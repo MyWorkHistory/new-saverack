@@ -1,0 +1,1 @@
+import{_ as s}from"./api-CFbuQvQA.js";import{f as o,h as r,g as n,x as t}from"./index-ITs7OSyQ.js";const c={},a={class:"min-h-screen"};function l(e,_){return o(),r("div",a,[n("main",null,[t(e.$slots,"default")])])}const m=s(c,[["render",l]]);export{m as F};

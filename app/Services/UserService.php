@@ -20,6 +20,8 @@ class UserService
     public function paginate(array $filters): LengthAwarePaginator
     {
         $search = $filters['search'] ?? null;
+        $roleId = isset($filters['role_id']) ? (int) $filters['role_id'] : null;
+        $status = isset($filters['status']) ? (string) $filters['status'] : null;
         $perPage = min(max((int) ($filters['per_page'] ?? 10), 5), 100);
         $sortBy = (string) ($filters['sort_by'] ?? 'id');
         $sortDir = strtolower((string) ($filters['sort_dir'] ?? 'desc')) === 'asc' ? 'asc' : 'desc';
@@ -40,6 +42,14 @@ class UserService
                             $p->where('phone', 'like', "%{$search}%");
                         });
                 });
+            })
+            ->when($roleId, function ($query) use ($roleId) {
+                $query->whereHas('roles', function ($q) use ($roleId) {
+                    $q->where('roles.id', $roleId);
+                });
+            })
+            ->when($status !== null && $status !== '' && $status !== 'all', function ($query) use ($status) {
+                $query->where('status', $status);
             })
             ->orderBy($sortBy, $sortDir)
             ->paginate($perPage);

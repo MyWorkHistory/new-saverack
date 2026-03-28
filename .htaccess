@@ -1,8 +1,0 @@
-# Use only when the domain document root is the Laravel base directory (not public/).
-# Preferred fix: set document root to the public/ folder in cPanel and remove this file.
-
-<IfModule mod_rewrite.c>
-    Options -Indexes +FollowSymLinks
-    RewriteEngine On
-    RewriteRule ^(.*)$ public/$1 [L,QSA]
-</IfModule>

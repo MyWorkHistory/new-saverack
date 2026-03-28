@@ -23,7 +23,15 @@ class UserController extends Controller
 
     public function index(Request $request): JsonResponse
     {
-        $users = $this->userService->paginate($request->only(['search', 'per_page', 'sort_by', 'sort_dir']));
+        $users = $this->userService->paginate($request->only([
+            'search',
+            'per_page',
+            'page',
+            'sort_by',
+            'sort_dir',
+            'role_id',
+            'status',
+        ]));
 
         return response()->json($users);
     }

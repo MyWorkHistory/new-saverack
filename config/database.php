@@ -125,10 +125,10 @@ return [
     |
     */
 
-    'migrations' => [
-        'table' => 'migrations',
-        'update_date_on_publish' => true,
-    ],
+    /*
+    | Laravel 8 expects a string (migration table name), not an array.
+    */
+    'migrations' => 'migrations',
 
     /*
     |--------------------------------------------------------------------------

@@ -5,11 +5,16 @@ namespace App\Services;
 use App\Models\User;
 use Illuminate\Contracts\Pagination\LengthAwarePaginator;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Hash;
 
 class UserService
 {
-    public function __construct(private readonly ActivityLogService $activityLog)
+    /** @var ActivityLogService */
+    protected $activityLog;
+
+    public function __construct(ActivityLogService $activityLog)
     {
+        $this->activityLog = $activityLog;
     }
 
     public function paginate(array $filters): LengthAwarePaginator
@@ -46,11 +51,16 @@ class UserService
             $roleIds = $data['role_ids'] ?? [];
             $phone = $data['phone'] ?? null;
             unset($data['role_ids'], $data['phone']);
+            if (! empty($data['password'])) {
+                $data['password'] = Hash::make($data['password']);
+            }
             $user = User::create($data);
             $user->roles()->sync($roleIds);
             $user->profile()->updateOrCreate(
                 ['user_id' => $user->id],
-                array_filter(['phone' => $phone], fn ($v) => $v !== null && $v !== '')
+                array_filter(['phone' => $phone], function ($v) {
+                    return $v !== null && $v !== '';
+                })
             );
             $user->load('roles');
             if ($actor) {
@@ -69,6 +79,8 @@ class UserService
             unset($data['role_ids'], $data['phone']);
             if (empty($data['password'])) {
                 unset($data['password']);
+            } elseif (! empty($data['password'])) {
+                $data['password'] = Hash::make($data['password']);
             }
             $user->update($data);
             if (is_array($roleIds)) {

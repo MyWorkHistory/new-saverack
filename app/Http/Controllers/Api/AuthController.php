@@ -14,8 +14,12 @@ use Illuminate\Validation\ValidationException;
 
 class AuthController extends Controller
 {
-    public function __construct(private readonly ActivityLogService $activityLog)
+    /** @var ActivityLogService */
+    protected $activityLog;
+
+    public function __construct(ActivityLogService $activityLog)
     {
+        $this->activityLog = $activityLog;
     }
 
     public function login(Request $request): JsonResponse
@@ -64,7 +68,9 @@ class AuthController extends Controller
     private function serializeUserForClient(User $user): array
     {
         $permissionKeys = $user->roles
-            ->flatMap(fn (Role $role) => $role->permissions->pluck('key'))
+            ->flatMap(function (Role $role) {
+                return $role->permissions->pluck('key');
+            })
             ->unique()
             ->values()
             ->all();
@@ -94,7 +100,7 @@ class AuthController extends Controller
         $status = Password::reset(
             $validated,
             function (User $user, string $password) {
-                $user->forceFill(['password' => $password])->save();
+                $user->forceFill(['password' => Hash::make($password)])->save();
             }
         );
 
@@ -108,7 +114,12 @@ class AuthController extends Controller
     public function logout(Request $request): JsonResponse
     {
         $user = $request->user();
-        $user?->currentAccessToken()?->delete();
+        if ($user) {
+            $token = $user->currentAccessToken();
+            if ($token) {
+                $token->delete();
+            }
+        }
 
         return response()->json(['message' => 'Logged out.']);
     }

@@ -22,13 +22,10 @@ class ActivityLog extends Model
         'created_at',
     ];
 
-    protected function casts(): array
-    {
-        return [
-            'metadata' => 'array',
-            'created_at' => 'datetime',
-        ];
-    }
+    protected $casts = [
+        'metadata' => 'array',
+        'created_at' => 'datetime',
+    ];
 
     public function user(): BelongsTo
     {

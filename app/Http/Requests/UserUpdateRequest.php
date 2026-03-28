@@ -11,10 +11,13 @@ class UserUpdateRequest extends FormRequest
     public function authorize(): bool
     {
         $user = $this->route('user');
+        $authUser = $this->user();
 
-        return $user instanceof User
-            ? ($this->user()?->can('update', $user) ?? false)
-            : false;
+        if (! $user instanceof User || ! $authUser) {
+            return false;
+        }
+
+        return $authUser->can('update', $user);
     }
 
     public function rules(): array

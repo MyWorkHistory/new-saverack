@@ -7,6 +7,7 @@ use App\Models\Role;
 use App\Models\User;
 use App\Models\UserProfile;
 use Illuminate\Database\Seeder;
+use Illuminate\Support\Facades\Hash;
 
 class RolePermissionSeeder extends Seeder
 {
@@ -18,10 +19,12 @@ class RolePermissionSeeder extends Seeder
             ['key' => 'users.create', 'label' => 'Create users', 'module' => 'users'],
             ['key' => 'users.update', 'label' => 'Update users', 'module' => 'users'],
             ['key' => 'users.delete', 'label' => 'Delete users', 'module' => 'users'],
-        ])->map(fn (array $p) => Permission::query()->firstOrCreate(
-            ['key' => $p['key']],
-            ['label' => $p['label'], 'module' => $p['module']]
-        ));
+        ])->map(function (array $p) {
+            return Permission::query()->firstOrCreate(
+                ['key' => $p['key']],
+                ['label' => $p['label'], 'module' => $p['module']]
+            );
+        });
 
         $admin = Role::query()->firstOrCreate(
             ['name' => 'admin'],
@@ -46,7 +49,7 @@ class RolePermissionSeeder extends Seeder
             ['email' => $email],
             [
                 'name' => $name,
-                'password' => $password,
+                'password' => Hash::make($password),
                 'status' => 'active',
             ]
         );
@@ -65,7 +68,7 @@ class RolePermissionSeeder extends Seeder
                 ['email' => $staffUserData['email']],
                 [
                     'name' => $staffUserData['name'],
-                    'password' => $staffUserData['password'],
+                    'password' => Hash::make($staffUserData['password']),
                     'status' => 'active',
                 ]
             );

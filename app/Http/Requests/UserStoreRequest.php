@@ -10,7 +10,9 @@ class UserStoreRequest extends FormRequest
 {
     public function authorize(): bool
     {
-        return $this->user()?->can('create', User::class) ?? false;
+        $user = $this->user();
+
+        return $user && $user->can('create', User::class);
     }
 
     public function rules(): array

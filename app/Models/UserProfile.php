@@ -70,22 +70,19 @@ class UserProfile extends Model
         'legacy_fields',
     ];
 
-    protected function casts(): array
-    {
-        return [
-            'birthday' => 'date',
-            'hire_date' => 'date',
-            'terminate_date' => 'date',
-            'quote_date' => 'date',
-            'is_clock' => 'boolean',
-            'crm_access' => 'boolean',
-            'wh_access' => 'boolean',
-            'is_permission' => 'boolean',
-            'is_email' => 'boolean',
-            'is_deleted_soft' => 'boolean',
-            'legacy_fields' => 'array',
-        ];
-    }
+    protected $casts = [
+        'birthday' => 'date',
+        'hire_date' => 'date',
+        'terminate_date' => 'date',
+        'quote_date' => 'date',
+        'is_clock' => 'boolean',
+        'crm_access' => 'boolean',
+        'wh_access' => 'boolean',
+        'is_permission' => 'boolean',
+        'is_email' => 'boolean',
+        'is_deleted_soft' => 'boolean',
+        'legacy_fields' => 'array',
+    ];
 
     public function user(): BelongsTo
     {

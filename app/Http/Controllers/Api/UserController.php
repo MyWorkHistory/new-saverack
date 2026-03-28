@@ -12,8 +12,12 @@ use Illuminate\Http\Request;
 
 class UserController extends Controller
 {
-    public function __construct(private readonly UserService $userService)
+    /** @var UserService */
+    protected $userService;
+
+    public function __construct(UserService $userService)
     {
+        $this->userService = $userService;
         $this->authorizeResource(User::class, 'user');
     }
 

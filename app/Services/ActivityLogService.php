@@ -12,7 +12,7 @@ class ActivityLogService
     public function log(?User $actor, string $action, Model $subject, ?string $description = null, ?array $metadata = null): void
     {
         ActivityLog::query()->create([
-            'user_id' => $actor?->id,
+            'user_id' => $actor ? $actor->id : null,
             'action' => $action,
             'subject_type' => $subject->getMorphClass(),
             'subject_id' => $subject->getKey(),

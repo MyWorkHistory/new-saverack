@@ -1,14 +1,29 @@
 <!doctype html>
-<html lang="">
+<html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <link rel="icon" type="image/jpeg" href="/logo.jpg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>SaveRack</title>
+    <!-- Computed favicon path (subpath-safe) + cache-bust so the tab icon updates -->
+    <link id="saverack-favicon" rel="icon" type="image/svg+xml" href="" />
+    <link id="saverack-favicon-shortcut" rel="shortcut icon" href="" />
+    <script>
+      (function () {
+        var p = location.pathname;
+        var dir = p.replace(/\/[^/]*$/, "") || "";
+        var h = dir + "/images/logo/logo-icon.svg?v=3";
+        var a = document.getElementById("saverack-favicon");
+        var b = document.getElementById("saverack-favicon-shortcut");
+        if (a) { a.href = h; }
+        if (b) { b.href = h; }
+      })();
+    </script>
+    <title>SaveRack CRM</title>
+    <!-- Main SPA: TailAdmin build with CRM sidebar, AppHeader (accounts / order / SKU), charts (see screenshot). -->
     <script type="module" crossorigin src="/assets/index-B3vOx6Rp.js"></script>
-    <link rel="stylesheet" crossorigin href="/assets/index-NUoy62eT.css">
+    <link rel="stylesheet" crossorigin href="/assets/index-NUoy62eT.css" />
   </head>
   <body class="dark:bg-gray-900">
     <div id="app"></div>
+    <script src="/assets/saverack-crm-owner-nav.js" defer></script>
   </body>
 </html>

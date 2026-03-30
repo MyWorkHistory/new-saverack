@@ -78,6 +78,7 @@ class AuthController extends Controller
         return array_merge($user->toArray(), [
             'permission_keys' => $permissionKeys,
             'is_admin' => $user->hasRole('admin'),
+            'is_crm_owner' => $user->isCrmOwner(),
         ]);
     }
 

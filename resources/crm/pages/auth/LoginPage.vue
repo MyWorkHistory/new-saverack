@@ -1,7 +1,10 @@
 <script setup>
 import { reactive, ref } from "vue";
+import { RouterLink, useRouter } from "vue-router";
 import api from "../../services/api";
+import { setCrmOwnerCache } from "../../router";
 
+const router = useRouter();
 const loading = ref(false);
 const error = ref("");
 const showPassword = ref(false);
@@ -23,7 +26,11 @@ const submit = async () => {
     } else {
       localStorage.removeItem("auth_remember");
     }
-    window.location.href = "/dashboard";
+    setCrmOwnerCache(data.user && data.user.is_crm_owner);
+    const r = route.query.redirect;
+    const dest =
+      typeof r === "string" && r.startsWith("/") ? r : "/dashboard";
+    router.push(dest);
   } catch (e) {
     error.value = e?.response?.data?.message || "Login failed.";
   } finally {
@@ -36,6 +43,7 @@ const submit = async () => {
   <div
     class="min-h-screen flex flex-col bg-white lg:flex-row dark:bg-gray-950"
   >
+    <!-- Form (matches SaveRack branded sign-in #2) -->
     <div
       class="flex flex-1 flex-col justify-center px-6 py-10 sm:px-10 lg:w-1/2 lg:px-14 xl:px-20"
     >
@@ -60,37 +68,37 @@ const submit = async () => {
           <div>
             <label
               class="mb-1.5 block text-sm font-medium text-slate-700 dark:text-slate-300"
-              for="stub-login-email"
+              for="login-email"
             >
               Email<span class="text-red-500" aria-hidden="true">*</span>
             </label>
             <input
-              id="stub-login-email"
+              id="login-email"
               v-model="form.email"
               type="email"
               autocomplete="username"
               required
               placeholder="you@company.com"
-              class="w-full rounded-lg border border-slate-200 bg-slate-50/80 px-3.5 py-2.5 text-slate-900 shadow-sm outline-none transition placeholder:text-slate-400 focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 dark:border-slate-600 dark:bg-slate-900 dark:text-white"
+              class="w-full rounded-lg border border-slate-200 bg-slate-50/80 px-3.5 py-2.5 text-slate-900 shadow-sm outline-none ring-slate-200 transition placeholder:text-slate-400 focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 dark:border-slate-600 dark:bg-slate-900 dark:text-white dark:placeholder:text-slate-500 dark:focus:border-blue-400 dark:focus:ring-blue-400/20"
             />
           </div>
 
           <div>
             <label
               class="mb-1.5 block text-sm font-medium text-slate-700 dark:text-slate-300"
-              for="stub-login-password"
+              for="login-password"
             >
               Password<span class="text-red-500" aria-hidden="true">*</span>
             </label>
             <div class="relative">
               <input
-                id="stub-login-password"
+                id="login-password"
                 v-model="form.password"
                 :type="showPassword ? 'text' : 'password'"
                 autocomplete="current-password"
                 required
                 placeholder="••••••••"
-                class="w-full rounded-lg border border-slate-200 bg-slate-50/80 py-2.5 pl-3.5 pr-11 text-slate-900 shadow-sm outline-none transition placeholder:text-slate-400 focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 dark:border-slate-600 dark:bg-slate-900 dark:text-white"
+                class="w-full rounded-lg border border-slate-200 bg-slate-50/80 py-2.5 pl-3.5 pr-11 text-slate-900 shadow-sm outline-none ring-slate-200 transition placeholder:text-slate-400 focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 dark:border-slate-600 dark:bg-slate-900 dark:text-white dark:focus:border-blue-400 dark:focus:ring-blue-400/20"
               />
               <button
                 type="button"
@@ -150,18 +158,18 @@ const submit = async () => {
               />
               Keep me logged in
             </label>
-            <a
-              href="/forgot-password"
-              class="text-sm font-medium text-blue-600 hover:text-blue-700 dark:text-blue-400"
+            <RouterLink
+              to="/forgot-password"
+              class="text-sm font-medium text-blue-600 hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-300"
             >
               Forgot password?
-            </a>
+            </RouterLink>
           </div>
 
           <button
             type="submit"
             :disabled="loading"
-            class="w-full rounded-lg bg-blue-600 py-3 text-sm font-semibold text-white shadow-sm transition hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-60"
+            class="w-full rounded-lg bg-blue-600 py-3 text-sm font-semibold text-white shadow-sm transition hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-60 dark:focus:ring-offset-gray-950"
           >
             {{ loading ? "Signing in…" : "Sign In" }}
           </button>
@@ -169,6 +177,7 @@ const submit = async () => {
       </div>
     </div>
 
+    <!-- Brand panel -->
     <div
       class="relative hidden min-h-[280px] flex-1 overflow-hidden lg:flex lg:min-h-screen"
     >
@@ -176,12 +185,12 @@ const submit = async () => {
         class="absolute inset-0 bg-gradient-to-br from-slate-800 via-slate-900 to-[#0c1929]"
       />
       <img
-        src="/images/shape/grid-01.svg"
+        :src="gridUrl"
         alt=""
         class="pointer-events-none absolute right-0 top-0 max-w-[280px] opacity-25 xl:max-w-[420px]"
       />
       <img
-        src="/images/shape/grid-01.svg"
+        :src="gridUrl"
         alt=""
         class="pointer-events-none absolute bottom-0 left-0 max-w-[280px] rotate-180 opacity-20 xl:max-w-[420px]"
       />
@@ -192,7 +201,7 @@ const submit = async () => {
           class="rounded-2xl bg-white/10 p-6 shadow-2xl ring-1 ring-white/10 backdrop-blur-sm"
         >
           <img
-            src="/images/logo/auth-logo.svg"
+            :src="authLogoUrl"
             alt="SaveRack"
             class="mx-auto h-12 w-auto max-w-[200px] sm:h-14"
           />

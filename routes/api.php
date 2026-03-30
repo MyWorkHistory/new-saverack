@@ -3,6 +3,7 @@
 use App\Http\Controllers\Api\AuthController;
 use App\Http\Controllers\Api\DashboardController;
 use App\Http\Controllers\Api\RoleController;
+use App\Http\Controllers\Api\TicketController;
 use App\Http\Controllers\Api\UserController;
 use Illuminate\Support\Facades\Route;
 
@@ -22,5 +23,10 @@ Route::middleware('auth:sanctum')->group(function () {
 
     Route::get('/dashboard/summary', [DashboardController::class, 'summary'])
         ->middleware('can:view-dashboard');
+
+    Route::get('/tickets/meta', [TicketController::class, 'meta']);
+    Route::post('/tickets/{ticket}/comments', [TicketController::class, 'storeComment']);
+    Route::apiResource('tickets', TicketController::class);
+
     Route::apiResource('users', UserController::class);
 });

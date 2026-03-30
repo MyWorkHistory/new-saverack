@@ -19,6 +19,11 @@ class RolePermissionSeeder extends Seeder
             ['key' => 'users.create', 'label' => 'Create users', 'module' => 'users'],
             ['key' => 'users.update', 'label' => 'Update users', 'module' => 'users'],
             ['key' => 'users.delete', 'label' => 'Delete users', 'module' => 'users'],
+            ['key' => 'tickets.view', 'label' => 'View tickets', 'module' => 'tickets'],
+            ['key' => 'tickets.create', 'label' => 'Create tickets', 'module' => 'tickets'],
+            ['key' => 'tickets.update', 'label' => 'Update tickets', 'module' => 'tickets'],
+            ['key' => 'tickets.delete', 'label' => 'Delete tickets', 'module' => 'tickets'],
+            ['key' => 'tickets.comment', 'label' => 'Comment on tickets', 'module' => 'tickets'],
         ])->map(function (array $p) {
             return Permission::query()->firstOrCreate(
                 ['key' => $p['key']],
@@ -43,7 +48,7 @@ class RolePermissionSeeder extends Seeder
 
         $email = env('ADMIN_EMAIL', 'audi@saverack.com');
         $password = env('ADMIN_PASSWORD', 'J0rdan$123');
-        $name = env('ADMIN_NAME', 'SaveRack Admin');
+        $name = env('ADMIN_NAME', 'Audi Kowalski');
 
         $adminUser = User::query()->updateOrCreate(
             ['email' => $email],

@@ -68,4 +68,18 @@ class User extends Authenticatable
 
         return false;
     }
+
+    /**
+     * CRM owner (Audi Kowalski) — tickets module MVP.
+     */
+    public function isCrmOwner(): bool
+    {
+        $owner = config('crm.owner_email');
+        if ($owner === null || $owner === '') {
+            return false;
+        }
+
+        return strcasecmp((string) $this->email, (string) $owner) === 0;
+    }
 }
+

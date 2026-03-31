@@ -8,10 +8,8 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 // Subpath deploy: set VITE_APP_BASE=/your-subpath/ (leading + trailing slash) and
 // use the same value when building. Router uses import.meta.env.BASE_URL automatically.
 //
-// IMPORTANT: outDir is NOT `public/` root — that would overwrite `public/index.html`.
-// Main professional CRM (dashboard, users + UserForm) is served from compiled
-// `/assets/index-CrZi7fja.js` (see public/index.html). This config builds the
-// tickets/Kanban app only, deployed at /tickets-app/ (see routes/web.php).
+// Root CRM SPA is built with vite.spa.config.js → public/index.html + public/assets/.
+// This config builds the same Vue app for /tickets-app/ (see routes/spa.php).
 export default defineConfig({
     base: process.env.VITE_APP_BASE || '/tickets-app/',
     plugins: [vue()],

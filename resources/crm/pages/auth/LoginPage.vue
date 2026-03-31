@@ -1,9 +1,14 @@
 <script setup>
-import { reactive, ref } from "vue";
-import { RouterLink, useRouter } from "vue-router";
+import { computed, reactive, ref } from "vue";
+import { RouterLink, useRoute, useRouter } from "vue-router";
 import api from "../../services/api";
-import { setCrmOwnerCache } from "../../router";
+import { setTicketNavFromUser } from "../../router";
+import AuthRotatingHero from "../../components/auth/AuthRotatingHero.vue";
+import { BRAND_MARK_SRC } from "../../utils/brandAssets.js";
 
+const markSrc = computed(() => BRAND_MARK_SRC());
+
+const route = useRoute();
 const router = useRouter();
 const loading = ref(false);
 const error = ref("");
@@ -26,13 +31,15 @@ const submit = async () => {
     } else {
       localStorage.removeItem("auth_remember");
     }
-    setCrmOwnerCache(data.user && data.user.is_crm_owner);
+    setTicketNavFromUser(data.user);
     const r = route.query.redirect;
     const dest =
       typeof r === "string" && r.startsWith("/") ? r : "/dashboard";
     router.push(dest);
   } catch (e) {
-    error.value = e?.response?.data?.message || "Login failed.";
+    const d = e?.response?.data;
+    const v = d?.errors?.email?.[0] || d?.errors?.password?.[0];
+    error.value = v || d?.message || e?.message || "Login failed.";
   } finally {
     loading.value = false;
   }
@@ -177,42 +184,22 @@ const submit = async () => {
       </div>
     </div>
 
-    <!-- Brand panel -->
-    <div
-      class="relative hidden min-h-[280px] flex-1 overflow-hidden lg:flex lg:min-h-screen"
-    >
-      <div
-        class="absolute inset-0 bg-gradient-to-br from-slate-800 via-slate-900 to-[#0c1929]"
-      />
+    <AuthRotatingHero>
       <img
-        :src="gridUrl"
+        :src="markSrc"
         alt=""
-        class="pointer-events-none absolute right-0 top-0 max-w-[280px] opacity-25 xl:max-w-[420px]"
+        class="mx-auto h-24 w-24 object-contain sm:h-28 sm:w-28 lg:h-32 lg:w-32"
+        width="128"
+        height="128"
       />
-      <img
-        :src="gridUrl"
-        alt=""
-        class="pointer-events-none absolute bottom-0 left-0 max-w-[280px] rotate-180 opacity-20 xl:max-w-[420px]"
-      />
-      <div
-        class="relative z-10 flex flex-1 flex-col items-center justify-center px-10 py-16 text-center"
+      <h2
+        class="mt-10 text-4xl font-bold tracking-tight text-white sm:text-5xl"
       >
-        <div
-          class="rounded-2xl bg-white/10 p-6 shadow-2xl ring-1 ring-white/10 backdrop-blur-sm"
-        >
-          <img
-            :src="authLogoUrl"
-            alt="SaveRack"
-            class="mx-auto h-12 w-auto max-w-[200px] sm:h-14"
-          />
-        </div>
-        <h2 class="mt-8 text-2xl font-bold tracking-tight text-white">
-          SaveRack
-        </h2>
-        <p class="mt-2 max-w-sm text-sm text-slate-400">
-          CRM Administration Portal
-        </p>
-      </div>
-    </div>
+        SaveRack
+      </h2>
+      <p class="mt-2 max-w-sm text-sm text-slate-400">
+        CRM Administration Portal
+      </p>
+    </AuthRotatingHero>
   </div>
 </template>

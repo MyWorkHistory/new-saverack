@@ -1,6 +1,6 @@
 ## SaveRack CRM (Phase 1)
 
-Laravel 11 API (Sanctum) + Vue 3 TailAdmin SPA served from `public/spa`.
+Laravel 11 API (Sanctum) + Vue 3 TailAdmin SPA served from `public/index.html` (see `vite.spa.config.js`).
 
 ### Setup
 
@@ -16,7 +16,7 @@ Laravel 11 API (Sanctum) + Vue 3 TailAdmin SPA served from `public/spa`.
 Source: `D:\app.saverack.com\vue-tailwind-admin-dashboard-main\vue-tailwind-admin-dashboard-main` (or your clone).
 
 - Dev: `npm install` then `npm run dev` (Vite proxies `/api` to `http://127.0.0.1:8000`).
-- Production build (outputs to this repo): `npm run build` — writes to `public/spa/`.
+- Production build: `npm run build` — Laravel assets to `public/build/`, CRM SPA to `public/index.html` + `public/assets/*`. Subpath: set `VITE_APP_BASE=/your-prefix/` for both `build:spa` / `build` SPA step.
 
 Open the app via Laravel: `http://127.0.0.1:8000/` (SPA) and sign in with `ADMIN_EMAIL` / `ADMIN_PASSWORD`.
 

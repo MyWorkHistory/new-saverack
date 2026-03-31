@@ -41,30 +41,52 @@ const router = createRouter({
   routes,
 });
 
-let crmOwnerCache = null;
+/** Cached result of whether /auth/me allows ticket routes (tickets.view permission or legacy CRM owner). */
+let ticketNavCache = null;
 
 export function clearCrmOwnerCache() {
-  crmOwnerCache = null;
+  ticketNavCache = null;
 }
 
+/**
+ * @param {boolean|null} value — legacy: true/false from old is_crm_owner-only checks
+ */
 export function setCrmOwnerCache(value) {
-  crmOwnerCache = value === null ? null : !!value;
+  ticketNavCache = value === null ? null : !!value;
 }
 
-async function ensureCrmOwner() {
-  if (crmOwnerCache !== null) {
-    return crmOwnerCache;
+/** Prefer this after login: derives access from permission_keys (tickets.view). */
+export function setTicketNavFromUser(user) {
+  if (!user) {
+    ticketNavCache = null;
+    return;
+  }
+  const keys = user.permission_keys;
+  ticketNavCache = Array.isArray(keys) && keys.includes("tickets.view");
+}
+
+function userCanTickets(userLike) {
+  if (!userLike || !Array.isArray(userLike.permission_keys)) {
+    return false;
+  }
+  return userLike.permission_keys.includes("tickets.view");
+}
+
+async function ensureTicketRouteAccess() {
+  if (ticketNavCache !== null) {
+    return ticketNavCache;
   }
   try {
     const { data } = await api.get("/auth/me");
-    crmOwnerCache = !!data.is_crm_owner;
-    return crmOwnerCache;
+    const ok = userCanTickets(data);
+    ticketNavCache = ok;
+    return ok;
   } catch (e) {
     if (e.response?.status === 401) {
       localStorage.removeItem("auth_token");
-      crmOwnerCache = null;
+      ticketNavCache = null;
     } else {
-      crmOwnerCache = false;
+      ticketNavCache = false;
     }
     return false;
   }
@@ -85,7 +107,7 @@ router.beforeEach(async (to) => {
   }
 
   if (to.path === "/tickets" || to.path.startsWith("/tickets/")) {
-    const ok = await ensureCrmOwner();
+    const ok = await ensureTicketRouteAccess();
     if (!ok) {
       if (!localStorage.getItem("auth_token")) {
         return { name: "login", query: { redirect: to.fullPath } };

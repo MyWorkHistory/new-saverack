@@ -56,7 +56,7 @@ class DashboardController extends Controller
                     'name' => $u->name,
                     'email' => $u->email,
                     'status' => $u->status,
-                    'created_at' => $u->created_at?->toIso8601String(),
+                    'created_at' => optional($u->created_at)->toIso8601String(),
                 ]),
             'recent_activity' => ActivityLog::query()
                 ->with('user:id,name')

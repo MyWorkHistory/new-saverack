@@ -6,24 +6,30 @@ use App\Models\User;
 
 class UserPolicy
 {
+    /** Admins (any naming) + CRM owner always manage users; staff uses explicit permissions only. */
+    private function canManageUsers(User $user): bool
+    {
+        return $user->isAdministrator() || $user->isCrmOwner();
+    }
+
     public function viewAny(User $user): bool
     {
-        return $user->hasRole('admin') || $user->hasPermission('users.view');
+        return $this->canManageUsers($user) || $user->hasPermission('users.view');
     }
 
     public function view(User $user, User $model): bool
     {
-        return $user->hasRole('admin') || $user->hasPermission('users.view');
+        return $this->canManageUsers($user) || $user->hasPermission('users.view');
     }
 
     public function create(User $user): bool
     {
-        return $user->hasRole('admin') || $user->hasPermission('users.create');
+        return $this->canManageUsers($user) || $user->hasPermission('users.create');
     }
 
     public function update(User $user, User $model): bool
     {
-        return $user->hasRole('admin') || $user->hasPermission('users.update');
+        return $this->canManageUsers($user) || $user->hasPermission('users.update');
     }
 
     public function delete(User $user, User $model): bool
@@ -32,6 +38,6 @@ class UserPolicy
             return false;
         }
 
-        return $user->hasRole('admin') || $user->hasPermission('users.delete');
+        return $this->canManageUsers($user) || $user->hasPermission('users.delete');
     }
 }

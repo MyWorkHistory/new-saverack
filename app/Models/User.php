@@ -59,10 +59,33 @@ class User extends Authenticatable
         return $this->hasMany(Task::class, 'assigned_to');
     }
 
+    /**
+     * System administrators (full CRM user management). Matches common role names;
+     * users may have both this and "staff" without losing admin rights.
+     */
+    public function isAdministrator(): bool
+    {
+        $this->loadMissing('roles');
+        $adminNames = ['admin', 'administrator', 'super_admin', 'superadmin'];
+
+        foreach ($this->roles as $role) {
+            $n = strtolower((string) $role->name);
+            if (in_array($n, $adminNames, true)) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
     public function hasRole(string $name): bool
     {
         $this->loadMissing('roles');
         $needle = strtolower($name);
+
+        if ($needle === 'admin' && $this->isAdministrator()) {
+            return true;
+        }
 
         foreach ($this->roles as $role) {
             if (strtolower((string) $role->name) === $needle) {

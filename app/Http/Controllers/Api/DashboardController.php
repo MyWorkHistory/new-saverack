@@ -48,16 +48,24 @@ class DashboardController extends Controller
                 'users_last_year' => User::query()->whereYear('created_at', now()->year - 1)->count(),
             ],
             'recent_users' => User::query()
+                ->with(['roles:id,name,label'])
                 ->latest()
                 ->limit(12)
                 ->get(['id', 'name', 'email', 'status', 'created_at'])
-                ->map(fn (User $u) => [
-                    'id' => $u->id,
-                    'name' => $u->name,
-                    'email' => $u->email,
-                    'status' => $u->status,
-                    'created_at' => optional($u->created_at)->toIso8601String(),
-                ]),
+                ->map(static function (User $u) {
+                    return [
+                        'id' => $u->id,
+                        'name' => $u->name,
+                        'email' => $u->email,
+                        'status' => $u->status,
+                        'created_at' => optional($u->created_at)->toIso8601String(),
+                        'roles' => $u->roles->map(static fn ($r) => [
+                            'id' => $r->id,
+                            'name' => $r->name,
+                            'label' => $r->label,
+                        ])->values()->all(),
+                    ];
+                }),
             'recent_activity' => ActivityLog::query()
                 ->with('user:id,name')
                 ->latest()

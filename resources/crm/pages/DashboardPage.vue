@@ -1,15 +1,56 @@
 <script setup>
-import { computed, onMounted, ref } from "vue";
+import { computed, inject, onMounted, onUnmounted, ref } from "vue";
 import { RouterLink } from "vue-router";
 import VueApexCharts from "vue3-apexcharts";
 import api from "../services/api";
 import CrmMetricCard from "../components/dashboard/CrmMetricCard.vue";
 import CrmLoadingSpinner from "../components/common/CrmLoadingSpinner.vue";
+import ConfirmModal from "../components/common/ConfirmModal.vue";
+import { useToast } from "../composables/useToast";
+import { crmIsAdmin } from "../utils/crmUser";
+import { errorMessage } from "../utils/apiError";
+
+const crmUser = inject("crmUser", ref(null));
+const toast = useToast();
 
 const loading = ref(true);
 const period = ref("monthly");
 const search = ref("");
 const statusFilter = ref("");
+
+const currentUser = ref(null);
+const manageOpenId = ref(null);
+const manageMenuRect = ref({ top: 0, left: 0 });
+const deleteTarget = ref(null);
+const deleteBusy = ref(false);
+const deleteError = ref("");
+
+function userHasPerm(key) {
+  const u = crmUser.value;
+  if (!u) return false;
+  if (crmIsAdmin(u) || u.is_crm_owner) return true;
+  return Array.isArray(u.permission_keys) && u.permission_keys.includes(key);
+}
+
+const canUpdateUsers = computed(() => userHasPerm("users.update"));
+const canDeleteUsers = computed(() => userHasPerm("users.delete"));
+const showRowActions = computed(
+  () => canUpdateUsers.value || canDeleteUsers.value,
+);
+
+const tableColspan = computed(() => {
+  let n = 3;
+  if (showRowActions.value) n += 1;
+  return n;
+});
+
+const deleteModalOpen = computed(() => deleteTarget.value !== null);
+const deleteMessage = computed(() => {
+  const u = deleteTarget.value;
+  return u
+    ? `Are you sure you want to delete ${u.name}? This cannot be undone.`
+    : "";
+});
 
 const summary = ref({
   metrics: {
@@ -43,12 +84,11 @@ function splitWhen(iso) {
 }
 
 const avatarPalettes = [
-  "bg-sky-100 text-sky-700 ring-sky-200",
-  "bg-violet-100 text-violet-700 ring-violet-200",
-  "bg-amber-100 text-amber-800 ring-amber-200",
-  "bg-emerald-100 text-emerald-800 ring-emerald-200",
-  "bg-rose-100 text-rose-800 ring-rose-200",
-  "bg-indigo-100 text-indigo-800 ring-indigo-200",
+  "bg-sky-100 text-sky-800 dark:bg-sky-500/20 dark:text-sky-200",
+  "bg-violet-100 text-violet-800 dark:bg-violet-500/20 dark:text-violet-200",
+  "bg-amber-100 text-amber-900 dark:bg-amber-500/20 dark:text-amber-200",
+  "bg-emerald-100 text-emerald-900 dark:bg-emerald-500/20 dark:text-emerald-200",
+  "bg-rose-100 text-rose-900 dark:bg-rose-500/20 dark:text-rose-200",
 ];
 
 function initials(name) {
@@ -57,12 +97,32 @@ function initials(name) {
   return parts.map((p) => p[0]?.toUpperCase() ?? "").join("") || "?";
 }
 
-function avatarClass(email) {
+function avatarClassForUser(email) {
   let h = 0;
   const s = email || "";
   for (let i = 0; i < s.length; i++) h = (h + s.charCodeAt(i)) % 997;
   return avatarPalettes[h % avatarPalettes.length];
 }
+
+const roleLabels = (user) => {
+  const r = user.roles;
+  if (!r || !r.length) return "—";
+  return r.map((x) => x.label || x.name).join(", ");
+};
+
+const statusBadgeClass = (status) => {
+  const s = String(status || "").toLowerCase();
+  if (s === "active") {
+    return "bg-emerald-50 text-emerald-800 ring-emerald-600/20 dark:bg-emerald-500/10 dark:text-emerald-300 dark:ring-emerald-500/30";
+  }
+  if (s === "pending") {
+    return "bg-amber-50 text-amber-800 ring-amber-600/20 dark:bg-amber-500/10 dark:text-amber-200 dark:ring-amber-500/30";
+  }
+  if (s === "inactive") {
+    return "bg-gray-100 text-gray-700 ring-gray-500/20 dark:bg-gray-800 dark:text-gray-300 dark:ring-gray-500/40";
+  }
+  return "bg-slate-100 text-slate-700 ring-slate-500/20 dark:bg-slate-800 dark:text-slate-300";
+};
 
 const filteredUsers = computed(() => {
   let rows = summary.value.recent_users ?? [];
@@ -79,6 +139,10 @@ const filteredUsers = computed(() => {
   }
   return rows;
 });
+
+const manageMenuUser = computed(() =>
+  filteredUsers.value.find((u) => u.id === manageOpenId.value) ?? null,
+);
 
 const chartBundle = computed(() => {
   const c = summary.value.chart;
@@ -260,24 +324,113 @@ const activityTrendBarPct = computed(() => {
   return Math.min(100, (last / m) * 100);
 });
 
-onMounted(async () => {
+const MENU_W = 176;
+const MENU_H = 112;
+
+function placeManageMenu(anchorEl) {
+  if (!(anchorEl instanceof HTMLElement)) return;
+  const r = anchorEl.getBoundingClientRect();
+  let top = r.bottom + 4;
+  let left = r.right - MENU_W;
+  left = Math.max(8, Math.min(left, window.innerWidth - MENU_W - 8));
+  if (top + MENU_H > window.innerHeight - 8) {
+    top = Math.max(8, r.top - MENU_H - 4);
+  }
+  manageMenuRect.value = { top, left };
+}
+
+function closeManageMenu() {
+  manageOpenId.value = null;
+}
+
+function onWindowScrollOrResize() {
+  if (manageOpenId.value !== null) {
+    closeManageMenu();
+  }
+}
+
+function toggleManageMenu(userId, e) {
+  e.stopPropagation();
+  if (manageOpenId.value === userId) {
+    closeManageMenu();
+    return;
+  }
+  manageOpenId.value = userId;
+  const btn = e.currentTarget;
+  if (btn instanceof HTMLElement) {
+    placeManageMenu(btn);
+  }
+}
+
+function onDocClick(e) {
+  if (!e.target.closest("[data-row-actions]")) {
+    manageOpenId.value = null;
+  }
+}
+
+const fetchMe = async () => {
   try {
+    const { data } = await api.get("/auth/me");
+    currentUser.value = data;
+  } catch {
+    currentUser.value = null;
+  }
+};
+
+const canDeleteRow = (user) => {
+  if (!canDeleteUsers.value) return false;
+  return !(currentUser.value && user.id === currentUser.value.id);
+};
+
+const openDeleteModal = (user) => {
+  manageOpenId.value = null;
+  deleteError.value = "";
+  deleteTarget.value = user;
+};
+
+const closeDeleteModal = () => {
+  if (deleteBusy.value) return;
+  deleteTarget.value = null;
+};
+
+const confirmDelete = async () => {
+  const user = deleteTarget.value;
+  if (!user) return;
+  deleteBusy.value = true;
+  deleteError.value = "";
+  try {
+    await api.delete(`/users/${user.id}`);
+    deleteTarget.value = null;
+    toast.success("User deleted.");
+    const { data } = await api.get("/dashboard/summary");
+    summary.value = { ...summary.value, ...data };
+  } catch (e) {
+    deleteError.value = errorMessage(e, "Could not delete user.");
+    toast.errorFrom(e, "Could not delete user.");
+  } finally {
+    deleteBusy.value = false;
+  }
+};
+
+onMounted(async () => {
+  loading.value = true;
+  try {
+    await fetchMe();
     const { data } = await api.get("/dashboard/summary");
     summary.value = { ...summary.value, ...data };
   } finally {
     loading.value = false;
   }
+  document.addEventListener("click", onDocClick);
+  window.addEventListener("scroll", onWindowScrollOrResize, true);
+  window.addEventListener("resize", onWindowScrollOrResize);
 });
 
-function statusBadgeClass(s) {
-  if (s === "active") {
-    return "bg-emerald-50 text-emerald-700 ring-emerald-600/20 dark:bg-emerald-500/10 dark:text-emerald-400";
-  }
-  if (s === "pending") {
-    return "bg-amber-50 text-amber-800 ring-amber-600/20 dark:bg-amber-500/10 dark:text-amber-400";
-  }
-  return "bg-gray-100 text-gray-700 ring-gray-600/10 dark:bg-white/10 dark:text-gray-300";
-}
+onUnmounted(() => {
+  document.removeEventListener("click", onDocClick);
+  window.removeEventListener("scroll", onWindowScrollOrResize, true);
+  window.removeEventListener("resize", onWindowScrollOrResize);
+});
 </script>
 
 <template>
@@ -624,130 +777,235 @@ function statusBadgeClass(s) {
         </div>
       </div>
 
-      <!-- Recent users table -->
+      <p v-if="deleteError" class="text-sm text-red-600 dark:text-red-400">
+        {{ deleteError }}
+      </p>
+
+      <!-- Recent users (same table pattern as Users page) -->
       <div
-        class="rounded-2xl border border-gray-200 bg-white shadow-sm dark:border-gray-800 dark:bg-white/[0.03]"
+        class="overflow-hidden rounded-xl border border-gray-200 bg-white shadow-sm dark:border-gray-800 dark:bg-gray-900/40"
       >
         <div
-          class="flex flex-col gap-4 border-b border-gray-100 p-5 dark:border-gray-800 sm:flex-row sm:items-center sm:justify-between"
+          class="flex flex-col gap-4 border-b border-gray-100 px-4 py-5 dark:border-gray-800 sm:px-6"
         >
-          <h2 class="text-lg font-semibold text-gray-900 dark:text-white">
-            Recent users
-          </h2>
-          <div class="flex flex-wrap items-center gap-2">
-            <div class="relative">
-              <span
-                class="pointer-events-none absolute left-3 top-1/2 text-gray-400 -translate-y-1/2"
-              >
-                ⌕
-              </span>
-              <input
-                v-model="search"
-                type="search"
-                placeholder="Search…"
-                class="w-full min-w-[200px] rounded-lg border border-gray-200 bg-white py-2 pl-9 pr-3 text-sm outline-none ring-[#206ba4] focus:border-[#206ba4] focus:ring-2 focus:ring-[#206ba4]/20 dark:border-gray-700 dark:bg-white/5 dark:text-white sm:w-56"
-              />
+          <div
+            class="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between"
+          >
+            <div>
+              <h2 class="text-xl font-bold text-gray-900 dark:text-white">
+                Recent users
+              </h2>
+              <p class="mt-0.5 text-sm text-gray-500 dark:text-gray-400">
+                Latest accounts in the directory
+              </p>
             </div>
-            <select
-              v-model="statusFilter"
-              class="rounded-lg border border-gray-200 bg-white py-2 pl-3 pr-8 text-sm outline-none focus:border-[#206ba4] dark:border-gray-700 dark:bg-white/5 dark:text-white"
+            <div
+              class="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-end"
             >
-              <option value="">All status</option>
-              <option value="active">Active</option>
-              <option value="pending">Pending</option>
-              <option value="inactive">Inactive</option>
-            </select>
+              <div class="relative min-w-0 flex-1 sm:max-w-xs">
+                <span
+                  class="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-gray-400"
+                >
+                  <svg
+                    class="h-5 w-5"
+                    fill="none"
+                    viewBox="0 0 20 20"
+                    stroke="currentColor"
+                    stroke-width="1.5"
+                  >
+                    <path
+                      stroke-linecap="round"
+                      d="M3.042 9.374c0-3.497 2.835-6.332 6.333-6.332 3.497 0 6.332 2.835 6.332 6.332 0 3.498-2.835 6.333-6.332 6.333-3.498 0-6.333-2.835-6.333-6.333zM17.208 17.205l-2.82-2.82"
+                    />
+                  </svg>
+                </span>
+                <input
+                  v-model="search"
+                  type="search"
+                  placeholder="Search…"
+                  class="h-11 w-full rounded-lg border border-gray-200 bg-gray-50 py-2.5 pl-10 pr-3 text-sm text-gray-900 placeholder:text-gray-400 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20 dark:border-gray-700 dark:bg-gray-800/50 dark:text-white dark:placeholder:text-gray-500"
+                />
+              </div>
+              <select
+                v-model="statusFilter"
+                class="h-11 rounded-lg border border-gray-200 bg-white py-2 pl-3 pr-8 text-sm text-gray-900 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20 dark:border-gray-700 dark:bg-gray-800 dark:text-white"
+              >
+                <option value="">All statuses</option>
+                <option value="pending">Pending</option>
+                <option value="active">Active</option>
+                <option value="inactive">Inactive</option>
+              </select>
+            </div>
           </div>
         </div>
+
         <div class="overflow-x-auto">
-          <table class="min-w-full text-left text-sm">
-            <thead class="bg-gray-50 text-xs font-semibold uppercase text-gray-500 dark:bg-white/[0.05] dark:text-gray-400">
-              <tr>
-                <th class="w-10 px-5 py-3">
-                  <span class="inline-block h-4 w-4 rounded border border-gray-300" />
+          <table class="min-w-[800px] w-full text-left text-sm">
+            <thead>
+              <tr
+                class="border-b border-gray-100 bg-gray-50 dark:border-gray-800 dark:bg-gray-800/40"
+              >
+                <th
+                  class="px-4 py-3 text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400"
+                >
+                  Status
                 </th>
-                <th class="px-3 py-3">User</th>
-                <th class="hidden px-3 py-3 md:table-cell">Email</th>
-                <th class="px-3 py-3">Status</th>
-                <th class="px-3 py-3">Joined</th>
-                <th class="w-14 px-3 py-3 text-right" />
+                <th class="px-4 py-3 text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">
+                  User
+                </th>
+                <th
+                  class="px-4 py-3 text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400"
+                >
+                  Role
+                </th>
+                <th
+                  v-if="showRowActions"
+                  class="w-[4.5rem] min-w-[4.75rem] px-3 py-3 text-right text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400"
+                >
+                  Actions
+                </th>
               </tr>
             </thead>
             <tbody class="divide-y divide-gray-100 dark:divide-gray-800">
               <tr
                 v-for="row in filteredUsers"
                 :key="row.id"
-                class="hover:bg-gray-50/80 dark:hover:bg-white/[0.03]"
+                class="bg-white hover:bg-gray-50/80 dark:bg-transparent dark:hover:bg-white/[0.02]"
               >
-                <td class="px-5 py-3 align-middle">
+                <td class="px-4 py-4 align-middle">
                   <span
-                    class="inline-block h-4 w-4 rounded border border-gray-300 dark:border-gray-600"
-                  />
+                    class="inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium capitalize ring-1 ring-inset"
+                    :class="statusBadgeClass(row.status)"
+                  >
+                    {{ row.status }}
+                  </span>
                 </td>
-                <td class="px-3 py-3 align-middle">
+                <td class="px-4 py-4 align-middle">
                   <div class="flex items-center gap-3">
                     <span
-                      class="flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-xs font-bold ring-2 ring-inset"
-                      :class="avatarClass(row.email)"
+                      class="flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-xs font-semibold"
+                      :class="avatarClassForUser(row.email)"
                     >
                       {{ initials(row.name) }}
                     </span>
                     <div class="min-w-0">
-                      <p class="font-semibold text-gray-900 dark:text-white">
+                      <RouterLink
+                        :to="`/users/${row.id}`"
+                        class="block truncate font-semibold text-gray-900 hover:text-blue-600 dark:text-white dark:hover:text-blue-400"
+                      >
                         {{ row.name }}
-                      </p>
-                      <p class="truncate text-xs text-gray-500 md:hidden dark:text-gray-400">
+                      </RouterLink>
+                      <RouterLink
+                        :to="`/users/${row.id}`"
+                        class="mt-0.5 block truncate text-xs text-gray-500 hover:text-blue-600 dark:text-gray-400"
+                      >
                         {{ row.email }}
-                      </p>
+                      </RouterLink>
                     </div>
                   </div>
                 </td>
                 <td
-                  class="hidden max-w-[220px] truncate px-3 py-3 align-middle text-gray-600 dark:text-gray-300 md:table-cell"
+                  class="px-4 py-4 align-middle text-gray-700 dark:text-gray-300"
                 >
-                  {{ row.email }}
-                </td>
-                <td class="px-3 py-3 align-middle">
-                  <span
-                    class="inline-flex rounded-full px-2.5 py-0.5 text-xs font-semibold ring-1 ring-inset"
-                    :class="statusBadgeClass(row.status)"
-                  >
-                    {{
-                      row.status
-                        ? row.status.charAt(0).toUpperCase() + row.status.slice(1)
-                        : "—"
-                    }}
-                  </span>
+                  {{ roleLabels(row) }}
                 </td>
                 <td
-                  class="whitespace-nowrap px-3 py-3 align-middle text-gray-600 dark:text-gray-300"
+                  v-if="showRowActions"
+                  class="relative px-4 py-4 text-right align-middle"
                 >
-                  {{
-                    row.created_at
-                      ? new Date(row.created_at).toISOString().slice(0, 10)
-                      : "—"
-                  }}
+                  <div data-row-actions class="relative inline-flex justify-end">
+                    <button
+                      type="button"
+                      class="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border border-gray-200 bg-white text-gray-600 shadow-sm transition hover:border-gray-300 hover:bg-gray-50 hover:text-gray-900 dark:border-gray-600 dark:bg-gray-900 dark:text-gray-300 dark:hover:border-gray-500 dark:hover:bg-white/10 dark:hover:text-white"
+                      :aria-expanded="manageOpenId === row.id"
+                      aria-haspopup="true"
+                      aria-label="Row actions"
+                      @click="toggleManageMenu(row.id, $event)"
+                    >
+                      <svg
+                        class="h-6 w-6"
+                        fill="currentColor"
+                        viewBox="0 0 24 24"
+                        aria-hidden="true"
+                      >
+                        <path
+                          d="M6 10.25a1.75 1.75 0 113.5 0 1.75 1.75 0 01-3.5 0zM10.25 12a1.75 1.75 0 113.5 0 1.75 1.75 0 01-3.5 0zM14.5 10.25a1.75 1.75 0 113.5 0 1.75 1.75 0 01-3.5 0z"
+                        />
+                      </svg>
+                    </button>
+                  </div>
                 </td>
-                <td class="px-3 py-3 text-right align-middle">
-                  <RouterLink
-                    :to="`/users/${row.id}/edit`"
-                    class="inline-flex rounded-lg p-2 text-gray-400 hover:bg-gray-100 hover:text-[#206ba4] dark:hover:bg-white/10"
-                    title="Edit user"
-                  >
-                    ✎
-                  </RouterLink>
+              </tr>
+              <tr v-if="filteredUsers.length === 0">
+                <td
+                  :colspan="tableColspan"
+                  class="px-4 py-12 text-center text-gray-500 dark:text-gray-400"
+                >
+                  No users match your filters.
                 </td>
               </tr>
             </tbody>
           </table>
-          <p
-            v-if="!filteredUsers.length"
-            class="p-8 text-center text-sm text-gray-500"
-          >
-            No users match your filters.
-          </p>
         </div>
       </div>
+
+      <ConfirmModal
+        :open="deleteModalOpen"
+        title="Delete user"
+        :message="deleteMessage"
+        confirm-label="Delete"
+        cancel-label="Cancel"
+        :busy="deleteBusy"
+        @close="closeDeleteModal"
+        @confirm="confirmDelete"
+      />
+
+      <Teleport to="body">
+        <Transition
+          enter-active-class="transition ease-out duration-100"
+          enter-from-class="transform opacity-0 scale-95"
+          enter-to-class="transform opacity-100 scale-100"
+          leave-active-class="transition ease-in duration-75"
+          leave-from-class="transform opacity-100 scale-100"
+          leave-to-class="transform opacity-0 scale-95"
+        >
+          <div
+            v-if="manageMenuUser"
+            data-row-actions
+            class="fixed z-[300] w-44 overflow-hidden rounded-xl border border-gray-200 bg-white py-1 shadow-lg ring-1 ring-black/5 dark:border-gray-700 dark:bg-gray-900 dark:ring-white/10"
+            role="menu"
+            :style="{
+              top: `${manageMenuRect.top}px`,
+              left: `${manageMenuRect.left}px`,
+            }"
+            @click.stop
+          >
+            <RouterLink
+              v-if="canUpdateUsers"
+              :to="`/users/${manageMenuUser.id}/edit`"
+              class="flex w-full items-center px-4 py-2.5 text-left text-sm font-medium text-gray-800 no-underline transition hover:bg-gray-50 dark:text-gray-200 dark:hover:bg-white/5"
+              role="menuitem"
+              @click="closeManageMenu"
+            >
+              Edit
+            </RouterLink>
+            <button
+              v-if="canDeleteRow(manageMenuUser)"
+              type="button"
+              :class="[
+                'flex w-full items-center px-4 py-2.5 text-left text-sm font-medium text-red-600 transition hover:bg-red-50 dark:text-red-400 dark:hover:bg-red-950/25',
+                canUpdateUsers
+                  ? 'border-t border-gray-100 dark:border-gray-800'
+                  : '',
+              ]"
+              role="menuitem"
+              @click="openDeleteModal(manageMenuUser)"
+            >
+              Delete
+            </button>
+          </div>
+        </Transition>
+      </Teleport>
     </template>
   </div>
 </template>

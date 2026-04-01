@@ -10,8 +10,8 @@ class TaskService
 {
     public function paginate(array $filters): LengthAwarePaginator
     {
-        $perPage = (int) ($filters['per_page'] ?? 15);
-        $perPage = $perPage > 0 && $perPage <= 500 ? $perPage : 15;
+        $perPage = (int) ($filters['per_page'] ?? 25);
+        $perPage = $perPage > 0 && $perPage <= 500 ? $perPage : 25;
 
         $sortBy = $filters['sort_by'] ?? 'created_at';
         $allowedSort = ['created_at', 'title', 'status', 'priority', 'due_date'];

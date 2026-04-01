@@ -20,6 +20,7 @@ class UserService
         'zip',
         'region',
         'employee_type',
+        'job_position',
         'hire_date',
         'terminate_date',
         'bio',
@@ -38,7 +39,7 @@ class UserService
         $search = $filters['search'] ?? null;
         $roleId = isset($filters['role_id']) ? (int) $filters['role_id'] : null;
         $status = isset($filters['status']) ? (string) $filters['status'] : null;
-        $perPage = min(max((int) ($filters['per_page'] ?? 10), 5), 100);
+        $perPage = min(max((int) ($filters['per_page'] ?? 25), 1), 500);
         $sortBy = (string) ($filters['sort_by'] ?? 'id');
         $sortDir = strtolower((string) ($filters['sort_dir'] ?? 'desc')) === 'asc' ? 'asc' : 'desc';
         $allowedSortColumns = ['id', 'name', 'email', 'status', 'created_at', 'updated_at'];
@@ -47,15 +48,21 @@ class UserService
         }
 
         return User::query()
-            ->with(['roles' => function ($q) {
-                $q->select('roles.id', 'roles.name', 'roles.label');
-            }])
+            ->with([
+                'roles' => function ($q) {
+                    $q->select('roles.id', 'roles.name', 'roles.label');
+                },
+                'profile' => function ($q) {
+                    $q->select('id', 'user_id', 'job_position', 'birthday', 'hire_date');
+                },
+            ])
             ->when($search, function ($query) use ($search) {
                 $query->where(function ($nested) use ($search) {
                     $nested->where('name', 'like', "%{$search}%")
                         ->orWhere('email', 'like', "%{$search}%")
                         ->orWhereHas('profile', function ($p) use ($search) {
-                            $p->where('phone', 'like', "%{$search}%");
+                            $p->where('phone', 'like', "%{$search}%")
+                                ->orWhere('job_position', 'like', "%{$search}%");
                         });
                 });
             })

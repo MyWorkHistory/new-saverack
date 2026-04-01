@@ -18,6 +18,8 @@ import { useToast } from "../../composables/useToast";
 import { errorMessage } from "../../utils/apiError";
 import { useRoute, useRouter } from "vue-router";
 import { crmIsAdmin } from "../../utils/crmUser";
+import { DEFAULT_PER_PAGE, PER_PAGE_OPTIONS } from "../../constants/pagination";
+import { formatUsdPrice } from "../../utils/formatPrice";
 
 const crmUser = inject("crmUser", ref(null));
 const toast = useToast();
@@ -41,7 +43,7 @@ const statusUpdateError = ref("");
 
 const query = reactive({
   search: "",
-  per_page: 250,
+  per_page: DEFAULT_PER_PAGE,
   page: 1,
   sort_by: "due_date",
   sort_dir: "asc",
@@ -331,14 +333,16 @@ function descSnippet(text) {
   return s.length > 72 ? `${s.slice(0, 72)}…` : s;
 }
 
-function formatPrice(price) {
-  if (price == null || price === "") return null;
-  const n = Number(price);
-  if (Number.isNaN(n)) return null;
-  return new Intl.NumberFormat(undefined, {
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
-  }).format(n);
+function onPerPageChange(e) {
+  query.per_page = Number(e.target.value);
+  query.page = 1;
+  fetchTasks();
+}
+
+function goTaskPage(p) {
+  if (p < 1 || p > pagination.value.last_page) return;
+  query.page = p;
+  fetchTasks();
 }
 
 function dueBadgeLabel(dueDate) {
@@ -639,8 +643,9 @@ onUnmounted(() => {
         v-if="hasMorePages"
         class="border-b border-amber-100 bg-amber-50/90 px-4 py-2.5 text-xs text-amber-900 dark:border-amber-900/40 dark:bg-amber-950/40 dark:text-amber-100 sm:px-6"
       >
-        Showing {{ rows.length }} of {{ pagination.total }} tasks on this board.
-        Add filters or raise per-page in a future update to load more at once.
+        Page {{ pagination.current_page }} of {{ pagination.last_page }} —
+        showing {{ rows.length }} tasks loaded. Increase “Rows per page” or use
+        pagination below to see more.
       </div>
 
       <div class="p-4 sm:p-6" :class="loading ? 'min-h-[280px]' : ''">
@@ -772,10 +777,10 @@ onUnmounted(() => {
                   </p>
                   <div class="mt-3 flex flex-wrap items-center gap-2">
                     <span
-                      v-if="formatPrice(task.price)"
+                      v-if="formatUsdPrice(task.price)"
                       class="inline-flex max-w-full truncate rounded-md bg-emerald-50 px-2 py-0.5 text-[11px] font-medium text-emerald-900 dark:bg-emerald-500/15 dark:text-emerald-200"
                     >
-                      {{ formatPrice(task.price) }}
+                      {{ formatUsdPrice(task.price) }}
                     </span>
                     <span
                       class="inline-flex rounded-full px-2 py-0.5 text-[11px] font-medium capitalize ring-1 ring-inset ring-gray-200 dark:ring-gray-600"
@@ -818,15 +823,72 @@ onUnmounted(() => {
       </div>
 
       <div
-        class="border-t border-gray-100 px-4 py-3 text-sm text-gray-600 dark:border-gray-800 dark:text-gray-400 sm:px-6"
+        class="flex flex-col gap-3 border-t border-gray-100 px-4 py-3 dark:border-gray-800 sm:px-6 lg:flex-row lg:items-center lg:justify-between"
       >
-        <span class="font-semibold text-gray-900 dark:text-white">{{
-          pagination.total
-        }}</span>
-        tasks
-        <span v-if="query.status" class="text-gray-500">
-          · filtered by {{ statusLabel(query.status) }}
-        </span>
+        <div
+          class="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center sm:gap-6"
+        >
+          <div class="flex items-center gap-2">
+            <label
+              for="webmaster-per-page"
+              class="whitespace-nowrap text-sm text-gray-600 dark:text-gray-400"
+              >Rows per page</label
+            >
+            <select
+              id="webmaster-per-page"
+              class="h-9 rounded-lg border border-gray-200 bg-white px-2 pr-8 text-sm text-gray-900 dark:border-gray-600 dark:bg-gray-800 dark:text-white"
+              :value="query.per_page"
+              :disabled="loading"
+              @change="onPerPageChange"
+            >
+              <option v-for="n in PER_PAGE_OPTIONS" :key="n" :value="n">
+                {{ n }}
+              </option>
+            </select>
+          </div>
+          <p class="text-sm text-gray-600 dark:text-gray-400">
+            <span class="font-semibold text-gray-900 dark:text-white">{{
+              pagination.total
+            }}</span>
+            tasks
+            <span v-if="query.status" class="text-gray-500">
+              · filtered by {{ statusLabel(query.status) }}
+            </span>
+          </p>
+        </div>
+        <div
+          v-if="pagination.last_page > 1"
+          class="flex flex-wrap items-center gap-2"
+        >
+          <button
+            type="button"
+            class="inline-flex h-9 items-center justify-center rounded-md border border-gray-200 px-3 text-sm text-gray-600 hover:bg-gray-50 disabled:opacity-40 dark:border-gray-600 dark:text-gray-300 dark:hover:bg-gray-800"
+            :disabled="loading || pagination.current_page <= 1"
+            @click="goTaskPage(pagination.current_page - 1)"
+          >
+            Previous
+          </button>
+          <span class="text-sm text-gray-600 dark:text-gray-400">
+            Page
+            <span class="font-medium text-gray-900 dark:text-white">{{
+              pagination.current_page
+            }}</span>
+            /
+            <span class="font-medium text-gray-900 dark:text-white">{{
+              pagination.last_page
+            }}</span>
+          </span>
+          <button
+            type="button"
+            class="inline-flex h-9 items-center justify-center rounded-md border border-gray-200 px-3 text-sm text-gray-600 hover:bg-gray-50 disabled:opacity-40 dark:border-gray-600 dark:text-gray-300 dark:hover:bg-gray-800"
+            :disabled="
+              loading || pagination.current_page >= pagination.last_page
+            "
+            @click="goTaskPage(pagination.current_page + 1)"
+          >
+            Next
+          </button>
+        </div>
       </div>
     </div>
 

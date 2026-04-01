@@ -48,11 +48,18 @@ class DashboardController extends Controller
                 'users_last_year' => User::query()->whereYear('created_at', now()->year - 1)->count(),
             ],
             'recent_users' => User::query()
-                ->with(['roles:id,name,label'])
+                ->with([
+                    'roles:id,name,label',
+                    'profile' => static function ($q) {
+                        $q->select('id', 'user_id', 'job_position', 'birthday', 'hire_date');
+                    },
+                ])
                 ->latest()
                 ->limit(12)
                 ->get(['id', 'name', 'email', 'status', 'created_at'])
                 ->map(static function (User $u) {
+                    $p = $u->profile;
+
                     return [
                         'id' => $u->id,
                         'name' => $u->name,
@@ -64,6 +71,9 @@ class DashboardController extends Controller
                             'name' => $r->name,
                             'label' => $r->label,
                         ])->values()->all(),
+                        'job_position' => $p?->job_position,
+                        'birthday' => $p && $p->birthday ? $p->birthday->toDateString() : null,
+                        'hire_date' => $p && $p->hire_date ? $p->hire_date->toDateString() : null,
                     ];
                 }),
             'recent_activity' => ActivityLog::query()

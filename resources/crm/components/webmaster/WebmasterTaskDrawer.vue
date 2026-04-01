@@ -140,7 +140,10 @@ async function onSubmit() {
   saving.value = true;
   errorMsg.value = "";
   try {
-    const priceRaw = form.price?.trim() || "";
+    const priceRaw =
+      form.price === null || form.price === undefined || form.price === ""
+        ? ""
+        : String(form.price).trim();
     const payload = {
       title: form.title.trim(),
       description: form.description?.trim() || null,

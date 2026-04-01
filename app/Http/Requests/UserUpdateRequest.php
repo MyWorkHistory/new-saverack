@@ -3,11 +3,19 @@
 namespace App\Http\Requests;
 
 use App\Models\User;
+use App\Support\JobPositions;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
 
 class UserUpdateRequest extends FormRequest
 {
+    protected function prepareForValidation(): void
+    {
+        if ($this->has('job_position') && $this->input('job_position') === '') {
+            $this->merge(['job_position' => null]);
+        }
+    }
+
     public function authorize(): bool
     {
         $user = $this->route('user');
@@ -41,6 +49,7 @@ class UserUpdateRequest extends FormRequest
             'zip' => ['nullable', 'string', 'max:32'],
             'region' => ['nullable', 'string', 'max:120'],
             'employee_type' => ['nullable', 'string', 'max:50'],
+            'job_position' => ['nullable', 'string', 'max:100', Rule::in(JobPositions::allowed())],
             'hire_date' => ['nullable', 'date'],
             'terminate_date' => ['nullable', 'date'],
             'bio' => ['nullable', 'string', 'max:20000'],

@@ -2,10 +2,12 @@
 import { computed, inject, onMounted, ref, watch } from "vue";
 import { RouterLink, useRoute, useRouter } from "vue-router";
 import api from "../../services/api";
+import CrmBackLink from "../../components/common/CrmBackLink.vue";
 import CrmLoadingSpinner from "../../components/common/CrmLoadingSpinner.vue";
 import CrmOutlineEditButton from "../../components/common/CrmOutlineEditButton.vue";
 import UserEditModal from "../../components/users/UserEditModal.vue";
 import { crmIsAdmin } from "../../utils/crmUser";
+import { formatBirthdayMonthDay } from "../../utils/formatUserDates";
 
 const props = defineProps({
   id: { type: String, required: true },
@@ -170,9 +172,12 @@ const profileLocationLine = computed(() => {
       </span>
     </nav>
 
-    <h1 class="mb-6 text-2xl font-semibold text-gray-900 dark:text-white">
-      User Profile
-    </h1>
+    <div class="mb-6 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+      <h1 class="text-2xl font-semibold text-gray-900 dark:text-white">
+        User Profile
+      </h1>
+      <CrmBackLink to="/dashboard" label="Back to dashboard" />
+    </div>
 
     <div v-if="loading" class="flex justify-center py-20">
       <CrmLoadingSpinner message="Loading profile…" />
@@ -196,7 +201,7 @@ const profileLocationLine = computed(() => {
         class="overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-sm dark:border-gray-800 dark:bg-gray-900/40"
       >
         <div
-          class="flex flex-col gap-6 border-b border-gray-100 p-6 dark:border-gray-800 sm:flex-row sm:items-center sm:justify-between"
+          class="flex flex-col gap-6 border-b border-gray-100 p-6 dark:border-gray-800 sm:flex-row sm:items-end sm:justify-between"
         >
           <div class="flex min-w-0 flex-1 items-center gap-5">
             <span
@@ -230,12 +235,9 @@ const profileLocationLine = computed(() => {
           </div>
           <div
             v-if="canUpdateUsers"
-            class="flex shrink-0 flex-col gap-2 sm:items-end"
+            class="flex w-full shrink-0 flex-col self-end sm:w-auto"
           >
-            <CrmOutlineEditButton
-              class="w-full sm:w-auto"
-              @click="editOpen = true"
-            />
+            <CrmOutlineEditButton @click="editOpen = true" />
           </div>
         </div>
       </div>
@@ -286,7 +288,7 @@ const profileLocationLine = computed(() => {
                 Birthday
               </dt>
               <dd class="mt-1 text-sm font-medium text-gray-900 dark:text-white">
-                {{ formatDate(profile.birthday) }}
+                {{ formatBirthdayMonthDay(profile.birthday) }}
               </dd>
             </div>
             <div>
@@ -355,7 +357,7 @@ const profileLocationLine = computed(() => {
           Employment
         </h3>
         <dl class="grid gap-4 sm:grid-cols-2">
-          <div>
+          <div class="sm:col-span-2">
             <dt class="text-xs font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400">
               Employment type
             </dt>
@@ -363,7 +365,14 @@ const profileLocationLine = computed(() => {
               {{ display(profile.employee_type) }}
             </dd>
           </div>
-          <div />
+          <div class="sm:col-span-2">
+            <dt class="text-xs font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400">
+              Position
+            </dt>
+            <dd class="mt-1 text-sm font-medium text-gray-900 dark:text-white">
+              {{ display(profile.job_position) }}
+            </dd>
+          </div>
           <div>
             <dt class="text-xs font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400">
               Hire date

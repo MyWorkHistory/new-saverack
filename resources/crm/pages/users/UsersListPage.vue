@@ -16,6 +16,11 @@ import UserEditModal from "../../components/users/UserEditModal.vue";
 import CrmLoadingSpinner from "../../components/common/CrmLoadingSpinner.vue";
 import { useToast } from "../../composables/useToast";
 import { crmIsAdmin } from "../../utils/crmUser";
+import { DEFAULT_PER_PAGE, PER_PAGE_OPTIONS } from "../../constants/pagination";
+import {
+  formatBirthdayMonthDay,
+  formatIsoDate,
+} from "../../utils/formatUserDates";
 
 const crmUser = inject("crmUser", ref(null));
 const toast = useToast();
@@ -35,7 +40,7 @@ const showRowActions = computed(
 );
 
 const tableColspan = computed(() => {
-  let n = 5;
+  let n = 8;
   if (!canDeleteUsers.value) n -= 1;
   if (!showRowActions.value) n -= 1;
   return n;
@@ -62,7 +67,7 @@ const selectedIds = ref([]);
 
 const query = reactive({
   search: "",
-  per_page: 15,
+  per_page: DEFAULT_PER_PAGE,
   page: 1,
   sort_by: "name",
   sort_dir: "asc",
@@ -277,6 +282,12 @@ const goPage = (p) => {
   fetchUsers();
 };
 
+function onPerPageChange(e) {
+  query.per_page = Number(e.target.value);
+  query.page = 1;
+  fetchUsers();
+}
+
 const canDeleteRow = (user) => {
   if (!canDeleteUsers.value) return false;
   return !(currentUser.value && user.id === currentUser.value.id);
@@ -415,12 +426,10 @@ onUnmounted(() => {
     </p>
 
     <div
-      class="overflow-hidden rounded-xl border border-gray-200 bg-white shadow-sm dark:border-gray-800 dark:bg-gray-900"
+      class="overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-sm dark:border-gray-800 dark:bg-gray-900"
     >
-      <!-- Toolbar -->
-      <div
-        class="flex flex-col gap-4 border-b border-gray-200 px-4 py-5 dark:border-gray-700 sm:px-6"
-      >
+      <!-- Toolbar (outer card — matches TailAdmin ComponentCard header) -->
+      <div class="px-4 py-5 sm:px-6">
         <div
           class="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between"
         >
@@ -609,14 +618,18 @@ onUnmounted(() => {
         </div>
       </div>
 
-      <!-- Table -->
-      <div class="overflow-x-auto">
-        <table class="min-w-[800px] w-full border-collapse text-left text-sm">
+      <!-- Inner table card (TailAdmin BasicTableOne: rounded-xl border + table) -->
+      <div
+        class="border-t border-gray-100 px-4 py-4 dark:border-gray-800 sm:px-6 sm:pb-6"
+      >
+        <div
+          class="overflow-hidden rounded-xl border border-gray-200 bg-white dark:border-gray-800 dark:bg-white/[0.03]"
+        >
+          <div class="overflow-x-auto">
+            <table class="min-w-[1024px] w-full text-left text-sm">
           <thead>
-            <tr
-              class="border-b border-gray-200 bg-gray-50 dark:border-gray-700 dark:bg-gray-800/60"
-            >
-              <th v-if="canDeleteUsers" class="w-12 px-5 py-4">
+            <tr class="border-b border-gray-200 dark:border-gray-700">
+              <th v-if="canDeleteUsers" class="w-12 px-5 py-3 sm:px-6">
                 <input
                   type="checkbox"
                   class="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
@@ -626,17 +639,15 @@ onUnmounted(() => {
                   @change="toggleSelectAll"
                 />
               </th>
-              <th
-                class="px-5 py-4 text-sm font-medium text-gray-500 dark:text-gray-400"
-              >
-                Status
+              <th class="px-5 py-3 text-left sm:px-6">
+                <p class="text-xs font-medium text-gray-500 dark:text-gray-400">
+                  Status
+                </p>
               </th>
-              <th
-                class="px-5 py-4 text-sm font-medium text-gray-500 dark:text-gray-400"
-              >
+              <th class="px-5 py-3 text-left sm:px-6">
                 <button
                   type="button"
-                  class="inline-flex items-center gap-1 font-medium text-gray-500 hover:text-gray-800 dark:text-gray-400 dark:hover:text-white"
+                  class="inline-flex items-center gap-1 text-xs font-medium text-gray-500 hover:text-gray-800 dark:text-gray-400 dark:hover:text-white"
                   @click="toggleSortName"
                 >
                   User
@@ -651,22 +662,39 @@ onUnmounted(() => {
                   </span>
                 </button>
               </th>
-              <th
-                class="px-5 py-4 text-sm font-medium text-gray-500 dark:text-gray-400"
-              >
-                Role
+              <th class="px-5 py-3 text-left sm:px-6">
+                <p class="text-xs font-medium text-gray-500 dark:text-gray-400">
+                  Position
+                </p>
+              </th>
+              <th class="px-5 py-3 text-left sm:px-6">
+                <p class="text-xs font-medium text-gray-500 dark:text-gray-400">
+                  Birthday
+                </p>
+              </th>
+              <th class="px-5 py-3 text-left sm:px-6">
+                <p class="text-xs font-medium text-gray-500 dark:text-gray-400">
+                  Hire date
+                </p>
+              </th>
+              <th class="px-5 py-3 text-left sm:px-6">
+                <p class="text-xs font-medium text-gray-500 dark:text-gray-400">
+                  Role
+                </p>
               </th>
               <th
                 v-if="showRowActions"
-                class="w-[4.5rem] min-w-[4.75rem] px-5 py-4 text-right text-sm font-medium text-gray-500 dark:text-gray-400"
+                class="w-[4.5rem] min-w-[4.75rem] px-5 py-3 text-right sm:px-6"
               >
-                Action
+                <p class="text-xs font-medium text-gray-500 dark:text-gray-400">
+                  Action
+                </p>
               </th>
             </tr>
           </thead>
-          <tbody class="divide-y divide-gray-100 bg-white dark:divide-gray-800 dark:bg-transparent">
+          <tbody class="divide-y divide-gray-200 dark:divide-gray-700">
             <tr v-if="loading">
-              <td :colspan="tableColspan" class="px-5 py-12">
+              <td :colspan="tableColspan" class="px-5 py-12 sm:px-6">
                 <div class="flex justify-center">
                   <CrmLoadingSpinner message="Loading users…" />
                 </div>
@@ -676,9 +704,9 @@ onUnmounted(() => {
               v-for="user in rows"
               v-else
               :key="user.id"
-              class="bg-white hover:bg-gray-50/80 dark:bg-transparent dark:hover:bg-white/[0.02]"
+              class="border-t border-gray-100 bg-white hover:bg-gray-50/80 dark:border-gray-800 dark:bg-transparent dark:hover:bg-white/[0.02]"
             >
-              <td v-if="canDeleteUsers" class="px-5 py-4 align-middle">
+              <td v-if="canDeleteUsers" class="px-5 py-4 align-middle sm:px-6">
                 <input
                   type="checkbox"
                   class="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
@@ -687,7 +715,7 @@ onUnmounted(() => {
                   @change="toggleRowSelect(user.id)"
                 />
               </td>
-              <td class="px-5 py-4 align-middle">
+              <td class="px-5 py-4 align-middle sm:px-6">
                 <span
                   class="inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium capitalize"
                   :class="statusBadgeClass(user.status)"
@@ -695,7 +723,7 @@ onUnmounted(() => {
                   {{ user.status }}
                 </span>
               </td>
-              <td class="px-5 py-4 align-middle">
+              <td class="px-5 py-4 align-middle sm:px-6">
                 <div class="flex items-center gap-3">
                   <span
                     class="flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-xs font-semibold"
@@ -720,13 +748,29 @@ onUnmounted(() => {
                 </div>
               </td>
               <td
-                class="px-5 py-4 align-middle text-gray-700 dark:text-gray-300"
+                class="max-w-[11rem] truncate px-5 py-4 align-middle text-gray-700 sm:px-6 dark:text-gray-300"
+                :title="user.profile?.job_position || undefined"
+              >
+                {{ user.profile?.job_position || "—" }}
+              </td>
+              <td
+                class="whitespace-nowrap px-5 py-4 align-middle text-gray-700 sm:px-6 dark:text-gray-300"
+              >
+                {{ formatBirthdayMonthDay(user.profile?.birthday) }}
+              </td>
+              <td
+                class="whitespace-nowrap px-5 py-4 align-middle text-gray-700 sm:px-6 dark:text-gray-300"
+              >
+                {{ formatIsoDate(user.profile?.hire_date) }}
+              </td>
+              <td
+                class="px-5 py-4 align-middle text-gray-700 sm:px-6 dark:text-gray-300"
               >
                 {{ roleLabels(user) }}
               </td>
               <td
                 v-if="showRowActions"
-                class="relative px-5 py-4 text-right align-middle"
+                class="relative px-5 py-4 text-right align-middle sm:px-6"
               >
                 <div data-row-actions class="relative inline-flex justify-end">
                   <button
@@ -752,33 +796,60 @@ onUnmounted(() => {
               </td>
             </tr>
             <tr v-if="!loading && rows.length === 0">
-              <td :colspan="tableColspan" class="px-4 py-12 text-center text-gray-500">
+              <td :colspan="tableColspan" class="px-5 py-12 text-center text-gray-500 sm:px-6">
                 No users found.
               </td>
             </tr>
           </tbody>
-        </table>
-      </div>
+            </table>
+          </div>
+        </div>
 
-      <!-- Pagination -->
-      <div
-        class="flex flex-col gap-4 border-t border-gray-200 px-4 py-4 dark:border-gray-700 sm:flex-row sm:items-center sm:justify-between sm:px-6"
-      >
-        <p class="text-sm text-gray-600 dark:text-gray-400">
-          Showing
-          <span class="font-semibold text-gray-900 dark:text-white">{{
-            showingFrom
-          }}</span>
-          to
-          <span class="font-semibold text-gray-900 dark:text-white">{{
-            showingTo
-          }}</span>
-          of
-          <span class="font-semibold text-gray-900 dark:text-white">{{
-            pagination.total
-          }}</span>
-        </p>
-        <div class="flex flex-wrap items-center gap-2">
+        <!-- Pagination -->
+        <div
+          class="mt-5 flex flex-col gap-4 border-t border-gray-100 pt-5 dark:border-gray-800 lg:flex-row lg:items-center lg:justify-between"
+        >
+          <div
+            class="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center sm:gap-6"
+          >
+            <div class="flex items-center gap-2">
+              <label
+                for="users-per-page"
+                class="whitespace-nowrap text-sm text-gray-600 dark:text-gray-400"
+                >Rows per page</label
+              >
+              <select
+                id="users-per-page"
+                class="h-9 rounded-lg border border-gray-200 bg-white px-2 pr-8 text-sm text-gray-900 dark:border-gray-600 dark:bg-gray-800 dark:text-white"
+                :value="query.per_page"
+                :disabled="loading"
+                @change="onPerPageChange"
+              >
+                <option
+                  v-for="n in PER_PAGE_OPTIONS"
+                  :key="n"
+                  :value="n"
+                >
+                  {{ n }}
+                </option>
+              </select>
+            </div>
+            <p class="text-sm text-gray-600 dark:text-gray-400">
+              Showing
+              <span class="font-semibold text-gray-900 dark:text-white">{{
+                showingFrom
+              }}</span>
+              to
+              <span class="font-semibold text-gray-900 dark:text-white">{{
+                showingTo
+              }}</span>
+              of
+              <span class="font-semibold text-gray-900 dark:text-white">{{
+                pagination.total
+              }}</span>
+            </p>
+          </div>
+          <div class="flex flex-wrap items-center gap-2">
           <button
             type="button"
             class="inline-flex h-9 w-9 items-center justify-center rounded-md border border-gray-200 text-gray-600 hover:bg-gray-50 disabled:opacity-40 dark:border-gray-600 dark:text-gray-300 dark:hover:bg-gray-800"
@@ -846,6 +917,7 @@ onUnmounted(() => {
               />
             </svg>
           </button>
+        </div>
         </div>
       </div>
     </div>

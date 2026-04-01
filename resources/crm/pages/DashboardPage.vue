@@ -10,6 +10,10 @@ import UserEditModal from "../components/users/UserEditModal.vue";
 import { useToast } from "../composables/useToast";
 import { crmIsAdmin } from "../utils/crmUser";
 import { errorMessage } from "../utils/apiError";
+import {
+  formatBirthdayMonthDay,
+  formatIsoDate,
+} from "../utils/formatUserDates";
 
 const crmUser = inject("crmUser", ref(null));
 const toast = useToast();
@@ -43,7 +47,7 @@ const showRowActions = computed(
 );
 
 const tableColspan = computed(() => {
-  let n = 3;
+  let n = 6;
   if (showRowActions.value) n += 1;
   return n;
 });
@@ -803,13 +807,11 @@ onUnmounted(() => {
         {{ deleteError }}
       </p>
 
-      <!-- Recent users (TailAdmin-style basic table: one card, toolbar + horizontal row lines) -->
+      <!-- Recent users: outer card + inner bordered table (TailAdmin BasicTables pattern) -->
       <div
-        class="overflow-hidden rounded-xl border border-gray-200 bg-white shadow-sm dark:border-gray-800 dark:bg-gray-900"
+        class="overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-sm dark:border-gray-800 dark:bg-gray-900"
       >
-        <div
-          class="flex flex-col gap-4 border-b border-gray-200 px-4 py-5 dark:border-gray-700 sm:px-6"
-        >
+        <div class="px-4 py-5 sm:px-6">
           <div
             class="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between"
           >
@@ -908,44 +910,63 @@ onUnmounted(() => {
           </div>
         </div>
 
-        <div class="overflow-x-auto">
-          <table
-            class="min-w-[800px] w-full border-collapse text-left text-sm"
+        <div
+          class="border-t border-gray-100 px-4 py-4 dark:border-gray-800 sm:px-6 sm:pb-6"
+        >
+          <div
+            class="overflow-hidden rounded-xl border border-gray-200 bg-white dark:border-gray-800 dark:bg-white/[0.03]"
           >
+            <div class="overflow-x-auto">
+              <table class="min-w-[1024px] w-full text-left text-sm">
             <thead>
-              <tr
-                class="border-b border-gray-200 bg-gray-50 dark:border-gray-700 dark:bg-gray-800/60"
-              >
-                <th
-                  class="px-5 py-4 text-sm font-medium text-gray-500 dark:text-gray-400"
-                >
-                  Status
+              <tr class="border-b border-gray-200 dark:border-gray-700">
+                <th class="px-5 py-3 text-left sm:px-6">
+                  <p class="text-xs font-medium text-gray-500 dark:text-gray-400">
+                    Status
+                  </p>
                 </th>
-                <th
-                  class="px-5 py-4 text-sm font-medium text-gray-500 dark:text-gray-400"
-                >
-                  User
+                <th class="px-5 py-3 text-left sm:px-6">
+                  <p class="text-xs font-medium text-gray-500 dark:text-gray-400">
+                    User
+                  </p>
                 </th>
-                <th
-                  class="px-5 py-4 text-sm font-medium text-gray-500 dark:text-gray-400"
-                >
-                  Role
+                <th class="px-5 py-3 text-left sm:px-6">
+                  <p class="text-xs font-medium text-gray-500 dark:text-gray-400">
+                    Position
+                  </p>
+                </th>
+                <th class="px-5 py-3 text-left sm:px-6">
+                  <p class="text-xs font-medium text-gray-500 dark:text-gray-400">
+                    Birthday
+                  </p>
+                </th>
+                <th class="px-5 py-3 text-left sm:px-6">
+                  <p class="text-xs font-medium text-gray-500 dark:text-gray-400">
+                    Hire date
+                  </p>
+                </th>
+                <th class="px-5 py-3 text-left sm:px-6">
+                  <p class="text-xs font-medium text-gray-500 dark:text-gray-400">
+                    Role
+                  </p>
                 </th>
                 <th
                   v-if="showRowActions"
-                  class="w-[4.5rem] min-w-[4.75rem] px-5 py-4 text-right text-sm font-medium text-gray-500 dark:text-gray-400"
+                  class="w-[4.5rem] min-w-[4.75rem] px-5 py-3 text-right sm:px-6"
                 >
-                  Action
+                  <p class="text-xs font-medium text-gray-500 dark:text-gray-400">
+                    Action
+                  </p>
                 </th>
               </tr>
             </thead>
-            <tbody class="divide-y divide-gray-100 bg-white dark:divide-gray-800 dark:bg-transparent">
+            <tbody class="divide-y divide-gray-200 dark:divide-gray-700">
               <tr
                 v-for="row in filteredUsers"
                 :key="row.id"
-                class="bg-white hover:bg-gray-50/80 dark:bg-transparent dark:hover:bg-white/[0.02]"
+                class="border-t border-gray-100 bg-white hover:bg-gray-50/80 dark:border-gray-800 dark:bg-transparent dark:hover:bg-white/[0.02]"
               >
-                <td class="px-5 py-4 align-middle">
+                <td class="px-5 py-4 align-middle sm:px-6">
                   <span
                     class="inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium capitalize"
                     :class="statusBadgeClass(row.status)"
@@ -953,7 +974,7 @@ onUnmounted(() => {
                     {{ row.status }}
                   </span>
                 </td>
-                <td class="px-5 py-4 align-middle">
+                <td class="px-5 py-4 align-middle sm:px-6">
                   <div class="flex items-center gap-3">
                     <span
                       class="flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-xs font-semibold"
@@ -978,13 +999,29 @@ onUnmounted(() => {
                   </div>
                 </td>
                 <td
-                  class="px-5 py-4 align-middle text-gray-700 dark:text-gray-300"
+                  class="max-w-[11rem] truncate px-5 py-4 align-middle text-gray-700 sm:px-6 dark:text-gray-300"
+                  :title="row.job_position || undefined"
+                >
+                  {{ row.job_position || "—" }}
+                </td>
+                <td
+                  class="whitespace-nowrap px-5 py-4 align-middle text-gray-700 sm:px-6 dark:text-gray-300"
+                >
+                  {{ formatBirthdayMonthDay(row.birthday) }}
+                </td>
+                <td
+                  class="whitespace-nowrap px-5 py-4 align-middle text-gray-700 sm:px-6 dark:text-gray-300"
+                >
+                  {{ formatIsoDate(row.hire_date) }}
+                </td>
+                <td
+                  class="px-5 py-4 align-middle text-gray-700 sm:px-6 dark:text-gray-300"
                 >
                   {{ roleLabels(row) }}
                 </td>
                 <td
                   v-if="showRowActions"
-                  class="relative px-5 py-4 text-right align-middle"
+                  class="relative px-5 py-4 text-right align-middle sm:px-6"
                 >
                   <div data-row-actions class="relative inline-flex justify-end">
                     <button
@@ -1012,13 +1049,15 @@ onUnmounted(() => {
               <tr v-if="filteredUsers.length === 0">
                 <td
                   :colspan="tableColspan"
-                  class="px-5 py-12 text-center text-gray-500 dark:text-gray-400"
+                  class="px-5 py-12 text-center text-gray-500 dark:text-gray-400 sm:px-6"
                 >
                   No users match your filters.
                 </td>
               </tr>
             </tbody>
-          </table>
+              </table>
+            </div>
+          </div>
         </div>
       </div>
 

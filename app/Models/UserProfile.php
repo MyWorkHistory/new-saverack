@@ -27,6 +27,7 @@ class UserProfile extends Model
         'zip',
         'region',
         'employee_type',
+        'job_position',
         'pin',
         'month',
         'day',

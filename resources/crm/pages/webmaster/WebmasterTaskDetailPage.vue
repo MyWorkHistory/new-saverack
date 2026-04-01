@@ -3,11 +3,13 @@ import { computed, inject, onMounted, onUnmounted, ref, watch } from "vue";
 import { useRouter } from "vue-router";
 import api from "../../services/api";
 import PageHeader from "../../components/common/PageHeader.vue";
+import CrmBackLink from "../../components/common/CrmBackLink.vue";
 import CrmLoadingSpinner from "../../components/common/CrmLoadingSpinner.vue";
 import CrmOutlineEditButton from "../../components/common/CrmOutlineEditButton.vue";
 import WebmasterTaskDrawer from "../../components/webmaster/WebmasterTaskDrawer.vue";
 import { crmIsAdmin } from "../../utils/crmUser";
 import { errorMessage } from "../../utils/apiError";
+import { formatUsdPriceOrDash } from "../../utils/formatPrice";
 
 const props = defineProps({
   id: { type: String, required: true },
@@ -40,16 +42,6 @@ const comments = computed(() => {
 function display(val) {
   if (val == null || val === "") return "—";
   return String(val);
-}
-
-function formatPrice(price) {
-  if (price == null || price === "") return "—";
-  const n = Number(price);
-  if (Number.isNaN(n)) return String(price);
-  return new Intl.NumberFormat(undefined, {
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
-  }).format(n);
 }
 
 function formatIso(iso) {
@@ -259,14 +251,9 @@ onUnmounted(() => {
         title="Task"
         subtitle="Details and activity"
       />
-      <div class="flex shrink-0 flex-wrap gap-2">
-        <button
-          type="button"
-          class="inline-flex items-center justify-center rounded-xl border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 dark:border-gray-600 dark:bg-gray-900 dark:text-gray-200 dark:hover:bg-gray-800"
-          @click="router.push('/webmaster')"
-        >
-          Back to board
-        </button>
+      <div class="flex shrink-0 flex-wrap items-center gap-2">
+        <CrmBackLink to="/webmaster" label="Back to board" />
+        <CrmBackLink to="/dashboard" label="Back to dashboard" />
         <CrmOutlineEditButton
           v-if="task && canMutateWebmasterTasks"
           @click="taskEditorOpen = true"
@@ -282,13 +269,9 @@ onUnmounted(() => {
       <p class="text-sm text-red-600 dark:text-red-400">
         {{ errorMsg }}
       </p>
-      <button
-        type="button"
-        class="text-sm font-medium text-blue-600 hover:text-blue-700 dark:text-blue-400"
-        @click="router.push('/webmaster')"
-      >
-        ← Back to board
-      </button>
+      <div class="mt-2">
+        <CrmBackLink to="/webmaster" label="Back to board" />
+      </div>
     </template>
 
     <div
@@ -456,7 +439,7 @@ onUnmounted(() => {
                 Ticket price
               </dt>
               <dd class="mt-0.5 font-medium text-gray-900 dark:text-white">
-                {{ formatPrice(task.price) }}
+                {{ formatUsdPriceOrDash(task.price) }}
               </dd>
             </div>
             <div>

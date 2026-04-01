@@ -1,5 +1,25 @@
 <script setup>
-import { computed } from "vue";
+import { computed, watch } from "vue";
+import {
+  JOB_POSITION_OPTIONS,
+  JOB_POSITION_VALUES,
+} from "../../constants/jobPositions";
+import { daysInMonth } from "../../utils/formatUserDates";
+
+const BIRTHDAY_MONTHS = [
+  { value: "1", label: "January" },
+  { value: "2", label: "February" },
+  { value: "3", label: "March" },
+  { value: "4", label: "April" },
+  { value: "5", label: "May" },
+  { value: "6", label: "June" },
+  { value: "7", label: "July" },
+  { value: "8", label: "August" },
+  { value: "9", label: "September" },
+  { value: "10", label: "October" },
+  { value: "11", label: "November" },
+  { value: "12", label: "December" },
+];
 
 const BASE_EMPLOYMENT_OPTIONS = [
   { value: "", label: "Not specified" },
@@ -31,6 +51,40 @@ const employmentOptions = computed(() => {
   }
   return BASE_EMPLOYMENT_OPTIONS;
 });
+
+const jobPositionOptions = computed(() => {
+  const known = new Set(["", ...JOB_POSITION_VALUES]);
+  const v = props.form?.job_position;
+  if (v != null && v !== "" && !known.has(String(v))) {
+    return [
+      ...JOB_POSITION_OPTIONS,
+      { value: String(v), label: `${v} (current)` },
+    ];
+  }
+  return JOB_POSITION_OPTIONS;
+});
+
+const birthdayMaxDay = computed(() =>
+  daysInMonth(Number(props.form?.birthday_month) || 1),
+);
+
+const birthdayDayChoices = computed(() => {
+  const max = birthdayMaxDay.value;
+  return Array.from({ length: max }, (_, i) => String(i + 1));
+});
+
+watch(
+  () => props.form?.birthday_month,
+  () => {
+    const f = props.form;
+    if (!f) return;
+    const max = daysInMonth(Number(f.birthday_month) || 1);
+    const d = Number(f.birthday_day);
+    if (f.birthday_day && d > max) {
+      f.birthday_day = String(max);
+    }
+  },
+);
 </script>
 
 <template>
@@ -180,16 +234,48 @@ const employmentOptions = computed(() => {
           </p>
         </div>
         <div>
-          <label
+          <span
             class="mb-1 block text-xs font-medium text-gray-500 dark:text-gray-400"
-            >Birthday</label
+            >Birthday</span
           >
-          <input
-            v-model="form.birthday"
-            type="date"
-            class="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-500/20 dark:border-gray-600 dark:bg-gray-900 dark:text-white"
-            @change="clearFieldError('birthday')"
-          />
+          <div class="grid grid-cols-2 gap-3">
+            <div>
+              <label
+                class="mb-1 block text-xs text-gray-500 dark:text-gray-400"
+                >Month</label
+              >
+              <select
+                v-model="form.birthday_month"
+                class="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-500/20 dark:border-gray-600 dark:bg-gray-900 dark:text-white"
+                @change="clearFieldError('birthday')"
+              >
+                <option value="">—</option>
+                <option
+                  v-for="mo in BIRTHDAY_MONTHS"
+                  :key="mo.value"
+                  :value="mo.value"
+                >
+                  {{ mo.label }}
+                </option>
+              </select>
+            </div>
+            <div>
+              <label
+                class="mb-1 block text-xs text-gray-500 dark:text-gray-400"
+                >Day</label
+              >
+              <select
+                v-model="form.birthday_day"
+                class="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-500/20 dark:border-gray-600 dark:bg-gray-900 dark:text-white"
+                @change="clearFieldError('birthday')"
+              >
+                <option value="">—</option>
+                <option v-for="d in birthdayDayChoices" :key="d" :value="d">
+                  {{ d }}
+                </option>
+              </select>
+            </div>
+          </div>
           <p v-if="firstError('birthday')" class="mt-1 text-xs text-red-600">
             {{ firstError("birthday") }}
           </p>
@@ -304,6 +390,31 @@ const employmentOptions = computed(() => {
             class="mt-1 text-xs text-red-600"
           >
             {{ firstError("employee_type") }}
+          </p>
+        </div>
+        <div class="sm:col-span-2">
+          <label
+            class="mb-1 block text-xs font-medium text-gray-500 dark:text-gray-400"
+            >Position</label
+          >
+          <select
+            v-model="form.job_position"
+            class="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-500/20 dark:border-gray-600 dark:bg-gray-900 dark:text-white"
+            @change="clearFieldError('job_position')"
+          >
+            <option
+              v-for="opt in jobPositionOptions"
+              :key="opt.value === '' ? '_jp_empty' : opt.value"
+              :value="opt.value"
+            >
+              {{ opt.label }}
+            </option>
+          </select>
+          <p
+            v-if="firstError('job_position')"
+            class="mt-1 text-xs text-red-600"
+          >
+            {{ firstError("job_position") }}
           </p>
         </div>
         <div>

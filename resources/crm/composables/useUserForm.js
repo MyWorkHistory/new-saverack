@@ -1,6 +1,10 @@
 import { reactive, ref } from "vue";
 import api from "../services/api";
 import { useToast } from "./useToast";
+import {
+  birthdayFromMonthDay,
+  parseBirthdayParts,
+} from "../utils/formatUserDates";
 
 export function useUserForm() {
   const toast = useToast();
@@ -16,13 +20,15 @@ export function useUserForm() {
     password: "",
     phone: "",
     personal_email: "",
-    birthday: "",
+    birthday_month: "",
+    birthday_day: "",
     address: "",
     city: "",
     state: "",
     zip: "",
     region: "",
     employee_type: "",
+    job_position: "",
     hire_date: "",
     terminate_date: "",
     bio: "",
@@ -55,7 +61,9 @@ export function useUserForm() {
       p.personal_email != null && p.personal_email !== ""
         ? String(p.personal_email)
         : "";
-    form.birthday = formatDateForInput(p.birthday);
+    const bp = parseBirthdayParts(formatDateForInput(p.birthday));
+    form.birthday_month = bp.month;
+    form.birthday_day = bp.day;
     form.address = p.address != null && p.address !== "" ? String(p.address) : "";
     form.city = p.city != null && p.city !== "" ? String(p.city) : "";
     form.state = p.state != null && p.state !== "" ? String(p.state) : "";
@@ -64,6 +72,10 @@ export function useUserForm() {
     form.employee_type =
       p.employee_type != null && p.employee_type !== ""
         ? String(p.employee_type)
+        : "";
+    form.job_position =
+      p.job_position != null && p.job_position !== ""
+        ? String(p.job_position)
         : "";
     form.hire_date = formatDateForInput(p.hire_date);
     form.terminate_date = formatDateForInput(p.terminate_date);
@@ -126,6 +138,10 @@ export function useUserForm() {
     errorMsg.value = "";
     fieldErrors.value = {};
     try {
+      const birthdayIso = birthdayFromMonthDay(
+        form.birthday_month,
+        form.birthday_day,
+      );
       const payload = {
         name: form.name.trim(),
         email: form.email.trim(),
@@ -133,13 +149,14 @@ export function useUserForm() {
         role_ids: form.role_ids,
         phone: form.phone?.trim() || null,
         personal_email: form.personal_email?.trim() || null,
-        birthday: form.birthday?.trim() || null,
+        birthday: birthdayIso,
         address: form.address?.trim() || null,
         city: form.city?.trim() || null,
         state: form.state?.trim() || null,
         zip: form.zip?.trim() || null,
         region: form.region?.trim() || null,
         employee_type: form.employee_type?.trim() || null,
+        job_position: form.job_position?.trim() || null,
         hire_date: form.hire_date?.trim() || null,
         terminate_date: form.terminate_date?.trim() || null,
         bio: form.bio?.trim() || null,

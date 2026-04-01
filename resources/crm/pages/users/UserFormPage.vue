@@ -2,6 +2,7 @@
 import { onMounted } from "vue";
 import { useRouter } from "vue-router";
 import PageHeader from "../../components/common/PageHeader.vue";
+import CrmBackLink from "../../components/common/CrmBackLink.vue";
 import CrmLoadingSpinner from "../../components/common/CrmLoadingSpinner.vue";
 import UserFormFields from "../../components/users/UserFormFields.vue";
 import { useUserForm } from "../../composables/useUserForm";
@@ -45,10 +46,16 @@ async function onSubmit() {
 
 <template>
   <div class="mx-auto max-w-4xl space-y-6">
-    <PageHeader
-      title="Add user"
-      subtitle="Account, profile, and roles — all saved to the user record"
-    />
+    <div class="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+      <PageHeader
+        title="Add user"
+        subtitle="Account, profile, and roles — all saved to the user record"
+      />
+      <div class="flex shrink-0 flex-wrap gap-x-4 gap-y-2">
+        <CrmBackLink to="/users" label="Back to users" />
+        <CrmBackLink to="/dashboard" label="Back to dashboard" />
+      </div>
+    </div>
 
     <p v-if="errorMsg" class="text-sm text-red-600 dark:text-red-400">
       {{ errorMsg }}
@@ -79,10 +86,24 @@ async function onSubmit() {
         </button>
         <button
           type="button"
-          class="inline-flex items-center justify-center rounded-xl border border-gray-300 bg-white px-5 py-2.5 text-sm font-medium text-gray-700 hover:bg-gray-50 dark:border-gray-600 dark:bg-gray-900 dark:text-gray-200 dark:hover:bg-gray-800"
+          class="inline-flex items-center justify-center gap-1.5 rounded-xl border border-gray-300 bg-white px-5 py-2.5 text-sm font-medium text-gray-700 hover:bg-gray-50 dark:border-gray-600 dark:bg-gray-900 dark:text-gray-200 dark:hover:bg-gray-800"
           :disabled="saving"
           @click="router.push('/users')"
         >
+          <svg
+            class="h-4 w-4 shrink-0"
+            fill="none"
+            viewBox="0 0 24 24"
+            stroke="currentColor"
+            stroke-width="2"
+            aria-hidden="true"
+          >
+            <path
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              d="M15 19l-7-7 7-7"
+            />
+          </svg>
           Cancel
         </button>
       </div>

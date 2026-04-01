@@ -628,7 +628,9 @@ onUnmounted(() => {
           <div class="overflow-x-auto">
             <table class="min-w-[1024px] w-full text-left text-sm">
           <thead>
-            <tr class="border-b border-gray-200 dark:border-gray-700">
+            <tr
+              class="border-b border-gray-200 bg-gray-50 dark:border-gray-700 dark:bg-gray-800/50"
+            >
               <th v-if="canDeleteUsers" class="w-12 px-5 py-3 sm:px-6">
                 <input
                   type="checkbox"

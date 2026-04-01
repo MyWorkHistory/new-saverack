@@ -2,7 +2,7 @@
 import { computed, inject, onMounted, ref, watch } from "vue";
 import { RouterLink, useRoute, useRouter } from "vue-router";
 import api from "../../services/api";
-import CrmBackLink from "../../components/common/CrmBackLink.vue";
+import CrmOutlinePillLink from "../../components/common/CrmOutlinePillLink.vue";
 import CrmLoadingSpinner from "../../components/common/CrmLoadingSpinner.vue";
 import CrmOutlineEditButton from "../../components/common/CrmOutlineEditButton.vue";
 import UserEditModal from "../../components/users/UserEditModal.vue";
@@ -176,7 +176,7 @@ const profileLocationLine = computed(() => {
       <h1 class="text-2xl font-semibold text-gray-900 dark:text-white">
         User Profile
       </h1>
-      <CrmBackLink to="/dashboard" label="Back to dashboard" />
+      <CrmOutlinePillLink to="/dashboard" label="Back to dashboard" />
     </div>
 
     <div v-if="loading" class="flex justify-center py-20">

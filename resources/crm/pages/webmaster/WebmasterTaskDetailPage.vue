@@ -3,7 +3,7 @@ import { computed, inject, onMounted, onUnmounted, ref, watch } from "vue";
 import { useRouter } from "vue-router";
 import api from "../../services/api";
 import PageHeader from "../../components/common/PageHeader.vue";
-import CrmBackLink from "../../components/common/CrmBackLink.vue";
+import CrmOutlinePillLink from "../../components/common/CrmOutlinePillLink.vue";
 import CrmLoadingSpinner from "../../components/common/CrmLoadingSpinner.vue";
 import CrmOutlineEditButton from "../../components/common/CrmOutlineEditButton.vue";
 import WebmasterTaskDrawer from "../../components/webmaster/WebmasterTaskDrawer.vue";
@@ -252,8 +252,7 @@ onUnmounted(() => {
         subtitle="Details and activity"
       />
       <div class="flex shrink-0 flex-wrap items-center gap-2">
-        <CrmBackLink to="/webmaster" label="Back to board" />
-        <CrmBackLink to="/dashboard" label="Back to dashboard" />
+        <CrmOutlinePillLink to="/webmaster" label="Back to board" />
         <CrmOutlineEditButton
           v-if="task && canMutateWebmasterTasks"
           @click="taskEditorOpen = true"
@@ -270,7 +269,7 @@ onUnmounted(() => {
         {{ errorMsg }}
       </p>
       <div class="mt-2">
-        <CrmBackLink to="/webmaster" label="Back to board" />
+        <CrmOutlinePillLink to="/webmaster" label="Back to board" />
       </div>
     </template>
 

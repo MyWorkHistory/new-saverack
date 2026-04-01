@@ -12,6 +12,9 @@ const router = useRouter();
 const me = ref(null);
 const navLoading = ref(false);
 
+/** Same user as shell/sidebar; pages use inject("crmUser") for permission checks. */
+provide("crmUser", me);
+
 const showShell = computed(() => {
   const p = route.path;
   return (

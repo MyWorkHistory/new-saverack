@@ -53,7 +53,7 @@ class UserService
                     $q->select('roles.id', 'roles.name', 'roles.label');
                 },
                 'profile' => function ($q) {
-                    $q->select('id', 'user_id', 'job_position', 'birthday', 'hire_date');
+                    $q->select('id', 'user_id', 'job_position', 'birthday', 'hire_date', 'avatar_path');
                 },
             ])
             ->when($search, function ($query) use ($search) {
@@ -164,6 +164,43 @@ class UserService
             }
             $user->tokens()->delete();
             $user->delete();
+        });
+    }
+
+    /**
+     * @param  array<int, int>  $userIds
+     * @param  array<int, int>|null  $roleIds  When not null, replaces roles for each user.
+     * @return int Number of users updated
+     */
+    public function bulkUpdateStatusAndRoles(
+        array $userIds,
+        ?string $status,
+        ?array $roleIds,
+        ?User $actor = null
+    ): int {
+        $userIds = array_values(array_unique(array_map('intval', $userIds)));
+
+        return (int) DB::transaction(function () use ($userIds, $status, $roleIds, $actor) {
+            $count = 0;
+            foreach ($userIds as $id) {
+                $user = User::query()->find($id);
+                if (! $user) {
+                    continue;
+                }
+                if ($status !== null && $status !== '') {
+                    $user->status = $status;
+                    $user->save();
+                }
+                if ($roleIds !== null) {
+                    $user->roles()->sync(array_values(array_unique(array_map('intval', $roleIds))));
+                }
+                if ($actor) {
+                    $this->activityLog->log($actor, 'user.updated', $user, 'Bulk user update', ['email' => $user->email]);
+                }
+                $count++;
+            }
+
+            return $count;
         });
     }
 }

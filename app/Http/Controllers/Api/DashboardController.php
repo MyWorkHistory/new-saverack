@@ -51,7 +51,7 @@ class DashboardController extends Controller
                 ->with([
                     'roles:id,name,label',
                     'profile' => static function ($q) {
-                        $q->select('id', 'user_id', 'job_position', 'birthday', 'hire_date');
+                        $q->select('id', 'user_id', 'job_position', 'birthday', 'hire_date', 'avatar_path');
                     },
                 ])
                 ->latest()
@@ -74,6 +74,7 @@ class DashboardController extends Controller
                         'job_position' => $p?->job_position,
                         'birthday' => $p && $p->birthday ? $p->birthday->toDateString() : null,
                         'hire_date' => $p && $p->hire_date ? $p->hire_date->toDateString() : null,
+                        'avatar_url' => $p?->avatar_url,
                     ];
                 }),
             'recent_activity' => ActivityLog::query()

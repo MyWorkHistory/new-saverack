@@ -1,5 +1,12 @@
 <script setup>
-import { computed, inject, onMounted, onUnmounted, ref, watch } from "vue";
+import {
+  computed,
+  inject,
+  onMounted,
+  onUnmounted,
+  ref,
+  watch,
+} from "vue";
 import { useRouter } from "vue-router";
 import api from "../../services/api";
 import PageHeader from "../../components/common/PageHeader.vue";
@@ -10,6 +17,8 @@ import WebmasterTaskDrawer from "../../components/webmaster/WebmasterTaskDrawer.
 import { crmIsAdmin } from "../../utils/crmUser";
 import { errorMessage } from "../../utils/apiError";
 import { formatUsdPriceOrDash } from "../../utils/formatPrice";
+import { formatDateTimeUs, formatDateUs } from "../../utils/formatUserDates";
+import { setCrmPageMeta } from "../../composables/useCrmPageMeta.js";
 
 const props = defineProps({
   id: { type: String, required: true },
@@ -42,15 +51,6 @@ const comments = computed(() => {
 function display(val) {
   if (val == null || val === "") return "—";
   return String(val);
-}
-
-function formatIso(iso) {
-  if (!iso) return "—";
-  try {
-    return new Date(iso).toLocaleString();
-  } catch {
-    return String(iso);
-  }
 }
 
 function formatStatus(raw) {
@@ -104,6 +104,18 @@ function formatFileSize(n) {
 function isImageMime(mime) {
   return typeof mime === "string" && mime.startsWith("image/");
 }
+
+watch(
+  () => task.value?.title,
+  (title) => {
+    if (title && typeof title === "string") {
+      setCrmPageMeta({
+        title: `SaveRack | Webmaster: ${title}`,
+        description: `Webmaster task: ${title}.`,
+      });
+    }
+  },
+);
 
 async function loadTask() {
   const id = props.id;
@@ -340,7 +352,7 @@ onUnmounted(() => {
                     c.user?.name || "User"
                   }}</span>
                   <span class="text-xs text-gray-500 dark:text-gray-400">{{
-                    formatIso(c.created_at)
+                    formatDateTimeUs(c.created_at)
                   }}</span>
                 </div>
                 <p
@@ -446,7 +458,7 @@ onUnmounted(() => {
                 Due date
               </dt>
               <dd class="mt-0.5 text-gray-900 dark:text-white">
-                {{ display(task.due_date) }}
+                {{ formatDateUs(task.due_date) }}
               </dd>
             </div>
             <div>
@@ -454,7 +466,7 @@ onUnmounted(() => {
                 Created
               </dt>
               <dd class="mt-0.5 text-gray-900 dark:text-white">
-                {{ formatIso(task.created_at) }}
+                {{ formatDateTimeUs(task.created_at) }}
               </dd>
             </div>
             <div>
@@ -462,7 +474,7 @@ onUnmounted(() => {
                 Updated
               </dt>
               <dd class="mt-0.5 text-gray-900 dark:text-white">
-                {{ formatIso(task.updated_at) }}
+                {{ formatDateTimeUs(task.updated_at) }}
               </dd>
             </div>
             <div>

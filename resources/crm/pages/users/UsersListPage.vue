@@ -17,10 +17,9 @@ import CrmLoadingSpinner from "../../components/common/CrmLoadingSpinner.vue";
 import { useToast } from "../../composables/useToast";
 import { crmIsAdmin } from "../../utils/crmUser";
 import { DEFAULT_PER_PAGE, PER_PAGE_OPTIONS } from "../../constants/pagination";
-import {
-  formatBirthdayMonthDay,
-  formatIsoDate,
-} from "../../utils/formatUserDates";
+import { formatBirthdayUs, formatIsoDate } from "../../utils/formatUserDates";
+import CrmIconRowActions from "../../components/common/CrmIconRowActions.vue";
+import StaffBulkEditModal from "../../components/users/StaffBulkEditModal.vue";
 
 const crmUser = inject("crmUser", ref(null));
 const toast = useToast();
@@ -63,6 +62,8 @@ const manageMenuUser = computed(() =>
 );
 const filterOpen = ref(false);
 const addDrawerOpen = ref(false);
+const bulkEditOpen = ref(false);
+const bulkEditBusy = ref(false);
 const selectedIds = ref([]);
 
 const query = reactive({
@@ -147,6 +148,7 @@ watch(
     clearTimeout(searchDebounce);
     searchDebounce = setTimeout(() => {
       query.page = 1;
+      selectedIds.value = [];
       fetchUsers();
     }, 300);
   },
@@ -228,7 +230,6 @@ const fetchUsers = async () => {
   loading.value = true;
   deleteError.value = "";
   manageOpenId.value = null;
-  selectedIds.value = [];
   try {
     const { data } = await api.get("/users", { params: buildParams() });
     rows.value = data.data;
@@ -245,6 +246,7 @@ const fetchUsers = async () => {
 const applySearch = () => {
   clearTimeout(searchDebounce);
   query.page = 1;
+  selectedIds.value = [];
   fetchUsers();
 };
 
@@ -255,6 +257,7 @@ const clearFilters = () => {
   query.role_id = "";
   query.status = "all";
   query.page = 1;
+  selectedIds.value = [];
   fetchUsers().finally(() => {
     searchWatchLock = false;
   });
@@ -279,13 +282,41 @@ const toggleSortName = () => {
 const goPage = (p) => {
   if (p < 1 || p > pagination.value.last_page) return;
   query.page = p;
+  selectedIds.value = [];
   fetchUsers();
 };
 
 function onPerPageChange(e) {
   query.per_page = Number(e.target.value);
   query.page = 1;
+  selectedIds.value = [];
   fetchUsers();
+}
+
+function openBulkEdit() {
+  if (!selectedIds.value.length) {
+    toast.error("Select one or more rows.");
+    return;
+  }
+  bulkEditOpen.value = true;
+}
+
+async function onBulkApply(payload) {
+  bulkEditBusy.value = true;
+  try {
+    await api.patch("/users/bulk", {
+      user_ids: selectedIds.value,
+      ...payload,
+    });
+    toast.success("Staff updated.");
+    bulkEditOpen.value = false;
+    selectedIds.value = [];
+    await fetchUsers();
+  } catch (e) {
+    toast.errorFrom(e, "Could not update staff.");
+  } finally {
+    bulkEditBusy.value = false;
+  }
 }
 
 const canDeleteRow = (user) => {
@@ -421,6 +452,14 @@ onUnmounted(() => {
       @saved="fetchUsers"
     />
 
+    <StaffBulkEditModal
+      v-model:open="bulkEditOpen"
+      :roles="roles"
+      :selected-count="selectedIds.length"
+      :busy="bulkEditBusy"
+      @apply="onBulkApply"
+    />
+
     <p v-if="deleteError" class="text-sm text-red-600 dark:text-red-400">
       {{ deleteError }}
     </p>
@@ -436,7 +475,7 @@ onUnmounted(() => {
           <div class="flex items-center gap-3">
             <div>
               <h1 class="text-xl font-bold text-gray-900 dark:text-white">
-                Users
+                Staff
               </h1>
               <p class="mt-0.5 text-sm text-gray-500 dark:text-gray-400">
                 Directory of admin and staff accounts
@@ -469,37 +508,11 @@ onUnmounted(() => {
           <div
             class="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-end"
           >
-            <div class="relative min-w-0 flex-1 sm:max-w-xs">
-              <span
-                class="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-gray-400"
-              >
-                <svg
-                  class="h-5 w-5"
-                  fill="none"
-                  viewBox="0 0 20 20"
-                  stroke="currentColor"
-                  stroke-width="1.5"
-                >
-                  <path
-                    stroke-linecap="round"
-                    d="M3.042 9.374c0-3.497 2.835-6.332 6.333-6.332 3.497 0 6.332 2.835 6.332 6.332 0 3.498-2.835 6.333-6.332 6.333-3.498 0-6.333-2.835-6.333-6.333zM17.208 17.205l-2.82-2.82"
-                  />
-                </svg>
-              </span>
-              <input
-                v-model="query.search"
-                type="search"
-                placeholder="Search..."
-                class="h-11 w-full rounded-lg border border-gray-200 bg-gray-50 py-2.5 pl-10 pr-3 text-sm text-gray-900 placeholder:text-gray-400 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20 dark:border-gray-700 dark:bg-gray-800/50 dark:text-white dark:placeholder:text-gray-500"
-                @keydown.enter.prevent="applySearch"
-              />
-            </div>
-
             <div class="relative flex shrink-0 items-center gap-2" data-filter-root>
               <button
                 type="button"
                 class="inline-flex h-11 items-center gap-2 rounded-lg border border-gray-200 bg-white px-4 text-sm font-medium text-gray-700 shadow-sm hover:bg-gray-50 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200 dark:hover:bg-gray-700"
-                :class="{ 'ring-2 ring-blue-500/30': filterOpen }"
+                :class="{ 'ring-2 ring-[#206ba4]/30': filterOpen }"
                 :aria-expanded="filterOpen"
                 @click.stop="filterOpen = !filterOpen"
               >
@@ -570,7 +583,7 @@ onUnmounted(() => {
                     <div class="flex gap-2 pt-1">
                       <button
                         type="button"
-                        class="flex min-h-10 min-w-0 flex-1 basis-0 items-center justify-center rounded-lg bg-blue-600 px-3 text-xs font-semibold text-white transition hover:bg-blue-700 disabled:opacity-50"
+                        class="flex min-h-10 min-w-0 flex-1 basis-0 items-center justify-center rounded-lg bg-[#206ba4] px-3 text-xs font-semibold text-white transition hover:opacity-95 disabled:opacity-50"
                         :disabled="loading"
                         @click="applyFilterPanel"
                       >
@@ -594,9 +607,19 @@ onUnmounted(() => {
             </div>
 
             <button
+              v-if="canUpdateUsers"
+              type="button"
+              class="inline-flex h-11 shrink-0 items-center justify-center gap-2 rounded-lg border border-gray-200 bg-white px-4 text-sm font-medium text-gray-700 shadow-sm hover:bg-gray-50 disabled:opacity-50 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200 dark:hover:bg-gray-700"
+              :disabled="!selectedIds.length || loading"
+              @click="openBulkEdit"
+            >
+              Bulk edit
+            </button>
+
+            <button
               v-if="canCreateUsers"
               type="button"
-              class="inline-flex h-11 shrink-0 items-center justify-center gap-2 rounded-lg bg-blue-600 px-4 text-sm font-semibold text-white shadow-sm hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 dark:focus:ring-offset-gray-900"
+              class="inline-flex h-11 shrink-0 items-center justify-center gap-2 rounded-lg bg-[#206ba4] px-4 text-sm font-semibold text-white shadow-sm transition hover:opacity-95 focus:outline-none focus:ring-2 focus:ring-[#206ba4]/40 focus:ring-offset-2 dark:focus:ring-offset-gray-900"
               @click="addDrawerOpen = true"
             >
               <svg
@@ -612,7 +635,7 @@ onUnmounted(() => {
                   d="M12 4v16m8-8H4"
                 />
               </svg>
-              Add User
+              Add staff
             </button>
           </div>
         </div>
@@ -622,6 +645,33 @@ onUnmounted(() => {
       <div
         class="border-t border-gray-100 px-4 py-4 dark:border-gray-800 sm:px-6 sm:pb-6"
       >
+        <div class="mb-4 max-w-md">
+          <div class="relative">
+            <span
+              class="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-gray-400"
+            >
+              <svg
+                class="h-5 w-5"
+                fill="none"
+                viewBox="0 0 20 20"
+                stroke="currentColor"
+                stroke-width="1.5"
+              >
+                <path
+                  stroke-linecap="round"
+                  d="M3.042 9.374c0-3.497 2.835-6.332 6.333-6.332 3.497 0 6.332 2.835 6.332 6.332 0 3.498-2.835 6.333-6.332 6.333-3.498 0-6.333-2.835-6.333-6.333zM17.208 17.205l-2.82-2.82"
+                />
+              </svg>
+            </span>
+            <input
+              v-model="query.search"
+              type="search"
+              placeholder="Search…"
+              class="h-11 w-full rounded-lg border border-gray-200 bg-gray-50 py-2.5 pl-10 pr-3 text-sm text-gray-900 placeholder:text-gray-400 focus:border-[#206ba4] focus:outline-none focus:ring-2 focus:ring-[#206ba4]/20 dark:border-gray-700 dark:bg-gray-800/50 dark:text-white dark:placeholder:text-gray-500"
+              @keydown.enter.prevent="applySearch"
+            />
+          </div>
+        </div>
         <div
           class="overflow-hidden rounded-xl border border-gray-200 bg-white dark:border-gray-800 dark:bg-white/[0.03]"
         >
@@ -634,7 +684,7 @@ onUnmounted(() => {
               <th v-if="canDeleteUsers" class="w-12 px-5 py-3 sm:px-6">
                 <input
                   type="checkbox"
-                  class="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                  class="h-4 w-4 rounded border-gray-300 text-[#206ba4] focus:ring-[#206ba4]"
                   :checked="isAllPageSelected"
                   :disabled="loading || !rows.length"
                   aria-label="Select all on page"
@@ -711,7 +761,7 @@ onUnmounted(() => {
               <td v-if="canDeleteUsers" class="px-5 py-4 align-middle sm:px-6">
                 <input
                   type="checkbox"
-                  class="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                  class="h-4 w-4 rounded border-gray-300 text-[#206ba4] focus:ring-[#206ba4]"
                   :checked="selectedIds.includes(user.id)"
                   :aria-label="`Select ${user.name}`"
                   @change="toggleRowSelect(user.id)"
@@ -727,21 +777,30 @@ onUnmounted(() => {
               </td>
               <td class="px-5 py-4 align-middle sm:px-6">
                 <div class="flex items-center gap-3">
-                  <span
-                    class="flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-xs font-semibold"
-                    :class="avatarClassForUser(user.email)"
-                  >
-                    {{ initials(user.name) }}
+                  <span class="relative h-10 w-10 shrink-0">
+                    <img
+                      v-if="user.profile?.avatar_url"
+                      :src="user.profile.avatar_url"
+                      alt=""
+                      class="h-10 w-10 rounded-full object-cover"
+                    />
+                    <span
+                      v-else
+                      class="flex h-10 w-10 items-center justify-center rounded-full text-xs font-semibold"
+                      :class="avatarClassForUser(user.email)"
+                    >
+                      {{ initials(user.name) }}
+                    </span>
                   </span>
                   <div class="min-w-0">
                     <RouterLink
-                      :to="`/users/${user.id}`"
+                      :to="`/staff/${user.id}`"
                       class="block truncate font-semibold text-gray-900 hover:text-blue-600 dark:text-white dark:hover:text-blue-400"
                     >
                       {{ user.name }}
                     </RouterLink>
                     <RouterLink
-                      :to="`/users/${user.id}`"
+                      :to="`/staff/${user.id}`"
                       class="mt-0.5 block truncate text-xs text-gray-500 hover:text-blue-600 dark:text-gray-400"
                     >
                       {{ user.email }}
@@ -758,7 +817,7 @@ onUnmounted(() => {
               <td
                 class="whitespace-nowrap px-5 py-4 align-middle text-gray-700 sm:px-6 dark:text-gray-300"
               >
-                {{ formatBirthdayMonthDay(user.profile?.birthday) }}
+                {{ formatBirthdayUs(user.profile?.birthday) }}
               </td>
               <td
                 class="whitespace-nowrap px-5 py-4 align-middle text-gray-700 sm:px-6 dark:text-gray-300"
@@ -783,23 +842,14 @@ onUnmounted(() => {
                     aria-label="Row actions"
                     @click="toggleManageMenu(user.id, $event)"
                   >
-                    <svg
-                      class="h-6 w-6"
-                      fill="currentColor"
-                      viewBox="0 0 24 24"
-                      aria-hidden="true"
-                    >
-                      <path
-                        d="M6 10.25a1.75 1.75 0 113.5 0 1.75 1.75 0 01-3.5 0zM10.25 12a1.75 1.75 0 113.5 0 1.75 1.75 0 01-3.5 0zM14.5 10.25a1.75 1.75 0 113.5 0 1.75 1.75 0 01-3.5 0z"
-                      />
-                    </svg>
+                    <CrmIconRowActions />
                   </button>
                 </div>
               </td>
             </tr>
             <tr v-if="!loading && rows.length === 0">
               <td :colspan="tableColspan" class="px-5 py-12 text-center text-gray-500 sm:px-6">
-                No users found.
+                No staff found.
               </td>
             </tr>
           </tbody>
@@ -886,8 +936,8 @@ onUnmounted(() => {
                 :class="[
                   'min-w-[2.25rem] px-2 py-1.5 text-sm font-medium transition rounded-md',
                   item.value === pagination.current_page
-                    ? 'bg-blue-600 text-white'
-                    : 'text-gray-600 hover:text-blue-600 dark:text-gray-300 dark:hover:text-blue-400',
+                    ? 'bg-[#206ba4] text-white'
+                    : 'text-gray-600 hover:text-[#206ba4] dark:text-gray-300 dark:hover:text-blue-400',
                 ]"
                 :disabled="loading"
                 @click="goPage(item.value)"

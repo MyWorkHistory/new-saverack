@@ -1,6 +1,7 @@
 import { createRouter, createWebHistory } from "vue-router";
 import api from "../services/api";
 import { crmIsAdmin } from "../utils/crmUser";
+import { applyRouteMeta } from "../composables/useCrmPageMeta.js";
 
 import LoginPage from "../pages/auth/LoginPage.vue";
 import ForgotPasswordPage from "../pages/auth/ForgotPasswordPage.vue";
@@ -12,42 +13,117 @@ import UserDetailPage from "../pages/users/UserDetailPage.vue";
 import WebmasterTasksPage from "../pages/webmaster/WebmasterTasksPage.vue";
 import WebmasterTaskDetailPage from "../pages/webmaster/WebmasterTaskDetailPage.vue";
 
+const meta = {
+  login: {
+    title: "SaveRack | Sign in",
+    description: "Sign in to SaveRack CRM.",
+  },
+  forgot: {
+    title: "SaveRack | Forgot password",
+    description: "Reset your SaveRack CRM password.",
+  },
+  reset: {
+    title: "SaveRack | Reset password",
+    description: "Choose a new password for SaveRack CRM.",
+  },
+  dashboard: {
+    title: "SaveRack | Dashboard",
+    description: "CRM dashboard — activity, metrics, and recent staff.",
+  },
+  staff: {
+    title: "SaveRack | Staff",
+    description: "Directory of admin and staff accounts.",
+  },
+  staffCreate: {
+    title: "SaveRack | Add staff",
+    description: "Create a new staff account.",
+  },
+  webmaster: {
+    title: "SaveRack | Webmaster",
+    description: "Site development tasks and board.",
+  },
+  webmasterTask: {
+    title: "SaveRack | Webmaster task",
+    description: "Webmaster task details.",
+  },
+};
+
 const routes = [
-  { path: "/login", name: "login", component: LoginPage, meta: { public: true } },
+  {
+    path: "/login",
+    name: "login",
+    component: LoginPage,
+    meta: { public: true, ...meta.login },
+  },
   {
     path: "/forgot-password",
     name: "forgot-password",
     component: ForgotPasswordPage,
-    meta: { public: true },
+    meta: { public: true, ...meta.forgot },
   },
   {
     path: "/reset-password",
     name: "reset-password",
     component: ResetPasswordPage,
-    meta: { public: true },
+    meta: { public: true, ...meta.reset },
   },
   { path: "/", redirect: "/dashboard" },
-  { path: "/dashboard", name: "dashboard", component: DashboardPage },
-  { path: "/users", name: "users", component: UsersListPage },
-  { path: "/users/create", name: "users-create", component: UserFormPage },
-  { path: "/users/new", redirect: "/users/create" },
   {
-    path: "/users/:id/edit",
-    name: "users-edit",
+    path: "/dashboard",
+    name: "dashboard",
+    component: DashboardPage,
+    meta: meta.dashboard,
+  },
+  { path: "/staff", name: "staff", component: UsersListPage, meta: meta.staff },
+  {
+    path: "/staff/create",
+    name: "staff-create",
+    component: UserFormPage,
+    meta: meta.staffCreate,
+  },
+  { path: "/staff/new", redirect: "/staff/create" },
+  {
+    path: "/staff/:id/edit",
+    name: "staff-edit",
     redirect: (to) => ({
-      path: `/users/${to.params.id}`,
+      path: `/staff/${to.params.id}`,
       query: { edit: "1" },
     }),
   },
-  { path: "/users/:id", name: "users-detail", component: UserDetailPage, props: true },
-  { path: "/webmaster", name: "webmaster", component: WebmasterTasksPage },
+  {
+    path: "/staff/:id",
+    name: "staff-detail",
+    component: UserDetailPage,
+    props: true,
+    meta: {
+      title: "SaveRack | Staff",
+      description: "Staff profile.",
+    },
+  },
+  { path: "/users/create", redirect: "/staff/create" },
+  { path: "/users/new", redirect: "/staff/create" },
+  {
+    path: "/users/:id/edit",
+    redirect: (to) => ({
+      path: `/staff/${to.params.id}`,
+      query: { edit: "1" },
+    }),
+  },
+  { path: "/users", redirect: "/staff" },
+  { path: "/users/:id", redirect: (to) => `/staff/${to.params.id}` },
+  {
+    path: "/webmaster",
+    name: "webmaster",
+    component: WebmasterTasksPage,
+    meta: meta.webmaster,
+  },
   {
     path: "/webmaster/tasks/:id",
     name: "webmaster-task-detail",
     component: WebmasterTaskDetailPage,
     props: true,
+    meta: meta.webmasterTask,
   },
-  // Tickets UI removed; old links go to dashboard
   { path: "/tickets/board", redirect: "/dashboard" },
   { path: "/tickets/:id", redirect: "/dashboard" },
   { path: "/tickets", redirect: "/dashboard" },
@@ -115,13 +191,23 @@ async function ensureUsersRouteAccess(path) {
       return false;
     }
   }
-  if (path === "/users/create" || path === "/users/new") {
+  const staffCreate =
+    path === "/staff/create" ||
+    path === "/staff/new" ||
+    path === "/users/create" ||
+    path === "/users/new";
+  if (staffCreate) {
     return usersNavCache.create === true;
   }
-  if (/^\/users\/[^/]+\/edit$/.test(path)) {
+  if (/^\/staff\/[^/]+\/edit$/.test(path) || /^\/users\/[^/]+\/edit$/.test(path)) {
     return usersNavCache.update === true;
   }
-  if (path === "/users" || path.startsWith("/users/")) {
+  if (
+    path === "/staff" ||
+    path.startsWith("/staff/") ||
+    path === "/users" ||
+    path.startsWith("/users/")
+  ) {
     return usersNavCache.view === true;
   }
   return true;
@@ -178,7 +264,7 @@ router.beforeEach(async (to) => {
     }
   }
 
-  if (to.path.startsWith("/users")) {
+  if (to.path.startsWith("/users") || to.path.startsWith("/staff")) {
     const ok = await ensureUsersRouteAccess(to.path);
     if (!ok) {
       if (!localStorage.getItem("auth_token")) {
@@ -189,6 +275,10 @@ router.beforeEach(async (to) => {
   }
 
   return true;
+});
+
+router.afterEach((to) => {
+  applyRouteMeta(to);
 });
 
 export default router;

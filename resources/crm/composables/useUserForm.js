@@ -14,6 +14,9 @@ export function useUserForm() {
   const fieldErrors = ref({});
   const roles = ref([]);
 
+  const pendingAvatarFile = ref(null);
+  const profileAvatarUrl = ref("");
+
   const form = reactive({
     name: "",
     email: "",
@@ -91,6 +94,45 @@ export function useUserForm() {
     form.status = data.status || "pending";
     form.role_ids = (data.roles || []).map((r) => r.id);
     applyProfileToForm(data.profile);
+    profileAvatarUrl.value = data.profile?.avatar_url || "";
+  }
+
+  async function uploadAvatarFile(userId, file, options = {}) {
+    const { successMessage = "Photo updated." } = options;
+    const fd = new FormData();
+    fd.append("avatar", file);
+    try {
+      const { data } = await api.post(`/users/${userId}/avatar`, fd, {
+        transformRequest: [
+          (body, headers) => {
+            if (headers && typeof headers.delete === "function") {
+              headers.delete("Content-Type");
+            }
+            return body;
+          },
+        ],
+      });
+      profileAvatarUrl.value = data.profile?.avatar_url || "";
+      applyProfileToForm(data.profile);
+      if (successMessage) {
+        toast.success(successMessage);
+      }
+    } catch (e) {
+      toast.errorFrom(e, "Could not upload photo.");
+      throw e;
+    }
+  }
+
+  async function deleteAvatarFile(userId) {
+    try {
+      const { data } = await api.delete(`/users/${userId}/avatar`);
+      profileAvatarUrl.value = data.profile?.avatar_url || "";
+      applyProfileToForm(data.profile);
+      toast.success("Photo removed.");
+    } catch (e) {
+      toast.errorFrom(e, "Could not remove photo.");
+      throw e;
+    }
   }
 
   function resetForCreate() {
@@ -100,6 +142,8 @@ export function useUserForm() {
     form.status = "pending";
     form.role_ids = [];
     applyProfileToForm({});
+    pendingAvatarFile.value = null;
+    profileAvatarUrl.value = "";
     errorMsg.value = "";
     fieldErrors.value = {};
   }
@@ -165,11 +209,24 @@ export function useUserForm() {
         if (form.password.trim()) {
           payload.password = form.password;
         }
-        await api.put(`/users/${userId}`, payload);
+        const { data: updated } = await api.put(`/users/${userId}`, payload);
+        profileAvatarUrl.value =
+          updated.profile?.avatar_url || profileAvatarUrl.value;
+        applyProfileToForm(updated.profile);
         toast.success("User updated successfully.");
       } else {
         payload.password = form.password;
-        await api.post("/users", payload);
+        const { data: created } = await api.post("/users", payload);
+        if (pendingAvatarFile.value) {
+          try {
+            await uploadAvatarFile(String(created.id), pendingAvatarFile.value, {
+              successMessage: null,
+            });
+          } catch {
+            // Handled inside uploadAvatarFile / interceptors
+          }
+          pendingAvatarFile.value = null;
+        }
         toast.success("User created successfully.");
       }
       return true;
@@ -201,10 +258,14 @@ export function useUserForm() {
     fieldErrors,
     roles,
     form,
+    pendingAvatarFile,
+    profileAvatarUrl,
     loadRoles,
     loadUser,
     resetForCreate,
     submit,
+    uploadAvatarFile,
+    deleteAvatarFile,
     toggleRole,
     roleChecked,
     clearFieldError,

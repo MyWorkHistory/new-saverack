@@ -17,9 +17,13 @@ const {
   errorMsg,
   form,
   roles,
+  pendingAvatarFile,
+  profileAvatarUrl,
   loadRoles,
   loadUser,
   submit,
+  uploadAvatarFile,
+  deleteAvatarFile,
   toggleRole,
   clearFieldError,
   firstError,
@@ -158,9 +162,14 @@ function onBackdropClick() {
                 @submit.prevent="onSubmit"
               >
                 <UserFormFields
+                  v-model:pending-avatar-file="pendingAvatarFile"
                   :form="form"
                   :roles="roles"
                   :is-edit="true"
+                  :user-id="userId"
+                  :avatar-url="profileAvatarUrl"
+                  :upload-avatar="(f) => uploadAvatarFile(userId, f)"
+                  :delete-avatar="() => deleteAvatarFile(userId)"
                   :saving="saving"
                   :first-error="firstError"
                   :clear-field-error="clearFieldError"

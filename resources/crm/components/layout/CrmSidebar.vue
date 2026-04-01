@@ -38,7 +38,7 @@ function itemJustify() {
 function navActive(mode) {
   const p = route.path;
   if (mode === "dashboard") return p.startsWith("/dashboard");
-  if (mode === "users") return p.startsWith("/users");
+  if (mode === "users") return p.startsWith("/staff") || p.startsWith("/users");
   if (mode === "webmaster") return p.startsWith("/webmaster");
   return false;
 }
@@ -133,7 +133,7 @@ function iconClass(mode) {
         </li>
         <li v-if="canViewUsers">
           <RouterLink
-            to="/users"
+            to="/staff"
             :class="[navClass('users'), itemJustify()]"
             @click="closeMobile"
           >
@@ -152,7 +152,7 @@ function iconClass(mode) {
                 />
               </svg>
             </span>
-            <span v-if="isExpanded">Users</span>
+            <span v-if="isExpanded">Staff</span>
           </RouterLink>
         </li>
         <li v-if="canViewWebmaster">

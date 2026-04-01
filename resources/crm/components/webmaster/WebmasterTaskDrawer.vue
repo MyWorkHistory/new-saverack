@@ -111,7 +111,7 @@ watch(
 );
 
 function onEsc(e) {
-  if (e.key === "Escape" && props.open && !saving.value) {
+  if (e.key === "Escape" && props.open && !saving.value && !loadingSupport.value) {
     e.preventDefault();
     close();
   }
@@ -178,28 +178,28 @@ function onBackdropClick() {
 
 <template>
   <Teleport to="body">
-    <Transition name="modal-backdrop">
+    <Transition name="drawer-fade">
       <div
         v-if="open"
-        class="fixed inset-0 z-[200] flex items-center justify-center p-4 sm:p-6"
+        class="fixed inset-0 z-[200] flex h-[100dvh] max-h-[100dvh] justify-end overflow-hidden"
         aria-modal="true"
         role="dialog"
-        aria-labelledby="webmaster-task-modal-title"
+        aria-labelledby="webmaster-task-drawer-title"
       >
         <div
-          class="absolute inset-0 bg-gray-900/40 backdrop-blur-[2px] dark:bg-black/55"
+          class="absolute inset-0 bg-gray-900/40 backdrop-blur-[1px] dark:bg-black/50"
           aria-hidden="true"
           @click="onBackdropClick"
         />
-        <Transition name="modal-panel" appear>
-          <div
-            class="relative z-10 flex max-h-[min(90dvh,720px)] w-full max-w-lg flex-col overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-2xl dark:border-gray-700 dark:bg-gray-900"
+        <Transition name="drawer-slide" appear>
+          <aside
+            class="relative flex h-full max-h-full min-h-0 w-full max-w-xl flex-col overflow-hidden border-l border-gray-200 bg-white shadow-2xl dark:border-gray-700 dark:bg-gray-900 sm:max-w-2xl"
           >
             <header
               class="flex shrink-0 items-center justify-between border-b border-gray-200 px-5 py-4 dark:border-gray-800"
             >
               <h2
-                id="webmaster-task-modal-title"
+                id="webmaster-task-drawer-title"
                 class="text-lg font-semibold text-gray-900 dark:text-white"
               >
                 {{ task?.id ? "Edit task" : "Add task" }}
@@ -269,23 +269,36 @@ function onBackdropClick() {
                     >
                     <textarea
                       v-model="form.description"
-                      rows="3"
-                      class="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm dark:border-gray-600 dark:bg-gray-800 dark:text-white"
+                      rows="8"
+                      class="min-h-[12rem] w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm dark:border-gray-600 dark:bg-gray-800 dark:text-white"
                     />
                   </div>
-                  <div>
-                    <label
-                      class="mb-1 block text-xs font-medium text-gray-500 dark:text-gray-400"
-                      >Ticket price</label
-                    >
-                    <input
-                      v-model="form.price"
-                      type="number"
-                      min="0"
-                      step="0.01"
-                      placeholder="0.00"
-                      class="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm dark:border-gray-600 dark:bg-gray-800 dark:text-white"
-                    />
+                  <div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                    <div>
+                      <label
+                        class="mb-1 block text-xs font-medium text-gray-500 dark:text-gray-400"
+                        >Ticket price</label
+                      >
+                      <input
+                        v-model="form.price"
+                        type="number"
+                        min="0"
+                        step="0.01"
+                        placeholder="0.00"
+                        class="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm dark:border-gray-600 dark:bg-gray-800 dark:text-white"
+                      />
+                    </div>
+                    <div>
+                      <label
+                        class="mb-1 block text-xs font-medium text-gray-500 dark:text-gray-400"
+                        >Due date</label
+                      >
+                      <input
+                        v-model="form.due_date"
+                        type="date"
+                        class="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm dark:border-gray-600 dark:bg-gray-800 dark:text-white"
+                      />
+                    </div>
                   </div>
                   <div class="grid grid-cols-2 gap-3">
                     <div>
@@ -324,17 +337,6 @@ function onBackdropClick() {
                         </option>
                       </select>
                     </div>
-                  </div>
-                  <div>
-                    <label
-                      class="mb-1 block text-xs font-medium text-gray-500 dark:text-gray-400"
-                      >Due date</label
-                    >
-                    <input
-                      v-model="form.due_date"
-                      type="date"
-                      class="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm dark:border-gray-600 dark:bg-gray-800 dark:text-white"
-                    />
                   </div>
                   <div>
                     <label
@@ -380,7 +382,7 @@ function onBackdropClick() {
                 Cancel
               </button>
             </footer>
-          </div>
+          </aside>
         </Transition>
       </div>
     </Transition>
@@ -388,28 +390,20 @@ function onBackdropClick() {
 </template>
 
 <style scoped>
-.modal-backdrop-enter-active,
-.modal-backdrop-leave-active {
+.drawer-fade-enter-active,
+.drawer-fade-leave-active {
   transition: opacity 0.2s ease;
 }
-.modal-backdrop-enter-from,
-.modal-backdrop-leave-to {
+.drawer-fade-enter-from,
+.drawer-fade-leave-to {
   opacity: 0;
 }
-
-.modal-panel-enter-active {
-  transition:
-    opacity 0.2s ease,
-    transform 0.2s ease;
+.drawer-slide-enter-active,
+.drawer-slide-leave-active {
+  transition: transform 0.25s ease;
 }
-.modal-panel-leave-active {
-  transition:
-    opacity 0.15s ease,
-    transform 0.15s ease;
-}
-.modal-panel-enter-from,
-.modal-panel-leave-to {
-  opacity: 0;
-  transform: scale(0.97) translateY(0.5rem);
+.drawer-slide-enter-from,
+.drawer-slide-leave-to {
+  transform: translateX(100%);
 }
 </style>

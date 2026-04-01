@@ -39,7 +39,7 @@ onMounted(async () => {
 async function onSubmit() {
   const ok = await submit({ isEdit: false, userId: null });
   if (ok) {
-    await router.push("/users");
+    await router.push("/staff");
   }
 }
 </script>
@@ -48,11 +48,11 @@ async function onSubmit() {
   <div class="mx-auto max-w-4xl space-y-6">
     <div class="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
       <PageHeader
-        title="Add user"
+        title="Add staff"
         subtitle="Account, profile, and roles — all saved to the user record"
       />
       <div class="flex shrink-0 flex-wrap gap-x-4 gap-y-2">
-        <CrmBackLink to="/users" label="Back to users" />
+        <CrmBackLink to="/staff" label="Back to staff" />
         <CrmBackLink to="/dashboard" label="Back to dashboard" />
       </div>
     </div>
@@ -88,7 +88,7 @@ async function onSubmit() {
           type="button"
           class="inline-flex items-center justify-center gap-1.5 rounded-xl border border-gray-300 bg-white px-5 py-2.5 text-sm font-medium text-gray-700 hover:bg-gray-50 dark:border-gray-600 dark:bg-gray-900 dark:text-gray-200 dark:hover:bg-gray-800"
           :disabled="saving"
-          @click="router.push('/users')"
+          @click="router.push('/staff')"
         >
           <svg
             class="h-4 w-4 shrink-0"

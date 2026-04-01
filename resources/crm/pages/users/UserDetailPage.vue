@@ -7,7 +7,12 @@ import CrmLoadingSpinner from "../../components/common/CrmLoadingSpinner.vue";
 import CrmOutlineEditButton from "../../components/common/CrmOutlineEditButton.vue";
 import UserEditModal from "../../components/users/UserEditModal.vue";
 import { crmIsAdmin } from "../../utils/crmUser";
-import { formatBirthdayMonthDay } from "../../utils/formatUserDates";
+import {
+  formatBirthdayUs,
+  formatDateUs,
+} from "../../utils/formatUserDates";
+import { useToast } from "../../composables/useToast";
+import { setCrmPageMeta } from "../../composables/useCrmPageMeta.js";
 
 const props = defineProps({
   id: { type: String, required: true },
@@ -17,6 +22,8 @@ const route = useRoute();
 const router = useRouter();
 const crmUser = inject("crmUser", ref(null));
 const editOpen = ref(false);
+const toast = useToast();
+const heroAvatarInput = ref(null);
 
 function userHasPerm(key) {
   const u = crmUser.value;
@@ -34,13 +41,6 @@ const user = ref(null);
 function display(val) {
   if (val == null || val === "") return "—";
   return String(val);
-}
-
-function formatDate(val) {
-  if (val == null || val === "") return "—";
-  const s = String(val);
-  const iso = s.match(/^(\d{4}-\d{2}-\d{2})/);
-  return iso ? iso[1] : s;
 }
 
 function roleLabels(roles) {
@@ -120,11 +120,11 @@ watch(
   () => {
     if (!wantsEditQuery(route.query.edit)) return;
     if (!canUpdateUsers.value) {
-      router.replace({ path: `/users/${props.id}`, query: {} });
+      router.replace({ path: `/staff/${props.id}`, query: {} });
       return;
     }
     editOpen.value = true;
-    router.replace({ path: `/users/${props.id}`, query: {} });
+    router.replace({ path: `/staff/${props.id}`, query: {} });
   },
   { immediate: true },
 );
@@ -139,14 +139,55 @@ const profileLocationLine = computed(() => {
   const p = profile.value;
   if (!p || typeof p !== "object") return "";
   const city = p.city ? String(p.city).trim() : "";
-  const region = p.region ? String(p.region).trim() : "";
   const state = p.state ? String(p.state).trim() : "";
+  const zip = p.zip ? String(p.zip).trim() : "";
   const parts = [];
   if (city) parts.push(city);
   if (state && state !== city) parts.push(state);
-  if (region && !parts.includes(region)) parts.unshift(region);
+  if (zip) parts.push(zip);
   return parts.filter(Boolean).join(", ");
 });
+
+function openHeroAvatarPicker() {
+  heroAvatarInput.value?.click();
+}
+
+watch(
+  () => user.value?.name,
+  (name) => {
+    if (name && typeof name === "string") {
+      setCrmPageMeta({
+        title: `SaveRack | Staff: ${name}`,
+        description: `Profile for ${name}.`,
+      });
+    }
+  },
+);
+
+async function onHeroAvatarChange(e) {
+  const input = e.target;
+  const file = input.files?.[0];
+  input.value = "";
+  if (!file || !canUpdateUsers.value) return;
+  const fd = new FormData();
+  fd.append("avatar", file);
+  try {
+    await api.post(`/users/${props.id}/avatar`, fd, {
+      transformRequest: [
+        (body, headers) => {
+          if (headers && typeof headers.delete === "function") {
+            headers.delete("Content-Type");
+          }
+          return body;
+        },
+      ],
+    });
+    await loadProfile();
+    toast.success("Photo updated.");
+  } catch (err) {
+    toast.errorFrom(err, "Could not upload photo.");
+  }
+}
 </script>
 
 <template>
@@ -161,10 +202,10 @@ const profileLocationLine = computed(() => {
       </RouterLink>
       <span class="text-gray-400 dark:text-gray-600" aria-hidden="true">/</span>
       <RouterLink
-        to="/users"
+        to="/staff"
         class="font-medium text-gray-500 transition hover:text-[#206ba4] dark:text-gray-400 dark:hover:text-blue-400"
       >
-        Users
+        Staff
       </RouterLink>
       <span class="text-gray-400 dark:text-gray-600" aria-hidden="true">/</span>
       <span class="font-medium text-gray-800 dark:text-gray-200">
@@ -188,7 +229,7 @@ const profileLocationLine = computed(() => {
         {{ errorMsg }}
       </p>
       <RouterLink
-        to="/users"
+        to="/staff"
         class="mt-2 inline-block text-sm font-medium text-[#206ba4] hover:underline dark:text-blue-400"
       >
         Back to directory
@@ -196,32 +237,77 @@ const profileLocationLine = computed(() => {
     </template>
 
     <div v-else-if="user" class="space-y-6">
-      <!-- Profile hero (TailAdmin profile top card) — single Edit control -->
+      <!-- Profile hero -->
       <div
         class="overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-sm dark:border-gray-800 dark:bg-gray-900/40"
       >
         <div
-          class="flex flex-col gap-6 border-b border-gray-100 p-6 dark:border-gray-800 sm:flex-row sm:items-end sm:justify-between"
+          class="flex flex-col gap-6 border-b border-gray-100 p-6 dark:border-gray-800 sm:flex-row sm:items-start sm:justify-between"
         >
-          <div class="flex min-w-0 flex-1 items-center gap-5">
-            <span
-              class="flex h-20 w-20 shrink-0 items-center justify-center rounded-full text-xl font-bold ring-2 ring-white dark:ring-gray-900"
-              :class="avatarClassForEmail(user.email)"
+          <div class="flex min-w-0 flex-1 items-start gap-5">
+            <input
+              ref="heroAvatarInput"
+              type="file"
+              accept="image/jpeg,image/png,image/webp"
+              class="hidden"
+              @change="onHeroAvatarChange"
+            />
+            <button
+              v-if="canUpdateUsers"
+              type="button"
+              class="shrink-0 rounded-full focus:outline-none focus:ring-2 focus:ring-[#206ba4]/40 dark:focus:ring-blue-400/40"
+              :title="'Change photo'"
+              @click="openHeroAvatarPicker"
             >
-              {{ initials(user.name) }}
-            </span>
+              <img
+                v-if="profile.avatar_url"
+                :src="profile.avatar_url"
+                alt=""
+                class="h-20 w-20 rounded-full object-cover ring-2 ring-white dark:ring-gray-900"
+              />
+              <span
+                v-else
+                class="flex h-20 w-20 items-center justify-center rounded-full text-xl font-bold ring-2 ring-white dark:ring-gray-900"
+                :class="avatarClassForEmail(user.email)"
+              >
+                {{ initials(user.name) }}
+              </span>
+            </button>
+            <div
+              v-else
+              class="shrink-0"
+            >
+              <img
+                v-if="profile.avatar_url"
+                :src="profile.avatar_url"
+                alt=""
+                class="h-20 w-20 rounded-full object-cover ring-2 ring-white dark:ring-gray-900"
+              />
+              <span
+                v-else
+                class="flex h-20 w-20 items-center justify-center rounded-full text-xl font-bold ring-2 ring-white dark:ring-gray-900"
+                :class="avatarClassForEmail(user.email)"
+              >
+                {{ initials(user.name) }}
+              </span>
+            </div>
             <div class="min-w-0">
               <h2 class="truncate text-xl font-semibold text-gray-900 dark:text-white">
                 {{ user.name }}
               </h2>
-              <p class="mt-1 text-sm font-medium text-gray-600 dark:text-gray-300">
+              <p class="mt-1 text-sm font-medium text-gray-800 dark:text-gray-200">
+                {{ display(profile.job_position) }}
+              </p>
+              <p class="mt-2 text-sm font-medium text-gray-600 dark:text-gray-300">
                 {{ roleLabels(user.roles) }}
               </p>
               <p
-                v-if="profileLocationLine || user.email"
                 class="mt-1 text-sm text-gray-500 dark:text-gray-400"
               >
-                {{ profileLocationLine || user.email }}
+                <template v-if="profileLocationLine">{{ profileLocationLine }}</template>
+                <template v-if="profileLocationLine && user.email"> · </template>
+                <template v-if="user.email">{{ user.email }}</template>
+                <template v-if="!profileLocationLine && !user.email">—</template>
               </p>
               <div class="mt-3 flex flex-wrap items-center gap-2">
                 <span
@@ -242,64 +328,75 @@ const profileLocationLine = computed(() => {
         </div>
       </div>
 
-      <!-- Two-column cards: Personal + Address -->
-      <div class="grid gap-6 lg:grid-cols-2">
+      <div class="space-y-6">
         <section
           class="rounded-2xl border border-gray-200 bg-white p-6 shadow-sm dark:border-gray-800 dark:bg-gray-900/40"
         >
           <h3 class="mb-5 border-b border-gray-100 pb-3 text-lg font-semibold text-gray-900 dark:border-gray-800 dark:text-white">
             Personal Information
           </h3>
-          <dl class="space-y-4">
-            <div>
-              <dt class="text-xs font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400">
-                Full name
-              </dt>
-              <dd class="mt-1 text-sm font-medium text-gray-900 dark:text-white">
-                {{ display(user.name) }}
-              </dd>
+          <div class="space-y-8">
+            <div class="space-y-4 border-b border-gray-100 pb-6 dark:border-gray-800">
+              <dl class="space-y-4">
+                <div>
+                  <dt class="text-xs font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400">
+                    Full name
+                  </dt>
+                  <dd class="mt-1 text-sm font-medium text-gray-900 dark:text-white">
+                    {{ display(user.name) }}
+                  </dd>
+                </div>
+                <div>
+                  <dt class="text-xs font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400">
+                    Login email
+                  </dt>
+                  <dd class="mt-1 text-sm font-medium text-gray-900 dark:text-white">
+                    {{ display(user.email) }}
+                  </dd>
+                </div>
+              </dl>
             </div>
-            <div>
-              <dt class="text-xs font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400">
-                Login email
-              </dt>
-              <dd class="mt-1 text-sm font-medium text-gray-900 dark:text-white">
-                {{ display(user.email) }}
-              </dd>
+            <div class="space-y-4 border-b border-gray-100 pb-6 dark:border-gray-800">
+              <dl class="space-y-4">
+                <div>
+                  <dt class="text-xs font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400">
+                    Phone
+                  </dt>
+                  <dd class="mt-1 text-sm font-medium text-gray-900 dark:text-white">
+                    {{ display(profile.phone) }}
+                  </dd>
+                </div>
+                <div>
+                  <dt class="text-xs font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400">
+                    Personal email
+                  </dt>
+                  <dd class="mt-1 text-sm font-medium text-gray-900 dark:text-white">
+                    {{ display(profile.personal_email) }}
+                  </dd>
+                </div>
+              </dl>
             </div>
-            <div>
-              <dt class="text-xs font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400">
-                Phone
-              </dt>
-              <dd class="mt-1 text-sm font-medium text-gray-900 dark:text-white">
-                {{ display(profile.phone) }}
-              </dd>
+            <div class="space-y-4">
+              <dl class="space-y-4">
+                <div>
+                  <dt class="text-xs font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400">
+                    Birthday
+                  </dt>
+                  <dd class="mt-1 text-sm font-medium text-gray-900 dark:text-white">
+                    {{ formatBirthdayUs(profile.birthday) }}
+                  </dd>
+                </div>
+                <div>
+                  <dt class="text-xs font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400">
+                    Bio
+                  </dt>
+                  <dd class="mt-1 whitespace-pre-wrap text-sm font-medium text-gray-900 dark:text-gray-200">
+                    {{ display(profile.bio) }}
+                  </dd>
+                </div>
+              </dl>
             </div>
-            <div>
-              <dt class="text-xs font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400">
-                Personal email
-              </dt>
-              <dd class="mt-1 text-sm font-medium text-gray-900 dark:text-white">
-                {{ display(profile.personal_email) }}
-              </dd>
-            </div>
-            <div>
-              <dt class="text-xs font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400">
-                Birthday
-              </dt>
-              <dd class="mt-1 text-sm font-medium text-gray-900 dark:text-white">
-                {{ formatBirthdayMonthDay(profile.birthday) }}
-              </dd>
-            </div>
-            <div>
-              <dt class="text-xs font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400">
-                Bio
-              </dt>
-              <dd class="mt-1 whitespace-pre-wrap text-sm font-medium text-gray-900 dark:text-gray-200">
-                {{ display(profile.bio) }}
-              </dd>
-            </div>
-          </dl>
+          </div>
         </section>
 
         <section
@@ -308,44 +405,60 @@ const profileLocationLine = computed(() => {
           <h3 class="mb-5 border-b border-gray-100 pb-3 text-lg font-semibold text-gray-900 dark:border-gray-800 dark:text-white">
             Address
           </h3>
-          <dl class="space-y-4">
-            <div>
-              <dt class="text-xs font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400">
-                Street
-              </dt>
-              <dd class="mt-1 text-sm font-medium text-gray-900 dark:text-white">
-                {{ display(profile.address) }}
-              </dd>
+          <div class="space-y-8">
+            <div class="space-y-4 border-b border-gray-100 pb-6 dark:border-gray-800">
+              <dl>
+                <div>
+                  <dt class="text-xs font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400">
+                    Street
+                  </dt>
+                  <dd class="mt-1 text-sm font-medium text-gray-900 dark:text-white">
+                    {{ display(profile.address) }}
+                  </dd>
+                </div>
+              </dl>
             </div>
-            <div>
-              <dt class="text-xs font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400">
-                City / State
-              </dt>
-              <dd class="mt-1 text-sm font-medium text-gray-900 dark:text-white">
-                {{
-                  [display(profile.city), display(profile.state)]
-                    .filter((x) => x !== "—")
-                    .join(", ") || "—"
-                }}
-              </dd>
+            <div class="space-y-4 border-b border-gray-100 pb-6 dark:border-gray-800">
+              <dl class="grid gap-4 sm:grid-cols-3">
+                <div>
+                  <dt class="text-xs font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400">
+                    City
+                  </dt>
+                  <dd class="mt-1 text-sm font-medium text-gray-900 dark:text-white">
+                    {{ display(profile.city) }}
+                  </dd>
+                </div>
+                <div>
+                  <dt class="text-xs font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400">
+                    State
+                  </dt>
+                  <dd class="mt-1 text-sm font-medium text-gray-900 dark:text-white">
+                    {{ display(profile.state) }}
+                  </dd>
+                </div>
+                <div>
+                  <dt class="text-xs font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400">
+                    Zip
+                  </dt>
+                  <dd class="mt-1 text-sm font-medium text-gray-900 dark:text-white">
+                    {{ display(profile.zip) }}
+                  </dd>
+                </div>
+              </dl>
             </div>
-            <div>
-              <dt class="text-xs font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400">
-                Postal code
-              </dt>
-              <dd class="mt-1 text-sm font-medium text-gray-900 dark:text-white">
-                {{ display(profile.zip) }}
-              </dd>
+            <div class="space-y-4">
+              <dl>
+                <div>
+                  <dt class="text-xs font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400">
+                    Country
+                  </dt>
+                  <dd class="mt-1 text-sm font-medium text-gray-900 dark:text-white">
+                    {{ display(profile.region) }}
+                  </dd>
+                </div>
+              </dl>
             </div>
-            <div>
-              <dt class="text-xs font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400">
-                Region
-              </dt>
-              <dd class="mt-1 text-sm font-medium text-gray-900 dark:text-white">
-                {{ display(profile.region) }}
-              </dd>
-            </div>
-          </dl>
+          </div>
         </section>
       </div>
 
@@ -356,40 +469,48 @@ const profileLocationLine = computed(() => {
         <h3 class="mb-5 border-b border-gray-100 pb-3 text-lg font-semibold text-gray-900 dark:border-gray-800 dark:text-white">
           Employment
         </h3>
-        <dl class="grid gap-4 sm:grid-cols-2">
-          <div class="sm:col-span-2">
-            <dt class="text-xs font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400">
-              Employment type
-            </dt>
-            <dd class="mt-1 text-sm font-medium text-gray-900 dark:text-white">
-              {{ display(profile.employee_type) }}
-            </dd>
+        <div class="space-y-8">
+          <div class="space-y-4 border-b border-gray-100 pb-6 dark:border-gray-800">
+            <dl class="grid gap-4 sm:grid-cols-2">
+              <div class="sm:col-span-2">
+                <dt class="text-xs font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400">
+                  Employment type
+                </dt>
+                <dd class="mt-1 text-sm font-medium text-gray-900 dark:text-white">
+                  {{ display(profile.employee_type) }}
+                </dd>
+              </div>
+              <div class="sm:col-span-2">
+                <dt class="text-xs font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400">
+                  Position
+                </dt>
+                <dd class="mt-1 text-sm font-medium text-gray-900 dark:text-white">
+                  {{ display(profile.job_position) }}
+                </dd>
+              </div>
+            </dl>
           </div>
-          <div class="sm:col-span-2">
-            <dt class="text-xs font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400">
-              Position
-            </dt>
-            <dd class="mt-1 text-sm font-medium text-gray-900 dark:text-white">
-              {{ display(profile.job_position) }}
-            </dd>
+          <div class="space-y-4">
+            <dl class="grid gap-4 sm:grid-cols-2">
+              <div>
+                <dt class="text-xs font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400">
+                  Hire date
+                </dt>
+                <dd class="mt-1 text-sm font-medium text-gray-900 dark:text-white">
+                  {{ formatDateUs(profile.hire_date) }}
+                </dd>
+              </div>
+              <div>
+                <dt class="text-xs font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400">
+                  Termination date
+                </dt>
+                <dd class="mt-1 text-sm font-medium text-gray-900 dark:text-white">
+                  {{ formatDateUs(profile.terminate_date) }}
+                </dd>
+              </div>
+            </dl>
           </div>
-          <div>
-            <dt class="text-xs font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400">
-              Hire date
-            </dt>
-            <dd class="mt-1 text-sm font-medium text-gray-900 dark:text-white">
-              {{ formatDate(profile.hire_date) }}
-            </dd>
-          </div>
-          <div>
-            <dt class="text-xs font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400">
-              Termination date
-            </dt>
-            <dd class="mt-1 text-sm font-medium text-gray-900 dark:text-white">
-              {{ formatDate(profile.terminate_date) }}
-            </dd>
-          </div>
-        </dl>
+        </div>
       </section>
     </div>
 

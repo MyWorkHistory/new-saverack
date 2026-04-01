@@ -1,5 +1,5 @@
 <script setup>
-import { computed, watch } from "vue";
+import { computed, onUnmounted, ref, watch } from "vue";
 import {
   JOB_POSITION_OPTIONS,
   JOB_POSITION_VALUES,
@@ -34,10 +34,92 @@ const props = defineProps({
   form: { type: Object, required: true },
   roles: { type: Array, default: () => [] },
   isEdit: { type: Boolean, default: false },
+  userId: { type: String, default: "" },
+  avatarUrl: { type: String, default: "" },
   saving: { type: Boolean, default: false },
   firstError: { type: Function, required: true },
   clearFieldError: { type: Function, required: true },
   toggleRole: { type: Function, required: true },
+  uploadAvatar: { type: Function, default: null },
+  deleteAvatar: { type: Function, default: null },
+});
+
+const pendingAvatarFile = defineModel("pendingAvatarFile", {
+  type: Object,
+  default: null,
+});
+
+const avatarInputRef = ref(null);
+const localPreviewObjectUrl = ref("");
+
+function formInitials(name) {
+  if (!name || typeof name !== "string") return "?";
+  const parts = name.trim().split(/\s+/).slice(0, 2);
+  return parts.map((p) => p[0]?.toUpperCase() ?? "").join("") || "?";
+}
+
+const avatarDisplayUrl = computed(() => {
+  if (localPreviewObjectUrl.value) {
+    return localPreviewObjectUrl.value;
+  }
+  return props.avatarUrl || "";
+});
+
+function openAvatarPicker() {
+  avatarInputRef.value?.click();
+}
+
+async function onAvatarInputChange(e) {
+  const input = e.target;
+  const file = input.files?.[0];
+  input.value = "";
+  if (!file) return;
+  if (props.isEdit && props.userId && props.uploadAvatar) {
+    try {
+      await props.uploadAvatar(file);
+    } catch {
+      /* errors surfaced by caller / API */
+    }
+    return;
+  }
+  if (localPreviewObjectUrl.value) {
+    URL.revokeObjectURL(localPreviewObjectUrl.value);
+  }
+  localPreviewObjectUrl.value = URL.createObjectURL(file);
+  pendingAvatarFile.value = file;
+}
+
+async function onRemoveAvatar() {
+  if (localPreviewObjectUrl.value) {
+    URL.revokeObjectURL(localPreviewObjectUrl.value);
+    localPreviewObjectUrl.value = "";
+  }
+  if (props.isEdit && props.userId && props.deleteAvatar) {
+    try {
+      await props.deleteAvatar();
+    } catch {
+      /* errors surfaced by caller */
+    }
+    return;
+  }
+  pendingAvatarFile.value = null;
+}
+
+watch(
+  () => pendingAvatarFile.value,
+  (file) => {
+    if (file) return;
+    if (localPreviewObjectUrl.value) {
+      URL.revokeObjectURL(localPreviewObjectUrl.value);
+      localPreviewObjectUrl.value = "";
+    }
+  },
+);
+
+onUnmounted(() => {
+  if (localPreviewObjectUrl.value) {
+    URL.revokeObjectURL(localPreviewObjectUrl.value);
+  }
 });
 
 const employmentOptions = computed(() => {
@@ -93,6 +175,51 @@ watch(
       <h3 class="text-sm font-semibold text-gray-900 dark:text-white">
         Account
       </h3>
+
+      <div class="flex flex-wrap items-center gap-4">
+        <button
+          type="button"
+          class="relative shrink-0 focus:outline-none focus:ring-2 focus:ring-brand-500/40 rounded-full"
+          @click="openAvatarPicker"
+        >
+          <img
+            v-if="avatarDisplayUrl"
+            :src="avatarDisplayUrl"
+            alt=""
+            class="h-20 w-20 rounded-full object-cover ring-2 ring-gray-200 dark:ring-gray-700"
+          />
+          <span
+            v-else
+            class="flex h-20 w-20 items-center justify-center rounded-full bg-gray-100 text-lg font-semibold text-gray-600 ring-2 ring-gray-200 dark:bg-gray-800 dark:text-gray-300 dark:ring-gray-700"
+          >
+            {{ formInitials(form.name) }}
+          </span>
+        </button>
+        <div class="flex flex-col gap-2">
+          <input
+            ref="avatarInputRef"
+            type="file"
+            accept="image/jpeg,image/png,image/webp"
+            class="hidden"
+            @change="onAvatarInputChange"
+          />
+          <button
+            type="button"
+            class="rounded-lg border border-gray-300 bg-white px-3 py-2 text-xs font-medium text-gray-700 hover:bg-gray-50 dark:border-gray-600 dark:bg-gray-900 dark:text-gray-200 dark:hover:bg-gray-800"
+            @click="openAvatarPicker"
+          >
+            Choose image
+          </button>
+          <button
+            v-if="avatarDisplayUrl"
+            type="button"
+            class="rounded-lg px-3 py-2 text-xs font-medium text-gray-600 hover:text-red-600 dark:text-gray-400 dark:hover:text-red-400"
+            @click="onRemoveAvatar"
+          >
+            Remove
+          </button>
+        </div>
+      </div>
 
       <div>
         <label
@@ -347,7 +474,7 @@ watch(
         <div>
           <label
             class="mb-1 block text-xs font-medium text-gray-500 dark:text-gray-400"
-            >Region</label
+            >Country</label
           >
           <input
             v-model="form.region"

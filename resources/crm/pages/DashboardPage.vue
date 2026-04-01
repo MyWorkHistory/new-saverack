@@ -10,10 +10,8 @@ import UserEditModal from "../components/users/UserEditModal.vue";
 import { useToast } from "../composables/useToast";
 import { crmIsAdmin } from "../utils/crmUser";
 import { errorMessage } from "../utils/apiError";
-import {
-  formatBirthdayMonthDay,
-  formatIsoDate,
-} from "../utils/formatUserDates";
+import { formatBirthdayUs, formatIsoDate } from "../utils/formatUserDates";
+import CrmIconRowActions from "../components/common/CrmIconRowActions.vue";
 
 const crmUser = inject("crmUser", ref(null));
 const toast = useToast();
@@ -812,107 +810,103 @@ onUnmounted(() => {
         class="overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-sm dark:border-gray-800 dark:bg-gray-900"
       >
         <div class="px-4 py-5 sm:px-6">
-          <div
-            class="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between"
-          >
-            <div>
-              <h2 class="text-xl font-bold text-gray-900 dark:text-white">
-                Recent users
-              </h2>
-              <p class="mt-0.5 text-sm text-gray-500 dark:text-gray-400">
-                Latest accounts in the directory
-              </p>
-            </div>
-            <div
-              class="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-end"
-            >
-              <div class="relative min-w-0 flex-1 sm:max-w-xs">
-                <span
-                  class="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-gray-400"
-                >
-                  <svg
-                    class="h-5 w-5"
-                    fill="none"
-                    viewBox="0 0 20 20"
-                    stroke="currentColor"
-                    stroke-width="1.5"
-                  >
-                    <path
-                      stroke-linecap="round"
-                      d="M3.042 9.374c0-3.497 2.835-6.332 6.333-6.332 3.497 0 6.332 2.835 6.332 6.332 0 3.498-2.835 6.333-6.332 6.333-3.498 0-6.333-2.835-6.333-6.333zM17.208 17.205l-2.82-2.82"
-                    />
-                  </svg>
-                </span>
-                <input
-                  v-model="search"
-                  type="search"
-                  placeholder="Search..."
-                  class="h-11 w-full rounded-lg border border-gray-200 bg-gray-50 py-2.5 pl-10 pr-3 text-sm text-gray-900 placeholder:text-gray-400 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20 dark:border-gray-700 dark:bg-gray-800/50 dark:text-white dark:placeholder:text-gray-500"
-                />
-              </div>
-              <div
-                class="relative flex shrink-0 items-center"
-                data-recent-filter
-              >
-                <button
-                  type="button"
-                  class="inline-flex h-11 items-center gap-2 rounded-lg border border-gray-200 bg-white px-4 text-sm font-medium text-gray-700 shadow-sm hover:bg-gray-50 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200 dark:hover:bg-gray-700"
-                  :class="{ 'ring-2 ring-blue-500/30': recentUsersFilterOpen }"
-                  :aria-expanded="recentUsersFilterOpen"
-                  @click.stop="recentUsersFilterOpen = !recentUsersFilterOpen"
-                >
-                  <svg
-                    class="h-5 w-5 text-gray-500"
-                    fill="none"
-                    viewBox="0 0 24 24"
-                    stroke="currentColor"
-                    stroke-width="2"
-                  >
-                    <path
-                      stroke-linecap="round"
-                      stroke-linejoin="round"
-                      d="M12 6V4m0 2a2 2 0 100 4m0-4a2 2 0 110 4m-6 8a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4m6 6v10m6-2a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4"
-                    />
-                  </svg>
-                  Filter
-                </button>
-                <Transition
-                  enter-active-class="transition ease-out duration-100"
-                  enter-from-class="transform opacity-0 scale-95"
-                  enter-to-class="transform opacity-100 scale-100"
-                  leave-active-class="transition ease-in duration-75"
-                  leave-from-class="transform opacity-100 scale-100"
-                  leave-to-class="transform opacity-0 scale-95"
-                >
-                  <div
-                    v-if="recentUsersFilterOpen"
-                    class="absolute right-0 top-full z-30 mt-2 w-64 origin-top-right rounded-xl border border-gray-200 bg-white p-4 shadow-lg dark:border-gray-700 dark:bg-gray-900"
-                    @click.stop
-                  >
-                    <label
-                      class="mb-1 block text-xs font-medium text-gray-500 dark:text-gray-400"
-                      >Status</label
-                    >
-                    <select
-                      v-model="statusFilter"
-                      class="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm dark:border-gray-600 dark:bg-gray-800 dark:text-white"
-                      @change="recentUsersFilterOpen = false"
-                    >
-                      <option value="">All statuses</option>
-                      <option value="pending">Pending</option>
-                      <option value="active">Active</option>
-                      <option value="inactive">Inactive</option>
-                    </select>
-                  </div>
-                </Transition>
-              </div>
-            </div>
+          <div>
+            <h2 class="text-xl font-bold text-gray-900 dark:text-white">
+              Recent staff
+            </h2>
+            <p class="mt-0.5 text-sm text-gray-500 dark:text-gray-400">
+              Latest accounts in the directory
+            </p>
           </div>
         </div>
 
         <div
           class="border-t border-gray-100 px-4 py-4 dark:border-gray-800 sm:px-6 sm:pb-6"
         >
+          <div
+            class="mb-4 flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center sm:justify-between"
+          >
+            <div class="relative min-w-0 max-w-md flex-1">
+              <span
+                class="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-gray-400"
+              >
+                <svg
+                  class="h-5 w-5"
+                  fill="none"
+                  viewBox="0 0 20 20"
+                  stroke="currentColor"
+                  stroke-width="1.5"
+                >
+                  <path
+                    stroke-linecap="round"
+                    d="M3.042 9.374c0-3.497 2.835-6.332 6.333-6.332 3.497 0 6.332 2.835 6.332 6.332 0 3.498-2.835 6.333-6.332 6.333-3.498 0-6.333-2.835-6.333-6.333zM17.208 17.205l-2.82-2.82"
+                  />
+                </svg>
+              </span>
+              <input
+                v-model="search"
+                type="search"
+                placeholder="Search…"
+                class="h-11 w-full rounded-lg border border-gray-200 bg-gray-50 py-2.5 pl-10 pr-3 text-sm text-gray-900 placeholder:text-gray-400 focus:border-[#206ba4] focus:outline-none focus:ring-2 focus:ring-[#206ba4]/20 dark:border-gray-700 dark:bg-gray-800/50 dark:text-white dark:placeholder:text-gray-500"
+              />
+            </div>
+            <div
+              class="relative flex shrink-0 items-center"
+              data-recent-filter
+            >
+              <button
+                type="button"
+                class="inline-flex h-11 items-center gap-2 rounded-lg border border-gray-200 bg-white px-4 text-sm font-medium text-gray-700 shadow-sm hover:bg-gray-50 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200 dark:hover:bg-gray-700"
+                :class="{ 'ring-2 ring-[#206ba4]/30': recentUsersFilterOpen }"
+                :aria-expanded="recentUsersFilterOpen"
+                @click.stop="recentUsersFilterOpen = !recentUsersFilterOpen"
+              >
+                <svg
+                  class="h-5 w-5 text-gray-500"
+                  fill="none"
+                  viewBox="0 0 24 24"
+                  stroke="currentColor"
+                  stroke-width="2"
+                >
+                  <path
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                    d="M12 6V4m0 2a2 2 0 100 4m0-4a2 2 0 110 4m-6 8a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4m6 6v10m6-2a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4"
+                  />
+                </svg>
+                Filter
+              </button>
+              <Transition
+                enter-active-class="transition ease-out duration-100"
+                enter-from-class="transform opacity-0 scale-95"
+                enter-to-class="transform opacity-100 scale-100"
+                leave-active-class="transition ease-in duration-75"
+                leave-from-class="transform opacity-100 scale-100"
+                leave-to-class="transform opacity-0 scale-95"
+              >
+                <div
+                  v-if="recentUsersFilterOpen"
+                  class="absolute right-0 top-full z-30 mt-2 w-64 origin-top-right rounded-xl border border-gray-200 bg-white p-4 shadow-lg dark:border-gray-700 dark:bg-gray-900"
+                  @click.stop
+                >
+                  <label
+                    class="mb-1 block text-xs font-medium text-gray-500 dark:text-gray-400"
+                    >Status</label
+                  >
+                  <select
+                    v-model="statusFilter"
+                    class="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm dark:border-gray-600 dark:bg-gray-800 dark:text-white"
+                    @change="recentUsersFilterOpen = false"
+                  >
+                    <option value="">All statuses</option>
+                    <option value="pending">Pending</option>
+                    <option value="active">Active</option>
+                    <option value="inactive">Inactive</option>
+                  </select>
+                </div>
+              </Transition>
+            </div>
+          </div>
           <div
             class="overflow-hidden rounded-xl border border-gray-200 bg-white dark:border-gray-800 dark:bg-white/[0.03]"
           >
@@ -978,21 +972,30 @@ onUnmounted(() => {
                 </td>
                 <td class="px-5 py-4 align-middle sm:px-6">
                   <div class="flex items-center gap-3">
-                    <span
-                      class="flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-xs font-semibold"
-                      :class="avatarClassForUser(row.email)"
-                    >
-                      {{ initials(row.name) }}
+                    <span class="relative h-10 w-10 shrink-0">
+                      <img
+                        v-if="row.avatar_url"
+                        :src="row.avatar_url"
+                        alt=""
+                        class="h-10 w-10 rounded-full object-cover"
+                      />
+                      <span
+                        v-else
+                        class="flex h-10 w-10 items-center justify-center rounded-full text-xs font-semibold"
+                        :class="avatarClassForUser(row.email)"
+                      >
+                        {{ initials(row.name) }}
+                      </span>
                     </span>
                     <div class="min-w-0">
                       <RouterLink
-                        :to="`/users/${row.id}`"
+                        :to="`/staff/${row.id}`"
                         class="block truncate font-semibold text-gray-900 hover:text-blue-600 dark:text-white dark:hover:text-blue-400"
                       >
                         {{ row.name }}
                       </RouterLink>
                       <RouterLink
-                        :to="`/users/${row.id}`"
+                        :to="`/staff/${row.id}`"
                         class="mt-0.5 block truncate text-xs text-gray-500 hover:text-blue-600 dark:text-gray-400"
                       >
                         {{ row.email }}
@@ -1009,7 +1012,7 @@ onUnmounted(() => {
                 <td
                   class="whitespace-nowrap px-5 py-4 align-middle text-gray-700 sm:px-6 dark:text-gray-300"
                 >
-                  {{ formatBirthdayMonthDay(row.birthday) }}
+                  {{ formatBirthdayUs(row.birthday) }}
                 </td>
                 <td
                   class="whitespace-nowrap px-5 py-4 align-middle text-gray-700 sm:px-6 dark:text-gray-300"
@@ -1034,16 +1037,7 @@ onUnmounted(() => {
                       aria-label="Row actions"
                       @click="toggleManageMenu(row.id, $event)"
                     >
-                      <svg
-                        class="h-6 w-6"
-                        fill="currentColor"
-                        viewBox="0 0 24 24"
-                        aria-hidden="true"
-                      >
-                        <path
-                          d="M6 10.25a1.75 1.75 0 113.5 0 1.75 1.75 0 01-3.5 0zM10.25 12a1.75 1.75 0 113.5 0 1.75 1.75 0 01-3.5 0zM14.5 10.25a1.75 1.75 0 113.5 0 1.75 1.75 0 01-3.5 0z"
-                        />
-                      </svg>
+                      <CrmIconRowActions />
                     </button>
                   </div>
                 </td>

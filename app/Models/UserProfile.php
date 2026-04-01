@@ -4,9 +4,12 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Support\Facades\Storage;
 
 class UserProfile extends Model
 {
+    protected $appends = ['avatar_url'];
+
     protected $fillable = [
         'user_id',
         'phone',
@@ -88,5 +91,14 @@ class UserProfile extends Model
     public function user(): BelongsTo
     {
         return $this->belongsTo(User::class);
+    }
+
+    public function getAvatarUrlAttribute(): ?string
+    {
+        if ($this->avatar_path === null || $this->avatar_path === '') {
+            return null;
+        }
+
+        return Storage::disk('public')->url($this->avatar_path);
     }
 }

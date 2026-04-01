@@ -36,5 +36,11 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::apiResource('tasks', WebmasterTaskController::class);
     });
 
+    Route::post('users/{user}/avatar', [UserController::class, 'uploadAvatar'])
+        ->name('users.avatar.store');
+    Route::delete('users/{user}/avatar', [UserController::class, 'destroyAvatar'])
+        ->name('users.avatar.destroy');
+    Route::patch('users/bulk', [UserController::class, 'bulkUpdate'])
+        ->name('users.bulk-update');
     Route::apiResource('users', UserController::class);
 });

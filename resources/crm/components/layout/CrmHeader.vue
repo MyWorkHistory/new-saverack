@@ -382,11 +382,20 @@ onUnmounted(() => {
                 menuOpen = !menuOpen;
               "
             >
-              <span
-                class="flex h-11 w-11 shrink-0 items-center justify-center rounded-full text-sm font-bold"
-                :class="avatarClass(user.email)"
-              >
-                {{ initials(user.name) }}
+              <span class="relative h-11 w-11 shrink-0">
+                <img
+                  v-if="user.profile?.avatar_url"
+                  :src="user.profile.avatar_url"
+                  alt=""
+                  class="h-11 w-11 rounded-full object-cover"
+                />
+                <span
+                  v-else
+                  class="flex h-11 w-11 items-center justify-center rounded-full text-sm font-bold"
+                  :class="avatarClass(user.email)"
+                >
+                  {{ initials(user.name) }}
+                </span>
               </span>
               <span
                 class="hidden max-w-[7rem] truncate text-sm font-medium text-gray-800 dark:text-white/90 lg:inline"
@@ -449,7 +458,7 @@ onUnmounted(() => {
                 </li>
                 <li v-else>
                   <RouterLink
-                    :to="`/users/${user.id}`"
+                    :to="`/staff/${user.id}`"
                     class="flex items-center gap-3 px-4 py-2.5 text-sm font-medium text-gray-700 hover:bg-gray-50 dark:text-gray-300 dark:hover:bg-white/5"
                     @click="closeMenu"
                   >

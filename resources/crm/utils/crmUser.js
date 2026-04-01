@@ -1,3 +1,4 @@
+/** Role `name` values that mean “administrator” (prod: `admin`, often paired with `staff`). */
 const ADMIN_ROLE_NAMES = new Set([
   "admin",
   "administrator",

@@ -60,8 +60,8 @@ class User extends Authenticatable
     }
 
     /**
-     * System administrators (full CRM user management). Matches common role names;
-     * users may have both this and "staff" without losing admin rights.
+     * Full CRM user management (see UserPolicy). SaveRack uses roles named `admin` and `staff`;
+     * anyone with the `admin` role qualifies, including accounts that also have `staff`.
      */
     public function isAdministrator(): bool
     {

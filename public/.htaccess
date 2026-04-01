@@ -5,6 +5,9 @@
 
     RewriteEngine On
 
+    # Serve Laravel first so / is not a cached static public/index.html (SPA updates apply).
+    DirectoryIndex index.php
+
     # Handle Authorization Header
     RewriteCond %{HTTP:Authorization} .
     RewriteRule .* - [E=HTTP_AUTHORIZATION:%{HTTP:Authorization}]

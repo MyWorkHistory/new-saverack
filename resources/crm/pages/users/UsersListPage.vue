@@ -21,6 +21,12 @@ const deleteTarget = ref(null);
 const deleteBusy = ref(false);
 const deleteError = ref("");
 const manageOpenId = ref(null);
+/** Viewport-fixed position for teleported row menu (escapes overflow-x-auto). */
+const manageMenuRect = ref({ top: 0, left: 0 });
+
+const manageMenuUser = computed(() =>
+  rows.value.find((u) => u.id === manageOpenId.value) ?? null,
+);
 const filterOpen = ref(false);
 const addDrawerOpen = ref(false);
 const selectedIds = ref([]);
@@ -277,9 +283,42 @@ const confirmDelete = async () => {
   }
 };
 
+const MENU_W = 160;
+const MENU_H = 100;
+
+function placeManageMenu(anchorEl) {
+  if (!(anchorEl instanceof HTMLElement)) return;
+  const r = anchorEl.getBoundingClientRect();
+  let top = r.bottom + 4;
+  let left = r.right - MENU_W;
+  left = Math.max(8, Math.min(left, window.innerWidth - MENU_W - 8));
+  if (top + MENU_H > window.innerHeight - 8) {
+    top = Math.max(8, r.top - MENU_H - 4);
+  }
+  manageMenuRect.value = { top, left };
+}
+
+function closeManageMenu() {
+  manageOpenId.value = null;
+}
+
+function onWindowScrollOrResize() {
+  if (manageOpenId.value !== null) {
+    closeManageMenu();
+  }
+}
+
 const toggleManageMenu = (userId, e) => {
   e.stopPropagation();
-  manageOpenId.value = manageOpenId.value === userId ? null : userId;
+  if (manageOpenId.value === userId) {
+    closeManageMenu();
+    return;
+  }
+  manageOpenId.value = userId;
+  const btn = e.currentTarget;
+  if (btn instanceof HTMLElement) {
+    placeManageMenu(btn);
+  }
 };
 
 function toggleSelectAll(ev) {
@@ -310,6 +349,8 @@ function onDocClick(e) {
 
 onMounted(async () => {
   document.addEventListener("click", onDocClick);
+  window.addEventListener("scroll", onWindowScrollOrResize, true);
+  window.addEventListener("resize", onWindowScrollOrResize);
   await fetchMe();
   await fetchRoles();
   await fetchUsers();
@@ -317,6 +358,8 @@ onMounted(async () => {
 
 onUnmounted(() => {
   document.removeEventListener("click", onDocClick);
+  window.removeEventListener("scroll", onWindowScrollOrResize, true);
+  window.removeEventListener("resize", onWindowScrollOrResize);
   clearTimeout(searchDebounce);
 });
 </script>
@@ -654,40 +697,6 @@ onUnmounted(() => {
                       />
                     </svg>
                   </button>
-                  <Transition
-                    enter-active-class="transition ease-out duration-100"
-                    enter-from-class="transform opacity-0 scale-95"
-                    enter-to-class="transform opacity-100 scale-100"
-                    leave-active-class="transition ease-in duration-75"
-                    leave-from-class="transform opacity-100 scale-100"
-                    leave-to-class="transform opacity-0 scale-95"
-                  >
-                    <div
-                      v-if="manageOpenId === user.id"
-                      class="absolute right-0 top-full z-20 mt-1 w-40 overflow-hidden rounded-xl border border-gray-200 bg-white py-1 shadow-lg ring-1 ring-black/5 dark:border-gray-700 dark:bg-gray-900 dark:ring-white/10"
-                      data-row-actions
-                      role="menu"
-                      @click.stop
-                    >
-                      <RouterLink
-                        :to="`/users/${user.id}/edit`"
-                        class="flex w-full items-center px-4 py-2.5 text-left text-sm font-medium text-gray-800 no-underline transition hover:bg-gray-50 dark:text-gray-200 dark:hover:bg-white/5"
-                        role="menuitem"
-                        @click="manageOpenId = null"
-                      >
-                        Edit
-                      </RouterLink>
-                      <button
-                        v-if="canDeleteRow(user)"
-                        type="button"
-                        class="flex w-full items-center border-t border-gray-100 px-4 py-2.5 text-left text-sm font-medium text-red-600 transition hover:bg-red-50 dark:border-gray-800 dark:text-red-400 dark:hover:bg-red-950/25"
-                        role="menuitem"
-                        @click="openDeleteModal(user)"
-                      >
-                        Delete
-                      </button>
-                    </div>
-                  </Transition>
                 </div>
               </td>
             </tr>
@@ -800,5 +809,46 @@ onUnmounted(() => {
       @close="closeDeleteModal"
       @confirm="confirmDelete"
     />
+
+    <Teleport to="body">
+      <Transition
+        enter-active-class="transition ease-out duration-100"
+        enter-from-class="transform opacity-0 scale-95"
+        enter-to-class="transform opacity-100 scale-100"
+        leave-active-class="transition ease-in duration-75"
+        leave-from-class="transform opacity-100 scale-100"
+        leave-to-class="transform opacity-0 scale-95"
+      >
+        <div
+          v-if="manageMenuUser"
+          data-row-actions
+          class="fixed z-[300] w-40 overflow-hidden rounded-xl border border-gray-200 bg-white py-1 shadow-lg ring-1 ring-black/5 dark:border-gray-700 dark:bg-gray-900 dark:ring-white/10"
+          role="menu"
+          :style="{
+            top: `${manageMenuRect.top}px`,
+            left: `${manageMenuRect.left}px`,
+          }"
+          @click.stop
+        >
+          <RouterLink
+            :to="`/users/${manageMenuUser.id}/edit`"
+            class="flex w-full items-center px-4 py-2.5 text-left text-sm font-medium text-gray-800 no-underline transition hover:bg-gray-50 dark:text-gray-200 dark:hover:bg-white/5"
+            role="menuitem"
+            @click="closeManageMenu"
+          >
+            Edit
+          </RouterLink>
+          <button
+            v-if="canDeleteRow(manageMenuUser)"
+            type="button"
+            class="flex w-full items-center border-t border-gray-100 px-4 py-2.5 text-left text-sm font-medium text-red-600 transition hover:bg-red-50 dark:border-gray-800 dark:text-red-400 dark:hover:bg-red-950/25"
+            role="menuitem"
+            @click="openDeleteModal(manageMenuUser)"
+          >
+            Delete
+          </button>
+        </div>
+      </Transition>
+    </Teleport>
   </div>
 </template>

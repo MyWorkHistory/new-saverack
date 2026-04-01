@@ -110,7 +110,7 @@ function onBackdropClick() {
     <Transition name="drawer-fade">
       <div
         v-if="open"
-        class="fixed inset-0 z-[200] flex justify-end"
+        class="fixed inset-0 z-[200] flex h-[100dvh] max-h-[100dvh] justify-end overflow-hidden"
         aria-modal="true"
         role="dialog"
       >
@@ -152,7 +152,9 @@ function onBackdropClick() {
               </button>
             </header>
 
-            <div class="min-h-0 flex-1 overflow-y-auto px-5 py-4">
+            <div
+              class="min-h-0 flex-1 overflow-y-auto overflow-x-hidden overscroll-y-contain px-5 py-4 [scrollbar-gutter:stable]"
+            >
               <p
                 v-if="errorMsg"
                 class="mb-4 text-sm text-red-600 dark:text-red-400"
@@ -269,7 +271,7 @@ function onBackdropClick() {
             </div>
 
             <footer
-              class="flex shrink-0 gap-3 border-t border-gray-200 bg-gray-50/80 px-5 py-4 dark:border-gray-800 dark:bg-gray-900/80"
+              class="flex shrink-0 gap-3 border-t border-gray-200 bg-gray-50/80 px-5 py-4 pb-[max(1rem,env(safe-area-inset-bottom,0px))] dark:border-gray-800 dark:bg-gray-900/80"
             >
               <button
                 type="submit"

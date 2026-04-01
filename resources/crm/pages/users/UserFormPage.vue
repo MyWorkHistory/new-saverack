@@ -57,10 +57,10 @@ async function onSubmit() {
 </script>
 
 <template>
-  <div class="mx-auto max-w-2xl space-y-6">
+  <div class="mx-auto max-w-4xl space-y-6">
     <PageHeader
       :title="title"
-      subtitle="Account details and role assignment"
+      subtitle="Account, profile, and roles — all saved to the user record"
     />
 
     <p v-if="errorMsg" class="text-sm text-red-600 dark:text-red-400">

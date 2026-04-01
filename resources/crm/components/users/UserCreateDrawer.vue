@@ -61,7 +61,7 @@ function onBackdropClick() {
     <Transition name="drawer-fade">
       <div
         v-if="open"
-        class="fixed inset-0 z-[200] flex justify-end"
+        class="fixed inset-0 z-[200] flex h-[100dvh] max-h-[100dvh] justify-end overflow-hidden"
         aria-modal="true"
         role="dialog"
       >
@@ -72,7 +72,7 @@ function onBackdropClick() {
         />
         <Transition name="drawer-slide" appear>
           <aside
-            class="relative flex h-full w-full max-w-md flex-col border-l border-gray-200 bg-white shadow-2xl dark:border-gray-700 dark:bg-gray-900 sm:max-w-lg"
+            class="relative flex h-full max-h-full min-h-0 w-full max-w-xl flex-col overflow-hidden border-l border-gray-200 bg-white shadow-2xl dark:border-gray-700 dark:bg-gray-900 sm:max-w-2xl"
           >
             <header
               class="flex shrink-0 items-center justify-between border-b border-gray-200 px-5 py-4 dark:border-gray-800"
@@ -134,7 +134,7 @@ function onBackdropClick() {
 
             <footer
               v-if="!loading"
-              class="flex shrink-0 gap-3 border-t border-gray-200 bg-gray-50/80 px-5 py-4 dark:border-gray-800 dark:bg-gray-900/80"
+              class="flex shrink-0 gap-3 border-t border-gray-200 bg-gray-50/80 px-5 py-4 pb-[max(1rem,env(safe-area-inset-bottom,0px))] dark:border-gray-800 dark:bg-gray-900/80"
             >
               <button
                 type="submit"

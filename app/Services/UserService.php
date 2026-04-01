@@ -9,6 +9,22 @@ use Illuminate\Support\Facades\Hash;
 
 class UserService
 {
+    /** Request keys stored on {@see \App\Models\UserProfile}. */
+    private const PROFILE_INPUT_KEYS = [
+        'phone',
+        'personal_email',
+        'birthday',
+        'address',
+        'city',
+        'state',
+        'zip',
+        'region',
+        'employee_type',
+        'hire_date',
+        'terminate_date',
+        'bio',
+    ];
+
     /** @var ActivityLogService */
     protected $activityLog;
 
@@ -59,19 +75,19 @@ class UserService
     {
         return DB::transaction(function () use ($data, $actor) {
             $roleIds = $data['role_ids'] ?? [];
-            $phone = $data['phone'] ?? null;
-            unset($data['role_ids'], $data['phone']);
+            unset($data['role_ids']);
+            $profileData = $this->extractProfileInput($data);
             if (! empty($data['password'])) {
                 $data['password'] = Hash::make($data['password']);
             }
             $user = User::create($data);
             $user->roles()->sync($roleIds);
-            $user->profile()->updateOrCreate(
-                ['user_id' => $user->id],
-                array_filter(['phone' => $phone], function ($v) {
-                    return $v !== null && $v !== '';
-                })
-            );
+            if ($profileData !== []) {
+                $user->profile()->updateOrCreate(
+                    ['user_id' => $user->id],
+                    $profileData
+                );
+            }
             $user->load('roles');
             if ($actor) {
                 $this->activityLog->log($actor, 'user.created', $user, 'User created', ['email' => $user->email]);
@@ -85,8 +101,8 @@ class UserService
     {
         return DB::transaction(function () use ($user, $data, $actor) {
             $roleIds = $data['role_ids'] ?? null;
-            $phone = $data['phone'] ?? null;
-            unset($data['role_ids'], $data['phone']);
+            unset($data['role_ids']);
+            $profileData = $this->extractProfileInput($data);
             if (empty($data['password'])) {
                 unset($data['password']);
             } elseif (! empty($data['password'])) {
@@ -96,10 +112,10 @@ class UserService
             if (is_array($roleIds)) {
                 $user->roles()->sync($roleIds);
             }
-            if ($phone !== null) {
+            if ($profileData !== []) {
                 $user->profile()->updateOrCreate(
                     ['user_id' => $user->id],
-                    ['phone' => $phone]
+                    $profileData
                 );
             }
             if ($actor) {
@@ -108,6 +124,27 @@ class UserService
 
             return $user->refresh()->load(['roles', 'profile']);
         });
+    }
+
+    /**
+     * Pull profile columns off $data (validated request body).
+     *
+     * @param  array<string, mixed>  $data
+     * @return array<string, mixed>
+     */
+    private function extractProfileInput(array &$data): array
+    {
+        $out = [];
+        foreach (self::PROFILE_INPUT_KEYS as $key) {
+            if (! array_key_exists($key, $data)) {
+                continue;
+            }
+            $value = $data[$key];
+            unset($data[$key]);
+            $out[$key] = ($value === '' || $value === null) ? null : $value;
+        }
+
+        return $out;
     }
 
     public function delete(User $user, ?User $actor = null): void

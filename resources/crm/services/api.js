@@ -1,15 +1,23 @@
 import axios from "axios";
 
-/** Same-origin /api when the app is at / or under a subpath (e.g. /project/public/tickets-app/...) */
+/**
+ * Same-origin API root.
+ * Never derive from `location.pathname` — Vue routes like `/users/5/edit` produced
+ * `/users/5/api` and broke auth and user loads.
+ *
+ * `/tickets-app/` build: assets stay under `/tickets-app/` but Laravel API stays at `/api`.
+ */
 function resolveApiBase() {
-  const p = location.pathname;
-  const mark = "/tickets-app";
-  const i = p.indexOf(mark);
-  if (i !== -1) {
-    return p.slice(0, i) + "/api";
+  const raw = import.meta.env.BASE_URL || "/";
+  let normalized = raw.replace(/\/$/, "");
+  if (normalized === "") {
+    normalized = "/";
   }
-  const dir = p.replace(/\/[^/]*$/, "") || "";
-  return dir + "/api";
+  if (normalized === "/tickets-app") {
+    return "/api";
+  }
+  const prefix = normalized === "/" ? "" : normalized;
+  return `${prefix}/api`;
 }
 
 const api = axios.create({

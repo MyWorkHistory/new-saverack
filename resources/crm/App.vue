@@ -64,7 +64,10 @@ const logout = async () => {
 <template>
   <div class="min-h-screen">
     <template v-if="!showShell">
-      <router-view @refresh-user="loadMe" />
+      <router-view
+        :key="route.fullPath"
+        @refresh-user="loadMe"
+      />
     </template>
 
     <div
@@ -79,7 +82,10 @@ const logout = async () => {
       :user="me"
       @logout="logout"
     >
-      <router-view @refresh-user="loadMe" />
+      <router-view
+        :key="route.fullPath"
+        @refresh-user="loadMe"
+      />
     </CrmAdminShell>
 
     <div

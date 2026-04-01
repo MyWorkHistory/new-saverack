@@ -74,7 +74,7 @@ class UserService
     public function create(array $data, ?User $actor = null): User
     {
         return DB::transaction(function () use ($data, $actor) {
-            $roleIds = $data['role_ids'] ?? [];
+            $roleIds = array_values(array_unique(array_map('intval', $data['role_ids'] ?? [])));
             unset($data['role_ids']);
             $profileData = $this->extractProfileInput($data);
             if (! empty($data['password'])) {
@@ -100,7 +100,9 @@ class UserService
     public function update(User $user, array $data, ?User $actor = null): User
     {
         return DB::transaction(function () use ($user, $data, $actor) {
-            $roleIds = $data['role_ids'] ?? null;
+            $roleIds = isset($data['role_ids']) && is_array($data['role_ids'])
+                ? array_values(array_unique(array_map('intval', $data['role_ids'])))
+                : null;
             unset($data['role_ids']);
             $profileData = $this->extractProfileInput($data);
             if (empty($data['password'])) {

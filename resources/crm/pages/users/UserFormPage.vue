@@ -1,6 +1,6 @@
 <script setup>
 import { computed, onMounted } from "vue";
-import { useRoute, useRouter } from "vue-router";
+import { RouterLink, useRoute, useRouter } from "vue-router";
 import PageHeader from "../../components/common/PageHeader.vue";
 import CrmLoadingSpinner from "../../components/common/CrmLoadingSpinner.vue";
 import UserFormFields from "../../components/users/UserFormFields.vue";
@@ -59,10 +59,19 @@ async function onSubmit() {
 
 <template>
   <div class="mx-auto max-w-4xl space-y-6">
-    <PageHeader
-      :title="title"
-      subtitle="Account, profile, and roles — all saved to the user record"
-    />
+    <div class="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+      <PageHeader
+        :title="title"
+        subtitle="Account, profile, and roles — all saved to the user record"
+      />
+      <RouterLink
+        v-if="isEdit && userId"
+        :to="`/users/${userId}`"
+        class="inline-flex shrink-0 items-center justify-center rounded-xl border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 dark:border-gray-600 dark:bg-gray-900 dark:text-gray-200 dark:hover:bg-gray-800"
+      >
+        View profile
+      </RouterLink>
+    </div>
 
     <p v-if="errorMsg" class="text-sm text-red-600 dark:text-red-400">
       {{ errorMsg }}

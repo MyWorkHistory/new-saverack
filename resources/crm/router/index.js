@@ -8,6 +8,7 @@ import ResetPasswordPage from "../pages/auth/ResetPasswordPage.vue";
 import DashboardPage from "../pages/DashboardPage.vue";
 import UsersListPage from "../pages/users/UsersListPage.vue";
 import UserFormPage from "../pages/users/UserFormPage.vue";
+import UserDetailPage from "../pages/users/UserDetailPage.vue";
 import WebmasterTasksPage from "../pages/webmaster/WebmasterTasksPage.vue";
 
 const routes = [
@@ -30,6 +31,7 @@ const routes = [
   { path: "/users/create", name: "users-create", component: UserFormPage },
   { path: "/users/new", redirect: "/users/create" },
   { path: "/users/:id/edit", name: "users-edit", component: UserFormPage, props: true },
+  { path: "/users/:id", name: "users-detail", component: UserDetailPage, props: true },
   { path: "/webmaster", name: "webmaster", component: WebmasterTasksPage },
   // Tickets UI removed; old links go to dashboard
   { path: "/tickets/board", redirect: "/dashboard" },

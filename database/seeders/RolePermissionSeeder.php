@@ -46,10 +46,11 @@ class RolePermissionSeeder extends Seeder
         );
 
         $admin->permissions()->sync($permissions->pluck('id'));
-        // Staff: no users.* — user accounts are admin/CRM owner only.
+        // Staff: read-only user directory (users.view); no create/update/delete.
         $staff->permissions()->sync(
             $permissions->whereIn('key', [
                 'dashboard.view',
+                'users.view',
                 'webmaster.view',
                 'webmaster.create',
                 'webmaster.update',

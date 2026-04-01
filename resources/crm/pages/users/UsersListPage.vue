@@ -696,31 +696,17 @@ onUnmounted(() => {
                   </span>
                   <div class="min-w-0">
                     <RouterLink
-                      v-if="canUpdateUsers"
-                      :to="`/users/${user.id}/edit`"
+                      :to="`/users/${user.id}`"
                       class="block truncate font-semibold text-gray-900 hover:text-blue-600 dark:text-white dark:hover:text-blue-400"
                     >
                       {{ user.name }}
                     </RouterLink>
-                    <span
-                      v-else
-                      class="block truncate font-semibold text-gray-900 dark:text-white"
-                    >
-                      {{ user.name }}
-                    </span>
                     <RouterLink
-                      v-if="canUpdateUsers"
-                      :to="`/users/${user.id}/edit`"
+                      :to="`/users/${user.id}`"
                       class="mt-0.5 block truncate text-xs text-gray-500 hover:text-blue-600 dark:text-gray-400"
                     >
                       {{ user.email }}
                     </RouterLink>
-                    <span
-                      v-else
-                      class="mt-0.5 block truncate text-xs text-gray-500 dark:text-gray-400"
-                    >
-                      {{ user.email }}
-                    </span>
                   </div>
                 </div>
               </td>
@@ -757,7 +743,7 @@ onUnmounted(() => {
               </td>
             </tr>
             <tr v-if="!loading && rows.length === 0">
-              <td colspan="5" class="px-4 py-12 text-center text-gray-500">
+              <td :colspan="tableColspan" class="px-4 py-12 text-center text-gray-500">
                 No users found.
               </td>
             </tr>

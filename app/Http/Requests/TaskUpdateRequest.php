@@ -18,7 +18,7 @@ class TaskUpdateRequest extends FormRequest
             'description' => ['nullable', 'string'],
             'status' => ['sometimes', 'string', 'in:pending,in_progress,review,completed'],
             'priority' => ['sometimes', 'string', 'in:low,medium,high,urgent'],
-            'account_name' => ['nullable', 'string', 'max:255'],
+            'price' => ['nullable', 'numeric', 'min:0', 'max:9999999999.99'],
             'due_date' => ['nullable', 'date'],
             'assigned_to' => ['nullable', 'integer', 'exists:users,id'],
         ];

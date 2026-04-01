@@ -24,7 +24,7 @@ const form = reactive({
   description: "",
   status: "pending",
   priority: "medium",
-  account_name: "",
+  price: "",
   due_date: "",
   assigned_to: "",
 });
@@ -34,7 +34,7 @@ function resetForm() {
   form.description = "";
   form.status = "pending";
   form.priority = "medium";
-  form.account_name = "";
+  form.price = "";
   form.due_date = "";
   form.assigned_to = "";
   errorMsg.value = "";
@@ -49,7 +49,10 @@ function applyTask(t) {
   form.description = t.description || "";
   form.status = t.status || "pending";
   form.priority = t.priority || "medium";
-  form.account_name = t.account_name || "";
+  form.price =
+    t.price !== null && t.price !== undefined && t.price !== ""
+      ? String(t.price)
+      : "";
   form.due_date = t.due_date || "";
   form.assigned_to = t.assigned_to ? String(t.assigned_to) : "";
   errorMsg.value = "";
@@ -71,12 +74,13 @@ async function onSubmit() {
   saving.value = true;
   errorMsg.value = "";
   try {
+    const priceRaw = form.price?.trim() || "";
     const payload = {
       title: form.title.trim(),
       description: form.description?.trim() || null,
       status: form.status,
       priority: form.priority,
-      account_name: form.account_name?.trim() || null,
+      price: priceRaw === "" ? null : Number(priceRaw),
       due_date: form.due_date || null,
       assigned_to: form.assigned_to ? Number(form.assigned_to) : null,
     };
@@ -192,12 +196,14 @@ function onBackdropClick() {
                 <div>
                   <label
                     class="mb-1 block text-xs font-medium text-gray-500 dark:text-gray-400"
-                    >Site / client</label
+                    >Ticket price</label
                   >
                   <input
-                    v-model="form.account_name"
-                    type="text"
-                    placeholder="e.g. Client site name"
+                    v-model="form.price"
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    placeholder="0.00"
                     class="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm dark:border-gray-600 dark:bg-gray-800 dark:text-white"
                   />
                 </div>

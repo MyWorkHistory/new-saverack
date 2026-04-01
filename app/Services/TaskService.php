@@ -39,17 +39,19 @@ class TaskService
             $query->where('assigned_to', (int) $filters['assigned_to']);
         }
 
-        if (! empty($filters['account_name'])) {
-            $term = '%' . str_replace(['%', '_'], ['\\%', '\\_'], $filters['account_name']) . '%';
-            $query->where('account_name', 'like', $term);
+        if (isset($filters['min_price']) && $filters['min_price'] !== '' && $filters['min_price'] !== null) {
+            $query->where('price', '>=', (float) $filters['min_price']);
+        }
+
+        if (isset($filters['max_price']) && $filters['max_price'] !== '' && $filters['max_price'] !== null) {
+            $query->where('price', '<=', (float) $filters['max_price']);
         }
 
         if (! empty($filters['search'])) {
             $term = '%' . str_replace(['%', '_'], ['\\%', '\\_'], $filters['search']) . '%';
             $query->where(function (Builder $q) use ($term) {
                 $q->where('title', 'like', $term)
-                    ->orWhere('description', 'like', $term)
-                    ->orWhere('account_name', 'like', $term);
+                    ->orWhere('description', 'like', $term);
             });
         }
 

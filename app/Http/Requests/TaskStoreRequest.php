@@ -19,7 +19,7 @@ class TaskStoreRequest extends FormRequest
             'description' => ['nullable', 'string'],
             'status' => ['required', 'string', 'in:pending,in_progress,review,completed'],
             'priority' => ['required', 'string', 'in:low,medium,high,urgent'],
-            'account_name' => ['nullable', 'string', 'max:255'],
+            'price' => ['nullable', 'numeric', 'min:0', 'max:9999999999.99'],
             'due_date' => ['nullable', 'date'],
             'assigned_to' => ['nullable', 'integer', 'exists:users,id'],
         ];

@@ -31,6 +31,8 @@ Route::middleware('auth:sanctum')->group(function () {
 
     Route::prefix('webmaster')->group(function () {
         Route::get('/tasks/meta', [WebmasterTaskController::class, 'meta']);
+        Route::post('/tasks/{task}/comments', [WebmasterTaskController::class, 'storeComment']);
+        Route::get('/tasks/{task}/comments/{comment}/attachment', [WebmasterTaskController::class, 'downloadCommentAttachment']);
         Route::apiResource('tasks', WebmasterTaskController::class);
     });
 

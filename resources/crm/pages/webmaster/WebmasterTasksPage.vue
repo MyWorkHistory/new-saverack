@@ -1,6 +1,7 @@
 <script setup>
 import {
   computed,
+  inject,
   nextTick,
   onMounted,
   onUnmounted,
@@ -16,7 +17,9 @@ import CrmLoadingSpinner from "../../components/common/CrmLoadingSpinner.vue";
 import { useToast } from "../../composables/useToast";
 import { errorMessage } from "../../utils/apiError";
 import { useRoute, useRouter } from "vue-router";
+import { crmIsAdmin } from "../../utils/crmUser";
 
+const crmUser = inject("crmUser", ref(null));
 const toast = useToast();
 const route = useRoute();
 const router = useRouter();
@@ -45,7 +48,14 @@ const query = reactive({
   status: "",
   priority: "",
   assigned_to: "",
-  account_name: "",
+  min_price: "",
+  max_price: "",
+});
+
+const canMutateWebmasterTasks = computed(() => {
+  const u = crmUser?.value;
+  if (!u) return false;
+  return !!u.is_crm_owner || crmIsAdmin(u);
 });
 
 let searchDebounce = null;
@@ -159,7 +169,12 @@ const buildParams = () => {
   if (query.status) p.status = query.status;
   if (query.priority) p.priority = query.priority;
   if (query.assigned_to) p.assigned_to = query.assigned_to;
-  if (query.account_name) p.account_name = query.account_name;
+  if (query.min_price !== "" && query.min_price != null) {
+    p.min_price = query.min_price;
+  }
+  if (query.max_price !== "" && query.max_price != null) {
+    p.max_price = query.max_price;
+  }
   return p;
 };
 
@@ -209,7 +224,8 @@ const clearFilters = () => {
   query.status = "";
   query.priority = "";
   query.assigned_to = "";
-  query.account_name = "";
+  query.min_price = "";
+  query.max_price = "";
   query.page = 1;
   fetchTasks().finally(() => {
     searchWatchLock = false;
@@ -253,6 +269,10 @@ async function openTaskEditFromQuery() {
         ? String(raw[0])
         : null;
   if (!id) return;
+  if (!canMutateWebmasterTasks.value) {
+    router.replace({ path: "/webmaster", query: {} });
+    return;
+  }
   try {
     const { data } = await api.get(`/webmaster/tasks/${id}`);
     openEdit(data);
@@ -309,6 +329,16 @@ function descSnippet(text) {
   if (!text) return "";
   const s = String(text).trim();
   return s.length > 72 ? `${s.slice(0, 72)}…` : s;
+}
+
+function formatPrice(price) {
+  if (price == null || price === "") return null;
+  const n = Number(price);
+  if (Number.isNaN(n)) return null;
+  return new Intl.NumberFormat(undefined, {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  }).format(n);
 }
 
 function dueBadgeLabel(dueDate) {
@@ -525,17 +555,35 @@ onUnmounted(() => {
                         </option>
                       </select>
                     </div>
-                    <div>
-                      <label
-                        class="mb-1 block text-xs font-medium text-gray-500 dark:text-gray-400"
-                        >Site / client contains</label
-                      >
-                      <input
-                        v-model="query.account_name"
-                        type="text"
-                        class="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm dark:border-gray-600 dark:bg-gray-800 dark:text-white"
-                        placeholder="Filter by site name"
-                      />
+                    <div class="grid grid-cols-2 gap-2">
+                      <div>
+                        <label
+                          class="mb-1 block text-xs font-medium text-gray-500 dark:text-gray-400"
+                          >Min price</label
+                        >
+                        <input
+                          v-model="query.min_price"
+                          type="number"
+                          min="0"
+                          step="0.01"
+                          class="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm dark:border-gray-600 dark:bg-gray-800 dark:text-white"
+                          placeholder="0"
+                        />
+                      </div>
+                      <div>
+                        <label
+                          class="mb-1 block text-xs font-medium text-gray-500 dark:text-gray-400"
+                          >Max price</label
+                        >
+                        <input
+                          v-model="query.max_price"
+                          type="number"
+                          min="0"
+                          step="0.01"
+                          class="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm dark:border-gray-600 dark:bg-gray-800 dark:text-white"
+                          placeholder="Any"
+                        />
+                      </div>
                     </div>
                     <div class="grid grid-cols-2 gap-2 pt-1">
                       <button
@@ -628,6 +676,7 @@ onUnmounted(() => {
             </header>
             <draggable
               v-model="col.tasks"
+              :disabled="!canMutateWebmasterTasks"
               :group="{ name: 'webmaster-tasks', pull: true, put: true }"
               :animation="200"
               :delay="175"
@@ -693,6 +742,7 @@ onUnmounted(() => {
                               View details
                             </button>
                             <button
+                              v-if="canMutateWebmasterTasks"
                               type="button"
                               class="w-full border-t border-gray-100 px-3 py-2 text-left text-sm font-medium text-gray-800 hover:bg-gray-50 dark:border-gray-800 dark:text-gray-200 dark:hover:bg-white/5"
                               role="menuitem"
@@ -701,6 +751,7 @@ onUnmounted(() => {
                               Edit
                             </button>
                             <button
+                              v-if="canMutateWebmasterTasks"
                               type="button"
                               class="w-full border-t border-gray-100 px-3 py-2 text-left text-sm font-medium text-red-600 hover:bg-red-50 dark:border-gray-800 dark:text-red-400 dark:hover:bg-red-950/25"
                               role="menuitem"
@@ -721,10 +772,10 @@ onUnmounted(() => {
                   </p>
                   <div class="mt-3 flex flex-wrap items-center gap-2">
                     <span
-                      v-if="task.account_name"
-                      class="inline-flex max-w-full truncate rounded-md bg-gray-100 px-2 py-0.5 text-[11px] font-medium text-gray-700 dark:bg-gray-800 dark:text-gray-300"
+                      v-if="formatPrice(task.price)"
+                      class="inline-flex max-w-full truncate rounded-md bg-emerald-50 px-2 py-0.5 text-[11px] font-medium text-emerald-900 dark:bg-emerald-500/15 dark:text-emerald-200"
                     >
-                      {{ task.account_name }}
+                      {{ formatPrice(task.price) }}
                     </span>
                     <span
                       class="inline-flex rounded-full px-2 py-0.5 text-[11px] font-medium capitalize ring-1 ring-inset ring-gray-200 dark:ring-gray-600"

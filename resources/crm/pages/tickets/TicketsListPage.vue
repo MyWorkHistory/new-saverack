@@ -4,8 +4,11 @@ import { useRouter } from "vue-router";
 import api from "../../services/api";
 import PageHeader from "../../components/common/PageHeader.vue";
 import ConfirmModal from "../../components/common/ConfirmModal.vue";
+import { useToast } from "../../composables/useToast";
+import { errorMessage } from "../../utils/apiError";
 
 const router = useRouter();
+const toast = useToast();
 const loading = ref(true);
 const rows = ref([]);
 const pagination = ref({ current_page: 1, last_page: 1, total: 0 });
@@ -194,17 +197,16 @@ const saveModal = async () => {
     };
     if (editingId.value) {
       await api.patch(`/tickets/${editingId.value}`, payload);
+      toast.success("Ticket updated.");
     } else {
       await api.post("/tickets", payload);
+      toast.success("Ticket created.");
     }
     modalOpen.value = false;
     await fetchTickets();
   } catch (e) {
-    const msg = e.response?.data?.message || e.response?.data?.errors;
-    modalError.value =
-      typeof msg === "string"
-        ? msg
-        : "Could not save ticket.";
+    modalError.value = errorMessage(e, "Could not save ticket.");
+    toast.errorFrom(e, "Could not save ticket.");
   } finally {
     modalBusy.value = false;
   }
@@ -232,10 +234,11 @@ const confirmDelete = async () => {
   try {
     await api.delete(`/tickets/${t.id}`);
     deleteTarget.value = null;
+    toast.success("Ticket deleted.");
     await fetchTickets();
   } catch (e) {
-    deleteError.value =
-      e.response?.data?.message || "Could not delete ticket.";
+    deleteError.value = errorMessage(e, "Could not delete ticket.");
+    toast.errorFrom(e, "Could not delete ticket.");
   } finally {
     deleteBusy.value = false;
   }

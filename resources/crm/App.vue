@@ -1,11 +1,13 @@
 <script setup>
-import { computed, ref, watch } from "vue";
+import { computed, provide, ref, watch } from "vue";
 import { RouterLink, useRoute, useRouter } from "vue-router";
 import api from "./services/api";
 import CrmAdminShell from "./components/layout/CrmAdminShell.vue";
+import ToastStack from "./components/common/ToastStack.vue";
 import {
   clearCrmOwnerCache,
   setTicketNavFromUser,
+  setUsersNavFromUser,
   setWebmasterNavFromUser,
 } from "./router";
 
@@ -35,6 +37,7 @@ const loadMe = async () => {
     me.value = data;
     setTicketNavFromUser(data);
     setWebmasterNavFromUser(data);
+    setUsersNavFromUser(data);
   } catch (e) {
     me.value = null;
     if (e.response?.status === 401) {
@@ -124,5 +127,7 @@ const logout = async () => {
         Sign in
       </RouterLink>
     </div>
+
+    <ToastStack />
   </div>
 </template>

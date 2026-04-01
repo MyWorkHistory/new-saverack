@@ -1,6 +1,10 @@
 <script setup>
 import { reactive, ref, watch } from "vue";
 import api from "../../services/api";
+import { useToast } from "../../composables/useToast";
+import { errorMessage } from "../../utils/apiError";
+
+const toast = useToast();
 
 const props = defineProps({
   open: { type: Boolean, default: false },
@@ -78,23 +82,17 @@ async function onSubmit() {
     };
     if (props.task?.id) {
       await api.put(`/webmaster/tasks/${props.task.id}`, payload);
+      toast.success("Task saved.");
     } else {
       await api.post("/webmaster/tasks", payload);
+      toast.success("Task created.");
     }
     emit("saved");
     close();
     resetForm();
   } catch (e) {
-    const d = e.response?.data;
-    if (d?.message) {
-      errorMsg.value =
-        typeof d.message === "string" ? d.message : "Could not save task.";
-    } else if (d?.errors) {
-      const first = Object.values(d.errors)[0];
-      errorMsg.value = Array.isArray(first) ? first[0] : "Validation error.";
-    } else {
-      errorMsg.value = "Could not save task.";
-    }
+    errorMsg.value = errorMessage(e, "Could not save task.");
+    toast.errorFrom(e, "Could not save task.");
   } finally {
     saving.value = false;
   }

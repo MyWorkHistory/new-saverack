@@ -49,9 +49,13 @@ let ticketNavCache = null;
 /** Cached result of whether /auth/me allows Webmaster routes (webmaster.view or CRM owner). */
 let webmasterNavCache = null;
 
+/** Users module: per-action permissions from /auth/me (see setUsersNavFromUser). */
+let usersNavCache = null;
+
 export function clearCrmOwnerCache() {
   ticketNavCache = null;
   webmasterNavCache = null;
+  usersNavCache = null;
 }
 
 /**
@@ -80,6 +84,54 @@ export function setWebmasterNavFromUser(user) {
   const perm =
     Array.isArray(keys) && keys.includes("webmaster.view");
   webmasterNavCache = perm || !!user.is_crm_owner;
+}
+
+export function setUsersNavFromUser(user) {
+  if (!user) {
+    usersNavCache = null;
+    return;
+  }
+  if (user.is_admin || user.is_crm_owner) {
+    usersNavCache = {
+      view: true,
+      create: true,
+      update: true,
+      delete: true,
+    };
+    return;
+  }
+  const k = Array.isArray(user.permission_keys) ? user.permission_keys : [];
+  usersNavCache = {
+    view: k.includes("users.view"),
+    create: k.includes("users.create"),
+    update: k.includes("users.update"),
+    delete: k.includes("users.delete"),
+  };
+}
+
+async function ensureUsersRouteAccess(path) {
+  if (usersNavCache === null) {
+    try {
+      const { data } = await api.get("/auth/me");
+      setUsersNavFromUser(data);
+    } catch (e) {
+      if (e.response?.status === 401) {
+        localStorage.removeItem("auth_token");
+        usersNavCache = null;
+      }
+      return false;
+    }
+  }
+  if (path === "/users/create" || path === "/users/new") {
+    return usersNavCache.create === true;
+  }
+  if (/^\/users\/[^/]+\/edit$/.test(path)) {
+    return usersNavCache.update === true;
+  }
+  if (path === "/users" || path.startsWith("/users/")) {
+    return usersNavCache.view === true;
+  }
+  return true;
 }
 
 function userCanWebmaster(userLike) {
@@ -162,6 +214,16 @@ router.beforeEach(async (to) => {
 
   if (to.path === "/webmaster" || to.path.startsWith("/webmaster/")) {
     const ok = await ensureWebmasterRouteAccess();
+    if (!ok) {
+      if (!localStorage.getItem("auth_token")) {
+        return { name: "login", query: { redirect: to.fullPath } };
+      }
+      return { path: "/dashboard" };
+    }
+  }
+
+  if (to.path.startsWith("/users")) {
+    const ok = await ensureUsersRouteAccess(to.path);
     if (!ok) {
       if (!localStorage.getItem("auth_token")) {
         return { name: "login", query: { redirect: to.fullPath } };

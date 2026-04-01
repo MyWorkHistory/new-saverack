@@ -12,6 +12,10 @@ import draggable from "vuedraggable";
 import api from "../../services/api";
 import ConfirmModal from "../../components/common/ConfirmModal.vue";
 import WebmasterTaskDrawer from "../../components/webmaster/WebmasterTaskDrawer.vue";
+import { useToast } from "../../composables/useToast";
+import { errorMessage } from "../../utils/apiError";
+
+const toast = useToast();
 
 const loading = ref(true);
 const rows = ref([]);
@@ -246,10 +250,11 @@ const confirmDelete = async () => {
   try {
     await api.delete(`/webmaster/tasks/${t.id}`);
     deleteTarget.value = null;
+    toast.success("Task deleted.");
     await fetchTasks();
   } catch (e) {
-    deleteError.value =
-      e.response?.data?.message || "Could not delete task.";
+    deleteError.value = errorMessage(e, "Could not delete task.");
+    toast.errorFrom(e, "Could not delete task.");
   } finally {
     deleteBusy.value = false;
   }
@@ -291,8 +296,11 @@ async function onColumnChange(columnStatus, evt) {
     await api.put(`/webmaster/tasks/${task.id}`, { status: columnStatus });
   } catch (e) {
     task.status = prev;
-    statusUpdateError.value =
-      e.response?.data?.message || "Could not update task status.";
+    statusUpdateError.value = errorMessage(
+      e,
+      "Could not update task status.",
+    );
+    toast.errorFrom(e, "Could not update task status.");
     await fetchTasks();
   }
 }

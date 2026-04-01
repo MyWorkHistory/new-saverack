@@ -1,6 +1,7 @@
 <script setup>
 import {
   computed,
+  inject,
   onMounted,
   onUnmounted,
   reactive,
@@ -11,6 +12,31 @@ import { RouterLink } from "vue-router";
 import api from "../../services/api";
 import ConfirmModal from "../../components/common/ConfirmModal.vue";
 import UserCreateDrawer from "../../components/users/UserCreateDrawer.vue";
+import { useToast } from "../../composables/useToast";
+
+const crmUser = inject("crmUser", ref(null));
+const toast = useToast();
+
+function userHasPerm(key) {
+  const u = crmUser.value;
+  if (!u) return false;
+  if (u.is_admin || u.is_crm_owner) return true;
+  return Array.isArray(u.permission_keys) && u.permission_keys.includes(key);
+}
+
+const canCreateUsers = computed(() => userHasPerm("users.create"));
+const canUpdateUsers = computed(() => userHasPerm("users.update"));
+const canDeleteUsers = computed(() => userHasPerm("users.delete"));
+const showRowActions = computed(
+  () => canUpdateUsers.value || canDeleteUsers.value,
+);
+
+const tableColspan = computed(() => {
+  let n = 5;
+  if (!canDeleteUsers.value) n -= 1;
+  if (!showRowActions.value) n -= 1;
+  return n;
+});
 
 const loading = ref(true);
 const rows = ref([]);
@@ -249,6 +275,7 @@ const goPage = (p) => {
 };
 
 const canDeleteRow = (user) => {
+  if (!canDeleteUsers.value) return false;
   return !(currentUser.value && user.id === currentUser.value.id);
 };
 
@@ -271,6 +298,7 @@ const confirmDelete = async () => {
   try {
     await api.delete(`/users/${user.id}`);
     deleteTarget.value = null;
+    toast.success("User deleted.");
     await fetchUsers();
   } catch (e) {
     const msg =
@@ -278,6 +306,7 @@ const confirmDelete = async () => {
       e.response?.data?.error ||
       "Could not delete user.";
     deleteError.value = typeof msg === "string" ? msg : "Could not delete user.";
+    toast.errorFrom(e, "Could not delete user.");
   } finally {
     deleteBusy.value = false;
   }
@@ -366,7 +395,11 @@ onUnmounted(() => {
 
 <template>
   <div class="space-y-4">
-    <UserCreateDrawer v-model:open="addDrawerOpen" @saved="fetchUsers" />
+    <UserCreateDrawer
+      v-if="canCreateUsers"
+      v-model:open="addDrawerOpen"
+      @saved="fetchUsers"
+    />
 
     <p v-if="deleteError" class="text-sm text-red-600 dark:text-red-400">
       {{ deleteError }}
@@ -543,6 +576,7 @@ onUnmounted(() => {
             </div>
 
             <button
+              v-if="canCreateUsers"
               type="button"
               class="inline-flex h-11 shrink-0 items-center justify-center gap-2 rounded-lg bg-blue-600 px-4 text-sm font-semibold text-white shadow-sm hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 dark:focus:ring-offset-gray-900"
               @click="addDrawerOpen = true"
@@ -573,7 +607,7 @@ onUnmounted(() => {
             <tr
               class="border-b border-gray-100 bg-gray-50 dark:border-gray-800 dark:bg-gray-800/40"
             >
-              <th class="w-12 px-4 py-3">
+              <th v-if="canDeleteUsers" class="w-12 px-4 py-3">
                 <input
                   type="checkbox"
                   class="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
@@ -612,6 +646,7 @@ onUnmounted(() => {
                 Role
               </th>
               <th
+                v-if="showRowActions"
                 class="w-14 px-4 py-3 text-right text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400"
               >
                 <!-- actions -->
@@ -620,7 +655,7 @@ onUnmounted(() => {
           </thead>
           <tbody class="divide-y divide-gray-100 dark:divide-gray-800">
             <tr v-if="loading">
-              <td colspan="5" class="px-4 py-12 text-center text-gray-500">
+              <td :colspan="tableColspan" class="px-4 py-12 text-center text-gray-500">
                 Loading users…
               </td>
             </tr>
@@ -630,7 +665,7 @@ onUnmounted(() => {
               :key="user.id"
               class="bg-white hover:bg-gray-50/80 dark:bg-transparent dark:hover:bg-white/[0.02]"
             >
-              <td class="px-4 py-4 align-middle">
+              <td v-if="canDeleteUsers" class="px-4 py-4 align-middle">
                 <input
                   type="checkbox"
                   class="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
@@ -657,17 +692,31 @@ onUnmounted(() => {
                   </span>
                   <div class="min-w-0">
                     <RouterLink
+                      v-if="canUpdateUsers"
                       :to="`/users/${user.id}/edit`"
                       class="block truncate font-semibold text-gray-900 hover:text-blue-600 dark:text-white dark:hover:text-blue-400"
                     >
                       {{ user.name }}
                     </RouterLink>
+                    <span
+                      v-else
+                      class="block truncate font-semibold text-gray-900 dark:text-white"
+                    >
+                      {{ user.name }}
+                    </span>
                     <RouterLink
+                      v-if="canUpdateUsers"
                       :to="`/users/${user.id}/edit`"
                       class="mt-0.5 block truncate text-xs text-gray-500 hover:text-blue-600 dark:text-gray-400"
                     >
                       {{ user.email }}
                     </RouterLink>
+                    <span
+                      v-else
+                      class="mt-0.5 block truncate text-xs text-gray-500 dark:text-gray-400"
+                    >
+                      {{ user.email }}
+                    </span>
                   </div>
                 </div>
               </td>
@@ -676,7 +725,10 @@ onUnmounted(() => {
               >
                 {{ roleLabels(user) }}
               </td>
-              <td class="relative px-4 py-4 text-right align-middle">
+              <td
+                v-if="showRowActions"
+                class="relative px-4 py-4 text-right align-middle"
+              >
                 <div data-row-actions class="relative inline-flex justify-end">
                   <button
                     type="button"
@@ -831,6 +883,7 @@ onUnmounted(() => {
           @click.stop
         >
           <RouterLink
+            v-if="canUpdateUsers"
             :to="`/users/${manageMenuUser.id}/edit`"
             class="flex w-full items-center px-4 py-2.5 text-left text-sm font-medium text-gray-800 no-underline transition hover:bg-gray-50 dark:text-gray-200 dark:hover:bg-white/5"
             role="menuitem"
@@ -841,7 +894,12 @@ onUnmounted(() => {
           <button
             v-if="canDeleteRow(manageMenuUser)"
             type="button"
-            class="flex w-full items-center border-t border-gray-100 px-4 py-2.5 text-left text-sm font-medium text-red-600 transition hover:bg-red-50 dark:border-gray-800 dark:text-red-400 dark:hover:bg-red-950/25"
+            :class="[
+              'flex w-full items-center px-4 py-2.5 text-left text-sm font-medium text-red-600 transition hover:bg-red-50 dark:text-red-400 dark:hover:bg-red-950/25',
+              canUpdateUsers
+                ? 'border-t border-gray-100 dark:border-gray-800'
+                : '',
+            ]"
             role="menuitem"
             @click="openDeleteModal(manageMenuUser)"
           >

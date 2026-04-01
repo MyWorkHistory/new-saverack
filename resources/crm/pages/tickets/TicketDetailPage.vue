@@ -3,12 +3,15 @@ import { computed, onMounted, reactive, ref } from "vue";
 import { useRouter } from "vue-router";
 import api from "../../services/api";
 import PageHeader from "../../components/common/PageHeader.vue";
+import { useToast } from "../../composables/useToast";
+import { errorMessage } from "../../utils/apiError";
 
 const props = defineProps({
   id: { type: String, required: true },
 });
 
 const router = useRouter();
+const toast = useToast();
 const loading = ref(true);
 const ticket = ref(null);
 const meta = ref({ statuses: [], priorities: [] });
@@ -114,9 +117,11 @@ const submitComment = async () => {
     } else if (ticket.value) {
       ticket.value.comments = [data];
     }
+    toast.success("Comment added.");
     await loadTicket(true);
-  } catch {
-    error.value = "Could not post comment.";
+  } catch (e) {
+    error.value = errorMessage(e, "Could not post comment.");
+    toast.errorFrom(e, "Could not post comment.");
   } finally {
     commentBusy.value = false;
   }

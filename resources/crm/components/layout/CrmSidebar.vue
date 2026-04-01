@@ -10,10 +10,19 @@ const props = defineProps({
 
 const route = useRoute();
 
+const canViewUsers = computed(
+  () =>
+    !!props.user?.is_admin ||
+    !!props.user?.is_crm_owner ||
+    (Array.isArray(props.user?.permission_keys) &&
+      props.user.permission_keys.includes("users.view")),
+);
+
 const canViewTickets = computed(
   () =>
-    Array.isArray(props.user?.permission_keys) &&
-    props.user.permission_keys.includes("tickets.view"),
+    !!props.user?.is_crm_owner ||
+    (Array.isArray(props.user?.permission_keys) &&
+      props.user.permission_keys.includes("tickets.view")),
 );
 
 const canViewWebmaster = computed(
@@ -130,7 +139,7 @@ function iconClass(mode) {
             <span v-if="isExpanded">Dashboard</span>
           </RouterLink>
         </li>
-        <li>
+        <li v-if="canViewUsers">
           <RouterLink
             to="/users"
             :class="[navClass('users'), itemJustify()]"
@@ -178,7 +187,7 @@ function iconClass(mode) {
             <span v-if="isExpanded">Webmaster</span>
           </RouterLink>
         </li>
-        <template v-if="user.is_crm_owner">
+        <template v-if="canViewTickets">
           <li>
             <RouterLink
               to="/tickets"

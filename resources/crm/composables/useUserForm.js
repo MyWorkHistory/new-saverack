@@ -1,7 +1,9 @@
 import { reactive, ref } from "vue";
 import api from "../services/api";
+import { useToast } from "./useToast";
 
 export function useUserForm() {
+  const toast = useToast();
   const loading = ref(false);
   const saving = ref(false);
   const errorMsg = ref("");
@@ -147,14 +149,19 @@ export function useUserForm() {
           payload.password = form.password;
         }
         await api.put(`/users/${userId}`, payload);
+        toast.success("User updated successfully.");
       } else {
         payload.password = form.password;
         await api.post("/users", payload);
+        toast.success("User created successfully.");
       }
       return true;
     } catch (e) {
       if (e.response?.status === 422 && e.response.data?.errors) {
         fieldErrors.value = e.response.data.errors;
+        const first = Object.values(e.response.data.errors)[0];
+        const msg = Array.isArray(first) ? first[0] : String(first);
+        toast.error(typeof msg === "string" ? msg : "Validation failed.");
       } else {
         const msg =
           e.response?.data?.message ||
@@ -162,6 +169,7 @@ export function useUserForm() {
           "Could not save user.";
         errorMsg.value =
           typeof msg === "string" ? msg : "Could not save user.";
+        toast.errorFrom(e, "Could not save user.");
       }
       return false;
     } finally {

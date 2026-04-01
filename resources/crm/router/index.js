@@ -10,6 +10,7 @@ import UsersListPage from "../pages/users/UsersListPage.vue";
 import UserFormPage from "../pages/users/UserFormPage.vue";
 import UserDetailPage from "../pages/users/UserDetailPage.vue";
 import WebmasterTasksPage from "../pages/webmaster/WebmasterTasksPage.vue";
+import WebmasterTaskDetailPage from "../pages/webmaster/WebmasterTaskDetailPage.vue";
 
 const routes = [
   { path: "/login", name: "login", component: LoginPage, meta: { public: true } },
@@ -33,6 +34,12 @@ const routes = [
   { path: "/users/:id/edit", name: "users-edit", component: UserFormPage, props: true },
   { path: "/users/:id", name: "users-detail", component: UserDetailPage, props: true },
   { path: "/webmaster", name: "webmaster", component: WebmasterTasksPage },
+  {
+    path: "/webmaster/tasks/:id",
+    name: "webmaster-task-detail",
+    component: WebmasterTaskDetailPage,
+    props: true,
+  },
   // Tickets UI removed; old links go to dashboard
   { path: "/tickets/board", redirect: "/dashboard" },
   { path: "/tickets/:id", redirect: "/dashboard" },

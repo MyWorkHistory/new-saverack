@@ -15,8 +15,11 @@ import WebmasterTaskDrawer from "../../components/webmaster/WebmasterTaskDrawer.
 import CrmLoadingSpinner from "../../components/common/CrmLoadingSpinner.vue";
 import { useToast } from "../../composables/useToast";
 import { errorMessage } from "../../utils/apiError";
+import { useRoute, useRouter } from "vue-router";
 
 const toast = useToast();
+const route = useRoute();
+const router = useRouter();
 
 const loading = ref(true);
 const rows = ref([]);
@@ -68,6 +71,16 @@ watch(
       fetchTasks();
     }, 300);
   },
+);
+
+watch(
+  () => route.query.edit,
+  (v) => {
+    if (v) {
+      openTaskEditFromQuery();
+    }
+  },
+  { immediate: true },
 );
 
 function statusLabel(v) {
@@ -217,6 +230,37 @@ function openEdit(row) {
   editingTask.value = { ...row };
   manageOpenId.value = null;
   drawerOpen.value = true;
+}
+
+function goTaskDetail(task) {
+  manageOpenId.value = null;
+  router.push(`/webmaster/tasks/${task.id}`);
+}
+
+function onKanbanCardClick(task, e) {
+  if (e.target instanceof Element && e.target.closest("[data-kanban-card-actions]")) {
+    return;
+  }
+  goTaskDetail(task);
+}
+
+async function openTaskEditFromQuery() {
+  const raw = route.query.edit;
+  const id =
+    typeof raw === "string" && /^\d+$/.test(raw)
+      ? raw
+      : Array.isArray(raw) && raw[0] && /^\d+$/.test(String(raw[0]))
+        ? String(raw[0])
+        : null;
+  if (!id) return;
+  try {
+    const { data } = await api.get(`/webmaster/tasks/${id}`);
+    openEdit(data);
+  } catch {
+    /* drawer stays closed */
+  } finally {
+    router.replace({ path: "/webmaster", query: {} });
+  }
 }
 
 const toggleManageMenu = (id, e) => {
@@ -586,6 +630,7 @@ onUnmounted(() => {
               v-model="col.tasks"
               :group="{ name: 'webmaster-tasks', pull: true, put: true }"
               :animation="200"
+              :delay="175"
               item-key="id"
               tag="div"
               class="flex min-h-[200px] flex-1 flex-col gap-3 p-3"
@@ -595,7 +640,11 @@ onUnmounted(() => {
             >
               <template #item="{ element: task }">
                 <article
-                  class="group relative cursor-grab rounded-xl border border-gray-200 bg-white p-3.5 shadow-sm transition hover:border-blue-300 hover:shadow-md active:cursor-grabbing dark:border-gray-600 dark:bg-gray-900"
+                  class="group relative cursor-pointer rounded-xl border border-gray-200 bg-white p-3.5 shadow-sm transition hover:border-blue-300 hover:shadow-md active:cursor-grabbing dark:border-gray-600 dark:bg-gray-900"
+                  role="button"
+                  tabindex="0"
+                  @click="onKanbanCardClick(task, $event)"
+                  @keydown.enter.prevent="goTaskDetail(task)"
                 >
                   <div class="flex items-start justify-between gap-2 pr-1">
                     <h3 class="min-w-0 flex-1 text-sm font-semibold leading-snug text-gray-900 dark:text-white">
@@ -608,12 +657,12 @@ onUnmounted(() => {
                     >
                       <button
                         type="button"
-                        class="rounded-lg p-1.5 text-gray-500 transition hover:bg-gray-100 dark:hover:bg-white/10 dark:hover:text-white"
+                        class="inline-flex h-10 w-10 items-center justify-center rounded-lg border border-gray-200 bg-white text-gray-600 shadow-sm transition hover:border-gray-300 hover:bg-gray-50 hover:text-gray-900 dark:border-gray-600 dark:bg-gray-900 dark:text-gray-300 dark:hover:border-gray-500 dark:hover:bg-white/10 dark:hover:text-white"
                         :aria-expanded="manageOpenId === task.id"
                         aria-label="Task actions"
                         @click="toggleManageMenu(task.id, $event)"
                       >
-                        <svg class="h-5 w-5" fill="currentColor" viewBox="0 0 24 24">
+                        <svg class="h-6 w-6" fill="currentColor" viewBox="0 0 24 24">
                           <path
                             d="M6 10.25a1.75 1.75 0 113.5 0 1.75 1.75 0 01-3.5 0zM10.25 12a1.75 1.75 0 113.5 0 1.75 1.75 0 01-3.5 0zM14.5 10.25a1.75 1.75 0 113.5 0 1.75 1.75 0 01-3.5 0z"
                           />
@@ -629,7 +678,7 @@ onUnmounted(() => {
                       >
                         <div
                           v-if="manageOpenId === task.id"
-                          class="absolute right-0 top-full z-20 mt-1 w-36 overflow-hidden rounded-lg border border-gray-200 bg-white py-1 shadow-lg dark:border-gray-700 dark:bg-gray-900"
+                          class="absolute right-0 top-full z-20 mt-1 w-44 overflow-hidden rounded-lg border border-gray-200 bg-white py-1 shadow-lg dark:border-gray-700 dark:bg-gray-900"
                           data-kanban-card-actions
                           role="menu"
                           @click.stop
@@ -638,6 +687,14 @@ onUnmounted(() => {
                             <button
                               type="button"
                               class="w-full px-3 py-2 text-left text-sm font-medium text-gray-800 hover:bg-gray-50 dark:text-gray-200 dark:hover:bg-white/5"
+                              role="menuitem"
+                              @click="goTaskDetail(task)"
+                            >
+                              View details
+                            </button>
+                            <button
+                              type="button"
+                              class="w-full border-t border-gray-100 px-3 py-2 text-left text-sm font-medium text-gray-800 hover:bg-gray-50 dark:border-gray-800 dark:text-gray-200 dark:hover:bg-white/5"
                               role="menuitem"
                               @click="openEdit(task)"
                             >

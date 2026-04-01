@@ -2,7 +2,6 @@
 import { computed, inject, onMounted, ref } from "vue";
 import { RouterLink, useRouter } from "vue-router";
 import api from "../../services/api";
-import PageHeader from "../../components/common/PageHeader.vue";
 import CrmLoadingSpinner from "../../components/common/CrmLoadingSpinner.vue";
 import { crmIsAdmin } from "../../utils/crmUser";
 
@@ -58,6 +57,27 @@ function statusBadgeClass(status) {
   return "bg-slate-100 text-slate-700 ring-slate-500/20 dark:bg-slate-800 dark:text-slate-300";
 }
 
+const avatarPalettes = [
+  "bg-sky-100 text-sky-800 ring-sky-200 dark:bg-sky-500/20 dark:text-sky-200 dark:ring-sky-500/30",
+  "bg-violet-100 text-violet-800 ring-violet-200 dark:bg-violet-500/20 dark:text-violet-200 dark:ring-violet-500/30",
+  "bg-amber-100 text-amber-900 ring-amber-200 dark:bg-amber-500/20 dark:text-amber-200 dark:ring-amber-500/30",
+  "bg-emerald-100 text-emerald-900 ring-emerald-200 dark:bg-emerald-500/20 dark:text-emerald-200 dark:ring-emerald-500/30",
+  "bg-rose-100 text-rose-900 ring-rose-200 dark:bg-rose-500/20 dark:text-rose-200 dark:ring-rose-500/30",
+];
+
+function avatarClassForEmail(email) {
+  let h = 0;
+  const s = email || "";
+  for (let i = 0; i < s.length; i++) h = (h + s.charCodeAt(i)) % 997;
+  return avatarPalettes[h % avatarPalettes.length];
+}
+
+function initials(name) {
+  if (!name || typeof name !== "string") return "?";
+  const parts = name.trim().split(/\s+/).slice(0, 2);
+  return parts.map((p) => p[0]?.toUpperCase() ?? "").join("") || "?";
+}
+
 onMounted(async () => {
   loading.value = true;
   errorMsg.value = "";
@@ -84,35 +104,49 @@ const profile = computed(() =>
     ? user.value.profile
     : {},
 );
+
+const profileLocationLine = computed(() => {
+  const p = profile.value;
+  if (!p || typeof p !== "object") return "";
+  const city = p.city ? String(p.city).trim() : "";
+  const region = p.region ? String(p.region).trim() : "";
+  const state = p.state ? String(p.state).trim() : "";
+  const parts = [];
+  if (city) parts.push(city);
+  if (state && state !== city) parts.push(state);
+  if (region && !parts.includes(region)) parts.unshift(region);
+  return parts.filter(Boolean).join(", ");
+});
 </script>
 
 <template>
-  <div class="mx-auto max-w-4xl space-y-6">
-    <div class="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
-      <PageHeader
-        title="User profile"
-        subtitle="Read-only directory record — use Edit to change account data"
-      />
-      <div class="flex shrink-0 flex-wrap gap-2">
-        <button
-          type="button"
-          class="inline-flex items-center justify-center rounded-xl border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 dark:border-gray-600 dark:bg-gray-900 dark:text-gray-200 dark:hover:bg-gray-800"
-          @click="router.push('/users')"
-        >
-          Back to users
-        </button>
-        <button
-          v-if="canUpdateUsers && user"
-          type="button"
-          class="inline-flex items-center justify-center rounded-xl bg-blue-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-blue-700"
-          @click="router.push(`/users/${id}/edit`)"
-        >
-          Edit user
-        </button>
-      </div>
-    </div>
+  <div class="mx-auto max-w-5xl">
+    <!-- Breadcrumb (TailAdmin-style) -->
+    <nav class="mb-4 flex flex-wrap items-center gap-1.5 text-sm">
+      <RouterLink
+        to="/dashboard"
+        class="font-medium text-gray-500 transition hover:text-[#206ba4] dark:text-gray-400 dark:hover:text-blue-400"
+      >
+        Home
+      </RouterLink>
+      <span class="text-gray-400 dark:text-gray-600" aria-hidden="true">/</span>
+      <RouterLink
+        to="/users"
+        class="font-medium text-gray-500 transition hover:text-[#206ba4] dark:text-gray-400 dark:hover:text-blue-400"
+      >
+        Users
+      </RouterLink>
+      <span class="text-gray-400 dark:text-gray-600" aria-hidden="true">/</span>
+      <span class="font-medium text-gray-800 dark:text-gray-200">
+        Profile
+      </span>
+    </nav>
 
-    <div v-if="loading" class="flex justify-center py-16">
+    <h1 class="mb-6 text-2xl font-semibold text-gray-900 dark:text-white">
+      User Profile
+    </h1>
+
+    <div v-if="loading" class="flex justify-center py-20">
       <CrmLoadingSpinner message="Loading profile…" />
     </div>
 
@@ -122,170 +156,206 @@ const profile = computed(() =>
       </p>
       <RouterLink
         to="/users"
-        class="inline-block text-sm font-medium text-blue-600 hover:text-blue-700 dark:text-blue-400"
+        class="mt-2 inline-block text-sm font-medium text-[#206ba4] hover:underline dark:text-blue-400"
       >
-                ← Back to users
+        Back to directory
       </RouterLink>
     </template>
 
-    <div
-      v-else-if="user"
-      class="space-y-8 rounded-2xl border border-gray-200 bg-white p-6 shadow-sm dark:border-gray-800 dark:bg-white/[0.03]"
-    >
-      <div class="flex flex-wrap items-center gap-3 border-b border-gray-100 pb-6 dark:border-gray-800">
-        <span
-          class="inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium capitalize ring-1 ring-inset"
-          :class="statusBadgeClass(user.status)"
+    <div v-else-if="user" class="space-y-6">
+      <!-- Profile hero (TailAdmin profile top card) — single Edit control -->
+      <div
+        class="overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-sm dark:border-gray-800 dark:bg-gray-900/40"
+      >
+        <div
+          class="flex flex-col gap-6 border-b border-gray-100 p-6 dark:border-gray-800 sm:flex-row sm:items-center sm:justify-between"
         >
-          {{ user.status }}
-        </span>
-        <span class="text-sm text-gray-500 dark:text-gray-400">
-          {{ roleLabels(user.roles) }}
-        </span>
+          <div class="flex min-w-0 flex-1 items-center gap-5">
+            <span
+              class="flex h-20 w-20 shrink-0 items-center justify-center rounded-full text-xl font-bold ring-2 ring-white dark:ring-gray-900"
+              :class="avatarClassForEmail(user.email)"
+            >
+              {{ initials(user.name) }}
+            </span>
+            <div class="min-w-0">
+              <h2 class="truncate text-xl font-semibold text-gray-900 dark:text-white">
+                {{ user.name }}
+              </h2>
+              <p class="mt-1 text-sm font-medium text-gray-600 dark:text-gray-300">
+                {{ roleLabels(user.roles) }}
+              </p>
+              <p
+                v-if="profileLocationLine || user.email"
+                class="mt-1 text-sm text-gray-500 dark:text-gray-400"
+              >
+                {{ profileLocationLine || user.email }}
+              </p>
+              <div class="mt-3 flex flex-wrap items-center gap-2">
+                <span
+                  class="inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium capitalize ring-1 ring-inset"
+                  :class="statusBadgeClass(user.status)"
+                >
+                  {{ user.status }}
+                </span>
+              </div>
+            </div>
+          </div>
+          <div
+            v-if="canUpdateUsers"
+            class="flex shrink-0 flex-col gap-2 sm:items-end"
+          >
+            <button
+              type="button"
+              class="inline-flex w-full items-center justify-center rounded-lg bg-[#206ba4] px-5 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-[#1a5a8a] focus:outline-none focus:ring-2 focus:ring-[#206ba4]/40 sm:w-auto dark:hover:bg-blue-500"
+              @click="router.push(`/users/${id}/edit`)"
+            >
+              Edit
+            </button>
+          </div>
+        </div>
       </div>
 
-      <section class="space-y-4">
-        <h3 class="text-sm font-semibold text-gray-900 dark:text-white">
-          Account
-        </h3>
-        <dl class="grid gap-4 sm:grid-cols-2">
-          <div>
-            <dt class="text-xs font-medium text-gray-500 dark:text-gray-400">
-              Name
-            </dt>
-            <dd class="mt-0.5 text-sm text-gray-900 dark:text-white">
-              {{ display(user.name) }}
-            </dd>
-          </div>
-          <div>
-            <dt class="text-xs font-medium text-gray-500 dark:text-gray-400">
-              Login email
-            </dt>
-            <dd class="mt-0.5 text-sm text-gray-900 dark:text-white">
-              {{ display(user.email) }}
-            </dd>
-          </div>
-        </dl>
-      </section>
+      <!-- Two-column cards: Personal + Address -->
+      <div class="grid gap-6 lg:grid-cols-2">
+        <section
+          class="rounded-2xl border border-gray-200 bg-white p-6 shadow-sm dark:border-gray-800 dark:bg-gray-900/40"
+        >
+          <h3 class="mb-5 border-b border-gray-100 pb-3 text-lg font-semibold text-gray-900 dark:border-gray-800 dark:text-white">
+            Personal Information
+          </h3>
+          <dl class="space-y-4">
+            <div>
+              <dt class="text-xs font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400">
+                Full name
+              </dt>
+              <dd class="mt-1 text-sm font-medium text-gray-900 dark:text-white">
+                {{ display(user.name) }}
+              </dd>
+            </div>
+            <div>
+              <dt class="text-xs font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400">
+                Login email
+              </dt>
+              <dd class="mt-1 text-sm font-medium text-gray-900 dark:text-white">
+                {{ display(user.email) }}
+              </dd>
+            </div>
+            <div>
+              <dt class="text-xs font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400">
+                Phone
+              </dt>
+              <dd class="mt-1 text-sm font-medium text-gray-900 dark:text-white">
+                {{ display(profile.phone) }}
+              </dd>
+            </div>
+            <div>
+              <dt class="text-xs font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400">
+                Personal email
+              </dt>
+              <dd class="mt-1 text-sm font-medium text-gray-900 dark:text-white">
+                {{ display(profile.personal_email) }}
+              </dd>
+            </div>
+            <div>
+              <dt class="text-xs font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400">
+                Birthday
+              </dt>
+              <dd class="mt-1 text-sm font-medium text-gray-900 dark:text-white">
+                {{ formatDate(profile.birthday) }}
+              </dd>
+            </div>
+            <div>
+              <dt class="text-xs font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400">
+                Bio
+              </dt>
+              <dd class="mt-1 whitespace-pre-wrap text-sm font-medium text-gray-900 dark:text-gray-200">
+                {{ display(profile.bio) }}
+              </dd>
+            </div>
+          </dl>
+        </section>
 
-      <section class="space-y-4 border-t border-gray-100 pt-8 dark:border-gray-800">
-        <h3 class="text-sm font-semibold text-gray-900 dark:text-white">
-          Contact &amp; location
-        </h3>
-        <dl class="grid gap-4 sm:grid-cols-2">
-          <div class="sm:col-span-2">
-            <dt class="text-xs font-medium text-gray-500 dark:text-gray-400">
-              Phone
-            </dt>
-            <dd class="mt-0.5 text-sm text-gray-900 dark:text-white">
-              {{ display(profile.phone) }}
-            </dd>
-          </div>
-          <div class="sm:col-span-2">
-            <dt class="text-xs font-medium text-gray-500 dark:text-gray-400">
-              Personal email
-            </dt>
-            <dd class="mt-0.5 text-sm text-gray-900 dark:text-white">
-              {{ display(profile.personal_email) }}
-            </dd>
-          </div>
-          <div>
-            <dt class="text-xs font-medium text-gray-500 dark:text-gray-400">
-              Birthday
-            </dt>
-            <dd class="mt-0.5 text-sm text-gray-900 dark:text-white">
-              {{ formatDate(profile.birthday) }}
-            </dd>
-          </div>
-          <div class="sm:col-span-2">
-            <dt class="text-xs font-medium text-gray-500 dark:text-gray-400">
-              Street address
-            </dt>
-            <dd class="mt-0.5 text-sm text-gray-900 dark:text-white">
-              {{ display(profile.address) }}
-            </dd>
-          </div>
-          <div>
-            <dt class="text-xs font-medium text-gray-500 dark:text-gray-400">
-              City
-            </dt>
-            <dd class="mt-0.5 text-sm text-gray-900 dark:text-white">
-              {{ display(profile.city) }}
-            </dd>
-          </div>
-          <div>
-            <dt class="text-xs font-medium text-gray-500 dark:text-gray-400">
-              State / province
-            </dt>
-            <dd class="mt-0.5 text-sm text-gray-900 dark:text-white">
-              {{ display(profile.state) }}
-            </dd>
-          </div>
-          <div>
-            <dt class="text-xs font-medium text-gray-500 dark:text-gray-400">
-              Postal code
-            </dt>
-            <dd class="mt-0.5 text-sm text-gray-900 dark:text-white">
-              {{ display(profile.zip) }}
-            </dd>
-          </div>
-          <div>
-            <dt class="text-xs font-medium text-gray-500 dark:text-gray-400">
-              Region
-            </dt>
-            <dd class="mt-0.5 text-sm text-gray-900 dark:text-white">
-              {{ display(profile.region) }}
-            </dd>
-          </div>
-        </dl>
-      </section>
+        <section
+          class="rounded-2xl border border-gray-200 bg-white p-6 shadow-sm dark:border-gray-800 dark:bg-gray-900/40"
+        >
+          <h3 class="mb-5 border-b border-gray-100 pb-3 text-lg font-semibold text-gray-900 dark:border-gray-800 dark:text-white">
+            Address
+          </h3>
+          <dl class="space-y-4">
+            <div>
+              <dt class="text-xs font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400">
+                Street
+              </dt>
+              <dd class="mt-1 text-sm font-medium text-gray-900 dark:text-white">
+                {{ display(profile.address) }}
+              </dd>
+            </div>
+            <div>
+              <dt class="text-xs font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400">
+                City / State
+              </dt>
+              <dd class="mt-1 text-sm font-medium text-gray-900 dark:text-white">
+                {{
+                  [display(profile.city), display(profile.state)]
+                    .filter((x) => x !== "—")
+                    .join(", ") || "—"
+                }}
+              </dd>
+            </div>
+            <div>
+              <dt class="text-xs font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400">
+                Postal code
+              </dt>
+              <dd class="mt-1 text-sm font-medium text-gray-900 dark:text-white">
+                {{ display(profile.zip) }}
+              </dd>
+            </div>
+            <div>
+              <dt class="text-xs font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400">
+                Region
+              </dt>
+              <dd class="mt-1 text-sm font-medium text-gray-900 dark:text-white">
+                {{ display(profile.region) }}
+              </dd>
+            </div>
+          </dl>
+        </section>
+      </div>
 
-      <section class="space-y-4 border-t border-gray-100 pt-8 dark:border-gray-800">
-        <h3 class="text-sm font-semibold text-gray-900 dark:text-white">
+      <!-- Employment full width -->
+      <section
+        class="rounded-2xl border border-gray-200 bg-white p-6 shadow-sm dark:border-gray-800 dark:bg-gray-900/40"
+      >
+        <h3 class="mb-5 border-b border-gray-100 pb-3 text-lg font-semibold text-gray-900 dark:border-gray-800 dark:text-white">
           Employment
         </h3>
         <dl class="grid gap-4 sm:grid-cols-2">
-          <div class="sm:col-span-2">
-            <dt class="text-xs font-medium text-gray-500 dark:text-gray-400">
+          <div>
+            <dt class="text-xs font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400">
               Employment type
             </dt>
-            <dd class="mt-0.5 text-sm text-gray-900 dark:text-white">
+            <dd class="mt-1 text-sm font-medium text-gray-900 dark:text-white">
               {{ display(profile.employee_type) }}
             </dd>
           </div>
+          <div />
           <div>
-            <dt class="text-xs font-medium text-gray-500 dark:text-gray-400">
+            <dt class="text-xs font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400">
               Hire date
             </dt>
-            <dd class="mt-0.5 text-sm text-gray-900 dark:text-white">
+            <dd class="mt-1 text-sm font-medium text-gray-900 dark:text-white">
               {{ formatDate(profile.hire_date) }}
             </dd>
           </div>
           <div>
-            <dt class="text-xs font-medium text-gray-500 dark:text-gray-400">
+            <dt class="text-xs font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400">
               Termination date
             </dt>
-            <dd class="mt-0.5 text-sm text-gray-900 dark:text-white">
+            <dd class="mt-1 text-sm font-medium text-gray-900 dark:text-white">
               {{ formatDate(profile.terminate_date) }}
             </dd>
           </div>
         </dl>
-      </section>
-
-      <section class="space-y-4 border-t border-gray-100 pt-8 dark:border-gray-800">
-        <h3 class="text-sm font-semibold text-gray-900 dark:text-white">
-          Notes
-        </h3>
-        <div>
-          <p class="text-xs font-medium text-gray-500 dark:text-gray-400">
-            Bio
-          </p>
-          <p
-            class="mt-1 whitespace-pre-wrap text-sm text-gray-900 dark:text-gray-200"
-          >
-            {{ display(profile.bio) }}
-          </p>
-        </div>
       </section>
     </div>
   </div>

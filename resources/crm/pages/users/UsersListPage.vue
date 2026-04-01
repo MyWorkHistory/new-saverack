@@ -314,8 +314,8 @@ const confirmDelete = async () => {
   }
 };
 
-const MENU_W = 160;
-const MENU_H = 100;
+const MENU_W = 176;
+const MENU_H = 112;
 
 function placeManageMenu(anchorEl) {
   if (!(anchorEl instanceof HTMLElement)) return;
@@ -649,9 +649,9 @@ onUnmounted(() => {
               </th>
               <th
                 v-if="showRowActions"
-                class="w-14 px-4 py-3 text-right text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400"
+                class="w-[4.5rem] min-w-[4.75rem] px-3 py-3 text-right text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400"
               >
-                <!-- actions -->
+                Actions
               </th>
             </tr>
           </thead>
@@ -722,14 +722,14 @@ onUnmounted(() => {
                 <div data-row-actions class="relative inline-flex justify-end">
                   <button
                     type="button"
-                    class="rounded-lg p-2 text-gray-500 transition hover:bg-gray-100 hover:text-gray-800 dark:hover:bg-white/10 dark:hover:text-white"
+                    class="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border border-gray-200 bg-white text-gray-600 shadow-sm transition hover:border-gray-300 hover:bg-gray-50 hover:text-gray-900 dark:border-gray-600 dark:bg-gray-900 dark:text-gray-300 dark:hover:border-gray-500 dark:hover:bg-white/10 dark:hover:text-white"
                     :aria-expanded="manageOpenId === user.id"
                     aria-haspopup="true"
                     aria-label="Row actions"
                     @click="toggleManageMenu(user.id, $event)"
                   >
                     <svg
-                      class="h-5 w-5"
+                      class="h-6 w-6"
                       fill="currentColor"
                       viewBox="0 0 24 24"
                       aria-hidden="true"
@@ -864,7 +864,7 @@ onUnmounted(() => {
         <div
           v-if="manageMenuUser"
           data-row-actions
-          class="fixed z-[300] w-40 overflow-hidden rounded-xl border border-gray-200 bg-white py-1 shadow-lg ring-1 ring-black/5 dark:border-gray-700 dark:bg-gray-900 dark:ring-white/10"
+          class="fixed z-[300] w-44 overflow-hidden rounded-xl border border-gray-200 bg-white py-1 shadow-lg ring-1 ring-black/5 dark:border-gray-700 dark:bg-gray-900 dark:ring-white/10"
           role="menu"
           :style="{
             top: `${manageMenuRect.top}px`,

@@ -2,6 +2,7 @@
 import { computed, onMounted } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import PageHeader from "../../components/common/PageHeader.vue";
+import CrmLoadingSpinner from "../../components/common/CrmLoadingSpinner.vue";
 import UserFormFields from "../../components/users/UserFormFields.vue";
 import { useUserForm } from "../../composables/useUserForm";
 
@@ -101,6 +102,8 @@ async function onSubmit() {
       </div>
     </form>
 
-    <p v-else class="text-sm text-gray-500">Loading…</p>
+    <div v-else class="flex justify-center py-12">
+      <CrmLoadingSpinner message="Loading..." />
+    </div>
   </div>
 </template>

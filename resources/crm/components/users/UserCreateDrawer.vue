@@ -1,6 +1,7 @@
 <script setup>
 import { watch } from "vue";
 import UserFormFields from "./UserFormFields.vue";
+import CrmLoadingSpinner from "../common/CrmLoadingSpinner.vue";
 import { useUserForm } from "../../composables/useUserForm";
 
 const props = defineProps({
@@ -127,9 +128,9 @@ function onBackdropClick() {
                   :toggle-role="toggleRole"
                 />
               </form>
-              <p v-else class="text-sm text-gray-500 dark:text-gray-400">
-                Loading…
-              </p>
+              <div v-else class="flex justify-center py-8">
+                <CrmLoadingSpinner message="Loading..." />
+              </div>
             </div>
 
             <footer

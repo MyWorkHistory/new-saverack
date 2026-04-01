@@ -1,5 +1,16 @@
 <script setup>
-defineProps({
+import { computed } from "vue";
+
+const BASE_EMPLOYMENT_OPTIONS = [
+  { value: "", label: "Not specified" },
+  { value: "Full-time", label: "Full-time" },
+  { value: "Part-time", label: "Part-time" },
+  { value: "Contractor", label: "Contractor" },
+  { value: "Temporary", label: "Temporary" },
+  { value: "Intern", label: "Intern" },
+];
+
+const props = defineProps({
   form: { type: Object, required: true },
   roles: { type: Array, default: () => [] },
   isEdit: { type: Boolean, default: false },
@@ -7,6 +18,18 @@ defineProps({
   firstError: { type: Function, required: true },
   clearFieldError: { type: Function, required: true },
   toggleRole: { type: Function, required: true },
+});
+
+const employmentOptions = computed(() => {
+  const known = new Set(BASE_EMPLOYMENT_OPTIONS.map((o) => o.value));
+  const v = props.form?.employee_type;
+  if (v != null && v !== "" && !known.has(String(v))) {
+    return [
+      ...BASE_EMPLOYMENT_OPTIONS,
+      { value: String(v), label: `${v} (current)` },
+    ];
+  }
+  return BASE_EMPLOYMENT_OPTIONS;
 });
 </script>
 
@@ -263,13 +286,19 @@ defineProps({
             class="mb-1 block text-xs font-medium text-gray-500 dark:text-gray-400"
             >Employment type</label
           >
-          <input
+          <select
             v-model="form.employee_type"
-            type="text"
-            placeholder="e.g. Full-time, Contractor"
             class="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-500/20 dark:border-gray-600 dark:bg-gray-900 dark:text-white"
-            @input="clearFieldError('employee_type')"
-          />
+            @change="clearFieldError('employee_type')"
+          >
+            <option
+              v-for="opt in employmentOptions"
+              :key="opt.value === '' ? '_empty' : opt.value"
+              :value="opt.value"
+            >
+              {{ opt.label }}
+            </option>
+          </select>
           <p
             v-if="firstError('employee_type')"
             class="mt-1 text-xs text-red-600"

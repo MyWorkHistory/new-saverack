@@ -12,6 +12,7 @@ import draggable from "vuedraggable";
 import api from "../../services/api";
 import ConfirmModal from "../../components/common/ConfirmModal.vue";
 import WebmasterTaskDrawer from "../../components/webmaster/WebmasterTaskDrawer.vue";
+import CrmLoadingSpinner from "../../components/common/CrmLoadingSpinner.vue";
 import { useToast } from "../../composables/useToast";
 import { errorMessage } from "../../utils/apiError";
 
@@ -551,9 +552,9 @@ onUnmounted(() => {
       </div>
 
       <div class="p-4 sm:p-6" :class="loading ? 'min-h-[280px]' : ''">
-        <p v-if="loading" class="text-center text-sm text-gray-500 dark:text-gray-400">
-          Loading tasks…
-        </p>
+        <div v-if="loading" class="flex justify-center py-12">
+          <CrmLoadingSpinner message="Loading tasks…" />
+        </div>
         <p
           v-else-if="pagination.total === 0"
           class="py-16 text-center text-sm text-gray-500 dark:text-gray-400"

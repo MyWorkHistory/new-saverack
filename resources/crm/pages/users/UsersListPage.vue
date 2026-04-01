@@ -12,7 +12,9 @@ import { RouterLink } from "vue-router";
 import api from "../../services/api";
 import ConfirmModal from "../../components/common/ConfirmModal.vue";
 import UserCreateDrawer from "../../components/users/UserCreateDrawer.vue";
+import CrmLoadingSpinner from "../../components/common/CrmLoadingSpinner.vue";
 import { useToast } from "../../composables/useToast";
+import { crmIsAdmin } from "../../utils/crmUser";
 
 const crmUser = inject("crmUser", ref(null));
 const toast = useToast();
@@ -20,7 +22,7 @@ const toast = useToast();
 function userHasPerm(key) {
   const u = crmUser.value;
   if (!u) return false;
-  if (u.is_admin || u.is_crm_owner) return true;
+  if (crmIsAdmin(u) || u.is_crm_owner) return true;
   return Array.isArray(u.permission_keys) && u.permission_keys.includes(key);
 }
 
@@ -655,8 +657,10 @@ onUnmounted(() => {
           </thead>
           <tbody class="divide-y divide-gray-100 dark:divide-gray-800">
             <tr v-if="loading">
-              <td :colspan="tableColspan" class="px-4 py-12 text-center text-gray-500">
-                Loading users…
+              <td :colspan="tableColspan" class="px-4 py-12">
+                <div class="flex justify-center">
+                  <CrmLoadingSpinner message="Loading users…" />
+                </div>
               </td>
             </tr>
             <tr

@@ -3,6 +3,7 @@ import { computed } from "vue";
 import { RouterLink, useRoute } from "vue-router";
 import { BRAND_MARK_SRC } from "../../utils/brandAssets.js";
 import { useCrmSidebar } from "../../composables/useCrmSidebar";
+import { crmIsAdmin } from "../../utils/crmUser";
 
 const props = defineProps({
   user: { type: Object, required: true },
@@ -12,22 +13,16 @@ const route = useRoute();
 
 const canViewUsers = computed(
   () =>
-    !!props.user?.is_admin ||
+    crmIsAdmin(props.user) ||
     !!props.user?.is_crm_owner ||
     (Array.isArray(props.user?.permission_keys) &&
       props.user.permission_keys.includes("users.view")),
 );
 
-const canViewTickets = computed(
-  () =>
-    !!props.user?.is_crm_owner ||
-    (Array.isArray(props.user?.permission_keys) &&
-      props.user.permission_keys.includes("tickets.view")),
-);
-
 const canViewWebmaster = computed(
   () =>
     !!props.user?.is_crm_owner ||
+    crmIsAdmin(props.user) ||
     (Array.isArray(props.user?.permission_keys) &&
       props.user.permission_keys.includes("webmaster.view")),
 );
@@ -44,9 +39,6 @@ function navActive(mode) {
   const p = route.path;
   if (mode === "dashboard") return p.startsWith("/dashboard");
   if (mode === "users") return p.startsWith("/users");
-  if (mode === "tickets")
-    return p.startsWith("/tickets") && !p.includes("/board");
-  if (mode === "board") return p.includes("/tickets/board");
   if (mode === "webmaster") return p.startsWith("/webmaster");
   return false;
 }
@@ -187,56 +179,6 @@ function iconClass(mode) {
             <span v-if="isExpanded">Webmaster</span>
           </RouterLink>
         </li>
-        <template v-if="canViewTickets">
-          <li>
-            <RouterLink
-              to="/tickets"
-              :class="[navClass('tickets'), itemJustify()]"
-              @click="closeMobile"
-            >
-              <span :class="iconClass('tickets')">
-                <svg
-                  class="h-5 w-5"
-                  fill="none"
-                  viewBox="0 0 24 24"
-                  stroke="currentColor"
-                  stroke-width="2"
-                >
-                  <path
-                    stroke-linecap="round"
-                    stroke-linejoin="round"
-                    d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"
-                  />
-                </svg>
-              </span>
-              <span v-if="isExpanded">Ticket management</span>
-            </RouterLink>
-          </li>
-          <li>
-            <RouterLink
-              to="/tickets/board"
-              :class="[navClass('board'), itemJustify()]"
-              @click="closeMobile"
-            >
-              <span :class="iconClass('board')">
-                <svg
-                  class="h-5 w-5"
-                  fill="none"
-                  viewBox="0 0 24 24"
-                  stroke="currentColor"
-                  stroke-width="2"
-                >
-                  <path
-                    stroke-linecap="round"
-                    stroke-linejoin="round"
-                    d="M9 17V7m0 10a2 2 0 01-2 2H5a2 2 0 01-2-2V7a2 2 0 012-2h2a2 2 0 012 2m0 10a2 2 0 002 2h2a2 2 0 002-2M9 7a2 2 0 012-2h2a2 2 0 012 2m0 10V7m0 10a2 2 0 002 2h2a2 2 0 002-2V7a2 2 0 00-2-2h-2a2 2 0 00-2 2"
-                  />
-                </svg>
-              </span>
-              <span v-if="isExpanded">Board</span>
-            </RouterLink>
-          </li>
-        </template>
       </ul>
     </nav>
   </aside>

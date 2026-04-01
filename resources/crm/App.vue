@@ -3,13 +3,9 @@ import { computed, provide, ref, watch } from "vue";
 import { RouterLink, useRoute, useRouter } from "vue-router";
 import api from "./services/api";
 import CrmAdminShell from "./components/layout/CrmAdminShell.vue";
+import CrmLoadingSpinner from "./components/common/CrmLoadingSpinner.vue";
 import ToastStack from "./components/common/ToastStack.vue";
-import {
-  clearCrmOwnerCache,
-  setTicketNavFromUser,
-  setUsersNavFromUser,
-  setWebmasterNavFromUser,
-} from "./router";
+import { clearCrmOwnerCache, setUsersNavFromUser, setWebmasterNavFromUser } from "./router";
 
 const route = useRoute();
 const router = useRouter();
@@ -35,7 +31,6 @@ const loadMe = async () => {
   try {
     const { data } = await api.get("/auth/me");
     me.value = data;
-    setTicketNavFromUser(data);
     setWebmasterNavFromUser(data);
     setUsersNavFromUser(data);
   } catch (e) {
@@ -97,9 +92,9 @@ const logout = async () => {
 
     <div
       v-else-if="navLoading"
-      class="flex min-h-screen items-center justify-center bg-gray-50 text-gray-500 dark:bg-gray-950 dark:text-gray-400"
+      class="flex min-h-screen items-center justify-center bg-gray-50 dark:bg-gray-950"
     >
-      Loading…
+      <CrmLoadingSpinner message="Loading..." :center="true" />
     </div>
 
     <CrmAdminShell

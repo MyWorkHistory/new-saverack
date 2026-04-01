@@ -61,7 +61,16 @@ class User extends Authenticatable
 
     public function hasRole(string $name): bool
     {
-        return $this->roles->contains('name', $name);
+        $this->loadMissing('roles');
+        $needle = strtolower($name);
+
+        foreach ($this->roles as $role) {
+            if (strtolower((string) $role->name) === $needle) {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     public function hasPermission(string $key): bool

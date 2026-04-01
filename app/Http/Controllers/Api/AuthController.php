@@ -75,6 +75,8 @@ class AuthController extends Controller
             ->values()
             ->all();
 
+        $user->loadMissing('roles');
+
         return array_merge($user->toArray(), [
             'permission_keys' => $permissionKeys,
             'is_admin' => $user->hasRole('admin'),

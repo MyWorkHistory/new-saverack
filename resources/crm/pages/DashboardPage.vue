@@ -4,6 +4,7 @@ import { RouterLink } from "vue-router";
 import VueApexCharts from "vue3-apexcharts";
 import api from "../services/api";
 import CrmMetricCard from "../components/dashboard/CrmMetricCard.vue";
+import CrmLoadingSpinner from "../components/common/CrmLoadingSpinner.vue";
 
 const loading = ref(true);
 const period = ref("monthly");
@@ -283,9 +284,9 @@ function statusBadgeClass(s) {
   <div class="space-y-6">
     <div
       v-if="loading"
-      class="rounded-2xl border border-gray-200 bg-white p-10 text-center text-gray-500 dark:border-gray-800 dark:bg-white/[0.03]"
+      class="flex justify-center rounded-2xl border border-gray-200 bg-white p-10 dark:border-gray-800 dark:bg-white/[0.03]"
     >
-      Loading dashboard…
+      <CrmLoadingSpinner message="Loading dashboard…" />
     </div>
 
     <template v-else>

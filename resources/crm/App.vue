@@ -1,5 +1,5 @@
 <script setup>
-import { computed, onMounted, ref } from "vue";
+import { computed, ref, watch } from "vue";
 import { RouterLink, useRoute, useRouter } from "vue-router";
 import api from "./services/api";
 import CrmAdminShell from "./components/layout/CrmAdminShell.vue";
@@ -12,7 +12,7 @@ import {
 const route = useRoute();
 const router = useRouter();
 const me = ref(null);
-const navLoading = ref(true);
+const navLoading = ref(false);
 
 const showShell = computed(() => {
   const p = route.path;
@@ -29,6 +29,7 @@ const loadMe = async () => {
     navLoading.value = false;
     return;
   }
+  navLoading.value = true;
   try {
     const { data } = await api.get("/auth/me");
     me.value = data;
@@ -46,7 +47,28 @@ const loadMe = async () => {
   }
 };
 
-onMounted(loadMe);
+// Login only sets localStorage; `me` is loaded here. Without this, SPA
+// navigation from /login to /dashboard left `me` null (stuck on “sign in”).
+// Skip refetch when `me` is already set (normal route changes under the shell).
+watch(
+  () => route.fullPath,
+  () => {
+    if (!showShell.value) {
+      navLoading.value = false;
+      return;
+    }
+    if (!localStorage.getItem("auth_token")) {
+      me.value = null;
+      navLoading.value = false;
+      return;
+    }
+    if (me.value) {
+      return;
+    }
+    loadMe();
+  },
+  { immediate: true },
+);
 
 const logout = async () => {
   try {

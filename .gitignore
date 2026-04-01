@@ -3,6 +3,19 @@
 /public/build
 /public/hot
 /public/storage
+
+# --- Generated CRM / tickets SPAs (Vite): run `npm run build:spa` and/or `npm run build:crm`
+# on deploy or CI. Stops hashed JS/CSS and index churn from dirtying git status.
+# If these paths were already committed: git rm -r --cached public/index.html public/assets public/tickets-app/index.html public/tickets-app/assets
+/public/index.html
+/public/assets/
+/public/tickets-app/index.html
+/public/tickets-app/assets/
+
+# Mistaken copies / editor debris (e.g. nano backups, stray git metadata in project root)
+/FETCH_HEAD
+*.save
+*~
 /storage/*.key
 /storage/pail
 /vendor

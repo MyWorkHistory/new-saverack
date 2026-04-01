@@ -49,6 +49,16 @@ class User extends Authenticatable
         return $this->hasMany(ActivityLog::class);
     }
 
+    public function createdWebmasterTasks(): HasMany
+    {
+        return $this->hasMany(Task::class, 'created_by');
+    }
+
+    public function assignedWebmasterTasks(): HasMany
+    {
+        return $this->hasMany(Task::class, 'assigned_to');
+    }
+
     public function hasRole(string $name): bool
     {
         return $this->roles->contains('name', $name);

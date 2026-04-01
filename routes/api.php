@@ -5,6 +5,7 @@ use App\Http\Controllers\Api\DashboardController;
 use App\Http\Controllers\Api\RoleController;
 use App\Http\Controllers\Api\TicketController;
 use App\Http\Controllers\Api\UserController;
+use App\Http\Controllers\Api\WebmasterTaskController;
 use Illuminate\Support\Facades\Route;
 
 Route::prefix('auth')->group(function () {
@@ -27,6 +28,11 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::get('/tickets/meta', [TicketController::class, 'meta']);
     Route::post('/tickets/{ticket}/comments', [TicketController::class, 'storeComment']);
     Route::apiResource('tickets', TicketController::class);
+
+    Route::prefix('webmaster')->group(function () {
+        Route::get('/tasks/meta', [WebmasterTaskController::class, 'meta']);
+        Route::apiResource('tasks', WebmasterTaskController::class);
+    });
 
     Route::apiResource('users', UserController::class);
 });

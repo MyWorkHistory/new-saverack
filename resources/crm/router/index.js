@@ -10,6 +10,7 @@ import UserFormPage from "../pages/users/UserFormPage.vue";
 import TicketsListPage from "../pages/tickets/TicketsListPage.vue";
 import TicketsBoardPage from "../pages/tickets/TicketsBoardPage.vue";
 import TicketDetailPage from "../pages/tickets/TicketDetailPage.vue";
+import WebmasterTasksPage from "../pages/webmaster/WebmasterTasksPage.vue";
 
 const routes = [
   { path: "/login", name: "login", component: LoginPage, meta: { public: true } },
@@ -34,6 +35,7 @@ const routes = [
   { path: "/tickets/board", name: "tickets-board", component: TicketsBoardPage },
   { path: "/tickets/:id", name: "ticket-detail", component: TicketDetailPage, props: true },
   { path: "/tickets", name: "tickets", component: TicketsListPage },
+  { path: "/webmaster", name: "webmaster", component: WebmasterTasksPage },
 ];
 
 const router = createRouter({
@@ -44,8 +46,12 @@ const router = createRouter({
 /** Cached result of whether /auth/me allows ticket routes (tickets.view permission or legacy CRM owner). */
 let ticketNavCache = null;
 
+/** Cached result of whether /auth/me allows Webmaster routes (webmaster.view or CRM owner). */
+let webmasterNavCache = null;
+
 export function clearCrmOwnerCache() {
   ticketNavCache = null;
+  webmasterNavCache = null;
 }
 
 /**
@@ -63,6 +69,24 @@ export function setTicketNavFromUser(user) {
   }
   const keys = user.permission_keys;
   ticketNavCache = Array.isArray(keys) && keys.includes("tickets.view");
+}
+
+export function setWebmasterNavFromUser(user) {
+  if (!user) {
+    webmasterNavCache = null;
+    return;
+  }
+  const keys = user.permission_keys;
+  const perm =
+    Array.isArray(keys) && keys.includes("webmaster.view");
+  webmasterNavCache = perm || !!user.is_crm_owner;
+}
+
+function userCanWebmaster(userLike) {
+  if (!userLike) return false;
+  if (userLike.is_crm_owner) return true;
+  const keys = userLike.permission_keys;
+  return Array.isArray(keys) && keys.includes("webmaster.view");
 }
 
 function userCanTickets(userLike) {
@@ -92,6 +116,26 @@ async function ensureTicketRouteAccess() {
   }
 }
 
+async function ensureWebmasterRouteAccess() {
+  if (webmasterNavCache !== null) {
+    return webmasterNavCache;
+  }
+  try {
+    const { data } = await api.get("/auth/me");
+    const ok = userCanWebmaster(data);
+    webmasterNavCache = ok;
+    return ok;
+  } catch (e) {
+    if (e.response?.status === 401) {
+      localStorage.removeItem("auth_token");
+      webmasterNavCache = null;
+    } else {
+      webmasterNavCache = false;
+    }
+    return false;
+  }
+}
+
 router.beforeEach(async (to) => {
   const token = localStorage.getItem("auth_token");
 
@@ -108,6 +152,16 @@ router.beforeEach(async (to) => {
 
   if (to.path === "/tickets" || to.path.startsWith("/tickets/")) {
     const ok = await ensureTicketRouteAccess();
+    if (!ok) {
+      if (!localStorage.getItem("auth_token")) {
+        return { name: "login", query: { redirect: to.fullPath } };
+      }
+      return { path: "/dashboard" };
+    }
+  }
+
+  if (to.path === "/webmaster" || to.path.startsWith("/webmaster/")) {
+    const ok = await ensureWebmasterRouteAccess();
     if (!ok) {
       if (!localStorage.getItem("auth_token")) {
         return { name: "login", query: { redirect: to.fullPath } };

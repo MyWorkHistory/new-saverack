@@ -2,7 +2,9 @@
 
 namespace App\Providers;
 
+use App\Models\Task;
 use App\Models\Ticket;
+use App\Policies\TaskPolicy;
 use App\Policies\TicketPolicy;
 use Illuminate\Foundation\Support\Providers\AuthServiceProvider as ServiceProvider;
 
@@ -15,6 +17,7 @@ class AuthServiceProvider extends ServiceProvider
      */
     protected $policies = [
         Ticket::class => TicketPolicy::class,
+        Task::class => TaskPolicy::class,
     ];
 
     /**

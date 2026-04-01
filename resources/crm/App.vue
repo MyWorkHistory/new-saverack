@@ -3,7 +3,11 @@ import { computed, onMounted, ref } from "vue";
 import { RouterLink, useRoute, useRouter } from "vue-router";
 import api from "./services/api";
 import CrmAdminShell from "./components/layout/CrmAdminShell.vue";
-import { clearCrmOwnerCache, setTicketNavFromUser } from "./router";
+import {
+  clearCrmOwnerCache,
+  setTicketNavFromUser,
+  setWebmasterNavFromUser,
+} from "./router";
 
 const route = useRoute();
 const router = useRouter();
@@ -29,6 +33,7 @@ const loadMe = async () => {
     const { data } = await api.get("/auth/me");
     me.value = data;
     setTicketNavFromUser(data);
+    setWebmasterNavFromUser(data);
   } catch (e) {
     me.value = null;
     if (e.response?.status === 401) {

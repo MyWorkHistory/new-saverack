@@ -26,5 +26,8 @@
         "vue": "^3.4.38",
         "vue-router": "^4.4.5",
         "vue3-apexcharts": "^1.11.1"
+    },
+    "dependencies": {
+        "vuedraggable": "^4.1.0"
     }
 }

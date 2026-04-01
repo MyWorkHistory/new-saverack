@@ -3,18 +3,35 @@ import { computed, onMounted, onUnmounted, ref } from "vue";
 import { RouterLink } from "vue-router";
 import { BRAND_MARK_SRC } from "../../utils/brandAssets.js";
 import { useCrmSidebar } from "../../composables/useCrmSidebar";
+import UserEditModal from "../users/UserEditModal.vue";
+import { crmIsAdmin } from "../../utils/crmUser";
 
 const props = defineProps({
   user: { type: Object, required: true },
 });
 
-const emit = defineEmits(["logout"]);
+const emit = defineEmits(["logout", "refresh-user"]);
 
 const { isMobileOpen, toggleSidebar } = useCrmSidebar();
 const markSrc = computed(() => BRAND_MARK_SRC());
 
 const menuOpen = ref(false);
 const menuRoot = ref(null);
+const editProfileModalOpen = ref(false);
+
+const canEditOwnProfile = computed(() => {
+  const u = props.user;
+  if (!u) return false;
+  if (crmIsAdmin(u) || u.is_crm_owner) return true;
+  return (
+    Array.isArray(u.permission_keys) && u.permission_keys.includes("users.update")
+  );
+});
+
+function openEditProfileModal() {
+  editProfileModalOpen.value = true;
+  closeMenu();
+}
 
 const accountRoot = ref(null);
 const accountOpen = ref(false);
@@ -408,9 +425,31 @@ onUnmounted(() => {
                 </p>
               </div>
               <ul class="py-1">
-                <li>
+                <li v-if="canEditOwnProfile">
+                  <button
+                    type="button"
+                    class="flex w-full items-center gap-3 px-4 py-2.5 text-left text-sm font-medium text-gray-700 hover:bg-gray-50 dark:text-gray-300 dark:hover:bg-white/5"
+                    @click="openEditProfileModal"
+                  >
+                    <svg
+                      class="h-5 w-5 text-gray-500"
+                      fill="none"
+                      viewBox="0 0 24 24"
+                      stroke="currentColor"
+                      stroke-width="1.5"
+                    >
+                      <path
+                        stroke-linecap="round"
+                        stroke-linejoin="round"
+                        d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"
+                      />
+                    </svg>
+                    Edit profile
+                  </button>
+                </li>
+                <li v-else>
                   <RouterLink
-                    :to="`/users/${user.id}/edit`"
+                    :to="`/users/${user.id}`"
                     class="flex items-center gap-3 px-4 py-2.5 text-sm font-medium text-gray-700 hover:bg-gray-50 dark:text-gray-300 dark:hover:bg-white/5"
                     @click="closeMenu"
                   >
@@ -427,7 +466,7 @@ onUnmounted(() => {
                         d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"
                       />
                     </svg>
-                    Edit profile
+                    View profile
                   </RouterLink>
                 </li>
                 <li>
@@ -508,4 +547,11 @@ onUnmounted(() => {
       </div>
     </div>
   </header>
+
+  <UserEditModal
+    v-if="user?.id"
+    v-model:open="editProfileModalOpen"
+    :user-id="String(user.id)"
+    @saved="$emit('refresh-user')"
+  />
 </template>

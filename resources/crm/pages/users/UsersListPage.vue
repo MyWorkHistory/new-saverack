@@ -12,6 +12,7 @@ import { RouterLink } from "vue-router";
 import api from "../../services/api";
 import ConfirmModal from "../../components/common/ConfirmModal.vue";
 import UserCreateDrawer from "../../components/users/UserCreateDrawer.vue";
+import UserEditModal from "../../components/users/UserEditModal.vue";
 import CrmLoadingSpinner from "../../components/common/CrmLoadingSpinner.vue";
 import { useToast } from "../../composables/useToast";
 import { crmIsAdmin } from "../../utils/crmUser";
@@ -155,15 +156,15 @@ const roleLabels = (user) => {
 const statusBadgeClass = (status) => {
   const s = String(status || "").toLowerCase();
   if (s === "active") {
-    return "bg-emerald-50 text-emerald-800 ring-emerald-600/20 dark:bg-emerald-500/10 dark:text-emerald-300 dark:ring-emerald-500/30";
+    return "bg-emerald-50 text-emerald-800 dark:bg-emerald-500/10 dark:text-emerald-300";
   }
   if (s === "pending") {
-    return "bg-amber-50 text-amber-800 ring-amber-600/20 dark:bg-amber-500/10 dark:text-amber-200 dark:ring-amber-500/30";
+    return "bg-amber-50 text-amber-800 dark:bg-amber-500/10 dark:text-amber-200";
   }
   if (s === "inactive") {
-    return "bg-gray-100 text-gray-700 ring-gray-500/20 dark:bg-gray-800 dark:text-gray-300 dark:ring-gray-500/40";
+    return "bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-300";
   }
-  return "bg-slate-100 text-slate-700 ring-slate-500/20 dark:bg-slate-800 dark:text-slate-300";
+  return "bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300";
 };
 
 const avatarPalettes = [
@@ -333,6 +334,12 @@ function closeManageMenu() {
   manageOpenId.value = null;
 }
 
+function openUserEditModal(user) {
+  userEditModalUserId.value = String(user.id);
+  userEditModalOpen.value = true;
+  closeManageMenu();
+}
+
 function onWindowScrollOrResize() {
   if (manageOpenId.value !== null) {
     closeManageMenu();
@@ -408,11 +415,11 @@ onUnmounted(() => {
     </p>
 
     <div
-      class="overflow-hidden rounded-xl border border-gray-200 bg-white shadow-sm dark:border-gray-800 dark:bg-gray-900/40"
+      class="overflow-hidden rounded-xl border border-gray-200 bg-white shadow-sm dark:border-gray-800 dark:bg-gray-900"
     >
       <!-- Toolbar -->
       <div
-        class="flex flex-col gap-4 border-b border-gray-100 px-4 py-5 dark:border-gray-800 sm:px-6"
+        class="flex flex-col gap-4 border-b border-gray-200 px-4 py-5 dark:border-gray-700 sm:px-6"
       >
         <div
           class="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between"
@@ -473,7 +480,7 @@ onUnmounted(() => {
               <input
                 v-model="query.search"
                 type="search"
-                placeholder="Search…"
+                placeholder="Search..."
                 class="h-11 w-full rounded-lg border border-gray-200 bg-gray-50 py-2.5 pl-10 pr-3 text-sm text-gray-900 placeholder:text-gray-400 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20 dark:border-gray-700 dark:bg-gray-800/50 dark:text-white dark:placeholder:text-gray-500"
                 @keydown.enter.prevent="applySearch"
               />
@@ -604,12 +611,12 @@ onUnmounted(() => {
 
       <!-- Table -->
       <div class="overflow-x-auto">
-        <table class="min-w-[800px] w-full text-left text-sm">
+        <table class="min-w-[800px] w-full border-collapse text-left text-sm">
           <thead>
             <tr
-              class="border-b border-gray-100 bg-gray-50 dark:border-gray-800 dark:bg-gray-800/40"
+              class="border-b border-gray-200 bg-gray-50 dark:border-gray-700 dark:bg-gray-800/60"
             >
-              <th v-if="canDeleteUsers" class="w-12 px-4 py-3">
+              <th v-if="canDeleteUsers" class="w-12 px-5 py-4">
                 <input
                   type="checkbox"
                   class="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
@@ -620,14 +627,16 @@ onUnmounted(() => {
                 />
               </th>
               <th
-                class="px-4 py-3 text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400"
+                class="px-5 py-4 text-sm font-medium text-gray-500 dark:text-gray-400"
               >
                 Status
               </th>
-              <th class="px-4 py-3 text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">
+              <th
+                class="px-5 py-4 text-sm font-medium text-gray-500 dark:text-gray-400"
+              >
                 <button
                   type="button"
-                  class="inline-flex items-center gap-1 font-semibold text-gray-600 hover:text-gray-900 dark:text-gray-300 dark:hover:text-white"
+                  class="inline-flex items-center gap-1 font-medium text-gray-500 hover:text-gray-800 dark:text-gray-400 dark:hover:text-white"
                   @click="toggleSortName"
                 >
                   User
@@ -643,21 +652,21 @@ onUnmounted(() => {
                 </button>
               </th>
               <th
-                class="px-4 py-3 text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400"
+                class="px-5 py-4 text-sm font-medium text-gray-500 dark:text-gray-400"
               >
                 Role
               </th>
               <th
                 v-if="showRowActions"
-                class="w-[4.5rem] min-w-[4.75rem] px-3 py-3 text-right text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400"
+                class="w-[4.5rem] min-w-[4.75rem] px-5 py-4 text-right text-sm font-medium text-gray-500 dark:text-gray-400"
               >
-                Actions
+                Action
               </th>
             </tr>
           </thead>
-          <tbody class="divide-y divide-gray-100 dark:divide-gray-800">
+          <tbody class="divide-y divide-gray-100 bg-white dark:divide-gray-800 dark:bg-transparent">
             <tr v-if="loading">
-              <td :colspan="tableColspan" class="px-4 py-12">
+              <td :colspan="tableColspan" class="px-5 py-12">
                 <div class="flex justify-center">
                   <CrmLoadingSpinner message="Loading users…" />
                 </div>
@@ -669,7 +678,7 @@ onUnmounted(() => {
               :key="user.id"
               class="bg-white hover:bg-gray-50/80 dark:bg-transparent dark:hover:bg-white/[0.02]"
             >
-              <td v-if="canDeleteUsers" class="px-4 py-4 align-middle">
+              <td v-if="canDeleteUsers" class="px-5 py-4 align-middle">
                 <input
                   type="checkbox"
                   class="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
@@ -678,15 +687,15 @@ onUnmounted(() => {
                   @change="toggleRowSelect(user.id)"
                 />
               </td>
-              <td class="px-4 py-4 align-middle">
+              <td class="px-5 py-4 align-middle">
                 <span
-                  class="inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium capitalize ring-1 ring-inset"
+                  class="inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium capitalize"
                   :class="statusBadgeClass(user.status)"
                 >
                   {{ user.status }}
                 </span>
               </td>
-              <td class="px-4 py-4 align-middle">
+              <td class="px-5 py-4 align-middle">
                 <div class="flex items-center gap-3">
                   <span
                     class="flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-xs font-semibold"
@@ -711,13 +720,13 @@ onUnmounted(() => {
                 </div>
               </td>
               <td
-                class="px-4 py-4 align-middle text-gray-700 dark:text-gray-300"
+                class="px-5 py-4 align-middle text-gray-700 dark:text-gray-300"
               >
                 {{ roleLabels(user) }}
               </td>
               <td
                 v-if="showRowActions"
-                class="relative px-4 py-4 text-right align-middle"
+                class="relative px-5 py-4 text-right align-middle"
               >
                 <div data-row-actions class="relative inline-flex justify-end">
                   <button
@@ -753,7 +762,7 @@ onUnmounted(() => {
 
       <!-- Pagination -->
       <div
-        class="flex flex-col gap-4 border-t border-gray-100 px-4 py-4 dark:border-gray-800 sm:flex-row sm:items-center sm:justify-between sm:px-6"
+        class="flex flex-col gap-4 border-t border-gray-200 px-4 py-4 dark:border-gray-700 sm:flex-row sm:items-center sm:justify-between sm:px-6"
       >
         <p class="text-sm text-gray-600 dark:text-gray-400">
           Showing
@@ -841,6 +850,12 @@ onUnmounted(() => {
       </div>
     </div>
 
+    <UserEditModal
+      v-model:open="userEditModalOpen"
+      :user-id="userEditModalUserId"
+      @saved="fetchUsers"
+    />
+
     <ConfirmModal
       :open="deleteModalOpen"
       title="Delete user"
@@ -872,15 +887,15 @@ onUnmounted(() => {
           }"
           @click.stop
         >
-          <RouterLink
+          <button
             v-if="canUpdateUsers"
-            :to="`/users/${manageMenuUser.id}/edit`"
-            class="flex w-full items-center px-4 py-2.5 text-left text-sm font-medium text-gray-800 no-underline transition hover:bg-gray-50 dark:text-gray-200 dark:hover:bg-white/5"
+            type="button"
+            class="flex w-full items-center px-4 py-2.5 text-left text-sm font-medium text-gray-800 transition hover:bg-gray-50 dark:text-gray-200 dark:hover:bg-white/5"
             role="menuitem"
-            @click="closeManageMenu"
+            @click="openUserEditModal(manageMenuUser)"
           >
             Edit
-          </RouterLink>
+          </button>
           <button
             v-if="canDeleteRow(manageMenuUser)"
             type="button"

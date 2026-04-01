@@ -4,6 +4,8 @@ import { useRouter } from "vue-router";
 import api from "../../services/api";
 import PageHeader from "../../components/common/PageHeader.vue";
 import CrmLoadingSpinner from "../../components/common/CrmLoadingSpinner.vue";
+import CrmOutlineEditButton from "../../components/common/CrmOutlineEditButton.vue";
+import WebmasterTaskDrawer from "../../components/webmaster/WebmasterTaskDrawer.vue";
 import { crmIsAdmin } from "../../utils/crmUser";
 import { errorMessage } from "../../utils/apiError";
 
@@ -22,6 +24,7 @@ const commentFile = ref(null);
 const commentFileInput = ref(null);
 const commentSubmitting = ref(false);
 const commentError = ref("");
+const taskEditorOpen = ref(false);
 
 const canMutateWebmasterTasks = computed(() => {
   const u = crmUser?.value;
@@ -250,7 +253,7 @@ onUnmounted(() => {
 </script>
 
 <template>
-  <div class="mx-auto max-w-5xl space-y-6">
+  <div class="w-full space-y-6">
     <div class="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
       <PageHeader
         title="Task"
@@ -264,16 +267,10 @@ onUnmounted(() => {
         >
           Back to board
         </button>
-        <button
+        <CrmOutlineEditButton
           v-if="task && canMutateWebmasterTasks"
-          type="button"
-          class="inline-flex items-center justify-center rounded-xl bg-[#206ba4] px-4 py-2 text-sm font-semibold text-white shadow-sm hover:opacity-95"
-          @click="
-            router.push({ path: '/webmaster', query: { edit: String(task.id) } })
-          "
-        >
-          Edit task
-        </button>
+          @click="taskEditorOpen = true"
+        />
       </div>
     </div>
 
@@ -512,5 +509,15 @@ onUnmounted(() => {
         </div>
       </aside>
     </div>
+
+    <WebmasterTaskDrawer
+      v-if="task"
+      v-model:open="taskEditorOpen"
+      :task="task"
+      :users="[]"
+      :statuses="[]"
+      :priorities="[]"
+      @saved="loadTask"
+    />
   </div>
 </template>

@@ -31,7 +31,14 @@ const routes = [
   { path: "/users", name: "users", component: UsersListPage },
   { path: "/users/create", name: "users-create", component: UserFormPage },
   { path: "/users/new", redirect: "/users/create" },
-  { path: "/users/:id/edit", name: "users-edit", component: UserFormPage, props: true },
+  {
+    path: "/users/:id/edit",
+    name: "users-edit",
+    redirect: (to) => ({
+      path: `/users/${to.params.id}`,
+      query: { edit: "1" },
+    }),
+  },
   { path: "/users/:id", name: "users-detail", component: UserDetailPage, props: true },
   { path: "/webmaster", name: "webmaster", component: WebmasterTasksPage },
   {

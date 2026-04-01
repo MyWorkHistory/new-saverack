@@ -104,6 +104,7 @@ const logout = async () => {
       v-else-if="me"
       :user="me"
       @logout="logout"
+      @refresh-user="loadMe"
     >
       <router-view
         :key="route.fullPath"

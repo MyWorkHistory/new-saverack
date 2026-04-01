@@ -1,16 +1,20 @@
 <script setup>
-import { computed, inject, onMounted, ref } from "vue";
-import { RouterLink, useRouter } from "vue-router";
+import { computed, inject, onMounted, ref, watch } from "vue";
+import { RouterLink, useRoute, useRouter } from "vue-router";
 import api from "../../services/api";
 import CrmLoadingSpinner from "../../components/common/CrmLoadingSpinner.vue";
+import CrmOutlineEditButton from "../../components/common/CrmOutlineEditButton.vue";
+import UserEditModal from "../../components/users/UserEditModal.vue";
 import { crmIsAdmin } from "../../utils/crmUser";
 
 const props = defineProps({
   id: { type: String, required: true },
 });
 
+const route = useRoute();
 const router = useRouter();
 const crmUser = inject("crmUser", ref(null));
+const editOpen = ref(false);
 
 function userHasPerm(key) {
   const u = crmUser.value;
@@ -46,15 +50,15 @@ function roleLabels(roles) {
 function statusBadgeClass(status) {
   const s = String(status || "").toLowerCase();
   if (s === "active") {
-    return "bg-emerald-50 text-emerald-800 ring-emerald-600/20 dark:bg-emerald-500/10 dark:text-emerald-300 dark:ring-emerald-500/30";
+    return "bg-emerald-50 text-emerald-800 dark:bg-emerald-500/10 dark:text-emerald-300";
   }
   if (s === "pending") {
-    return "bg-amber-50 text-amber-800 ring-amber-600/20 dark:bg-amber-500/10 dark:text-amber-200 dark:ring-amber-500/30";
+    return "bg-amber-50 text-amber-800 dark:bg-amber-500/10 dark:text-amber-200";
   }
   if (s === "inactive") {
-    return "bg-gray-100 text-gray-700 ring-gray-500/20 dark:bg-gray-800 dark:text-gray-300 dark:ring-gray-500/40";
+    return "bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-300";
   }
-  return "bg-slate-100 text-slate-700 ring-slate-500/20 dark:bg-slate-800 dark:text-slate-300";
+  return "bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300";
 }
 
 const avatarPalettes = [
@@ -78,7 +82,7 @@ function initials(name) {
   return parts.map((p) => p[0]?.toUpperCase() ?? "").join("") || "?";
 }
 
-onMounted(async () => {
+async function loadProfile() {
   loading.value = true;
   errorMsg.value = "";
   user.value = null;
@@ -97,7 +101,31 @@ onMounted(async () => {
   } finally {
     loading.value = false;
   }
-});
+}
+
+onMounted(loadProfile);
+
+function wantsEditQuery(q) {
+  if (q === "1" || q === "true") return true;
+  if (Array.isArray(q)) {
+    return q[0] === "1" || q[0] === "true";
+  }
+  return false;
+}
+
+watch(
+  [() => route.query.edit, canUpdateUsers, () => props.id],
+  () => {
+    if (!wantsEditQuery(route.query.edit)) return;
+    if (!canUpdateUsers.value) {
+      router.replace({ path: `/users/${props.id}`, query: {} });
+      return;
+    }
+    editOpen.value = true;
+    router.replace({ path: `/users/${props.id}`, query: {} });
+  },
+  { immediate: true },
+);
 
 const profile = computed(() =>
   user.value?.profile && typeof user.value.profile === "object"
@@ -120,7 +148,7 @@ const profileLocationLine = computed(() => {
 </script>
 
 <template>
-  <div class="mx-auto max-w-5xl">
+  <div class="w-full">
     <!-- Breadcrumb (TailAdmin-style) -->
     <nav class="mb-4 flex flex-wrap items-center gap-1.5 text-sm">
       <RouterLink
@@ -192,7 +220,7 @@ const profileLocationLine = computed(() => {
               </p>
               <div class="mt-3 flex flex-wrap items-center gap-2">
                 <span
-                  class="inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium capitalize ring-1 ring-inset"
+                  class="inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium capitalize"
                   :class="statusBadgeClass(user.status)"
                 >
                   {{ user.status }}
@@ -204,13 +232,10 @@ const profileLocationLine = computed(() => {
             v-if="canUpdateUsers"
             class="flex shrink-0 flex-col gap-2 sm:items-end"
           >
-            <button
-              type="button"
-              class="inline-flex w-full items-center justify-center rounded-lg bg-[#206ba4] px-5 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-[#1a5a8a] focus:outline-none focus:ring-2 focus:ring-[#206ba4]/40 sm:w-auto dark:hover:bg-blue-500"
-              @click="router.push(`/users/${id}/edit`)"
-            >
-              Edit
-            </button>
+            <CrmOutlineEditButton
+              class="w-full sm:w-auto"
+              @click="editOpen = true"
+            />
           </div>
         </div>
       </div>
@@ -358,5 +383,11 @@ const profileLocationLine = computed(() => {
         </dl>
       </section>
     </div>
+
+    <UserEditModal
+      v-model:open="editOpen"
+      :user-id="String(props.id)"
+      @saved="loadProfile"
+    />
   </div>
 </template>

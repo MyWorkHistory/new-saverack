@@ -1,5 +1,5 @@
 <script setup>
-import { reactive, ref, watch } from "vue";
+import { computed, onUnmounted, reactive, ref, watch } from "vue";
 import api from "../../services/api";
 import { useToast } from "../../composables/useToast";
 import { errorMessage } from "../../utils/apiError";
@@ -18,6 +18,21 @@ const emit = defineEmits(["update:open", "saved"]);
 
 const saving = ref(false);
 const errorMsg = ref("");
+const loadingSupport = ref(false);
+
+const localUsers = ref([]);
+const localStatuses = ref([]);
+const localPriorities = ref([]);
+
+const displayUsers = computed(() =>
+  props.users.length ? props.users : localUsers.value,
+);
+const displayStatuses = computed(() =>
+  props.statuses.length ? props.statuses : localStatuses.value,
+);
+const displayPriorities = computed(() =>
+  props.priorities.length ? props.priorities : localPriorities.value,
+);
 
 const form = reactive({
   title: "",
@@ -58,13 +73,64 @@ function applyTask(t) {
   errorMsg.value = "";
 }
 
+async function ensureSupportData() {
+  loadingSupport.value = true;
+  try {
+    if (!props.users.length) {
+      const { data } = await api.get("/users", {
+        params: { per_page: 100, page: 1 },
+      });
+      localUsers.value = data.data || [];
+    } else {
+      localUsers.value = [];
+    }
+    if (!props.statuses.length || !props.priorities.length) {
+      const { data } = await api.get("/webmaster/tasks/meta");
+      localStatuses.value = data.statuses || [];
+      localPriorities.value = data.priorities || [];
+    } else {
+      localStatuses.value = [];
+      localPriorities.value = [];
+    }
+  } catch {
+    localUsers.value = [];
+    localStatuses.value = [];
+    localPriorities.value = [];
+  } finally {
+    loadingSupport.value = false;
+  }
+}
+
 watch(
   () => [props.open, props.task],
-  () => {
-    if (!props.open) return;
+  async ([isOpen]) => {
+    if (!isOpen) return;
+    await ensureSupportData();
     applyTask(props.task);
   },
 );
+
+function onEsc(e) {
+  if (e.key === "Escape" && props.open && !saving.value) {
+    e.preventDefault();
+    close();
+  }
+}
+
+watch(
+  () => props.open,
+  (o) => {
+    if (o) {
+      document.addEventListener("keydown", onEsc);
+    } else {
+      document.removeEventListener("keydown", onEsc);
+    }
+  },
+);
+
+onUnmounted(() => {
+  document.removeEventListener("keydown", onEsc);
+});
 
 function close() {
   emit("update:open", false);
@@ -103,32 +169,36 @@ async function onSubmit() {
 }
 
 function onBackdropClick() {
-  if (!saving.value) close();
+  if (!saving.value && !loadingSupport.value) close();
 }
 </script>
 
 <template>
   <Teleport to="body">
-    <Transition name="drawer-fade">
+    <Transition name="modal-backdrop">
       <div
         v-if="open"
-        class="fixed inset-0 z-[200] flex h-[100dvh] max-h-[100dvh] justify-end overflow-hidden"
+        class="fixed inset-0 z-[200] flex items-center justify-center p-4 sm:p-6"
         aria-modal="true"
         role="dialog"
+        aria-labelledby="webmaster-task-modal-title"
       >
         <div
-          class="absolute inset-0 bg-gray-900/40 backdrop-blur-[1px] dark:bg-black/50"
+          class="absolute inset-0 bg-gray-900/40 backdrop-blur-[2px] dark:bg-black/55"
           aria-hidden="true"
           @click="onBackdropClick"
         />
-        <Transition name="drawer-slide" appear>
-          <aside
-            class="relative flex h-full w-full max-w-md flex-col border-l border-gray-200 bg-white shadow-2xl dark:border-gray-700 dark:bg-gray-900 sm:max-w-lg"
+        <Transition name="modal-panel" appear>
+          <div
+            class="relative z-10 flex max-h-[min(90dvh,720px)] w-full max-w-lg flex-col overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-2xl dark:border-gray-700 dark:bg-gray-900"
           >
             <header
               class="flex shrink-0 items-center justify-between border-b border-gray-200 px-5 py-4 dark:border-gray-800"
             >
-              <h2 class="text-lg font-semibold text-gray-900 dark:text-white">
+              <h2
+                id="webmaster-task-modal-title"
+                class="text-lg font-semibold text-gray-900 dark:text-white"
+              >
                 {{ task?.id ? "Edit task" : "Add task" }}
               </h2>
               <button
@@ -157,131 +227,144 @@ function onBackdropClick() {
             <div
               class="min-h-0 flex-1 overflow-y-auto overflow-x-hidden overscroll-y-contain px-5 py-4 [scrollbar-gutter:stable]"
             >
-              <p
-                v-if="errorMsg"
-                class="mb-4 text-sm text-red-600 dark:text-red-400"
+              <div
+                v-if="loadingSupport"
+                class="flex justify-center py-10 text-sm text-gray-500 dark:text-gray-400"
               >
-                {{ errorMsg }}
-              </p>
+                Loading…
+              </div>
+              <template v-else>
+                <p
+                  v-if="errorMsg"
+                  class="mb-4 text-sm text-red-600 dark:text-red-400"
+                >
+                  {{ errorMsg }}
+                </p>
 
-              <form
-                id="webmaster-task-form"
-                class="space-y-4"
-                @submit.prevent="onSubmit"
-              >
-                <div>
-                  <label
-                    class="mb-1 block text-xs font-medium text-gray-500 dark:text-gray-400"
-                    >Title<span class="text-red-500">*</span></label
-                  >
-                  <input
-                    v-model="form.title"
-                    type="text"
-                    required
-                    maxlength="255"
-                    class="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm dark:border-gray-600 dark:bg-gray-800 dark:text-white"
-                  />
-                </div>
-                <div>
-                  <label
-                    class="mb-1 block text-xs font-medium text-gray-500 dark:text-gray-400"
-                    >Description</label
-                  >
-                  <textarea
-                    v-model="form.description"
-                    rows="3"
-                    class="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm dark:border-gray-600 dark:bg-gray-800 dark:text-white"
-                  />
-                </div>
-                <div>
-                  <label
-                    class="mb-1 block text-xs font-medium text-gray-500 dark:text-gray-400"
-                    >Ticket price</label
-                  >
-                  <input
-                    v-model="form.price"
-                    type="number"
-                    min="0"
-                    step="0.01"
-                    placeholder="0.00"
-                    class="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm dark:border-gray-600 dark:bg-gray-800 dark:text-white"
-                  />
-                </div>
-                <div class="grid grid-cols-2 gap-3">
+                <form
+                  id="webmaster-task-form"
+                  class="space-y-4"
+                  @submit.prevent="onSubmit"
+                >
                   <div>
                     <label
                       class="mb-1 block text-xs font-medium text-gray-500 dark:text-gray-400"
-                      >Status</label
+                      >Title<span class="text-red-500">*</span></label
                     >
-                    <select
-                      v-model="form.status"
+                    <input
+                      v-model="form.title"
+                      type="text"
+                      required
+                      maxlength="255"
                       class="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm dark:border-gray-600 dark:bg-gray-800 dark:text-white"
-                    >
-                      <option
-                        v-for="s in statuses"
-                        :key="s.value"
-                        :value="s.value"
-                      >
-                        {{ s.label }}
-                      </option>
-                    </select>
+                    />
                   </div>
                   <div>
                     <label
                       class="mb-1 block text-xs font-medium text-gray-500 dark:text-gray-400"
-                      >Priority</label
+                      >Description</label
+                    >
+                    <textarea
+                      v-model="form.description"
+                      rows="3"
+                      class="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm dark:border-gray-600 dark:bg-gray-800 dark:text-white"
+                    />
+                  </div>
+                  <div>
+                    <label
+                      class="mb-1 block text-xs font-medium text-gray-500 dark:text-gray-400"
+                      >Ticket price</label
+                    >
+                    <input
+                      v-model="form.price"
+                      type="number"
+                      min="0"
+                      step="0.01"
+                      placeholder="0.00"
+                      class="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm dark:border-gray-600 dark:bg-gray-800 dark:text-white"
+                    />
+                  </div>
+                  <div class="grid grid-cols-2 gap-3">
+                    <div>
+                      <label
+                        class="mb-1 block text-xs font-medium text-gray-500 dark:text-gray-400"
+                        >Status</label
+                      >
+                      <select
+                        v-model="form.status"
+                        class="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm dark:border-gray-600 dark:bg-gray-800 dark:text-white"
+                      >
+                        <option
+                          v-for="s in displayStatuses"
+                          :key="s.value"
+                          :value="s.value"
+                        >
+                          {{ s.label }}
+                        </option>
+                      </select>
+                    </div>
+                    <div>
+                      <label
+                        class="mb-1 block text-xs font-medium text-gray-500 dark:text-gray-400"
+                        >Priority</label
+                      >
+                      <select
+                        v-model="form.priority"
+                        class="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm dark:border-gray-600 dark:bg-gray-800 dark:text-white"
+                      >
+                        <option
+                          v-for="p in displayPriorities"
+                          :key="p.value"
+                          :value="p.value"
+                        >
+                          {{ p.label }}
+                        </option>
+                      </select>
+                    </div>
+                  </div>
+                  <div>
+                    <label
+                      class="mb-1 block text-xs font-medium text-gray-500 dark:text-gray-400"
+                      >Due date</label
+                    >
+                    <input
+                      v-model="form.due_date"
+                      type="date"
+                      class="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm dark:border-gray-600 dark:bg-gray-800 dark:text-white"
+                    />
+                  </div>
+                  <div>
+                    <label
+                      class="mb-1 block text-xs font-medium text-gray-500 dark:text-gray-400"
+                      >Assign to</label
                     >
                     <select
-                      v-model="form.priority"
+                      v-model="form.assigned_to"
                       class="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm dark:border-gray-600 dark:bg-gray-800 dark:text-white"
                     >
+                      <option value="">Unassigned</option>
                       <option
-                        v-for="p in priorities"
-                        :key="p.value"
-                        :value="p.value"
+                        v-for="u in displayUsers"
+                        :key="u.id"
+                        :value="String(u.id)"
                       >
-                        {{ p.label }}
+                        {{ u.name }} ({{ u.email }})
                       </option>
                     </select>
                   </div>
-                </div>
-                <div>
-                  <label
-                    class="mb-1 block text-xs font-medium text-gray-500 dark:text-gray-400"
-                    >Due date</label
-                  >
-                  <input
-                    v-model="form.due_date"
-                    type="date"
-                    class="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm dark:border-gray-600 dark:bg-gray-800 dark:text-white"
-                  />
-                </div>
-                <div>
-                  <label
-                    class="mb-1 block text-xs font-medium text-gray-500 dark:text-gray-400"
-                    >Assign to</label
-                  >
-                  <select
-                    v-model="form.assigned_to"
-                    class="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm dark:border-gray-600 dark:bg-gray-800 dark:text-white"
-                  >
-                    <option value="">Unassigned</option>
-                    <option v-for="u in users" :key="u.id" :value="String(u.id)">
-                      {{ u.name }} ({{ u.email }})
-                    </option>
-                  </select>
-                </div>
-              </form>
+                </form>
+              </template>
             </div>
 
             <footer
+              v-if="!loadingSupport"
               class="flex shrink-0 gap-3 border-t border-gray-200 bg-gray-50/80 px-5 py-4 pb-[max(1rem,env(safe-area-inset-bottom,0px))] dark:border-gray-800 dark:bg-gray-900/80"
             >
               <button
                 type="submit"
                 form="webmaster-task-form"
                 :disabled="saving"
-                class="flex min-h-[2.75rem] min-w-0 flex-1 basis-0 items-center justify-center rounded-xl bg-blue-600 px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-50"
+                class="flex min-h-[2.75rem] min-w-0 flex-1 basis-0 items-center justify-center rounded-xl bg-[#206ba4] px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:opacity-95 focus:outline-none focus:ring-2 focus:ring-[#206ba4]/40 disabled:opacity-50"
               >
                 {{ saving ? "Saving…" : "Save" }}
               </button>
@@ -294,7 +377,7 @@ function onBackdropClick() {
                 Cancel
               </button>
             </footer>
-          </aside>
+          </div>
         </Transition>
       </div>
     </Transition>
@@ -302,20 +385,28 @@ function onBackdropClick() {
 </template>
 
 <style scoped>
-.drawer-fade-enter-active,
-.drawer-fade-leave-active {
+.modal-backdrop-enter-active,
+.modal-backdrop-leave-active {
   transition: opacity 0.2s ease;
 }
-.drawer-fade-enter-from,
-.drawer-fade-leave-to {
+.modal-backdrop-enter-from,
+.modal-backdrop-leave-to {
   opacity: 0;
 }
-.drawer-slide-enter-active,
-.drawer-slide-leave-active {
-  transition: transform 0.25s ease;
+
+.modal-panel-enter-active {
+  transition:
+    opacity 0.2s ease,
+    transform 0.2s ease;
 }
-.drawer-slide-enter-from,
-.drawer-slide-leave-to {
-  transform: translateX(100%);
+.modal-panel-leave-active {
+  transition:
+    opacity 0.15s ease,
+    transform 0.15s ease;
+}
+.modal-panel-enter-from,
+.modal-panel-leave-to {
+  opacity: 0;
+  transform: scale(0.97) translateY(0.5rem);
 }
 </style>

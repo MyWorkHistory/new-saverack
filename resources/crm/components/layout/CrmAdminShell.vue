@@ -7,7 +7,7 @@ defineProps({
   user: { type: Object, required: true },
 });
 
-defineEmits(["logout"]);
+defineEmits(["logout", "refresh-user"]);
 
 const { isMobileOpen, toggleMobileSidebar, mainMarginClass } = useCrmSidebar();
 </script>
@@ -29,7 +29,11 @@ const { isMobileOpen, toggleMobileSidebar, mainMarginClass } = useCrmSidebar();
         mainMarginClass,
       ]"
     >
-      <CrmHeader :user="user" @logout="$emit('logout')" />
+      <CrmHeader
+        :user="user"
+        @logout="$emit('logout')"
+        @refresh-user="$emit('refresh-user')"
+      />
       <div class="mx-auto max-w-[var(--breakpoint-2xl)] p-4 md:p-6">
         <slot />
       </div>

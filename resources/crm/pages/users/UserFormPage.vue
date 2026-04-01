@@ -1,18 +1,12 @@
 <script setup>
-import { computed, onMounted } from "vue";
-import { RouterLink, useRoute, useRouter } from "vue-router";
+import { onMounted } from "vue";
+import { useRouter } from "vue-router";
 import PageHeader from "../../components/common/PageHeader.vue";
 import CrmLoadingSpinner from "../../components/common/CrmLoadingSpinner.vue";
 import UserFormFields from "../../components/users/UserFormFields.vue";
 import { useUserForm } from "../../composables/useUserForm";
 
-const route = useRoute();
 const router = useRouter();
-
-const isEdit = computed(() => route.name === "users-edit");
-const userId = computed(() => (isEdit.value ? String(route.params.id) : null));
-
-const title = computed(() => (isEdit.value ? "Edit user" : "Add user"));
 
 const {
   loading,
@@ -21,7 +15,6 @@ const {
   roles,
   form,
   loadRoles,
-  loadUser,
   resetForCreate,
   submit,
   toggleRole,
@@ -34,23 +27,16 @@ onMounted(async () => {
   errorMsg.value = "";
   try {
     await loadRoles();
-    if (isEdit.value && userId.value) {
-      await loadUser(userId.value);
-    } else {
-      resetForCreate();
-    }
+    resetForCreate();
   } catch {
-    errorMsg.value = "Could not load user.";
+    errorMsg.value = "Could not load form.";
   } finally {
     loading.value = false;
   }
 });
 
 async function onSubmit() {
-  const ok = await submit({
-    isEdit: isEdit.value,
-    userId: userId.value,
-  });
+  const ok = await submit({ isEdit: false, userId: null });
   if (ok) {
     await router.push("/users");
   }
@@ -59,19 +45,10 @@ async function onSubmit() {
 
 <template>
   <div class="mx-auto max-w-4xl space-y-6">
-    <div class="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
-      <PageHeader
-        :title="title"
-        subtitle="Account, profile, and roles — all saved to the user record"
-      />
-      <RouterLink
-        v-if="isEdit && userId"
-        :to="`/users/${userId}`"
-        class="inline-flex shrink-0 items-center justify-center rounded-xl border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 dark:border-gray-600 dark:bg-gray-900 dark:text-gray-200 dark:hover:bg-gray-800"
-      >
-        View profile
-      </RouterLink>
-    </div>
+    <PageHeader
+      title="Add user"
+      subtitle="Account, profile, and roles — all saved to the user record"
+    />
 
     <p v-if="errorMsg" class="text-sm text-red-600 dark:text-red-400">
       {{ errorMsg }}
@@ -85,7 +62,7 @@ async function onSubmit() {
       <UserFormFields
         :form="form"
         :roles="roles"
-        :is-edit="isEdit"
+        :is-edit="false"
         :saving="saving"
         :first-error="firstError"
         :clear-field-error="clearFieldError"

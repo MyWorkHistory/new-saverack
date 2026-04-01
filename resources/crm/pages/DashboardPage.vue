@@ -6,6 +6,7 @@ import api from "../services/api";
 import CrmMetricCard from "../components/dashboard/CrmMetricCard.vue";
 import CrmLoadingSpinner from "../components/common/CrmLoadingSpinner.vue";
 import ConfirmModal from "../components/common/ConfirmModal.vue";
+import UserEditModal from "../components/users/UserEditModal.vue";
 import { useToast } from "../composables/useToast";
 import { crmIsAdmin } from "../utils/crmUser";
 import { errorMessage } from "../utils/apiError";
@@ -24,6 +25,9 @@ const manageMenuRect = ref({ top: 0, left: 0 });
 const deleteTarget = ref(null);
 const deleteBusy = ref(false);
 const deleteError = ref("");
+const userEditModalOpen = ref(false);
+const userEditModalUserId = ref("");
+const recentUsersFilterOpen = ref(false);
 
 function userHasPerm(key) {
   const u = crmUser.value;
@@ -113,15 +117,15 @@ const roleLabels = (user) => {
 const statusBadgeClass = (status) => {
   const s = String(status || "").toLowerCase();
   if (s === "active") {
-    return "bg-emerald-50 text-emerald-800 ring-emerald-600/20 dark:bg-emerald-500/10 dark:text-emerald-300 dark:ring-emerald-500/30";
+    return "bg-emerald-50 text-emerald-800 dark:bg-emerald-500/10 dark:text-emerald-300";
   }
   if (s === "pending") {
-    return "bg-amber-50 text-amber-800 ring-amber-600/20 dark:bg-amber-500/10 dark:text-amber-200 dark:ring-amber-500/30";
+    return "bg-amber-50 text-amber-800 dark:bg-amber-500/10 dark:text-amber-200";
   }
   if (s === "inactive") {
-    return "bg-gray-100 text-gray-700 ring-gray-500/20 dark:bg-gray-800 dark:text-gray-300 dark:ring-gray-500/40";
+    return "bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-300";
   }
-  return "bg-slate-100 text-slate-700 ring-slate-500/20 dark:bg-slate-800 dark:text-slate-300";
+  return "bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300";
 };
 
 const filteredUsers = computed(() => {
@@ -343,6 +347,21 @@ function closeManageMenu() {
   manageOpenId.value = null;
 }
 
+function openUserEditModal(user) {
+  userEditModalUserId.value = String(user.id);
+  userEditModalOpen.value = true;
+  closeManageMenu();
+}
+
+async function refreshDashboardSummary() {
+  try {
+    const { data } = await api.get("/dashboard/summary");
+    summary.value = { ...summary.value, ...data };
+  } catch {
+    /* ignore */
+  }
+}
+
 function onWindowScrollOrResize() {
   if (manageOpenId.value !== null) {
     closeManageMenu();
@@ -365,6 +384,9 @@ function toggleManageMenu(userId, e) {
 function onDocClick(e) {
   if (!e.target.closest("[data-row-actions]")) {
     manageOpenId.value = null;
+  }
+  if (!e.target.closest("[data-recent-filter]")) {
+    recentUsersFilterOpen.value = false;
   }
 }
 
@@ -781,12 +803,12 @@ onUnmounted(() => {
         {{ deleteError }}
       </p>
 
-      <!-- Recent users (same table pattern as Users page) -->
+      <!-- Recent users (TailAdmin-style basic table: one card, toolbar + horizontal row lines) -->
       <div
-        class="overflow-hidden rounded-xl border border-gray-200 bg-white shadow-sm dark:border-gray-800 dark:bg-gray-900/40"
+        class="overflow-hidden rounded-xl border border-gray-200 bg-white shadow-sm dark:border-gray-800 dark:bg-gray-900"
       >
         <div
-          class="flex flex-col gap-4 border-b border-gray-100 px-4 py-5 dark:border-gray-800 sm:px-6"
+          class="flex flex-col gap-4 border-b border-gray-200 px-4 py-5 dark:border-gray-700 sm:px-6"
         >
           <div
             class="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between"
@@ -822,65 +844,116 @@ onUnmounted(() => {
                 <input
                   v-model="search"
                   type="search"
-                  placeholder="Search…"
+                  placeholder="Search..."
                   class="h-11 w-full rounded-lg border border-gray-200 bg-gray-50 py-2.5 pl-10 pr-3 text-sm text-gray-900 placeholder:text-gray-400 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20 dark:border-gray-700 dark:bg-gray-800/50 dark:text-white dark:placeholder:text-gray-500"
                 />
               </div>
-              <select
-                v-model="statusFilter"
-                class="h-11 rounded-lg border border-gray-200 bg-white py-2 pl-3 pr-8 text-sm text-gray-900 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20 dark:border-gray-700 dark:bg-gray-800 dark:text-white"
+              <div
+                class="relative flex shrink-0 items-center"
+                data-recent-filter
               >
-                <option value="">All statuses</option>
-                <option value="pending">Pending</option>
-                <option value="active">Active</option>
-                <option value="inactive">Inactive</option>
-              </select>
+                <button
+                  type="button"
+                  class="inline-flex h-11 items-center gap-2 rounded-lg border border-gray-200 bg-white px-4 text-sm font-medium text-gray-700 shadow-sm hover:bg-gray-50 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200 dark:hover:bg-gray-700"
+                  :class="{ 'ring-2 ring-blue-500/30': recentUsersFilterOpen }"
+                  :aria-expanded="recentUsersFilterOpen"
+                  @click.stop="recentUsersFilterOpen = !recentUsersFilterOpen"
+                >
+                  <svg
+                    class="h-5 w-5 text-gray-500"
+                    fill="none"
+                    viewBox="0 0 24 24"
+                    stroke="currentColor"
+                    stroke-width="2"
+                  >
+                    <path
+                      stroke-linecap="round"
+                      stroke-linejoin="round"
+                      d="M12 6V4m0 2a2 2 0 100 4m0-4a2 2 0 110 4m-6 8a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4m6 6v10m6-2a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4"
+                    />
+                  </svg>
+                  Filter
+                </button>
+                <Transition
+                  enter-active-class="transition ease-out duration-100"
+                  enter-from-class="transform opacity-0 scale-95"
+                  enter-to-class="transform opacity-100 scale-100"
+                  leave-active-class="transition ease-in duration-75"
+                  leave-from-class="transform opacity-100 scale-100"
+                  leave-to-class="transform opacity-0 scale-95"
+                >
+                  <div
+                    v-if="recentUsersFilterOpen"
+                    class="absolute right-0 top-full z-30 mt-2 w-64 origin-top-right rounded-xl border border-gray-200 bg-white p-4 shadow-lg dark:border-gray-700 dark:bg-gray-900"
+                    @click.stop
+                  >
+                    <label
+                      class="mb-1 block text-xs font-medium text-gray-500 dark:text-gray-400"
+                      >Status</label
+                    >
+                    <select
+                      v-model="statusFilter"
+                      class="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm dark:border-gray-600 dark:bg-gray-800 dark:text-white"
+                      @change="recentUsersFilterOpen = false"
+                    >
+                      <option value="">All statuses</option>
+                      <option value="pending">Pending</option>
+                      <option value="active">Active</option>
+                      <option value="inactive">Inactive</option>
+                    </select>
+                  </div>
+                </Transition>
+              </div>
             </div>
           </div>
         </div>
 
         <div class="overflow-x-auto">
-          <table class="min-w-[800px] w-full text-left text-sm">
+          <table
+            class="min-w-[800px] w-full border-collapse text-left text-sm"
+          >
             <thead>
               <tr
-                class="border-b border-gray-100 bg-gray-50 dark:border-gray-800 dark:bg-gray-800/40"
+                class="border-b border-gray-200 bg-gray-50 dark:border-gray-700 dark:bg-gray-800/60"
               >
                 <th
-                  class="px-4 py-3 text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400"
+                  class="px-5 py-4 text-sm font-medium text-gray-500 dark:text-gray-400"
                 >
                   Status
                 </th>
-                <th class="px-4 py-3 text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">
+                <th
+                  class="px-5 py-4 text-sm font-medium text-gray-500 dark:text-gray-400"
+                >
                   User
                 </th>
                 <th
-                  class="px-4 py-3 text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400"
+                  class="px-5 py-4 text-sm font-medium text-gray-500 dark:text-gray-400"
                 >
                   Role
                 </th>
                 <th
                   v-if="showRowActions"
-                  class="w-[4.5rem] min-w-[4.75rem] px-3 py-3 text-right text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400"
+                  class="w-[4.5rem] min-w-[4.75rem] px-5 py-4 text-right text-sm font-medium text-gray-500 dark:text-gray-400"
                 >
-                  Actions
+                  Action
                 </th>
               </tr>
             </thead>
-            <tbody class="divide-y divide-gray-100 dark:divide-gray-800">
+            <tbody class="divide-y divide-gray-100 bg-white dark:divide-gray-800 dark:bg-transparent">
               <tr
                 v-for="row in filteredUsers"
                 :key="row.id"
                 class="bg-white hover:bg-gray-50/80 dark:bg-transparent dark:hover:bg-white/[0.02]"
               >
-                <td class="px-4 py-4 align-middle">
+                <td class="px-5 py-4 align-middle">
                   <span
-                    class="inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium capitalize ring-1 ring-inset"
+                    class="inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium capitalize"
                     :class="statusBadgeClass(row.status)"
                   >
                     {{ row.status }}
                   </span>
                 </td>
-                <td class="px-4 py-4 align-middle">
+                <td class="px-5 py-4 align-middle">
                   <div class="flex items-center gap-3">
                     <span
                       class="flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-xs font-semibold"
@@ -905,13 +978,13 @@ onUnmounted(() => {
                   </div>
                 </td>
                 <td
-                  class="px-4 py-4 align-middle text-gray-700 dark:text-gray-300"
+                  class="px-5 py-4 align-middle text-gray-700 dark:text-gray-300"
                 >
                   {{ roleLabels(row) }}
                 </td>
                 <td
                   v-if="showRowActions"
-                  class="relative px-4 py-4 text-right align-middle"
+                  class="relative px-5 py-4 text-right align-middle"
                 >
                   <div data-row-actions class="relative inline-flex justify-end">
                     <button
@@ -939,7 +1012,7 @@ onUnmounted(() => {
               <tr v-if="filteredUsers.length === 0">
                 <td
                   :colspan="tableColspan"
-                  class="px-4 py-12 text-center text-gray-500 dark:text-gray-400"
+                  class="px-5 py-12 text-center text-gray-500 dark:text-gray-400"
                 >
                   No users match your filters.
                 </td>
@@ -948,6 +1021,12 @@ onUnmounted(() => {
           </table>
         </div>
       </div>
+
+      <UserEditModal
+        v-model:open="userEditModalOpen"
+        :user-id="userEditModalUserId"
+        @saved="refreshDashboardSummary"
+      />
 
       <ConfirmModal
         :open="deleteModalOpen"
@@ -980,15 +1059,15 @@ onUnmounted(() => {
             }"
             @click.stop
           >
-            <RouterLink
+            <button
               v-if="canUpdateUsers"
-              :to="`/users/${manageMenuUser.id}/edit`"
-              class="flex w-full items-center px-4 py-2.5 text-left text-sm font-medium text-gray-800 no-underline transition hover:bg-gray-50 dark:text-gray-200 dark:hover:bg-white/5"
+              type="button"
+              class="flex w-full items-center px-4 py-2.5 text-left text-sm font-medium text-gray-800 transition hover:bg-gray-50 dark:text-gray-200 dark:hover:bg-white/5"
               role="menuitem"
-              @click="closeManageMenu"
+              @click="openUserEditModal(manageMenuUser)"
             >
               Edit
-            </RouterLink>
+            </button>
             <button
               v-if="canDeleteRow(manageMenuUser)"
               type="button"

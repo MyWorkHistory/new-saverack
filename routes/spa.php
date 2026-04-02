@@ -56,4 +56,4 @@ Route::get('/{any?}', function () use ($spaHtmlHeaders) {
     }
 
     return response()->file($index, $spaHtmlHeaders);
-})->where('any', '^(?!(?:api|sanctum)(?:/|$)).*$');
+})->where('any', '^(?!(?:api|sanctum|storage)(?:/|$)).*$');

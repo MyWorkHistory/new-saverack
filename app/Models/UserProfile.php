@@ -98,9 +98,17 @@ class UserProfile extends Model
             return null;
         }
 
-        $path = str_replace('\\', '/', $this->avatar_path);
+        $path = ltrim(str_replace('\\', '/', $this->avatar_path), '/');
+        $relative = 'storage/'.$path;
 
-        // Root-relative avoids baking in APP_URL (e.g. http://localhost) into JSON for the SPA.
-        return '/storage/'.ltrim($path, '/');
+        // Prefer the HTTP host serving this response so <img src> hits Laravel, not the Vite port.
+        if (! app()->runningInConsole()) {
+            $host = request()->getSchemeAndHttpHost();
+            if (is_string($host) && $host !== '') {
+                return rtrim($host, '/').'/'.ltrim($relative, '/');
+            }
+        }
+
+        return asset($relative);
     }
 }

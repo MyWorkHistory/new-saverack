@@ -52,10 +52,6 @@ const expanded = ref({
 
 const isAdminTarget = computed(() => subject.value?.is_admin === true);
 
-const gridTemplate = computed(
-  () => "minmax(8rem,1fr) repeat(4, minmax(4.5rem, 1fr))",
-);
-
 async function load() {
   loading.value = true;
   errorMsg.value = "";
@@ -214,103 +210,117 @@ load();
       <div
         class="overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-sm dark:border-gray-800 dark:bg-gray-900/40"
       >
-        <div
-          class="hidden border-b border-gray-100 bg-gray-50 px-4 py-3 dark:border-gray-800 dark:bg-gray-800/50 sm:grid sm:gap-3 sm:px-6"
-          :style="{ gridTemplateColumns: gridTemplate }"
+        <h2
+          class="border-b border-gray-100 px-4 py-4 text-lg font-semibold text-gray-900 dark:border-gray-800 dark:text-white sm:px-6"
         >
-          <div class="text-xs font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400">
-            Module
-          </div>
-          <div
-            v-for="h in ACTION_HEADERS"
-            :key="h"
-            class="text-center text-xs font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400"
-          >
-            {{ h }}
-          </div>
-        </div>
+          Permissions
+        </h2>
 
-        <div
-          v-for="mod in MODULES"
-          :key="mod.key"
-          class="border-b border-gray-100 last:border-b-0 dark:border-gray-800"
-        >
-          <!-- Accordion header -->
-          <div
-            class="flex flex-wrap items-center gap-2 px-4 py-3 sm:grid sm:gap-3 sm:px-6"
-            :style="{ gridTemplateColumns: gridTemplate }"
+        <div class="overflow-x-auto">
+          <table
+            class="w-full min-w-[640px] table-fixed border-collapse text-sm"
           >
-            <div class="flex min-w-0 flex-1 items-center gap-2 sm:col-span-1 sm:flex-initial">
-              <button
-                type="button"
-                class="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-gray-200 bg-white text-gray-600 transition hover:bg-gray-50 dark:border-gray-600 dark:bg-gray-900 dark:text-gray-300 dark:hover:bg-white/5"
-                :aria-expanded="expanded[mod.key]"
-                :aria-controls="`perm-panel-${mod.key}`"
-                @click="toggleExpanded(mod.key)"
-              >
-                <svg
-                  class="h-5 w-5 transition"
-                  :class="expanded[mod.key] ? 'rotate-180' : ''"
-                  fill="none"
-                  stroke="currentColor"
-                  viewBox="0 0 24 24"
-                  aria-hidden="true"
+            <colgroup>
+              <col class="w-[44%]" />
+              <col class="w-[14%]" />
+              <col class="w-[14%]" />
+              <col class="w-[14%]" />
+              <col class="w-[14%]" />
+            </colgroup>
+
+            <tbody
+              v-for="mod in MODULES"
+              :key="mod.key"
+            >
+              <!-- Section header: module + checkbox + label per column -->
+              <tr class="border-b border-gray-100 bg-white dark:border-gray-800">
+                <th
+                  scope="row"
+                  class="px-4 py-3 text-left align-middle font-normal sm:px-6"
                 >
-                  <path
-                    stroke-linecap="round"
-                    stroke-linejoin="round"
-                    stroke-width="2"
-                    d="M19 9l-7 7-7-7"
-                  />
-                </svg>
-              </button>
-              <span class="text-sm font-semibold text-gray-900 dark:text-white">
-                {{ mod.label }}
-              </span>
-            </div>
-            <div
-              v-for="(colKey, colIdx) in mod.keys"
-              :key="`h-${mod.key}-${colKey}`"
-              class="flex flex-1 items-center justify-center sm:block"
-            >
-              <input
-                type="checkbox"
-                :class="checkboxClass"
-                :checked="hasKey(colKey)"
-                :disabled="isAdminTarget"
-                :aria-label="`${mod.label} ${ACTION_HEADERS[colIdx]} (All In Section)`"
-                @change="onColToggle(mod, colIdx, $event)"
-              />
-            </div>
-          </div>
+                  <div class="flex min-w-0 items-center gap-2">
+                    <button
+                      type="button"
+                      class="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-gray-200 bg-white text-gray-600 transition hover:bg-gray-50 dark:border-gray-600 dark:bg-gray-900 dark:text-gray-300 dark:hover:bg-white/5"
+                      :aria-expanded="expanded[mod.key]"
+                      :aria-controls="`perm-panel-${mod.key}`"
+                      @click="toggleExpanded(mod.key)"
+                    >
+                      <svg
+                        class="h-5 w-5 transition"
+                        :class="expanded[mod.key] ? 'rotate-180' : ''"
+                        fill="none"
+                        stroke="currentColor"
+                        viewBox="0 0 24 24"
+                        aria-hidden="true"
+                      >
+                        <path
+                          stroke-linecap="round"
+                          stroke-linejoin="round"
+                          stroke-width="2"
+                          d="M19 9l-7 7-7-7"
+                        />
+                      </svg>
+                    </button>
+                    <span class="font-semibold text-gray-900 dark:text-white">
+                      {{ mod.label }}
+                    </span>
+                  </div>
+                </th>
+                <td
+                  v-for="(colKey, colIdx) in mod.keys"
+                  :key="`h-${mod.key}-${colKey}`"
+                  class="border-l border-gray-100 px-2 py-3 align-middle dark:border-gray-800"
+                >
+                  <div
+                    class="flex items-center justify-center gap-2 whitespace-nowrap"
+                  >
+                    <input
+                      type="checkbox"
+                      :class="checkboxClass"
+                      :checked="hasKey(colKey)"
+                      :disabled="isAdminTarget"
+                      :aria-label="`${mod.label} ${ACTION_HEADERS[colIdx]}`"
+                      @change="onColToggle(mod, colIdx, $event)"
+                    />
+                    <span
+                      class="text-xs font-medium text-gray-600 dark:text-gray-400"
+                    >
+                      {{ ACTION_HEADERS[colIdx] }}
+                    </span>
+                  </div>
+                </td>
+              </tr>
 
-          <!-- Child row -->
-          <div
-            v-show="expanded[mod.key]"
-            :id="`perm-panel-${mod.key}`"
-            class="border-t border-gray-100 bg-gray-50/60 px-4 py-3 dark:border-gray-800 dark:bg-gray-800/20 sm:grid sm:gap-3 sm:px-6"
-            :style="{ gridTemplateColumns: gridTemplate }"
-          >
-            <div
-              class="pl-11 text-sm text-gray-700 dark:text-gray-300"
-            >
-              {{ mod.rowLabel }}
-            </div>
-            <div
-              v-for="(colKey, colIdx) in mod.keys"
-              :key="`c-${mod.key}-${colKey}`"
-              class="flex flex-1 items-center justify-center sm:block sm:text-center"
-            >
-              <input
-                type="checkbox"
-                :class="checkboxClass"
-                :checked="hasKey(colKey)"
-                :disabled="isAdminTarget"
-                :aria-label="`${mod.rowLabel} ${ACTION_HEADERS[colIdx]}`"
-                @change="onCellToggle(colKey, $event)"
-              />
-            </div>
-          </div>
+              <!-- Child row: aligned checkboxes only -->
+              <tr
+                v-show="expanded[mod.key]"
+                :id="`perm-panel-${mod.key}`"
+                class="border-b border-gray-100 bg-gray-50/80 dark:border-gray-800 dark:bg-gray-800/25"
+              >
+                <th
+                  scope="row"
+                  class="px-4 py-3 pl-14 text-left align-middle font-normal text-gray-700 dark:text-gray-300 sm:px-6 sm:pl-16"
+                >
+                  {{ mod.rowLabel }}
+                </th>
+                <td
+                  v-for="(colKey, colIdx) in mod.keys"
+                  :key="`c-${mod.key}-${colKey}`"
+                  class="border-l border-gray-100 px-2 py-3 text-center align-middle dark:border-gray-800"
+                >
+                  <input
+                    type="checkbox"
+                    :class="checkboxClass"
+                    :checked="hasKey(colKey)"
+                    :disabled="isAdminTarget"
+                    :aria-label="`${mod.rowLabel} ${ACTION_HEADERS[colIdx]}`"
+                    @change="onCellToggle(colKey, $event)"
+                  />
+                </td>
+              </tr>
+            </tbody>
+          </table>
         </div>
       </div>
 

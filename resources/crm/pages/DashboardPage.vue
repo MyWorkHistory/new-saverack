@@ -55,7 +55,7 @@ const deleteModalOpen = computed(() => deleteTarget.value !== null);
 const deleteMessage = computed(() => {
   const u = deleteTarget.value;
   return u
-    ? `Are you sure you want to delete ${u.name}? This cannot be undone.`
+    ? `Are You Sure You Want To Delete ${u.name}? This Cannot Be Undone.`
     : "";
 });
 
@@ -163,7 +163,7 @@ const chartBundle = computed(() => {
       labels: c.labels,
       series: [
         { name: "Activity", data: c.activity ?? [] },
-        { name: "New users", data: c.new_users ?? [] },
+        { name: "New Users", data: c.new_users ?? [] },
       ],
     };
   }
@@ -182,7 +182,7 @@ const chartBundle = computed(() => {
       labels: ["Q1", "Q2", "Q3", "Q4"],
       series: [
         { name: "Activity", data: sumQ(c.activity) },
-        { name: "New users", data: sumQ(c.new_users) },
+        { name: "New Users", data: sumQ(c.new_users) },
       ],
     };
   }
@@ -426,12 +426,12 @@ const confirmDelete = async () => {
   try {
     await api.delete(`/users/${user.id}`);
     deleteTarget.value = null;
-    toast.success("User deleted.");
+    toast.success("User Deleted.");
     const { data } = await api.get("/dashboard/summary");
     summary.value = { ...summary.value, ...data };
   } catch (e) {
     deleteError.value = errorMessage(e, "Could not delete user.");
-    toast.errorFrom(e, "Could not delete user.");
+    toast.errorFrom(e, "Could Not Delete User.");
   } finally {
     deleteBusy.value = false;
   }
@@ -464,29 +464,29 @@ onUnmounted(() => {
       v-if="loading"
       class="flex justify-center rounded-2xl border border-gray-200 bg-white p-10 dark:border-gray-800 dark:bg-white/[0.03]"
     >
-      <CrmLoadingSpinner message="Loading dashboard…" />
+      <CrmLoadingSpinner message="Loading Dashboard…" />
     </div>
 
     <template v-else>
       <!-- Top metrics -->
       <div class="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">
         <CrmMetricCard
-          label="Total users"
+          label="Total Users"
           :value="nf.format(summary.metrics.total_users.value)"
           :change-pct="summary.metrics.total_users.change_pct"
-          period-label="From last month"
+          period-label="From Last Month"
         />
         <CrmMetricCard
-          label="Active users"
+          label="Active Users"
           :value="nf.format(summary.metrics.active_users.value)"
           :change-pct="summary.metrics.active_users.change_pct"
-          period-label="New active accounts (MoM)"
+          period-label="New Active Accounts (MoM)"
         />
         <CrmMetricCard
-          label="Activities today"
+          label="Activities Today"
           :value="nf.format(summary.metrics.activities_today.value)"
           :change-pct="summary.metrics.activities_today.change_pct"
-          period-label="vs yesterday"
+          period-label="Compared To Yesterday"
         />
       </div>
 
@@ -503,7 +503,7 @@ onUnmounted(() => {
                 Statistics
               </h2>
               <p class="mt-0.5 text-sm text-gray-500 dark:text-gray-400">
-                Activity and new registrations by period
+                Activity And New Registrations By Period
               </p>
               <div class="mt-4 flex flex-wrap gap-6">
                 <div>
@@ -515,13 +515,13 @@ onUnmounted(() => {
                     <span
                       class="ml-2 inline-flex items-center rounded-full bg-emerald-50 px-2 py-0.5 text-xs font-semibold text-emerald-600 dark:bg-emerald-500/15 dark:text-emerald-400"
                     >
-                      {{ avgActivityMonthly.line2 }} vs prior
+                      {{ avgActivityMonthly.line2 }} Vs Prior
                     </span>
                   </p>
                 </div>
                 <div>
                   <p class="text-xs font-medium text-gray-500 dark:text-gray-400">
-                    Latest month vs prev.
+                    Latest Month Vs Prev.
                   </p>
                   <p class="mt-1 text-xl font-bold text-gray-900 dark:text-white">
                     {{
@@ -532,7 +532,7 @@ onUnmounted(() => {
                     <span
                       class="ml-2 text-sm font-normal text-gray-500 dark:text-gray-400"
                     >
-                      activity
+                      Activity
                     </span>
                   </p>
                 </div>
@@ -598,7 +598,7 @@ onUnmounted(() => {
                 Engagement
               </h2>
               <p class="mt-0.5 text-sm text-gray-500 dark:text-gray-400">
-                Today’s activity vs active accounts
+                Today’s Activity Vs Active Accounts
               </p>
             </div>
             <button
@@ -620,12 +620,12 @@ onUnmounted(() => {
           <p
             class="text-center text-xs font-medium text-gray-500 dark:text-gray-400"
           >
-            This month goals
+            This Month’s Goals
           </p>
           <div class="mt-4 space-y-3 border-t border-gray-100 pt-4 dark:border-gray-800">
             <div>
               <div class="flex justify-between text-xs font-medium">
-                <span class="text-gray-600 dark:text-gray-300">Active users</span>
+                <span class="text-gray-600 dark:text-gray-300">Active Users</span>
                 <span class="text-gray-900 dark:text-white">{{
                   nf.format(summary.metrics.active_users.value)
                 }}</span>
@@ -650,7 +650,7 @@ onUnmounted(() => {
             </div>
             <div>
               <div class="flex justify-between text-xs font-medium">
-                <span class="text-gray-600 dark:text-gray-300">Activity (30d)</span>
+                <span class="text-gray-600 dark:text-gray-300">Activity (30D)</span>
                 <span class="text-gray-900 dark:text-white">{{
                   nf.format(
                     (summary.chart.activity ?? []).reduce(
@@ -678,7 +678,7 @@ onUnmounted(() => {
         >
           <div class="flex items-start justify-between">
             <h2 class="text-lg font-semibold text-gray-900 dark:text-white">
-              Users by status
+              Users By Status
             </h2>
             <button
               type="button"
@@ -748,7 +748,7 @@ onUnmounted(() => {
                     {{ slice.key }}
                   </p>
                   <p class="text-xs text-gray-500 dark:text-gray-400">
-                    {{ slice.pct }}% • {{ nf.format(slice.count) }} accounts
+                    {{ slice.pct }}% • {{ nf.format(slice.count) }} Accounts
                   </p>
                 </div>
               </li>
@@ -761,7 +761,7 @@ onUnmounted(() => {
         >
           <div class="flex items-start justify-between">
             <h2 class="text-lg font-semibold text-gray-900 dark:text-white">
-              Recent activity
+              Recent Activity
             </h2>
             <button
               type="button"
@@ -813,10 +813,10 @@ onUnmounted(() => {
         <div class="px-4 py-5 sm:px-6">
           <div>
             <h2 class="text-xl font-bold text-gray-900 dark:text-white">
-              Recent staff
+              Recent Staff
             </h2>
             <p class="mt-0.5 text-sm text-gray-500 dark:text-gray-400">
-              Latest accounts in the directory
+              Latest Accounts In The Directory
             </p>
           </div>
         </div>
@@ -899,7 +899,7 @@ onUnmounted(() => {
                     class="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm dark:border-gray-600 dark:bg-gray-800 dark:text-white"
                     @change="recentUsersFilterOpen = false"
                   >
-                    <option value="">All statuses</option>
+                    <option value="">All Statuses</option>
                     <option value="pending">Pending</option>
                     <option value="active">Active</option>
                     <option value="inactive">Inactive</option>
@@ -939,7 +939,7 @@ onUnmounted(() => {
                 </th>
                 <th class="px-5 py-3 text-left sm:px-6">
                   <p class="text-xs font-medium text-gray-500 dark:text-gray-400">
-                    Hire date
+                    Hire Date
                   </p>
                 </th>
                 <th class="px-5 py-3 text-left sm:px-6">
@@ -1035,7 +1035,7 @@ onUnmounted(() => {
                       class="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border border-gray-200 bg-white text-gray-600 shadow-sm transition hover:border-gray-300 hover:bg-gray-50 hover:text-gray-900 dark:border-gray-600 dark:bg-gray-900 dark:text-gray-300 dark:hover:border-gray-500 dark:hover:bg-white/10 dark:hover:text-white"
                       :aria-expanded="manageOpenId === row.id"
                       aria-haspopup="true"
-                      aria-label="Row actions"
+                      aria-label="Row Actions"
                       @click="toggleManageMenu(row.id, $event)"
                     >
                       <CrmIconRowActions />
@@ -1048,7 +1048,7 @@ onUnmounted(() => {
                   :colspan="tableColspan"
                   class="px-5 py-12 text-center text-gray-500 dark:text-gray-400 sm:px-6"
                 >
-                  No users match your filters.
+                  No Users Match Your Filters.
                 </td>
               </tr>
             </tbody>

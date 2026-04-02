@@ -1,7 +1,7 @@
 <script setup>
 defineProps({
   /** Shown next to the spinner ring (e.g. "Loading...", "Loading users…"). */
-  message: { type: String, default: "Loading..." },
+  message: { type: String, default: "Loading…" },
   /** When true, the block is centered in its container (use for full-page shells). */
   center: { type: Boolean, default: false },
 });

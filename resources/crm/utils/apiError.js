@@ -1,5 +1,5 @@
 /** Turn an axios/API error into a single user-facing string. */
-export function errorMessage(e, fallback = "Something went wrong.") {
+export function errorMessage(e, fallback = "Something Went Wrong.") {
   const d = e?.response?.data;
   if (!d) {
     return typeof e?.message === "string" && e.message ? e.message : fallback;

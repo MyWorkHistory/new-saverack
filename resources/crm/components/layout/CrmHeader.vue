@@ -44,7 +44,7 @@ const accountOptions = computed(() => [
   {
     id: "workspace",
     title: "Save Rack",
-    subtitle: props.user?.email || "Primary workspace",
+    subtitle: props.user?.email || "Primary Workspace",
   },
 ]);
 
@@ -272,7 +272,7 @@ onUnmounted(() => {
                   v-model="accountFilter"
                   type="search"
                   autocomplete="off"
-                  placeholder="Search accounts…"
+                  placeholder="Search Accounts…"
                   class="h-10 w-full rounded-lg border border-gray-200 bg-gray-50 px-3 text-sm text-gray-900 placeholder:text-gray-400 focus:border-[#2563eb] focus:outline-none focus:ring-2 focus:ring-[#2563eb]/20 dark:border-gray-600 dark:bg-gray-800/80 dark:text-white dark:placeholder:text-gray-500"
                   @click.stop
                 />
@@ -330,7 +330,7 @@ onUnmounted(() => {
           <button
             type="button"
             class="relative flex h-11 w-11 items-center justify-center rounded-full border border-gray-200 bg-white text-gray-500 transition hover:bg-gray-100 hover:text-gray-800 dark:border-gray-800 dark:bg-gray-900 dark:text-gray-400 dark:hover:bg-gray-800 dark:hover:text-white"
-            aria-label="Toggle dark mode"
+            aria-label="Toggle Dark Mode"
             @click.stop="toggleTheme"
           >
             <svg
@@ -454,7 +454,7 @@ onUnmounted(() => {
                         d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"
                       />
                     </svg>
-                    Edit profile
+                    Edit Profile
                   </button>
                 </li>
                 <li v-else>
@@ -476,7 +476,7 @@ onUnmounted(() => {
                         d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"
                       />
                     </svg>
-                    View profile
+                    View Profile
                   </RouterLink>
                 </li>
                 <li>
@@ -503,7 +503,7 @@ onUnmounted(() => {
                         d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"
                       />
                     </svg>
-                    Account settings
+                    Account Settings
                   </RouterLink>
                 </li>
                 <li>
@@ -549,7 +549,7 @@ onUnmounted(() => {
                     d="M15.75 9V5.25A2.25 2.25 0 0013.5 3h-6a2.25 2.25 0 00-2.25 2.25v13.5A2.25 2.25 0 007.5 21h6a2.25 2.25 0 002.25-2.25V15M12 9l-3 3m0 0l3 3m-3-3h12.75"
                   />
                 </svg>
-                Sign out
+                Sign Out
               </button>
             </div>
           </div>

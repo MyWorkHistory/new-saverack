@@ -23,13 +23,13 @@ const submit = async () => {
   error.value = "";
   try {
     await api.post("/auth/reset-password", form);
-    message.value = "Password reset successful. You can sign in now.";
+    message.value = "Password Reset Successful. You Can Sign In Now.";
   } catch (e) {
     const d = e?.response?.data;
     error.value =
       d?.message ||
       (typeof d?.error === "string" ? d.error : null) ||
-      "Could not reset password.";
+      "Could Not Reset Password.";
   } finally {
     loading.value = false;
   }
@@ -47,10 +47,10 @@ const submit = async () => {
         <h1
           class="text-3xl font-bold tracking-tight text-[#1e3a5f] dark:text-white"
         >
-          Reset password
+          Reset Password
         </h1>
         <p class="mt-2 text-sm text-slate-500 dark:text-slate-400">
-          Enter the token from your email and choose a new password.
+          Enter The Token From Your Email And Choose A New Password.
         </p>
 
         <p
@@ -104,7 +104,7 @@ const submit = async () => {
               class="mb-1.5 block text-sm font-medium text-slate-700 dark:text-slate-300"
               for="reset-password"
             >
-              New password<span class="text-red-500" aria-hidden="true">*</span>
+              New Password<span class="text-red-500" aria-hidden="true">*</span>
             </label>
             <input
               id="reset-password"
@@ -139,14 +139,14 @@ const submit = async () => {
             :disabled="loading"
             class="w-full rounded-lg bg-[#2563eb] py-3 text-sm font-semibold text-white shadow-sm transition hover:opacity-90 focus:outline-none focus:ring-2 focus:ring-[#2563eb]/50 focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-60 dark:focus:ring-offset-gray-950"
           >
-            {{ loading ? "Resetting…" : "Reset password" }}
+            {{ loading ? "Resetting…" : "Reset Password" }}
           </button>
 
           <RouterLink
             to="/login"
             class="block text-center text-sm font-medium text-blue-600 hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-300"
           >
-            Back to sign in
+            Back To Sign In
           </RouterLink>
         </form>
       </div>

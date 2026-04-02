@@ -38,7 +38,7 @@ async function hydrate() {
     await loadRoles();
     await loadUser(id);
   } catch {
-    errorMsg.value = "Could not load user.";
+    errorMsg.value = "Could Not Load User.";
   } finally {
     loading.value = false;
   }
@@ -120,7 +120,7 @@ function onBackdropClick() {
                 id="user-edit-modal-title"
                 class="text-lg font-semibold text-gray-900 dark:text-white"
               >
-                Edit user
+                Edit User
               </h2>
               <button
                 type="button"
@@ -177,7 +177,7 @@ function onBackdropClick() {
                 />
               </form>
               <div v-else-if="loading" class="flex justify-center py-12">
-                <CrmLoadingSpinner message="Loading user…" />
+                <CrmLoadingSpinner message="Loading User…" />
               </div>
             </div>
 
@@ -191,7 +191,7 @@ function onBackdropClick() {
                 :disabled="saving"
                 class="inline-flex min-h-[2.75rem] flex-1 items-center justify-center rounded-xl bg-[#2563eb] px-5 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:opacity-95 focus:outline-none focus:ring-2 focus:ring-[#2563eb]/40 disabled:opacity-50 sm:flex-none"
               >
-                {{ saving ? "Saving…" : "Save changes" }}
+                {{ saving ? "Saving…" : "Save Changes" }}
               </button>
               <button
                 type="button"

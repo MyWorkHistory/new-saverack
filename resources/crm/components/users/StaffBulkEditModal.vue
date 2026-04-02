@@ -81,11 +81,11 @@ function onBackdrop() {
               class="shrink-0 border-b border-gray-200 px-5 py-4 dark:border-gray-800"
             >
               <h2 class="text-lg font-semibold text-gray-900 dark:text-white">
-                Bulk edit
+                Bulk Edit
               </h2>
               <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">
-                Update {{ selectedCount }} selected
-                {{ selectedCount === 1 ? "person" : "people" }}
+                Update {{ selectedCount }} Selected
+                {{ selectedCount === 1 ? "Person" : "People" }}
               </p>
             </header>
             <div class="min-h-0 flex-1 overflow-y-auto px-5 py-4">
@@ -129,7 +129,7 @@ function onBackdrop() {
                     >
                     <span
                       class="mt-1 block text-xs text-gray-500 dark:text-gray-400"
-                      >Replaces roles for all selected accounts.</span
+                      >Replaces Roles For All Selected Accounts.</span
                     >
                     <div class="mt-2 flex flex-wrap gap-2">
                       <label

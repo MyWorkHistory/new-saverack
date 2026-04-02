@@ -87,7 +87,7 @@ const deleteModalOpen = computed(() => deleteTarget.value !== null);
 const deleteMessage = computed(() => {
   const u = deleteTarget.value;
   return u
-    ? `Are you sure you want to delete ${u.name}? This cannot be undone.`
+    ? `Are You Sure You Want To Delete ${u.name}? This Cannot Be Undone.`
     : "";
 });
 
@@ -298,7 +298,7 @@ function onPerPageChange(e) {
 
 function openBulkEdit() {
   if (!selectedIds.value.length) {
-    toast.error("Select one or more rows.");
+    toast.error("Select One Or More Rows.");
     return;
   }
   bulkEditOpen.value = true;
@@ -311,12 +311,12 @@ async function onBulkApply(payload) {
       user_ids: selectedIds.value,
       ...payload,
     });
-    toast.success("Staff updated.");
+    toast.success("Staff Updated.");
     bulkEditOpen.value = false;
     selectedIds.value = [];
     await fetchUsers();
   } catch (e) {
-    toast.errorFrom(e, "Could not update staff.");
+    toast.errorFrom(e, "Could Not Update Staff.");
   } finally {
     bulkEditBusy.value = false;
   }
@@ -346,7 +346,7 @@ const confirmDelete = async () => {
   try {
     await api.delete(`/users/${user.id}`);
     deleteTarget.value = null;
-    toast.success("User deleted.");
+    toast.success("User Deleted.");
     await fetchUsers();
   } catch (e) {
     const msg =
@@ -481,7 +481,7 @@ onUnmounted(() => {
                 Staff
               </h1>
               <p class="mt-0.5 text-sm text-gray-500 dark:text-gray-400">
-                Directory of admin and staff accounts
+                Directory Of Admin And Staff Accounts
               </p>
             </div>
             <button
@@ -489,7 +489,7 @@ onUnmounted(() => {
               class="rounded-lg p-2 text-gray-500 transition hover:bg-gray-100 dark:hover:bg-white/10 dark:hover:text-gray-300"
               :disabled="loading"
               title="Refresh"
-              aria-label="Refresh list"
+              aria-label="Refresh List"
               @click="fetchUsers"
             >
               <svg
@@ -558,7 +558,7 @@ onUnmounted(() => {
                         v-model="query.role_id"
                         class="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm dark:border-gray-600 dark:bg-gray-800 dark:text-white"
                       >
-                        <option value="">All roles</option>
+                        <option value="">All Roles</option>
                         <option
                           v-for="r in roles"
                           :key="r.id"
@@ -577,7 +577,7 @@ onUnmounted(() => {
                         v-model="query.status"
                         class="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm dark:border-gray-600 dark:bg-gray-800 dark:text-white"
                       >
-                        <option value="all">All statuses</option>
+                        <option value="all">All Statuses</option>
                         <option value="pending">Pending</option>
                         <option value="active">Active</option>
                         <option value="inactive">Inactive</option>
@@ -693,7 +693,7 @@ onUnmounted(() => {
                   class="h-4 w-4 rounded border-gray-300 text-[#2563eb] focus:ring-[#2563eb]"
                   :checked="isAllPageSelected"
                   :disabled="loading || !rows.length"
-                  aria-label="Select all on page"
+                  aria-label="Select All On Page"
                   @change="toggleSelectAll"
                 />
               </th>
@@ -732,7 +732,7 @@ onUnmounted(() => {
               </th>
               <th class="px-5 py-3 text-left sm:px-6">
                 <p class="text-xs font-medium text-gray-500 dark:text-gray-400">
-                  Hire date
+                  Hire Date
                 </p>
               </th>
               <th class="px-5 py-3 text-left sm:px-6">
@@ -754,7 +754,7 @@ onUnmounted(() => {
             <tr v-if="loading">
               <td :colspan="tableColspan" class="px-5 py-12 sm:px-6">
                 <div class="flex justify-center">
-                  <CrmLoadingSpinner message="Loading users…" />
+                  <CrmLoadingSpinner message="Loading Users…" />
                 </div>
               </td>
             </tr>
@@ -855,7 +855,7 @@ onUnmounted(() => {
             </tr>
             <tr v-if="!loading && rows.length === 0">
               <td :colspan="tableColspan" class="px-5 py-12 text-center text-gray-500 sm:px-6">
-                No staff found.
+                No Staff Found.
               </td>
             </tr>
           </tbody>
@@ -897,11 +897,11 @@ onUnmounted(() => {
               <span class="font-semibold text-gray-900 dark:text-white">{{
                 showingFrom
               }}</span>
-              to
+              To
               <span class="font-semibold text-gray-900 dark:text-white">{{
                 showingTo
               }}</span>
-              of
+              Of
               <span class="font-semibold text-gray-900 dark:text-white">{{
                 pagination.total
               }}</span>
@@ -912,7 +912,7 @@ onUnmounted(() => {
             type="button"
             class="inline-flex h-9 w-9 items-center justify-center rounded-md border border-gray-200 text-gray-600 hover:bg-gray-50 disabled:opacity-40 dark:border-gray-600 dark:text-gray-300 dark:hover:bg-gray-800"
             :disabled="loading || pagination.current_page <= 1"
-            aria-label="Previous page"
+            aria-label="Previous Page"
             @click="goPage(pagination.current_page - 1)"
           >
             <svg
@@ -958,7 +958,7 @@ onUnmounted(() => {
             :disabled="
               loading || pagination.current_page >= pagination.last_page
             "
-            aria-label="Next page"
+            aria-label="Next Page"
             @click="goPage(pagination.current_page + 1)"
           >
             <svg
@@ -988,7 +988,7 @@ onUnmounted(() => {
 
     <ConfirmModal
       :open="deleteModalOpen"
-      title="Delete user"
+      title="Delete User"
       :message="deleteMessage"
       confirm-label="Delete"
       cancel-label="Cancel"

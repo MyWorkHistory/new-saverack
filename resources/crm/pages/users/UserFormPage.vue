@@ -30,7 +30,7 @@ onMounted(async () => {
     await loadRoles();
     resetForCreate();
   } catch {
-    errorMsg.value = "Could not load form.";
+    errorMsg.value = "Could Not Load Form.";
   } finally {
     loading.value = false;
   }
@@ -49,11 +49,11 @@ async function onSubmit() {
     <div class="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
       <PageHeader
         title="Add Staff"
-        subtitle="Account, profile, and roles — all saved to the user record"
+        subtitle="Account, Profile, And Roles — All Saved To The User Record"
       />
       <div class="flex shrink-0 flex-wrap gap-x-4 gap-y-2">
-        <CrmBackLink to="/staff" label="Back to staff" />
-        <CrmBackLink to="/dashboard" label="Back to dashboard" />
+        <CrmBackLink to="/staff" label="Back To Staff" />
+        <CrmBackLink to="/dashboard" label="Back To Dashboard" />
       </div>
     </div>
 
@@ -110,7 +110,7 @@ async function onSubmit() {
     </form>
 
     <div v-else class="flex justify-center py-12">
-      <CrmLoadingSpinner message="Loading..." />
+      <CrmLoadingSpinner message="Loading…" />
     </div>
   </div>
 </template>

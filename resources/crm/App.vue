@@ -97,7 +97,7 @@ const logout = async () => {
       v-else-if="navLoading"
       class="flex min-h-screen items-center justify-center bg-gray-50 dark:bg-gray-950"
     >
-      <CrmLoadingSpinner message="Loading..." :center="true" />
+      <CrmLoadingSpinner message="Loading…" :center="true" />
     </div>
 
     <CrmAdminShell
@@ -117,13 +117,13 @@ const logout = async () => {
       class="flex min-h-screen flex-col items-center justify-center gap-2 bg-gray-50 px-4 dark:bg-gray-950"
     >
       <p class="text-sm text-gray-600 dark:text-gray-400">
-        You need to sign in to continue.
+        You Need To Sign In To Continue.
       </p>
       <RouterLink
         to="/login"
         class="rounded-lg bg-[#2563eb] px-4 py-2 text-sm font-semibold text-white hover:opacity-95"
       >
-        Sign in
+        Sign In
       </RouterLink>
     </div>
 

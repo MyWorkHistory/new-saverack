@@ -55,7 +55,7 @@ defineEmits(["close", "confirm"]);
               :disabled="busy"
               @click="$emit('confirm')"
             >
-              {{ busy ? "Please wait…" : confirmLabel }}
+              {{ busy ? "Please Wait…" : confirmLabel }}
             </button>
           </div>
         </div>

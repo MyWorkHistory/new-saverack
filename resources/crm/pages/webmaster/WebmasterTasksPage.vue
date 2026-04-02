@@ -68,7 +68,7 @@ let searchWatchLock = false;
 const deleteModalOpen = computed(() => deleteTarget.value !== null);
 const deleteMessage = computed(() => {
   const t = deleteTarget.value;
-  return t ? `Delete task “${t.title}”? This cannot be undone.` : "";
+  return t ? `Delete Task “${t.title}”? This Cannot Be Undone.` : "";
 });
 
 const hasMorePages = computed(
@@ -319,11 +319,11 @@ const confirmDelete = async () => {
   try {
     await api.delete(`/webmaster/tasks/${t.id}`);
     deleteTarget.value = null;
-    toast.success("Task deleted.");
+    toast.success("Task Deleted.");
     await fetchTasks();
   } catch (e) {
-    deleteError.value = errorMessage(e, "Could not delete task.");
-    toast.errorFrom(e, "Could not delete task.");
+    deleteError.value = errorMessage(e, "Could Not Delete Task.");
+    toast.errorFrom(e, "Could Not Delete Task.");
   } finally {
     deleteBusy.value = false;
   }
@@ -430,7 +430,7 @@ onUnmounted(() => {
               Webmaster
             </h1>
             <p class="mt-0.5 text-sm text-gray-500 dark:text-gray-400">
-              Site development tasks — drag cards between columns to change status
+              Site Development Tasks — Drag Cards Between Columns To Change Status
             </p>
           </div>
           <button
@@ -451,7 +451,7 @@ onUnmounted(() => {
                 d="M12 4v16m8-8H4"
               />
             </svg>
-            Add task
+            Add Task
           </button>
         </div>
       </div>
@@ -460,9 +460,9 @@ onUnmounted(() => {
         v-if="hasMorePages"
         class="border-b border-amber-100 bg-amber-50/90 px-4 py-2.5 text-xs text-amber-900 dark:border-amber-900/40 dark:bg-amber-950/40 dark:text-amber-100 sm:px-6"
       >
-        Page {{ pagination.current_page }} of {{ pagination.last_page }} —
-        showing {{ rows.length }} tasks loaded. Increase “Rows per page” or use
-        pagination below to see more.
+        Page {{ pagination.current_page }} Of {{ pagination.last_page }} —
+        Showing {{ rows.length }} Tasks Loaded. Increase “Rows Per Page” Or Use
+        Pagination Below To See More.
       </div>
 
       <div class="space-y-4 p-4 sm:p-6" :class="loading ? 'min-h-[280px]' : ''">
@@ -489,7 +489,7 @@ onUnmounted(() => {
             <input
               v-model="query.search"
               type="search"
-              placeholder="Search tasks…"
+              placeholder="Search Tasks…"
               class="h-11 w-full rounded-lg border border-gray-200 bg-gray-50 py-2.5 pl-10 pr-3 text-sm text-gray-900 placeholder:text-gray-400 focus:border-[#2563eb] focus:outline-none focus:ring-2 focus:ring-[#2563eb]/20 dark:border-gray-700 dark:bg-gray-800/50 dark:text-white"
               @keydown.enter.prevent="applySearch"
             />
@@ -540,7 +540,7 @@ onUnmounted(() => {
                       v-model="query.status"
                       class="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm dark:border-gray-600 dark:bg-gray-800 dark:text-white"
                     >
-                      <option value="">All columns</option>
+                      <option value="">All Columns</option>
                       <option
                         v-for="s in meta.statuses"
                         :key="s.value"
@@ -592,7 +592,7 @@ onUnmounted(() => {
                     <div>
                       <label
                         class="mb-1 block text-xs font-medium text-gray-500 dark:text-gray-400"
-                        >Min price</label
+                        >Min Price</label
                       >
                       <input
                         v-model="query.min_price"
@@ -606,7 +606,7 @@ onUnmounted(() => {
                     <div>
                       <label
                         class="mb-1 block text-xs font-medium text-gray-500 dark:text-gray-400"
-                        >Max price</label
+                        >Max Price</label
                       >
                       <input
                         v-model="query.max_price"
@@ -645,13 +645,13 @@ onUnmounted(() => {
           </div>
         </div>
         <div v-if="loading" class="flex justify-center py-12">
-          <CrmLoadingSpinner message="Loading tasks…" />
+          <CrmLoadingSpinner message="Loading Tasks…" />
         </div>
         <p
           v-else-if="pagination.total === 0"
           class="py-16 text-center text-sm text-gray-500 dark:text-gray-400"
         >
-          No tasks yet. Add one to get started.
+          No Tasks Yet. Add One To Get Started.
         </p>
         <div
           v-else
@@ -735,7 +735,7 @@ onUnmounted(() => {
                               role="menuitem"
                               @click="goTaskDetail(task)"
                             >
-                              View details
+                              View Details
                             </button>
                             <button
                               v-if="canMutateWebmasterTasks"
@@ -808,7 +808,7 @@ onUnmounted(() => {
             v-if="!boardColumns.length"
             class="col-span-full py-12 text-center text-sm text-gray-500 dark:text-gray-400"
           >
-            No status columns. Reload the page.
+            No Status Columns. Reload The Page.
           </p>
         </div>
       </div>
@@ -823,7 +823,7 @@ onUnmounted(() => {
             <label
               for="webmaster-per-page"
               class="whitespace-nowrap text-sm text-gray-600 dark:text-gray-400"
-              >Rows per page</label
+              >Rows Per Page</label
             >
             <select
               id="webmaster-per-page"
@@ -885,7 +885,7 @@ onUnmounted(() => {
 
     <ConfirmModal
       :open="deleteModalOpen"
-      title="Delete task"
+      title="Delete Task"
       :message="deleteMessage"
       confirm-label="Delete"
       cancel-label="Cancel"

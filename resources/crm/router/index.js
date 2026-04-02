@@ -15,36 +15,36 @@ import WebmasterTaskDetailPage from "../pages/webmaster/WebmasterTaskDetailPage.
 
 const meta = {
   login: {
-    title: "Save Rack | Sign in",
-    description: "Sign in to Save Rack CRM.",
+    title: "Save Rack | Sign In",
+    description: "Sign In To Save Rack CRM.",
   },
   forgot: {
-    title: "Save Rack | Forgot password",
-    description: "Reset your Save Rack CRM password.",
+    title: "Save Rack | Forgot Password",
+    description: "Reset Your Save Rack CRM Password.",
   },
   reset: {
-    title: "Save Rack | Reset password",
-    description: "Choose a new password for Save Rack CRM.",
+    title: "Save Rack | Reset Password",
+    description: "Choose A New Password For Save Rack CRM.",
   },
   dashboard: {
     title: "Save Rack | Dashboard",
-    description: "CRM dashboard — activity, metrics, and recent staff.",
+    description: "CRM Dashboard — Activity, Metrics, And Recent Staff.",
   },
   staff: {
     title: "Save Rack | Staff",
-    description: "Directory of admin and staff accounts.",
+    description: "Directory Of Admin And Staff Accounts.",
   },
   staffCreate: {
     title: "Save Rack | Add Staff",
-    description: "Create a new staff account.",
+    description: "Create A New Staff Account.",
   },
   webmaster: {
     title: "Save Rack | Webmaster",
-    description: "Site development tasks and board.",
+    description: "Site Development Tasks And Board.",
   },
   webmasterTask: {
-    title: "Save Rack | Webmaster task",
-    description: "Webmaster task details.",
+    title: "Save Rack | Webmaster Task",
+    description: "Webmaster Task Details.",
   },
 };
 
@@ -97,7 +97,7 @@ const routes = [
     props: true,
     meta: {
       title: "Save Rack | Staff",
-      description: "Staff profile.",
+      description: "Staff Profile.",
     },
   },
   { path: "/users/create", redirect: "/staff/create" },

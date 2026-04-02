@@ -40,7 +40,7 @@ const submit = async () => {
   } catch (e) {
     const d = e?.response?.data;
     const v = d?.errors?.email?.[0] || d?.errors?.password?.[0];
-    error.value = v || d?.message || e?.message || "Login failed.";
+    error.value = v || d?.message || e?.message || "Login Failed.";
   } finally {
     loading.value = false;
   }
@@ -62,7 +62,7 @@ const submit = async () => {
           Sign In
         </h1>
         <p class="mt-2 text-sm text-slate-500 dark:text-slate-400">
-          Enter your Save Rack account credentials.
+          Enter Your Save Rack Account Credentials.
         </p>
 
         <p
@@ -112,7 +112,7 @@ const submit = async () => {
                 type="button"
                 class="absolute right-2 top-1/2 -translate-y-1/2 rounded-md p-1.5 text-slate-400 transition hover:bg-slate-100 hover:text-slate-600 dark:hover:bg-slate-800 dark:hover:text-slate-300"
                 :aria-pressed="showPassword"
-                aria-label="Toggle password visibility"
+                aria-label="Toggle Password Visibility"
                 @click="showPassword = !showPassword"
               >
                 <svg
@@ -164,13 +164,13 @@ const submit = async () => {
                 type="checkbox"
                 class="h-4 w-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500/30 dark:border-slate-600 dark:bg-slate-900"
               />
-              Keep me logged in
+              Keep Me Logged In
             </label>
             <RouterLink
               to="/forgot-password"
               class="text-sm font-medium text-blue-600 hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-300"
             >
-              Forgot password?
+              Forgot Password?
             </RouterLink>
           </div>
 

@@ -23,7 +23,7 @@ const BIRTHDAY_MONTHS = [
 ];
 
 const BASE_EMPLOYMENT_OPTIONS = [
-  { value: "", label: "Not specified" },
+  { value: "", label: "Not Specified" },
   { value: "Full-time", label: "Full-time" },
   { value: "Part-time", label: "Part-time" },
   { value: "Contractor", label: "Contractor" },
@@ -209,7 +209,7 @@ watch(
             class="rounded-lg border border-gray-300 bg-white px-3 py-2 text-xs font-medium text-gray-700 hover:bg-gray-50 dark:border-gray-600 dark:bg-gray-900 dark:text-gray-200 dark:hover:bg-gray-800"
             @click="openAvatarPicker"
           >
-            Choose image
+            Choose Image
           </button>
           <button
             v-if="avatarDisplayUrl"
@@ -243,7 +243,7 @@ watch(
       <div>
         <label
           class="mb-1 block text-xs font-medium text-gray-500 dark:text-gray-400"
-          >Login email</label
+          >Login Email</label
         >
         <input
           v-model="form.email"
@@ -261,7 +261,7 @@ watch(
       <div>
         <label
           class="mb-1 block text-xs font-medium text-gray-500 dark:text-gray-400"
-          >{{ isEdit ? "New password (optional)" : "Password" }}</label
+          >{{ isEdit ? "New Password (Optional)" : "Password" }}</label
         >
         <input
           v-model="form.password"
@@ -323,7 +323,7 @@ watch(
 
     <div class="border-t border-gray-100 pt-6 dark:border-gray-800">
       <h3 class="mb-4 text-sm font-semibold text-gray-900 dark:text-white">
-        Contact &amp; location
+        Contact &amp; Location
       </h3>
       <div class="grid gap-4 sm:grid-cols-2">
         <div class="sm:col-span-2">
@@ -411,7 +411,7 @@ watch(
         <div class="sm:col-span-2">
           <label
             class="mb-1 block text-xs font-medium text-gray-500 dark:text-gray-400"
-            >Street address</label
+            >Street Address</label
           >
           <input
             v-model="form.address"
@@ -459,7 +459,7 @@ watch(
         <div>
           <label
             class="mb-1 block text-xs font-medium text-gray-500 dark:text-gray-400"
-            >Postal code</label
+            >Postal Code</label
           >
           <input
             v-model="form.zip"
@@ -548,7 +548,7 @@ watch(
         <div>
           <label
             class="mb-1 block text-xs font-medium text-gray-500 dark:text-gray-400"
-            >Hire date</label
+            >Hire Date</label
           >
           <input
             v-model="form.hire_date"
@@ -563,7 +563,7 @@ watch(
         <div>
           <label
             class="mb-1 block text-xs font-medium text-gray-500 dark:text-gray-400"
-            >Termination date</label
+            >Termination Date</label
           >
           <input
             v-model="form.terminate_date"

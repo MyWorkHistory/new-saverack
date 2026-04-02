@@ -16,7 +16,7 @@ const submit = async () => {
   message.value = "";
   try {
     await api.post("/auth/forgot-password", { email: email.value });
-    message.value = "If your email exists, reset instructions were sent.";
+    message.value = "If Your Email Exists, Reset Instructions Were Sent.";
   } finally {
     loading.value = false;
   }
@@ -34,11 +34,11 @@ const submit = async () => {
         <h1
           class="text-3xl font-bold tracking-tight text-[#1e3a5f] dark:text-white"
         >
-          Forgot password
+          Forgot Password
         </h1>
         <p class="mt-2 text-sm text-slate-500 dark:text-slate-400">
-          Enter your email and we’ll send reset instructions if an account
-          exists.
+          Enter Your Email And We’ll Send Reset Instructions If An Account
+          Exists.
         </p>
 
         <p
@@ -72,14 +72,14 @@ const submit = async () => {
             :disabled="loading"
             class="w-full rounded-lg bg-[#2563eb] py-3 text-sm font-semibold text-white shadow-sm transition hover:opacity-90 focus:outline-none focus:ring-2 focus:ring-[#2563eb]/50 focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-60 dark:focus:ring-offset-gray-950"
           >
-            {{ loading ? "Sending…" : "Send reset link" }}
+            {{ loading ? "Sending…" : "Send Reset Link" }}
           </button>
 
           <RouterLink
             to="/login"
             class="block text-center text-sm font-medium text-blue-600 hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-300"
           >
-            Back to sign in
+            Back To Sign In
           </RouterLink>
         </form>
       </div>

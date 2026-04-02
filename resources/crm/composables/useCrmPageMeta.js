@@ -5,7 +5,7 @@
 
 const DEFAULT_TITLE = "Save Rack";
 const DEFAULT_DESC =
-  "Save Rack CRM — manage staff, webmaster tasks, and operations.";
+  "Save Rack CRM — Manage Staff, Webmaster Tasks, And Operations.";
 
 function ensureMeta(attr, key) {
   let el = document.querySelector(`meta[${attr}="${key}"]`);

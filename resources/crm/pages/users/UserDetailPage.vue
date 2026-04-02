@@ -94,11 +94,11 @@ async function loadProfile() {
   } catch (e) {
     const st = e.response?.status;
     if (st === 403) {
-      errorMsg.value = "You don't have access to this profile.";
+      errorMsg.value = "You Don't Have Access To This Profile.";
     } else if (st === 404) {
-      errorMsg.value = "User not found.";
+      errorMsg.value = "User Not Found.";
     } else {
-      errorMsg.value = "Could not load user.";
+      errorMsg.value = "Could Not Load User.";
     }
   } finally {
     loading.value = false;
@@ -176,7 +176,7 @@ watch(
     if (name && typeof name === "string") {
       setCrmPageMeta({
         title: `Save Rack | Staff: ${name}`,
-        description: `Profile for ${name}.`,
+        description: `Profile For ${name}.`,
       });
     }
   },
@@ -229,7 +229,7 @@ async function onHeroAvatarChange(e) {
     </div>
 
     <div v-if="loading" class="flex justify-center py-20">
-      <CrmLoadingSpinner message="Loading profile…" />
+      <CrmLoadingSpinner message="Loading Profile…" />
     </div>
 
     <template v-else-if="errorMsg">
@@ -240,7 +240,7 @@ async function onHeroAvatarChange(e) {
         to="/staff"
         class="mt-2 inline-block text-sm font-medium text-[#2563eb] hover:underline dark:text-blue-400"
       >
-        Back to directory
+        Back To Directory
       </RouterLink>
     </template>
 
@@ -264,7 +264,7 @@ async function onHeroAvatarChange(e) {
               v-if="canUpdateUsers"
               type="button"
               class="shrink-0 rounded-full focus:outline-none focus:ring-2 focus:ring-[#2563eb]/40 dark:focus:ring-blue-400/40"
-              :title="'Change photo'"
+              :title="'Change Photo'"
               @click="openHeroAvatarPicker"
             >
               <img
@@ -364,7 +364,7 @@ async function onHeroAvatarChange(e) {
               <dl class="space-y-4">
                 <div>
                   <dt class="text-xs font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400">
-                    Full name
+                    Full Name
                   </dt>
                   <dd class="mt-1 text-sm font-semibold text-gray-900 dark:text-white">
                     {{ display(user.name) }}
@@ -372,7 +372,7 @@ async function onHeroAvatarChange(e) {
                 </div>
                 <div>
                   <dt class="text-xs font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400">
-                    Login email
+                    Login Email
                   </dt>
                   <dd class="mt-1 break-all text-sm font-semibold text-gray-900 dark:text-white">
                     {{ display(user.email) }}
@@ -464,7 +464,7 @@ async function onHeroAvatarChange(e) {
                 </div>
                 <div>
                   <dt class="text-xs font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400">
-                    Zip
+                    ZIP
                   </dt>
                   <dd class="mt-1 text-sm font-semibold text-gray-900 dark:text-white">
                     {{ display(profile.zip) }}
@@ -502,7 +502,7 @@ async function onHeroAvatarChange(e) {
             <dl class="space-y-4">
               <div>
                 <dt class="text-xs font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400">
-                  Employment type
+                  Employment Type
                 </dt>
                 <dd class="mt-1 text-sm font-semibold text-gray-900 dark:text-white">
                   {{ display(profile.employee_type) }}
@@ -522,7 +522,7 @@ async function onHeroAvatarChange(e) {
             <dl class="space-y-4">
               <div>
                 <dt class="text-xs font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400">
-                  Hire date
+                  Hire Date
                 </dt>
                 <dd class="mt-1 text-sm font-semibold text-gray-900 dark:text-white">
                   {{ formatDateUs(profile.hire_date) }}
@@ -530,7 +530,7 @@ async function onHeroAvatarChange(e) {
               </div>
               <div>
                 <dt class="text-xs font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400">
-                  Termination date
+                  Termination Date
                 </dt>
                 <dd class="mt-1 text-sm font-semibold text-gray-900 dark:text-white">
                   {{ formatDateUs(profile.terminate_date) }}

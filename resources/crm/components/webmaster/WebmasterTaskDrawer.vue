@@ -155,17 +155,17 @@ async function onSubmit() {
     };
     if (props.task?.id) {
       await api.put(`/webmaster/tasks/${props.task.id}`, payload);
-      toast.success("Task saved.");
+      toast.success("Task Saved.");
     } else {
       await api.post("/webmaster/tasks", payload);
-      toast.success("Task created.");
+      toast.success("Task Created.");
     }
     emit("saved");
     close();
     resetForm();
   } catch (e) {
-    errorMsg.value = errorMessage(e, "Could not save task.");
-    toast.errorFrom(e, "Could not save task.");
+    errorMsg.value = errorMessage(e, "Could Not Save Task.");
+    toast.errorFrom(e, "Could Not Save Task.");
   } finally {
     saving.value = false;
   }
@@ -202,7 +202,7 @@ function onBackdropClick() {
                 id="webmaster-task-drawer-title"
                 class="text-lg font-semibold text-gray-900 dark:text-white"
               >
-                {{ task?.id ? "Edit task" : "Add task" }}
+                {{ task?.id ? "Edit Task" : "Add Task" }}
               </h2>
               <button
                 type="button"
@@ -277,7 +277,7 @@ function onBackdropClick() {
                     <div>
                       <label
                         class="mb-1 block text-xs font-medium text-gray-500 dark:text-gray-400"
-                        >Ticket price</label
+                        >Ticket Price</label
                       >
                       <input
                         v-model="form.price"
@@ -291,7 +291,7 @@ function onBackdropClick() {
                     <div>
                       <label
                         class="mb-1 block text-xs font-medium text-gray-500 dark:text-gray-400"
-                        >Due date</label
+                        >Due Date</label
                       >
                       <input
                         v-model="form.due_date"
@@ -341,7 +341,7 @@ function onBackdropClick() {
                   <div>
                     <label
                       class="mb-1 block text-xs font-medium text-gray-500 dark:text-gray-400"
-                      >Assign to</label
+                      >Assign To</label
                     >
                     <select
                       v-model="form.assigned_to"

@@ -111,7 +111,7 @@ watch(
     if (title && typeof title === "string") {
       setCrmPageMeta({
         title: `Save Rack | Webmaster: ${title}`,
-        description: `Webmaster task: ${title}.`,
+        description: `Webmaster Task: ${title}.`,
       });
     }
   },
@@ -128,11 +128,11 @@ async function loadTask() {
   } catch (e) {
     const st = e.response?.status;
     if (st === 403) {
-      errorMsg.value = "You don't have access to this task.";
+      errorMsg.value = "You Don't Have Access To This Task.";
     } else if (st === 404) {
-      errorMsg.value = "Task not found.";
+      errorMsg.value = "Task Not Found.";
     } else {
-      errorMsg.value = "Could not load task.";
+      errorMsg.value = "Could Not Load Task.";
     }
   } finally {
     loading.value = false;
@@ -169,7 +169,7 @@ async function submitComment() {
     commentFile.value = null;
     if (commentFileInput.value) commentFileInput.value.value = "";
   } catch (e) {
-    commentError.value = errorMessage(e, "Could not post comment.");
+    commentError.value = errorMessage(e, "Could Not Post Comment.");
   } finally {
     commentSubmitting.value = false;
   }
@@ -261,10 +261,10 @@ onUnmounted(() => {
     <div class="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
       <PageHeader
         title="Task"
-        subtitle="Details and activity"
+        subtitle="Details And Activity"
       />
       <div class="flex shrink-0 flex-wrap items-center gap-2">
-        <CrmOutlinePillLink to="/webmaster" label="Back to board" />
+        <CrmOutlinePillLink to="/webmaster" label="Back To Board" />
         <CrmOutlineEditButton
           v-if="task && canMutateWebmasterTasks"
           @click="taskEditorOpen = true"
@@ -281,7 +281,7 @@ onUnmounted(() => {
         {{ errorMsg }}
       </p>
       <div class="mt-2">
-        <CrmOutlinePillLink to="/webmaster" label="Back to board" />
+        <CrmOutlinePillLink to="/webmaster" label="Back To Board" />
       </div>
     </template>
 
@@ -378,7 +378,7 @@ onUnmounted(() => {
                     <span v-if="c.attachment.original_name">{{
                       c.attachment.original_name
                     }}</span>
-                    <span v-else>Download attachment</span>
+                    <span v-else>Download Attachment</span>
                     <span
                       v-if="formatFileSize(c.attachment.size)"
                       class="text-gray-500 dark:text-gray-400"
@@ -392,7 +392,7 @@ onUnmounted(() => {
             v-else
             class="border-b border-gray-100 pb-6 text-sm text-gray-500 dark:border-gray-800 dark:text-gray-400"
           >
-            No comments yet.
+            No Comments Yet.
           </p>
 
           <div class="pt-6">
@@ -403,7 +403,7 @@ onUnmounted(() => {
               v-model="commentBody"
               rows="3"
               class="w-full rounded-xl border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 dark:border-gray-600 dark:bg-gray-900 dark:text-white"
-              placeholder="Write an update…"
+              placeholder="Write An Update…"
             />
             <div class="mt-2 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
               <input
@@ -419,7 +419,7 @@ onUnmounted(() => {
                 :disabled="commentSubmitting"
                 @click="submitComment"
               >
-                {{ commentSubmitting ? "Posting…" : "Post comment" }}
+                {{ commentSubmitting ? "Posting…" : "Post Comment" }}
               </button>
             </div>
             <p
@@ -429,7 +429,7 @@ onUnmounted(() => {
               {{ commentError }}
             </p>
             <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">
-              Optional attachment: image, PDF, or small document (max 5 MB).
+              Optional Attachment: Image, PDF, Or Small Document (Max 5 MB).
             </p>
           </div>
         </div>
@@ -447,7 +447,7 @@ onUnmounted(() => {
           <dl class="space-y-3 text-sm">
             <div>
               <dt class="text-xs text-gray-500 dark:text-gray-400">
-                Ticket price
+                Ticket Price
               </dt>
               <dd class="mt-0.5 font-medium text-gray-900 dark:text-white">
                 {{ formatUsdPriceOrDash(task.price) }}
@@ -479,7 +479,7 @@ onUnmounted(() => {
             </div>
             <div>
               <dt class="text-xs text-gray-500 dark:text-gray-400">
-                Created by
+                Created By
               </dt>
               <dd class="mt-0.5 text-gray-900 dark:text-white">
                 <template v-if="task.creator">
@@ -490,7 +490,7 @@ onUnmounted(() => {
             </div>
             <div>
               <dt class="text-xs text-gray-500 dark:text-gray-400">
-                Assigned to
+                Assigned To
               </dt>
               <dd class="mt-0.5 text-gray-900 dark:text-white">
                 <template v-if="task.assignee">

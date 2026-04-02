@@ -81,7 +81,7 @@ function onBackdropClick() {
               class="flex shrink-0 items-center justify-between border-b border-gray-200 px-5 py-4 dark:border-gray-800"
             >
               <h2 class="text-lg font-semibold text-gray-900 dark:text-white">
-                Add user
+                Add User
               </h2>
               <button
                 type="button"
@@ -133,7 +133,7 @@ function onBackdropClick() {
                 />
               </form>
               <div v-else class="flex justify-center py-8">
-                <CrmLoadingSpinner message="Loading..." />
+                <CrmLoadingSpinner message="Loading…" />
               </div>
             </div>
 

@@ -10,6 +10,6 @@ export const JOB_POSITION_VALUES = [
 ];
 
 export const JOB_POSITION_OPTIONS = [
-  { value: "", label: "Not specified" },
+  { value: "", label: "Not Specified" },
   ...JOB_POSITION_VALUES.map((v) => ({ value: v, label: v })),
 ];

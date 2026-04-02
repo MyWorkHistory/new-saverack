@@ -98,7 +98,7 @@ export function useUserForm() {
   }
 
   async function uploadAvatarFile(userId, file, options = {}) {
-    const { successMessage = "Photo updated." } = options;
+    const { successMessage = "Photo Updated." } = options;
     const fd = new FormData();
     fd.append("avatar", file);
     try {
@@ -109,7 +109,7 @@ export function useUserForm() {
         toast.success(successMessage);
       }
     } catch (e) {
-      toast.errorFrom(e, "Could not upload photo.");
+      toast.errorFrom(e, "Could Not Upload Photo.");
       throw e;
     }
   }
@@ -119,9 +119,9 @@ export function useUserForm() {
       const { data } = await api.delete(`/users/${userId}/avatar`);
       profileAvatarUrl.value = data.profile?.avatar_url || "";
       applyProfileToForm(data.profile);
-      toast.success("Photo removed.");
+      toast.success("Photo Removed.");
     } catch (e) {
-      toast.errorFrom(e, "Could not remove photo.");
+      toast.errorFrom(e, "Could Not Remove Photo.");
       throw e;
     }
   }
@@ -218,7 +218,7 @@ export function useUserForm() {
           }
           pendingAvatarFile.value = null;
         }
-        toast.success("User created successfully.");
+        toast.success("User Created Successfully.");
       }
       return true;
     } catch (e) {
@@ -231,10 +231,10 @@ export function useUserForm() {
         const msg =
           e.response?.data?.message ||
           e.response?.data?.error ||
-          "Could not save user.";
+          "Could Not Save User.";
         errorMsg.value =
-          typeof msg === "string" ? msg : "Could not save user.";
-        toast.errorFrom(e, "Could not save user.");
+          typeof msg === "string" ? msg : "Could Not Save User.";
+        toast.errorFrom(e, "Could Not Save User.");
       }
       return false;
     } finally {

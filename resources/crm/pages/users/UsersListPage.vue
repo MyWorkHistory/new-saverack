@@ -271,16 +271,33 @@ const applyFilterPanel = () => {
   applySearch();
 };
 
-const toggleSortName = () => {
-  if (query.sort_by !== "name") {
-    query.sort_by = "name";
+/** Columns that map to API `sort_by` (not including checkbox / action). */
+const TABLE_SORT_COLUMNS = [
+  "status",
+  "name",
+  "job_position",
+  "birthday",
+  "hire_date",
+  "role",
+];
+
+function toggleSort(column) {
+  if (!TABLE_SORT_COLUMNS.includes(column)) return;
+  if (query.sort_by !== column) {
+    query.sort_by = column;
     query.sort_dir = "asc";
   } else {
     query.sort_dir = query.sort_dir === "asc" ? "desc" : "asc";
   }
   query.page = 1;
+  selectedIds.value = [];
   fetchUsers();
-};
+}
+
+function sortIndicator(column) {
+  if (query.sort_by !== column) return "↕";
+  return query.sort_dir === "asc" ? "↑" : "↓";
+}
 
 const goPage = (p) => {
   if (p < 1 || p > pagination.value.last_page) return;
@@ -610,16 +627,6 @@ onUnmounted(() => {
             </div>
 
             <button
-              v-if="canUpdateUsers"
-              type="button"
-              class="inline-flex h-11 shrink-0 items-center justify-center gap-2 rounded-lg border border-gray-200 bg-white px-4 text-sm font-medium text-gray-700 shadow-sm hover:bg-gray-50 disabled:opacity-50 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200 dark:hover:bg-gray-700"
-              :disabled="!selectedIds.length || loading"
-              @click="openBulkEdit"
-            >
-              Bulk edit
-            </button>
-
-            <button
               v-if="canCreateUsers"
               type="button"
               class="inline-flex h-11 shrink-0 items-center justify-center gap-2 rounded-lg bg-[#2563eb] px-4 text-sm font-semibold text-white shadow-sm transition hover:opacity-95 focus:outline-none focus:ring-2 focus:ring-[#2563eb]/40 focus:ring-offset-2 dark:focus:ring-offset-gray-900"
@@ -648,11 +655,11 @@ onUnmounted(() => {
         <div
           class="overflow-hidden rounded-xl border border-gray-200 bg-white dark:border-gray-800 dark:bg-white/[0.03]"
         >
-          <!-- Search inside table card (TailAdmin basic-tables: white toolbar strip) -->
+          <!-- Search + bulk edit (inner card toolbar) -->
           <div
-            class="border-b border-gray-200 bg-white px-4 py-4 dark:border-gray-700 dark:bg-gray-900 sm:px-6"
+            class="flex flex-col gap-3 border-b border-gray-200 bg-white px-4 py-4 dark:border-gray-700 dark:bg-gray-900 sm:flex-row sm:items-center sm:justify-between sm:px-6"
           >
-            <div class="max-w-md">
+            <div class="min-w-0 w-full max-w-md sm:flex-1">
               <div class="relative">
                 <span
                   class="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-gray-400"
@@ -679,6 +686,15 @@ onUnmounted(() => {
                 />
               </div>
             </div>
+            <button
+              v-if="canUpdateUsers"
+              type="button"
+              class="inline-flex h-11 shrink-0 items-center justify-center gap-2 self-start rounded-lg border border-gray-200 bg-white px-4 text-sm font-medium text-gray-700 shadow-sm hover:bg-gray-50 disabled:opacity-50 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200 dark:hover:bg-gray-700 sm:self-center"
+              :disabled="!selectedIds.length || loading"
+              @click="openBulkEdit"
+            >
+              Bulk Edit
+            </button>
           </div>
 
           <div class="overflow-x-auto">
@@ -698,47 +714,76 @@ onUnmounted(() => {
                 />
               </th>
               <th class="px-5 py-3 text-left sm:px-6">
-                <p class="text-xs font-medium text-gray-500 dark:text-gray-400">
+                <button
+                  type="button"
+                  class="inline-flex items-center gap-1 text-xs font-medium text-gray-500 hover:text-gray-800 dark:text-gray-400 dark:hover:text-white"
+                  @click="toggleSort('status')"
+                >
                   Status
-                </p>
+                  <span class="text-gray-400" aria-hidden="true">{{
+                    sortIndicator("status")
+                  }}</span>
+                </button>
               </th>
               <th class="px-5 py-3 text-left sm:px-6">
                 <button
                   type="button"
                   class="inline-flex items-center gap-1 text-xs font-medium text-gray-500 hover:text-gray-800 dark:text-gray-400 dark:hover:text-white"
-                  @click="toggleSortName"
+                  @click="toggleSort('name')"
                 >
                   User
-                  <span class="text-gray-400" aria-hidden="true">
-                    {{
-                      query.sort_by === "name"
-                        ? query.sort_dir === "asc"
-                          ? "↑"
-                          : "↓"
-                        : "↕"
-                    }}
-                  </span>
+                  <span class="text-gray-400" aria-hidden="true">{{
+                    sortIndicator("name")
+                  }}</span>
                 </button>
               </th>
               <th class="px-5 py-3 text-left sm:px-6">
-                <p class="text-xs font-medium text-gray-500 dark:text-gray-400">
+                <button
+                  type="button"
+                  class="inline-flex items-center gap-1 text-xs font-medium text-gray-500 hover:text-gray-800 dark:text-gray-400 dark:hover:text-white"
+                  @click="toggleSort('job_position')"
+                >
                   Position
-                </p>
+                  <span class="text-gray-400" aria-hidden="true">{{
+                    sortIndicator("job_position")
+                  }}</span>
+                </button>
               </th>
               <th class="px-5 py-3 text-left sm:px-6">
-                <p class="text-xs font-medium text-gray-500 dark:text-gray-400">
+                <button
+                  type="button"
+                  class="inline-flex items-center gap-1 text-xs font-medium text-gray-500 hover:text-gray-800 dark:text-gray-400 dark:hover:text-white"
+                  @click="toggleSort('birthday')"
+                >
                   Birthday
-                </p>
+                  <span class="text-gray-400" aria-hidden="true">{{
+                    sortIndicator("birthday")
+                  }}</span>
+                </button>
               </th>
               <th class="px-5 py-3 text-left sm:px-6">
-                <p class="text-xs font-medium text-gray-500 dark:text-gray-400">
+                <button
+                  type="button"
+                  class="inline-flex items-center gap-1 text-xs font-medium text-gray-500 hover:text-gray-800 dark:text-gray-400 dark:hover:text-white"
+                  @click="toggleSort('hire_date')"
+                >
                   Hire Date
-                </p>
+                  <span class="text-gray-400" aria-hidden="true">{{
+                    sortIndicator("hire_date")
+                  }}</span>
+                </button>
               </th>
               <th class="px-5 py-3 text-left sm:px-6">
-                <p class="text-xs font-medium text-gray-500 dark:text-gray-400">
+                <button
+                  type="button"
+                  class="inline-flex items-center gap-1 text-xs font-medium text-gray-500 hover:text-gray-800 dark:text-gray-400 dark:hover:text-white"
+                  @click="toggleSort('role')"
+                >
                   Role
-                </p>
+                  <span class="text-gray-400" aria-hidden="true">{{
+                    sortIndicator("role")
+                  }}</span>
+                </button>
               </th>
               <th
                 v-if="showRowActions"

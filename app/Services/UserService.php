@@ -43,12 +43,15 @@ class UserService
         $perPage = min(max((int) ($filters['per_page'] ?? 25), 1), 500);
         $sortBy = (string) ($filters['sort_by'] ?? 'id');
         $sortDir = strtolower((string) ($filters['sort_dir'] ?? 'desc')) === 'asc' ? 'asc' : 'desc';
-        $allowedSortColumns = ['id', 'name', 'email', 'status', 'created_at', 'updated_at'];
+        $allowedSortColumns = [
+            'id', 'name', 'email', 'status', 'created_at', 'updated_at',
+            'job_position', 'birthday', 'hire_date', 'role',
+        ];
         if (! in_array($sortBy, $allowedSortColumns, true)) {
             $sortBy = 'id';
         }
 
-        return User::query()
+        $query = User::query()
             ->with([
                 'roles' => function ($q) {
                     $q->select('roles.id', 'roles.name', 'roles.label');
@@ -57,8 +60,8 @@ class UserService
                     $q->select('id', 'user_id', 'job_position', 'birthday', 'hire_date', 'avatar_path');
                 },
             ])
-            ->when($search, function ($query) use ($search) {
-                $query->where(function ($nested) use ($search) {
+            ->when($search, function ($q) use ($search) {
+                $q->where(function ($nested) use ($search) {
                     $nested->where('name', 'like', "%{$search}%")
                         ->orWhere('email', 'like', "%{$search}%")
                         ->orWhereHas('profile', function ($p) use ($search) {
@@ -67,16 +70,36 @@ class UserService
                         });
                 });
             })
-            ->when($roleId, function ($query) use ($roleId) {
-                $query->whereHas('roles', function ($q) use ($roleId) {
-                    $q->where('roles.id', $roleId);
+            ->when($roleId, function ($q) use ($roleId) {
+                $q->whereHas('roles', function ($roleQuery) use ($roleId) {
+                    $roleQuery->where('roles.id', $roleId);
                 });
             })
-            ->when($status !== null && $status !== '' && $status !== 'all', function ($query) use ($status) {
-                $query->where('status', $status);
-            })
-            ->orderBy($sortBy, $sortDir)
-            ->paginate($perPage);
+            ->when($status !== null && $status !== '' && $status !== 'all', function ($q) use ($status) {
+                $q->where('status', $status);
+            });
+
+        $profileSortColumns = ['job_position', 'birthday', 'hire_date'];
+        if (in_array($sortBy, $profileSortColumns, true)) {
+            $query->leftJoin('user_profiles', 'users.id', '=', 'user_profiles.user_id')
+                ->select('users.*');
+            $profileColumn = [
+                'job_position' => 'user_profiles.job_position',
+                'birthday' => 'user_profiles.birthday',
+                'hire_date' => 'user_profiles.hire_date',
+            ][$sortBy];
+            $query->orderBy($profileColumn, $sortDir);
+        } elseif ($sortBy === 'role') {
+            $query->select('users.*');
+            $dir = $sortDir === 'desc' ? 'DESC' : 'ASC';
+            $query->orderByRaw(
+                '(SELECT MIN(COALESCE(roles.label, roles.name)) FROM role_user INNER JOIN roles ON roles.id = role_user.role_id WHERE role_user.user_id = users.id) '.$dir
+            );
+        } else {
+            $query->orderBy($sortBy, $sortDir);
+        }
+
+        return $query->paginate($perPage);
     }
 
     public function create(array $data, ?User $actor = null): User

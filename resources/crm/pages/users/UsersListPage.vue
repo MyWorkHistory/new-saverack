@@ -17,7 +17,7 @@ import CrmLoadingSpinner from "../../components/common/CrmLoadingSpinner.vue";
 import { useToast } from "../../composables/useToast";
 import { crmIsAdmin } from "../../utils/crmUser";
 import { DEFAULT_PER_PAGE, PER_PAGE_OPTIONS } from "../../constants/pagination";
-import { formatBirthdayUs, formatIsoDate } from "../../utils/formatUserDates";
+import { formatBirthdayUs, formatDateUs } from "../../utils/formatUserDates";
 import CrmIconRowActions from "../../components/common/CrmIconRowActions.vue";
 import StaffBulkEditModal from "../../components/users/StaffBulkEditModal.vue";
 
@@ -466,7 +466,7 @@ onUnmounted(() => {
       {{ deleteError }}
     </p>
 
-    <!-- Single rounded card (template: one shell — title/toolbar + search + table + pagination) -->
+    <!-- TailAdmin pattern: wrapper card + inner table card (see basic-tables) -->
     <div
       class="overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-sm dark:border-gray-800 dark:bg-gray-900"
     >
@@ -671,7 +671,11 @@ onUnmounted(() => {
             />
           </div>
         </div>
-        <div class="overflow-x-auto">
+
+        <div
+          class="mt-4 overflow-hidden rounded-xl border border-gray-200 bg-white dark:border-gray-800 dark:bg-white/[0.03] sm:mt-6"
+        >
+          <div class="overflow-x-auto">
             <table class="min-w-[1024px] w-full text-left text-sm">
           <thead>
             <tr
@@ -818,7 +822,7 @@ onUnmounted(() => {
               <td
                 class="whitespace-nowrap px-5 py-4 align-middle text-gray-700 sm:px-6 dark:text-gray-300"
               >
-                {{ formatIsoDate(user.profile?.hire_date) }}
+                {{ formatDateUs(user.profile?.hire_date) }}
               </td>
               <td
                 class="px-5 py-4 align-middle text-gray-700 sm:px-6 dark:text-gray-300"
@@ -850,9 +854,10 @@ onUnmounted(() => {
             </tr>
           </tbody>
             </table>
+          </div>
         </div>
 
-        <!-- Pagination -->
+        <!-- Pagination (still inside wrapper card body) -->
         <div
           class="mt-5 flex flex-col gap-4 border-t border-gray-100 pt-5 dark:border-gray-800 lg:flex-row lg:items-center lg:justify-between"
         >

@@ -367,9 +367,12 @@ async function onHeroAvatarChange(e) {
           <h3 class="mb-5 border-b border-gray-100 pb-3 text-lg font-semibold text-gray-900 dark:border-gray-800 dark:text-white">
             Personal Information
           </h3>
-          <div class="space-y-8">
-            <div class="border-b border-gray-100 pb-6 dark:border-gray-800">
-              <dl class="grid gap-6 sm:grid-cols-2">
+          <!-- Three sections side-by-side on large screens (horizontal bands) -->
+          <div
+            class="grid grid-cols-1 gap-8 lg:grid-cols-3 lg:gap-0 lg:divide-x lg:divide-gray-100 dark:lg:divide-gray-800"
+          >
+            <div class="space-y-4 lg:pr-6">
+              <dl class="space-y-4">
                 <div>
                   <dt class="text-xs font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400">
                     Full name
@@ -382,14 +385,14 @@ async function onHeroAvatarChange(e) {
                   <dt class="text-xs font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400">
                     Login email
                   </dt>
-                  <dd class="mt-1 text-sm font-medium text-gray-900 dark:text-white">
+                  <dd class="mt-1 break-all text-sm font-medium text-gray-900 dark:text-white">
                     {{ display(user.email) }}
                   </dd>
                 </div>
               </dl>
             </div>
-            <div class="border-b border-gray-100 pb-6 dark:border-gray-800">
-              <dl class="grid gap-6 sm:grid-cols-2">
+            <div class="space-y-4 lg:px-6">
+              <dl class="space-y-4">
                 <div>
                   <dt class="text-xs font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400">
                     Phone
@@ -402,14 +405,14 @@ async function onHeroAvatarChange(e) {
                   <dt class="text-xs font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400">
                     Personal email
                   </dt>
-                  <dd class="mt-1 text-sm font-medium text-gray-900 dark:text-white">
+                  <dd class="mt-1 break-all text-sm font-medium text-gray-900 dark:text-white">
                     {{ display(profile.personal_email) }}
                   </dd>
                 </div>
               </dl>
             </div>
-            <div>
-              <dl class="grid gap-6 sm:grid-cols-2 sm:items-start">
+            <div class="space-y-4 lg:pl-6">
+              <dl class="space-y-4">
                 <div>
                   <dt class="text-xs font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400">
                     Birthday
@@ -418,7 +421,7 @@ async function onHeroAvatarChange(e) {
                     {{ formatBirthdayUs(profile.birthday) }}
                   </dd>
                 </div>
-                <div class="sm:col-span-1">
+                <div>
                   <dt class="text-xs font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400">
                     Bio
                   </dt>
@@ -501,9 +504,11 @@ async function onHeroAvatarChange(e) {
         <h3 class="mb-5 border-b border-gray-100 pb-3 text-lg font-semibold text-gray-900 dark:border-gray-800 dark:text-white">
           Employment
         </h3>
-        <div class="space-y-8">
-          <div class="border-b border-gray-100 pb-6 dark:border-gray-800">
-            <dl class="grid gap-6 sm:grid-cols-2">
+        <div
+          class="grid grid-cols-1 gap-8 lg:grid-cols-2 lg:gap-0 lg:divide-x lg:divide-gray-100 dark:lg:divide-gray-800"
+        >
+          <div class="space-y-4 lg:pr-6">
+            <dl class="space-y-4">
               <div>
                 <dt class="text-xs font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400">
                   Employment type
@@ -522,7 +527,7 @@ async function onHeroAvatarChange(e) {
               </div>
             </dl>
           </div>
-          <div>
+          <div class="lg:pl-6">
             <dl class="grid gap-6 sm:grid-cols-2">
               <div>
                 <dt class="text-xs font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400">

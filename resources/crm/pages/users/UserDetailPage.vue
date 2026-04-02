@@ -2,7 +2,6 @@
 import { computed, inject, onMounted, ref, watch } from "vue";
 import { RouterLink, useRoute, useRouter } from "vue-router";
 import api from "../../services/api";
-import CrmOutlinePillLink from "../../components/common/CrmOutlinePillLink.vue";
 import CrmLoadingSpinner from "../../components/common/CrmLoadingSpinner.vue";
 import CrmOutlineEditButton from "../../components/common/CrmOutlineEditButton.vue";
 import UserEditModal from "../../components/users/UserEditModal.vue";
@@ -175,7 +174,7 @@ watch(
   (name) => {
     if (name && typeof name === "string") {
       setCrmPageMeta({
-        title: `SaveRack | Staff: ${name}`,
+        title: `Save Rack | Staff: ${name}`,
         description: `Profile for ${name}.`,
       });
     }
@@ -205,14 +204,14 @@ async function onHeroAvatarChange(e) {
     <nav class="mb-4 flex flex-wrap items-center gap-1.5 text-sm">
       <RouterLink
         to="/dashboard"
-        class="font-medium text-gray-500 transition hover:text-[#206ba4] dark:text-gray-400 dark:hover:text-blue-400"
+        class="font-medium text-gray-500 transition hover:text-[#38bdf8] dark:text-gray-400 dark:hover:text-blue-400"
       >
         Home
       </RouterLink>
       <span class="text-gray-400 dark:text-gray-600" aria-hidden="true">/</span>
       <RouterLink
         to="/staff"
-        class="font-medium text-gray-500 transition hover:text-[#206ba4] dark:text-gray-400 dark:hover:text-blue-400"
+        class="font-medium text-gray-500 transition hover:text-[#38bdf8] dark:text-gray-400 dark:hover:text-blue-400"
       >
         Staff
       </RouterLink>
@@ -222,11 +221,10 @@ async function onHeroAvatarChange(e) {
       </span>
     </nav>
 
-    <div class="mb-6 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+    <div class="mb-6">
       <h1 class="text-2xl font-semibold text-gray-900 dark:text-white">
         User Profile
       </h1>
-      <CrmOutlinePillLink to="/dashboard" label="Back to dashboard" />
     </div>
 
     <div v-if="loading" class="flex justify-center py-20">
@@ -239,7 +237,7 @@ async function onHeroAvatarChange(e) {
       </p>
       <RouterLink
         to="/staff"
-        class="mt-2 inline-block text-sm font-medium text-[#206ba4] hover:underline dark:text-blue-400"
+        class="mt-2 inline-block text-sm font-medium text-[#38bdf8] hover:underline dark:text-blue-400"
       >
         Back to directory
       </RouterLink>
@@ -264,7 +262,7 @@ async function onHeroAvatarChange(e) {
             <button
               v-if="canUpdateUsers"
               type="button"
-              class="shrink-0 rounded-full focus:outline-none focus:ring-2 focus:ring-[#206ba4]/40 dark:focus:ring-blue-400/40"
+              class="shrink-0 rounded-full focus:outline-none focus:ring-2 focus:ring-[#38bdf8]/40 dark:focus:ring-blue-400/40"
               :title="'Change photo'"
               @click="openHeroAvatarPicker"
             >
@@ -358,7 +356,6 @@ async function onHeroAvatarChange(e) {
           <h3 class="mb-5 border-b border-gray-100 pb-3 text-lg font-semibold text-gray-900 dark:border-gray-800 dark:text-white">
             Personal Information
           </h3>
-          <!-- Three sections side-by-side on large screens (horizontal bands) -->
           <div
             class="grid grid-cols-1 gap-8 lg:grid-cols-3 lg:gap-0 lg:divide-x lg:divide-gray-100 dark:lg:divide-gray-800"
           >
@@ -368,7 +365,7 @@ async function onHeroAvatarChange(e) {
                   <dt class="text-xs font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400">
                     Full name
                   </dt>
-                  <dd class="mt-1 text-sm font-medium text-gray-900 dark:text-white">
+                  <dd class="mt-1 text-sm font-semibold text-gray-900 dark:text-white">
                     {{ display(user.name) }}
                   </dd>
                 </div>
@@ -376,7 +373,7 @@ async function onHeroAvatarChange(e) {
                   <dt class="text-xs font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400">
                     Login email
                   </dt>
-                  <dd class="mt-1 break-all text-sm font-medium text-gray-900 dark:text-white">
+                  <dd class="mt-1 break-all text-sm font-semibold text-gray-900 dark:text-white">
                     {{ display(user.email) }}
                   </dd>
                 </div>
@@ -388,15 +385,15 @@ async function onHeroAvatarChange(e) {
                   <dt class="text-xs font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400">
                     Phone
                   </dt>
-                  <dd class="mt-1 text-sm font-medium text-gray-900 dark:text-white">
+                  <dd class="mt-1 text-sm font-semibold text-gray-900 dark:text-white">
                     {{ display(profile.phone) }}
                   </dd>
                 </div>
                 <div>
                   <dt class="text-xs font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400">
-                    Personal email
+                    Email
                   </dt>
-                  <dd class="mt-1 break-all text-sm font-medium text-gray-900 dark:text-white">
+                  <dd class="mt-1 break-all text-sm font-semibold text-gray-900 dark:text-white">
                     {{ display(profile.personal_email) }}
                   </dd>
                 </div>
@@ -408,7 +405,7 @@ async function onHeroAvatarChange(e) {
                   <dt class="text-xs font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400">
                     Birthday
                   </dt>
-                  <dd class="mt-1 text-sm font-medium text-gray-900 dark:text-white">
+                  <dd class="mt-1 text-sm font-semibold text-gray-900 dark:text-white">
                     {{ formatBirthdayUs(profile.birthday) }}
                   </dd>
                 </div>
@@ -416,7 +413,7 @@ async function onHeroAvatarChange(e) {
                   <dt class="text-xs font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400">
                     Bio
                   </dt>
-                  <dd class="mt-1 whitespace-pre-wrap text-sm font-medium text-gray-900 dark:text-gray-200">
+                  <dd class="mt-1 whitespace-pre-wrap text-sm font-semibold text-gray-900 dark:text-gray-200">
                     {{ display(profile.bio) }}
                   </dd>
                 </div>
@@ -431,7 +428,6 @@ async function onHeroAvatarChange(e) {
           <h3 class="mb-5 border-b border-gray-100 pb-3 text-lg font-semibold text-gray-900 dark:border-gray-800 dark:text-white">
             Address
           </h3>
-          <!-- Same 3-column band layout as Personal Information -->
           <div
             class="grid grid-cols-1 gap-8 lg:grid-cols-3 lg:gap-0 lg:divide-x lg:divide-gray-100 dark:lg:divide-gray-800"
           >
@@ -441,19 +437,19 @@ async function onHeroAvatarChange(e) {
                   <dt class="text-xs font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400">
                     Street
                   </dt>
-                  <dd class="mt-1 text-sm font-medium text-gray-900 dark:text-white">
+                  <dd class="mt-1 text-sm font-semibold text-gray-900 dark:text-white">
                     {{ display(profile.address) }}
                   </dd>
                 </div>
               </dl>
             </div>
             <div class="space-y-4 lg:px-6">
-              <dl class="grid gap-4 sm:grid-cols-3 sm:gap-3">
+              <dl class="space-y-4">
                 <div>
                   <dt class="text-xs font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400">
                     City
                   </dt>
-                  <dd class="mt-1 text-sm font-medium text-gray-900 dark:text-white">
+                  <dd class="mt-1 text-sm font-semibold text-gray-900 dark:text-white">
                     {{ display(profile.city) }}
                   </dd>
                 </div>
@@ -461,7 +457,7 @@ async function onHeroAvatarChange(e) {
                   <dt class="text-xs font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400">
                     State
                   </dt>
-                  <dd class="mt-1 text-sm font-medium text-gray-900 dark:text-white">
+                  <dd class="mt-1 text-sm font-semibold text-gray-900 dark:text-white">
                     {{ display(profile.state) }}
                   </dd>
                 </div>
@@ -469,7 +465,7 @@ async function onHeroAvatarChange(e) {
                   <dt class="text-xs font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400">
                     Zip
                   </dt>
-                  <dd class="mt-1 text-sm font-medium text-gray-900 dark:text-white">
+                  <dd class="mt-1 text-sm font-semibold text-gray-900 dark:text-white">
                     {{ display(profile.zip) }}
                   </dd>
                 </div>
@@ -481,7 +477,7 @@ async function onHeroAvatarChange(e) {
                   <dt class="text-xs font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400">
                     Country
                   </dt>
-                  <dd class="mt-1 text-sm font-medium text-gray-900 dark:text-white">
+                  <dd class="mt-1 text-sm font-semibold text-gray-900 dark:text-white">
                     {{ display(profile.region) }}
                   </dd>
                 </div>
@@ -499,7 +495,7 @@ async function onHeroAvatarChange(e) {
           Employment
         </h3>
         <div
-          class="grid grid-cols-1 gap-8 lg:grid-cols-2 lg:gap-0 lg:divide-x lg:divide-gray-100 dark:lg:divide-gray-800"
+          class="grid grid-cols-1 gap-8 lg:grid-cols-3 lg:gap-0 lg:divide-x lg:divide-gray-100 dark:lg:divide-gray-800"
         >
           <div class="space-y-4 lg:pr-6">
             <dl class="space-y-4">
@@ -507,7 +503,7 @@ async function onHeroAvatarChange(e) {
                 <dt class="text-xs font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400">
                   Employment type
                 </dt>
-                <dd class="mt-1 text-sm font-medium text-gray-900 dark:text-white">
+                <dd class="mt-1 text-sm font-semibold text-gray-900 dark:text-white">
                   {{ display(profile.employee_type) }}
                 </dd>
               </div>
@@ -515,19 +511,19 @@ async function onHeroAvatarChange(e) {
                 <dt class="text-xs font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400">
                   Position
                 </dt>
-                <dd class="mt-1 text-sm font-medium text-gray-900 dark:text-white">
+                <dd class="mt-1 text-sm font-semibold text-gray-900 dark:text-white">
                   {{ display(profile.job_position) }}
                 </dd>
               </div>
             </dl>
           </div>
-          <div class="lg:pl-6">
-            <dl class="grid gap-6 sm:grid-cols-2">
+          <div class="space-y-4 lg:px-6">
+            <dl class="space-y-4">
               <div>
                 <dt class="text-xs font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400">
                   Hire date
                 </dt>
-                <dd class="mt-1 text-sm font-medium text-gray-900 dark:text-white">
+                <dd class="mt-1 text-sm font-semibold text-gray-900 dark:text-white">
                   {{ formatDateUs(profile.hire_date) }}
                 </dd>
               </div>
@@ -535,12 +531,16 @@ async function onHeroAvatarChange(e) {
                 <dt class="text-xs font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400">
                   Termination date
                 </dt>
-                <dd class="mt-1 text-sm font-medium text-gray-900 dark:text-white">
+                <dd class="mt-1 text-sm font-semibold text-gray-900 dark:text-white">
                   {{ formatDateUs(profile.terminate_date) }}
                 </dd>
               </div>
             </dl>
           </div>
+          <div
+            class="hidden min-h-0 lg:block lg:pl-6"
+            aria-hidden="true"
+          />
         </div>
       </section>
     </div>

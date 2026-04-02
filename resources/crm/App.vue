@@ -121,7 +121,7 @@ const logout = async () => {
       </p>
       <RouterLink
         to="/login"
-        class="rounded-lg bg-[#206ba4] px-4 py-2 text-sm font-semibold text-white hover:opacity-95"
+        class="rounded-lg bg-[#38bdf8] px-4 py-2 text-sm font-semibold text-white hover:opacity-95"
       >
         Sign in
       </RouterLink>

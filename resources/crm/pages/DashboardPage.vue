@@ -219,7 +219,7 @@ const areaChartOptions = computed(() => ({
       opacityTo: 0.05,
     },
   },
-  colors: ["#206ba4", "#38BDF8"],
+  colors: ["#38bdf8", "#0ea5e9"],
   xaxis: {
     categories: chartBundle.value.labels,
     axisBorder: { show: false },
@@ -262,7 +262,7 @@ const donutTotal = computed(() =>
 const donutOptions = computed(() => ({
   chart: { fontFamily: "inherit" },
   labels: ["Pending", "Active", "Inactive"],
-  colors: ["#93C5FD", "#206ba4", "#0F172A"],
+  colors: ["#93C5FD", "#38bdf8", "#0F172A"],
   plotOptions: {
     pie: {
       donut: {
@@ -303,7 +303,7 @@ const radialOptions = computed(() => ({
       },
     },
   },
-  colors: ["#206ba4"],
+  colors: ["#38bdf8"],
   labels: ["Engagement"],
 }));
 
@@ -545,7 +545,7 @@ onUnmounted(() => {
                 class="rounded-md px-3 py-1.5 text-xs font-semibold transition"
                 :class="
                   period === 'monthly'
-                    ? 'bg-[#206ba4] text-white shadow-sm'
+                    ? 'bg-[#38bdf8] text-white shadow-sm'
                     : 'text-gray-600 hover:bg-gray-50 dark:text-gray-400 dark:hover:bg-white/5'
                 "
                 @click="period = 'monthly'"
@@ -557,7 +557,7 @@ onUnmounted(() => {
                 class="rounded-md px-3 py-1.5 text-xs font-semibold transition"
                 :class="
                   period === 'quarterly'
-                    ? 'bg-[#206ba4] text-white shadow-sm'
+                    ? 'bg-[#38bdf8] text-white shadow-sm'
                     : 'text-gray-600 hover:bg-gray-50 dark:text-gray-400 dark:hover:bg-white/5'
                 "
                 @click="period = 'quarterly'"
@@ -569,7 +569,7 @@ onUnmounted(() => {
                 class="rounded-md px-3 py-1.5 text-xs font-semibold transition"
                 :class="
                   period === 'annually'
-                    ? 'bg-[#206ba4] text-white shadow-sm'
+                    ? 'bg-[#38bdf8] text-white shadow-sm'
                     : 'text-gray-600 hover:bg-gray-50 dark:text-gray-400 dark:hover:bg-white/5'
                 "
                 @click="period = 'annually'"
@@ -631,7 +631,7 @@ onUnmounted(() => {
               </div>
               <div class="mt-1.5 h-2 overflow-hidden rounded-full bg-gray-100 dark:bg-gray-800">
                 <div
-                  class="h-full rounded-full bg-[#206ba4]"
+                  class="h-full rounded-full bg-[#38bdf8]"
                   :style="{
                     width: `${
                       summary.metrics.total_users.value
@@ -721,7 +721,7 @@ onUnmounted(() => {
                           )
                         : 0,
                     count: donutSeries[1],
-                    dot: 'bg-[#206ba4]',
+                    dot: 'bg-[#38bdf8]',
                   },
                   {
                     key: 'Inactive',
@@ -847,7 +847,7 @@ onUnmounted(() => {
                 v-model="search"
                 type="search"
                 placeholder="Search…"
-                class="h-11 w-full rounded-lg border border-gray-200 bg-gray-50 py-2.5 pl-10 pr-3 text-sm text-gray-900 placeholder:text-gray-400 focus:border-[#206ba4] focus:outline-none focus:ring-2 focus:ring-[#206ba4]/20 dark:border-gray-700 dark:bg-gray-800/50 dark:text-white dark:placeholder:text-gray-500"
+                class="h-11 w-full rounded-lg border border-gray-200 bg-gray-50 py-2.5 pl-10 pr-3 text-sm text-gray-900 placeholder:text-gray-400 focus:border-[#38bdf8] focus:outline-none focus:ring-2 focus:ring-[#38bdf8]/20 dark:border-gray-700 dark:bg-gray-800/50 dark:text-white dark:placeholder:text-gray-500"
               />
             </div>
             <div
@@ -857,7 +857,7 @@ onUnmounted(() => {
               <button
                 type="button"
                 class="inline-flex h-11 items-center gap-2 rounded-lg border border-gray-200 bg-white px-4 text-sm font-medium text-gray-700 shadow-sm hover:bg-gray-50 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200 dark:hover:bg-gray-700"
-                :class="{ 'ring-2 ring-[#206ba4]/30': recentUsersFilterOpen }"
+                :class="{ 'ring-2 ring-[#38bdf8]/30': recentUsersFilterOpen }"
                 :aria-expanded="recentUsersFilterOpen"
                 @click.stop="recentUsersFilterOpen = !recentUsersFilterOpen"
               >

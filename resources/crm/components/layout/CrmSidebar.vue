@@ -75,7 +75,7 @@ function iconClass(mode) {
       <RouterLink
         to="/dashboard"
         :class="[
-          'flex min-w-0 items-center rounded-lg outline-none ring-[#206ba4] transition hover:opacity-95 focus-visible:ring-2',
+          'flex min-w-0 items-center rounded-lg outline-none ring-[#38bdf8] transition hover:opacity-95 focus-visible:ring-2',
           isExpanded ? 'gap-3' : 'justify-center',
         ]"
         @click="closeMobile"
@@ -91,7 +91,7 @@ function iconClass(mode) {
           v-if="isExpanded"
           class="select-none text-3xl font-bold leading-none tracking-tight text-[#1e3a5f] dark:text-white sm:text-[2rem]"
         >
-          SaveRack
+          Save Rack
         </span>
       </RouterLink>
     </div>

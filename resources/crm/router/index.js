@@ -15,35 +15,35 @@ import WebmasterTaskDetailPage from "../pages/webmaster/WebmasterTaskDetailPage.
 
 const meta = {
   login: {
-    title: "SaveRack | Sign in",
-    description: "Sign in to SaveRack CRM.",
+    title: "Save Rack | Sign in",
+    description: "Sign in to Save Rack CRM.",
   },
   forgot: {
-    title: "SaveRack | Forgot password",
-    description: "Reset your SaveRack CRM password.",
+    title: "Save Rack | Forgot password",
+    description: "Reset your Save Rack CRM password.",
   },
   reset: {
-    title: "SaveRack | Reset password",
-    description: "Choose a new password for SaveRack CRM.",
+    title: "Save Rack | Reset password",
+    description: "Choose a new password for Save Rack CRM.",
   },
   dashboard: {
-    title: "SaveRack | Dashboard",
+    title: "Save Rack | Dashboard",
     description: "CRM dashboard — activity, metrics, and recent staff.",
   },
   staff: {
-    title: "SaveRack | Staff",
+    title: "Save Rack | Staff",
     description: "Directory of admin and staff accounts.",
   },
   staffCreate: {
-    title: "SaveRack | Add staff",
+    title: "Save Rack | Add Staff",
     description: "Create a new staff account.",
   },
   webmaster: {
-    title: "SaveRack | Webmaster",
+    title: "Save Rack | Webmaster",
     description: "Site development tasks and board.",
   },
   webmasterTask: {
-    title: "SaveRack | Webmaster task",
+    title: "Save Rack | Webmaster task",
     description: "Webmaster task details.",
   },
 };
@@ -96,7 +96,7 @@ const routes = [
     component: UserDetailPage,
     props: true,
     meta: {
-      title: "SaveRack | Staff",
+      title: "Save Rack | Staff",
       description: "Staff profile.",
     },
   },

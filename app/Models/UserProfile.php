@@ -4,7 +4,6 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
-use Illuminate\Support\Facades\Storage;
 
 class UserProfile extends Model
 {
@@ -99,6 +98,9 @@ class UserProfile extends Model
             return null;
         }
 
-        return Storage::disk('public')->url($this->avatar_path);
+        $path = str_replace('\\', '/', $this->avatar_path);
+
+        // Root-relative avoids baking in APP_URL (e.g. http://localhost) into JSON for the SPA.
+        return '/storage/'.ltrim($path, '/');
     }
 }

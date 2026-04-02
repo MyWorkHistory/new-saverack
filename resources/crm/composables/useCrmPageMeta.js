@@ -3,9 +3,9 @@
  * Link previews in some apps only see the initial HTML; SPA updates help the tab and some crawlers.
  */
 
-const DEFAULT_TITLE = "SaveRack";
+const DEFAULT_TITLE = "Save Rack";
 const DEFAULT_DESC =
-  "SaveRack CRM — manage staff, webmaster tasks, and operations.";
+  "Save Rack CRM — manage staff, webmaster tasks, and operations.";
 
 function ensureMeta(attr, key) {
   let el = document.querySelector(`meta[${attr}="${key}"]`);

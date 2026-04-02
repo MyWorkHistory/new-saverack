@@ -51,7 +51,7 @@ const submit = async () => {
   <div
     class="min-h-screen flex flex-col bg-white lg:flex-row dark:bg-gray-950"
   >
-    <!-- Form (matches SaveRack branded sign-in #2) -->
+    <!-- Form (matches Save Rack branded sign-in #2) -->
     <div
       class="flex flex-1 flex-col justify-center px-6 py-10 sm:px-10 lg:w-1/2 lg:px-14 xl:px-20"
     >
@@ -62,7 +62,7 @@ const submit = async () => {
           Sign In
         </h1>
         <p class="mt-2 text-sm text-slate-500 dark:text-slate-400">
-          Enter your SaveRack account credentials.
+          Enter your Save Rack account credentials.
         </p>
 
         <p
@@ -177,7 +177,7 @@ const submit = async () => {
           <button
             type="submit"
             :disabled="loading"
-            class="w-full rounded-lg bg-blue-600 py-3 text-sm font-semibold text-white shadow-sm transition hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-60 dark:focus:ring-offset-gray-950"
+            class="w-full rounded-lg bg-[#38bdf8] py-3 text-sm font-semibold text-white shadow-sm transition hover:opacity-90 focus:outline-none focus:ring-2 focus:ring-[#38bdf8]/50 focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-60 dark:focus:ring-offset-gray-950"
           >
             {{ loading ? "Signing in…" : "Sign In" }}
           </button>
@@ -196,7 +196,7 @@ const submit = async () => {
       <h2
         class="mt-10 text-4xl font-bold tracking-tight text-white sm:text-5xl"
       >
-        SaveRack
+        Save Rack
       </h2>
       <p class="mt-2 max-w-sm text-sm text-slate-400">
         CRM Administration Portal

@@ -137,7 +137,7 @@ const submit = async () => {
           <button
             type="submit"
             :disabled="loading"
-            class="w-full rounded-lg bg-blue-600 py-3 text-sm font-semibold text-white shadow-sm transition hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-60 dark:focus:ring-offset-gray-950"
+            class="w-full rounded-lg bg-[#38bdf8] py-3 text-sm font-semibold text-white shadow-sm transition hover:opacity-90 focus:outline-none focus:ring-2 focus:ring-[#38bdf8]/50 focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-60 dark:focus:ring-offset-gray-950"
           >
             {{ loading ? "Resetting…" : "Reset password" }}
           </button>
@@ -163,7 +163,7 @@ const submit = async () => {
       <h2
         class="mt-10 text-4xl font-bold tracking-tight text-white sm:text-5xl"
       >
-        SaveRack
+        Save Rack
       </h2>
       <p class="mt-2 max-w-sm text-sm text-slate-400">
         CRM Administration Portal

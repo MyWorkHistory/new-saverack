@@ -145,7 +145,7 @@ function onBackdropClick() {
                 type="submit"
                 form="user-create-drawer-form"
                 :disabled="saving"
-                class="inline-flex min-h-[2.75rem] min-w-0 flex-1 basis-0 items-center justify-center rounded-xl bg-blue-600 px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-50"
+                class="inline-flex min-h-[2.75rem] min-w-0 flex-1 basis-0 items-center justify-center rounded-xl bg-[#38bdf8] px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:opacity-90 focus:outline-none focus:ring-2 focus:ring-[#38bdf8]/40 disabled:opacity-50"
               >
                 {{ saving ? "Saving…" : "Save" }}
               </button>

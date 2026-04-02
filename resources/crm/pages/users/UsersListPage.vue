@@ -514,7 +514,7 @@ onUnmounted(() => {
               <button
                 type="button"
                 class="inline-flex h-11 items-center gap-2 rounded-lg border border-gray-200 bg-white px-4 text-sm font-medium text-gray-700 shadow-sm hover:bg-gray-50 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200 dark:hover:bg-gray-700"
-                :class="{ 'ring-2 ring-[#206ba4]/30': filterOpen }"
+                :class="{ 'ring-2 ring-[#38bdf8]/30': filterOpen }"
                 :aria-expanded="filterOpen"
                 @click.stop="filterOpen = !filterOpen"
               >
@@ -585,7 +585,7 @@ onUnmounted(() => {
                     <div class="flex gap-2 pt-1">
                       <button
                         type="button"
-                        class="flex min-h-10 min-w-0 flex-1 basis-0 items-center justify-center rounded-lg bg-[#206ba4] px-3 text-xs font-semibold text-white transition hover:opacity-95 disabled:opacity-50"
+                        class="flex min-h-10 min-w-0 flex-1 basis-0 items-center justify-center rounded-lg bg-[#38bdf8] px-3 text-xs font-semibold text-white transition hover:opacity-95 disabled:opacity-50"
                         :disabled="loading"
                         @click="applyFilterPanel"
                       >
@@ -621,7 +621,7 @@ onUnmounted(() => {
             <button
               v-if="canCreateUsers"
               type="button"
-              class="inline-flex h-11 shrink-0 items-center justify-center gap-2 rounded-lg bg-[#206ba4] px-4 text-sm font-semibold text-white shadow-sm transition hover:opacity-95 focus:outline-none focus:ring-2 focus:ring-[#206ba4]/40 focus:ring-offset-2 dark:focus:ring-offset-gray-900"
+              class="inline-flex h-11 shrink-0 items-center justify-center gap-2 rounded-lg bg-[#38bdf8] px-4 text-sm font-semibold text-white shadow-sm transition hover:opacity-95 focus:outline-none focus:ring-2 focus:ring-[#38bdf8]/40 focus:ring-offset-2 dark:focus:ring-offset-gray-900"
               @click="addDrawerOpen = true"
             >
               <svg
@@ -637,44 +637,49 @@ onUnmounted(() => {
                   d="M12 4v16m8-8H4"
                 />
               </svg>
-              Add staff
+              Add Staff
             </button>
           </div>
         </div>
       </div>
 
       <div class="px-4 py-4 sm:px-6 sm:pb-6">
-        <div class="mb-4 max-w-md">
-          <div class="relative">
-            <span
-              class="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-gray-400"
-            >
-              <svg
-                class="h-5 w-5"
-                fill="none"
-                viewBox="0 0 20 20"
-                stroke="currentColor"
-                stroke-width="1.5"
-              >
-                <path
-                  stroke-linecap="round"
-                  d="M3.042 9.374c0-3.497 2.835-6.332 6.333-6.332 3.497 0 6.332 2.835 6.332 6.332 0 3.498-2.835 6.333-6.332 6.333-3.498 0-6.333-2.835-6.333-6.333zM17.208 17.205l-2.82-2.82"
-                />
-              </svg>
-            </span>
-            <input
-              v-model="query.search"
-              type="search"
-              placeholder="Search…"
-              class="h-11 w-full rounded-lg border border-gray-200 bg-gray-50 py-2.5 pl-10 pr-3 text-sm text-gray-900 placeholder:text-gray-400 focus:border-[#206ba4] focus:outline-none focus:ring-2 focus:ring-[#206ba4]/20 dark:border-gray-700 dark:bg-gray-800/50 dark:text-white dark:placeholder:text-gray-500"
-              @keydown.enter.prevent="applySearch"
-            />
-          </div>
-        </div>
-
         <div
-          class="mt-4 overflow-hidden rounded-xl border border-gray-200 bg-white dark:border-gray-800 dark:bg-white/[0.03] sm:mt-6"
+          class="overflow-hidden rounded-xl border border-gray-200 bg-white dark:border-gray-800 dark:bg-white/[0.03]"
         >
+          <!-- Search inside table card (TailAdmin basic-tables: white toolbar strip) -->
+          <div
+            class="border-b border-gray-200 bg-white px-4 py-4 dark:border-gray-700 dark:bg-gray-900 sm:px-6"
+          >
+            <div class="max-w-md">
+              <div class="relative">
+                <span
+                  class="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-gray-400"
+                >
+                  <svg
+                    class="h-5 w-5"
+                    fill="none"
+                    viewBox="0 0 20 20"
+                    stroke="currentColor"
+                    stroke-width="1.5"
+                  >
+                    <path
+                      stroke-linecap="round"
+                      d="M3.042 9.374c0-3.497 2.835-6.332 6.333-6.332 3.497 0 6.332 2.835 6.332 6.332 0 3.498-2.835 6.333-6.332 6.333-3.498 0-6.333-2.835-6.333-6.333zM17.208 17.205l-2.82-2.82"
+                    />
+                  </svg>
+                </span>
+                <input
+                  v-model="query.search"
+                  type="search"
+                  placeholder="Search…"
+                  class="h-11 w-full rounded-lg border border-gray-200 bg-white py-2.5 pl-10 pr-3 text-sm text-gray-900 placeholder:text-gray-400 focus:border-[#38bdf8] focus:outline-none focus:ring-2 focus:ring-[#38bdf8]/20 dark:border-gray-600 dark:bg-gray-900 dark:text-white dark:placeholder:text-gray-500"
+                  @keydown.enter.prevent="applySearch"
+                />
+              </div>
+            </div>
+          </div>
+
           <div class="overflow-x-auto">
             <table class="min-w-[1024px] w-full text-left text-sm">
           <thead>
@@ -684,7 +689,7 @@ onUnmounted(() => {
               <th v-if="canDeleteUsers" class="w-12 px-5 py-3 sm:px-6">
                 <input
                   type="checkbox"
-                  class="h-4 w-4 rounded border-gray-300 text-[#206ba4] focus:ring-[#206ba4]"
+                  class="h-4 w-4 rounded border-gray-300 text-[#38bdf8] focus:ring-[#38bdf8]"
                   :checked="isAllPageSelected"
                   :disabled="loading || !rows.length"
                   aria-label="Select all on page"
@@ -761,7 +766,7 @@ onUnmounted(() => {
               <td v-if="canDeleteUsers" class="px-5 py-4 align-middle sm:px-6">
                 <input
                   type="checkbox"
-                  class="h-4 w-4 rounded border-gray-300 text-[#206ba4] focus:ring-[#206ba4]"
+                  class="h-4 w-4 rounded border-gray-300 text-[#38bdf8] focus:ring-[#38bdf8]"
                   :checked="selectedIds.includes(user.id)"
                   :aria-label="`Select ${user.name}`"
                   @change="toggleRowSelect(user.id)"
@@ -936,8 +941,8 @@ onUnmounted(() => {
                 :class="[
                   'min-w-[2.25rem] px-2 py-1.5 text-sm font-medium transition rounded-md',
                   item.value === pagination.current_page
-                    ? 'bg-[#206ba4] text-white'
-                    : 'text-gray-600 hover:text-[#206ba4] dark:text-gray-300 dark:hover:text-blue-400',
+                    ? 'bg-[#38bdf8] text-white'
+                    : 'text-gray-600 hover:text-[#38bdf8] dark:text-gray-300 dark:hover:text-blue-400',
                 ]"
                 :disabled="loading"
                 @click="goPage(item.value)"

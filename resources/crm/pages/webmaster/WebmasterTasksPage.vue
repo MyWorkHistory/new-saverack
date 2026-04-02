@@ -435,7 +435,7 @@ onUnmounted(() => {
           </div>
           <button
             type="button"
-            class="inline-flex h-11 shrink-0 items-center justify-center gap-2 rounded-lg bg-[#206ba4] px-4 text-sm font-semibold text-white shadow-sm transition hover:opacity-95 focus:outline-none focus:ring-2 focus:ring-[#206ba4]/40 focus:ring-offset-2 dark:focus:ring-offset-gray-900"
+            class="inline-flex h-11 shrink-0 items-center justify-center gap-2 rounded-lg bg-[#38bdf8] px-4 text-sm font-semibold text-white shadow-sm transition hover:opacity-95 focus:outline-none focus:ring-2 focus:ring-[#38bdf8]/40 focus:ring-offset-2 dark:focus:ring-offset-gray-900"
             @click="openAdd"
           >
             <svg
@@ -490,7 +490,7 @@ onUnmounted(() => {
               v-model="query.search"
               type="search"
               placeholder="Search tasks…"
-              class="h-11 w-full rounded-lg border border-gray-200 bg-gray-50 py-2.5 pl-10 pr-3 text-sm text-gray-900 placeholder:text-gray-400 focus:border-[#206ba4] focus:outline-none focus:ring-2 focus:ring-[#206ba4]/20 dark:border-gray-700 dark:bg-gray-800/50 dark:text-white"
+              class="h-11 w-full rounded-lg border border-gray-200 bg-gray-50 py-2.5 pl-10 pr-3 text-sm text-gray-900 placeholder:text-gray-400 focus:border-[#38bdf8] focus:outline-none focus:ring-2 focus:ring-[#38bdf8]/20 dark:border-gray-700 dark:bg-gray-800/50 dark:text-white"
               @keydown.enter.prevent="applySearch"
             />
           </div>
@@ -498,7 +498,7 @@ onUnmounted(() => {
             <button
               type="button"
               class="inline-flex h-11 items-center gap-2 rounded-lg border border-gray-200 bg-white px-4 text-sm font-medium text-gray-700 shadow-sm hover:bg-gray-50 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200 dark:hover:bg-gray-700"
-              :class="{ 'ring-2 ring-[#206ba4]/30': filterOpen }"
+              :class="{ 'ring-2 ring-[#38bdf8]/30': filterOpen }"
               :aria-expanded="filterOpen"
               @click.stop="filterOpen = !filterOpen"
             >
@@ -621,7 +621,7 @@ onUnmounted(() => {
                   <div class="grid grid-cols-2 gap-2 pt-1">
                     <button
                       type="button"
-                      class="inline-flex min-h-10 items-center justify-center rounded-lg bg-[#206ba4] px-3 text-xs font-semibold text-white transition hover:opacity-95 disabled:opacity-50"
+                      class="inline-flex min-h-10 items-center justify-center rounded-lg bg-[#38bdf8] px-3 text-xs font-semibold text-white transition hover:opacity-95 disabled:opacity-50"
                       :disabled="loading"
                       @click="applyFilterPanel"
                     >

@@ -48,7 +48,7 @@ async function onSubmit() {
   <div class="mx-auto max-w-4xl space-y-6">
     <div class="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
       <PageHeader
-        title="Add staff"
+        title="Add Staff"
         subtitle="Account, profile, and roles — all saved to the user record"
       />
       <div class="flex shrink-0 flex-wrap gap-x-4 gap-y-2">

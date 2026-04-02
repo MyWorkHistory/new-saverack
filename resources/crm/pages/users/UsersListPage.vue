@@ -65,6 +65,8 @@ const addDrawerOpen = ref(false);
 const bulkEditOpen = ref(false);
 const bulkEditBusy = ref(false);
 const selectedIds = ref([]);
+const userEditModalOpen = ref(false);
+const userEditModalUserId = ref("");
 
 const query = reactive({
   search: "",
@@ -464,11 +466,11 @@ onUnmounted(() => {
       {{ deleteError }}
     </p>
 
+    <!-- Single rounded card (template: one shell — title/toolbar + search + table + pagination) -->
     <div
       class="overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-sm dark:border-gray-800 dark:bg-gray-900"
     >
-      <!-- Toolbar (outer card — matches TailAdmin ComponentCard header) -->
-      <div class="px-4 py-5 sm:px-6">
+      <div class="border-b border-gray-100 px-4 py-5 dark:border-gray-800 sm:px-6">
         <div
           class="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between"
         >
@@ -641,10 +643,7 @@ onUnmounted(() => {
         </div>
       </div>
 
-      <!-- Inner table card (TailAdmin BasicTableOne: rounded-xl border + table) -->
-      <div
-        class="border-t border-gray-100 px-4 py-4 dark:border-gray-800 sm:px-6 sm:pb-6"
-      >
+      <div class="px-4 py-4 sm:px-6 sm:pb-6">
         <div class="mb-4 max-w-md">
           <div class="relative">
             <span
@@ -672,10 +671,7 @@ onUnmounted(() => {
             />
           </div>
         </div>
-        <div
-          class="overflow-hidden rounded-xl border border-gray-200 bg-white dark:border-gray-800 dark:bg-white/[0.03]"
-        >
-          <div class="overflow-x-auto">
+        <div class="overflow-x-auto">
             <table class="min-w-[1024px] w-full text-left text-sm">
           <thead>
             <tr
@@ -854,7 +850,6 @@ onUnmounted(() => {
             </tr>
           </tbody>
             </table>
-          </div>
         </div>
 
         <!-- Pagination -->

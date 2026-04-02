@@ -71,10 +71,10 @@ class DashboardController extends Controller
                             'name' => $r->name,
                             'label' => $r->label,
                         ])->values()->all(),
-                        'job_position' => $p?->job_position,
+                        'job_position' => $p ? $p->job_position : null,
                         'birthday' => $p && $p->birthday ? $p->birthday->toDateString() : null,
                         'hire_date' => $p && $p->hire_date ? $p->hire_date->toDateString() : null,
-                        'avatar_url' => $p?->avatar_url,
+                        'avatar_url' => $p ? $p->avatar_url : null,
                     ];
                 }),
             'recent_activity' => ActivityLog::query()

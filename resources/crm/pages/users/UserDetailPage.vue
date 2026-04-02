@@ -148,6 +148,24 @@ const profileLocationLine = computed(() => {
   return parts.filter(Boolean).join(", ");
 });
 
+/** Role, location, email as one horizontal row (segments for pipes). */
+const profileAboutSegments = computed(() => {
+  const u = user.value;
+  if (!u) return [];
+  const segs = [];
+  const rl = roleLabels(u.roles);
+  if (rl && rl !== "—") {
+    segs.push({ key: "role", text: rl, emphasis: true });
+  }
+  if (profileLocationLine.value) {
+    segs.push({ key: "loc", text: profileLocationLine.value, emphasis: false });
+  }
+  if (u.email) {
+    segs.push({ key: "email", text: u.email, emphasis: false });
+  }
+  return segs;
+});
+
 function openHeroAvatarPicker() {
   heroAvatarInput.value?.click();
 }
@@ -291,24 +309,38 @@ async function onHeroAvatarChange(e) {
                 {{ initials(user.name) }}
               </span>
             </div>
-            <div class="min-w-0">
+            <div class="min-w-0 flex-1">
               <h2 class="truncate text-xl font-semibold text-gray-900 dark:text-white">
                 {{ user.name }}
               </h2>
               <p class="mt-1 text-sm font-medium text-gray-800 dark:text-gray-200">
                 {{ display(profile.job_position) }}
               </p>
-              <p class="mt-2 text-sm font-medium text-gray-600 dark:text-gray-300">
-                {{ roleLabels(user.roles) }}
-              </p>
-              <p
-                class="mt-1 text-sm text-gray-500 dark:text-gray-400"
-              >
-                <template v-if="profileLocationLine">{{ profileLocationLine }}</template>
-                <template v-if="profileLocationLine && user.email"> · </template>
-                <template v-if="user.email">{{ user.email }}</template>
-                <template v-if="!profileLocationLine && !user.email">—</template>
-              </p>
+              <!-- About: role | location | email (horizontal) -->
+              <div class="mt-3 flex flex-wrap items-center gap-x-2 gap-y-1 text-sm sm:gap-x-3">
+                <template v-if="profileAboutSegments.length">
+                  <template
+                    v-for="(seg, idx) in profileAboutSegments"
+                    :key="seg.key"
+                  >
+                    <span
+                      v-if="idx > 0"
+                      class="text-gray-300 dark:text-gray-600"
+                      aria-hidden="true"
+                      >|</span
+                    >
+                    <span
+                      :class="
+                        seg.emphasis
+                          ? 'font-medium text-gray-700 dark:text-gray-300'
+                          : 'text-gray-500 dark:text-gray-400'
+                      "
+                      >{{ seg.text }}</span
+                    >
+                  </template>
+                </template>
+                <span v-else class="text-gray-500 dark:text-gray-400">—</span>
+              </div>
               <div class="mt-3 flex flex-wrap items-center gap-2">
                 <span
                   class="inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium capitalize"
@@ -336,8 +368,8 @@ async function onHeroAvatarChange(e) {
             Personal Information
           </h3>
           <div class="space-y-8">
-            <div class="space-y-4 border-b border-gray-100 pb-6 dark:border-gray-800">
-              <dl class="space-y-4">
+            <div class="border-b border-gray-100 pb-6 dark:border-gray-800">
+              <dl class="grid gap-6 sm:grid-cols-2">
                 <div>
                   <dt class="text-xs font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400">
                     Full name
@@ -356,8 +388,8 @@ async function onHeroAvatarChange(e) {
                 </div>
               </dl>
             </div>
-            <div class="space-y-4 border-b border-gray-100 pb-6 dark:border-gray-800">
-              <dl class="space-y-4">
+            <div class="border-b border-gray-100 pb-6 dark:border-gray-800">
+              <dl class="grid gap-6 sm:grid-cols-2">
                 <div>
                   <dt class="text-xs font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400">
                     Phone
@@ -376,8 +408,8 @@ async function onHeroAvatarChange(e) {
                 </div>
               </dl>
             </div>
-            <div class="space-y-4">
-              <dl class="space-y-4">
+            <div>
+              <dl class="grid gap-6 sm:grid-cols-2 sm:items-start">
                 <div>
                   <dt class="text-xs font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400">
                     Birthday
@@ -386,7 +418,7 @@ async function onHeroAvatarChange(e) {
                     {{ formatBirthdayUs(profile.birthday) }}
                   </dd>
                 </div>
-                <div>
+                <div class="sm:col-span-1">
                   <dt class="text-xs font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400">
                     Bio
                   </dt>
@@ -406,7 +438,7 @@ async function onHeroAvatarChange(e) {
             Address
           </h3>
           <div class="space-y-8">
-            <div class="space-y-4 border-b border-gray-100 pb-6 dark:border-gray-800">
+            <div class="border-b border-gray-100 pb-6 dark:border-gray-800">
               <dl>
                 <div>
                   <dt class="text-xs font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400">
@@ -418,8 +450,8 @@ async function onHeroAvatarChange(e) {
                 </div>
               </dl>
             </div>
-            <div class="space-y-4 border-b border-gray-100 pb-6 dark:border-gray-800">
-              <dl class="grid gap-4 sm:grid-cols-3">
+            <div class="border-b border-gray-100 pb-6 dark:border-gray-800">
+              <dl class="grid gap-6 sm:grid-cols-3">
                 <div>
                   <dt class="text-xs font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400">
                     City
@@ -446,7 +478,7 @@ async function onHeroAvatarChange(e) {
                 </div>
               </dl>
             </div>
-            <div class="space-y-4">
+            <div>
               <dl>
                 <div>
                   <dt class="text-xs font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400">
@@ -470,9 +502,9 @@ async function onHeroAvatarChange(e) {
           Employment
         </h3>
         <div class="space-y-8">
-          <div class="space-y-4 border-b border-gray-100 pb-6 dark:border-gray-800">
-            <dl class="grid gap-4 sm:grid-cols-2">
-              <div class="sm:col-span-2">
+          <div class="border-b border-gray-100 pb-6 dark:border-gray-800">
+            <dl class="grid gap-6 sm:grid-cols-2">
+              <div>
                 <dt class="text-xs font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400">
                   Employment type
                 </dt>
@@ -480,7 +512,7 @@ async function onHeroAvatarChange(e) {
                   {{ display(profile.employee_type) }}
                 </dd>
               </div>
-              <div class="sm:col-span-2">
+              <div>
                 <dt class="text-xs font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400">
                   Position
                 </dt>
@@ -490,8 +522,8 @@ async function onHeroAvatarChange(e) {
               </div>
             </dl>
           </div>
-          <div class="space-y-4">
-            <dl class="grid gap-4 sm:grid-cols-2">
+          <div>
+            <dl class="grid gap-6 sm:grid-cols-2">
               <div>
                 <dt class="text-xs font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400">
                   Hire date

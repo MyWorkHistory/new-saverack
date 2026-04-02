@@ -190,16 +190,7 @@ async function onHeroAvatarChange(e) {
   const fd = new FormData();
   fd.append("avatar", file);
   try {
-    await api.post(`/users/${props.id}/avatar`, fd, {
-      transformRequest: [
-        (body, headers) => {
-          if (headers && typeof headers.delete === "function") {
-            headers.delete("Content-Type");
-          }
-          return body;
-        },
-      ],
-    });
+    await api.post(`/users/${props.id}/avatar`, fd);
     await loadProfile();
     toast.success("Photo updated.");
   } catch (err) {
@@ -440,9 +431,12 @@ async function onHeroAvatarChange(e) {
           <h3 class="mb-5 border-b border-gray-100 pb-3 text-lg font-semibold text-gray-900 dark:border-gray-800 dark:text-white">
             Address
           </h3>
-          <div class="space-y-8">
-            <div class="border-b border-gray-100 pb-6 dark:border-gray-800">
-              <dl>
+          <!-- Same 3-column band layout as Personal Information -->
+          <div
+            class="grid grid-cols-1 gap-8 lg:grid-cols-3 lg:gap-0 lg:divide-x lg:divide-gray-100 dark:lg:divide-gray-800"
+          >
+            <div class="space-y-4 lg:pr-6">
+              <dl class="space-y-4">
                 <div>
                   <dt class="text-xs font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400">
                     Street
@@ -453,8 +447,8 @@ async function onHeroAvatarChange(e) {
                 </div>
               </dl>
             </div>
-            <div class="border-b border-gray-100 pb-6 dark:border-gray-800">
-              <dl class="grid gap-6 sm:grid-cols-3">
+            <div class="space-y-4 lg:px-6">
+              <dl class="grid gap-4 sm:grid-cols-3 sm:gap-3">
                 <div>
                   <dt class="text-xs font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400">
                     City
@@ -481,8 +475,8 @@ async function onHeroAvatarChange(e) {
                 </div>
               </dl>
             </div>
-            <div>
-              <dl>
+            <div class="space-y-4 lg:pl-6">
+              <dl class="space-y-4">
                 <div>
                   <dt class="text-xs font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400">
                     Country

@@ -34,6 +34,14 @@ api.interceptors.request.use((config) => {
   if (token) {
     config.headers.Authorization = `Bearer ${token}`;
   }
+  // Axios defaults Content-Type: application/json; FormData must omit it so the
+  // browser sets multipart boundaries (otherwise Laravel never sees the file).
+  if (typeof FormData !== "undefined" && config.data instanceof FormData) {
+    const h = config.headers;
+    if (h && typeof h.delete === "function") {
+      h.delete("Content-Type");
+    }
+  }
   return config;
 });
 

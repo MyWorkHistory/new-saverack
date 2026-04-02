@@ -102,16 +102,7 @@ export function useUserForm() {
     const fd = new FormData();
     fd.append("avatar", file);
     try {
-      const { data } = await api.post(`/users/${userId}/avatar`, fd, {
-        transformRequest: [
-          (body, headers) => {
-            if (headers && typeof headers.delete === "function") {
-              headers.delete("Content-Type");
-            }
-            return body;
-          },
-        ],
-      });
+      const { data } = await api.post(`/users/${userId}/avatar`, fd);
       profileAvatarUrl.value = data.profile?.avatar_url || "";
       applyProfileToForm(data.profile);
       if (successMessage) {

@@ -10,14 +10,14 @@
   .menu-item-inactive {
     @apply text-gray-700 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-white/5;
   }
-  /* Active: Tailwind logo chip (#38bdf8 ≈ brand sky) — high contrast so it’s obvious */
+  /* Active: TailAdmin-style (pale blue chip + vivid blue label/icon) */
   .menu-item-active {
-    @apply bg-[#38bdf8] font-semibold text-[#0f172a] shadow-sm dark:bg-[#38bdf8]/90 dark:text-[#0f172a];
+    @apply bg-blue-50 font-medium text-blue-600 dark:bg-blue-950/35 dark:text-blue-400;
   }
   .menu-item-icon-inactive {
     @apply text-gray-500 dark:text-gray-400;
   }
   .menu-item-icon-active {
-    @apply text-[#0f172a];
+    @apply text-blue-600 dark:text-blue-400;
   }
 }

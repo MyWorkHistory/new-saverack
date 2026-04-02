@@ -44,5 +44,7 @@ Route::middleware('auth:sanctum')->group(function () {
         ->name('users.bulk-update');
     Route::match(['put', 'patch'], 'users/{user}/permissions', [UserController::class, 'updatePermissions'])
         ->name('users.permissions.update');
+    Route::get('users/{user}/history', [UserController::class, 'history'])
+        ->name('users.history');
     Route::apiResource('users', UserController::class);
 });

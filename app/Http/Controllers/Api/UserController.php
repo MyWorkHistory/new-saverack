@@ -7,8 +7,10 @@ use App\Http\Requests\UserBulkUpdateRequest;
 use App\Http\Requests\UserPermissionsUpdateRequest;
 use App\Http\Requests\UserStoreRequest;
 use App\Http\Requests\UserUpdateRequest;
+use App\Models\ActivityLog;
 use App\Models\Permission;
 use App\Models\User;
+use App\Support\UserStaffHistory;
 use App\Services\UserAvatarService;
 use App\Services\UserService;
 use Illuminate\Http\JsonResponse;
@@ -84,6 +86,33 @@ class UserController extends Controller
         ]);
 
         return response()->json($user->toClientPayload());
+    }
+
+    public function history(User $user): JsonResponse
+    {
+        $this->authorize('view', $user);
+
+        $logs = ActivityLog::query()
+            ->where('subject_type', $user->getMorphClass())
+            ->where('subject_id', $user->id)
+            ->whereIn('action', ['user.created', 'user.updated'])
+            ->with(['user:id,name'])
+            ->orderByDesc('id')
+            ->limit(200)
+            ->get();
+
+        $items = $logs->map(function (ActivityLog $log) {
+            return [
+                'id' => $log->id,
+                'created_at' => $log->created_at?->toIso8601String(),
+                'actor_name' => $log->user?->name ?? 'System',
+                'actor_initials' => UserStaffHistory::initials($log->user?->name),
+                'line' => UserStaffHistory::formatLogLine($log),
+                'body' => UserStaffHistory::formatLogBody($log),
+            ];
+        })->values()->all();
+
+        return response()->json(['items' => $items]);
     }
 
     public function updatePermissions(UserPermissionsUpdateRequest $request, User $user): JsonResponse

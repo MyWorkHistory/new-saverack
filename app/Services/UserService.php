@@ -3,6 +3,7 @@
 namespace App\Services;
 
 use App\Models\User;
+use App\Support\UserStaffHistory;
 use Illuminate\Contracts\Pagination\LengthAwarePaginator;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
@@ -97,7 +98,9 @@ class UserService
             }
             $user->load('roles');
             if ($actor) {
-                $this->activityLog->log($actor, 'user.created', $user, 'User created', ['email' => $user->email]);
+                $this->activityLog->log($actor, 'user.created', $user, null, [
+                    'new_user_name' => $user->name,
+                ]);
             }
 
             return $user->refresh()->load('profile');
@@ -107,6 +110,13 @@ class UserService
     public function update(User $user, array $data, ?User $actor = null): User
     {
         return DB::transaction(function () use ($user, $data, $actor) {
+            $user->load(['profile', 'roles']);
+            $before = UserStaffHistory::snapshot($user);
+
+            $willChangePassword = isset($data['password'])
+                && $data['password'] !== null
+                && $data['password'] !== '';
+
             $roleIds = isset($data['role_ids']) && is_array($data['role_ids'])
                 ? array_values(array_unique(array_map('intval', $data['role_ids'])))
                 : null;
@@ -127,11 +137,23 @@ class UserService
                     $profileData
                 );
             }
+
+            $user->refresh()->load(['roles', 'profile']);
+            $after = UserStaffHistory::snapshot($user);
+
             if ($actor) {
-                $this->activityLog->log($actor, 'user.updated', $user, 'User updated', ['email' => $user->email]);
+                if ($willChangePassword) {
+                    $this->activityLog->log($actor, 'user.updated', $user, null, [
+                        'kind' => 'password',
+                        'field' => 'Password',
+                    ]);
+                }
+                foreach (UserStaffHistory::diff($before, $after) as $row) {
+                    $this->activityLog->log($actor, 'user.updated', $user, null, $row);
+                }
             }
 
-            return $user->refresh()->load(['roles', 'profile']);
+            return $user;
         });
     }
 

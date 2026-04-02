@@ -169,8 +169,8 @@ const gearMenuOpen = ref(false);
 const gearMenuRect = ref({ top: 0, left: 0 });
 
 function placeGearMenu(buttonEl) {
-  const MENU_W = 176;
-  const MENU_H = 120;
+  const MENU_W = 208;
+  const MENU_H = 168;
   const r = buttonEl.getBoundingClientRect();
   let top = r.bottom + 4;
   let left = r.right - MENU_W;
@@ -201,6 +201,15 @@ function toggleGearMenu(e) {
 function openPermissionsInNewTab() {
   const href = router.resolve({
     name: "staff-permissions",
+    params: { id: props.id },
+  }).href;
+  window.open(href, "_blank", "noopener,noreferrer");
+  closeGearMenu();
+}
+
+function openHistoryInNewTab() {
+  const href = router.resolve({
+    name: "staff-history",
     params: { id: props.id },
   }).href;
   window.open(href, "_blank", "noopener,noreferrer");
@@ -652,7 +661,7 @@ async function onHeroAvatarChange(e) {
         <div
           v-if="gearMenuOpen"
           data-page-gear
-          class="fixed z-[300] w-44 overflow-hidden rounded-xl border border-gray-200 bg-white py-1 shadow-lg ring-1 ring-black/5 dark:border-gray-700 dark:bg-gray-900 dark:ring-white/10"
+          class="fixed z-[300] w-52 overflow-hidden rounded-xl border border-gray-200 bg-white py-1 shadow-lg ring-1 ring-black/5 dark:border-gray-700 dark:bg-gray-900 dark:ring-white/10"
           role="menu"
           :style="{
             top: `${gearMenuRect.top}px`,
@@ -667,6 +676,14 @@ async function onHeroAvatarChange(e) {
             @click="openPermissionsInNewTab"
           >
             Permissions
+          </button>
+          <button
+            type="button"
+            class="flex w-full items-center border-t border-gray-100 px-4 py-2.5 text-left text-sm font-medium text-gray-800 transition hover:bg-gray-50 dark:border-gray-800 dark:text-gray-200 dark:hover:bg-white/5"
+            role="menuitem"
+            @click="openHistoryInNewTab"
+          >
+            History
           </button>
         </div>
       </Transition>

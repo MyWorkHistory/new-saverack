@@ -11,6 +11,7 @@ import UsersListPage from "../pages/users/UsersListPage.vue";
 import UserFormPage from "../pages/users/UserFormPage.vue";
 import UserDetailPage from "../pages/users/UserDetailPage.vue";
 import UserPermissionsPage from "../pages/users/UserPermissionsPage.vue";
+import UserHistoryPage from "../pages/users/UserHistoryPage.vue";
 import WebmasterTasksPage from "../pages/webmaster/WebmasterTasksPage.vue";
 import WebmasterTaskDetailPage from "../pages/webmaster/WebmasterTaskDetailPage.vue";
 
@@ -99,6 +100,16 @@ const routes = [
     meta: {
       title: "Save Rack | User Permissions",
       description: "Manage User Module Permissions.",
+    },
+  },
+  {
+    path: "/staff/:id/history",
+    name: "staff-history",
+    component: UserHistoryPage,
+    props: true,
+    meta: {
+      title: "Save Rack | Staff History",
+      description: "Staff Profile Change History.",
     },
   },
   {
@@ -222,6 +233,12 @@ async function ensureUsersRouteAccess(path) {
     /^\/users\/[^/]+\/permissions$/.test(path)
   ) {
     return usersNavCache.update === true;
+  }
+  if (
+    /^\/staff\/[^/]+\/history$/.test(path) ||
+    /^\/users\/[^/]+\/history$/.test(path)
+  ) {
+    return usersNavCache.view === true;
   }
   if (
     path === "/staff" ||

@@ -3,6 +3,8 @@
 /public/build
 /public/hot
 /public/storage
+/public/avatars/*
+!/public/avatars/.gitkeep
 
 # --- Generated CRM / tickets SPAs (Vite): run `npm run build:spa` and/or `npm run build:crm`
 # on deploy or CI. Stops hashed JS/CSS and index churn from dirtying git status.

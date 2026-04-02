@@ -20,7 +20,7 @@ class UserAvatarService
             throw new RuntimeException('PHP GD extension is required for avatars.');
         }
 
-        $disk = Storage::disk('public');
+        $disk = Storage::disk('avatars_public');
         $userDir = 'avatars/'.$user->id;
         if (! $disk->exists($userDir)) {
             $disk->makeDirectory($userDir);
@@ -57,7 +57,7 @@ class UserAvatarService
         }
 
         $path = $profile->avatar_path;
-        $disk = Storage::disk('public');
+        $disk = Storage::disk('avatars_public');
         $profile->avatar_path = null;
         $profile->save();
         $this->deleteIfUserAvatar($disk, $user->id, $path, null);

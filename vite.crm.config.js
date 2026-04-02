@@ -26,6 +26,10 @@ export default defineConfig({
                 target: process.env.VITE_DEV_LARAVEL_ORIGIN || 'http://127.0.0.1:8000',
                 changeOrigin: true,
             },
+            '/avatars': {
+                target: process.env.VITE_DEV_LARAVEL_ORIGIN || 'http://127.0.0.1:8000',
+                changeOrigin: true,
+            },
         },
     },
     build: {

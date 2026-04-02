@@ -2,8 +2,8 @@
  * Resolve paths like `/storage/...` for <img src> so they load from the Laravel app.
  *
  * - Production (same origin): uses the current page origin — `/storage/...` works.
- * - Vite dev on another port: set `VITE_APP_ORIGIN=http://127.0.0.1:8000` (no trailing slash)
- *   to match `php artisan serve`, or rely on the dev proxy for `/storage` in vite.crm.config.js.
+ * - Avatars are served from `/avatars/…` under public/ (see UserAvatarService). Vite proxies `/avatars`.
+ * - Legacy `/storage/…` URLs still work when resolvePublicUrl receives a full `https://` URL from the API.
  */
 export function resolvePublicUrl(path) {
   if (path == null || path === "") return "";

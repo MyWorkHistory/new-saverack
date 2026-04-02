@@ -99,9 +99,17 @@ class UserProfile extends Model
         }
 
         $path = ltrim(str_replace('\\', '/', $this->avatar_path), '/');
-        $relative = 'storage/'.$path;
 
-        // Prefer the HTTP host serving this response so <img src> hits Laravel, not the Vite port.
+        // New location: public/avatars/… (same URL path as disk path — works like logos in public/).
+        if (is_file(public_path($path))) {
+            $relative = $path;
+        } elseif (is_file(storage_path('app/public/'.$path))) {
+            // Legacy: file only under storage/app/public (symlink often missing on production).
+            $relative = 'storage/'.$path;
+        } else {
+            $relative = $path;
+        }
+
         if (! app()->runningInConsole()) {
             $host = request()->getSchemeAndHttpHost();
             if (is_string($host) && $host !== '') {

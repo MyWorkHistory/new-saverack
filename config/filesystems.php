@@ -47,6 +47,16 @@ return [
             'report' => false,
         ],
 
+        // User avatars under public/avatars (no storage symlink required on deploy).
+        // Only paths beginning with avatars/ are written by UserAvatarService.
+        'avatars_public' => [
+            'driver' => 'local',
+            'root' => public_path(),
+            'visibility' => 'public',
+            'throw' => false,
+            'report' => false,
+        ],
+
         's3' => [
             'driver' => 's3',
             'key' => env('AWS_ACCESS_KEY_ID'),

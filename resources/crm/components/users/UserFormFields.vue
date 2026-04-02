@@ -5,6 +5,7 @@ import {
   JOB_POSITION_VALUES,
 } from "../../constants/jobPositions";
 import { daysInMonth } from "../../utils/formatUserDates";
+import { resolvePublicUrl } from "../../utils/resolvePublicUrl.js";
 
 const BIRTHDAY_MONTHS = [
   { value: "1", label: "January" },
@@ -62,7 +63,7 @@ const avatarDisplayUrl = computed(() => {
   if (localPreviewObjectUrl.value) {
     return localPreviewObjectUrl.value;
   }
-  return props.avatarUrl || "";
+  return resolvePublicUrl(props.avatarUrl || "");
 });
 
 function openAvatarPicker() {

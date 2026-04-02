@@ -15,6 +15,19 @@ export default defineConfig({
     plugins: [vue()],
     root: path.resolve(__dirname, 'resources/crm'),
     publicDir: false,
+    // Dev: forward API + uploaded files to Laravel (e.g. php artisan serve on :8000)
+    server: {
+        proxy: {
+            '/api': {
+                target: process.env.VITE_DEV_LARAVEL_ORIGIN || 'http://127.0.0.1:8000',
+                changeOrigin: true,
+            },
+            '/storage': {
+                target: process.env.VITE_DEV_LARAVEL_ORIGIN || 'http://127.0.0.1:8000',
+                changeOrigin: true,
+            },
+        },
+    },
     build: {
         outDir: path.resolve(__dirname, 'public/tickets-app'),
         emptyOutDir: true,

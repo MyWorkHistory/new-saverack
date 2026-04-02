@@ -177,7 +177,7 @@ const submit = async () => {
           <button
             type="submit"
             :disabled="loading"
-            class="w-full rounded-lg bg-[#38bdf8] py-3 text-sm font-semibold text-white shadow-sm transition hover:opacity-90 focus:outline-none focus:ring-2 focus:ring-[#38bdf8]/50 focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-60 dark:focus:ring-offset-gray-950"
+            class="w-full rounded-lg bg-[#0ea5e9] py-3 text-sm font-semibold text-white shadow-sm transition hover:opacity-90 focus:outline-none focus:ring-2 focus:ring-[#0ea5e9]/50 focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-60 dark:focus:ring-offset-gray-950"
           >
             {{ loading ? "Signing in…" : "Sign In" }}
           </button>

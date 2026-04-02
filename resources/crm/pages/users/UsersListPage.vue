@@ -20,6 +20,7 @@ import { DEFAULT_PER_PAGE, PER_PAGE_OPTIONS } from "../../constants/pagination";
 import { formatBirthdayUs, formatDateUs } from "../../utils/formatUserDates";
 import CrmIconRowActions from "../../components/common/CrmIconRowActions.vue";
 import StaffBulkEditModal from "../../components/users/StaffBulkEditModal.vue";
+import { resolvePublicUrl } from "../../utils/resolvePublicUrl.js";
 
 const crmUser = inject("crmUser", ref(null));
 const toast = useToast();
@@ -514,7 +515,7 @@ onUnmounted(() => {
               <button
                 type="button"
                 class="inline-flex h-11 items-center gap-2 rounded-lg border border-gray-200 bg-white px-4 text-sm font-medium text-gray-700 shadow-sm hover:bg-gray-50 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200 dark:hover:bg-gray-700"
-                :class="{ 'ring-2 ring-[#38bdf8]/30': filterOpen }"
+                :class="{ 'ring-2 ring-[#0ea5e9]/30': filterOpen }"
                 :aria-expanded="filterOpen"
                 @click.stop="filterOpen = !filterOpen"
               >
@@ -585,7 +586,7 @@ onUnmounted(() => {
                     <div class="flex gap-2 pt-1">
                       <button
                         type="button"
-                        class="flex min-h-10 min-w-0 flex-1 basis-0 items-center justify-center rounded-lg bg-[#38bdf8] px-3 text-xs font-semibold text-white transition hover:opacity-95 disabled:opacity-50"
+                        class="flex min-h-10 min-w-0 flex-1 basis-0 items-center justify-center rounded-lg bg-[#0ea5e9] px-3 text-xs font-semibold text-white transition hover:opacity-95 disabled:opacity-50"
                         :disabled="loading"
                         @click="applyFilterPanel"
                       >
@@ -621,7 +622,7 @@ onUnmounted(() => {
             <button
               v-if="canCreateUsers"
               type="button"
-              class="inline-flex h-11 shrink-0 items-center justify-center gap-2 rounded-lg bg-[#38bdf8] px-4 text-sm font-semibold text-white shadow-sm transition hover:opacity-95 focus:outline-none focus:ring-2 focus:ring-[#38bdf8]/40 focus:ring-offset-2 dark:focus:ring-offset-gray-900"
+              class="inline-flex h-11 shrink-0 items-center justify-center gap-2 rounded-lg bg-[#0ea5e9] px-4 text-sm font-semibold text-white shadow-sm transition hover:opacity-95 focus:outline-none focus:ring-2 focus:ring-[#0ea5e9]/40 focus:ring-offset-2 dark:focus:ring-offset-gray-900"
               @click="addDrawerOpen = true"
             >
               <svg
@@ -673,7 +674,7 @@ onUnmounted(() => {
                   v-model="query.search"
                   type="search"
                   placeholder="Search…"
-                  class="h-11 w-full rounded-lg border border-gray-200 bg-white py-2.5 pl-10 pr-3 text-sm text-gray-900 placeholder:text-gray-400 focus:border-[#38bdf8] focus:outline-none focus:ring-2 focus:ring-[#38bdf8]/20 dark:border-gray-600 dark:bg-gray-900 dark:text-white dark:placeholder:text-gray-500"
+                  class="h-11 w-full rounded-lg border border-gray-200 bg-white py-2.5 pl-10 pr-3 text-sm text-gray-900 placeholder:text-gray-400 focus:border-[#0ea5e9] focus:outline-none focus:ring-2 focus:ring-[#0ea5e9]/20 dark:border-gray-600 dark:bg-gray-900 dark:text-white dark:placeholder:text-gray-500"
                   @keydown.enter.prevent="applySearch"
                 />
               </div>
@@ -689,7 +690,7 @@ onUnmounted(() => {
               <th v-if="canDeleteUsers" class="w-12 px-5 py-3 sm:px-6">
                 <input
                   type="checkbox"
-                  class="h-4 w-4 rounded border-gray-300 text-[#38bdf8] focus:ring-[#38bdf8]"
+                  class="h-4 w-4 rounded border-gray-300 text-[#0ea5e9] focus:ring-[#0ea5e9]"
                   :checked="isAllPageSelected"
                   :disabled="loading || !rows.length"
                   aria-label="Select all on page"
@@ -766,7 +767,7 @@ onUnmounted(() => {
               <td v-if="canDeleteUsers" class="px-5 py-4 align-middle sm:px-6">
                 <input
                   type="checkbox"
-                  class="h-4 w-4 rounded border-gray-300 text-[#38bdf8] focus:ring-[#38bdf8]"
+                  class="h-4 w-4 rounded border-gray-300 text-[#0ea5e9] focus:ring-[#0ea5e9]"
                   :checked="selectedIds.includes(user.id)"
                   :aria-label="`Select ${user.name}`"
                   @change="toggleRowSelect(user.id)"
@@ -785,7 +786,7 @@ onUnmounted(() => {
                   <span class="relative h-10 w-10 shrink-0">
                     <img
                       v-if="user.profile?.avatar_url"
-                      :src="user.profile.avatar_url"
+                      :src="resolvePublicUrl(user.profile.avatar_url)"
                       alt=""
                       class="h-10 w-10 rounded-full object-cover"
                     />
@@ -941,8 +942,8 @@ onUnmounted(() => {
                 :class="[
                   'min-w-[2.25rem] px-2 py-1.5 text-sm font-medium transition rounded-md',
                   item.value === pagination.current_page
-                    ? 'bg-[#38bdf8] text-white'
-                    : 'text-gray-600 hover:text-[#38bdf8] dark:text-gray-300 dark:hover:text-blue-400',
+                    ? 'bg-[#0ea5e9] text-white'
+                    : 'text-gray-600 hover:text-[#0ea5e9] dark:text-gray-300 dark:hover:text-blue-400',
                 ]"
                 :disabled="loading"
                 @click="goPage(item.value)"

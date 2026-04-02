@@ -96,7 +96,7 @@ function onBackdrop() {
                   <input
                     v-model="changeStatus"
                     type="checkbox"
-                    class="mt-0.5 h-4 w-4 rounded border-gray-300 text-[#38bdf8] focus:ring-[#38bdf8]"
+                    class="mt-0.5 h-4 w-4 rounded border-gray-300 text-[#0ea5e9] focus:ring-[#0ea5e9]"
                   />
                   <span class="min-w-0 flex-1">
                     <span
@@ -120,7 +120,7 @@ function onBackdrop() {
                   <input
                     v-model="changeRoles"
                     type="checkbox"
-                    class="mt-0.5 h-4 w-4 rounded border-gray-300 text-[#38bdf8] focus:ring-[#38bdf8]"
+                    class="mt-0.5 h-4 w-4 rounded border-gray-300 text-[#0ea5e9] focus:ring-[#0ea5e9]"
                   />
                   <span class="min-w-0 flex-1">
                     <span
@@ -142,7 +142,7 @@ function onBackdrop() {
                       >
                         <input
                           type="checkbox"
-                          class="rounded border-gray-300 text-[#38bdf8] focus:ring-[#38bdf8]"
+                          class="rounded border-gray-300 text-[#0ea5e9] focus:ring-[#0ea5e9]"
                           :checked="roleIds.includes(Number(r.id))"
                           :disabled="!changeRoles"
                           @change="toggleRole(r.id)"
@@ -159,7 +159,7 @@ function onBackdrop() {
             >
               <button
                 type="button"
-                class="inline-flex min-h-[2.75rem] flex-1 items-center justify-center rounded-xl bg-[#38bdf8] px-5 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:opacity-95 focus:outline-none focus:ring-2 focus:ring-[#38bdf8]/40 disabled:opacity-50 sm:flex-none"
+                class="inline-flex min-h-[2.75rem] flex-1 items-center justify-center rounded-xl bg-[#0ea5e9] px-5 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:opacity-95 focus:outline-none focus:ring-2 focus:ring-[#0ea5e9]/40 disabled:opacity-50 sm:flex-none"
                 :disabled="busy || (!changeStatus && !changeRoles)"
                 @click="onSubmit"
               >

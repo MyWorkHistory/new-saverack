@@ -10,7 +10,7 @@ defineProps({
 <template>
   <RouterLink
     :to="to"
-    class="inline-flex items-center gap-1.5 text-sm font-medium text-gray-600 transition hover:text-[#38bdf8] dark:text-gray-400 dark:hover:text-blue-400"
+    class="inline-flex items-center gap-1.5 text-sm font-medium text-gray-600 transition hover:text-[#0ea5e9] dark:text-gray-400 dark:hover:text-blue-400"
   >
     <svg
       class="h-4 w-4 shrink-0"

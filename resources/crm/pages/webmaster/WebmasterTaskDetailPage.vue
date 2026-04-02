@@ -372,7 +372,7 @@ onUnmounted(() => {
                   />
                   <button
                     type="button"
-                    class="mt-2 inline-flex items-center gap-1 text-xs font-medium text-[#38bdf8] hover:underline"
+                    class="mt-2 inline-flex items-center gap-1 text-xs font-medium text-[#0ea5e9] hover:underline"
                     @click="downloadAttachment(c.id)"
                   >
                     <span v-if="c.attachment.original_name">{{
@@ -415,7 +415,7 @@ onUnmounted(() => {
               />
               <button
                 type="button"
-                class="mt-2 inline-flex shrink-0 justify-center rounded-xl bg-[#38bdf8] px-4 py-2 text-sm font-semibold text-white hover:opacity-95 disabled:opacity-50 sm:mt-0"
+                class="mt-2 inline-flex shrink-0 justify-center rounded-xl bg-[#0ea5e9] px-4 py-2 text-sm font-semibold text-white hover:opacity-95 disabled:opacity-50 sm:mt-0"
                 :disabled="commentSubmitting"
                 @click="submitComment"
               >

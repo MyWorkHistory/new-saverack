@@ -12,6 +12,7 @@ import {
 } from "../../utils/formatUserDates";
 import { useToast } from "../../composables/useToast";
 import { setCrmPageMeta } from "../../composables/useCrmPageMeta.js";
+import { resolvePublicUrl } from "../../utils/resolvePublicUrl.js";
 
 const props = defineProps({
   id: { type: String, required: true },
@@ -204,14 +205,14 @@ async function onHeroAvatarChange(e) {
     <nav class="mb-4 flex flex-wrap items-center gap-1.5 text-sm">
       <RouterLink
         to="/dashboard"
-        class="font-medium text-gray-500 transition hover:text-[#38bdf8] dark:text-gray-400 dark:hover:text-blue-400"
+        class="font-medium text-gray-500 transition hover:text-[#0ea5e9] dark:text-gray-400 dark:hover:text-blue-400"
       >
         Home
       </RouterLink>
       <span class="text-gray-400 dark:text-gray-600" aria-hidden="true">/</span>
       <RouterLink
         to="/staff"
-        class="font-medium text-gray-500 transition hover:text-[#38bdf8] dark:text-gray-400 dark:hover:text-blue-400"
+        class="font-medium text-gray-500 transition hover:text-[#0ea5e9] dark:text-gray-400 dark:hover:text-blue-400"
       >
         Staff
       </RouterLink>
@@ -237,7 +238,7 @@ async function onHeroAvatarChange(e) {
       </p>
       <RouterLink
         to="/staff"
-        class="mt-2 inline-block text-sm font-medium text-[#38bdf8] hover:underline dark:text-blue-400"
+        class="mt-2 inline-block text-sm font-medium text-[#0ea5e9] hover:underline dark:text-blue-400"
       >
         Back to directory
       </RouterLink>
@@ -262,13 +263,13 @@ async function onHeroAvatarChange(e) {
             <button
               v-if="canUpdateUsers"
               type="button"
-              class="shrink-0 rounded-full focus:outline-none focus:ring-2 focus:ring-[#38bdf8]/40 dark:focus:ring-blue-400/40"
+              class="shrink-0 rounded-full focus:outline-none focus:ring-2 focus:ring-[#0ea5e9]/40 dark:focus:ring-blue-400/40"
               :title="'Change photo'"
               @click="openHeroAvatarPicker"
             >
               <img
                 v-if="profile.avatar_url"
-                :src="profile.avatar_url"
+                :src="resolvePublicUrl(profile.avatar_url)"
                 alt=""
                 class="h-20 w-20 rounded-full object-cover ring-2 ring-white dark:ring-gray-900"
               />
@@ -286,7 +287,7 @@ async function onHeroAvatarChange(e) {
             >
               <img
                 v-if="profile.avatar_url"
-                :src="profile.avatar_url"
+                :src="resolvePublicUrl(profile.avatar_url)"
                 alt=""
                 class="h-20 w-20 rounded-full object-cover ring-2 ring-white dark:ring-gray-900"
               />

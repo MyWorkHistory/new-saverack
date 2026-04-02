@@ -5,6 +5,7 @@ import { BRAND_MARK_SRC } from "../../utils/brandAssets.js";
 import { useCrmSidebar } from "../../composables/useCrmSidebar";
 import UserEditModal from "../users/UserEditModal.vue";
 import { crmIsAdmin } from "../../utils/crmUser";
+import { resolvePublicUrl } from "../../utils/resolvePublicUrl.js";
 
 const props = defineProps({
   user: { type: Object, required: true },
@@ -210,7 +211,7 @@ onUnmounted(() => {
           >
             <button
               type="button"
-              class="flex h-11 w-full min-w-0 items-center gap-2.5 rounded-xl border border-gray-200 bg-white px-3 text-left shadow-sm transition hover:border-gray-300 hover:bg-gray-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-[#38bdf8]/25 dark:border-gray-700 dark:bg-gray-900 dark:hover:border-gray-600 dark:hover:bg-gray-800/80"
+              class="flex h-11 w-full min-w-0 items-center gap-2.5 rounded-xl border border-gray-200 bg-white px-3 text-left shadow-sm transition hover:border-gray-300 hover:bg-gray-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-[#0ea5e9]/25 dark:border-gray-700 dark:bg-gray-900 dark:hover:border-gray-600 dark:hover:bg-gray-800/80"
               :aria-expanded="accountOpen"
               aria-haspopup="listbox"
               @click.stop="toggleAccountPanel"
@@ -272,7 +273,7 @@ onUnmounted(() => {
                   type="search"
                   autocomplete="off"
                   placeholder="Search accounts…"
-                  class="h-10 w-full rounded-lg border border-gray-200 bg-gray-50 px-3 text-sm text-gray-900 placeholder:text-gray-400 focus:border-[#38bdf8] focus:outline-none focus:ring-2 focus:ring-[#38bdf8]/20 dark:border-gray-600 dark:bg-gray-800/80 dark:text-white dark:placeholder:text-gray-500"
+                  class="h-10 w-full rounded-lg border border-gray-200 bg-gray-50 px-3 text-sm text-gray-900 placeholder:text-gray-400 focus:border-[#0ea5e9] focus:outline-none focus:ring-2 focus:ring-[#0ea5e9]/20 dark:border-gray-600 dark:bg-gray-800/80 dark:text-white dark:placeholder:text-gray-500"
                   @click.stop
                 />
               </div>
@@ -385,7 +386,7 @@ onUnmounted(() => {
               <span class="relative h-11 w-11 shrink-0">
                 <img
                   v-if="user.profile?.avatar_url"
-                  :src="user.profile.avatar_url"
+                  :src="resolvePublicUrl(user.profile.avatar_url)"
                   alt=""
                   class="h-11 w-11 rounded-full object-cover"
                 />

@@ -806,53 +806,51 @@ onUnmounted(() => {
         {{ deleteError }}
       </p>
 
-      <!-- Recent users: outer card + inner bordered table (TailAdmin BasicTables pattern) -->
+      <!-- Recent staff: same shell as Staff list — header row + inner table card; search in white toolbar strip -->
       <div
         class="overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-sm dark:border-gray-800 dark:bg-gray-900"
       >
-        <div class="px-4 py-5 sm:px-6">
-          <div>
-            <h2 class="text-xl font-bold text-gray-900 dark:text-white">
-              Recent Staff
-            </h2>
-            <p class="mt-0.5 text-sm text-gray-500 dark:text-gray-400">
-              Latest Accounts In The Directory
-            </p>
-          </div>
-        </div>
-
         <div
-          class="border-t border-gray-100 px-4 py-4 dark:border-gray-800 sm:px-6 sm:pb-6"
+          class="border-b border-gray-100 px-4 py-5 dark:border-gray-800 sm:px-6"
         >
           <div
-            class="mb-4 flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center sm:justify-between"
+            class="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between"
           >
-            <div class="relative min-w-0 max-w-md flex-1">
-              <span
-                class="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-gray-400"
+            <div class="flex items-center gap-3">
+              <div>
+                <h2 class="text-xl font-bold text-gray-900 dark:text-white">
+                  Recent Staff
+                </h2>
+                <p class="mt-0.5 text-sm text-gray-500 dark:text-gray-400">
+                  Latest Accounts In The Directory
+                </p>
+              </div>
+              <button
+                type="button"
+                class="rounded-lg p-2 text-gray-500 transition hover:bg-gray-100 dark:hover:bg-white/10 dark:hover:text-gray-300"
+                :disabled="loading"
+                title="Refresh"
+                aria-label="Refresh List"
+                @click="refreshDashboardSummary"
               >
                 <svg
                   class="h-5 w-5"
                   fill="none"
-                  viewBox="0 0 20 20"
                   stroke="currentColor"
-                  stroke-width="1.5"
+                  viewBox="0 0 24 24"
                 >
                   <path
                     stroke-linecap="round"
-                    d="M3.042 9.374c0-3.497 2.835-6.332 6.333-6.332 3.497 0 6.332 2.835 6.332 6.332 0 3.498-2.835 6.333-6.332 6.333-3.498 0-6.333-2.835-6.333-6.333zM17.208 17.205l-2.82-2.82"
+                    stroke-linejoin="round"
+                    stroke-width="2"
+                    d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"
                   />
                 </svg>
-              </span>
-              <input
-                v-model="search"
-                type="search"
-                placeholder="Search…"
-                class="h-11 w-full rounded-lg border border-gray-200 bg-gray-50 py-2.5 pl-10 pr-3 text-sm text-gray-900 placeholder:text-gray-400 focus:border-[#2563eb] focus:outline-none focus:ring-2 focus:ring-[#2563eb]/20 dark:border-gray-700 dark:bg-gray-800/50 dark:text-white dark:placeholder:text-gray-500"
-              />
+              </button>
             </div>
+
             <div
-              class="relative flex shrink-0 items-center"
+              class="relative flex shrink-0 items-center gap-2 sm:justify-end"
               data-recent-filter
             >
               <button
@@ -887,30 +885,86 @@ onUnmounted(() => {
               >
                 <div
                   v-if="recentUsersFilterOpen"
-                  class="absolute right-0 top-full z-30 mt-2 w-64 origin-top-right rounded-xl border border-gray-200 bg-white p-4 shadow-lg dark:border-gray-700 dark:bg-gray-900"
+                  class="absolute right-0 top-full z-30 mt-2 w-72 origin-top-right rounded-xl border border-gray-200 bg-white p-4 shadow-lg dark:border-gray-700 dark:bg-gray-900"
                   @click.stop
                 >
-                  <label
-                    class="mb-1 block text-xs font-medium text-gray-500 dark:text-gray-400"
-                    >Status</label
-                  >
-                  <select
-                    v-model="statusFilter"
-                    class="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm dark:border-gray-600 dark:bg-gray-800 dark:text-white"
-                    @change="recentUsersFilterOpen = false"
-                  >
-                    <option value="">All Statuses</option>
-                    <option value="pending">Pending</option>
-                    <option value="active">Active</option>
-                    <option value="inactive">Inactive</option>
-                  </select>
+                  <div class="space-y-3">
+                    <div>
+                      <label
+                        class="mb-1 block text-xs font-medium text-gray-500 dark:text-gray-400"
+                        >Status</label
+                      >
+                      <select
+                        v-model="statusFilter"
+                        class="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm dark:border-gray-600 dark:bg-gray-800 dark:text-white"
+                      >
+                        <option value="">All Statuses</option>
+                        <option value="pending">Pending</option>
+                        <option value="active">Active</option>
+                        <option value="inactive">Inactive</option>
+                      </select>
+                    </div>
+                    <div class="flex gap-2 pt-1">
+                      <button
+                        type="button"
+                        class="flex min-h-10 min-w-0 flex-1 basis-0 items-center justify-center rounded-lg bg-[#2563eb] px-3 text-xs font-semibold text-white transition hover:opacity-95"
+                        @click="recentUsersFilterOpen = false"
+                      >
+                        Apply
+                      </button>
+                      <button
+                        type="button"
+                        class="flex min-h-10 min-w-0 flex-1 basis-0 items-center justify-center rounded-lg border border-gray-200 bg-white px-3 text-xs font-medium text-gray-700 transition hover:bg-gray-50 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-200 dark:hover:bg-gray-700"
+                        @click="
+                          statusFilter = '';
+                          recentUsersFilterOpen = false;
+                        "
+                      >
+                        Clear
+                      </button>
+                    </div>
+                  </div>
                 </div>
               </Transition>
             </div>
           </div>
+        </div>
+
+        <div class="px-4 py-4 sm:px-6 sm:pb-6">
           <div
             class="overflow-hidden rounded-xl border border-gray-200 bg-white dark:border-gray-800 dark:bg-white/[0.03]"
           >
+            <div
+              class="border-b border-gray-200 bg-white px-4 py-4 dark:border-gray-700 dark:bg-gray-900 sm:px-6"
+            >
+              <div class="max-w-md">
+                <div class="relative">
+                  <span
+                    class="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-gray-400"
+                  >
+                    <svg
+                      class="h-5 w-5"
+                      fill="none"
+                      viewBox="0 0 20 20"
+                      stroke="currentColor"
+                      stroke-width="1.5"
+                    >
+                      <path
+                        stroke-linecap="round"
+                        d="M3.042 9.374c0-3.497 2.835-6.332 6.333-6.332 3.497 0 6.332 2.835 6.332 6.332 0 3.498-2.835 6.333-6.332 6.333-3.498 0-6.333-2.835-6.333-6.333zM17.208 17.205l-2.82-2.82"
+                      />
+                    </svg>
+                  </span>
+                  <input
+                    v-model="search"
+                    type="search"
+                    placeholder="Search…"
+                    class="h-11 w-full rounded-lg border border-gray-200 bg-white py-2.5 pl-10 pr-3 text-sm text-gray-900 placeholder:text-gray-400 focus:border-[#2563eb] focus:outline-none focus:ring-2 focus:ring-[#2563eb]/20 dark:border-gray-600 dark:bg-gray-900 dark:text-white dark:placeholder:text-gray-500"
+                  />
+                </div>
+              </div>
+            </div>
+
             <div class="overflow-x-auto">
               <table class="min-w-[1024px] w-full text-left text-sm">
             <thead>
@@ -1066,7 +1120,7 @@ onUnmounted(() => {
 
       <ConfirmModal
         :open="deleteModalOpen"
-        title="Delete user"
+        title="Delete User"
         :message="deleteMessage"
         confirm-label="Delete"
         cancel-label="Cancel"

@@ -416,234 +416,280 @@ onUnmounted(() => {
       {{ statusUpdateError }}
     </p>
 
+    <!-- Same shell as Staff: rounded-2xl outer card, header strip, inner card + search toolbar, pagination below inner card -->
     <div
-      class="overflow-hidden rounded-xl border border-gray-200 bg-white shadow-sm dark:border-gray-800 dark:bg-gray-900/40"
+      class="overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-sm dark:border-gray-800 dark:bg-gray-900"
     >
       <div
-        class="flex flex-col gap-4 border-b border-gray-100 px-4 py-5 dark:border-gray-800 sm:px-6"
+        class="border-b border-gray-100 px-4 py-5 dark:border-gray-800 sm:px-6"
       >
         <div
-          class="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between"
+          class="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between"
         >
-          <div>
-            <h1 class="text-xl font-bold text-gray-900 dark:text-white">
-              Webmaster
-            </h1>
-            <p class="mt-0.5 text-sm text-gray-500 dark:text-gray-400">
-              Site Development Tasks — Drag Cards Between Columns To Change Status
-            </p>
-          </div>
-          <button
-            type="button"
-            class="inline-flex h-11 shrink-0 items-center justify-center gap-2 rounded-lg bg-[#2563eb] px-4 text-sm font-semibold text-white shadow-sm transition hover:opacity-95 focus:outline-none focus:ring-2 focus:ring-[#2563eb]/40 focus:ring-offset-2 dark:focus:ring-offset-gray-900"
-            @click="openAdd"
-          >
-            <svg
-              class="h-5 w-5"
-              fill="none"
-              stroke="currentColor"
-              viewBox="0 0 24 24"
-            >
-              <path
-                stroke-linecap="round"
-                stroke-linejoin="round"
-                stroke-width="2"
-                d="M12 4v16m8-8H4"
-              />
-            </svg>
-            Add Task
-          </button>
-        </div>
-      </div>
-
-      <div
-        v-if="hasMorePages"
-        class="border-b border-amber-100 bg-amber-50/90 px-4 py-2.5 text-xs text-amber-900 dark:border-amber-900/40 dark:bg-amber-950/40 dark:text-amber-100 sm:px-6"
-      >
-        Page {{ pagination.current_page }} Of {{ pagination.last_page }} —
-        Showing {{ rows.length }} Tasks Loaded. Increase “Rows Per Page” Or Use
-        Pagination Below To See More.
-      </div>
-
-      <div class="space-y-4 p-4 sm:p-6" :class="loading ? 'min-h-[280px]' : ''">
-        <div
-          class="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center sm:justify-between"
-        >
-          <div class="relative min-w-0 max-w-md flex-1">
-            <span
-              class="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-gray-400"
+          <div class="flex items-center gap-3">
+            <div>
+              <h1 class="text-xl font-bold text-gray-900 dark:text-white">
+                Webmaster
+              </h1>
+              <p class="mt-0.5 text-sm text-gray-500 dark:text-gray-400">
+                Site Development Tasks — Drag Cards Between Columns To Change
+                Status
+              </p>
+            </div>
+            <button
+              type="button"
+              class="rounded-lg p-2 text-gray-500 transition hover:bg-gray-100 dark:hover:bg-white/10 dark:hover:text-gray-300"
+              :disabled="loading"
+              title="Refresh"
+              aria-label="Refresh List"
+              @click="fetchTasks"
             >
               <svg
                 class="h-5 w-5"
                 fill="none"
-                viewBox="0 0 20 20"
                 stroke="currentColor"
-                stroke-width="1.5"
-              >
-                <path
-                  stroke-linecap="round"
-                  d="M3.042 9.374c0-3.497 2.835-6.332 6.333-6.332 3.497 0 6.332 2.835 6.332 6.332 0 3.498-2.835 6.333-6.332 6.333-3.498 0-6.333-2.835-6.333-6.333zM17.208 17.205l-2.82-2.82"
-                />
-              </svg>
-            </span>
-            <input
-              v-model="query.search"
-              type="search"
-              placeholder="Search Tasks…"
-              class="h-11 w-full rounded-lg border border-gray-200 bg-gray-50 py-2.5 pl-10 pr-3 text-sm text-gray-900 placeholder:text-gray-400 focus:border-[#2563eb] focus:outline-none focus:ring-2 focus:ring-[#2563eb]/20 dark:border-gray-700 dark:bg-gray-800/50 dark:text-white"
-              @keydown.enter.prevent="applySearch"
-            />
-          </div>
-          <div class="relative flex shrink-0 items-center gap-2" data-filter-root>
-            <button
-              type="button"
-              class="inline-flex h-11 items-center gap-2 rounded-lg border border-gray-200 bg-white px-4 text-sm font-medium text-gray-700 shadow-sm hover:bg-gray-50 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200 dark:hover:bg-gray-700"
-              :class="{ 'ring-2 ring-[#2563eb]/30': filterOpen }"
-              :aria-expanded="filterOpen"
-              @click.stop="filterOpen = !filterOpen"
-            >
-              <svg
-                class="h-5 w-5 text-gray-500"
-                fill="none"
                 viewBox="0 0 24 24"
-                stroke="currentColor"
-                stroke-width="2"
               >
                 <path
                   stroke-linecap="round"
                   stroke-linejoin="round"
-                  d="M12 6V4m0 2a2 2 0 100 4m0-4a2 2 0 110 4m-6 8a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4m6 6v10m6-2a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4"
+                  stroke-width="2"
+                  d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"
                 />
               </svg>
-              Filter
             </button>
-            <Transition
-              enter-active-class="transition ease-out duration-100"
-              enter-from-class="transform opacity-0 scale-95"
-              enter-to-class="transform opacity-100 scale-100"
-              leave-active-class="transition ease-in duration-75"
-              leave-from-class="transform opacity-100 scale-100"
-              leave-to-class="transform opacity-0 scale-95"
+          </div>
+
+          <div
+            class="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-end"
+          >
+            <div
+              class="relative flex shrink-0 items-center gap-2"
+              data-filter-root
             >
-              <div
-                v-if="filterOpen"
-                class="absolute right-0 top-full z-30 mt-2 w-72 origin-top-right rounded-xl border border-gray-200 bg-white p-4 shadow-lg dark:border-gray-700 dark:bg-gray-900"
-                @click.stop
+              <button
+                type="button"
+                class="inline-flex h-11 items-center gap-2 rounded-lg border border-gray-200 bg-white px-4 text-sm font-medium text-gray-700 shadow-sm hover:bg-gray-50 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200 dark:hover:bg-gray-700"
+                :class="{ 'ring-2 ring-[#2563eb]/30': filterOpen }"
+                :aria-expanded="filterOpen"
+                @click.stop="filterOpen = !filterOpen"
               >
-                <div class="space-y-3">
-                  <div>
-                    <label
-                      class="mb-1 block text-xs font-medium text-gray-500 dark:text-gray-400"
-                      >Status</label
-                    >
-                    <select
-                      v-model="query.status"
-                      class="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm dark:border-gray-600 dark:bg-gray-800 dark:text-white"
-                    >
-                      <option value="">All Columns</option>
-                      <option
-                        v-for="s in meta.statuses"
-                        :key="s.value"
-                        :value="s.value"
-                      >
-                        {{ s.label }}
-                      </option>
-                    </select>
-                  </div>
-                  <div>
-                    <label
-                      class="mb-1 block text-xs font-medium text-gray-500 dark:text-gray-400"
-                      >Priority</label
-                    >
-                    <select
-                      v-model="query.priority"
-                      class="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm dark:border-gray-600 dark:bg-gray-800 dark:text-white"
-                    >
-                      <option value="">All</option>
-                      <option
-                        v-for="p in meta.priorities"
-                        :key="p.value"
-                        :value="p.value"
-                      >
-                        {{ p.label }}
-                      </option>
-                    </select>
-                  </div>
-                  <div>
-                    <label
-                      class="mb-1 block text-xs font-medium text-gray-500 dark:text-gray-400"
-                      >Assignee</label
-                    >
-                    <select
-                      v-model="query.assigned_to"
-                      class="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm dark:border-gray-600 dark:bg-gray-800 dark:text-white"
-                    >
-                      <option value="">Anyone</option>
-                      <option
-                        v-for="u in users"
-                        :key="u.id"
-                        :value="String(u.id)"
-                      >
-                        {{ u.name }}
-                      </option>
-                    </select>
-                  </div>
-                  <div class="grid grid-cols-2 gap-2">
+                <svg
+                  class="h-5 w-5 text-gray-500"
+                  fill="none"
+                  viewBox="0 0 24 24"
+                  stroke="currentColor"
+                  stroke-width="2"
+                >
+                  <path
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                    d="M12 6V4m0 2a2 2 0 100 4m0-4a2 2 0 110 4m-6 8a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4m6 6v10m6-2a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4"
+                  />
+                </svg>
+                Filter
+              </button>
+              <Transition
+                enter-active-class="transition ease-out duration-100"
+                enter-from-class="transform opacity-0 scale-95"
+                enter-to-class="transform opacity-100 scale-100"
+                leave-active-class="transition ease-in duration-75"
+                leave-from-class="transform opacity-100 scale-100"
+                leave-to-class="transform opacity-0 scale-95"
+              >
+                <div
+                  v-if="filterOpen"
+                  class="absolute right-0 top-full z-30 mt-2 w-72 origin-top-right rounded-xl border border-gray-200 bg-white p-4 shadow-lg dark:border-gray-700 dark:bg-gray-900"
+                  @click.stop
+                >
+                  <div class="space-y-3">
                     <div>
                       <label
                         class="mb-1 block text-xs font-medium text-gray-500 dark:text-gray-400"
-                        >Min Price</label
+                        >Status</label
                       >
-                      <input
-                        v-model="query.min_price"
-                        type="number"
-                        min="0"
-                        step="0.01"
+                      <select
+                        v-model="query.status"
                         class="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm dark:border-gray-600 dark:bg-gray-800 dark:text-white"
-                        placeholder="0"
-                      />
+                      >
+                        <option value="">All Columns</option>
+                        <option
+                          v-for="s in meta.statuses"
+                          :key="s.value"
+                          :value="s.value"
+                        >
+                          {{ s.label }}
+                        </option>
+                      </select>
                     </div>
                     <div>
                       <label
                         class="mb-1 block text-xs font-medium text-gray-500 dark:text-gray-400"
-                        >Max Price</label
+                        >Priority</label
                       >
-                      <input
-                        v-model="query.max_price"
-                        type="number"
-                        min="0"
-                        step="0.01"
+                      <select
+                        v-model="query.priority"
                         class="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm dark:border-gray-600 dark:bg-gray-800 dark:text-white"
-                        placeholder="Any"
-                      />
+                      >
+                        <option value="">All</option>
+                        <option
+                          v-for="p in meta.priorities"
+                          :key="p.value"
+                          :value="p.value"
+                        >
+                          {{ p.label }}
+                        </option>
+                      </select>
                     </div>
-                  </div>
-                  <div class="grid grid-cols-2 gap-2 pt-1">
-                    <button
-                      type="button"
-                      class="inline-flex min-h-10 items-center justify-center rounded-lg bg-[#2563eb] px-3 text-xs font-semibold text-white transition hover:opacity-95 disabled:opacity-50"
-                      :disabled="loading"
-                      @click="applyFilterPanel"
-                    >
-                      Apply
-                    </button>
-                    <button
-                      type="button"
-                      class="inline-flex min-h-10 items-center justify-center rounded-lg border border-gray-200 bg-white px-3 text-xs font-medium text-gray-700 hover:bg-gray-50 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-200 dark:hover:bg-gray-700"
-                      :disabled="loading"
-                      @click="
-                        clearFilters();
-                        filterOpen = false;
-                      "
-                    >
-                      Clear
-                    </button>
+                    <div>
+                      <label
+                        class="mb-1 block text-xs font-medium text-gray-500 dark:text-gray-400"
+                        >Assignee</label
+                      >
+                      <select
+                        v-model="query.assigned_to"
+                        class="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm dark:border-gray-600 dark:bg-gray-800 dark:text-white"
+                      >
+                        <option value="">Anyone</option>
+                        <option
+                          v-for="u in users"
+                          :key="u.id"
+                          :value="String(u.id)"
+                        >
+                          {{ u.name }}
+                        </option>
+                      </select>
+                    </div>
+                    <div class="grid grid-cols-2 gap-2">
+                      <div>
+                        <label
+                          class="mb-1 block text-xs font-medium text-gray-500 dark:text-gray-400"
+                          >Min Price</label
+                        >
+                        <input
+                          v-model="query.min_price"
+                          type="number"
+                          min="0"
+                          step="0.01"
+                          class="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm dark:border-gray-600 dark:bg-gray-800 dark:text-white"
+                          placeholder="0"
+                        />
+                      </div>
+                      <div>
+                        <label
+                          class="mb-1 block text-xs font-medium text-gray-500 dark:text-gray-400"
+                          >Max Price</label
+                        >
+                        <input
+                          v-model="query.max_price"
+                          type="number"
+                          min="0"
+                          step="0.01"
+                          class="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm dark:border-gray-600 dark:bg-gray-800 dark:text-white"
+                          placeholder="Any"
+                        />
+                      </div>
+                    </div>
+                    <div class="grid grid-cols-2 gap-2 pt-1">
+                      <button
+                        type="button"
+                        class="inline-flex min-h-10 items-center justify-center rounded-lg bg-[#2563eb] px-3 text-xs font-semibold text-white transition hover:opacity-95 disabled:opacity-50"
+                        :disabled="loading"
+                        @click="applyFilterPanel"
+                      >
+                        Apply
+                      </button>
+                      <button
+                        type="button"
+                        class="inline-flex min-h-10 items-center justify-center rounded-lg border border-gray-200 bg-white px-3 text-xs font-medium text-gray-700 hover:bg-gray-50 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-200 dark:hover:bg-gray-700"
+                        :disabled="loading"
+                        @click="
+                          clearFilters();
+                          filterOpen = false;
+                        "
+                      >
+                        Clear
+                      </button>
+                    </div>
                   </div>
                 </div>
-              </div>
-            </Transition>
+              </Transition>
+            </div>
+
+            <button
+              v-if="canMutateWebmasterTasks"
+              type="button"
+              class="inline-flex h-11 shrink-0 items-center justify-center gap-2 rounded-lg bg-[#2563eb] px-4 text-sm font-semibold text-white shadow-sm transition hover:opacity-95 focus:outline-none focus:ring-2 focus:ring-[#2563eb]/40 focus:ring-offset-2 dark:focus:ring-offset-gray-900"
+              @click="openAdd"
+            >
+              <svg
+                class="h-5 w-5"
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+              >
+                <path
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                  stroke-width="2"
+                  d="M12 4v16m8-8H4"
+                />
+              </svg>
+              Add Task
+            </button>
           </div>
         </div>
+      </div>
+
+      <div class="px-4 py-4 sm:px-6 sm:pb-6">
+        <div
+          class="overflow-hidden rounded-xl border border-gray-200 bg-white dark:border-gray-800 dark:bg-white/[0.03]"
+        >
+          <div
+            class="border-b border-gray-200 bg-white px-4 py-4 dark:border-gray-700 dark:bg-gray-900 sm:px-6"
+          >
+            <div class="max-w-md">
+              <div class="relative">
+                <span
+                  class="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-gray-400"
+                >
+                  <svg
+                    class="h-5 w-5"
+                    fill="none"
+                    viewBox="0 0 20 20"
+                    stroke="currentColor"
+                    stroke-width="1.5"
+                  >
+                    <path
+                      stroke-linecap="round"
+                      d="M3.042 9.374c0-3.497 2.835-6.332 6.333-6.332 3.497 0 6.332 2.835 6.332 6.332 0 3.498-2.835 6.333-6.332 6.333-3.498 0-6.333-2.835-6.333-6.333zM17.208 17.205l-2.82-2.82"
+                    />
+                  </svg>
+                </span>
+                <input
+                  v-model="query.search"
+                  type="search"
+                  placeholder="Search Tasks…"
+                  class="h-11 w-full rounded-lg border border-gray-200 bg-white py-2.5 pl-10 pr-3 text-sm text-gray-900 placeholder:text-gray-400 focus:border-[#2563eb] focus:outline-none focus:ring-2 focus:ring-[#2563eb]/20 dark:border-gray-600 dark:bg-gray-900 dark:text-white dark:placeholder:text-gray-500"
+                  @keydown.enter.prevent="applySearch"
+                />
+              </div>
+            </div>
+          </div>
+
+          <div
+            v-if="hasMorePages"
+            class="border-b border-amber-100 bg-amber-50/90 px-4 py-2.5 text-xs text-amber-900 dark:border-amber-900/40 dark:bg-amber-950/40 dark:text-amber-100 sm:px-6"
+          >
+            Page {{ pagination.current_page }} Of {{ pagination.last_page }} —
+            Showing {{ rows.length }} Tasks Loaded. Increase “Rows Per Page” Or
+            Use Pagination Below To See More.
+          </div>
+
+          <div
+            class="space-y-4 p-4 sm:p-6"
+            :class="loading ? 'min-h-[280px]' : ''"
+          >
         <div v-if="loading" class="flex justify-center py-12">
           <CrmLoadingSpinner message="Loading Tasks…" />
         </div>
@@ -708,7 +754,7 @@ onUnmounted(() => {
                         type="button"
                         class="inline-flex h-10 w-10 items-center justify-center rounded-lg border border-gray-200 bg-white text-gray-600 shadow-sm transition hover:border-gray-300 hover:bg-gray-50 hover:text-gray-900 dark:border-gray-600 dark:bg-gray-900 dark:text-gray-300 dark:hover:border-gray-500 dark:hover:bg-white/10 dark:hover:text-white"
                         :aria-expanded="manageOpenId === task.id"
-                        aria-label="Task actions"
+                        aria-label="Task Actions"
                         @click="toggleManageMenu(task.id, $event)"
                       >
                         <CrmIconRowActions />
@@ -811,11 +857,12 @@ onUnmounted(() => {
             No Status Columns. Reload The Page.
           </p>
         </div>
-      </div>
+          </div>
+        </div>
 
-      <div
-        class="flex flex-col gap-3 border-t border-gray-100 px-4 py-3 dark:border-gray-800 sm:px-6 lg:flex-row lg:items-center lg:justify-between"
-      >
+        <div
+          class="mt-5 flex flex-col gap-4 border-t border-gray-100 pt-5 dark:border-gray-800 lg:flex-row lg:items-center lg:justify-between"
+        >
         <div
           class="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center sm:gap-6"
         >
@@ -841,9 +888,9 @@ onUnmounted(() => {
             <span class="font-semibold text-gray-900 dark:text-white">{{
               pagination.total
             }}</span>
-            tasks
+            Tasks
             <span v-if="query.status" class="text-gray-500">
-              · filtered by {{ statusLabel(query.status) }}
+              · Filtered By {{ statusLabel(query.status) }}
             </span>
           </p>
         </div>
@@ -879,6 +926,7 @@ onUnmounted(() => {
           >
             Next
           </button>
+        </div>
         </div>
       </div>
     </div>

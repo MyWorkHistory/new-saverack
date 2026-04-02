@@ -207,30 +207,43 @@ load();
         Are Not Stored Per User.
       </p>
 
-      <div class="space-y-5">
-        <h2 class="text-lg font-semibold text-gray-900 dark:text-white">
-          Permissions
-        </h2>
-
+      <!-- TailAdmin pattern: wrapper card + inner table cards (see Staff list) -->
+      <div
+        class="overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-sm dark:border-gray-800 dark:bg-gray-900"
+      >
         <div
-          v-for="mod in MODULES"
-          :key="mod.key"
-          class="overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-sm dark:border-gray-700 dark:bg-gray-900"
+          class="border-b border-gray-100 px-4 py-5 dark:border-gray-800 sm:px-6"
         >
-          <div class="overflow-x-auto">
-            <table
-              class="w-full min-w-[60rem] border-collapse text-left text-sm sm:min-w-[68rem] lg:min-w-[72rem] xl:min-w-0 xl:table-fixed"
-            >
-              <colgroup>
-                <col class="xl:w-[30%]" />
-                <col class="xl:w-[17.5%]" />
-                <col class="xl:w-[17.5%]" />
-                <col class="xl:w-[17.5%]" />
-                <col class="xl:w-[17.5%]" />
-              </colgroup>
-              <tbody>
-              <!-- Module header row: name + checkbox + label per action -->
-              <tr class="bg-white dark:bg-gray-900">
+          <h2 class="text-xl font-bold text-gray-900 dark:text-white">
+            Permissions
+          </h2>
+          <p class="mt-0.5 text-sm text-gray-500 dark:text-gray-400">
+            Module Access For This User
+          </p>
+        </div>
+
+        <div class="space-y-4 px-4 py-4 sm:px-6 sm:pb-6">
+          <div
+            v-for="mod in MODULES"
+            :key="mod.key"
+            class="overflow-hidden rounded-xl border border-gray-200 bg-white dark:border-gray-800 dark:bg-white/[0.03]"
+          >
+            <div class="overflow-x-auto">
+              <table
+                class="w-full min-w-[60rem] border-collapse text-left text-sm sm:min-w-[68rem] lg:min-w-[72rem] xl:min-w-0 xl:table-fixed"
+              >
+                <colgroup>
+                  <col class="xl:w-[30%]" />
+                  <col class="xl:w-[17.5%]" />
+                  <col class="xl:w-[17.5%]" />
+                  <col class="xl:w-[17.5%]" />
+                  <col class="xl:w-[17.5%]" />
+                </colgroup>
+                <tbody>
+              <!-- Module header row = strip like table thead (gray) -->
+              <tr
+                class="border-b border-gray-200 bg-gray-50 dark:border-gray-700 dark:bg-gray-800/50"
+              >
                 <th
                   scope="row"
                   class="border border-gray-200 px-5 py-4 align-middle font-normal dark:border-gray-700 sm:px-6 sm:py-5"
@@ -289,11 +302,11 @@ load();
                 </td>
               </tr>
 
-              <!-- Sub-row: checkboxes line up with header row -->
+              <!-- Sub-row = body row (white / transparent) -->
               <tr
                 v-show="expanded[mod.key]"
                 :id="`perm-panel-${mod.key}`"
-                class="bg-gray-50 dark:bg-gray-800/45"
+                class="border-b border-gray-200 bg-white dark:border-gray-800 dark:bg-transparent"
               >
                 <th
                   scope="row"
@@ -323,28 +336,31 @@ load();
                   </div>
                 </td>
               </tr>
-              </tbody>
-            </table>
+                </tbody>
+              </table>
+            </div>
           </div>
         </div>
-      </div>
 
-      <div class="flex flex-wrap gap-3">
-        <button
-          type="button"
-          class="inline-flex h-10 items-center justify-center rounded-lg bg-[#2563eb] px-5 text-sm font-semibold text-white shadow-sm transition hover:bg-[#1d4ed8] disabled:cursor-not-allowed disabled:opacity-50"
-          :disabled="saving || isAdminTarget"
-          @click="save"
+        <div
+          class="flex flex-wrap gap-3 border-t border-gray-100 px-4 py-4 dark:border-gray-800 sm:px-6 sm:py-5"
         >
-          {{ saving ? "Saving…" : "Save" }}
-        </button>
-        <button
-          type="button"
-          class="inline-flex h-10 items-center justify-center rounded-lg border border-gray-200 bg-white px-5 text-sm font-medium text-gray-700 transition hover:bg-gray-50 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-200 dark:hover:bg-gray-700/70"
-          @click="router.push(`/staff/${id}`)"
-        >
-          Cancel
-        </button>
+          <button
+            type="button"
+            class="inline-flex h-10 items-center justify-center rounded-lg bg-[#2563eb] px-5 text-sm font-semibold text-white shadow-sm transition hover:bg-[#1d4ed8] disabled:cursor-not-allowed disabled:opacity-50"
+            :disabled="saving || isAdminTarget"
+            @click="save"
+          >
+            {{ saving ? "Saving…" : "Save" }}
+          </button>
+          <button
+            type="button"
+            class="inline-flex h-10 items-center justify-center rounded-lg border border-gray-200 bg-white px-5 text-sm font-medium text-gray-700 transition hover:bg-gray-50 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-200 dark:hover:bg-gray-700/70"
+            @click="router.push(`/staff/${id}`)"
+          >
+            Cancel
+          </button>
+        </div>
       </div>
     </div>
   </div>

@@ -165,9 +165,13 @@ let webmasterNavCache = null;
 /** Users module: per-action permissions from /auth/me (see setUsersNavFromUser). */
 let usersNavCache = null;
 
+/** True when the signed-in CRM user is an administrator (`crmIsAdmin`); used for permissions routes only. */
+let usersMeIsAdmin = false;
+
 export function clearCrmOwnerCache() {
   webmasterNavCache = null;
   usersNavCache = null;
+  usersMeIsAdmin = false;
 }
 
 export function setWebmasterNavFromUser(user) {
@@ -183,8 +187,10 @@ export function setWebmasterNavFromUser(user) {
 export function setUsersNavFromUser(user) {
   if (!user) {
     usersNavCache = null;
+    usersMeIsAdmin = false;
     return;
   }
+  usersMeIsAdmin = crmIsAdmin(user);
   if (crmIsAdmin(user) || user.is_crm_owner) {
     usersNavCache = {
       view: true,
@@ -232,7 +238,7 @@ async function ensureUsersRouteAccess(path) {
     /^\/staff\/[^/]+\/permissions$/.test(path) ||
     /^\/users\/[^/]+\/permissions$/.test(path)
   ) {
-    return usersNavCache.update === true;
+    return usersMeIsAdmin === true;
   }
   if (
     /^\/staff\/[^/]+\/history$/.test(path) ||

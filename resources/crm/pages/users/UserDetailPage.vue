@@ -40,6 +40,8 @@ function userHasPerm(key) {
 }
 
 const canUpdateUsers = computed(() => userHasPerm("users.update"));
+const showGearMenu = computed(() => userHasPerm("users.view"));
+const canManagePermissions = computed(() => crmIsAdmin(crmUser.value));
 
 const loading = ref(true);
 const errorMsg = ref("");
@@ -199,6 +201,7 @@ function toggleGearMenu(e) {
 }
 
 function openPermissionsInNewTab() {
+  if (!crmIsAdmin(crmUser.value)) return;
   const href = router.resolve({
     name: "staff-permissions",
     params: { id: props.id },
@@ -289,7 +292,7 @@ async function onHeroAvatarChange(e) {
         User Profile
       </h1>
       <div
-        v-if="canUpdateUsers && !loading && !errorMsg"
+        v-if="showGearMenu && !loading && !errorMsg"
         class="relative shrink-0"
         data-page-gear
       >
@@ -670,6 +673,7 @@ async function onHeroAvatarChange(e) {
           @click.stop
         >
           <button
+            v-if="canManagePermissions"
             type="button"
             class="flex w-full items-center px-4 py-2.5 text-left text-sm font-medium text-gray-800 transition hover:bg-gray-50 dark:text-gray-200 dark:hover:bg-white/5"
             role="menuitem"
@@ -679,7 +683,12 @@ async function onHeroAvatarChange(e) {
           </button>
           <button
             type="button"
-            class="flex w-full items-center border-t border-gray-100 px-4 py-2.5 text-left text-sm font-medium text-gray-800 transition hover:bg-gray-50 dark:border-gray-800 dark:text-gray-200 dark:hover:bg-white/5"
+            class="flex w-full items-center px-4 py-2.5 text-left text-sm font-medium text-gray-800 transition hover:bg-gray-50 dark:text-gray-200 dark:hover:bg-white/5"
+            :class="
+              canManagePermissions
+                ? 'border-t border-gray-100 dark:border-gray-800'
+                : ''
+            "
             role="menuitem"
             @click="openHistoryInNewTab"
           >

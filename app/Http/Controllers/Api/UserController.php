@@ -119,6 +119,12 @@ class UserController extends Controller
 
     public function updatePermissions(UserPermissionsUpdateRequest $request, User $user): JsonResponse
     {
+        if (! $request->user()->isAdministrator()) {
+            return response()->json([
+                'message' => 'Only administrators can update user permissions.',
+            ], 403);
+        }
+
         $this->authorize('update', $user);
 
         if ($user->isAdministrator()) {

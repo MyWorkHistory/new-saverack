@@ -46,15 +46,9 @@ class RolePermissionSeeder extends Seeder
         );
 
         $admin->permissions()->sync($permissions->pluck('id'));
-        // Staff: read-only user directory (users.view); no create/update/delete.
+        // Staff: dashboard only; users/webmaster module access via direct user permissions.
         $staff->permissions()->sync(
-            $permissions->whereIn('key', [
-                'dashboard.view',
-                'users.view',
-                'webmaster.view',
-                'webmaster.create',
-                'webmaster.update',
-            ])->pluck('id')
+            $permissions->whereIn('key', ['dashboard.view'])->pluck('id')
         );
 
         $email = env('ADMIN_EMAIL', 'audi@saverack.com');

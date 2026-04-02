@@ -10,6 +10,7 @@ import DashboardPage from "../pages/DashboardPage.vue";
 import UsersListPage from "../pages/users/UsersListPage.vue";
 import UserFormPage from "../pages/users/UserFormPage.vue";
 import UserDetailPage from "../pages/users/UserDetailPage.vue";
+import UserPermissionsPage from "../pages/users/UserPermissionsPage.vue";
 import WebmasterTasksPage from "../pages/webmaster/WebmasterTasksPage.vue";
 import WebmasterTaskDetailPage from "../pages/webmaster/WebmasterTaskDetailPage.vue";
 
@@ -91,6 +92,16 @@ const routes = [
     }),
   },
   {
+    path: "/staff/:id/permissions",
+    name: "staff-permissions",
+    component: UserPermissionsPage,
+    props: true,
+    meta: {
+      title: "Save Rack | User Permissions",
+      description: "Manage User Module Permissions.",
+    },
+  },
+  {
     path: "/staff/:id",
     name: "staff-detail",
     component: UserDetailPage,
@@ -110,6 +121,10 @@ const routes = [
     }),
   },
   { path: "/users", redirect: "/staff" },
+  {
+    path: "/users/:id/permissions",
+    redirect: (to) => `/staff/${to.params.id}/permissions`,
+  },
   { path: "/users/:id", redirect: (to) => `/staff/${to.params.id}` },
   {
     path: "/webmaster",
@@ -200,6 +215,12 @@ async function ensureUsersRouteAccess(path) {
     return usersNavCache.create === true;
   }
   if (/^\/staff\/[^/]+\/edit$/.test(path) || /^\/users\/[^/]+\/edit$/.test(path)) {
+    return usersNavCache.update === true;
+  }
+  if (
+    /^\/staff\/[^/]+\/permissions$/.test(path) ||
+    /^\/users\/[^/]+\/permissions$/.test(path)
+  ) {
     return usersNavCache.update === true;
   }
   if (

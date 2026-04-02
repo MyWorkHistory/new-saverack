@@ -4,8 +4,10 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Http\Requests\UserBulkUpdateRequest;
+use App\Http\Requests\UserPermissionsUpdateRequest;
 use App\Http\Requests\UserStoreRequest;
 use App\Http\Requests\UserUpdateRequest;
+use App\Models\Permission;
 use App\Models\User;
 use App\Services\UserAvatarService;
 use App\Services\UserService;
@@ -74,7 +76,51 @@ class UserController extends Controller
 
     public function show(User $user): JsonResponse
     {
-        return response()->json($user->load(['roles:id,name,label', 'profile']));
+        $user->load([
+            'roles:id,name,label',
+            'roles.permissions',
+            'profile',
+            'permissions:id,key',
+        ]);
+
+        return response()->json($user->toClientPayload());
+    }
+
+    public function updatePermissions(UserPermissionsUpdateRequest $request, User $user): JsonResponse
+    {
+        $this->authorize('update', $user);
+
+        if ($user->isAdministrator()) {
+            return response()->json([
+                'message' => 'Administrators Have Full Access; Permissions Are Not Stored Per User.',
+            ], 422);
+        }
+
+        $keys = array_values(array_unique($request->validated('permission_keys')));
+
+        $whitelistIds = Permission::query()
+            ->whereIn('key', User::CRM_MODULE_PERMISSION_KEYS)
+            ->pluck('id')
+            ->all();
+
+        $user->permissions()->detach($whitelistIds);
+
+        if ($keys !== []) {
+            $attachIds = Permission::query()
+                ->whereIn('key', $keys)
+                ->pluck('id')
+                ->all();
+            $user->permissions()->attach($attachIds);
+        }
+
+        $user->load([
+            'roles:id,name,label',
+            'roles.permissions',
+            'profile',
+            'permissions:id,key',
+        ]);
+
+        return response()->json($user->toClientPayload());
     }
 
     public function update(UserUpdateRequest $request, User $user): JsonResponse

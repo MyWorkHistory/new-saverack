@@ -14,6 +14,18 @@ class User extends Authenticatable
 {
     use HasApiTokens, HasFactory, Notifiable;
 
+    /** Permission keys editable from CRM “User Permissions” (direct user grants). */
+    public const CRM_MODULE_PERMISSION_KEYS = [
+        'users.view',
+        'users.create',
+        'users.update',
+        'users.delete',
+        'webmaster.view',
+        'webmaster.create',
+        'webmaster.update',
+        'webmaster.delete',
+    ];
+
     protected $fillable = [
         'name',
         'email',
@@ -37,6 +49,12 @@ class User extends Authenticatable
     public function roles(): BelongsToMany
     {
         return $this->belongsToMany(Role::class, 'role_user')->withTimestamps();
+    }
+
+    /** Direct permission grants (merged with role permissions for effective access). */
+    public function permissions(): BelongsToMany
+    {
+        return $this->belongsToMany(Permission::class, 'permission_user')->withTimestamps();
     }
 
     public function profile(): HasOne
@@ -98,7 +116,17 @@ class User extends Authenticatable
 
     public function hasPermission(string $key): bool
     {
-        $this->loadMissing('roles.permissions');
+        if ($this->isAdministrator()) {
+            return true;
+        }
+
+        $this->loadMissing('roles.permissions', 'permissions');
+
+        foreach ($this->permissions as $permission) {
+            if ($permission->key === $key) {
+                return true;
+            }
+        }
 
         foreach ($this->roles as $role) {
             foreach ($role->permissions as $permission) {
@@ -112,6 +140,24 @@ class User extends Authenticatable
     }
 
     /**
+     * @return list<string>
+     */
+    public function allPermissionKeys(): array
+    {
+        $this->loadMissing('roles.permissions', 'permissions');
+
+        $fromRoles = $this->roles
+            ->flatMap(function (Role $role) {
+                return $role->permissions->pluck('key');
+            })
+            ->all();
+
+        $fromDirect = $this->permissions->pluck('key')->all();
+
+        return array_values(array_unique(array_merge($fromRoles, $fromDirect)));
+    }
+
+    /**
      * CRM owner (Audi Kowalski) — tickets module MVP.
      */
     public function isCrmOwner(): bool
@@ -122,6 +168,25 @@ class User extends Authenticatable
         }
 
         return strcasecmp((string) $this->email, (string) $owner) === 0;
+    }
+
+    /**
+     * API shape for auth and user detail (exposes merged permission_keys, hides raw permissions pivot list).
+     *
+     * @return array<string, mixed>
+     */
+    public function toClientPayload(): array
+    {
+        $this->loadMissing('roles.permissions', 'roles', 'permissions', 'profile');
+
+        $arr = $this->toArray();
+        unset($arr['permissions']);
+
+        return array_merge($arr, [
+            'permission_keys' => $this->allPermissionKeys(),
+            'is_admin' => $this->isAdministrator(),
+            'is_crm_owner' => $this->isCrmOwner(),
+        ]);
     }
 }
 

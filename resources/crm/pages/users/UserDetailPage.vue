@@ -1,5 +1,12 @@
 <script setup>
-import { computed, inject, onMounted, ref, watch } from "vue";
+import {
+  computed,
+  inject,
+  onMounted,
+  onUnmounted,
+  ref,
+  watch,
+} from "vue";
 import { RouterLink, useRoute, useRouter } from "vue-router";
 import api from "../../services/api";
 import CrmLoadingSpinner from "../../components/common/CrmLoadingSpinner.vue";
@@ -105,7 +112,15 @@ async function loadProfile() {
   }
 }
 
-onMounted(loadProfile);
+onMounted(() => {
+  loadProfile();
+  document.addEventListener("click", onGearDocClick);
+  window.addEventListener("resize", onGearWindowResize);
+});
+onUnmounted(() => {
+  document.removeEventListener("click", onGearDocClick);
+  window.removeEventListener("resize", onGearWindowResize);
+});
 
 function wantsEditQuery(q) {
   if (q === "1" || q === "true") return true;
@@ -135,20 +150,7 @@ const profile = computed(() =>
     : {},
 );
 
-const profileLocationLine = computed(() => {
-  const p = profile.value;
-  if (!p || typeof p !== "object") return "";
-  const city = p.city ? String(p.city).trim() : "";
-  const state = p.state ? String(p.state).trim() : "";
-  const zip = p.zip ? String(p.zip).trim() : "";
-  const parts = [];
-  if (city) parts.push(city);
-  if (state && state !== city) parts.push(state);
-  if (zip) parts.push(zip);
-  return parts.filter(Boolean).join(", ");
-});
-
-/** Role, location, email as one horizontal row (segments for pipes). */
+/** Role and login email only (no city/state/zip in hero — see Address card). */
 const profileAboutSegments = computed(() => {
   const u = user.value;
   if (!u) return [];
@@ -157,14 +159,65 @@ const profileAboutSegments = computed(() => {
   if (rl && rl !== "—") {
     segs.push({ key: "role", text: rl, emphasis: true });
   }
-  if (profileLocationLine.value) {
-    segs.push({ key: "loc", text: profileLocationLine.value, emphasis: false });
-  }
   if (u.email) {
     segs.push({ key: "email", text: u.email, emphasis: false });
   }
   return segs;
 });
+
+const gearMenuOpen = ref(false);
+const gearMenuRect = ref({ top: 0, left: 0 });
+
+function placeGearMenu(buttonEl) {
+  const MENU_W = 176;
+  const MENU_H = 120;
+  const r = buttonEl.getBoundingClientRect();
+  let top = r.bottom + 4;
+  let left = r.right - MENU_W;
+  left = Math.max(8, Math.min(left, window.innerWidth - MENU_W - 8));
+  if (top + MENU_H > window.innerHeight - 8) {
+    top = Math.max(8, r.top - MENU_H - 4);
+  }
+  gearMenuRect.value = { top, left };
+}
+
+function closeGearMenu() {
+  gearMenuOpen.value = false;
+}
+
+function toggleGearMenu(e) {
+  e.stopPropagation();
+  if (gearMenuOpen.value) {
+    closeGearMenu();
+    return;
+  }
+  gearMenuOpen.value = true;
+  const btn = e.currentTarget;
+  if (btn instanceof HTMLElement) {
+    placeGearMenu(btn);
+  }
+}
+
+function openPermissionsInNewTab() {
+  const href = router.resolve({
+    name: "staff-permissions",
+    params: { id: props.id },
+  }).href;
+  window.open(href, "_blank", "noopener,noreferrer");
+  closeGearMenu();
+}
+
+function onGearDocClick(e) {
+  if (!e.target.closest("[data-page-gear]")) {
+    gearMenuOpen.value = false;
+  }
+}
+
+function onGearWindowResize() {
+  if (gearMenuOpen.value) {
+    closeGearMenu();
+  }
+}
 
 function openHeroAvatarPicker() {
   heroAvatarInput.value?.click();
@@ -222,10 +275,45 @@ async function onHeroAvatarChange(e) {
       </span>
     </nav>
 
-    <div class="mb-6">
+    <div class="mb-6 flex flex-wrap items-center justify-between gap-3">
       <h1 class="text-2xl font-semibold text-gray-900 dark:text-white">
         User Profile
       </h1>
+      <div
+        v-if="canUpdateUsers && !loading && !errorMsg"
+        class="relative shrink-0"
+        data-page-gear
+      >
+        <button
+          type="button"
+          class="inline-flex h-10 w-10 items-center justify-center rounded-lg border border-gray-200 bg-white text-gray-600 shadow-sm transition hover:border-gray-300 hover:bg-gray-50 hover:text-gray-900 dark:border-gray-600 dark:bg-gray-900 dark:text-gray-300 dark:hover:border-gray-500 dark:hover:bg-white/10 dark:hover:text-white"
+          :aria-expanded="gearMenuOpen"
+          aria-haspopup="true"
+          aria-label="Page Actions"
+          @click="toggleGearMenu"
+        >
+          <svg
+            class="h-5 w-5"
+            fill="none"
+            stroke="currentColor"
+            viewBox="0 0 24 24"
+            aria-hidden="true"
+          >
+            <path
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              stroke-width="2"
+              d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"
+            />
+            <path
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              stroke-width="2"
+              d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"
+            />
+          </svg>
+        </button>
+      </div>
     </div>
 
     <div v-if="loading" class="flex justify-center py-20">
@@ -306,7 +394,7 @@ async function onHeroAvatarChange(e) {
               <p class="mt-1 text-sm font-medium text-gray-800 dark:text-gray-200">
                 {{ display(profile.job_position) }}
               </p>
-              <!-- About: role | location | email (horizontal) -->
+              <!-- About: role | email (horizontal) -->
               <div class="mt-3 flex flex-wrap items-center gap-x-2 gap-y-1 text-sm sm:gap-x-3">
                 <template v-if="profileAboutSegments.length">
                   <template
@@ -551,5 +639,37 @@ async function onHeroAvatarChange(e) {
       :user-id="String(props.id)"
       @saved="loadProfile"
     />
+
+    <Teleport to="body">
+      <Transition
+        enter-active-class="transition ease-out duration-100"
+        enter-from-class="transform opacity-0 scale-95"
+        enter-to-class="transform opacity-100 scale-100"
+        leave-active-class="transition ease-in duration-75"
+        leave-from-class="transform opacity-100 scale-100"
+        leave-to-class="transform opacity-0 scale-95"
+      >
+        <div
+          v-if="gearMenuOpen"
+          data-page-gear
+          class="fixed z-[300] w-44 overflow-hidden rounded-xl border border-gray-200 bg-white py-1 shadow-lg ring-1 ring-black/5 dark:border-gray-700 dark:bg-gray-900 dark:ring-white/10"
+          role="menu"
+          :style="{
+            top: `${gearMenuRect.top}px`,
+            left: `${gearMenuRect.left}px`,
+          }"
+          @click.stop
+        >
+          <button
+            type="button"
+            class="flex w-full items-center px-4 py-2.5 text-left text-sm font-medium text-gray-800 transition hover:bg-gray-50 dark:text-gray-200 dark:hover:bg-white/5"
+            role="menuitem"
+            @click="openPermissionsInNewTab"
+          >
+            Permissions
+          </button>
+        </div>
+      </Transition>
+    </Teleport>
   </div>
 </template>

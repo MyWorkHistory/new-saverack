@@ -3,7 +3,6 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
-use App\Models\Role;
 use App\Models\User;
 use App\Services\ActivityLogService;
 use Illuminate\Http\JsonResponse;
@@ -47,41 +46,19 @@ class AuthController extends Controller
 
         $this->activityLog->log($user, 'auth.login', $user, 'Login', []);
 
-        $user->load(['roles.permissions', 'profile']);
+        $user->load(['roles.permissions', 'profile', 'permissions']);
 
         return response()->json([
             'token' => $token,
-            'user' => $this->serializeUserForClient($user),
+            'user' => $user->toClientPayload(),
         ]);
     }
 
     public function me(Request $request): JsonResponse
     {
-        $user = $request->user()->load(['roles.permissions', 'profile']);
+        $user = $request->user()->load(['roles.permissions', 'profile', 'permissions']);
 
-        return response()->json($this->serializeUserForClient($user));
-    }
-
-    /**
-     * @return array<string, mixed>
-     */
-    private function serializeUserForClient(User $user): array
-    {
-        $permissionKeys = $user->roles
-            ->flatMap(function (Role $role) {
-                return $role->permissions->pluck('key');
-            })
-            ->unique()
-            ->values()
-            ->all();
-
-        $user->loadMissing('roles');
-
-        return array_merge($user->toArray(), [
-            'permission_keys' => $permissionKeys,
-            'is_admin' => $user->isAdministrator(),
-            'is_crm_owner' => $user->isCrmOwner(),
-        ]);
+        return response()->json($user->toClientPayload());
     }
 
     public function forgotPassword(Request $request): JsonResponse

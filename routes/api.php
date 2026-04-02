@@ -42,5 +42,7 @@ Route::middleware('auth:sanctum')->group(function () {
         ->name('users.avatar.destroy');
     Route::patch('users/bulk', [UserController::class, 'bulkUpdate'])
         ->name('users.bulk-update');
+    Route::match(['put', 'patch'], 'users/{user}/permissions', [UserController::class, 'updatePermissions'])
+        ->name('users.permissions.update');
     Route::apiResource('users', UserController::class);
 });

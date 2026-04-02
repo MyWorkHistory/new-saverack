@@ -23,17 +23,23 @@ class TaskPolicy
 
     public function create(User $user): bool
     {
-        return $user->isCrmOwner() || $user->hasPermission('webmaster.create');
+        return $user->isCrmOwner()
+            || $user->isAdministrator()
+            || $user->hasPermission('webmaster.create');
     }
 
     public function update(User $user, Task $task): bool
     {
-        return $user->isCrmOwner() || $user->isAdministrator();
+        return $user->isCrmOwner()
+            || $user->isAdministrator()
+            || $user->hasPermission('webmaster.update');
     }
 
     public function delete(User $user, Task $task): bool
     {
-        return $user->isCrmOwner() || $user->isAdministrator();
+        return $user->isCrmOwner()
+            || $user->isAdministrator()
+            || $user->hasPermission('webmaster.delete');
     }
 
     public function comment(User $user, Task $task): bool

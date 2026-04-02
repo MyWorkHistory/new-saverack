@@ -10,7 +10,7 @@ defineProps({
 <template>
   <div class="mb-6">
     <div class="flex flex-wrap items-baseline gap-x-2 gap-y-1">
-      <h1 class="text-2xl font-semibold text-[#0ea5e9] dark:text-blue-400">
+      <h1 class="text-2xl font-semibold text-[#2563eb] dark:text-blue-400">
         {{ title }}
       </h1>
       <span

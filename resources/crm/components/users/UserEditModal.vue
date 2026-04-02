@@ -189,7 +189,7 @@ function onBackdropClick() {
                 type="submit"
                 form="user-edit-modal-form"
                 :disabled="saving"
-                class="inline-flex min-h-[2.75rem] flex-1 items-center justify-center rounded-xl bg-[#0ea5e9] px-5 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:opacity-95 focus:outline-none focus:ring-2 focus:ring-[#0ea5e9]/40 disabled:opacity-50 sm:flex-none"
+                class="inline-flex min-h-[2.75rem] flex-1 items-center justify-center rounded-xl bg-[#2563eb] px-5 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:opacity-95 focus:outline-none focus:ring-2 focus:ring-[#2563eb]/40 disabled:opacity-50 sm:flex-none"
               >
                 {{ saving ? "Saving…" : "Save changes" }}
               </button>

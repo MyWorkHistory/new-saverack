@@ -10,7 +10,7 @@
   .menu-item-inactive {
     @apply text-gray-700 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-white/5;
   }
-  /* Active: TailAdmin-style (pale blue chip + vivid blue label/icon) */
+  /* Active: pale chip + blue-600 label/icon (#2563eb). Same hue as primary buttons site-wide. */
   .menu-item-active {
     @apply bg-blue-50 font-medium text-blue-600 dark:bg-blue-950/35 dark:text-blue-400;
   }

@@ -75,7 +75,7 @@ function iconClass(mode) {
       <RouterLink
         to="/dashboard"
         :class="[
-          'flex min-w-0 items-center rounded-lg outline-none ring-[#0ea5e9] transition hover:opacity-95 focus-visible:ring-2',
+          'flex min-w-0 items-center rounded-lg outline-none ring-[#2563eb] transition hover:opacity-95 focus-visible:ring-2',
           isExpanded ? 'gap-3' : 'justify-center',
         ]"
         @click="closeMobile"

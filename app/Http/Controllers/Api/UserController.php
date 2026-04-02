@@ -102,11 +102,13 @@ class UserController extends Controller
             ->get();
 
         $items = $logs->map(function (ActivityLog $log) {
+            $actorName = ($log->user !== null) ? (string) $log->user->name : null;
+
             return [
                 'id' => $log->id,
-                'created_at' => $log->created_at?->toIso8601String(),
-                'actor_name' => $log->user?->name ?? 'System',
-                'actor_initials' => UserStaffHistory::initials($log->user?->name),
+                'created_at' => $log->created_at !== null ? $log->created_at->toIso8601String() : null,
+                'actor_name' => $actorName !== null ? $actorName : 'System',
+                'actor_initials' => UserStaffHistory::initials($actorName),
                 'line' => UserStaffHistory::formatLogLine($log),
                 'body' => UserStaffHistory::formatLogBody($log),
             ];

@@ -45,19 +45,19 @@ final class UserStaffHistory
             'name' => $user->name,
             'email' => $user->email,
             'status' => $user->status,
-            'phone' => $p?->phone,
-            'personal_email' => $p?->personal_email,
-            'birthday' => $p?->birthday,
-            'address' => $p?->address,
-            'city' => $p?->city,
-            'state' => $p?->state,
-            'zip' => $p?->zip,
-            'region' => $p?->region,
-            'employee_type' => $p?->employee_type,
-            'job_position' => $p?->job_position,
-            'hire_date' => $p?->hire_date,
-            'terminate_date' => $p?->terminate_date,
-            'bio' => $p?->bio,
+            'phone' => $p !== null ? $p->phone : null,
+            'personal_email' => $p !== null ? $p->personal_email : null,
+            'birthday' => $p !== null ? $p->birthday : null,
+            'address' => $p !== null ? $p->address : null,
+            'city' => $p !== null ? $p->city : null,
+            'state' => $p !== null ? $p->state : null,
+            'zip' => $p !== null ? $p->zip : null,
+            'region' => $p !== null ? $p->region : null,
+            'employee_type' => $p !== null ? $p->employee_type : null,
+            'job_position' => $p !== null ? $p->job_position : null,
+            'hire_date' => $p !== null ? $p->hire_date : null,
+            'terminate_date' => $p !== null ? $p->terminate_date : null,
+            'bio' => $p !== null ? $p->bio : null,
             'role_ids' => $user->roles->pluck('id')->sort()->values()->all(),
         ];
     }
@@ -132,7 +132,10 @@ final class UserStaffHistory
         return $labels !== [] ? implode(', ', $labels) : 'null';
     }
 
-    private static function normalizeComparable(string $key, mixed $value): ?string
+    /**
+     * @param  mixed  $value
+     */
+    private static function normalizeComparable(string $key, $value): ?string
     {
         if ($value === null || $value === '') {
             return null;
@@ -143,7 +146,7 @@ final class UserStaffHistory
         if (in_array($key, ['hire_date', 'terminate_date', 'birthday'], true)) {
             try {
                 return Carbon::parse($value)->format('Y-m-d');
-            } catch (\Throwable) {
+            } catch (\Throwable $e) {
                 return is_string($value) ? trim($value) : (string) $value;
             }
         }
@@ -151,7 +154,10 @@ final class UserStaffHistory
         return is_string($value) ? trim($value) : (string) $value;
     }
 
-    private static function formatDisplayValue(string $key, mixed $raw, ?string $normalized): string
+    /**
+     * @param  mixed  $raw
+     */
+    private static function formatDisplayValue(string $key, $raw, ?string $normalized): string
     {
         if ($normalized === null) {
             return 'null';
@@ -162,7 +168,7 @@ final class UserStaffHistory
         if (in_array($key, ['hire_date', 'terminate_date', 'birthday'], true)) {
             try {
                 return Carbon::parse($raw)->format('n/j/Y');
-            } catch (\Throwable) {
+            } catch (\Throwable $e) {
                 return (string) $raw;
             }
         }
@@ -216,7 +222,7 @@ final class UserStaffHistory
             : 'System';
         $line = self::formatLogLine($log);
         $prefix = $actorName.' ';
-        if (str_starts_with($line, $prefix)) {
+        if (strpos($line, $prefix) === 0) {
             return substr($line, strlen($prefix));
         }
 

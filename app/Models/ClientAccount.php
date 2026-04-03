@@ -5,6 +5,7 @@ namespace App\Models;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\Relations\HasOne;
 
 class ClientAccount extends Model
 {
@@ -50,6 +51,12 @@ class ClientAccount extends Model
     public function accountManager(): BelongsTo
     {
         return $this->belongsTo(User::class, 'account_manager_id');
+    }
+
+    /** Primary portal login for this 3PL account (self-serve or CRM-created). */
+    public function portalUser(): HasOne
+    {
+        return $this->hasOne(User::class, 'client_account_id');
     }
 
     public function stores(): HasMany

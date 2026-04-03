@@ -53,6 +53,16 @@ class RolePermissionSeeder extends Seeder
             ['label' => 'Staff', 'description' => 'Limited access', 'is_system' => true]
         );
 
+        $client = Role::query()->firstOrCreate(
+            ['name' => 'client'],
+            [
+                'label' => '3PL Client',
+                'description' => 'Self-service / portal 3PL accounts',
+                'is_system' => true,
+            ]
+        );
+        $client->permissions()->sync([]);
+
         $admin->permissions()->sync($permissions->pluck('id'));
         // Staff: dashboard + clients + view stores; other module access via direct user permissions.
         $staff->permissions()->sync(

@@ -4,6 +4,7 @@ import { crmIsAdmin } from "../utils/crmUser";
 import { applyRouteMeta } from "../composables/useCrmPageMeta.js";
 
 import LoginPage from "../pages/auth/LoginPage.vue";
+import CreateAccountPage from "../pages/auth/CreateAccountPage.vue";
 import ForgotPasswordPage from "../pages/auth/ForgotPasswordPage.vue";
 import ResetPasswordPage from "../pages/auth/ResetPasswordPage.vue";
 import DashboardPage from "../pages/DashboardPage.vue";
@@ -29,6 +30,10 @@ const meta = {
   reset: {
     title: "Save Rack | Reset Password",
     description: "Choose A New Password For Save Rack CRM.",
+  },
+  createAccount: {
+    title: "Save Rack | Create Account",
+    description: "Create Your Save Rack 3PL Client Account.",
   },
   dashboard: {
     title: "Save Rack | Dashboard",
@@ -66,6 +71,12 @@ const routes = [
     name: "login",
     component: LoginPage,
     meta: { public: true, ...meta.login },
+  },
+  {
+    path: "/create",
+    name: "create-account",
+    component: CreateAccountPage,
+    meta: { public: true, ...meta.createAccount },
   },
   {
     path: "/forgot-password",
@@ -363,7 +374,7 @@ router.beforeEach(async (to) => {
   const token = localStorage.getItem("auth_token");
 
   if (to.meta.public) {
-    if (token && to.name === "login") {
+    if (token && (to.name === "login" || to.name === "create-account")) {
       return { path: "/dashboard" };
     }
     return true;

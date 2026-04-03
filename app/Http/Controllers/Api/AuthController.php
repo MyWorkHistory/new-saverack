@@ -3,8 +3,10 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use App\Http\Requests\PublicClientRegisterRequest;
 use App\Models\User;
 use App\Services\ActivityLogService;
+use App\Services\PortalClientProvisioningService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
@@ -16,9 +18,13 @@ class AuthController extends Controller
     /** @var ActivityLogService */
     protected $activityLog;
 
-    public function __construct(ActivityLogService $activityLog)
+    /** @var PortalClientProvisioningService */
+    protected $portalClients;
+
+    public function __construct(ActivityLogService $activityLog, PortalClientProvisioningService $portalClients)
     {
         $this->activityLog = $activityLog;
+        $this->portalClients = $portalClients;
     }
 
     public function login(Request $request): JsonResponse
@@ -35,7 +41,9 @@ class AuthController extends Controller
         }
 
         if ($user->status !== 'active') {
-            throw ValidationException::withMessages(['email' => ['User account is not active.']]);
+            if (! ($user->status === 'pending' && $user->hasRole('client'))) {
+                throw ValidationException::withMessages(['email' => ['User account is not active.']]);
+            }
         }
 
         $token = $user->createToken('crm-api-token')->plainTextToken;
@@ -52,6 +60,33 @@ class AuthController extends Controller
             'token' => $token,
             'user' => $user->toClientPayload(),
         ]);
+    }
+
+    public function register(PublicClientRegisterRequest $request): JsonResponse
+    {
+        $validated = $request->validated();
+        $user = $this->portalClients->registerNew3plClient(
+            $validated['company_name'],
+            $validated['full_name'],
+            $validated['email'],
+            $validated['phone'],
+            $validated['password'],
+        );
+
+        $token = $user->createToken('crm-api-token')->plainTextToken;
+        $user->update([
+            'last_login_at' => now(),
+            'last_login_ip' => $request->ip(),
+        ]);
+
+        $this->activityLog->log($user, 'auth.register', $user, '3PL registration', []);
+
+        $user->load(['roles.permissions', 'profile', 'permissions']);
+
+        return response()->json([
+            'token' => $token,
+            'user' => $user->toClientPayload(),
+        ], 201);
     }
 
     public function me(Request $request): JsonResponse

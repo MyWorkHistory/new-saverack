@@ -5,9 +5,18 @@ namespace App\Services;
 use App\Models\ClientAccount;
 use App\Models\User;
 use Illuminate\Contracts\Pagination\LengthAwarePaginator;
+use InvalidArgumentException;
 
 class ClientAccountService
 {
+    /** @var PortalClientProvisioningService */
+    protected $portalProvisioning;
+
+    public function __construct(PortalClientProvisioningService $portalProvisioning)
+    {
+        $this->portalProvisioning = $portalProvisioning;
+    }
+
     public function paginate(array $filters): LengthAwarePaginator
     {
         $search = isset($filters['search']) ? trim((string) $filters['search']) : '';
@@ -54,12 +63,23 @@ class ClientAccountService
 
     /**
      * @param  array<string, mixed>  $data
+     * @param  string|null  $portalPlainPassword  When set, creates a pending portal user (client role) for this account.
      */
-    public function create(array $data): ClientAccount
+    public function create(array $data, $portalPlainPassword = null): ClientAccount
     {
         $data['status'] = $data['status'] ?? ClientAccount::STATUS_PENDING;
 
-        return ClientAccount::query()->create($data);
+        $account = ClientAccount::query()->create($data);
+
+        if ($portalPlainPassword !== null && $portalPlainPassword !== '') {
+            $fullName = $account->contactFullName();
+            if ($fullName === '' || trim($fullName) === '') {
+                throw new InvalidArgumentException('Full name is required to create a portal login.');
+            }
+            $this->portalProvisioning->attachPortalLoginToAccount($account, $fullName, $portalPlainPassword);
+        }
+
+        return $account->fresh(['accountManager']);
     }
 
     /**

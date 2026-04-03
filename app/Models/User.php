@@ -3,6 +3,7 @@
 namespace App\Models;
 
 use Illuminate\Database\Eloquent\Factories\HasFactory;
+use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Relations\HasOne;
@@ -93,6 +94,7 @@ class User extends Authenticatable
         'last_login_at',
         'last_login_ip',
         'legacy_user_id',
+        'client_account_id',
     ];
 
     protected $hidden = [
@@ -125,6 +127,12 @@ class User extends Authenticatable
     public function managedClientAccounts(): HasMany
     {
         return $this->hasMany(ClientAccount::class, 'account_manager_id');
+    }
+
+    /** 3PL client portal account linked to this login (inverse of account manager). */
+    public function clientAccount(): BelongsTo
+    {
+        return $this->belongsTo(ClientAccount::class, 'client_account_id');
     }
 
     public function activityLogs(): HasMany
@@ -281,6 +289,7 @@ class User extends Authenticatable
             'direct_permission_keys' => $this->directCrmPermissionKeys(),
             'is_admin' => $this->isAdministrator(),
             'is_crm_owner' => $this->isCrmOwner(),
+            'client_account_id' => $this->client_account_id,
         ]);
     }
 }

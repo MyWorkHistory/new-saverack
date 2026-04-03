@@ -10,6 +10,7 @@ use App\Models\ClientAccount;
 use App\Services\ClientAccountService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Validation\ValidationException;
 
 class ClientAccountController extends Controller
 {
@@ -52,7 +53,20 @@ class ClientAccountController extends Controller
 
     public function store(ClientAccountStoreRequest $request): JsonResponse
     {
-        $account = $this->clientAccounts->create($request->validated());
+        $validated = $request->validated();
+        $portalPassword = null;
+        if (isset($validated['password']) && $validated['password'] !== null && $validated['password'] !== '') {
+            $portalPassword = $validated['password'];
+        }
+        unset($validated['password'], $validated['password_confirmation'], $validated['full_name']);
+
+        try {
+            $account = $this->clientAccounts->create($validated, $portalPassword);
+        } catch (\InvalidArgumentException $e) {
+            throw ValidationException::withMessages(['full_name' => [$e->getMessage()]]);
+        } catch (\RuntimeException $e) {
+            throw ValidationException::withMessages(['email' => [$e->getMessage()]]);
+        }
 
         return response()->json($this->clientAccounts->toApiArray($account->fresh(['accountManager'])), 201);
     }

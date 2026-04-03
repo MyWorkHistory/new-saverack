@@ -60,8 +60,8 @@ const meta = {
     description: "Webmaster Task Details.",
   },
   clientAccounts: {
-    title: "Save Rack | Client Accounts",
-    description: "Client Accounts Directory.",
+    title: "Save Rack | Accounts",
+    description: "Accounts directory.",
   },
   clientAccountDetail: {
     title: "Save Rack | Account",

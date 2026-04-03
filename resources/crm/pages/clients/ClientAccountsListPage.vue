@@ -467,8 +467,8 @@ watch(editModalOpen, (o) => {
 onMounted(async () => {
   document.addEventListener("click", onDocClick);
   setCrmPageMeta({
-    title: "Save Rack | Client Accounts",
-    description: "Client accounts directory.",
+    title: "Save Rack | Accounts",
+    description: "Accounts directory.",
   });
   await fetchMeta();
   await fetchRows();
@@ -516,7 +516,7 @@ onUnmounted(() => {
           <div class="flex items-center gap-3">
             <div>
               <h1 class="text-xl font-bold text-gray-900 dark:text-white">
-                Client Accounts
+                Accounts
               </h1>
               <p class="mt-0.5 text-sm text-gray-500 dark:text-gray-400">
                 Directory of client companies and contacts

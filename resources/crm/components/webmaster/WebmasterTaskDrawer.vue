@@ -3,6 +3,11 @@ import { computed, onUnmounted, reactive, ref, watch } from "vue";
 import api from "../../services/api";
 import { useToast } from "../../composables/useToast";
 import { errorMessage } from "../../utils/apiError";
+import {
+  CRM_BTN_PRIMARY,
+  CRM_BTN_SECONDARY,
+  CRM_DIALOG_FOOTER_CLASS_DRAWER,
+} from "../../constants/dialogFooter.js";
 
 const toast = useToast();
 
@@ -361,25 +366,22 @@ function onBackdropClick() {
               </template>
             </div>
 
-            <footer
-              v-if="!loadingSupport"
-              class="flex shrink-0 gap-3 border-t border-gray-200 bg-gray-50/80 px-5 py-4 pb-[max(1rem,env(safe-area-inset-bottom,0px))] dark:border-gray-800 dark:bg-gray-900/80"
-            >
-              <button
-                type="submit"
-                form="webmaster-task-form"
-                :disabled="saving"
-                class="flex min-h-[2.75rem] min-w-0 flex-1 basis-0 items-center justify-center rounded-xl bg-[#2563eb] px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:opacity-95 focus:outline-none focus:ring-2 focus:ring-[#2563eb]/40 disabled:opacity-50"
-              >
-                {{ saving ? "Saving…" : "Save" }}
-              </button>
+            <footer v-if="!loadingSupport" :class="CRM_DIALOG_FOOTER_CLASS_DRAWER">
               <button
                 type="button"
-                class="flex min-h-[2.75rem] min-w-0 flex-1 basis-0 items-center justify-center rounded-xl border border-gray-300 bg-white px-4 py-2.5 text-sm font-medium text-gray-700 hover:bg-gray-50 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-200 dark:hover:bg-gray-700"
+                :class="CRM_BTN_SECONDARY"
                 :disabled="saving"
                 @click="close"
               >
                 Cancel
+              </button>
+              <button
+                type="submit"
+                form="webmaster-task-form"
+                :disabled="saving"
+                :class="CRM_BTN_PRIMARY"
+              >
+                {{ saving ? "Saving…" : "Save" }}
               </button>
             </footer>
           </aside>

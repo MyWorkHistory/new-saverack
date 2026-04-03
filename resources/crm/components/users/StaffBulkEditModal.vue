@@ -1,5 +1,10 @@
 <script setup>
 import { ref, watch } from "vue";
+import {
+  CRM_BTN_PRIMARY,
+  CRM_BTN_SECONDARY,
+  CRM_DIALOG_FOOTER_CLASS,
+} from "../../constants/dialogFooter.js";
 
 const props = defineProps({
   open: { type: Boolean, default: false },
@@ -75,7 +80,7 @@ function onBackdrop() {
         />
         <Transition name="modal-panel" appear>
           <div
-            class="relative z-10 flex max-h-[min(90dvh,640px)] w-full max-w-md flex-col overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-2xl dark:border-gray-700 dark:bg-gray-900"
+            class="relative z-10 flex max-h-[min(90dvh,640px)] w-full max-w-lg flex-col overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-2xl dark:border-gray-700 dark:bg-gray-900"
           >
             <header
               class="shrink-0 border-b border-gray-200 px-5 py-4 dark:border-gray-800"
@@ -154,24 +159,22 @@ function onBackdrop() {
                 </label>
               </div>
             </div>
-            <footer
-              class="flex shrink-0 flex-wrap gap-3 border-t border-gray-200 bg-gray-50/90 px-5 py-4 dark:border-gray-800 dark:bg-gray-900/90"
-            >
+            <footer :class="CRM_DIALOG_FOOTER_CLASS">
               <button
                 type="button"
-                class="inline-flex min-h-[2.75rem] flex-1 items-center justify-center rounded-xl bg-[#2563eb] px-5 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:opacity-95 focus:outline-none focus:ring-2 focus:ring-[#2563eb]/40 disabled:opacity-50 sm:flex-none"
-                :disabled="busy || (!changeStatus && !changeRoles)"
-                @click="onSubmit"
-              >
-                {{ busy ? "Applying…" : "Apply" }}
-              </button>
-              <button
-                type="button"
-                class="inline-flex min-h-[2.75rem] flex-1 items-center justify-center rounded-xl border border-gray-300 bg-white px-5 py-2.5 text-sm font-medium text-gray-700 hover:bg-gray-50 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-200 dark:hover:bg-gray-700 sm:flex-none"
+                :class="CRM_BTN_SECONDARY"
                 :disabled="busy"
                 @click="close"
               >
                 Cancel
+              </button>
+              <button
+                type="button"
+                :class="CRM_BTN_PRIMARY"
+                :disabled="busy || (!changeStatus && !changeRoles)"
+                @click="onSubmit"
+              >
+                {{ busy ? "Applying…" : "Apply" }}
               </button>
             </footer>
           </div>

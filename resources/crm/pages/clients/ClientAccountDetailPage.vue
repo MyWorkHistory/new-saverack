@@ -5,6 +5,7 @@ import api from "../../services/api";
 import CrmLoadingSpinner from "../../components/common/CrmLoadingSpinner.vue";
 import CrmOutlineEditButton from "../../components/common/CrmOutlineEditButton.vue";
 import ConfirmModal from "../../components/common/ConfirmModal.vue";
+import ClientAccountChannelIcons from "../../components/clients/ClientAccountChannelIcons.vue";
 import ClientAccountEditModal from "../../components/clients/ClientAccountEditModal.vue";
 import ClientStoreCreateDrawer from "../../components/clients/ClientStoreCreateDrawer.vue";
 import ClientStoreEditModal from "../../components/clients/ClientStoreEditModal.vue";
@@ -445,6 +446,18 @@ onMounted(async () => {
                 </dt>
                 <dd class="mt-1 break-all text-sm font-semibold text-gray-900 dark:text-white">
                   {{ display(account.email) }}
+                </dd>
+              </div>
+              <div>
+                <dt class="text-xs font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400">
+                  Channels
+                </dt>
+                <dd class="mt-1">
+                  <ClientAccountChannelIcons
+                    :notify-email="!!account.notify_email"
+                    :telegram-handle="account.telegram_handle || ''"
+                    :whatsapp-e164="account.whatsapp_e164 || ''"
+                  />
                 </dd>
               </div>
             </dl>

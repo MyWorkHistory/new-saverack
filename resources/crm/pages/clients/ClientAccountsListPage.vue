@@ -11,6 +11,7 @@ import {
 import { RouterLink } from "vue-router";
 import api from "../../services/api";
 import ConfirmModal from "../../components/common/ConfirmModal.vue";
+import ClientAccountChannelIcons from "../../components/clients/ClientAccountChannelIcons.vue";
 import ClientAccountCreateDrawer from "../../components/clients/ClientAccountCreateDrawer.vue";
 import ClientAccountEditModal from "../../components/clients/ClientAccountEditModal.vue";
 import ClientAccountsBulkEditModal from "../../components/clients/ClientAccountsBulkEditModal.vue";
@@ -790,40 +791,11 @@ onUnmounted(() => {
                     {{ row.email }}
                   </td>
                   <td class="px-5 py-4 align-middle sm:px-6">
-                    <div class="flex items-center gap-2 text-gray-500 dark:text-gray-400">
-                      <span
-                        v-if="row.notify_email"
-                        class="inline-flex"
-                        title="Email"
-                      >
-                        <svg class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
-                          <path stroke-linecap="round" stroke-linejoin="round" d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
-                        </svg>
-                      </span>
-                      <span
-                        v-if="row.telegram_handle"
-                        class="inline-flex text-sky-600 dark:text-sky-400"
-                        title="Telegram"
-                      >
-                        <svg class="h-5 w-5" fill="currentColor" viewBox="0 0 24 24">
-                          <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm4.64 6.8c-.15 1.58-.8 5.42-1.13 7.19-.14.75-.42 1-.68 1.03-.58.05-1.02-.38-1.58-.75-.88-.58-1.38-.94-2.23-1.5-.99-.65-.35-1.01.22-1.59.15-.15 2.71-2.48 2.76-2.69.01-.03.01-.14-.07-.2-.08-.06-.19-.04-.27-.02-.12.02-1.96 1.25-5.54 3.67-.52.36-.99.53-1.42.52-.47-.01-1.37-.26-2.03-.48-.82-.27-1.47-.42-1.42-.88.03-.24.27-.4874.74-1 1.25-1.25 5.01-5.05 5.53-5.57.55-.55.82-.77.79-1.05-.05-.4-.78-.26-1.21-.16-.48.1-8.26 3.45-9.8 4.09-.94.38-1.81.43-2.51.41-1.18-.04-2.23-.5-2.79-.93-.32-.24-.38-.52-.25-.81.12-.27.37-.47.87-.52 1.44-.16 4.95-.33 8.62-.82.72-.1 1.5-.31 2.1-.3.55.01 1.91.11 2.2.67.18.35.08.82-.38 1.41z"/>
-                        </svg>
-                      </span>
-                      <span
-                        v-if="row.whatsapp_e164"
-                        class="inline-flex text-emerald-600 dark:text-emerald-400"
-                        title="WhatsApp"
-                      >
-                        <svg class="h-5 w-5" fill="currentColor" viewBox="0 0 24 24">
-                          <path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.435 9.884-9.881 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413z"/>
-                        </svg>
-                      </span>
-                      <span
-                        v-if="!row.notify_email && !row.telegram_handle && !row.whatsapp_e164"
-                        class="text-gray-400"
-                        >—</span
-                      >
-                    </div>
+                    <ClientAccountChannelIcons
+                      :notify-email="!!row.notify_email"
+                      :telegram-handle="row.telegram_handle || ''"
+                      :whatsapp-e164="row.whatsapp_e164 || ''"
+                    />
                   </td>
                   <td
                     class="whitespace-nowrap px-5 py-4 align-middle text-gray-700 sm:px-6 dark:text-gray-300"

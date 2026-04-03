@@ -1,5 +1,10 @@
 <script setup>
 import { ref, watch } from "vue";
+import {
+  CRM_BTN_PRIMARY,
+  CRM_BTN_SECONDARY,
+  CRM_DIALOG_FOOTER_CLASS,
+} from "../../constants/dialogFooter.js";
 
 const props = defineProps({
   open: { type: Boolean, default: false },
@@ -52,7 +57,7 @@ function onBackdrop() {
         />
         <Transition name="modal-panel" appear>
           <div
-            class="relative z-10 w-full max-w-md overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-2xl dark:border-gray-700 dark:bg-gray-900"
+            class="relative z-10 max-h-[min(90dvh,640px)] w-full max-w-lg overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-2xl dark:border-gray-700 dark:bg-gray-900"
           >
             <header class="border-b border-gray-100 px-5 py-4 dark:border-gray-800">
               <h2 class="text-lg font-semibold text-gray-900 dark:text-white">
@@ -88,12 +93,10 @@ function onBackdrop() {
                 </select>
               </div>
             </div>
-            <footer
-              class="flex justify-end gap-2 border-t border-gray-100 px-5 py-4 dark:border-gray-800"
-            >
+            <footer :class="CRM_DIALOG_FOOTER_CLASS">
               <button
                 type="button"
-                class="rounded-lg border border-gray-200 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 dark:border-gray-600 dark:text-gray-200 dark:hover:bg-gray-800"
+                :class="CRM_BTN_SECONDARY"
                 :disabled="busy"
                 @click="close"
               >
@@ -101,7 +104,7 @@ function onBackdrop() {
               </button>
               <button
                 type="button"
-                class="rounded-lg bg-[#2563eb] px-4 py-2 text-sm font-semibold text-white hover:opacity-95 disabled:opacity-50"
+                :class="CRM_BTN_PRIMARY"
                 :disabled="busy || !changeStatus"
                 @click="onSubmit"
               >

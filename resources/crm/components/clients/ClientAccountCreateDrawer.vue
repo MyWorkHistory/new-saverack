@@ -3,6 +3,11 @@ import { computed, reactive, ref, watch } from "vue";
 import api from "../../services/api";
 import { useToast } from "../../composables/useToast";
 import CrmSearchableSelect from "../common/CrmSearchableSelect.vue";
+import {
+  CRM_BTN_PRIMARY,
+  CRM_BTN_SECONDARY,
+  CRM_DIALOG_FOOTER_CLASS,
+} from "../../constants/dialogFooter.js";
 
 const props = defineProps({
   open: { type: Boolean, default: false },
@@ -504,23 +509,21 @@ async function onSubmit() {
                   </div>
                 </div>
               </div>
-              <footer
-                class="flex shrink-0 gap-3 border-t border-gray-200 bg-gray-50/80 px-5 py-4 dark:border-gray-800 dark:bg-gray-900/80"
-              >
-                <button
-                  type="submit"
-                  :disabled="saving"
-                  class="inline-flex min-h-[2.75rem] min-w-0 flex-1 basis-0 items-center justify-center rounded-xl bg-[#2563eb] px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:opacity-90 disabled:opacity-50"
-                >
-                  {{ saving ? "Saving…" : "Save" }}
-                </button>
+              <footer :class="CRM_DIALOG_FOOTER_CLASS">
                 <button
                   type="button"
-                  class="inline-flex min-h-[2.75rem] min-w-0 flex-1 basis-0 items-center justify-center rounded-xl border border-gray-300 bg-white px-4 py-2.5 text-sm font-medium text-gray-700 hover:bg-gray-50 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-200"
+                  :class="CRM_BTN_SECONDARY"
                   :disabled="saving"
                   @click="close"
                 >
                   Cancel
+                </button>
+                <button
+                  type="submit"
+                  :class="CRM_BTN_PRIMARY"
+                  :disabled="saving"
+                >
+                  {{ saving ? "Saving…" : "Save" }}
                 </button>
               </footer>
             </form>

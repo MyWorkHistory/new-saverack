@@ -3,6 +3,11 @@ import { onUnmounted, watch } from "vue";
 import UserFormFields from "./UserFormFields.vue";
 import CrmLoadingSpinner from "../common/CrmLoadingSpinner.vue";
 import { useUserForm } from "../../composables/useUserForm";
+import {
+  CRM_BTN_PRIMARY,
+  CRM_BTN_SECONDARY,
+  CRM_DIALOG_FOOTER_CLASS,
+} from "../../constants/dialogFooter.js";
 
 const props = defineProps({
   open: { type: Boolean, default: false },
@@ -111,7 +116,7 @@ function onBackdropClick() {
         />
         <Transition name="modal-panel" appear>
           <div
-            class="relative z-10 flex max-h-[min(90dvh,860px)] w-full max-w-3xl flex-col overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-2xl dark:border-gray-700 dark:bg-gray-900"
+            class="relative z-10 flex max-h-[min(90dvh,640px)] w-full max-w-lg flex-col overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-2xl dark:border-gray-700 dark:bg-gray-900"
           >
             <header
               class="flex shrink-0 items-center justify-between border-b border-gray-200 px-5 py-4 dark:border-gray-800"
@@ -183,23 +188,23 @@ function onBackdropClick() {
 
             <footer
               v-if="!loading && userId"
-              class="flex shrink-0 flex-wrap gap-3 border-t border-gray-200 bg-gray-50/90 px-5 py-4 dark:border-gray-800 dark:bg-gray-900/90"
+              :class="CRM_DIALOG_FOOTER_CLASS"
             >
               <button
-                type="submit"
-                form="user-edit-modal-form"
-                :disabled="saving"
-                class="inline-flex min-h-[2.75rem] flex-1 items-center justify-center rounded-xl bg-[#2563eb] px-5 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:opacity-95 focus:outline-none focus:ring-2 focus:ring-[#2563eb]/40 disabled:opacity-50 sm:flex-none"
-              >
-                {{ saving ? "Saving…" : "Save Changes" }}
-              </button>
-              <button
                 type="button"
-                class="inline-flex min-h-[2.75rem] flex-1 items-center justify-center rounded-xl border border-gray-300 bg-white px-5 py-2.5 text-sm font-medium text-gray-700 hover:bg-gray-50 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-200 dark:hover:bg-gray-700 sm:flex-none"
+                :class="CRM_BTN_SECONDARY"
                 :disabled="saving"
                 @click="close"
               >
                 Cancel
+              </button>
+              <button
+                type="submit"
+                form="user-edit-modal-form"
+                :disabled="saving"
+                :class="CRM_BTN_PRIMARY"
+              >
+                {{ saving ? "Saving…" : "Save Changes" }}
               </button>
             </footer>
           </div>

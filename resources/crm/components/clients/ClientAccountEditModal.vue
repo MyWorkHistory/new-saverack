@@ -4,6 +4,11 @@ import api from "../../services/api";
 import CrmLoadingSpinner from "../common/CrmLoadingSpinner.vue";
 import { useToast } from "../../composables/useToast";
 import CrmSearchableSelect from "../common/CrmSearchableSelect.vue";
+import {
+  CRM_BTN_PRIMARY,
+  CRM_BTN_SECONDARY,
+  CRM_DIALOG_FOOTER_CLASS,
+} from "../../constants/dialogFooter.js";
 
 const props = defineProps({
   open: { type: Boolean, default: false },
@@ -345,10 +350,10 @@ async function onSubmit() {
                   />
                 </div>
               </div>
-              <div class="flex justify-end gap-2 pt-2">
+              <footer :class="CRM_DIALOG_FOOTER_CLASS">
                 <button
                   type="button"
-                  class="rounded-lg border border-gray-200 px-4 py-2 text-sm font-medium text-gray-700 dark:border-gray-600 dark:text-gray-200"
+                  :class="CRM_BTN_SECONDARY"
                   :disabled="saving"
                   @click="close"
                 >
@@ -356,12 +361,12 @@ async function onSubmit() {
                 </button>
                 <button
                   type="submit"
-                  class="rounded-lg bg-[#2563eb] px-4 py-2 text-sm font-semibold text-white disabled:opacity-50"
+                  :class="CRM_BTN_PRIMARY"
                   :disabled="saving"
                 >
                   {{ saving ? "Saving…" : "Save" }}
                 </button>
-              </div>
+              </footer>
             </form>
           </div>
         </Transition>

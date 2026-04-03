@@ -1,6 +1,7 @@
 <script setup>
-import { computed, onMounted, onUnmounted, ref } from "vue";
-import { RouterLink } from "vue-router";
+import { computed, onMounted, onUnmounted, ref, watch } from "vue";
+import { RouterLink, useRouter } from "vue-router";
+import api from "../../services/api";
 import { BRAND_MARK_SRC } from "../../utils/brandAssets.js";
 import { useCrmSidebar } from "../../composables/useCrmSidebar";
 import UserEditModal from "../users/UserEditModal.vue";
@@ -13,6 +14,7 @@ const props = defineProps({
 
 const emit = defineEmits(["logout", "refresh-user"]);
 
+const router = useRouter();
 const { isMobileOpen, toggleSidebar } = useCrmSidebar();
 const markSrc = computed(() => BRAND_MARK_SRC());
 
@@ -39,14 +41,42 @@ const accountOpen = ref(false);
 const accountFilter = ref("");
 const selectedAccountId = ref("workspace");
 
-/** Primary workspace row; extend with API-driven accounts when multi-tenant is added. */
-const accountOptions = computed(() => [
-  {
+const clientAccounts = ref([]);
+const accountsLoadState = ref("idle");
+
+const canViewClientAccounts = computed(() => {
+  const u = props.user;
+  if (!u) return false;
+  if (crmIsAdmin(u) || u.is_crm_owner) return true;
+  return (
+    Array.isArray(u.permission_keys) &&
+    u.permission_keys.includes("clients.view")
+  );
+});
+
+const accountOptions = computed(() => {
+  const workspace = {
     id: "workspace",
+    kind: "workspace",
     title: "Save Rack",
-    subtitle: props.user?.email || "Primary Workspace",
-  },
-]);
+    subtitle: props.user?.email || "Primary workspace",
+    accountId: null,
+  };
+  if (!canViewClientAccounts.value) {
+    return [workspace];
+  }
+  const rows = clientAccounts.value.map((row) => ({
+    id: `ca-${row.id}`,
+    kind: "client_account",
+    accountId: row.id,
+    title: row.company_name || `Account #${row.id}`,
+    subtitle:
+      row.contact_full_name && String(row.contact_full_name).trim()
+        ? String(row.contact_full_name).trim()
+        : row.email || "",
+  }));
+  return [workspace, ...rows];
+});
 
 const selectedAccount = computed(() => {
   const list = accountOptions.value;
@@ -77,6 +107,69 @@ function selectAccount(opt) {
   selectedAccountId.value = opt.id;
   accountOpen.value = false;
   accountFilter.value = "";
+}
+
+function openClientAccountDetailInNewTab(accountId) {
+  const resolved = router.resolve({
+    name: "client-account-detail",
+    params: { id: String(accountId) },
+  });
+  let href = resolved.href;
+  if (typeof href !== "string" || href === "") {
+    href = router.resolve(`/clients/accounts/${accountId}`).href;
+  }
+  const absolute = /^https?:\/\//i.test(href)
+    ? href
+    : new URL(href, window.location.origin).href;
+  window.open(absolute, "_blank", "noopener,noreferrer");
+  accountOpen.value = false;
+  accountFilter.value = "";
+}
+
+function onAccountOptionClick(opt) {
+  if (opt.kind === "workspace") {
+    selectAccount(opt);
+    return;
+  }
+  if (opt.kind === "client_account" && opt.accountId != null) {
+    openClientAccountDetailInNewTab(opt.accountId);
+  }
+}
+
+async function loadClientAccountsForHeader() {
+  if (!canViewClientAccounts.value) {
+    clientAccounts.value = [];
+    accountsLoadState.value = "idle";
+    return;
+  }
+  accountsLoadState.value = "loading";
+  const collected = [];
+  try {
+    let page = 1;
+    let lastPage = 1;
+    do {
+      const { data } = await api.get("/client-accounts", {
+        params: {
+          per_page: 500,
+          page,
+          sort_by: "company_name",
+          sort_dir: "asc",
+        },
+      });
+      const chunk = Array.isArray(data.data) ? data.data : [];
+      collected.push(...chunk);
+      lastPage =
+        typeof data.last_page === "number" && data.last_page >= 1
+          ? data.last_page
+          : 1;
+      page += 1;
+    } while (page <= lastPage && page <= 25);
+    clientAccounts.value = collected;
+    accountsLoadState.value = "success";
+  } catch {
+    clientAccounts.value = [];
+    accountsLoadState.value = "error";
+  }
 }
 
 const firstName = computed(() => {
@@ -137,6 +230,14 @@ function signOut() {
   menuOpen.value = false;
   emit("logout");
 }
+
+watch(
+  () => [props.user?.id, canViewClientAccounts.value],
+  () => {
+    loadClientAccountsForHeader();
+  },
+  { immediate: true },
+);
 
 onMounted(() => {
   const el = document.documentElement;
@@ -281,28 +382,62 @@ onUnmounted(() => {
                 class="max-h-56 overflow-y-auto py-1"
                 role="presentation"
               >
-                <li v-for="opt in filteredAccounts" :key="opt.id">
-                  <button
-                    type="button"
-                    class="flex w-full flex-col items-start gap-0.5 px-3 py-2.5 text-left text-sm transition hover:bg-gray-50 dark:hover:bg-white/5"
-                    :class="[
-                      opt.id === selectedAccountId
-                        ? 'bg-gray-50 dark:bg-white/[0.06]'
-                        : '',
-                    ]"
-                    role="option"
-                    :aria-selected="opt.id === selectedAccountId"
-                    @click.stop="selectAccount(opt)"
-                  >
-                    <span class="font-medium text-gray-900 dark:text-white">{{
-                      opt.title
-                    }}</span>
-                    <span
-                      class="text-xs text-gray-500 dark:text-gray-400"
-                      >{{ opt.subtitle }}</span
-                    >
-                  </button>
+                <li
+                  v-if="
+                    canViewClientAccounts && accountsLoadState === 'loading'
+                  "
+                  class="px-3 py-4 text-center text-xs text-gray-500 dark:text-gray-400"
+                >
+                  Loading accounts…
                 </li>
+                <li
+                  v-else-if="
+                    canViewClientAccounts &&
+                    accountsLoadState === 'error' &&
+                    !clientAccounts.length
+                  "
+                  class="px-3 py-4 text-center text-xs text-red-600 dark:text-red-400"
+                >
+                  Could not load accounts.
+                </li>
+                <template v-else>
+                  <li v-for="opt in filteredAccounts" :key="opt.id">
+                    <button
+                      type="button"
+                      class="flex w-full flex-col items-start gap-0.5 px-3 py-2.5 text-left text-sm transition hover:bg-gray-50 dark:hover:bg-white/5"
+                      :class="[
+                        opt.kind === 'workspace' &&
+                        opt.id === selectedAccountId
+                          ? 'bg-gray-50 dark:bg-white/[0.06]'
+                          : '',
+                      ]"
+                      role="option"
+                      :aria-selected="
+                        opt.kind === 'workspace' &&
+                        opt.id === selectedAccountId
+                      "
+                      @click.stop="onAccountOptionClick(opt)"
+                    >
+                      <span
+                        class="flex w-full min-w-0 items-center justify-between gap-2"
+                      >
+                        <span
+                          class="truncate font-medium text-gray-900 dark:text-white"
+                          >{{ opt.title }}</span
+                        >
+                        <span
+                          v-if="opt.kind === 'client_account'"
+                          class="shrink-0 text-[10px] font-medium uppercase tracking-wide text-gray-400 dark:text-gray-500"
+                          >New tab</span
+                        >
+                      </span>
+                      <span
+                        class="text-xs text-gray-500 dark:text-gray-400"
+                        >{{ opt.subtitle }}</span
+                      >
+                    </button>
+                  </li>
+                </template>
               </ul>
             </div>
           </div>

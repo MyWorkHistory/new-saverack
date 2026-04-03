@@ -9,8 +9,10 @@ import {
 } from "../../router";
 import AuthRotatingHero from "../../components/auth/AuthRotatingHero.vue";
 import { BRAND_MARK_SRC } from "../../utils/brandAssets.js";
+import { getPublicSignupUrl } from "../../utils/publicSignupUrl.js";
 
 const markSrc = computed(() => BRAND_MARK_SRC());
+const publicSignupUrl = computed(() => getPublicSignupUrl());
 
 const route = useRoute();
 const router = useRouter();
@@ -189,12 +191,12 @@ const submit = async () => {
 
           <p class="text-center text-sm text-slate-600 dark:text-slate-400">
             New to Save Rack?
-            <RouterLink
-              to="/create"
+            <a
+              :href="publicSignupUrl"
               class="font-medium text-blue-600 hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-300"
             >
               Create account
-            </RouterLink>
+            </a>
           </p>
         </form>
       </div>

@@ -22,6 +22,7 @@ import { crmIsAdmin } from "../../utils/crmUser";
 import { DEFAULT_PER_PAGE, PER_PAGE_OPTIONS } from "../../constants/pagination";
 import { formatDateUs } from "../../utils/formatUserDates";
 import { setCrmPageMeta } from "../../composables/useCrmPageMeta.js";
+import { getPublicSignupUrl } from "../../utils/publicSignupUrl.js";
 
 const crmUser = inject("crmUser", ref(null));
 const toast = useToast();
@@ -34,6 +35,9 @@ function userHasPerm(key) {
 }
 
 const canCreate = computed(() => userHasPerm("clients.create"));
+
+/** Root SPA signup URL (not /tickets-app/); override with VITE_PUBLIC_SIGNUP_URL. */
+const publicCreateAccountUrl = computed(() => getPublicSignupUrl());
 const canUpdate = computed(() => userHasPerm("clients.update"));
 const canDelete = computed(() => userHasPerm("clients.delete"));
 const showRowActions = computed(() => canUpdate.value || canDelete.value);
@@ -82,6 +86,32 @@ const query = reactive({
 
 let searchDebounce = null;
 let searchWatchLock = false;
+
+async function copyPublicCreateLink() {
+  const url = publicCreateAccountUrl.value;
+  if (!url) {
+    toast.error("Could not build signup URL.");
+    return;
+  }
+  try {
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      await navigator.clipboard.writeText(url);
+    } else {
+      const ta = document.createElement("textarea");
+      ta.value = url;
+      ta.setAttribute("readonly", "");
+      ta.style.position = "fixed";
+      ta.style.left = "-9999px";
+      document.body.appendChild(ta);
+      ta.select();
+      document.execCommand("copy");
+      document.body.removeChild(ta);
+    }
+    toast.success("Public signup link copied.");
+  } catch (e) {
+    toast.error("Could not copy link.");
+  }
+}
 
 const deleteModalOpen = computed(() => deleteTarget.value !== null);
 const deleteMessage = computed(() => {
@@ -514,27 +544,50 @@ onUnmounted(() => {
               </svg>
             </button>
           </div>
-          <button
-            v-if="canCreate"
-            type="button"
-            class="inline-flex h-11 shrink-0 items-center justify-center gap-2 rounded-lg bg-[#2563eb] px-4 text-sm font-semibold text-white shadow-sm transition hover:opacity-95"
-            @click="addDrawerOpen = true"
-          >
-            <svg
-              class="h-5 w-5"
-              fill="none"
-              stroke="currentColor"
-              viewBox="0 0 24 24"
+          <div class="flex shrink-0 items-center gap-2">
+            <button
+              type="button"
+              class="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-lg border border-gray-300 bg-white text-gray-700 shadow-sm transition hover:bg-gray-50 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-200 dark:hover:bg-white/10"
+              title="Copy public signup link"
+              aria-label="Copy public signup link"
+              @click="copyPublicCreateLink"
             >
-              <path
-                stroke-linecap="round"
-                stroke-linejoin="round"
-                stroke-width="2"
-                d="M12 4v16m8-8H4"
-              />
-            </svg>
-            Add Account
-          </button>
+              <svg
+                class="h-5 w-5"
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+              >
+                <path
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                  stroke-width="2"
+                  d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"
+                />
+              </svg>
+            </button>
+            <button
+              v-if="canCreate"
+              type="button"
+              class="inline-flex h-11 shrink-0 items-center justify-center gap-2 rounded-lg bg-[#2563eb] px-4 text-sm font-semibold text-white shadow-sm transition hover:opacity-95"
+              @click="addDrawerOpen = true"
+            >
+              <svg
+                class="h-5 w-5"
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+              >
+                <path
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                  stroke-width="2"
+                  d="M12 4v16m8-8H4"
+                />
+              </svg>
+              Add Account
+            </button>
+          </div>
         </div>
       </div>
 

@@ -2,6 +2,10 @@ import { createRouter, createWebHistory } from "vue-router";
 import api from "../services/api";
 import { crmIsAdmin } from "../utils/crmUser";
 import { applyRouteMeta } from "../composables/useCrmPageMeta.js";
+import {
+  getPublicSignupUrl,
+  isRootSpaBundle,
+} from "../utils/publicSignupUrl.js";
 
 import LoginPage from "../pages/auth/LoginPage.vue";
 import CreateAccountPage from "../pages/auth/CreateAccountPage.vue";
@@ -371,10 +375,18 @@ async function ensureWebmasterRouteAccess() {
 }
 
 router.beforeEach(async (to) => {
+  if (to.name === "create-account" && !isRootSpaBundle()) {
+    if (typeof window !== "undefined") {
+      window.location.replace(getPublicSignupUrl());
+    }
+    return false;
+  }
+
   const token = localStorage.getItem("auth_token");
 
   if (to.meta.public) {
-    if (token && (to.name === "login" || to.name === "create-account")) {
+    // Keep /create reachable while signed in (e.g. staff verifying the form); only skip /login when already authenticated.
+    if (token && to.name === "login") {
       return { path: "/dashboard" };
     }
     return true;

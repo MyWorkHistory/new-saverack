@@ -143,7 +143,7 @@ class UserController extends Controller
         try {
             $whitelistIds = Permission::idsForKeys(User::CRM_MODULE_PERMISSION_KEYS);
             $desiredIds = Permission::idsForKeys($keys);
-        } catch (\RuntimeException) {
+        } catch (\RuntimeException $e) {
             return response()->json([
                 'message' => 'Permission definitions are missing from the database. Run: php artisan db:seed --class=RolePermissionSeeder',
             ], 422);

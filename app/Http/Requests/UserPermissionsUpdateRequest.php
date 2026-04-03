@@ -23,7 +23,11 @@ class UserPermissionsUpdateRequest extends FormRequest
         $allowed = array_flip(User::CRM_MODULE_PERMISSION_KEYS);
         $filtered = [];
         foreach ($keys as $k) {
-            if (is_string($k) && isset($allowed[$k])) {
+            if (! is_string($k)) {
+                continue;
+            }
+            $k = trim($k);
+            if ($k !== '' && isset($allowed[$k])) {
                 $filtered[] = $k;
             }
         }

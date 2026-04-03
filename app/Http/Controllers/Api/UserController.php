@@ -135,20 +135,42 @@ class UserController extends Controller
 
         $keys = array_values(array_unique($request->validated('permission_keys')));
 
+        Permission::ensureRowsForKeys(User::CRM_MODULE_PERMISSION_KEYS);
+
         $whitelistIds = Permission::query()
             ->whereIn('key', User::CRM_MODULE_PERMISSION_KEYS)
             ->pluck('id')
             ->all();
 
-        $user->permissions()->detach($whitelistIds);
-
-        if ($keys !== []) {
-            $attachIds = Permission::query()
+        $desiredIds = $keys === []
+            ? []
+            : Permission::query()
                 ->whereIn('key', $keys)
                 ->pluck('id')
                 ->all();
-            $user->permissions()->attach($attachIds);
+
+        if ($keys !== [] && count($desiredIds) !== count($keys)) {
+            return response()->json([
+                'message' => 'Some permission keys could not be saved.',
+            ], 422);
         }
+
+        $user->loadMissing(['permissions:id']);
+
+        $whitelistIdSet = [];
+        foreach ($whitelistIds as $wid) {
+            $whitelistIdSet[(int) $wid] = true;
+        }
+
+        $currentIds = $user->permissions->pluck('id')->map(static fn ($id) => (int) $id)->all();
+        $keepIds = array_values(array_filter(
+            $currentIds,
+            static fn (int $id): bool => ! isset($whitelistIdSet[$id]),
+        ));
+
+        $newPivotIds = array_values(array_unique(array_merge($keepIds, array_map('intval', $desiredIds))));
+
+        $user->permissions()->sync($newPivotIds);
 
         $user->load([
             'roles:id,name,label',

@@ -137,17 +137,8 @@ class UserController extends Controller
 
         Permission::ensureRowsForKeys(User::CRM_MODULE_PERMISSION_KEYS);
 
-        $whitelistIds = Permission::query()
-            ->whereIn('key', User::CRM_MODULE_PERMISSION_KEYS)
-            ->pluck('id')
-            ->all();
-
-        $desiredIds = $keys === []
-            ? []
-            : Permission::query()
-                ->whereIn('key', $keys)
-                ->pluck('id')
-                ->all();
+        $whitelistIds = Permission::idsForKeys(User::CRM_MODULE_PERMISSION_KEYS);
+        $desiredIds = Permission::idsForKeys($keys);
 
         if ($keys !== [] && count($desiredIds) !== count($keys)) {
             return response()->json([
@@ -155,7 +146,7 @@ class UserController extends Controller
             ], 422);
         }
 
-        $user->loadMissing(['permissions:id']);
+        $user->loadMissing('permissions');
 
         $whitelistIdSet = [];
         foreach ($whitelistIds as $wid) {

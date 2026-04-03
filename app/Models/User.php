@@ -171,6 +171,26 @@ class User extends Authenticatable
     }
 
     /**
+     * Direct user→permission grants limited to CRM module keys (Staff / Webmaster matrix).
+     *
+     * @return list<string>
+     */
+    public function directCrmPermissionKeys(): array
+    {
+        $this->loadMissing('permissions');
+        $allowed = array_flip(self::CRM_MODULE_PERMISSION_KEYS);
+        $out = [];
+        foreach ($this->permissions as $permission) {
+            $k = (string) $permission->key;
+            if (isset($allowed[$k])) {
+                $out[] = $k;
+            }
+        }
+
+        return array_values(array_unique($out));
+    }
+
+    /**
      * API shape for auth and user detail (exposes merged permission_keys, hides raw permissions pivot list).
      *
      * @return array<string, mixed>
@@ -184,6 +204,7 @@ class User extends Authenticatable
 
         return array_merge($arr, [
             'permission_keys' => $this->allPermissionKeys(),
+            'direct_permission_keys' => $this->directCrmPermissionKeys(),
             'is_admin' => $this->isAdministrator(),
             'is_crm_owner' => $this->isCrmOwner(),
         ]);

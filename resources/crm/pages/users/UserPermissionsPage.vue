@@ -62,8 +62,12 @@ async function load() {
   try {
     const { data } = await api.get(`/users/${props.id}`);
     subject.value = data;
-    const keys = Array.isArray(data.permission_keys) ? [...data.permission_keys] : [];
-    draftKeys.value = keys.filter(
+    const merged = Array.isArray(data.permission_keys) ? [...data.permission_keys] : [];
+    const direct = Array.isArray(data.direct_permission_keys)
+      ? [...data.direct_permission_keys]
+      : null;
+    const source = direct !== null ? direct : merged;
+    draftKeys.value = source.filter(
       (k) => typeof k === "string" && EDITABLE_PERMISSION_KEYS.has(k),
     );
   } catch (e) {

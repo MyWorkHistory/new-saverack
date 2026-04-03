@@ -18,6 +18,36 @@ class Permission extends Model
      *
      * @param  list<string>  $keys
      */
+    /**
+     * Resolve permission IDs without whereIn (some PDO/MySQL setups error with IN () / binding edge cases).
+     *
+     * @param  list<string>  $keys
+     * @return list<int>
+     */
+    public static function idsForKeys(array $keys): array
+    {
+        $keys = array_values(array_unique(array_filter(
+            $keys,
+            static fn ($k): bool => is_string($k) && $k !== '',
+        )));
+
+        if ($keys === []) {
+            return [];
+        }
+
+        return static::query()
+            ->where(function ($q) use ($keys): void {
+                $q->where('key', $keys[0]);
+                for ($i = 1, $n = count($keys); $i < $n; $i++) {
+                    $q->orWhere('key', $keys[$i]);
+                }
+            })
+            ->orderBy('id')
+            ->pluck('id')
+            ->map(static fn ($id) => (int) $id)
+            ->all();
+    }
+
     public static function ensureRowsForKeys(array $keys): void
     {
         $metaByKey = [

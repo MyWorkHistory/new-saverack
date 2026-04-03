@@ -26,6 +26,65 @@ class User extends Authenticatable
         'webmaster.delete',
     ];
 
+    /**
+     * Flatten mixed request shapes and keep only allowed CRM permission key strings.
+     *
+     * @param  mixed  $input
+     * @return list<string>
+     */
+    public static function normalizeCrmPermissionKeys($input): array
+    {
+        if (! is_array($input)) {
+            return [];
+        }
+
+        $allowed = array_flip(self::CRM_MODULE_PERMISSION_KEYS);
+        $flat = [];
+        $queue = array_values($input);
+
+        while ($queue !== []) {
+            $item = array_pop($queue);
+            if (is_string($item)) {
+                $flat[] = trim($item);
+            } elseif (is_array($item)) {
+                foreach ($item as $sub) {
+                    $queue[] = $sub;
+                }
+            } elseif (is_scalar($item)) {
+                $flat[] = trim((string) $item);
+            }
+        }
+
+        $out = [];
+        foreach ($flat as $s) {
+            if ($s !== '' && isset($allowed[$s])) {
+                $out[] = $s;
+            }
+        }
+
+        return array_values(array_unique($out));
+    }
+
+    /**
+     * @param  list<mixed>  $keys
+     * @return list<string>
+     */
+    public static function permissionKeyStringsOnly(array $keys): array
+    {
+        $out = [];
+        foreach ($keys as $k) {
+            if (! is_string($k)) {
+                continue;
+            }
+            $t = trim($k);
+            if ($t !== '') {
+                $out[] = $t;
+            }
+        }
+
+        return array_values(array_unique($out));
+    }
+
     protected $fillable = [
         'name',
         'email',
@@ -123,14 +182,16 @@ class User extends Authenticatable
         $this->loadMissing('roles.permissions', 'permissions');
 
         foreach ($this->permissions as $permission) {
-            if ($permission->key === $key) {
+            $pKey = $permission->getAttribute('key');
+            if (is_string($pKey) && $pKey === $key) {
                 return true;
             }
         }
 
         foreach ($this->roles as $role) {
             foreach ($role->permissions as $permission) {
-                if ($permission->key === $key) {
+                $pKey = $permission->getAttribute('key');
+                if (is_string($pKey) && $pKey === $key) {
                     return true;
                 }
             }
@@ -154,7 +215,10 @@ class User extends Authenticatable
 
         $fromDirect = $this->permissions->pluck('key')->all();
 
-        return array_values(array_unique(array_merge($fromRoles, $fromDirect)));
+        return array_values(array_unique(array_merge(
+            self::permissionKeyStringsOnly($fromRoles),
+            self::permissionKeyStringsOnly($fromDirect),
+        )));
     }
 
     /**
@@ -181,8 +245,12 @@ class User extends Authenticatable
         $allowed = array_flip(self::CRM_MODULE_PERMISSION_KEYS);
         $out = [];
         foreach ($this->permissions as $permission) {
-            $k = (string) $permission->key;
-            if (isset($allowed[$k])) {
+            $raw = $permission->getAttribute('key');
+            if (! is_string($raw)) {
+                continue;
+            }
+            $k = trim($raw);
+            if ($k !== '' && isset($allowed[$k])) {
                 $out[] = $k;
             }
         }

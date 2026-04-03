@@ -16,24 +16,10 @@ class UserPermissionsUpdateRequest extends FormRequest
     protected function prepareForValidation(): void
     {
         $keys = $this->input('permission_keys');
-        if (! is_array($keys)) {
-            return;
-        }
-
-        $allowed = array_flip(User::CRM_MODULE_PERMISSION_KEYS);
-        $filtered = [];
-        foreach ($keys as $k) {
-            if (! is_string($k)) {
-                continue;
-            }
-            $k = trim($k);
-            if ($k !== '' && isset($allowed[$k])) {
-                $filtered[] = $k;
-            }
-        }
+        $normalized = User::normalizeCrmPermissionKeys(is_array($keys) ? $keys : []);
 
         $this->merge([
-            'permission_keys' => array_values(array_unique($filtered)),
+            'permission_keys' => $normalized,
         ]);
     }
 

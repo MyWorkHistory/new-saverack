@@ -133,7 +133,7 @@ class UserController extends Controller
             ], 422);
         }
 
-        $keys = array_values(array_unique($request->validated('permission_keys')));
+        $keys = User::normalizeCrmPermissionKeys($request->validated('permission_keys'));
 
         Permission::ensureRowsForKeys(array_values(array_unique(array_merge(
             User::CRM_MODULE_PERMISSION_KEYS,

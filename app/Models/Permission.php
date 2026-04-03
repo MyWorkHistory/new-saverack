@@ -38,7 +38,8 @@ class Permission extends Model
                 $id = static::query()->where('key', $key)->value('id');
             }
             if ($id === null) {
-                throw new \RuntimeException('Missing permission row for key: '.$key);
+                $label = is_string($key) ? $key : json_encode($key);
+                throw new \RuntimeException('Missing permission row for key: '.$label);
             }
             $ids[] = (int) $id;
         }
@@ -60,6 +61,14 @@ class Permission extends Model
         ];
 
         foreach (array_unique($keys) as $key) {
+            if (! is_string($key)) {
+                continue;
+            }
+            $key = trim($key);
+            if ($key === '') {
+                continue;
+            }
+
             $meta = $metaByKey[$key] ?? [
                 'label' => $key,
                 'module' => (str_contains($key, '.')) ? strstr($key, '.', true) : 'crm',

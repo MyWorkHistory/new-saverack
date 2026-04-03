@@ -55,13 +55,14 @@ const loadMe = async () => {
   }
 };
 
-// Login only sets localStorage; `me` is loaded here. Without this, SPA
-// navigation from /login to /dashboard left `me` null (stuck on “sign in”).
-// Skip refetch when `me` is already set (normal route changes under the shell).
+// Load /auth/me when entering the authenticated shell, or when `me` is still empty.
+// Important: do not skip load when `me` is already set but the user just signed in
+// as a different account (token replaced on /login while stale `me` stayed in memory),
+// which hid Staff/Webmaster for admins and broke permission UI.
 watch(
-  () => route.fullPath,
-  () => {
-    if (!showShell.value) {
+  showShell,
+  (shell, prevShell) => {
+    if (!shell) {
       navLoading.value = false;
       return;
     }
@@ -70,10 +71,10 @@ watch(
       navLoading.value = false;
       return;
     }
-    if (me.value) {
-      return;
+    const enteredShellFromPublic = prevShell === false;
+    if (me.value === null || enteredShellFromPublic) {
+      loadMe();
     }
-    loadMe();
   },
   { immediate: true },
 );

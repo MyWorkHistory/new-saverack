@@ -35,16 +35,17 @@ defineProps({
     </span>
     <span
       v-if="telegramHandle"
-      class="inline-flex shrink-0 items-center"
+      class="inline-flex shrink-0 items-center justify-center bg-transparent"
       :title="telegramTitle"
     >
       <img
         :src="telegramIconUrl"
         alt=""
-        :class="[sizeClass, 'object-contain']"
+        :class="[sizeClass, 'object-contain bg-transparent']"
         width="20"
         height="20"
         decoding="async"
+        draggable="false"
       />
     </span>
     <span

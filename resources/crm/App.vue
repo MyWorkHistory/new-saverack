@@ -24,6 +24,7 @@ const showShell = computed(() => {
   const p = route.path;
   return (
     !p.startsWith("/login") &&
+    !p.startsWith("/create") &&
     !p.startsWith("/forgot-password") &&
     !p.startsWith("/reset-password")
   );

@@ -223,17 +223,29 @@ function buildParams() {
   return p;
 }
 
+function normalizeAccountManagersFromMeta(payload) {
+  const raw =
+    payload?.account_managers ??
+    payload?.accountManagers ??
+    (Array.isArray(payload) ? payload : null);
+  if (!Array.isArray(raw)) return [];
+  return raw.map((row) => ({
+    id: Number(row.id),
+    name: row.name != null ? String(row.name) : "",
+    email: row.email != null ? String(row.email) : "",
+  }));
+}
+
 async function fetchMeta() {
   try {
     const { data } = await api.get("/client-accounts/meta");
-    accountManagers.value = Array.isArray(data.account_managers)
-      ? data.account_managers
-      : [];
-    if (Array.isArray(data.statuses) && data.statuses.length) {
+    accountManagers.value = normalizeAccountManagersFromMeta(data);
+    if (Array.isArray(data?.statuses) && data.statuses.length) {
       statuses.value = data.statuses;
     }
-  } catch {
+  } catch (e) {
     accountManagers.value = [];
+    toast.errorFrom(e, "Could not load account manager list.");
   }
 }
 

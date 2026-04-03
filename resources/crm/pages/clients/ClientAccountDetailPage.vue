@@ -141,14 +141,26 @@ const filteredStores = computed(() => {
   });
 });
 
+function normalizeAccountManagersFromMeta(payload) {
+  const raw =
+    payload?.account_managers ??
+    payload?.accountManagers ??
+    (Array.isArray(payload) ? payload : null);
+  if (!Array.isArray(raw)) return [];
+  return raw.map((row) => ({
+    id: Number(row.id),
+    name: row.name != null ? String(row.name) : "",
+    email: row.email != null ? String(row.email) : "",
+  }));
+}
+
 async function fetchMeta() {
   try {
     const { data } = await api.get("/client-accounts/meta");
-    accountManagers.value = Array.isArray(data.account_managers)
-      ? data.account_managers
-      : [];
-  } catch {
+    accountManagers.value = normalizeAccountManagersFromMeta(data);
+  } catch (e) {
     accountManagers.value = [];
+    toast.errorFrom(e, "Could not load account manager list.");
   }
 }
 

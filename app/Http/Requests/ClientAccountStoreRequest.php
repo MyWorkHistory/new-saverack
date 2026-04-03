@@ -25,9 +25,7 @@ class ClientAccountStoreRequest extends FormRequest
      */
     protected function commonRules(): array
     {
-        $accountManagerRule = Rule::exists('users', 'id')->where(function ($query) {
-            $query->whereHas('roles', fn ($q) => $q->whereIn('name', ['admin', 'staff']));
-        });
+        $accountManagerRule = Rule::exists('users', 'id');
 
         return [
             'company_name' => ['required', 'string', 'max:190'],

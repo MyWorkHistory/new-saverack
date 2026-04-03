@@ -33,6 +33,9 @@ const MODULES = [
 
 const ACTION_HEADERS = ["View", "Create", "Edit", "Delete"];
 
+/** Keys this page may assign; API user payloads also merge in role keys (e.g. dashboard) which the update endpoint rejects. */
+const EDITABLE_PERMISSION_KEYS = new Set(MODULES.flatMap((m) => m.keys));
+
 const props = defineProps({
   id: { type: String, required: true },
 });
@@ -60,7 +63,9 @@ async function load() {
     const { data } = await api.get(`/users/${props.id}`);
     subject.value = data;
     const keys = Array.isArray(data.permission_keys) ? [...data.permission_keys] : [];
-    draftKeys.value = keys;
+    draftKeys.value = keys.filter(
+      (k) => typeof k === "string" && EDITABLE_PERMISSION_KEYS.has(k),
+    );
   } catch (e) {
     const st = e.response?.status;
     if (st === 403) {
@@ -125,7 +130,7 @@ async function save() {
   saving.value = true;
   try {
     await api.put(`/users/${props.id}/permissions`, {
-      permission_keys: draftKeys.value,
+      permission_keys: draftKeys.value.filter((k) => EDITABLE_PERMISSION_KEYS.has(k)),
     });
     toast.success("Permissions Saved.");
     await load();

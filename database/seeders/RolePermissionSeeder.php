@@ -28,6 +28,10 @@ class RolePermissionSeeder extends Seeder
             ['key' => 'webmaster.create', 'label' => 'Create webmaster tasks', 'module' => 'webmaster'],
             ['key' => 'webmaster.update', 'label' => 'Update webmaster tasks', 'module' => 'webmaster'],
             ['key' => 'webmaster.delete', 'label' => 'Delete webmaster tasks', 'module' => 'webmaster'],
+            ['key' => 'clients.view', 'label' => 'View client accounts', 'module' => 'clients'],
+            ['key' => 'clients.create', 'label' => 'Create client accounts', 'module' => 'clients'],
+            ['key' => 'clients.update', 'label' => 'Update client accounts', 'module' => 'clients'],
+            ['key' => 'clients.delete', 'label' => 'Delete client accounts', 'module' => 'clients'],
         ])->map(function (array $p) {
             return Permission::query()->firstOrCreate(
                 ['key' => $p['key']],
@@ -46,9 +50,9 @@ class RolePermissionSeeder extends Seeder
         );
 
         $admin->permissions()->sync($permissions->pluck('id'));
-        // Staff: dashboard only; users/webmaster module access via direct user permissions.
+        // Staff: dashboard + view clients only; other module access via direct user permissions.
         $staff->permissions()->sync(
-            $permissions->whereIn('key', ['dashboard.view'])->pluck('id')
+            $permissions->whereIn('key', ['dashboard.view', 'clients.view'])->pluck('id')
         );
 
         $email = env('ADMIN_EMAIL', 'audi@saverack.com');

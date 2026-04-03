@@ -121,6 +121,12 @@ class User extends Authenticatable
         return $this->hasOne(UserProfile::class);
     }
 
+    /** Client CRM rows where this user is the assigned account manager (staff). */
+    public function managedClientAccounts(): HasMany
+    {
+        return $this->hasMany(ClientAccount::class, 'account_manager_id');
+    }
+
     public function activityLogs(): HasMany
     {
         return $this->hasMany(ActivityLog::class);

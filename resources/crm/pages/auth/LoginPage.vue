@@ -2,7 +2,11 @@
 import { computed, reactive, ref } from "vue";
 import { RouterLink, useRoute, useRouter } from "vue-router";
 import api from "../../services/api";
-import { setUsersNavFromUser, setWebmasterNavFromUser } from "../../router";
+import {
+  setClientsNavFromUser,
+  setUsersNavFromUser,
+  setWebmasterNavFromUser,
+} from "../../router";
 import AuthRotatingHero from "../../components/auth/AuthRotatingHero.vue";
 import { BRAND_MARK_SRC } from "../../utils/brandAssets.js";
 
@@ -33,6 +37,7 @@ const submit = async () => {
     }
     setWebmasterNavFromUser(data.user);
     setUsersNavFromUser(data.user);
+    setClientsNavFromUser(data.user);
     const r = route.query.redirect;
     const dest =
       typeof r === "string" && r.startsWith("/") ? r : "/dashboard";

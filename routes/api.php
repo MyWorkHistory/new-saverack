@@ -1,6 +1,7 @@
 <?php
 
 use App\Http\Controllers\Api\AuthController;
+use App\Http\Controllers\Api\ClientAccountController;
 use App\Http\Controllers\Api\DashboardController;
 use App\Http\Controllers\Api\RoleController;
 use App\Http\Controllers\Api\TicketController;
@@ -42,6 +43,12 @@ Route::middleware('auth:sanctum')->group(function () {
         ->name('users.avatar.destroy');
     Route::patch('users/bulk', [UserController::class, 'bulkUpdate'])
         ->name('users.bulk-update');
+
+    Route::get('client-accounts/meta', [ClientAccountController::class, 'meta'])
+        ->name('client-accounts.meta');
+    Route::patch('client-accounts/bulk', [ClientAccountController::class, 'bulkUpdate'])
+        ->name('client-accounts.bulk-update');
+    Route::apiResource('client-accounts', ClientAccountController::class);
     Route::match(['put', 'patch'], 'users/{user}/permissions', [UserController::class, 'updatePermissions'])
         ->name('users.permissions.update');
     Route::get('users/{user}/history', [UserController::class, 'history'])

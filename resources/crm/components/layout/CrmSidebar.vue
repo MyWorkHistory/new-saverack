@@ -1,5 +1,5 @@
 <script setup>
-import { computed } from "vue";
+import { computed, ref, watch } from "vue";
 import { RouterLink, useRoute } from "vue-router";
 import { BRAND_MARK_SRC } from "../../utils/brandAssets.js";
 import { useCrmSidebar } from "../../composables/useCrmSidebar";
@@ -26,6 +26,25 @@ const canViewWebmaster = computed(
     (Array.isArray(props.user?.permission_keys) &&
       props.user.permission_keys.includes("webmaster.view")),
 );
+
+const canViewClients = computed(
+  () =>
+    crmIsAdmin(props.user) ||
+    !!props.user?.is_crm_owner ||
+    (Array.isArray(props.user?.permission_keys) &&
+      props.user.permission_keys.includes("clients.view")),
+);
+
+const clientsGroupOpen = ref(route.path.startsWith("/clients"));
+watch(
+  () => route.path,
+  (p) => {
+    if (p.startsWith("/clients")) {
+      clientsGroupOpen.value = true;
+    }
+  },
+);
+
 const { isExpanded, isMobileOpen, closeMobile, sidebarWidthClass } =
   useCrmSidebar();
 
@@ -40,6 +59,8 @@ function navActive(mode) {
   if (mode === "dashboard") return p.startsWith("/dashboard");
   if (mode === "users") return p.startsWith("/staff") || p.startsWith("/users");
   if (mode === "webmaster") return p.startsWith("/webmaster");
+  if (mode === "clients") return p.startsWith("/clients");
+  if (mode === "clients-accounts") return p.startsWith("/clients/accounts");
   return false;
 }
 
@@ -153,6 +174,109 @@ function iconClass(mode) {
               </svg>
             </span>
             <span v-if="isExpanded">Staff</span>
+          </RouterLink>
+        </li>
+        <li v-if="canViewClients">
+          <template v-if="isExpanded">
+            <div class="flex flex-col gap-1">
+              <button
+                type="button"
+                :class="[
+                  'menu-item group flex w-full items-center rounded-lg text-left transition',
+                  navActive('clients')
+                    ? 'menu-item-active'
+                    : 'menu-item-inactive',
+                  itemJustify(),
+                ]"
+                :aria-expanded="clientsGroupOpen"
+                @click="clientsGroupOpen = !clientsGroupOpen"
+              >
+                <span :class="iconClass('clients')">
+                  <svg
+                    class="h-5 w-5"
+                    fill="none"
+                    viewBox="0 0 24 24"
+                    stroke="currentColor"
+                    stroke-width="2"
+                  >
+                    <path
+                      stroke-linecap="round"
+                      stroke-linejoin="round"
+                      d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4"
+                    />
+                  </svg>
+                </span>
+                <span v-if="isExpanded" class="flex min-w-0 flex-1 items-center gap-2">
+                  <span class="truncate">Clients</span>
+                  <svg
+                    class="ml-auto h-4 w-4 shrink-0 transition"
+                    :class="clientsGroupOpen ? 'rotate-180' : ''"
+                    fill="none"
+                    viewBox="0 0 24 24"
+                    stroke="currentColor"
+                    stroke-width="2"
+                    aria-hidden="true"
+                  >
+                    <path
+                      stroke-linecap="round"
+                      stroke-linejoin="round"
+                      d="M19 9l-7 7-7-7"
+                    />
+                  </svg>
+                </span>
+              </button>
+              <Transition
+                enter-active-class="transition duration-150 ease-out"
+                enter-from-class="opacity-0 -translate-y-0.5"
+                enter-to-class="opacity-100 translate-y-0"
+                leave-active-class="transition duration-100 ease-in"
+                leave-from-class="opacity-100"
+                leave-to-class="opacity-0"
+              >
+                <ul
+                  v-show="clientsGroupOpen"
+                  class="ml-4 space-y-1 border-l border-gray-200 py-0.5 pl-3 dark:border-gray-700"
+                >
+                  <li>
+                    <RouterLink
+                      to="/clients/accounts"
+                      :class="[
+                        'menu-item group flex w-full items-center rounded-lg py-2 text-sm',
+                        navActive('clients-accounts')
+                          ? 'menu-item-active'
+                          : 'menu-item-inactive',
+                      ]"
+                      @click="closeMobile"
+                    >
+                      Accounts
+                    </RouterLink>
+                  </li>
+                </ul>
+              </Transition>
+            </div>
+          </template>
+          <RouterLink
+            v-else
+            to="/clients/accounts"
+            :class="[navClass('clients-accounts'), itemJustify()]"
+            title="Accounts"
+            @click="closeMobile"
+          >
+            <span :class="iconClass('clients-accounts')">
+              <svg
+                class="h-5 w-5"
+                fill="none"
+                viewBox="0 0 24 24"
+                stroke="currentColor"
+                stroke-width="2"
+              >
+                <path
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                  d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4"
+                />
+              </svg>
+            </span>
           </RouterLink>
         </li>
         <li v-if="canViewWebmaster">

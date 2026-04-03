@@ -14,6 +14,7 @@ import UserPermissionsPage from "../pages/users/UserPermissionsPage.vue";
 import UserHistoryPage from "../pages/users/UserHistoryPage.vue";
 import WebmasterTasksPage from "../pages/webmaster/WebmasterTasksPage.vue";
 import WebmasterTaskDetailPage from "../pages/webmaster/WebmasterTaskDetailPage.vue";
+import ClientAccountsListPage from "../pages/clients/ClientAccountsListPage.vue";
 
 const meta = {
   login: {
@@ -47,6 +48,10 @@ const meta = {
   webmasterTask: {
     title: "Save Rack | Webmaster Task",
     description: "Webmaster Task Details.",
+  },
+  clientAccounts: {
+    title: "Save Rack | Client Accounts",
+    description: "Client Accounts Directory.",
   },
 };
 
@@ -138,6 +143,13 @@ const routes = [
   },
   { path: "/users/:id", redirect: (to) => `/staff/${to.params.id}` },
   {
+    path: "/clients/accounts",
+    name: "client-accounts",
+    component: ClientAccountsListPage,
+    meta: meta.clientAccounts,
+  },
+  { path: "/clients", redirect: "/clients/accounts" },
+  {
     path: "/webmaster",
     name: "webmaster",
     component: WebmasterTasksPage,
@@ -165,12 +177,16 @@ let webmasterNavCache = null;
 /** Users module: per-action permissions from /auth/me (see setUsersNavFromUser). */
 let usersNavCache = null;
 
+/** Clients module: per-action permissions from /auth/me (see setClientsNavFromUser). */
+let clientsNavCache = null;
+
 /** True when the signed-in CRM user is an administrator (`crmIsAdmin`); used for permissions routes only. */
 let usersMeIsAdmin = false;
 
 export function clearCrmOwnerCache() {
   webmasterNavCache = null;
   usersNavCache = null;
+  clientsNavCache = null;
   usersMeIsAdmin = false;
 }
 
@@ -209,11 +225,56 @@ export function setUsersNavFromUser(user) {
   };
 }
 
+export function setClientsNavFromUser(user) {
+  if (!user) {
+    clientsNavCache = null;
+    return;
+  }
+  if (crmIsAdmin(user) || user.is_crm_owner) {
+    clientsNavCache = {
+      view: true,
+      create: true,
+      update: true,
+      delete: true,
+    };
+    return;
+  }
+  const k = Array.isArray(user.permission_keys) ? user.permission_keys : [];
+  clientsNavCache = {
+    view: k.includes("clients.view"),
+    create: k.includes("clients.create"),
+    update: k.includes("clients.update"),
+    delete: k.includes("clients.delete"),
+  };
+}
+
+async function ensureClientsRouteAccess(path) {
+  if (clientsNavCache === null) {
+    try {
+      const { data } = await api.get("/auth/me");
+      setUsersNavFromUser(data);
+      setClientsNavFromUser(data);
+      setWebmasterNavFromUser(data);
+    } catch (e) {
+      if (e.response?.status === 401) {
+        localStorage.removeItem("auth_token");
+        clientsNavCache = null;
+      }
+      return false;
+    }
+  }
+  if (path === "/clients" || path.startsWith("/clients/")) {
+    return clientsNavCache.view === true;
+  }
+  return true;
+}
+
 async function ensureUsersRouteAccess(path) {
   if (usersNavCache === null) {
     try {
       const { data } = await api.get("/auth/me");
       setUsersNavFromUser(data);
+      setClientsNavFromUser(data);
       setWebmasterNavFromUser(data);
     } catch (e) {
       if (e.response?.status === 401) {
@@ -270,6 +331,8 @@ async function ensureWebmasterRouteAccess() {
   }
   try {
     const { data } = await api.get("/auth/me");
+    setUsersNavFromUser(data);
+    setClientsNavFromUser(data);
     const ok = userCanWebmaster(data);
     webmasterNavCache = ok;
     return ok;
@@ -310,6 +373,16 @@ router.beforeEach(async (to) => {
 
   if (to.path.startsWith("/users") || to.path.startsWith("/staff")) {
     const ok = await ensureUsersRouteAccess(to.path);
+    if (!ok) {
+      if (!localStorage.getItem("auth_token")) {
+        return { name: "login", query: { redirect: to.fullPath } };
+      }
+      return { path: "/dashboard" };
+    }
+  }
+
+  if (to.path.startsWith("/clients")) {
+    const ok = await ensureClientsRouteAccess(to.path);
     if (!ok) {
       if (!localStorage.getItem("auth_token")) {
         return { name: "login", query: { redirect: to.fullPath } };

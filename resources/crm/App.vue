@@ -5,7 +5,12 @@ import api from "./services/api";
 import CrmAdminShell from "./components/layout/CrmAdminShell.vue";
 import CrmLoadingSpinner from "./components/common/CrmLoadingSpinner.vue";
 import ToastStack from "./components/common/ToastStack.vue";
-import { clearCrmOwnerCache, setUsersNavFromUser, setWebmasterNavFromUser } from "./router";
+import {
+  clearCrmOwnerCache,
+  setClientsNavFromUser,
+  setUsersNavFromUser,
+  setWebmasterNavFromUser,
+} from "./router";
 
 const route = useRoute();
 const router = useRouter();
@@ -36,6 +41,7 @@ const loadMe = async () => {
     me.value = data;
     setWebmasterNavFromUser(data);
     setUsersNavFromUser(data);
+    setClientsNavFromUser(data);
   } catch (e) {
     me.value = null;
     if (e.response?.status === 401) {

@@ -25,8 +25,8 @@ class ClientAccountUpdateRequest extends FormRequest
 
     public function rules(): array
     {
-        $staffManagerRule = Rule::exists('users', 'id')->where(function ($query) {
-            $query->whereHas('roles', fn ($q) => $q->where('name', 'staff'));
+        $accountManagerRule = Rule::exists('users', 'id')->where(function ($query) {
+            $query->whereHas('roles', fn ($q) => $q->whereIn('name', ['admin', 'staff']));
         });
 
         return [
@@ -51,7 +51,7 @@ class ClientAccountUpdateRequest extends FormRequest
             'state' => ['sometimes', 'nullable', 'string', 'max:64'],
             'zip' => ['sometimes', 'nullable', 'string', 'max:32'],
             'country' => ['sometimes', 'nullable', 'string', 'max:120'],
-            'account_manager_id' => ['sometimes', 'nullable', 'integer', $staffManagerRule],
+            'account_manager_id' => ['sometimes', 'nullable', 'integer', $accountManagerRule],
         ];
     }
 }

@@ -3,6 +3,7 @@ import { reactive, ref, watch } from "vue";
 import api from "../../services/api";
 import CrmLoadingSpinner from "../common/CrmLoadingSpinner.vue";
 import { useToast } from "../../composables/useToast";
+import CrmSearchableSelect from "../common/CrmSearchableSelect.vue";
 
 const props = defineProps({
   open: { type: Boolean, default: false },
@@ -305,25 +306,14 @@ async function onSubmit() {
                   />
                 </div>
               </div>
-              <div>
-                <label
-                  class="mb-1 block text-xs font-medium text-gray-600 dark:text-gray-400"
-                  >Account manager</label
-                >
-                <select
-                  v-model="form.account_manager_id"
-                  class="h-10 w-full rounded-lg border border-gray-300 bg-white px-3 text-sm dark:border-gray-600 dark:bg-gray-800 dark:text-white"
-                >
-                  <option value="">— None —</option>
-                  <option
-                    v-for="m in accountManagers"
-                    :key="m.id"
-                    :value="String(m.id)"
-                  >
-                    {{ m.name }}
-                  </option>
-                </select>
-              </div>
+              <CrmSearchableSelect
+                v-model="form.account_manager_id"
+                label="Account manager"
+                :options="accountManagers"
+                placeholder="Choose account manager"
+                search-placeholder="Search staff…"
+                empty-label="— None —"
+              />
               <div class="rounded-lg border border-gray-200 p-3 dark:border-gray-700">
                 <p class="mb-2 text-xs font-medium text-gray-600 dark:text-gray-400">
                   Channels

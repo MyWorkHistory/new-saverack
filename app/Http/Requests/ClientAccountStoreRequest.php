@@ -25,8 +25,8 @@ class ClientAccountStoreRequest extends FormRequest
      */
     protected function commonRules(): array
     {
-        $staffManagerRule = Rule::exists('users', 'id')->where(function ($query) {
-            $query->whereHas('roles', fn ($q) => $q->where('name', 'staff'));
+        $accountManagerRule = Rule::exists('users', 'id')->where(function ($query) {
+            $query->whereHas('roles', fn ($q) => $q->whereIn('name', ['admin', 'staff']));
         });
 
         return [
@@ -45,7 +45,7 @@ class ClientAccountStoreRequest extends FormRequest
             'state' => ['nullable', 'string', 'max:64'],
             'zip' => ['nullable', 'string', 'max:32'],
             'country' => ['nullable', 'string', 'max:120'],
-            'account_manager_id' => ['nullable', 'integer', $staffManagerRule],
+            'account_manager_id' => ['nullable', 'integer', $accountManagerRule],
         ];
     }
 

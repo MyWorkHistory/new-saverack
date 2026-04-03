@@ -84,16 +84,19 @@ class ClientAccountService
     }
 
     /**
-     * Users that may be assigned as account managers (have `staff` role).
+     * Users that may be assigned as account managers — same population as the Staff directory
+     * (administrator + staff CRM roles, so admins appear and validation stays aligned).
      *
      * @return \Illuminate\Support\Collection<int, array{id:int,name:string,email:string}>
      */
     public function accountManagersForMeta()
     {
+        $internalRoleNames = ['admin', 'staff'];
+
         return User::query()
             ->select('users.id', 'users.name', 'users.email')
-            ->whereHas('roles', function ($q) {
-                $q->where('name', 'staff');
+            ->whereHas('roles', function ($q) use ($internalRoleNames) {
+                $q->whereIn('name', $internalRoleNames);
             })
             ->orderBy('users.name')
             ->get()

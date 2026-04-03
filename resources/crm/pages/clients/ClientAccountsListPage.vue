@@ -15,6 +15,7 @@ import ClientAccountCreateDrawer from "../../components/clients/ClientAccountCre
 import ClientAccountEditModal from "../../components/clients/ClientAccountEditModal.vue";
 import ClientAccountsBulkEditModal from "../../components/clients/ClientAccountsBulkEditModal.vue";
 import CrmLoadingSpinner from "../../components/common/CrmLoadingSpinner.vue";
+import CrmSearchableSelect from "../../components/common/CrmSearchableSelect.vue";
 import CrmIconRowActions from "../../components/common/CrmIconRowActions.vue";
 import { useToast } from "../../composables/useToast";
 import { crmIsAdmin } from "../../utils/crmUser";
@@ -559,22 +560,16 @@ onUnmounted(() => {
                   class="h-11 w-full rounded-lg border border-gray-200 bg-white py-2.5 pl-10 pr-3 text-sm text-gray-900 placeholder:text-gray-400 focus:border-[#2563eb] focus:outline-none focus:ring-2 focus:ring-[#2563eb]/20 dark:border-gray-600 dark:bg-gray-900 dark:text-white"
                 />
               </div>
-              <div class="w-full sm:w-56">
-                <label class="sr-only" for="client-am-filter">Account manager</label>
-                <select
-                  id="client-am-filter"
+              <div class="w-full sm:min-w-[220px] sm:max-w-xs">
+                <CrmSearchableSelect
                   v-model="query.account_manager_id"
-                  class="h-11 w-full rounded-lg border border-gray-200 bg-white px-3 text-sm text-gray-900 dark:border-gray-600 dark:bg-gray-900 dark:text-white"
-                >
-                  <option value="">All account managers</option>
-                  <option
-                    v-for="m in accountManagers"
-                    :key="m.id"
-                    :value="String(m.id)"
-                  >
-                    {{ m.name }}
-                  </option>
-                </select>
+                  :options="accountManagers"
+                  placeholder="All account managers"
+                  search-placeholder="Search staff…"
+                  empty-label="All account managers"
+                  button-id="client-am-filter"
+                  aria-label="Filter by account manager"
+                />
               </div>
             </div>
             <button

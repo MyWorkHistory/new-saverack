@@ -14,12 +14,7 @@ class Permission extends Model
     ];
 
     /**
-     * Create missing permission rows so pivot sync/attach can resolve IDs (mirrors RolePermissionSeeder).
-     *
-     * @param  list<string>  $keys
-     */
-    /**
-     * Resolve permission IDs without whereIn (some PDO/MySQL setups error with IN () / binding edge cases).
+     * One DB row per key, same order as $keys (deduped). Avoids whereIn binding issues and OR-clause edge cases.
      *
      * @param  list<string>  $keys
      * @return list<int>
@@ -35,17 +30,20 @@ class Permission extends Model
             return [];
         }
 
-        return static::query()
-            ->where(function ($q) use ($keys): void {
-                $q->where('key', $keys[0]);
-                for ($i = 1, $n = count($keys); $i < $n; $i++) {
-                    $q->orWhere('key', $keys[$i]);
-                }
-            })
-            ->orderBy('id')
-            ->pluck('id')
-            ->map(static fn ($id) => (int) $id)
-            ->all();
+        $ids = [];
+        foreach ($keys as $key) {
+            $id = static::query()->where('key', $key)->value('id');
+            if ($id === null) {
+                static::ensureRowsForKeys([$key]);
+                $id = static::query()->where('key', $key)->value('id');
+            }
+            if ($id === null) {
+                throw new \RuntimeException('Missing permission row for key: '.$key);
+            }
+            $ids[] = (int) $id;
+        }
+
+        return $ids;
     }
 
     public static function ensureRowsForKeys(array $keys): void

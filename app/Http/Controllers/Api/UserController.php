@@ -135,14 +135,17 @@ class UserController extends Controller
 
         $keys = array_values(array_unique($request->validated('permission_keys')));
 
-        Permission::ensureRowsForKeys(User::CRM_MODULE_PERMISSION_KEYS);
+        Permission::ensureRowsForKeys(array_values(array_unique(array_merge(
+            User::CRM_MODULE_PERMISSION_KEYS,
+            $keys,
+        ))));
 
-        $whitelistIds = Permission::idsForKeys(User::CRM_MODULE_PERMISSION_KEYS);
-        $desiredIds = Permission::idsForKeys($keys);
-
-        if ($keys !== [] && count($desiredIds) !== count($keys)) {
+        try {
+            $whitelistIds = Permission::idsForKeys(User::CRM_MODULE_PERMISSION_KEYS);
+            $desiredIds = Permission::idsForKeys($keys);
+        } catch (\RuntimeException) {
             return response()->json([
-                'message' => 'Some permission keys could not be saved.',
+                'message' => 'Permission definitions are missing from the database. Run: php artisan db:seed --class=RolePermissionSeeder',
             ], 422);
         }
 

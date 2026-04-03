@@ -542,10 +542,6 @@ async function onHeroAvatarChange(e) {
                     {{ display(profile.address) }}
                   </dd>
                 </div>
-              </dl>
-            </div>
-            <div class="space-y-4 lg:px-6">
-              <dl class="space-y-4">
                 <div>
                   <dt class="text-xs font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400">
                     City
@@ -554,6 +550,10 @@ async function onHeroAvatarChange(e) {
                     {{ display(profile.city) }}
                   </dd>
                 </div>
+              </dl>
+            </div>
+            <div class="space-y-4 lg:px-6">
+              <dl class="space-y-4">
                 <div>
                   <dt class="text-xs font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400">
                     State

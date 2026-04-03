@@ -32,6 +32,8 @@ class ClientAccountUpdateRequest extends FormRequest
         return [
             'status' => ['sometimes', 'string', Rule::in(ClientAccount::STATUSES)],
             'company_name' => ['sometimes', 'string', 'max:190'],
+            'brand_name' => ['sometimes', 'nullable', 'string', 'max:190'],
+            'website' => ['sometimes', 'nullable', 'string', 'max:512'],
             'contact_first_name' => ['sometimes', 'nullable', 'string', 'max:100'],
             'contact_last_name' => ['sometimes', 'nullable', 'string', 'max:100'],
             'email' => [
@@ -40,9 +42,15 @@ class ClientAccountUpdateRequest extends FormRequest
                 'max:190',
                 Rule::unique('client_accounts', 'email')->ignore($this->route('client_account')),
             ],
+            'phone' => ['sometimes', 'nullable', 'string', 'max:64'],
             'notify_email' => ['sometimes', 'boolean'],
             'telegram_handle' => ['sometimes', 'nullable', 'string', 'max:190'],
             'whatsapp_e164' => ['sometimes', 'nullable', 'string', 'max:32'],
+            'street' => ['sometimes', 'nullable', 'string', 'max:190'],
+            'city' => ['sometimes', 'nullable', 'string', 'max:120'],
+            'state' => ['sometimes', 'nullable', 'string', 'max:64'],
+            'zip' => ['sometimes', 'nullable', 'string', 'max:32'],
+            'country' => ['sometimes', 'nullable', 'string', 'max:120'],
             'account_manager_id' => ['sometimes', 'nullable', 'integer', $staffManagerRule],
         ];
     }

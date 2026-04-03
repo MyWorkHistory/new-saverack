@@ -36,4 +36,28 @@ class ClientAccountPolicy
     {
         return $this->canManageClients($user) || $user->hasPermission('clients.delete');
     }
+
+    public function viewStores(User $user, ClientAccount $clientAccount): bool
+    {
+        if (! $this->view($user, $clientAccount)) {
+            return false;
+        }
+        if ($this->canManageClients($user)) {
+            return true;
+        }
+
+        return $user->hasPermission('stores.view');
+    }
+
+    public function createStore(User $user, ClientAccount $clientAccount): bool
+    {
+        if (! $this->view($user, $clientAccount)) {
+            return false;
+        }
+        if ($this->canManageClients($user)) {
+            return true;
+        }
+
+        return $user->hasPermission('stores.create');
+    }
 }

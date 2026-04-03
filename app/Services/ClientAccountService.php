@@ -35,7 +35,11 @@ class ClientAccountService
                 $like = '%'.$search.'%';
                 $q->where(function ($nested) use ($like) {
                     $nested->where('company_name', 'like', $like)
+                        ->orWhere('brand_name', 'like', $like)
+                        ->orWhere('website', 'like', $like)
                         ->orWhere('email', 'like', $like)
+                        ->orWhere('phone', 'like', $like)
+                        ->orWhere('city', 'like', $like)
                         ->orWhere('contact_first_name', 'like', $like)
                         ->orWhere('contact_last_name', 'like', $like);
                 });
@@ -112,13 +116,21 @@ class ClientAccountService
             'id' => $account->id,
             'status' => $account->status,
             'company_name' => $account->company_name,
+            'brand_name' => $account->brand_name,
+            'website' => $account->website,
             'contact_first_name' => $account->contact_first_name,
             'contact_last_name' => $account->contact_last_name,
             'contact_full_name' => $account->contactFullName(),
             'email' => $account->email,
+            'phone' => $account->phone,
             'notify_email' => (bool) $account->notify_email,
             'telegram_handle' => $account->telegram_handle,
             'whatsapp_e164' => $account->whatsapp_e164,
+            'street' => $account->street,
+            'city' => $account->city,
+            'state' => $account->state,
+            'zip' => $account->zip,
+            'country' => $account->country,
             'account_manager_id' => $account->account_manager_id,
             'account_manager' => $manager !== null
                 ? ['id' => $manager->id, 'name' => $manager->name, 'email' => $manager->email]

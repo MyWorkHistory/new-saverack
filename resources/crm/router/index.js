@@ -15,6 +15,7 @@ import UserHistoryPage from "../pages/users/UserHistoryPage.vue";
 import WebmasterTasksPage from "../pages/webmaster/WebmasterTasksPage.vue";
 import WebmasterTaskDetailPage from "../pages/webmaster/WebmasterTaskDetailPage.vue";
 import ClientAccountsListPage from "../pages/clients/ClientAccountsListPage.vue";
+import ClientAccountDetailPage from "../pages/clients/ClientAccountDetailPage.vue";
 
 const meta = {
   login: {
@@ -52,6 +53,10 @@ const meta = {
   clientAccounts: {
     title: "Save Rack | Client Accounts",
     description: "Client Accounts Directory.",
+  },
+  clientAccountDetail: {
+    title: "Save Rack | Account",
+    description: "Client account profile.",
   },
 };
 
@@ -147,6 +152,13 @@ const routes = [
     name: "client-accounts",
     component: ClientAccountsListPage,
     meta: meta.clientAccounts,
+  },
+  {
+    path: "/clients/accounts/:id",
+    name: "client-account-detail",
+    component: ClientAccountDetailPage,
+    props: true,
+    meta: meta.clientAccountDetail,
   },
   { path: "/clients", redirect: "/clients/accounts" },
   {

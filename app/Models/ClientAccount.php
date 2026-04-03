@@ -4,6 +4,7 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class ClientAccount extends Model
 {
@@ -25,12 +26,20 @@ class ClientAccount extends Model
     protected $fillable = [
         'status',
         'company_name',
+        'brand_name',
+        'website',
         'contact_first_name',
         'contact_last_name',
         'email',
+        'phone',
         'notify_email',
         'telegram_handle',
         'whatsapp_e164',
+        'street',
+        'city',
+        'state',
+        'zip',
+        'country',
         'account_manager_id',
     ];
 
@@ -41,6 +50,11 @@ class ClientAccount extends Model
     public function accountManager(): BelongsTo
     {
         return $this->belongsTo(User::class, 'account_manager_id');
+    }
+
+    public function stores(): HasMany
+    {
+        return $this->hasMany(ClientStore::class, 'client_account_id');
     }
 
     public function contactFullName(): string

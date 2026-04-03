@@ -3,10 +3,12 @@
 namespace App\Providers;
 
 use App\Models\ClientAccount;
+use App\Models\ClientStore;
 use App\Models\Task;
 use App\Models\Ticket;
 use App\Models\User;
 use App\Policies\ClientAccountPolicy;
+use App\Policies\ClientStorePolicy;
 use App\Policies\TaskPolicy;
 use App\Policies\TicketPolicy;
 use App\Policies\UserPolicy;
@@ -22,6 +24,7 @@ class AuthServiceProvider extends ServiceProvider
     protected $policies = [
         User::class => UserPolicy::class,
         ClientAccount::class => ClientAccountPolicy::class,
+        ClientStore::class => ClientStorePolicy::class,
         Ticket::class => TicketPolicy::class,
         Task::class => TaskPolicy::class,
     ];

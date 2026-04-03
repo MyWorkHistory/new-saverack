@@ -2,6 +2,7 @@
 
 use App\Http\Controllers\Api\AuthController;
 use App\Http\Controllers\Api\ClientAccountController;
+use App\Http\Controllers\Api\ClientStoreController;
 use App\Http\Controllers\Api\DashboardController;
 use App\Http\Controllers\Api\RoleController;
 use App\Http\Controllers\Api\TicketController;
@@ -48,6 +49,14 @@ Route::middleware('auth:sanctum')->group(function () {
         ->name('client-accounts.meta');
     Route::patch('client-accounts/bulk', [ClientAccountController::class, 'bulkUpdate'])
         ->name('client-accounts.bulk-update');
+    Route::get('client-accounts/{client_account}/stores', [ClientStoreController::class, 'index'])
+        ->name('client-accounts.stores.index');
+    Route::post('client-accounts/{client_account}/stores', [ClientStoreController::class, 'store'])
+        ->name('client-accounts.stores.store');
+    Route::patch('client-stores/{client_store}', [ClientStoreController::class, 'update'])
+        ->name('client-stores.update');
+    Route::delete('client-stores/{client_store}', [ClientStoreController::class, 'destroy'])
+        ->name('client-stores.destroy');
     Route::apiResource('client-accounts', ClientAccountController::class);
     Route::match(['put', 'patch'], 'users/{user}/permissions', [UserController::class, 'updatePermissions'])
         ->name('users.permissions.update');

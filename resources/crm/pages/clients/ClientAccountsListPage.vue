@@ -8,6 +8,7 @@ import {
   ref,
   watch,
 } from "vue";
+import { RouterLink } from "vue-router";
 import api from "../../services/api";
 import ConfirmModal from "../../components/common/ConfirmModal.vue";
 import ClientAccountCreateDrawer from "../../components/clients/ClientAccountCreateDrawer.vue";
@@ -412,6 +413,13 @@ function onDocClick(e) {
   }
 }
 
+watch(addDrawerOpen, (o) => {
+  if (o) fetchMeta();
+});
+watch(editModalOpen, (o) => {
+  if (o) fetchMeta();
+});
+
 onMounted(async () => {
   document.addEventListener("click", onDocClick);
   setCrmPageMeta({
@@ -690,7 +698,10 @@ onUnmounted(() => {
                     </span>
                   </td>
                   <td class="px-5 py-4 align-middle sm:px-6">
-                    <div class="flex items-center gap-3">
+                    <RouterLink
+                      :to="`/clients/accounts/${row.id}`"
+                      class="flex items-center gap-3 rounded-lg outline-none ring-[#2563eb] transition hover:bg-gray-50/80 focus-visible:ring-2 dark:hover:bg-white/[0.04]"
+                    >
                       <span
                         class="flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-xs font-semibold"
                         :class="avatarClassForRow(row.email)"
@@ -711,7 +722,7 @@ onUnmounted(() => {
                           }}
                         </p>
                       </div>
-                    </div>
+                    </RouterLink>
                   </td>
                   <td
                     class="max-w-[14rem] truncate px-5 py-4 align-middle text-gray-700 sm:px-6 dark:text-gray-300"

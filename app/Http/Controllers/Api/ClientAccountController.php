@@ -13,8 +13,12 @@ use Illuminate\Http\Request;
 
 class ClientAccountController extends Controller
 {
-    public function __construct(private ClientAccountService $clientAccounts)
+    /** @var ClientAccountService */
+    protected $clientAccounts;
+
+    public function __construct(ClientAccountService $clientAccounts)
     {
+        $this->clientAccounts = $clientAccounts;
         $this->authorizeResource(ClientAccount::class, 'client_account');
     }
 

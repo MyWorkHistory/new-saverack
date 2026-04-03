@@ -16,23 +16,39 @@ const errorMsg = ref("");
 
 const form = reactive({
   company_name: "",
+  brand_name: "",
+  website: "",
   contact_first_name: "",
   contact_last_name: "",
   email: "",
+  phone: "",
   notify_email: true,
   telegram_handle: "",
   whatsapp_e164: "",
+  street: "",
+  city: "",
+  state: "",
+  zip: "",
+  country: "",
   account_manager_id: "",
 });
 
 function reset() {
   form.company_name = "";
+  form.brand_name = "";
+  form.website = "";
   form.contact_first_name = "";
   form.contact_last_name = "";
   form.email = "";
+  form.phone = "";
   form.notify_email = true;
   form.telegram_handle = "";
   form.whatsapp_e164 = "";
+  form.street = "";
+  form.city = "";
+  form.state = "";
+  form.zip = "";
+  form.country = "";
   form.account_manager_id = "";
   errorMsg.value = "";
 }
@@ -58,12 +74,20 @@ async function onSubmit() {
   try {
     const payload = {
       company_name: form.company_name.trim(),
+      brand_name: form.brand_name.trim() || null,
+      website: form.website.trim() || null,
       contact_first_name: form.contact_first_name.trim() || null,
       contact_last_name: form.contact_last_name.trim() || null,
       email: form.email.trim(),
+      phone: form.phone.trim() || null,
       notify_email: !!form.notify_email,
       telegram_handle: form.telegram_handle.trim() || null,
       whatsapp_e164: form.whatsapp_e164.trim() || null,
+      street: form.street.trim() || null,
+      city: form.city.trim() || null,
+      state: form.state.trim() || null,
+      zip: form.zip.trim() || null,
+      country: form.country.trim() || null,
       account_manager_id: form.account_manager_id
         ? Number(form.account_manager_id)
         : null,
@@ -195,6 +219,104 @@ async function onSubmit() {
                       required
                       class="h-10 w-full rounded-lg border border-gray-300 bg-white px-3 text-sm dark:border-gray-600 dark:bg-gray-800 dark:text-white"
                     />
+                  </div>
+                  <div>
+                    <label
+                      class="mb-1 block text-xs font-medium text-gray-600 dark:text-gray-400"
+                      >Phone</label
+                    >
+                    <input
+                      v-model="form.phone"
+                      type="text"
+                      class="h-10 w-full rounded-lg border border-gray-300 bg-white px-3 text-sm dark:border-gray-600 dark:bg-gray-800 dark:text-white"
+                    />
+                  </div>
+                  <div class="grid gap-4 sm:grid-cols-2">
+                    <div>
+                      <label
+                        class="mb-1 block text-xs font-medium text-gray-600 dark:text-gray-400"
+                        >Brand name</label
+                      >
+                      <input
+                        v-model="form.brand_name"
+                        type="text"
+                        class="h-10 w-full rounded-lg border border-gray-300 bg-white px-3 text-sm dark:border-gray-600 dark:bg-gray-800 dark:text-white"
+                      />
+                    </div>
+                    <div>
+                      <label
+                        class="mb-1 block text-xs font-medium text-gray-600 dark:text-gray-400"
+                        >Website</label
+                      >
+                      <input
+                        v-model="form.website"
+                        type="url"
+                        placeholder="https://"
+                        class="h-10 w-full rounded-lg border border-gray-300 bg-white px-3 text-sm dark:border-gray-600 dark:bg-gray-800 dark:text-white"
+                      />
+                    </div>
+                  </div>
+                  <p class="text-xs font-medium text-gray-600 dark:text-gray-400">
+                    Address
+                  </p>
+                  <div>
+                    <label
+                      class="mb-1 block text-xs font-medium text-gray-600 dark:text-gray-400"
+                      >Street</label
+                    >
+                    <input
+                      v-model="form.street"
+                      type="text"
+                      class="h-10 w-full rounded-lg border border-gray-300 bg-white px-3 text-sm dark:border-gray-600 dark:bg-gray-800 dark:text-white"
+                    />
+                  </div>
+                  <div class="grid gap-4 sm:grid-cols-2">
+                    <div>
+                      <label
+                        class="mb-1 block text-xs font-medium text-gray-600 dark:text-gray-400"
+                        >City</label
+                      >
+                      <input
+                        v-model="form.city"
+                        type="text"
+                        class="h-10 w-full rounded-lg border border-gray-300 bg-white px-3 text-sm dark:border-gray-600 dark:bg-gray-800 dark:text-white"
+                      />
+                    </div>
+                    <div>
+                      <label
+                        class="mb-1 block text-xs font-medium text-gray-600 dark:text-gray-400"
+                        >State</label
+                      >
+                      <input
+                        v-model="form.state"
+                        type="text"
+                        class="h-10 w-full rounded-lg border border-gray-300 bg-white px-3 text-sm dark:border-gray-600 dark:bg-gray-800 dark:text-white"
+                      />
+                    </div>
+                  </div>
+                  <div class="grid gap-4 sm:grid-cols-2">
+                    <div>
+                      <label
+                        class="mb-1 block text-xs font-medium text-gray-600 dark:text-gray-400"
+                        >ZIP</label
+                      >
+                      <input
+                        v-model="form.zip"
+                        type="text"
+                        class="h-10 w-full rounded-lg border border-gray-300 bg-white px-3 text-sm dark:border-gray-600 dark:bg-gray-800 dark:text-white"
+                      />
+                    </div>
+                    <div>
+                      <label
+                        class="mb-1 block text-xs font-medium text-gray-600 dark:text-gray-400"
+                        >Country</label
+                      >
+                      <input
+                        v-model="form.country"
+                        type="text"
+                        class="h-10 w-full rounded-lg border border-gray-300 bg-white px-3 text-sm dark:border-gray-600 dark:bg-gray-800 dark:text-white"
+                      />
+                    </div>
                   </div>
                   <div>
                     <label

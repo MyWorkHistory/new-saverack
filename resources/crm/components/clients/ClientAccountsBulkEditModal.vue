@@ -57,15 +57,40 @@ function onBackdrop() {
         />
         <Transition name="modal-panel" appear>
           <div
-            class="relative z-10 max-h-[min(90dvh,640px)] w-full max-w-lg overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-2xl dark:border-gray-700 dark:bg-gray-900"
+            class="relative z-10 max-h-[min(90dvh,640px)] w-full max-w-sm overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-2xl dark:border-gray-700 dark:bg-gray-900"
           >
-            <header class="border-b border-gray-100 px-5 py-4 dark:border-gray-800">
-              <h2 class="text-lg font-semibold text-gray-900 dark:text-white">
-                Bulk Edit
-              </h2>
-              <p class="mt-0.5 text-sm text-gray-500 dark:text-gray-400">
-                {{ selectedCount }} account(s) selected
-              </p>
+            <header
+              class="flex items-start justify-between gap-3 border-b border-gray-100 px-5 py-4 dark:border-gray-800"
+            >
+              <div class="min-w-0">
+                <h2 class="text-lg font-semibold text-gray-900 dark:text-white">
+                  Bulk Edit
+                </h2>
+                <p class="mt-0.5 text-sm text-gray-500 dark:text-gray-400">
+                  {{ selectedCount }} account(s) selected
+                </p>
+              </div>
+              <button
+                type="button"
+                class="shrink-0 rounded-lg p-2 text-gray-500 transition hover:bg-gray-100 hover:text-gray-800 disabled:opacity-50 dark:hover:bg-white/10 dark:hover:text-white"
+                aria-label="Close"
+                :disabled="busy"
+                @click="close"
+              >
+                <svg
+                  class="h-5 w-5"
+                  fill="none"
+                  viewBox="0 0 24 24"
+                  stroke="currentColor"
+                  stroke-width="2"
+                >
+                  <path
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                    d="M6 18L18 6M6 6l12 12"
+                  />
+                </svg>
+              </button>
             </header>
             <div class="space-y-4 px-5 py-4">
               <label class="flex cursor-pointer items-center gap-2">

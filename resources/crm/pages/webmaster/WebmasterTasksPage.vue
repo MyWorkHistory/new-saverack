@@ -13,6 +13,7 @@ import draggable from "vuedraggable";
 import api from "../../services/api";
 import ConfirmModal from "../../components/common/ConfirmModal.vue";
 import WebmasterTaskDrawer from "../../components/webmaster/WebmasterTaskDrawer.vue";
+import WebmasterTaskModal from "../../components/webmaster/WebmasterTaskModal.vue";
 import CrmLoadingSpinner from "../../components/common/CrmLoadingSpinner.vue";
 import { useToast } from "../../composables/useToast";
 import { errorMessage } from "../../utils/apiError";
@@ -37,6 +38,7 @@ const boardColumns = ref([]);
 const manageOpenId = ref(null);
 const filterOpen = ref(false);
 const drawerOpen = ref(false);
+const taskEditModalOpen = ref(false);
 const editingTask = ref(null);
 const deleteTarget = ref(null);
 const deleteBusy = ref(false);
@@ -242,14 +244,13 @@ const applyFilterPanel = () => {
 };
 
 function openAdd() {
-  editingTask.value = null;
   drawerOpen.value = true;
 }
 
 function openEdit(row) {
   editingTask.value = { ...row };
   manageOpenId.value = null;
-  drawerOpen.value = true;
+  taskEditModalOpen.value = true;
 }
 
 function goTaskDetail(task) {
@@ -399,6 +400,13 @@ onUnmounted(() => {
   <div class="space-y-4">
     <WebmasterTaskDrawer
       v-model:open="drawerOpen"
+      :users="users"
+      :statuses="meta.statuses"
+      :priorities="meta.priorities"
+      @saved="fetchTasks"
+    />
+    <WebmasterTaskModal
+      v-model:open="taskEditModalOpen"
       :task="editingTask"
       :users="users"
       :statuses="meta.statuses"

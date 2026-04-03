@@ -13,7 +13,7 @@ import PageHeader from "../../components/common/PageHeader.vue";
 import CrmOutlinePillLink from "../../components/common/CrmOutlinePillLink.vue";
 import CrmLoadingSpinner from "../../components/common/CrmLoadingSpinner.vue";
 import CrmOutlineEditButton from "../../components/common/CrmOutlineEditButton.vue";
-import WebmasterTaskDrawer from "../../components/webmaster/WebmasterTaskDrawer.vue";
+import WebmasterTaskModal from "../../components/webmaster/WebmasterTaskModal.vue";
 import { crmIsAdmin } from "../../utils/crmUser";
 import { errorMessage } from "../../utils/apiError";
 import { formatUsdPriceOrDash } from "../../utils/formatPrice";
@@ -504,7 +504,7 @@ onUnmounted(() => {
       </aside>
     </div>
 
-    <WebmasterTaskDrawer
+    <WebmasterTaskModal
       v-if="task"
       v-model:open="taskEditorOpen"
       :task="task"

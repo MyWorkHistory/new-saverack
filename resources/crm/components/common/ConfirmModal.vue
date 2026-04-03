@@ -1,7 +1,7 @@
 <script setup>
 import { CRM_BTN_SECONDARY } from "../../constants/dialogFooter.js";
 
-defineProps({
+const props = defineProps({
   open: { type: Boolean, default: false },
   title: { type: String, default: "Confirm" },
   message: { type: String, default: "" },
@@ -11,7 +11,11 @@ defineProps({
   busy: { type: Boolean, default: false },
 });
 
-defineEmits(["close", "confirm"]);
+const emit = defineEmits(["close", "confirm"]);
+
+function onBackdrop() {
+  if (!props.busy) emit("close");
+}
 </script>
 
 <template>
@@ -24,21 +28,46 @@ defineEmits(["close", "confirm"]);
         aria-modal="true"
       >
         <div
-          class="absolute inset-0 bg-gray-900/50 backdrop-blur-[2px]"
+          class="absolute inset-0 bg-gray-900/50 backdrop-blur-[2px] dark:bg-black/55"
           aria-hidden="true"
-          @click="$emit('close')"
+          @click="onBackdrop"
         />
         <div
-          class="relative z-[100001] w-full max-w-lg rounded-2xl border border-gray-200 bg-white p-6 shadow-2xl dark:border-gray-700 dark:bg-gray-900"
+          class="relative z-[100001] w-full max-w-md overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-2xl dark:border-gray-700 dark:bg-gray-900"
         >
-          <h2 class="text-lg font-semibold text-gray-900 dark:text-white">
-            {{ title }}
-          </h2>
-          <p class="mt-3 text-sm text-gray-600 dark:text-gray-300">
+          <div
+            class="flex items-start justify-between gap-3 border-b border-gray-100 px-5 py-4 dark:border-gray-800"
+          >
+            <h2 class="text-lg font-semibold text-gray-900 dark:text-white">
+              {{ title }}
+            </h2>
+            <button
+              type="button"
+              class="shrink-0 rounded-lg p-2 text-gray-500 transition hover:bg-gray-100 hover:text-gray-800 disabled:opacity-50 dark:hover:bg-white/10 dark:hover:text-white"
+              aria-label="Close"
+              :disabled="busy"
+              @click="$emit('close')"
+            >
+              <svg
+                class="h-5 w-5"
+                fill="none"
+                viewBox="0 0 24 24"
+                stroke="currentColor"
+                stroke-width="2"
+              >
+                <path
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                  d="M6 18L18 6M6 6l12 12"
+                />
+              </svg>
+            </button>
+          </div>
+          <p class="px-5 py-4 text-sm text-gray-600 dark:text-gray-300">
             {{ message }}
           </p>
           <div
-            class="mt-6 flex flex-wrap items-center justify-end gap-2 border-t border-gray-100 pt-4 dark:border-gray-800 sm:gap-3"
+            class="flex flex-wrap items-center justify-end gap-2 border-t border-gray-100 px-5 py-4 dark:border-gray-800 sm:gap-3"
           >
             <button
               type="button"

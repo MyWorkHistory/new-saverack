@@ -25,8 +25,12 @@ class ClientStoreController extends Controller
             'name' => $store->name,
             'website' => $store->website,
             'marketplace' => $store->marketplace,
-            'created_at' => $store->created_at?->toIso8601String(),
-            'updated_at' => $store->updated_at?->toIso8601String(),
+            'created_at' => $store->created_at !== null
+                ? $store->created_at->toIso8601String()
+                : null,
+            'updated_at' => $store->updated_at !== null
+                ? $store->updated_at->toIso8601String()
+                : null,
         ];
     }
 
@@ -37,7 +41,9 @@ class ClientStoreController extends Controller
             ->get();
 
         return response()->json(
-            $rows->map(fn (ClientStore $s) => self::storeToApiArray($s))->values()
+            $rows->map(function (ClientStore $s) {
+                return self::storeToApiArray($s);
+            })->values()
         );
     }
 

@@ -62,7 +62,9 @@ class ClientAccount extends Model
         $parts = array_filter([
             $this->contact_first_name,
             $this->contact_last_name,
-        ], static fn ($s) => $s !== null && $s !== '');
+        ], static function ($s) {
+            return $s !== null && $s !== '';
+        });
 
         return trim(implode(' ', $parts));
     }

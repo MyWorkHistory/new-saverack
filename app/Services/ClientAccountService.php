@@ -44,7 +44,9 @@ class ClientAccountService
                         ->orWhere('contact_last_name', 'like', $like);
                 });
             })
-            ->when($managerId !== null && $managerId > 0, fn ($q) => $q->where('account_manager_id', $managerId))
+            ->when($managerId !== null && $managerId > 0, function ($q) use ($managerId) {
+                $q->where('account_manager_id', $managerId);
+            })
             ->orderBy($sortBy, $sortDir);
 
         return $query->paginate($perPage);
@@ -97,11 +99,13 @@ class ClientAccountService
             ->orderBy('users.name')
             ->orderBy('users.id')
             ->get()
-            ->map(fn (User $u) => [
-                'id' => (int) $u->id,
-                'name' => $u->name,
-                'email' => $u->email,
-            ]);
+            ->map(function (User $u) {
+                return [
+                    'id' => (int) $u->id,
+                    'name' => $u->name,
+                    'email' => $u->email,
+                ];
+            });
     }
 
     /**
@@ -135,8 +139,12 @@ class ClientAccountService
             'account_manager' => $manager !== null
                 ? ['id' => $manager->id, 'name' => $manager->name, 'email' => $manager->email]
                 : null,
-            'created_at' => $account->created_at?->toIso8601String(),
-            'updated_at' => $account->updated_at?->toIso8601String(),
+            'created_at' => $account->created_at !== null
+                ? $account->created_at->toIso8601String()
+                : null,
+            'updated_at' => $account->updated_at !== null
+                ? $account->updated_at->toIso8601String()
+                : null,
         ];
     }
 }

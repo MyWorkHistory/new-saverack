@@ -9,25 +9,33 @@ use Illuminate\Console\Command;
 use Illuminate\Support\Facades\DB;
 
 /**
- * Imports customers + crm_stores from a legacy MySQL CRM into client_accounts / client_stores.
+ * Imports account + store rows from a legacy MySQL database into this app's client_accounts / client_stores.
  *
- * Prerequisite: create an empty MySQL database and load the dumps:
- *   mysql -u USER -p LEGACY_DB < database/customers.sql
- *   mysql -u USER -p LEGACY_DB < database/crm_stores.sql
+ * Supports:
+ * - Old CRM shape: tables like customers + crm_stores (c_email, customer FK, …)
+ * - Laravel shape: tables client_accounts + client_stores (email, client_account_id FK, …)
  *
- * Then set LEGACY_DB_DATABASE (and credentials if needed) in .env and run migrations, then:
- *   php artisan crm:import-legacy-clients
+ * Set LEGACY_DB_* in .env, then: php artisan crm:import-legacy-clients
  */
 class ImportLegacyCrmClientsCommand extends Command
 {
     protected $signature = 'crm:import-legacy-clients
                             {--connection=legacy_crm : Laravel DB connection name for legacy MySQL}
-                            {--customers-table=customers : Legacy customers table name}
-                            {--stores-table=crm_stores : Legacy stores table name}
-                            {--skip-deleted : Omit legacy rows where is_deleted = 2}
+                            {--customers-table=client_accounts : Legacy accounts table name (old CRM: customers)}
+                            {--stores-table=client_stores : Legacy stores table name (old CRM: crm_stores)}
+                            {--skip-deleted : Omit legacy rows where is_deleted = 2 (when that column exists)}
                             {--dry-run : Show counts and sample mapping without writing}';
 
     protected $description = 'Import legacy CRM customers + stores from MySQL dumps into client_accounts and client_stores';
+
+    /** @var bool */
+    protected $legacyAccountsOldCrmColumns = false;
+
+    /** @var string */
+    protected $legacyStoreAccountFkColumn = 'customer';
+
+    /** @var bool */
+    protected $legacyStoresOldCrmColumns = false;
 
     public function handle(): int
     {
@@ -61,19 +69,36 @@ class ImportLegacyCrmClientsCommand extends Command
         $legacy = DB::connection($connName);
 
         if (! $legacy->getSchemaBuilder()->hasTable($customersTable)) {
-            $this->error("Legacy table [{$customersTable}] not found. Import database/customers.sql first.");
+            $this->error("Legacy table [{$customersTable}] not found. Check LEGACY_DB_DATABASE and table name (--customers-table).");
 
             return self::FAILURE;
         }
 
         if (! $legacy->getSchemaBuilder()->hasTable($storesTable)) {
-            $this->error("Legacy table [{$storesTable}] not found. Import database/crm_stores.sql first.");
+            $this->error("Legacy table [{$storesTable}] not found. Check LEGACY_DB_DATABASE and table name (--stores-table).");
 
             return self::FAILURE;
         }
 
+        $schema = $legacy->getSchemaBuilder();
+        $this->legacyAccountsOldCrmColumns = $schema->hasColumn($customersTable, 'c_email');
+        if ($schema->hasColumn($storesTable, 'customer')) {
+            $this->legacyStoreAccountFkColumn = 'customer';
+        } elseif ($schema->hasColumn($storesTable, 'client_account_id')) {
+            $this->legacyStoreAccountFkColumn = 'client_account_id';
+        } else {
+            $this->error("Legacy stores table [{$storesTable}] needs a `customer` or `client_account_id` column linking to accounts.");
+
+            return self::FAILURE;
+        }
+
+        $this->legacyStoresOldCrmColumns = $schema->hasColumn($storesTable, 'store_name');
+
+        $accountsHaveIsDeleted = $schema->hasColumn($customersTable, 'is_deleted');
+        $storesHaveIsDeleted = $schema->hasColumn($storesTable, 'is_deleted');
+
         $customerQuery = $legacy->table($customersTable);
-        if ($skipDeleted) {
+        if ($skipDeleted && $accountsHaveIsDeleted) {
             $customerQuery->where(function ($q) {
                 $q->whereNull('is_deleted')->orWhere('is_deleted', '!=', 2);
             });
@@ -83,7 +108,7 @@ class ImportLegacyCrmClientsCommand extends Command
         $this->info("Legacy customers to process: {$customerTotal}".($skipDeleted ? ' (excluding is_deleted=2)' : ' (including deleted as inactive)'));
 
         $storeQuery = $legacy->table($storesTable);
-        if ($skipDeleted) {
+        if ($skipDeleted && $storesHaveIsDeleted) {
             $storeQuery->where(function ($q) {
                 $q->whereNull('is_deleted')->orWhere('is_deleted', '!=', 2);
             });
@@ -115,8 +140,10 @@ class ImportLegacyCrmClientsCommand extends Command
             }, 'id');
 
             $storeQuery->orderBy('id')->chunkById(200, function ($rows) use (&$importedStores, &$skippedStoresNoAccount) {
+                $fk = $this->legacyStoreAccountFkColumn;
                 foreach ($rows as $row) {
-                    $legacyCustomerId = $row->customer !== null ? (int) $row->customer : null;
+                    $rawFk = $row->{$fk} ?? null;
+                    $legacyCustomerId = $rawFk !== null ? (int) $rawFk : null;
                     if ($legacyCustomerId === null) {
                         $skippedStoresNoAccount++;
 
@@ -163,6 +190,20 @@ class ImportLegacyCrmClientsCommand extends Command
      * @param  object  $row  stdClass from legacy query
      */
     private function mapCustomerRow(object $row): array
+    {
+        if ($this->legacyAccountsOldCrmColumns) {
+            return $this->mapCustomerRowOldCrm($row);
+        }
+
+        return $this->mapCustomerRowLaravelAccounts($row);
+    }
+
+    /**
+     * Old phpMyAdmin `customers` table (c_email, c_name, b_*, website_url, numeric status, …).
+     *
+     * @param  object  $row
+     */
+    private function mapCustomerRowOldCrm(object $row): array
     {
         $isDeleted = isset($row->is_deleted) ? (int) $row->is_deleted : 1;
         $legacyStatus = isset($row->status) ? (int) $row->status : 1;
@@ -232,9 +273,93 @@ class ImportLegacyCrmClientsCommand extends Command
     }
 
     /**
+     * Laravel-style `client_accounts` (email, string status, profile columns).
+     *
+     * @param  object  $row
+     */
+    private function mapCustomerRowLaravelAccounts(object $row): array
+    {
+        $status = (string) ($row->status ?? ClientAccount::STATUS_PENDING);
+        if (! in_array($status, ClientAccount::STATUSES, true)) {
+            $status = ClientAccount::STATUS_PENDING;
+        }
+
+        if (isset($row->is_deleted) && (int) $row->is_deleted === 2) {
+            $status = ClientAccount::STATUS_INACTIVE;
+        }
+
+        $email = $this->truncate($this->normEmail($row->email ?? ''), 190);
+        if ($email === '') {
+            $email = 'legacy-customer-'.(int) $row->id.'@import.invalid';
+        }
+
+        $website = $this->nonEmptyString($row->website ?? null);
+        $website = $website !== null ? $this->truncate($website, 512) : null;
+
+        $telegram = $this->nonEmptyString($row->telegram_handle ?? null);
+
+        $created = $this->parseTimestamp($row->created_at ?? null);
+        $updated = $this->parseTimestamp($row->updated_at ?? null);
+
+        $managerId = isset($row->account_manager_id) ? $row->account_manager_id : null;
+        $managerId = $managerId !== null && $managerId !== '' ? (int) $managerId : null;
+        if ($managerId === 0) {
+            $managerId = null;
+        }
+
+        return array_filter([
+            'status' => $status,
+            'company_name' => $this->truncate((string) ($row->company_name ?? 'Legacy import'), 190),
+            'brand_name' => $this->nullableTruncate($row->brand_name ?? null, 190),
+            'website' => $website,
+            'contact_first_name' => $this->nullableTruncate($row->contact_first_name ?? null, 100),
+            'contact_last_name' => $this->nullableTruncate($row->contact_last_name ?? null, 100),
+            'email' => $email,
+            'phone' => $this->nullableTruncate($row->phone ?? null, 64),
+            'notify_email' => isset($row->notify_email) ? (bool) $row->notify_email : true,
+            'telegram_handle' => $telegram !== null ? $this->truncate(ltrim($telegram, '@'), 190) : null,
+            'whatsapp_e164' => $this->nullableTruncate($row->whatsapp_e164 ?? null, 32),
+            'street' => $this->nullableTruncate($row->street ?? null, 190),
+            'city' => $this->nullableTruncate($row->city ?? null, 120),
+            'state' => $this->nullableTruncate($row->state ?? null, 64),
+            'zip' => $this->nullableTruncate($row->zip ?? null, 32),
+            'country' => $this->nullableTruncate($row->country ?? null, 120),
+            'account_manager_id' => $managerId,
+            'created_at' => $created,
+            'updated_at' => $updated,
+        ], function ($v) {
+            return $v !== null;
+        });
+    }
+
+    /**
+     * @param  mixed  $v
+     */
+    private function nullableTruncate($v, int $max): ?string
+    {
+        $s = $this->nonEmptyString($v);
+
+        return $s !== null ? $this->truncate($s, $max) : null;
+    }
+
+    /**
      * @param  object  $row
      */
     private function mapStoreRow(object $row, int $clientAccountId): array
+    {
+        if ($this->legacyStoresOldCrmColumns) {
+            return $this->mapStoreRowOldCrm($row, $clientAccountId);
+        }
+
+        return $this->mapStoreRowLaravelStores($row, $clientAccountId);
+    }
+
+    /**
+     * Old `crm_stores` table (store_name, ship_status, store_url, …).
+     *
+     * @param  object  $row
+     */
+    private function mapStoreRowOldCrm(object $row, int $clientAccountId): array
     {
         $isDeleted = isset($row->is_deleted) ? (int) $row->is_deleted : 1;
         $shipStatus = isset($row->ship_status) ? (int) $row->ship_status : 2;
@@ -248,7 +373,6 @@ class ImportLegacyCrmClientsCommand extends Command
 
         $num = isset($row->store_number) ? trim((string) $row->store_number) : '';
         $baseName = trim((string) ($row->store_name ?? 'Store'));
-        $name = $baseName;
         if ($num !== '' && $num !== '0') {
             $suffix = ' (#'.str_replace(["\r", "\n"], '', $num).')';
             $name = $this->truncate($baseName.$suffix, 190);
@@ -262,6 +386,43 @@ class ImportLegacyCrmClientsCommand extends Command
         $market = $this->nonEmptyString($row->sell_platform ?? null)
             ?? $this->nonEmptyString($row->market_place ?? null);
         $market = $market !== null ? $this->truncate($market, 190) : null;
+
+        $created = $this->parseTimestamp($row->created_at ?? null);
+        $updated = $this->parseTimestamp($row->updated_at ?? null);
+
+        return array_filter([
+            'client_account_id' => $clientAccountId,
+            'status' => $status,
+            'name' => $name,
+            'website' => $website,
+            'marketplace' => $market,
+            'created_at' => $created,
+            'updated_at' => $updated,
+        ], function ($v) {
+            return $v !== null;
+        });
+    }
+
+    /**
+     * Laravel-style `client_stores` (name, string status, marketplace).
+     *
+     * @param  object  $row
+     */
+    private function mapStoreRowLaravelStores(object $row, int $clientAccountId): array
+    {
+        $status = (string) ($row->status ?? ClientStore::STATUS_PENDING);
+        if (! in_array($status, ClientStore::STATUSES, true)) {
+            $status = ClientStore::STATUS_PENDING;
+        }
+
+        if (isset($row->is_deleted) && (int) $row->is_deleted === 2) {
+            $status = ClientStore::STATUS_INACTIVE;
+        }
+
+        $name = $this->truncate(trim((string) ($row->name ?? 'Store')), 190);
+
+        $website = $this->nullableTruncate($row->website ?? null, 512);
+        $market = $this->nullableTruncate($row->marketplace ?? null, 190);
 
         $created = $this->parseTimestamp($row->created_at ?? null);
         $updated = $this->parseTimestamp($row->updated_at ?? null);

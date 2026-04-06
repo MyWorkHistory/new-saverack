@@ -51,6 +51,8 @@ Route::middleware('auth:sanctum')->group(function () {
         ->name('client-accounts.meta');
     Route::patch('client-accounts/bulk', [ClientAccountController::class, 'bulkUpdate'])
         ->name('client-accounts.bulk-update');
+    Route::patch('client-stores/bulk', [ClientStoreController::class, 'bulkUpdate'])
+        ->name('client-stores.bulk-update');
     Route::get('client-accounts/{client_account}/stores', [ClientStoreController::class, 'index'])
         ->name('client-accounts.stores.index');
     Route::post('client-accounts/{client_account}/stores', [ClientStoreController::class, 'store'])

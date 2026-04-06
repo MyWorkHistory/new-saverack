@@ -1,7 +1,12 @@
 <script setup>
-import { onUnmounted, reactive, ref, watch } from "vue";
+import { computed, onUnmounted, reactive, ref, watch } from "vue";
 import api from "../../services/api";
 import { useToast } from "../../composables/useToast";
+import CrmSearchableSelect from "../common/CrmSearchableSelect.vue";
+import {
+  marketplaceOptionsForValue,
+  normalizeMarketplaceValue,
+} from "../../constants/storeMarketplaces.js";
 const props = defineProps({
   open: { type: Boolean, default: false },
   /** @type {{ id: number, name?: string, website?: string, marketplace?: string } | null} */
@@ -19,6 +24,10 @@ const form = reactive({
   website: "",
   marketplace: "",
 });
+
+const marketplaceOptions = computed(() =>
+  marketplaceOptionsForValue(form.marketplace),
+);
 
 function close() {
   emit("update:open", false);
@@ -57,7 +66,7 @@ watch(
     errorMsg.value = "";
     form.name = props.store.name || "";
     form.website = props.store.website || "";
-    form.marketplace = props.store.marketplace || "";
+    form.marketplace = normalizeMarketplaceValue(props.store.marketplace || "");
   },
 );
 
@@ -169,14 +178,16 @@ async function onSubmit() {
                   />
                 </div>
                 <div>
-                  <label class="form-label small mb-1 text-secondary" for="cse-mp"
-                    >Marketplace</label
-                  >
-                  <input
-                    id="cse-mp"
+                  <CrmSearchableSelect
                     v-model="form.marketplace"
-                    type="text"
-                    class="form-control"
+                    :options="marketplaceOptions"
+                    label="Marketplace"
+                    placeholder="Select marketplace"
+                    search-placeholder="Search marketplaces…"
+                    :allow-empty="true"
+                    empty-label="— None —"
+                    button-id="cse-mp"
+                    listbox-id="cse-mp-list"
                   />
                 </div>
               </form>

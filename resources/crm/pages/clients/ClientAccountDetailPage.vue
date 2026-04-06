@@ -1,5 +1,5 @@
 <script setup>
-import { computed, inject, onMounted, ref, watch } from "vue";
+import { computed, inject, onMounted, reactive, ref, watch } from "vue";
 import { RouterLink, useRouter } from "vue-router";
 import api from "../../services/api";
 import CrmLoadingSpinner from "../../components/common/CrmLoadingSpinner.vue";
@@ -8,6 +8,8 @@ import ClientAccountChannelIcons from "../../components/clients/ClientAccountCha
 import ClientAccountEditModal from "../../components/clients/ClientAccountEditModal.vue";
 import ClientStoreCreateDrawer from "../../components/clients/ClientStoreCreateDrawer.vue";
 import ClientStoreEditModal from "../../components/clients/ClientStoreEditModal.vue";
+import ClientStoresBulkEditModal from "../../components/clients/ClientStoresBulkEditModal.vue";
+import { DEFAULT_PER_PAGE, PER_PAGE_OPTIONS } from "../../constants/pagination";
 import { crmIsAdmin } from "../../utils/crmUser";
 import { formatDateUs, formatDateTimeUs } from "../../utils/formatUserDates";
 import { setCrmPageMeta } from "../../composables/useCrmPageMeta.js";
@@ -54,6 +56,14 @@ const storeDeleteBusy = ref(false);
 
 const storeSearch = ref("");
 const storeStatusFilter = ref("all");
+
+const storeListQuery = reactive({
+  page: 1,
+  per_page: DEFAULT_PER_PAGE,
+});
+const selectedStoreIds = ref([]);
+const storeBulkEditOpen = ref(false);
+const storeBulkEditBusy = ref(false);
 
 const activeTab = ref("overview");
 
@@ -164,9 +174,18 @@ const channelsCount = computed(() => {
   return n;
 });
 
-const storeTableColspan = computed(() =>
-  canUpdateStore.value || canDeleteStore.value ? 5 : 4,
-);
+const showStoreCheckboxCol = computed(() => canUpdateStore.value);
+
+const storeTableColspan = computed(() => {
+  let n = 4;
+  if (canUpdateStore.value || canDeleteStore.value) {
+    n += 1;
+  }
+  if (showStoreCheckboxCol.value) {
+    n += 1;
+  }
+  return n;
+});
 
 const filteredStores = computed(() => {
   let list = stores.value;
@@ -181,6 +200,149 @@ const filteredStores = computed(() => {
     return hay.includes(q);
   });
 });
+
+const storeListTotal = computed(() => filteredStores.value.length);
+
+const storeListLastPage = computed(() => {
+  const t = storeListTotal.value;
+  const pp = storeListQuery.per_page;
+  if (t === 0) return 1;
+  return Math.max(1, Math.ceil(t / pp));
+});
+
+const paginatedStores = computed(() => {
+  const list = filteredStores.value;
+  const pp = storeListQuery.per_page;
+  const p = storeListQuery.page;
+  const start = (p - 1) * pp;
+  return list.slice(start, start + pp);
+});
+
+const showingStoresFrom = computed(() => {
+  const t = storeListTotal.value;
+  if (t === 0) return 0;
+  return (storeListQuery.page - 1) * storeListQuery.per_page + 1;
+});
+
+const showingStoresTo = computed(() => {
+  const t = storeListTotal.value;
+  if (t === 0) return 0;
+  return Math.min(storeListQuery.page * storeListQuery.per_page, t);
+});
+
+const storePageItems = computed(() => {
+  const last = storeListLastPage.value;
+  const cur = storeListQuery.page;
+  if (last < 1) return [];
+  if (last <= 7) {
+    return Array.from({ length: last }, (_, i) => ({
+      type: "page",
+      value: i + 1,
+    }));
+  }
+  const nums = new Set([1, last, cur, cur - 1, cur + 1, cur - 2, cur + 2]);
+  const sorted = [...nums].filter((p) => p >= 1 && p <= last).sort((a, b) => a - b);
+  const out = [];
+  let prev = 0;
+  for (const p of sorted) {
+    if (prev && p - prev > 1) out.push({ type: "gap" });
+    out.push({ type: "page", value: p });
+    prev = p;
+  }
+  return out;
+});
+
+const isAllStoresPageSelected = computed(
+  () =>
+    paginatedStores.value.length > 0 &&
+    paginatedStores.value.every((r) => selectedStoreIds.value.includes(r.id)),
+);
+
+watch(storeListLastPage, (last) => {
+  if (storeListQuery.page > last) {
+    storeListQuery.page = last;
+  }
+});
+
+watch([storeSearch, storeStatusFilter], () => {
+  storeListQuery.page = 1;
+  selectedStoreIds.value = [];
+});
+
+function toggleSelectAllStores() {
+  const pageIds = paginatedStores.value.map((r) => r.id);
+  if (!pageIds.length) return;
+  const allSelected = pageIds.every((id) => selectedStoreIds.value.includes(id));
+  if (allSelected) {
+    selectedStoreIds.value = selectedStoreIds.value.filter(
+      (id) => !pageIds.includes(id),
+    );
+  } else {
+    const set = new Set(selectedStoreIds.value);
+    pageIds.forEach((id) => set.add(id));
+    selectedStoreIds.value = [...set];
+  }
+}
+
+function toggleStoreRowSelect(id) {
+  const i = selectedStoreIds.value.indexOf(id);
+  if (i >= 0) {
+    selectedStoreIds.value = selectedStoreIds.value.filter((x) => x !== id);
+  } else {
+    selectedStoreIds.value = [...selectedStoreIds.value, id];
+  }
+}
+
+function storeGoPage(p) {
+  const last = storeListLastPage.value;
+  if (p < 1 || p > last) return;
+  storeListQuery.page = p;
+}
+
+function storeFirstPage() {
+  storeListQuery.page = 1;
+}
+
+function storeLastPageFn() {
+  storeListQuery.page = storeListLastPage.value;
+}
+
+function onStorePerPageChange(e) {
+  storeListQuery.per_page = Number(e.target.value);
+  storeListQuery.page = 1;
+  selectedStoreIds.value = [];
+}
+
+function openStoreBulkEdit() {
+  if (!selectedStoreIds.value.length) return;
+  storeBulkEditOpen.value = true;
+}
+
+async function applyStoreBulkEdit(payload) {
+  storeBulkEditBusy.value = true;
+  try {
+    const body = {
+      client_store_ids: selectedStoreIds.value,
+      apply_status: !!payload.apply_status,
+      apply_marketplace: !!payload.apply_marketplace,
+    };
+    if (payload.apply_status) {
+      body.status = payload.status;
+    }
+    if (payload.apply_marketplace) {
+      body.marketplace = payload.marketplace ?? null;
+    }
+    await api.patch("/client-stores/bulk", body);
+    toast.success("Stores updated.");
+    storeBulkEditOpen.value = false;
+    selectedStoreIds.value = [];
+    await loadStores();
+  } catch (e) {
+    toast.errorFrom(e, "Could not update stores.");
+  } finally {
+    storeBulkEditBusy.value = false;
+  }
+}
 
 function normalizeAccountManagersFromMeta(payload) {
   const raw =
@@ -371,6 +533,13 @@ onMounted(async () => {
       v-model:open="editStoreOpen"
       :store="editingStore"
       @saved="loadStores"
+    />
+    <ClientStoresBulkEditModal
+      v-if="canUpdateStore && canViewStores"
+      v-model:open="storeBulkEditOpen"
+      :selected-count="selectedStoreIds.length"
+      :busy="storeBulkEditBusy"
+      @apply="applyStoreBulkEdit"
     />
     <ConfirmModal
       :open="storeDeleteOpen"
@@ -741,25 +910,58 @@ onMounted(async () => {
                   </button>
                 </div>
                 <div
-                  class="staff-table-toolbar border-top-0 pt-0 d-flex flex-column flex-md-row flex-wrap align-items-stretch align-items-md-center gap-3"
+                  class="staff-table-toolbar staff-table-toolbar--split border-top-0 pt-0"
                 >
-                  <input
-                    v-model="storeSearch"
-                    type="search"
-                    class="form-control staff-toolbar-search"
-                    placeholder="Search stores"
-                    autocomplete="off"
-                  />
-                  <select
-                    v-model="storeStatusFilter"
-                    class="form-select staff-toolbar-select"
-                    style="max-width: 12rem"
+                  <div
+                    class="staff-toolbar-split d-flex flex-column flex-lg-row align-items-stretch align-items-lg-center justify-content-lg-between gap-3 gap-lg-4"
                   >
-                    <option value="all">All statuses</option>
-                    <option value="pending">Pending</option>
-                    <option value="active">Active</option>
-                    <option value="inactive">Inactive</option>
-                  </select>
+                    <div class="flex-shrink-0 staff-toolbar-per-page">
+                      <label class="visually-hidden" for="store-per-page-toolbar"
+                        >Rows per page</label
+                      >
+                      <select
+                        id="store-per-page-toolbar"
+                        class="form-select staff-toolbar-select staff-toolbar-per-page-select"
+                        :value="storeListQuery.per_page"
+                        :disabled="storesLoading"
+                        @change="onStorePerPageChange"
+                      >
+                        <option v-for="n in PER_PAGE_OPTIONS" :key="n" :value="n">
+                          {{ n }}
+                        </option>
+                      </select>
+                    </div>
+                    <div
+                      class="staff-toolbar-actions d-flex flex-column flex-sm-row flex-wrap align-items-stretch align-items-sm-center gap-2 flex-grow-1 min-w-0"
+                    >
+                      <input
+                        v-model="storeSearch"
+                        type="search"
+                        class="form-control staff-toolbar-search flex-grow-1 min-w-0"
+                        placeholder="Search stores"
+                        autocomplete="off"
+                      />
+                      <select
+                        v-model="storeStatusFilter"
+                        class="form-select staff-toolbar-select flex-shrink-0"
+                        style="max-width: 12rem"
+                      >
+                        <option value="all">All statuses</option>
+                        <option value="pending">Pending</option>
+                        <option value="active">Active</option>
+                        <option value="inactive">Inactive</option>
+                      </select>
+                      <button
+                        v-if="canUpdateStore"
+                        type="button"
+                        class="btn btn-outline-secondary staff-toolbar-btn flex-shrink-0"
+                        :disabled="!selectedStoreIds.length || storesLoading"
+                        @click="openStoreBulkEdit"
+                      >
+                        Bulk edit
+                      </button>
+                    </div>
+                  </div>
                 </div>
                 <div class="table-responsive staff-table-wrap">
                   <div v-if="storesLoading" class="d-flex justify-content-center py-5">
@@ -771,6 +973,20 @@ onMounted(async () => {
                   >
                     <thead class="table-light staff-table-head">
                       <tr>
+                        <th
+                          v-if="showStoreCheckboxCol"
+                          class="staff-table-head__th"
+                          scope="col"
+                        >
+                          <input
+                            type="checkbox"
+                            class="form-check-input staff-table-head__check mt-0"
+                            :checked="isAllStoresPageSelected"
+                            :disabled="storesLoading || !paginatedStores.length"
+                            aria-label="Select all stores on this page"
+                            @change="toggleSelectAllStores"
+                          />
+                        </th>
                         <th class="staff-table-head__th" scope="col">
                           Status
                         </th>
@@ -802,11 +1018,23 @@ onMounted(async () => {
                         </td>
                       </tr>
                       <tr
-                        v-for="row in filteredStores"
+                        v-for="row in paginatedStores"
                         v-else
                         :key="row.id"
                         class="align-middle"
                       >
+                        <td
+                          v-if="showStoreCheckboxCol"
+                          class="staff-table-cell--tight-check"
+                        >
+                          <input
+                            type="checkbox"
+                            class="form-check-input staff-table-head__check mt-0"
+                            :checked="selectedStoreIds.includes(row.id)"
+                            :aria-label="`Select ${row.name}`"
+                            @change="toggleStoreRowSelect(row.id)"
+                          />
+                        </td>
                         <td>
                           <span
                             class="text-capitalize fw-medium"
@@ -894,6 +1122,138 @@ onMounted(async () => {
                       </tr>
                     </tbody>
                   </table>
+                </div>
+                <div
+                  v-if="!storesLoading && filteredStores.length > 0"
+                  class="d-flex flex-column flex-lg-row align-items-lg-center justify-content-lg-between gap-3 border-top staff-table-footer"
+                >
+                  <p
+                    class="small text-secondary mb-0 order-2 order-lg-1 text-center text-lg-start"
+                  >
+                    Showing
+                    <span class="fw-semibold text-body">{{ showingStoresFrom }}</span>
+                    to
+                    <span class="fw-semibold text-body">{{ showingStoresTo }}</span>
+                    of
+                    <span class="fw-semibold text-body">{{ storeListTotal }}</span>
+                    entries
+                  </p>
+                  <nav
+                    class="order-1 order-lg-2 d-flex justify-content-center justify-content-lg-end ms-lg-auto flex-shrink-0"
+                    aria-label="Store list pages"
+                  >
+                    <div class="staff-page-pager staff-page-pager--cluster">
+                      <div class="staff-page-pager__start">
+                        <button
+                          type="button"
+                          class="staff-page-pager-tile staff-page-pager-tile--nav"
+                          :disabled="storesLoading || storeListQuery.page <= 1"
+                          aria-label="First page"
+                          @click="storeFirstPage"
+                        >
+                          <svg
+                            width="18"
+                            height="18"
+                            fill="currentColor"
+                            viewBox="0 0 24 24"
+                            aria-hidden="true"
+                          >
+                            <path
+                              d="M5.59 18L7 16.59 2.41 12 7 7.41 5.59 6l-6 6 6 6zm8 0L15 16.59 10.41 12 15 7.41 13.59 6l-6 6 6 6z"
+                            />
+                          </svg>
+                        </button>
+                        <button
+                          type="button"
+                          class="staff-page-pager-tile staff-page-pager-tile--nav"
+                          :disabled="storesLoading || storeListQuery.page <= 1"
+                          aria-label="Previous page"
+                          @click="storeGoPage(storeListQuery.page - 1)"
+                        >
+                          <svg
+                            width="18"
+                            height="18"
+                            fill="currentColor"
+                            viewBox="0 0 24 24"
+                            aria-hidden="true"
+                          >
+                            <path d="M15.41 7.41L14 6l-6 6 6 6 1.41-1.41L10.83 12z" />
+                          </svg>
+                        </button>
+                      </div>
+                      <div class="staff-page-pager__pages">
+                        <div class="staff-page-pager-inner d-flex align-items-center">
+                          <template
+                            v-for="(item, idx) in storePageItems"
+                            :key="'st-pi-' + idx"
+                          >
+                            <span
+                              v-if="item.type === 'gap'"
+                              class="px-1 small text-secondary user-select-none"
+                              >…</span
+                            >
+                            <button
+                              v-else
+                              type="button"
+                              class="staff-page-pager-tile"
+                              :class="{
+                                'staff-page-pager-tile--active':
+                                  item.value === storeListQuery.page,
+                              }"
+                              :disabled="storesLoading"
+                              @click="storeGoPage(item.value)"
+                            >
+                              {{ item.value }}
+                            </button>
+                          </template>
+                        </div>
+                      </div>
+                      <div class="staff-page-pager__end">
+                        <button
+                          type="button"
+                          class="staff-page-pager-tile staff-page-pager-tile--nav"
+                          :disabled="
+                            storesLoading ||
+                            storeListQuery.page >= storeListLastPage
+                          "
+                          aria-label="Next page"
+                          @click="storeGoPage(storeListQuery.page + 1)"
+                        >
+                          <svg
+                            width="18"
+                            height="18"
+                            fill="currentColor"
+                            viewBox="0 0 24 24"
+                            aria-hidden="true"
+                          >
+                            <path d="M8.59 16.59L10 18l6-6-6-6-1.41 1.41L13.17 12z" />
+                          </svg>
+                        </button>
+                        <button
+                          type="button"
+                          class="staff-page-pager-tile staff-page-pager-tile--nav"
+                          :disabled="
+                            storesLoading ||
+                            storeListQuery.page >= storeListLastPage
+                          "
+                          aria-label="Last page"
+                          @click="storeLastPageFn"
+                        >
+                          <svg
+                            width="18"
+                            height="18"
+                            fill="currentColor"
+                            viewBox="0 0 24 24"
+                            aria-hidden="true"
+                          >
+                            <path
+                              d="M6.41 6L5 7.41 9.58 12 5 16.59 6.41 18l6-6-6-6zm8 0L13 7.41 17.58 12 13 16.59 14.41 18l6-6-6-6z"
+                            />
+                          </svg>
+                        </button>
+                      </div>
+                    </div>
+                  </nav>
                 </div>
               </div>
             </template>

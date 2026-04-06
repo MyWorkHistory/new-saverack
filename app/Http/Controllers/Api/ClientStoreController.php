@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use App\Http\Requests\ClientStoreBulkUpdateRequest;
 use App\Http\Requests\ClientStoreDestroyRequest;
 use App\Http\Requests\ClientStoreListRequest;
 use App\Http\Requests\ClientStoreStoreRequest;
@@ -62,6 +63,31 @@ class ClientStoreController extends Controller
         $client_store->update($request->validated());
 
         return response()->json(self::storeToApiArray($client_store->fresh()));
+    }
+
+    public function bulkUpdate(ClientStoreBulkUpdateRequest $request): JsonResponse
+    {
+        $validated = $request->validated();
+        $ids = $validated['client_store_ids'];
+
+        foreach ($ids as $id) {
+            $this->authorize('update', ClientStore::query()->findOrFail($id));
+        }
+
+        $attrs = [];
+        if (! empty($validated['apply_status'])) {
+            $attrs['status'] = $validated['status'];
+        }
+        if (! empty($validated['apply_marketplace'])) {
+            $attrs['marketplace'] = $validated['marketplace'] ?? null;
+        }
+
+        $updated = ClientStore::query()->whereIn('id', $ids)->update($attrs);
+
+        return response()->json([
+            'message' => 'Stores updated.',
+            'updated' => $updated,
+        ]);
     }
 
     public function destroy(ClientStoreDestroyRequest $request, ClientStore $client_store): JsonResponse

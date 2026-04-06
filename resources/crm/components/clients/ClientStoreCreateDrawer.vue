@@ -1,12 +1,14 @@
 <script setup>
-import { reactive, ref, watch } from "vue";
+import { computed, reactive, ref, watch } from "vue";
 import api from "../../services/api";
 import { useToast } from "../../composables/useToast";
+import CrmSearchableSelect from "../common/CrmSearchableSelect.vue";
 import {
   CRM_BTN_PRIMARY,
   CRM_BTN_SECONDARY,
   CRM_DIALOG_FOOTER_CLASS,
 } from "../../constants/dialogFooter.js";
+import { marketplaceOptionsForValue } from "../../constants/storeMarketplaces.js";
 
 const props = defineProps({
   open: { type: Boolean, default: false },
@@ -24,6 +26,10 @@ const form = reactive({
   website: "",
   marketplace: "",
 });
+
+const marketplaceOptions = computed(() =>
+  marketplaceOptionsForValue(form.marketplace),
+);
 
 function reset() {
   form.name = "";
@@ -160,14 +166,16 @@ async function onSubmit() {
                     />
                   </div>
                   <div>
-                    <label
-                      class="mb-1 block text-xs font-medium text-gray-600 dark:text-gray-400"
-                      >Marketplace</label
-                    >
-                    <input
+                    <CrmSearchableSelect
                       v-model="form.marketplace"
-                      type="text"
-                      class="h-10 w-full rounded-lg border border-gray-300 bg-white px-3 text-sm dark:border-gray-600 dark:bg-gray-800 dark:text-white"
+                      :options="marketplaceOptions"
+                      label="Marketplace"
+                      placeholder="Select marketplace"
+                      search-placeholder="Search marketplaces…"
+                      :allow-empty="true"
+                      empty-label="— None —"
+                      button-id="csc-store-mp-trigger"
+                      listbox-id="csc-store-mp-list"
                     />
                   </div>
                 </div>

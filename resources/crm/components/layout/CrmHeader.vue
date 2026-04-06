@@ -316,8 +316,7 @@ onUnmounted(() => {
 
           <div
             ref="accountRoot"
-            class="position-relative flex-grow-1 flex-md-grow-0 min-w-0 d-none d-md-block"
-            style="min-width: min(20rem, 100%); max-width: min(36rem, 100%)"
+            class="position-relative flex-grow-1 flex-md-grow-0 min-w-0 d-none d-md-block crm-navbar-account"
           >
             <button
               type="button"

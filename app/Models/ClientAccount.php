@@ -25,6 +25,7 @@ class ClientAccount extends Model
     ];
 
     protected $fillable = [
+        'legacy_customer_id',
         'status',
         'company_name',
         'brand_name',

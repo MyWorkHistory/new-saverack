@@ -36,3 +36,7 @@ yarn-error.log
 /.nova
 /.vscode
 /.zed
+
+# Legacy CRM MySQL dumps from phpMyAdmin — contain real tokens/passwords; import locally only.
+/database/customers.sql
+/database/crm_stores.sql

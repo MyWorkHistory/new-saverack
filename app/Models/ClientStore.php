@@ -20,6 +20,7 @@ class ClientStore extends Model
     ];
 
     protected $fillable = [
+        'legacy_store_id',
         'client_account_id',
         'status',
         'name',

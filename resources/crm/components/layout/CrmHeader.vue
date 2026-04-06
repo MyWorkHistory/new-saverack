@@ -317,7 +317,7 @@ onUnmounted(() => {
           <div
             ref="accountRoot"
             class="position-relative flex-grow-1 flex-md-grow-0 min-w-0 d-none d-md-block"
-            style="max-width: min(15rem, 100%)"
+            style="min-width: min(20rem, 100%); max-width: min(36rem, 100%)"
           >
             <button
               type="button"

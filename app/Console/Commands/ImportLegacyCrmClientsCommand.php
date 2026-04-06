@@ -226,7 +226,9 @@ class ImportLegacyCrmClientsCommand extends Command
             'account_manager_id' => null,
             'created_at' => $created,
             'updated_at' => $updated,
-        ], static fn ($v) => $v !== null);
+        ], function ($v) {
+            return $v !== null;
+        });
     }
 
     /**
@@ -272,7 +274,9 @@ class ImportLegacyCrmClientsCommand extends Command
             'marketplace' => $market,
             'created_at' => $created,
             'updated_at' => $updated,
-        ], static fn ($v) => $v !== null);
+        ], function ($v) {
+            return $v !== null;
+        });
     }
 
     private function buildStreet(object $row, string $prefix): string
@@ -307,7 +311,10 @@ class ImportLegacyCrmClientsCommand extends Command
         return trim(strtolower($e));
     }
 
-    private function nonEmptyString(mixed $v): ?string
+    /**
+     * @param  mixed  $v
+     */
+    private function nonEmptyString($v): ?string
     {
         if ($v === null) {
             return null;
@@ -326,14 +333,17 @@ class ImportLegacyCrmClientsCommand extends Command
         return substr($s, 0, $max);
     }
 
-    private function parseTimestamp(mixed $v): ?Carbon
+    /**
+     * @param  mixed  $v
+     */
+    private function parseTimestamp($v): ?Carbon
     {
         if ($v === null || $v === '') {
             return null;
         }
         try {
             return Carbon::parse($v);
-        } catch (\Throwable) {
+        } catch (\Throwable $e) {
             return null;
         }
     }

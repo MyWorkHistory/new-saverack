@@ -7,12 +7,9 @@ import {
   ref,
   watch,
 } from "vue";
-import { useRouter } from "vue-router";
+import { RouterLink, useRouter } from "vue-router";
 import api from "../../services/api";
-import PageHeader from "../../components/common/PageHeader.vue";
-import CrmOutlinePillLink from "../../components/common/CrmOutlinePillLink.vue";
 import CrmLoadingSpinner from "../../components/common/CrmLoadingSpinner.vue";
-import CrmOutlineEditButton from "../../components/common/CrmOutlineEditButton.vue";
 import WebmasterTaskModal from "../../components/webmaster/WebmasterTaskModal.vue";
 import { crmIsAdmin } from "../../utils/crmUser";
 import { errorMessage } from "../../utils/apiError";
@@ -257,242 +254,241 @@ onUnmounted(() => {
 </script>
 
 <template>
-  <div class="w-full space-y-6">
-    <div class="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
-      <PageHeader
-        title="Task"
-        subtitle="Details And Activity"
-      />
-      <div class="flex shrink-0 flex-wrap items-center gap-2">
-        <CrmOutlinePillLink to="/webmaster" label="Back To Board" />
-        <CrmOutlineEditButton
+  <div class="staff-user-view staff-page--wide">
+    <nav
+      class="staff-user-view__breadcrumb d-flex flex-wrap align-items-center gap-1"
+      aria-label="Breadcrumb"
+    >
+      <RouterLink to="/dashboard">Home</RouterLink>
+      <span class="text-secondary" aria-hidden="true">/</span>
+      <RouterLink to="/webmaster">Webmaster</RouterLink>
+      <span class="text-secondary" aria-hidden="true">/</span>
+      <span class="text-body-secondary">Task</span>
+    </nav>
+
+    <div
+      class="staff-user-view__title-row d-flex flex-wrap align-items-start justify-content-between gap-2 mb-4"
+    >
+      <div class="min-w-0">
+        <h1 class="staff-user-view__title">Task</h1>
+        <p class="text-secondary small mb-0">Details and activity</p>
+      </div>
+      <div class="d-flex flex-wrap align-items-center gap-2 flex-shrink-0">
+        <RouterLink
+          to="/webmaster"
+          class="btn btn-outline-secondary btn-sm"
+        >
+          Back to board
+        </RouterLink>
+        <button
           v-if="task && canMutateWebmasterTasks"
+          type="button"
+          class="btn btn-primary staff-page-primary btn-sm"
           @click="taskEditorOpen = true"
-        />
+        >
+          Edit
+        </button>
       </div>
     </div>
 
-    <div v-if="loading" class="flex justify-center py-16">
+    <div v-if="loading" class="d-flex justify-content-center py-5">
       <CrmLoadingSpinner message="Loading task…" />
     </div>
 
     <template v-else-if="errorMsg">
-      <p class="text-sm text-red-600 dark:text-red-400">
+      <p class="text-danger small mb-2">
         {{ errorMsg }}
       </p>
-      <div class="mt-2">
-        <CrmOutlinePillLink to="/webmaster" label="Back To Board" />
-      </div>
+      <RouterLink to="/webmaster" class="small">Back to board</RouterLink>
     </template>
 
-    <div
-      v-else-if="task"
-      class="grid gap-6 lg:grid-cols-3"
-    >
-      <div class="space-y-6 lg:col-span-2">
-        <div
-          class="rounded-2xl border border-gray-200 bg-white p-6 shadow-sm dark:border-gray-800 dark:bg-white/[0.03]"
-        >
-          <div class="flex flex-wrap items-start justify-between gap-3 border-b border-gray-100 pb-4 dark:border-gray-800">
-            <h2 class="text-xl font-semibold text-gray-900 dark:text-white">
-              {{ task.title }}
-            </h2>
-            <div class="flex flex-wrap items-center gap-2">
-              <span
-                class="inline-flex rounded-full px-2.5 py-0.5 text-xs font-medium capitalize ring-1 ring-inset ring-gray-200 dark:ring-gray-600"
-                :class="priorityClass(task.priority)"
-              >
-                {{ task.priority }}
-              </span>
-              <span
-                class="inline-flex rounded-md bg-gray-100 px-2 py-0.5 text-xs font-medium capitalize text-gray-800 dark:bg-gray-800 dark:text-gray-200"
-              >
-                {{ formatStatus(task.status) }}
-              </span>
+    <div v-else-if="task" class="row g-4">
+      <div class="col-12 col-lg-8 d-flex flex-column gap-4">
+        <div class="staff-table-card overflow-hidden">
+          <div class="p-4 p-md-5 border-bottom">
+            <div
+              class="d-flex flex-wrap align-items-start justify-content-between gap-3"
+            >
+              <h2 class="h5 fw-semibold text-body mb-0">
+                {{ task.title }}
+              </h2>
+              <div class="d-flex flex-wrap align-items-center gap-2">
+                <span
+                  class="rounded-pill px-2 py-1 small fw-medium text-capitalize"
+                  :class="priorityClass(task.priority)"
+                >
+                  {{ task.priority }}
+                </span>
+                <span class="badge text-bg-secondary text-capitalize">
+                  {{ formatStatus(task.status) }}
+                </span>
+              </div>
             </div>
           </div>
-
-          <section class="mt-6">
-            <h3 class="mb-2 text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">
+          <section class="p-4 p-md-5">
+            <h3 class="small fw-semibold text-secondary text-uppercase mb-2">
               Description
             </h3>
-            <p
-              class="whitespace-pre-wrap text-sm leading-relaxed text-gray-800 dark:text-gray-200"
-            >
+            <p class="mb-0 text-body small whitespace-pre-wrap lh-lg">
               {{ display(task.description) }}
             </p>
           </section>
         </div>
 
-        <div
-          class="rounded-2xl border border-gray-200 bg-white p-6 shadow-sm dark:border-gray-800 dark:bg-white/[0.03]"
-        >
-          <h3 class="mb-4 text-sm font-semibold text-gray-900 dark:text-white">
-            Activity
-          </h3>
-
-          <ul
-            v-if="comments.length"
-            class="space-y-6 border-b border-gray-100 pb-6 dark:border-gray-800"
-          >
-            <li
-              v-for="c in comments"
-              :key="c.id"
-              class="flex gap-3"
+        <div class="staff-table-card overflow-hidden">
+          <div class="p-4 p-md-5 border-bottom">
+            <h3 class="h6 fw-semibold text-body mb-0">Activity</h3>
+          </div>
+          <div class="p-4 p-md-5">
+            <ul
+              v-if="comments.length"
+              class="list-unstyled mb-0 pb-4 border-bottom"
             >
-              <span
-                class="flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-[11px] font-semibold"
-                :class="avatarClassForUser(c.user?.email)"
+              <li
+                v-for="c in comments"
+                :key="c.id"
+                class="d-flex gap-3 mb-4"
               >
-                {{ initials(c.user?.name) }}
-              </span>
-              <div class="min-w-0 flex-1">
-                <div class="flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
-                  <span class="text-sm font-medium text-gray-900 dark:text-white">{{
-                    c.user?.name || "User"
-                  }}</span>
-                  <span class="text-xs text-gray-500 dark:text-gray-400">{{
-                    formatDateTimeUs(c.created_at)
-                  }}</span>
-                </div>
-                <p
-                  class="mt-1 whitespace-pre-wrap text-sm text-gray-800 dark:text-gray-200"
+                <span
+                  class="d-flex align-items-center justify-content-center rounded-circle flex-shrink-0 small fw-semibold wm-task-detail-avatar"
+                  :class="avatarClassForUser(c.user?.email)"
                 >
-                  {{ c.body }}
-                </p>
-                <div
-                  v-if="c.attachment"
-                  class="mt-3"
-                >
-                  <img
-                    v-if="isImageMime(c.attachment.mime) && imagePreviewUrls[c.id]"
-                    :src="imagePreviewUrls[c.id]"
-                    alt=""
-                    class="max-h-48 max-w-full rounded-lg border border-gray-200 object-contain dark:border-gray-700"
-                  />
-                  <button
-                    type="button"
-                    class="mt-2 inline-flex items-center gap-1 text-xs font-medium text-[#2563eb] hover:underline"
-                    @click="downloadAttachment(c.id)"
-                  >
-                    <span v-if="c.attachment.original_name">{{
-                      c.attachment.original_name
+                  {{ initials(c.user?.name) }}
+                </span>
+                <div class="min-w-0 flex-grow-1">
+                  <div class="d-flex flex-wrap align-items-baseline gap-2">
+                    <span class="small fw-medium text-body">{{
+                      c.user?.name || "User"
                     }}</span>
-                    <span v-else>Download Attachment</span>
-                    <span
-                      v-if="formatFileSize(c.attachment.size)"
-                      class="text-gray-500 dark:text-gray-400"
-                    >({{ formatFileSize(c.attachment.size) }})</span>
-                  </button>
+                    <span class="small text-secondary">{{
+                      formatDateTimeUs(c.created_at)
+                    }}</span>
+                  </div>
+                  <p class="mt-1 mb-0 small text-body whitespace-pre-wrap">
+                    {{ c.body }}
+                  </p>
+                  <div
+                    v-if="c.attachment"
+                    class="mt-3"
+                  >
+                    <img
+                      v-if="isImageMime(c.attachment.mime) && imagePreviewUrls[c.id]"
+                      :src="imagePreviewUrls[c.id]"
+                      alt=""
+                      class="img-fluid rounded border"
+                      style="max-height: 12rem"
+                    />
+                    <button
+                      type="button"
+                      class="btn btn-link btn-sm text-decoration-none p-0 mt-2 d-inline-flex align-items-center gap-1"
+                      @click="downloadAttachment(c.id)"
+                    >
+                      <span v-if="c.attachment.original_name">{{
+                        c.attachment.original_name
+                      }}</span>
+                      <span v-else>Download attachment</span>
+                      <span
+                        v-if="formatFileSize(c.attachment.size)"
+                        class="text-secondary"
+                      >({{ formatFileSize(c.attachment.size) }})</span>
+                    </button>
+                  </div>
                 </div>
-              </div>
-            </li>
-          </ul>
-          <p
-            v-else
-            class="border-b border-gray-100 pb-6 text-sm text-gray-500 dark:border-gray-800 dark:text-gray-400"
-          >
-            No Comments Yet.
-          </p>
-
-          <div class="pt-6">
-            <label class="mb-1 block text-xs font-medium text-gray-500 dark:text-gray-400">
-              Add comment
-            </label>
-            <textarea
-              v-model="commentBody"
-              rows="3"
-              class="w-full rounded-xl border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 dark:border-gray-600 dark:bg-gray-900 dark:text-white"
-              placeholder="Write An Update…"
-            />
-            <div class="mt-2 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-              <input
-                ref="commentFileInput"
-                type="file"
-                accept="image/jpeg,image/png,image/gif,image/webp,.pdf,.txt,.doc,.docx"
-                class="block w-full text-xs text-gray-600 file:mr-2 file:rounded-lg file:border-0 file:bg-gray-100 file:px-3 file:py-1.5 file:text-xs file:font-medium file:text-gray-800 hover:file:bg-gray-200 dark:text-gray-400 dark:file:bg-gray-800 dark:file:text-gray-200"
-                @change="commentFile = $event.target.files?.[0] || null"
-              />
-              <button
-                type="button"
-                class="mt-2 inline-flex shrink-0 justify-center rounded-xl bg-[#2563eb] px-4 py-2 text-sm font-semibold text-white hover:opacity-95 disabled:opacity-50 sm:mt-0"
-                :disabled="commentSubmitting"
-                @click="submitComment"
-              >
-                {{ commentSubmitting ? "Posting…" : "Post Comment" }}
-              </button>
-            </div>
+              </li>
+            </ul>
             <p
-              v-if="commentError"
-              class="mt-2 text-xs text-red-600 dark:text-red-400"
+              v-else
+              class="text-secondary small border-bottom pb-4 mb-0"
             >
-              {{ commentError }}
+              No comments yet.
             </p>
-            <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">
-              Optional Attachment: Image, PDF, Or Small Document (Max 5 MB).
-            </p>
+
+            <div class="pt-4">
+              <label class="form-label small text-secondary" for="wm-task-comment">
+                Add comment
+              </label>
+              <textarea
+                id="wm-task-comment"
+                v-model="commentBody"
+                rows="3"
+                class="form-control"
+                placeholder="Write an update…"
+              />
+              <div
+                class="mt-3 d-flex flex-column flex-sm-row align-items-stretch align-items-sm-center justify-content-between gap-2"
+              >
+                <input
+                  ref="commentFileInput"
+                  type="file"
+                  accept="image/jpeg,image/png,image/gif,image/webp,.pdf,.txt,.doc,.docx"
+                  class="form-control form-control-sm"
+                  @change="commentFile = $event.target.files?.[0] || null"
+                />
+                <button
+                  type="button"
+                  class="btn btn-primary staff-page-primary"
+                  :disabled="commentSubmitting"
+                  @click="submitComment"
+                >
+                  {{ commentSubmitting ? "Posting…" : "Post comment" }}
+                </button>
+              </div>
+              <p
+                v-if="commentError"
+                class="text-danger small mt-2 mb-0"
+              >
+                {{ commentError }}
+              </p>
+              <p class="text-secondary small mt-2 mb-0">
+                Optional attachment: image, PDF, or small document (max 5 MB).
+              </p>
+            </div>
           </div>
         </div>
       </div>
 
-      <aside
-        class="space-y-4 lg:col-span-1"
-      >
-        <div
-          class="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm dark:border-gray-800 dark:bg-white/[0.03]"
-        >
-          <h3 class="mb-3 text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">
+      <aside class="col-12 col-lg-4">
+        <div class="staff-table-card overflow-hidden p-4 p-md-5">
+          <h3 class="small fw-semibold text-secondary text-uppercase mb-3">
             Details
           </h3>
-          <dl class="space-y-3 text-sm">
-            <div>
-              <dt class="text-xs text-gray-500 dark:text-gray-400">
-                Ticket Price
-              </dt>
-              <dd class="mt-0.5 font-medium text-gray-900 dark:text-white">
+          <dl class="row small mb-0 gy-3">
+            <div class="col-12">
+              <dt class="text-secondary mb-1">Ticket price</dt>
+              <dd class="mb-0 fw-medium text-body">
                 {{ formatUsdPriceOrDash(task.price) }}
               </dd>
             </div>
-            <div>
-              <dt class="text-xs text-gray-500 dark:text-gray-400">
-                Due date
-              </dt>
-              <dd class="mt-0.5 text-gray-900 dark:text-white">
+            <div class="col-12">
+              <dt class="text-secondary mb-1">Due date</dt>
+              <dd class="mb-0 text-body">
                 {{ formatDateUs(task.due_date) }}
               </dd>
             </div>
-            <div>
-              <dt class="text-xs text-gray-500 dark:text-gray-400">
-                Created
-              </dt>
-              <dd class="mt-0.5 text-gray-900 dark:text-white">
+            <div class="col-12">
+              <dt class="text-secondary mb-1">Created</dt>
+              <dd class="mb-0 text-body">
                 {{ formatDateTimeUs(task.created_at) }}
               </dd>
             </div>
-            <div>
-              <dt class="text-xs text-gray-500 dark:text-gray-400">
-                Updated
-              </dt>
-              <dd class="mt-0.5 text-gray-900 dark:text-white">
+            <div class="col-12">
+              <dt class="text-secondary mb-1">Updated</dt>
+              <dd class="mb-0 text-body">
                 {{ formatDateTimeUs(task.updated_at) }}
               </dd>
             </div>
-            <div>
-              <dt class="text-xs text-gray-500 dark:text-gray-400">
-                Created By
-              </dt>
-              <dd class="mt-0.5 text-gray-900 dark:text-white">
+            <div class="col-12">
+              <dt class="text-secondary mb-1">Created by</dt>
+              <dd class="mb-0 text-body">
                 <template v-if="task.creator">
                   {{ task.creator.name }}
                 </template>
                 <template v-else>—</template>
               </dd>
             </div>
-            <div>
-              <dt class="text-xs text-gray-500 dark:text-gray-400">
-                Assigned To
-              </dt>
-              <dd class="mt-0.5 text-gray-900 dark:text-white">
+            <div class="col-12">
+              <dt class="text-secondary mb-1">Assigned to</dt>
+              <dd class="mb-0 text-body">
                 <template v-if="task.assignee">
                   {{ task.assignee.name }}
                 </template>
@@ -515,3 +511,14 @@ onUnmounted(() => {
     />
   </div>
 </template>
+
+<style scoped>
+.whitespace-pre-wrap {
+  white-space: pre-wrap;
+}
+.wm-task-detail-avatar {
+  width: 2.25rem;
+  height: 2.25rem;
+  font-size: 0.6875rem;
+}
+</style>

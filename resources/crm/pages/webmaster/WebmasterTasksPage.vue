@@ -36,7 +36,6 @@ const users = ref([]);
 const meta = ref({ statuses: [], priorities: [] });
 const boardColumns = ref([]);
 const manageOpenId = ref(null);
-const filterOpen = ref(false);
 const drawerOpen = ref(false);
 const taskEditModalOpen = ref(false);
 const editingTask = ref(null);
@@ -76,6 +75,53 @@ const deleteMessage = computed(() => {
 const hasMorePages = computed(
   () => pagination.value.last_page > 1,
 );
+
+const showingFrom = computed(() => {
+  const t = pagination.value.total;
+  if (t === 0) return 0;
+  return (pagination.value.current_page - 1) * query.per_page + 1;
+});
+
+const showingTo = computed(() => {
+  const t = pagination.value.total;
+  if (t === 0) return 0;
+  return Math.min(
+    pagination.value.current_page * query.per_page,
+    t,
+  );
+});
+
+const pageItems = computed(() => {
+  const last = pagination.value.last_page;
+  const cur = pagination.value.current_page;
+  if (last < 1) return [];
+  if (last <= 7) {
+    return Array.from({ length: last }, (_, i) => ({
+      type: "page",
+      value: i + 1,
+    }));
+  }
+  const nums = new Set([
+    1,
+    last,
+    cur,
+    cur - 1,
+    cur + 1,
+    cur - 2,
+    cur + 2,
+  ]);
+  const sorted = [...nums].filter((p) => p >= 1 && p <= last).sort((a, b) => a - b);
+  const out = [];
+  let prev = 0;
+  for (const p of sorted) {
+    if (prev && p - prev > 1) {
+      out.push({ type: "gap" });
+    }
+    out.push({ type: "page", value: p });
+    prev = p;
+  }
+  return out;
+});
 
 watch(
   () => query.search,
@@ -238,11 +284,6 @@ const clearFilters = () => {
   });
 };
 
-const applyFilterPanel = () => {
-  filterOpen.value = false;
-  applySearch();
-};
-
 function openAdd() {
   drawerOpen.value = true;
 }
@@ -294,9 +335,6 @@ const toggleManageMenu = (id, e) => {
 };
 
 function onDocClick(e) {
-  if (!e.target.closest("[data-filter-root]")) {
-    filterOpen.value = false;
-  }
   if (!e.target.closest("[data-kanban-card-actions]")) {
     manageOpenId.value = null;
   }
@@ -342,10 +380,18 @@ function onPerPageChange(e) {
   fetchTasks();
 }
 
-function goTaskPage(p) {
+function goPage(p) {
   if (p < 1 || p > pagination.value.last_page) return;
   query.page = p;
   fetchTasks();
+}
+
+function goFirstPage() {
+  goPage(1);
+}
+
+function goLastPage() {
+  goPage(pagination.value.last_page);
 }
 
 function dueBadgeLabel(dueDate) {
@@ -397,7 +443,7 @@ onUnmounted(() => {
 </script>
 
 <template>
-  <div class="space-y-4">
+  <div class="staff-page staff-page--wide">
     <WebmasterTaskDrawer
       v-model:open="drawerOpen"
       :users="users"
@@ -414,316 +460,264 @@ onUnmounted(() => {
       @saved="fetchTasks"
     />
 
-    <p v-if="deleteError" class="text-sm text-red-600 dark:text-red-400">
+    <div
+      v-if="deleteError"
+      class="alert alert-danger mb-3 mb-md-4"
+      role="alert"
+    >
       {{ deleteError }}
-    </p>
-    <p
+    </div>
+    <div
       v-if="statusUpdateError"
-      class="text-sm text-red-600 dark:text-red-400"
+      class="alert alert-danger mb-3 mb-md-4"
+      role="alert"
     >
       {{ statusUpdateError }}
-    </p>
+    </div>
 
-    <!-- Same shell as Staff: rounded-2xl outer card, header strip, inner card + search toolbar, pagination below inner card -->
     <div
-      class="overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-sm dark:border-gray-800 dark:bg-gray-900"
+      class="d-flex flex-column flex-md-row align-items-start align-items-md-center gap-2 gap-md-3 mb-4"
     >
-      <div
-        class="border-b border-gray-100 px-4 py-5 dark:border-gray-800 sm:px-6"
+      <div class="min-w-0">
+        <h1 class="h4 mb-1 fw-semibold text-body">Webmaster</h1>
+        <p class="text-secondary small mb-0">
+          Site development tasks — drag cards between columns to change status
+        </p>
+      </div>
+      <button
+        type="button"
+        class="btn btn-outline-secondary btn-sm ms-md-auto d-inline-flex align-items-center gap-2"
+        :disabled="loading"
+        title="Refresh"
+        aria-label="Refresh list"
+        @click="fetchTasks"
       >
-        <div
-          class="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between"
+        <svg
+          width="18"
+          height="18"
+          fill="none"
+          stroke="currentColor"
+          viewBox="0 0 24 24"
+          aria-hidden="true"
         >
-          <div class="flex items-center gap-3">
-            <div>
-              <h1 class="text-xl font-bold text-gray-900 dark:text-white">
-                Webmaster
-              </h1>
-              <p class="mt-0.5 text-sm text-gray-500 dark:text-gray-400">
-                Site Development Tasks — Drag Cards Between Columns To Change
-                Status
-              </p>
-            </div>
-            <button
-              type="button"
-              class="rounded-lg p-2 text-gray-500 transition hover:bg-gray-100 dark:hover:bg-white/10 dark:hover:text-gray-300"
-              :disabled="loading"
-              title="Refresh"
-              aria-label="Refresh List"
-              @click="fetchTasks"
-            >
-              <svg
-                class="h-5 w-5"
-                fill="none"
-                stroke="currentColor"
-                viewBox="0 0 24 24"
-              >
-                <path
-                  stroke-linecap="round"
-                  stroke-linejoin="round"
-                  stroke-width="2"
-                  d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"
-                />
-              </svg>
-            </button>
-          </div>
+          <path
+            stroke-linecap="round"
+            stroke-linejoin="round"
+            stroke-width="2"
+            d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"
+          />
+        </svg>
+        Refresh
+      </button>
+    </div>
 
-          <div
-            class="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-end"
+    <div class="staff-table-card staff-datatable-card">
+      <div class="staff-datatable-filters">
+        <div
+          class="d-flex flex-wrap align-items-center justify-content-between gap-2 mb-3"
+        >
+          <h2 class="staff-datatable-filters__title mb-0">Filters</h2>
+          <button
+            type="button"
+            class="btn btn-link btn-sm text-secondary text-decoration-none px-0"
+            :disabled="loading"
+            @click="clearFilters"
           >
-            <div
-              class="relative flex shrink-0 items-center gap-2"
-              data-filter-root
+            Reset
+          </button>
+        </div>
+        <div class="row g-3 g-md-4">
+          <div class="col-12 col-sm-6 col-lg-3">
+            <label class="visually-hidden" for="wm-filter-status">Status</label>
+            <select
+              id="wm-filter-status"
+              v-model="query.status"
+              class="form-select staff-datatable-filters__select"
+              :disabled="loading"
+              @change="applySearch"
             >
-              <button
-                type="button"
-                class="inline-flex h-11 items-center gap-2 rounded-lg border border-gray-200 bg-white px-4 text-sm font-medium text-gray-700 shadow-sm hover:bg-gray-50 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200 dark:hover:bg-gray-700"
-                :class="{ 'ring-2 ring-[#2563eb]/30': filterOpen }"
-                :aria-expanded="filterOpen"
-                @click.stop="filterOpen = !filterOpen"
+              <option value="">All columns</option>
+              <option
+                v-for="s in meta.statuses"
+                :key="s.value"
+                :value="s.value"
               >
-                <svg
-                  class="h-5 w-5 text-gray-500"
-                  fill="none"
-                  viewBox="0 0 24 24"
-                  stroke="currentColor"
-                  stroke-width="2"
-                >
-                  <path
-                    stroke-linecap="round"
-                    stroke-linejoin="round"
-                    d="M12 6V4m0 2a2 2 0 100 4m0-4a2 2 0 110 4m-6 8a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4m6 6v10m6-2a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4"
-                  />
-                </svg>
-                Filter
-              </button>
-              <Transition
-                enter-active-class="transition ease-out duration-100"
-                enter-from-class="transform opacity-0 scale-95"
-                enter-to-class="transform opacity-100 scale-100"
-                leave-active-class="transition ease-in duration-75"
-                leave-from-class="transform opacity-100 scale-100"
-                leave-to-class="transform opacity-0 scale-95"
+                {{ s.label }}
+              </option>
+            </select>
+          </div>
+          <div class="col-12 col-sm-6 col-lg-3">
+            <label class="visually-hidden" for="wm-filter-priority"
+              >Priority</label
+            >
+            <select
+              id="wm-filter-priority"
+              v-model="query.priority"
+              class="form-select staff-datatable-filters__select"
+              :disabled="loading"
+              @change="applySearch"
+            >
+              <option value="">All priorities</option>
+              <option
+                v-for="p in meta.priorities"
+                :key="p.value"
+                :value="p.value"
               >
-                <div
-                  v-if="filterOpen"
-                  class="absolute right-0 top-full z-30 mt-2 w-72 origin-top-right rounded-xl border border-gray-200 bg-white p-4 shadow-lg dark:border-gray-700 dark:bg-gray-900"
-                  @click.stop
-                >
-                  <div class="space-y-3">
-                    <div>
-                      <label
-                        class="mb-1 block text-xs font-medium text-gray-500 dark:text-gray-400"
-                        >Status</label
-                      >
-                      <select
-                        v-model="query.status"
-                        class="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm dark:border-gray-600 dark:bg-gray-800 dark:text-white"
-                      >
-                        <option value="">All Columns</option>
-                        <option
-                          v-for="s in meta.statuses"
-                          :key="s.value"
-                          :value="s.value"
-                        >
-                          {{ s.label }}
-                        </option>
-                      </select>
-                    </div>
-                    <div>
-                      <label
-                        class="mb-1 block text-xs font-medium text-gray-500 dark:text-gray-400"
-                        >Priority</label
-                      >
-                      <select
-                        v-model="query.priority"
-                        class="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm dark:border-gray-600 dark:bg-gray-800 dark:text-white"
-                      >
-                        <option value="">All</option>
-                        <option
-                          v-for="p in meta.priorities"
-                          :key="p.value"
-                          :value="p.value"
-                        >
-                          {{ p.label }}
-                        </option>
-                      </select>
-                    </div>
-                    <div>
-                      <label
-                        class="mb-1 block text-xs font-medium text-gray-500 dark:text-gray-400"
-                        >Assignee</label
-                      >
-                      <select
-                        v-model="query.assigned_to"
-                        class="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm dark:border-gray-600 dark:bg-gray-800 dark:text-white"
-                      >
-                        <option value="">Anyone</option>
-                        <option
-                          v-for="u in users"
-                          :key="u.id"
-                          :value="String(u.id)"
-                        >
-                          {{ u.name }}
-                        </option>
-                      </select>
-                    </div>
-                    <div class="grid grid-cols-2 gap-2">
-                      <div>
-                        <label
-                          class="mb-1 block text-xs font-medium text-gray-500 dark:text-gray-400"
-                          >Min Price</label
-                        >
-                        <input
-                          v-model="query.min_price"
-                          type="number"
-                          min="0"
-                          step="0.01"
-                          class="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm dark:border-gray-600 dark:bg-gray-800 dark:text-white"
-                          placeholder="0"
-                        />
-                      </div>
-                      <div>
-                        <label
-                          class="mb-1 block text-xs font-medium text-gray-500 dark:text-gray-400"
-                          >Max Price</label
-                        >
-                        <input
-                          v-model="query.max_price"
-                          type="number"
-                          min="0"
-                          step="0.01"
-                          class="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm dark:border-gray-600 dark:bg-gray-800 dark:text-white"
-                          placeholder="Any"
-                        />
-                      </div>
-                    </div>
-                    <div class="grid grid-cols-2 gap-2 pt-1">
-                      <button
-                        type="button"
-                        class="inline-flex min-h-10 items-center justify-center rounded-lg bg-[#2563eb] px-3 text-xs font-semibold text-white transition hover:opacity-95 disabled:opacity-50"
-                        :disabled="loading"
-                        @click="applyFilterPanel"
-                      >
-                        Apply
-                      </button>
-                      <button
-                        type="button"
-                        class="inline-flex min-h-10 items-center justify-center rounded-lg border border-gray-200 bg-white px-3 text-xs font-medium text-gray-700 hover:bg-gray-50 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-200 dark:hover:bg-gray-700"
-                        :disabled="loading"
-                        @click="
-                          clearFilters();
-                          filterOpen = false;
-                        "
-                      >
-                        Clear
-                      </button>
-                    </div>
-                  </div>
-                </div>
-              </Transition>
-            </div>
+                {{ p.label }}
+              </option>
+            </select>
+          </div>
+          <div class="col-12 col-sm-6 col-lg-3">
+            <label class="visually-hidden" for="wm-filter-assignee"
+              >Assignee</label
+            >
+            <select
+              id="wm-filter-assignee"
+              v-model="query.assigned_to"
+              class="form-select staff-datatable-filters__select"
+              :disabled="loading"
+              @change="applySearch"
+            >
+              <option value="">Anyone</option>
+              <option
+                v-for="u in users"
+                :key="u.id"
+                :value="String(u.id)"
+              >
+                {{ u.name }}
+              </option>
+            </select>
+          </div>
+          <div class="col-12 col-sm-6 col-lg-2">
+            <label class="visually-hidden" for="wm-min-price">Min price</label>
+            <input
+              id="wm-min-price"
+              v-model="query.min_price"
+              type="number"
+              min="0"
+              step="0.01"
+              class="form-control staff-datatable-filters__select"
+              placeholder="Min price"
+              :disabled="loading"
+              @change="applySearch"
+              @keydown.enter.prevent="applySearch"
+            />
+          </div>
+          <div class="col-12 col-sm-6 col-lg-2">
+            <label class="visually-hidden" for="wm-max-price">Max price</label>
+            <input
+              id="wm-max-price"
+              v-model="query.max_price"
+              type="number"
+              min="0"
+              step="0.01"
+              class="form-control staff-datatable-filters__select"
+              placeholder="Max price"
+              :disabled="loading"
+              @change="applySearch"
+              @keydown.enter.prevent="applySearch"
+            />
+          </div>
+        </div>
+      </div>
 
+      <div class="staff-table-toolbar staff-table-toolbar--split">
+        <div
+          class="staff-toolbar-split d-flex flex-column flex-lg-row align-items-stretch align-items-lg-center justify-content-lg-between gap-3 gap-lg-4"
+        >
+          <div class="flex-shrink-0 staff-toolbar-per-page">
+            <label class="visually-hidden" for="wm-per-page-toolbar"
+              >Rows per page</label
+            >
+            <select
+              id="wm-per-page-toolbar"
+              class="form-select staff-toolbar-select staff-toolbar-per-page-select"
+              :value="query.per_page"
+              :disabled="loading"
+              @change="onPerPageChange"
+            >
+              <option v-for="n in PER_PAGE_OPTIONS" :key="n" :value="n">
+                {{ n }}
+              </option>
+            </select>
+          </div>
+          <div
+            class="staff-toolbar-actions d-flex flex-column flex-sm-row flex-wrap align-items-stretch align-items-sm-center"
+          >
+            <input
+              id="wm-search"
+              v-model="query.search"
+              type="search"
+              class="form-control staff-toolbar-search"
+              placeholder="Search tasks"
+              autocomplete="off"
+              @keydown.enter.prevent="applySearch"
+            />
             <button
               v-if="canMutateWebmasterTasks"
               type="button"
-              class="inline-flex h-11 shrink-0 items-center justify-center gap-2 rounded-lg bg-[#2563eb] px-4 text-sm font-semibold text-white shadow-sm transition hover:opacity-95 focus:outline-none focus:ring-2 focus:ring-[#2563eb]/40 focus:ring-offset-2 dark:focus:ring-offset-gray-900"
+              class="btn btn-primary staff-page-primary staff-toolbar-btn-add d-inline-flex align-items-center gap-2"
               @click="openAdd"
             >
               <svg
-                class="h-5 w-5"
-                fill="none"
-                stroke="currentColor"
+                width="18"
+                height="18"
+                fill="currentColor"
                 viewBox="0 0 24 24"
+                aria-hidden="true"
               >
-                <path
-                  stroke-linecap="round"
-                  stroke-linejoin="round"
-                  stroke-width="2"
-                  d="M12 4v16m8-8H4"
-                />
+                <path d="M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z" />
               </svg>
-              Add Task
+              Add task
             </button>
           </div>
         </div>
       </div>
 
-      <div class="px-4 py-4 sm:px-6 sm:pb-6">
-        <div
-          class="overflow-hidden rounded-xl border border-gray-200 bg-white dark:border-gray-800 dark:bg-white/[0.03]"
-        >
-          <div
-            class="border-b border-gray-200 bg-white px-4 py-4 dark:border-gray-700 dark:bg-gray-900 sm:px-6"
-          >
-            <div class="max-w-md">
-              <div class="relative">
-                <span
-                  class="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-gray-400"
-                >
-                  <svg
-                    class="h-5 w-5"
-                    fill="none"
-                    viewBox="0 0 20 20"
-                    stroke="currentColor"
-                    stroke-width="1.5"
-                  >
-                    <path
-                      stroke-linecap="round"
-                      d="M3.042 9.374c0-3.497 2.835-6.332 6.333-6.332 3.497 0 6.332 2.835 6.332 6.332 0 3.498-2.835 6.333-6.332 6.333-3.498 0-6.333-2.835-6.333-6.333zM17.208 17.205l-2.82-2.82"
-                    />
-                  </svg>
-                </span>
-                <input
-                  v-model="query.search"
-                  type="search"
-                  placeholder="Search Tasks…"
-                  class="h-11 w-full rounded-lg border border-gray-200 bg-white py-2.5 pl-10 pr-3 text-sm text-gray-900 placeholder:text-gray-400 focus:border-[#2563eb] focus:outline-none focus:ring-2 focus:ring-[#2563eb]/20 dark:border-gray-600 dark:bg-gray-900 dark:text-white dark:placeholder:text-gray-500"
-                  @keydown.enter.prevent="applySearch"
-                />
-              </div>
-            </div>
-          </div>
+      <div
+        v-if="hasMorePages"
+        class="alert alert-warning border-start-0 border-end-0 rounded-0 border-top-0 border-bottom mb-0 py-2 px-3 small"
+        role="status"
+      >
+        Page {{ pagination.current_page }} of {{ pagination.last_page }} —
+        {{ rows.length }} tasks loaded on this page. Increase rows per page or
+        use pagination below to see more.
+      </div>
 
-          <div
-            v-if="hasMorePages"
-            class="border-b border-amber-100 bg-amber-50/90 px-4 py-2.5 text-xs text-amber-900 dark:border-amber-900/40 dark:bg-amber-950/40 dark:text-amber-100 sm:px-6"
-          >
-            Page {{ pagination.current_page }} Of {{ pagination.last_page }} —
-            Showing {{ rows.length }} Tasks Loaded. Increase “Rows Per Page” Or
-            Use Pagination Below To See More.
-          </div>
-
-          <div
-            class="space-y-4 p-4 sm:p-6"
-            :class="loading ? 'min-h-[280px]' : ''"
-          >
-        <div v-if="loading" class="flex justify-center py-12">
-          <CrmLoadingSpinner message="Loading Tasks…" />
+      <div
+        class="px-3 px-md-4 py-4 wm-kanban-board-host"
+        :class="{ 'wm-kanban-board-host--loading': loading }"
+      >
+        <div v-if="loading" class="d-flex justify-content-center py-5">
+          <CrmLoadingSpinner message="Loading tasks…" />
         </div>
         <p
           v-else-if="pagination.total === 0"
-          class="py-16 text-center text-sm text-gray-500 dark:text-gray-400"
+          class="py-5 text-center text-secondary small mb-0"
         >
-          No Tasks Yet. Add One To Get Started.
+          No tasks yet. Add one to get started.
         </p>
         <div
           v-else
-          class="grid min-h-[min(70vh,640px)] grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4"
+          class="row g-3 g-md-4 wm-kanban-grid"
         >
-          <section
+          <div
             v-for="col in boardColumns"
             :key="col.value"
-            class="flex min-h-[12rem] min-w-0 flex-col rounded-xl border border-gray-200 bg-gray-50/90 dark:border-gray-700 dark:bg-gray-800/50"
+            class="col-12 col-sm-6 col-xl-3"
           >
-            <header
-              class="flex shrink-0 items-center justify-between gap-2 border-b border-gray-200 px-4 py-3 dark:border-gray-700"
+            <section
+              class="wm-kanban-column d-flex flex-column rounded border bg-body-secondary h-100"
+              style="min-height: 12rem"
             >
-              <h2 class="text-sm font-semibold text-gray-900 dark:text-white">
+            <header
+              class="d-flex flex-shrink-0 align-items-center justify-content-between gap-2 border-bottom px-3 py-3"
+            >
+              <h2 class="small fw-semibold text-body mb-0">
                 {{ col.label }}
               </h2>
               <span
-                class="inline-flex h-6 min-w-[1.5rem] items-center justify-center rounded-full bg-white px-2 text-xs font-medium text-gray-600 ring-1 ring-gray-200 dark:bg-gray-900 dark:text-gray-300 dark:ring-gray-600"
+                class="badge rounded-pill text-bg-light border"
               >
                 {{ col.tasks.length }}
               </span>
@@ -736,31 +730,32 @@ onUnmounted(() => {
               :delay="175"
               item-key="id"
               tag="div"
-              class="flex min-h-[200px] flex-1 flex-col gap-3 p-3"
+              class="d-flex flex-column flex-grow-1 gap-3 p-3 wm-kanban-dropzone"
               ghost-class="kanban-ghost"
               drag-class="kanban-drag"
               @change="onColumnChange(col.value, $event)"
             >
               <template #item="{ element: task }">
                 <article
-                  class="group relative cursor-pointer rounded-xl border border-gray-200 bg-white p-3.5 shadow-sm transition hover:border-blue-300 hover:shadow-md active:cursor-grabbing dark:border-gray-600 dark:bg-gray-900"
+                  class="wm-kanban-card position-relative rounded border bg-body p-3 shadow-sm"
                   role="button"
                   tabindex="0"
                   @click="onKanbanCardClick(task, $event)"
                   @keydown.enter.prevent="goTaskDetail(task)"
                 >
-                  <div class="flex items-start justify-between gap-2 pr-1">
-                    <h3 class="min-w-0 flex-1 text-sm font-semibold leading-snug text-gray-900 dark:text-white">
+                  <div class="d-flex align-items-start justify-content-between gap-2 pe-1">
+                    <h3 class="min-w-0 flex-grow-1 small fw-semibold lh-sm text-body mb-0">
                       {{ task.title }}
                     </h3>
                     <div
                       data-kanban-card-actions
-                      class="relative shrink-0"
+                      class="position-relative flex-shrink-0"
                       @click.stop
                     >
                       <button
                         type="button"
-                        class="inline-flex h-10 w-10 items-center justify-center rounded-lg border border-gray-200 bg-white text-gray-600 shadow-sm transition hover:border-gray-300 hover:bg-gray-50 hover:text-gray-900 dark:border-gray-600 dark:bg-gray-900 dark:text-gray-300 dark:hover:border-gray-500 dark:hover:bg-white/10 dark:hover:text-white"
+                        class="btn btn-sm btn-outline-secondary d-inline-flex align-items-center justify-content-center p-2"
+                        style="width: 2.5rem; height: 2.5rem"
                         :aria-expanded="manageOpenId === task.id"
                         aria-label="Task Actions"
                         @click="toggleManageMenu(task.id, $event)"
@@ -777,24 +772,25 @@ onUnmounted(() => {
                       >
                         <div
                           v-if="manageOpenId === task.id"
-                          class="absolute right-0 top-full z-20 mt-1 w-44 overflow-hidden rounded-lg border border-gray-200 bg-white py-1 shadow-lg dark:border-gray-700 dark:bg-gray-900"
+                          class="dropdown-menu show position-absolute end-0 mt-1 p-0 shadow"
+                          style="top: 100%"
                           data-kanban-card-actions
                           role="menu"
                           @click.stop
                         >
-                          <div class="flex flex-col">
+                          <div class="d-flex flex-column">
                             <button
                               type="button"
-                              class="w-full px-3 py-2 text-left text-sm font-medium text-gray-800 hover:bg-gray-50 dark:text-gray-200 dark:hover:bg-white/5"
+                              class="dropdown-item small"
                               role="menuitem"
                               @click="goTaskDetail(task)"
                             >
-                              View Details
+                              View details
                             </button>
                             <button
                               v-if="canMutateWebmasterTasks"
                               type="button"
-                              class="w-full border-t border-gray-100 px-3 py-2 text-left text-sm font-medium text-gray-800 hover:bg-gray-50 dark:border-gray-800 dark:text-gray-200 dark:hover:bg-white/5"
+                              class="dropdown-item small"
                               role="menuitem"
                               @click="openEdit(task)"
                             >
@@ -803,7 +799,7 @@ onUnmounted(() => {
                             <button
                               v-if="canMutateWebmasterTasks"
                               type="button"
-                              class="w-full border-t border-gray-100 px-3 py-2 text-left text-sm font-medium text-red-600 hover:bg-red-50 dark:border-gray-800 dark:text-red-400 dark:hover:bg-red-950/25"
+                              class="dropdown-item small text-danger"
                               role="menuitem"
                               @click="openDeleteModal(task)"
                             >
@@ -820,7 +816,7 @@ onUnmounted(() => {
                   >
                     {{ descSnippet(task.description) }}
                   </p>
-                  <div class="mt-3 flex flex-wrap items-center gap-2">
+                  <div class="mt-3 d-flex flex-wrap align-items-center gap-2">
                     <span
                       v-if="formatUsdPrice(task.price)"
                       class="inline-flex max-w-full truncate rounded-md bg-emerald-50 px-2 py-0.5 text-[11px] font-medium text-emerald-900 dark:bg-emerald-500/15 dark:text-emerald-200"
@@ -840,108 +836,163 @@ onUnmounted(() => {
                       {{ dueBadgeLabel(task.due_date) }}
                     </span>
                   </div>
-                  <div v-if="task.assignee" class="mt-3 flex items-center gap-2 border-t border-gray-100 pt-3 dark:border-gray-800">
+                  <div v-if="task.assignee" class="mt-3 d-flex align-items-center gap-2 border-top pt-3">
                     <span
-                      class="flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-[11px] font-semibold"
+                      class="d-flex align-items-center justify-content-center rounded-circle flex-shrink-0 small fw-semibold wm-kanban-avatar"
                       :class="avatarClassForUser(task.assignee.email)"
                     >
                       {{ initials(task.assignee.name) }}
                     </span>
-                    <span class="min-w-0 truncate text-xs text-gray-700 dark:text-gray-300">{{
+                    <span class="min-w-0 text-truncate small text-body-secondary">{{
                       task.assignee.name
                     }}</span>
                   </div>
-                  <div v-else class="mt-3 border-t border-gray-100 pt-3 text-xs text-gray-400 dark:border-gray-800">
+                  <div v-else class="mt-3 border-top pt-3 small text-body-secondary">
                     Unassigned
                   </div>
                 </article>
               </template>
             </draggable>
-          </section>
+            </section>
+          </div>
           <p
             v-if="!boardColumns.length"
-            class="col-span-full py-12 text-center text-sm text-gray-500 dark:text-gray-400"
+            class="col-12 py-5 text-center text-secondary small mb-0"
           >
-            No Status Columns. Reload The Page.
+            No status columns. Reload the page.
           </p>
         </div>
-          </div>
-        </div>
+      </div>
 
-        <div
-          class="mt-5 flex flex-col gap-4 border-t border-gray-100 pt-5 dark:border-gray-800 lg:flex-row lg:items-center lg:justify-between"
+      <div
+        class="d-flex flex-column flex-lg-row align-items-lg-center justify-content-lg-between gap-3 border-top staff-table-footer"
+      >
+        <p
+          class="small text-secondary mb-0 order-2 order-lg-1 text-center text-lg-start"
         >
-        <div
-          class="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center sm:gap-6"
-        >
-          <div class="flex items-center gap-2">
-            <label
-              for="webmaster-per-page"
-              class="whitespace-nowrap text-sm text-gray-600 dark:text-gray-400"
-              >Rows Per Page</label
-            >
-            <select
-              id="webmaster-per-page"
-              class="h-9 rounded-lg border border-gray-200 bg-white px-2 pr-8 text-sm text-gray-900 dark:border-gray-600 dark:bg-gray-800 dark:text-white"
-              :value="query.per_page"
-              :disabled="loading"
-              @change="onPerPageChange"
-            >
-              <option v-for="n in PER_PAGE_OPTIONS" :key="n" :value="n">
-                {{ n }}
-              </option>
-            </select>
-          </div>
-          <p class="text-sm text-gray-600 dark:text-gray-400">
-            <span class="font-semibold text-gray-900 dark:text-white">{{
-              pagination.total
-            }}</span>
-            Tasks
-            <span v-if="query.status" class="text-gray-500">
-              · Filtered By {{ statusLabel(query.status) }}
-            </span>
-          </p>
-        </div>
-        <div
+          Showing
+          <span class="fw-semibold text-body">{{ showingFrom }}</span>
+          to
+          <span class="fw-semibold text-body">{{ showingTo }}</span>
+          of
+          <span class="fw-semibold text-body">{{ pagination.total }}</span>
+          tasks
+          <span v-if="query.status" class="text-secondary">
+            · {{ statusLabel(query.status) }}
+          </span>
+        </p>
+        <nav
           v-if="pagination.last_page > 1"
-          class="flex w-full min-w-0 flex-wrap items-center gap-y-2"
+          class="order-1 order-lg-2 d-flex justify-content-center justify-content-lg-end ms-lg-auto flex-shrink-0"
+          aria-label="Webmaster task pages"
         >
-          <div class="flex flex-grow basis-0 justify-start">
-            <button
-              type="button"
-              class="inline-flex h-9 items-center justify-center rounded-md border border-gray-200 px-3 text-sm text-gray-600 hover:bg-gray-50 disabled:opacity-40 dark:border-gray-600 dark:text-gray-300 dark:hover:bg-gray-800"
-              :disabled="loading || pagination.current_page <= 1"
-              @click="goTaskPage(pagination.current_page - 1)"
-            >
-              Previous
-            </button>
+          <div class="staff-page-pager staff-page-pager--cluster">
+            <div class="staff-page-pager__start">
+              <button
+                type="button"
+                class="staff-page-pager-tile staff-page-pager-tile--nav"
+                :disabled="loading || pagination.current_page <= 1"
+                aria-label="First page"
+                @click="goFirstPage"
+              >
+                <svg
+                  width="18"
+                  height="18"
+                  fill="currentColor"
+                  viewBox="0 0 24 24"
+                  aria-hidden="true"
+                >
+                  <path
+                    d="M5.59 18L7 16.59 2.41 12 7 7.41 5.59 6l-6 6 6 6zm8 0L15 16.59 10.41 12 15 7.41 13.59 6l-6 6 6 6z"
+                  />
+                </svg>
+              </button>
+              <button
+                type="button"
+                class="staff-page-pager-tile staff-page-pager-tile--nav"
+                :disabled="loading || pagination.current_page <= 1"
+                aria-label="Previous page"
+                @click="goPage(pagination.current_page - 1)"
+              >
+                <svg
+                  width="18"
+                  height="18"
+                  fill="currentColor"
+                  viewBox="0 0 24 24"
+                  aria-hidden="true"
+                >
+                  <path d="M15.41 7.41L14 6l-6 6 6 6 1.41-1.41L10.83 12z" />
+                </svg>
+              </button>
+            </div>
+            <div class="staff-page-pager__pages">
+              <div class="staff-page-pager-inner d-flex align-items-center">
+                <template v-for="(item, idx) in pageItems" :key="'wm-pi-' + idx">
+                  <span
+                    v-if="item.type === 'gap'"
+                    class="px-1 small text-secondary user-select-none"
+                    >…</span
+                  >
+                  <button
+                    v-else
+                    type="button"
+                    class="staff-page-pager-tile"
+                    :class="{
+                      'staff-page-pager-tile--active':
+                        item.value === pagination.current_page,
+                    }"
+                    :disabled="loading"
+                    @click="goPage(item.value)"
+                  >
+                    {{ item.value }}
+                  </button>
+                </template>
+              </div>
+            </div>
+            <div class="staff-page-pager__end">
+              <button
+                type="button"
+                class="staff-page-pager-tile staff-page-pager-tile--nav"
+                :disabled="
+                  loading || pagination.current_page >= pagination.last_page
+                "
+                aria-label="Next page"
+                @click="goPage(pagination.current_page + 1)"
+              >
+                <svg
+                  width="18"
+                  height="18"
+                  fill="currentColor"
+                  viewBox="0 0 24 24"
+                  aria-hidden="true"
+                >
+                  <path d="M8.59 16.59L10 18l6-6-6-6-1.41 1.41L13.17 12z" />
+                </svg>
+              </button>
+              <button
+                type="button"
+                class="staff-page-pager-tile staff-page-pager-tile--nav"
+                :disabled="
+                  loading || pagination.current_page >= pagination.last_page
+                "
+                aria-label="Last page"
+                @click="goLastPage"
+              >
+                <svg
+                  width="18"
+                  height="18"
+                  fill="currentColor"
+                  viewBox="0 0 24 24"
+                  aria-hidden="true"
+                >
+                  <path
+                    d="M6.41 6L5 7.41 9.58 12 5 16.59 6.41 18l6-6-6-6zm8 0L13 7.41 17.58 12 13 16.59 14.41 18l6-6-6-6z"
+                  />
+                </svg>
+              </button>
+            </div>
           </div>
-          <div class="flex flex-grow basis-0 justify-center">
-            <span class="text-sm text-gray-600 dark:text-gray-400">
-              Page
-              <span class="font-medium text-gray-900 dark:text-white">{{
-                pagination.current_page
-              }}</span>
-              /
-              <span class="font-medium text-gray-900 dark:text-white">{{
-                pagination.last_page
-              }}</span>
-            </span>
-          </div>
-          <div class="flex flex-grow basis-0 justify-end">
-            <button
-              type="button"
-              class="inline-flex h-9 items-center justify-center rounded-md border border-gray-200 px-3 text-sm text-gray-600 hover:bg-gray-50 disabled:opacity-40 dark:border-gray-600 dark:text-gray-300 dark:hover:bg-gray-800"
-              :disabled="
-                loading || pagination.current_page >= pagination.last_page
-              "
-              @click="goTaskPage(pagination.current_page + 1)"
-            >
-              Next
-            </button>
-          </div>
-        </div>
-        </div>
+        </nav>
       </div>
     </div>
 
@@ -964,5 +1015,25 @@ onUnmounted(() => {
 }
 .kanban-drag {
   opacity: 0.98;
+}
+.wm-kanban-board-host--loading {
+  min-height: 280px;
+}
+.wm-kanban-grid {
+  min-height: min(70vh, 640px);
+}
+.wm-kanban-dropzone {
+  min-height: 200px;
+}
+.wm-kanban-card {
+  cursor: pointer;
+}
+.wm-kanban-card:hover {
+  box-shadow: 0 0.125rem 0.5rem rgba(47, 43, 61, 0.08);
+}
+.wm-kanban-avatar {
+  width: 2rem;
+  height: 2rem;
+  font-size: 0.6875rem;
 }
 </style>

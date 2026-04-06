@@ -261,17 +261,17 @@ async function onSubmit() {
                           class="mb-1 block text-xs font-medium text-gray-600 dark:text-gray-400"
                           >Password</label
                         >
-                        <div class="relative">
+                        <div class="relative isolate">
                           <input
                             v-model="form.password"
                             :type="showPortalPassword ? 'text' : 'password'"
                             autocomplete="new-password"
                             minlength="8"
-                            class="h-10 w-full rounded-lg border border-gray-300 bg-white py-2 pl-3 pr-10 text-sm dark:border-gray-600 dark:bg-gray-800 dark:text-white"
+                            class="relative z-0 h-10 w-full rounded-lg border border-gray-300 bg-white py-2 pl-3 pr-11 text-sm dark:border-gray-600 dark:bg-gray-800 dark:text-white"
                           />
                           <button
                             type="button"
-                            class="absolute right-1.5 top-1/2 -translate-y-1/2 rounded-md p-1 text-gray-400 hover:bg-gray-100 dark:hover:bg-white/10"
+                            class="client-account-drawer__pw-toggle absolute inset-y-0 right-0 z-10 flex w-10 shrink-0 items-center justify-center rounded-r-lg text-gray-500 hover:bg-gray-100 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-violet-500 dark:text-gray-400 dark:hover:bg-white/10"
                             :aria-pressed="showPortalPassword"
                             aria-label="Toggle password visibility"
                             @click="showPortalPassword = !showPortalPassword"
@@ -318,17 +318,17 @@ async function onSubmit() {
                           class="mb-1 block text-xs font-medium text-gray-600 dark:text-gray-400"
                           >Confirm password</label
                         >
-                        <div class="relative">
+                        <div class="relative isolate">
                           <input
                             v-model="form.password_confirmation"
                             :type="showPortalPassword ? 'text' : 'password'"
                             autocomplete="new-password"
                             minlength="8"
-                            class="h-10 w-full rounded-lg border border-gray-300 bg-white py-2 pl-3 pr-10 text-sm dark:border-gray-600 dark:bg-gray-800 dark:text-white"
+                            class="relative z-0 h-10 w-full rounded-lg border border-gray-300 bg-white py-2 pl-3 pr-11 text-sm dark:border-gray-600 dark:bg-gray-800 dark:text-white"
                           />
                           <button
                             type="button"
-                            class="absolute right-1.5 top-1/2 -translate-y-1/2 rounded-md p-1 text-gray-400 hover:bg-gray-100 dark:hover:bg-white/10"
+                            class="client-account-drawer__pw-toggle absolute inset-y-0 right-0 z-10 flex w-10 shrink-0 items-center justify-center rounded-r-lg text-gray-500 hover:bg-gray-100 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-violet-500 dark:text-gray-400 dark:hover:bg-white/10"
                             :aria-pressed="showPortalPassword"
                             aria-label="Toggle confirm password visibility"
                             @click="showPortalPassword = !showPortalPassword"
@@ -535,6 +535,18 @@ async function onSubmit() {
 </template>
 
 <style scoped>
+/* Suffix eye control: no Bootstrap default button chrome inside masked inputs */
+.client-account-drawer__pw-toggle {
+  margin: 0;
+  padding: 0;
+  appearance: none;
+  -webkit-appearance: none;
+  border: none !important;
+  background: transparent !important;
+  box-shadow: none !important;
+  line-height: 1;
+}
+
 .drawer-fade-enter-active,
 .drawer-fade-leave-active {
   transition: opacity 0.2s ease;

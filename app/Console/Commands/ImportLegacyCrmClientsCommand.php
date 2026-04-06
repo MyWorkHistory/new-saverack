@@ -9,24 +9,21 @@ use Illuminate\Console\Command;
 use Illuminate\Support\Facades\DB;
 
 /**
- * Imports account + store rows from a legacy MySQL database into this app's client_accounts / client_stores.
+ * Reads legacy MySQL source tables (`customers`, `crm_stores` from your dumps) and writes this app’s
+ * `client_accounts` / `client_stores` on the default DB connection.
  *
- * Supports:
- * - Old CRM shape: tables like customers + crm_stores (c_email, customer FK, …)
- * - Laravel shape: tables client_accounts + client_stores (email, client_account_id FK, …)
- *
- * Set LEGACY_DB_* in .env, then: php artisan crm:import-legacy-clients
+ * The .sql files are NOT read by this command — load them into MySQL first, then set LEGACY_DB_DATABASE.
  */
 class ImportLegacyCrmClientsCommand extends Command
 {
     protected $signature = 'crm:import-legacy-clients
                             {--connection=legacy_crm : Laravel DB connection name for legacy MySQL}
-                            {--customers-table=client_accounts : Legacy accounts table name (old CRM: customers)}
-                            {--stores-table=client_stores : Legacy stores table name (old CRM: crm_stores)}
+                            {--customers-table=auto : Source accounts table: auto prefers customers, or pass a table name}
+                            {--stores-table=auto : Source stores table: auto prefers crm_stores, or pass a table name}
                             {--skip-deleted : Omit legacy rows where is_deleted = 2 (when that column exists)}
                             {--dry-run : Show counts and sample mapping without writing}';
 
-    protected $description = 'Import legacy CRM customers + stores from MySQL dumps into client_accounts and client_stores';
+    protected $description = 'Import legacy customers + crm_stores from MySQL into client_accounts/client_stores';
 
     /** @var bool */
     protected $legacyAccountsOldCrmColumns = false;
@@ -40,8 +37,8 @@ class ImportLegacyCrmClientsCommand extends Command
     public function handle(): int
     {
         $connName = (string) $this->option('connection');
-        $customersTable = (string) $this->option('customers-table');
-        $storesTable = (string) $this->option('stores-table');
+        $customersTableOpt = (string) $this->option('customers-table');
+        $storesTableOpt = (string) $this->option('stores-table');
         $skipDeleted = (bool) $this->option('skip-deleted');
         $dryRun = (bool) $this->option('dry-run');
 
@@ -67,20 +64,51 @@ class ImportLegacyCrmClientsCommand extends Command
         }
 
         $legacy = DB::connection($connName);
-
-        if (! $legacy->getSchemaBuilder()->hasTable($customersTable)) {
-            $this->error("Legacy table [{$customersTable}] not found. Check LEGACY_DB_DATABASE and table name (--customers-table).");
-
-            return self::FAILURE;
-        }
-
-        if (! $legacy->getSchemaBuilder()->hasTable($storesTable)) {
-            $this->error("Legacy table [{$storesTable}] not found. Check LEGACY_DB_DATABASE and table name (--stores-table).");
-
-            return self::FAILURE;
-        }
-
         $schema = $legacy->getSchemaBuilder();
+
+        try {
+            $customersTable = $this->resolveAccountsSourceTable($schema, $customersTableOpt);
+            $storesTable = $this->resolveStoresSourceTable($schema, $storesTableOpt);
+        } catch (\InvalidArgumentException $e) {
+            $this->error($e->getMessage());
+
+            return self::FAILURE;
+        }
+
+        if (! $schema->hasTable($customersTable) || ! $schema->hasTable($storesTable)) {
+            $this->error('Resolved legacy tables missing (internal error).');
+
+            return self::FAILURE;
+        }
+
+        $this->line("<fg=cyan>Legacy connection database:</> {$config['database']}");
+        $this->line("<fg=cyan>Reading source tables:</> `{$customersTable}` → app `client_accounts`, `{$storesTable}` → app `client_stores`");
+
+        if ($this->legacyMysqlMatchesAppDatabase($connName)) {
+            $this->warn('LEGACY_DB_DATABASE is the same as your app MySQL database. That is OK only if you imported `customers.sql` / `crm_stores.sql` into this database so `customers` and `crm_stores` exist with full data. If you did not import those dumps, the importer will only see your current Laravel tables.');
+        }
+
+        $nCustomersTable = (int) $legacy->table($customersTable)->count();
+        $nCustomersDump = $schema->hasTable('customers') ? (int) $legacy->table('customers')->count() : 0;
+
+        if ($customersTable === 'client_accounts' && $nCustomersTable < 50 && $schema->hasTable('customers') && $nCustomersDump > $nCustomersTable) {
+            $this->error('You are reading `client_accounts` ('.$nCustomersTable.' rows) but `customers` exists with '.$nCustomersDump.' rows. Re-run with --customers-table=customers --stores-table=crm_stores, or use --customers-table=auto (default).');
+
+            return self::FAILURE;
+        }
+
+        if ($customersTable === 'client_accounts' && $nCustomersTable < 50 && ! $schema->hasTable('customers')) {
+            $this->warn('Only '.$nCustomersTable.' rows in `'.$customersTable.'`. If you expected hundreds, create a MySQL database, run: mysql ... < database/customers.sql && mysql ... < database/crm_stores.sql — then set LEGACY_DB_DATABASE to that database.');
+        }
+
+        $nStoresTable = (int) $legacy->table($storesTable)->count();
+        $nCrmStoresDump = $schema->hasTable('crm_stores') ? (int) $legacy->table('crm_stores')->count() : 0;
+        if ($storesTable === 'client_stores' && $nStoresTable < 50 && $schema->hasTable('crm_stores') && $nCrmStoresDump > $nStoresTable) {
+            $this->error('You are reading `client_stores` ('.$nStoresTable.' rows) but `crm_stores` exists with '.$nCrmStoresDump.' rows. Use --stores-table=auto (default) or --stores-table=crm_stores.');
+
+            return self::FAILURE;
+        }
+
         $this->legacyAccountsOldCrmColumns = $schema->hasColumn($customersTable, 'c_email');
         if ($schema->hasColumn($storesTable, 'customer')) {
             $this->legacyStoreAccountFkColumn = 'customer';
@@ -438,6 +466,74 @@ class ImportLegacyCrmClientsCommand extends Command
         ], function ($v) {
             return $v !== null;
         });
+    }
+
+    /**
+     * @param  \Illuminate\Database\Schema\Builder  $schema
+     */
+    private function resolveAccountsSourceTable($schema, string $explicit): string
+    {
+        $explicit = trim($explicit);
+        if ($explicit !== '' && strcasecmp($explicit, 'auto') !== 0) {
+            if (! $schema->hasTable($explicit)) {
+                throw new \InvalidArgumentException("Legacy accounts table [{$explicit}] does not exist.");
+            }
+
+            return $explicit;
+        }
+        if ($schema->hasTable('customers')) {
+            return 'customers';
+        }
+        if ($schema->hasTable('client_accounts')) {
+            return 'client_accounts';
+        }
+
+        throw new \InvalidArgumentException(
+            'No source accounts table found. Import `database/customers.sql` into MySQL (creates `customers`), then set LEGACY_DB_DATABASE to that database.'
+        );
+    }
+
+    /**
+     * @param  \Illuminate\Database\Schema\Builder  $schema
+     */
+    private function resolveStoresSourceTable($schema, string $explicit): string
+    {
+        $explicit = trim($explicit);
+        if ($explicit !== '' && strcasecmp($explicit, 'auto') !== 0) {
+            if (! $schema->hasTable($explicit)) {
+                throw new \InvalidArgumentException("Legacy stores table [{$explicit}] does not exist.");
+            }
+
+            return $explicit;
+        }
+        if ($schema->hasTable('crm_stores')) {
+            return 'crm_stores';
+        }
+        if ($schema->hasTable('client_stores')) {
+            return 'client_stores';
+        }
+
+        throw new \InvalidArgumentException(
+            'No source stores table found. Import `database/crm_stores.sql` into MySQL (creates `crm_stores`), then set LEGACY_DB_DATABASE to that database.'
+        );
+    }
+
+    private function legacyMysqlMatchesAppDatabase(string $legacyConnName): bool
+    {
+        $defaultName = (string) config('database.default');
+        $appCfg = config("database.connections.{$defaultName}");
+        $legCfg = config("database.connections.{$legacyConnName}");
+        if (! is_array($appCfg) || ! is_array($legCfg)) {
+            return false;
+        }
+        if (($appCfg['driver'] ?? '') !== 'mysql' || ($legCfg['driver'] ?? '') !== 'mysql') {
+            return false;
+        }
+        $sameDb = (string) ($appCfg['database'] ?? '') === (string) ($legCfg['database'] ?? '');
+        $sameHost = (string) ($appCfg['host'] ?? '') === (string) ($legCfg['host'] ?? '');
+        $samePort = (string) ($appCfg['port'] ?? '3306') === (string) ($legCfg['port'] ?? '3306');
+
+        return $sameDb && $sameHost && $samePort;
     }
 
     private function buildStreet(object $row, string $prefix): string

@@ -15,6 +15,12 @@ const props = defineProps({
   listboxId: { type: String, default: "" },
   /** For filters without a visible label (e.g. list toolbar). */
   ariaLabel: { type: String, default: "" },
+  /** `staff`: match CRM staff/datatable filter controls (Bootstrap-ish). */
+  appearance: {
+    type: String,
+    default: "default",
+    validator: (v) => v === "default" || v === "staff",
+  },
 });
 
 const emit = defineEmits(["update:modelValue"]);
@@ -89,7 +95,11 @@ onUnmounted(() => document.removeEventListener("click", onDocClick));
 </script>
 
 <template>
-  <div ref="root" class="relative w-full">
+  <div
+    ref="root"
+    class="relative w-full"
+    :class="{ 'crm-searchable-select--staff': appearance === 'staff' }"
+  >
     <label
       v-if="label"
       class="mb-1 block text-xs font-medium text-gray-600 dark:text-gray-400"
@@ -98,7 +108,7 @@ onUnmounted(() => document.removeEventListener("click", onDocClick));
     <button
       :id="buttonId || undefined"
       type="button"
-      class="flex h-11 w-full min-w-0 items-center gap-2.5 rounded-xl border border-gray-200 bg-white px-3 text-left shadow-sm transition hover:border-gray-300 hover:bg-gray-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-[#2563eb]/25 disabled:cursor-not-allowed disabled:opacity-60 dark:border-gray-700 dark:bg-gray-900 dark:hover:border-gray-600 dark:hover:bg-gray-800/80"
+      class="crm-searchable-select__trigger flex h-11 w-full min-w-0 items-center gap-2.5 rounded-xl border border-gray-200 bg-white px-3 text-left shadow-sm transition hover:border-gray-300 hover:bg-gray-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-[#2563eb]/25 disabled:cursor-not-allowed disabled:opacity-60 dark:border-gray-700 dark:bg-gray-900 dark:hover:border-gray-600 dark:hover:bg-gray-800/80"
       :aria-expanded="open"
       aria-haspopup="listbox"
       :aria-label="ariaLabel || undefined"
@@ -144,7 +154,7 @@ onUnmounted(() => document.removeEventListener("click", onDocClick));
     <div
       v-if="open"
       :id="listboxId || undefined"
-      class="absolute left-0 right-0 z-[140] mt-2 overflow-hidden rounded-xl border border-gray-200 bg-white shadow-xl dark:border-gray-700 dark:bg-gray-900"
+      class="crm-searchable-select__panel absolute left-0 right-0 z-[140] mt-2 overflow-hidden rounded-xl border border-gray-200 bg-white shadow-xl dark:border-gray-700 dark:bg-gray-900"
       role="listbox"
     >
       <div class="border-b border-gray-100 p-2 dark:border-gray-800">

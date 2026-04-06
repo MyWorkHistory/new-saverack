@@ -12,6 +12,7 @@ import { crmIsAdmin } from "../utils/crmUser";
 import { errorMessage } from "../utils/apiError";
 import { formatBirthdayUs, formatIsoDate } from "../utils/formatUserDates";
 import CrmIconRowActions from "../components/common/CrmIconRowActions.vue";
+import StaffRoleIcon from "../components/users/StaffRoleIcon.vue";
 import { resolvePublicUrl } from "../utils/resolvePublicUrl.js";
 
 const crmUser = inject("crmUser", ref(null));
@@ -91,11 +92,11 @@ function splitWhen(iso) {
 }
 
 const avatarPalettes = [
-  "bg-sky-100 text-sky-800 dark:bg-sky-500/20 dark:text-sky-200",
-  "bg-violet-100 text-violet-800 dark:bg-violet-500/20 dark:text-violet-200",
-  "bg-amber-100 text-amber-900 dark:bg-amber-500/20 dark:text-amber-200",
-  "bg-emerald-100 text-emerald-900 dark:bg-emerald-500/20 dark:text-emerald-200",
-  "bg-rose-100 text-rose-900 dark:bg-rose-500/20 dark:text-rose-200",
+  "bg-info-subtle text-info-emphasis",
+  "bg-primary-subtle text-primary-emphasis",
+  "bg-warning-subtle text-warning-emphasis",
+  "bg-success-subtle text-success",
+  "bg-danger-subtle text-danger",
 ];
 
 function initials(name) {
@@ -120,15 +121,15 @@ const roleLabels = (user) => {
 const statusBadgeClass = (status) => {
   const s = String(status || "").toLowerCase();
   if (s === "active") {
-    return "bg-emerald-50 text-emerald-800 dark:bg-emerald-500/10 dark:text-emerald-300";
+    return "bg-success-subtle text-success";
   }
   if (s === "pending") {
-    return "bg-amber-50 text-amber-800 dark:bg-amber-500/10 dark:text-amber-200";
+    return "bg-warning-subtle text-warning-emphasis";
   }
   if (s === "inactive") {
-    return "bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-300";
+    return "bg-body-secondary text-body-secondary";
   }
-  return "bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300";
+  return "bg-body-tertiary text-body-secondary";
 };
 
 const filteredUsers = computed(() => {
@@ -220,22 +221,22 @@ const areaChartOptions = computed(() => ({
       opacityTo: 0.05,
     },
   },
-  colors: ["#2563eb", "#1d4ed8"],
+  colors: ["#7367F0", "#00BAD1"],
   xaxis: {
     categories: chartBundle.value.labels,
     axisBorder: { show: false },
     axisTicks: { show: false },
     labels: {
-      style: { colors: "#6B7280", fontSize: "12px" },
+      style: { colors: "#808390", fontSize: "12px" },
     },
   },
   yaxis: {
     labels: {
-      style: { colors: "#6B7280", fontSize: "12px" },
+      style: { colors: "#808390", fontSize: "12px" },
     },
   },
   grid: {
-    borderColor: "#E5E7EB",
+    borderColor: "rgba(47, 43, 61, 0.08)",
     strokeDashArray: 4,
     xaxis: { lines: { show: false } },
   },
@@ -260,10 +261,23 @@ const donutTotal = computed(() =>
   donutSeries.value.reduce((a, b) => a + b, 0),
 );
 
+const donutLegendSlices = computed(() => {
+  const colors = ["#B8B2FF", "#7367F0", "#2F2B3D"];
+  const keys = ["Pending", "Active", "Inactive"];
+  const series = donutSeries.value;
+  const total = donutTotal.value;
+  return keys.map((key, idx) => ({
+    key,
+    pct: total > 0 ? Math.round(((series[idx] ?? 0) / total) * 100) : 0,
+    count: series[idx] ?? 0,
+    color: colors[idx],
+  }));
+});
+
 const donutOptions = computed(() => ({
   chart: { fontFamily: "inherit" },
   labels: ["Pending", "Active", "Inactive"],
-  colors: ["#93C5FD", "#2563eb", "#0F172A"],
+  colors: ["#B8B2FF", "#7367F0", "#2F2B3D"],
   plotOptions: {
     pie: {
       donut: {
@@ -292,19 +306,19 @@ const radialOptions = computed(() => ({
   plotOptions: {
     radialBar: {
       hollow: { size: "62%" },
-      track: { background: "#E5E7EB" },
+      track: { background: "rgba(47, 43, 61, 0.08)" },
       dataLabels: {
         name: { show: false },
         value: {
           fontSize: "28px",
           fontWeight: 700,
-          color: "#111827",
+          color: "#2F2B3D",
           formatter: (val) => `${val}%`,
         },
       },
     },
   },
-  colors: ["#2563eb"],
+  colors: ["#7367F0"],
   labels: ["Engagement"],
 }));
 
@@ -459,382 +473,330 @@ onUnmounted(() => {
 </script>
 
 <template>
-  <div class="space-y-6">
+  <div class="vx-dashboard">
     <div
       v-if="loading"
-      class="flex justify-center rounded-2xl border border-gray-200 bg-white p-10 dark:border-gray-800 dark:bg-white/[0.03]"
+      class="vx-card p-5 d-flex justify-content-center"
     >
       <CrmLoadingSpinner message="Loading Dashboard…" />
     </div>
 
     <template v-else>
-      <!-- Top metrics -->
-      <div class="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">
-        <CrmMetricCard
-          label="Total Users"
-          :value="nf.format(summary.metrics.total_users.value)"
-          :change-pct="summary.metrics.total_users.change_pct"
-          period-label="From Last Month"
-        />
-        <CrmMetricCard
-          label="Active Users"
-          :value="nf.format(summary.metrics.active_users.value)"
-          :change-pct="summary.metrics.active_users.change_pct"
-          period-label="New Active Accounts (MoM)"
-        />
-        <CrmMetricCard
-          label="Activities Today"
-          :value="nf.format(summary.metrics.activities_today.value)"
-          :change-pct="summary.metrics.activities_today.change_pct"
-          period-label="Compared To Yesterday"
-        />
+      <div class="row g-4 mb-4">
+        <div class="col-12 col-sm-6 col-xl-4">
+          <CrmMetricCard
+            label="Total Users"
+            :value="nf.format(summary.metrics.total_users.value)"
+            :change-pct="summary.metrics.total_users.change_pct"
+            period-label="From Last Month"
+          />
+        </div>
+        <div class="col-12 col-sm-6 col-xl-4">
+          <CrmMetricCard
+            label="Active Users"
+            :value="nf.format(summary.metrics.active_users.value)"
+            :change-pct="summary.metrics.active_users.change_pct"
+            period-label="New Active Accounts (MoM)"
+          />
+        </div>
+        <div class="col-12 col-sm-6 col-xl-4">
+          <CrmMetricCard
+            label="Activities Today"
+            :value="nf.format(summary.metrics.activities_today.value)"
+            :change-pct="summary.metrics.activities_today.change_pct"
+            period-label="Compared To Yesterday"
+          />
+        </div>
       </div>
 
       <!-- Statistics + radial -->
-      <div class="grid grid-cols-1 gap-4 xl:grid-cols-12">
-        <div
-          class="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm dark:border-gray-800 dark:bg-white/[0.03] xl:col-span-8"
-        >
-          <div
-            class="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between"
-          >
-            <div>
-              <h2 class="text-lg font-semibold text-gray-900 dark:text-white">
-                Statistics
-              </h2>
-              <p class="mt-0.5 text-sm text-gray-500 dark:text-gray-400">
-                Activity And New Registrations By Period
-              </p>
-              <div class="mt-4 flex flex-wrap gap-6">
-                <div>
-                  <p class="text-xs font-medium text-gray-500 dark:text-gray-400">
-                    Avg. monthly activity
-                  </p>
-                  <p class="mt-1 text-xl font-bold text-gray-900 dark:text-white">
-                    {{ avgActivityMonthly.line1 }}
-                    <span
-                      class="ml-2 inline-flex items-center rounded-full bg-emerald-50 px-2 py-0.5 text-xs font-semibold text-emerald-600 dark:bg-emerald-500/15 dark:text-emerald-400"
-                    >
-                      {{ avgActivityMonthly.line2 }} Vs Prior
-                    </span>
-                  </p>
-                </div>
-                <div>
-                  <p class="text-xs font-medium text-gray-500 dark:text-gray-400">
-                    Latest Month Vs Prev.
-                  </p>
-                  <p class="mt-1 text-xl font-bold text-gray-900 dark:text-white">
-                    {{
-                      nf.format(
-                        summary.chart.activity?.at(-1) ?? 0,
-                      )
-                    }}
-                    <span
-                      class="ml-2 text-sm font-normal text-gray-500 dark:text-gray-400"
-                    >
-                      Activity
-                    </span>
-                  </p>
+      <div class="row g-4 mb-4">
+        <div class="col-12 col-xl-8">
+          <div class="vx-card p-4 h-100">
+            <div
+              class="d-flex flex-column flex-sm-row align-items-start justify-content-between gap-3"
+            >
+              <div class="flex-grow-1 min-w-0">
+                <h2 class="vx-card-title">Statistics</h2>
+                <p class="vx-card-sub">
+                  Activity And New Registrations By Period
+                </p>
+                <div class="d-flex flex-wrap gap-4 mt-3">
+                  <div>
+                    <p class="small text-body-secondary fw-medium mb-1">
+                      Avg. monthly activity
+                    </p>
+                    <p class="fs-5 fw-bold text-body mb-0">
+                      {{ avgActivityMonthly.line1 }}
+                      <span
+                        class="badge bg-success-subtle text-success ms-2 align-middle"
+                      >
+                        {{ avgActivityMonthly.line2 }} Vs Prior
+                      </span>
+                    </p>
+                  </div>
+                  <div>
+                    <p class="small text-body-secondary fw-medium mb-1">
+                      Latest Month Vs Prev.
+                    </p>
+                    <p class="fs-5 fw-bold text-body mb-0">
+                      {{
+                        nf.format(summary.chart.activity?.at(-1) ?? 0)
+                      }}
+                      <span class="small fw-normal text-body-secondary ms-2">
+                        Activity
+                      </span>
+                    </p>
+                  </div>
                 </div>
               </div>
+              <div class="vx-period-pill flex-shrink-0">
+                <button
+                  type="button"
+                  :class="{ active: period === 'monthly' }"
+                  @click="period = 'monthly'"
+                >
+                  Monthly
+                </button>
+                <button
+                  type="button"
+                  :class="{ active: period === 'quarterly' }"
+                  @click="period = 'quarterly'"
+                >
+                  Quarterly
+                </button>
+                <button
+                  type="button"
+                  :class="{ active: period === 'annually' }"
+                  @click="period = 'annually'"
+                >
+                  Annually
+                </button>
+              </div>
             </div>
-            <div
-              class="inline-flex rounded-lg border border-gray-200 p-0.5 dark:border-gray-700"
-            >
-              <button
-                type="button"
-                class="rounded-md px-3 py-1.5 text-xs font-semibold transition"
-                :class="
-                  period === 'monthly'
-                    ? 'bg-[#2563eb] text-white shadow-sm'
-                    : 'text-gray-600 hover:bg-gray-50 dark:text-gray-400 dark:hover:bg-white/5'
-                "
-                @click="period = 'monthly'"
-              >
-                Monthly
-              </button>
-              <button
-                type="button"
-                class="rounded-md px-3 py-1.5 text-xs font-semibold transition"
-                :class="
-                  period === 'quarterly'
-                    ? 'bg-[#2563eb] text-white shadow-sm'
-                    : 'text-gray-600 hover:bg-gray-50 dark:text-gray-400 dark:hover:bg-white/5'
-                "
-                @click="period = 'quarterly'"
-              >
-                Quarterly
-              </button>
-              <button
-                type="button"
-                class="rounded-md px-3 py-1.5 text-xs font-semibold transition"
-                :class="
-                  period === 'annually'
-                    ? 'bg-[#2563eb] text-white shadow-sm'
-                    : 'text-gray-600 hover:bg-gray-50 dark:text-gray-400 dark:hover:bg-white/5'
-                "
-                @click="period = 'annually'"
-              >
-                Annually
-              </button>
+            <div class="mt-3" style="min-height: 320px">
+              <VueApexCharts
+                type="area"
+                height="320"
+                :options="areaChartOptions"
+                :series="chartBundle.series"
+              />
             </div>
-          </div>
-          <div class="mt-2 min-h-[320px]">
-            <VueApexCharts
-              type="area"
-              height="320"
-              :options="areaChartOptions"
-              :series="chartBundle.series"
-            />
           </div>
         </div>
 
-        <div
-          class="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm dark:border-gray-800 dark:bg-white/[0.03] xl:col-span-4"
-        >
-          <div class="flex items-start justify-between">
-            <div>
-              <h2 class="text-lg font-semibold text-gray-900 dark:text-white">
-                Engagement
-              </h2>
-              <p class="mt-0.5 text-sm text-gray-500 dark:text-gray-400">
-                Today’s Activity Vs Active Accounts
-              </p>
-            </div>
-            <button
-              type="button"
-              class="rounded-lg p-1 text-gray-400 hover:bg-gray-100 dark:hover:bg-white/10"
-              aria-label="Menu"
-            >
-              <span class="inline-block rotate-90 font-bold leading-none">⋯</span>
-            </button>
-          </div>
-          <div class="flex justify-center py-2">
-            <VueApexCharts
-              type="radialBar"
-              height="260"
-              :options="radialOptions"
-              :series="[summary.engagement_score]"
-            />
-          </div>
-          <p
-            class="text-center text-xs font-medium text-gray-500 dark:text-gray-400"
-          >
-            This Month’s Goals
-          </p>
-          <div class="mt-4 space-y-3 border-t border-gray-100 pt-4 dark:border-gray-800">
-            <div>
-              <div class="flex justify-between text-xs font-medium">
-                <span class="text-gray-600 dark:text-gray-300">Active Users</span>
-                <span class="text-gray-900 dark:text-white">{{
-                  nf.format(summary.metrics.active_users.value)
-                }}</span>
+        <div class="col-12 col-xl-4">
+          <div class="vx-card p-4 h-100">
+            <div class="vx-card-header-row">
+              <div>
+                <h2 class="vx-card-title">Engagement</h2>
+                <p class="vx-card-sub">
+                  Today’s Activity Vs Active Accounts
+                </p>
               </div>
-              <div class="mt-1.5 h-2 overflow-hidden rounded-full bg-gray-100 dark:bg-gray-800">
+              <button
+                type="button"
+                class="btn btn-sm btn-link text-secondary p-1"
+                aria-label="Menu"
+              >
+                <span class="d-inline-block user-select-none fs-5 lh-1"
+                  >⋯</span
+                >
+              </button>
+            </div>
+            <div class="d-flex justify-content-center py-2">
+              <VueApexCharts
+                type="radialBar"
+                height="260"
+                :options="radialOptions"
+                :series="[summary.engagement_score]"
+              />
+            </div>
+            <p class="text-center small fw-medium text-body-secondary mb-0">
+              This Month’s Goals
+            </p>
+            <div class="mt-4 pt-4 border-top border-opacity-10">
+              <div class="mb-3">
                 <div
-                  class="h-full rounded-full bg-[#2563eb]"
-                  :style="{
-                    width: `${
-                      summary.metrics.total_users.value
-                        ? Math.min(
-                            100,
-                            (summary.metrics.active_users.value /
-                              summary.metrics.total_users.value) *
+                  class="d-flex justify-content-between small fw-medium text-body-secondary"
+                >
+                  <span>Active Users</span>
+                  <span class="text-body">{{
+                    nf.format(summary.metrics.active_users.value)
+                  }}</span>
+                </div>
+                <div
+                  class="vx-progress-thin mt-2 overflow-hidden rounded-pill"
+                >
+                  <div
+                    class="vx-progress-bar--primary h-100 rounded-pill"
+                    :style="{
+                      width: `${
+                        summary.metrics.total_users.value
+                          ? Math.min(
                               100,
-                          )
-                        : 0
-                    }%`,
-                  }"
-                />
+                              (summary.metrics.active_users.value /
+                                summary.metrics.total_users.value) *
+                                100,
+                            )
+                          : 0
+                      }%`,
+                    }"
+                  />
+                </div>
               </div>
-            </div>
-            <div>
-              <div class="flex justify-between text-xs font-medium">
-                <span class="text-gray-600 dark:text-gray-300">Activity (30D)</span>
-                <span class="text-gray-900 dark:text-white">{{
-                  nf.format(
-                    (summary.chart.activity ?? []).reduce(
-                      (a, b) => a + b,
-                      0,
-                    ),
-                  )
-                }}</span>
-              </div>
-              <div class="mt-1.5 h-2 overflow-hidden rounded-full bg-gray-100 dark:bg-gray-800">
+              <div>
                 <div
-                  class="h-full rounded-full bg-sky-400"
-                  :style="{ width: `${activityTrendBarPct}%` }"
-                />
+                  class="d-flex justify-content-between small fw-medium text-body-secondary"
+                >
+                  <span>Activity (30D)</span>
+                  <span class="text-body">{{
+                    nf.format(
+                      (summary.chart.activity ?? []).reduce(
+                        (a, b) => a + b,
+                        0,
+                      ),
+                    )
+                  }}</span>
+                </div>
+                <div
+                  class="vx-progress-thin mt-2 overflow-hidden rounded-pill"
+                >
+                  <div
+                    class="vx-progress-bar--teal h-100 rounded-pill"
+                    :style="{ width: `${activityTrendBarPct}%` }"
+                  />
+                </div>
               </div>
             </div>
           </div>
         </div>
       </div>
 
-      <!-- Donut + schedule -->
-      <div class="grid grid-cols-1 gap-4 lg:grid-cols-2">
-        <div
-          class="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm dark:border-gray-800 dark:bg-white/[0.03]"
-        >
-          <div class="flex items-start justify-between">
-            <h2 class="text-lg font-semibold text-gray-900 dark:text-white">
-              Users By Status
-            </h2>
-            <button
-              type="button"
-              class="rounded-lg p-1 text-gray-400 hover:bg-gray-100 dark:hover:bg-white/10"
-              aria-label="Menu"
-            >
-              <span class="inline-block rotate-90 font-bold leading-none">⋯</span>
-            </button>
-          </div>
-          <div class="mt-2 flex flex-col items-stretch gap-4 md:flex-row">
-            <div class="min-w-0 flex-1 md:max-w-[55%]">
-              <VueApexCharts
-                type="donut"
-                height="320"
-                :options="donutOptions"
-                :series="donutSeries"
-              />
+      <!-- Donut + recent activity -->
+      <div class="row g-4 mb-4">
+        <div class="col-12 col-lg-6">
+          <div class="vx-card p-4 h-100">
+            <div class="vx-card-header-row">
+              <h2 class="vx-card-title mb-0">Users By Status</h2>
+              <button
+                type="button"
+                class="btn btn-sm btn-link text-secondary p-1"
+                aria-label="Menu"
+              >
+                <span class="d-inline-block user-select-none fs-5 lh-1"
+                  >⋯</span
+                >
+              </button>
             </div>
-            <ul
-              class="flex flex-1 flex-col justify-center gap-3 text-sm dark:text-gray-300"
+            <div
+              class="mt-2 d-flex flex-column flex-md-row align-items-stretch gap-4"
             >
+              <div class="min-w-0 flex-grow-1" style="max-width: 55%">
+                <VueApexCharts
+                  type="donut"
+                  height="320"
+                  :options="donutOptions"
+                  :series="donutSeries"
+                />
+              </div>
+              <ul
+                class="list-unstyled mb-0 d-flex flex-column justify-content-center gap-3 flex-grow-1 small"
+              >
+                <li
+                  v-for="slice in donutLegendSlices"
+                  :key="slice.key"
+                  class="d-flex gap-3"
+                >
+                  <span
+                    class="mt-1 flex-shrink-0 rounded-circle"
+                    style="width: 0.625rem; height: 0.625rem"
+                    :style="{ backgroundColor: slice.color }"
+                  />
+                  <div class="min-w-0">
+                    <p class="fw-medium text-body mb-0">{{ slice.key }}</p>
+                    <p class="text-body-secondary small mb-0">
+                      {{ slice.pct }}% • {{ nf.format(slice.count) }} Accounts
+                    </p>
+                  </div>
+                </li>
+              </ul>
+            </div>
+          </div>
+        </div>
+
+        <div class="col-12 col-lg-6">
+          <div class="vx-card p-4 h-100">
+            <div class="vx-card-header-row">
+              <h2 class="vx-card-title mb-0">Recent Activity</h2>
+              <button
+                type="button"
+                class="btn btn-sm btn-link text-secondary p-1"
+                aria-label="Menu"
+              >
+                <span class="d-inline-block user-select-none fs-5 lh-1"
+                  >⋯</span
+                >
+              </button>
+            </div>
+            <ul class="list-unstyled mb-0 mt-3">
               <li
-                v-for="(slice, idx) in [
-                  {
-                    key: 'Pending',
-                    pct:
-                      donutTotal > 0
-                        ? Math.round(
-                            (donutSeries[0] / donutTotal) * 100,
-                          )
-                        : 0,
-                    count: donutSeries[0],
-                    dot: 'bg-sky-300',
-                  },
-                  {
-                    key: 'Active',
-                    pct:
-                      donutTotal > 0
-                        ? Math.round(
-                            (donutSeries[1] / donutTotal) * 100,
-                          )
-                        : 0,
-                    count: donutSeries[1],
-                    dot: 'bg-[#2563eb]',
-                  },
-                  {
-                    key: 'Inactive',
-                    pct:
-                      donutTotal > 0
-                        ? Math.round(
-                            (donutSeries[2] / donutTotal) * 100,
-                          )
-                        : 0,
-                    count: donutSeries[2],
-                    dot: 'bg-slate-800',
-                  },
-                ]"
-                :key="slice.key"
-                class="flex gap-3"
+                v-for="item in summary.recent_activity"
+                :key="item.id"
+                class="d-flex gap-3 py-3 border-bottom border-opacity-10"
               >
                 <span
-                  class="mt-1.5 h-2.5 w-2.5 shrink-0 rounded-full"
-                  :class="slice.dot"
+                  class="mt-1 flex-shrink-0 rounded border"
+                  style="width: 1rem; height: 1rem"
                 />
-                <div>
-                  <p class="font-medium text-gray-900 dark:text-white">
-                    {{ slice.key }}
+                <div class="min-w-0 flex-grow-1">
+                  <p class="small fw-medium text-body-secondary mb-0">
+                    {{ splitWhen(item.at).date }}
+                    <span class="text-body">{{ splitWhen(item.at).time }}</span>
                   </p>
-                  <p class="text-xs text-gray-500 dark:text-gray-400">
-                    {{ slice.pct }}% • {{ nf.format(slice.count) }} Accounts
+                  <p class="fw-semibold text-body mt-1 mb-0">
+                    {{ item.title }}
+                  </p>
+                  <p
+                    v-if="item.description"
+                    class="small text-body-secondary mt-1 mb-0 vx-line-clamp-2"
+                  >
+                    {{ item.description }}
                   </p>
                 </div>
               </li>
             </ul>
           </div>
         </div>
-
-        <div
-          class="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm dark:border-gray-800 dark:bg-white/[0.03]"
-        >
-          <div class="flex items-start justify-between">
-            <h2 class="text-lg font-semibold text-gray-900 dark:text-white">
-              Recent Activity
-            </h2>
-            <button
-              type="button"
-              class="rounded-lg p-1 text-gray-400 hover:bg-gray-100 dark:hover:bg-white/10"
-              aria-label="Menu"
-            >
-              <span class="inline-block rotate-90 font-bold leading-none">⋯</span>
-            </button>
-          </div>
-          <ul class="mt-4 divide-y divide-gray-100 dark:divide-gray-800">
-            <li
-              v-for="item in summary.recent_activity"
-              :key="item.id"
-              class="flex gap-3 py-3 first:pt-0"
-            >
-              <span
-                class="mt-1 flex h-4 w-4 shrink-0 rounded border border-gray-300 dark:border-gray-600"
-              />
-              <div class="min-w-0 flex-1">
-                <p class="text-xs font-medium text-gray-500 dark:text-gray-400">
-                  {{ splitWhen(item.at).date }}
-                  <span class="text-gray-800 dark:text-gray-200">
-                    {{ splitWhen(item.at).time }}
-                  </span>
-                </p>
-                <p class="mt-0.5 font-semibold text-gray-900 dark:text-white">
-                  {{ item.title }}
-                </p>
-                <p
-                  v-if="item.description"
-                  class="mt-0.5 line-clamp-2 text-xs text-gray-500 dark:text-gray-400"
-                >
-                  {{ item.description }}
-                </p>
-              </div>
-            </li>
-          </ul>
-        </div>
       </div>
 
-      <p v-if="deleteError" class="text-sm text-red-600 dark:text-red-400">
+      <p v-if="deleteError" class="small text-danger">
         {{ deleteError }}
       </p>
 
-      <!-- Recent staff: same shell as Staff list — header row + inner table card; search in white toolbar strip -->
-      <div
-        class="overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-sm dark:border-gray-800 dark:bg-gray-900"
-      >
-        <div
-          class="border-b border-gray-100 px-4 py-5 dark:border-gray-800 sm:px-6"
-        >
+      <div class="vx-card overflow-hidden">
+        <div class="border-bottom border-opacity-10 px-4 py-4 px-sm-5">
           <div
-            class="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between"
+            class="d-flex flex-column flex-lg-row align-items-lg-center justify-content-lg-between gap-3"
           >
-            <div class="flex items-center gap-3">
+            <div class="d-flex align-items-center gap-3">
               <div>
-                <h2 class="text-xl font-bold text-gray-900 dark:text-white">
-                  Recent Staff
-                </h2>
-                <p class="mt-0.5 text-sm text-gray-500 dark:text-gray-400">
+                <h2 class="h5 fw-bold text-body mb-1">Recent Staff</h2>
+                <p class="small text-body-secondary mb-0">
                   Latest Accounts In The Directory
                 </p>
               </div>
               <button
                 type="button"
-                class="rounded-lg p-2 text-gray-500 transition hover:bg-gray-100 dark:hover:bg-white/10 dark:hover:text-gray-300"
+                class="btn btn-sm btn-outline-secondary border-0"
                 :disabled="loading"
                 title="Refresh"
                 aria-label="Refresh List"
                 @click="refreshDashboardSummary"
               >
                 <svg
-                  class="h-5 w-5"
+                  width="20"
+                  height="20"
                   fill="none"
                   stroke="currentColor"
                   viewBox="0 0 24 24"
@@ -850,18 +812,20 @@ onUnmounted(() => {
             </div>
 
             <div
-              class="relative flex shrink-0 items-center gap-2 sm:justify-end"
+              class="position-relative d-flex flex-shrink-0 align-items-center gap-2 justify-content-sm-end"
               data-recent-filter
             >
               <button
                 type="button"
-                class="inline-flex h-11 items-center gap-2 rounded-lg border border-gray-200 bg-white px-4 text-sm font-medium text-gray-700 shadow-sm hover:bg-gray-50 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200 dark:hover:bg-gray-700"
-                :class="{ 'ring-2 ring-[#2563eb]/30': recentUsersFilterOpen }"
+                class="btn btn-outline-secondary d-inline-flex align-items-center gap-2"
+                :class="{ 'border-primary': recentUsersFilterOpen }"
                 :aria-expanded="recentUsersFilterOpen"
                 @click.stop="recentUsersFilterOpen = !recentUsersFilterOpen"
               >
                 <svg
-                  class="h-5 w-5 text-gray-500"
+                  width="20"
+                  height="20"
+                  class="text-secondary"
                   fill="none"
                   viewBox="0 0 24 24"
                   stroke="currentColor"
@@ -875,28 +839,21 @@ onUnmounted(() => {
                 </svg>
                 Filter
               </button>
-              <Transition
-                enter-active-class="transition ease-out duration-100"
-                enter-from-class="transform opacity-0 scale-95"
-                enter-to-class="transform opacity-100 scale-100"
-                leave-active-class="transition ease-in duration-75"
-                leave-from-class="transform opacity-100 scale-100"
-                leave-to-class="transform opacity-0 scale-95"
-              >
+              <Transition name="vx-fade-scale">
                 <div
                   v-if="recentUsersFilterOpen"
-                  class="absolute right-0 top-full z-30 mt-2 w-72 origin-top-right rounded-xl border border-gray-200 bg-white p-4 shadow-lg dark:border-gray-700 dark:bg-gray-900"
+                  class="position-absolute end-0 card shadow border-0 mt-2 p-3"
+                  style="top: 100%; z-index: 30; width: 18rem"
                   @click.stop
                 >
-                  <div class="space-y-3">
+                  <div class="d-grid gap-3">
                     <div>
-                      <label
-                        class="mb-1 block text-xs font-medium text-gray-500 dark:text-gray-400"
+                      <label class="form-label small text-body-secondary mb-1"
                         >Status</label
                       >
                       <select
                         v-model="statusFilter"
-                        class="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm dark:border-gray-600 dark:bg-gray-800 dark:text-white"
+                        class="form-select form-select-sm"
                       >
                         <option value="">All Statuses</option>
                         <option value="pending">Pending</option>
@@ -904,17 +861,17 @@ onUnmounted(() => {
                         <option value="inactive">Inactive</option>
                       </select>
                     </div>
-                    <div class="flex gap-2 pt-1">
+                    <div class="d-flex gap-2 pt-1">
                       <button
                         type="button"
-                        class="flex min-h-10 min-w-0 flex-1 basis-0 items-center justify-center rounded-lg bg-[#2563eb] px-3 text-xs font-semibold text-white transition hover:opacity-95"
+                        class="btn btn-primary btn-sm flex-fill"
                         @click="recentUsersFilterOpen = false"
                       >
                         Apply
                       </button>
                       <button
                         type="button"
-                        class="flex min-h-10 min-w-0 flex-1 basis-0 items-center justify-center rounded-lg border border-gray-200 bg-white px-3 text-xs font-medium text-gray-700 transition hover:bg-gray-50 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-200 dark:hover:bg-gray-700"
+                        class="btn btn-outline-secondary btn-sm flex-fill"
                         @click="
                           statusFilter = '';
                           recentUsersFilterOpen = false;
@@ -930,24 +887,20 @@ onUnmounted(() => {
           </div>
         </div>
 
-        <div class="px-4 py-4 sm:px-6 sm:pb-6">
-          <div
-            class="overflow-hidden rounded-xl border border-gray-200 bg-white dark:border-gray-800 dark:bg-white/[0.03]"
-          >
-            <div
-              class="border-b border-gray-200 bg-white px-4 py-4 dark:border-gray-700 dark:bg-gray-900 sm:px-6"
-            >
-              <div class="max-w-md">
-                <div class="relative">
-                  <span
-                    class="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-gray-400"
-                  >
+        <div class="px-4 py-4 px-sm-5 pb-sm-5">
+          <div class="vx-card overflow-hidden p-0">
+            <div class="border-bottom px-4 py-3 px-sm-4 bg-body">
+              <div style="max-width: 28rem">
+                <div class="input-group input-group-merge rounded-2">
+                  <span class="input-group-text border-end-0 bg-body">
                     <svg
-                      class="h-5 w-5"
+                      width="18"
+                      height="18"
                       fill="none"
                       viewBox="0 0 20 20"
                       stroke="currentColor"
                       stroke-width="1.5"
+                      class="text-secondary"
                     >
                       <path
                         stroke-linecap="round"
@@ -959,153 +912,143 @@ onUnmounted(() => {
                     v-model="search"
                     type="search"
                     placeholder="Search…"
-                    class="h-11 w-full rounded-lg border border-gray-200 bg-white py-2.5 pl-10 pr-3 text-sm text-gray-900 placeholder:text-gray-400 focus:border-[#2563eb] focus:outline-none focus:ring-2 focus:ring-[#2563eb]/20 dark:border-gray-600 dark:bg-gray-900 dark:text-white dark:placeholder:text-gray-500"
+                    class="form-control border-start-0"
+                    autocomplete="off"
                   />
                 </div>
               </div>
             </div>
 
-            <div class="overflow-x-auto">
-              <table class="min-w-[1024px] w-full text-left text-sm">
-            <thead>
-              <tr
-                class="border-b border-gray-200 bg-gray-50 dark:border-gray-700 dark:bg-gray-800/50"
+            <div class="table-responsive">
+              <table
+                class="table table-hover align-middle mb-0 small"
+                style="min-width: 1024px"
               >
-                <th class="px-5 py-3 text-left sm:px-6">
-                  <p class="text-xs font-medium text-gray-500 dark:text-gray-400">
-                    Status
-                  </p>
-                </th>
-                <th class="px-5 py-3 text-left sm:px-6">
-                  <p class="text-xs font-medium text-gray-500 dark:text-gray-400">
-                    User
-                  </p>
-                </th>
-                <th class="px-5 py-3 text-left sm:px-6">
-                  <p class="text-xs font-medium text-gray-500 dark:text-gray-400">
-                    Position
-                  </p>
-                </th>
-                <th class="px-5 py-3 text-left sm:px-6">
-                  <p class="text-xs font-medium text-gray-500 dark:text-gray-400">
-                    Birthday
-                  </p>
-                </th>
-                <th class="px-5 py-3 text-left sm:px-6">
-                  <p class="text-xs font-medium text-gray-500 dark:text-gray-400">
-                    Hire Date
-                  </p>
-                </th>
-                <th class="px-5 py-3 text-left sm:px-6">
-                  <p class="text-xs font-medium text-gray-500 dark:text-gray-400">
-                    Role
-                  </p>
-                </th>
-                <th
-                  v-if="showRowActions"
-                  class="w-[4.5rem] min-w-[4.75rem] px-5 py-3 text-right sm:px-6"
-                >
-                  <p class="text-xs font-medium text-gray-500 dark:text-gray-400">
-                    Action
-                  </p>
-                </th>
-              </tr>
-            </thead>
-            <tbody class="divide-y divide-gray-200 dark:divide-gray-700">
-              <tr
-                v-for="row in filteredUsers"
-                :key="row.id"
-                class="border-t border-gray-100 bg-white hover:bg-gray-50/80 dark:border-gray-800 dark:bg-transparent dark:hover:bg-white/[0.02]"
-              >
-                <td class="px-5 py-4 align-middle sm:px-6">
-                  <span
-                    class="inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium capitalize"
-                    :class="statusBadgeClass(row.status)"
-                  >
-                    {{ row.status }}
-                  </span>
-                </td>
-                <td class="px-5 py-4 align-middle sm:px-6">
-                  <div class="flex items-center gap-3">
-                    <span class="relative h-10 w-10 shrink-0">
-                      <img
-                        v-if="row.avatar_url"
-                        :src="resolvePublicUrl(row.avatar_url)"
-                        alt=""
-                        class="h-10 w-10 rounded-full object-cover"
-                      />
-                      <span
-                        v-else
-                        class="flex h-10 w-10 items-center justify-center rounded-full text-xs font-semibold"
-                        :class="avatarClassForUser(row.email)"
-                      >
-                        {{ initials(row.name) }}
-                      </span>
-                    </span>
-                    <div class="min-w-0">
-                      <RouterLink
-                        :to="`/staff/${row.id}`"
-                        class="block truncate font-semibold text-gray-900 hover:text-blue-600 dark:text-white dark:hover:text-blue-400"
-                      >
-                        {{ row.name }}
-                      </RouterLink>
-                      <RouterLink
-                        :to="`/staff/${row.id}`"
-                        class="mt-0.5 block truncate text-xs text-gray-500 hover:text-blue-600 dark:text-gray-400"
-                      >
-                        {{ row.email }}
-                      </RouterLink>
-                    </div>
-                  </div>
-                </td>
-                <td
-                  class="max-w-[11rem] truncate px-5 py-4 align-middle text-gray-700 sm:px-6 dark:text-gray-300"
-                  :title="row.job_position || undefined"
-                >
-                  {{ row.job_position || "—" }}
-                </td>
-                <td
-                  class="whitespace-nowrap px-5 py-4 align-middle text-gray-700 sm:px-6 dark:text-gray-300"
-                >
-                  {{ formatBirthdayUs(row.birthday) }}
-                </td>
-                <td
-                  class="whitespace-nowrap px-5 py-4 align-middle text-gray-700 sm:px-6 dark:text-gray-300"
-                >
-                  {{ formatIsoDate(row.hire_date) }}
-                </td>
-                <td
-                  class="px-5 py-4 align-middle text-gray-700 sm:px-6 dark:text-gray-300"
-                >
-                  {{ roleLabels(row) }}
-                </td>
-                <td
-                  v-if="showRowActions"
-                  class="relative px-5 py-4 text-right align-middle sm:px-6"
-                >
-                  <div data-row-actions class="relative inline-flex justify-end">
-                    <button
-                      type="button"
-                      class="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border border-gray-200 bg-white text-gray-600 shadow-sm transition hover:border-gray-300 hover:bg-gray-50 hover:text-gray-900 dark:border-gray-600 dark:bg-gray-900 dark:text-gray-300 dark:hover:border-gray-500 dark:hover:bg-white/10 dark:hover:text-white"
-                      :aria-expanded="manageOpenId === row.id"
-                      aria-haspopup="true"
-                      aria-label="Row Actions"
-                      @click="toggleManageMenu(row.id, $event)"
+                <thead class="table-light">
+                  <tr>
+                    <th class="px-4 py-3 text-secondary fw-medium small">
+                      Status
+                    </th>
+                    <th class="px-4 py-3 text-secondary fw-medium small">
+                      User
+                    </th>
+                    <th class="px-4 py-3 text-secondary fw-medium small">
+                      Position
+                    </th>
+                    <th class="px-4 py-3 text-secondary fw-medium small">
+                      Birthday
+                    </th>
+                    <th class="px-4 py-3 text-secondary fw-medium small">
+                      Hire Date
+                    </th>
+                    <th class="px-4 py-3 text-secondary fw-medium small">
+                      Role
+                    </th>
+                    <th
+                      v-if="showRowActions"
+                      class="px-4 py-3 text-secondary fw-medium small text-end"
+                      style="width: 4.75rem"
                     >
-                      <CrmIconRowActions />
-                    </button>
-                  </div>
-                </td>
-              </tr>
-              <tr v-if="filteredUsers.length === 0">
-                <td
-                  :colspan="tableColspan"
-                  class="px-5 py-12 text-center text-gray-500 dark:text-gray-400 sm:px-6"
-                >
-                  No Users Match Your Filters.
-                </td>
-              </tr>
-            </tbody>
+                      Action
+                    </th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr v-for="row in filteredUsers" :key="row.id">
+                    <td class="px-4 py-3">
+                      <span
+                        class="badge rounded-pill text-capitalize fw-medium"
+                        :class="statusBadgeClass(row.status)"
+                      >
+                        {{ row.status }}
+                      </span>
+                    </td>
+                    <td class="px-4 py-3">
+                      <div class="d-flex align-items-center gap-3">
+                        <span
+                          class="position-relative flex-shrink-0 rounded-circle overflow-hidden bg-body-secondary"
+                          style="width: 2.5rem; height: 2.5rem"
+                        >
+                          <img
+                            v-if="row.avatar_url"
+                            :src="resolvePublicUrl(row.avatar_url)"
+                            alt=""
+                            class="w-100 h-100 object-fit-cover rounded-circle"
+                          />
+                          <span
+                            v-else
+                            class="d-flex w-100 h-100 align-items-center justify-content-center small fw-semibold"
+                            :class="avatarClassForUser(row.email)"
+                          >
+                            {{ initials(row.name) }}
+                          </span>
+                        </span>
+                        <div class="min-w-0">
+                          <RouterLink
+                            :to="`/staff/${row.id}`"
+                            class="d-block text-truncate fw-semibold text-body text-decoration-none"
+                          >
+                            {{ row.name }}
+                          </RouterLink>
+                          <RouterLink
+                            :to="`/staff/${row.id}`"
+                            class="d-block text-truncate small text-secondary text-decoration-none"
+                          >
+                            {{ row.email }}
+                          </RouterLink>
+                        </div>
+                      </div>
+                    </td>
+                    <td
+                      class="px-4 py-3 text-body-secondary text-truncate"
+                      style="max-width: 11rem"
+                      :title="row.job_position || undefined"
+                    >
+                      {{ row.job_position || "—" }}
+                    </td>
+                    <td class="px-4 py-3 text-body-secondary text-nowrap">
+                      {{ formatBirthdayUs(row.birthday) }}
+                    </td>
+                  <td class="px-4 py-3 text-body-secondary text-nowrap">
+                    {{ formatIsoDate(row.hire_date) }}
+                  </td>
+                  <td class="px-4 py-3 text-body-secondary">
+                    <div class="d-flex align-items-center gap-2 min-w-0">
+                      <StaffRoleIcon :roles="row.roles" />
+                      <span class="text-truncate">{{ roleLabels(row) }}</span>
+                    </div>
+                  </td>
+                  <td
+                    v-if="showRowActions"
+                    class="px-4 py-3 text-end position-relative"
+                  >
+                    <div
+                      data-row-actions
+                      class="position-relative d-inline-flex justify-content-end"
+                    >
+                      <button
+                        type="button"
+                        class="btn btn-outline-secondary btn-sm p-0 d-inline-flex align-items-center justify-content-center"
+                        style="width: 2.5rem; height: 2.5rem"
+                        :aria-expanded="manageOpenId === row.id"
+                        aria-haspopup="true"
+                        aria-label="Row Actions"
+                        @click="toggleManageMenu(row.id, $event)"
+                      >
+                        <CrmIconRowActions />
+                      </button>
+                    </div>
+                  </td>
+                </tr>
+                <tr v-if="filteredUsers.length === 0">
+                  <td
+                    :colspan="tableColspan"
+                    class="px-4 py-5 text-center text-secondary"
+                  >
+                    No Users Match Your Filters.
+                  </td>
+                </tr>
+              </tbody>
               </table>
             </div>
           </div>
@@ -1121,6 +1064,7 @@ onUnmounted(() => {
       <ConfirmModal
         :open="deleteModalOpen"
         title="Delete User"
+        subtitle="This action is permanent and may be audited."
         :message="deleteMessage"
         confirm-label="Delete"
         cancel-label="Cancel"
@@ -1130,29 +1074,24 @@ onUnmounted(() => {
       />
 
       <Teleport to="body">
-        <Transition
-          enter-active-class="transition ease-out duration-100"
-          enter-from-class="transform opacity-0 scale-95"
-          enter-to-class="transform opacity-100 scale-100"
-          leave-active-class="transition ease-in duration-75"
-          leave-from-class="transform opacity-100 scale-100"
-          leave-to-class="transform opacity-0 scale-95"
-        >
+        <Transition name="vx-fade-scale">
           <div
             v-if="manageMenuUser"
             data-row-actions
-            class="fixed z-[300] w-44 overflow-hidden rounded-xl border border-gray-200 bg-white py-1 shadow-lg ring-1 ring-black/5 dark:border-gray-700 dark:bg-gray-900 dark:ring-white/10"
+            class="position-fixed overflow-hidden rounded-3 border bg-body py-1 shadow-lg"
             role="menu"
             :style="{
               top: `${manageMenuRect.top}px`,
               left: `${manageMenuRect.left}px`,
+              zIndex: 300,
+              width: '11rem',
             }"
             @click.stop
           >
             <button
               v-if="canUpdateUsers"
               type="button"
-              class="flex w-full items-center px-4 py-2.5 text-left text-sm font-medium text-gray-800 transition hover:bg-gray-50 dark:text-gray-200 dark:hover:bg-white/5"
+              class="btn btn-link w-100 text-start text-body text-decoration-none rounded-0 py-2 px-3 small fw-medium"
               role="menuitem"
               @click="openUserEditModal(manageMenuUser)"
             >
@@ -1162,10 +1101,8 @@ onUnmounted(() => {
               v-if="canDeleteRow(manageMenuUser)"
               type="button"
               :class="[
-                'flex w-full items-center px-4 py-2.5 text-left text-sm font-medium text-red-600 transition hover:bg-red-50 dark:text-red-400 dark:hover:bg-red-950/25',
-                canUpdateUsers
-                  ? 'border-t border-gray-100 dark:border-gray-800'
-                  : '',
+                'btn btn-link w-100 text-start text-danger text-decoration-none rounded-0 py-2 px-3 small fw-medium',
+                canUpdateUsers ? 'border-top' : '',
               ]"
               role="menuitem"
               @click="openDeleteModal(manageMenuUser)"

@@ -1,3 +1,7 @@
-@tailwind base;
-@tailwind components;
-@tailwind utilities;
+/* Blade / Laravel Vite entry — Vuexy primary token + Bootstrap 5 (no Tailwind). */
+@import "bootstrap/dist/css/bootstrap.min.css";
+
+:root {
+  --bs-primary: #7367f0;
+  --bs-primary-rgb: 115, 103, 240;
+}

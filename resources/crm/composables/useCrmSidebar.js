@@ -5,7 +5,7 @@ const isMobileOpen = ref(false);
 
 export function useCrmSidebar() {
   function toggleSidebar() {
-    if (typeof window !== "undefined" && window.innerWidth >= 1024) {
+    if (typeof window !== "undefined" && window.innerWidth >= 992) {
       isExpanded.value = !isExpanded.value;
     } else {
       isMobileOpen.value = !isMobileOpen.value;
@@ -20,13 +20,24 @@ export function useCrmSidebar() {
     isMobileOpen.value = false;
   }
 
-  const sidebarWidthClass = computed(() =>
-    isExpanded.value ? "lg:w-[290px]" : "lg:w-[90px]",
-  );
+  const sidebarClass = computed(() => {
+    const parts = ["crm-vertical-nav", "vx-sidebar--floating"];
+    if (!isExpanded.value) {
+      parts.push("crm-vertical-nav--collapsed");
+    }
+    if (isMobileOpen.value) {
+      parts.push("crm-vertical-nav--mobile-open");
+    }
+    return parts.join(" ");
+  });
 
-  const mainMarginClass = computed(() =>
-    isExpanded.value ? "lg:ml-[290px]" : "lg:ml-[90px]",
-  );
+  const mainWrapClass = computed(() => {
+    const parts = ["crm-main-wrap", "vx-main--floating", "d-flex", "flex-column", "min-vh-100"];
+    if (!isExpanded.value) {
+      parts.push("crm-main-wrap--collapsed");
+    }
+    return parts.join(" ");
+  });
 
   return {
     isExpanded,
@@ -34,7 +45,7 @@ export function useCrmSidebar() {
     toggleSidebar,
     toggleMobileSidebar,
     closeMobile,
-    sidebarWidthClass,
-    mainMarginClass,
+    sidebarClass,
+    mainWrapClass,
   };
 }

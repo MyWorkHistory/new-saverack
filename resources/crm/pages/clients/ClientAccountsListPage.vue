@@ -27,6 +27,7 @@ import { getPublicSignupUrl } from "../../utils/publicSignupUrl.js";
 
 const crmUser = inject("crmUser", ref(null));
 const toast = useToast();
+const nf = new Intl.NumberFormat(undefined, { maximumFractionDigits: 0 });
 
 function userHasPerm(key) {
   const u = crmUser.value;
@@ -56,6 +57,18 @@ const rows = ref([]);
 const pagination = ref({ current_page: 1, last_page: 1, total: 0 });
 const accountManagers = ref([]);
 const statuses = ref(["pending", "active", "paused", "inactive"]);
+
+const directoryStats = ref({
+  total: 0,
+  active: 0,
+  pending: 0,
+  paused: 0,
+  inactive: 0,
+});
+
+const pausedAndInactiveTotal = computed(
+  () => directoryStats.value.paused + directoryStats.value.inactive,
+);
 
 const deleteTarget = ref(null);
 const deleteBusy = ref(false);
@@ -171,7 +184,7 @@ watch(
       query.page = 1;
       selectedIds.value = [];
       fetchRows();
-    }, 300);
+    }, 280);
   },
 );
 
@@ -187,24 +200,24 @@ watch(
 const statusBadgeClass = (status) => {
   const s = String(status || "").toLowerCase();
   if (s === "active") {
-    return "bg-emerald-50 text-emerald-800 dark:bg-emerald-500/10 dark:text-emerald-300";
+    return "bg-success-subtle text-success";
   }
   if (s === "pending") {
-    return "bg-amber-50 text-amber-800 dark:bg-amber-500/10 dark:text-amber-200";
+    return "bg-warning-subtle text-warning-emphasis";
   }
   if (s === "paused") {
-    return "bg-sky-50 text-sky-900 dark:bg-sky-500/15 dark:text-sky-200";
+    return "bg-info-subtle text-info-emphasis";
   }
   if (s === "inactive") {
-    return "bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-300";
+    return "bg-secondary-subtle text-secondary";
   }
-  return "bg-slate-100 text-slate-700";
+  return "bg-body-secondary text-body-secondary";
 };
 
 const avatarPalettes = [
-  "bg-sky-100 text-sky-800 dark:bg-sky-500/20 dark:text-sky-200",
-  "bg-violet-100 text-violet-800 dark:bg-violet-500/20 dark:text-violet-200",
-  "bg-amber-100 text-amber-900 dark:bg-amber-500/20 dark:text-amber-200",
+  "bg-info-subtle text-info-emphasis",
+  "bg-primary-subtle text-primary-emphasis",
+  "bg-warning-subtle text-warning-emphasis",
 ];
 
 function avatarClassForRow(email) {
@@ -236,8 +249,16 @@ function toggleSort(column) {
 }
 
 function sortIndicator(column) {
-  if (query.sort_by !== column) return "↕";
+  if (query.sort_by !== column) return "";
   return query.sort_dir === "asc" ? "↑" : "↓";
+}
+
+function thAriaSort(column) {
+  return query.sort_by === column
+    ? query.sort_dir === "asc"
+      ? "ascending"
+      : "descending"
+    : "none";
 }
 
 function buildParams() {
@@ -274,6 +295,16 @@ async function fetchMeta() {
     if (Array.isArray(data?.statuses) && data.statuses.length) {
       statuses.value = data.statuses;
     }
+    if (data?.directory_stats) {
+      const d = data.directory_stats;
+      directoryStats.value = {
+        total: Number(d.total) || 0,
+        active: Number(d.active) || 0,
+        pending: Number(d.pending) || 0,
+        paused: Number(d.paused) || 0,
+        inactive: Number(d.inactive) || 0,
+      };
+    }
   } catch (e) {
     accountManagers.value = [];
     toast.errorFrom(e, "Could not load account manager list.");
@@ -303,6 +334,42 @@ function goPage(p) {
   fetchRows();
 }
 
+function goFirstPage() {
+  goPage(1);
+}
+
+function goLastPage() {
+  goPage(pagination.value.last_page);
+}
+
+function applySearch() {
+  clearTimeout(searchDebounce);
+  query.page = 1;
+  selectedIds.value = [];
+  fetchRows();
+}
+
+function clearFilters() {
+  clearTimeout(searchDebounce);
+  searchWatchLock = true;
+  query.search = "";
+  query.account_manager_id = "";
+  query.sort_by = "created_at";
+  query.sort_dir = "desc";
+  query.page = 1;
+  selectedIds.value = [];
+  fetchRows()
+    .finally(() => {
+      searchWatchLock = false;
+    });
+  fetchMeta();
+}
+
+async function refreshList() {
+  await fetchRows();
+  await fetchMeta();
+}
+
 function onPerPageChange(e) {
   query.per_page = Number(e.target.value);
   query.page = 1;
@@ -328,7 +395,7 @@ async function onBulkApply(payload) {
     toast.success("Accounts updated.");
     bulkEditOpen.value = false;
     selectedIds.value = [];
-    await fetchRows();
+    await refreshList();
   } catch (e) {
     toast.errorFrom(e, "Could not update accounts.");
   } finally {
@@ -356,7 +423,7 @@ async function confirmDelete() {
     await api.delete(`/client-accounts/${row.id}`);
     deleteTarget.value = null;
     toast.success("Account deleted.");
-    await fetchRows();
+    await refreshList();
   } catch (e) {
     deleteError.value = "Could not delete.";
     toast.errorFrom(e, "Could not delete.");
@@ -421,7 +488,7 @@ async function setRowStatus(row, status) {
     await api.patch(`/client-accounts/${row.id}`, { status });
     toast.success("Status updated.");
     closeManageMenu();
-    await fetchRows();
+    await refreshList();
   } catch (e) {
     toast.errorFrom(e, "Could not update status.");
   }
@@ -457,6 +524,13 @@ function onDocClick(e) {
   }
 }
 
+function onWindowScrollOrResize() {
+  if (manageOpenId.value !== null) {
+    manageOpenId.value = null;
+    manageMenuSubMode.value = "main";
+  }
+}
+
 watch(addDrawerOpen, (o) => {
   if (o) fetchMeta();
 });
@@ -466,6 +540,8 @@ watch(editModalOpen, (o) => {
 
 onMounted(async () => {
   document.addEventListener("click", onDocClick);
+  window.addEventListener("scroll", onWindowScrollOrResize, true);
+  window.addEventListener("resize", onWindowScrollOrResize);
   setCrmPageMeta({
     title: "Save Rack | Accounts",
     description: "Accounts directory.",
@@ -476,23 +552,25 @@ onMounted(async () => {
 
 onUnmounted(() => {
   document.removeEventListener("click", onDocClick);
+  window.removeEventListener("scroll", onWindowScrollOrResize, true);
+  window.removeEventListener("resize", onWindowScrollOrResize);
   clearTimeout(searchDebounce);
 });
 </script>
 
 <template>
-  <div class="space-y-4">
+  <div class="staff-page staff-page--wide">
     <ClientAccountCreateDrawer
       v-if="canCreate"
       v-model:open="addDrawerOpen"
       :account-managers="accountManagers"
-      @saved="fetchRows"
+      @saved="refreshList"
     />
     <ClientAccountEditModal
       v-model:open="editModalOpen"
       :account-id="editAccountId"
       :account-managers="accountManagers"
-      @saved="fetchRows"
+      @saved="refreshList"
     />
     <ClientAccountsBulkEditModal
       v-model:open="bulkEditOpen"
@@ -502,62 +580,208 @@ onUnmounted(() => {
       @apply="onBulkApply"
     />
 
-    <p v-if="deleteError" class="text-sm text-red-600 dark:text-red-400">
+    <div
+      v-if="deleteError"
+      class="alert alert-danger mb-3 mb-md-4"
+      role="alert"
+    >
       {{ deleteError }}
-    </p>
+    </div>
 
     <div
-      class="overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-sm dark:border-gray-800 dark:bg-gray-900"
+      class="d-flex flex-column flex-md-row align-items-start align-items-md-center gap-2 gap-md-3 mb-4"
     >
-      <div class="border-b border-gray-100 px-4 py-5 dark:border-gray-800 sm:px-6">
-        <div
-          class="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between"
+      <div class="min-w-0">
+        <h1 class="h4 mb-1 fw-semibold text-body">Accounts</h1>
+        <p class="text-secondary small mb-0">
+          Directory of client companies and contacts
+        </p>
+      </div>
+      <button
+        type="button"
+        class="btn btn-outline-secondary btn-sm ms-md-auto d-inline-flex align-items-center gap-2"
+        :disabled="loading"
+        title="Refresh"
+        aria-label="Refresh list"
+        @click="refreshList"
+      >
+        <svg
+          width="18"
+          height="18"
+          fill="none"
+          stroke="currentColor"
+          viewBox="0 0 24 24"
+          aria-hidden="true"
         >
-          <div class="flex items-center gap-3">
-            <div>
-              <h1 class="text-xl font-bold text-gray-900 dark:text-white">
-                Accounts
-              </h1>
-              <p class="mt-0.5 text-sm text-gray-500 dark:text-gray-400">
-                Directory of client companies and contacts
-              </p>
-            </div>
-            <button
-              type="button"
-              class="rounded-lg p-2 text-gray-500 transition hover:bg-gray-100 dark:hover:bg-white/10"
-              :disabled="loading"
-              title="Refresh"
-              aria-label="Refresh list"
-              @click="fetchRows"
-            >
-              <svg
-                class="h-5 w-5"
-                fill="none"
-                stroke="currentColor"
-                viewBox="0 0 24 24"
-              >
-                <path
-                  stroke-linecap="round"
-                  stroke-linejoin="round"
-                  stroke-width="2"
-                  d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"
-                />
-              </svg>
-            </button>
+          <path
+            stroke-linecap="round"
+            stroke-linejoin="round"
+            stroke-width="2"
+            d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"
+          />
+        </svg>
+        Refresh
+      </button>
+    </div>
+
+    <div class="row g-4 mb-2">
+      <div class="col-12 col-sm-6 col-xl-3">
+        <div class="staff-stat-card h-100">
+          <p class="staff-stat-card__label">Total accounts</p>
+          <p class="staff-stat-card__value">
+            {{ nf.format(directoryStats.total) }}
+          </p>
+          <p class="staff-stat-card__sub">All companies in the directory</p>
+          <div
+            class="staff-stat-card__icon text-white"
+            style="background: #7367f0"
+            aria-hidden="true"
+          >
+            <svg width="22" height="22" fill="currentColor" viewBox="0 0 24 24">
+              <path
+                d="M12 7V3H2v18h20V7H12zM6 19H4v-2h2v2zm0-4H4v-2h2v2zm0-4H4V9h2v2zm0-4H4V5h2v2zm4 12H8v-2h2v2zm0-4H8v-2h2v2zm0-4H8V9h2v2zm0-4H8V5h2v2zm10 12h-8v-2h2v-2h-2v-2h2v-2h-2V9h8v10zm-2-8h-2v2h2v-2zm0 4h-2v2h2v-2z"
+              />
+            </svg>
           </div>
-          <div class="flex shrink-0 items-center gap-2">
+        </div>
+      </div>
+      <div class="col-12 col-sm-6 col-xl-3">
+        <div class="staff-stat-card h-100">
+          <p class="staff-stat-card__label">Active</p>
+          <p class="staff-stat-card__value">
+            {{ nf.format(directoryStats.active) }}
+          </p>
+          <p class="staff-stat-card__sub">Accounts marked active</p>
+          <div
+            class="staff-stat-card__icon bg-success-subtle text-success"
+            aria-hidden="true"
+          >
+            <svg width="22" height="22" fill="currentColor" viewBox="0 0 24 24">
+              <path
+                d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z"
+              />
+            </svg>
+          </div>
+        </div>
+      </div>
+      <div class="col-12 col-sm-6 col-xl-3">
+        <div class="staff-stat-card h-100">
+          <p class="staff-stat-card__label">Pending</p>
+          <p class="staff-stat-card__value">
+            {{ nf.format(directoryStats.pending) }}
+          </p>
+          <p class="staff-stat-card__sub">Awaiting activation</p>
+          <div
+            class="staff-stat-card__icon bg-warning-subtle text-warning-emphasis"
+            aria-hidden="true"
+          >
+            <svg width="22" height="22" fill="currentColor" viewBox="0 0 24 24">
+              <path
+                d="M15.5 14h-.79l-.28-.27A6.471 6.471 0 0016 9.5 6.5 6.5 0 109.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C7.01 9.5 5 7.49 5 5c0-2.59 2.01-4.5 4.5-4.5S14 2.41 14 5c0 2.49-2.01 4.5-4.5 4.5z"
+              />
+            </svg>
+          </div>
+        </div>
+      </div>
+      <div class="col-12 col-sm-6 col-xl-3">
+        <div class="staff-stat-card h-100">
+          <p class="staff-stat-card__label">Paused &amp; inactive</p>
+          <p class="staff-stat-card__value">
+            {{ nf.format(pausedAndInactiveTotal) }}
+          </p>
+          <p class="staff-stat-card__sub">Not in active onboarding</p>
+          <div
+            class="staff-stat-card__icon bg-secondary-subtle text-secondary"
+            aria-hidden="true"
+          >
+            <svg width="22" height="22" fill="currentColor" viewBox="0 0 24 24">
+              <path
+                d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z"
+              />
+            </svg>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="staff-table-card staff-datatable-card">
+      <div class="staff-datatable-filters">
+        <div
+          class="d-flex flex-wrap align-items-center justify-content-between gap-2 mb-3"
+        >
+          <h2 class="staff-datatable-filters__title mb-0">Filters</h2>
+          <button
+            type="button"
+            class="btn btn-link btn-sm text-secondary text-decoration-none px-0"
+            :disabled="loading"
+            @click="clearFilters"
+          >
+            Reset
+          </button>
+        </div>
+        <div class="row g-3 g-md-4">
+          <div class="col-12 col-md-4">
+            <label class="visually-hidden" for="client-am-filter">Account manager</label>
+            <CrmSearchableSelect
+              v-model="query.account_manager_id"
+              appearance="staff"
+              :options="accountManagers"
+              placeholder="All account managers"
+              search-placeholder="Search staff…"
+              empty-label="All account managers"
+              button-id="client-am-filter"
+              aria-label="Filter by account manager"
+            />
+          </div>
+        </div>
+      </div>
+
+      <div class="staff-table-toolbar staff-table-toolbar--split">
+        <div
+          class="staff-toolbar-split d-flex flex-column flex-lg-row align-items-stretch align-items-lg-center justify-content-lg-between gap-3 gap-lg-4"
+        >
+          <div class="flex-shrink-0 staff-toolbar-per-page">
+            <label class="visually-hidden" for="ca-per-page-toolbar"
+              >Rows per page</label
+            >
+            <select
+              id="ca-per-page-toolbar"
+              class="form-select staff-toolbar-select staff-toolbar-per-page-select"
+              :value="query.per_page"
+              :disabled="loading"
+              @change="onPerPageChange"
+            >
+              <option v-for="n in PER_PAGE_OPTIONS" :key="n" :value="n">
+                {{ n }}
+              </option>
+            </select>
+          </div>
+          <div
+            class="staff-toolbar-actions d-flex flex-column flex-sm-row flex-wrap align-items-stretch align-items-sm-center"
+          >
+            <input
+              id="ca-search"
+              v-model="query.search"
+              type="search"
+              class="form-control staff-toolbar-search"
+              placeholder="Search accounts"
+              autocomplete="off"
+              @keydown.enter.prevent="applySearch"
+            />
             <button
               type="button"
-              class="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-lg border border-gray-300 bg-white text-gray-700 shadow-sm transition hover:bg-gray-50 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-200 dark:hover:bg-white/10"
+              class="btn btn-outline-secondary staff-toolbar-btn d-inline-flex align-items-center justify-content-center"
               title="Copy public signup link"
               aria-label="Copy public signup link"
               @click="copyPublicCreateLink"
             >
               <svg
-                class="h-5 w-5"
+                width="18"
+                height="18"
                 fill="none"
                 stroke="currentColor"
                 viewBox="0 0 24 24"
+                aria-hidden="true"
               >
                 <path
                   stroke-linecap="round"
@@ -568,358 +792,402 @@ onUnmounted(() => {
               </svg>
             </button>
             <button
+              v-if="canUpdate"
+              type="button"
+              class="btn btn-outline-secondary staff-toolbar-btn"
+              :disabled="!selectedIds.length || loading"
+              @click="openBulkEdit"
+            >
+              Bulk edit
+            </button>
+            <button
               v-if="canCreate"
               type="button"
-              class="inline-flex h-11 shrink-0 items-center justify-center gap-2 rounded-lg bg-[#2563eb] px-4 text-sm font-semibold text-white shadow-sm transition hover:opacity-95"
+              class="btn btn-primary staff-page-primary staff-toolbar-btn-add d-inline-flex align-items-center gap-2"
               @click="addDrawerOpen = true"
             >
               <svg
-                class="h-5 w-5"
-                fill="none"
-                stroke="currentColor"
+                width="18"
+                height="18"
+                fill="currentColor"
                 viewBox="0 0 24 24"
+                aria-hidden="true"
               >
-                <path
-                  stroke-linecap="round"
-                  stroke-linejoin="round"
-                  stroke-width="2"
-                  d="M12 4v16m8-8H4"
-                />
+                <path d="M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z" />
               </svg>
-              Add Account
+              Add account
             </button>
           </div>
         </div>
       </div>
 
-      <div class="px-4 py-4 sm:px-6 sm:pb-6">
-        <div
-          class="overflow-hidden rounded-xl border border-gray-200 bg-white dark:border-gray-800 dark:bg-white/[0.03]"
-        >
-          <div
-            class="flex flex-col gap-3 border-b border-gray-200 bg-white px-4 py-4 dark:border-gray-700 dark:bg-gray-900 sm:flex-row sm:items-center sm:justify-between sm:px-6"
-          >
-            <div
-              class="flex min-w-0 flex-1 flex-col gap-3 sm:flex-row sm:items-center sm:gap-3"
-            >
-              <div class="relative min-w-0 flex-1 max-w-md">
-                <span
-                  class="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-gray-400"
-                >
-                  <svg
-                    class="h-5 w-5"
-                    fill="none"
-                    viewBox="0 0 20 20"
-                    stroke="currentColor"
-                    stroke-width="1.5"
-                  >
-                    <path
-                      stroke-linecap="round"
-                      d="M3.042 9.374c0-3.497 2.835-6.332 6.333-6.332 3.497 0 6.332 2.835 6.332 6.332 0 3.498-2.835 6.333-6.332 6.333-3.498 0-6.333-2.835-6.333-6.333zM17.208 17.205l-2.82-2.82"
-                    />
-                  </svg>
-                </span>
+      <div class="table-responsive staff-table-wrap">
+        <table class="table table-hover align-middle mb-0 staff-data-table">
+          <thead class="table-light staff-table-head">
+            <tr>
+              <th v-if="showCheckboxCol" class="staff-table-head__th" scope="col">
                 <input
-                  v-model="query.search"
-                  type="search"
-                  placeholder="Search…"
-                  class="h-11 w-full rounded-lg border border-gray-200 bg-white py-2.5 pl-10 pr-3 text-sm text-gray-900 placeholder:text-gray-400 focus:border-[#2563eb] focus:outline-none focus:ring-2 focus:ring-[#2563eb]/20 dark:border-gray-600 dark:bg-gray-900 dark:text-white"
+                  type="checkbox"
+                  class="form-check-input staff-table-head__check mt-0"
+                  :checked="isAllPageSelected"
+                  :disabled="loading || !rows.length"
+                  aria-label="Select all on page"
+                  @change="toggleSelectAll"
                 />
-              </div>
-              <div class="w-full sm:min-w-[220px] sm:max-w-xs">
-                <CrmSearchableSelect
-                  v-model="query.account_manager_id"
-                  :options="accountManagers"
-                  placeholder="All account managers"
-                  search-placeholder="Search staff…"
-                  empty-label="All account managers"
-                  button-id="client-am-filter"
-                  aria-label="Filter by account manager"
-                />
-              </div>
-            </div>
-            <button
-              v-if="canUpdate"
-              type="button"
-              class="inline-flex h-11 shrink-0 items-center justify-center gap-2 self-start rounded-lg border border-gray-200 bg-white px-4 text-sm font-medium text-gray-700 shadow-sm hover:bg-gray-50 disabled:opacity-50 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200 dark:hover:bg-gray-700 sm:self-center"
-              :disabled="!selectedIds.length || loading"
-              @click="openBulkEdit"
-            >
-              Bulk Edit
-            </button>
-          </div>
-
-          <div class="overflow-x-auto">
-            <table class="min-w-[1100px] w-full text-left text-sm">
-              <thead>
-                <tr
-                  class="border-b border-gray-200 bg-gray-50 dark:border-gray-700 dark:bg-gray-800/50"
-                >
-                  <th v-if="showCheckboxCol" class="w-12 px-5 py-3 sm:px-6">
-                    <input
-                      type="checkbox"
-                      class="h-4 w-4 rounded border-gray-300 text-[#2563eb]"
-                      :checked="isAllPageSelected"
-                      :disabled="loading || !rows.length"
-                      @change="toggleSelectAll"
-                    />
-                  </th>
-                  <th class="px-5 py-3 sm:px-6">
-                    <button
-                      type="button"
-                      class="inline-flex items-center gap-1 text-xs font-medium text-gray-500 hover:text-gray-800 dark:text-gray-400"
-                      @click="toggleSort('status')"
-                    >
-                      Status
-                      <span class="text-gray-400">{{ sortIndicator("status") }}</span>
-                    </button>
-                  </th>
-                  <th class="px-5 py-3 sm:px-6">
-                    <button
-                      type="button"
-                      class="inline-flex items-center gap-1 text-xs font-medium text-gray-500 hover:text-gray-800 dark:text-gray-400"
-                      @click="toggleSort('company_name')"
-                    >
-                      Account
-                      <span class="text-gray-400">{{
-                        sortIndicator("company_name")
-                      }}</span>
-                    </button>
-                  </th>
-                  <th class="px-5 py-3 sm:px-6">
-                    <button
-                      type="button"
-                      class="inline-flex items-center gap-1 text-xs font-medium text-gray-500 hover:text-gray-800 dark:text-gray-400"
-                      @click="toggleSort('email')"
-                    >
-                      Email
-                      <span class="text-gray-400">{{ sortIndicator("email") }}</span>
-                    </button>
-                  </th>
-                  <th class="px-5 py-3 sm:px-6">
-                    <span class="text-xs font-medium text-gray-500 dark:text-gray-400"
-                      >Channel</span
-                    >
-                  </th>
-                  <th class="px-5 py-3 sm:px-6">
-                    <button
-                      type="button"
-                      class="inline-flex items-center gap-1 text-xs font-medium text-gray-500 hover:text-gray-800 dark:text-gray-400"
-                      @click="toggleSort('created_at')"
-                    >
-                      Create Date
-                      <span class="text-gray-400">{{
-                        sortIndicator("created_at")
-                      }}</span>
-                    </button>
-                  </th>
-                  <th class="px-5 py-3 sm:px-6">
-                    <span class="text-xs font-medium text-gray-500 dark:text-gray-400"
-                      >Account Manager</span
-                    >
-                  </th>
-                  <th
-                    v-if="showRowActions"
-                    class="w-[4.5rem] px-5 py-3 text-right sm:px-6"
-                  >
-                    <span class="text-xs font-medium text-gray-500 dark:text-gray-400"
-                      >Action</span
-                    >
-                  </th>
-                </tr>
-              </thead>
-              <tbody class="divide-y divide-gray-200 dark:divide-gray-700">
-                <tr v-if="loading">
-                  <td :colspan="tableColspan" class="px-5 py-12 sm:px-6">
-                    <div class="flex justify-center">
-                      <CrmLoadingSpinner message="Loading…" />
-                    </div>
-                  </td>
-                </tr>
-                <tr
-                  v-for="row in rows"
-                  v-else
-                  :key="row.id"
-                  class="border-t border-gray-100 bg-white hover:bg-gray-50/80 dark:border-gray-800 dark:bg-transparent dark:hover:bg-white/[0.02]"
-                >
-                  <td v-if="showCheckboxCol" class="px-5 py-4 align-middle sm:px-6">
-                    <input
-                      type="checkbox"
-                      class="h-4 w-4 rounded border-gray-300 text-[#2563eb]"
-                      :checked="selectedIds.includes(row.id)"
-                      @change="toggleRowSelect(row.id)"
-                    />
-                  </td>
-                  <td class="px-5 py-4 align-middle sm:px-6">
-                    <span
-                      class="inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium capitalize"
-                      :class="statusBadgeClass(row.status)"
-                    >
-                      {{ row.status }}
-                    </span>
-                  </td>
-                  <td class="px-5 py-4 align-middle sm:px-6">
-                    <RouterLink
-                      :to="`/clients/accounts/${row.id}`"
-                      class="flex items-center gap-3 rounded-lg outline-none ring-[#2563eb] transition hover:bg-gray-50/80 focus-visible:ring-2 dark:hover:bg-white/[0.04]"
-                    >
-                      <span
-                        class="flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-xs font-semibold"
-                        :class="avatarClassForRow(row.email)"
-                      >
-                        {{ initialsFromName(row.contact_full_name || row.company_name) }}
-                      </span>
-                      <div class="min-w-0">
-                        <p
-                          class="truncate font-semibold text-gray-900 dark:text-white"
-                        >
-                          {{ row.company_name }}
-                        </p>
-                        <p class="mt-0.5 truncate text-xs text-gray-500 dark:text-gray-400">
-                          {{
-                            row.contact_full_name && row.contact_full_name.trim()
-                              ? row.contact_full_name
-                              : "—"
-                          }}
-                        </p>
-                      </div>
-                    </RouterLink>
-                  </td>
-                  <td
-                    class="max-w-[14rem] truncate px-5 py-4 align-middle text-gray-700 sm:px-6 dark:text-gray-300"
-                  >
-                    {{ row.email }}
-                  </td>
-                  <td class="px-5 py-4 align-middle sm:px-6">
-                    <ClientAccountChannelIcons
-                      :notify-email="!!row.notify_email"
-                      :telegram-handle="row.telegram_handle || ''"
-                      :whatsapp-e164="row.whatsapp_e164 || ''"
-                    />
-                  </td>
-                  <td
-                    class="whitespace-nowrap px-5 py-4 align-middle text-gray-700 sm:px-6 dark:text-gray-300"
-                  >
-                    {{ formatDateUs(row.created_at) }}
-                  </td>
-                  <td
-                    class="max-w-[12rem] truncate px-5 py-4 align-middle text-gray-700 sm:px-6 dark:text-gray-300"
-                    :title="row.account_manager?.name"
-                  >
-                    {{ row.account_manager?.name || "—" }}
-                  </td>
-                  <td
-                    v-if="showRowActions"
-                    class="relative px-5 py-4 text-right align-middle sm:px-6"
-                  >
-                    <div data-row-actions class="relative inline-flex justify-end">
-                      <button
-                        type="button"
-                        class="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border border-gray-200 bg-white text-gray-600 shadow-sm transition hover:bg-gray-50 dark:border-gray-600 dark:bg-gray-900 dark:hover:bg-white/10"
-                        :aria-expanded="manageOpenId === row.id"
-                        :aria-row-actions="row.id"
-                        aria-haspopup="true"
-                        aria-label="Row actions"
-                        @click="toggleManageMenu(row.id, $event)"
-                      >
-                        <CrmIconRowActions />
-                      </button>
-                    </div>
-                  </td>
-                </tr>
-                <tr v-if="!loading && rows.length === 0">
-                  <td :colspan="tableColspan" class="px-5 py-12 text-center text-gray-500">
-                    No accounts found.
-                  </td>
-                </tr>
-              </tbody>
-            </table>
-          </div>
-        </div>
-
-        <div
-          class="mt-5 flex flex-col gap-4 border-t border-gray-100 pt-5 dark:border-gray-800 lg:flex-row lg:items-center lg:justify-between"
-        >
-          <div class="flex flex-wrap items-center gap-6">
-            <div class="flex items-center gap-2">
-              <label class="text-sm text-gray-600 dark:text-gray-400" for="ca-per-page"
-                >Rows per page</label
+              </th>
+              <th
+                class="staff-table-head__th staff-table-head__th--sort"
+                scope="col"
+                :aria-sort="thAriaSort('status')"
               >
-              <select
-                id="ca-per-page"
-                class="h-9 rounded-lg border border-gray-200 bg-white px-2 text-sm dark:border-gray-600 dark:bg-gray-800 dark:text-white"
-                :value="query.per_page"
-                :disabled="loading"
-                @change="onPerPageChange"
-              >
-                <option v-for="n in PER_PAGE_OPTIONS" :key="n" :value="n">
-                  {{ n }}
-                </option>
-              </select>
-            </div>
-            <p class="text-sm text-gray-600 dark:text-gray-400">
-              Showing
-              <span class="font-semibold text-gray-900 dark:text-white">{{
-                showingFrom
-              }}</span>
-              –
-              <span class="font-semibold text-gray-900 dark:text-white">{{
-                showingTo
-              }}</span>
-              of
-              <span class="font-semibold text-gray-900 dark:text-white">{{
-                pagination.total
-              }}</span>
-            </p>
-          </div>
-          <div class="flex flex-wrap items-center gap-2">
-            <button
-              type="button"
-              class="inline-flex h-9 w-9 items-center justify-center rounded-md border border-gray-200 text-gray-600 hover:bg-gray-50 disabled:opacity-40 dark:border-gray-600 dark:hover:bg-gray-800"
-              :disabled="loading || pagination.current_page <= 1"
-              @click="goPage(pagination.current_page - 1)"
-            >
-              <svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
-                <path stroke-linecap="round" stroke-linejoin="round" d="M15 19l-7-7 7-7" />
-              </svg>
-            </button>
-            <div class="flex items-center gap-1 px-1">
-              <template v-for="(item, idx) in pageItems" :key="'p-' + idx">
-                <span v-if="item.type === 'gap'" class="px-1 text-sm text-gray-400">... </span>
                 <button
-                  v-else
                   type="button"
-                  :class="[
-                    'min-w-[2.25rem] rounded-md px-2 py-1.5 text-sm font-medium transition',
-                    item.value === pagination.current_page
-                      ? 'bg-[#2563eb] text-white'
-                      : 'text-gray-600 hover:text-[#2563eb] dark:text-gray-300',
-                  ]"
+                  class="staff-sort-btn"
                   :disabled="loading"
-                  @click="goPage(item.value)"
+                  @click="toggleSort('status')"
                 >
-                  {{ item.value }}
+                  Status
+                  <span v-if="sortIndicator('status')" class="staff-sort-ind">{{
+                    sortIndicator("status")
+                  }}</span>
                 </button>
-              </template>
-            </div>
-            <button
-              type="button"
-              class="inline-flex h-9 w-9 items-center justify-center rounded-md border border-gray-200 text-gray-600 hover:bg-gray-50 disabled:opacity-40 dark:border-gray-600 dark:hover:bg-gray-800"
-              :disabled="loading || pagination.current_page >= pagination.last_page"
-              @click="goPage(pagination.current_page + 1)"
+              </th>
+              <th
+                class="staff-table-head__th staff-table-head__th--sort"
+                scope="col"
+                :aria-sort="thAriaSort('company_name')"
+              >
+                <button
+                  type="button"
+                  class="staff-sort-btn"
+                  :disabled="loading"
+                  @click="toggleSort('company_name')"
+                >
+                  Account
+                  <span
+                    v-if="sortIndicator('company_name')"
+                    class="staff-sort-ind"
+                    >{{ sortIndicator("company_name") }}</span
+                  >
+                </button>
+              </th>
+              <th
+                class="staff-table-head__th staff-table-head__th--sort"
+                scope="col"
+                :aria-sort="thAriaSort('email')"
+              >
+                <button
+                  type="button"
+                  class="staff-sort-btn"
+                  :disabled="loading"
+                  @click="toggleSort('email')"
+                >
+                  Email
+                  <span v-if="sortIndicator('email')" class="staff-sort-ind">{{
+                    sortIndicator("email")
+                  }}</span>
+                </button>
+              </th>
+              <th class="staff-table-head__th" scope="col" aria-sort="none">
+                Channel
+              </th>
+              <th
+                class="staff-table-head__th staff-table-head__th--sort"
+                scope="col"
+                :aria-sort="thAriaSort('created_at')"
+              >
+                <button
+                  type="button"
+                  class="staff-sort-btn"
+                  :disabled="loading"
+                  @click="toggleSort('created_at')"
+                >
+                  Create date
+                  <span
+                    v-if="sortIndicator('created_at')"
+                    class="staff-sort-ind"
+                    >{{ sortIndicator("created_at") }}</span
+                  >
+                </button>
+              </th>
+              <th class="staff-table-head__th" scope="col" aria-sort="none">
+                Account manager
+              </th>
+              <th
+                v-if="showRowActions"
+                class="staff-table-head__th staff-actions-col text-end"
+                scope="col"
+                aria-sort="none"
+              >
+                Actions
+              </th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr v-if="loading">
+              <td :colspan="tableColspan" class="py-5">
+                <div class="d-flex justify-content-center py-3">
+                  <CrmLoadingSpinner message="Loading…" />
+                </div>
+              </td>
+            </tr>
+            <tr
+              v-for="row in rows"
+              v-else
+              :key="row.id"
+              class="align-middle"
             >
-              <svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
-                <path stroke-linecap="round" stroke-linejoin="round" d="M9 5l7 7-7 7" />
-              </svg>
-            </button>
+              <td v-if="showCheckboxCol" class="staff-table-cell--tight-check">
+                <input
+                  type="checkbox"
+                  class="form-check-input staff-table-head__check mt-0"
+                  :checked="selectedIds.includes(row.id)"
+                  :aria-label="`Select ${row.company_name}`"
+                  @change="toggleRowSelect(row.id)"
+                />
+              </td>
+              <td>
+                <span
+                  class="badge rounded-pill text-capitalize fw-medium"
+                  :class="statusBadgeClass(row.status)"
+                >
+                  {{ row.status }}
+                </span>
+              </td>
+              <td>
+                <RouterLink
+                  :to="`/clients/accounts/${row.id}`"
+                  class="d-flex align-items-center gap-3 min-w-0 text-decoration-none rounded px-1 py-1"
+                >
+                  <span
+                    class="flex-shrink-0 rounded-circle d-inline-flex align-items-center justify-content-center small fw-semibold"
+                    style="width: 2.5rem; height: 2.5rem"
+                    :class="avatarClassForRow(row.email)"
+                  >
+                    {{
+                      initialsFromName(
+                        row.contact_full_name || row.company_name,
+                      )
+                    }}
+                  </span>
+                  <div class="min-w-0">
+                    <span class="d-block text-truncate fw-semibold text-body">{{
+                      row.company_name
+                    }}</span>
+                    <span
+                      class="d-block text-truncate text-secondary staff-user-cell__meta"
+                    >
+                      {{
+                        row.contact_full_name &&
+                        String(row.contact_full_name).trim()
+                          ? row.contact_full_name
+                          : "—"
+                      }}
+                    </span>
+                  </div>
+                </RouterLink>
+              </td>
+              <td
+                class="text-secondary staff-table-cell__meta text-truncate"
+                style="max-width: 14rem"
+              >
+                {{ row.email }}
+              </td>
+              <td>
+                <ClientAccountChannelIcons
+                  :notify-email="!!row.notify_email"
+                  :telegram-handle="row.telegram_handle || ''"
+                  :whatsapp-e164="row.whatsapp_e164 || ''"
+                />
+              </td>
+              <td class="text-secondary staff-table-cell__meta text-nowrap">
+                {{ formatDateUs(row.created_at) }}
+              </td>
+              <td
+                class="text-secondary staff-table-cell__meta text-truncate"
+                style="max-width: 12rem"
+                :title="row.account_manager?.name"
+              >
+                {{ row.account_manager?.name || "—" }}
+              </td>
+              <td v-if="showRowActions" class="staff-actions-cell">
+                <div data-row-actions class="staff-actions-inner">
+                  <RouterLink
+                    :to="`/clients/accounts/${row.id}`"
+                    class="staff-action-btn text-decoration-none"
+                    aria-label="View account"
+                  >
+                    <svg
+                      width="18"
+                      height="18"
+                      fill="currentColor"
+                      viewBox="0 0 24 24"
+                      aria-hidden="true"
+                    >
+                      <path
+                        d="M12 4.5C7 4.5 2.73 7.61 1 12c1.73 4.39 6 7.5 11 7.5s9.27-3.11 11-7.5c-1.73-4.39-6-7.5-11-7.5zM12 17c-2.76 0-5-2.24-5-5s2.24-5 5-5 5 2.24 5 5-2.24 5-5 5zm0-8c-1.66 0-3 1.34-3 3s1.34 3 3 3 3-1.34 3-3-1.34-3-3-3z"
+                      />
+                    </svg>
+                  </RouterLink>
+                  <button
+                    type="button"
+                    class="staff-action-btn staff-action-btn--more"
+                    :class="{ 'is-open': manageOpenId === row.id }"
+                    :aria-expanded="manageOpenId === row.id"
+                    :aria-row-actions="row.id"
+                    aria-haspopup="true"
+                    aria-label="More actions"
+                    @click="toggleManageMenu(row.id, $event)"
+                  >
+                    <CrmIconRowActions />
+                  </button>
+                </div>
+              </td>
+            </tr>
+            <tr v-if="!loading && rows.length === 0">
+              <td
+                :colspan="tableColspan"
+                class="px-4 py-5 text-center text-secondary"
+              >
+                No accounts found.
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div
+        class="d-flex flex-column flex-lg-row align-items-lg-center justify-content-lg-between gap-3 border-top staff-table-footer"
+      >
+        <p
+          class="small text-secondary mb-0 order-2 order-lg-1 text-center text-lg-start"
+        >
+          Showing
+          <span class="fw-semibold text-body">{{ showingFrom }}</span>
+          to
+          <span class="fw-semibold text-body">{{ showingTo }}</span>
+          of
+          <span class="fw-semibold text-body">{{ pagination.total }}</span>
+          entries
+        </p>
+        <nav
+          class="order-1 order-lg-2 d-flex justify-content-center justify-content-lg-end ms-lg-auto flex-shrink-0"
+          aria-label="Account list pages"
+        >
+          <div class="staff-page-pager staff-page-pager--cluster">
+            <div class="staff-page-pager__start">
+              <button
+                type="button"
+                class="staff-page-pager-tile staff-page-pager-tile--nav"
+                :disabled="loading || pagination.current_page <= 1"
+                aria-label="First page"
+                @click="goFirstPage"
+              >
+                <svg
+                  width="18"
+                  height="18"
+                  fill="currentColor"
+                  viewBox="0 0 24 24"
+                  aria-hidden="true"
+                >
+                  <path
+                    d="M5.59 18L7 16.59 2.41 12 7 7.41 5.59 6l-6 6 6 6zm8 0L15 16.59 10.41 12 15 7.41 13.59 6l-6 6 6 6z"
+                  />
+                </svg>
+              </button>
+              <button
+                type="button"
+                class="staff-page-pager-tile staff-page-pager-tile--nav"
+                :disabled="loading || pagination.current_page <= 1"
+                aria-label="Previous page"
+                @click="goPage(pagination.current_page - 1)"
+              >
+                <svg
+                  width="18"
+                  height="18"
+                  fill="currentColor"
+                  viewBox="0 0 24 24"
+                  aria-hidden="true"
+                >
+                  <path d="M15.41 7.41L14 6l-6 6 6 6 1.41-1.41L10.83 12z" />
+                </svg>
+              </button>
+            </div>
+            <div class="staff-page-pager__pages">
+              <div class="staff-page-pager-inner d-flex align-items-center">
+                <template v-for="(item, idx) in pageItems" :key="'ca-pi-' + idx">
+                  <span
+                    v-if="item.type === 'gap'"
+                    class="px-1 small text-secondary user-select-none"
+                    >…</span
+                  >
+                  <button
+                    v-else
+                    type="button"
+                    class="staff-page-pager-tile"
+                    :class="{
+                      'staff-page-pager-tile--active':
+                        item.value === pagination.current_page,
+                    }"
+                    :disabled="loading"
+                    @click="goPage(item.value)"
+                  >
+                    {{ item.value }}
+                  </button>
+                </template>
+              </div>
+            </div>
+            <div class="staff-page-pager__end">
+              <button
+                type="button"
+                class="staff-page-pager-tile staff-page-pager-tile--nav"
+                :disabled="
+                  loading || pagination.current_page >= pagination.last_page
+                "
+                aria-label="Next page"
+                @click="goPage(pagination.current_page + 1)"
+              >
+                <svg
+                  width="18"
+                  height="18"
+                  fill="currentColor"
+                  viewBox="0 0 24 24"
+                  aria-hidden="true"
+                >
+                  <path d="M8.59 16.59L10 18l6-6-6-6-1.41 1.41L13.17 12z" />
+                </svg>
+              </button>
+              <button
+                type="button"
+                class="staff-page-pager-tile staff-page-pager-tile--nav"
+                :disabled="
+                  loading || pagination.current_page >= pagination.last_page
+                "
+                aria-label="Last page"
+                @click="goLastPage"
+              >
+                <svg
+                  width="18"
+                  height="18"
+                  fill="currentColor"
+                  viewBox="0 0 24 24"
+                  aria-hidden="true"
+                >
+                  <path
+                    d="M6.41 6L5 7.41 9.58 12 5 16.59 6.41 18l6-6-6-6zm8 0L13 7.41 17.58 12 13 16.59 14.41 18l6-6-6-6z"
+                  />
+                </svg>
+              </button>
+            </div>
           </div>
-        </div>
+        </nav>
       </div>
     </div>
 
     <ConfirmModal
       :open="deleteModalOpen"
       title="Delete account"
+      subtitle="This action is permanent and may remove related CRM data."
       :message="deleteMessage"
       confirm-label="Delete"
       cancel-label="Cancel"
@@ -940,11 +1208,12 @@ onUnmounted(() => {
         <div
           v-if="manageMenuRow"
           data-row-actions
-          class="fixed z-[300] w-[200px] overflow-hidden rounded-xl border border-gray-200 bg-white py-1 shadow-lg dark:border-gray-700 dark:bg-gray-900"
+          class="staff-row-menu fixed z-[300]"
           role="menu"
           :style="{
             top: `${manageMenuRect.top}px`,
             left: `${manageMenuRect.left}px`,
+            minWidth: '200px',
           }"
           @click.stop
         >
@@ -952,24 +1221,34 @@ onUnmounted(() => {
             <button
               v-if="canUpdate"
               type="button"
-              class="flex w-full items-center px-4 py-2.5 text-left text-sm font-medium text-gray-800 hover:bg-gray-50 dark:text-gray-200 dark:hover:bg-white/5"
+              class="staff-row-menu__item"
+              role="menuitem"
               @click="openStatusSubmenu"
             >
               Status
             </button>
+            <hr
+              v-if="canUpdate"
+              class="staff-row-menu__divider"
+            />
             <button
               v-if="canUpdate"
               type="button"
-              class="flex w-full items-center px-4 py-2.5 text-left text-sm font-medium text-gray-800 hover:bg-gray-50 dark:text-gray-200 dark:hover:bg-white/5"
-              :class="canUpdate ? 'border-t border-gray-100 dark:border-gray-800' : ''"
+              class="staff-row-menu__item"
+              role="menuitem"
               @click="openEditModal(manageMenuRow)"
             >
               Edit
             </button>
+            <hr
+              v-if="canUpdate && canDelete"
+              class="staff-row-menu__divider"
+            />
             <button
               v-if="canDelete"
               type="button"
-              class="flex w-full items-center border-t border-gray-100 px-4 py-2.5 text-left text-sm font-medium text-red-600 hover:bg-red-50 dark:border-gray-800 dark:text-red-400 dark:hover:bg-red-950/25"
+              class="staff-row-menu__item staff-row-menu__item--danger"
+              role="menuitem"
               @click="openDeleteModal(manageMenuRow)"
             >
               Delete
@@ -978,17 +1257,19 @@ onUnmounted(() => {
           <template v-else>
             <button
               type="button"
-              class="flex w-full items-center px-4 py-2 text-left text-xs font-medium text-gray-500 hover:bg-gray-50 dark:text-gray-400 dark:hover:bg-white/5"
+              class="staff-row-menu__item"
+              role="menuitem"
               @click="backToMainMenu"
             >
               ← Back
             </button>
-            <div class="border-t border-gray-100 dark:border-gray-800" />
+            <hr class="staff-row-menu__divider" />
             <button
               v-for="s in statuses"
               :key="s"
               type="button"
-              class="flex w-full items-center px-4 py-2 text-left text-sm capitalize text-gray-800 hover:bg-gray-50 disabled:opacity-50 dark:text-gray-200 dark:hover:bg-white/5"
+              class="staff-row-menu__item text-capitalize"
+              role="menuitem"
               :disabled="manageMenuRow.status === s"
               @click="setRowStatus(manageMenuRow, s)"
             >

@@ -15,6 +15,15 @@ export default defineConfig({
     plugins: [vue()],
     root: path.resolve(__dirname, 'resources/crm'),
     publicDir: false,
+    // Bootstrap SCSS triggers Sass “mixed-decls” deprecation warnings; build is still valid.
+    css: {
+        preprocessorOptions: {
+            scss: {
+                quietDeps: true,
+                silenceDeprecations: ['mixed-decls', 'import', 'global-builtin'],
+            },
+        },
+    },
     // Dev: forward API + uploaded files to Laravel (e.g. php artisan serve on :8000)
     server: {
         proxy: {

@@ -69,7 +69,7 @@ function onBackdropClick() {
     <Transition name="drawer-fade">
       <div
         v-if="open"
-        class="fixed inset-0 z-[200] flex h-[100dvh] max-h-[100dvh] justify-end overflow-hidden"
+        class="fixed inset-0 z-[1200] flex h-[100dvh] max-h-[100dvh] justify-end overflow-hidden"
         aria-modal="true"
         role="dialog"
       >

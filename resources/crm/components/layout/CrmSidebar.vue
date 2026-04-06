@@ -45,14 +45,10 @@ watch(
   },
 );
 
-const { isExpanded, isMobileOpen, closeMobile, sidebarWidthClass } =
+const { isExpanded, isMobileOpen, closeMobile, sidebarClass, toggleSidebar } =
   useCrmSidebar();
 
 const markSrc = computed(() => BRAND_MARK_SRC());
-
-function itemJustify() {
-  return isExpanded.value ? "" : "lg:justify-center lg:px-2";
-}
 
 function navActive(mode) {
   const p = route.path;
@@ -64,242 +60,213 @@ function navActive(mode) {
   return false;
 }
 
-function navClass(mode) {
-  const active = navActive(mode);
-  return [
-    "menu-item group w-full",
-    active ? "menu-item-active" : "menu-item-inactive",
-  ];
-}
-
-function iconClass(mode) {
-  return navActive(mode) ? "menu-item-icon-active" : "menu-item-icon-inactive";
+function collapseNav() {
+  if (typeof window !== "undefined" && window.innerWidth >= 992) {
+    toggleSidebar();
+  }
 }
 </script>
 
 <template>
-  <aside
-    :class="[
-      'fixed left-0 top-0 z-[100] flex h-screen flex-col border-r border-gray-200 bg-white transition-all duration-300 ease-in-out dark:border-gray-800 dark:bg-gray-900',
-      sidebarWidthClass,
-      isMobileOpen
-        ? 'w-[290px] translate-x-0'
-        : '-translate-x-full w-[290px] lg:translate-x-0',
-    ]"
-  >
-    <div
-      :class="[
-        'flex border-b border-gray-200 py-5 dark:border-gray-800',
-        isExpanded ? 'items-center justify-start px-4' : 'justify-center px-2',
-      ]"
-    >
+  <aside :class="sidebarClass">
+    <div class="vx-sidebar__header">
       <RouterLink
+        v-if="isExpanded"
         to="/dashboard"
-        :class="[
-          'flex min-w-0 items-center rounded-lg outline-none ring-[#2563eb] transition hover:opacity-95 focus-visible:ring-2',
-          isExpanded ? 'gap-3' : 'justify-center',
-        ]"
+        class="vx-sidebar__brand-link"
         @click="closeMobile"
       >
         <img
           :src="markSrc"
           alt=""
-          class="h-14 w-14 shrink-0 object-contain sm:h-16 sm:w-16"
-          width="64"
-          height="64"
+          class="crm-vertical-nav__brand-logo"
+          width="40"
+          height="40"
         />
-        <span
-          v-if="isExpanded"
-          class="select-none text-3xl font-bold leading-none tracking-tight text-[#1e3a5f] dark:text-white sm:text-[2rem]"
-        >
-          Save Rack
-        </span>
+        <span class="crm-vertical-nav__brand-text text-truncate">Save Rack</span>
       </RouterLink>
+      <RouterLink
+        v-else
+        to="/dashboard"
+        class="vx-sidebar__brand-link justify-content-center w-100"
+        @click="closeMobile"
+      >
+        <img
+          :src="markSrc"
+          alt=""
+          class="crm-vertical-nav__brand-logo"
+          width="40"
+          height="40"
+        />
+      </RouterLink>
+      <button
+        v-if="isExpanded"
+        type="button"
+        class="vx-sidebar__collapse-btn"
+        aria-label="Collapse navigation"
+        @click="collapseNav"
+      >
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+          <circle cx="8" cy="12" r="3" stroke="currentColor" stroke-width="2" />
+          <circle cx="16" cy="12" r="3" stroke="currentColor" stroke-width="2" />
+        </svg>
+      </button>
     </div>
 
-    <nav
-      class="no-scrollbar flex-1 overflow-y-auto py-6"
-      :class="isExpanded ? 'px-4' : 'px-2'"
-    >
-      <h2
-        v-if="isExpanded"
-        class="mb-4 px-3 text-xs font-semibold uppercase tracking-wide text-gray-400"
+    <!-- Collapsed: show expand control -->
+    <div v-if="!isExpanded" class="px-2 pb-2 d-none d-lg-block">
+      <button
+        type="button"
+        class="vx-sidebar__collapse-btn w-100"
+        aria-label="Expand navigation"
+        @click="collapseNav"
       >
-        Menu
-      </h2>
-      <ul class="flex flex-col gap-1">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+          <circle cx="8" cy="12" r="3" stroke="currentColor" stroke-width="2" />
+          <circle cx="16" cy="12" r="3" stroke="currentColor" stroke-width="2" />
+        </svg>
+      </button>
+    </div>
+
+    <nav class="vx-sidebar__scroll">
+      <h2 v-if="isExpanded" class="vx-section-label">Menu</h2>
+      <ul class="list-unstyled mb-0 pb-2">
         <li>
           <RouterLink
             to="/dashboard"
-            :class="[navClass('dashboard'), itemJustify()]"
+            class="vx-nav-link"
+            :title="!isExpanded ? 'Dashboard' : undefined"
             @click="closeMobile"
           >
-            <span :class="iconClass('dashboard')">
-              <svg
-                class="h-5 w-5"
-                fill="none"
-                viewBox="0 0 24 24"
-                stroke="currentColor"
-                stroke-width="2"
-              >
-                <path
-                  stroke-linecap="round"
-                  stroke-linejoin="round"
-                  d="M4 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2V6zM14 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V6zM4 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2v-2zM14 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2v-2z"
-                />
-              </svg>
-            </span>
+            <svg
+              fill="none"
+              viewBox="0 0 24 24"
+              stroke="currentColor"
+              stroke-width="1.5"
+            >
+              <path
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                d="m2.25 12 8.954-8.955c.44-.439 1.152-.439 1.591 0L21.75 12M4.5 9.75v10.125c0 .621.504 1.125 1.125 1.125H9.75v-4.875c0-.621.504-1.125 1.125-1.125h2.25c.621 0 1.125.504 1.125 1.125V21h4.125c.621 0 1.125-.504 1.125-1.125V9.75M8.25 21h8.25"
+              />
+            </svg>
             <span v-if="isExpanded">Dashboard</span>
           </RouterLink>
         </li>
         <li v-if="canViewUsers">
           <RouterLink
             to="/staff"
-            :class="[navClass('users'), itemJustify()]"
+            class="vx-nav-link"
+            :title="!isExpanded ? 'Staff' : undefined"
             @click="closeMobile"
           >
-            <span :class="iconClass('users')">
-              <svg
-                class="h-5 w-5"
-                fill="none"
-                viewBox="0 0 24 24"
-                stroke="currentColor"
-                stroke-width="2"
-              >
-                <path
-                  stroke-linecap="round"
-                  stroke-linejoin="round"
-                  d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z"
-                />
-              </svg>
-            </span>
+            <svg
+              fill="none"
+              viewBox="0 0 24 24"
+              stroke="currentColor"
+              stroke-width="1.5"
+            >
+              <path
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                d="M15.75 6a3.75 3.75 0 1 1-7.5 0 3.75 3.75 0 0 1 7.5 0ZM4.501 20.118a7.5 7.5 0 0 1 14.998 0A17.933 17.933 0 0 1 12 21.75c-2.676 0-5.216-.584-7.499-1.632Z"
+              />
+            </svg>
             <span v-if="isExpanded">Staff</span>
           </RouterLink>
         </li>
         <li v-if="canViewClients">
           <template v-if="isExpanded">
-            <div class="flex flex-col gap-1">
+            <div>
               <button
                 type="button"
-                :class="[
-                  'menu-item group flex w-full items-center rounded-lg text-left transition',
-                  navActive('clients')
-                    ? 'menu-item-active'
-                    : 'menu-item-inactive',
-                  itemJustify(),
-                ]"
+                class="vx-nav-link"
                 :aria-expanded="clientsGroupOpen"
                 @click="clientsGroupOpen = !clientsGroupOpen"
               >
-                <span :class="iconClass('clients')">
-                  <svg
-                    class="h-5 w-5"
-                    fill="none"
-                    viewBox="0 0 24 24"
-                    stroke="currentColor"
-                    stroke-width="2"
-                  >
-                    <path
-                      stroke-linecap="round"
-                      stroke-linejoin="round"
-                      d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4"
-                    />
-                  </svg>
-                </span>
-                <span v-if="isExpanded" class="flex min-w-0 flex-1 items-center gap-2">
-                  <span class="truncate">Clients</span>
-                  <svg
-                    class="ml-auto h-4 w-4 shrink-0 transition"
-                    :class="clientsGroupOpen ? 'rotate-180' : ''"
-                    fill="none"
-                    viewBox="0 0 24 24"
-                    stroke="currentColor"
-                    stroke-width="2"
-                    aria-hidden="true"
-                  >
-                    <path
-                      stroke-linecap="round"
-                      stroke-linejoin="round"
-                      d="M19 9l-7 7-7-7"
-                    />
-                  </svg>
-                </span>
-              </button>
-              <Transition
-                enter-active-class="transition duration-150 ease-out"
-                enter-from-class="opacity-0 -translate-y-0.5"
-                enter-to-class="opacity-100 translate-y-0"
-                leave-active-class="transition duration-100 ease-in"
-                leave-from-class="opacity-100"
-                leave-to-class="opacity-0"
-              >
-                <ul
-                  v-show="clientsGroupOpen"
-                  class="ml-4 space-y-1 border-l border-gray-200 py-0.5 pl-3 dark:border-gray-700"
+                <svg
+                  fill="none"
+                  viewBox="0 0 24 24"
+                  stroke="currentColor"
+                  stroke-width="1.5"
                 >
-                  <li>
-                    <RouterLink
-                      to="/clients/accounts"
-                      :class="[
-                        'menu-item group flex w-full items-center rounded-lg py-2 text-sm',
-                        navActive('clients-accounts')
-                          ? 'menu-item-active'
-                          : 'menu-item-inactive',
-                      ]"
-                      @click="closeMobile"
-                    >
-                      Accounts
-                    </RouterLink>
-                  </li>
-                </ul>
-              </Transition>
+                  <path
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                    d="M2.25 21h19.5m-18-18v18m10.5-18v18m6-13.5V21M6.75 6.75h.75m-.75 3h.75m-.75 3h.75m3-6h1.5m-1.5 3h1.5m-1.5 3h1.5M9 21v-3.375c0-.621.504-1.125 1.125-1.125h3.75c.621 0 1.125.504 1.125 1.125V21"
+                  />
+                </svg>
+                <span class="text-truncate">Clients</span>
+                <svg
+                  class="ms-auto flex-shrink-0 transition"
+                  :class="clientsGroupOpen ? 'rotate-180' : ''"
+                  style="width: 1rem; height: 1rem"
+                  fill="none"
+                  viewBox="0 0 24 24"
+                  stroke="currentColor"
+                  stroke-width="1.5"
+                  aria-hidden="true"
+                >
+                  <path
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                    d="M19 9l-7 7-7-7"
+                  />
+                </svg>
+              </button>
+              <ul v-show="clientsGroupOpen" class="list-unstyled mb-0 mt-1">
+                <li>
+                  <RouterLink
+                    to="/clients/accounts"
+                    class="vx-nav-link vx-nav-sublink"
+                    @click="closeMobile"
+                  >
+                    Accounts
+                  </RouterLink>
+                </li>
+              </ul>
             </div>
           </template>
           <RouterLink
             v-else
             to="/clients/accounts"
-            :class="[navClass('clients-accounts'), itemJustify()]"
+            class="vx-nav-link"
             title="Accounts"
             @click="closeMobile"
           >
-            <span :class="iconClass('clients-accounts')">
-              <svg
-                class="h-5 w-5"
-                fill="none"
-                viewBox="0 0 24 24"
-                stroke="currentColor"
-                stroke-width="2"
-              >
-                <path
-                  stroke-linecap="round"
-                  stroke-linejoin="round"
-                  d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4"
-                />
-              </svg>
-            </span>
+            <svg
+              fill="none"
+              viewBox="0 0 24 24"
+              stroke="currentColor"
+              stroke-width="1.5"
+            >
+              <path
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                d="M2.25 21h19.5m-18-18v18m10.5-18v18m6-13.5V21M6.75 6.75h.75m-.75 3h.75m-.75 3h.75m3-6h1.5m-1.5 3h1.5m-1.5 3h1.5M9 21v-3.375c0-.621.504-1.125 1.125-1.125h3.75c.621 0 1.125.504 1.125 1.125V21"
+              />
+            </svg>
           </RouterLink>
         </li>
         <li v-if="canViewWebmaster">
           <RouterLink
             to="/webmaster"
-            :class="[navClass('webmaster'), itemJustify()]"
+            class="vx-nav-link"
+            :title="!isExpanded ? 'Webmaster' : undefined"
             @click="closeMobile"
           >
-            <span :class="iconClass('webmaster')">
-              <svg
-                class="h-5 w-5"
-                fill="none"
-                viewBox="0 0 24 24"
-                stroke="currentColor"
-                stroke-width="2"
-              >
-                <path
-                  stroke-linecap="round"
-                  stroke-linejoin="round"
-                  d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"
-                />
-              </svg>
-            </span>
+            <svg
+              fill="none"
+              viewBox="0 0 24 24"
+              stroke="currentColor"
+              stroke-width="1.5"
+            >
+              <path
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                d="M9.594 3.94c.09-.542.56-.94 1.11-.94h2.593c.55 0 1.02.398 1.11.94l.213 1.281c.063.374.313.686.645.87.074.04.147.083.22.127.324.196.72.257 1.075.124l1.217-.456a1.125 1.125 0 0 1 1.37.49l1.224 2.3c.307.575.21 1.278-.234 1.733l-.793.792c-.39.39-.601.918-.601 1.467v.224c0 .99.66 1.86 1.617 2.12l1.218.304c.517.129.88.596.88 1.114v2.593c0 .55-.398 1.02-.94 1.11l-1.281.213a1.125 1.125 0 0 1-.87.645l-.135.045a1.125 1.125 0 0 0-.53.315l-.792.793a1.125 1.125 0 0 1-1.733-.234l-1.224-2.3a1.125 1.125 0 0 0-.49-.37l-.286-.107a1.125 1.125 0 0 1-.633-1.326l.302-.774a1.125 1.125 0 0 0-.216-.883l-.792-.792a1.125 1.125 0 0 0-.883-.216l-.774.302a1.125 1.125 0 0 1-1.326-.633l-.107-.286a1.125 1.125 0 0 0-.37-.49l-2.3-1.224a1.125 1.125 0 0 1-.234-1.733l.793-.792c.196-.324.257-.72.124-1.075l-.456-1.217a1.125 1.125 0 0 1 .49-1.37l2.3-1.224c.162-.086.312-.2.444-.324L9.594 3.94ZM12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6Z"
+              />
+            </svg>
             <span v-if="isExpanded">Webmaster</span>
           </RouterLink>
         </li>
@@ -307,3 +274,9 @@ function iconClass(mode) {
     </nav>
   </aside>
 </template>
+
+<style scoped>
+.rotate-180 {
+  transform: rotate(180deg);
+}
+</style>

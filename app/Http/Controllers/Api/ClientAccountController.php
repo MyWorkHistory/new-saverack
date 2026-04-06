@@ -27,9 +27,26 @@ class ClientAccountController extends Controller
     {
         $this->authorize('viewAny', ClientAccount::class);
 
+        $countsByStatus = ClientAccount::query()
+            ->selectRaw('status, count(*) as aggregate')
+            ->groupBy('status')
+            ->pluck('aggregate', 'status')
+            ->map(fn ($n) => (int) $n)
+            ->all();
+
+        $total = array_sum($countsByStatus);
+        $directoryStats = [
+            'total' => $total,
+            'active' => (int) ($countsByStatus[ClientAccount::STATUS_ACTIVE] ?? 0),
+            'pending' => (int) ($countsByStatus[ClientAccount::STATUS_PENDING] ?? 0),
+            'paused' => (int) ($countsByStatus[ClientAccount::STATUS_PAUSED] ?? 0),
+            'inactive' => (int) ($countsByStatus[ClientAccount::STATUS_INACTIVE] ?? 0),
+        ];
+
         return response()->json([
             'statuses' => ClientAccount::STATUSES,
             'account_managers' => $this->clientAccounts->accountManagersForMeta(),
+            'directory_stats' => $directoryStats,
         ]);
     }
 

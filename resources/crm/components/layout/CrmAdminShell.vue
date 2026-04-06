@@ -1,4 +1,6 @@
 <script setup>
+import { computed } from "vue";
+import { useRoute } from "vue-router";
 import { useCrmSidebar } from "../../composables/useCrmSidebar";
 import CrmHeader from "./CrmHeader.vue";
 import CrmSidebar from "./CrmSidebar.vue";
@@ -9,34 +11,59 @@ defineProps({
 
 defineEmits(["logout", "refresh-user"]);
 
-const { isMobileOpen, toggleMobileSidebar, mainMarginClass } = useCrmSidebar();
+const route = useRoute();
+const { isMobileOpen, toggleMobileSidebar, mainWrapClass } = useCrmSidebar();
+
+/** Full-width main column with demo-like gutters (no 1440px cap). */
+const useWideCrmContent = computed(
+  () =>
+    route.path.startsWith("/staff") ||
+    route.path.startsWith("/clients/accounts"),
+);
+
+const crmContentClass = computed(() =>
+  [
+    "crm-content",
+    "flex-grow-1",
+    useWideCrmContent.value ? "crm-content--staff-wide" : "",
+  ].filter(Boolean),
+);
 </script>
 
 <template>
-  <div class="min-h-screen bg-gray-50 dark:bg-gray-950">
+  <div class="crm-app-shell">
     <CrmSidebar :user="user" />
 
     <div
       v-if="isMobileOpen"
-      class="fixed inset-0 z-[90] bg-gray-900/50 lg:hidden"
+      class="crm-backdrop-nav d-lg-none"
       aria-hidden="true"
       @click="toggleMobileSidebar"
     />
 
-    <div
-      :class="[
-        'min-h-screen flex-1 transition-all duration-300 ease-in-out',
-        mainMarginClass,
-      ]"
-    >
+    <div :class="mainWrapClass">
       <CrmHeader
         :user="user"
         @logout="$emit('logout')"
         @refresh-user="$emit('refresh-user')"
       />
-      <div class="mx-auto max-w-[var(--breakpoint-2xl)] p-4 md:p-6">
+      <div :class="crmContentClass">
         <slot />
       </div>
+      <footer class="vx-app-footer flex-shrink-0 mt-auto">
+        <div class="vx-app-footer__inner">
+          <span>
+            © {{ new Date().getFullYear() }}, made with
+            <span class="text-danger" aria-hidden="true">♥</span>
+            by
+            <a href="#" class="text-decoration-none fw-medium">Save Rack</a>
+          </span>
+          <div class="vx-app-footer__links">
+            <a href="mailto:support@saverack.com">Support</a>
+            <a href="#">Documentation</a>
+          </div>
+        </div>
+      </footer>
     </div>
   </div>
 </template>

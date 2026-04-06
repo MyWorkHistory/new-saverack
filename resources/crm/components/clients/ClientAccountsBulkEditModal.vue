@@ -1,10 +1,5 @@
 <script setup>
-import { ref, watch } from "vue";
-import {
-  CRM_BTN_PRIMARY,
-  CRM_BTN_SECONDARY,
-  CRM_DIALOG_FOOTER_CLASS,
-} from "../../constants/dialogFooter.js";
+import { onUnmounted, ref, watch } from "vue";
 
 const props = defineProps({
   open: { type: Boolean, default: false },
@@ -36,9 +31,31 @@ function onSubmit() {
   emit("apply", { status: status.value });
 }
 
-function onBackdrop() {
+function onBackdropClick() {
   if (!props.busy) close();
 }
+
+function onEsc(e) {
+  if (e.key === "Escape" && props.open && !props.busy) {
+    e.preventDefault();
+    close();
+  }
+}
+
+watch(
+  () => props.open,
+  (o) => {
+    if (o) {
+      document.addEventListener("keydown", onEsc);
+    } else {
+      document.removeEventListener("keydown", onEsc);
+    }
+  },
+);
+
+onUnmounted(() => {
+  document.removeEventListener("keydown", onEsc);
+});
 </script>
 
 <template>
@@ -46,82 +63,79 @@ function onBackdrop() {
     <Transition name="modal-backdrop">
       <div
         v-if="open"
-        class="fixed inset-0 z-[240] flex items-center justify-center p-4 sm:p-6"
+        class="crm-vx-modal-overlay"
         aria-modal="true"
         role="dialog"
+        aria-labelledby="accounts-bulk-edit-modal-title"
       >
         <div
-          class="absolute inset-0 bg-gray-900/40 backdrop-blur-[2px] dark:bg-black/55"
+          class="crm-vx-modal-backdrop"
           aria-hidden="true"
-          @click="onBackdrop"
+          @click="onBackdropClick"
         />
         <Transition name="modal-panel" appear>
-          <div
-            class="relative z-10 max-h-[min(90dvh,640px)] w-full max-w-sm overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-2xl dark:border-gray-700 dark:bg-gray-900"
-          >
-            <header
-              class="flex items-start justify-between gap-3 border-b border-gray-100 px-5 py-4 dark:border-gray-800"
+          <div class="crm-vx-modal crm-vx-modal--sm">
+            <button
+              type="button"
+              class="crm-vx-modal__close"
+              aria-label="Close"
+              :disabled="busy"
+              @click="close"
             >
-              <div class="min-w-0">
-                <h2 class="text-lg font-semibold text-gray-900 dark:text-white">
-                  Bulk Edit
-                </h2>
-                <p class="mt-0.5 text-sm text-gray-500 dark:text-gray-400">
-                  {{ selectedCount }} account(s) selected
-                </p>
-              </div>
-              <button
-                type="button"
-                class="shrink-0 rounded-lg p-2 text-gray-500 transition hover:bg-gray-100 hover:text-gray-800 disabled:opacity-50 dark:hover:bg-white/10 dark:hover:text-white"
-                aria-label="Close"
-                :disabled="busy"
-                @click="close"
+              <svg
+                width="20"
+                height="20"
+                fill="none"
+                viewBox="0 0 24 24"
+                stroke="currentColor"
+                stroke-width="1.75"
+                aria-hidden="true"
               >
-                <svg
-                  class="h-5 w-5"
-                  fill="none"
-                  viewBox="0 0 24 24"
-                  stroke="currentColor"
-                  stroke-width="2"
-                >
-                  <path
-                    stroke-linecap="round"
-                    stroke-linejoin="round"
-                    d="M6 18L18 6M6 6l12 12"
-                  />
-                </svg>
-              </button>
+                <path
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                  d="M6 18L18 6M6 6l12 12"
+                />
+              </svg>
+            </button>
+
+            <header class="crm-vx-modal__head">
+              <h2 id="accounts-bulk-edit-modal-title" class="crm-vx-modal__title">
+                Bulk edit
+              </h2>
+              <p class="crm-vx-modal__subtitle">
+                {{ selectedCount }} account(s) selected
+              </p>
             </header>
-            <div class="space-y-4 px-5 py-4">
-              <label class="flex cursor-pointer items-center gap-2">
+
+            <div class="crm-vx-modal__body pt-0">
+              <div class="form-check mb-3">
                 <input
+                  id="cab-change-status"
                   v-model="changeStatus"
                   type="checkbox"
-                  class="h-4 w-4 rounded border-gray-300 text-[#2563eb] focus:ring-[#2563eb]/30"
+                  class="form-check-input"
                 />
-                <span class="text-sm font-medium text-gray-800 dark:text-gray-200">
+                <label class="form-check-label fw-medium" for="cab-change-status">
                   Change status
-                </span>
-              </label>
+                </label>
+              </div>
               <div v-if="changeStatus">
-                <label
-                  class="mb-1 block text-xs font-medium text-gray-500 dark:text-gray-400"
+                <label class="form-label small mb-1 text-secondary" for="cab-status"
                   >Status</label
                 >
-                <select
-                  v-model="status"
-                  class="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm dark:border-gray-600 dark:bg-gray-800 dark:text-white"
-                >
+                <select id="cab-status" v-model="status" class="form-select">
                   <option v-for="s in statuses" :key="s" :value="s">
                     {{ s.charAt(0).toUpperCase() + s.slice(1) }}
                   </option>
                 </select>
               </div>
             </div>
-            <footer :class="CRM_DIALOG_FOOTER_CLASS">
+
+            <footer class="crm-vx-modal__footer">
               <button
                 type="button"
-                :class="CRM_BTN_SECONDARY"
+                class="crm-vx-modal-btn crm-vx-modal-btn--secondary"
                 :disabled="busy"
                 @click="close"
               >
@@ -129,7 +143,7 @@ function onBackdrop() {
               </button>
               <button
                 type="button"
-                :class="CRM_BTN_PRIMARY"
+                class="crm-vx-modal-btn crm-vx-modal-btn--primary"
                 :disabled="busy || !changeStatus"
                 @click="onSubmit"
               >
@@ -148,19 +162,28 @@ function onBackdrop() {
 .modal-backdrop-leave-active {
   transition: opacity 0.2s ease;
 }
+.modal-backdrop-enter-active .crm-vx-modal-backdrop,
+.modal-backdrop-leave-active .crm-vx-modal-backdrop {
+  transition: inherit;
+}
 .modal-backdrop-enter-from,
 .modal-backdrop-leave-to {
   opacity: 0;
 }
-.modal-panel-enter-active,
-.modal-panel-leave-active {
+
+.modal-panel-enter-active {
   transition:
     opacity 0.2s ease,
     transform 0.2s ease;
 }
+.modal-panel-leave-active {
+  transition:
+    opacity 0.15s ease,
+    transform 0.15s ease;
+}
 .modal-panel-enter-from,
 .modal-panel-leave-to {
   opacity: 0;
-  transform: scale(0.98);
+  transform: scale(0.97) translateY(0.5rem);
 }
 </style>

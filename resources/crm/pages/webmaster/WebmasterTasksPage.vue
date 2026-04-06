@@ -904,36 +904,42 @@ onUnmounted(() => {
         </div>
         <div
           v-if="pagination.last_page > 1"
-          class="flex flex-wrap items-center gap-2"
+          class="flex w-full min-w-0 flex-wrap items-center gap-y-2"
         >
-          <button
-            type="button"
-            class="inline-flex h-9 items-center justify-center rounded-md border border-gray-200 px-3 text-sm text-gray-600 hover:bg-gray-50 disabled:opacity-40 dark:border-gray-600 dark:text-gray-300 dark:hover:bg-gray-800"
-            :disabled="loading || pagination.current_page <= 1"
-            @click="goTaskPage(pagination.current_page - 1)"
-          >
-            Previous
-          </button>
-          <span class="text-sm text-gray-600 dark:text-gray-400">
-            Page
-            <span class="font-medium text-gray-900 dark:text-white">{{
-              pagination.current_page
-            }}</span>
-            /
-            <span class="font-medium text-gray-900 dark:text-white">{{
-              pagination.last_page
-            }}</span>
-          </span>
-          <button
-            type="button"
-            class="inline-flex h-9 items-center justify-center rounded-md border border-gray-200 px-3 text-sm text-gray-600 hover:bg-gray-50 disabled:opacity-40 dark:border-gray-600 dark:text-gray-300 dark:hover:bg-gray-800"
-            :disabled="
-              loading || pagination.current_page >= pagination.last_page
-            "
-            @click="goTaskPage(pagination.current_page + 1)"
-          >
-            Next
-          </button>
+          <div class="flex flex-grow basis-0 justify-start">
+            <button
+              type="button"
+              class="inline-flex h-9 items-center justify-center rounded-md border border-gray-200 px-3 text-sm text-gray-600 hover:bg-gray-50 disabled:opacity-40 dark:border-gray-600 dark:text-gray-300 dark:hover:bg-gray-800"
+              :disabled="loading || pagination.current_page <= 1"
+              @click="goTaskPage(pagination.current_page - 1)"
+            >
+              Previous
+            </button>
+          </div>
+          <div class="flex flex-grow basis-0 justify-center">
+            <span class="text-sm text-gray-600 dark:text-gray-400">
+              Page
+              <span class="font-medium text-gray-900 dark:text-white">{{
+                pagination.current_page
+              }}</span>
+              /
+              <span class="font-medium text-gray-900 dark:text-white">{{
+                pagination.last_page
+              }}</span>
+            </span>
+          </div>
+          <div class="flex flex-grow basis-0 justify-end">
+            <button
+              type="button"
+              class="inline-flex h-9 items-center justify-center rounded-md border border-gray-200 px-3 text-sm text-gray-600 hover:bg-gray-50 disabled:opacity-40 dark:border-gray-600 dark:text-gray-300 dark:hover:bg-gray-800"
+              :disabled="
+                loading || pagination.current_page >= pagination.last_page
+              "
+              @click="goTaskPage(pagination.current_page + 1)"
+            >
+              Next
+            </button>
+          </div>
         </div>
         </div>
       </div>

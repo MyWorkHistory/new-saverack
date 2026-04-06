@@ -1,0 +1,440 @@
+// Vuexy-aligned shell (screenshot-driven) — Save Rack CRM
+
+$vx-primary: #7367f0;
+$vx-teal: #00bad1;
+/* Sidebar gap from viewport edges (0 = flush docked column). */
+$vx-float-inset: 0;
+$vx-sidebar-w: 260px;
+$vx-sidebar-collapsed: 80px;
+
+// —— Docked vertical sidebar: full height, no outer margin, aligned with header/content ——
+@media (min-width: 992px) {
+  .crm-vertical-nav.vx-sidebar--floating {
+    inset-block: 0;
+    top: 0;
+    bottom: 0;
+    left: 0;
+    height: 100vh;
+    height: 100dvh;
+    border-radius: 0;
+    border: none;
+    border-inline-end: 1px solid var(--vx-nav-border);
+    box-shadow: none;
+  }
+
+  .crm-main-wrap.vx-main--floating {
+    margin-inline-start: calc(#{$vx-sidebar-w} + #{$vx-float-inset * 2});
+  }
+
+  .crm-main-wrap.vx-main--floating.crm-main-wrap--collapsed {
+    margin-inline-start: calc(#{$vx-sidebar-collapsed} + #{$vx-float-inset * 2});
+  }
+}
+
+// Brand row with collapse (Vuexy double-circle affordance)
+.vx-sidebar__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  padding: 0.75rem 0.75rem;
+  border-bottom: 1px solid var(--vx-nav-border);
+  min-height: 3.75rem;
+}
+
+.vx-sidebar__brand-link {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  min-width: 0;
+  text-decoration: none;
+  color: var(--bs-body-color);
+}
+
+.vx-sidebar__collapse-btn {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 2rem;
+  height: 2rem;
+  padding: 0;
+  border: none;
+  border-radius: 0.375rem;
+  background: transparent;
+  color: var(--bs-secondary-color);
+  transition: background 0.15s ease, color 0.15s ease;
+}
+
+.vx-sidebar__collapse-btn:hover {
+  background: rgba(115, 103, 240, 0.08);
+  color: $vx-primary;
+}
+
+.crm-vertical-nav__brand-logo {
+  width: 2.5rem;
+  height: 2.5rem;
+  object-fit: contain;
+  flex-shrink: 0;
+}
+
+.crm-vertical-nav__brand-text {
+  font-size: 1.25rem;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  color: var(--bs-heading-color);
+}
+
+@media (max-width: 991.98px) {
+  .vx-sidebar__collapse-btn {
+    display: none;
+  }
+}
+
+.vx-section-label {
+  font-size: 0.6875rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--bs-secondary-color);
+  padding: 0.375rem 0.75rem 0.25rem;
+  margin: 0;
+}
+
+// Nav links — Vuexy CRM: solid primary + white label when active
+.vx-nav-link {
+  display: flex;
+  align-items: center;
+  gap: 0.625rem;
+  padding: 0.5625rem 0.75rem;
+  margin-bottom: 0.125rem;
+  border-radius: 0.375rem;
+  border: none;
+  width: 100%;
+  text-align: start;
+  text-decoration: none;
+  font-size: 0.9375rem;
+  font-weight: 500;
+  color: #5d596c;
+  background: transparent;
+  transition:
+    background 0.15s ease,
+    color 0.15s ease;
+}
+
+[data-bs-theme="dark"] .vx-nav-link {
+  color: rgba(225, 222, 245, 0.85);
+}
+
+.vx-nav-link:hover {
+  background: rgba(115, 103, 240, 0.06);
+  color: var(--bs-body-color);
+}
+
+.vx-nav-link--active,
+.vx-nav-link.router-link-active {
+  background: $vx-primary !important;
+  color: #fff !important;
+  box-shadow: 0 1px 4px rgba(115, 103, 240, 0.22);
+}
+
+.vx-nav-link--active svg,
+.vx-nav-link.router-link-active svg {
+  color: #fff !important;
+  stroke: #fff;
+  opacity: 1;
+}
+
+.vx-nav-link svg {
+  width: 1.375rem;
+  height: 1.375rem;
+  flex-shrink: 0;
+  stroke: currentColor;
+}
+
+.vx-nav-sublink {
+  padding: 0.5rem 0.75rem 0.5rem 2rem;
+  font-size: 0.875rem;
+  margin-left: 0.25rem;
+  border-left: 2px solid var(--vx-nav-border);
+}
+
+.vx-nav-sublink.vx-nav-link--active,
+.vx-nav-sublink.router-link-active {
+  border-left-color: $vx-primary;
+}
+
+.vx-nav-badge {
+  margin-left: auto;
+  font-size: 0.625rem;
+  font-weight: 700;
+  padding: 0.125rem 0.375rem;
+  border-radius: 0.25rem;
+  background: #ff4c51;
+  color: #fff;
+}
+
+.vx-sidebar__scroll {
+  flex: 1;
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding: 0.375rem 0.5rem 0.75rem;
+}
+
+// —— Header: compact strip; small gutter vs sidebar / content ——
+.crm-navbar {
+  background: transparent;
+  border-bottom: none;
+  backdrop-filter: none;
+  padding: 0.5rem 0.75rem 0.625rem;
+}
+
+@media (min-width: 768px) {
+  .crm-navbar {
+    padding: 0.5rem 1rem 0.625rem;
+  }
+}
+
+.vx-navbar-float {
+  display: flex;
+  align-items: center;
+  background: var(--vx-nav-bg);
+  border: 1px solid var(--vx-nav-border);
+  border-radius: 0.375rem;
+  box-shadow: 0 2px 8px rgba(47, 43, 61, 0.05);
+}
+
+[data-bs-theme="dark"] .vx-navbar-float {
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.22);
+}
+
+.vx-navbar__inner {
+  padding: 0.375rem 0.625rem;
+  width: 100%;
+}
+
+@media (min-width: 992px) {
+  .vx-navbar__inner {
+    padding: 0.4375rem 0.75rem;
+  }
+}
+
+.vx-search-merge {
+  flex: 1 1 auto;
+  min-width: 0;
+  max-width: none;
+}
+
+.vx-search-merge .input-group {
+  border-radius: 50rem;
+  overflow: hidden;
+}
+
+.vx-search-merge .input-group-text {
+  border-color: transparent;
+  background: transparent;
+  color: #7c7a8b;
+  padding-inline-start: 0.75rem;
+  padding-inline-end: 0.25rem;
+}
+
+.vx-search-merge .form-control {
+  border-color: transparent;
+  background: transparent;
+  padding-block: 0.4375rem;
+  font-size: 0.9375rem;
+}
+
+.vx-search-merge .form-control::placeholder {
+  color: #acaab1;
+}
+
+.vx-search-merge .form-control:focus {
+  box-shadow: none;
+  border-color: transparent;
+}
+
+.vx-search-merge:focus-within .input-group {
+  box-shadow: 0 0 0 2px rgba(115, 103, 240, 0.2);
+  border-radius: 50rem;
+}
+
+[data-bs-theme="dark"] .vx-search-merge .input-group-text,
+[data-bs-theme="dark"] .vx-search-merge .form-control {
+  border-color: transparent;
+  background: transparent;
+}
+
+.vx-icon-btn {
+  width: 2.375rem;
+  height: 2.375rem;
+  padding: 0 !important;
+  display: inline-flex !important;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50% !important;
+  color: #5d596c;
+  border: none !important;
+  background: transparent !important;
+}
+
+.vx-icon-btn:hover {
+  background: rgba(115, 103, 240, 0.08) !important;
+  color: $vx-primary;
+}
+
+[data-bs-theme="dark"] .vx-icon-btn {
+  color: rgba(225, 222, 245, 0.82);
+}
+
+[data-bs-theme="dark"] .vx-icon-btn:hover {
+  background: rgba(115, 103, 240, 0.15) !important;
+  color: #c5bfff;
+}
+
+.vx-navbar-env-badge {
+  font-size: 0.625rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+}
+
+.vx-avatar-online {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  width: 0.65rem;
+  height: 0.65rem;
+  border-radius: 50%;
+  background: #28c76f;
+  border: 2px solid var(--vx-nav-bg);
+  box-sizing: content-box;
+}
+
+// —— App footer (Vuexy-style) ——
+.vx-app-footer {
+  margin-top: auto;
+  padding: 1rem 1rem 1.125rem;
+  border-top: 1px solid var(--vx-nav-border);
+  background: var(--vx-navbar-bg);
+}
+
+.vx-app-footer__inner {
+  max-width: 1440px;
+  margin-inline: auto;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  font-size: 0.8125rem;
+  color: #a5a3ae;
+}
+
+.vx-app-footer__links a {
+  color: $vx-primary;
+  text-decoration: none;
+  margin-left: 1.25rem;
+}
+
+.vx-app-footer__links a:hover {
+  text-decoration: underline;
+}
+
+// —— Dashboard cards ——
+.vx-card {
+  background: var(--vx-nav-bg);
+  border: 1px solid var(--vx-nav-border);
+  border-radius: 0.5rem;
+  box-shadow: 0 2px 10px rgba(47, 43, 61, 0.06);
+}
+
+[data-bs-theme="dark"] .vx-card {
+  box-shadow: 0 2px 14px rgba(0, 0, 0, 0.22);
+}
+
+.vx-card-header-row {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.75rem;
+  margin-bottom: 1rem;
+}
+
+.vx-card-title {
+  font-size: 1.125rem;
+  font-weight: 600;
+  color: var(--bs-body-color);
+  margin: 0;
+}
+
+.vx-card-sub {
+  font-size: 0.8125rem;
+  color: var(--bs-secondary-color);
+  margin: 0.25rem 0 0;
+}
+
+.vx-period-pill {
+  display: inline-flex;
+  padding: 0.125rem;
+  border-radius: 0.375rem;
+  border: 1px solid var(--vx-nav-border);
+  background: var(--bs-body-bg);
+}
+
+.vx-period-pill button {
+  border: none;
+  background: transparent;
+  padding: 0.375rem 0.75rem;
+  font-size: 0.75rem;
+  font-weight: 600;
+  border-radius: 0.25rem;
+  color: var(--bs-secondary-color);
+}
+
+.vx-period-pill button.active {
+  background: $vx-primary;
+  color: #fff;
+  box-shadow: 0 1px 4px rgba(115, 103, 240, 0.18);
+}
+
+.vx-dashboard {
+  margin-bottom: 0;
+}
+
+.vx-dashboard .vx-progress-thin {
+  height: 0.5rem;
+  border-radius: 50rem;
+  background: rgba(47, 43, 61, 0.08);
+}
+
+[data-bs-theme="dark"] .vx-dashboard .vx-progress-thin {
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.vx-dashboard .vx-progress-bar--primary {
+  background-color: $vx-primary;
+}
+
+.vx-dashboard .vx-progress-bar--teal {
+  background-color: $vx-teal;
+}
+
+.vx-line-clamp-2 {
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.vx-fade-scale-enter-active,
+.vx-fade-scale-leave-active {
+  transition:
+    opacity 0.12s ease,
+    transform 0.12s ease;
+}
+
+.vx-fade-scale-enter-from,
+.vx-fade-scale-leave-to {
+  opacity: 0;
+  transform: scale(0.97);
+}

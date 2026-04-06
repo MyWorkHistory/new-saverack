@@ -1,13 +1,7 @@
 <script setup>
-import { reactive, ref, watch } from "vue";
+import { onUnmounted, reactive, ref, watch } from "vue";
 import api from "../../services/api";
 import { useToast } from "../../composables/useToast";
-import {
-  CRM_BTN_PRIMARY,
-  CRM_BTN_SECONDARY,
-  CRM_DIALOG_FOOTER_CLASS,
-} from "../../constants/dialogFooter.js";
-
 const props = defineProps({
   open: { type: Boolean, default: false },
   /** @type {{ id: number, name?: string, website?: string, marketplace?: string } | null} */
@@ -30,9 +24,31 @@ function close() {
   emit("update:open", false);
 }
 
-function onBackdrop() {
+function onBackdropClick() {
   if (!saving.value) close();
 }
+
+function onEsc(e) {
+  if (e.key === "Escape" && props.open && !saving.value) {
+    e.preventDefault();
+    close();
+  }
+}
+
+watch(
+  () => props.open,
+  (o) => {
+    if (o) {
+      document.addEventListener("keydown", onEsc);
+    } else {
+      document.removeEventListener("keydown", onEsc);
+    }
+  },
+);
+
+onUnmounted(() => {
+  document.removeEventListener("keydown", onEsc);
+});
 
 watch(
   () => [props.open, props.store],
@@ -72,86 +88,118 @@ async function onSubmit() {
     <Transition name="modal-backdrop">
       <div
         v-if="open"
-        class="fixed inset-0 z-[240] flex items-center justify-center p-4 sm:p-6"
+        class="crm-vx-modal-overlay"
         aria-modal="true"
         role="dialog"
+        aria-labelledby="client-store-edit-modal-title"
       >
         <div
-          class="absolute inset-0 bg-gray-900/40 backdrop-blur-[2px] dark:bg-black/55"
+          class="crm-vx-modal-backdrop"
           aria-hidden="true"
-          @click="onBackdrop"
+          @click="onBackdropClick"
         />
         <Transition name="modal-panel" appear>
-          <div
-            class="relative z-10 max-h-[min(90dvh,640px)] w-full max-w-lg overflow-y-auto rounded-2xl border border-gray-200 bg-white shadow-2xl dark:border-gray-700 dark:bg-gray-900"
-          >
-            <header
-              class="sticky top-0 z-10 border-b border-gray-100 bg-white px-5 py-4 dark:border-gray-800 dark:bg-gray-900"
+          <div class="crm-vx-modal crm-vx-modal--sm">
+            <button
+              type="button"
+              class="crm-vx-modal__close"
+              aria-label="Close"
+              :disabled="saving"
+              @click="close"
             >
-              <h2 class="text-lg font-semibold text-gray-900 dark:text-white">
-                Edit Store
+              <svg
+                width="20"
+                height="20"
+                fill="none"
+                viewBox="0 0 24 24"
+                stroke="currentColor"
+                stroke-width="1.75"
+                aria-hidden="true"
+              >
+                <path
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                  d="M6 18L18 6M6 6l12 12"
+                />
+              </svg>
+            </button>
+
+            <header class="crm-vx-modal__head">
+              <h2 id="client-store-edit-modal-title" class="crm-vx-modal__title">
+                Edit store
               </h2>
+              <p class="crm-vx-modal__subtitle">
+                Update store name, website, and marketplace for this account.
+              </p>
             </header>
 
-            <form class="space-y-4 px-5 py-4" @submit.prevent="onSubmit">
+            <div class="crm-vx-modal__body pt-0">
               <p
                 v-if="errorMsg"
-                class="text-sm text-red-600 dark:text-red-400"
+                class="small text-danger mb-3 text-center"
               >
                 {{ errorMsg }}
               </p>
-              <div>
-                <label
-                  class="mb-1 block text-xs font-medium text-gray-600 dark:text-gray-400"
-                  >Store name</label
-                >
-                <input
-                  v-model="form.name"
-                  type="text"
-                  required
-                  class="h-10 w-full rounded-lg border border-gray-300 bg-white px-3 text-sm dark:border-gray-600 dark:bg-gray-800 dark:text-white"
-                />
-              </div>
-              <div>
-                <label
-                  class="mb-1 block text-xs font-medium text-gray-600 dark:text-gray-400"
-                  >Website</label
-                >
-                <input
-                  v-model="form.website"
-                  type="url"
-                  class="h-10 w-full rounded-lg border border-gray-300 bg-white px-3 text-sm dark:border-gray-600 dark:bg-gray-800 dark:text-white"
-                />
-              </div>
-              <div>
-                <label
-                  class="mb-1 block text-xs font-medium text-gray-600 dark:text-gray-400"
-                  >Marketplace</label
-                >
-                <input
-                  v-model="form.marketplace"
-                  type="text"
-                  class="h-10 w-full rounded-lg border border-gray-300 bg-white px-3 text-sm dark:border-gray-600 dark:bg-gray-800 dark:text-white"
-                />
-              </div>
-              <footer :class="CRM_DIALOG_FOOTER_CLASS">
-                <button
-                  type="button"
-                  :class="CRM_BTN_SECONDARY"
-                  :disabled="saving"
-                  @click="close"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  :class="CRM_BTN_PRIMARY"
-                  :disabled="saving"
-                >
-                  {{ saving ? "Saving…" : "Save" }}
-                </button>
-              </footer>
-            </form>
+              <form
+                id="client-store-edit-modal-form"
+                class="d-flex flex-column gap-3"
+                @submit.prevent="onSubmit"
+              >
+                <div>
+                  <label class="form-label small mb-1 text-secondary" for="cse-name"
+                    >Store name</label
+                  >
+                  <input
+                    id="cse-name"
+                    v-model="form.name"
+                    type="text"
+                    class="form-control"
+                    required
+                  />
+                </div>
+                <div>
+                  <label class="form-label small mb-1 text-secondary" for="cse-web"
+                    >Website</label
+                  >
+                  <input
+                    id="cse-web"
+                    v-model="form.website"
+                    type="url"
+                    class="form-control"
+                  />
+                </div>
+                <div>
+                  <label class="form-label small mb-1 text-secondary" for="cse-mp"
+                    >Marketplace</label
+                  >
+                  <input
+                    id="cse-mp"
+                    v-model="form.marketplace"
+                    type="text"
+                    class="form-control"
+                  />
+                </div>
+              </form>
+            </div>
+
+            <footer class="crm-vx-modal__footer">
+              <button
+                type="button"
+                class="crm-vx-modal-btn crm-vx-modal-btn--secondary"
+                :disabled="saving"
+                @click="close"
+              >
+                Cancel
+              </button>
+              <button
+                type="submit"
+                form="client-store-edit-modal-form"
+                class="crm-vx-modal-btn crm-vx-modal-btn--primary"
+                :disabled="saving || !store?.id"
+              >
+                {{ saving ? "Saving…" : "Save" }}
+              </button>
+            </footer>
           </div>
         </Transition>
       </div>
@@ -164,19 +212,28 @@ async function onSubmit() {
 .modal-backdrop-leave-active {
   transition: opacity 0.2s ease;
 }
+.modal-backdrop-enter-active .crm-vx-modal-backdrop,
+.modal-backdrop-leave-active .crm-vx-modal-backdrop {
+  transition: inherit;
+}
 .modal-backdrop-enter-from,
 .modal-backdrop-leave-to {
   opacity: 0;
 }
-.modal-panel-enter-active,
-.modal-panel-leave-active {
+
+.modal-panel-enter-active {
   transition:
     opacity 0.2s ease,
     transform 0.2s ease;
 }
+.modal-panel-leave-active {
+  transition:
+    opacity 0.15s ease,
+    transform 0.15s ease;
+}
 .modal-panel-enter-from,
 .modal-panel-leave-to {
   opacity: 0;
-  transform: scale(0.98);
+  transform: scale(0.97) translateY(0.5rem);
 }
 </style>

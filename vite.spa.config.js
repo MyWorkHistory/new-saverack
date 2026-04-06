@@ -15,6 +15,14 @@ export default defineConfig({
     plugins: [vue()],
     root: path.resolve(__dirname, 'resources/crm'),
     publicDir: false,
+    css: {
+        preprocessorOptions: {
+            scss: {
+                quietDeps: true,
+                silenceDeprecations: ['mixed-decls', 'import', 'global-builtin'],
+            },
+        },
+    },
     build: {
         outDir: path.resolve(__dirname, 'public'),
         emptyOutDir: false,

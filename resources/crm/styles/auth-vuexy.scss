@@ -1,0 +1,415 @@
+// Vuexy-inspired auth (cover split): left illustration panel + right form — Save Rack branding
+
+$auth-primary: #7367f0;
+$auth-hero-bg: #f8f7fa;
+
+.auth-vuexy-shell {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+
+  @media (min-width: 992px) {
+    flex-direction: row;
+  }
+}
+
+.auth-vuexy-hero {
+  display: none;
+  position: relative;
+  flex: 1 1 58%;
+  max-width: 100%;
+  min-height: 100vh;
+  background: $auth-hero-bg;
+  overflow: hidden;
+  align-items: center;
+  justify-content: center;
+  padding: 2rem;
+
+  @media (min-width: 992px) {
+    display: flex;
+  }
+}
+
+.auth-vuexy-hero__blobs {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+.auth-vuexy-hero__blob {
+  position: absolute;
+  border-radius: 50%;
+  opacity: 0.45;
+}
+
+.auth-vuexy-hero__blob--1 {
+  width: min(85vw, 520px);
+  height: min(85vw, 520px);
+  background: radial-gradient(
+    circle,
+    rgba(115, 103, 240, 0.14) 0%,
+    transparent 70%
+  );
+  top: -12%;
+  right: -8%;
+}
+
+.auth-vuexy-hero__blob--2 {
+  width: min(70vw, 420px);
+  height: min(70vw, 420px);
+  background: radial-gradient(
+    circle,
+    rgba(0, 186, 209, 0.12) 0%,
+    transparent 70%
+  );
+  bottom: 8%;
+  left: -10%;
+}
+
+.auth-vuexy-hero__ring {
+  position: absolute;
+  width: min(90vw, 560px);
+  height: min(90vw, 560px);
+  border: 1px solid rgba(47, 43, 61, 0.06);
+  border-radius: 50%;
+  top: 50%;
+  left: 50%;
+  translate: -50% -50%;
+}
+
+.auth-vuexy-hero__content {
+  position: relative;
+  z-index: 1;
+  width: 100%;
+  max-width: 420px;
+  text-align: center;
+}
+
+.auth-vuexy-hero__figure {
+  position: relative;
+  height: 280px;
+  margin-bottom: 1.5rem;
+}
+
+.auth-vuexy-hero__mock-card {
+  position: absolute;
+  background: #fff;
+  border-radius: 0.5rem;
+  box-shadow: 0 2px 10px rgba(47, 43, 61, 0.06);
+  padding: 0.75rem 1rem;
+  text-align: start;
+  animation: auth-vuexy-float 5s ease-in-out infinite;
+}
+
+.auth-vuexy-hero__mock-card--profit {
+  width: 11rem;
+  top: 12%;
+  left: 8%;
+  animation-delay: -1s;
+}
+
+.auth-vuexy-hero__mock-card--orders {
+  width: 11rem;
+  bottom: 18%;
+  right: 6%;
+  animation-delay: -2.5s;
+}
+
+@keyframes auth-vuexy-float {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-8px);
+  }
+}
+
+.auth-vuexy-mock-chart {
+  display: flex;
+  align-items: flex-end;
+  gap: 3px;
+  height: 40px;
+  margin-top: 0.35rem;
+}
+
+.auth-vuexy-mock-bar {
+  flex: 1;
+  border-radius: 2px 2px 0 0;
+  background: rgba(115, 103, 240, 0.25);
+}
+
+.auth-vuexy-mock-bar--hi {
+  background: $auth-primary;
+  height: 100%;
+}
+
+.auth-vuexy-mock-line {
+  height: 2px;
+  border-radius: 1px;
+  background: linear-gradient(
+    90deg,
+    rgba(0, 186, 209, 0.3),
+    #00bad1
+  );
+  margin-top: 0.5rem;
+}
+
+.auth-vuexy-mock-value {
+  font-size: 1.125rem;
+  font-weight: 700;
+  color: #2f2b3d;
+}
+
+.auth-vuexy-mock-badge {
+  font-size: 0.6875rem;
+  font-weight: 600;
+  color: #28c76f;
+}
+
+.auth-vuexy-character {
+  position: absolute;
+  left: 50%;
+  bottom: 0;
+  translate: -50% 0;
+  width: 140px;
+  height: 200px;
+}
+
+.auth-vuexy-character__body {
+  position: absolute;
+  bottom: 48px;
+  left: 50%;
+  translate: -50% 0;
+  width: 72px;
+  height: 88px;
+  background: linear-gradient(180deg, $auth-primary 0%, #5e50eb 100%);
+  border-radius: 1rem 1rem 0.5rem 0.5rem;
+}
+
+.auth-vuexy-character__head {
+  position: absolute;
+  bottom: 128px;
+  left: 50%;
+  translate: -50% 0;
+  width: 52px;
+  height: 52px;
+  background: #fdbf8f;
+  border-radius: 50%;
+}
+
+.auth-vuexy-character__arm {
+  position: absolute;
+  bottom: 100px;
+  right: 22%;
+  width: 36px;
+  height: 14px;
+  background: #fdbf8f;
+  border-radius: 0.5rem;
+  rotate: -25deg;
+}
+
+.auth-vuexy-character__leg {
+  position: absolute;
+  bottom: 0;
+  width: 26px;
+  height: 52px;
+  background: #3d3d5c;
+  border-radius: 0 0 0.25rem 0.25rem;
+}
+
+.auth-vuexy-character__leg--l {
+  left: calc(50% - 28px);
+}
+
+.auth-vuexy-character__leg--r {
+  right: calc(50% - 28px);
+}
+
+.auth-vuexy-hero__title {
+  font-size: 1.75rem;
+  font-weight: 700;
+  color: #2f2b3d;
+  margin: 0;
+}
+
+.auth-vuexy-hero__sub {
+  font-size: 0.875rem;
+  color: #7c7a8b;
+  margin: 0.5rem 0 0;
+}
+
+.auth-vuexy-form-column {
+  flex: 1 1 42%;
+  display: flex;
+  flex-direction: column;
+  background: #fff;
+  min-height: 100vh;
+}
+
+[data-bs-theme="dark"] .auth-vuexy-form-column {
+  background: #25293c;
+}
+
+.auth-vuexy-form-inner {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  padding: 2rem 1.5rem;
+  max-width: 28rem;
+  width: 100%;
+  margin: 0 auto;
+}
+
+@media (min-width: 576px) {
+  .auth-vuexy-form-inner {
+    padding: 2.5rem 2rem;
+  }
+}
+
+.auth-vuexy-top-brand {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.75rem;
+  text-decoration: none;
+  color: inherit;
+  margin-bottom: 2rem;
+}
+
+.auth-vuexy-top-brand img {
+  width: 2.5rem;
+  height: 2.5rem;
+  object-fit: contain;
+}
+
+.auth-vuexy-top-brand span {
+  font-size: 1.375rem;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  color: #2f2b3d;
+}
+
+[data-bs-theme="dark"] .auth-vuexy-top-brand span {
+  color: #e7e3ff;
+}
+
+.auth-vuexy-heading {
+  font-size: 1.625rem;
+  font-weight: 600;
+  color: #2f2b3d;
+  margin: 0;
+  line-height: 1.25;
+}
+
+[data-bs-theme="dark"] .auth-vuexy-heading {
+  color: #f4f2ff;
+}
+
+.auth-vuexy-lead {
+  font-size: 0.9375rem;
+  color: #7c7a8b;
+  margin: 0.5rem 0 0;
+}
+
+.auth-vuexy-divider {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  margin: 1.5rem 0;
+  color: #7c7a8b;
+  font-size: 0.8125rem;
+}
+
+.auth-vuexy-divider::before,
+.auth-vuexy-divider::after {
+  content: "";
+  flex: 1;
+  height: 1px;
+  background: rgba(47, 43, 61, 0.12);
+}
+
+[data-bs-theme="dark"] .auth-vuexy-divider::before,
+[data-bs-theme="dark"] .auth-vuexy-divider::after {
+  background: rgba(225, 222, 245, 0.12);
+}
+
+.auth-vuexy-social {
+  display: flex;
+  justify-content: center;
+  gap: 0.75rem;
+}
+
+.auth-vuexy-social button {
+  width: 2.375rem;
+  height: 2.375rem;
+  border-radius: 50%;
+  border: 1px solid rgba(47, 43, 61, 0.1);
+  background: #fff;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  color: #5d596c;
+  transition:
+    background 0.15s ease,
+    border-color 0.15s ease,
+    color 0.15s ease;
+}
+
+.auth-vuexy-social button:hover {
+  border-color: rgba(115, 103, 240, 0.35);
+  color: $auth-primary;
+  background: rgba(115, 103, 240, 0.06);
+}
+
+[data-bs-theme="dark"] .auth-vuexy-social button {
+  background: rgba(255, 255, 255, 0.06);
+  border-color: rgba(225, 222, 245, 0.12);
+  color: rgba(225, 222, 245, 0.85);
+}
+
+.auth-vuexy-link {
+  color: $auth-primary;
+  font-weight: 500;
+  text-decoration: none;
+}
+
+.auth-vuexy-link:hover {
+  color: #5e50eb;
+  text-decoration: underline;
+}
+
+.auth-vuexy-btn-primary {
+  --bs-btn-bg: #{$auth-primary};
+  --bs-btn-border-color: #{$auth-primary};
+  --bs-btn-hover-bg: #5e50eb;
+  --bs-btn-hover-border-color: #5e50eb;
+  --bs-btn-active-bg: #5548e8;
+  --bs-btn-active-border-color: #5548e8;
+  font-weight: 600;
+  padding-block: 0.65rem;
+  border-radius: 0.375rem;
+}
+
+.auth-vuexy-input-icon-wrap {
+  position: relative;
+}
+
+.auth-vuexy-input-toggle {
+  position: absolute;
+  right: 0.35rem;
+  top: 50%;
+  translate: 0 -50%;
+  border: none;
+  background: transparent;
+  color: #7c7a8b;
+  padding: 0.35rem 0.5rem;
+  border-radius: 0.25rem;
+  line-height: 1;
+}
+
+.auth-vuexy-input-toggle:hover {
+  background: rgba(47, 43, 61, 0.06);
+  color: #2f2b3d;
+}

@@ -40,6 +40,7 @@ class UserService
         $search = $filters['search'] ?? null;
         $roleId = isset($filters['role_id']) ? (int) $filters['role_id'] : null;
         $status = isset($filters['status']) ? (string) $filters['status'] : null;
+        $plan = isset($filters['plan']) ? trim((string) $filters['plan']) : '';
         $perPage = min(max((int) ($filters['per_page'] ?? 25), 1), 500);
         $sortBy = (string) ($filters['sort_by'] ?? 'id');
         $sortDir = strtolower((string) ($filters['sort_dir'] ?? 'desc')) === 'asc' ? 'asc' : 'desc';
@@ -77,6 +78,11 @@ class UserService
             })
             ->when($status !== null && $status !== '' && $status !== 'all', function ($q) use ($status) {
                 $q->where('status', $status);
+            })
+            ->when($plan !== '', function ($q) use ($plan) {
+                $q->whereHas('profile', function ($p) use ($plan) {
+                    $p->where('job_position', 'like', '%'.$plan.'%');
+                });
             });
 
         $profileSortColumns = ['job_position', 'birthday', 'hire_date'];

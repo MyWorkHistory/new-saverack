@@ -64,6 +64,7 @@ class UserController extends Controller
             'sort_dir',
             'role_id',
             'status',
+            'plan',
         ]));
 
         return response()->json($users);

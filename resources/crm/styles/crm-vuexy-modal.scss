@@ -1,0 +1,218 @@
+// Vuexy-style dialogs: centered header (title + subtitle), soft shadow, footer actions centered.
+
+$vx-modal-primary: #7367f0;
+
+.crm-vx-modal-overlay {
+  position: fixed;
+  inset: 0;
+  /* Above .crm-vertical-nav (1040) and header popovers (1080) */
+  z-index: 1200;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1rem;
+}
+
+@media (min-width: 576px) {
+  .crm-vx-modal-overlay {
+    padding: 1.5rem;
+  }
+}
+
+.crm-vx-modal-backdrop {
+  position: absolute;
+  inset: 0;
+  background: rgba(47, 43, 61, 0.45);
+  backdrop-filter: blur(2px);
+}
+
+[data-bs-theme="dark"] .crm-vx-modal-backdrop {
+  background: rgba(0, 0, 0, 0.55);
+}
+
+.crm-vx-modal {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  max-width: 42rem;
+  max-height: min(90dvh, 720px);
+  overflow: hidden;
+  background: var(--vx-nav-bg);
+  border: 1px solid var(--vx-nav-border);
+  border-radius: 0.5rem;
+  box-shadow: 0 4px 22px rgba(47, 43, 61, 0.075);
+}
+
+[data-bs-theme="dark"] .crm-vx-modal {
+  box-shadow: 0 4px 26px rgba(0, 0, 0, 0.32);
+}
+
+.crm-vx-modal--sm {
+  max-width: 28rem;
+  max-height: none;
+}
+
+.crm-vx-modal__close {
+  position: absolute;
+  top: 1rem;
+  right: 1rem;
+  z-index: 2;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 2.25rem;
+  height: 2.25rem;
+  padding: 0;
+  border: none;
+  border-radius: 0.375rem;
+  background: transparent;
+  color: #7c7a8b;
+  transition:
+    background 0.15s ease,
+    color 0.15s ease;
+}
+
+.crm-vx-modal__close:hover:not(:disabled) {
+  background: rgba(47, 43, 61, 0.06);
+  color: #5d596c;
+}
+
+[data-bs-theme="dark"] .crm-vx-modal__close:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--bs-body-color);
+}
+
+.crm-vx-modal__close:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.crm-vx-modal__head {
+  flex-shrink: 0;
+  padding: 2rem 2.5rem 1.25rem;
+  padding-right: 3.5rem;
+  text-align: center;
+}
+
+.crm-vx-modal__title {
+  margin: 0;
+  font-size: 1.25rem;
+  font-weight: 600;
+  line-height: 1.35;
+  color: #5d596c;
+}
+
+[data-bs-theme="dark"] .crm-vx-modal__title {
+  color: var(--bs-heading-color);
+}
+
+.crm-vx-modal__subtitle {
+  margin: 0.5rem 0 0;
+  font-size: 0.9375rem;
+  line-height: 1.45;
+  color: #a5a3ae;
+}
+
+[data-bs-theme="dark"] .crm-vx-modal__subtitle {
+  color: var(--bs-secondary-color);
+}
+
+.crm-vx-modal__body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding: 0.5rem 2.5rem 1.5rem;
+  scrollbar-gutter: stable;
+}
+
+.crm-vx-modal--sm .crm-vx-modal__body {
+  padding: 0.5rem 2rem 1.25rem;
+}
+
+.crm-vx-modal__footer {
+  flex-shrink: 0;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: 0.75rem;
+  padding: 1.25rem 2.5rem 2rem;
+  border-top: 1px solid rgba(47, 43, 61, 0.08);
+}
+
+[data-bs-theme="dark"] .crm-vx-modal__footer {
+  border-top-color: var(--vx-nav-border);
+}
+
+.crm-vx-modal--sm .crm-vx-modal__footer {
+  padding: 1.25rem 2rem 2rem;
+}
+
+.crm-vx-modal-btn {
+  min-width: 7.5rem;
+  padding: 0.5625rem 1.5rem;
+  font-size: 0.9375rem;
+  font-weight: 600;
+  line-height: 1.5;
+  border-radius: 0.375rem;
+  border: 1px solid transparent;
+  transition:
+    background 0.15s ease,
+    border-color 0.15s ease,
+    color 0.15s ease,
+    opacity 0.15s ease;
+}
+
+.crm-vx-modal-btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.crm-vx-modal-btn--secondary {
+  background: #f1f0f2;
+  border-color: #e3e1e8;
+  color: #6d6b77;
+}
+
+.crm-vx-modal-btn--secondary:hover:not(:disabled) {
+  background: #e8e6ec;
+  border-color: #d5d3db;
+  color: #403f4b;
+}
+
+[data-bs-theme="dark"] .crm-vx-modal-btn--secondary {
+  background: rgba(255, 255, 255, 0.08);
+  border-color: var(--vx-nav-border);
+  color: var(--bs-body-color);
+}
+
+[data-bs-theme="dark"] .crm-vx-modal-btn--secondary:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.12);
+}
+
+.crm-vx-modal-btn--primary {
+  background: $vx-modal-primary;
+  border-color: $vx-modal-primary;
+  color: #fff;
+}
+
+.crm-vx-modal-btn--primary:hover:not(:disabled) {
+  background: #5e50eb;
+  border-color: #5e50eb;
+  color: #fff;
+}
+
+.crm-vx-modal-btn--danger {
+  background: #ff4c51;
+  border-color: #ff4c51;
+  color: #fff;
+}
+
+.crm-vx-modal-btn--danger:hover:not(:disabled) {
+  background: #e04448;
+  border-color: #e04448;
+  color: #fff;
+}

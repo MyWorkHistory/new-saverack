@@ -1,0 +1,195 @@
+// Save Rack CRM — Vuexy design tokens (colors from Vuexy theme.js, licensed template).
+// UI components: Bootstrap 5. Layout polish: extra rules below.
+
+$primary: #7367f0;
+$secondary: #808390;
+$success: #28c76f;
+$info: #00bad1;
+$warning: #ff9f43;
+$danger: #ff4c51;
+
+$body-bg: #f8f7fa;
+$body-color: #2f2b3d;
+$border-radius: 0.375rem;
+$border-radius-lg: 0.5rem;
+$border-radius-xl: 0.625rem;
+
+$navbar-padding-y: 0.65rem;
+$card-border-radius: $border-radius-lg;
+$card-spacer-y: 1rem;
+$card-spacer-x: 1.25rem;
+$input-border-radius: $border-radius;
+
+// Dark theme (Bootstrap 5.3 + data-bs-theme)
+$body-bg-dark: #25293c;
+$body-color-dark: #e1def5;
+$border-color-translucent-dark: rgba(225, 222, 245, 0.12);
+
+@import "bootstrap/scss/bootstrap";
+
+// —— CRM layout (vertical nav, Vuexy-style floating sidebar) ——
+:root,
+[data-bs-theme="light"] {
+  --vx-page-bg: #f8f7fa;
+  --vx-nav-bg: #fff;
+  --vx-nav-border: rgba(47, 43, 61, 0.12);
+  --vx-navbar-bg: rgba(255, 255, 255, 0.88);
+  --vx-shadow: 0 2px 10px rgba(47, 43, 61, 0.06);
+  --vx-nav-active-bg: rgba(115, 103, 240, 0.12);
+  --vx-nav-active-color: #{$primary};
+}
+
+[data-bs-theme="dark"] {
+  --vx-page-bg: #25293c;
+  --vx-nav-bg: #2f3349;
+  --vx-nav-border: rgba(225, 222, 245, 0.08);
+  --vx-navbar-bg: rgba(47, 51, 73, 0.9);
+  --vx-shadow: 0 2px 14px rgba(0, 0, 0, 0.22);
+  --vx-nav-active-bg: rgba(115, 103, 240, 0.2);
+  --vx-nav-active-color: #9e95f5;
+}
+
+body {
+  background-color: var(--vx-page-bg);
+}
+
+.crm-app-shell {
+  min-height: 100vh;
+}
+
+.crm-vertical-nav {
+  position: fixed;
+  inset-block: 0;
+  inset-inline-start: 0;
+  z-index: 1040;
+  display: flex;
+  flex-direction: column;
+  background: var(--vx-nav-bg);
+  border-inline-end: 1px solid var(--vx-nav-border);
+  box-shadow: var(--vx-shadow);
+  transition:
+    width 0.25s ease,
+    transform 0.25s ease;
+  width: 260px;
+}
+
+@media (min-width: 992px) {
+  .crm-vertical-nav.crm-vertical-nav--collapsed {
+    width: 80px;
+  }
+}
+
+@media (max-width: 991.98px) {
+  .crm-vertical-nav {
+    width: 260px;
+    transform: translateX(-100%);
+  }
+  .crm-vertical-nav.crm-vertical-nav--mobile-open {
+    transform: translateX(0);
+  }
+}
+
+// Sidebar inner layout lives in vx-shell.scss (.vx-sidebar__*, .vx-nav-link)
+
+.crm-main-wrap {
+  min-height: 100vh;
+  transition: margin-inline-start 0.25s ease;
+  margin-inline-start: 0;
+}
+
+@media (min-width: 992px) {
+  .crm-main-wrap {
+    margin-inline-start: 260px;
+  }
+  .crm-main-wrap.crm-main-wrap--collapsed {
+    margin-inline-start: 80px;
+  }
+}
+
+// Navbar chrome: floating card is styled in vx-shell.scss (.vx-navbar-spacer + .vx-navbar-float)
+.crm-navbar {
+  position: sticky;
+  top: 0;
+  z-index: 1030;
+}
+
+.crm-content {
+  max-width: 1440px;
+  margin-inline: auto;
+  padding: 0.75rem 1rem 1.5rem;
+}
+
+@media (min-width: 768px) {
+  .crm-content {
+    padding: 1rem 1.25rem 2rem;
+  }
+}
+
+/*
+ * Staff: full main width, small gutter next to sidebar + under header.
+ */
+.crm-content.crm-content--staff-wide {
+  max-width: none;
+  width: 100%;
+  margin-inline: 0;
+  padding: 0.5rem 0.75rem 1.25rem;
+}
+
+@media (min-width: 768px) {
+  .crm-content.crm-content--staff-wide {
+    padding: 0.625rem 1rem 1.5rem;
+  }
+}
+
+@media (min-width: 1200px) {
+  .crm-content.crm-content--staff-wide {
+    padding: 0.75rem 1.125rem 1.75rem;
+  }
+}
+
+.crm-backdrop-nav {
+  position: fixed;
+  inset: 0;
+  z-index: 1035;
+  background: rgba(47, 43, 61, 0.45);
+}
+
+[data-bs-theme="dark"] .crm-backdrop-nav {
+  background: rgba(0, 0, 0, 0.45);
+}
+
+// Modal / drawer overlays (Bootstrap modals use .modal-backdrop)
+.crm-modal-shell {
+  border-radius: $border-radius-xl;
+  overflow: hidden;
+}
+
+@import "./vx-shell";
+@import "./auth-vuexy";
+@import "./crm-vuexy-modal";
+@import "./staff-page";
+
+/* After vx-shell: staff route footer aligns with full-width content gutters. */
+.crm-content.crm-content--staff-wide ~ .vx-app-footer .vx-app-footer__inner {
+  max-width: none;
+  width: 100%;
+}
+
+.crm-content.crm-content--staff-wide ~ .vx-app-footer {
+  padding-left: 0.75rem;
+  padding-right: 0.75rem;
+}
+
+@media (min-width: 768px) {
+  .crm-content.crm-content--staff-wide ~ .vx-app-footer {
+    padding-left: 1rem;
+    padding-right: 1rem;
+  }
+}
+
+@media (min-width: 1200px) {
+  .crm-content.crm-content--staff-wide ~ .vx-app-footer {
+    padding-left: 1.125rem;
+    padding-right: 1.125rem;
+  }
+}

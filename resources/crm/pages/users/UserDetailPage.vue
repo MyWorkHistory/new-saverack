@@ -10,11 +10,12 @@ import {
 import { RouterLink, useRoute, useRouter } from "vue-router";
 import api from "../../services/api";
 import CrmLoadingSpinner from "../../components/common/CrmLoadingSpinner.vue";
-import CrmOutlineEditButton from "../../components/common/CrmOutlineEditButton.vue";
 import UserEditModal from "../../components/users/UserEditModal.vue";
+import StaffRoleIcon from "../../components/users/StaffRoleIcon.vue";
 import { crmIsAdmin } from "../../utils/crmUser";
 import {
   formatBirthdayUs,
+  formatDateTimeUs,
   formatDateUs,
 } from "../../utils/formatUserDates";
 import { useToast } from "../../composables/useToast";
@@ -31,6 +32,8 @@ const crmUser = inject("crmUser", ref(null));
 const editOpen = ref(false);
 const toast = useToast();
 const heroAvatarInput = ref(null);
+const activeTab = ref("account");
+const historyItems = ref([]);
 
 function userHasPerm(key) {
   const u = crmUser.value;
@@ -52,32 +55,32 @@ function display(val) {
   return String(val);
 }
 
-function roleLabels(roles) {
-  const r = roles;
-  if (!r || !r.length) return "—";
-  return r.map((x) => x.label || x.name).join(", ");
+function primaryRoleLabel(u) {
+  if (!u?.roles?.length) return "Staff";
+  const x = u.roles[0];
+  return x?.label || x?.name || "Staff";
 }
 
 function statusBadgeClass(status) {
   const s = String(status || "").toLowerCase();
   if (s === "active") {
-    return "bg-emerald-50 text-emerald-800 dark:bg-emerald-500/10 dark:text-emerald-300";
+    return "badge bg-success-subtle text-success-emphasis";
   }
   if (s === "pending") {
-    return "bg-amber-50 text-amber-800 dark:bg-amber-500/10 dark:text-amber-200";
+    return "badge bg-warning-subtle text-warning-emphasis";
   }
   if (s === "inactive") {
-    return "bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-300";
+    return "badge bg-secondary-subtle text-secondary";
   }
-  return "bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300";
+  return "badge bg-light text-secondary";
 }
 
 const avatarPalettes = [
-  "bg-sky-100 text-sky-800 ring-sky-200 dark:bg-sky-500/20 dark:text-sky-200 dark:ring-sky-500/30",
-  "bg-violet-100 text-violet-800 ring-violet-200 dark:bg-violet-500/20 dark:text-violet-200 dark:ring-violet-500/30",
-  "bg-amber-100 text-amber-900 ring-amber-200 dark:bg-amber-500/20 dark:text-amber-200 dark:ring-amber-500/30",
-  "bg-emerald-100 text-emerald-900 ring-emerald-200 dark:bg-emerald-500/20 dark:text-emerald-200 dark:ring-emerald-500/30",
-  "bg-rose-100 text-rose-900 ring-rose-200 dark:bg-rose-500/20 dark:text-rose-200 dark:ring-rose-500/30",
+  "bg-primary-subtle text-primary-emphasis",
+  "bg-info-subtle text-info-emphasis",
+  "bg-warning-subtle text-warning-emphasis",
+  "bg-success-subtle text-success-emphasis",
+  "bg-danger-subtle text-danger-emphasis",
 ];
 
 function avatarClassForEmail(email) {
@@ -93,13 +96,62 @@ function initials(name) {
   return parts.map((p) => p[0]?.toUpperCase() ?? "").join("") || "?";
 }
 
-async function loadProfile() {
+function formatRelativeTime(iso) {
+  if (!iso) return "—";
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return "—";
+  const diff = Date.now() - d.getTime();
+  const sec = Math.floor(diff / 1000);
+  if (sec < 45) return "Just now";
+  const min = Math.floor(sec / 60);
+  if (min < 60) return `${min} min ago`;
+  const hr = Math.floor(min / 60);
+  if (hr < 24) return `${hr} hr ago`;
+  const day = Math.floor(hr / 24);
+  if (day < 7) return `${day} day${day === 1 ? "" : "s"} ago`;
+  try {
+    return formatDateTimeUs(iso);
+  } catch {
+    return iso;
+  }
+}
+
+function timelineHeading(row) {
+  const t = (row.body || row.line || "Profile activity").trim();
+  if (t.length <= 72) return t;
+  return `${t.slice(0, 69)}…`;
+}
+
+const usernameFromEmail = computed(() => {
+  const e = user.value?.email;
+  if (!e || typeof e !== "string") return "—";
+  const i = e.indexOf("@");
+  return i > 0 ? e.slice(0, i) : e;
+});
+
+const rolesCount = computed(() =>
+  Array.isArray(user.value?.roles) ? user.value.roles.length : 0,
+);
+
+const updatesCount = computed(() => historyItems.value.length);
+
+const timelinePreview = computed(() => historyItems.value.slice(0, 5));
+
+const historyTableRows = computed(() => historyItems.value.slice(0, 15));
+
+async function loadPageData() {
   loading.value = true;
   errorMsg.value = "";
   user.value = null;
+  historyItems.value = [];
   try {
-    const { data } = await api.get(`/users/${props.id}`);
-    user.value = data;
+    const [userRes, histRes] = await Promise.all([
+      api.get(`/users/${props.id}`),
+      api.get(`/users/${props.id}/history`),
+    ]);
+    user.value = userRes.data;
+    const list = histRes.data?.items;
+    historyItems.value = Array.isArray(list) ? list : [];
   } catch (e) {
     const st = e.response?.status;
     if (st === 403) {
@@ -115,7 +167,7 @@ async function loadProfile() {
 }
 
 onMounted(() => {
-  loadProfile();
+  loadPageData();
   document.addEventListener("click", onGearDocClick);
   window.addEventListener("resize", onGearWindowResize);
 });
@@ -151,21 +203,6 @@ const profile = computed(() =>
     ? user.value.profile
     : {},
 );
-
-/** Role and login email only (no city/state/zip in hero — see Address card). */
-const profileAboutSegments = computed(() => {
-  const u = user.value;
-  if (!u) return [];
-  const segs = [];
-  const rl = roleLabels(u.roles);
-  if (rl && rl !== "—") {
-    segs.push({ key: "role", text: rl, emphasis: true });
-  }
-  if (u.email) {
-    segs.push({ key: "email", text: u.email, emphasis: false });
-  }
-  return segs;
-});
 
 const gearMenuOpen = ref(false);
 const gearMenuRect = ref({ top: 0, left: 0 });
@@ -256,400 +293,580 @@ async function onHeroAvatarChange(e) {
   fd.append("avatar", file);
   try {
     await api.post(`/users/${props.id}/avatar`, fd);
-    await loadProfile();
+    await loadPageData();
     toast.success("Photo updated.");
   } catch (err) {
     toast.errorFrom(err, "Could not upload photo.");
   }
 }
+
+const tabs = [
+  { id: "account", label: "Account" },
+  { id: "security", label: "Security" },
+  { id: "billing", label: "Billing & Plans" },
+  { id: "notifications", label: "Notifications" },
+  { id: "connections", label: "Connections" },
+];
 </script>
 
 <template>
-  <div class="w-full">
-    <!-- Breadcrumb (TailAdmin-style) -->
-    <nav class="mb-4 flex flex-wrap items-center gap-1.5 text-sm">
-      <RouterLink
-        to="/dashboard"
-        class="font-medium text-gray-500 transition hover:text-[#2563eb] dark:text-gray-400 dark:hover:text-blue-400"
-      >
-        Home
-      </RouterLink>
-      <span class="text-gray-400 dark:text-gray-600" aria-hidden="true">/</span>
-      <RouterLink
-        to="/staff"
-        class="font-medium text-gray-500 transition hover:text-[#2563eb] dark:text-gray-400 dark:hover:text-blue-400"
-      >
-        Staff
-      </RouterLink>
-      <span class="text-gray-400 dark:text-gray-600" aria-hidden="true">/</span>
-      <span class="font-medium text-gray-800 dark:text-gray-200">
-        Profile
-      </span>
+  <div class="staff-user-view staff-page--wide">
+    <nav
+      class="staff-user-view__breadcrumb d-flex flex-wrap align-items-center gap-1"
+      aria-label="Breadcrumb"
+    >
+      <RouterLink to="/dashboard">Home</RouterLink>
+      <span class="text-secondary" aria-hidden="true">/</span>
+      <RouterLink to="/staff">Staff</RouterLink>
+      <span class="text-secondary" aria-hidden="true">/</span>
+      <span class="text-body-secondary">Profile</span>
     </nav>
 
-    <div class="mb-6 flex flex-wrap items-center justify-between gap-3">
-      <h1 class="text-2xl font-semibold text-gray-900 dark:text-white">
-        User Profile
-      </h1>
+    <div
+      class="staff-user-view__title-row d-flex flex-wrap align-items-center justify-content-between gap-2"
+    >
+      <h1 class="staff-user-view__title">User Profile</h1>
       <div
         v-if="showGearMenu && !loading && !errorMsg"
-        class="relative shrink-0"
+        class="position-relative flex-shrink-0"
         data-page-gear
       >
         <button
           type="button"
-          class="inline-flex h-10 w-10 items-center justify-center rounded-lg border border-gray-200 bg-white text-gray-600 shadow-sm transition hover:border-gray-300 hover:bg-gray-50 hover:text-gray-900 dark:border-gray-600 dark:bg-gray-900 dark:text-gray-300 dark:hover:border-gray-500 dark:hover:bg-white/10 dark:hover:text-white"
+          class="staff-user-gear"
           :aria-expanded="gearMenuOpen"
           aria-haspopup="true"
           aria-label="Page Actions"
           @click="toggleGearMenu"
         >
           <svg
-            class="h-5 w-5"
+            width="18"
+            height="18"
             fill="none"
             stroke="currentColor"
+            stroke-width="1.5"
             viewBox="0 0 24 24"
             aria-hidden="true"
           >
             <path
               stroke-linecap="round"
               stroke-linejoin="round"
-              stroke-width="2"
-              d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"
-            />
-            <path
-              stroke-linecap="round"
-              stroke-linejoin="round"
-              stroke-width="2"
-              d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"
+              d="M9.594 3.94c.09-.542.56-.94 1.11-.94h2.593c.55 0 1.02.398 1.11.94l.213 1.281c.063.374.313.686.645.87.074.04.147.083.22.127.324.196.72.257 1.075.124l1.217-.456a1.125 1.125 0 011.37.49l1.224 2.3c.307.575.21 1.278-.234 1.733l-.793.792c-.39.39-.601.918-.601 1.467v.224c0 .99.66 1.86 1.617 2.12l1.218.304c.517.129.88.596.88 1.114v2.593c0 .55-.398 1.02-.94 1.11l-1.281.213a1.125 1.125 0 01-.87.645l-.135.045a1.125 1.125 0 00-.53.315l-.792.793a1.125 1.125 0 01-1.733-.234l-1.224-2.3a1.125 1.125 0 00-.49-.37l-.286-.107a1.125 1.125 0 01-.633-1.326l.302-.774a1.125 1.125 0 00-.216-.883l-.792-.792a1.125 1.125 0 00-.883-.216l-.774.302a1.125 1.125 0 01-1.326-.633l-.107-.286a1.125 1.125 0 00-.37-.49l-2.3-1.224a1.125 1.125 0 01-.234-1.733l.793-.792c.196-.324.257-.72.124-1.075l-.456-1.217a1.125 1.125 0 01.49-1.37l2.3-1.224c.162-.086.312-.2.444-.324L9.594 3.94zM12 15a3 3 0 100-6 3 3 0 000 6z"
             />
           </svg>
         </button>
       </div>
     </div>
 
-    <div v-if="loading" class="flex justify-center py-20">
+    <div v-if="loading" class="d-flex justify-content-center py-5">
       <CrmLoadingSpinner message="Loading Profile…" />
     </div>
 
     <template v-else-if="errorMsg">
-      <p class="text-sm text-red-600 dark:text-red-400">
+      <p class="text-danger small mb-2">
         {{ errorMsg }}
       </p>
-      <RouterLink
-        to="/staff"
-        class="mt-2 inline-block text-sm font-medium text-[#2563eb] hover:underline dark:text-blue-400"
-      >
-        Back To Directory
-      </RouterLink>
+      <RouterLink to="/staff" class="small">Back To Directory</RouterLink>
     </template>
 
-    <div v-else-if="user" class="space-y-6">
-      <!-- Profile hero -->
-      <div
-        class="overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-sm dark:border-gray-800 dark:bg-gray-900/40"
-      >
-        <div
-          class="flex flex-col gap-6 border-b border-gray-100 p-6 dark:border-gray-800 sm:flex-row sm:items-start sm:justify-between"
-        >
-          <div class="flex min-w-0 flex-1 items-start gap-5">
+    <template v-else-if="user">
+      <!-- #1 Profile + tabs -->
+      <div class="row g-3">
+        <div class="col-12 col-xl-4">
+          <aside class="staff-user-profile">
             <input
               ref="heroAvatarInput"
               type="file"
               accept="image/jpeg,image/png,image/webp"
-              class="hidden"
+              class="d-none"
               @change="onHeroAvatarChange"
             />
-            <button
-              v-if="canUpdateUsers"
-              type="button"
-              class="shrink-0 rounded-full focus:outline-none focus:ring-2 focus:ring-[#2563eb]/40 dark:focus:ring-blue-400/40"
-              :title="'Change Photo'"
-              @click="openHeroAvatarPicker"
-            >
-              <img
-                v-if="profile.avatar_url"
-                :src="resolvePublicUrl(profile.avatar_url)"
-                alt=""
-                class="h-20 w-20 rounded-full object-cover ring-2 ring-white dark:ring-gray-900"
-              />
-              <span
-                v-else
-                class="flex h-20 w-20 items-center justify-center rounded-full text-xl font-bold ring-2 ring-white dark:ring-gray-900"
-                :class="avatarClassForEmail(user.email)"
+            <div class="staff-user-profile__avatar-wrap">
+              <button
+                v-if="canUpdateUsers"
+                type="button"
+                class="staff-user-profile__avatar-btn rounded focus-ring"
+                title="Change photo"
+                @click="openHeroAvatarPicker"
               >
-                {{ initials(user.name) }}
-              </span>
-            </button>
-            <div
-              v-else
-              class="shrink-0"
-            >
-              <img
-                v-if="profile.avatar_url"
-                :src="resolvePublicUrl(profile.avatar_url)"
-                alt=""
-                class="h-20 w-20 rounded-full object-cover ring-2 ring-white dark:ring-gray-900"
-              />
-              <span
-                v-else
-                class="flex h-20 w-20 items-center justify-center rounded-full text-xl font-bold ring-2 ring-white dark:ring-gray-900"
-                :class="avatarClassForEmail(user.email)"
-              >
-                {{ initials(user.name) }}
-              </span>
-            </div>
-            <div class="min-w-0 flex-1">
-              <h2 class="truncate text-xl font-semibold text-gray-900 dark:text-white">
-                {{ user.name }}
-              </h2>
-              <p class="mt-1 text-sm font-medium text-gray-800 dark:text-gray-200">
-                {{ display(profile.job_position) }}
-              </p>
-              <!-- About: role | email (horizontal) -->
-              <div class="mt-3 flex flex-wrap items-center gap-x-2 gap-y-1 text-sm sm:gap-x-3">
-                <template v-if="profileAboutSegments.length">
-                  <template
-                    v-for="(seg, idx) in profileAboutSegments"
-                    :key="seg.key"
-                  >
-                    <span
-                      v-if="idx > 0"
-                      class="text-gray-300 dark:text-gray-600"
-                      aria-hidden="true"
-                      >|</span
-                    >
-                    <span
-                      :class="
-                        seg.emphasis
-                          ? 'font-medium text-gray-700 dark:text-gray-300'
-                          : 'text-gray-500 dark:text-gray-400'
-                      "
-                      >{{ seg.text }}</span
-                    >
-                  </template>
-                </template>
-                <span v-else class="text-gray-500 dark:text-gray-400">—</span>
-              </div>
-              <div class="mt-3 flex flex-wrap items-center gap-2">
+                <img
+                  v-if="profile.avatar_url"
+                  :src="resolvePublicUrl(profile.avatar_url)"
+                  alt=""
+                  class="staff-user-profile__avatar"
+                />
                 <span
-                  class="inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium capitalize"
-                  :class="statusBadgeClass(user.status)"
+                  v-else
+                  class="staff-user-profile__avatar staff-user-profile__avatar--initials"
+                  :class="avatarClassForEmail(user.email)"
                 >
-                  {{ user.status }}
+                  {{ initials(user.name) }}
+                </span>
+              </button>
+              <div v-else>
+                <img
+                  v-if="profile.avatar_url"
+                  :src="resolvePublicUrl(profile.avatar_url)"
+                  alt=""
+                  class="staff-user-profile__avatar"
+                />
+                <span
+                  v-else
+                  class="staff-user-profile__avatar staff-user-profile__avatar--initials"
+                  :class="avatarClassForEmail(user.email)"
+                >
+                  {{ initials(user.name) }}
                 </span>
               </div>
             </div>
+            <h2 class="staff-user-profile__name">
+              {{ user.name }}
+            </h2>
+            <div class="staff-user-profile__role-pill">
+              <span class="badge rounded-pill bg-body-secondary text-body-secondary px-3 py-2">
+                {{ primaryRoleLabel(user) }}
+              </span>
+            </div>
+            <div class="staff-user-profile__stats">
+              <div class="staff-user-profile__stat">
+                <div class="staff-user-profile__stat-icon" aria-hidden="true">
+                  <svg width="20" height="20" fill="currentColor" viewBox="0 0 24 24">
+                    <path
+                      d="M19 3H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm-8 14H7v-4h4v4zm0-6H7V7h4v4zm6 6h-4v-4h4v4zm0-6h-4V7h4v4z"
+                    />
+                  </svg>
+                </div>
+                <div class="staff-user-profile__stat-val">
+                  {{ rolesCount }}
+                </div>
+                <div class="staff-user-profile__stat-lbl">Roles</div>
+              </div>
+              <div class="staff-user-profile__stat">
+                <div class="staff-user-profile__stat-icon" aria-hidden="true">
+                  <svg width="20" height="20" fill="currentColor" viewBox="0 0 24 24">
+                    <path
+                      d="M20 6h-2.18c.11-.31.18-.65.18-1a2 2 0 00-4 0c0 .35.07.69.18 1H5c-1.11 0-1.99.89-1.99 2L3 19c0 1.11.89 2 2 2h14c1.11 0 2-.89 2-2V8c0-1.11-.89-2-2-2zm-5-3c.55 0 1 .45 1 1s-.45 1-1 1-1-.45-1-1 .45-1 1-1z"
+                    />
+                  </svg>
+                </div>
+                <div class="staff-user-profile__stat-val">
+                  {{ updatesCount }}
+                </div>
+                <div class="staff-user-profile__stat-lbl">Updates</div>
+              </div>
+            </div>
+            <h3 class="staff-user-profile__details-title">Details</h3>
+            <dl class="staff-user-profile__dl">
+              <div>
+                <dt class="staff-user-profile__dt">Username</dt>
+                <dd class="staff-user-profile__dd">{{ usernameFromEmail }}</dd>
+              </div>
+              <div>
+                <dt class="staff-user-profile__dt">Email</dt>
+                <dd class="staff-user-profile__dd">{{ display(user.email) }}</dd>
+              </div>
+              <div>
+                <dt class="staff-user-profile__dt">Status</dt>
+                <dd class="staff-user-profile__dd text-capitalize">
+                  <span :class="statusBadgeClass(user.status)">{{ user.status }}</span>
+                </dd>
+              </div>
+              <div>
+                <dt class="staff-user-profile__dt">Role</dt>
+                <dd class="staff-user-profile__dd">
+                  <template v-if="!user.roles?.length">—</template>
+                  <div v-else class="d-flex flex-column gap-2">
+                    <div
+                      v-for="r in user.roles"
+                      :key="r.id"
+                      class="d-flex align-items-center gap-2 min-w-0"
+                    >
+                      <StaffRoleIcon :role="r" />
+                      <span class="text-break">{{ r.label || r.name }}</span>
+                    </div>
+                  </div>
+                </dd>
+              </div>
+              <div>
+                <dt class="staff-user-profile__dt">Tax id</dt>
+                <dd class="staff-user-profile__dd">{{ display(profile.tax_id) }}</dd>
+              </div>
+              <div>
+                <dt class="staff-user-profile__dt">Contact</dt>
+                <dd class="staff-user-profile__dd">{{ display(profile.phone) }}</dd>
+              </div>
+              <div>
+                <dt class="staff-user-profile__dt">Languages</dt>
+                <dd class="staff-user-profile__dd">—</dd>
+              </div>
+              <div>
+                <dt class="staff-user-profile__dt">Country</dt>
+                <dd class="staff-user-profile__dd">{{ display(profile.region) }}</dd>
+              </div>
+            </dl>
+            <div class="staff-user-profile__actions">
+              <button
+                v-if="canUpdateUsers"
+                type="button"
+                class="btn btn-sm btn-primary staff-page-primary"
+                @click="editOpen = true"
+              >
+                Edit
+              </button>
+              <button
+                type="button"
+                class="btn btn-sm staff-user-profile__btn-suspend"
+                disabled
+                title="Not available in this version"
+              >
+                Suspend
+              </button>
+            </div>
+          </aside>
+        </div>
+        <div class="col-12 col-xl-8">
+          <div class="staff-user-tabs" role="tablist">
+            <button
+              v-for="t in tabs"
+              :key="t.id"
+              type="button"
+              class="staff-user-tab"
+              :class="{ 'staff-user-tab--active': activeTab === t.id }"
+              role="tab"
+              :aria-selected="activeTab === t.id"
+              @click="activeTab = t.id"
+            >
+              <svg
+                v-if="t.id === 'account'"
+                fill="none"
+                viewBox="0 0 24 24"
+                stroke="currentColor"
+                stroke-width="1.5"
+                aria-hidden="true"
+              >
+                <path
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                  d="M15.75 6a3.75 3.75 0 11-7.5 0 3.75 3.75 0 017.5 0zM4.501 20.118a7.5 7.5 0 0114.998 0A17.933 17.933 0 0112 21.75c-2.676 0-5.216-.584-7.499-1.632z"
+                />
+              </svg>
+              <svg
+                v-else-if="t.id === 'security'"
+                fill="none"
+                viewBox="0 0 24 24"
+                stroke="currentColor"
+                stroke-width="1.5"
+                aria-hidden="true"
+              >
+                <path
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                  d="M16.5 10.5V6.75a4.5 4.5 0 10-9 0v3.75m-.75 11.25h10.5a2.25 2.25 0 002.25-2.25v-6.75a2.25 2.25 0 00-2.25-2.25H6.75a2.25 2.25 0 00-2.25 2.25v6.75a2.25 2.25 0 002.25 2.25z"
+                />
+              </svg>
+              <svg
+                v-else-if="t.id === 'billing'"
+                fill="none"
+                viewBox="0 0 24 24"
+                stroke="currentColor"
+                stroke-width="1.5"
+                aria-hidden="true"
+              >
+                <path
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                  d="M2.25 8.25h19.5M2.25 9h19.5m-16.5 5.25h6m-6 2.25h3m-3.75 3h15a2.25 2.25 0 002.25-2.25V6.75A2.25 2.25 0 0019.5 4.5h-15a2.25 2.25 0 00-2.25 2.25v10.5A2.25 2.25 0 004.5 19.5z"
+                />
+              </svg>
+              <svg
+                v-else-if="t.id === 'notifications'"
+                fill="none"
+                viewBox="0 0 24 24"
+                stroke="currentColor"
+                stroke-width="1.5"
+                aria-hidden="true"
+              >
+                <path
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                  d="M14.857 17.082a23.848 23.848 0 005.454-1.31A8.967 8.967 0 0118 9.75v-.75A6 6 0 006 9v.75a8.967 8.967 0 01-2.312 6.022c1.733.64 3.56 1.085 5.455 1.31m5.714 0a24.255 24.255 0 01-5.714 0m5.714 0a3.75 3.75 0 11-5.714 0"
+                />
+              </svg>
+              <svg
+                v-else
+                fill="none"
+                viewBox="0 0 24 24"
+                stroke="currentColor"
+                stroke-width="1.5"
+                aria-hidden="true"
+              >
+                <path
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                  d="M7.5 21L3 16.5m0 0L7.5 12M3 16.5h13.5m0-13.5L21 7.5m0 0L16.5 12M21 7.5H7.5"
+                />
+              </svg>
+              {{ t.label }}
+            </button>
           </div>
           <div
-            v-if="canUpdateUsers"
-            class="flex w-full shrink-0 flex-col self-end sm:w-auto"
+            class="staff-user-tab-panel"
+            role="tabpanel"
+            :aria-label="tabs.find((x) => x.id === activeTab)?.label"
           >
-            <CrmOutlineEditButton @click="editOpen = true" />
+            <template v-if="activeTab === 'account'">
+              <h3 class="staff-user-section-title">Personal Information</h3>
+              <div class="row g-3">
+                <div class="col-md-6">
+                  <dl class="mb-0 small">
+                    <dt class="text-secondary text-uppercase fw-semibold mb-1" style="font-size: 0.65rem">
+                      Full Name
+                    </dt>
+                    <dd class="mb-3 fw-semibold text-body">
+                      {{ display(user.name) }}
+                    </dd>
+                    <dt class="text-secondary text-uppercase fw-semibold mb-1" style="font-size: 0.65rem">
+                      Login Email
+                    </dt>
+                    <dd class="mb-0 fw-semibold text-body text-break">
+                      {{ display(user.email) }}
+                    </dd>
+                  </dl>
+                </div>
+                <div class="col-md-6">
+                  <dl class="mb-0 small">
+                    <dt class="text-secondary text-uppercase fw-semibold mb-1" style="font-size: 0.65rem">
+                      Phone
+                    </dt>
+                    <dd class="mb-3 fw-semibold text-body">
+                      {{ display(profile.phone) }}
+                    </dd>
+                    <dt class="text-secondary text-uppercase fw-semibold mb-1" style="font-size: 0.65rem">
+                      Personal Email
+                    </dt>
+                    <dd class="mb-0 fw-semibold text-body text-break">
+                      {{ display(profile.personal_email) }}
+                    </dd>
+                  </dl>
+                </div>
+                <div class="col-md-6">
+                  <dl class="mb-0 small">
+                    <dt class="text-secondary text-uppercase fw-semibold mb-1" style="font-size: 0.65rem">
+                      Birthday
+                    </dt>
+                    <dd class="mb-0 fw-semibold text-body">
+                      {{ formatBirthdayUs(profile.birthday) }}
+                    </dd>
+                  </dl>
+                </div>
+                <div class="col-md-6">
+                  <dl class="mb-0 small">
+                    <dt class="text-secondary text-uppercase fw-semibold mb-1" style="font-size: 0.65rem">
+                      Bio
+                    </dt>
+                    <dd class="mb-0 fw-semibold text-body text-break" style="white-space: pre-wrap">
+                      {{ display(profile.bio) }}
+                    </dd>
+                  </dl>
+                </div>
+              </div>
+              <h3 class="staff-user-section-title">Address</h3>
+              <div class="row g-3">
+                <div class="col-md-4">
+                  <dl class="mb-0 small">
+                    <dt class="text-secondary text-uppercase fw-semibold mb-1" style="font-size: 0.65rem">
+                      Street
+                    </dt>
+                    <dd class="mb-0 fw-semibold text-body">
+                      {{ display(profile.address) }}
+                    </dd>
+                  </dl>
+                </div>
+                <div class="col-md-4">
+                  <dl class="mb-0 small">
+                    <dt class="text-secondary text-uppercase fw-semibold mb-1" style="font-size: 0.65rem">
+                      City
+                    </dt>
+                    <dd class="mb-0 fw-semibold text-body">
+                      {{ display(profile.city) }}
+                    </dd>
+                  </dl>
+                </div>
+                <div class="col-md-4">
+                  <dl class="mb-0 small">
+                    <dt class="text-secondary text-uppercase fw-semibold mb-1" style="font-size: 0.65rem">
+                      State / ZIP
+                    </dt>
+                    <dd class="mb-0 fw-semibold text-body">
+                      {{ display(profile.state) }}
+                      <template v-if="profile.zip"> {{ display(profile.zip) }}</template>
+                    </dd>
+                  </dl>
+                </div>
+                <div class="col-md-4">
+                  <dl class="mb-0 small">
+                    <dt class="text-secondary text-uppercase fw-semibold mb-1" style="font-size: 0.65rem">
+                      Country
+                    </dt>
+                    <dd class="mb-0 fw-semibold text-body">
+                      {{ display(profile.region) }}
+                    </dd>
+                  </dl>
+                </div>
+              </div>
+              <h3 class="staff-user-section-title">Employment</h3>
+              <div class="row g-3">
+                <div class="col-md-4">
+                  <dl class="mb-0 small">
+                    <dt class="text-secondary text-uppercase fw-semibold mb-1" style="font-size: 0.65rem">
+                      Employment Type
+                    </dt>
+                    <dd class="mb-0 fw-semibold text-body">
+                      {{ display(profile.employee_type) }}
+                    </dd>
+                  </dl>
+                </div>
+                <div class="col-md-4">
+                  <dl class="mb-0 small">
+                    <dt class="text-secondary text-uppercase fw-semibold mb-1" style="font-size: 0.65rem">
+                      Position
+                    </dt>
+                    <dd class="mb-0 fw-semibold text-body">
+                      {{ display(profile.job_position) }}
+                    </dd>
+                  </dl>
+                </div>
+                <div class="col-md-4">
+                  <dl class="mb-0 small">
+                    <dt class="text-secondary text-uppercase fw-semibold mb-1" style="font-size: 0.65rem">
+                      Hire Date
+                    </dt>
+                    <dd class="mb-0 fw-semibold text-body">
+                      {{ formatDateUs(profile.hire_date) }}
+                    </dd>
+                  </dl>
+                </div>
+                <div class="col-md-4">
+                  <dl class="mb-0 small">
+                    <dt class="text-secondary text-uppercase fw-semibold mb-1" style="font-size: 0.65rem">
+                      Termination Date
+                    </dt>
+                    <dd class="mb-0 fw-semibold text-body">
+                      {{ formatDateUs(profile.terminate_date) }}
+                    </dd>
+                  </dl>
+                </div>
+              </div>
+            </template>
+            <p v-else class="staff-user-tab-panel__placeholder mb-0">
+              {{ tabs.find((x) => x.id === activeTab)?.label }} settings will be
+              available in a future update.
+            </p>
           </div>
         </div>
       </div>
 
-      <div class="space-y-6">
-        <section
-          class="rounded-2xl border border-gray-200 bg-white p-6 shadow-sm dark:border-gray-800 dark:bg-gray-900/40"
-        >
-          <h3 class="mb-5 border-b border-gray-100 pb-3 text-lg font-semibold text-gray-900 dark:border-gray-800 dark:text-white">
-            Personal Information
-          </h3>
+      <!-- #3 Activity timeline -->
+      <section class="staff-user-timeline-card" aria-labelledby="staff-activity-timeline-heading">
+        <h2 id="staff-activity-timeline-heading" class="staff-user-timeline-card__title">
+          User Activity Timeline
+        </h2>
+        <div v-if="timelinePreview.length" class="staff-user-timeline">
           <div
-            class="grid grid-cols-1 gap-8 lg:grid-cols-3 lg:gap-0 lg:divide-x lg:divide-gray-100 dark:lg:divide-gray-800"
+            v-for="(row, idx) in timelinePreview"
+            :key="row.id"
+            class="staff-user-timeline__item"
           >
-            <div class="space-y-4 lg:pr-6">
-              <dl class="space-y-4">
-                <div>
-                  <dt class="text-xs font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400">
-                    Full Name
-                  </dt>
-                  <dd class="mt-1 text-sm font-semibold text-gray-900 dark:text-white">
-                    {{ display(user.name) }}
-                  </dd>
-                </div>
-                <div>
-                  <dt class="text-xs font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400">
-                    Login Email
-                  </dt>
-                  <dd class="mt-1 break-all text-sm font-semibold text-gray-900 dark:text-white">
-                    {{ display(user.email) }}
-                  </dd>
-                </div>
-              </dl>
+            <span
+              class="staff-user-timeline__dot"
+              :class="`staff-user-timeline__dot--${idx % 3}`"
+              aria-hidden="true"
+            />
+            <div class="staff-user-timeline__row">
+              <h3 class="staff-user-timeline__heading">
+                {{ timelineHeading(row) }}
+              </h3>
+              <time
+                class="staff-user-timeline__time"
+                :datetime="row.created_at"
+              >{{ formatRelativeTime(row.created_at) }}</time>
             </div>
-            <div class="space-y-4 lg:px-6">
-              <dl class="space-y-4">
-                <div>
-                  <dt class="text-xs font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400">
-                    Phone
-                  </dt>
-                  <dd class="mt-1 text-sm font-semibold text-gray-900 dark:text-white">
-                    {{ display(profile.phone) }}
-                  </dd>
-                </div>
-                <div>
-                  <dt class="text-xs font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400">
-                    Email
-                  </dt>
-                  <dd class="mt-1 break-all text-sm font-semibold text-gray-900 dark:text-white">
-                    {{ display(profile.personal_email) }}
-                  </dd>
-                </div>
-              </dl>
-            </div>
-            <div class="space-y-4 lg:pl-6">
-              <dl class="space-y-4">
-                <div>
-                  <dt class="text-xs font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400">
-                    Birthday
-                  </dt>
-                  <dd class="mt-1 text-sm font-semibold text-gray-900 dark:text-white">
-                    {{ formatBirthdayUs(profile.birthday) }}
-                  </dd>
-                </div>
-                <div>
-                  <dt class="text-xs font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400">
-                    Bio
-                  </dt>
-                  <dd class="mt-1 whitespace-pre-wrap text-sm font-semibold text-gray-900 dark:text-gray-200">
-                    {{ display(profile.bio) }}
-                  </dd>
-                </div>
-              </dl>
-            </div>
+            <p class="staff-user-timeline__body">
+              {{ row.body || row.line }}
+            </p>
           </div>
-        </section>
+        </div>
+        <p v-else class="staff-user-timeline__empty">
+          No profile activity yet.
+        </p>
+      </section>
 
-        <section
-          class="rounded-2xl border border-gray-200 bg-white p-6 shadow-sm dark:border-gray-800 dark:bg-gray-900/40"
-        >
-          <h3 class="mb-5 border-b border-gray-100 pb-3 text-lg font-semibold text-gray-900 dark:border-gray-800 dark:text-white">
-            Address
-          </h3>
-          <div
-            class="grid grid-cols-1 gap-8 lg:grid-cols-3 lg:gap-0 lg:divide-x lg:divide-gray-100 dark:lg:divide-gray-800"
+      <!-- #2 Change history table -->
+      <section class="staff-user-history-card" aria-labelledby="staff-history-table-heading">
+        <div class="staff-user-history-card__head">
+          <h2 id="staff-history-table-heading" class="staff-user-history-card__title">
+            Change History
+          </h2>
+          <RouterLink
+            :to="{ name: 'staff-history', params: { id: props.id } }"
+            class="btn btn-sm btn-outline-secondary"
           >
-            <div class="space-y-4 lg:pr-6">
-              <dl class="space-y-4">
-                <div>
-                  <dt class="text-xs font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400">
-                    Street
-                  </dt>
-                  <dd class="mt-1 text-sm font-semibold text-gray-900 dark:text-white">
-                    {{ display(profile.address) }}
-                  </dd>
-                </div>
-                <div>
-                  <dt class="text-xs font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400">
-                    City
-                  </dt>
-                  <dd class="mt-1 text-sm font-semibold text-gray-900 dark:text-white">
-                    {{ display(profile.city) }}
-                  </dd>
-                </div>
-              </dl>
-            </div>
-            <div class="space-y-4 lg:px-6">
-              <dl class="space-y-4">
-                <div>
-                  <dt class="text-xs font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400">
-                    State
-                  </dt>
-                  <dd class="mt-1 text-sm font-semibold text-gray-900 dark:text-white">
-                    {{ display(profile.state) }}
-                  </dd>
-                </div>
-                <div>
-                  <dt class="text-xs font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400">
-                    ZIP
-                  </dt>
-                  <dd class="mt-1 text-sm font-semibold text-gray-900 dark:text-white">
-                    {{ display(profile.zip) }}
-                  </dd>
-                </div>
-              </dl>
-            </div>
-            <div class="space-y-4 lg:pl-6">
-              <dl class="space-y-4">
-                <div>
-                  <dt class="text-xs font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400">
-                    Country
-                  </dt>
-                  <dd class="mt-1 text-sm font-semibold text-gray-900 dark:text-white">
-                    {{ display(profile.region) }}
-                  </dd>
-                </div>
-              </dl>
-            </div>
-          </div>
-        </section>
-      </div>
-
-      <!-- Employment full width -->
-      <section
-        class="rounded-2xl border border-gray-200 bg-white p-6 shadow-sm dark:border-gray-800 dark:bg-gray-900/40"
-      >
-        <h3 class="mb-5 border-b border-gray-100 pb-3 text-lg font-semibold text-gray-900 dark:border-gray-800 dark:text-white">
-          Employment
-        </h3>
-        <div
-          class="grid grid-cols-1 gap-8 lg:grid-cols-3 lg:gap-0 lg:divide-x lg:divide-gray-100 dark:lg:divide-gray-800"
-        >
-          <div class="space-y-4 lg:pr-6">
-            <dl class="space-y-4">
-              <div>
-                <dt class="text-xs font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400">
-                  Employment Type
-                </dt>
-                <dd class="mt-1 text-sm font-semibold text-gray-900 dark:text-white">
-                  {{ display(profile.employee_type) }}
-                </dd>
-              </div>
-              <div>
-                <dt class="text-xs font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400">
-                  Position
-                </dt>
-                <dd class="mt-1 text-sm font-semibold text-gray-900 dark:text-white">
-                  {{ display(profile.job_position) }}
-                </dd>
-              </div>
-            </dl>
-          </div>
-          <div class="space-y-4 lg:px-6">
-            <dl class="space-y-4">
-              <div>
-                <dt class="text-xs font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400">
-                  Hire Date
-                </dt>
-                <dd class="mt-1 text-sm font-semibold text-gray-900 dark:text-white">
-                  {{ formatDateUs(profile.hire_date) }}
-                </dd>
-              </div>
-              <div>
-                <dt class="text-xs font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400">
-                  Termination Date
-                </dt>
-                <dd class="mt-1 text-sm font-semibold text-gray-900 dark:text-white">
-                  {{ formatDateUs(profile.terminate_date) }}
-                </dd>
-              </div>
-            </dl>
-          </div>
-          <div
-            class="hidden min-h-0 lg:block lg:pl-6"
-            aria-hidden="true"
-          />
+            View all
+          </RouterLink>
+        </div>
+        <div v-if="historyTableRows.length" class="staff-user-history-table-wrap">
+          <table class="staff-user-history-table table table-hover mb-0">
+            <thead>
+              <tr>
+                <th scope="col">#</th>
+                <th scope="col">Status</th>
+                <th scope="col">Activity</th>
+                <th scope="col">Date</th>
+                <th scope="col" class="text-end">Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr v-for="row in historyTableRows" :key="row.id">
+                <td class="staff-user-history-table__id">#{{ row.id }}</td>
+                <td>
+                  <span
+                    class="rounded-circle d-inline-flex align-items-center justify-content-center bg-success-subtle text-success"
+                    style="width: 2rem; height: 2rem"
+                    aria-label="Update"
+                  >
+                    <svg width="14" height="14" fill="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+                      <path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z" />
+                    </svg>
+                  </span>
+                </td>
+                <td class="small text-body">
+                  {{ row.body || row.line }}
+                </td>
+                <td class="small text-secondary text-nowrap">
+                  {{ formatDateTimeUs(row.created_at) }}
+                </td>
+                <td class="text-end">
+                  <RouterLink
+                    :to="{ name: 'staff-history', params: { id: props.id } }"
+                    class="btn btn-link btn-sm text-decoration-none p-0"
+                  >
+                    View
+                  </RouterLink>
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        <div v-else class="staff-user-history-table__empty">
+          No history entries yet.
         </div>
       </section>
-    </div>
+    </template>
 
     <UserEditModal
       v-model:open="editOpen"
       :user-id="String(props.id)"
-      @saved="loadProfile"
+      @saved="loadPageData"
     />
 
     <Teleport to="body">
@@ -664,7 +881,8 @@ async function onHeroAvatarChange(e) {
         <div
           v-if="gearMenuOpen"
           data-page-gear
-          class="fixed z-[300] w-52 overflow-hidden rounded-xl border border-gray-200 bg-white py-1 shadow-lg ring-1 ring-black/5 dark:border-gray-700 dark:bg-gray-900 dark:ring-white/10"
+          class="position-fixed rounded-3 border bg-body shadow py-1 staff-row-menu"
+          style="z-index: 300; width: 13rem"
           role="menu"
           :style="{
             top: `${gearMenuRect.top}px`,
@@ -675,7 +893,7 @@ async function onHeroAvatarChange(e) {
           <button
             v-if="canManagePermissions"
             type="button"
-            class="flex w-full items-center px-4 py-2.5 text-left text-sm font-medium text-gray-800 transition hover:bg-gray-50 dark:text-gray-200 dark:hover:bg-white/5"
+            class="staff-row-menu__item"
             role="menuitem"
             @click="openPermissionsInNewTab"
           >
@@ -683,12 +901,8 @@ async function onHeroAvatarChange(e) {
           </button>
           <button
             type="button"
-            class="flex w-full items-center px-4 py-2.5 text-left text-sm font-medium text-gray-800 transition hover:bg-gray-50 dark:text-gray-200 dark:hover:bg-white/5"
-            :class="
-              canManagePermissions
-                ? 'border-t border-gray-100 dark:border-gray-800'
-                : ''
-            "
+            class="staff-row-menu__item"
+            :class="{ 'border-top': canManagePermissions }"
             role="menuitem"
             @click="openHistoryInNewTab"
           >

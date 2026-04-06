@@ -4,6 +4,7 @@ import { RouterLink, useRouter } from "vue-router";
 import api from "../../services/api";
 import { BRAND_MARK_SRC } from "../../utils/brandAssets.js";
 import { useCrmSidebar } from "../../composables/useCrmSidebar";
+import { setThemeMode, themeMode } from "../../composables/useCrmTheme.js";
 import UserEditModal from "../users/UserEditModal.vue";
 import { crmIsAdmin } from "../../utils/crmUser";
 import { resolvePublicUrl } from "../../utils/resolvePublicUrl.js";
@@ -21,6 +22,17 @@ const markSrc = computed(() => BRAND_MARK_SRC());
 const menuOpen = ref(false);
 const menuRoot = ref(null);
 const editProfileModalOpen = ref(false);
+const themeMenuOpen = ref(false);
+const themeMenuRoot = ref(null);
+const headerSearch = ref("");
+
+const buildEnvLabel = computed(() =>
+  import.meta.env.MODE === "production" ? "Prod" : "Dev",
+);
+
+const buildEnvTitle = computed(
+  () => `Build: ${import.meta.env.MODE}`,
+);
 
 const canEditOwnProfile = computed(() => {
   const u = props.user;
@@ -185,36 +197,27 @@ function initials(name) {
 }
 
 const avatarPalettes = [
-  "bg-sky-200 text-sky-900 ring-sky-300/80",
-  "bg-violet-200 text-violet-900 ring-violet-300/80",
-  "bg-amber-200 text-amber-900 ring-amber-300/80",
-  "bg-emerald-200 text-emerald-900 ring-emerald-300/80",
-  "bg-rose-200 text-rose-900 ring-rose-300/80",
+  "bg-info-subtle text-info-emphasis border border-info-subtle",
+  "bg-primary-subtle text-primary-emphasis border border-primary-subtle",
+  "bg-warning-subtle text-warning-emphasis border border-warning-subtle",
+  "bg-success-subtle text-success-emphasis border border-success-subtle",
+  "bg-danger-subtle text-danger-emphasis border border-danger-subtle",
 ];
 
 function avatarClass(email) {
   let h = 0;
   const s = email || "";
   for (let i = 0; i < s.length; i++) h = (h + s.charCodeAt(i)) % 997;
-  return `${avatarPalettes[h % avatarPalettes.length]} ring-2 ring-inset`;
-}
-
-function toggleTheme(e) {
-  e?.preventDefault();
-  e?.stopPropagation();
-  const el = document.documentElement;
-  const nextDark = !el.classList.contains("dark");
-  if (nextDark) {
-    el.classList.add("dark");
-    localStorage.setItem("theme", "dark");
-  } else {
-    el.classList.remove("dark");
-    localStorage.setItem("theme", "light");
-  }
+  return avatarPalettes[h % avatarPalettes.length];
 }
 
 function closeMenu() {
   menuOpen.value = false;
+}
+
+function pickTheme(mode) {
+  setThemeMode(mode);
+  themeMenuOpen.value = false;
 }
 
 function onDocClick(e) {
@@ -223,6 +226,9 @@ function onDocClick(e) {
   }
   if (!accountRoot.value?.contains(e.target)) {
     accountOpen.value = false;
+  }
+  if (!themeMenuRoot.value?.contains(e.target)) {
+    themeMenuOpen.value = false;
   }
 }
 
@@ -239,46 +245,47 @@ watch(
   { immediate: true },
 );
 
-onMounted(() => {
-  const el = document.documentElement;
-  const saved = localStorage.getItem("theme");
-  if (saved === "dark") {
-    el.classList.add("dark");
-  } else if (saved === "light") {
-    el.classList.remove("dark");
-  } else if (window.matchMedia("(prefers-color-scheme: dark)").matches) {
-    el.classList.add("dark");
-  } else {
-    el.classList.remove("dark");
+function onGlobalSearchKey(e) {
+  if (!(e instanceof KeyboardEvent)) return;
+  if ((e.ctrlKey || e.metaKey) && (e.key === "k" || e.key === "K")) {
+    e.preventDefault();
+    const el = document.getElementById("crm-global-search");
+    if (el instanceof HTMLInputElement) {
+      el.focus();
+      el.select?.();
+    }
   }
+}
+
+onMounted(() => {
   document.addEventListener("click", onDocClick);
+  document.addEventListener("keydown", onGlobalSearchKey);
 });
 
 onUnmounted(() => {
   document.removeEventListener("click", onDocClick);
+  document.removeEventListener("keydown", onGlobalSearchKey);
 });
 </script>
 
 <template>
-  <header
-    class="sticky top-0 z-[99] border-b border-gray-200 bg-white dark:border-gray-800 dark:bg-gray-900"
-  >
-    <div
-      class="flex flex-col border-b border-gray-200 dark:border-gray-800 lg:border-b-0 lg:px-6"
-    >
-      <div
-        class="flex w-full items-center gap-2 px-3 py-3 sm:gap-3 lg:px-0 lg:py-4"
-      >
-        <div class="flex min-w-0 flex-1 items-center gap-2 sm:gap-3">
+  <header class="crm-navbar">
+    <div class="vx-navbar-float">
+      <div class="vx-navbar__inner">
+        <div
+          class="d-flex flex-wrap flex-lg-nowrap align-items-center gap-2 w-100"
+        >
+        <div class="d-flex align-items-center gap-2 flex-shrink-0">
           <button
             type="button"
-            class="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border border-gray-200 text-gray-600 hover:bg-gray-50 dark:border-gray-800 dark:text-gray-400 dark:hover:bg-white/5 lg:h-11 lg:w-11"
+            class="btn vx-icon-btn d-lg-none flex-shrink-0"
             aria-label="Toggle sidebar"
             @click="toggleSidebar"
           >
             <svg
               v-if="isMobileOpen"
-              class="h-6 w-6"
+              width="22"
+              height="22"
               fill="none"
               viewBox="0 0 24 24"
               stroke="currentColor"
@@ -292,7 +299,8 @@ onUnmounted(() => {
             </svg>
             <svg
               v-else
-              class="h-5 w-5"
+              width="20"
+              height="16"
               viewBox="0 0 16 12"
               fill="none"
               xmlns="http://www.w3.org/2000/svg"
@@ -308,20 +316,23 @@ onUnmounted(() => {
 
           <div
             ref="accountRoot"
-            class="relative ml-1 min-w-0 flex-1 sm:ml-2 lg:ml-3 lg:max-w-lg"
+            class="position-relative flex-grow-1 flex-md-grow-0 min-w-0 d-none d-md-block"
+            style="max-width: min(15rem, 100%)"
           >
             <button
               type="button"
-              class="flex h-11 w-full min-w-0 items-center gap-2.5 rounded-xl border border-gray-200 bg-white px-3 text-left shadow-sm transition hover:border-gray-300 hover:bg-gray-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-[#2563eb]/25 dark:border-gray-700 dark:bg-gray-900 dark:hover:border-gray-600 dark:hover:bg-gray-800/80"
+              class="btn btn-light border-0 d-flex align-items-center gap-2 w-100 text-start rounded-pill py-2 px-3"
               :aria-expanded="accountOpen"
               aria-haspopup="listbox"
               @click.stop="toggleAccountPanel"
             >
               <span
-                class="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-[#1e3a5f]/10 text-[#1e3a5f] dark:bg-sky-500/15 dark:text-sky-300"
+                class="d-flex align-items-center justify-content-center flex-shrink-0 rounded-3 bg-primary-subtle text-primary"
+                style="width: 2rem; height: 2rem"
               >
                 <svg
-                  class="h-4 w-4"
+                  width="16"
+                  height="16"
                   fill="none"
                   viewBox="0 0 24 24"
                   stroke="currentColor"
@@ -335,20 +346,21 @@ onUnmounted(() => {
                   />
                 </svg>
               </span>
-              <span class="min-w-0 flex-1">
+              <span class="min-w-0 flex-grow-1 text-truncate">
                 <span
-                  class="block text-[10px] font-semibold uppercase tracking-wide text-gray-400 dark:text-gray-500"
+                  class="d-block text-uppercase fw-semibold text-secondary"
+                  style="font-size: 0.6rem; letter-spacing: 0.06em"
                   >Account</span
                 >
-                <span
-                  class="block truncate text-sm font-semibold text-gray-900 dark:text-white"
-                >
+                <span class="d-block text-truncate fw-semibold text-body small">
                   {{ selectedAccount?.title ?? "Save Rack" }}
                 </span>
               </span>
               <svg
-                class="h-4 w-4 shrink-0 text-gray-400 transition dark:text-gray-500"
+                class="flex-shrink-0 text-secondary transition"
                 :class="{ 'rotate-180': accountOpen }"
+                width="16"
+                height="16"
                 fill="none"
                 viewBox="0 0 24 24"
                 stroke="currentColor"
@@ -365,28 +377,26 @@ onUnmounted(() => {
 
             <div
               v-if="accountOpen"
-              class="absolute left-0 right-0 z-[120] mt-2 overflow-hidden rounded-xl border border-gray-200 bg-white shadow-xl dark:border-gray-700 dark:bg-gray-900"
+              class="position-absolute start-0 end-0 mt-2 rounded-4 border bg-body shadow-lg overflow-hidden"
+              style="z-index: 1080"
               role="listbox"
             >
-              <div class="border-b border-gray-100 p-2 dark:border-gray-800">
+              <div class="border-bottom p-2">
                 <input
                   v-model="accountFilter"
                   type="search"
                   autocomplete="off"
-                  placeholder="Search Accounts…"
-                  class="h-10 w-full rounded-lg border border-gray-200 bg-gray-50 px-3 text-sm text-gray-900 placeholder:text-gray-400 focus:border-[#2563eb] focus:outline-none focus:ring-2 focus:ring-[#2563eb]/20 dark:border-gray-600 dark:bg-gray-800/80 dark:text-white dark:placeholder:text-gray-500"
+                  placeholder="Search accounts…"
+                  class="form-control form-control-sm"
                   @click.stop
                 />
               </div>
-              <ul
-                class="max-h-56 overflow-y-auto py-1"
-                role="presentation"
-              >
+              <ul class="list-unstyled mb-0 overflow-auto" style="max-height: 14rem">
                 <li
                   v-if="
                     canViewClientAccounts && accountsLoadState === 'loading'
                   "
-                  class="px-3 py-4 text-center text-xs text-gray-500 dark:text-gray-400"
+                  class="px-3 py-4 text-center small text-secondary"
                 >
                   Loading accounts…
                 </li>
@@ -396,7 +406,7 @@ onUnmounted(() => {
                     accountsLoadState === 'error' &&
                     !clientAccounts.length
                   "
-                  class="px-3 py-4 text-center text-xs text-red-600 dark:text-red-400"
+                  class="px-3 py-4 text-center small text-danger"
                 >
                   Could not load accounts.
                 </li>
@@ -404,13 +414,12 @@ onUnmounted(() => {
                   <li v-for="opt in filteredAccounts" :key="opt.id">
                     <button
                       type="button"
-                      class="flex w-full flex-col items-start gap-0.5 px-3 py-2.5 text-left text-sm transition hover:bg-gray-50 dark:hover:bg-white/5"
-                      :class="[
-                        opt.kind === 'workspace' &&
-                        opt.id === selectedAccountId
-                          ? 'bg-gray-50 dark:bg-white/[0.06]'
-                          : '',
-                      ]"
+                      class="btn btn-link text-start text-decoration-none text-body w-100 rounded-0 py-2 px-3 d-flex flex-column align-items-start"
+                      :class="{
+                        'bg-body-secondary':
+                          opt.kind === 'workspace' &&
+                          opt.id === selectedAccountId,
+                      }"
                       role="option"
                       :aria-selected="
                         opt.kind === 'workspace' &&
@@ -419,22 +428,21 @@ onUnmounted(() => {
                       @click.stop="onAccountOptionClick(opt)"
                     >
                       <span
-                        class="flex w-full min-w-0 items-center justify-between gap-2"
+                        class="d-flex w-100 min-w-0 justify-content-between gap-2"
                       >
-                        <span
-                          class="truncate font-medium text-gray-900 dark:text-white"
-                          >{{ opt.title }}</span
-                        >
+                        <span class="text-truncate fw-medium">{{
+                          opt.title
+                        }}</span>
                         <span
                           v-if="opt.kind === 'client_account'"
-                          class="shrink-0 text-[10px] font-medium uppercase tracking-wide text-gray-400 dark:text-gray-500"
+                          class="flex-shrink-0 text-uppercase text-secondary"
+                          style="font-size: 0.65rem"
                           >New tab</span
                         >
                       </span>
-                      <span
-                        class="text-xs text-gray-500 dark:text-gray-400"
-                        >{{ opt.subtitle }}</span
-                      >
+                      <span class="small text-secondary">{{
+                        opt.subtitle
+                      }}</span>
                     </button>
                   </li>
                 </template>
@@ -444,73 +452,203 @@ onUnmounted(() => {
 
           <RouterLink
             to="/dashboard"
-            class="hidden shrink-0 items-center gap-2 sm:flex lg:hidden"
+            class="d-none d-sm-flex d-lg-none align-items-center gap-2 text-decoration-none text-body flex-shrink-0"
           >
             <img
               :src="markSrc"
               alt=""
-              class="h-11 w-11 object-contain sm:h-12 sm:w-12"
-              width="48"
-              height="48"
+              width="44"
+              height="44"
+              class="rounded object-fit-contain"
             />
-            <span
-              class="max-w-[5.5rem] truncate text-lg font-bold tracking-tight text-[#1e3a5f] dark:text-white"
+            <span class="fw-bold text-truncate" style="max-width: 5.5rem"
+              >Save Rack</span
             >
-              Save Rack
-            </span>
           </RouterLink>
         </div>
 
-        <div class="flex shrink-0 items-center gap-1.5 sm:gap-2">
+        <div
+          class="d-flex align-items-center vx-search-merge flex-grow-1 min-w-0 order-3 order-lg-2 w-100 w-lg-auto mx-lg-1"
+        >
+          <div class="input-group w-100">
+            <span class="input-group-text border-end-0">
+              <svg
+                width="20"
+                height="20"
+                class="text-secondary opacity-75 flex-shrink-0"
+                fill="none"
+                viewBox="0 0 24 24"
+                stroke="currentColor"
+                stroke-width="1.5"
+              >
+                <path
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                  d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"
+                />
+              </svg>
+            </span>
+            <input
+              id="crm-global-search"
+              v-model="headerSearch"
+              type="search"
+              class="form-control border-start-0"
+              placeholder="Search [CTRL + K]"
+              autocomplete="off"
+              aria-label="Search"
+            />
+          </div>
+        </div>
+
+        <div
+          class="d-flex align-items-center gap-1 gap-sm-2 flex-shrink-0 ms-lg-auto order-2 order-lg-3"
+        >
+          <span
+            class="badge rounded-pill vx-navbar-env-badge text-bg-secondary text-uppercase d-none d-sm-inline me-1"
+            :title="buildEnvTitle"
+            >{{ buildEnvLabel }}</span
+          >
+
           <button
             type="button"
-            class="relative flex h-11 w-11 items-center justify-center rounded-full border border-gray-200 bg-white text-gray-500 transition hover:bg-gray-100 hover:text-gray-800 dark:border-gray-800 dark:bg-gray-900 dark:text-gray-400 dark:hover:bg-gray-800 dark:hover:text-white"
-            aria-label="Toggle Dark Mode"
-            @click.stop="toggleTheme"
+            class="btn vx-icon-btn d-none d-sm-inline-flex"
+            aria-label="Language"
+            title="Language"
           >
             <svg
-              class="hidden h-5 w-5 dark:block"
-              fill="currentColor"
-              viewBox="0 0 20 20"
+              width="20"
+              height="20"
+              fill="none"
+              viewBox="0 0 24 24"
+              stroke="currentColor"
+              stroke-width="1.5"
+              aria-hidden="true"
             >
               <path
-                d="M17.293 13.293A8 8 0 016.707 2.707a8.001 8.001 0 1010.586 10.586z"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                d="m10.5 21 5.25-11.25L21 21m-9-3h7.5M3 5.621a48.474 48.474 0 0 1 6-.371m0 0c1.12 0 2.233.038 3.334.114M9 5.25v13.5m.375-19.5h7.5m-12 0H9m0 0c-.884.724-1.735 1.44-2.548 2.13M9 5.25c.84 1.037 1.763 2.04 2.75 3M15 5.25a48.416 48.416 0 0 0-8 .372m0-.372c-.884.724-1.735 1.44-2.548 2.13"
               />
             </svg>
+          </button>
+
+          <div ref="themeMenuRoot" class="position-relative">
+            <button
+              type="button"
+              class="btn vx-icon-btn position-relative"
+              aria-label="Theme"
+              aria-haspopup="true"
+              :aria-expanded="themeMenuOpen"
+              @click.stop="themeMenuOpen = !themeMenuOpen"
+            >
+              <svg
+                width="20"
+                height="20"
+                fill="none"
+                viewBox="0 0 24 24"
+                stroke="currentColor"
+                stroke-width="1.5"
+                aria-hidden="true"
+              >
+                <path
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                  d="M12 3v2.25m6.364.386-1.591 1.591M21 12h-2.25m-.386 6.364-1.591-1.591M12 18.75V21m-4.773-4.227-1.591 1.591M5.25 12H3m4.773-4.773-1.591-1.591M15.75 12a3.75 3.75 0 1 1-7.5 0 3.75 3.75 0 0 1 7.5 0Z"
+                />
+              </svg>
+            </button>
+            <div
+              v-if="themeMenuOpen"
+              class="position-absolute end-0 mt-2 rounded-4 border bg-body shadow py-1"
+              style="min-width: 11rem; z-index: 1080"
+              role="menu"
+            >
+              <button
+                type="button"
+                class="dropdown-item d-flex align-items-center gap-2 py-2 px-3"
+                :class="{ active: themeMode === 'light' }"
+                @click="pickTheme('light')"
+              >
+                Light
+              </button>
+              <button
+                type="button"
+                class="dropdown-item d-flex align-items-center gap-2 py-2 px-3"
+                :class="{ active: themeMode === 'dark' }"
+                @click="pickTheme('dark')"
+              >
+                Dark
+              </button>
+              <button
+                type="button"
+                class="dropdown-item d-flex align-items-center gap-2 py-2 px-3"
+                :class="{ active: themeMode === 'system' }"
+                @click="pickTheme('system')"
+              >
+                System
+              </button>
+            </div>
+          </div>
+
+          <button
+            type="button"
+            class="btn vx-icon-btn d-none d-md-inline-flex"
+            aria-label="Shortcuts"
+            title="Shortcuts"
+          >
             <svg
-              class="h-5 w-5 dark:hidden"
-              fill="currentColor"
-              viewBox="0 0 20 20"
+              width="20"
+              height="20"
+              fill="none"
+              viewBox="0 0 24 24"
+              stroke="currentColor"
+              stroke-width="1.5"
+              aria-hidden="true"
             >
               <path
-                fill-rule="evenodd"
-                d="M10 2a1 1 0 011 1v1a1 1 0 11-2 0V3a1 1 0 011-1zm4 8a4 4 0 11-8 0 4 4 0 018 0zm-.464 4.95l.707.707a1 1 0 001.414-1.414l-.707-.707a1 1 0 00-1.414 1.414zm2.12-10.607a1 1 0 010 1.414l-.706.707a1 1 0 11-1.414-1.414l.707-.707a1 1 0 011.414 0zM17 11a1 1 0 100-2h-1a1 1 0 100 2h1zm-7 4a1 1 0 011 1v1a1 1 0 11-2 0v-1a1 1 0 011-1zM5.05 6.464A1 1 0 106.465 5.05l-.708-.707a1 1 0 00-1.414 1.414l.707.707zm1.414 8.486l-.707.707a1 1 0 01-1.414-1.414l.707-.707a1 1 0 011.414 1.414zM4 11a1 1 0 100-2H3a1 1 0 000 2h1z"
-                clip-rule="evenodd"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                d="M3.75 3A2.25 2.25 0 0 0 1.5 5.25v2.25A2.25 2.25 0 0 0 3.75 9.75h2.25A2.25 2.25 0 0 0 8.25 7.5V5.25A2.25 2.25 0 0 0 6 3H3.75Zm9 0A2.25 2.25 0 0 0 10.5 5.25v2.25a2.25 2.25 0 0 0 2.25 2.25H15a2.25 2.25 0 0 0 2.25-2.25V5.25A2.25 2.25 0 0 0 15 3h-2.25Zm-9 7.5A2.25 2.25 0 0 0 1.5 12.75v2.25a2.25 2.25 0 0 0 2.25 2.25H6a2.25 2.25 0 0 0 2.25-2.25v-2.25A2.25 2.25 0 0 0 6 10.5H3.75Zm9 0A2.25 2.25 0 0 0 10.5 12.75v2.25a2.25 2.25 0 0 0 2.25 2.25H15a2.25 2.25 0 0 0 2.25-2.25v-2.25A2.25 2.25 0 0 0 15 10.5h-2.25Z"
               />
             </svg>
           </button>
 
           <button
             type="button"
-            class="relative flex h-11 w-11 items-center justify-center rounded-full border border-gray-200 bg-white text-gray-500 transition hover:bg-gray-100 dark:border-gray-800 dark:bg-gray-900 dark:text-gray-400 dark:hover:bg-gray-800"
+            class="btn vx-icon-btn position-relative"
             aria-label="Notifications"
           >
-            <svg class="h-5 w-5" fill="currentColor" viewBox="0 0 20 20">
+            <svg
+              width="20"
+              height="20"
+              fill="none"
+              viewBox="0 0 24 24"
+              stroke="currentColor"
+              stroke-width="1.5"
+              aria-hidden="true"
+            >
               <path
-                fill-rule="evenodd"
-                d="M10.75 2.292a.75.75 0 00-1.5 0v.543a6.5 6.5 0 00-4.41 5.903V14.46H2.58a.75.75 0 000 1.5h14.84a.75.75 0 000-1.5h-2.17V8.738a6.5 6.5 0 00-4.41-5.902V2.292zM14.25 8.738v5.722H5.75V8.738a5 5 0 0110 0zm-5.25 8.208a.75.75 0 01.75.75v.75a.75.75 0 01-1.5 0v-.75a.75.75 0 01.75-.75z"
-                clip-rule="evenodd"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                d="M14.857 17.082a23.848 23.848 0 0 0 5.454-1.31A8.967 8.967 0 0 0 18 9.75V9A6 6 0 0 0 6 9v.75a8.967 8.967 0 0 0 2.312 6.022c1.733.64 3.56 1.085 5.455 1.31m5.714 0a24.255 24.255 0 0 1-5.714 0m5.714 0a3.75 3.75 0 1 1-5.714 0"
               />
             </svg>
             <span
-              class="absolute right-2 top-1.5 flex h-2 w-2 rounded-full bg-orange-400 ring-2 ring-white dark:ring-gray-900"
+              class="position-absolute rounded-circle bg-danger border border-white p-0"
+              style="
+                width: 8px;
+                height: 8px;
+                top: 6px;
+                right: 6px;
+              "
+              aria-hidden="true"
             />
           </button>
 
-          <div ref="menuRoot" class="relative">
+          <div ref="menuRoot" class="position-relative">
             <button
               type="button"
-              class="flex items-center gap-2 rounded-lg py-1 pl-1 pr-1.5 text-left transition hover:bg-gray-100 dark:hover:bg-white/5 sm:pr-2"
+              class="btn btn-link text-decoration-none text-body d-flex align-items-center gap-2 rounded-3 py-1 ps-1 pe-1 pe-sm-2 border-0"
               :aria-expanded="menuOpen"
               aria-haspopup="true"
               @click.stop="
@@ -518,29 +656,36 @@ onUnmounted(() => {
                 menuOpen = !menuOpen;
               "
             >
-              <span class="relative h-11 w-11 shrink-0">
+              <span class="position-relative flex-shrink-0 d-inline-flex">
                 <img
                   v-if="user.profile?.avatar_url"
                   :src="resolvePublicUrl(user.profile.avatar_url)"
                   alt=""
-                  class="h-11 w-11 rounded-full object-cover"
+                  class="rounded-circle object-fit-cover"
+                  width="40"
+                  height="40"
                 />
                 <span
                   v-else
-                  class="flex h-11 w-11 items-center justify-center rounded-full text-sm font-bold"
+                  class="d-flex align-items-center justify-content-center rounded-circle fw-bold small"
+                  style="width: 2.5rem; height: 2.5rem"
                   :class="avatarClass(user.email)"
                 >
                   {{ initials(user.name) }}
                 </span>
+                <span class="vx-avatar-online" aria-hidden="true" />
               </span>
               <span
-                class="hidden max-w-[7rem] truncate text-sm font-medium text-gray-800 dark:text-white/90 lg:inline"
+                class="d-none d-md-inline text-truncate fw-medium d-lg-none"
+                style="max-width: 6rem"
               >
                 {{ firstName || user.name }}
               </span>
               <svg
-                class="hidden h-4 w-4 shrink-0 text-gray-500 transition sm:block dark:text-gray-400"
+                class="d-none d-md-inline flex-shrink-0 text-secondary d-lg-none"
                 :class="{ 'rotate-180': menuOpen }"
+                width="16"
+                height="16"
                 fill="none"
                 viewBox="0 0 24 24"
                 stroke="currentColor"
@@ -556,138 +701,66 @@ onUnmounted(() => {
 
             <div
               v-if="menuOpen"
-              class="absolute right-0 z-[120] mt-2 w-[260px] overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-lg dark:border-gray-800 dark:bg-gray-900"
+              class="position-absolute end-0 mt-2 rounded-4 border bg-body shadow overflow-hidden"
+              style="width: 16rem; z-index: 1080"
               role="menu"
             >
-              <div
-                class="border-b border-gray-100 px-4 pb-3 pt-4 dark:border-gray-800"
-              >
-                <p class="font-medium text-gray-800 dark:text-white/90">
-                  {{ user.name }}
-                </p>
-                <p class="mt-0.5 truncate text-xs text-gray-500 dark:text-gray-400">
+              <div class="border-bottom px-3 pb-3 pt-3">
+                <p class="fw-medium mb-0 text-body">{{ user.name }}</p>
+                <p class="mb-0 small text-secondary text-truncate">
                   {{ user.email }}
                 </p>
               </div>
-              <ul class="py-1">
+              <ul class="list-unstyled mb-0 py-1">
                 <li v-if="canEditOwnProfile">
                   <button
                     type="button"
-                    class="flex w-full items-center gap-3 px-4 py-2.5 text-left text-sm font-medium text-gray-700 hover:bg-gray-50 dark:text-gray-300 dark:hover:bg-white/5"
+                    class="btn btn-link text-start text-decoration-none text-body w-100 py-2 px-3 rounded-0"
                     @click="openEditProfileModal"
                   >
-                    <svg
-                      class="h-5 w-5 text-gray-500"
-                      fill="none"
-                      viewBox="0 0 24 24"
-                      stroke="currentColor"
-                      stroke-width="1.5"
-                    >
-                      <path
-                        stroke-linecap="round"
-                        stroke-linejoin="round"
-                        d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"
-                      />
-                    </svg>
-                    Edit Profile
+                    Edit profile
                   </button>
                 </li>
                 <li v-else>
                   <RouterLink
                     :to="`/staff/${user.id}`"
-                    class="flex items-center gap-3 px-4 py-2.5 text-sm font-medium text-gray-700 hover:bg-gray-50 dark:text-gray-300 dark:hover:bg-white/5"
+                    class="d-block py-2 px-3 text-body text-decoration-none"
                     @click="closeMenu"
                   >
-                    <svg
-                      class="h-5 w-5 text-gray-500"
-                      fill="none"
-                      viewBox="0 0 24 24"
-                      stroke="currentColor"
-                      stroke-width="1.5"
-                    >
-                      <path
-                        stroke-linecap="round"
-                        stroke-linejoin="round"
-                        d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"
-                      />
-                    </svg>
-                    View Profile
+                    View profile
                   </RouterLink>
                 </li>
                 <li>
                   <RouterLink
                     to="/dashboard"
-                    class="flex items-center gap-3 px-4 py-2.5 text-sm font-medium text-gray-700 hover:bg-gray-50 dark:text-gray-300 dark:hover:bg-white/5"
+                    class="d-block py-2 px-3 text-body text-decoration-none"
                     @click="closeMenu"
                   >
-                    <svg
-                      class="h-5 w-5 text-gray-500"
-                      fill="none"
-                      viewBox="0 0 24 24"
-                      stroke="currentColor"
-                      stroke-width="1.5"
-                    >
-                      <path
-                        stroke-linecap="round"
-                        stroke-linejoin="round"
-                        d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"
-                      />
-                      <path
-                        stroke-linecap="round"
-                        stroke-linejoin="round"
-                        d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"
-                      />
-                    </svg>
-                    Account Settings
+                    Account settings
                   </RouterLink>
                 </li>
                 <li>
                   <a
                     href="mailto:support@saverack.com"
-                    class="flex items-center gap-3 px-4 py-2.5 text-sm font-medium text-gray-700 hover:bg-gray-50 dark:text-gray-300 dark:hover:bg-white/5"
+                    class="d-block py-2 px-3 text-body text-decoration-none"
                     @click="closeMenu"
                   >
-                    <svg
-                      class="h-5 w-5 text-gray-500"
-                      fill="none"
-                      viewBox="0 0 24 24"
-                      stroke="currentColor"
-                      stroke-width="1.5"
-                    >
-                      <path
-                        stroke-linecap="round"
-                        stroke-linejoin="round"
-                        d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
-                      />
-                    </svg>
                     Support
                   </a>
                 </li>
               </ul>
-              <div class="border-t border-gray-100 dark:border-gray-800" />
+              <div class="border-top" />
               <button
                 type="button"
-                class="flex w-full items-center gap-3 px-4 py-3 text-left text-sm font-medium text-gray-700 hover:bg-gray-50 dark:text-gray-300 dark:hover:bg-white/5"
+                class="btn btn-link text-start text-danger w-100 py-2 px-3 rounded-0 text-decoration-none"
                 role="menuitem"
                 @click="signOut"
               >
-                <svg
-                  class="h-5 w-5 text-gray-500"
-                  fill="none"
-                  viewBox="0 0 24 24"
-                  stroke="currentColor"
-                  stroke-width="1.5"
-                >
-                  <path
-                    stroke-linecap="round"
-                    stroke-linejoin="round"
-                    d="M15.75 9V5.25A2.25 2.25 0 0013.5 3h-6a2.25 2.25 0 00-2.25 2.25v13.5A2.25 2.25 0 007.5 21h6a2.25 2.25 0 002.25-2.25V15M12 9l-3 3m0 0l3 3m-3-3h12.75"
-                  />
-                </svg>
-                Sign Out
+                Sign out
               </button>
             </div>
           </div>
+        </div>
         </div>
       </div>
     </div>
@@ -700,3 +773,15 @@ onUnmounted(() => {
     @saved="$emit('refresh-user')"
   />
 </template>
+
+<style scoped>
+.rotate-180 {
+  transform: rotate(180deg);
+}
+.btn-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+}
+</style>

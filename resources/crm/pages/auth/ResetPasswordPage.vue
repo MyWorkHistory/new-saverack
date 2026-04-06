@@ -1,15 +1,13 @@
 <script setup>
-import { computed, reactive, ref } from "vue";
+import { reactive, ref } from "vue";
 import { RouterLink } from "vue-router";
 import api from "../../services/api";
-import AuthRotatingHero from "../../components/auth/AuthRotatingHero.vue";
-import { BRAND_MARK_SRC } from "../../utils/brandAssets.js";
-
-const markSrc = computed(() => BRAND_MARK_SRC());
+import AuthVuexyShell from "../../components/auth/AuthVuexyShell.vue";
 
 const message = ref("");
 const error = ref("");
 const loading = ref(false);
+const showPassword = ref(false);
 const form = reactive({
   email: "",
   token: "",
@@ -23,13 +21,13 @@ const submit = async () => {
   error.value = "";
   try {
     await api.post("/auth/reset-password", form);
-    message.value = "Password Reset Successful. You Can Sign In Now.";
+    message.value = "Password reset successful. You can sign in now.";
   } catch (e) {
     const d = e?.response?.data;
     error.value =
       d?.message ||
       (typeof d?.error === "string" ? d.error : null) ||
-      "Could Not Reset Password.";
+      "Could not reset password.";
   } finally {
     loading.value = false;
   }
@@ -37,137 +35,184 @@ const submit = async () => {
 </script>
 
 <template>
-  <div
-    class="flex min-h-screen flex-col bg-white lg:flex-row dark:bg-gray-950"
-  >
+  <AuthVuexyShell>
+    <h1 class="auth-vuexy-heading">Reset password 🔑</h1>
+    <p class="auth-vuexy-lead">
+      Enter the token from your email and choose a new password.
+    </p>
+
     <div
-      class="flex flex-1 flex-col justify-center px-6 py-10 sm:px-10 lg:w-1/2 lg:px-14 xl:px-20"
+      v-if="message"
+      class="alert alert-success small mt-4 mb-0"
+      role="status"
     >
-      <div class="mx-auto w-full max-w-md">
-        <h1
-          class="text-3xl font-bold tracking-tight text-[#1e3a5f] dark:text-white"
-        >
-          Reset Password
-        </h1>
-        <p class="mt-2 text-sm text-slate-500 dark:text-slate-400">
-          Enter The Token From Your Email And Choose A New Password.
-        </p>
-
-        <p
-          v-if="message"
-          class="mt-4 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-800 dark:border-emerald-900/40 dark:bg-emerald-950/30 dark:text-emerald-200"
-        >
-          {{ message }}
-        </p>
-        <p
-          v-if="error"
-          class="mt-4 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700 dark:border-red-900/50 dark:bg-red-950/40 dark:text-red-300"
-        >
-          {{ error }}
-        </p>
-
-        <form class="mt-8 space-y-4" @submit.prevent="submit">
-          <div>
-            <label
-              class="mb-1.5 block text-sm font-medium text-slate-700 dark:text-slate-300"
-              for="reset-email"
-            >
-              Email<span class="text-red-500" aria-hidden="true">*</span>
-            </label>
-            <input
-              id="reset-email"
-              v-model="form.email"
-              type="email"
-              required
-              autocomplete="email"
-              class="w-full rounded-lg border border-slate-200 bg-slate-50/80 px-3.5 py-2.5 text-slate-900 shadow-sm outline-none transition focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 dark:border-slate-600 dark:bg-slate-900 dark:text-white dark:focus:border-blue-400 dark:focus:ring-blue-400/20"
-            />
-          </div>
-          <div>
-            <label
-              class="mb-1.5 block text-sm font-medium text-slate-700 dark:text-slate-300"
-              for="reset-token"
-            >
-              Reset token<span class="text-red-500" aria-hidden="true">*</span>
-            </label>
-            <input
-              id="reset-token"
-              v-model="form.token"
-              type="text"
-              required
-              autocomplete="one-time-code"
-              class="w-full rounded-lg border border-slate-200 bg-slate-50/80 px-3.5 py-2.5 text-slate-900 shadow-sm outline-none transition focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 dark:border-slate-600 dark:bg-slate-900 dark:text-white dark:focus:border-blue-400 dark:focus:ring-blue-400/20"
-            />
-          </div>
-          <div>
-            <label
-              class="mb-1.5 block text-sm font-medium text-slate-700 dark:text-slate-300"
-              for="reset-password"
-            >
-              New Password<span class="text-red-500" aria-hidden="true">*</span>
-            </label>
-            <input
-              id="reset-password"
-              v-model="form.password"
-              type="password"
-              required
-              autocomplete="new-password"
-              class="w-full rounded-lg border border-slate-200 bg-slate-50/80 px-3.5 py-2.5 text-slate-900 shadow-sm outline-none transition focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 dark:border-slate-600 dark:bg-slate-900 dark:text-white dark:focus:border-blue-400 dark:focus:ring-blue-400/20"
-            />
-          </div>
-          <div>
-            <label
-              class="mb-1.5 block text-sm font-medium text-slate-700 dark:text-slate-300"
-              for="reset-password-confirm"
-            >
-              Confirm password<span class="text-red-500" aria-hidden="true"
-                >*</span
-              >
-            </label>
-            <input
-              id="reset-password-confirm"
-              v-model="form.password_confirmation"
-              type="password"
-              required
-              autocomplete="new-password"
-              class="w-full rounded-lg border border-slate-200 bg-slate-50/80 px-3.5 py-2.5 text-slate-900 shadow-sm outline-none transition focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 dark:border-slate-600 dark:bg-slate-900 dark:text-white dark:focus:border-blue-400 dark:focus:ring-blue-400/20"
-            />
-          </div>
-
-          <button
-            type="submit"
-            :disabled="loading"
-            class="w-full rounded-lg bg-[#2563eb] py-3 text-sm font-semibold text-white shadow-sm transition hover:opacity-90 focus:outline-none focus:ring-2 focus:ring-[#2563eb]/50 focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-60 dark:focus:ring-offset-gray-950"
-          >
-            {{ loading ? "Resetting…" : "Reset Password" }}
-          </button>
-
-          <RouterLink
-            to="/login"
-            class="block text-center text-sm font-medium text-blue-600 hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-300"
-          >
-            Back To Sign In
-          </RouterLink>
-        </form>
-      </div>
+      {{ message }}
+    </div>
+    <div
+      v-if="error"
+      class="alert alert-danger small mt-4 mb-0"
+      role="alert"
+    >
+      {{ error }}
     </div>
 
-    <AuthRotatingHero>
-      <img
-        :src="markSrc"
-        alt=""
-        class="mx-auto h-24 w-24 object-contain sm:h-28 sm:w-28 lg:h-32 lg:w-32"
-        width="128"
-        height="128"
-      />
-      <h2
-        class="mt-10 text-4xl font-bold tracking-tight text-white sm:text-5xl"
+    <form class="mt-4" @submit.prevent="submit">
+      <div class="mb-3">
+        <label class="form-label small fw-medium text-body-secondary" for="reset-email">
+          Email<span class="text-danger" aria-hidden="true">*</span>
+        </label>
+        <input
+          id="reset-email"
+          v-model="form.email"
+          type="email"
+          required
+          autocomplete="email"
+          class="form-control"
+        />
+      </div>
+      <div class="mb-3">
+        <label class="form-label small fw-medium text-body-secondary" for="reset-token">
+          Reset token<span class="text-danger" aria-hidden="true">*</span>
+        </label>
+        <input
+          id="reset-token"
+          v-model="form.token"
+          type="text"
+          required
+          autocomplete="one-time-code"
+          class="form-control"
+        />
+      </div>
+      <div class="mb-3">
+        <label class="form-label small fw-medium text-body-secondary" for="reset-password">
+          New password<span class="text-danger" aria-hidden="true">*</span>
+        </label>
+        <div class="auth-vuexy-input-icon-wrap">
+          <input
+            id="reset-password"
+            v-model="form.password"
+            :type="showPassword ? 'text' : 'password'"
+            required
+            autocomplete="new-password"
+            class="form-control pe-5"
+          />
+          <button
+            type="button"
+            class="auth-vuexy-input-toggle"
+            :aria-pressed="showPassword"
+            aria-label="Toggle password visibility"
+            @click="showPassword = !showPassword"
+          >
+            <svg
+              v-if="!showPassword"
+              width="20"
+              height="20"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2"
+              viewBox="0 0 24 24"
+            >
+              <path
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"
+              />
+              <path
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"
+              />
+            </svg>
+            <svg
+              v-else
+              width="20"
+              height="20"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2"
+              viewBox="0 0 24 24"
+            >
+              <path
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                d="M3.98 8.223A10.477 10.477 0 001.934 12C3.226 16.338 7.244 19.5 12 19.5c.993 0 1.953-.138 2.863-.395M6.228 6.228A10.45 10.45 0 0112 4.5c4.756 0 8.773 3.162 10.065 7.498a10.523 10.523 0 01-4.293 5.774M6.228 6.228L3 3m3.228 3.228l3.65 3.65m7.894 7.894L21 21m-3.228-3.228l-3.65-3.65m0 0a3 3 0 10-4.243-4.243m4.242 4.242L9.88 9.88"
+              />
+            </svg>
+          </button>
+        </div>
+      </div>
+      <div class="mb-4">
+        <label class="form-label small fw-medium text-body-secondary" for="reset-password-confirm">
+          Confirm password<span class="text-danger" aria-hidden="true">*</span>
+        </label>
+        <div class="auth-vuexy-input-icon-wrap">
+          <input
+            id="reset-password-confirm"
+            v-model="form.password_confirmation"
+            :type="showPassword ? 'text' : 'password'"
+            required
+            autocomplete="new-password"
+            class="form-control pe-5"
+          />
+          <button
+            type="button"
+            class="auth-vuexy-input-toggle"
+            :aria-pressed="showPassword"
+            aria-label="Toggle confirm password visibility"
+            @click="showPassword = !showPassword"
+          >
+            <svg
+              v-if="!showPassword"
+              width="20"
+              height="20"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2"
+              viewBox="0 0 24 24"
+            >
+              <path
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"
+              />
+              <path
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"
+              />
+            </svg>
+            <svg
+              v-else
+              width="20"
+              height="20"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2"
+              viewBox="0 0 24 24"
+            >
+              <path
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                d="M3.98 8.223A10.477 10.477 0 001.934 12C3.226 16.338 7.244 19.5 12 19.5c.993 0 1.953-.138 2.863-.395M6.228 6.228A10.45 10.45 0 0112 4.5c4.756 0 8.773 3.162 10.065 7.498a10.523 10.523 0 01-4.293 5.774M6.228 6.228L3 3m3.228 3.228l3.65 3.65m7.894 7.894L21 21m-3.228-3.228l-3.65-3.65m0 0a3 3 0 10-4.243-4.243m4.242 4.242L9.88 9.88"
+              />
+            </svg>
+          </button>
+        </div>
+      </div>
+
+      <button
+        type="submit"
+        class="btn btn-primary auth-vuexy-btn-primary w-100"
+        :disabled="loading"
       >
-        Save Rack
-      </h2>
-      <p class="mt-2 max-w-sm text-sm text-slate-400">
-        CRM Administration Portal
+        {{ loading ? "Resetting…" : "Reset password" }}
+      </button>
+
+      <p class="text-center mt-4 mb-0">
+        <RouterLink to="/login" class="auth-vuexy-link small">
+          Back to sign in
+        </RouterLink>
       </p>
-    </AuthRotatingHero>
-  </div>
+    </form>
+  </AuthVuexyShell>
 </template>

@@ -1,5 +1,6 @@
 <script setup>
-import { computed, provide, ref, watch } from "vue";
+import { computed, onMounted, provide, ref, watch } from "vue";
+import { initCrmTheme } from "./composables/useCrmTheme.js";
 import { RouterLink, useRoute, useRouter } from "vue-router";
 import api from "./services/api";
 import CrmAdminShell from "./components/layout/CrmAdminShell.vue";
@@ -79,6 +80,10 @@ watch(
   { immediate: true },
 );
 
+onMounted(() => {
+  initCrmTheme();
+});
+
 const logout = async () => {
   try {
     await api.post("/auth/logout");
@@ -93,7 +98,7 @@ const logout = async () => {
 </script>
 
 <template>
-  <div class="min-h-screen">
+  <div class="min-vh-100 d-flex flex-column">
     <template v-if="!showShell">
       <router-view
         :key="route.fullPath"
@@ -103,7 +108,7 @@ const logout = async () => {
 
     <div
       v-else-if="navLoading"
-      class="flex min-h-screen items-center justify-center bg-gray-50 dark:bg-gray-950"
+      class="min-vh-100 d-flex align-items-center justify-content-center"
     >
       <CrmLoadingSpinner message="Loading…" :center="true" />
     </div>
@@ -122,16 +127,13 @@ const logout = async () => {
 
     <div
       v-else
-      class="flex min-h-screen flex-col items-center justify-center gap-2 bg-gray-50 px-4 dark:bg-gray-950"
+      class="min-vh-100 d-flex flex-column align-items-center justify-content-center gap-2 px-3"
     >
-      <p class="text-sm text-gray-600 dark:text-gray-400">
-        You Need To Sign In To Continue.
+      <p class="small text-secondary mb-0">
+        You need to sign in to continue.
       </p>
-      <RouterLink
-        to="/login"
-        class="rounded-lg bg-[#2563eb] px-4 py-2 text-sm font-semibold text-white hover:opacity-95"
-      >
-        Sign In
+      <RouterLink to="/login" class="btn btn-primary fw-semibold">
+        Sign in
       </RouterLink>
     </div>
 

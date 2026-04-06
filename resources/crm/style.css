@@ -1,23 +1,2 @@
-@tailwind base;
-@tailwind components;
+/* Utilities only — Bootstrap provides base/reboot via vuexy-entry.scss */
 @tailwind utilities;
-
-/* CRM shell sidebar / nav (Save Rack) */
-@layer components {
-  .menu-item {
-    @apply flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-colors;
-  }
-  .menu-item-inactive {
-    @apply text-gray-700 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-white/5;
-  }
-  /* Active: pale chip + blue-600 label/icon (#2563eb). Same hue as primary buttons site-wide. */
-  .menu-item-active {
-    @apply bg-blue-50 font-medium text-blue-600 dark:bg-blue-950/35 dark:text-blue-400;
-  }
-  .menu-item-icon-inactive {
-    @apply text-gray-500 dark:text-gray-400;
-  }
-  .menu-item-icon-active {
-    @apply text-blue-600 dark:text-blue-400;
-  }
-}

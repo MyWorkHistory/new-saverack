@@ -193,3 +193,33 @@ body {
     padding-right: 1.125rem;
   }
 }
+
+/*
+ * Bootstrap Reboot normalizes button border-radius but not the thick default
+ * border some browsers paint on plain <button>. Icon closes (X), password
+ * toggles, and staff controls often omit `.btn`; teleported overlays sit under
+ * `body`, so scope this globally for the CRM bundle (not just `.crm-app-shell`).
+ */
+body button:not(.btn):not(.btn-close):not(.staff-page-pager-tile):not(
+    .page-link
+  ):not(.crm-vx-modal-btn) {
+  border: 0 solid transparent;
+  box-shadow: none;
+  -webkit-appearance: none;
+  appearance: none;
+}
+
+body button:not(.btn):not(.btn-close):not(.staff-page-pager-tile):not(
+    .page-link
+  ):not(.crm-vx-modal-btn)::-moz-focus-inner {
+  border: 0;
+  padding: 0;
+}
+
+/* Vuexy modal actions are plain buttons with intentional 1px borders */
+body button.crm-vx-modal-btn {
+  -webkit-appearance: button;
+  appearance: button;
+  border-width: 1px;
+  border-style: solid;
+}

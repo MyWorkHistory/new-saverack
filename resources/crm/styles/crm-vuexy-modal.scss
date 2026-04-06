@@ -65,13 +65,26 @@ $vx-modal-primary: #7367f0;
   width: 2.25rem;
   height: 2.25rem;
   padding: 0;
-  border: none;
+  /* UA / Windows often paints a heavy border on <button>; force ghost chrome */
+  border: none !important;
   border-radius: 0.375rem;
-  background: transparent;
+  background: transparent !important;
+  box-shadow: none !important;
   color: #7c7a8b;
+  -webkit-appearance: none;
+  appearance: none;
   transition:
     background 0.15s ease,
     color 0.15s ease;
+}
+
+.crm-vx-modal__close:focus {
+  outline: none;
+}
+
+.crm-vx-modal__close:focus-visible {
+  outline: 2px solid rgba(115, 103, 240, 0.45);
+  outline-offset: 2px;
 }
 
 .crm-vx-modal__close:hover:not(:disabled) {

@@ -1,6 +1,6 @@
 // Vuexy-aligned shell (screenshot-driven) — Save Rack CRM
 
-$vx-primary: #7367f0;
+$vx-primary: #2563eb;
 $vx-teal: #00bad1;
 /* Sidebar gap from viewport edges (0 = flush docked column). */
 $vx-float-inset: 0;
@@ -67,7 +67,7 @@ $vx-sidebar-collapsed: 80px;
 }
 
 .vx-sidebar__collapse-btn:hover {
-  background: rgba(115, 103, 240, 0.08);
+  background: rgba(37, 99, 235, 0.08);
   color: $vx-primary;
 }
 
@@ -127,7 +127,7 @@ $vx-sidebar-collapsed: 80px;
 }
 
 .vx-nav-link:hover {
-  background: rgba(115, 103, 240, 0.06);
+  background: rgba(37, 99, 235, 0.06);
   color: var(--bs-body-color);
 }
 
@@ -135,7 +135,7 @@ $vx-sidebar-collapsed: 80px;
 .vx-nav-link.router-link-active {
   background: $vx-primary !important;
   color: #fff !important;
-  box-shadow: 0 1px 4px rgba(115, 103, 240, 0.22);
+  box-shadow: 0 1px 4px rgba(37, 99, 235, 0.22);
 }
 
 .vx-nav-link--active svg,
@@ -268,7 +268,7 @@ $vx-sidebar-collapsed: 80px;
 }
 
 .vx-search-merge:focus-within .input-group {
-  box-shadow: 0 0 0 2px rgba(115, 103, 240, 0.2);
+  box-shadow: 0 0 0 2px rgba(37, 99, 235, 0.2);
   border-radius: 50rem;
 }
 
@@ -292,7 +292,7 @@ $vx-sidebar-collapsed: 80px;
 }
 
 .vx-icon-btn:hover {
-  background: rgba(115, 103, 240, 0.08) !important;
+  background: rgba(37, 99, 235, 0.08) !important;
   color: $vx-primary;
 }
 
@@ -301,7 +301,7 @@ $vx-sidebar-collapsed: 80px;
 }
 
 [data-bs-theme="dark"] .vx-icon-btn:hover {
-  background: rgba(115, 103, 240, 0.15) !important;
+  background: rgba(37, 99, 235, 0.15) !important;
   color: #c5bfff;
 }
 
@@ -407,7 +407,7 @@ $vx-sidebar-collapsed: 80px;
 .vx-period-pill button.active {
   background: $vx-primary;
   color: #fff;
-  box-shadow: 0 1px 4px rgba(115, 103, 240, 0.18);
+  box-shadow: 0 1px 4px rgba(37, 99, 235, 0.18);
 }
 
 .vx-dashboard {

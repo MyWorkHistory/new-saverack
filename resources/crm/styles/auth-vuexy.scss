@@ -1,6 +1,6 @@
 // Vuexy-inspired auth (cover split): left illustration panel + right form — Save Rack branding
 
-$auth-primary: #7367f0;
+$auth-primary: #2563eb;
 $auth-hero-bg: #f8f7fa;
 
 .auth-vuexy-shell {
@@ -47,7 +47,7 @@ $auth-hero-bg: #f8f7fa;
   height: min(85vw, 520px);
   background: radial-gradient(
     circle,
-    rgba(115, 103, 240, 0.14) 0%,
+    rgba(37, 99, 235, 0.14) 0%,
     transparent 70%
   );
   top: -12%;
@@ -136,7 +136,7 @@ $auth-hero-bg: #f8f7fa;
 .auth-vuexy-mock-bar {
   flex: 1;
   border-radius: 2px 2px 0 0;
-  background: rgba(115, 103, 240, 0.25);
+  background: rgba(37, 99, 235, 0.25);
 }
 
 .auth-vuexy-mock-bar--hi {
@@ -358,9 +358,9 @@ $auth-hero-bg: #f8f7fa;
 }
 
 .auth-vuexy-social button:hover {
-  border-color: rgba(115, 103, 240, 0.35);
+  border-color: rgba(37, 99, 235, 0.35);
   color: $auth-primary;
-  background: rgba(115, 103, 240, 0.06);
+  background: rgba(37, 99, 235, 0.06);
 }
 
 [data-bs-theme="dark"] .auth-vuexy-social button {

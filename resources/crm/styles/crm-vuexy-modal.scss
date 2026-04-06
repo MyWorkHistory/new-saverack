@@ -1,6 +1,6 @@
 // Vuexy-style dialogs: centered header (title + subtitle), soft shadow, footer actions centered.
 
-$vx-modal-primary: #7367f0;
+$vx-modal-primary: #2563eb;
 
 .crm-vx-modal-overlay {
   position: fixed;
@@ -83,7 +83,7 @@ $vx-modal-primary: #7367f0;
 }
 
 .crm-vx-modal__close:focus-visible {
-  outline: 2px solid rgba(115, 103, 240, 0.45);
+  outline: 2px solid rgba(37, 99, 235, 0.45);
   outline-offset: 2px;
 }
 

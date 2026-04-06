@@ -1,6 +1,6 @@
 // Staff user detail — Vuexy-style profile + tabs + timeline + history table
 
-$staff-detail-primary: #7367f0;
+$staff-detail-primary: #2563eb;
 
 .staff-user-view {
   width: 100%;
@@ -230,14 +230,14 @@ $staff-detail-primary: #7367f0;
 }
 
 .staff-user-tab:hover:not(:disabled) {
-  background: rgba(115, 103, 240, 0.08);
+  background: rgba(37, 99, 235, 0.08);
   color: #5d596c;
 }
 
 .staff-user-tab--active {
   background: $staff-detail-primary !important;
   color: #fff !important;
-  box-shadow: 0 1px 4px rgba(115, 103, 240, 0.22);
+  box-shadow: 0 1px 4px rgba(37, 99, 235, 0.22);
 }
 
 .staff-user-tab--active svg {
@@ -466,7 +466,7 @@ $staff-detail-primary: #7367f0;
 }
 
 .staff-user-gear:hover {
-  background: rgba(115, 103, 240, 0.08);
+  background: rgba(37, 99, 235, 0.08);
   color: $staff-detail-primary;
-  border-color: rgba(115, 103, 240, 0.25);
+  border-color: rgba(37, 99, 235, 0.25);
 }

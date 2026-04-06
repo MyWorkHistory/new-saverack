@@ -8,7 +8,7 @@ import {
   ref,
   watch,
 } from "vue";
-import { RouterLink } from "vue-router";
+import { RouterLink, useRouter } from "vue-router";
 import api from "../../services/api";
 import ConfirmModal from "../../components/common/ConfirmModal.vue";
 import UserCreateDrawer from "../../components/users/UserCreateDrawer.vue";
@@ -25,6 +25,7 @@ import { formatBirthdayUs, formatDateUs } from "../../utils/formatUserDates";
 
 const crmUser = inject("crmUser", ref(null));
 const toast = useToast();
+const router = useRouter();
 
 function userHasPerm(key) {
   const u = crmUser.value;
@@ -126,8 +127,6 @@ const query = reactive({
   page: 1,
   sort_by: "name",
   sort_dir: "asc",
-  role_id: "",
-  plan: "",
   status: "all",
 });
 
@@ -295,9 +294,7 @@ const buildParams = () => {
     sort_by: query.sort_by,
     sort_dir: query.sort_dir,
   };
-  if (query.role_id) p.role_id = query.role_id;
   if (query.status && query.status !== "all") p.status = query.status;
-  if (query.plan) p.plan = query.plan;
   return p;
 };
 
@@ -354,8 +351,6 @@ const clearFilters = () => {
   clearTimeout(searchDebounce);
   searchWatchLock = true;
   query.search = "";
-  query.role_id = "";
-  query.plan = "";
   query.status = "all";
   query.sort_by = "name";
   query.sort_dir = "asc";
@@ -452,8 +447,8 @@ const confirmDelete = async () => {
   }
 };
 
-const MENU_W = 176;
-const MENU_H = 112;
+const MENU_W = 200;
+const MENU_H = 200;
 
 function placeManageMenu(anchorEl) {
   if (!(anchorEl instanceof HTMLElement)) return;
@@ -475,6 +470,11 @@ function openUserEditModal(user) {
   userEditModalUserId.value = String(user.id);
   userEditModalOpen.value = true;
   closeManageMenu();
+}
+
+function goViewStaff(user) {
+  closeManageMenu();
+  router.push(`/staff/${user.id}`);
 }
 
 function onWindowScrollOrResize() {
@@ -564,39 +564,60 @@ onUnmounted(() => {
     </div>
 
     <div
-      class="d-flex flex-column flex-md-row align-items-start align-items-md-center gap-2 gap-md-3 mb-4"
+      class="d-flex flex-column flex-md-row align-items-start align-items-md-center gap-3 mb-4"
     >
-      <div class="min-w-0">
+      <div class="min-w-0 flex-grow-1">
         <h1 class="h4 mb-1 fw-semibold text-body">Staff</h1>
         <p class="text-secondary small mb-0">
           Directory of admin and staff accounts
         </p>
       </div>
-      <button
-        type="button"
-        class="btn btn-outline-secondary btn-sm ms-md-auto d-inline-flex align-items-center gap-2"
-        :disabled="loading"
-        title="Refresh"
-        aria-label="Refresh list"
-        @click="refreshList"
+      <div
+        class="d-flex flex-wrap align-items-center gap-2 ms-md-auto flex-shrink-0"
       >
-        <svg
-          width="18"
-          height="18"
-          fill="none"
-          stroke="currentColor"
-          viewBox="0 0 24 24"
-          aria-hidden="true"
+        <button
+          v-if="canCreateUsers"
+          type="button"
+          class="btn btn-primary staff-page-primary d-inline-flex align-items-center gap-2"
+          @click="addDrawerOpen = true"
         >
-          <path
-            stroke-linecap="round"
-            stroke-linejoin="round"
-            stroke-width="2"
-            d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"
-          />
-        </svg>
-        Refresh
-      </button>
+          <svg
+            width="18"
+            height="18"
+            fill="currentColor"
+            viewBox="0 0 24 24"
+            aria-hidden="true"
+          >
+            <path d="M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z" />
+          </svg>
+          Add staff
+        </button>
+        <button
+          type="button"
+          class="btn btn-outline-secondary btn-sm d-inline-flex align-items-center gap-2"
+          :disabled="loading"
+          title="Refresh"
+          aria-label="Refresh list"
+          @click="refreshList"
+        >
+          <svg
+            width="18"
+            height="18"
+            fill="none"
+            stroke="currentColor"
+            viewBox="0 0 24 24"
+            aria-hidden="true"
+          >
+            <path
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              stroke-width="2"
+              d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"
+            />
+          </svg>
+          Refresh
+        </button>
+      </div>
     </div>
 
     <div class="row g-4 mb-2">
@@ -607,7 +628,7 @@ onUnmounted(() => {
           <p class="staff-stat-card__sub">All accounts in the directory</p>
           <div
             class="staff-stat-card__icon text-white"
-            style="background: #7367f0"
+            style="background: #2563eb"
             aria-hidden="true"
           >
             <svg width="22" height="22" fill="currentColor" viewBox="0 0 24 24">
@@ -681,38 +702,7 @@ onUnmounted(() => {
           </button>
         </div>
         <div class="row g-3 g-md-4">
-          <div class="col-12 col-md-4">
-            <label class="visually-hidden" for="staff-filter-role">Role</label>
-            <select
-              id="staff-filter-role"
-              v-model="query.role_id"
-              class="form-select staff-datatable-filters__select"
-              :disabled="loading"
-              @change="applySearch"
-            >
-              <option value="">Select Role</option>
-              <option v-for="r in roles" :key="r.id" :value="String(r.id)">
-                {{ r.label || r.name }}
-              </option>
-            </select>
-          </div>
-          <div class="col-12 col-md-4">
-            <label class="visually-hidden" for="staff-filter-plan">Plan</label>
-            <select
-              id="staff-filter-plan"
-              v-model="query.plan"
-              class="form-select staff-datatable-filters__select"
-              :disabled="loading"
-              @change="applySearch"
-            >
-              <option value="">Select Plan</option>
-              <option value="Team">Team</option>
-              <option value="Enterprise">Enterprise</option>
-              <option value="Basic">Basic</option>
-              <option value="Company">Company</option>
-            </select>
-          </div>
-          <div class="col-12 col-md-4">
+          <div class="col-12 col-md-4 col-lg-3">
             <label class="visually-hidden" for="staff-filter-status">Status</label>
             <select
               id="staff-filter-status"
@@ -721,7 +711,7 @@ onUnmounted(() => {
               :disabled="loading"
               @change="applySearch"
             >
-              <option value="all">Select Status</option>
+              <option value="all">Select status</option>
               <option value="pending">Pending</option>
               <option value="active">Active</option>
               <option value="inactive">Inactive</option>
@@ -730,38 +720,22 @@ onUnmounted(() => {
         </div>
       </div>
 
-      <div class="staff-table-toolbar staff-table-toolbar--split">
+      <div class="staff-table-toolbar">
         <div
-          class="staff-toolbar-split d-flex flex-column flex-lg-row align-items-stretch align-items-lg-center justify-content-lg-between gap-3 gap-lg-4"
+          class="d-flex flex-column flex-md-row align-items-stretch align-items-md-center gap-3 w-100"
         >
-          <div class="flex-shrink-0 staff-toolbar-per-page">
-            <label class="visually-hidden" for="users-per-page-toolbar"
-              >Rows per page</label
-            >
-            <select
-              id="users-per-page-toolbar"
-              class="form-select staff-toolbar-select staff-toolbar-per-page-select"
-              :value="query.per_page"
-              :disabled="loading"
-              @change="onPerPageChange"
-            >
-              <option v-for="n in PER_PAGE_OPTIONS" :key="n" :value="n">
-                {{ n }}
-              </option>
-            </select>
-          </div>
+          <input
+            id="staff-search"
+            v-model="query.search"
+            type="search"
+            class="form-control staff-toolbar-search staff-toolbar-search--grow"
+            placeholder="Search user"
+            autocomplete="off"
+            @keydown.enter.prevent="applySearch"
+          />
           <div
-            class="staff-toolbar-actions d-flex flex-column flex-sm-row flex-wrap align-items-stretch align-items-sm-center"
+            class="d-flex flex-wrap align-items-center gap-2 gap-md-3 ms-md-auto flex-shrink-0"
           >
-            <input
-              id="staff-search"
-              v-model="query.search"
-              type="search"
-              class="form-control staff-toolbar-search"
-              placeholder="Search User"
-              autocomplete="off"
-              @keydown.enter.prevent="applySearch"
-            />
             <div class="position-relative" data-export-root>
               <button
                 type="button"
@@ -820,23 +794,6 @@ onUnmounted(() => {
               @click="openBulkEdit"
             >
               Bulk edit
-            </button>
-            <button
-              v-if="canCreateUsers"
-              type="button"
-              class="btn btn-primary staff-page-primary staff-toolbar-btn-add d-inline-flex align-items-center gap-2"
-              @click="addDrawerOpen = true"
-            >
-              <svg
-                width="18"
-                height="18"
-                fill="currentColor"
-                viewBox="0 0 24 24"
-                aria-hidden="true"
-              >
-                <path d="M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z" />
-              </svg>
-              Add New Record
             </button>
           </div>
         </div>
@@ -1060,57 +1017,21 @@ onUnmounted(() => {
                   }}</span>
                 </div>
               </td>
-              <td v-if="showRowActions" class="staff-actions-cell">
+              <td v-if="showRowActions" class="staff-actions-cell text-end">
                 <div
                   data-row-actions
-                  class="staff-actions-inner"
+                  class="staff-actions-inner staff-actions-inner--single"
                 >
-                  <button
-                    v-if="canDeleteRow(user)"
-                    type="button"
-                    class="staff-action-btn"
-                    aria-label="Delete user"
-                    @click="openDeleteModal(user)"
-                  >
-                    <svg
-                      width="18"
-                      height="18"
-                      fill="currentColor"
-                      viewBox="0 0 24 24"
-                      aria-hidden="true"
-                    >
-                      <path
-                        d="M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z"
-                      />
-                    </svg>
-                  </button>
-                  <RouterLink
-                    :to="`/staff/${user.id}`"
-                    class="staff-action-btn text-decoration-none"
-                    aria-label="View user"
-                  >
-                    <svg
-                      width="18"
-                      height="18"
-                      fill="currentColor"
-                      viewBox="0 0 24 24"
-                      aria-hidden="true"
-                    >
-                      <path
-                        d="M12 4.5C7 4.5 2.73 7.61 1 12c1.73 4.39 6 7.5 11 7.5s9.27-3.11 11-7.5c-1.73-4.39-6-7.5-11-7.5zM12 17c-2.76 0-5-2.24-5-5s2.24-5 5-5 5 2.24 5 5-2.24 5-5 5zm0-8c-1.66 0-3 1.34-3 3s1.34 3 3 3 3-1.34 3-3-1.34-3-3-3z"
-                      />
-                    </svg>
-                  </RouterLink>
                   <button
                     type="button"
                     class="staff-action-btn staff-action-btn--more"
                     :class="{ 'is-open': manageOpenId === user.id }"
                     :aria-expanded="manageOpenId === user.id"
                     aria-haspopup="true"
-                    aria-label="More actions"
+                    aria-label="Row actions"
                     @click="toggleManageMenu(user.id, $event)"
                   >
-                    <CrmIconRowActions />
+                    <CrmIconRowActions variant="horizontal" />
                   </button>
                 </div>
               </td>
@@ -1127,15 +1048,41 @@ onUnmounted(() => {
       <div
         class="d-flex flex-column flex-lg-row align-items-lg-center justify-content-lg-between gap-3 border-top staff-table-footer"
       >
-        <p class="small text-secondary mb-0 order-2 order-lg-1 text-center text-lg-start">
-          Showing
-          <span class="fw-semibold text-body">{{ showingFrom }}</span>
-          to
-          <span class="fw-semibold text-body">{{ showingTo }}</span>
-          of
-          <span class="fw-semibold text-body">{{ pagination.total }}</span>
-          entries
-        </p>
+        <div
+          class="d-flex flex-column flex-sm-row align-items-sm-center gap-2 gap-sm-4 flex-wrap order-2 order-lg-1 justify-content-center justify-content-lg-start"
+        >
+          <p
+            class="small text-secondary mb-0 text-center text-sm-start"
+          >
+            Showing
+            <span class="fw-semibold text-body">{{ showingFrom }}</span>
+            to
+            <span class="fw-semibold text-body">{{ showingTo }}</span>
+            of
+            <span class="fw-semibold text-body">{{ pagination.total }}</span>
+            entries
+          </p>
+          <div
+            class="d-flex align-items-center gap-2 justify-content-center justify-content-sm-start"
+          >
+            <label
+              class="small text-secondary text-nowrap mb-0"
+              for="users-per-page-footer"
+              >Rows per page</label
+            >
+            <select
+              id="users-per-page-footer"
+              class="form-select form-select-sm staff-table-footer-per-page"
+              :value="query.per_page"
+              :disabled="loading"
+              @change="onPerPageChange"
+            >
+              <option v-for="n in PER_PAGE_OPTIONS" :key="n" :value="n">
+                {{ n }}
+              </option>
+            </select>
+          </div>
+        </div>
         <nav
           class="order-1 order-lg-2 d-flex justify-content-center justify-content-lg-end ms-lg-auto flex-shrink-0"
           aria-label="Staff list pages"
@@ -1288,6 +1235,18 @@ onUnmounted(() => {
           }"
           @click.stop
         >
+          <button
+            type="button"
+            class="staff-row-menu__item"
+            role="menuitem"
+            @click="goViewStaff(manageMenuUser)"
+          >
+            View
+          </button>
+          <hr
+            v-if="canUpdateUsers || canDeleteRow(manageMenuUser)"
+            class="staff-row-menu__divider"
+          />
           <button
             v-if="canUpdateUsers"
             type="button"

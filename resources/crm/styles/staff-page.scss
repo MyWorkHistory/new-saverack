@@ -1,6 +1,6 @@
 // Staff / users list — Vuexy-style analytics cards + datatable
 
-$staff-primary: #7367f0;
+$staff-primary: #2563eb;
 
 .staff-surface {
   background: var(--vx-nav-bg);
@@ -143,8 +143,8 @@ $staff-primary: #7367f0;
 }
 
 .staff-datatable-filters__select:focus {
-  border-color: rgba(115, 103, 240, 0.55);
-  box-shadow: 0 0 0 0.2rem rgba(115, 103, 240, 0.12);
+  border-color: rgba(37, 99, 235, 0.55);
+  box-shadow: 0 0 0 0.2rem rgba(37, 99, 235, 0.12);
 }
 
 .staff-datatable-filters .crm-searchable-select--staff .crm-searchable-select__trigger {
@@ -160,8 +160,8 @@ $staff-primary: #7367f0;
 }
 
 .staff-datatable-filters .crm-searchable-select--staff .crm-searchable-select__trigger:focus-visible {
-  border-color: rgba(115, 103, 240, 0.55);
-  box-shadow: 0 0 0 0.2rem rgba(115, 103, 240, 0.12);
+  border-color: rgba(37, 99, 235, 0.55);
+  box-shadow: 0 0 0 0.2rem rgba(37, 99, 235, 0.12);
 }
 
 .staff-datatable-filters .crm-searchable-select--staff .crm-searchable-select__panel {
@@ -251,6 +251,29 @@ $staff-primary: #7367f0;
   .staff-toolbar-search {
     max-width: none;
   }
+}
+
+/* Toolbar: search expands first; Export / bulk stay end-aligned */
+.staff-toolbar-search--grow {
+  flex: 1 1 auto;
+  min-width: 0;
+  max-width: none;
+}
+
+@media (min-width: 992px) {
+  .staff-toolbar-search--grow {
+    max-width: min(48rem, 100%);
+  }
+}
+
+.staff-table-footer-per-page {
+  width: auto;
+  min-width: 5.25rem;
+  max-width: 8rem;
+}
+
+.staff-actions-inner--single {
+  justify-content: flex-end;
 }
 
 .staff-toolbar-btn,
@@ -376,7 +399,7 @@ $staff-primary: #7367f0;
 }
 
 .staff-sort-btn:focus-visible {
-  outline: 2px solid rgba(115, 103, 240, 0.35);
+  outline: 2px solid rgba(37, 99, 235, 0.35);
   outline-offset: 1px;
 }
 
@@ -504,14 +527,14 @@ $staff-primary: #7367f0;
   background: #{$staff-primary} !important;
   border-color: #{$staff-primary} !important;
   color: #fff !important;
-  box-shadow: 0 1px 4px rgba(115, 103, 240, 0.2);
+  box-shadow: 0 1px 4px rgba(37, 99, 235, 0.2);
 }
 
 .staff-page-pager-tile--active:hover:not(:disabled) {
   background: #5e50eb !important;
   border-color: #5e50eb !important;
   color: #fff !important;
-  box-shadow: 0 1px 5px rgba(115, 103, 240, 0.22);
+  box-shadow: 0 1px 5px rgba(37, 99, 235, 0.22);
 }
 
 [data-bs-theme="dark"] .staff-page-pager-tile:not(.staff-page-pager-tile--active) {
@@ -530,7 +553,7 @@ $staff-primary: #7367f0;
 }
 
 [data-bs-theme="dark"] .staff-page-pager-tile--active {
-  box-shadow: 0 1px 5px rgba(115, 103, 240, 0.28);
+  box-shadow: 0 1px 5px rgba(37, 99, 235, 0.28);
 }
 
 .staff-page-primary {
@@ -568,9 +591,9 @@ $staff-primary: #7367f0;
 }
 
 .staff-role-icon--subscriber {
-  color: #7367f0;
-  background: rgba(115, 103, 240, 0.1);
-  border: 1px solid rgba(115, 103, 240, 0.42);
+  color: #2563eb;
+  background: rgba(37, 99, 235, 0.1);
+  border: 1px solid rgba(37, 99, 235, 0.42);
 }
 
 .staff-role-icon--editor {
@@ -603,7 +626,7 @@ $staff-primary: #7367f0;
 }
 
 [data-bs-theme="dark"] .staff-role-icon--subscriber {
-  background: rgba(115, 103, 240, 0.18);
+  background: rgba(37, 99, 235, 0.18);
   border-color: rgba(158, 149, 245, 0.4);
 }
 
@@ -654,7 +677,7 @@ $staff-primary: #7367f0;
 }
 
 .staff-action-btn:focus-visible {
-  outline: 2px solid rgba(115, 103, 240, 0.45);
+  outline: 2px solid rgba(37, 99, 235, 0.45);
   outline-offset: 2px;
 }
 

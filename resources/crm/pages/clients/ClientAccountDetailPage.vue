@@ -737,7 +737,7 @@ onMounted(async () => {
                     <p class="staff-stat-card__sub">Linked to this account</p>
                     <div
                       class="staff-stat-card__icon text-white"
-                      style="background: #7367f0"
+                      style="background: #2563eb"
                       aria-hidden="true"
                     >
                       <svg width="22" height="22" fill="currentColor" viewBox="0 0 24 24">

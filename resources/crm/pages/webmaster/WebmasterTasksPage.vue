@@ -476,39 +476,60 @@ onUnmounted(() => {
     </div>
 
     <div
-      class="d-flex flex-column flex-md-row align-items-start align-items-md-center gap-2 gap-md-3 mb-4"
+      class="d-flex flex-column flex-md-row align-items-start align-items-md-center gap-3 mb-4"
     >
-      <div class="min-w-0">
+      <div class="min-w-0 flex-grow-1">
         <h1 class="h4 mb-1 fw-semibold text-body">Webmaster</h1>
         <p class="text-secondary small mb-0">
           Site development tasks — drag cards between columns to change status
         </p>
       </div>
-      <button
-        type="button"
-        class="btn btn-outline-secondary btn-sm ms-md-auto d-inline-flex align-items-center gap-2"
-        :disabled="loading"
-        title="Refresh"
-        aria-label="Refresh list"
-        @click="fetchTasks"
+      <div
+        class="d-flex flex-wrap align-items-center gap-2 ms-md-auto flex-shrink-0"
       >
-        <svg
-          width="18"
-          height="18"
-          fill="none"
-          stroke="currentColor"
-          viewBox="0 0 24 24"
-          aria-hidden="true"
+        <button
+          v-if="canMutateWebmasterTasks"
+          type="button"
+          class="btn btn-primary staff-page-primary d-inline-flex align-items-center gap-2"
+          @click="openAdd"
         >
-          <path
-            stroke-linecap="round"
-            stroke-linejoin="round"
-            stroke-width="2"
-            d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"
-          />
-        </svg>
-        Refresh
-      </button>
+          <svg
+            width="18"
+            height="18"
+            fill="currentColor"
+            viewBox="0 0 24 24"
+            aria-hidden="true"
+          >
+            <path d="M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z" />
+          </svg>
+          Add task
+        </button>
+        <button
+          type="button"
+          class="btn btn-outline-secondary btn-sm d-inline-flex align-items-center gap-2"
+          :disabled="loading"
+          title="Refresh"
+          aria-label="Refresh list"
+          @click="fetchTasks"
+        >
+          <svg
+            width="18"
+            height="18"
+            fill="none"
+            stroke="currentColor"
+            viewBox="0 0 24 24"
+            aria-hidden="true"
+          >
+            <path
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              stroke-width="2"
+              d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"
+            />
+          </svg>
+          Refresh
+        </button>
+      </div>
     </div>
 
     <div class="staff-table-card staff-datatable-card">
@@ -621,56 +642,19 @@ onUnmounted(() => {
         </div>
       </div>
 
-      <div class="staff-table-toolbar staff-table-toolbar--split">
+      <div class="staff-table-toolbar">
         <div
-          class="staff-toolbar-split d-flex flex-column flex-lg-row align-items-stretch align-items-lg-center justify-content-lg-between gap-3 gap-lg-4"
+          class="d-flex flex-column flex-md-row align-items-stretch align-items-md-center gap-3 w-100"
         >
-          <div class="flex-shrink-0 staff-toolbar-per-page">
-            <label class="visually-hidden" for="wm-per-page-toolbar"
-              >Rows per page</label
-            >
-            <select
-              id="wm-per-page-toolbar"
-              class="form-select staff-toolbar-select staff-toolbar-per-page-select"
-              :value="query.per_page"
-              :disabled="loading"
-              @change="onPerPageChange"
-            >
-              <option v-for="n in PER_PAGE_OPTIONS" :key="n" :value="n">
-                {{ n }}
-              </option>
-            </select>
-          </div>
-          <div
-            class="staff-toolbar-actions d-flex flex-column flex-sm-row flex-wrap align-items-stretch align-items-sm-center"
-          >
-            <input
-              id="wm-search"
-              v-model="query.search"
-              type="search"
-              class="form-control staff-toolbar-search"
-              placeholder="Search tasks"
-              autocomplete="off"
-              @keydown.enter.prevent="applySearch"
-            />
-            <button
-              v-if="canMutateWebmasterTasks"
-              type="button"
-              class="btn btn-primary staff-page-primary staff-toolbar-btn-add d-inline-flex align-items-center gap-2"
-              @click="openAdd"
-            >
-              <svg
-                width="18"
-                height="18"
-                fill="currentColor"
-                viewBox="0 0 24 24"
-                aria-hidden="true"
-              >
-                <path d="M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z" />
-              </svg>
-              Add task
-            </button>
-          </div>
+          <input
+            id="wm-search"
+            v-model="query.search"
+            type="search"
+            class="form-control staff-toolbar-search staff-toolbar-search--grow"
+            placeholder="Search tasks"
+            autocomplete="off"
+            @keydown.enter.prevent="applySearch"
+          />
         </div>
       </div>
 
@@ -754,13 +738,14 @@ onUnmounted(() => {
                     >
                       <button
                         type="button"
-                        class="btn btn-sm btn-outline-secondary d-inline-flex align-items-center justify-content-center p-2"
-                        style="width: 2.5rem; height: 2.5rem"
+                        class="staff-action-btn staff-action-btn--more"
+                        :class="{ 'is-open': manageOpenId === task.id }"
                         :aria-expanded="manageOpenId === task.id"
-                        aria-label="Task Actions"
+                        aria-haspopup="true"
+                        aria-label="Row actions"
                         @click="toggleManageMenu(task.id, $event)"
                       >
-                        <CrmIconRowActions />
+                        <CrmIconRowActions variant="horizontal" />
                       </button>
                       <Transition
                         enter-active-class="transition ease-out duration-100"
@@ -785,7 +770,7 @@ onUnmounted(() => {
                               role="menuitem"
                               @click="goTaskDetail(task)"
                             >
-                              View details
+                              View
                             </button>
                             <button
                               v-if="canMutateWebmasterTasks"
@@ -867,20 +852,44 @@ onUnmounted(() => {
       <div
         class="d-flex flex-column flex-lg-row align-items-lg-center justify-content-lg-between gap-3 border-top staff-table-footer"
       >
-        <p
-          class="small text-secondary mb-0 order-2 order-lg-1 text-center text-lg-start"
+        <div
+          class="d-flex flex-column flex-sm-row align-items-sm-center gap-2 gap-sm-4 flex-wrap order-2 order-lg-1 justify-content-center justify-content-lg-start"
         >
-          Showing
-          <span class="fw-semibold text-body">{{ showingFrom }}</span>
-          to
-          <span class="fw-semibold text-body">{{ showingTo }}</span>
-          of
-          <span class="fw-semibold text-body">{{ pagination.total }}</span>
-          tasks
-          <span v-if="query.status" class="text-secondary">
-            · {{ statusLabel(query.status) }}
-          </span>
-        </p>
+          <p
+            class="small text-secondary mb-0 text-center text-sm-start"
+          >
+            Showing
+            <span class="fw-semibold text-body">{{ showingFrom }}</span>
+            to
+            <span class="fw-semibold text-body">{{ showingTo }}</span>
+            of
+            <span class="fw-semibold text-body">{{ pagination.total }}</span>
+            entries
+            <span v-if="query.status" class="text-secondary">
+              · {{ statusLabel(query.status) }}
+            </span>
+          </p>
+          <div
+            class="d-flex align-items-center gap-2 justify-content-center justify-content-sm-start"
+          >
+            <label
+              class="small text-secondary text-nowrap mb-0"
+              for="wm-per-page-footer"
+              >Rows per page</label
+            >
+            <select
+              id="wm-per-page-footer"
+              class="form-select form-select-sm staff-table-footer-per-page"
+              :value="query.per_page"
+              :disabled="loading"
+              @change="onPerPageChange"
+            >
+              <option v-for="n in PER_PAGE_OPTIONS" :key="n" :value="n">
+                {{ n }}
+              </option>
+            </select>
+          </div>
+        </div>
         <nav
           v-if="pagination.last_page > 1"
           class="order-1 order-lg-2 d-flex justify-content-center justify-content-lg-end ms-lg-auto flex-shrink-0"

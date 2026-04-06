@@ -8,7 +8,7 @@ import {
   ref,
   watch,
 } from "vue";
-import { RouterLink } from "vue-router";
+import { RouterLink, useRouter } from "vue-router";
 import api from "../../services/api";
 import ConfirmModal from "../../components/common/ConfirmModal.vue";
 import ClientAccountChannelIcons from "../../components/clients/ClientAccountChannelIcons.vue";
@@ -27,6 +27,7 @@ import { getPublicSignupUrl } from "../../utils/publicSignupUrl.js";
 
 const crmUser = inject("crmUser", ref(null));
 const toast = useToast();
+const router = useRouter();
 const nf = new Intl.NumberFormat(undefined, { maximumFractionDigits: 0 });
 
 function userHasPerm(key) {
@@ -433,7 +434,7 @@ async function confirmDelete() {
 }
 
 const MENU_W = 200;
-const MENU_H_MAIN = 132;
+const MENU_H_MAIN = 180;
 const MENU_H_STATUS = 220;
 
 function placeManageMenu(anchorEl) {
@@ -498,6 +499,11 @@ function openEditModal(row) {
   editAccountId.value = String(row.id);
   editModalOpen.value = true;
   closeManageMenu();
+}
+
+function goViewAccount(row) {
+  closeManageMenu();
+  router.push(`/clients/accounts/${row.id}`);
 }
 
 function toggleSelectAll(ev) {
@@ -589,39 +595,60 @@ onUnmounted(() => {
     </div>
 
     <div
-      class="d-flex flex-column flex-md-row align-items-start align-items-md-center gap-2 gap-md-3 mb-4"
+      class="d-flex flex-column flex-md-row align-items-start align-items-md-center gap-3 mb-4"
     >
-      <div class="min-w-0">
+      <div class="min-w-0 flex-grow-1">
         <h1 class="h4 mb-1 fw-semibold text-body">Accounts</h1>
         <p class="text-secondary small mb-0">
           Directory of client companies and contacts
         </p>
       </div>
-      <button
-        type="button"
-        class="btn btn-outline-secondary btn-sm ms-md-auto d-inline-flex align-items-center gap-2"
-        :disabled="loading"
-        title="Refresh"
-        aria-label="Refresh list"
-        @click="refreshList"
+      <div
+        class="d-flex flex-wrap align-items-center gap-2 ms-md-auto flex-shrink-0"
       >
-        <svg
-          width="18"
-          height="18"
-          fill="none"
-          stroke="currentColor"
-          viewBox="0 0 24 24"
-          aria-hidden="true"
+        <button
+          v-if="canCreate"
+          type="button"
+          class="btn btn-primary staff-page-primary d-inline-flex align-items-center gap-2"
+          @click="addDrawerOpen = true"
         >
-          <path
-            stroke-linecap="round"
-            stroke-linejoin="round"
-            stroke-width="2"
-            d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"
-          />
-        </svg>
-        Refresh
-      </button>
+          <svg
+            width="18"
+            height="18"
+            fill="currentColor"
+            viewBox="0 0 24 24"
+            aria-hidden="true"
+          >
+            <path d="M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z" />
+          </svg>
+          Add account
+        </button>
+        <button
+          type="button"
+          class="btn btn-outline-secondary btn-sm d-inline-flex align-items-center gap-2"
+          :disabled="loading"
+          title="Refresh"
+          aria-label="Refresh list"
+          @click="refreshList"
+        >
+          <svg
+            width="18"
+            height="18"
+            fill="none"
+            stroke="currentColor"
+            viewBox="0 0 24 24"
+            aria-hidden="true"
+          >
+            <path
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              stroke-width="2"
+              d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"
+            />
+          </svg>
+          Refresh
+        </button>
+      </div>
     </div>
 
     <div class="row g-4 mb-2">
@@ -634,7 +661,7 @@ onUnmounted(() => {
           <p class="staff-stat-card__sub">All companies in the directory</p>
           <div
             class="staff-stat-card__icon text-white"
-            style="background: #7367f0"
+            style="background: #2563eb"
             aria-hidden="true"
           >
             <svg width="22" height="22" fill="currentColor" viewBox="0 0 24 24">
@@ -736,38 +763,22 @@ onUnmounted(() => {
         </div>
       </div>
 
-      <div class="staff-table-toolbar staff-table-toolbar--split">
+      <div class="staff-table-toolbar">
         <div
-          class="staff-toolbar-split d-flex flex-column flex-lg-row align-items-stretch align-items-lg-center justify-content-lg-between gap-3 gap-lg-4"
+          class="d-flex flex-column flex-md-row align-items-stretch align-items-md-center gap-3 w-100"
         >
-          <div class="flex-shrink-0 staff-toolbar-per-page">
-            <label class="visually-hidden" for="ca-per-page-toolbar"
-              >Rows per page</label
-            >
-            <select
-              id="ca-per-page-toolbar"
-              class="form-select staff-toolbar-select staff-toolbar-per-page-select"
-              :value="query.per_page"
-              :disabled="loading"
-              @change="onPerPageChange"
-            >
-              <option v-for="n in PER_PAGE_OPTIONS" :key="n" :value="n">
-                {{ n }}
-              </option>
-            </select>
-          </div>
+          <input
+            id="ca-search"
+            v-model="query.search"
+            type="search"
+            class="form-control staff-toolbar-search staff-toolbar-search--grow"
+            placeholder="Search accounts"
+            autocomplete="off"
+            @keydown.enter.prevent="applySearch"
+          />
           <div
-            class="staff-toolbar-actions d-flex flex-column flex-sm-row flex-wrap align-items-stretch align-items-sm-center"
+            class="d-flex flex-wrap align-items-center gap-2 gap-md-3 ms-md-auto flex-shrink-0"
           >
-            <input
-              id="ca-search"
-              v-model="query.search"
-              type="search"
-              class="form-control staff-toolbar-search"
-              placeholder="Search accounts"
-              autocomplete="off"
-              @keydown.enter.prevent="applySearch"
-            />
             <button
               type="button"
               class="btn btn-outline-secondary staff-toolbar-btn d-inline-flex align-items-center justify-content-center"
@@ -799,23 +810,6 @@ onUnmounted(() => {
               @click="openBulkEdit"
             >
               Bulk edit
-            </button>
-            <button
-              v-if="canCreate"
-              type="button"
-              class="btn btn-primary staff-page-primary staff-toolbar-btn-add d-inline-flex align-items-center gap-2"
-              @click="addDrawerOpen = true"
-            >
-              <svg
-                width="18"
-                height="18"
-                fill="currentColor"
-                viewBox="0 0 24 24"
-                aria-hidden="true"
-              >
-                <path d="M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z" />
-              </svg>
-              Add account
             </button>
           </div>
         </div>
@@ -1010,25 +1004,11 @@ onUnmounted(() => {
               >
                 {{ row.account_manager?.name || "—" }}
               </td>
-              <td v-if="showRowActions" class="staff-actions-cell">
-                <div data-row-actions class="staff-actions-inner">
-                  <RouterLink
-                    :to="`/clients/accounts/${row.id}`"
-                    class="staff-action-btn text-decoration-none"
-                    aria-label="View account"
-                  >
-                    <svg
-                      width="18"
-                      height="18"
-                      fill="currentColor"
-                      viewBox="0 0 24 24"
-                      aria-hidden="true"
-                    >
-                      <path
-                        d="M12 4.5C7 4.5 2.73 7.61 1 12c1.73 4.39 6 7.5 11 7.5s9.27-3.11 11-7.5c-1.73-4.39-6-7.5-11-7.5zM12 17c-2.76 0-5-2.24-5-5s2.24-5 5-5 5 2.24 5 5-2.24 5-5 5zm0-8c-1.66 0-3 1.34-3 3s1.34 3 3 3 3-1.34 3-3-1.34-3-3-3z"
-                      />
-                    </svg>
-                  </RouterLink>
+              <td v-if="showRowActions" class="staff-actions-cell text-end">
+                <div
+                  data-row-actions
+                  class="staff-actions-inner staff-actions-inner--single"
+                >
                   <button
                     type="button"
                     class="staff-action-btn staff-action-btn--more"
@@ -1036,10 +1016,10 @@ onUnmounted(() => {
                     :aria-expanded="manageOpenId === row.id"
                     :aria-row-actions="row.id"
                     aria-haspopup="true"
-                    aria-label="More actions"
+                    aria-label="Row actions"
                     @click="toggleManageMenu(row.id, $event)"
                   >
-                    <CrmIconRowActions />
+                    <CrmIconRowActions variant="horizontal" />
                   </button>
                 </div>
               </td>
@@ -1059,17 +1039,41 @@ onUnmounted(() => {
       <div
         class="d-flex flex-column flex-lg-row align-items-lg-center justify-content-lg-between gap-3 border-top staff-table-footer"
       >
-        <p
-          class="small text-secondary mb-0 order-2 order-lg-1 text-center text-lg-start"
+        <div
+          class="d-flex flex-column flex-sm-row align-items-sm-center gap-2 gap-sm-4 flex-wrap order-2 order-lg-1 justify-content-center justify-content-lg-start"
         >
-          Showing
-          <span class="fw-semibold text-body">{{ showingFrom }}</span>
-          to
-          <span class="fw-semibold text-body">{{ showingTo }}</span>
-          of
-          <span class="fw-semibold text-body">{{ pagination.total }}</span>
-          entries
-        </p>
+          <p
+            class="small text-secondary mb-0 text-center text-sm-start"
+          >
+            Showing
+            <span class="fw-semibold text-body">{{ showingFrom }}</span>
+            to
+            <span class="fw-semibold text-body">{{ showingTo }}</span>
+            of
+            <span class="fw-semibold text-body">{{ pagination.total }}</span>
+            entries
+          </p>
+          <div
+            class="d-flex align-items-center gap-2 justify-content-center justify-content-sm-start"
+          >
+            <label
+              class="small text-secondary text-nowrap mb-0"
+              for="ca-per-page-footer"
+              >Rows per page</label
+            >
+            <select
+              id="ca-per-page-footer"
+              class="form-select form-select-sm staff-table-footer-per-page"
+              :value="query.per_page"
+              :disabled="loading"
+              @change="onPerPageChange"
+            >
+              <option v-for="n in PER_PAGE_OPTIONS" :key="n" :value="n">
+                {{ n }}
+              </option>
+            </select>
+          </div>
+        </div>
         <nav
           class="order-1 order-lg-2 d-flex justify-content-center justify-content-lg-end ms-lg-auto flex-shrink-0"
           aria-label="Account list pages"
@@ -1218,6 +1222,18 @@ onUnmounted(() => {
           @click.stop
         >
           <template v-if="manageMenuSubMode === 'main'">
+            <button
+              type="button"
+              class="staff-row-menu__item"
+              role="menuitem"
+              @click="goViewAccount(manageMenuRow)"
+            >
+              View
+            </button>
+            <hr
+              v-if="canUpdate || canDelete"
+              class="staff-row-menu__divider"
+            />
             <button
               v-if="canUpdate"
               type="button"

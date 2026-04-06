@@ -1,7 +1,7 @@
 // Save Rack CRM — Vuexy design tokens (colors from Vuexy theme.js, licensed template).
 // UI components: Bootstrap 5. Layout polish: extra rules below.
 
-$primary: #7367f0;
+$primary: #2563eb;
 $secondary: #808390;
 $success: #28c76f;
 $info: #00bad1;
@@ -35,7 +35,7 @@ $border-color-translucent-dark: rgba(225, 222, 245, 0.12);
   --vx-nav-border: rgba(47, 43, 61, 0.12);
   --vx-navbar-bg: rgba(255, 255, 255, 0.88);
   --vx-shadow: 0 2px 10px rgba(47, 43, 61, 0.06);
-  --vx-nav-active-bg: rgba(115, 103, 240, 0.12);
+  --vx-nav-active-bg: rgba(37, 99, 235, 0.12);
   --vx-nav-active-color: #{$primary};
 }
 
@@ -45,7 +45,7 @@ $border-color-translucent-dark: rgba(225, 222, 245, 0.12);
   --vx-nav-border: rgba(225, 222, 245, 0.08);
   --vx-navbar-bg: rgba(47, 51, 73, 0.9);
   --vx-shadow: 0 2px 14px rgba(0, 0, 0, 0.22);
-  --vx-nav-active-bg: rgba(115, 103, 240, 0.2);
+  --vx-nav-active-bg: rgba(37, 99, 235, 0.2);
   --vx-nav-active-color: #9e95f5;
 }
 

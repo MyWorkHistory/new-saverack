@@ -15,6 +15,10 @@ class User extends Authenticatable
 {
     use HasApiTokens, HasFactory, Notifiable;
 
+    public const ACCOUNT_USER_ROLE_ADMIN = 'admin';
+
+    public const ACCOUNT_USER_ROLE_CUSTOMER_SERVICE = 'customer_service';
+
     /** Permission keys editable from CRM “User Permissions” (direct user grants). */
     public const CRM_MODULE_PERMISSION_KEYS = [
         'users.view',
@@ -95,6 +99,8 @@ class User extends Authenticatable
         'last_login_ip',
         'legacy_user_id',
         'client_account_id',
+        'account_user_role',
+        'is_account_primary',
     ];
 
     protected $hidden = [
@@ -105,6 +111,7 @@ class User extends Authenticatable
     protected $casts = [
         'email_verified_at' => 'datetime',
         'last_login_at' => 'datetime',
+        'is_account_primary' => 'boolean',
     ];
 
     public function roles(): BelongsToMany

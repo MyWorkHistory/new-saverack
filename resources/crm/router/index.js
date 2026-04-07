@@ -21,6 +21,8 @@ import WebmasterTasksPage from "../pages/webmaster/WebmasterTasksPage.vue";
 import WebmasterTaskDetailPage from "../pages/webmaster/WebmasterTaskDetailPage.vue";
 import ClientAccountsListPage from "../pages/clients/ClientAccountsListPage.vue";
 import ClientAccountDetailPage from "../pages/clients/ClientAccountDetailPage.vue";
+import ClientAccountUsersListPage from "../pages/clients/ClientAccountUsersListPage.vue";
+import ClientAccountUserDetailPage from "../pages/clients/ClientAccountUserDetailPage.vue";
 
 const meta = {
   login: {
@@ -66,6 +68,14 @@ const meta = {
   clientAccountDetail: {
     title: "Save Rack | Account",
     description: "Client account profile.",
+  },
+  clientUsers: {
+    title: "Save Rack | Client users",
+    description: "Portal logins for client accounts.",
+  },
+  clientAccountUserDetail: {
+    title: "Save Rack | Client user",
+    description: "Portal user profile.",
   },
 };
 
@@ -175,6 +185,19 @@ const routes = [
     props: true,
     meta: meta.clientAccountDetail,
   },
+  {
+    path: "/clients/users",
+    name: "client-users",
+    component: ClientAccountUsersListPage,
+    meta: meta.clientUsers,
+  },
+  {
+    path: "/clients/users/:accountId/:userId",
+    name: "client-account-user-detail",
+    component: ClientAccountUserDetailPage,
+    props: true,
+    meta: meta.clientAccountUserDetail,
+  },
   { path: "/clients", redirect: "/clients/accounts" },
   {
     path: "/webmaster",
@@ -267,8 +290,10 @@ export function setClientsNavFromUser(user) {
     return;
   }
   const k = Array.isArray(user.permission_keys) ? user.permission_keys : [];
+  const canSeeClientsSection =
+    k.includes("clients.view") || k.includes("client_users.view");
   clientsNavCache = {
-    view: k.includes("clients.view"),
+    view: canSeeClientsSection,
     create: k.includes("clients.create"),
     update: k.includes("clients.update"),
     delete: k.includes("clients.delete"),

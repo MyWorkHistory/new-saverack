@@ -2,6 +2,7 @@
 
 use App\Http\Controllers\Api\AuthController;
 use App\Http\Controllers\Api\ClientAccountController;
+use App\Http\Controllers\Api\ClientAccountUserController;
 use App\Http\Controllers\Api\ClientStoreController;
 use App\Http\Controllers\Api\DashboardController;
 use App\Http\Controllers\Api\RoleController;
@@ -46,6 +47,17 @@ Route::middleware('auth:sanctum')->group(function () {
         ->name('users.avatar.destroy');
     Route::patch('users/bulk', [UserController::class, 'bulkUpdate'])
         ->name('users.bulk-update');
+
+    Route::get('client-account-users', [ClientAccountUserController::class, 'index'])
+        ->name('client-account-users.index');
+    Route::get('client-accounts/{client_account}/account-users/{user}', [ClientAccountUserController::class, 'show'])
+        ->name('client-accounts.account-users.show');
+    Route::post('client-accounts/{client_account}/account-users', [ClientAccountUserController::class, 'store'])
+        ->name('client-accounts.account-users.store');
+    Route::patch('client-accounts/{client_account}/account-users/{user}', [ClientAccountUserController::class, 'update'])
+        ->name('client-accounts.account-users.update');
+    Route::delete('client-accounts/{client_account}/account-users/{user}', [ClientAccountUserController::class, 'destroy'])
+        ->name('client-accounts.account-users.destroy');
 
     Route::get('client-accounts/meta', [ClientAccountController::class, 'meta'])
         ->name('client-accounts.meta');

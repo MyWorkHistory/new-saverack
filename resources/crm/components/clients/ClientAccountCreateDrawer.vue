@@ -1,5 +1,5 @@
 <script setup>
-import { computed, reactive, ref, watch } from "vue";
+import { reactive, ref, watch } from "vue";
 import api from "../../services/api";
 import { useToast } from "../../composables/useToast";
 import CrmSearchableSelect from "../common/CrmSearchableSelect.vue";
@@ -40,10 +40,6 @@ const form = reactive({
   country: "",
   account_manager_id: "",
 });
-
-const portalFieldsRequired = computed(
-  () => (form.password || "").trim().length > 0,
-);
 
 function reset() {
   form.company_name = "";
@@ -86,13 +82,16 @@ async function onSubmit() {
   saving.value = true;
   errorMsg.value = "";
   try {
+    const rawPw = (form.password || "").trim();
     const payload = {
       company_name: form.company_name.trim(),
       brand_name: form.brand_name.trim() || null,
       website: form.website.trim() || null,
-      full_name: form.full_name.trim() || null,
+      full_name: form.full_name.trim(),
       email: form.email.trim(),
       phone: form.phone.trim() || null,
+      password: rawPw,
+      password_confirmation: (form.password_confirmation || "").trim(),
       notify_email: !!form.notify_email,
       telegram_handle: form.telegram_handle.trim() || null,
       whatsapp_e164: form.whatsapp_e164.trim() || null,
@@ -105,11 +104,6 @@ async function onSubmit() {
         ? Number(form.account_manager_id)
         : null,
     };
-    const rawPw = (form.password || "").trim();
-    if (rawPw !== "") {
-      payload.password = rawPw;
-      payload.password_confirmation = (form.password_confirmation || "").trim();
-    }
     await api.post("/client-accounts", payload);
     toast.success("Account created.");
     emit("saved");
@@ -211,11 +205,11 @@ async function onSubmit() {
                       v-model="form.full_name"
                       type="text"
                       autocomplete="name"
-                      :required="portalFieldsRequired"
+                      required
                       class="h-10 w-full rounded-lg border border-gray-300 bg-white px-3 text-sm dark:border-gray-600 dark:bg-gray-800 dark:text-white"
                     />
                     <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">
-                      Required if you set a portal password below.
+                      Used for the primary portal login (admin) for this account.
                     </p>
                   </div>
                   <div>
@@ -249,11 +243,11 @@ async function onSubmit() {
                     <p
                       class="mb-2 text-xs font-medium text-gray-600 dark:text-gray-400"
                     >
-                      Portal login (optional)
+                      Portal login (required)
                     </p>
                     <p class="mb-3 text-xs text-gray-500 dark:text-gray-400">
-                      Creates a pending client user with this email so they can
-                      sign in to the portal.
+                      Creates the primary admin user with the account email so
+                      they can sign in to the portal.
                     </p>
                     <div class="space-y-3">
                       <div>
@@ -266,6 +260,7 @@ async function onSubmit() {
                             v-model="form.password"
                             :type="showPortalPassword ? 'text' : 'password'"
                             autocomplete="new-password"
+                            required
                             minlength="8"
                             class="relative z-0 h-10 w-full rounded-lg border border-gray-300 bg-white py-2 pl-3 pr-11 text-sm dark:border-gray-600 dark:bg-gray-800 dark:text-white"
                           />
@@ -323,6 +318,7 @@ async function onSubmit() {
                             v-model="form.password_confirmation"
                             :type="showPortalPassword ? 'text' : 'password'"
                             autocomplete="new-password"
+                            required
                             minlength="8"
                             class="relative z-0 h-10 w-full rounded-lg border border-gray-300 bg-white py-2 pl-3 pr-11 text-sm dark:border-gray-600 dark:bg-gray-800 dark:text-white"
                           />

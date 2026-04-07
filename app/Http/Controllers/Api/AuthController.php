@@ -41,7 +41,9 @@ class AuthController extends Controller
         }
 
         if ($user->status !== 'active') {
-            if (! ($user->status === 'pending' && $user->hasRole('client'))) {
+            $pendingPortal = $user->status === 'pending'
+                && $user->client_account_id !== null;
+            if (! $pendingPortal) {
                 throw ValidationException::withMessages(['email' => ['User account is not active.']]);
             }
         }

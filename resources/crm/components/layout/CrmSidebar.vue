@@ -27,13 +27,12 @@ const canViewWebmaster = computed(
       props.user.permission_keys.includes("webmaster.view")),
 );
 
-const canViewClients = computed(
-  () =>
-    crmIsAdmin(props.user) ||
-    !!props.user?.is_crm_owner ||
-    (Array.isArray(props.user?.permission_keys) &&
-      props.user.permission_keys.includes("clients.view")),
-);
+const canViewClients = computed(() => {
+  if (crmIsAdmin(props.user) || props.user?.is_crm_owner) return true;
+  const k = props.user?.permission_keys;
+  if (!Array.isArray(k)) return false;
+  return k.includes("clients.view") || k.includes("client_users.view");
+});
 
 const clientsGroupOpen = ref(route.path.startsWith("/clients"));
 watch(
@@ -57,6 +56,7 @@ function navActive(mode) {
   if (mode === "webmaster") return p.startsWith("/webmaster");
   if (mode === "clients") return p.startsWith("/clients");
   if (mode === "clients-accounts") return p.startsWith("/clients/accounts");
+  if (mode === "clients-users") return p.startsWith("/clients/users");
   return false;
 }
 
@@ -219,9 +219,20 @@ function collapseNav() {
                   <RouterLink
                     to="/clients/accounts"
                     class="vx-nav-link vx-nav-sublink"
+                    :class="{ 'vx-nav-link--active': navActive('clients-accounts') }"
                     @click="closeMobile"
                   >
                     Accounts
+                  </RouterLink>
+                </li>
+                <li>
+                  <RouterLink
+                    to="/clients/users"
+                    class="vx-nav-link vx-nav-sublink"
+                    :class="{ 'vx-nav-link--active': navActive('clients-users') }"
+                    @click="closeMobile"
+                  >
+                    Users
                   </RouterLink>
                 </li>
               </ul>

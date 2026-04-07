@@ -32,6 +32,10 @@ class RolePermissionSeeder extends Seeder
             ['key' => 'clients.create', 'label' => 'Create client accounts', 'module' => 'clients'],
             ['key' => 'clients.update', 'label' => 'Update client accounts', 'module' => 'clients'],
             ['key' => 'clients.delete', 'label' => 'Delete client accounts', 'module' => 'clients'],
+            ['key' => 'client_users.view', 'label' => 'View client portal users', 'module' => 'client_users'],
+            ['key' => 'client_users.create', 'label' => 'Create client portal users', 'module' => 'client_users'],
+            ['key' => 'client_users.update', 'label' => 'Update client portal users', 'module' => 'client_users'],
+            ['key' => 'client_users.delete', 'label' => 'Delete client portal users', 'module' => 'client_users'],
             ['key' => 'stores.view', 'label' => 'View client stores', 'module' => 'stores'],
             ['key' => 'stores.create', 'label' => 'Create client stores', 'module' => 'stores'],
             ['key' => 'stores.update', 'label' => 'Update client stores', 'module' => 'stores'],
@@ -66,7 +70,12 @@ class RolePermissionSeeder extends Seeder
         $admin->permissions()->sync($permissions->pluck('id'));
         // Staff: dashboard + clients + view stores; other module access via direct user permissions.
         $staff->permissions()->sync(
-            $permissions->whereIn('key', ['dashboard.view', 'clients.view', 'stores.view'])->pluck('id')
+            $permissions->whereIn('key', [
+                'dashboard.view',
+                'clients.view',
+                'client_users.view',
+                'stores.view',
+            ])->pluck('id')
         );
 
         $email = env('ADMIN_EMAIL', 'audi@saverack.com');

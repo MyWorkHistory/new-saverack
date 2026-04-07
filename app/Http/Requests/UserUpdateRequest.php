@@ -53,6 +53,9 @@ class UserUpdateRequest extends FormRequest
             'hire_date' => ['nullable', 'date'],
             'terminate_date' => ['nullable', 'date'],
             'bio' => ['nullable', 'string', 'max:20000'],
+            'client_account_id' => ['prohibited'],
+            'account_user_role' => ['prohibited'],
+            'is_account_primary' => ['prohibited'],
         ];
     }
 }

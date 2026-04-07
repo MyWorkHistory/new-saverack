@@ -71,10 +71,7 @@ class ClientAccountController extends Controller
     public function store(ClientAccountStoreRequest $request): JsonResponse
     {
         $validated = $request->validated();
-        $portalPassword = null;
-        if (isset($validated['password']) && $validated['password'] !== null && $validated['password'] !== '') {
-            $portalPassword = $validated['password'];
-        }
+        $portalPassword = (string) $validated['password'];
         unset($validated['password'], $validated['password_confirmation'], $validated['full_name']);
 
         try {

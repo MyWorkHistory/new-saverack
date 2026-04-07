@@ -53,6 +53,7 @@ class UserService
         }
 
         $query = User::query()
+            ->whereNull('client_account_id')
             ->with([
                 'roles' => function ($q) {
                     $q->select('roles.id', 'roles.name', 'roles.label');
@@ -113,6 +114,10 @@ class UserService
         return DB::transaction(function () use ($data, $actor) {
             $roleIds = array_values(array_unique(array_map('intval', $data['role_ids'] ?? [])));
             unset($data['role_ids']);
+            unset($data['client_account_id'], $data['account_user_role'], $data['is_account_primary']);
+            $data['client_account_id'] = null;
+            $data['account_user_role'] = null;
+            $data['is_account_primary'] = false;
             $profileData = $this->extractProfileInput($data);
             if (! empty($data['password'])) {
                 $data['password'] = Hash::make($data['password']);
@@ -235,7 +240,7 @@ class UserService
             $count = 0;
             foreach ($userIds as $id) {
                 $user = User::query()->find($id);
-                if (! $user) {
+                if (! $user || $user->client_account_id !== null) {
                     continue;
                 }
                 if ($status !== null && $status !== '') {

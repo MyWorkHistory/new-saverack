@@ -24,11 +24,9 @@ class ClientAccountStoreRequest extends FormRequest
     public function withValidator($validator): void
     {
         $validator->after(function ($validator) {
-            if ($this->filled('password')) {
-                $email = $this->input('email');
-                if (is_string($email) && $email !== '' && User::query()->where('email', $email)->exists()) {
-                    $validator->errors()->add('email', 'A user with this email already exists.');
-                }
+            $email = $this->input('email');
+            if (is_string($email) && $email !== '' && User::query()->where('email', $email)->exists()) {
+                $validator->errors()->add('email', 'A user with this email already exists.');
             }
         });
     }
@@ -38,17 +36,17 @@ class ClientAccountStoreRequest extends FormRequest
      */
     protected function commonRules(): array
     {
-        $accountManagerRule = Rule::exists('users', 'id');
+        $accountManagerRule = Rule::exists('users', 'id')->whereNull('client_account_id');
 
         return [
             'company_name' => ['required', 'string', 'max:190'],
-            'full_name' => ['nullable', 'string', 'max:201', 'required_with:password'],
+            'full_name' => ['required', 'string', 'max:201'],
             'brand_name' => ['nullable', 'string', 'max:190'],
             'website' => ['nullable', 'string', 'max:512'],
             'contact_first_name' => ['nullable', 'string', 'max:100'],
             'contact_last_name' => ['nullable', 'string', 'max:100'],
             'email' => ['required', 'email', 'max:190', 'unique:client_accounts,email'],
-            'password' => ['nullable', 'string', 'min:8', 'confirmed'],
+            'password' => ['required', 'string', 'min:8', 'confirmed'],
             'phone' => ['nullable', 'string', 'max:64'],
             'notify_email' => ['sometimes', 'boolean'],
             'telegram_handle' => ['nullable', 'string', 'max:190'],

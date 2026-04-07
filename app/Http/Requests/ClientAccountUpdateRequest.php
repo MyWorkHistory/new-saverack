@@ -25,7 +25,7 @@ class ClientAccountUpdateRequest extends FormRequest
 
     public function rules(): array
     {
-        $accountManagerRule = Rule::exists('users', 'id');
+        $accountManagerRule = Rule::exists('users', 'id')->whereNull('client_account_id');
 
         return [
             'status' => ['sometimes', 'string', Rule::in(ClientAccount::STATUSES)],

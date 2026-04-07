@@ -63,21 +63,19 @@ class ClientAccountService
 
     /**
      * @param  array<string, mixed>  $data
-     * @param  string|null  $portalPlainPassword  When set, creates a pending portal user (client role) for this account.
+     * @param  string  $portalPlainPassword  Primary admin portal user (always created).
      */
-    public function create(array $data, $portalPlainPassword = null): ClientAccount
+    public function create(array $data, string $portalPlainPassword): ClientAccount
     {
         $data['status'] = $data['status'] ?? ClientAccount::STATUS_PENDING;
 
         $account = ClientAccount::query()->create($data);
 
-        if ($portalPlainPassword !== null && $portalPlainPassword !== '') {
-            $fullName = $account->contactFullName();
-            if ($fullName === '' || trim($fullName) === '') {
-                throw new InvalidArgumentException('Full name is required to create a portal login.');
-            }
-            $this->portalProvisioning->attachPortalLoginToAccount($account, $fullName, $portalPlainPassword);
+        $fullName = $account->contactFullName();
+        if ($fullName === '' || trim($fullName) === '') {
+            throw new InvalidArgumentException('Full name is required to create a portal login.');
         }
+        $this->portalProvisioning->attachPortalLoginToAccount($account, $fullName, $portalPlainPassword);
 
         return $account->fresh(['accountManager']);
     }
@@ -115,6 +113,7 @@ class ClientAccountService
     public function accountManagersForMeta()
     {
         return User::query()
+            ->whereNull('client_account_id')
             ->select('users.id', 'users.name', 'users.email')
             ->orderBy('users.name')
             ->orderBy('users.id')

@@ -3,7 +3,6 @@
 namespace App\Services;
 
 use App\Models\ClientAccount;
-use App\Models\Role;
 use App\Models\User;
 use App\Models\UserProfile;
 use Illuminate\Support\Facades\DB;
@@ -68,7 +67,7 @@ class PortalClientProvisioningService
         string $fullName,
         string $plainPassword
     ): User {
-        if ($account->portalUser !== null) {
+        if ($account->primaryAccountUser !== null) {
             throw new RuntimeException('This client account already has a portal login.');
         }
 
@@ -108,6 +107,8 @@ class PortalClientProvisioningService
             'password' => Hash::make($plainPassword),
             'status' => 'pending',
             'client_account_id' => $account->id,
+            'account_user_role' => User::ACCOUNT_USER_ROLE_ADMIN,
+            'is_account_primary' => true,
         ]);
 
         UserProfile::query()->firstOrCreate(
@@ -115,11 +116,7 @@ class PortalClientProvisioningService
             ['phone' => $phone !== '' ? $phone : null]
         );
 
-        $role = Role::query()->where('name', 'client')->first();
-        if ($role === null) {
-            throw new RuntimeException('Client role is missing. Run database seeders.');
-        }
-        $user->roles()->sync([$role->id]);
+        $user->roles()->sync([]);
 
         return $user->fresh(['roles.permissions', 'profile', 'permissions']);
     }

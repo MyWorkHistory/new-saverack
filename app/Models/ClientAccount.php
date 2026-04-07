@@ -54,10 +54,17 @@ class ClientAccount extends Model
         return $this->belongsTo(User::class, 'account_manager_id');
     }
 
-    /** Primary portal login for this 3PL account (self-serve or CRM-created). */
-    public function portalUser(): HasOne
+    /** All logins for this 3PL account (primary admin + secondary users). */
+    public function accountUsers(): HasMany
     {
-        return $this->hasOne(User::class, 'client_account_id');
+        return $this->hasMany(User::class, 'client_account_id');
+    }
+
+    /** Main account admin login (one per account). */
+    public function primaryAccountUser(): HasOne
+    {
+        return $this->hasOne(User::class, 'client_account_id')
+            ->where('is_account_primary', true);
     }
 
     public function stores(): HasMany

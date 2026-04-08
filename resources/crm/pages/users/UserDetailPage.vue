@@ -3,7 +3,6 @@ import {
   computed,
   inject,
   onMounted,
-  onUnmounted,
   ref,
   watch,
 } from "vue";
@@ -90,7 +89,6 @@ function userHasPerm(key) {
 }
 
 const canUpdateUsers = computed(() => userHasPerm("users.update"));
-const showGearMenu = computed(() => userHasPerm("users.view"));
 const canManagePermissions = computed(() => crmIsAdmin(crmUser.value));
 
 const loading = ref(true);
@@ -198,67 +196,7 @@ async function loadPageData() {
 onMounted(() => {
   loadPageData();
   syncTabFromRoute();
-  document.addEventListener("click", onGearDocClick);
-  window.addEventListener("resize", onGearWindowResize);
 });
-onUnmounted(() => {
-  document.removeEventListener("click", onGearDocClick);
-  window.removeEventListener("resize", onGearWindowResize);
-});
-
-const gearMenuOpen = ref(false);
-const gearMenuRect = ref({ top: 0, left: 0 });
-
-function placeGearMenu(buttonEl) {
-  const MENU_W = 208;
-  const MENU_H = 120;
-  const r = buttonEl.getBoundingClientRect();
-  let top = r.bottom + 4;
-  let left = r.right - MENU_W;
-  left = Math.max(8, Math.min(left, window.innerWidth - MENU_W - 8));
-  if (top + MENU_H > window.innerHeight - 8) {
-    top = Math.max(8, r.top - MENU_H - 4);
-  }
-  gearMenuRect.value = { top, left };
-}
-
-function closeGearMenu() {
-  gearMenuOpen.value = false;
-}
-
-function toggleGearMenu(e) {
-  e.stopPropagation();
-  if (gearMenuOpen.value) {
-    closeGearMenu();
-    return;
-  }
-  gearMenuOpen.value = true;
-  const btn = e.currentTarget;
-  if (btn instanceof HTMLElement) {
-    placeGearMenu(btn);
-  }
-}
-
-function openHistoryInNewTab() {
-  const href = router.resolve({
-    name: "staff-history",
-    params: { id: props.id },
-  }).href;
-  window.open(href, "_blank", "noopener,noreferrer");
-  closeGearMenu();
-}
-
-function onGearDocClick(e) {
-  if (!e.target.closest("[data-page-gear]")) {
-    gearMenuOpen.value = false;
-  }
-}
-
-function onGearWindowResize() {
-  if (gearMenuOpen.value) {
-    closeGearMenu();
-  }
-}
 
 function openHeroAvatarPicker() {
   heroAvatarInput.value?.click();
@@ -320,36 +258,6 @@ function onPermissionsSaved() {
       class="staff-user-view__title-row d-flex flex-wrap align-items-center justify-content-between gap-2"
     >
       <h1 class="staff-user-view__title">User Profile</h1>
-      <div
-        v-if="showGearMenu && !loading && !errorMsg"
-        class="position-relative flex-shrink-0"
-        data-page-gear
-      >
-        <button
-          type="button"
-          class="staff-user-gear"
-          :aria-expanded="gearMenuOpen"
-          aria-haspopup="true"
-          aria-label="Page actions"
-          @click="toggleGearMenu"
-        >
-          <svg
-            width="20"
-            height="20"
-            fill="none"
-            stroke="currentColor"
-            stroke-width="1.75"
-            viewBox="0 0 24 24"
-            aria-hidden="true"
-          >
-            <path
-              stroke-linecap="round"
-              stroke-linejoin="round"
-              d="M9.594 3.94c.09-.542.56-.94 1.11-.94h2.593c.55 0 1.02.398 1.11.94l.213 1.281c.063.374.313.686.645.87.074.04.147.083.22.127.324.196.72.257 1.075.124l1.217-.456a1.125 1.125 0 0 1 1.37.49l1.224 2.3c.307.575.21 1.278-.234 1.733l-.793.792c-.39.39-.601.918-.601 1.467v.224c0 .99.66 1.86 1.617 2.12l1.218.304c.517.129.88.596.88 1.114v2.593c0 .55-.398 1.02-.94 1.11l-1.281.213a1.125 1.125 0 0 1-.87.645l-.135.045a1.125 1.125 0 0 0-.53.315l-.792.793a1.125 1.125 0 0 1-1.733-.234l-1.224-2.3a1.125 1.125 0 0 0-.49-.37l-.286-.107a1.125 1.125 0 0 1-.633-1.326l.302-.774a1.125 1.125 0 0 0-.216-.883l-.792-.792a1.125 1.125 0 0 0-.883-.216l-.774.302a1.125 1.125 0 0 1-1.326-.633l-.107-.286a1.125 1.125 0 0 0-.37-.49l-2.3-1.224a1.125 1.125 0 0 1-.234-1.733l.793-.792c.196-.324.257-.72.124-1.075l-.456-1.217a1.125 1.125 0 0 1 .49-1.37l2.3-1.224c.162-.086.312-.2.444-.324L9.594 3.94ZM12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6Z"
-            />
-          </svg>
-        </button>
-      </div>
     </div>
 
     <div v-if="loading" class="d-flex justify-content-center py-5">
@@ -479,16 +387,13 @@ function onPermissionsSaved() {
                 </dd>
               </div>
               <div>
-                <dt class="staff-user-profile__dt">Tax id</dt>
-                <dd class="staff-user-profile__dd">{{ display(profile.tax_id) }}</dd>
-              </div>
-              <div>
-                <dt class="staff-user-profile__dt">Contact</dt>
-                <dd class="staff-user-profile__dd">{{ display(profile.phone) }}</dd>
-              </div>
-              <div>
-                <dt class="staff-user-profile__dt">Country</dt>
-                <dd class="staff-user-profile__dd">{{ display(profile.region) }}</dd>
+                <dt class="staff-user-profile__dt">Bio</dt>
+                <dd
+                  class="staff-user-profile__dd"
+                  style="white-space: pre-wrap"
+                >
+                  {{ display(profile.bio) }}
+                </dd>
               </div>
             </dl>
           </aside>
@@ -545,12 +450,6 @@ function onPermissionsSaved() {
                       <dd class="mb-3 fw-semibold text-body">
                         {{ display(user.name) }}
                       </dd>
-                      <dt class="text-secondary text-uppercase fw-semibold mb-1" style="font-size: 0.65rem">
-                        Login Email
-                      </dt>
-                      <dd class="mb-0 fw-semibold text-body text-break">
-                        {{ display(user.email) }}
-                      </dd>
                     </dl>
                   </div>
                   <div class="col-md-6">
@@ -576,16 +475,6 @@ function onPermissionsSaved() {
                       </dt>
                       <dd class="mb-0 fw-semibold text-body">
                         {{ formatBirthdayUs(profile.birthday) }}
-                      </dd>
-                    </dl>
-                  </div>
-                  <div class="col-md-6">
-                    <dl class="mb-0 small">
-                      <dt class="text-secondary text-uppercase fw-semibold mb-1" style="font-size: 0.65rem">
-                        Bio
-                      </dt>
-                      <dd class="mb-0 fw-semibold text-body text-break" style="white-space: pre-wrap">
-                        {{ display(profile.bio) }}
                       </dd>
                     </dl>
                   </div>
@@ -790,37 +679,5 @@ function onPermissionsSaved() {
       @saved="loadPageData"
     />
 
-    <Teleport to="body">
-      <Transition
-        enter-active-class="transition ease-out duration-100"
-        enter-from-class="opacity-0"
-        enter-to-class="opacity-100"
-        leave-active-class="transition ease-in duration-75"
-        leave-from-class="opacity-100"
-        leave-to-class="opacity-0"
-      >
-        <div
-          v-if="gearMenuOpen"
-          data-page-gear
-          class="position-fixed rounded-3 border bg-body shadow py-1 staff-row-menu"
-          style="z-index: 300; width: 13rem"
-          role="menu"
-          :style="{
-            top: `${gearMenuRect.top}px`,
-            left: `${gearMenuRect.left}px`,
-          }"
-          @click.stop
-        >
-          <button
-            type="button"
-            class="staff-row-menu__item"
-            role="menuitem"
-            @click="openHistoryInNewTab"
-          >
-            History
-          </button>
-        </div>
-      </Transition>
-    </Teleport>
   </div>
 </template>

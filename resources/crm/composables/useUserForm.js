@@ -14,6 +14,10 @@ export function useUserForm() {
   const fieldErrors = ref({});
   const roles = ref([]);
 
+  function isStaffAssignableRole(role) {
+    return String(role?.name || "").toLowerCase() !== "client";
+  }
+
   const pendingAvatarFile = ref(null);
   const profileAvatarUrl = ref("");
 
@@ -42,7 +46,7 @@ export function useUserForm() {
   async function loadRoles() {
     try {
       const { data } = await api.get("/roles");
-      roles.value = Array.isArray(data) ? data : [];
+      roles.value = Array.isArray(data) ? data.filter(isStaffAssignableRole) : [];
     } catch {
       roles.value = [];
     }
@@ -92,7 +96,10 @@ export function useUserForm() {
     form.email = data.email || "";
     form.password = "";
     form.status = data.status || "pending";
-    form.role_ids = (data.roles || []).map((r) => r.id);
+    const allowedRoleIds = new Set(roles.value.map((r) => Number(r.id)));
+    form.role_ids = (data.roles || [])
+      .map((r) => Number(r.id))
+      .filter((id) => allowedRoleIds.has(id));
     applyProfileToForm(data.profile);
     profileAvatarUrl.value = data.profile?.avatar_url || "";
   }
@@ -181,7 +188,9 @@ export function useUserForm() {
         name: form.name.trim(),
         email: form.email.trim(),
         status: form.status,
-        role_ids: form.role_ids,
+        role_ids: form.role_ids.filter((id) =>
+          roles.value.some((r) => Number(r.id) === Number(id)),
+        ),
         phone: form.phone?.trim() || null,
         personal_email: form.personal_email?.trim() || null,
         birthday: birthdayIso,

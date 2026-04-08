@@ -1,5 +1,5 @@
 <script setup>
-import { onUnmounted, watch } from "vue";
+import { computed, onUnmounted, watch } from "vue";
 import UserFormFields from "./UserFormFields.vue";
 import CrmLoadingSpinner from "../common/CrmLoadingSpinner.vue";
 import { useUserForm } from "../../composables/useUserForm";
@@ -35,6 +35,12 @@ const {
   clearFieldError,
   firstError,
 } = useUserForm();
+
+const visibleRoles = computed(() =>
+  Array.isArray(roles.value)
+    ? roles.value.filter((r) => String(r?.name || "").toLowerCase() !== "client")
+    : [],
+);
 
 async function hydrate() {
   const id = props.userId;
@@ -169,7 +175,7 @@ function onBackdropClick() {
                 <UserFormFields
                   v-model:pending-avatar-file="pendingAvatarFile"
                   :form="form"
-                  :roles="roles"
+                  :roles="visibleRoles"
                   :is-edit="true"
                   :user-id="userId"
                   :avatar-url="profileAvatarUrl"

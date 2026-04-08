@@ -447,7 +447,7 @@ function onPermissionsSaved() {
                       <dt class="text-secondary text-uppercase fw-semibold mb-1" style="font-size: 0.65rem">
                         Full Name
                       </dt>
-                      <dd class="mb-3 fw-semibold text-body">
+                      <dd class="mb-0 fw-semibold text-body">
                         {{ display(user.name) }}
                       </dd>
                     </dl>
@@ -457,9 +457,13 @@ function onPermissionsSaved() {
                       <dt class="text-secondary text-uppercase fw-semibold mb-1" style="font-size: 0.65rem">
                         Phone
                       </dt>
-                      <dd class="mb-3 fw-semibold text-body">
+                      <dd class="mb-0 fw-semibold text-body">
                         {{ display(profile.phone) }}
                       </dd>
+                    </dl>
+                  </div>
+                  <div class="col-md-6">
+                    <dl class="mb-0 small">
                       <dt class="text-secondary text-uppercase fw-semibold mb-1" style="font-size: 0.65rem">
                         Personal Email
                       </dt>

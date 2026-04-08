@@ -47,6 +47,8 @@ Route::middleware('auth:sanctum')->group(function () {
         ->name('users.avatar.destroy');
     Route::patch('users/bulk', [UserController::class, 'bulkUpdate'])
         ->name('users.bulk-update');
+    Route::get('users/permissions/meta', [UserController::class, 'permissionsMeta'])
+        ->name('users.permissions.meta');
 
     Route::get('client-account-users', [ClientAccountUserController::class, 'index'])
         ->name('client-account-users.index');

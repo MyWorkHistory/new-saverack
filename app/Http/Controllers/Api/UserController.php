@@ -13,6 +13,7 @@ use App\Models\User;
 use App\Support\UserStaffHistory;
 use App\Services\UserAvatarService;
 use App\Services\UserService;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use RuntimeException;
@@ -134,15 +135,19 @@ class UserController extends Controller
             ], 422);
         }
 
-        $keys = User::normalizeCrmPermissionKeys($request->validated('permission_keys'));
+        $editableKeys = User::editableCrmPermissionKeys();
+        $keys = User::normalizeCrmPermissionKeys(
+            $request->validated('permission_keys'),
+            $editableKeys
+        );
 
         Permission::ensureRowsForKeys(array_values(array_unique(array_merge(
-            User::CRM_MODULE_PERMISSION_KEYS,
+            $editableKeys,
             $keys,
         ))));
 
         try {
-            $whitelistIds = Permission::idsForKeys(User::CRM_MODULE_PERMISSION_KEYS);
+            $whitelistIds = Permission::idsForKeys($editableKeys);
             $desiredIds = Permission::idsForKeys($keys);
         } catch (\RuntimeException $e) {
             return response()->json([
@@ -175,6 +180,38 @@ class UserController extends Controller
         ]);
 
         return response()->json($user->toClientPayload());
+    }
+
+    public function permissionsMeta(Request $request): JsonResponse
+    {
+        if (! $request->user()->isAdministrator()) {
+            return response()->json(['message' => 'Only administrators can view permission metadata.'], 403);
+        }
+
+        // Ensure core page permissions exist so the UI always renders Staff/Webmaster/Clients rows.
+        User::editableCrmPermissionKeys();
+
+        $permissions = Permission::query()
+            ->select(['key', 'label', 'module'])
+            ->where(function (Builder $q) {
+                $q->where('key', 'like', '%.view')
+                    ->orWhere('key', 'like', '%.create')
+                    ->orWhere('key', 'like', '%.update')
+                    ->orWhere('key', 'like', '%.delete');
+            })
+            ->orderBy('module')
+            ->orderBy('key')
+            ->get()
+            ->map(static fn (Permission $p) => [
+                'key' => (string) $p->key,
+                'label' => (string) $p->label,
+                'module' => (string) $p->module,
+            ])
+            ->values();
+
+        return response()->json([
+            'items' => $permissions,
+        ]);
     }
 
     public function update(UserUpdateRequest $request, User $user): JsonResponse

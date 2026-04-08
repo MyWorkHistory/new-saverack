@@ -58,6 +58,14 @@ class Permission extends Model
             'webmaster.create' => ['label' => 'Create webmaster tasks', 'module' => 'webmaster'],
             'webmaster.update' => ['label' => 'Update webmaster tasks', 'module' => 'webmaster'],
             'webmaster.delete' => ['label' => 'Delete webmaster tasks', 'module' => 'webmaster'],
+            'clients.view' => ['label' => 'View client accounts', 'module' => 'clients'],
+            'clients.create' => ['label' => 'Create client accounts', 'module' => 'clients'],
+            'clients.update' => ['label' => 'Update client accounts', 'module' => 'clients'],
+            'clients.delete' => ['label' => 'Delete client accounts', 'module' => 'clients'],
+            'client_users.view' => ['label' => 'View client portal users', 'module' => 'client_users'],
+            'client_users.create' => ['label' => 'Create client portal users', 'module' => 'client_users'],
+            'client_users.update' => ['label' => 'Update client portal users', 'module' => 'client_users'],
+            'client_users.delete' => ['label' => 'Delete client portal users', 'module' => 'client_users'],
         ];
 
         foreach (array_unique($keys) as $key) {

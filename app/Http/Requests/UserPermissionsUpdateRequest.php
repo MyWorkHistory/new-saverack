@@ -16,7 +16,10 @@ class UserPermissionsUpdateRequest extends FormRequest
     protected function prepareForValidation(): void
     {
         $keys = $this->input('permission_keys');
-        $normalized = User::normalizeCrmPermissionKeys(is_array($keys) ? $keys : []);
+        $normalized = User::normalizeCrmPermissionKeys(
+            is_array($keys) ? $keys : [],
+            User::editableCrmPermissionKeys()
+        );
 
         $this->merge([
             'permission_keys' => $normalized,
@@ -28,9 +31,11 @@ class UserPermissionsUpdateRequest extends FormRequest
      */
     public function rules(): array
     {
+        $editableKeys = User::editableCrmPermissionKeys();
+
         return [
             'permission_keys' => ['present', 'array'],
-            'permission_keys.*' => ['string', Rule::in(User::CRM_MODULE_PERMISSION_KEYS)],
+            'permission_keys.*' => ['string', Rule::in($editableKeys)],
         ];
     }
 }

@@ -19,8 +19,8 @@ class User extends Authenticatable
 
     public const ACCOUNT_USER_ROLE_CUSTOMER_SERVICE = 'customer_service';
 
-    /** Permission keys editable from CRM “User Permissions” (direct user grants). */
-    public const CRM_MODULE_PERMISSION_KEYS = [
+    private const EDITABLE_PERMISSION_ACTIONS = ['view', 'create', 'update', 'delete'];
+    private const DEFAULT_EDITABLE_PERMISSION_KEYS = [
         'users.view',
         'users.create',
         'users.update',
@@ -29,6 +29,14 @@ class User extends Authenticatable
         'webmaster.create',
         'webmaster.update',
         'webmaster.delete',
+        'clients.view',
+        'clients.create',
+        'clients.update',
+        'clients.delete',
+        'client_users.view',
+        'client_users.create',
+        'client_users.update',
+        'client_users.delete',
     ];
 
     /**
@@ -37,13 +45,13 @@ class User extends Authenticatable
      * @param  mixed  $input
      * @return list<string>
      */
-    public static function normalizeCrmPermissionKeys($input): array
+    public static function normalizeCrmPermissionKeys($input, ?array $allowedKeys = null): array
     {
         if (! is_array($input)) {
             return [];
         }
 
-        $allowed = array_flip(self::CRM_MODULE_PERMISSION_KEYS);
+        $allowed = array_flip($allowedKeys ?? self::editableCrmPermissionKeys());
         $flat = [];
         $queue = array_values($input);
 
@@ -65,6 +73,38 @@ class User extends Authenticatable
             if ($s !== '' && isset($allowed[$s])) {
                 $out[] = $s;
             }
+        }
+
+        return array_values(array_unique($out));
+    }
+
+    /**
+     * Direct user grants that can be toggled in CRM permissions UI.
+     *
+     * @return list<string>
+     */
+    public static function editableCrmPermissionKeys(): array
+    {
+        Permission::ensureRowsForKeys(self::DEFAULT_EDITABLE_PERMISSION_KEYS);
+
+        $keys = Permission::query()->pluck('key')->all();
+        $out = [];
+        foreach ($keys as $raw) {
+            if (! is_string($raw)) {
+                continue;
+            }
+            $key = trim($raw);
+            if ($key === '') {
+                continue;
+            }
+            if (! preg_match('/^[a-z0-9_]+\.(view|create|update|delete)$/i', $key)) {
+                continue;
+            }
+            $action = strtolower((string) substr($key, strrpos($key, '.') + 1));
+            if (! in_array($action, self::EDITABLE_PERMISSION_ACTIONS, true)) {
+                continue;
+            }
+            $out[] = $key;
         }
 
         return array_values(array_unique($out));
@@ -263,7 +303,7 @@ class User extends Authenticatable
     public function directCrmPermissionKeys(): array
     {
         $this->loadMissing('permissions');
-        $allowed = array_flip(self::CRM_MODULE_PERMISSION_KEYS);
+        $allowed = array_flip(self::editableCrmPermissionKeys());
         $out = [];
         foreach ($this->permissions as $permission) {
             $raw = $permission->getAttribute('key');

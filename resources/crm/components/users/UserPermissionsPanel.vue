@@ -5,34 +5,30 @@ import api from "../../services/api";
 import CrmLoadingSpinner from "../common/CrmLoadingSpinner.vue";
 import { useToast } from "../../composables/useToast";
 
-const MODULES = [
-  {
-    key: "users",
-    label: "Staff",
-    rowLabel: "Staff",
-    keys: [
-      "users.view",
-      "users.create",
-      "users.update",
-      "users.delete",
-    ],
-  },
-  {
-    key: "webmaster",
-    label: "Webmaster",
-    rowLabel: "Webmaster",
-    keys: [
-      "webmaster.view",
-      "webmaster.create",
-      "webmaster.update",
-      "webmaster.delete",
-    ],
-  },
-];
-
 const ACTION_HEADERS = ["View", "Create", "Edit", "Delete"];
+const ACTION_SUFFIXES = ["view", "create", "update", "delete"];
 
-const EDITABLE_PERMISSION_KEYS = new Set(MODULES.flatMap((m) => m.keys));
+const PAGE_META = {
+  users: { moduleKey: "staff", moduleLabel: "Staff", rowLabel: "Staff", order: 10 },
+  webmaster: {
+    moduleKey: "webmaster",
+    moduleLabel: "Webmaster",
+    rowLabel: "Webmaster",
+    order: 20,
+  },
+  clients: {
+    moduleKey: "clients",
+    moduleLabel: "Clients",
+    rowLabel: "Accounts",
+    order: 30,
+  },
+  client_users: {
+    moduleKey: "clients",
+    moduleLabel: "Clients",
+    rowLabel: "Account users",
+    order: 31,
+  },
+};
 
 const props = defineProps({
   userId: { type: String, required: true },
@@ -50,10 +46,56 @@ const saving = ref(false);
 const errorMsg = ref("");
 const subject = ref(null);
 const draftKeys = ref([]);
-const expanded = ref({
-  users: true,
-  webmaster: true,
+const permissionDefs = ref([]);
+const modules = computed(() => {
+  const byModule = new Map();
+  for (const def of permissionDefs.value) {
+    const pageKey = def.page;
+    const known = PAGE_META[pageKey];
+    const moduleKey = known?.moduleKey ?? pageKey;
+    const moduleLabel =
+      known?.moduleLabel ?? def.moduleLabel ?? pageKey.replace(/_/g, " ");
+    const rowLabel = known?.rowLabel ?? def.pageLabel ?? pageKey.replace(/_/g, " ");
+    const order = known?.order ?? 9999;
+    if (!byModule.has(moduleKey)) {
+      byModule.set(moduleKey, {
+        key: moduleKey,
+        label: moduleLabel,
+        order,
+        rowsByPage: new Map(),
+      });
+    }
+    const mod = byModule.get(moduleKey);
+    if (!mod.rowsByPage.has(pageKey)) {
+      mod.rowsByPage.set(pageKey, {
+        key: pageKey,
+        rowLabel,
+        keys: [null, null, null, null],
+      });
+    }
+    const row = mod.rowsByPage.get(pageKey);
+    const actionIdx = ACTION_SUFFIXES.indexOf(def.action);
+    if (actionIdx >= 0) {
+      row.keys[actionIdx] = def.key;
+    }
+  }
+
+  return [...byModule.values()]
+    .sort((a, b) => a.order - b.order || a.label.localeCompare(b.label))
+    .map((mod) => ({
+      key: mod.key,
+      label: mod.label,
+      rows: [...mod.rowsByPage.values()].sort((a, b) =>
+        a.rowLabel.localeCompare(b.rowLabel),
+      ),
+    }));
 });
+const editablePermissionKeys = computed(() =>
+  new Set(
+    modules.value.flatMap((m) => m.rows.flatMap((r) => r.keys.filter(Boolean))),
+  ),
+);
+const expanded = ref({});
 
 const isAdminTarget = computed(() => subject.value?.is_admin === true);
 
@@ -63,15 +105,26 @@ async function load() {
   errorMsg.value = "";
   subject.value = null;
   try {
-    const { data } = await api.get(`/users/${props.userId}`);
-    subject.value = data;
-    const merged = Array.isArray(data.permission_keys) ? [...data.permission_keys] : [];
-    const direct = Array.isArray(data.direct_permission_keys)
-      ? [...data.direct_permission_keys]
+    const [userRes, metaRes] = await Promise.all([
+      api.get(`/users/${props.userId}`),
+      api.get("/users/permissions/meta"),
+    ]);
+    subject.value = userRes.data;
+    permissionDefs.value = normalizePermissionDefs(metaRes.data?.items);
+    const nextExpanded = {};
+    for (const mod of modules.value) {
+      nextExpanded[mod.key] = expanded.value[mod.key] ?? true;
+    }
+    expanded.value = nextExpanded;
+    const merged = Array.isArray(userRes.data.permission_keys)
+      ? [...userRes.data.permission_keys]
+      : [];
+    const direct = Array.isArray(userRes.data.direct_permission_keys)
+      ? [...userRes.data.direct_permission_keys]
       : null;
     const source = direct !== null ? direct : merged;
     draftKeys.value = source.filter(
-      (k) => typeof k === "string" && EDITABLE_PERMISSION_KEYS.has(k),
+      (k) => typeof k === "string" && editablePermissionKeys.value.has(k),
     );
   } catch (e) {
     const st = e.response?.status;
@@ -105,6 +158,7 @@ function hasKey(key) {
 }
 
 function setKey(key, on) {
+  if (!key) return;
   if (isAdminTarget.value) return;
   const next = new Set(draftKeys.value);
   if (on) {
@@ -117,11 +171,13 @@ function setKey(key, on) {
 
 function onColToggle(module, colIdx, ev) {
   const on = ev.target.checked;
-  const key = module.keys[colIdx];
-  setKey(key, on);
+  for (const row of module.rows) {
+    setKey(row.keys[colIdx], on);
+  }
 }
 
 function onCellToggle(key, ev) {
+  if (!key) return;
   setKey(key, ev.target.checked);
 }
 
@@ -133,7 +189,9 @@ async function save() {
   saving.value = true;
   try {
     await api.put(`/users/${props.userId}/permissions`, {
-      permission_keys: draftKeys.value.filter((k) => EDITABLE_PERMISSION_KEYS.has(k)),
+      permission_keys: draftKeys.value.filter((k) =>
+        editablePermissionKeys.value.has(k),
+      ),
     });
     toast.success("Permissions Saved.");
     await load();
@@ -153,6 +211,35 @@ function cancel() {
   } else {
     router.push(`/staff/${props.userId}`);
   }
+}
+
+function titleCase(input) {
+  const s = String(input || "").replace(/[_\-]+/g, " ").trim();
+  if (!s) return "Page";
+  return s
+    .split(/\s+/)
+    .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
+    .join(" ");
+}
+
+function normalizePermissionDefs(items) {
+  if (!Array.isArray(items)) return [];
+  const out = [];
+  for (const row of items) {
+    const key = String(row?.key || "").trim();
+    const match = key.match(/^([a-z0-9_]+)\.(view|create|update|delete)$/i);
+    if (!match) continue;
+    const page = match[1].toLowerCase();
+    const action = match[2].toLowerCase();
+    out.push({
+      key,
+      page,
+      action,
+      pageLabel: titleCase(page),
+      moduleLabel: titleCase(row?.module || ""),
+    });
+  }
+  return out;
 }
 </script>
 
@@ -193,7 +280,7 @@ function cancel() {
 
         <div class="space-y-4 px-4 py-4 sm:px-6 sm:pb-6">
           <div
-            v-for="mod in MODULES"
+            v-for="mod in modules"
             :key="mod.key"
             class="overflow-hidden rounded-xl border border-gray-200 bg-white dark:border-gray-800 dark:bg-white/[0.03]"
           >
@@ -246,8 +333,8 @@ function cancel() {
                       </div>
                     </th>
                     <td
-                      v-for="(colKey, colIdx) in mod.keys"
-                      :key="`h-${mod.key}-${colKey}`"
+                      v-for="(col, colIdx) in ACTION_HEADERS"
+                      :key="`h-${mod.key}-${col}`"
                       class="border border-gray-200 px-4 py-4 align-middle dark:border-gray-700 sm:px-5 sm:py-5"
                     >
                       <div
@@ -256,34 +343,44 @@ function cancel() {
                         <input
                           type="checkbox"
                           :class="checkboxClass"
-                          :checked="hasKey(colKey)"
+                          :checked="
+                            mod.rows.length > 0 &&
+                            mod.rows.every((r) => hasKey(r.keys[colIdx]))
+                          "
+                          :indeterminate.prop="
+                            mod.rows.length > 0 &&
+                            !mod.rows.every((r) => hasKey(r.keys[colIdx])) &&
+                            mod.rows.some((r) => hasKey(r.keys[colIdx]))
+                          "
                           :disabled="isAdminTarget"
-                          :aria-label="`${mod.label} ${ACTION_HEADERS[colIdx]}`"
+                          :aria-label="`${mod.label} ${col}`"
                           @change="onColToggle(mod, colIdx, $event)"
                         />
                         <span
                           class="text-sm font-medium text-gray-800 dark:text-gray-200"
                         >
-                          {{ ACTION_HEADERS[colIdx] }}
+                          {{ col }}
                         </span>
                       </div>
                     </td>
                   </tr>
 
                   <tr
+                    v-for="(row, rowIdx) in mod.rows"
                     v-show="expanded[mod.key]"
-                    :id="`perm-panel-${mod.key}`"
+                    :id="rowIdx === 0 ? `perm-panel-${mod.key}` : undefined"
+                    :key="`r-${mod.key}-${row.key}`"
                     class="border-b border-gray-200 bg-white dark:border-gray-800 dark:bg-transparent"
                   >
                     <th
                       scope="row"
                       class="border border-gray-200 px-5 py-4 pl-12 align-middle text-left text-sm font-normal text-gray-700 dark:border-gray-700 dark:text-gray-300 sm:px-6 sm:pl-14 sm:py-5"
                     >
-                      {{ mod.rowLabel }}
+                      {{ row.rowLabel }}
                     </th>
                     <td
-                      v-for="(colKey, colIdx) in mod.keys"
-                      :key="`c-${mod.key}-${colKey}`"
+                      v-for="(colKey, colIdx) in row.keys"
+                      :key="`c-${mod.key}-${row.key}-${colIdx}`"
                       class="border border-gray-200 px-4 py-4 align-middle dark:border-gray-700 sm:px-5 sm:py-5"
                     >
                       <div
@@ -293,8 +390,8 @@ function cancel() {
                           type="checkbox"
                           :class="checkboxClass"
                           :checked="hasKey(colKey)"
-                          :disabled="isAdminTarget"
-                          :aria-label="`${mod.rowLabel} ${ACTION_HEADERS[colIdx]}`"
+                          :disabled="isAdminTarget || !colKey"
+                          :aria-label="`${row.rowLabel} ${ACTION_HEADERS[colIdx]}`"
                           @change="onCellToggle(colKey, $event)"
                         />
                         <span

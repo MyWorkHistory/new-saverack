@@ -8,9 +8,12 @@ use App\Http\Requests\ClientAccountStoreRequest;
 use App\Http\Requests\ClientAccountUpdateRequest;
 use App\Models\ClientAccount;
 use App\Services\ClientAccountService;
+use App\Support\CsvExporter;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Schema;
 use Illuminate\Validation\ValidationException;
+use Symfony\Component\HttpFoundation\StreamedResponse;
 
 class ClientAccountController extends Controller
 {
@@ -66,6 +69,33 @@ class ClientAccountController extends Controller
         });
 
         return response()->json($paginator);
+    }
+
+    public function exportCsv(Request $request): StreamedResponse
+    {
+        $this->authorize('viewAny', ClientAccount::class);
+
+        $filters = $request->only(['search', 'account_manager_id']);
+        $query = $this->clientAccounts->filteredAccountsQuery($filters)->orderBy('id');
+
+        $columns = Schema::getColumnListing('client_accounts');
+        $headers = array_merge($columns, ['account_manager_name', 'account_manager_email']);
+        $filename = 'accounts-export-'.date('Y-m-d').'.csv';
+
+        return CsvExporter::stream($filename, $headers, function ($out) use ($query, $columns) {
+            $query->chunk(500, function ($rows) use ($out, $columns) {
+                foreach ($rows as $account) {
+                    $row = [];
+                    foreach ($columns as $col) {
+                        $row[] = CsvExporter::cell($account->getAttribute($col));
+                    }
+                    $manager = $account->accountManager;
+                    $row[] = CsvExporter::cell($manager !== null ? $manager->name : null);
+                    $row[] = CsvExporter::cell($manager !== null ? $manager->email : null);
+                    fputcsv($out, $row);
+                }
+            });
+        });
     }
 
     public function store(ClientAccountStoreRequest $request): JsonResponse

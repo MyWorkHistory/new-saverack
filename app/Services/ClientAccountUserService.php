@@ -5,19 +5,30 @@ namespace App\Services;
 use App\Models\ClientAccount;
 use App\Models\User;
 use Illuminate\Contracts\Pagination\LengthAwarePaginator;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Validation\ValidationException;
 
 class ClientAccountUserService
 {
+    public function filteredAccountUsersQuery(array $filters): Builder
+    {
+        $query = User::query()
+            ->whereNotNull('users.client_account_id')
+            ->with([
+                'clientAccount' => function ($q) {
+                    $q->select('client_accounts.id', 'client_accounts.company_name', 'client_accounts.email');
+                },
+            ]);
+
+        $this->applyAccountUserDirectoryFilters($query, $filters);
+
+        return $query;
+    }
+
     public function paginate(array $filters): LengthAwarePaginator
     {
-        $search = isset($filters['search']) ? trim((string) $filters['search']) : '';
-        $status = isset($filters['status']) ? trim((string) $filters['status']) : '';
-        $clientAccountId = isset($filters['client_account_id']) && $filters['client_account_id'] !== '' && $filters['client_account_id'] !== 'all'
-            ? (int) $filters['client_account_id']
-            : null;
         $perPage = min(max((int) ($filters['per_page'] ?? 25), 1), 500);
         $sortBy = (string) ($filters['sort_by'] ?? 'id');
         $sortDir = strtolower((string) ($filters['sort_dir'] ?? 'desc')) === 'asc' ? 'asc' : 'desc';
@@ -26,13 +37,26 @@ class ClientAccountUserService
             $sortBy = 'id';
         }
 
-        $query = User::query()
-            ->whereNotNull('users.client_account_id')
-            ->with([
-                'clientAccount' => function ($q) {
-                    $q->select('client_accounts.id', 'client_accounts.company_name', 'client_accounts.email');
-                },
-            ]);
+        $query = $this->filteredAccountUsersQuery($filters);
+
+        if ($sortBy === 'company_name') {
+            $query->leftJoin('client_accounts', 'client_accounts.id', '=', 'users.client_account_id')
+                ->select('users.*')
+                ->orderBy('client_accounts.company_name', $sortDir);
+        } else {
+            $query->orderBy('users.'.$sortBy, $sortDir);
+        }
+
+        return $query->paginate($perPage);
+    }
+
+    private function applyAccountUserDirectoryFilters(Builder $query, array $filters): void
+    {
+        $search = isset($filters['search']) ? trim((string) $filters['search']) : '';
+        $status = isset($filters['status']) ? trim((string) $filters['status']) : '';
+        $clientAccountId = isset($filters['client_account_id']) && $filters['client_account_id'] !== '' && $filters['client_account_id'] !== 'all'
+            ? (int) $filters['client_account_id']
+            : null;
 
         if ($clientAccountId !== null && $clientAccountId > 0) {
             $query->where('users.client_account_id', $clientAccountId);
@@ -52,16 +76,6 @@ class ClientAccountUserService
                     });
             });
         }
-
-        if ($sortBy === 'company_name') {
-            $query->leftJoin('client_accounts', 'client_accounts.id', '=', 'users.client_account_id')
-                ->select('users.*')
-                ->orderBy('client_accounts.company_name', $sortDir);
-        } else {
-            $query->orderBy('users.'.$sortBy, $sortDir);
-        }
-
-        return $query->paginate($perPage);
     }
 
     /**

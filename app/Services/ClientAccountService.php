@@ -5,6 +5,7 @@ namespace App\Services;
 use App\Models\ClientAccount;
 use App\Models\User;
 use Illuminate\Contracts\Pagination\LengthAwarePaginator;
+use Illuminate\Database\Eloquent\Builder;
 use InvalidArgumentException;
 
 class ClientAccountService
@@ -17,12 +18,19 @@ class ClientAccountService
         $this->portalProvisioning = $portalProvisioning;
     }
 
+    public function filteredAccountsQuery(array $filters): Builder
+    {
+        return ClientAccount::query()
+            ->with([
+                'accountManager' => function ($q) {
+                    $q->select('users.id', 'users.name', 'users.email');
+                },
+            ])
+            ->tap(fn (Builder $q) => $this->applyAccountDirectoryFilters($q, $filters));
+    }
+
     public function paginate(array $filters): LengthAwarePaginator
     {
-        $search = isset($filters['search']) ? trim((string) $filters['search']) : '';
-        $managerId = isset($filters['account_manager_id']) && $filters['account_manager_id'] !== '' && $filters['account_manager_id'] !== 'all'
-            ? (int) $filters['account_manager_id']
-            : null;
         $perPage = min(max((int) ($filters['per_page'] ?? 25), 1), 500);
         $sortBy = (string) ($filters['sort_by'] ?? 'created_at');
         $sortDir = strtolower((string) ($filters['sort_dir'] ?? 'desc')) === 'asc' ? 'asc' : 'desc';
@@ -34,12 +42,19 @@ class ClientAccountService
             $sortBy = 'created_at';
         }
 
-        $query = ClientAccount::query()
-            ->with([
-                'accountManager' => function ($q) {
-                    $q->select('users.id', 'users.name', 'users.email');
-                },
-            ])
+        $query = $this->filteredAccountsQuery($filters)->orderBy($sortBy, $sortDir);
+
+        return $query->paginate($perPage);
+    }
+
+    private function applyAccountDirectoryFilters(Builder $query, array $filters): void
+    {
+        $search = isset($filters['search']) ? trim((string) $filters['search']) : '';
+        $managerId = isset($filters['account_manager_id']) && $filters['account_manager_id'] !== '' && $filters['account_manager_id'] !== 'all'
+            ? (int) $filters['account_manager_id']
+            : null;
+
+        $query
             ->when($search !== '', function ($q) use ($search) {
                 $like = '%'.$search.'%';
                 $q->where(function ($nested) use ($like) {
@@ -55,10 +70,7 @@ class ClientAccountService
             })
             ->when($managerId !== null && $managerId > 0, function ($q) use ($managerId) {
                 $q->where('account_manager_id', $managerId);
-            })
-            ->orderBy($sortBy, $sortDir);
-
-        return $query->paginate($perPage);
+            });
     }
 
     /**

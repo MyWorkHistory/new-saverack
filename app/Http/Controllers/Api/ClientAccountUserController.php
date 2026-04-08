@@ -9,8 +9,11 @@ use App\Models\ClientAccount;
 use App\Models\User;
 use App\Policies\ClientAccountUserPolicy;
 use App\Services\ClientAccountUserService;
+use App\Support\CsvExporter;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Schema;
+use Symfony\Component\HttpFoundation\StreamedResponse;
 
 class ClientAccountUserController extends Controller
 {
@@ -44,6 +47,43 @@ class ClientAccountUserController extends Controller
         });
 
         return response()->json($paginator);
+    }
+
+    public function exportCsv(Request $request): StreamedResponse
+    {
+        $user = $request->user();
+        if ($user === null || ! app(ClientAccountUserPolicy::class)->viewAny($user)) {
+            abort(403);
+        }
+
+        $filters = $request->only(['search', 'status', 'client_account_id']);
+        $query = $this->accountUsers->filteredAccountUsersQuery($filters)
+            ->orderBy('users.id');
+
+        $userColumns = array_values(array_diff(
+            Schema::getColumnListing('users'),
+            ['password', 'remember_token'],
+        ));
+        $headers = array_merge(
+            $userColumns,
+            ['client_account_company_name', 'client_account_email'],
+        );
+        $filename = 'account-users-export-'.date('Y-m-d').'.csv';
+
+        return CsvExporter::stream($filename, $headers, function ($out) use ($query, $userColumns) {
+            $query->chunk(500, function ($rows) use ($out, $userColumns) {
+                foreach ($rows as $portalUser) {
+                    $row = [];
+                    foreach ($userColumns as $col) {
+                        $row[] = CsvExporter::cell($portalUser->getAttribute($col));
+                    }
+                    $account = $portalUser->clientAccount;
+                    $row[] = CsvExporter::cell($account !== null ? $account->company_name : null);
+                    $row[] = CsvExporter::cell($account !== null ? $account->email : null);
+                    fputcsv($out, $row);
+                }
+            });
+        });
     }
 
     public function show(Request $request, ClientAccount $client_account, User $user): JsonResponse

@@ -25,6 +25,7 @@ import { DEFAULT_PER_PAGE, PER_PAGE_OPTIONS } from "../../constants/pagination";
 import { formatDateUs } from "../../utils/formatUserDates";
 import { setCrmPageMeta } from "../../composables/useCrmPageMeta.js";
 import { getPublicSignupUrl } from "../../utils/publicSignupUrl.js";
+import { downloadListCsv } from "../../utils/downloadListCsv.js";
 
 const crmUser = inject("crmUser", ref(null));
 const toast = useToast();
@@ -86,6 +87,8 @@ const manageMenuRow = computed(
 
 const addDrawerOpen = ref(false);
 const filterMenuOpen = ref(false);
+const exportOpen = ref(false);
+const exportBusy = ref(false);
 const bulkEditOpen = ref(false);
 const bulkEditBusy = ref(false);
 const selectedIds = ref([]);
@@ -276,6 +279,33 @@ function buildParams() {
     p.account_manager_id = query.account_manager_id;
   }
   return p;
+}
+
+function buildExportParams() {
+  const p = {};
+  const s = (query.search || "").trim();
+  if (s) p.search = s;
+  if (query.account_manager_id) {
+    p.account_manager_id = query.account_manager_id;
+  }
+  return p;
+}
+
+async function runAccountsExport() {
+  exportOpen.value = false;
+  exportBusy.value = true;
+  try {
+    await downloadListCsv({
+      path: "/client-accounts/export-csv",
+      params: buildExportParams(),
+      filenameBase: "accounts",
+      toast,
+    });
+  } catch {
+    /* toast handled in downloadListCsv */
+  } finally {
+    exportBusy.value = false;
+  }
 }
 
 function normalizeAccountManagersFromMeta(payload) {
@@ -532,6 +562,9 @@ function toggleRowSelect(id) {
 }
 
 function onDocClick(e) {
+  if (!e.target.closest("[data-export-root]")) {
+    exportOpen.value = false;
+  }
   if (!e.target.closest("[data-toolbar-filter]")) {
     filterMenuOpen.value = false;
   }
@@ -821,6 +854,53 @@ onUnmounted(() => {
           <div
             class="d-flex flex-wrap align-items-center gap-2 gap-md-3 ms-md-auto flex-shrink-0"
           >
+            <div class="position-relative" data-export-root>
+              <button
+                type="button"
+                class="btn btn-outline-secondary staff-toolbar-btn d-inline-flex align-items-center gap-2"
+                :aria-expanded="exportOpen"
+                :disabled="loading || exportBusy"
+                @click.stop="exportOpen = !exportOpen"
+              >
+                <svg
+                  width="18"
+                  height="18"
+                  fill="currentColor"
+                  viewBox="0 0 24 24"
+                  aria-hidden="true"
+                >
+                  <path
+                    d="M9 16h6v-6h4l-7-7-7 7h4v6zm-4 2h14v2H5v-2z"
+                  />
+                </svg>
+                Export
+                <svg
+                  width="14"
+                  height="14"
+                  fill="currentColor"
+                  viewBox="0 0 24 24"
+                  class="text-secondary"
+                  aria-hidden="true"
+                >
+                  <path d="M7 10l5 5 5-5H7z" />
+                </svg>
+              </button>
+              <div
+                v-if="exportOpen"
+                class="dropdown-menu show shadow border px-0 py-1 mt-1"
+                style="min-width: 11rem; right: 0; left: auto"
+                @click.stop
+              >
+                <button
+                  type="button"
+                  class="dropdown-item small"
+                  :disabled="exportBusy"
+                  @click="runAccountsExport"
+                >
+                  Download CSV
+                </button>
+              </div>
+            </div>
             <button
               type="button"
               class="btn btn-outline-secondary staff-toolbar-btn d-inline-flex align-items-center justify-content-center"

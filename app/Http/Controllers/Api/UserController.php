@@ -13,10 +13,13 @@ use App\Models\User;
 use App\Support\UserStaffHistory;
 use App\Services\UserAvatarService;
 use App\Services\UserService;
+use App\Support\CsvExporter;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Schema;
 use RuntimeException;
+use Symfony\Component\HttpFoundation\StreamedResponse;
 
 class UserController extends Controller
 {
@@ -69,6 +72,58 @@ class UserController extends Controller
         ]));
 
         return response()->json($users);
+    }
+
+    public function exportCsv(Request $request): StreamedResponse
+    {
+        $this->authorize('viewAny', User::class);
+
+        $filters = $request->only(['search', 'role_id', 'status', 'plan']);
+        $query = $this->userService->staffExportQuery($filters);
+
+        $userColumns = array_values(array_diff(
+            Schema::getColumnListing('users'),
+            ['password', 'remember_token'],
+        ));
+        $profileColumns = array_values(array_diff(
+            Schema::getColumnListing('user_profiles'),
+            ['id', 'user_id'],
+        ));
+        $profileHeaders = array_map(
+            static fn (string $c): string => 'user_profile_'.$c,
+            $profileColumns,
+        );
+        $headers = array_merge($userColumns, $profileHeaders, ['roles']);
+
+        $filename = 'staff-export-'.date('Y-m-d').'.csv';
+
+        return CsvExporter::stream($filename, $headers, function ($out) use ($query, $userColumns, $profileColumns) {
+            $query->chunk(500, function ($users) use ($out, $userColumns, $profileColumns) {
+                foreach ($users as $user) {
+                    $row = [];
+                    foreach ($userColumns as $col) {
+                        $row[] = CsvExporter::cell($user->getAttribute($col));
+                    }
+                    $profile = $user->profile;
+                    foreach ($profileColumns as $col) {
+                        $row[] = CsvExporter::cell(
+                            $profile !== null ? $profile->getAttribute($col) : null
+                        );
+                    }
+                    $roleText = $user->roles
+                        ->map(static function ($r) {
+                            $label = $r->label ?? null;
+                            $name = $r->name ?? null;
+
+                            return (string) (($label !== null && $label !== '') ? $label : ($name ?? ''));
+                        })
+                        ->filter(static fn (string $s) => $s !== '')
+                        ->implode('; ');
+                    $row[] = $roleText;
+                    fputcsv($out, $row);
+                }
+            });
+        });
     }
 
     public function store(UserStoreRequest $request): JsonResponse

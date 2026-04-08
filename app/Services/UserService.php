@@ -5,6 +5,7 @@ namespace App\Services;
 use App\Models\User;
 use App\Support\UserStaffHistory;
 use Illuminate\Contracts\Pagination\LengthAwarePaginator;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
 
@@ -35,12 +36,27 @@ class UserService
         $this->activityLog = $activityLog;
     }
 
+    /**
+     * Staff directory rows (CRM): users not linked to a client account, with list filters applied.
+     */
+    public function staffExportQuery(array $filters): Builder
+    {
+        $query = User::query()
+            ->whereNull('client_account_id')
+            ->with([
+                'profile',
+                'roles' => function ($q) {
+                    $q->select('roles.id', 'roles.name', 'roles.label');
+                },
+            ]);
+
+        $this->applyStaffDirectoryFilters($query, $filters);
+
+        return $query->orderBy('users.id');
+    }
+
     public function paginate(array $filters): LengthAwarePaginator
     {
-        $search = $filters['search'] ?? null;
-        $roleId = isset($filters['role_id']) ? (int) $filters['role_id'] : null;
-        $status = isset($filters['status']) ? (string) $filters['status'] : null;
-        $plan = isset($filters['plan']) ? trim((string) $filters['plan']) : '';
         $perPage = min(max((int) ($filters['per_page'] ?? 25), 1), 500);
         $sortBy = (string) ($filters['sort_by'] ?? 'id');
         $sortDir = strtolower((string) ($filters['sort_dir'] ?? 'desc')) === 'asc' ? 'asc' : 'desc';
@@ -61,7 +77,41 @@ class UserService
                 'profile' => function ($q) {
                     $q->select('id', 'user_id', 'job_position', 'birthday', 'hire_date', 'avatar_path');
                 },
-            ])
+            ]);
+
+        $this->applyStaffDirectoryFilters($query, $filters);
+
+        $profileSortColumns = ['job_position', 'birthday', 'hire_date'];
+        if (in_array($sortBy, $profileSortColumns, true)) {
+            $query->leftJoin('user_profiles', 'users.id', '=', 'user_profiles.user_id')
+                ->select('users.*');
+            $profileColumn = [
+                'job_position' => 'user_profiles.job_position',
+                'birthday' => 'user_profiles.birthday',
+                'hire_date' => 'user_profiles.hire_date',
+            ][$sortBy];
+            $query->orderBy($profileColumn, $sortDir);
+        } elseif ($sortBy === 'role') {
+            $query->select('users.*');
+            $dir = $sortDir === 'desc' ? 'DESC' : 'ASC';
+            $query->orderByRaw(
+                '(SELECT MIN(COALESCE(roles.label, roles.name)) FROM role_user INNER JOIN roles ON roles.id = role_user.role_id WHERE role_user.user_id = users.id) '.$dir
+            );
+        } else {
+            $query->orderBy($sortBy, $sortDir);
+        }
+
+        return $query->paginate($perPage);
+    }
+
+    private function applyStaffDirectoryFilters(Builder $query, array $filters): void
+    {
+        $search = $filters['search'] ?? null;
+        $roleId = isset($filters['role_id']) ? (int) $filters['role_id'] : null;
+        $status = isset($filters['status']) ? (string) $filters['status'] : null;
+        $plan = isset($filters['plan']) ? trim((string) $filters['plan']) : '';
+
+        $query
             ->when($search, function ($q) use ($search) {
                 $q->where(function ($nested) use ($search) {
                     $nested->where('name', 'like', "%{$search}%")
@@ -85,28 +135,6 @@ class UserService
                     $p->where('job_position', 'like', '%'.$plan.'%');
                 });
             });
-
-        $profileSortColumns = ['job_position', 'birthday', 'hire_date'];
-        if (in_array($sortBy, $profileSortColumns, true)) {
-            $query->leftJoin('user_profiles', 'users.id', '=', 'user_profiles.user_id')
-                ->select('users.*');
-            $profileColumn = [
-                'job_position' => 'user_profiles.job_position',
-                'birthday' => 'user_profiles.birthday',
-                'hire_date' => 'user_profiles.hire_date',
-            ][$sortBy];
-            $query->orderBy($profileColumn, $sortDir);
-        } elseif ($sortBy === 'role') {
-            $query->select('users.*');
-            $dir = $sortDir === 'desc' ? 'DESC' : 'ASC';
-            $query->orderByRaw(
-                '(SELECT MIN(COALESCE(roles.label, roles.name)) FROM role_user INNER JOIN roles ON roles.id = role_user.role_id WHERE role_user.user_id = users.id) '.$dir
-            );
-        } else {
-            $query->orderBy($sortBy, $sortDir);
-        }
-
-        return $query->paginate($perPage);
     }
 
     public function create(array $data, ?User $actor = null): User

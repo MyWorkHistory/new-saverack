@@ -23,6 +23,7 @@ import StaffRoleIcon from "../../components/users/StaffRoleIcon.vue";
 import StaffBulkEditModal from "../../components/users/StaffBulkEditModal.vue";
 import { resolvePublicUrl } from "../../utils/resolvePublicUrl.js";
 import { formatBirthdayUs, formatDateUs } from "../../utils/formatUserDates";
+import { downloadListCsv } from "../../utils/downloadListCsv.js";
 
 const crmUser = inject("crmUser", ref(null));
 const toast = useToast();
@@ -115,6 +116,7 @@ const manageMenuUser = computed(() =>
   rows.value.find((u) => u.id === manageOpenId.value) ?? null,
 );
 const exportOpen = ref(false);
+const exportBusy = ref(false);
 const filterMenuOpen = ref(false);
 const addDrawerOpen = ref(false);
 const bulkEditOpen = ref(false);
@@ -299,6 +301,31 @@ const buildParams = () => {
   if (query.status && query.status !== "all") p.status = query.status;
   return p;
 };
+
+function buildExportParams() {
+  const p = {};
+  const s = (query.search || "").trim();
+  if (s) p.search = s;
+  if (query.status && query.status !== "all") p.status = query.status;
+  return p;
+}
+
+async function runStaffExport() {
+  exportOpen.value = false;
+  exportBusy.value = true;
+  try {
+    await downloadListCsv({
+      path: "/users/export-csv",
+      params: buildExportParams(),
+      filenameBase: "staff",
+      toast,
+    });
+  } catch {
+    /* toast handled in downloadListCsv */
+  } finally {
+    exportBusy.value = false;
+  }
+}
 
 const fetchUsers = async () => {
   loading.value = true;
@@ -756,6 +783,7 @@ onUnmounted(() => {
                 type="button"
                 class="btn btn-outline-secondary staff-toolbar-btn d-inline-flex align-items-center gap-2"
                 :aria-expanded="exportOpen"
+                :disabled="loading || exportBusy"
                 @click.stop="exportOpen = !exportOpen"
               >
                 <svg
@@ -790,12 +818,8 @@ onUnmounted(() => {
                 <button
                   type="button"
                   class="dropdown-item small"
-                  @click="
-                    exportOpen = false;
-                    toast.success(
-                      'Export will be available in a future update.',
-                    );
-                  "
+                  :disabled="exportBusy"
+                  @click="runStaffExport"
                 >
                   Download CSV
                 </button>

@@ -49,9 +49,13 @@ Route::middleware('auth:sanctum')->group(function () {
         ->name('users.bulk-update');
     Route::get('users/permissions/meta', [UserController::class, 'permissionsMeta'])
         ->name('users.permissions.meta');
+    Route::get('users/export-csv', [UserController::class, 'exportCsv'])
+        ->name('users.export-csv');
 
     Route::get('client-account-users', [ClientAccountUserController::class, 'index'])
         ->name('client-account-users.index');
+    Route::get('client-account-users/export-csv', [ClientAccountUserController::class, 'exportCsv'])
+        ->name('client-account-users.export-csv');
     Route::get('client-accounts/{client_account}/account-users/{user}', [ClientAccountUserController::class, 'show'])
         ->name('client-accounts.account-users.show');
     Route::post('client-accounts/{client_account}/account-users', [ClientAccountUserController::class, 'store'])
@@ -63,6 +67,8 @@ Route::middleware('auth:sanctum')->group(function () {
 
     Route::get('client-accounts/meta', [ClientAccountController::class, 'meta'])
         ->name('client-accounts.meta');
+    Route::get('client-accounts/export-csv', [ClientAccountController::class, 'exportCsv'])
+        ->name('client-accounts.export-csv');
     Route::patch('client-accounts/bulk', [ClientAccountController::class, 'bulkUpdate'])
         ->name('client-accounts.bulk-update');
     Route::patch('client-stores/bulk', [ClientStoreController::class, 'bulkUpdate'])

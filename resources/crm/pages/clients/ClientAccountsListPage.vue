@@ -2,6 +2,7 @@
 import {
   computed,
   inject,
+  nextTick,
   onMounted,
   onUnmounted,
   reactive,
@@ -84,6 +85,7 @@ const manageMenuRow = computed(
 );
 
 const addDrawerOpen = ref(false);
+const filterMenuOpen = ref(false);
 const bulkEditOpen = ref(false);
 const bulkEditBusy = ref(false);
 const selectedIds = ref([]);
@@ -455,16 +457,22 @@ function closeManageMenu() {
   manageMenuSubMode.value = "main";
 }
 
-function toggleManageMenu(rowId, e) {
+async function toggleManageMenu(rowId, e) {
   e.stopPropagation();
   if (manageOpenId.value === rowId) {
     closeManageMenu();
     return;
   }
   manageMenuSubMode.value = "main";
-  manageOpenId.value = rowId;
   const btn = e.currentTarget;
-  if (btn instanceof HTMLElement) placeManageMenu(btn);
+  manageOpenId.value = rowId;
+  await nextTick();
+  requestAnimationFrame(() => {
+    requestAnimationFrame(() => {
+      if (manageOpenId.value !== rowId) return;
+      if (btn instanceof HTMLElement) placeManageMenu(btn);
+    });
+  });
 }
 
 function openStatusSubmenu() {
@@ -524,6 +532,9 @@ function toggleRowSelect(id) {
 }
 
 function onDocClick(e) {
+  if (!e.target.closest("[data-toolbar-filter]")) {
+    filterMenuOpen.value = false;
+  }
   if (!e.target.closest("[data-row-actions]")) {
     manageOpenId.value = null;
     manageMenuSubMode.value = "main";
@@ -732,50 +743,81 @@ onUnmounted(() => {
     </div>
 
     <div class="staff-table-card staff-datatable-card">
-      <div class="staff-datatable-filters">
-        <div
-          class="d-flex flex-wrap align-items-center justify-content-between gap-2 mb-3"
-        >
-          <h2 class="staff-datatable-filters__title mb-0">Filters</h2>
-          <button
-            type="button"
-            class="btn btn-link btn-sm text-secondary text-decoration-none px-0"
-            :disabled="loading"
-            @click="clearFilters"
-          >
-            Reset
-          </button>
-        </div>
-        <div class="row g-3 g-md-4">
-          <div class="col-12 col-md-4">
-            <label class="visually-hidden" for="client-am-filter">Account manager</label>
-            <CrmSearchableSelect
-              v-model="query.account_manager_id"
-              appearance="staff"
-              :options="accountManagers"
-              placeholder="All account managers"
-              search-placeholder="Search staff…"
-              empty-label="All account managers"
-              button-id="client-am-filter"
-              aria-label="Filter by account manager"
-            />
-          </div>
-        </div>
-      </div>
-
       <div class="staff-table-toolbar">
-        <div
-          class="d-flex flex-column flex-md-row align-items-stretch align-items-md-center gap-3 w-100"
-        >
+        <div class="staff-table-toolbar--row">
           <input
             id="ca-search"
             v-model="query.search"
             type="search"
-            class="form-control staff-toolbar-search staff-toolbar-search--grow"
+            class="form-control staff-toolbar-search staff-toolbar-search--inline"
             placeholder="Search accounts"
             autocomplete="off"
             @keydown.enter.prevent="applySearch"
           />
+          <div class="position-relative flex-shrink-0" data-toolbar-filter>
+            <button
+              type="button"
+              class="btn btn-outline-secondary staff-toolbar-btn d-inline-flex align-items-center gap-2"
+              :aria-expanded="filterMenuOpen"
+              aria-haspopup="true"
+              aria-controls="ca-filter-panel"
+              :disabled="loading"
+              @click.stop="filterMenuOpen = !filterMenuOpen"
+            >
+              <svg
+                width="18"
+                height="18"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+                viewBox="0 0 24 24"
+                aria-hidden="true"
+              >
+                <path
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                  d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2.586a1 1 0 01-.293.707l-6.414 6.414a1 1 0 00-.293.707V17l-4 4v-6.586a1 1 0 00-.293-.707L3.293 7.293A1 1 0 013 6.586V4z"
+                />
+              </svg>
+              <span class="d-none d-sm-inline">Filters</span>
+            </button>
+            <div
+              v-if="filterMenuOpen"
+              id="ca-filter-panel"
+              class="dropdown-menu dropdown-menu-end show shadow border p-0 staff-toolbar-filter-dropdown"
+              role="dialog"
+              aria-label="Table filters"
+              @click.stop
+            >
+              <div class="staff-toolbar-filter-dropdown__head">
+                <span>Filters</span>
+                <button
+                  type="button"
+                  class="btn btn-link btn-sm text-secondary text-decoration-none p-0"
+                  :disabled="loading"
+                  @click="
+                    clearFilters();
+                    filterMenuOpen = false;
+                  "
+                >
+                  Reset
+                </button>
+              </div>
+              <div class="staff-toolbar-filter-dropdown__body">
+                <label class="form-label" for="client-am-filter">Account manager</label>
+                <CrmSearchableSelect
+                  v-model="query.account_manager_id"
+                  appearance="staff"
+                  :options="accountManagers"
+                  placeholder="All account managers"
+                  search-placeholder="Search staff…"
+                  empty-label="All account managers"
+                  button-id="client-am-filter"
+                  aria-label="Filter by account manager"
+                />
+              </div>
+            </div>
+          </div>
           <div
             class="d-flex flex-wrap align-items-center gap-2 gap-md-3 ms-md-auto flex-shrink-0"
           >
@@ -819,7 +861,11 @@ onUnmounted(() => {
         <table class="table table-hover align-middle mb-0 staff-data-table">
           <thead class="table-light staff-table-head">
             <tr>
-              <th v-if="showCheckboxCol" class="staff-table-head__th" scope="col">
+              <th
+                v-if="showCheckboxCol"
+                class="staff-table-head__th staff-table-head__th--select"
+                scope="col"
+              >
                 <input
                   type="checkbox"
                   class="form-check-input staff-table-head__check mt-0"
@@ -1203,11 +1249,11 @@ onUnmounted(() => {
     <Teleport to="body">
       <Transition
         enter-active-class="transition ease-out duration-100"
-        enter-from-class="transform opacity-0 scale-95"
-        enter-to-class="transform opacity-100 scale-100"
+        enter-from-class="opacity-0"
+        enter-to-class="opacity-100"
         leave-active-class="transition ease-in duration-75"
-        leave-from-class="transform opacity-100 scale-100"
-        leave-to-class="transform opacity-0 scale-95"
+        leave-from-class="opacity-100"
+        leave-to-class="opacity-0"
       >
         <div
           v-if="manageMenuRow"

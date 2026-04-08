@@ -36,6 +36,7 @@ const users = ref([]);
 const meta = ref({ statuses: [], priorities: [] });
 const boardColumns = ref([]);
 const manageOpenId = ref(null);
+const filterMenuOpen = ref(false);
 const drawerOpen = ref(false);
 const taskEditModalOpen = ref(false);
 const editingTask = ref(null);
@@ -338,6 +339,9 @@ function onDocClick(e) {
   if (!e.target.closest("[data-kanban-card-actions]")) {
     manageOpenId.value = null;
   }
+  if (!e.target.closest("[data-toolbar-filter]")) {
+    filterMenuOpen.value = false;
+  }
 }
 
 const openDeleteModal = (row) => {
@@ -533,128 +537,161 @@ onUnmounted(() => {
     </div>
 
     <div class="staff-table-card staff-datatable-card">
-      <div class="staff-datatable-filters">
-        <div
-          class="d-flex flex-wrap align-items-center justify-content-between gap-2 mb-3"
-        >
-          <h2 class="staff-datatable-filters__title mb-0">Filters</h2>
-          <button
-            type="button"
-            class="btn btn-link btn-sm text-secondary text-decoration-none px-0"
-            :disabled="loading"
-            @click="clearFilters"
-          >
-            Reset
-          </button>
-        </div>
-        <div class="row g-3 g-md-4">
-          <div class="col-12 col-sm-6 col-lg-3">
-            <label class="visually-hidden" for="wm-filter-status">Status</label>
-            <select
-              id="wm-filter-status"
-              v-model="query.status"
-              class="form-select staff-datatable-filters__select"
-              :disabled="loading"
-              @change="applySearch"
-            >
-              <option value="">All columns</option>
-              <option
-                v-for="s in meta.statuses"
-                :key="s.value"
-                :value="s.value"
-              >
-                {{ s.label }}
-              </option>
-            </select>
-          </div>
-          <div class="col-12 col-sm-6 col-lg-3">
-            <label class="visually-hidden" for="wm-filter-priority"
-              >Priority</label
-            >
-            <select
-              id="wm-filter-priority"
-              v-model="query.priority"
-              class="form-select staff-datatable-filters__select"
-              :disabled="loading"
-              @change="applySearch"
-            >
-              <option value="">All priorities</option>
-              <option
-                v-for="p in meta.priorities"
-                :key="p.value"
-                :value="p.value"
-              >
-                {{ p.label }}
-              </option>
-            </select>
-          </div>
-          <div class="col-12 col-sm-6 col-lg-3">
-            <label class="visually-hidden" for="wm-filter-assignee"
-              >Assignee</label
-            >
-            <select
-              id="wm-filter-assignee"
-              v-model="query.assigned_to"
-              class="form-select staff-datatable-filters__select"
-              :disabled="loading"
-              @change="applySearch"
-            >
-              <option value="">Anyone</option>
-              <option
-                v-for="u in users"
-                :key="u.id"
-                :value="String(u.id)"
-              >
-                {{ u.name }}
-              </option>
-            </select>
-          </div>
-          <div class="col-12 col-sm-6 col-lg-2">
-            <label class="visually-hidden" for="wm-min-price">Min price</label>
-            <input
-              id="wm-min-price"
-              v-model="query.min_price"
-              type="number"
-              min="0"
-              step="0.01"
-              class="form-control staff-datatable-filters__select"
-              placeholder="Min price"
-              :disabled="loading"
-              @change="applySearch"
-              @keydown.enter.prevent="applySearch"
-            />
-          </div>
-          <div class="col-12 col-sm-6 col-lg-2">
-            <label class="visually-hidden" for="wm-max-price">Max price</label>
-            <input
-              id="wm-max-price"
-              v-model="query.max_price"
-              type="number"
-              min="0"
-              step="0.01"
-              class="form-control staff-datatable-filters__select"
-              placeholder="Max price"
-              :disabled="loading"
-              @change="applySearch"
-              @keydown.enter.prevent="applySearch"
-            />
-          </div>
-        </div>
-      </div>
-
       <div class="staff-table-toolbar">
-        <div
-          class="d-flex flex-column flex-md-row align-items-stretch align-items-md-center gap-3 w-100"
-        >
+        <div class="staff-table-toolbar--row">
           <input
             id="wm-search"
             v-model="query.search"
             type="search"
-            class="form-control staff-toolbar-search staff-toolbar-search--grow"
+            class="form-control staff-toolbar-search staff-toolbar-search--inline"
             placeholder="Search tasks"
             autocomplete="off"
             @keydown.enter.prevent="applySearch"
           />
+          <div class="position-relative flex-shrink-0" data-toolbar-filter>
+            <button
+              type="button"
+              class="btn btn-outline-secondary staff-toolbar-btn d-inline-flex align-items-center gap-2"
+              :aria-expanded="filterMenuOpen"
+              aria-haspopup="true"
+              aria-controls="wm-filter-panel"
+              :disabled="loading"
+              @click.stop="filterMenuOpen = !filterMenuOpen"
+            >
+              <svg
+                width="18"
+                height="18"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+                viewBox="0 0 24 24"
+                aria-hidden="true"
+              >
+                <path
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                  d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2.586a1 1 0 01-.293.707l-6.414 6.414a1 1 0 00-.293.707V17l-4 4v-6.586a1 1 0 00-.293-.707L3.293 7.293A1 1 0 013 6.586V4z"
+                />
+              </svg>
+              <span class="d-none d-sm-inline">Filters</span>
+            </button>
+            <div
+              v-if="filterMenuOpen"
+              id="wm-filter-panel"
+              class="dropdown-menu dropdown-menu-end show shadow border p-0 staff-toolbar-filter-dropdown"
+              role="dialog"
+              aria-label="Table filters"
+              @click.stop
+            >
+              <div class="staff-toolbar-filter-dropdown__head">
+                <span>Filters</span>
+                <button
+                  type="button"
+                  class="btn btn-link btn-sm text-secondary text-decoration-none p-0"
+                  :disabled="loading"
+                  @click="
+                    clearFilters();
+                    filterMenuOpen = false;
+                  "
+                >
+                  Reset
+                </button>
+              </div>
+              <div class="staff-toolbar-filter-dropdown__body">
+                <label class="form-label" for="wm-filter-status">Status</label>
+                <select
+                  id="wm-filter-status"
+                  v-model="query.status"
+                  class="form-select staff-datatable-filters__select mb-3"
+                  :disabled="loading"
+                  @change="applySearch"
+                >
+                  <option value="">All columns</option>
+                  <option
+                    v-for="s in meta.statuses"
+                    :key="s.value"
+                    :value="s.value"
+                  >
+                    {{ s.label }}
+                  </option>
+                </select>
+                <label class="form-label" for="wm-filter-priority"
+                  >Priority</label
+                >
+                <select
+                  id="wm-filter-priority"
+                  v-model="query.priority"
+                  class="form-select staff-datatable-filters__select mb-3"
+                  :disabled="loading"
+                  @change="applySearch"
+                >
+                  <option value="">All priorities</option>
+                  <option
+                    v-for="p in meta.priorities"
+                    :key="p.value"
+                    :value="p.value"
+                  >
+                    {{ p.label }}
+                  </option>
+                </select>
+                <label class="form-label" for="wm-filter-assignee"
+                  >Assignee</label
+                >
+                <select
+                  id="wm-filter-assignee"
+                  v-model="query.assigned_to"
+                  class="form-select staff-datatable-filters__select mb-3"
+                  :disabled="loading"
+                  @change="applySearch"
+                >
+                  <option value="">Anyone</option>
+                  <option
+                    v-for="u in users"
+                    :key="u.id"
+                    :value="String(u.id)"
+                  >
+                    {{ u.name }}
+                  </option>
+                </select>
+                <div class="row g-2">
+                  <div class="col-12 col-sm-6">
+                    <label class="form-label" for="wm-min-price"
+                      >Min price</label
+                    >
+                    <input
+                      id="wm-min-price"
+                      v-model="query.min_price"
+                      type="number"
+                      min="0"
+                      step="0.01"
+                      class="form-control staff-datatable-filters__select"
+                      placeholder="Min"
+                      :disabled="loading"
+                      @change="applySearch"
+                      @keydown.enter.prevent="applySearch"
+                    />
+                  </div>
+                  <div class="col-12 col-sm-6">
+                    <label class="form-label" for="wm-max-price"
+                      >Max price</label
+                    >
+                    <input
+                      id="wm-max-price"
+                      v-model="query.max_price"
+                      type="number"
+                      min="0"
+                      step="0.01"
+                      class="form-control staff-datatable-filters__select"
+                      placeholder="Max"
+                      :disabled="loading"
+                      @change="applySearch"
+                      @keydown.enter.prevent="applySearch"
+                    />
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
         </div>
       </div>
 
@@ -749,11 +786,11 @@ onUnmounted(() => {
                       </button>
                       <Transition
                         enter-active-class="transition ease-out duration-100"
-                        enter-from-class="transform opacity-0 scale-95"
-                        enter-to-class="transform opacity-100 scale-100"
+                        enter-from-class="opacity-0"
+                        enter-to-class="opacity-100"
                         leave-active-class="transition ease-in duration-75"
-                        leave-from-class="transform opacity-100 scale-100"
-                        leave-to-class="transform opacity-0 scale-95"
+                        leave-from-class="opacity-100"
+                        leave-to-class="opacity-0"
                       >
                         <div
                           v-if="manageOpenId === task.id"

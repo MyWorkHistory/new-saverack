@@ -49,6 +49,7 @@ class ClientAccountUpdateRequest extends FormRequest
             'state' => ['sometimes', 'nullable', 'string', 'max:64'],
             'zip' => ['sometimes', 'nullable', 'string', 'max:32'],
             'country' => ['sometimes', 'nullable', 'string', 'max:120'],
+            'notes' => ['sometimes', 'nullable', 'string', 'max:65535'],
             'account_manager_id' => ['sometimes', 'nullable', 'integer', $accountManagerRule],
         ];
     }

@@ -42,6 +42,7 @@ class ClientAccount extends Model
         'state',
         'zip',
         'country',
+        'notes',
         'account_manager_id',
     ];
 

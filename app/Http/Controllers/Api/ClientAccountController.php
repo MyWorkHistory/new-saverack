@@ -87,7 +87,12 @@ class ClientAccountController extends Controller
 
     public function show(ClientAccount $client_account): JsonResponse
     {
-        return response()->json($this->clientAccounts->toApiArray($client_account));
+        $client_account->loadCount(['stores', 'accountUsers']);
+        $payload = $this->clientAccounts->toApiArray($client_account);
+        $payload['stores_count'] = (int) $client_account->stores_count;
+        $payload['account_users_count'] = (int) $client_account->account_users_count;
+
+        return response()->json($payload);
     }
 
     public function update(ClientAccountUpdateRequest $request, ClientAccount $client_account): JsonResponse

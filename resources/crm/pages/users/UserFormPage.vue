@@ -49,7 +49,7 @@ async function onSubmit() {
     <div class="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
       <PageHeader
         title="Add Staff"
-        subtitle="Account, Profile, And Roles — All Saved To The User Record"
+        subtitle="Name, login email, password, status, and roles. More details can be added when you edit the user."
       />
       <div class="flex shrink-0 flex-wrap gap-x-4 gap-y-2">
         <CrmBackLink to="/staff" label="Back To Staff" />
@@ -74,6 +74,8 @@ async function onSubmit() {
         :first-error="firstError"
         :clear-field-error="clearFieldError"
         :toggle-role="toggleRole"
+        :sections="['identity', 'access']"
+        :show-avatar="false"
       />
 
       <div class="flex flex-wrap gap-3 pt-2">

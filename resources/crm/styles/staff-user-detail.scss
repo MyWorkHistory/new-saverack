@@ -85,11 +85,19 @@ $staff-detail-primary: #2563eb;
   margin-bottom: 1.25rem;
 }
 
+.staff-user-profile__role-pill--start {
+  justify-content: flex-start;
+}
+
 .staff-user-profile__stats {
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: 0.75rem;
   margin-bottom: 1.25rem;
+}
+
+.staff-user-profile__stats--single {
+  grid-template-columns: 1fr;
 }
 
 .staff-user-profile__stat {

@@ -135,6 +135,8 @@ function onBackdropClick() {
                   :first-error="firstError"
                   :clear-field-error="clearFieldError"
                   :toggle-role="toggleRole"
+                  :sections="['identity', 'access']"
+                  :show-avatar="false"
                 />
               </form>
               <div v-else class="flex justify-center py-8">

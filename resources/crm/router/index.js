@@ -122,10 +122,7 @@ const routes = [
   {
     path: "/staff/:id/edit",
     name: "staff-edit",
-    redirect: (to) => ({
-      path: `/staff/${to.params.id}`,
-      query: { edit: "1" },
-    }),
+    redirect: (to) => `/staff/${to.params.id}`,
   },
   {
     path: "/staff/:id/permissions",
@@ -161,10 +158,7 @@ const routes = [
   { path: "/users/new", redirect: "/staff/create" },
   {
     path: "/users/:id/edit",
-    redirect: (to) => ({
-      path: `/staff/${to.params.id}`,
-      query: { edit: "1" },
-    }),
+    redirect: (to) => `/staff/${to.params.id}`,
   },
   { path: "/users", redirect: "/staff" },
   {

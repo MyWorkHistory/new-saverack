@@ -34,6 +34,7 @@ const form = reactive({
   state: "",
   zip: "",
   country: "",
+  notes: "",
   account_manager_id: "",
 });
 
@@ -77,6 +78,7 @@ async function load() {
     form.state = data.state || "";
     form.zip = data.zip || "";
     form.country = data.country || "";
+    form.notes = data.notes != null ? String(data.notes) : "";
     form.account_manager_id = data.account_manager_id
       ? String(data.account_manager_id)
       : "";
@@ -345,6 +347,18 @@ async function onSubmit() {
                         class="form-control"
                       />
                     </div>
+                  </div>
+                  <div>
+                    <label class="form-label small mb-1 text-secondary" for="cae-notes"
+                      >Notes</label
+                    >
+                    <textarea
+                      id="cae-notes"
+                      v-model="form.notes"
+                      class="form-control"
+                      rows="4"
+                      placeholder="Internal notes…"
+                    />
                   </div>
                   <CrmSearchableSelect
                     v-model="form.account_manager_id"

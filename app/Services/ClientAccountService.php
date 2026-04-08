@@ -154,6 +154,7 @@ class ClientAccountService
             'state' => $account->state,
             'zip' => $account->zip,
             'country' => $account->country,
+            'notes' => $account->notes,
             'account_manager_id' => $account->account_manager_id,
             'account_manager' => $manager !== null
                 ? ['id' => $manager->id, 'name' => $manager->name, 'email' => $manager->email]

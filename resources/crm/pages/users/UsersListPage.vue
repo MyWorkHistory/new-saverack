@@ -2,6 +2,7 @@
 import {
   computed,
   inject,
+  nextTick,
   onMounted,
   onUnmounted,
   reactive,
@@ -114,6 +115,7 @@ const manageMenuUser = computed(() =>
   rows.value.find((u) => u.id === manageOpenId.value) ?? null,
 );
 const exportOpen = ref(false);
+const filterMenuOpen = ref(false);
 const addDrawerOpen = ref(false);
 const bulkEditOpen = ref(false);
 const bulkEditBusy = ref(false);
@@ -483,18 +485,22 @@ function onWindowScrollOrResize() {
   }
 }
 
-const toggleManageMenu = (userId, e) => {
+async function toggleManageMenu(userId, e) {
   e.stopPropagation();
   if (manageOpenId.value === userId) {
     closeManageMenu();
     return;
   }
-  manageOpenId.value = userId;
   const btn = e.currentTarget;
-  if (btn instanceof HTMLElement) {
-    placeManageMenu(btn);
-  }
-};
+  manageOpenId.value = userId;
+  await nextTick();
+  requestAnimationFrame(() => {
+    requestAnimationFrame(() => {
+      if (manageOpenId.value !== userId) return;
+      if (btn instanceof HTMLElement) placeManageMenu(btn);
+    });
+  });
+}
 
 function toggleSelectAll(ev) {
   if (ev.target.checked) {
@@ -516,6 +522,9 @@ function toggleRowSelect(userId) {
 function onDocClick(e) {
   if (!e.target.closest("[data-export-root]")) {
     exportOpen.value = false;
+  }
+  if (!e.target.closest("[data-toolbar-filter]")) {
+    filterMenuOpen.value = false;
   }
   if (!e.target.closest("[data-row-actions]")) {
     manageOpenId.value = null;
@@ -564,16 +573,16 @@ onUnmounted(() => {
     </div>
 
     <div
-      class="d-flex flex-column flex-md-row align-items-start align-items-md-center gap-3 mb-4"
+      class="d-flex flex-column flex-md-row align-items-center justify-content-between gap-3 mb-4"
     >
-      <div class="min-w-0 flex-grow-1">
-        <h1 class="h4 mb-1 fw-semibold text-body">Staff</h1>
-        <p class="text-secondary small mb-0">
+      <div class="min-w-0 flex-grow-1 text-center text-md-start w-100">
+        <h1 class="h4 mb-1 fw-semibold text-body staff-page__heading">Staff</h1>
+        <p class="staff-page__intro mb-0">
           Directory of admin and staff accounts
         </p>
       </div>
       <div
-        class="d-flex flex-wrap align-items-center gap-2 ms-md-auto flex-shrink-0"
+        class="d-flex flex-wrap align-items-center justify-content-center justify-content-md-end gap-2 flex-shrink-0"
       >
         <button
           v-if="canCreateUsers"
@@ -590,32 +599,7 @@ onUnmounted(() => {
           >
             <path d="M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z" />
           </svg>
-          Add staff
-        </button>
-        <button
-          type="button"
-          class="btn btn-outline-secondary btn-sm d-inline-flex align-items-center gap-2"
-          :disabled="loading"
-          title="Refresh"
-          aria-label="Refresh list"
-          @click="refreshList"
-        >
-          <svg
-            width="18"
-            height="18"
-            fill="none"
-            stroke="currentColor"
-            viewBox="0 0 24 24"
-            aria-hidden="true"
-          >
-            <path
-              stroke-linecap="round"
-              stroke-linejoin="round"
-              stroke-width="2"
-              d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"
-            />
-          </svg>
-          Refresh
+          Add Staff
         </button>
       </div>
     </div>
@@ -687,52 +671,83 @@ onUnmounted(() => {
     </div>
 
     <div class="staff-table-card staff-datatable-card">
-      <div class="staff-datatable-filters">
-        <div
-          class="d-flex flex-wrap align-items-center justify-content-between gap-2 mb-3"
-        >
-          <h2 class="staff-datatable-filters__title mb-0">Filters</h2>
-          <button
-            type="button"
-            class="btn btn-link btn-sm text-secondary text-decoration-none px-0"
-            :disabled="loading"
-            @click="clearFilters"
-          >
-            Reset
-          </button>
-        </div>
-        <div class="row g-3 g-md-4">
-          <div class="col-12 col-md-4 col-lg-3">
-            <label class="visually-hidden" for="staff-filter-status">Status</label>
-            <select
-              id="staff-filter-status"
-              v-model="query.status"
-              class="form-select staff-datatable-filters__select"
-              :disabled="loading"
-              @change="applySearch"
-            >
-              <option value="all">Select status</option>
-              <option value="pending">Pending</option>
-              <option value="active">Active</option>
-              <option value="inactive">Inactive</option>
-            </select>
-          </div>
-        </div>
-      </div>
-
       <div class="staff-table-toolbar">
-        <div
-          class="d-flex flex-column flex-md-row align-items-stretch align-items-md-center gap-3 w-100"
-        >
+        <div class="staff-table-toolbar--row">
           <input
             id="staff-search"
             v-model="query.search"
             type="search"
-            class="form-control staff-toolbar-search staff-toolbar-search--grow"
+            class="form-control staff-toolbar-search staff-toolbar-search--inline"
             placeholder="Search user"
             autocomplete="off"
             @keydown.enter.prevent="applySearch"
           />
+          <div class="position-relative flex-shrink-0" data-toolbar-filter>
+            <button
+              type="button"
+              class="btn btn-outline-secondary staff-toolbar-btn d-inline-flex align-items-center gap-2"
+              :aria-expanded="filterMenuOpen"
+              aria-haspopup="true"
+              aria-controls="staff-filter-panel"
+              :disabled="loading"
+              @click.stop="filterMenuOpen = !filterMenuOpen"
+            >
+              <svg
+                width="18"
+                height="18"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+                viewBox="0 0 24 24"
+                aria-hidden="true"
+              >
+                <path
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                  d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2.586a1 1 0 01-.293.707l-6.414 6.414a1 1 0 00-.293.707V17l-4 4v-6.586a1 1 0 00-.293-.707L3.293 7.293A1 1 0 013 6.586V4z"
+                />
+              </svg>
+              <span class="d-none d-sm-inline">Filters</span>
+            </button>
+            <div
+              v-if="filterMenuOpen"
+              id="staff-filter-panel"
+              class="dropdown-menu dropdown-menu-end show shadow border p-0 staff-toolbar-filter-dropdown"
+              role="dialog"
+              aria-label="Table filters"
+              @click.stop
+            >
+              <div class="staff-toolbar-filter-dropdown__head">
+                <span>Filters</span>
+                <button
+                  type="button"
+                  class="btn btn-link btn-sm text-secondary text-decoration-none p-0"
+                  :disabled="loading"
+                  @click="
+                    clearFilters();
+                    filterMenuOpen = false;
+                  "
+                >
+                  Reset
+                </button>
+              </div>
+              <div class="staff-toolbar-filter-dropdown__body">
+                <label class="form-label" for="staff-filter-status">Status</label>
+                <select
+                  id="staff-filter-status"
+                  v-model="query.status"
+                  class="form-select staff-datatable-filters__select"
+                  :disabled="loading"
+                  @change="applySearch"
+                >
+                  <option value="all">All statuses</option>
+                  <option value="pending">Pending</option>
+                  <option value="active">Active</option>
+                  <option value="inactive">Inactive</option>
+                </select>
+              </div>
+            </div>
+          </div>
           <div
             class="d-flex flex-wrap align-items-center gap-2 gap-md-3 ms-md-auto flex-shrink-0"
           >
@@ -803,7 +818,11 @@ onUnmounted(() => {
         <table class="table table-hover align-middle mb-0 staff-data-table">
           <thead class="table-light staff-table-head">
             <tr>
-              <th v-if="showCheckboxColumn" class="staff-table-head__th" scope="col">
+              <th
+                v-if="showCheckboxColumn"
+                class="staff-table-head__th staff-table-head__th--select"
+                scope="col"
+              >
                 <input
                   type="checkbox"
                   class="form-check-input staff-table-head__check mt-0"
@@ -1218,11 +1237,11 @@ onUnmounted(() => {
     <Teleport to="body">
       <Transition
         enter-active-class="transition ease-out duration-100"
-        enter-from-class="transform opacity-0 scale-95"
-        enter-to-class="transform opacity-100 scale-100"
+        enter-from-class="opacity-0"
+        enter-to-class="opacity-100"
         leave-active-class="transition ease-in duration-75"
-        leave-from-class="transform opacity-100 scale-100"
-        leave-to-class="transform opacity-0 scale-95"
+        leave-from-class="opacity-100"
+        leave-to-class="opacity-0"
       >
         <div
           v-if="manageMenuUser"

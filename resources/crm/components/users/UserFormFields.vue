@@ -31,6 +31,18 @@ const BASE_EMPLOYMENT_OPTIONS = [
   { value: "Intern", label: "Intern" },
 ];
 
+/** When null or empty, all sections render (full edit). */
+const SECTION_ORDER = [
+  "avatar",
+  "displayName",
+  "identity",
+  "access",
+  "contact",
+  "address",
+  "employment",
+  "bio",
+];
+
 const props = defineProps({
   form: { type: Object, required: true },
   roles: { type: Array, default: () => [] },
@@ -43,7 +55,34 @@ const props = defineProps({
   toggleRole: { type: Function, required: true },
   uploadAvatar: { type: Function, default: null },
   deleteAvatar: { type: Function, default: null },
+  /** Keys: avatar, displayName, identity, access, contact, address, employment, bio */
+  sections: { type: Array, default: null },
+  showAvatar: { type: Boolean, default: true },
 });
+
+function showSection(key) {
+  if (props.sections == null || props.sections.length === 0) {
+    return key !== "displayName";
+  }
+  return props.sections.includes(key);
+}
+
+const showAvatarBlock = computed(
+  () => props.showAvatar && showSection("avatar"),
+);
+
+function sectionWrapperClass(key) {
+  const visible = SECTION_ORDER.filter((k) => {
+    if (k === "avatar") return showAvatarBlock.value;
+    return showSection(k);
+  });
+  const idx = visible.indexOf(key);
+  const border =
+    idx > 0
+      ? "border-t border-gray-100 pt-6 dark:border-gray-800 "
+      : "";
+  return `${border}space-y-5`;
+}
 
 const pendingAvatarFile = defineModel("pendingAvatarFile", {
   type: Object,
@@ -172,9 +211,9 @@ watch(
 
 <template>
   <div class="space-y-8">
-    <div class="space-y-5">
+    <div v-if="showAvatarBlock" :class="sectionWrapperClass('avatar')">
       <h3 class="text-sm font-semibold text-gray-900 dark:text-white">
-        Account
+        Profile photo
       </h3>
 
       <div class="flex flex-wrap items-center gap-4">
@@ -221,6 +260,35 @@ watch(
           </button>
         </div>
       </div>
+    </div>
+
+    <div v-if="showSection('displayName')" :class="sectionWrapperClass('displayName')">
+      <h3 class="text-sm font-semibold text-gray-900 dark:text-white">
+        Name
+      </h3>
+      <div>
+        <label
+          class="mb-1 block text-xs font-medium text-gray-500 dark:text-gray-400"
+          >Full name</label
+        >
+        <input
+          v-model="form.name"
+          type="text"
+          required
+          autocomplete="name"
+          class="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-500/20 dark:border-gray-600 dark:bg-gray-900 dark:text-white"
+          @input="clearFieldError('name')"
+        />
+        <p v-if="firstError('name')" class="mt-1 text-xs text-red-600">
+          {{ firstError("name") }}
+        </p>
+      </div>
+    </div>
+
+    <div v-if="showSection('identity')" :class="sectionWrapperClass('identity')">
+      <h3 class="text-sm font-semibold text-gray-900 dark:text-white">
+        Name &amp; login
+      </h3>
 
       <div>
         <label
@@ -275,6 +343,12 @@ watch(
           {{ firstError("password") }}
         </p>
       </div>
+    </div>
+
+    <div v-if="showSection('access')" :class="sectionWrapperClass('access')">
+      <h3 class="text-sm font-semibold text-gray-900 dark:text-white">
+        Status &amp; roles
+      </h3>
 
       <div>
         <label
@@ -321,9 +395,9 @@ watch(
       </div>
     </div>
 
-    <div class="border-t border-gray-100 pt-6 dark:border-gray-800">
+    <div v-if="showSection('contact')" :class="sectionWrapperClass('contact')">
       <h3 class="mb-4 text-sm font-semibold text-gray-900 dark:text-white">
-        Contact &amp; Location
+        Contact
       </h3>
       <div class="grid gap-4 sm:grid-cols-2">
         <div class="sm:col-span-2">
@@ -408,6 +482,14 @@ watch(
             {{ firstError("birthday") }}
           </p>
         </div>
+      </div>
+    </div>
+
+    <div v-if="showSection('address')" :class="sectionWrapperClass('address')">
+      <h3 class="mb-4 text-sm font-semibold text-gray-900 dark:text-white">
+        Address
+      </h3>
+      <div class="grid gap-4 sm:grid-cols-2">
         <div class="sm:col-span-2">
           <label
             class="mb-1 block text-xs font-medium text-gray-500 dark:text-gray-400"
@@ -490,7 +572,7 @@ watch(
       </div>
     </div>
 
-    <div class="border-t border-gray-100 pt-6 dark:border-gray-800">
+    <div v-if="showSection('employment')" :class="sectionWrapperClass('employment')">
       <h3 class="mb-4 text-sm font-semibold text-gray-900 dark:text-white">
         Employment
       </h3>
@@ -581,9 +663,9 @@ watch(
       </div>
     </div>
 
-    <div class="border-t border-gray-100 pt-6 dark:border-gray-800">
+    <div v-if="showSection('bio')" :class="sectionWrapperClass('bio')">
       <h3 class="mb-4 text-sm font-semibold text-gray-900 dark:text-white">
-        Notes
+        Bio
       </h3>
       <div>
         <label

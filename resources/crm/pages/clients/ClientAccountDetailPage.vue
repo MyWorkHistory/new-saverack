@@ -1,17 +1,16 @@
 <script setup>
 import { computed, inject, onMounted, reactive, ref, watch } from "vue";
-import { RouterLink, useRouter } from "vue-router";
+import { RouterLink, useRoute, useRouter } from "vue-router";
 import api from "../../services/api";
 import CrmLoadingSpinner from "../../components/common/CrmLoadingSpinner.vue";
 import ConfirmModal from "../../components/common/ConfirmModal.vue";
-import ClientAccountChannelIcons from "../../components/clients/ClientAccountChannelIcons.vue";
 import ClientAccountEditModal from "../../components/clients/ClientAccountEditModal.vue";
+import ClientAccountChannelIcons from "../../components/clients/ClientAccountChannelIcons.vue";
 import ClientStoreCreateDrawer from "../../components/clients/ClientStoreCreateDrawer.vue";
 import ClientStoreEditModal from "../../components/clients/ClientStoreEditModal.vue";
 import ClientStoresBulkEditModal from "../../components/clients/ClientStoresBulkEditModal.vue";
 import { DEFAULT_PER_PAGE, PER_PAGE_OPTIONS } from "../../constants/pagination";
 import { crmIsAdmin } from "../../utils/crmUser";
-import { formatDateUs, formatDateTimeUs } from "../../utils/formatUserDates";
 import { setCrmPageMeta } from "../../composables/useCrmPageMeta.js";
 import { useToast } from "../../composables/useToast";
 
@@ -20,6 +19,7 @@ const props = defineProps({
 });
 
 const router = useRouter();
+const route = useRoute();
 const crmUser = inject("crmUser", ref(null));
 const toast = useToast();
 const nf = new Intl.NumberFormat(undefined, { maximumFractionDigits: 0 });
@@ -65,24 +65,67 @@ const selectedStoreIds = ref([]);
 const storeBulkEditOpen = ref(false);
 const storeBulkEditBusy = ref(false);
 
-const activeTab = ref("overview");
+const TAB_ACCOUNT_INFO = "account-info";
+const TAB_FEES = "fees";
+const TAB_BILLING = "billing";
 
-const accountTabs = computed(() => {
-  const rows = [{ id: "overview", label: "Overview" }];
-  if (canViewStores.value) {
-    rows.push({ id: "stores", label: "Stores" });
+const accountTabList = [
+  { id: TAB_ACCOUNT_INFO, label: "Account Info" },
+  { id: TAB_FEES, label: "Fees" },
+  { id: TAB_BILLING, label: "Billing" },
+];
+
+const activeTab = ref(TAB_ACCOUNT_INFO);
+
+function tabFromRouteQuery(tab) {
+  const t = String(tab || "").toLowerCase();
+  if (t === TAB_FEES) return TAB_FEES;
+  if (t === TAB_BILLING) return TAB_BILLING;
+  if (
+    t === TAB_ACCOUNT_INFO ||
+    t === "overview" ||
+    t === "stores"
+  ) {
+    return TAB_ACCOUNT_INFO;
   }
-  return rows;
-});
+  return TAB_ACCOUNT_INFO;
+}
+
+function syncTabFromRoute() {
+  const next = tabFromRouteQuery(route.query.tab);
+  if (activeTab.value !== next) {
+    activeTab.value = next;
+  }
+}
+
+function setActiveTab(tabId) {
+  activeTab.value = tabId;
+  const q = String(route.query.tab || "");
+  if (q !== tabId) {
+    router.replace({ query: { ...route.query, tab: tabId } });
+  }
+}
 
 watch(
-  accountTabs,
-  (tabs) => {
-    if (!tabs.some((t) => t.id === activeTab.value)) {
-      activeTab.value = "overview";
+  () => route.query.tab,
+  () => {
+    const next = tabFromRouteQuery(route.query.tab);
+    if (activeTab.value !== next) {
+      activeTab.value = next;
     }
   },
-  { immediate: true },
+);
+
+const notesDraft = ref("");
+const notesSaving = ref(false);
+
+watch(
+  () => account.value,
+  (a) => {
+    if (a) {
+      notesDraft.value = a.notes != null ? String(a.notes) : "";
+    }
+  },
 );
 
 const accountDeleteOpen = ref(false);
@@ -158,21 +201,45 @@ function storeStatusBadgeClass(status) {
   return "badge bg-body-secondary text-body-secondary";
 }
 
-const storesTotal = computed(() => stores.value.length);
-const storesActiveCount = computed(() =>
-  stores.value.filter((r) => String(r.status).toLowerCase() === "active")
-    .length,
-);
-
-const channelsCount = computed(() => {
+const storeCountDisplay = computed(() => {
   const a = account.value;
-  if (!a) return 0;
-  let n = 0;
-  if (a.notify_email) n += 1;
-  if (a.telegram_handle && String(a.telegram_handle).trim()) n += 1;
-  if (a.whatsapp_e164 && String(a.whatsapp_e164).trim()) n += 1;
-  return n;
+  if (a && a.stores_count != null) return Number(a.stores_count);
+  return stores.value.length;
 });
+
+const usersCountDisplay = computed(() => {
+  const a = account.value;
+  if (a && a.account_users_count != null) return Number(a.account_users_count);
+  return 0;
+});
+
+function formatAccountAddress(a) {
+  if (!a) return "";
+  const lines = [];
+  if (a.street) lines.push(String(a.street));
+  const cityParts = [a.city, a.state, a.zip].filter(
+    (x) => x != null && String(x).trim() !== "",
+  );
+  if (cityParts.length) lines.push(cityParts.join(", "));
+  if (a.country) lines.push(String(a.country));
+  return lines.join("\n");
+}
+
+async function saveNotes() {
+  if (!canUpdateAccount.value || !account.value) return;
+  notesSaving.value = true;
+  try {
+    await api.patch(`/client-accounts/${props.id}`, {
+      notes: notesDraft.value.trim() || null,
+    });
+    toast.success("Notes saved.");
+    await loadAccount();
+  } catch (e) {
+    toast.errorFrom(e, "Could not save notes.");
+  } finally {
+    notesSaving.value = false;
+  }
+}
 
 const showStoreCheckboxCol = computed(() => canUpdateStore.value);
 
@@ -336,7 +403,7 @@ async function applyStoreBulkEdit(payload) {
     toast.success("Stores updated.");
     storeBulkEditOpen.value = false;
     selectedStoreIds.value = [];
-    await loadStores();
+    await refreshStoresAndAccountCounts();
   } catch (e) {
     toast.errorFrom(e, "Could not update stores.");
   } finally {
@@ -404,6 +471,11 @@ async function loadStores() {
   }
 }
 
+async function refreshStoresAndAccountCounts() {
+  await loadStores();
+  await loadAccount();
+}
+
 function openEditStore(row) {
   editingStore.value = { ...row };
   editStoreOpen.value = true;
@@ -422,7 +494,7 @@ async function confirmStoreDelete() {
     await api.delete(`/client-stores/${row.id}`);
     storeDeleteTarget.value = null;
     toast.success("Store deleted.");
-    await loadStores();
+    await refreshStoresAndAccountCounts();
   } catch (e) {
     toast.errorFrom(e, "Could not delete store.");
   } finally {
@@ -472,6 +544,7 @@ onMounted(async () => {
     description: "Client account profile.",
   });
   await loadAccount();
+  syncTabFromRoute();
   await loadStores();
 });
 </script>
@@ -495,15 +568,7 @@ onMounted(async () => {
       class="staff-user-view__title-row d-flex flex-wrap align-items-start justify-content-between gap-2"
     >
       <div class="min-w-0">
-        <h1 class="staff-user-view__title">
-          {{ account?.company_name || "Account" }}
-        </h1>
-        <p
-          v-if="account?.created_at"
-          class="text-secondary small mb-0"
-        >
-          Added {{ formatDateTimeUs(account.created_at) }}
-        </p>
+        <h1 class="staff-user-view__title">Account Profile</h1>
       </div>
       <button
         v-if="canDeleteAccount && account && !loading && !errorMsg"
@@ -526,13 +591,13 @@ onMounted(async () => {
       v-if="canCreateStore && canViewStores"
       v-model:open="addStoreOpen"
       :client-account-id="id"
-      @saved="loadStores"
+      @saved="refreshStoresAndAccountCounts"
     />
     <ClientStoreEditModal
       v-if="canUpdateStore"
       v-model:open="editStoreOpen"
       :store="editingStore"
-      @saved="loadStores"
+      @saved="refreshStoresAndAccountCounts"
     />
     <ClientStoresBulkEditModal
       v-if="canUpdateStore && canViewStores"
@@ -591,9 +656,12 @@ onMounted(async () => {
             <h2 class="staff-user-profile__name">
               {{ account.company_name }}
             </h2>
-            <p class="text-body-secondary small text-center mb-3">
-              Account ID #{{ account.id }}
-            </p>
+            <div class="text-center mb-3">
+              <span
+                class="text-capitalize"
+                :class="accountStatusBadgeClass(account.status)"
+              >{{ account.status }}</span>
+            </div>
             <div class="staff-user-profile__stats">
               <div class="staff-user-profile__stat">
                 <div class="staff-user-profile__stat-icon" aria-hidden="true">
@@ -604,7 +672,7 @@ onMounted(async () => {
                   </svg>
                 </div>
                 <div class="staff-user-profile__stat-val">
-                  {{ nf.format(storesTotal) }}
+                  {{ nf.format(storeCountDisplay) }}
                 </div>
                 <div class="staff-user-profile__stat-lbl">Stores</div>
               </div>
@@ -612,14 +680,14 @@ onMounted(async () => {
                 <div class="staff-user-profile__stat-icon" aria-hidden="true">
                   <svg width="20" height="20" fill="currentColor" viewBox="0 0 24 24">
                     <path
-                      d="M11.99 2C6.47 2 2 6.48 2 12s4.47 10 9.99 10C17.52 22 22 17.52 22 12S17.52 2 11.99 2zM12 20c-4.42 0-8-3.58-8-8s3.58-8 8-8 8 3.58 8 8-3.58 8-8 8zm.5-13H11v6l5.25 3.15.75-1.23-4.5-2.67z"
+                      d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z"
                     />
                   </svg>
                 </div>
-                <div class="staff-user-profile__stat-val text-truncate px-1">
-                  {{ formatDateUs(account.created_at) }}
+                <div class="staff-user-profile__stat-val">
+                  {{ nf.format(usersCountDisplay) }}
                 </div>
-                <div class="staff-user-profile__stat-lbl">Created</div>
+                <div class="staff-user-profile__stat-lbl">Users</div>
               </div>
             </div>
 
@@ -635,14 +703,6 @@ onMounted(async () => {
                 <dt class="staff-user-profile__dt">Phone</dt>
                 <dd class="staff-user-profile__dd">
                   {{ display(account.phone) }}
-                </dd>
-              </div>
-              <div>
-                <dt class="staff-user-profile__dt">Status</dt>
-                <dd class="staff-user-profile__dd text-capitalize">
-                  <span :class="accountStatusBadgeClass(account.status)">{{
-                    account.status
-                  }}</span>
                 </dd>
               </div>
               <div>
@@ -678,223 +738,124 @@ onMounted(async () => {
         </div>
 
         <div class="col-12 col-xl-8">
-          <div class="staff-user-tabs" role="tablist">
-            <button
-              v-for="t in accountTabs"
-              :key="t.id"
-              type="button"
-              class="staff-user-tab"
-              :class="{ 'staff-user-tab--active': activeTab === t.id }"
-              role="tab"
-              :aria-selected="activeTab === t.id"
-              @click="activeTab = t.id"
-            >
-              <svg
-                v-if="t.id === 'overview'"
-                fill="none"
-                viewBox="0 0 24 24"
-                stroke="currentColor"
-                stroke-width="1.5"
-                aria-hidden="true"
-              >
-                <path
-                  stroke-linecap="round"
-                  stroke-linejoin="round"
-                  d="M3.75 6A2.25 2.25 0 016 3.75h2.25A2.25 2.25 0 0110.5 6v2.25a2.25 2.25 0 01-2.25 2.25H6a2.25 2.25 0 01-2.25-2.25V6zM13.5 15.75a2.25 2.25 0 012.25-2.25H18a2.25 2.25 0 012.25 2.25V18A2.25 2.25 0 0118 20.25h-2.25A2.25 2.25 0 0113.5 18v-2.25zM13.5 6a2.25 2.25 0 012.25-2.25H18A2.25 2.25 0 0120.25 6v2.25A2.25 2.25 0 0118 10.5h-2.25A2.25 2.25 0 0113.5 8.25V6zM3.75 15.75a2.25 2.25 0 012.25-2.25h2.25a2.25 2.25 0 012.25 2.25V18a2.25 2.25 0 01-2.25 2.25H6a2.25 2.25 0 01-2.25-2.25v-2.25z"
-                />
-              </svg>
-              <svg
-                v-else
-                fill="none"
-                viewBox="0 0 24 24"
-                stroke="currentColor"
-                stroke-width="1.5"
-                aria-hidden="true"
-              >
-                <path
-                  stroke-linecap="round"
-                  stroke-linejoin="round"
-                  d="M13.5 21v-7.5a.75.75 0 00-.75-.75H3a.75.75 0 00-.75.75V21m18-10.5v7.5a.75.75 0 01-.75.75H13.5a.75.75 0 01-.75-.75v-7.5m9-6h-9a.75.75 0 00-.75.75V9m10.5-3.75h-9a.75.75 0 01-.75-.75v-1.5c0-.414.336-.75.75-.75h9c.414 0 .75.336.75.75v1.5a.75.75 0 01-.75.75z"
-                />
-              </svg>
-              {{ t.label }}
-            </button>
-          </div>
-
-          <div
-            class="staff-user-tab-panel"
-            role="tabpanel"
-            :aria-label="accountTabs.find((x) => x.id === activeTab)?.label"
+        <div class="staff-user-tabs" role="tablist">
+          <button
+            v-for="t in accountTabList"
+            :key="t.id"
+            type="button"
+            class="staff-user-tab"
+            :class="{ 'staff-user-tab--active': activeTab === t.id }"
+            role="tab"
+            :aria-selected="activeTab === t.id"
+            @click="setActiveTab(t.id)"
           >
-            <template v-if="activeTab === 'overview'">
-              <div class="row g-4 mb-4">
-                <div class="col-12 col-sm-6">
-                  <div class="staff-stat-card h-100">
-                    <p class="staff-stat-card__label">Total stores</p>
-                    <p class="staff-stat-card__value">
-                      {{ nf.format(storesTotal) }}
-                    </p>
-                    <p class="staff-stat-card__sub">Linked to this account</p>
-                    <div
-                      class="staff-stat-card__icon text-white"
-                      style="background: #2563eb"
-                      aria-hidden="true"
-                    >
-                      <svg width="22" height="22" fill="currentColor" viewBox="0 0 24 24">
-                        <path
-                          d="M12 7V3H2v18h20V7H12zM6 19H4v-2h2v2zm0-4H4v-2h2v2zm0-4H4V9h2v2zm0-4H4V5h2v2zm4 12H8v-2h2v2zm0-4H8v-2h2v2zm0-4H8V9h2v2zm0-4H8V5h2v2zm10 12h-8v-2h2v-2h-2v-2h2v-2h-2V9h8v10zm-2-8h-2v2h2v-2zm0 4h-2v2h2v-2z"
-                        />
-                      </svg>
-                    </div>
-                  </div>
-                </div>
-                <div class="col-12 col-sm-6">
-                  <div class="staff-stat-card h-100">
-                    <p class="staff-stat-card__label">Active stores</p>
-                    <p class="staff-stat-card__value">
-                      {{ nf.format(storesActiveCount) }}
-                    </p>
-                    <p class="staff-stat-card__sub">Status active</p>
-                    <div
-                      class="staff-stat-card__icon bg-success-subtle text-success"
-                      aria-hidden="true"
-                    >
-                      <svg width="22" height="22" fill="currentColor" viewBox="0 0 24 24">
-                        <path
-                          d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z"
-                        />
-                      </svg>
-                    </div>
-                  </div>
-                </div>
-                <div class="col-12 col-sm-6">
-                  <div class="staff-stat-card h-100">
-                    <p class="staff-stat-card__label">Contact</p>
-                    <p class="staff-stat-card__value text-truncate fs-6">
-                      {{ display(account.contact_full_name) }}
-                    </p>
-                    <p class="staff-stat-card__sub">Primary contact name</p>
-                    <div
-                      class="staff-stat-card__icon bg-warning-subtle text-warning-emphasis"
-                      aria-hidden="true"
-                    >
-                      <svg width="22" height="22" fill="currentColor" viewBox="0 0 24 24">
-                        <path
-                          d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z"
-                        />
-                      </svg>
-                    </div>
-                  </div>
-                </div>
-                <div class="col-12 col-sm-6">
-                  <div class="staff-stat-card h-100">
-                    <p class="staff-stat-card__label">Channels</p>
-                    <p class="staff-stat-card__value">
-                      {{ nf.format(channelsCount) }}
-                    </p>
-                    <p class="staff-stat-card__sub">Notification paths on</p>
-                    <div
-                      class="staff-stat-card__icon bg-info-subtle text-info-emphasis"
-                      aria-hidden="true"
-                    >
-                      <svg width="22" height="22" fill="currentColor" viewBox="0 0 24 24">
-                        <path
-                          d="M20 2H4c-1.1 0-2 .9-2 2v18l4-4h14c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2z"
-                        />
-                      </svg>
-                    </div>
-                  </div>
-                </div>
-              </div>
+            {{ t.label }}
+          </button>
+        </div>
 
-              <div class="staff-surface p-3 p-md-4 mb-4">
-                <h3 class="staff-user-section-title">Account information</h3>
-                <div class="row g-3">
-                  <div class="col-md-6">
-                    <dl class="mb-0 small">
-                      <dt class="text-secondary text-uppercase fw-semibold mb-1" style="font-size: 0.65rem">
-                        Company
-                      </dt>
-                      <dd class="mb-3 fw-semibold text-body">
-                        {{ display(account.company_name) }}
-                      </dd>
-                      <dt class="text-secondary text-uppercase fw-semibold mb-1" style="font-size: 0.65rem">
-                        Brand
-                      </dt>
-                      <dd class="mb-0 fw-semibold text-body">
-                        {{ display(account.brand_name) }}
-                      </dd>
-                    </dl>
-                  </div>
-                  <div class="col-md-6">
-                    <dl class="mb-0 small">
-                      <dt class="text-secondary text-uppercase fw-semibold mb-1" style="font-size: 0.65rem">
-                        Website
-                      </dt>
-                      <dd class="mb-3 fw-semibold text-body text-break">
-                        {{ display(account.website) }}
-                      </dd>
-                      <dt class="text-secondary text-uppercase fw-semibold mb-1" style="font-size: 0.65rem">
-                        Email
-                      </dt>
-                      <dd class="mb-0 fw-semibold text-body text-break">
-                        {{ display(account.email) }}
-                      </dd>
-                    </dl>
-                  </div>
-                </div>
+        <div
+          class="staff-user-tab-panel"
+          role="tabpanel"
+          :aria-label="accountTabList.find((x) => x.id === activeTab)?.label"
+        >
+          <template v-if="activeTab === TAB_ACCOUNT_INFO">
+            <div class="staff-surface p-3 p-md-4 mb-4">
+              <div
+                class="d-flex flex-wrap align-items-start justify-content-between gap-2 mb-3"
+              >
+                <h3 class="staff-user-section-title mb-0">Account Info</h3>
+                <button
+                  v-if="canUpdateAccount"
+                  type="button"
+                  class="btn btn-primary staff-page-primary btn-sm"
+                  @click="editAccountOpen = true"
+                >
+                  Edit details
+                </button>
               </div>
+              <dl class="mb-0 small">
+                <dt
+                  class="text-secondary text-uppercase fw-semibold mb-1"
+                  style="font-size: 0.65rem"
+                >
+                  Company
+                </dt>
+                <dd class="mb-3 fw-semibold text-body">
+                  {{ display(account.company_name) }}
+                </dd>
+                <dt
+                  class="text-secondary text-uppercase fw-semibold mb-1"
+                  style="font-size: 0.65rem"
+                >
+                  Name
+                </dt>
+                <dd class="mb-3 fw-semibold text-body">
+                  {{ display(account.contact_full_name) }}
+                </dd>
+                <dt
+                  class="text-secondary text-uppercase fw-semibold mb-1"
+                  style="font-size: 0.65rem"
+                >
+                  Email
+                </dt>
+                <dd class="mb-3 fw-semibold text-body text-break">
+                  {{ display(account.email) }}
+                </dd>
+                <dt
+                  class="text-secondary text-uppercase fw-semibold mb-1"
+                  style="font-size: 0.65rem"
+                >
+                  Phone
+                </dt>
+                <dd class="mb-0 fw-semibold text-body">
+                  {{ display(account.phone) }}
+                </dd>
+              </dl>
+            </div>
 
-              <div class="staff-surface p-3 p-md-4">
-                <h3 class="staff-user-section-title">Address</h3>
-                <div class="row g-3">
-                  <div class="col-md-4">
-                    <dl class="mb-0 small">
-                      <dt class="text-secondary text-uppercase fw-semibold mb-1" style="font-size: 0.65rem">
-                        Street
-                      </dt>
-                      <dd class="mb-3 fw-semibold text-body">
-                        {{ display(account.street) }}
-                      </dd>
-                      <dt class="text-secondary text-uppercase fw-semibold mb-1" style="font-size: 0.65rem">
-                        City
-                      </dt>
-                      <dd class="mb-0 fw-semibold text-body">
-                        {{ display(account.city) }}
-                      </dd>
-                    </dl>
-                  </div>
-                  <div class="col-md-4">
-                    <dl class="mb-0 small">
-                      <dt class="text-secondary text-uppercase fw-semibold mb-1" style="font-size: 0.65rem">
-                        State
-                      </dt>
-                      <dd class="mb-3 fw-semibold text-body">
-                        {{ display(account.state) }}
-                      </dd>
-                      <dt class="text-secondary text-uppercase fw-semibold mb-1" style="font-size: 0.65rem">
-                        ZIP
-                      </dt>
-                      <dd class="mb-0 fw-semibold text-body">
-                        {{ display(account.zip) }}
-                      </dd>
-                    </dl>
-                  </div>
-                  <div class="col-md-4">
-                    <dl class="mb-0 small">
-                      <dt class="text-secondary text-uppercase fw-semibold mb-1" style="font-size: 0.65rem">
-                        Country
-                      </dt>
-                      <dd class="mb-0 fw-semibold text-body">
-                        {{ display(account.country) }}
-                      </dd>
-                    </dl>
-                  </div>
-                </div>
-              </div>
-            </template>
+            <div class="staff-surface p-3 p-md-4 mb-4">
+              <h3 class="staff-user-section-title">Address</h3>
+              <p
+                v-if="formatAccountAddress(account).trim()"
+                class="mb-0 small fw-semibold text-body"
+                style="white-space: pre-line"
+              >
+                {{ formatAccountAddress(account) }}
+              </p>
+              <p v-else class="text-secondary small mb-0">No address on file.</p>
+            </div>
 
-            <template v-else-if="activeTab === 'stores' && canViewStores">
+            <div class="staff-surface p-3 p-md-4 mb-4">
+              <h3 class="staff-user-section-title">Notes</h3>
+              <template v-if="canUpdateAccount">
+                <textarea
+                  v-model="notesDraft"
+                  class="form-control mb-3"
+                  rows="5"
+                  placeholder="Add internal notes…"
+                />
+                <button
+                  type="button"
+                  class="btn btn-primary staff-page-primary btn-sm"
+                  :disabled="notesSaving"
+                  @click="saveNotes"
+                >
+                  {{ notesSaving ? "Saving…" : "Save notes" }}
+                </button>
+              </template>
+              <template v-else>
+                <p
+                  v-if="notesDraft.trim()"
+                  class="mb-0 small"
+                  style="white-space: pre-wrap"
+                >
+                  {{ notesDraft }}
+                </p>
+                <p v-else class="text-secondary small mb-0">No notes.</p>
+              </template>
+            </div>
+
+            <template v-if="canViewStores">
               <div class="staff-table-card staff-datatable-card">
                 <div
                   class="staff-table-toolbar d-flex flex-column flex-sm-row flex-wrap align-items-stretch align-items-sm-center justify-content-between gap-3"
@@ -975,7 +936,7 @@ onMounted(async () => {
                       <tr>
                         <th
                           v-if="showStoreCheckboxCol"
-                          class="staff-table-head__th"
+                          class="staff-table-head__th staff-table-head__th--select"
                           scope="col"
                         >
                           <input
@@ -1257,7 +1218,24 @@ onMounted(async () => {
                 </div>
               </div>
             </template>
-          </div>
+          </template>
+
+          <template v-else-if="activeTab === TAB_FEES">
+            <div class="staff-surface p-3 p-md-4">
+              <p class="text-secondary small mb-0">
+                Fee schedules and account pricing will appear here.
+              </p>
+            </div>
+          </template>
+
+          <template v-else-if="activeTab === TAB_BILLING">
+            <div class="staff-surface p-3 p-md-4">
+              <p class="text-secondary small mb-0">
+                Billing history and invoices will appear here.
+              </p>
+            </div>
+          </template>
+        </div>
         </div>
       </div>
     </template>

@@ -118,6 +118,9 @@ function onWindowScrollOrResize() {
 }
 
 function onDocClick(e) {
+  if (!e.target.closest("[data-toolbar-filter]")) {
+    filterMenuOpen.value = false;
+  }
   if (!e.target.closest("[data-row-actions]")) {
     manageOpenId.value = null;
   }
@@ -142,6 +145,8 @@ const loading = ref(true);
 const rows = ref([]);
 const pagination = ref({ current_page: 1, last_page: 1, total: 0 });
 const accountOptions = ref([]);
+
+const filterMenuOpen = ref(false);
 
 const addOpen = ref(false);
 const addSaving = ref(false);
@@ -800,63 +805,94 @@ onUnmounted(() => {
     </div>
 
     <div class="staff-table-card staff-datatable-card">
-      <div class="staff-datatable-filters">
-        <div
-          class="d-flex flex-wrap align-items-center justify-content-between gap-2 mb-3"
-        >
-          <h2 class="staff-datatable-filters__title mb-0">Filters</h2>
-          <button
-            type="button"
-            class="btn btn-link btn-sm text-secondary text-decoration-none px-0"
-            :disabled="loading"
-            @click="clearFilters"
-          >
-            Reset
-          </button>
-        </div>
-        <div class="row g-3 g-md-4">
-          <div class="col-12 col-md-4 col-lg-3">
-            <label class="visually-hidden" for="cau-filter-status">Status</label>
-            <select
-              id="cau-filter-status"
-              v-model="query.status"
-              class="form-select staff-datatable-filters__select"
-              :disabled="loading"
-              @change="applySearch"
-            >
-              <option value="all">All statuses</option>
-              <option value="pending">Pending</option>
-              <option value="active">Active</option>
-              <option value="inactive">Inactive</option>
-            </select>
-          </div>
-          <div class="col-12 col-md-6 col-lg-4">
-            <CrmSearchableSelect
-              v-model="query.client_account_id"
-              appearance="staff"
-              aria-label="Account"
-              :options="accountOptions"
-              placeholder="All accounts"
-              search-placeholder="Search accounts…"
-              empty-label="All accounts"
-            />
-          </div>
-        </div>
-      </div>
-
       <div class="staff-table-toolbar">
-        <div
-          class="d-flex flex-column flex-md-row align-items-stretch align-items-md-center gap-3 w-100"
-        >
+        <div class="staff-table-toolbar--row">
           <input
             id="cau-search"
             v-model="query.search"
             type="search"
-            class="form-control staff-toolbar-search staff-toolbar-search--grow"
+            class="form-control staff-toolbar-search staff-toolbar-search--inline"
             placeholder="Search name, email, company…"
             autocomplete="off"
             @keydown.enter.prevent="applySearch"
           />
+          <div class="position-relative flex-shrink-0" data-toolbar-filter>
+            <button
+              type="button"
+              class="btn btn-outline-secondary staff-toolbar-btn d-inline-flex align-items-center gap-2"
+              :aria-expanded="filterMenuOpen"
+              aria-haspopup="true"
+              aria-controls="cau-filter-panel"
+              :disabled="loading"
+              @click.stop="filterMenuOpen = !filterMenuOpen"
+            >
+              <svg
+                width="18"
+                height="18"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+                viewBox="0 0 24 24"
+                aria-hidden="true"
+              >
+                <path
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                  d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2.586a1 1 0 01-.293.707l-6.414 6.414a1 1 0 00-.293.707V17l-4 4v-6.586a1 1 0 00-.293-.707L3.293 7.293A1 1 0 013 6.586V4z"
+                />
+              </svg>
+              <span class="d-none d-sm-inline">Filters</span>
+            </button>
+            <div
+              v-if="filterMenuOpen"
+              id="cau-filter-panel"
+              class="dropdown-menu dropdown-menu-end show shadow border p-0 staff-toolbar-filter-dropdown"
+              role="dialog"
+              aria-label="Table filters"
+              @click.stop
+            >
+              <div class="staff-toolbar-filter-dropdown__head">
+                <span>Filters</span>
+                <button
+                  type="button"
+                  class="btn btn-link btn-sm text-secondary text-decoration-none p-0"
+                  :disabled="loading"
+                  @click="
+                    clearFilters();
+                    filterMenuOpen = false;
+                  "
+                >
+                  Reset
+                </button>
+              </div>
+              <div class="staff-toolbar-filter-dropdown__body">
+                <label class="form-label" for="cau-filter-status">Status</label>
+                <select
+                  id="cau-filter-status"
+                  v-model="query.status"
+                  class="form-select staff-datatable-filters__select mb-3"
+                  :disabled="loading"
+                  @change="applySearch"
+                >
+                  <option value="all">All statuses</option>
+                  <option value="pending">Pending</option>
+                  <option value="active">Active</option>
+                  <option value="inactive">Inactive</option>
+                </select>
+                <label class="form-label" for="cau-filter-account">Account</label>
+                <CrmSearchableSelect
+                  v-model="query.client_account_id"
+                  appearance="staff"
+                  aria-label="Account"
+                  :options="accountOptions"
+                  placeholder="All accounts"
+                  search-placeholder="Search accounts…"
+                  empty-label="All accounts"
+                  button-id="cau-filter-account"
+                />
+              </div>
+            </div>
+          </div>
         </div>
       </div>
 
@@ -1185,11 +1221,11 @@ onUnmounted(() => {
     <Teleport to="body">
       <Transition
         enter-active-class="transition ease-out duration-100"
-        enter-from-class="transform opacity-0 scale-95"
-        enter-to-class="transform opacity-100 scale-100"
+        enter-from-class="opacity-0"
+        enter-to-class="opacity-100"
         leave-active-class="transition ease-in duration-75"
-        leave-from-class="transform opacity-100 scale-100"
-        leave-to-class="transform opacity-0 scale-95"
+        leave-from-class="opacity-100"
+        leave-to-class="opacity-0"
       >
         <div
           v-if="manageMenuRow"

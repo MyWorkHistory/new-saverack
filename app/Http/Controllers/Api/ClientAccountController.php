@@ -217,7 +217,7 @@ class ClientAccountController extends Controller
     public function updateComment(
         ClientAccountCommentUpdateRequest $request,
         ClientAccount $client_account,
-        ClientAccountComment $comment,
+        ClientAccountComment $comment
     ): JsonResponse {
         if ((int) $comment->client_account_id !== (int) $client_account->id) {
             abort(404);

@@ -11,7 +11,8 @@ import ClientStoreEditModal from "../../components/clients/ClientStoreEditModal.
 import ClientStoresBulkEditModal from "../../components/clients/ClientStoresBulkEditModal.vue";
 import ClientAccountFeesPanel from "../../components/clients/ClientAccountFeesPanel.vue";
 import CrmIconRowActions from "../../components/common/CrmIconRowActions.vue";
-import { DEFAULT_PER_PAGE, PER_PAGE_OPTIONS } from "../../constants/pagination";
+import { DEFAULT_PER_PAGE } from "../../constants/pagination";
+import { slackChannelHref, slackChannelLabel } from "../../utils/slackChannel.js";
 import { crmIsAdmin } from "../../utils/crmUser";
 import { setCrmPageMeta } from "../../composables/useCrmPageMeta.js";
 import { useToast } from "../../composables/useToast";
@@ -37,7 +38,6 @@ function userHasPerm(key) {
 }
 
 const canUpdateAccount = computed(() => userHasPerm("clients.update"));
-const canDeleteAccount = computed(() => userHasPerm("clients.delete"));
 const canViewStores = computed(() => userHasPerm("stores.view"));
 const canCreateStore = computed(() => userHasPerm("stores.create"));
 const canUpdateStore = computed(() => userHasPerm("stores.update"));
@@ -74,6 +74,9 @@ const storeListQuery = reactive({
 const selectedStoreIds = ref([]);
 const storeBulkEditOpen = ref(false);
 const storeBulkEditBusy = ref(false);
+const storeFilterMenuOpen = ref(false);
+const storeBulkDeleteOpen = ref(false);
+const storeBulkDeleteBusy = ref(false);
 
 const TAB_ACCOUNT_INFO = "account-info";
 const TAB_STORES = "stores";
@@ -164,23 +167,20 @@ const accountComments = computed(() => {
 
 const imagePreviewUrls = ref({});
 
-const accountDeleteOpen = ref(false);
-const accountDeleteBusy = ref(false);
-
 const storeDeleteOpen = computed(() => storeDeleteTarget.value !== null);
 const storeDeleteMessage = computed(() => {
   const s = storeDeleteTarget.value;
   return s ? `Delete store “${s.name}”? This cannot be undone.` : "";
 });
 
-const accountDeleteMessage = computed(() => {
-  const a = account.value;
-  return a
-    ? `Delete ${a.company_name}? This cannot be undone.`
+const noteDeleteModalOpen = computed(() => noteDeleteTarget.value !== null);
+
+const storeBulkDeleteMessage = computed(() => {
+  const n = selectedStoreIds.value.length;
+  return n
+    ? `Delete ${n} store${n === 1 ? "" : "s"}? This cannot be undone.`
     : "";
 });
-
-const noteDeleteModalOpen = computed(() => noteDeleteTarget.value !== null);
 const noteDeleteMessage = computed(() => {
   const c = noteDeleteTarget.value;
   return c ? "Remove this note? This cannot be undone." : "";
@@ -222,20 +222,6 @@ function accountStatusBadgeClass(status) {
   }
   if (s === "paused") {
     return "badge bg-info-subtle text-info-emphasis";
-  }
-  if (s === "inactive") {
-    return "badge bg-secondary-subtle text-secondary";
-  }
-  return "badge bg-body-secondary text-body-secondary";
-}
-
-function storeStatusBadgeClass(status) {
-  const s = String(status || "").toLowerCase();
-  if (s === "active") {
-    return "badge bg-success-subtle text-success";
-  }
-  if (s === "pending") {
-    return "badge bg-warning-subtle text-warning-emphasis";
   }
   if (s === "inactive") {
     return "badge bg-secondary-subtle text-secondary";
@@ -326,6 +312,42 @@ function closeNoteMenu() {
 
 function closeStoreMenu() {
   storeMenuOpenId.value = null;
+}
+
+function requestStoreDelete(row) {
+  if (!row) return;
+  storeDeleteTarget.value = row;
+  closeStoreMenu();
+}
+
+function openStoreBulkDelete() {
+  if (!selectedStoreIds.value.length) {
+    toast.error("Select one or more stores.");
+    return;
+  }
+  storeBulkDeleteOpen.value = true;
+}
+
+function closeStoreBulkDelete() {
+  if (!storeBulkDeleteBusy.value) storeBulkDeleteOpen.value = false;
+}
+
+async function confirmStoreBulkDelete() {
+  if (!selectedStoreIds.value.length) return;
+  storeBulkDeleteBusy.value = true;
+  try {
+    await api.delete("/client-stores/bulk", {
+      data: { client_store_ids: selectedStoreIds.value },
+    });
+    toast.success("Stores deleted.");
+    storeBulkDeleteOpen.value = false;
+    selectedStoreIds.value = [];
+    await refreshStoresAndAccountCounts();
+  } catch (e) {
+    toast.errorFrom(e, "Could not delete stores.");
+  } finally {
+    storeBulkDeleteBusy.value = false;
+  }
 }
 
 function toggleNoteMenu(commentId, e) {
@@ -435,6 +457,14 @@ async function confirmDeleteNote() {
 
 function onDocumentClickCloseNoteMenu(e) {
   const t = e.target;
+
+  if (
+    storeFilterMenuOpen.value &&
+    t instanceof Element &&
+    !t.closest("[data-store-toolbar-filter]")
+  ) {
+    storeFilterMenuOpen.value = false;
+  }
 
   if (storeMenuOpenId.value !== null) {
     if (!(t instanceof Element) || !t.closest("[data-store-menu-anchor]")) {
@@ -571,7 +601,7 @@ watch(
 const showStoreCheckboxCol = computed(() => canUpdateStore.value);
 
 const storeTableColspan = computed(() => {
-  let n = 4;
+  let n = 3;
   if (canUpdateStore.value || canDeleteStore.value) {
     n += 1;
   }
@@ -666,6 +696,10 @@ watch([storeSearch, storeStatusFilter], () => {
   selectedStoreIds.value = [];
 });
 
+watch(storeStatusFilter, () => {
+  storeFilterMenuOpen.value = false;
+});
+
 function toggleSelectAllStores() {
   const pageIds = paginatedStores.value.map((r) => r.id);
   if (!pageIds.length) return;
@@ -702,12 +736,6 @@ function storeFirstPage() {
 
 function storeLastPageFn() {
   storeListQuery.page = storeListLastPage.value;
-}
-
-function onStorePerPageChange(e) {
-  storeListQuery.per_page = Number(e.target.value);
-  storeListQuery.page = 1;
-  selectedStoreIds.value = [];
 }
 
 function openStoreBulkEdit() {
@@ -833,26 +861,6 @@ async function confirmStoreDelete() {
   }
 }
 
-function closeAccountDelete() {
-  if (accountDeleteBusy.value) return;
-  accountDeleteOpen.value = false;
-}
-
-async function confirmAccountDelete() {
-  if (!account.value) return;
-  accountDeleteBusy.value = true;
-  try {
-    await api.delete(`/client-accounts/${props.id}`);
-    accountDeleteOpen.value = false;
-    toast.success("Account deleted.");
-    await router.push("/clients/accounts");
-  } catch (e) {
-    toast.errorFrom(e, "Could not delete account.");
-  } finally {
-    accountDeleteBusy.value = false;
-  }
-}
-
 watch(
   () => account.value?.company_name,
   (name) => {
@@ -908,20 +916,10 @@ onUnmounted(() => {
       }}</span>
     </nav>
 
-    <div
-      class="staff-user-view__title-row d-flex flex-wrap align-items-start justify-content-between gap-2"
-    >
+    <div class="staff-user-view__title-row d-flex flex-wrap align-items-start gap-2">
       <div class="min-w-0">
         <h1 class="staff-user-view__title">Account Profile</h1>
       </div>
-      <button
-        v-if="canDeleteAccount && account && !loading && !errorMsg"
-        type="button"
-        class="btn btn-outline-danger btn-sm flex-shrink-0"
-        @click="accountDeleteOpen = true"
-      >
-        Delete account
-      </button>
     </div>
 
     <ClientAccountEditModal
@@ -965,15 +963,14 @@ onUnmounted(() => {
       @confirm="confirmStoreDelete"
     />
     <ConfirmModal
-      :open="accountDeleteOpen"
-      title="Delete account"
-      subtitle="This action is permanent and may remove related CRM data."
-      :message="accountDeleteMessage"
+      :open="storeBulkDeleteOpen"
+      title="Delete stores"
+      :message="storeBulkDeleteMessage"
       confirm-label="Delete"
       cancel-label="Cancel"
-      :busy="accountDeleteBusy"
-      @close="closeAccountDelete"
-      @confirm="confirmAccountDelete"
+      :busy="storeBulkDeleteBusy"
+      @close="closeStoreBulkDelete"
+      @confirm="confirmStoreBulkDelete"
     />
     <ConfirmModal
       :open="noteDeleteModalOpen"
@@ -1091,13 +1088,31 @@ onUnmounted(() => {
                     :notify-email="!!account.notify_email"
                     :telegram-handle="account.telegram_handle || ''"
                     :whatsapp-e164="account.whatsapp_e164 || ''"
-                    :slack-channel="account.slack_channel || ''"
-                    :slack-title="
-                      account.slack_channel
-                        ? `Slack: ${account.slack_channel}`
-                        : 'Slack channel'
-                    "
                   />
+                </dd>
+              </div>
+              <div v-if="account.slack_channel">
+                <dt class="staff-user-profile__dt">Slack</dt>
+                <dd class="staff-user-profile__dd text-break text-end">
+                  <a
+                    v-if="slackChannelHref(account.slack_channel)"
+                    :href="slackChannelHref(account.slack_channel)"
+                    class="link-primary text-decoration-none"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                  >
+                    {{ slackChannelLabel(account.slack_channel) }}
+                  </a>
+                  <span v-else class="text-body">{{
+                    slackChannelLabel(account.slack_channel)
+                  }}</span>
+                  <span
+                    v-if="!slackChannelHref(account.slack_channel)"
+                    class="d-block small text-secondary mt-1"
+                  >
+                    Paste a full Slack URL in account settings to make this
+                    clickable.
+                  </span>
                 </dd>
               </div>
             </dl>
@@ -1282,7 +1297,7 @@ onUnmounted(() => {
             </div>
 
             <div class="staff-table-card staff-datatable-card overflow-hidden mb-4">
-              <div class="p-4 p-md-5 border-bottom">
+              <div class="px-4 py-3 px-md-5 py-md-3 border-bottom">
                 <h3 class="h6 fw-semibold text-body mb-0">Notes</h3>
               </div>
               <div class="p-4 p-md-5">
@@ -1491,69 +1506,113 @@ onUnmounted(() => {
 
           <template v-else-if="activeTab === TAB_STORES && canViewStores">
               <div class="staff-table-card staff-datatable-card">
-                <div
-                  class="staff-table-toolbar d-flex flex-column flex-sm-row flex-wrap align-items-stretch align-items-sm-center justify-content-between gap-3"
-                >
-                  <h3 class="staff-datatable-filters__title mb-0">Stores</h3>
-                  <button
-                    v-if="canCreateStore"
-                    type="button"
-                    class="btn btn-primary staff-page-primary btn-sm"
-                    @click="addStoreOpen = true"
-                  >
-                    Add Store
-                  </button>
-                </div>
-                <div
-                  class="staff-table-toolbar staff-table-toolbar--split border-top-0 pt-0"
-                >
-                  <div
-                    class="staff-toolbar-split d-flex flex-column flex-lg-row align-items-stretch align-items-lg-center justify-content-lg-between gap-3 gap-lg-4"
-                  >
-                    <div class="flex-shrink-0 staff-toolbar-per-page">
-                      <label class="visually-hidden" for="store-per-page-toolbar"
-                        >Rows per page</label
-                      >
-                      <select
-                        id="store-per-page-toolbar"
-                        class="form-select staff-toolbar-select staff-toolbar-per-page-select"
-                        :value="storeListQuery.per_page"
+                <div class="staff-table-toolbar">
+                  <div class="staff-table-toolbar--row">
+                    <input
+                      v-model="storeSearch"
+                      type="search"
+                      class="form-control staff-toolbar-search staff-toolbar-search--inline"
+                      placeholder="Search stores"
+                      autocomplete="off"
+                    />
+                    <div
+                      class="position-relative flex-shrink-0"
+                      data-store-toolbar-filter
+                    >
+                      <button
+                        type="button"
+                        class="btn btn-outline-secondary staff-toolbar-btn d-inline-flex align-items-center gap-2"
+                        :aria-expanded="storeFilterMenuOpen"
+                        aria-haspopup="true"
+                        aria-controls="store-filter-panel"
                         :disabled="storesLoading"
-                        @change="onStorePerPageChange"
+                        @click.stop="storeFilterMenuOpen = !storeFilterMenuOpen"
                       >
-                        <option v-for="n in PER_PAGE_OPTIONS" :key="n" :value="n">
-                          {{ n }}
-                        </option>
-                      </select>
+                        <svg
+                          width="18"
+                          height="18"
+                          fill="none"
+                          stroke="currentColor"
+                          stroke-width="2"
+                          viewBox="0 0 24 24"
+                          aria-hidden="true"
+                        >
+                          <path
+                            stroke-linecap="round"
+                            stroke-linejoin="round"
+                            d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2.586a1 1 0 01-.293.707l-6.414 6.414a1 1 0 00-.293.707V17l-4 4v-6.586a1 1 0 00-.293-.707L3.293 7.293A1 1 0 013 6.586V4z"
+                          />
+                        </svg>
+                        <span class="d-none d-sm-inline">Filters</span>
+                      </button>
+                      <div
+                        v-if="storeFilterMenuOpen"
+                        id="store-filter-panel"
+                        class="dropdown-menu dropdown-menu-end show shadow border p-0 staff-toolbar-filter-dropdown"
+                        role="dialog"
+                        aria-label="Table filters"
+                        @click.stop
+                      >
+                        <div class="staff-toolbar-filter-dropdown__head">
+                          <span>Filters</span>
+                          <button
+                            type="button"
+                            class="btn btn-link btn-sm text-secondary text-decoration-none p-0"
+                            :disabled="storesLoading"
+                            @click="
+                              storeStatusFilter = 'all';
+                              storeFilterMenuOpen = false;
+                            "
+                          >
+                            Reset
+                          </button>
+                        </div>
+                        <div class="staff-toolbar-filter-dropdown__body">
+                          <label class="form-label" for="store-filter-status"
+                            >Status</label
+                          >
+                          <select
+                            id="store-filter-status"
+                            v-model="storeStatusFilter"
+                            class="form-select staff-datatable-filters__select mb-0"
+                            :disabled="storesLoading"
+                          >
+                            <option value="all">All statuses</option>
+                            <option value="pending">Pending</option>
+                            <option value="active">Active</option>
+                            <option value="inactive">Inactive</option>
+                          </select>
+                        </div>
+                      </div>
                     </div>
                     <div
-                      class="staff-toolbar-actions d-flex flex-column flex-sm-row flex-wrap align-items-stretch align-items-sm-center gap-2 flex-grow-1 min-w-0"
+                      class="d-flex flex-wrap align-items-center gap-2 gap-md-3 ms-md-auto flex-shrink-0"
                     >
-                      <input
-                        v-model="storeSearch"
-                        type="search"
-                        class="form-control staff-toolbar-search flex-grow-1 min-w-0"
-                        placeholder="Search stores"
-                        autocomplete="off"
-                      />
-                      <select
-                        v-model="storeStatusFilter"
-                        class="form-select staff-toolbar-select flex-shrink-0"
-                        style="max-width: 12rem"
+                      <button
+                        v-if="canCreateStore"
+                        type="button"
+                        class="btn btn-primary staff-page-primary btn-sm"
+                        @click="addStoreOpen = true"
                       >
-                        <option value="all">All statuses</option>
-                        <option value="pending">Pending</option>
-                        <option value="active">Active</option>
-                        <option value="inactive">Inactive</option>
-                      </select>
+                        Add Store
+                      </button>
                       <button
                         v-if="canUpdateStore"
                         type="button"
-                        class="btn btn-outline-secondary staff-toolbar-btn flex-shrink-0"
+                        class="btn btn-outline-secondary staff-toolbar-btn"
                         :disabled="!selectedStoreIds.length || storesLoading"
                         @click="openStoreBulkEdit"
                       >
-                        Bulk edit
+                        Bulk Edit
+                      </button>
+                      <button
+                        v-if="canDeleteStore"
+                        type="button"
+                        class="btn btn-outline-danger staff-toolbar-btn"
+                        :disabled="!selectedStoreIds.length || storesLoading"
+                        @click="openStoreBulkDelete"
+                      >
+                        Bulk Delete
                       </button>
                     </div>
                   </div>
@@ -1581,9 +1640,6 @@ onUnmounted(() => {
                             aria-label="Select all stores on this page"
                             @change="toggleSelectAllStores"
                           />
-                        </th>
-                        <th class="staff-table-head__th" scope="col">
-                          Status
                         </th>
                         <th class="staff-table-head__th" scope="col">
                           Store name
@@ -1631,14 +1687,6 @@ onUnmounted(() => {
                           />
                         </td>
                         <td>
-                          <span
-                            class="text-capitalize fw-medium"
-                            :class="storeStatusBadgeClass(row.status)"
-                          >
-                            {{ row.status }}
-                          </span>
-                        </td>
-                        <td>
                           <div class="d-flex align-items-center gap-3 min-w-0">
                             <span
                               class="flex-shrink-0 rounded-circle d-inline-flex align-items-center justify-content-center small fw-semibold"
@@ -1651,12 +1699,6 @@ onUnmounted(() => {
                               <span class="d-block fw-semibold text-body text-truncate">{{
                                 row.name
                               }}</span>
-                              <span
-                                v-if="row.website"
-                                class="d-block text-secondary staff-user-cell__meta text-truncate"
-                              >
-                                {{ row.website }}
-                              </span>
                             </div>
                           </div>
                         </td>
@@ -1940,10 +1982,7 @@ onUnmounted(() => {
               type="button"
               class="staff-row-menu__item staff-row-menu__item--danger"
               role="menuitem"
-              @click="
-                closeStoreMenu();
-                storeDeleteTarget = storeMenuRow;
-              "
+              @click="requestStoreDelete(storeMenuRow)"
             >
               Delete
             </button>

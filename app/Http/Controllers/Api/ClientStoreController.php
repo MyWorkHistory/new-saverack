@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use App\Http\Requests\ClientStoreBulkDeleteRequest;
 use App\Http\Requests\ClientStoreBulkUpdateRequest;
 use App\Http\Requests\ClientStoreDestroyRequest;
 use App\Http\Requests\ClientStoreListRequest;
@@ -87,6 +88,23 @@ class ClientStoreController extends Controller
         return response()->json([
             'message' => 'Stores updated.',
             'updated' => $updated,
+        ]);
+    }
+
+    public function bulkDestroy(ClientStoreBulkDeleteRequest $request): JsonResponse
+    {
+        $validated = $request->validated();
+        $ids = array_map('intval', $validated['client_store_ids']);
+
+        foreach ($ids as $id) {
+            $this->authorize('delete', ClientStore::query()->findOrFail($id));
+        }
+
+        $deleted = ClientStore::query()->whereIn('id', $ids)->delete();
+
+        return response()->json([
+            'message' => 'Stores deleted.',
+            'deleted' => $deleted,
         ]);
     }
 

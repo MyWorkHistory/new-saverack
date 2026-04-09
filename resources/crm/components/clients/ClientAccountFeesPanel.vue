@@ -172,7 +172,11 @@ async function removeStorageRow(row, idx) {
       </header>
       <div v-if="canEdit" class="d-flex flex-wrap align-items-center gap-2 flex-shrink-0">
         <template v-if="!editing">
-          <button type="button" class="btn btn-outline-secondary btn-sm" @click="startEdit">
+          <button
+            type="button"
+            class="btn btn-primary staff-page-primary btn-sm"
+            @click="startEdit"
+          >
             Edit Fees
           </button>
         </template>
@@ -218,8 +222,8 @@ async function removeStorageRow(row, idx) {
         </div>
 
         <div class="row g-3 mt-1">
-          <div class="col-12">
-            <div class="crm-account-fees__metric staff-surface">
+          <div class="col-12 col-md-6">
+            <div class="crm-account-fees__metric crm-account-fees__metric--tall staff-surface h-100">
               <div class="crm-account-fees__metric-body">
                 <p class="crm-account-fees__metric-label mb-0">
                   Order fulfillment 1st pick fee
@@ -240,8 +244,8 @@ async function removeStorageRow(row, idx) {
               </p>
             </div>
           </div>
-          <div class="col-12">
-            <div class="crm-account-fees__metric staff-surface">
+          <div class="col-12 col-md-6">
+            <div class="crm-account-fees__metric crm-account-fees__metric--tall staff-surface h-100">
               <div class="crm-account-fees__metric-body">
                 <p class="crm-account-fees__metric-label mb-0">Additional Picks</p>
                 <p class="crm-account-fees__metric-sub small text-secondary mb-0">

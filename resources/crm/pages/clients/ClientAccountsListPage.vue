@@ -998,7 +998,7 @@ onUnmounted(() => {
               :disabled="!selectedIds.length || loading"
               @click="openBulkEdit"
             >
-              Bulk edit
+              Bulk Edit
             </button>
             <button
               v-if="canDelete"
@@ -1007,7 +1007,7 @@ onUnmounted(() => {
               :disabled="!selectedIds.length || loading"
               @click="openBulkDelete"
             >
-              Bulk delete
+              Bulk Delete
             </button>
           </div>
         </div>
@@ -1210,7 +1210,6 @@ onUnmounted(() => {
                     :notify-email="!!row.notify_email"
                     :telegram-handle="row.telegram_handle || ''"
                     :whatsapp-e164="row.whatsapp_e164 || ''"
-                    :slack-channel="row.slack_channel || ''"
                   />
                 </div>
               </td>

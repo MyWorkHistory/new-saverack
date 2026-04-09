@@ -91,6 +91,8 @@ Route::middleware('auth:sanctum')->group(function () {
         ->name('client-accounts.bulk-destroy');
     Route::patch('client-stores/bulk', [ClientStoreController::class, 'bulkUpdate'])
         ->name('client-stores.bulk-update');
+    Route::delete('client-stores/bulk', [ClientStoreController::class, 'bulkDestroy'])
+        ->name('client-stores.bulk-destroy');
     Route::get('client-accounts/{client_account}/stores', [ClientStoreController::class, 'index'])
         ->name('client-accounts.stores.index');
     Route::post('client-accounts/{client_account}/stores', [ClientStoreController::class, 'store'])

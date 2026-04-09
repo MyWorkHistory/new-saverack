@@ -152,6 +152,14 @@ watch(
   },
 );
 
+function normalizeWhatsappE164(v) {
+  const t = String(v || "").trim();
+  if (t === "") return null;
+  const digits = t.replace(/\D/g, "");
+  if (!digits) return null;
+  return `+${digits}`;
+}
+
 function buildPatch() {
   const trimOrNull = (v) => {
     const t = String(v || "").trim();
@@ -169,7 +177,7 @@ function buildPatch() {
       phone: trimOrNull(form.phone),
       notify_email: !!form.notify_email,
       telegram_handle: trimOrNull(form.telegram_handle),
-      whatsapp_e164: trimOrNull(form.whatsapp_e164),
+      whatsapp_e164: normalizeWhatsappE164(form.whatsapp_e164),
       slack_channel: trimOrNull(form.slack_channel),
       street: trimOrNull(form.street),
       city: trimOrNull(form.city),
@@ -187,7 +195,7 @@ function buildPatch() {
       phone: trimOrNull(form.phone),
       notify_email: !!form.notify_email,
       telegram_handle: trimOrNull(form.telegram_handle),
-      whatsapp_e164: trimOrNull(form.whatsapp_e164),
+      whatsapp_e164: normalizeWhatsappE164(form.whatsapp_e164),
       slack_channel: trimOrNull(form.slack_channel),
       account_manager_id: form.account_manager_id
         ? Number(form.account_manager_id)

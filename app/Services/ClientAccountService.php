@@ -331,7 +331,10 @@ class ClientAccountService
         return $fresh !== null ? $fresh : $account;
     }
 
-    private function updateStandardFeeAmount(ClientAccount $account, string $group, string $lineCode, mixed $rawAmount): void
+    /**
+     * @param  mixed  $rawAmount
+     */
+    private function updateStandardFeeAmount(ClientAccount $account, string $group, string $lineCode, $rawAmount): void
     {
         $fee = ClientAccountFee::query()
             ->where('client_account_id', $account->id)
@@ -353,7 +356,10 @@ class ClientAccountService
         }
     }
 
-    private function normalizeFeeAmount(mixed $value): ?string
+    /**
+     * @param  mixed  $value
+     */
+    private function normalizeFeeAmount($value): ?string
     {
         if ($value === null || $value === '') {
             return null;

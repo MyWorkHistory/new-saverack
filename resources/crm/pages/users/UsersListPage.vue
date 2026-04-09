@@ -1074,7 +1074,7 @@ onUnmounted(() => {
                     aria-label="Row actions"
                     @click="toggleManageMenu(user.id, $event)"
                   >
-                    <CrmIconRowActions variant="vertical" />
+                    <CrmIconRowActions variant="horizontal" />
                   </button>
                 </div>
               </td>

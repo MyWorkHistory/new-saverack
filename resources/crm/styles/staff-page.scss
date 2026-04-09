@@ -224,11 +224,6 @@ $staff-primary: #2563eb;
   text-align: center !important;
 }
 
-.table.staff-data-table > thead > tr > th.client-account-stores-actions-col,
-.table.staff-data-table > tbody > tr > td.client-account-stores-actions-cell {
-  text-align: center !important;
-}
-
 .client-account-users-list .table.staff-data-table > thead > tr > th.staff-actions-col,
 .client-account-users-list .table.staff-data-table > tbody > tr > td.staff-actions-cell {
   text-align: center !important;
@@ -934,6 +929,12 @@ $staff-primary: #2563eb;
   .table.staff-data-table > tbody > tr > td.staff-actions-cell {
     padding: 1.125rem 0.5rem !important;
   }
+}
+
+/* After generic actions column `text-align: end` — stores kebab must stay centered */
+.table.staff-data-table > thead > tr > th.client-account-stores-actions-col,
+.table.staff-data-table > tbody > tr > td.client-account-stores-actions-cell {
+  text-align: center !important;
 }
 
 .staff-actions-inner {

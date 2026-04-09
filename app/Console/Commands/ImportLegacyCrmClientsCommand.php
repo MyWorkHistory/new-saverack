@@ -346,7 +346,7 @@ class ImportLegacyCrmClientsCommand extends Command
             'phone' => $this->nullableTruncate($row->phone ?? null, 64),
             'notify_email' => isset($row->notify_email) ? (bool) $row->notify_email : true,
             'telegram_handle' => $telegram !== null ? $this->truncate(ltrim($telegram, '@'), 190) : null,
-            'whatsapp_e164' => $this->nullableTruncate($row->whatsapp_e164 ?? null, 32),
+            'whatsapp_e164' => $this->nullableTruncate($row->whatsapp_e164 ?? null, 65535),
             'street' => $this->nullableTruncate($row->street ?? null, 190),
             'city' => $this->nullableTruncate($row->city ?? null, 120),
             'state' => $this->nullableTruncate($row->state ?? null, 64),

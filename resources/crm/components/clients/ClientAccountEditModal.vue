@@ -154,18 +154,6 @@ watch(
   },
 );
 
-function normalizeWhatsappE164(v) {
-  const t = String(v || "").trim();
-  if (t === "") return null;
-  let digits = t.replace(/\D/g, "");
-  digits = digits.replace(/^0+/, "");
-  if (!digits) return null;
-  if (digits.length > 15) {
-    digits = digits.slice(0, 15);
-  }
-  return `+${digits}`;
-}
-
 function buildPatch() {
   const trimOrNull = (v) => {
     const t = String(v || "").trim();
@@ -183,7 +171,7 @@ function buildPatch() {
       phone: trimOrNull(form.phone),
       notify_email: !!form.notify_email,
       telegram_handle: trimOrNull(form.telegram_handle),
-      whatsapp_e164: normalizeWhatsappE164(form.whatsapp_e164),
+      whatsapp_e164: trimOrNull(form.whatsapp_e164),
       slack_channel: trimOrNull(form.slack_channel),
       in_house_slack: trimOrNull(form.in_house_slack),
       street: trimOrNull(form.street),
@@ -202,7 +190,7 @@ function buildPatch() {
       phone: trimOrNull(form.phone),
       notify_email: !!form.notify_email,
       telegram_handle: trimOrNull(form.telegram_handle),
-      whatsapp_e164: normalizeWhatsappE164(form.whatsapp_e164),
+      whatsapp_e164: trimOrNull(form.whatsapp_e164),
       slack_channel: trimOrNull(form.slack_channel),
       in_house_slack: trimOrNull(form.in_house_slack),
       account_manager_id: form.account_manager_id
@@ -539,9 +527,12 @@ async function onSubmit() {
                         v-model="form.in_house_slack"
                         type="text"
                         class="form-control form-control-sm"
-                        placeholder="https://your-workspace.slack.com/archives/…"
+                        placeholder="#antonia-saint-ny"
                         autocomplete="off"
                       />
+                      <p class="small text-secondary mb-0 mt-1">
+                        Channel name only (with or without #). Opens in Save Rack Slack.
+                      </p>
                     </div>
                     <div class="border rounded p-3 mt-3">
                       <p class="small fw-semibold text-secondary mb-2">Channels</p>
@@ -578,6 +569,8 @@ async function onSubmit() {
                           v-model="form.whatsapp_e164"
                           type="text"
                           class="form-control form-control-sm"
+                          placeholder="Phone, or paste a WhatsApp / wa.me link"
+                          autocomplete="off"
                         />
                       </div>
                       <div class="mt-2">

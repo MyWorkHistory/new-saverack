@@ -3,7 +3,9 @@
 namespace App\Http\Requests;
 
 use App\Models\ClientAccount;
+use App\Models\ClientStore;
 use Illuminate\Foundation\Http\FormRequest;
+use Illuminate\Validation\Rule;
 
 class ClientStoreStoreRequest extends FormRequest
 {
@@ -24,6 +26,7 @@ class ClientStoreStoreRequest extends FormRequest
             'name' => ['required', 'string', 'max:190'],
             'website' => ['nullable', 'string', 'max:512'],
             'marketplace' => ['nullable', 'string', 'max:190'],
+            'status' => ['sometimes', 'string', Rule::in(ClientStore::STATUSES)],
         ];
     }
 }

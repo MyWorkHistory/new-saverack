@@ -9,6 +9,7 @@ import {
   CRM_DIALOG_FOOTER_CLASS,
 } from "../../constants/dialogFooter.js";
 import { marketplaceOptionsForValue } from "../../constants/storeMarketplaces.js";
+import { CLIENT_STORE_STATUS_OPTIONS } from "../../constants/clientStoreStatuses.js";
 
 const props = defineProps({
   open: { type: Boolean, default: false },
@@ -25,7 +26,10 @@ const form = reactive({
   name: "",
   website: "",
   marketplace: "",
+  status: "pending",
 });
+
+const statusOptions = CLIENT_STORE_STATUS_OPTIONS;
 
 const marketplaceOptions = computed(() =>
   marketplaceOptionsForValue(form.marketplace),
@@ -35,6 +39,7 @@ function reset() {
   form.name = "";
   form.website = "";
   form.marketplace = "";
+  form.status = "pending";
   errorMsg.value = "";
 }
 
@@ -62,6 +67,7 @@ async function onSubmit() {
       name: form.name.trim(),
       website: form.website.trim() || null,
       marketplace: form.marketplace.trim() || null,
+      status: form.status || "pending",
     });
     toast.success("Store added.");
     emit("saved");
@@ -160,10 +166,30 @@ async function onSubmit() {
                     >
                     <input
                       v-model="form.website"
-                      type="url"
+                      type="text"
                       placeholder="https://"
                       class="h-10 w-full rounded-lg border border-gray-300 bg-white px-3 text-sm dark:border-gray-600 dark:bg-gray-800 dark:text-white"
                     />
+                  </div>
+                  <div>
+                    <label
+                      class="mb-1 block text-xs font-medium text-gray-600 dark:text-gray-400"
+                      for="csc-store-status"
+                      >Status</label
+                    >
+                    <select
+                      id="csc-store-status"
+                      v-model="form.status"
+                      class="h-10 w-full rounded-lg border border-gray-300 bg-white px-3 text-sm dark:border-gray-600 dark:bg-gray-800 dark:text-white"
+                    >
+                      <option
+                        v-for="opt in statusOptions"
+                        :key="opt.value"
+                        :value="opt.value"
+                      >
+                        {{ opt.label }}
+                      </option>
+                    </select>
                   </div>
                   <div>
                     <CrmSearchableSelect

@@ -50,7 +50,7 @@ class ClientAccountStoreRequest extends FormRequest
             'phone' => ['nullable', 'string', 'max:64'],
             'notify_email' => ['sometimes', 'boolean'],
             'telegram_handle' => ['nullable', 'string', 'max:190'],
-            'whatsapp_e164' => ['nullable', 'string', 'max:32'],
+            'whatsapp_e164' => ['nullable', 'string', 'max:65535'],
             'slack_channel' => ['nullable', 'string', 'max:255'],
             'in_house_slack' => ['nullable', 'string', 'max:512'],
             'street' => ['nullable', 'string', 'max:190'],
@@ -70,6 +70,18 @@ class ClientAccountStoreRequest extends FormRequest
         }
         if ($this->input('account_manager_id') === '') {
             $this->merge(['account_manager_id' => null]);
+        }
+
+        if ($this->exists('in_house_slack')) {
+            $raw = $this->input('in_house_slack');
+            if ($raw === null || $raw === '') {
+                $this->merge(['in_house_slack' => null]);
+            } else {
+                $s = trim((string) $raw);
+                $s = ltrim($s, '#');
+                $s = trim($s);
+                $this->merge(['in_house_slack' => $s !== '' ? $s : null]);
+            }
         }
 
         $fn = trim((string) $this->input('full_name', ''));

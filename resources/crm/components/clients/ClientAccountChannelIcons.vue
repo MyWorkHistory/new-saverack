@@ -1,10 +1,12 @@
 <script setup>
+import { computed } from "vue";
 import telegramIconUrl from "@public/images/telegram-icon.png";
+import { inHouseSlackHref, slackChannelHref } from "../../utils/slackChannel.js";
 
 /**
  * Channel indicators: email, Telegram, WhatsApp, Slack (client and/or in-house URL).
  */
-defineProps({
+const props = defineProps({
   telegramTitle: { type: String, default: "Telegram" },
   emailTitle: { type: String, default: "Email" },
   whatsappTitle: { type: String, default: "WhatsApp" },
@@ -15,6 +17,13 @@ defineProps({
   slackChannel: { type: String, default: "" },
   inHouseSlack: { type: String, default: "" },
   sizeClass: { type: String, default: "h-5 w-5" },
+});
+
+/** Prefer client Slack URL; else in-house app_redirect (or legacy URL). */
+const slackIconHref = computed(() => {
+  const client = slackChannelHref(props.slackChannel);
+  if (client) return client;
+  return inHouseSlackHref(props.inHouseSlack);
 });
 </script>
 
@@ -62,8 +71,23 @@ defineProps({
         />
       </svg>
     </span>
+    <a
+      v-if="(slackChannel || inHouseSlack) && slackIconHref"
+      class="inline-flex shrink-0 text-[#4A154B] dark:text-[#e01e5a] text-decoration-none"
+      :href="slackIconHref"
+      :title="slackTitle"
+      :aria-label="`${slackTitle} (opens in new tab)`"
+      target="_blank"
+      rel="noopener noreferrer"
+    >
+      <svg :class="sizeClass" fill="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+        <path
+          d="M5.042 15.165a2.528 2.528 0 0 1-2.52 2.523A2.528 2.528 0 0 1 0 15.165a2.527 2.527 0 0 1 2.522-2.52h2.52v2.52zM6.313 15.165a2.527 2.527 0 0 1 2.521-2.52 2.527 2.527 0 0 1 2.521 2.52v6.313A2.528 2.528 0 0 1 8.834 24a2.528 2.528 0 0 1-2.521-2.522v-6.313zM8.834 5.042a2.528 2.528 0 0 1-2.521-2.52A2.528 2.528 0 0 1 8.834 0a2.528 2.528 0 0 1 2.521 2.522v2.52H8.834V5.042zm0 1.27a2.528 2.528 0 0 1 2.521 2.521 2.528 2.528 0 0 1-2.521 2.521H2.522A2.528 2.528 0 0 1 0 8.834a2.528 2.528 0 0 1 2.522-2.521h6.312zm9.124 2.521a2.528 2.528 0 0 1 2.52-2.521A2.528 2.528 0 0 1 24 8.834a2.528 2.528 0 0 1-2.522 2.521h-2.522V8.834zm-1.269 0a2.528 2.528 0 0 1-2.523 2.521 2.527 2.527 0 0 1-2.52-2.521V2.522A2.527 2.527 0 0 1 15.165 0a2.528 2.528 0 0 1 2.523 2.522v6.312zm-2.523 9.124a2.528 2.528 0 0 1 2.523 2.52A2.528 2.528 0 0 1 15.165 24a2.528 2.528 0 0 1-2.523-2.522v-2.52h2.523zm0-1.268a2.527 2.527 0 0 1-2.52-2.523 2.526 2.526 0 0 1 2.52-2.52h6.313A2.527 2.527 0 0 1 24 15.165a2.528 2.528 0 0 1-2.522 2.523h-6.313z"
+        />
+      </svg>
+    </a>
     <span
-      v-if="slackChannel || inHouseSlack"
+      v-else-if="slackChannel || inHouseSlack"
       class="inline-flex text-[#4A154B] dark:text-[#e01e5a]"
       :title="slackTitle"
     >

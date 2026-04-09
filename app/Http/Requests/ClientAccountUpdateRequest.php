@@ -22,21 +22,24 @@ class ClientAccountUpdateRequest extends FormRequest
             $this->merge(['account_manager_id' => null]);
         }
 
+        if ($this->exists('in_house_slack')) {
+            $raw = $this->input('in_house_slack');
+            if ($raw === null || $raw === '') {
+                $this->merge(['in_house_slack' => null]);
+            } else {
+                $s = trim((string) $raw);
+                $s = ltrim($s, '#');
+                $s = trim($s);
+                $this->merge(['in_house_slack' => $s !== '' ? $s : null]);
+            }
+        }
+
         if ($this->exists('whatsapp_e164')) {
             $raw = $this->input('whatsapp_e164');
             if ($raw === null || $raw === '') {
                 $this->merge(['whatsapp_e164' => null]);
             } else {
-                $digits = preg_replace('/\D+/', '', (string) $raw);
-                $digits = ltrim($digits, '0');
-                if ($digits === '') {
-                    $this->merge(['whatsapp_e164' => null]);
-                } else {
-                    if (strlen($digits) > 15) {
-                        $digits = substr($digits, 0, 15);
-                    }
-                    $this->merge(['whatsapp_e164' => '+'.$digits]);
-                }
+                $this->merge(['whatsapp_e164' => trim((string) $raw)]);
             }
         }
     }
@@ -61,8 +64,8 @@ class ClientAccountUpdateRequest extends FormRequest
             'phone' => ['sometimes', 'nullable', 'string', 'max:64'],
             'notify_email' => ['sometimes', 'boolean'],
             'telegram_handle' => ['sometimes', 'nullable', 'string', 'max:190'],
-            /* E.164: + then 6–15 digits (after leading-zero strip); max 32 matches column */
-            'whatsapp_e164' => ['sometimes', 'nullable', 'string', 'max:32', 'regex:/^\+[1-9]\d{4,14}$/'],
+            /* Phone numbers, wa.me links, etc. — stored as TEXT in DB */
+            'whatsapp_e164' => ['sometimes', 'nullable', 'string', 'max:65535'],
             'slack_channel' => ['sometimes', 'nullable', 'string', 'max:255'],
             'in_house_slack' => ['sometimes', 'nullable', 'string', 'max:512'],
             'street' => ['sometimes', 'nullable', 'string', 'max:190'],

@@ -52,7 +52,9 @@ class ClientStoreController extends Controller
     public function store(ClientStoreStoreRequest $request, ClientAccount $client_account): JsonResponse
     {
         $data = $request->validated();
-        $data['status'] = ClientStore::STATUS_PENDING;
+        if (! isset($data['status']) || $data['status'] === null || $data['status'] === '') {
+            $data['status'] = ClientStore::STATUS_PENDING;
+        }
 
         $store = $client_account->stores()->create($data);
 

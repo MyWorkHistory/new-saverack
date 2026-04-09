@@ -7,6 +7,7 @@ import {
   marketplaceOptionsForValue,
   normalizeMarketplaceValue,
 } from "../../constants/storeMarketplaces.js";
+import { CLIENT_STORE_STATUS_OPTIONS } from "../../constants/clientStoreStatuses.js";
 const props = defineProps({
   open: { type: Boolean, default: false },
   /** @type {{ id: number, name?: string, website?: string, marketplace?: string } | null} */
@@ -23,7 +24,10 @@ const form = reactive({
   name: "",
   website: "",
   marketplace: "",
+  status: "pending",
 });
+
+const statusOptions = CLIENT_STORE_STATUS_OPTIONS;
 
 const marketplaceOptions = computed(() =>
   marketplaceOptionsForValue(form.marketplace),
@@ -67,6 +71,7 @@ watch(
     form.name = props.store.name || "";
     form.website = props.store.website || "";
     form.marketplace = normalizeMarketplaceValue(props.store.marketplace || "");
+    form.status = props.store.status || "pending";
   },
 );
 
@@ -79,6 +84,7 @@ async function onSubmit() {
       name: form.name.trim(),
       website: form.website.trim() || null,
       marketplace: form.marketplace.trim() || null,
+      status: form.status || "pending",
     });
     toast.success("Store updated.");
     emit("saved");
@@ -138,7 +144,7 @@ async function onSubmit() {
                 Edit store
               </h2>
               <p class="crm-vx-modal__subtitle">
-                Update store name, website, and marketplace for this account.
+                Update store name, website, status, and marketplace for this account.
               </p>
             </header>
 
@@ -173,9 +179,29 @@ async function onSubmit() {
                   <input
                     id="cse-web"
                     v-model="form.website"
-                    type="url"
+                    type="text"
                     class="form-control"
                   />
+                </div>
+                <div>
+                  <label
+                    class="form-label small mb-1 text-secondary"
+                    for="cse-status"
+                    >Status</label
+                  >
+                  <select
+                    id="cse-status"
+                    v-model="form.status"
+                    class="form-select"
+                  >
+                    <option
+                      v-for="opt in statusOptions"
+                      :key="opt.value"
+                      :value="opt.value"
+                    >
+                      {{ opt.label }}
+                    </option>
+                  </select>
                 </div>
                 <div>
                   <CrmSearchableSelect

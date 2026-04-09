@@ -1,5 +1,5 @@
 <script setup>
-import { computed, inject, onMounted, onUnmounted, reactive, ref, watch } from "vue";
+import { computed, inject, nextTick, onMounted, onUnmounted, reactive, ref, watch } from "vue";
 import { RouterLink, useRoute, useRouter } from "vue-router";
 import api from "../../services/api";
 import CrmLoadingSpinner from "../../components/common/CrmLoadingSpinner.vue";
@@ -62,6 +62,7 @@ const editingStore = ref(null);
 const storeDeleteTarget = ref(null);
 const storeDeleteBusy = ref(false);
 const storeMenuOpenId = ref(null);
+const storeMenuRect = ref({ top: 0, left: 0 });
 
 const storeSearch = ref("");
 const storeStatusFilter = ref("all");
@@ -334,7 +335,31 @@ function toggleNoteMenu(commentId, e) {
 
 function toggleStoreMenu(storeId, e) {
   e.stopPropagation();
-  storeMenuOpenId.value = storeMenuOpenId.value === storeId ? null : storeId;
+  if (storeMenuOpenId.value === storeId) {
+    closeStoreMenu();
+    return;
+  }
+  const btn = e.currentTarget;
+  storeMenuOpenId.value = storeId;
+  nextTick(() => {
+    requestAnimationFrame(() => {
+      if (!(btn instanceof HTMLElement)) return;
+      placeStoreMenu(btn);
+    });
+  });
+}
+
+const STORE_MENU_W = 176;
+const STORE_MENU_H = 120;
+function placeStoreMenu(anchorEl) {
+  const r = anchorEl.getBoundingClientRect();
+  let top = r.bottom + 4;
+  let left = r.right - STORE_MENU_W;
+  left = Math.max(8, Math.min(left, window.innerWidth - STORE_MENU_W - 8));
+  if (top + STORE_MENU_H > window.innerHeight - 8) {
+    top = Math.max(8, r.top - STORE_MENU_H - 4);
+  }
+  storeMenuRect.value = { top, left };
 }
 
 function openEditNote(c) {
@@ -412,7 +437,7 @@ function onDocumentClickCloseNoteMenu(e) {
   const t = e.target;
 
   if (storeMenuOpenId.value !== null) {
-    if (!(t instanceof Element) || !t.closest("[data-store-menu-root]")) {
+    if (!(t instanceof Element) || !t.closest("[data-store-menu-anchor]")) {
       closeStoreMenu();
     }
   }
@@ -420,6 +445,10 @@ function onDocumentClickCloseNoteMenu(e) {
   if (noteMenuOpenId.value === null) return;
   if (t instanceof Element && t.closest("[data-note-menu-root]")) return;
   closeNoteMenu();
+}
+
+function onWindowScrollOrResize() {
+  closeStoreMenu();
 }
 
 function openAccountEdit(section = "") {
@@ -582,6 +611,9 @@ const paginatedStores = computed(() => {
   const start = (p - 1) * pp;
   return list.slice(start, start + pp);
 });
+const storeMenuRow = computed(
+  () => paginatedStores.value.find((r) => r.id === storeMenuOpenId.value) ?? null,
+);
 
 const showingStoresFrom = computed(() => {
   const t = storeListTotal.value;
@@ -843,6 +875,8 @@ onMounted(async () => {
     description: "Client account profile.",
   });
   document.addEventListener("click", onDocumentClickCloseNoteMenu);
+  window.addEventListener("scroll", onWindowScrollOrResize, true);
+  window.addEventListener("resize", onWindowScrollOrResize);
   await loadAccount();
   syncTabFromRoute();
   await loadStores();
@@ -851,6 +885,8 @@ onMounted(async () => {
 
 onUnmounted(() => {
   document.removeEventListener("click", onDocumentClickCloseNoteMenu);
+  window.removeEventListener("scroll", onWindowScrollOrResize, true);
+  window.removeEventListener("resize", onWindowScrollOrResize);
   for (const url of Object.values(imagePreviewUrls.value)) {
     if (typeof url === "string") window.URL.revokeObjectURL(url);
   }
@@ -1560,7 +1596,7 @@ onUnmounted(() => {
                         </th>
                         <th
                           v-if="canUpdateStore || canDeleteStore"
-                          class="staff-table-head__th staff-actions-col text-center"
+                          class="staff-table-head__th staff-actions-col text-center client-account-stores-actions-col"
                           scope="col"
                         >
                           Actions
@@ -1635,11 +1671,11 @@ onUnmounted(() => {
                         </td>
                         <td
                           v-if="canUpdateStore || canDeleteStore"
-                          class="staff-actions-cell text-center"
+                          class="staff-actions-cell text-center client-account-stores-actions-cell"
                         >
                           <div
-                            class="staff-actions-inner staff-actions-inner--single position-relative d-inline-flex"
-                            data-store-menu-root
+                            class="staff-actions-inner staff-actions-inner--single d-inline-flex"
+                            data-store-menu-anchor
                           >
                             <button
                               type="button"
@@ -1652,35 +1688,6 @@ onUnmounted(() => {
                             >
                               <CrmIconRowActions variant="horizontal" />
                             </button>
-                            <div
-                              v-if="storeMenuOpenId === row.id"
-                              class="staff-row-menu position-absolute end-0 mt-1 py-1 shadow border"
-                              style="min-width: 11rem; z-index: 400"
-                              role="menu"
-                              @click.stop
-                            >
-                              <button
-                                v-if="canUpdateStore"
-                                type="button"
-                                class="staff-row-menu__item"
-                                role="menuitem"
-                                @click="openEditStore(row)"
-                              >
-                                Edit
-                              </button>
-                              <button
-                                v-if="canDeleteStore"
-                                type="button"
-                                class="staff-row-menu__item staff-row-menu__item--danger"
-                                role="menuitem"
-                                @click="
-                                  closeStoreMenu();
-                                  storeDeleteTarget = row;
-                                "
-                              >
-                                Delete
-                              </button>
-                            </div>
                           </div>
                         </td>
                       </tr>
@@ -1898,6 +1905,51 @@ onUnmounted(() => {
           No activity logged yet.
         </p>
       </section>
+
+      <Teleport to="body">
+        <Transition
+          enter-active-class="transition ease-out duration-100"
+          enter-from-class="opacity-0"
+          enter-to-class="opacity-100"
+          leave-active-class="transition ease-in duration-75"
+          leave-from-class="opacity-100"
+          leave-to-class="opacity-0"
+        >
+          <div
+            v-if="storeMenuRow"
+            class="staff-row-menu fixed z-[300]"
+            role="menu"
+            :style="{
+              top: `${storeMenuRect.top}px`,
+              left: `${storeMenuRect.left}px`,
+              minWidth: '11rem',
+            }"
+            @click.stop
+          >
+            <button
+              v-if="canUpdateStore"
+              type="button"
+              class="staff-row-menu__item"
+              role="menuitem"
+              @click="openEditStore(storeMenuRow)"
+            >
+              Edit
+            </button>
+            <button
+              v-if="canDeleteStore"
+              type="button"
+              class="staff-row-menu__item staff-row-menu__item--danger"
+              role="menuitem"
+              @click="
+                closeStoreMenu();
+                storeDeleteTarget = storeMenuRow;
+              "
+            >
+              Delete
+            </button>
+          </div>
+        </Transition>
+      </Teleport>
     </template>
   </div>
 </template>

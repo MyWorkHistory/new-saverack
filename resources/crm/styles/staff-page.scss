@@ -162,6 +162,11 @@ $staff-primary: #2563eb;
   text-align: center !important;
 }
 
+.table.staff-data-table > thead > tr > th.client-account-stores-actions-col,
+.table.staff-data-table > tbody > tr > td.client-account-stores-actions-cell {
+  text-align: center !important;
+}
+
 .client-account-users-list .table.staff-data-table > thead > tr > th.staff-actions-col,
 .client-account-users-list .table.staff-data-table > tbody > tr > td.staff-actions-cell {
   text-align: center !important;

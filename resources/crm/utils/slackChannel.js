@@ -53,14 +53,46 @@ export function inHouseSlackHref(raw) {
 }
 
 /**
- * Shown in UI: prefer #name when it’s a plain slug.
+ * Extract `channel` query param from a Slack / app_redirect URL for display.
+ * @param {string} urlStr
+ * @returns {string}
+ */
+function inHouseSlackLabelFromUrl(urlStr) {
+  try {
+    const normalized = String(urlStr).trim().replace(/^\/\//, "https://");
+    if (!/^https?:\/\//i.test(normalized)) return "";
+    const u = new URL(normalized);
+    const ch = u.searchParams.get("channel");
+    if (ch == null || ch === "") return "";
+    const slug = inHouseSlackChannelSlug(ch);
+    if (!slug) return "";
+    return `#${slug}`;
+  } catch {
+    return "";
+  }
+}
+
+/**
+ * Shown in UI: channel-style label (not the raw URL). Pair with {@link inHouseSlackHref} for the link target.
  * @param {string|null|undefined} raw
  * @returns {string}
  */
 export function inHouseSlackDisplayLabel(raw) {
-  const slug = inHouseSlackChannelSlug(raw);
-  if (!slug) return "";
   const original = String(raw ?? "").trim();
+  if (!original) return "";
+
+  const fromStored = inHouseSlackLabelFromUrl(original);
+  if (fromStored) return fromStored;
+
+  const asUrl = slackChannelHref(original);
+  if (asUrl) {
+    const fromResolved = inHouseSlackLabelFromUrl(asUrl);
+    if (fromResolved) return fromResolved;
+    return "Slack";
+  }
+
+  const slug = inHouseSlackChannelSlug(original);
+  if (!slug) return "";
   if (/^#/u.test(original)) return `#${slug}`;
   return slug;
 }

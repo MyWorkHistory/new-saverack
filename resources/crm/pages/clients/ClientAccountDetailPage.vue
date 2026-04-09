@@ -12,7 +12,10 @@ import ClientStoresBulkEditModal from "../../components/clients/ClientStoresBulk
 import ClientAccountFeesPanel from "../../components/clients/ClientAccountFeesPanel.vue";
 import CrmIconRowActions from "../../components/common/CrmIconRowActions.vue";
 import { DEFAULT_PER_PAGE } from "../../constants/pagination";
-import { inHouseSlackHref } from "../../utils/slackChannel.js";
+import {
+  inHouseSlackDisplayLabel,
+  inHouseSlackHref,
+} from "../../utils/slackChannel.js";
 import { crmIsAdmin } from "../../utils/crmUser";
 import { setCrmPageMeta } from "../../composables/useCrmPageMeta.js";
 import { useToast } from "../../composables/useToast";
@@ -1136,14 +1139,18 @@ onUnmounted(() => {
                     <a
                       :href="inHouseSlackHref(account.in_house_slack)"
                       class="link-primary text-decoration-none text-break"
+                      :aria-label="`${inHouseSlackDisplayLabel(account.in_house_slack)} in Slack (opens in new tab)`"
                       target="_blank"
                       rel="noopener noreferrer"
                     >
-                      {{ inHouseSlackHref(account.in_house_slack) }}
+                      {{ inHouseSlackDisplayLabel(account.in_house_slack) }}
                     </a>
                   </template>
                   <template v-else-if="account.in_house_slack">
-                    <span class="text-body text-break">{{ account.in_house_slack }}</span>
+                    <span class="text-body text-break">{{
+                      inHouseSlackDisplayLabel(account.in_house_slack) ||
+                      display(account.in_house_slack)
+                    }}</span>
                   </template>
                   <template v-else>{{ display(account.in_house_slack) }}</template>
                 </dd>

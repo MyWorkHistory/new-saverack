@@ -1132,9 +1132,7 @@ onUnmounted(() => {
               </div>
               <div>
                 <dt class="staff-user-profile__dt">In-House Slack</dt>
-                <dd
-                  class="staff-user-profile__dd text-break client-account-profile-dd--slack"
-                >
+                <dd class="staff-user-profile__dd text-break">
                   <template v-if="inHouseSlackHref(account.in_house_slack)">
                     <a
                       :href="inHouseSlackHref(account.in_house_slack)"
@@ -2055,9 +2053,5 @@ onUnmounted(() => {
 }
 .object-fit-cover {
   object-fit: cover;
-}
-/* Slack rows: left-align (override profile `dd { text-align: right }`) */
-.client-account-profile-dd--slack {
-  text-align: left !important;
 }
 </style>

@@ -172,6 +172,13 @@ function timelineActorAvatarUrl(row) {
   return resolvePublicUrl(raw) || raw;
 }
 
+function avatarClassForTimelineActor(label) {
+  let h = 0;
+  const s = label || "";
+  for (let i = 0; i < s.length; i++) h = (h + s.charCodeAt(i)) % 997;
+  return avatarPalettes[h % avatarPalettes.length];
+}
+
 async function loadPageData() {
   loading.value = true;
   errorMsg.value = "";
@@ -659,10 +666,13 @@ function onPermissionsSaved() {
             />
             <span
               v-else
-              class="staff-user-timeline__dot"
-              :class="`staff-user-timeline__dot--${idx % 3}`"
+              class="staff-user-timeline__avatar-img rounded-circle flex-shrink-0 d-inline-flex align-items-center justify-content-center small fw-semibold"
+              style="width: 28px; height: 28px; font-size: 0.625rem"
+              :class="avatarClassForTimelineActor(row.actor_name)"
+              :title="row.actor_name || 'User'"
               aria-hidden="true"
-            />
+              >{{ row.actor_initials || "?" }}</span
+            >
             <div class="staff-user-timeline__row">
               <h3 class="staff-user-timeline__heading">
                 {{ timelineHeading(row) }}

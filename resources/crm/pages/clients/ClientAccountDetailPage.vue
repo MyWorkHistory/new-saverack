@@ -10,6 +10,7 @@ import ClientStoreCreateDrawer from "../../components/clients/ClientStoreCreateD
 import ClientStoreEditModal from "../../components/clients/ClientStoreEditModal.vue";
 import ClientStoresBulkEditModal from "../../components/clients/ClientStoresBulkEditModal.vue";
 import ClientAccountFeesPanel from "../../components/clients/ClientAccountFeesPanel.vue";
+import CrmIconRowActions from "../../components/common/CrmIconRowActions.vue";
 import { DEFAULT_PER_PAGE, PER_PAGE_OPTIONS } from "../../constants/pagination";
 import { crmIsAdmin } from "../../utils/crmUser";
 import { setCrmPageMeta } from "../../composables/useCrmPageMeta.js";
@@ -147,6 +148,13 @@ const commentFileInput = ref(null);
 const commentSubmitting = ref(false);
 const commentError = ref("");
 
+const noteMenuOpenId = ref(null);
+const noteEditId = ref(null);
+const noteEditBody = ref("");
+const noteEditSaving = ref(false);
+const noteDeleteTarget = ref(null);
+const noteDeleteBusy = ref(false);
+
 const accountComments = computed(() => {
   const c = account.value?.comments;
   return Array.isArray(c) ? c : [];
@@ -168,6 +176,12 @@ const accountDeleteMessage = computed(() => {
   return a
     ? `Delete ${a.company_name}? This cannot be undone.`
     : "";
+});
+
+const noteDeleteModalOpen = computed(() => noteDeleteTarget.value !== null);
+const noteDeleteMessage = computed(() => {
+  const c = noteDeleteTarget.value;
+  return c ? "Remove this note? This cannot be undone." : "";
 });
 
 function display(val) {
@@ -252,6 +266,19 @@ function avatarClassForCommentUser(email) {
   return avatarPalettesWm[h % avatarPalettesWm.length];
 }
 
+const timelineAvatarPalettes = [
+  "bg-info-subtle text-info-emphasis",
+  "bg-primary-subtle text-primary-emphasis",
+  "bg-warning-subtle text-warning-emphasis",
+];
+
+function avatarClassForTimelineActor(label) {
+  let h = 0;
+  const s = label || "";
+  for (let i = 0; i < s.length; i++) h = (h + s.charCodeAt(i)) % 997;
+  return timelineAvatarPalettes[h % timelineAvatarPalettes.length];
+}
+
 function formatFileSize(n) {
   if (n == null || n === "") return "";
   const x = Number(n);
@@ -308,6 +335,100 @@ function timelineActorAvatarUrl(row) {
   const raw = row?.actor_avatar_url;
   if (!raw) return "";
   return resolvePublicUrl(raw) || raw;
+}
+
+function canModifyNote(c) {
+  const u = crmUser.value;
+  if (!u || !canUpdateAccount.value) return false;
+  if (crmIsAdmin(u) || u.is_crm_owner) return true;
+  return Number(c?.user?.id) === Number(u.id);
+}
+
+function closeNoteMenu() {
+  noteMenuOpenId.value = null;
+}
+
+function toggleNoteMenu(commentId, e) {
+  e.stopPropagation();
+  noteMenuOpenId.value = noteMenuOpenId.value === commentId ? null : commentId;
+}
+
+function openEditNote(c) {
+  closeNoteMenu();
+  noteEditId.value = c.id;
+  noteEditBody.value = c.body || "";
+}
+
+function cancelEditNote() {
+  noteEditId.value = null;
+  noteEditBody.value = "";
+}
+
+async function saveEditNote(c) {
+  const body = noteEditBody.value?.trim() || "";
+  if (!body) {
+    toast.error("Note cannot be empty.");
+    return;
+  }
+  noteEditSaving.value = true;
+  try {
+    const { data } = await api.patch(
+      `/client-accounts/${props.id}/comments/${c.id}`,
+      { body },
+    );
+    if (account.value && Array.isArray(account.value.comments)) {
+      const list = account.value.comments.map((x) =>
+        x.id === c.id ? { ...x, ...data } : x,
+      );
+      account.value = { ...account.value, comments: list };
+    }
+    cancelEditNote();
+    toast.success("Note updated.");
+    await loadHistory();
+  } catch (e) {
+    toast.errorFrom(e, "Could not update note.");
+  } finally {
+    noteEditSaving.value = false;
+  }
+}
+
+function requestDeleteNote(c) {
+  closeNoteMenu();
+  noteDeleteTarget.value = c;
+}
+
+function closeNoteDelete() {
+  if (!noteDeleteBusy.value) noteDeleteTarget.value = null;
+}
+
+async function confirmDeleteNote() {
+  const c = noteDeleteTarget.value;
+  if (!c) return;
+  noteDeleteBusy.value = true;
+  try {
+    await api.delete(`/client-accounts/${props.id}/comments/${c.id}`);
+    if (account.value && Array.isArray(account.value.comments)) {
+      const list = account.value.comments.filter((x) => x.id !== c.id);
+      account.value = { ...account.value, comments: list };
+    }
+    const prevUrls = { ...imagePreviewUrls.value };
+    delete prevUrls[c.id];
+    imagePreviewUrls.value = prevUrls;
+    noteDeleteTarget.value = null;
+    toast.success("Note deleted.");
+    await loadHistory();
+  } catch (e) {
+    toast.errorFrom(e, "Could not delete note.");
+  } finally {
+    noteDeleteBusy.value = false;
+  }
+}
+
+function onDocumentClickCloseNoteMenu(e) {
+  if (noteMenuOpenId.value === null) return;
+  const t = e.target;
+  if (t instanceof Element && t.closest("[data-note-menu-root]")) return;
+  closeNoteMenu();
 }
 
 function openAccountEdit(section = "") {
@@ -729,6 +850,7 @@ onMounted(async () => {
     title: "Save Rack | Account",
     description: "Client account profile.",
   });
+  document.addEventListener("click", onDocumentClickCloseNoteMenu);
   await loadAccount();
   syncTabFromRoute();
   await loadStores();
@@ -736,6 +858,7 @@ onMounted(async () => {
 });
 
 onUnmounted(() => {
+  document.removeEventListener("click", onDocumentClickCloseNoteMenu);
   for (const url of Object.values(imagePreviewUrls.value)) {
     if (typeof url === "string") window.URL.revokeObjectURL(url);
   }
@@ -823,6 +946,17 @@ onUnmounted(() => {
       :busy="accountDeleteBusy"
       @close="closeAccountDelete"
       @confirm="confirmAccountDelete"
+    />
+    <ConfirmModal
+      :open="noteDeleteModalOpen"
+      title="Delete Note"
+      :message="noteDeleteMessage"
+      confirm-label="Delete"
+      cancel-label="Cancel"
+      :busy="noteDeleteBusy"
+      danger
+      @close="closeNoteDelete"
+      @confirm="confirmDeleteNote"
     />
 
     <div v-if="loading" class="d-flex justify-content-center py-5">
@@ -1147,44 +1281,128 @@ onUnmounted(() => {
                       {{ initials(c.user?.name) }}
                     </span>
                     <div class="min-w-0 flex-grow-1">
-                      <div class="d-flex flex-wrap align-items-baseline gap-2">
-                        <span class="small fw-medium text-body">{{
-                          c.user?.name || "User"
-                        }}</span>
-                        <span class="small text-secondary">{{
-                          formatDateTimeUs(c.created_at)
-                        }}</span>
-                      </div>
-                      <p class="mt-1 mb-0 small text-body notes-pre-wrap">
-                        {{ c.body }}
-                      </p>
-                      <div v-if="c.attachment" class="mt-3">
-                        <img
-                          v-if="
-                            isImageMime(c.attachment.mime) &&
-                            imagePreviewUrls[c.id]
-                          "
-                          :src="imagePreviewUrls[c.id]"
-                          alt=""
-                          class="img-fluid rounded border"
-                          style="max-height: 12rem"
-                        />
-                        <button
-                          type="button"
-                          class="btn btn-link btn-sm text-decoration-none p-0 mt-2 d-inline-flex align-items-center gap-1"
-                          @click="downloadAccountCommentAttachment(c.id)"
+                      <div
+                        class="d-flex align-items-start justify-content-between gap-2"
+                      >
+                        <div
+                          class="d-flex flex-wrap align-items-baseline gap-2 min-w-0"
                         >
-                          <span v-if="c.attachment.original_name">{{
-                            c.attachment.original_name
+                          <span class="small fw-medium text-body">{{
+                            c.user?.name || "User"
                           }}</span>
-                          <span v-else>Download attachment</span>
+                          <span class="small text-secondary">{{
+                            formatDateTimeUs(c.created_at)
+                          }}</span>
                           <span
-                            v-if="formatFileSize(c.attachment.size)"
-                            class="text-secondary"
-                            >({{ formatFileSize(c.attachment.size) }})</span
+                            v-if="
+                              c.updated_at &&
+                              c.created_at &&
+                              String(c.updated_at) !== String(c.created_at)
+                            "
+                            class="small text-secondary fst-italic"
+                            >(edited)</span
                           >
-                        </button>
+                        </div>
+                        <div
+                          v-if="canModifyNote(c)"
+                          class="flex-shrink-0 position-relative"
+                          data-note-menu-root
+                        >
+                          <button
+                            type="button"
+                            class="btn btn-link btn-sm text-secondary p-1 lh-1 rounded border-0"
+                            :class="{ 'text-body': noteMenuOpenId === c.id }"
+                            :aria-expanded="noteMenuOpenId === c.id"
+                            aria-haspopup="true"
+                            aria-label="Note actions"
+                            @click="toggleNoteMenu(c.id, $event)"
+                          >
+                            <CrmIconRowActions variant="horizontal" />
+                          </button>
+                          <div
+                            v-if="noteMenuOpenId === c.id"
+                            class="staff-row-menu position-absolute end-0 mt-1 py-1 shadow border"
+                            style="min-width: 11rem; z-index: 400"
+                            role="menu"
+                            @click.stop
+                          >
+                            <button
+                              type="button"
+                              class="staff-row-menu__item"
+                              role="menuitem"
+                              @click="openEditNote(c)"
+                            >
+                              Edit Note
+                            </button>
+                            <button
+                              type="button"
+                              class="staff-row-menu__item staff-row-menu__item--danger"
+                              role="menuitem"
+                              @click="requestDeleteNote(c)"
+                            >
+                              Delete Note
+                            </button>
+                          </div>
+                        </div>
                       </div>
+                      <template v-if="noteEditId === c.id">
+                        <textarea
+                          v-model="noteEditBody"
+                          class="form-control form-control-sm mt-2"
+                          rows="4"
+                          aria-label="Edit note"
+                        />
+                        <div class="d-flex flex-wrap gap-2 mt-2">
+                          <button
+                            type="button"
+                            class="btn btn-primary btn-sm"
+                            :disabled="noteEditSaving"
+                            @click="saveEditNote(c)"
+                          >
+                            {{ noteEditSaving ? "Saving…" : "Save" }}
+                          </button>
+                          <button
+                            type="button"
+                            class="btn btn-outline-secondary btn-sm"
+                            :disabled="noteEditSaving"
+                            @click="cancelEditNote"
+                          >
+                            Cancel
+                          </button>
+                        </div>
+                      </template>
+                      <template v-else>
+                        <p class="mt-1 mb-0 small text-body notes-pre-wrap">
+                          {{ c.body }}
+                        </p>
+                        <div v-if="c.attachment" class="mt-3">
+                          <img
+                            v-if="
+                              isImageMime(c.attachment.mime) &&
+                              imagePreviewUrls[c.id]
+                            "
+                            :src="imagePreviewUrls[c.id]"
+                            alt=""
+                            class="img-fluid rounded border"
+                            style="max-height: 12rem"
+                          />
+                          <button
+                            type="button"
+                            class="btn btn-link btn-sm text-decoration-none p-0 mt-2 d-inline-flex align-items-center gap-1"
+                            @click="downloadAccountCommentAttachment(c.id)"
+                          >
+                            <span v-if="c.attachment.original_name">{{
+                              c.attachment.original_name
+                            }}</span>
+                            <span v-else>Download attachment</span>
+                            <span
+                              v-if="formatFileSize(c.attachment.size)"
+                              class="text-secondary"
+                              >({{ formatFileSize(c.attachment.size) }})</span
+                            >
+                          </button>
+                        </div>
+                      </template>
                     </div>
                   </li>
                 </ul>
@@ -1655,10 +1873,13 @@ onUnmounted(() => {
             />
             <span
               v-else
-              class="staff-user-timeline__dot"
-              :class="`staff-user-timeline__dot--${idx % 3}`"
+              class="staff-user-timeline__avatar-img rounded-circle flex-shrink-0 d-inline-flex align-items-center justify-content-center small fw-semibold"
+              style="width: 36px; height: 36px; font-size: 0.6875rem"
+              :class="avatarClassForTimelineActor(row.actor_name)"
+              :title="row.actor_name || 'User'"
               aria-hidden="true"
-            />
+              >{{ row.actor_initials || "?" }}</span
+            >
             <div class="staff-user-timeline__row">
               <h3 class="staff-user-timeline__heading">
                 {{ timelineHeading(row) }}

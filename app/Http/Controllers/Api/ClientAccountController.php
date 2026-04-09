@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Http\Requests\ClientAccountBulkDeleteRequest;
 use App\Http\Requests\ClientAccountBulkUpdateRequest;
 use App\Http\Requests\ClientAccountCommentStoreRequest;
+use App\Http\Requests\ClientAccountCommentUpdateRequest;
 use App\Http\Requests\ClientAccountFeesSyncRequest;
 use App\Http\Requests\ClientAccountStoreRequest;
 use App\Http\Requests\ClientAccountUpdateRequest;
@@ -213,6 +214,40 @@ class ClientAccountController extends Controller
         return response()->json($this->transformAccountComment($comment), 201);
     }
 
+    public function updateComment(
+        ClientAccountCommentUpdateRequest $request,
+        ClientAccount $client_account,
+        ClientAccountComment $comment,
+    ): JsonResponse {
+        if ((int) $comment->client_account_id !== (int) $client_account->id) {
+            abort(404);
+        }
+
+        $comment->update(['body' => $request->validated()['body']]);
+        $comment->refresh();
+        $comment->load(['user:id,name,email', 'user.profile:id,user_id,avatar_path']);
+
+        return response()->json($this->transformAccountComment($comment));
+    }
+
+    public function destroyComment(ClientAccount $client_account, ClientAccountComment $comment): JsonResponse
+    {
+        $this->authorize('modifyComment', [$client_account, $comment]);
+
+        if ((int) $comment->client_account_id !== (int) $client_account->id) {
+            abort(404);
+        }
+
+        $path = $comment->attachment_path;
+        $comment->delete();
+
+        if ($path !== null && $path !== '') {
+            Storage::disk('local')->delete((string) $path);
+        }
+
+        return response()->json(['message' => 'Note deleted.']);
+    }
+
     public function downloadCommentAttachment(ClientAccount $client_account, ClientAccountComment $comment)
     {
         $this->authorize('view', $client_account);
@@ -284,8 +319,10 @@ class ClientAccountController extends Controller
 
         return [
             'id' => $comment->id,
+            'user_id' => $comment->user_id,
             'body' => $comment->body,
             'created_at' => $comment->created_at !== null ? $comment->created_at->toIso8601String() : null,
+            'updated_at' => $comment->updated_at !== null ? $comment->updated_at->toIso8601String() : null,
             'user' => $u !== null
                 ? [
                     'id' => $u->id,

@@ -75,6 +75,10 @@ Route::middleware('auth:sanctum')->group(function () {
         ->name('client-accounts.history');
     Route::post('client-accounts/{client_account}/comments', [ClientAccountController::class, 'storeComment'])
         ->name('client-accounts.comments.store');
+    Route::patch('client-accounts/{client_account}/comments/{comment}', [ClientAccountController::class, 'updateComment'])
+        ->name('client-accounts.comments.update');
+    Route::delete('client-accounts/{client_account}/comments/{comment}', [ClientAccountController::class, 'destroyComment'])
+        ->name('client-accounts.comments.destroy');
     Route::get('client-accounts/{client_account}/comments/{comment}/attachment', [ClientAccountController::class, 'downloadCommentAttachment'])
         ->name('client-accounts.comments.attachment');
     Route::put('client-accounts/{client_account}/fees', [ClientAccountController::class, 'syncFees'])

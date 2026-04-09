@@ -3,6 +3,7 @@
 namespace App\Policies;
 
 use App\Models\ClientAccount;
+use App\Models\ClientAccountComment;
 use App\Models\User;
 
 class ClientAccountPolicy
@@ -36,6 +37,24 @@ class ClientAccountPolicy
     public function comment(User $user, ClientAccount $clientAccount): bool
     {
         return $this->update($user, $clientAccount);
+    }
+
+    /**
+     * Edit or delete an existing account note (author or CRM admin/owner).
+     */
+    public function modifyComment(User $user, ClientAccount $account, ClientAccountComment $comment): bool
+    {
+        if (! $this->comment($user, $account)) {
+            return false;
+        }
+        if ((int) $comment->client_account_id !== (int) $account->id) {
+            return false;
+        }
+        if ($this->canManageClients($user)) {
+            return true;
+        }
+
+        return (int) $comment->user_id === (int) $user->id;
     }
 
     public function delete(User $user, ClientAccount $clientAccount): bool

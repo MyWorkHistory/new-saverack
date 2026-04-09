@@ -98,6 +98,13 @@ function timelineActorAvatarUrl(r) {
   return resolvePublicUrl(raw) || raw;
 }
 
+function avatarClassForTimelineActor(label) {
+  let h = 0;
+  const s = label || "";
+  for (let i = 0; i < s.length; i++) h = (h + s.charCodeAt(i)) % 997;
+  return avatarPalettes[h % avatarPalettes.length];
+}
+
 async function loadHistory() {
   try {
     const { data } = await api.get(
@@ -321,14 +328,17 @@ watch(
               v-if="timelineActorAvatarUrl(item)"
               :src="timelineActorAvatarUrl(item)"
               alt=""
-              class="staff-user-timeline__avatar-img rounded-circle flex-shrink-0"
+              class="staff-user-timeline__avatar-img rounded-circle flex-shrink-0 object-fit-cover"
             />
             <span
               v-else
-              class="staff-user-timeline__dot"
-              :class="`staff-user-timeline__dot--${idx % 3}`"
+              class="staff-user-timeline__avatar-img rounded-circle flex-shrink-0 d-inline-flex align-items-center justify-content-center small fw-semibold"
+              style="width: 36px; height: 36px; font-size: 0.6875rem"
+              :class="avatarClassForTimelineActor(item.actor_name)"
+              :title="item.actor_name || 'User'"
               aria-hidden="true"
-            />
+              >{{ item.actor_initials || "?" }}</span
+            >
             <div class="staff-user-timeline__row">
               <h3 class="staff-user-timeline__heading">
                 {{ timelineHeading(item) }}

@@ -5,6 +5,7 @@ import api from "../../services/api";
 import CrmLoadingSpinner from "../../components/common/CrmLoadingSpinner.vue";
 import { setCrmPageMeta } from "../../composables/useCrmPageMeta.js";
 import { formatDateTimeUs } from "../../utils/formatUserDates";
+import { resolvePublicUrl } from "../../utils/resolvePublicUrl.js";
 
 const props = defineProps({
   id: { type: String, required: true },
@@ -150,7 +151,16 @@ load();
           :key="row.id"
           class="flex gap-3 px-4 py-2.5 sm:gap-4 sm:px-6 sm:py-3"
         >
+          <img
+            v-if="row.actor_avatar_url"
+            :src="resolvePublicUrl(row.actor_avatar_url) || row.actor_avatar_url"
+            alt=""
+            class="h-11 w-11 shrink-0 rounded-full object-cover"
+            width="44"
+            height="44"
+          />
           <div
+            v-else
             class="flex h-11 w-11 shrink-0 items-center justify-center rounded-full text-xs font-semibold"
             :class="avatarClass(row.actor_name || row.actor_initials)"
           >

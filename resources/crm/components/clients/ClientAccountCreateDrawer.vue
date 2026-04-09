@@ -2,7 +2,6 @@
 import { reactive, ref, watch } from "vue";
 import api from "../../services/api";
 import { useToast } from "../../composables/useToast";
-import CrmSearchableSelect from "../common/CrmSearchableSelect.vue";
 import {
   CRM_BTN_PRIMARY,
   CRM_BTN_SECONDARY,
@@ -11,7 +10,6 @@ import {
 
 const props = defineProps({
   open: { type: Boolean, default: false },
-  accountManagers: { type: Array, default: () => [] },
 });
 
 const emit = defineEmits(["update:open", "saved"]);
@@ -23,42 +21,20 @@ const showPortalPassword = ref(false);
 
 const form = reactive({
   company_name: "",
-  brand_name: "",
-  website: "",
   full_name: "",
   email: "",
   phone: "",
   password: "",
   password_confirmation: "",
-  notify_email: true,
-  telegram_handle: "",
-  whatsapp_e164: "",
-  street: "",
-  city: "",
-  state: "",
-  zip: "",
-  country: "",
-  account_manager_id: "",
 });
 
 function reset() {
   form.company_name = "";
-  form.brand_name = "";
-  form.website = "";
   form.full_name = "";
   form.email = "";
   form.phone = "";
   form.password = "";
   form.password_confirmation = "";
-  form.notify_email = true;
-  form.telegram_handle = "";
-  form.whatsapp_e164 = "";
-  form.street = "";
-  form.city = "";
-  form.state = "";
-  form.zip = "";
-  form.country = "";
-  form.account_manager_id = "";
   errorMsg.value = "";
   showPortalPassword.value = false;
 }
@@ -85,24 +61,11 @@ async function onSubmit() {
     const rawPw = (form.password || "").trim();
     const payload = {
       company_name: form.company_name.trim(),
-      brand_name: form.brand_name.trim() || null,
-      website: form.website.trim() || null,
       full_name: form.full_name.trim(),
       email: form.email.trim(),
       phone: form.phone.trim() || null,
       password: rawPw,
       password_confirmation: (form.password_confirmation || "").trim(),
-      notify_email: !!form.notify_email,
-      telegram_handle: form.telegram_handle.trim() || null,
-      whatsapp_e164: form.whatsapp_e164.trim() || null,
-      street: form.street.trim() || null,
-      city: form.city.trim() || null,
-      state: form.state.trim() || null,
-      zip: form.zip.trim() || null,
-      country: form.country.trim() || null,
-      account_manager_id: form.account_manager_id
-        ? Number(form.account_manager_id)
-        : null,
     };
     await api.post("/client-accounts", payload);
     toast.success("Account created.");
@@ -369,140 +332,10 @@ async function onSubmit() {
                     </div>
                   </div>
 
-                  <div class="grid gap-4 sm:grid-cols-2">
-                    <div>
-                      <label
-                        class="mb-1 block text-xs font-medium text-gray-600 dark:text-gray-400"
-                        >Brand name</label
-                      >
-                      <input
-                        v-model="form.brand_name"
-                        type="text"
-                        class="h-10 w-full rounded-lg border border-gray-300 bg-white px-3 text-sm dark:border-gray-600 dark:bg-gray-800 dark:text-white"
-                      />
-                    </div>
-                    <div>
-                      <label
-                        class="mb-1 block text-xs font-medium text-gray-600 dark:text-gray-400"
-                        >Website</label
-                      >
-                      <input
-                        v-model="form.website"
-                        type="url"
-                        placeholder="https://"
-                        class="h-10 w-full rounded-lg border border-gray-300 bg-white px-3 text-sm dark:border-gray-600 dark:bg-gray-800 dark:text-white"
-                      />
-                    </div>
-                  </div>
-                  <p class="text-xs font-medium text-gray-600 dark:text-gray-400">
-                    Address
+                  <p class="text-xs text-gray-500 dark:text-gray-400">
+                    Add other business details, address, channels, and an account
+                    manager on the account profile page after this account exists.
                   </p>
-                  <div>
-                    <label
-                      class="mb-1 block text-xs font-medium text-gray-600 dark:text-gray-400"
-                      >Street</label
-                    >
-                    <input
-                      v-model="form.street"
-                      type="text"
-                      class="h-10 w-full rounded-lg border border-gray-300 bg-white px-3 text-sm dark:border-gray-600 dark:bg-gray-800 dark:text-white"
-                    />
-                  </div>
-                  <div class="grid gap-4 sm:grid-cols-2">
-                    <div>
-                      <label
-                        class="mb-1 block text-xs font-medium text-gray-600 dark:text-gray-400"
-                        >City</label
-                      >
-                      <input
-                        v-model="form.city"
-                        type="text"
-                        class="h-10 w-full rounded-lg border border-gray-300 bg-white px-3 text-sm dark:border-gray-600 dark:bg-gray-800 dark:text-white"
-                      />
-                    </div>
-                    <div>
-                      <label
-                        class="mb-1 block text-xs font-medium text-gray-600 dark:text-gray-400"
-                        >State</label
-                      >
-                      <input
-                        v-model="form.state"
-                        type="text"
-                        class="h-10 w-full rounded-lg border border-gray-300 bg-white px-3 text-sm dark:border-gray-600 dark:bg-gray-800 dark:text-white"
-                      />
-                    </div>
-                  </div>
-                  <div class="grid gap-4 sm:grid-cols-2">
-                    <div>
-                      <label
-                        class="mb-1 block text-xs font-medium text-gray-600 dark:text-gray-400"
-                        >ZIP</label
-                      >
-                      <input
-                        v-model="form.zip"
-                        type="text"
-                        class="h-10 w-full rounded-lg border border-gray-300 bg-white px-3 text-sm dark:border-gray-600 dark:bg-gray-800 dark:text-white"
-                      />
-                    </div>
-                    <div>
-                      <label
-                        class="mb-1 block text-xs font-medium text-gray-600 dark:text-gray-400"
-                        >Country</label
-                      >
-                      <input
-                        v-model="form.country"
-                        type="text"
-                        class="h-10 w-full rounded-lg border border-gray-300 bg-white px-3 text-sm dark:border-gray-600 dark:bg-gray-800 dark:text-white"
-                      />
-                    </div>
-                  </div>
-                  <CrmSearchableSelect
-                    v-model="form.account_manager_id"
-                    label="Account manager"
-                    :options="accountManagers"
-                    placeholder="Choose account manager"
-                    search-placeholder="Search staff…"
-                    empty-label="— None —"
-                  />
-                  <div class="rounded-lg border border-gray-200 p-3 dark:border-gray-700">
-                    <p class="mb-2 text-xs font-medium text-gray-600 dark:text-gray-400">
-                      Channels
-                    </p>
-                    <label class="flex items-center gap-2 py-1">
-                      <input
-                        v-model="form.notify_email"
-                        type="checkbox"
-                        class="h-4 w-4 rounded border-gray-300 text-[#2563eb]"
-                      />
-                      <span class="text-sm text-gray-800 dark:text-gray-200"
-                        >Email</span
-                      >
-                    </label>
-                    <div class="mt-2">
-                      <label
-                        class="mb-1 block text-xs text-gray-500 dark:text-gray-400"
-                        >Telegram</label
-                      >
-                      <input
-                        v-model="form.telegram_handle"
-                        type="text"
-                        placeholder="@handle"
-                        class="h-9 w-full rounded-lg border border-gray-300 bg-white px-3 text-sm dark:border-gray-600 dark:bg-gray-800 dark:text-white"
-                      />
-                    </div>
-                    <div class="mt-2">
-                      <label
-                        class="mb-1 block text-xs text-gray-500 dark:text-gray-400"
-                        >WhatsApp</label
-                      >
-                      <input
-                        v-model="form.whatsapp_e164"
-                        type="text"
-                        placeholder="E.164"
-                        class="h-9 w-full rounded-lg border border-gray-300 bg-white px-3 text-sm dark:border-gray-600 dark:bg-gray-800 dark:text-white"
-                      />
-                    </div>
-                  </div>
                 </div>
               </div>
               <footer :class="CRM_DIALOG_FOOTER_CLASS">

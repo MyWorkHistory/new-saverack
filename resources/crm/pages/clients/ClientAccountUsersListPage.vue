@@ -16,6 +16,7 @@ import CrmLoadingSpinner from "../../components/common/CrmLoadingSpinner.vue";
 import CrmSearchableSelect from "../../components/common/CrmSearchableSelect.vue";
 import CrmIconRowActions from "../../components/common/CrmIconRowActions.vue";
 import ClientAccountUserEditModal from "../../components/clients/ClientAccountUserEditModal.vue";
+import ClientAccountUsersBulkEditModal from "../../components/clients/ClientAccountUsersBulkEditModal.vue";
 import { useToast } from "../../composables/useToast";
 import { crmIsAdmin } from "../../utils/crmUser";
 import { DEFAULT_PER_PAGE, PER_PAGE_OPTIONS } from "../../constants/pagination";
@@ -26,6 +27,7 @@ import {
   CRM_DIALOG_FOOTER_CLASS_DRAWER,
 } from "../../constants/dialogFooter.js";
 import { downloadListCsv } from "../../utils/downloadListCsv.js";
+import { resolvePublicUrl } from "../../utils/resolvePublicUrl.js";
 
 const crmUser = inject("crmUser", ref(null));
 const toast = useToast();
@@ -47,6 +49,7 @@ const editAccountId = ref("");
 const editUserId = ref("");
 /** Show kebab column whenever any row menu action exists (View for everyone on this page). */
 const showRowActions = computed(() => true);
+const showCheckboxCol = computed(() => canUpdate.value || canDelete.value);
 
 const manageOpenId = ref(null);
 const manageMenuRect = ref({ top: 0, left: 0 });
@@ -132,8 +135,26 @@ function onDocClick(e) {
 
 const tableColspan = computed(() => {
   let n = 5;
+  if (showCheckboxCol.value) n += 1;
   if (showRowActions.value) n += 1;
   return n;
+});
+
+const selectedIds = ref([]);
+const bulkEditOpen = ref(false);
+const bulkEditBusy = ref(false);
+const bulkDeleteOpen = ref(false);
+const bulkDeleteBusy = ref(false);
+
+const isAllPageSelected = computed(
+  () =>
+    rows.value.length > 0 &&
+    rows.value.every((r) => selectedIds.value.includes(r.id)),
+);
+
+const selectedDeletableRows = computed(() => {
+  const ids = new Set(selectedIds.value);
+  return rows.value.filter((r) => ids.has(r.id) && canRemoveRow(r));
 });
 
 const nf = new Intl.NumberFormat(undefined, { maximumFractionDigits: 0 });
@@ -194,6 +215,7 @@ function toggleSort(column) {
     query.sort_dir = "asc";
   }
   query.page = 1;
+  selectedIds.value = [];
   fetchRows();
 }
 
@@ -259,6 +281,7 @@ watch(
     clearTimeout(searchDebounce);
     searchDebounce = setTimeout(() => {
       query.page = 1;
+      selectedIds.value = [];
       fetchRows();
     }, 300);
   },
@@ -268,6 +291,7 @@ watch(
   () => query.client_account_id,
   () => {
     query.page = 1;
+    selectedIds.value = [];
     fetchRows();
   },
 );
@@ -276,6 +300,7 @@ watch(
   () => query.status,
   () => {
     query.page = 1;
+    selectedIds.value = [];
     fetchRows();
   },
 );
@@ -445,6 +470,7 @@ function clearFilters() {
   query.sort_by = "name";
   query.sort_dir = "asc";
   query.page = 1;
+  selectedIds.value = [];
   fetchRows().finally(() => {
     searchWatchLock = false;
   });
@@ -453,12 +479,14 @@ function clearFilters() {
 function applySearch() {
   clearTimeout(searchDebounce);
   query.page = 1;
+  selectedIds.value = [];
   fetchRows();
 }
 
 function goPage(p) {
   if (p < 1 || p > pagination.value.last_page) return;
   query.page = p;
+  selectedIds.value = [];
   fetchRows();
 }
 
@@ -473,7 +501,102 @@ function goLastPage() {
 function onPerPageChange(e) {
   query.per_page = Number(e.target.value);
   query.page = 1;
+  selectedIds.value = [];
   fetchRows();
+}
+
+function toggleSelectAll(ev) {
+  if (ev.target.checked) {
+    selectedIds.value = rows.value.map((r) => r.id);
+  } else {
+    selectedIds.value = [];
+  }
+}
+
+function toggleRowSelect(id) {
+  const i = selectedIds.value.indexOf(id);
+  if (i === -1) {
+    selectedIds.value = [...selectedIds.value, id];
+  } else {
+    selectedIds.value = selectedIds.value.filter((x) => x !== id);
+  }
+}
+
+function openBulkEdit() {
+  if (!selectedIds.value.length) {
+    toast.error("Select one or more users.");
+    return;
+  }
+  if (!canUpdate.value) return;
+  bulkEditOpen.value = true;
+}
+
+async function onBulkApply(payload) {
+  if (!payload?.status || !selectedIds.value.length) return;
+  bulkEditBusy.value = true;
+  try {
+    for (const id of selectedIds.value) {
+      const row = rows.value.find((r) => r.id === id);
+      if (!row) continue;
+      await api.patch(`/client-accounts/${row.client_account_id}/account-users/${id}`, {
+        status: payload.status,
+      });
+    }
+    toast.success("Users updated.");
+    bulkEditOpen.value = false;
+    selectedIds.value = [];
+    await refreshList();
+  } catch (e) {
+    toast.errorFrom(e, "Could not update users.");
+  } finally {
+    bulkEditBusy.value = false;
+  }
+}
+
+function openBulkDelete() {
+  if (!selectedDeletableRows.value.length) {
+    toast.error(
+      selectedIds.value.length
+        ? "Primary account admins cannot be removed. Deselect them or delete other users only."
+        : "Select one or more users.",
+    );
+    return;
+  }
+  if (!canDelete.value) return;
+  bulkDeleteOpen.value = true;
+}
+
+function closeBulkDelete() {
+  if (!bulkDeleteBusy.value) bulkDeleteOpen.value = false;
+}
+
+const bulkDeleteMessage = computed(() => {
+  const n = selectedDeletableRows.value.length;
+  const skipped = selectedIds.value.length - n;
+  let msg = `Remove ${n} user${n === 1 ? "" : "s"} from the directory? This cannot be undone.`;
+  if (skipped > 0) {
+    msg += ` (${skipped} primary admin${skipped === 1 ? "" : "s"} will be skipped.)`;
+  }
+  return msg;
+});
+
+async function confirmBulkDelete() {
+  const targets = selectedDeletableRows.value;
+  if (!targets.length) return;
+  bulkDeleteBusy.value = true;
+  try {
+    for (const r of targets) {
+      await api.delete(`/client-accounts/${r.client_account_id}/account-users/${r.id}`);
+    }
+    toast.success(targets.length === 1 ? "User deleted." : `${targets.length} users deleted.`);
+    bulkDeleteOpen.value = false;
+    selectedIds.value = [];
+    await refreshList();
+  } catch (e) {
+    toast.errorFrom(e, "Could not delete users.");
+  } finally {
+    bulkDeleteBusy.value = false;
+  }
 }
 
 function openAdd() {
@@ -569,7 +692,7 @@ onUnmounted(() => {
 </script>
 
 <template>
-  <div class="staff-page staff-page--wide">
+  <div class="staff-page staff-page--wide client-account-users-list">
     <Teleport to="body">
       <Transition name="drawer-fade">
         <div
@@ -745,32 +868,7 @@ onUnmounted(() => {
           <svg width="18" height="18" fill="currentColor" viewBox="0 0 24 24" aria-hidden="true">
             <path d="M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z" />
           </svg>
-          Add user
-        </button>
-        <button
-          type="button"
-          class="btn btn-outline-secondary btn-sm d-inline-flex align-items-center gap-2"
-          :disabled="loading"
-          title="Refresh"
-          aria-label="Refresh list"
-          @click="refreshList"
-        >
-          <svg
-            width="18"
-            height="18"
-            fill="none"
-            stroke="currentColor"
-            viewBox="0 0 24 24"
-            aria-hidden="true"
-          >
-            <path
-              stroke-linecap="round"
-              stroke-linejoin="round"
-              stroke-width="2"
-              d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"
-            />
-          </svg>
-          Refresh
+          Add User
         </button>
       </div>
     </div>
@@ -980,6 +1078,24 @@ onUnmounted(() => {
                 </button>
               </div>
             </div>
+            <button
+              v-if="canUpdate"
+              type="button"
+              class="btn btn-outline-secondary staff-toolbar-btn"
+              :disabled="!selectedIds.length || loading"
+              @click="openBulkEdit"
+            >
+              Bulk edit
+            </button>
+            <button
+              v-if="canDelete"
+              type="button"
+              class="btn btn-outline-danger staff-toolbar-btn"
+              :disabled="!selectedDeletableRows.length || loading"
+              @click="openBulkDelete"
+            >
+              Bulk delete
+            </button>
           </div>
         </div>
       </div>
@@ -988,6 +1104,20 @@ onUnmounted(() => {
         <table class="table table-hover align-middle mb-0 staff-data-table">
           <thead class="table-light staff-table-head">
             <tr>
+              <th
+                v-if="showCheckboxCol"
+                class="staff-table-head__th staff-table-head__th--select"
+                scope="col"
+              >
+                <input
+                  type="checkbox"
+                  class="form-check-input staff-table-head__check mt-0"
+                  :checked="isAllPageSelected"
+                  :disabled="loading || !rows.length"
+                  aria-label="Select all on page"
+                  @change="toggleSelectAll"
+                />
+              </th>
               <th
                 class="staff-table-head__th staff-table-head__th--sort"
                 scope="col"
@@ -1062,7 +1192,7 @@ onUnmounted(() => {
               </th>
               <th
                 v-if="showRowActions"
-                class="staff-table-head__th staff-actions-col"
+                class="staff-table-head__th staff-actions-col text-center"
                 scope="col"
               >
                 Actions
@@ -1083,6 +1213,15 @@ onUnmounted(() => {
               :key="row.id"
               class="align-middle"
             >
+              <td v-if="showCheckboxCol" class="staff-table-cell--tight-check">
+                <input
+                  type="checkbox"
+                  class="form-check-input staff-table-head__check mt-0"
+                  :checked="selectedIds.includes(row.id)"
+                  :aria-label="`Select ${row.name}`"
+                  @change="toggleRowSelect(row.id)"
+                />
+              </td>
               <td>
                 <span
                   class="badge rounded-pill text-capitalize fw-medium"
@@ -1097,7 +1236,14 @@ onUnmounted(() => {
                     class="flex-shrink-0 rounded-circle overflow-hidden bg-body-secondary d-inline-flex"
                     style="width: 2.75rem; height: 2.75rem"
                   >
+                    <img
+                      v-if="row.avatar_url"
+                      :src="resolvePublicUrl(row.avatar_url)"
+                      alt=""
+                      class="w-100 h-100 object-fit-cover"
+                    />
                     <span
+                      v-else
                       class="d-flex w-100 h-100 align-items-center justify-content-center fw-semibold staff-user-cell__meta"
                       :class="avatarClassForEmail(row.email)"
                     >
@@ -1137,10 +1283,10 @@ onUnmounted(() => {
                   >Primary</span
                 >
               </td>
-              <td v-if="showRowActions" class="staff-actions-cell text-end">
+              <td v-if="showRowActions" class="staff-actions-cell text-center">
                 <div
                   data-row-actions
-                  class="staff-actions-inner staff-actions-inner--single"
+                  class="staff-actions-inner staff-actions-inner--single justify-content-center"
                 >
                   <button
                     type="button"
@@ -1295,6 +1441,13 @@ onUnmounted(() => {
       @saved="refreshList"
     />
 
+    <ClientAccountUsersBulkEditModal
+      v-model:open="bulkEditOpen"
+      :selected-count="selectedIds.length"
+      :busy="bulkEditBusy"
+      @apply="onBulkApply"
+    />
+
     <ConfirmModal
       :open="deleteModalOpen"
       title="Delete user?"
@@ -1304,6 +1457,17 @@ onUnmounted(() => {
       danger
       @close="deleteTarget = null"
       @confirm="runDelete"
+    />
+
+    <ConfirmModal
+      :open="bulkDeleteOpen"
+      title="Delete users?"
+      :message="bulkDeleteMessage"
+      confirm-label="Delete"
+      :busy="bulkDeleteBusy"
+      danger
+      @close="closeBulkDelete"
+      @confirm="confirmBulkDelete"
     />
 
     <Teleport to="body">

@@ -44,6 +44,7 @@ class ClientAccountUpdateRequest extends FormRequest
             'notify_email' => ['sometimes', 'boolean'],
             'telegram_handle' => ['sometimes', 'nullable', 'string', 'max:190'],
             'whatsapp_e164' => ['sometimes', 'nullable', 'string', 'max:32'],
+            'slack_channel' => ['sometimes', 'nullable', 'string', 'max:255'],
             'street' => ['sometimes', 'nullable', 'string', 'max:190'],
             'city' => ['sometimes', 'nullable', 'string', 'max:120'],
             'state' => ['sometimes', 'nullable', 'string', 'max:64'],
@@ -51,6 +52,7 @@ class ClientAccountUpdateRequest extends FormRequest
             'country' => ['sometimes', 'nullable', 'string', 'max:120'],
             'notes' => ['sometimes', 'nullable', 'string', 'max:65535'],
             'account_manager_id' => ['sometimes', 'nullable', 'integer', $accountManagerRule],
+            'contract_date' => ['sometimes', 'nullable', 'date'],
         ];
     }
 }

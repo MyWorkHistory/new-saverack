@@ -356,6 +356,17 @@ $staff-detail-primary: #2563eb;
   background: #00bad1;
 }
 
+.staff-user-timeline__avatar-img {
+  position: absolute;
+  left: -2rem;
+  top: 0.05rem;
+  width: 1.75rem;
+  height: 1.75rem;
+  object-fit: cover;
+  border: 2px solid var(--vx-nav-bg);
+  box-sizing: content-box;
+}
+
 .staff-user-timeline__row {
   display: flex;
   flex-wrap: wrap;

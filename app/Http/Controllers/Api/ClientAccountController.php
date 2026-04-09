@@ -3,15 +3,24 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use App\Http\Requests\ClientAccountBulkDeleteRequest;
 use App\Http\Requests\ClientAccountBulkUpdateRequest;
+use App\Http\Requests\ClientAccountCommentStoreRequest;
+use App\Http\Requests\ClientAccountFeesSyncRequest;
 use App\Http\Requests\ClientAccountStoreRequest;
 use App\Http\Requests\ClientAccountUpdateRequest;
+use App\Models\ActivityLog;
 use App\Models\ClientAccount;
+use App\Models\ClientAccountComment;
+use App\Models\ClientAccountFee;
+use App\Services\ActivityLogService;
 use App\Services\ClientAccountService;
 use App\Support\CsvExporter;
+use App\Support\CrmActivityPresenter;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Schema;
+use Illuminate\Support\Facades\Storage;
 use Illuminate\Validation\ValidationException;
 use Symfony\Component\HttpFoundation\StreamedResponse;
 
@@ -20,9 +29,13 @@ class ClientAccountController extends Controller
     /** @var ClientAccountService */
     protected $clientAccounts;
 
-    public function __construct(ClientAccountService $clientAccounts)
+    /** @var ActivityLogService */
+    protected $activityLog;
+
+    public function __construct(ClientAccountService $clientAccounts, ActivityLogService $activityLog)
     {
         $this->clientAccounts = $clientAccounts;
+        $this->activityLog = $activityLog;
         $this->authorizeResource(ClientAccount::class, 'client_account');
     }
 
@@ -62,6 +75,7 @@ class ClientAccountController extends Controller
             'sort_by',
             'sort_dir',
             'account_manager_id',
+            'status',
         ]));
 
         $paginator->getCollection()->transform(function (ClientAccount $row) {
@@ -75,7 +89,7 @@ class ClientAccountController extends Controller
     {
         $this->authorize('viewAny', ClientAccount::class);
 
-        $filters = $request->only(['search', 'account_manager_id']);
+        $filters = $request->only(['search', 'account_manager_id', 'status']);
         $query = $this->clientAccounts->filteredAccountsQuery($filters)->orderBy('id');
 
         $columns = Schema::getColumnListing('client_accounts');
@@ -105,31 +119,189 @@ class ClientAccountController extends Controller
         unset($validated['password'], $validated['password_confirmation'], $validated['full_name']);
 
         try {
-            $account = $this->clientAccounts->create($validated, $portalPassword);
+            $account = $this->clientAccounts->create($validated, $portalPassword, $request->user());
         } catch (\InvalidArgumentException $e) {
             throw ValidationException::withMessages(['full_name' => [$e->getMessage()]]);
         } catch (\RuntimeException $e) {
             throw ValidationException::withMessages(['email' => [$e->getMessage()]]);
         }
 
-        return response()->json($this->clientAccounts->toApiArray($account->fresh(['accountManager'])), 201);
+        return response()->json($this->clientAccounts->toApiArray($account->fresh(['accountManager', 'feeItems'])), 201);
     }
 
     public function show(ClientAccount $client_account): JsonResponse
     {
         $client_account->loadCount(['stores', 'accountUsers']);
+        $client_account->load([
+            'comments' => fn ($q) => $q
+                ->with(['user:id,name,email', 'user.profile:id,user_id,avatar_path'])
+                ->orderBy('created_at'),
+        ]);
         $payload = $this->clientAccounts->toApiArray($client_account);
         $payload['stores_count'] = (int) $client_account->stores_count;
         $payload['account_users_count'] = (int) $client_account->account_users_count;
+        $payload['comments'] = $client_account->relationLoaded('comments')
+            ? $client_account->comments
+                ->map(fn (ClientAccountComment $c) => $this->transformAccountComment($c))
+                ->values()
+                ->all()
+            : [];
 
         return response()->json($payload);
     }
 
+    public function history(ClientAccount $client_account): JsonResponse
+    {
+        $this->authorize('view', $client_account);
+
+        $logs = ActivityLog::query()
+            ->where('subject_type', $client_account->getMorphClass())
+            ->where('subject_id', $client_account->id)
+            ->whereIn('action', ['client_account.created', 'client_account.updated', 'client_account.comment'])
+            ->with(['user:id,name', 'user.profile:id,user_id,avatar_path'])
+            ->orderByDesc('id')
+            ->limit(200)
+            ->get();
+
+        $items = $logs
+            ->map(static fn (ActivityLog $log) => CrmActivityPresenter::toHistoryItem($log))
+            ->values()
+            ->all();
+
+        return response()->json(['items' => $items]);
+    }
+
+    public function storeComment(ClientAccountCommentStoreRequest $request, ClientAccount $client_account): JsonResponse
+    {
+        $validated = $request->validated();
+        $path = null;
+        $original = null;
+        $mime = null;
+        $size = null;
+
+        if ($request->hasFile('attachment')) {
+            $file = $request->file('attachment');
+            $path = $file->store('client-account-comments/'.$client_account->id, 'local');
+            $original = $file->getClientOriginalName();
+            $mime = $file->getClientMimeType();
+            $size = (int) $file->getSize();
+        }
+
+        try {
+            $comment = ClientAccountComment::query()->create([
+                'client_account_id' => $client_account->id,
+                'user_id' => $request->user()->id,
+                'body' => $validated['body'],
+                'attachment_path' => $path,
+                'attachment_original_name' => $original,
+                'attachment_mime' => $mime,
+                'attachment_size' => $size,
+            ]);
+        } catch (\Throwable $e) {
+            if ($path !== null) {
+                Storage::disk('local')->delete($path);
+            }
+            throw $e;
+        }
+
+        $this->activityLog->log($request->user(), 'client_account.comment', $client_account, null, [
+            'comment_id' => $comment->id,
+        ]);
+
+        $comment->load(['user:id,name,email', 'user.profile:id,user_id,avatar_path']);
+
+        return response()->json($this->transformAccountComment($comment), 201);
+    }
+
+    public function downloadCommentAttachment(ClientAccount $client_account, ClientAccountComment $comment)
+    {
+        $this->authorize('view', $client_account);
+
+        if ((int) $comment->client_account_id !== (int) $client_account->id || ! $comment->hasAttachment()) {
+            abort(404);
+        }
+
+        $disk = Storage::disk('local');
+
+        if (! $disk->exists((string) $comment->attachment_path)) {
+            abort(404);
+        }
+
+        return $disk->response(
+            (string) $comment->attachment_path,
+            $comment->attachment_original_name ?: 'attachment',
+            ['Content-Type' => $comment->attachment_mime ?: 'application/octet-stream']
+        );
+    }
+
     public function update(ClientAccountUpdateRequest $request, ClientAccount $client_account): JsonResponse
     {
-        $account = $this->clientAccounts->update($client_account, $request->validated());
+        $account = $this->clientAccounts->update($client_account, $request->validated(), $request->user());
 
         return response()->json($this->clientAccounts->toApiArray($account));
+    }
+
+    public function syncFees(ClientAccountFeesSyncRequest $request, ClientAccount $client_account): JsonResponse
+    {
+        $account = $this->clientAccounts->syncFees(
+            $client_account,
+            $request->validated(),
+            $request->user()
+        );
+
+        return response()->json($this->clientAccounts->toApiArray($account));
+    }
+
+    public function destroyFeeItem(ClientAccount $client_account, ClientAccountFee $fee): JsonResponse
+    {
+        $this->authorize('update', $client_account);
+
+        if ((int) $fee->client_account_id !== (int) $client_account->id) {
+            abort(404);
+        }
+
+        if ($fee->fee_group !== ClientAccountFee::GROUP_STORAGE) {
+            return response()->json([
+                'message' => 'Only storage fee lines can be removed.',
+            ], 422);
+        }
+
+        $fee->delete();
+
+        return response()->json($this->clientAccounts->toApiArray($client_account->fresh()));
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    protected function transformAccountComment(ClientAccountComment $comment): array
+    {
+        $u = $comment->relationLoaded('user') ? $comment->user : null;
+        $avatarUrl = null;
+        if ($u !== null && $u->relationLoaded('profile') && $u->profile !== null) {
+            $avatarUrl = $u->profile->avatar_url;
+        }
+
+        return [
+            'id' => $comment->id,
+            'body' => $comment->body,
+            'created_at' => $comment->created_at !== null ? $comment->created_at->toIso8601String() : null,
+            'user' => $u !== null
+                ? [
+                    'id' => $u->id,
+                    'name' => $u->name,
+                    'email' => $u->email,
+                    'avatar_url' => $avatarUrl,
+                ]
+                : null,
+            'attachment' => $comment->hasAttachment()
+                ? [
+                    'original_name' => $comment->attachment_original_name,
+                    'mime' => $comment->attachment_mime,
+                    'size' => $comment->attachment_size,
+                ]
+                : null,
+        ];
     }
 
     public function destroy(ClientAccount $client_account): JsonResponse
@@ -152,5 +324,19 @@ class ClientAccountController extends Controller
         $updated = $this->clientAccounts->bulkUpdateStatus($ids, $status);
 
         return response()->json(['message' => 'Client accounts updated.', 'updated' => $updated]);
+    }
+
+    public function bulkDestroy(ClientAccountBulkDeleteRequest $request): JsonResponse
+    {
+        $validated = $request->validated();
+        $ids = array_map('intval', $validated['client_account_ids']);
+
+        foreach ($ids as $id) {
+            $this->authorize('delete', ClientAccount::query()->findOrFail($id));
+        }
+
+        $deleted = $this->clientAccounts->bulkDelete($ids);
+
+        return response()->json(['message' => 'Client accounts deleted.', 'deleted' => $deleted]);
     }
 }

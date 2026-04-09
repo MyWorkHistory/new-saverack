@@ -5,10 +5,12 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\ClientAccountUserStoreRequest;
 use App\Http\Requests\ClientAccountUserUpdateRequest;
+use App\Models\ActivityLog;
 use App\Models\ClientAccount;
 use App\Models\User;
 use App\Policies\ClientAccountUserPolicy;
 use App\Services\ClientAccountUserService;
+use App\Support\CrmActivityPresenter;
 use App\Support\CsvExporter;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -100,9 +102,39 @@ class ClientAccountUserController extends Controller
         return response()->json($this->accountUsers->toApiArray($user));
     }
 
+    public function history(Request $request, ClientAccount $client_account, User $user): JsonResponse
+    {
+        $this->guardUserBelongsToAccount($client_account, $user);
+
+        $auth = $request->user();
+        if ($auth === null || ! app(ClientAccountUserPolicy::class)->view($auth, $user, $client_account)) {
+            abort(403);
+        }
+
+        $logs = ActivityLog::query()
+            ->where('subject_type', $user->getMorphClass())
+            ->where('subject_id', $user->id)
+            ->whereIn('action', ['portal_user.created', 'portal_user.updated', 'portal_user.deleted'])
+            ->with(['user:id,name', 'user.profile:id,user_id,avatar_path'])
+            ->orderByDesc('id')
+            ->limit(200)
+            ->get();
+
+        $items = $logs
+            ->map(static fn (ActivityLog $log) => CrmActivityPresenter::toHistoryItem($log))
+            ->values()
+            ->all();
+
+        return response()->json(['items' => $items]);
+    }
+
     public function store(ClientAccountUserStoreRequest $request, ClientAccount $client_account): JsonResponse
     {
-        $user = $this->accountUsers->createSecondary($client_account, $request->validated());
+        $user = $this->accountUsers->createSecondary(
+            $client_account,
+            $request->validated(),
+            $request->user(),
+        );
 
         return response()->json($this->accountUsers->toApiArray($user), 201);
     }
@@ -114,7 +146,11 @@ class ClientAccountUserController extends Controller
     ): JsonResponse {
         $this->guardUserBelongsToAccount($client_account, $user);
 
-        $updated = $this->accountUsers->updateAccountUser($user, $request->validated());
+        $updated = $this->accountUsers->updateAccountUser(
+            $user,
+            $request->validated(),
+            $request->user(),
+        );
 
         return response()->json($this->accountUsers->toApiArray($updated));
     }
@@ -128,7 +164,7 @@ class ClientAccountUserController extends Controller
             abort(403);
         }
 
-        $this->accountUsers->deleteAccountUser($user);
+        $this->accountUsers->deleteAccountUser($user, $auth);
 
         return response()->json(['message' => 'User deleted.']);
     }

@@ -37,6 +37,7 @@ class ClientAccount extends Model
         'notify_email',
         'telegram_handle',
         'whatsapp_e164',
+        'slack_channel',
         'street',
         'city',
         'state',
@@ -44,10 +45,12 @@ class ClientAccount extends Model
         'country',
         'notes',
         'account_manager_id',
+        'contract_date',
     ];
 
     protected $casts = [
         'notify_email' => 'boolean',
+        'contract_date' => 'date',
     ];
 
     public function accountManager(): BelongsTo
@@ -71,6 +74,20 @@ class ClientAccount extends Model
     public function stores(): HasMany
     {
         return $this->hasMany(ClientStore::class, 'client_account_id');
+    }
+
+    /** CRM notes / activity comments (attachments supported). */
+    public function comments(): HasMany
+    {
+        return $this->hasMany(ClientAccountComment::class, 'client_account_id');
+    }
+
+    /** Fulfillment / returns / storage line items for the Account fees tab. */
+    public function feeItems(): HasMany
+    {
+        return $this->hasMany(ClientAccountFee::class, 'client_account_id')
+            ->orderBy('sort_order')
+            ->orderBy('id');
     }
 
     public function contactFullName(): string

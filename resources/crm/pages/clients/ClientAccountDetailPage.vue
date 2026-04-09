@@ -1,5 +1,5 @@
 <script setup>
-import { computed, inject, onMounted, reactive, ref, watch } from "vue";
+import { computed, inject, onMounted, onUnmounted, reactive, ref, watch } from "vue";
 import { RouterLink, useRoute, useRouter } from "vue-router";
 import api from "../../services/api";
 import CrmLoadingSpinner from "../../components/common/CrmLoadingSpinner.vue";
@@ -9,10 +9,14 @@ import ClientAccountChannelIcons from "../../components/clients/ClientAccountCha
 import ClientStoreCreateDrawer from "../../components/clients/ClientStoreCreateDrawer.vue";
 import ClientStoreEditModal from "../../components/clients/ClientStoreEditModal.vue";
 import ClientStoresBulkEditModal from "../../components/clients/ClientStoresBulkEditModal.vue";
+import ClientAccountFeesPanel from "../../components/clients/ClientAccountFeesPanel.vue";
 import { DEFAULT_PER_PAGE, PER_PAGE_OPTIONS } from "../../constants/pagination";
 import { crmIsAdmin } from "../../utils/crmUser";
 import { setCrmPageMeta } from "../../composables/useCrmPageMeta.js";
 import { useToast } from "../../composables/useToast";
+import { errorMessage } from "../../utils/apiError";
+import { formatDateTimeUs } from "../../utils/formatUserDates";
+import { resolvePublicUrl } from "../../utils/resolvePublicUrl.js";
 
 const props = defineProps({
   id: { type: String, required: true },
@@ -45,7 +49,10 @@ const storesLoading = ref(false);
 const stores = ref([]);
 
 const editAccountOpen = ref(false);
+const editAccountSection = ref("");
 const accountManagers = ref([]);
+
+const historyItems = ref([]);
 
 const addStoreOpen = ref(false);
 const editStoreOpen = ref(false);
@@ -66,14 +73,21 @@ const storeBulkEditOpen = ref(false);
 const storeBulkEditBusy = ref(false);
 
 const TAB_ACCOUNT_INFO = "account-info";
+const TAB_STORES = "stores";
 const TAB_FEES = "fees";
 const TAB_BILLING = "billing";
 
-const accountTabList = [
-  { id: TAB_ACCOUNT_INFO, label: "Account Info" },
-  { id: TAB_FEES, label: "Fees" },
-  { id: TAB_BILLING, label: "Billing" },
-];
+const accountTabList = computed(() => {
+  const tabs = [{ id: TAB_ACCOUNT_INFO, label: "Account Info" }];
+  if (canViewStores.value) {
+    tabs.push({ id: TAB_STORES, label: "Stores" });
+  }
+  tabs.push(
+    { id: TAB_FEES, label: "Fees" },
+    { id: TAB_BILLING, label: "Billing" },
+  );
+  return tabs;
+});
 
 const activeTab = ref(TAB_ACCOUNT_INFO);
 
@@ -81,18 +95,16 @@ function tabFromRouteQuery(tab) {
   const t = String(tab || "").toLowerCase();
   if (t === TAB_FEES) return TAB_FEES;
   if (t === TAB_BILLING) return TAB_BILLING;
-  if (
-    t === TAB_ACCOUNT_INFO ||
-    t === "overview" ||
-    t === "stores"
-  ) {
-    return TAB_ACCOUNT_INFO;
-  }
+  if (t === TAB_STORES || t === "stores") return TAB_STORES;
+  if (t === TAB_ACCOUNT_INFO || t === "overview") return TAB_ACCOUNT_INFO;
   return TAB_ACCOUNT_INFO;
 }
 
 function syncTabFromRoute() {
-  const next = tabFromRouteQuery(route.query.tab);
+  let next = tabFromRouteQuery(route.query.tab);
+  if (next === TAB_STORES && !canViewStores.value) {
+    next = TAB_ACCOUNT_INFO;
+  }
   if (activeTab.value !== next) {
     activeTab.value = next;
   }
@@ -109,24 +121,38 @@ function setActiveTab(tabId) {
 watch(
   () => route.query.tab,
   () => {
-    const next = tabFromRouteQuery(route.query.tab);
+    let next = tabFromRouteQuery(route.query.tab);
+    if (next === TAB_STORES && !canViewStores.value) {
+      next = TAB_ACCOUNT_INFO;
+    }
     if (activeTab.value !== next) {
       activeTab.value = next;
     }
   },
 );
 
-const notesDraft = ref("");
-const notesSaving = ref(false);
-
-watch(
-  () => account.value,
-  (a) => {
-    if (a) {
-      notesDraft.value = a.notes != null ? String(a.notes) : "";
+watch(canViewStores, (ok) => {
+  if (!ok && activeTab.value === TAB_STORES) {
+    activeTab.value = TAB_ACCOUNT_INFO;
+    const cur = String(route.query.tab || "").toLowerCase();
+    if (cur === TAB_STORES || cur === "stores") {
+      router.replace({ query: { ...route.query, tab: TAB_ACCOUNT_INFO } });
     }
-  },
-);
+  }
+});
+
+const commentBody = ref("");
+const commentFile = ref(null);
+const commentFileInput = ref(null);
+const commentSubmitting = ref(false);
+const commentError = ref("");
+
+const accountComments = computed(() => {
+  const c = account.value?.comments;
+  return Array.isArray(c) ? c : [];
+});
+
+const imagePreviewUrls = ref({});
 
 const accountDeleteOpen = ref(false);
 const accountDeleteBusy = ref(false);
@@ -213,33 +239,193 @@ const usersCountDisplay = computed(() => {
   return 0;
 });
 
-function formatAccountAddress(a) {
-  if (!a) return "";
-  const lines = [];
-  if (a.street) lines.push(String(a.street));
-  const cityParts = [a.city, a.state, a.zip].filter(
-    (x) => x != null && String(x).trim() !== "",
-  );
-  if (cityParts.length) lines.push(cityParts.join(", "));
-  if (a.country) lines.push(String(a.country));
-  return lines.join("\n");
+const avatarPalettesWm = [
+  "bg-sky-100 text-sky-800",
+  "bg-violet-100 text-violet-800",
+  "bg-amber-100 text-amber-900",
+];
+
+function avatarClassForCommentUser(email) {
+  let h = 0;
+  const s = email || "";
+  for (let i = 0; i < s.length; i++) h = (h + s.charCodeAt(i)) % 997;
+  return avatarPalettesWm[h % avatarPalettesWm.length];
 }
 
-async function saveNotes() {
-  if (!canUpdateAccount.value || !account.value) return;
-  notesSaving.value = true;
+function formatFileSize(n) {
+  if (n == null || n === "") return "";
+  const x = Number(n);
+  if (Number.isNaN(x) || x <= 0) return "";
+  if (x < 1024) return `${x} B`;
+  if (x < 1024 * 1024) return `${(x / 1024).toFixed(1)} KB`;
+  return `${(x / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+function isImageMime(mime) {
+  return typeof mime === "string" && mime.startsWith("image/");
+}
+
+function formatRelativeTime(iso) {
+  if (!iso) return "—";
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return "—";
+  const diff = Date.now() - d.getTime();
+  const sec = Math.floor(diff / 1000);
+  if (sec < 45) return "Just now";
+  const min = Math.floor(sec / 60);
+  if (min < 60) return `${min} min ago`;
+  const hr = Math.floor(min / 60);
+  if (hr < 24) return `${hr} hr ago`;
+  const day = Math.floor(hr / 24);
+  if (day < 7) return `${day} day${day === 1 ? "" : "s"} ago`;
   try {
-    await api.patch(`/client-accounts/${props.id}`, {
-      notes: notesDraft.value.trim() || null,
-    });
-    toast.success("Notes saved.");
-    await loadAccount();
-  } catch (e) {
-    toast.errorFrom(e, "Could not save notes.");
-  } finally {
-    notesSaving.value = false;
+    return formatDateTimeUs(iso);
+  } catch {
+    return iso;
   }
 }
+
+function timelineHeading(row) {
+  const t = (row.body || row.line || "Activity").trim();
+  if (t.length <= 72) return t;
+  return `${t.slice(0, 69)}…`;
+}
+
+const timelinePreview = computed(() => historyItems.value.slice(0, 5));
+
+const primaryAccountUserId = computed(
+  () => account.value?.primary_account_user_id ?? null,
+);
+
+function accountUserDetailRoute(userId) {
+  return {
+    name: "client-account-user-detail",
+    params: { accountId: String(props.id), userId: String(userId) },
+  };
+}
+
+function timelineActorAvatarUrl(row) {
+  const raw = row?.actor_avatar_url;
+  if (!raw) return "";
+  return resolvePublicUrl(raw) || raw;
+}
+
+function openAccountEdit(section = "") {
+  editAccountSection.value = section;
+  editAccountOpen.value = true;
+}
+
+function onAccountFeesUpdated(payload) {
+  account.value = payload;
+}
+
+async function loadHistory() {
+  if (!props.id) return;
+  try {
+    const { data } = await api.get(`/client-accounts/${props.id}/history`);
+    const list = data?.items;
+    historyItems.value = Array.isArray(list) ? list : [];
+  } catch {
+    historyItems.value = [];
+  }
+}
+
+async function submitAccountComment() {
+  const body = commentBody.value?.trim() || "";
+  if (!body) {
+    commentError.value = "Write a comment first.";
+    return;
+  }
+  commentSubmitting.value = true;
+  commentError.value = "";
+  const fd = new FormData();
+  fd.append("body", body);
+  const f = commentFile.value;
+  if (f) fd.append("attachment", f);
+  try {
+    const { data } = await api.post(
+      `/client-accounts/${props.id}/comments`,
+      fd,
+      { headers: { "Content-Type": undefined } },
+    );
+    if (account.value) {
+      const list = Array.isArray(account.value.comments)
+        ? [...account.value.comments]
+        : [];
+      list.push(data);
+      account.value = { ...account.value, comments: list };
+    }
+    commentBody.value = "";
+    commentFile.value = null;
+    if (commentFileInput.value) commentFileInput.value.value = "";
+    await loadHistory();
+    toast.success("Note added.");
+  } catch (e) {
+    commentError.value = errorMessage(e, "Could not add note.");
+  } finally {
+    commentSubmitting.value = false;
+  }
+}
+
+async function downloadAccountCommentAttachment(commentId) {
+  try {
+    const res = await api.get(
+      `/client-accounts/${props.id}/comments/${commentId}/attachment`,
+      { responseType: "blob" },
+    );
+    const cd = res.headers?.["content-disposition"];
+    let name = "download";
+    if (cd && typeof cd === "string") {
+      const m = /filename\*?=(?:UTF-8'')?["']?([^"'\s;]+)/i.exec(cd);
+      if (m?.[1]) name = decodeURIComponent(m[1].replace(/["']/g, ""));
+    }
+    const c = accountComments.value.find((x) => x.id === commentId);
+    if (c?.attachment?.original_name) name = c.attachment.original_name;
+    const url = window.URL.createObjectURL(res.data);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = name;
+    a.click();
+    window.URL.revokeObjectURL(url);
+  } catch {
+    /* ignore */
+  }
+}
+
+async function loadImagePreview(commentId) {
+  const res = await api.get(
+    `/client-accounts/${props.id}/comments/${commentId}/attachment`,
+    { responseType: "blob" },
+  );
+  return window.URL.createObjectURL(res.data);
+}
+
+async function ensureAccountImagePreview(comment) {
+  if (!comment?.attachment || !isImageMime(comment.attachment.mime)) return;
+  const id = comment.id;
+  if (imagePreviewUrls.value[id]) return;
+  try {
+    imagePreviewUrls.value = {
+      ...imagePreviewUrls.value,
+      [id]: await loadImagePreview(id),
+    };
+  } catch {
+    /* ignore */
+  }
+}
+
+watch(
+  () => account.value?.comments,
+  (list) => {
+    if (!Array.isArray(list)) return;
+    for (const c of list) {
+      if (c.attachment && isImageMime(c.attachment.mime)) {
+        ensureAccountImagePreview(c);
+      }
+    }
+  },
+  { deep: true },
+);
 
 const showStoreCheckboxCol = computed(() => canUpdateStore.value);
 
@@ -546,6 +732,13 @@ onMounted(async () => {
   await loadAccount();
   syncTabFromRoute();
   await loadStores();
+  await loadHistory();
+});
+
+onUnmounted(() => {
+  for (const url of Object.values(imagePreviewUrls.value)) {
+    if (typeof url === "string") window.URL.revokeObjectURL(url);
+  }
 });
 </script>
 
@@ -585,7 +778,11 @@ onMounted(async () => {
       v-model:open="editAccountOpen"
       :account-id="id"
       :account-managers="accountManagers"
-      @saved="loadAccount"
+      :section="editAccountSection"
+      @saved="
+        loadAccount();
+        loadHistory();
+      "
     />
     <ClientStoreCreateDrawer
       v-if="canCreateStore && canViewStores"
@@ -691,7 +888,19 @@ onMounted(async () => {
               </div>
             </div>
 
-            <h3 class="staff-user-profile__details-title">Details</h3>
+            <div
+              class="d-flex flex-wrap align-items-center justify-content-between gap-2 mb-2"
+            >
+              <h3 class="staff-user-profile__details-title mb-0">Details</h3>
+              <button
+                v-if="canUpdateAccount"
+                type="button"
+                class="btn btn-sm btn-primary staff-page-primary"
+                @click="openAccountEdit('left')"
+              >
+                Edit
+              </button>
+            </div>
             <dl class="staff-user-profile__dl">
               <div>
                 <dt class="staff-user-profile__dt">Email</dt>
@@ -706,34 +915,30 @@ onMounted(async () => {
                 </dd>
               </div>
               <div>
-                <dt class="staff-user-profile__dt">Channels</dt>
+                <dt class="staff-user-profile__dt">Account manager</dt>
                 <dd class="staff-user-profile__dd">
+                  {{ display(account.account_manager?.name) }}
+                </dd>
+              </div>
+              <div>
+                <dt class="staff-user-profile__dt">Channels</dt>
+                <dd
+                  class="staff-user-profile__dd d-flex justify-content-end flex-wrap gap-1"
+                >
                   <ClientAccountChannelIcons
                     :notify-email="!!account.notify_email"
                     :telegram-handle="account.telegram_handle || ''"
                     :whatsapp-e164="account.whatsapp_e164 || ''"
+                    :slack-channel="account.slack_channel || ''"
+                    :slack-title="
+                      account.slack_channel
+                        ? `Slack: ${account.slack_channel}`
+                        : 'Slack channel'
+                    "
                   />
                 </dd>
               </div>
-              <div v-if="account.account_manager?.name">
-                <dt class="staff-user-profile__dt">Account manager</dt>
-                <dd class="staff-user-profile__dd">
-                  {{ account.account_manager.name }}
-                </dd>
-              </div>
             </dl>
-            <div
-              v-if="canUpdateAccount"
-              class="staff-user-profile__actions staff-user-profile__actions--single"
-            >
-              <button
-                type="button"
-                class="btn btn-primary staff-page-primary"
-                @click="editAccountOpen = true"
-              >
-                Edit details
-              </button>
-            </div>
           </aside>
         </div>
 
@@ -763,99 +968,282 @@ onMounted(async () => {
               <div
                 class="d-flex flex-wrap align-items-start justify-content-between gap-2 mb-3"
               >
-                <h3 class="staff-user-section-title mb-0">Account Info</h3>
+                <h3 class="staff-user-section-title mb-0">Personal information</h3>
                 <button
                   v-if="canUpdateAccount"
                   type="button"
-                  class="btn btn-primary staff-page-primary btn-sm"
-                  @click="editAccountOpen = true"
+                  class="btn btn-sm btn-primary staff-page-primary"
+                  @click="openAccountEdit('account')"
                 >
-                  Edit details
+                  Edit
                 </button>
               </div>
-              <dl class="mb-0 small">
-                <dt
-                  class="text-secondary text-uppercase fw-semibold mb-1"
-                  style="font-size: 0.65rem"
-                >
-                  Company
-                </dt>
-                <dd class="mb-3 fw-semibold text-body">
-                  {{ display(account.company_name) }}
-                </dd>
-                <dt
-                  class="text-secondary text-uppercase fw-semibold mb-1"
-                  style="font-size: 0.65rem"
-                >
-                  Name
-                </dt>
-                <dd class="mb-3 fw-semibold text-body">
-                  {{ display(account.contact_full_name) }}
-                </dd>
-                <dt
-                  class="text-secondary text-uppercase fw-semibold mb-1"
-                  style="font-size: 0.65rem"
-                >
-                  Email
-                </dt>
-                <dd class="mb-3 fw-semibold text-body text-break">
-                  {{ display(account.email) }}
-                </dd>
-                <dt
-                  class="text-secondary text-uppercase fw-semibold mb-1"
-                  style="font-size: 0.65rem"
-                >
-                  Phone
-                </dt>
-                <dd class="mb-0 fw-semibold text-body">
-                  {{ display(account.phone) }}
-                </dd>
-              </dl>
-            </div>
-
-            <div class="staff-surface p-3 p-md-4 mb-4">
-              <h3 class="staff-user-section-title">Address</h3>
-              <p
-                v-if="formatAccountAddress(account).trim()"
-                class="mb-0 small fw-semibold text-body"
-                style="white-space: pre-line"
+              <div class="row g-3">
+                <div class="col-md-6">
+                  <dl class="mb-0 small">
+                    <dt
+                      class="text-secondary text-uppercase fw-semibold mb-1"
+                      style="font-size: 0.65rem"
+                    >
+                      Company
+                    </dt>
+                    <dd class="mb-0 fw-semibold text-body">
+                      {{ display(account.company_name) }}
+                    </dd>
+                  </dl>
+                </div>
+                <div class="col-md-6">
+                  <dl class="mb-0 small">
+                    <dt
+                      class="text-secondary text-uppercase fw-semibold mb-1"
+                      style="font-size: 0.65rem"
+                    >
+                      Email
+                    </dt>
+                    <dd class="mb-0 fw-semibold text-body text-break">
+                      {{ display(account.email) }}
+                    </dd>
+                  </dl>
+                </div>
+                <div class="col-md-6">
+                  <dl class="mb-0 small">
+                    <dt
+                      class="text-secondary text-uppercase fw-semibold mb-1"
+                      style="font-size: 0.65rem"
+                    >
+                      Name
+                    </dt>
+                    <dd class="mb-0 fw-semibold text-body">
+                      {{ display(account.contact_full_name) }}
+                    </dd>
+                  </dl>
+                </div>
+                <div class="col-md-6">
+                  <dl class="mb-0 small">
+                    <dt
+                      class="text-secondary text-uppercase fw-semibold mb-1"
+                      style="font-size: 0.65rem"
+                    >
+                      Phone number
+                    </dt>
+                    <dd class="mb-0 fw-semibold text-body">
+                      {{ display(account.phone) }}
+                    </dd>
+                  </dl>
+                </div>
+              </div>
+              <div
+                class="mt-3 pt-3 border-top d-flex flex-wrap align-items-center gap-2"
               >
-                {{ formatAccountAddress(account) }}
-              </p>
-              <p v-else class="text-secondary small mb-0">No address on file.</p>
+                <RouterLink
+                  v-if="primaryAccountUserId"
+                  class="btn btn-sm btn-outline-primary"
+                  :to="accountUserDetailRoute(primaryAccountUserId)"
+                >
+                  View primary portal user
+                </RouterLink>
+              </div>
             </div>
 
             <div class="staff-surface p-3 p-md-4 mb-4">
-              <h3 class="staff-user-section-title">Notes</h3>
-              <template v-if="canUpdateAccount">
-                <textarea
-                  v-model="notesDraft"
-                  class="form-control mb-3"
-                  rows="5"
-                  placeholder="Add internal notes…"
-                />
+              <div
+                class="d-flex flex-wrap align-items-start justify-content-between gap-2 mb-3"
+              >
+                <h3 class="staff-user-section-title mb-0">Address</h3>
                 <button
+                  v-if="canUpdateAccount"
                   type="button"
-                  class="btn btn-primary staff-page-primary btn-sm"
-                  :disabled="notesSaving"
-                  @click="saveNotes"
+                  class="btn btn-sm btn-primary staff-page-primary"
+                  @click="openAccountEdit('address')"
                 >
-                  {{ notesSaving ? "Saving…" : "Save notes" }}
+                  Edit
                 </button>
-              </template>
-              <template v-else>
-                <p
-                  v-if="notesDraft.trim()"
-                  class="mb-0 small"
-                  style="white-space: pre-wrap"
-                >
-                  {{ notesDraft }}
-                </p>
-                <p v-else class="text-secondary small mb-0">No notes.</p>
-              </template>
+              </div>
+              <div class="row g-3">
+                <div class="col-md-6">
+                  <dl class="mb-0 small">
+                    <dt
+                      class="text-secondary text-uppercase fw-semibold mb-1"
+                      style="font-size: 0.65rem"
+                    >
+                      Street
+                    </dt>
+                    <dd class="mb-0 fw-semibold text-body">
+                      {{ display(account.street) }}
+                    </dd>
+                  </dl>
+                </div>
+                <div class="col-md-6">
+                  <dl class="mb-0 small">
+                    <dt
+                      class="text-secondary text-uppercase fw-semibold mb-1"
+                      style="font-size: 0.65rem"
+                    >
+                      City
+                    </dt>
+                    <dd class="mb-0 fw-semibold text-body">
+                      {{ display(account.city) }}
+                    </dd>
+                  </dl>
+                </div>
+                <div class="col-md-6">
+                  <dl class="mb-0 small">
+                    <dt
+                      class="text-secondary text-uppercase fw-semibold mb-1"
+                      style="font-size: 0.65rem"
+                    >
+                      State / ZIP
+                    </dt>
+                    <dd class="mb-0 fw-semibold text-body">
+                      {{ display(account.state) }}
+                      <template v-if="account.zip">
+                        <span v-if="account.state"> </span
+                        >{{ display(account.zip) }}
+                      </template>
+                    </dd>
+                  </dl>
+                </div>
+                <div class="col-md-6">
+                  <dl class="mb-0 small">
+                    <dt
+                      class="text-secondary text-uppercase fw-semibold mb-1"
+                      style="font-size: 0.65rem"
+                    >
+                      Country
+                    </dt>
+                    <dd class="mb-0 fw-semibold text-body">
+                      {{ display(account.country) }}
+                    </dd>
+                  </dl>
+                </div>
+              </div>
             </div>
 
-            <template v-if="canViewStores">
+            <div class="staff-table-card staff-datatable-card overflow-hidden mb-4">
+              <div class="p-4 p-md-5 border-bottom">
+                <h3 class="h6 fw-semibold text-body mb-0">Notes</h3>
+              </div>
+              <div class="p-4 p-md-5">
+                <ul
+                  v-if="accountComments.length"
+                  class="list-unstyled mb-0 pb-4 border-bottom"
+                >
+                  <li
+                    v-for="c in accountComments"
+                    :key="c.id"
+                    class="d-flex gap-3 mb-4"
+                  >
+                    <img
+                      v-if="c.user?.avatar_url"
+                      :src="resolvePublicUrl(c.user.avatar_url) || c.user.avatar_url"
+                      alt=""
+                      class="account-note-avatar rounded-circle flex-shrink-0 object-fit-cover"
+                    />
+                    <span
+                      v-else
+                      class="d-flex align-items-center justify-content-center rounded-circle flex-shrink-0 small fw-semibold account-note-avatar"
+                      :class="avatarClassForCommentUser(c.user?.email)"
+                    >
+                      {{ initials(c.user?.name) }}
+                    </span>
+                    <div class="min-w-0 flex-grow-1">
+                      <div class="d-flex flex-wrap align-items-baseline gap-2">
+                        <span class="small fw-medium text-body">{{
+                          c.user?.name || "User"
+                        }}</span>
+                        <span class="small text-secondary">{{
+                          formatDateTimeUs(c.created_at)
+                        }}</span>
+                      </div>
+                      <p class="mt-1 mb-0 small text-body notes-pre-wrap">
+                        {{ c.body }}
+                      </p>
+                      <div v-if="c.attachment" class="mt-3">
+                        <img
+                          v-if="
+                            isImageMime(c.attachment.mime) &&
+                            imagePreviewUrls[c.id]
+                          "
+                          :src="imagePreviewUrls[c.id]"
+                          alt=""
+                          class="img-fluid rounded border"
+                          style="max-height: 12rem"
+                        />
+                        <button
+                          type="button"
+                          class="btn btn-link btn-sm text-decoration-none p-0 mt-2 d-inline-flex align-items-center gap-1"
+                          @click="downloadAccountCommentAttachment(c.id)"
+                        >
+                          <span v-if="c.attachment.original_name">{{
+                            c.attachment.original_name
+                          }}</span>
+                          <span v-else>Download attachment</span>
+                          <span
+                            v-if="formatFileSize(c.attachment.size)"
+                            class="text-secondary"
+                            >({{ formatFileSize(c.attachment.size) }})</span
+                          >
+                        </button>
+                      </div>
+                    </div>
+                  </li>
+                </ul>
+                <p
+                  v-else
+                  class="text-secondary small border-bottom pb-4 mb-0"
+                >
+                  No notes yet.
+                </p>
+
+                <div v-if="canUpdateAccount" class="pt-4">
+                  <label
+                    class="form-label small text-secondary"
+                    for="client-account-note"
+                    >Add Note</label
+                  >
+                  <textarea
+                    id="client-account-note"
+                    v-model="commentBody"
+                    rows="3"
+                    class="form-control"
+                    placeholder="Write an update…"
+                  />
+                  <div
+                    class="mt-3 d-flex flex-wrap align-items-center gap-2"
+                  >
+                    <input
+                      ref="commentFileInput"
+                      type="file"
+                      accept="image/jpeg,image/png,image/gif,image/webp,.pdf,.txt,.doc,.docx"
+                      class="form-control form-control-sm flex-grow-1"
+                      style="min-width: 12rem; max-width: 100%"
+                      @change="commentFile = $event.target.files?.[0] || null"
+                    />
+                    <button
+                      type="button"
+                      class="btn btn-primary staff-page-primary text-nowrap flex-shrink-0"
+                      :disabled="commentSubmitting"
+                      @click="submitAccountComment"
+                    >
+                      {{ commentSubmitting ? "Adding…" : "Add Note" }}
+                    </button>
+                  </div>
+                  <p
+                    v-if="commentError"
+                    class="text-danger small mt-2 mb-0"
+                  >
+                    {{ commentError }}
+                  </p>
+                  <p class="text-secondary small mt-2 mb-0">
+                    Optional attachment: image, PDF, or small document (max 5
+                    MB).
+                  </p>
+                </div>
+              </div>
+            </div>
+          </template>
+
+          <template v-else-if="activeTab === TAB_STORES && canViewStores">
               <div class="staff-table-card staff-datatable-card">
                 <div
                   class="staff-table-toolbar d-flex flex-column flex-sm-row flex-wrap align-items-stretch align-items-sm-center justify-content-between gap-3"
@@ -867,7 +1255,7 @@ onMounted(async () => {
                     class="btn btn-primary staff-page-primary btn-sm"
                     @click="addStoreOpen = true"
                   >
-                    Add store
+                    Add Store
                   </button>
                 </div>
                 <div
@@ -1217,14 +1605,16 @@ onMounted(async () => {
                   </nav>
                 </div>
               </div>
-            </template>
           </template>
 
           <template v-else-if="activeTab === TAB_FEES">
             <div class="staff-surface p-3 p-md-4">
-              <p class="text-secondary small mb-0">
-                Fee schedules and account pricing will appear here.
-              </p>
+              <ClientAccountFeesPanel
+                :account="account"
+                :account-id="String(props.id)"
+                :can-edit="canUpdateAccount"
+                @fees-updated="onAccountFeesUpdated"
+              />
             </div>
           </template>
 
@@ -1238,6 +1628,70 @@ onMounted(async () => {
         </div>
         </div>
       </div>
+
+      <section
+        class="staff-user-timeline-card mt-3"
+        aria-labelledby="client-account-activity-heading"
+      >
+        <h2
+          id="client-account-activity-heading"
+          class="staff-user-timeline-card__title mb-3"
+        >
+          Account activity
+        </h2>
+        <div v-if="timelinePreview.length" class="staff-user-timeline">
+          <div
+            v-for="(row, idx) in timelinePreview"
+            :key="row.id"
+            class="staff-user-timeline__item"
+          >
+            <img
+              v-if="timelineActorAvatarUrl(row)"
+              :src="timelineActorAvatarUrl(row)"
+              alt=""
+              class="staff-user-timeline__avatar-img rounded-circle flex-shrink-0 object-fit-cover"
+              width="36"
+              height="36"
+            />
+            <span
+              v-else
+              class="staff-user-timeline__dot"
+              :class="`staff-user-timeline__dot--${idx % 3}`"
+              aria-hidden="true"
+            />
+            <div class="staff-user-timeline__row">
+              <h3 class="staff-user-timeline__heading">
+                {{ timelineHeading(row) }}
+              </h3>
+              <time
+                class="staff-user-timeline__time"
+                :datetime="row.created_at"
+                >{{ formatRelativeTime(row.created_at) }}</time
+              >
+            </div>
+            <p class="staff-user-timeline__body">
+              {{ row.body || row.line }}
+            </p>
+          </div>
+        </div>
+        <p v-else class="staff-user-timeline__empty">
+          No activity logged yet.
+        </p>
+      </section>
     </template>
   </div>
 </template>
+
+<style scoped>
+.account-note-avatar {
+  width: 2.25rem;
+  height: 2.25rem;
+  font-size: 0.6875rem;
+}
+.notes-pre-wrap {
+  white-space: pre-wrap;
+}
+.object-fit-cover {
+  object-fit: cover;
+}
+</style>

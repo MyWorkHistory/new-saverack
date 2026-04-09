@@ -166,6 +166,12 @@ function timelineHeading(row) {
 
 const timelinePreview = computed(() => historyItems.value.slice(0, 5));
 
+function timelineActorAvatarUrl(row) {
+  const raw = row?.actor_avatar_url;
+  if (!raw) return "";
+  return resolvePublicUrl(raw) || raw;
+}
+
 async function loadPageData() {
   loading.value = true;
   errorMsg.value = "";
@@ -354,9 +360,9 @@ function onPermissionsSaved() {
                 class="btn btn-sm btn-primary staff-page-primary"
                 @click="
                   openSectionModal(
-                    ['identity', 'access'],
+                    ['identity', 'access', 'bio'],
                     'Login & access',
-                    'Update email, password, status, and roles.',
+                    'Email, password, status, roles, and bio.',
                   )
                 "
               >
@@ -430,13 +436,7 @@ function onPermissionsSaved() {
                     v-if="canUpdateUsers"
                     type="button"
                     class="btn btn-sm btn-primary staff-page-primary"
-                    @click="
-                      openSectionModal(
-                        ['displayName', 'contact', 'bio'],
-                        'Personal information',
-                        'Update name, contact details, and bio.',
-                      )
-                    "
+                    @click="openSectionModal(['displayName', 'contact'])"
                   >
                     Edit
                   </button>
@@ -498,7 +498,7 @@ function onPermissionsSaved() {
                       openSectionModal(
                         ['address'],
                         'Address',
-                        'Update street, city, and country.',
+                        'Street, city, and country.',
                       )
                     "
                   >
@@ -563,7 +563,7 @@ function onPermissionsSaved() {
                       openSectionModal(
                         ['employment'],
                         'Employment',
-                        'Update role, dates, and employment type.',
+                        'Role, dates, and employment type.',
                       )
                     "
                   >
@@ -649,7 +649,16 @@ function onPermissionsSaved() {
             :key="row.id"
             class="staff-user-timeline__item"
           >
+            <img
+              v-if="timelineActorAvatarUrl(row)"
+              :src="timelineActorAvatarUrl(row)"
+              alt=""
+              class="staff-user-timeline__avatar-img rounded-circle flex-shrink-0 object-fit-cover"
+              width="28"
+              height="28"
+            />
             <span
+              v-else
               class="staff-user-timeline__dot"
               :class="`staff-user-timeline__dot--${idx % 3}`"
               aria-hidden="true"

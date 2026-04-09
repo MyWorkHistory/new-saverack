@@ -1,38 +1,21 @@
 <script setup>
-import { computed, inject, onMounted, ref, watch } from "vue";
-import { RouterLink, useRouter } from "vue-router";
+import { computed, onMounted, ref, watch } from "vue";
+import { RouterLink } from "vue-router";
 import api from "../../services/api";
-import ConfirmModal from "../../components/common/ConfirmModal.vue";
 import CrmLoadingSpinner from "../../components/common/CrmLoadingSpinner.vue";
-import { crmIsAdmin } from "../../utils/crmUser";
-import { formatDateUs } from "../../utils/formatUserDates";
-import { useToast } from "../../composables/useToast";
+import { formatDateTimeUs, formatDateUs } from "../../utils/formatUserDates";
 import { setCrmPageMeta } from "../../composables/useCrmPageMeta.js";
+import { resolvePublicUrl } from "../../utils/resolvePublicUrl.js";
 
 const props = defineProps({
   accountId: { type: String, required: true },
   userId: { type: String, required: true },
 });
 
-const router = useRouter();
-const crmUser = inject("crmUser", ref(null));
-const toast = useToast();
-
-function userHasPerm(key) {
-  const u = crmUser.value;
-  if (!u) return false;
-  if (crmIsAdmin(u) || u.is_crm_owner) return true;
-  return Array.isArray(u.permission_keys) && u.permission_keys.includes(key);
-}
-
-const canDelete = computed(() => userHasPerm("client_users.delete"));
-
 const loading = ref(true);
 const errorMsg = ref("");
 const row = ref(null);
-
-const deleteOpen = ref(false);
-const deleteBusy = ref(false);
+const historyItems = ref([]);
 
 const avatarPalettes = [
   "bg-primary-subtle text-primary-emphasis",
@@ -81,15 +64,63 @@ const accountDetailLink = computed(() => ({
   params: { id: props.accountId },
 }));
 
+const timelinePreview = computed(() => historyItems.value.slice(0, 5));
+
+function formatRelativeTime(iso) {
+  if (!iso) return "—";
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return "—";
+  const diff = Date.now() - d.getTime();
+  const sec = Math.floor(diff / 1000);
+  if (sec < 45) return "Just now";
+  const min = Math.floor(sec / 60);
+  if (min < 60) return `${min} min ago`;
+  const hr = Math.floor(min / 60);
+  if (hr < 24) return `${hr} hr ago`;
+  const day = Math.floor(hr / 24);
+  if (day < 7) return `${day} day${day === 1 ? "" : "s"} ago`;
+  try {
+    return formatDateTimeUs(iso);
+  } catch {
+    return iso;
+  }
+}
+
+function timelineHeading(r) {
+  const t = (r.body || r.line || "Activity").trim();
+  if (t.length <= 72) return t;
+  return `${t.slice(0, 69)}…`;
+}
+
+function timelineActorAvatarUrl(r) {
+  const raw = r?.actor_avatar_url;
+  if (!raw) return "";
+  return resolvePublicUrl(raw) || raw;
+}
+
+async function loadHistory() {
+  try {
+    const { data } = await api.get(
+      `/client-accounts/${props.accountId}/account-users/${props.userId}/history`,
+    );
+    const list = data?.items;
+    historyItems.value = Array.isArray(list) ? list : [];
+  } catch {
+    historyItems.value = [];
+  }
+}
+
 async function load() {
   loading.value = true;
   errorMsg.value = "";
   row.value = null;
+  historyItems.value = [];
   try {
     const { data } = await api.get(
       `/client-accounts/${props.accountId}/account-users/${props.userId}`,
     );
     row.value = data;
+    await loadHistory();
   } catch (e) {
     const st = e.response?.status;
     if (st === 403) {
@@ -101,28 +132,6 @@ async function load() {
     }
   } finally {
     loading.value = false;
-  }
-}
-
-function confirmDelete() {
-  if (!row.value || row.value.is_account_primary) return;
-  deleteOpen.value = true;
-}
-
-async function runDelete() {
-  if (!row.value) return;
-  deleteBusy.value = true;
-  try {
-    await api.delete(
-      `/client-accounts/${props.accountId}/account-users/${props.userId}`,
-    );
-    toast.success("User deleted.");
-    deleteOpen.value = false;
-    router.replace({ name: "client-users" });
-  } catch (e) {
-    toast.errorFrom(e, "Could not delete user.");
-  } finally {
-    deleteBusy.value = false;
   }
 }
 
@@ -276,14 +285,6 @@ watch(
               >
                 View client account
               </RouterLink>
-              <button
-                v-if="canDelete && !row.is_account_primary"
-                type="button"
-                class="btn btn-sm btn-outline-danger"
-                @click="confirmDelete"
-              >
-                Remove user
-              </button>
             </div>
           </aside>
         </div>
@@ -299,17 +300,55 @@ watch(
           </div>
         </div>
       </div>
+
+      <section
+        class="staff-user-timeline-card mt-3"
+        aria-labelledby="portal-user-activity-heading"
+      >
+        <h2
+          id="portal-user-activity-heading"
+          class="staff-user-timeline-card__title mb-3"
+        >
+          User activity
+        </h2>
+        <div v-if="timelinePreview.length" class="staff-user-timeline">
+          <div
+            v-for="(item, idx) in timelinePreview"
+            :key="item.id"
+            class="staff-user-timeline__item"
+          >
+            <img
+              v-if="timelineActorAvatarUrl(item)"
+              :src="timelineActorAvatarUrl(item)"
+              alt=""
+              class="staff-user-timeline__avatar-img rounded-circle flex-shrink-0"
+            />
+            <span
+              v-else
+              class="staff-user-timeline__dot"
+              :class="`staff-user-timeline__dot--${idx % 3}`"
+              aria-hidden="true"
+            />
+            <div class="staff-user-timeline__row">
+              <h3 class="staff-user-timeline__heading">
+                {{ timelineHeading(item) }}
+              </h3>
+              <time
+                class="staff-user-timeline__time"
+                :datetime="item.created_at"
+                >{{ formatRelativeTime(item.created_at) }}</time
+              >
+            </div>
+            <p class="staff-user-timeline__body">
+              {{ item.body || item.line }}
+            </p>
+          </div>
+        </div>
+        <p v-else class="staff-user-timeline__empty">
+          No activity logged yet.
+        </p>
+      </section>
     </template>
 
-    <ConfirmModal
-      :open="deleteOpen"
-      title="Remove user?"
-      message="This removes the portal login permanently. This cannot be undone."
-      confirm-label="Remove"
-      :busy="deleteBusy"
-      danger
-      @close="deleteOpen = false"
-      @confirm="runDelete"
-    />
   </div>
 </template>

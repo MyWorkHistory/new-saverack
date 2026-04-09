@@ -12,6 +12,14 @@ use Illuminate\Validation\ValidationException;
 
 class ClientAccountUserService
 {
+    /** @var ActivityLogService */
+    protected $activityLog;
+
+    public function __construct(ActivityLogService $activityLog)
+    {
+        $this->activityLog = $activityLog;
+    }
+
     public function filteredAccountUsersQuery(array $filters): Builder
     {
         $query = User::query()
@@ -20,6 +28,7 @@ class ClientAccountUserService
                 'clientAccount' => function ($q) {
                     $q->select('client_accounts.id', 'client_accounts.company_name', 'client_accounts.email');
                 },
+                'profile:id,user_id,avatar_path',
             ]);
 
         $this->applyAccountUserDirectoryFilters($query, $filters);
@@ -83,13 +92,18 @@ class ClientAccountUserService
      */
     public function toApiArray(User $user): array
     {
-        $user->loadMissing('clientAccount:id,company_name,email');
+        $user->loadMissing([
+            'clientAccount:id,company_name,email',
+            'profile:id,user_id,avatar_path',
+        ]);
         $account = $user->clientAccount;
+        $profile = $user->profile;
 
         return [
             'id' => $user->id,
             'name' => $user->name,
             'email' => $user->email,
+            'avatar_url' => $profile !== null ? $profile->avatar_url : null,
             'status' => $user->status,
             'client_account_id' => $user->client_account_id,
             'company_name' => $account !== null ? $account->company_name : null,
@@ -118,7 +132,7 @@ class ClientAccountUserService
         return null;
     }
 
-    public function createSecondary(ClientAccount $account, array $data): User
+    public function createSecondary(ClientAccount $account, array $data, ?User $actor = null): User
     {
         $email = (string) $data['email'];
         if (strcasecmp($email, (string) $account->email) === 0) {
@@ -127,7 +141,7 @@ class ClientAccountUserService
             ]);
         }
 
-        return DB::transaction(function () use ($account, $data, $email) {
+        return DB::transaction(function () use ($account, $data, $email, $actor) {
             $user = User::query()->create([
                 'name' => trim((string) $data['name']),
                 'email' => $email,
@@ -139,14 +153,21 @@ class ClientAccountUserService
             ]);
             $user->roles()->sync([]);
 
-            return $user->fresh(['clientAccount']);
+            $fresh = $user->fresh(['clientAccount']);
+            if ($actor !== null) {
+                $this->activityLog->log($actor, 'portal_user.created', $fresh, null, [
+                    'email' => (string) $fresh->email,
+                ]);
+            }
+
+            return $fresh;
         });
     }
 
     /**
      * @param  array<string, mixed>  $data
      */
-    public function updateAccountUser(User $user, array $data): User
+    public function updateAccountUser(User $user, array $data, ?User $actor = null): User
     {
         if ($user->is_account_primary) {
             unset($data['email']);
@@ -160,18 +181,32 @@ class ClientAccountUserService
 
         unset($data['client_account_id'], $data['account_user_role'], $data['is_account_primary']);
 
+        $changedKeys = array_keys($data);
         $user->update($data);
 
-        return $user->fresh(['clientAccount']);
+        $fresh = $user->fresh(['clientAccount']);
+        if ($actor !== null && $changedKeys !== []) {
+            $this->activityLog->log($actor, 'portal_user.updated', $fresh, null, [
+                'email' => (string) $fresh->email,
+                'fields' => $changedKeys,
+            ]);
+        }
+
+        return $fresh;
     }
 
-    public function deleteAccountUser(User $user): void
+    public function deleteAccountUser(User $user, ?User $actor = null): void
     {
         if ($user->is_account_primary) {
             abort(403, 'The primary account admin cannot be deleted here.');
         }
 
-        DB::transaction(function () use ($user) {
+        $email = (string) $user->email;
+
+        DB::transaction(function () use ($user, $actor, $email) {
+            if ($actor !== null) {
+                $this->activityLog->log($actor, 'portal_user.deleted', $user, null, ['email' => $email]);
+            }
             $user->tokens()->delete();
             $user->delete();
         });

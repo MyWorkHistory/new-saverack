@@ -576,7 +576,7 @@ onUnmounted(() => {
 </script>
 
 <template>
-  <div class="staff-page staff-page--wide">
+  <div class="staff-page staff-page--wide staff-directory-page">
     <UserCreateDrawer
       v-if="canCreateUsers"
       v-model:open="addDrawerOpen"
@@ -1060,10 +1060,10 @@ onUnmounted(() => {
                   }}</span>
                 </div>
               </td>
-              <td v-if="showRowActions" class="staff-actions-cell text-end">
+              <td v-if="showRowActions" class="staff-actions-cell text-center">
                 <div
                   data-row-actions
-                  class="staff-actions-inner staff-actions-inner--single"
+                  class="staff-actions-inner staff-actions-inner--single justify-content-center"
                 >
                   <button
                     type="button"
@@ -1074,7 +1074,7 @@ onUnmounted(() => {
                     aria-label="Row actions"
                     @click="toggleManageMenu(user.id, $event)"
                   >
-                    <CrmIconRowActions variant="horizontal" />
+                    <CrmIconRowActions variant="vertical" />
                   </button>
                 </div>
               </td>

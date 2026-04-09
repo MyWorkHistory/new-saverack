@@ -58,6 +58,8 @@ const props = defineProps({
   /** Keys: avatar, displayName, identity, access, contact, address, employment, bio */
   sections: { type: Array, default: null },
   showAvatar: { type: Boolean, default: true },
+  /** When false, hide subsection headings (e.g. in UserEditSectionModal). */
+  showSectionTitles: { type: Boolean, default: true },
 });
 
 function showSection(key) {
@@ -212,7 +214,10 @@ watch(
 <template>
   <div class="space-y-8">
     <div v-if="showAvatarBlock" :class="sectionWrapperClass('avatar')">
-      <h3 class="text-sm font-semibold text-gray-900 dark:text-white">
+      <h3
+        v-if="showSectionTitles"
+        class="text-sm font-semibold text-gray-900 dark:text-white"
+      >
         Profile photo
       </h3>
 
@@ -263,7 +268,10 @@ watch(
     </div>
 
     <div v-if="showSection('displayName')" :class="sectionWrapperClass('displayName')">
-      <h3 class="text-sm font-semibold text-gray-900 dark:text-white">
+      <h3
+        v-if="showSectionTitles"
+        class="text-sm font-semibold text-gray-900 dark:text-white"
+      >
         Name
       </h3>
       <div>
@@ -286,7 +294,10 @@ watch(
     </div>
 
     <div v-if="showSection('identity')" :class="sectionWrapperClass('identity')">
-      <h3 class="text-sm font-semibold text-gray-900 dark:text-white">
+      <h3
+        v-if="showSectionTitles"
+        class="text-sm font-semibold text-gray-900 dark:text-white"
+      >
         Name &amp; login
       </h3>
 
@@ -346,7 +357,10 @@ watch(
     </div>
 
     <div v-if="showSection('access')" :class="sectionWrapperClass('access')">
-      <h3 class="text-sm font-semibold text-gray-900 dark:text-white">
+      <h3
+        v-if="showSectionTitles"
+        class="text-sm font-semibold text-gray-900 dark:text-white"
+      >
         Status &amp; roles
       </h3>
 
@@ -396,7 +410,10 @@ watch(
     </div>
 
     <div v-if="showSection('contact')" :class="sectionWrapperClass('contact')">
-      <h3 class="mb-4 text-sm font-semibold text-gray-900 dark:text-white">
+      <h3
+        v-if="showSectionTitles"
+        class="mb-4 text-sm font-semibold text-gray-900 dark:text-white"
+      >
         Contact
       </h3>
       <div class="grid gap-4 sm:grid-cols-2">
@@ -486,7 +503,10 @@ watch(
     </div>
 
     <div v-if="showSection('address')" :class="sectionWrapperClass('address')">
-      <h3 class="mb-4 text-sm font-semibold text-gray-900 dark:text-white">
+      <h3
+        v-if="showSectionTitles"
+        class="mb-4 text-sm font-semibold text-gray-900 dark:text-white"
+      >
         Address
       </h3>
       <div class="grid gap-4 sm:grid-cols-2">
@@ -573,7 +593,10 @@ watch(
     </div>
 
     <div v-if="showSection('employment')" :class="sectionWrapperClass('employment')">
-      <h3 class="mb-4 text-sm font-semibold text-gray-900 dark:text-white">
+      <h3
+        v-if="showSectionTitles"
+        class="mb-4 text-sm font-semibold text-gray-900 dark:text-white"
+      >
         Employment
       </h3>
       <div class="grid gap-4 sm:grid-cols-2">
@@ -664,7 +687,10 @@ watch(
     </div>
 
     <div v-if="showSection('bio')" :class="sectionWrapperClass('bio')">
-      <h3 class="mb-4 text-sm font-semibold text-gray-900 dark:text-white">
+      <h3
+        v-if="showSectionTitles"
+        class="mb-4 text-sm font-semibold text-gray-900 dark:text-white"
+      >
         Bio
       </h3>
       <div>

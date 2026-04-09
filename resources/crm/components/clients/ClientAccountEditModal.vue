@@ -1,5 +1,5 @@
 <script setup>
-import { onUnmounted, reactive, ref, watch } from "vue";
+import { computed, onUnmounted, reactive, ref, watch } from "vue";
 import api from "../../services/api";
 import CrmLoadingSpinner from "../common/CrmLoadingSpinner.vue";
 import CrmSearchableSelect from "../common/CrmSearchableSelect.vue";
@@ -9,6 +9,8 @@ const props = defineProps({
   open: { type: Boolean, default: false },
   accountId: { type: String, default: "" },
   accountManagers: { type: Array, default: () => [] },
+  /** "", "left" (sidebar contact & channels), "account", "address" */
+  section: { type: String, default: "" },
 });
 
 const emit = defineEmits(["update:open", "saved"]);
@@ -29,13 +31,61 @@ const form = reactive({
   notify_email: true,
   telegram_handle: "",
   whatsapp_e164: "",
+  slack_channel: "",
   street: "",
   city: "",
   state: "",
   zip: "",
   country: "",
-  notes: "",
   account_manager_id: "",
+});
+
+const showAll = computed(() => !props.section);
+const showLeft = computed(() => showAll.value || props.section === "left");
+const showAccount = computed(() => showAll.value || props.section === "account");
+const showAddress = computed(() => showAll.value || props.section === "address");
+const isAccountSectionOnly = computed(() => props.section === "account");
+
+const contactFullName = computed({
+  get() {
+    const a = String(form.contact_first_name || "").trim();
+    const b = String(form.contact_last_name || "").trim();
+    return [a, b].filter(Boolean).join(" ");
+  },
+  set(v) {
+    const parts = String(v || "")
+      .trim()
+      .split(/\s+/)
+      .filter(Boolean);
+    form.contact_first_name = parts[0] || "";
+    form.contact_last_name = parts.length > 1 ? parts.slice(1).join(" ") : "";
+  },
+});
+
+const modalTitle = computed(() => {
+  switch (props.section) {
+    case "left":
+      return "Contact & channels";
+    case "account":
+      return "Personal information";
+    case "address":
+      return "Address";
+    default:
+      return "Edit account";
+  }
+});
+
+const modalSubtitle = computed(() => {
+  switch (props.section) {
+    case "left":
+      return "Email, phone, account manager, and notification channels (including Slack).";
+    case "account":
+      return "Company, email, contact name, and phone.";
+    case "address":
+      return "Street, city, and country.";
+    default:
+      return "Update company profile, contacts, and notification channels.";
+  }
 });
 
 function close() {
@@ -73,12 +123,12 @@ async function load() {
     form.notify_email = !!data.notify_email;
     form.telegram_handle = data.telegram_handle || "";
     form.whatsapp_e164 = data.whatsapp_e164 || "";
+    form.slack_channel = data.slack_channel || "";
     form.street = data.street || "";
     form.city = data.city || "";
     form.state = data.state || "";
     form.zip = data.zip || "";
     form.country = data.country || "";
-    form.notes = data.notes != null ? String(data.notes) : "";
     form.account_manager_id = data.account_manager_id
       ? String(data.account_manager_id)
       : "";
@@ -102,31 +152,78 @@ watch(
   },
 );
 
+function buildPatch() {
+  const trimOrNull = (v) => {
+    const t = String(v || "").trim();
+
+    return t === "" ? null : t;
+  };
+  if (!props.section) {
+    return {
+      company_name: form.company_name.trim(),
+      brand_name: trimOrNull(form.brand_name),
+      website: trimOrNull(form.website),
+      contact_first_name: trimOrNull(form.contact_first_name),
+      contact_last_name: trimOrNull(form.contact_last_name),
+      email: form.email.trim(),
+      phone: trimOrNull(form.phone),
+      notify_email: !!form.notify_email,
+      telegram_handle: trimOrNull(form.telegram_handle),
+      whatsapp_e164: trimOrNull(form.whatsapp_e164),
+      slack_channel: trimOrNull(form.slack_channel),
+      street: trimOrNull(form.street),
+      city: trimOrNull(form.city),
+      state: trimOrNull(form.state),
+      zip: trimOrNull(form.zip),
+      country: trimOrNull(form.country),
+      account_manager_id: form.account_manager_id
+        ? Number(form.account_manager_id)
+        : null,
+    };
+  }
+  if (props.section === "left") {
+    return {
+      email: form.email.trim(),
+      phone: trimOrNull(form.phone),
+      notify_email: !!form.notify_email,
+      telegram_handle: trimOrNull(form.telegram_handle),
+      whatsapp_e164: trimOrNull(form.whatsapp_e164),
+      slack_channel: trimOrNull(form.slack_channel),
+      account_manager_id: form.account_manager_id
+        ? Number(form.account_manager_id)
+        : null,
+    };
+  }
+  if (props.section === "account") {
+    return {
+      company_name: form.company_name.trim(),
+      brand_name: trimOrNull(form.brand_name),
+      website: trimOrNull(form.website),
+      contact_first_name: trimOrNull(form.contact_first_name),
+      contact_last_name: trimOrNull(form.contact_last_name),
+      email: form.email.trim(),
+      phone: trimOrNull(form.phone),
+    };
+  }
+  if (props.section === "address") {
+    return {
+      street: trimOrNull(form.street),
+      city: trimOrNull(form.city),
+      state: trimOrNull(form.state),
+      zip: trimOrNull(form.zip),
+      country: trimOrNull(form.country),
+    };
+  }
+
+  return {};
+}
+
 async function onSubmit() {
   if (!props.accountId) return;
   saving.value = true;
   errorMsg.value = "";
   try {
-    await api.patch(`/client-accounts/${props.accountId}`, {
-      company_name: form.company_name.trim(),
-      brand_name: form.brand_name.trim() || null,
-      website: form.website.trim() || null,
-      contact_first_name: form.contact_first_name.trim() || null,
-      contact_last_name: form.contact_last_name.trim() || null,
-      email: form.email.trim(),
-      phone: form.phone.trim() || null,
-      notify_email: !!form.notify_email,
-      telegram_handle: form.telegram_handle.trim() || null,
-      whatsapp_e164: form.whatsapp_e164.trim() || null,
-      street: form.street.trim() || null,
-      city: form.city.trim() || null,
-      state: form.state.trim() || null,
-      zip: form.zip.trim() || null,
-      country: form.country.trim() || null,
-      account_manager_id: form.account_manager_id
-        ? Number(form.account_manager_id)
-        : null,
-    });
+    await api.patch(`/client-accounts/${props.accountId}`, buildPatch());
     toast.success("Account updated.");
     emit("saved");
     close();
@@ -182,10 +279,10 @@ async function onSubmit() {
 
             <header class="crm-vx-modal__head">
               <h2 id="client-account-edit-modal-title" class="crm-vx-modal__title">
-                Edit Account
+                {{ modalTitle }}
               </h2>
               <p class="crm-vx-modal__subtitle">
-                Update company profile, contacts, and notification channels.
+                {{ modalSubtitle }}
               </p>
             </header>
 
@@ -205,207 +302,268 @@ async function onSubmit() {
                   class="d-flex flex-column gap-3"
                   @submit.prevent="onSubmit"
                 >
-                  <div>
-                    <label class="form-label small mb-1 text-secondary" for="cae-company"
-                      >Company name</label
-                    >
-                    <input
-                      id="cae-company"
-                      v-model="form.company_name"
-                      type="text"
-                      class="form-control"
-                      required
-                    />
-                  </div>
-                  <div class="row g-3">
-                    <div class="col-sm-6">
-                      <label class="form-label small mb-1 text-secondary" for="cae-fn"
-                        >Contact first name</label
+                  <template v-if="showAccount && isAccountSectionOnly">
+                    <div class="row g-3">
+                      <div class="col-md-6">
+                        <label class="form-label small mb-1 text-secondary" for="cae-company"
+                          >Company</label
+                        >
+                        <input
+                          id="cae-company"
+                          v-model="form.company_name"
+                          type="text"
+                          class="form-control"
+                          required
+                        />
+                      </div>
+                      <div class="col-md-6">
+                        <label class="form-label small mb-1 text-secondary" for="cae-email-personal"
+                          >Email</label
+                        >
+                        <input
+                          id="cae-email-personal"
+                          v-model="form.email"
+                          type="email"
+                          class="form-control"
+                          required
+                        />
+                      </div>
+                      <div class="col-md-6">
+                        <label class="form-label small mb-1 text-secondary" for="cae-contact-name"
+                          >Name</label
+                        >
+                        <input
+                          id="cae-contact-name"
+                          v-model="contactFullName"
+                          type="text"
+                          class="form-control"
+                          autocomplete="name"
+                        />
+                      </div>
+                      <div class="col-md-6">
+                        <label class="form-label small mb-1 text-secondary" for="cae-phone-personal"
+                          >Phone number</label
+                        >
+                        <input
+                          id="cae-phone-personal"
+                          v-model="form.phone"
+                          type="text"
+                          class="form-control"
+                          autocomplete="tel"
+                        />
+                      </div>
+                    </div>
+                  </template>
+                  <template v-else-if="showAccount && showAll">
+                    <div>
+                      <label class="form-label small mb-1 text-secondary" for="cae-company-full"
+                        >Company name</label
                       >
                       <input
-                        id="cae-fn"
-                        v-model="form.contact_first_name"
+                        id="cae-company-full"
+                        v-model="form.company_name"
                         type="text"
                         class="form-control"
+                        :required="showAccount"
                       />
                     </div>
-                    <div class="col-sm-6">
-                      <label class="form-label small mb-1 text-secondary" for="cae-ln"
-                        >Contact last name</label
-                      >
-                      <input
-                        id="cae-ln"
-                        v-model="form.contact_last_name"
-                        type="text"
-                        class="form-control"
-                      />
+                    <div class="row g-3">
+                      <div class="col-sm-6">
+                        <label class="form-label small mb-1 text-secondary" for="cae-fn"
+                          >Contact first name</label
+                        >
+                        <input
+                          id="cae-fn"
+                          v-model="form.contact_first_name"
+                          type="text"
+                          class="form-control"
+                        />
+                      </div>
+                      <div class="col-sm-6">
+                        <label class="form-label small mb-1 text-secondary" for="cae-ln"
+                          >Contact last name</label
+                        >
+                        <input
+                          id="cae-ln"
+                          v-model="form.contact_last_name"
+                          type="text"
+                          class="form-control"
+                        />
+                      </div>
                     </div>
-                  </div>
-                  <div>
-                    <label class="form-label small mb-1 text-secondary" for="cae-email"
-                      >Email</label
-                    >
-                    <input
-                      id="cae-email"
-                      v-model="form.email"
-                      type="email"
-                      class="form-control"
-                      required
-                    />
-                  </div>
-                  <div>
-                    <label class="form-label small mb-1 text-secondary" for="cae-phone"
-                      >Phone</label
-                    >
-                    <input
-                      id="cae-phone"
-                      v-model="form.phone"
-                      type="text"
-                      class="form-control"
-                    />
-                  </div>
-                  <div class="row g-3">
-                    <div class="col-sm-6">
-                      <label class="form-label small mb-1 text-secondary" for="cae-brand"
-                        >Brand name</label
-                      >
-                      <input
-                        id="cae-brand"
-                        v-model="form.brand_name"
-                        type="text"
-                        class="form-control"
-                      />
+                    <div class="row g-3">
+                      <div class="col-sm-6">
+                        <label class="form-label small mb-1 text-secondary" for="cae-brand"
+                          >Brand name</label
+                        >
+                        <input
+                          id="cae-brand"
+                          v-model="form.brand_name"
+                          type="text"
+                          class="form-control"
+                        />
+                      </div>
+                      <div class="col-sm-6">
+                        <label class="form-label small mb-1 text-secondary" for="cae-web"
+                          >Website</label
+                        >
+                        <input
+                          id="cae-web"
+                          v-model="form.website"
+                          type="url"
+                          class="form-control"
+                        />
+                      </div>
                     </div>
-                    <div class="col-sm-6">
-                      <label class="form-label small mb-1 text-secondary" for="cae-web"
-                        >Website</label
-                      >
-                      <input
-                        id="cae-web"
-                        v-model="form.website"
-                        type="url"
-                        class="form-control"
-                      />
-                    </div>
-                  </div>
-                  <p class="small fw-semibold text-secondary mb-0">Address</p>
-                  <div>
-                    <label class="form-label small mb-1 text-secondary" for="cae-street"
-                      >Street</label
-                    >
-                    <input
-                      id="cae-street"
-                      v-model="form.street"
-                      type="text"
-                      class="form-control"
-                    />
-                  </div>
-                  <div class="row g-3">
-                    <div class="col-sm-6">
-                      <label class="form-label small mb-1 text-secondary" for="cae-city"
-                        >City</label
-                      >
-                      <input
-                        id="cae-city"
-                        v-model="form.city"
-                        type="text"
-                        class="form-control"
-                      />
-                    </div>
-                    <div class="col-sm-6">
-                      <label class="form-label small mb-1 text-secondary" for="cae-state"
-                        >State</label
-                      >
-                      <input
-                        id="cae-state"
-                        v-model="form.state"
-                        type="text"
-                        class="form-control"
-                      />
-                    </div>
-                  </div>
-                  <div class="row g-3">
-                    <div class="col-sm-6">
-                      <label class="form-label small mb-1 text-secondary" for="cae-zip"
-                        >ZIP</label
-                      >
-                      <input
-                        id="cae-zip"
-                        v-model="form.zip"
-                        type="text"
-                        class="form-control"
-                      />
-                    </div>
-                    <div class="col-sm-6">
-                      <label class="form-label small mb-1 text-secondary" for="cae-country"
-                        >Country</label
-                      >
-                      <input
-                        id="cae-country"
-                        v-model="form.country"
-                        type="text"
-                        class="form-control"
-                      />
-                    </div>
-                  </div>
-                  <div>
-                    <label class="form-label small mb-1 text-secondary" for="cae-notes"
-                      >Notes</label
-                    >
-                    <textarea
-                      id="cae-notes"
-                      v-model="form.notes"
-                      class="form-control"
-                      rows="4"
-                      placeholder="Internal notes…"
-                    />
-                  </div>
-                  <CrmSearchableSelect
-                    v-model="form.account_manager_id"
-                    label="Account manager"
-                    :options="accountManagers"
-                    placeholder="Choose account manager"
-                    search-placeholder="Search staff…"
-                    empty-label="— None —"
-                  />
-                  <div class="border rounded p-3">
-                    <p class="small fw-semibold text-secondary mb-2">Channels</p>
-                    <div class="form-check">
-                      <input
-                        id="cae-notify-email"
-                        v-model="form.notify_email"
-                        type="checkbox"
-                        class="form-check-input"
-                      />
-                      <label
-                        class="form-check-label"
-                        for="cae-notify-email"
+                  </template>
+                  <template v-if="(showAccount && showAll) || showLeft">
+                    <div>
+                      <label class="form-label small mb-1 text-secondary" for="cae-email"
                         >Email</label
                       >
-                    </div>
-                    <div class="mt-2">
-                      <label class="form-label small mb-1 text-secondary" for="cae-tg"
-                        >Telegram</label
-                      >
                       <input
-                        id="cae-tg"
-                        v-model="form.telegram_handle"
-                        type="text"
-                        class="form-control form-control-sm"
+                        id="cae-email"
+                        v-model="form.email"
+                        type="email"
+                        class="form-control"
+                        required
                       />
                     </div>
-                    <div class="mt-2">
-                      <label class="form-label small mb-1 text-secondary" for="cae-wa"
-                        >WhatsApp</label
+                    <div>
+                      <label class="form-label small mb-1 text-secondary" for="cae-phone"
+                        >Phone</label
                       >
                       <input
-                        id="cae-wa"
-                        v-model="form.whatsapp_e164"
+                        id="cae-phone"
+                        v-model="form.phone"
                         type="text"
-                        class="form-control form-control-sm"
+                        class="form-control"
                       />
                     </div>
-                  </div>
+                  </template>
+                  <template v-if="showAddress">
+                    <p class="small fw-semibold text-secondary mb-0">Address</p>
+                    <div>
+                      <label class="form-label small mb-1 text-secondary" for="cae-street"
+                        >Street</label
+                      >
+                      <input
+                        id="cae-street"
+                        v-model="form.street"
+                        type="text"
+                        class="form-control"
+                      />
+                    </div>
+                    <div class="row g-3">
+                      <div class="col-sm-6">
+                        <label class="form-label small mb-1 text-secondary" for="cae-city"
+                          >City</label
+                        >
+                        <input
+                          id="cae-city"
+                          v-model="form.city"
+                          type="text"
+                          class="form-control"
+                        />
+                      </div>
+                      <div class="col-sm-6">
+                        <label class="form-label small mb-1 text-secondary" for="cae-state"
+                          >State</label
+                        >
+                        <input
+                          id="cae-state"
+                          v-model="form.state"
+                          type="text"
+                          class="form-control"
+                        />
+                      </div>
+                    </div>
+                    <div class="row g-3">
+                      <div class="col-sm-6">
+                        <label class="form-label small mb-1 text-secondary" for="cae-zip"
+                          >ZIP</label
+                        >
+                        <input
+                          id="cae-zip"
+                          v-model="form.zip"
+                          type="text"
+                          class="form-control"
+                        />
+                      </div>
+                      <div class="col-sm-6">
+                        <label class="form-label small mb-1 text-secondary" for="cae-country"
+                          >Country</label
+                        >
+                        <input
+                          id="cae-country"
+                          v-model="form.country"
+                          type="text"
+                          class="form-control"
+                        />
+                      </div>
+                    </div>
+                  </template>
+                  <template v-if="showLeft">
+                    <CrmSearchableSelect
+                      v-model="form.account_manager_id"
+                      label="Account manager"
+                      :options="accountManagers"
+                      placeholder="Choose account manager"
+                      search-placeholder="Search staff…"
+                      empty-label="— None —"
+                    />
+                    <div class="border rounded p-3">
+                      <p class="small fw-semibold text-secondary mb-2">Channels</p>
+                      <div class="form-check">
+                        <input
+                          id="cae-notify-email"
+                          v-model="form.notify_email"
+                          type="checkbox"
+                          class="form-check-input"
+                        />
+                        <label
+                          class="form-check-label"
+                          for="cae-notify-email"
+                          >Email</label
+                        >
+                      </div>
+                      <div class="mt-2">
+                        <label class="form-label small mb-1 text-secondary" for="cae-tg"
+                          >Telegram</label
+                        >
+                        <input
+                          id="cae-tg"
+                          v-model="form.telegram_handle"
+                          type="text"
+                          class="form-control form-control-sm"
+                        />
+                      </div>
+                      <div class="mt-2">
+                        <label class="form-label small mb-1 text-secondary" for="cae-wa"
+                          >WhatsApp</label
+                        >
+                        <input
+                          id="cae-wa"
+                          v-model="form.whatsapp_e164"
+                          type="text"
+                          class="form-control form-control-sm"
+                        />
+                      </div>
+                      <div class="mt-2">
+                        <label class="form-label small mb-1 text-secondary" for="cae-slack"
+                          >Slack channel</label
+                        >
+                        <input
+                          id="cae-slack"
+                          v-model="form.slack_channel"
+                          type="text"
+                          class="form-control form-control-sm"
+                          placeholder="#account-name or channel ID"
+                          autocomplete="off"
+                        />
+                      </div>
+                    </div>
+                  </template>
                 </form>
               </template>
             </div>

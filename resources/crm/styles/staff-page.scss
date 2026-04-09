@@ -136,6 +136,42 @@ $staff-primary: #2563eb;
   width: 100%;
 }
 
+/* Accounts directory: solid white card + toolbar (overrides `.staff-surface`). */
+.staff-datatable-card--white {
+  background: #fff !important;
+}
+
+[data-bs-theme="dark"] .staff-datatable-card--white {
+  background: var(--bs-body-bg) !important;
+}
+
+.staff-datatable-card--white .staff-table-toolbar {
+  background: inherit;
+}
+
+.staff-toolbar-export-dropdown {
+  background: #fff !important;
+}
+
+[data-bs-theme="dark"] .staff-toolbar-export-dropdown {
+  background: var(--bs-body-bg) !important;
+}
+
+.client-accounts-directory .table.staff-data-table > thead > tr > th.client-accounts-actions-col,
+.client-accounts-directory .table.staff-data-table > tbody > tr > td.client-accounts-actions-cell {
+  text-align: center !important;
+}
+
+.client-account-users-list .table.staff-data-table > thead > tr > th.staff-actions-col,
+.client-account-users-list .table.staff-data-table > tbody > tr > td.staff-actions-cell {
+  text-align: center !important;
+}
+
+.staff-directory-page .table.staff-data-table > thead > tr > th.staff-actions-col,
+.staff-directory-page .table.staff-data-table > tbody > tr > td.staff-actions-cell {
+  text-align: center !important;
+}
+
 .staff-datatable-filters {
   padding: 1rem 1.125rem;
   border-bottom: 1px solid var(--vx-nav-border);
@@ -233,6 +269,11 @@ $staff-primary: #2563eb;
   min-width: 17rem;
   max-width: min(22rem, calc(100vw - 2rem));
   z-index: 1080;
+  background: #fff !important;
+}
+
+[data-bs-theme="dark"] .staff-toolbar-filter-dropdown {
+  background: var(--bs-body-bg) !important;
 }
 
 .staff-toolbar-filter-dropdown__head {
@@ -258,6 +299,14 @@ $staff-primary: #2563eb;
   letter-spacing: 0.03em;
   color: var(--bs-secondary-color);
   margin-bottom: 0.35rem;
+}
+
+.staff-table-toolbar .crm-searchable-select--staff .crm-searchable-select__panel {
+  background: #fff !important;
+}
+
+[data-bs-theme="dark"] .staff-table-toolbar .crm-searchable-select--staff .crm-searchable-select__panel {
+  background: var(--bs-body-bg) !important;
 }
 
 @media (min-width: 768px) {

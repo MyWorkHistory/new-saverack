@@ -51,12 +51,14 @@ class ClientAccountStoreRequest extends FormRequest
             'notify_email' => ['sometimes', 'boolean'],
             'telegram_handle' => ['nullable', 'string', 'max:190'],
             'whatsapp_e164' => ['nullable', 'string', 'max:32'],
+            'slack_channel' => ['nullable', 'string', 'max:255'],
             'street' => ['nullable', 'string', 'max:190'],
             'city' => ['nullable', 'string', 'max:120'],
             'state' => ['nullable', 'string', 'max:64'],
             'zip' => ['nullable', 'string', 'max:32'],
             'country' => ['nullable', 'string', 'max:120'],
             'account_manager_id' => ['nullable', 'integer', $accountManagerRule],
+            'contract_date' => ['nullable', 'date'],
         ];
     }
 

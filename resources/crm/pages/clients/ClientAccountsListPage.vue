@@ -26,6 +26,7 @@ import { formatDateUs } from "../../utils/formatUserDates";
 import { setCrmPageMeta } from "../../composables/useCrmPageMeta.js";
 import { getPublicSignupUrl } from "../../utils/publicSignupUrl.js";
 import { downloadListCsv } from "../../utils/downloadListCsv.js";
+import { resolvePublicUrl } from "../../utils/resolvePublicUrl.js";
 
 const crmUser = inject("crmUser", ref(null));
 const toast = useToast();
@@ -91,6 +92,8 @@ const exportOpen = ref(false);
 const exportBusy = ref(false);
 const bulkEditOpen = ref(false);
 const bulkEditBusy = ref(false);
+const bulkDeleteOpen = ref(false);
+const bulkDeleteBusy = ref(false);
 const selectedIds = ref([]);
 const editModalOpen = ref(false);
 const editAccountId = ref("");
@@ -102,6 +105,7 @@ const query = reactive({
   sort_by: "created_at",
   sort_dir: "desc",
   account_manager_id: "",
+  status: "all",
 });
 
 let searchDebounce = null;
@@ -203,6 +207,15 @@ watch(
   },
 );
 
+watch(
+  () => query.status,
+  () => {
+    query.page = 1;
+    selectedIds.value = [];
+    fetchRows();
+  },
+);
+
 const statusBadgeClass = (status) => {
   const s = String(status || "").toLowerCase();
   if (s === "active") {
@@ -239,7 +252,12 @@ function initialsFromName(name) {
   return parts.map((p) => p[0]?.toUpperCase() ?? "").join("") || "?";
 }
 
-const TABLE_SORT_COLUMNS = ["status", "company_name", "email", "created_at"];
+const TABLE_SORT_COLUMNS = [
+  "status",
+  "company_name",
+  "email",
+  "created_at",
+];
 
 function toggleSort(column) {
   if (!TABLE_SORT_COLUMNS.includes(column)) return;
@@ -278,6 +296,9 @@ function buildParams() {
   if (query.account_manager_id) {
     p.account_manager_id = query.account_manager_id;
   }
+  if (query.status && query.status !== "all") {
+    p.status = query.status;
+  }
   return p;
 }
 
@@ -287,6 +308,9 @@ function buildExportParams() {
   if (s) p.search = s;
   if (query.account_manager_id) {
     p.account_manager_id = query.account_manager_id;
+  }
+  if (query.status && query.status !== "all") {
+    p.status = query.status;
   }
   return p;
 }
@@ -387,6 +411,7 @@ function clearFilters() {
   searchWatchLock = true;
   query.search = "";
   query.account_manager_id = "";
+  query.status = "all";
   query.sort_by = "created_at";
   query.sort_dir = "desc";
   query.page = 1;
@@ -434,6 +459,47 @@ async function onBulkApply(payload) {
   } finally {
     bulkEditBusy.value = false;
   }
+}
+
+function openBulkDelete() {
+  if (!selectedIds.value.length) {
+    toast.error("Select one or more rows.");
+    return;
+  }
+  bulkDeleteOpen.value = true;
+}
+
+function closeBulkDelete() {
+  if (!bulkDeleteBusy.value) bulkDeleteOpen.value = false;
+}
+
+const bulkDeleteMessage = computed(() => {
+  const n = selectedIds.value.length;
+  return n
+    ? `Delete ${n} account${n === 1 ? "" : "s"}? This cannot be undone.`
+    : "";
+});
+
+async function confirmBulkDelete() {
+  if (!selectedIds.value.length) return;
+  bulkDeleteBusy.value = true;
+  try {
+    await api.delete("/client-accounts/bulk", {
+      data: { client_account_ids: selectedIds.value },
+    });
+    toast.success("Accounts deleted.");
+    bulkDeleteOpen.value = false;
+    selectedIds.value = [];
+    await refreshList();
+  } catch (e) {
+    toast.errorFrom(e, "Could not delete accounts.");
+  } finally {
+    bulkDeleteBusy.value = false;
+  }
+}
+
+function accountStartDate(row) {
+  return row.contract_date || row.created_at || null;
 }
 
 function openDeleteModal(row) {
@@ -609,11 +675,10 @@ onUnmounted(() => {
 </script>
 
 <template>
-  <div class="staff-page staff-page--wide">
+  <div class="staff-page staff-page--wide client-accounts-directory">
     <ClientAccountCreateDrawer
       v-if="canCreate"
       v-model:open="addDrawerOpen"
-      :account-managers="accountManagers"
       @saved="refreshList"
     />
     <ClientAccountEditModal
@@ -628,6 +693,17 @@ onUnmounted(() => {
       :busy="bulkEditBusy"
       :statuses="statuses"
       @apply="onBulkApply"
+    />
+
+    <ConfirmModal
+      :open="bulkDeleteOpen"
+      title="Delete accounts?"
+      :message="bulkDeleteMessage"
+      confirm-label="Delete"
+      :busy="bulkDeleteBusy"
+      danger
+      @close="closeBulkDelete"
+      @confirm="confirmBulkDelete"
     />
 
     <div
@@ -665,32 +741,7 @@ onUnmounted(() => {
           >
             <path d="M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z" />
           </svg>
-          Add account
-        </button>
-        <button
-          type="button"
-          class="btn btn-outline-secondary btn-sm d-inline-flex align-items-center gap-2"
-          :disabled="loading"
-          title="Refresh"
-          aria-label="Refresh list"
-          @click="refreshList"
-        >
-          <svg
-            width="18"
-            height="18"
-            fill="none"
-            stroke="currentColor"
-            viewBox="0 0 24 24"
-            aria-hidden="true"
-          >
-            <path
-              stroke-linecap="round"
-              stroke-linejoin="round"
-              stroke-width="2"
-              d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"
-            />
-          </svg>
-          Refresh
+          Add Account
         </button>
       </div>
     </div>
@@ -775,7 +826,7 @@ onUnmounted(() => {
       </div>
     </div>
 
-    <div class="staff-table-card staff-datatable-card">
+    <div class="staff-table-card staff-datatable-card staff-datatable-card--white">
       <div class="staff-table-toolbar">
         <div class="staff-table-toolbar--row">
           <input
@@ -837,6 +888,22 @@ onUnmounted(() => {
                 </button>
               </div>
               <div class="staff-toolbar-filter-dropdown__body">
+                <label class="form-label" for="ca-filter-status">Status</label>
+                <select
+                  id="ca-filter-status"
+                  v-model="query.status"
+                  class="form-select staff-datatable-filters__select mb-3"
+                  :disabled="loading"
+                >
+                  <option value="all">All statuses</option>
+                  <option
+                    v-for="st in statuses"
+                    :key="st"
+                    :value="st"
+                  >
+                    {{ st.charAt(0).toUpperCase() + st.slice(1) }}
+                  </option>
+                </select>
                 <label class="form-label" for="client-am-filter">Account manager</label>
                 <CrmSearchableSelect
                   v-model="query.account_manager_id"
@@ -887,7 +954,7 @@ onUnmounted(() => {
               </button>
               <div
                 v-if="exportOpen"
-                class="dropdown-menu show shadow border px-0 py-1 mt-1"
+                class="dropdown-menu show shadow border px-0 py-1 mt-1 staff-toolbar-export-dropdown"
                 style="min-width: 11rem; right: 0; left: auto"
                 @click.stop
               >
@@ -933,6 +1000,15 @@ onUnmounted(() => {
             >
               Bulk edit
             </button>
+            <button
+              v-if="canDelete"
+              type="button"
+              class="btn btn-outline-danger staff-toolbar-btn"
+              :disabled="!selectedIds.length || loading"
+              @click="openBulkDelete"
+            >
+              Bulk delete
+            </button>
           </div>
         </div>
       </div>
@@ -958,23 +1034,6 @@ onUnmounted(() => {
               <th
                 class="staff-table-head__th staff-table-head__th--sort"
                 scope="col"
-                :aria-sort="thAriaSort('status')"
-              >
-                <button
-                  type="button"
-                  class="staff-sort-btn"
-                  :disabled="loading"
-                  @click="toggleSort('status')"
-                >
-                  Status
-                  <span v-if="sortIndicator('status')" class="staff-sort-ind">{{
-                    sortIndicator("status")
-                  }}</span>
-                </button>
-              </th>
-              <th
-                class="staff-table-head__th staff-table-head__th--sort"
-                scope="col"
                 :aria-sort="thAriaSort('company_name')"
               >
                 <button
@@ -994,6 +1053,23 @@ onUnmounted(() => {
               <th
                 class="staff-table-head__th staff-table-head__th--sort"
                 scope="col"
+                :aria-sort="thAriaSort('status')"
+              >
+                <button
+                  type="button"
+                  class="staff-sort-btn"
+                  :disabled="loading"
+                  @click="toggleSort('status')"
+                >
+                  Status
+                  <span v-if="sortIndicator('status')" class="staff-sort-ind">{{
+                    sortIndicator("status")
+                  }}</span>
+                </button>
+              </th>
+              <th
+                class="staff-table-head__th staff-table-head__th--sort"
+                scope="col"
                 :aria-sort="thAriaSort('email')"
               >
                 <button
@@ -1008,7 +1084,11 @@ onUnmounted(() => {
                   }}</span>
                 </button>
               </th>
-              <th class="staff-table-head__th" scope="col" aria-sort="none">
+              <th
+                class="staff-table-head__th text-center staff-table-head__th--channel"
+                scope="col"
+                aria-sort="none"
+              >
                 Channel
               </th>
               <th
@@ -1022,7 +1102,7 @@ onUnmounted(() => {
                   :disabled="loading"
                   @click="toggleSort('created_at')"
                 >
-                  Create date
+                  Start date
                   <span
                     v-if="sortIndicator('created_at')"
                     class="staff-sort-ind"
@@ -1035,7 +1115,7 @@ onUnmounted(() => {
               </th>
               <th
                 v-if="showRowActions"
-                class="staff-table-head__th staff-actions-col text-end"
+                class="staff-table-head__th staff-actions-col text-center client-accounts-actions-col"
                 scope="col"
                 aria-sort="none"
               >
@@ -1067,28 +1147,31 @@ onUnmounted(() => {
                 />
               </td>
               <td>
-                <span
-                  class="badge rounded-pill text-capitalize fw-medium"
-                  :class="statusBadgeClass(row.status)"
-                >
-                  {{ row.status }}
-                </span>
-              </td>
-              <td>
                 <RouterLink
                   :to="`/clients/accounts/${row.id}`"
                   class="d-flex align-items-center gap-3 min-w-0 text-decoration-none rounded px-1 py-1"
                 >
                   <span
-                    class="flex-shrink-0 rounded-circle d-inline-flex align-items-center justify-content-center small fw-semibold"
-                    style="width: 2.5rem; height: 2.5rem"
-                    :class="avatarClassForRow(row.email)"
+                    class="flex-shrink-0 rounded-circle overflow-hidden bg-body-secondary d-inline-flex"
+                    style="width: 2.75rem; height: 2.75rem"
                   >
-                    {{
-                      initialsFromName(
-                        row.contact_full_name || row.company_name,
-                      )
-                    }}
+                    <img
+                      v-if="row.primary_avatar_url"
+                      :src="resolvePublicUrl(row.primary_avatar_url)"
+                      alt=""
+                      class="w-100 h-100 object-fit-cover"
+                    />
+                    <span
+                      v-else
+                      class="d-flex w-100 h-100 align-items-center justify-content-center small fw-semibold"
+                      :class="avatarClassForRow(row.email)"
+                    >
+                      {{
+                        initialsFromName(
+                          row.contact_full_name || row.company_name,
+                        )
+                      }}
+                    </span>
                   </span>
                   <div class="min-w-0">
                     <span class="d-block text-truncate fw-semibold text-body">{{
@@ -1107,21 +1190,32 @@ onUnmounted(() => {
                   </div>
                 </RouterLink>
               </td>
+              <td>
+                <span
+                  class="badge rounded-pill text-capitalize fw-medium"
+                  :class="statusBadgeClass(row.status)"
+                >
+                  {{ row.status }}
+                </span>
+              </td>
               <td
                 class="text-secondary staff-table-cell__meta text-truncate"
                 style="max-width: 14rem"
               >
                 {{ row.email }}
               </td>
-              <td>
+              <td
+                class="staff-table-cell--channel d-flex justify-content-center align-items-center"
+              >
                 <ClientAccountChannelIcons
                   :notify-email="!!row.notify_email"
                   :telegram-handle="row.telegram_handle || ''"
                   :whatsapp-e164="row.whatsapp_e164 || ''"
+                  :slack-channel="row.slack_channel || ''"
                 />
               </td>
               <td class="text-secondary staff-table-cell__meta text-nowrap">
-                {{ formatDateUs(row.created_at) }}
+                {{ formatDateUs(accountStartDate(row)) }}
               </td>
               <td
                 class="text-secondary staff-table-cell__meta text-truncate"
@@ -1130,7 +1224,7 @@ onUnmounted(() => {
               >
                 {{ row.account_manager?.name || "—" }}
               </td>
-              <td v-if="showRowActions" class="staff-actions-cell text-end">
+              <td v-if="showRowActions" class="staff-actions-cell text-center client-accounts-actions-cell">
                 <div
                   data-row-actions
                   class="staff-actions-inner staff-actions-inner--single"

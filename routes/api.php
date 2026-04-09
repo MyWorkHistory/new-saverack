@@ -58,6 +58,8 @@ Route::middleware('auth:sanctum')->group(function () {
         ->name('client-account-users.export-csv');
     Route::get('client-accounts/{client_account}/account-users/{user}', [ClientAccountUserController::class, 'show'])
         ->name('client-accounts.account-users.show');
+    Route::get('client-accounts/{client_account}/account-users/{user}/history', [ClientAccountUserController::class, 'history'])
+        ->name('client-accounts.account-users.history');
     Route::post('client-accounts/{client_account}/account-users', [ClientAccountUserController::class, 'store'])
         ->name('client-accounts.account-users.store');
     Route::patch('client-accounts/{client_account}/account-users/{user}', [ClientAccountUserController::class, 'update'])
@@ -69,8 +71,20 @@ Route::middleware('auth:sanctum')->group(function () {
         ->name('client-accounts.meta');
     Route::get('client-accounts/export-csv', [ClientAccountController::class, 'exportCsv'])
         ->name('client-accounts.export-csv');
+    Route::get('client-accounts/{client_account}/history', [ClientAccountController::class, 'history'])
+        ->name('client-accounts.history');
+    Route::post('client-accounts/{client_account}/comments', [ClientAccountController::class, 'storeComment'])
+        ->name('client-accounts.comments.store');
+    Route::get('client-accounts/{client_account}/comments/{comment}/attachment', [ClientAccountController::class, 'downloadCommentAttachment'])
+        ->name('client-accounts.comments.attachment');
+    Route::put('client-accounts/{client_account}/fees', [ClientAccountController::class, 'syncFees'])
+        ->name('client-accounts.fees.sync');
+    Route::delete('client-accounts/{client_account}/fees/{fee}', [ClientAccountController::class, 'destroyFeeItem'])
+        ->name('client-accounts.fees.destroy');
     Route::patch('client-accounts/bulk', [ClientAccountController::class, 'bulkUpdate'])
         ->name('client-accounts.bulk-update');
+    Route::delete('client-accounts/bulk', [ClientAccountController::class, 'bulkDestroy'])
+        ->name('client-accounts.bulk-destroy');
     Route::patch('client-stores/bulk', [ClientStoreController::class, 'bulkUpdate'])
         ->name('client-stores.bulk-update');
     Route::get('client-accounts/{client_account}/stores', [ClientStoreController::class, 'index'])

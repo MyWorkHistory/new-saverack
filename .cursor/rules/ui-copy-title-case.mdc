@@ -1,0 +1,8 @@
+---
+description: CRM UI copy — Title Case for primary actions and key labels
+alwaysApply: true
+---
+
+# UI copy (CRM)
+
+Use **Title Case** for primary actions and prominent labels on buttons and equivalent controls (e.g. **Add User**, **Add Note**, **Add Store**), not sentence case (**Add user**), unless the product explicitly uses a different pattern for a specific string.

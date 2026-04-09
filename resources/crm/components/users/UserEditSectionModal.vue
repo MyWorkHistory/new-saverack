@@ -187,6 +187,7 @@ function onBackdropClick() {
                   :toggle-role="toggleRole"
                   :sections="sectionKeys"
                   :show-avatar="false"
+                  :show-section-titles="false"
                 />
               </form>
               <div v-else-if="loading" class="d-flex justify-content-center py-5">

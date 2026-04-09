@@ -148,7 +148,7 @@ load();
         <div
           v-for="row in items"
           :key="row.id"
-          class="flex gap-4 px-4 py-5 sm:gap-5 sm:px-6 sm:py-6"
+          class="flex gap-3 px-4 py-2.5 sm:gap-4 sm:px-6 sm:py-3"
         >
           <div
             class="flex h-11 w-11 shrink-0 items-center justify-center rounded-full text-xs font-semibold"
@@ -165,7 +165,7 @@ load();
                 {{ formatDateTimeUs(row.created_at) }}
               </span>
             </div>
-            <p class="mt-2 text-sm leading-relaxed text-gray-600 dark:text-gray-300">
+            <p class="mt-1 text-sm text-gray-600 dark:text-gray-300">
               {{ row.body || row.line }}
             </p>
           </div>

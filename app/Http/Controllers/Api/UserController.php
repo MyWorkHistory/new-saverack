@@ -10,6 +10,7 @@ use App\Http\Requests\UserUpdateRequest;
 use App\Models\ActivityLog;
 use App\Models\Permission;
 use App\Models\User;
+use App\Support\CrmActivityPresenter;
 use App\Support\UserStaffHistory;
 use App\Services\UserAvatarService;
 use App\Services\UserService;
@@ -152,24 +153,16 @@ class UserController extends Controller
         $logs = ActivityLog::query()
             ->where('subject_type', $user->getMorphClass())
             ->where('subject_id', $user->id)
-            ->whereIn('action', ['user.created', 'user.updated'])
-            ->with(['user:id,name'])
+            ->whereIn('action', ['user.created', 'user.updated', 'user.deleted'])
+            ->with(['user:id,name', 'user.profile:id,user_id,avatar_path'])
             ->orderByDesc('id')
             ->limit(200)
             ->get();
 
-        $items = $logs->map(function (ActivityLog $log) {
-            $actorName = ($log->user !== null) ? (string) $log->user->name : null;
-
-            return [
-                'id' => $log->id,
-                'created_at' => $log->created_at !== null ? $log->created_at->toIso8601String() : null,
-                'actor_name' => $actorName !== null ? $actorName : 'System',
-                'actor_initials' => UserStaffHistory::initials($actorName),
-                'line' => UserStaffHistory::formatLogLine($log),
-                'body' => UserStaffHistory::formatLogBody($log),
-            ];
-        })->values()->all();
+        $items = $logs
+            ->map(static fn (ActivityLog $log) => CrmActivityPresenter::toHistoryItem($log))
+            ->values()
+            ->all();
 
         return response()->json(['items' => $items]);
     }

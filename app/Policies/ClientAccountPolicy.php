@@ -32,6 +32,12 @@ class ClientAccountPolicy
         return $this->canManageClients($user) || $user->hasPermission('clients.update');
     }
 
+    /** Internal notes / threaded comments on the account profile. */
+    public function comment(User $user, ClientAccount $clientAccount): bool
+    {
+        return $this->update($user, $clientAccount);
+    }
+
     public function delete(User $user, ClientAccount $clientAccount): bool
     {
         return $this->canManageClients($user) || $user->hasPermission('clients.delete');

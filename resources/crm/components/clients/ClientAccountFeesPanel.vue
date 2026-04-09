@@ -167,7 +167,7 @@ async function removeStorageRow(row, idx) {
           Account Fees
         </h2>
         <p class="crm-account-fees__page-sub small text-secondary mb-0">
-          Fulfillment, returns, and storage pricing for this account.
+          Fulfillment fees, returns fees, and storage pricing for this account.
         </p>
       </header>
       <div v-if="canEdit" class="d-flex flex-wrap align-items-center gap-2 flex-shrink-0">
@@ -203,7 +203,7 @@ async function removeStorageRow(row, idx) {
       </div>
     </div>
 
-    <!-- Fulfillment -->
+    <!-- Fulfillment Fee -->
     <section class="crm-account-fees__section mb-4" aria-labelledby="crm-fees-fulfillment">
       <div class="staff-surface crm-account-fees__section-card">
         <div class="crm-account-fees__section-head">
@@ -217,7 +217,7 @@ async function removeStorageRow(row, idx) {
             </svg>
           </span>
           <h3 id="crm-fees-fulfillment" class="crm-account-fees__section-title mb-0">
-            Fulfillment
+            Fulfillment Fee
           </h3>
         </div>
 
@@ -225,8 +225,9 @@ async function removeStorageRow(row, idx) {
           <div class="col-12 col-md-6">
             <div class="crm-account-fees__metric crm-account-fees__metric--tall staff-surface h-100">
               <div class="crm-account-fees__metric-body">
-                <p class="crm-account-fees__metric-label mb-0">
-                  Order fulfillment 1st pick fee
+                <p class="crm-account-fees__metric-label mb-0">Fulfillment</p>
+                <p class="crm-account-fees__metric-sub small text-secondary mb-0">
+                  1st item picked in the order
                 </p>
               </div>
               <template v-if="editing && draft">
@@ -236,7 +237,7 @@ async function removeStorageRow(row, idx) {
                   step="0.0001"
                   class="form-control form-control-sm crm-account-fees__amount-input text-end"
                   placeholder="Amount"
-                  aria-label="Order fulfillment 1st pick fee amount"
+                  aria-label="Fulfillment 1st item picked in the order amount"
                 />
               </template>
               <p v-else class="crm-account-fees__metric-value mb-0">
@@ -249,7 +250,7 @@ async function removeStorageRow(row, idx) {
               <div class="crm-account-fees__metric-body">
                 <p class="crm-account-fees__metric-label mb-0">Additional Picks</p>
                 <p class="crm-account-fees__metric-sub small text-secondary mb-0">
-                  Additional items in the same order fee
+                  Additional items picked in the same order
                 </p>
               </div>
               <template v-if="editing && draft">
@@ -259,7 +260,7 @@ async function removeStorageRow(row, idx) {
                   step="0.0001"
                   class="form-control form-control-sm crm-account-fees__amount-input text-end"
                   placeholder="Amount"
-                  aria-label="Additional picks fee amount"
+                  aria-label="Additional items picked in the same order amount"
                 />
               </template>
               <p v-else class="crm-account-fees__metric-value mb-0">
@@ -271,7 +272,7 @@ async function removeStorageRow(row, idx) {
       </div>
     </section>
 
-    <!-- Returns -->
+    <!-- Returns Fee -->
     <section class="crm-account-fees__section mb-4" aria-labelledby="crm-fees-returns">
       <div class="staff-surface crm-account-fees__section-card">
         <div class="crm-account-fees__section-head">
@@ -284,14 +285,14 @@ async function removeStorageRow(row, idx) {
               />
             </svg>
           </span>
-          <h3 id="crm-fees-returns" class="crm-account-fees__section-title mb-0">Returns</h3>
+          <h3 id="crm-fees-returns" class="crm-account-fees__section-title mb-0">Returns Fee</h3>
         </div>
 
         <div class="row g-3 mt-1">
           <div class="col-12 col-md-6">
             <div class="crm-account-fees__metric crm-account-fees__metric--tall staff-surface h-100">
               <div class="crm-account-fees__metric-body">
-                <p class="crm-account-fees__metric-label mb-0">Returns processing fee</p>
+                <p class="crm-account-fees__metric-label mb-0">Returns 1st item returned</p>
               </div>
               <template v-if="editing && draft">
                 <input
@@ -300,7 +301,7 @@ async function removeStorageRow(row, idx) {
                   step="0.0001"
                   class="form-control form-control-sm crm-account-fees__amount-input text-end"
                   placeholder="Amount"
-                  aria-label="Returns processing fee amount"
+                  aria-label="Returns 1st item returned amount"
                 />
               </template>
               <p v-else class="crm-account-fees__metric-value mb-0">
@@ -312,6 +313,9 @@ async function removeStorageRow(row, idx) {
             <div class="crm-account-fees__metric crm-account-fees__metric--tall staff-surface h-100">
               <div class="crm-account-fees__metric-body">
                 <p class="crm-account-fees__metric-label mb-0">Additional Items</p>
+                <p class="crm-account-fees__metric-sub small text-secondary mb-0">
+                  Additional items returned
+                </p>
               </div>
               <template v-if="editing && draft">
                 <input
@@ -320,7 +324,7 @@ async function removeStorageRow(row, idx) {
                   step="0.0001"
                   class="form-control form-control-sm crm-account-fees__amount-input text-end"
                   placeholder="Amount"
-                  aria-label="Returns additional items fee amount"
+                  aria-label="Additional items returned amount"
                 />
               </template>
               <p v-else class="crm-account-fees__metric-value mb-0">

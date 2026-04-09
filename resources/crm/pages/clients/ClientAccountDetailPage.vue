@@ -229,6 +229,40 @@ function accountStatusBadgeClass(status) {
   return "badge bg-body-secondary text-body-secondary";
 }
 
+function storeStatusBadgeClass(status) {
+  const s = String(status || "").toLowerCase();
+  if (s === "active") {
+    return "badge bg-success-subtle text-success";
+  }
+  if (s === "pending") {
+    return "badge bg-warning-subtle text-warning-emphasis";
+  }
+  if (s === "inactive") {
+    return "badge bg-secondary-subtle text-secondary";
+  }
+  return "badge bg-body-secondary text-body-secondary";
+}
+
+/** Store row website: safe href for anchor (adds https:// when missing). */
+function storeWebsiteHref(raw) {
+  if (raw == null || raw === "") return "";
+  const t = String(raw).trim();
+  if (!t) return "";
+  if (/^https?:\/\//i.test(t)) return t;
+  if (/^\/\//.test(t)) return `https:${t}`;
+  return `https://${t}`;
+}
+
+/** Display host/path for link text (trim scheme). */
+function storeWebsiteLinkLabel(raw) {
+  if (raw == null || raw === "") return "";
+  let t = String(raw).trim();
+  if (!t) return "";
+  t = t.replace(/^https?:\/\//i, "").replace(/^\/\//, "");
+  t = t.replace(/\/$/, "");
+  return t || String(raw).trim();
+}
+
 const storeCountDisplay = computed(() => {
   const a = account.value;
   if (a && a.stores_count != null) return Number(a.stores_count);
@@ -1645,7 +1679,7 @@ onUnmounted(() => {
                           Store name
                         </th>
                         <th class="staff-table-head__th" scope="col">
-                          Website
+                          Status
                         </th>
                         <th class="staff-table-head__th" scope="col">
                           Marketplace
@@ -1699,14 +1733,25 @@ onUnmounted(() => {
                               <span class="d-block fw-semibold text-body text-truncate">{{
                                 row.name
                               }}</span>
+                              <a
+                                v-if="row.website && storeWebsiteHref(row.website)"
+                                class="d-block small text-primary text-truncate text-decoration-none mt-1"
+                                :href="storeWebsiteHref(row.website)"
+                                target="_blank"
+                                rel="noopener noreferrer"
+                              >
+                                {{ storeWebsiteLinkLabel(row.website) }}
+                              </a>
                             </div>
                           </div>
                         </td>
-                        <td
-                          class="text-secondary staff-table-cell__meta text-truncate"
-                          style="max-width: 12rem"
-                        >
-                          {{ display(row.website) }}
+                        <td>
+                          <span
+                            class="text-capitalize fw-medium"
+                            :class="storeStatusBadgeClass(row.status)"
+                          >
+                            {{ row.status }}
+                          </span>
                         </td>
                         <td class="text-secondary staff-table-cell__meta">
                           {{ display(row.marketplace) }}

@@ -28,9 +28,13 @@ class ClientAccountUpdateRequest extends FormRequest
                 $this->merge(['whatsapp_e164' => null]);
             } else {
                 $digits = preg_replace('/\D+/', '', (string) $raw);
+                $digits = ltrim($digits, '0');
                 if ($digits === '') {
                     $this->merge(['whatsapp_e164' => null]);
                 } else {
+                    if (strlen($digits) > 15) {
+                        $digits = substr($digits, 0, 15);
+                    }
                     $this->merge(['whatsapp_e164' => '+'.$digits]);
                 }
             }
@@ -57,7 +61,8 @@ class ClientAccountUpdateRequest extends FormRequest
             'phone' => ['sometimes', 'nullable', 'string', 'max:64'],
             'notify_email' => ['sometimes', 'boolean'],
             'telegram_handle' => ['sometimes', 'nullable', 'string', 'max:190'],
-            'whatsapp_e164' => ['sometimes', 'nullable', 'string', 'max:32', 'regex:/^\+[1-9]\d{6,14}$/'],
+            /* E.164: + then 6–15 digits (after leading-zero strip); max 32 matches column */
+            'whatsapp_e164' => ['sometimes', 'nullable', 'string', 'max:32', 'regex:/^\+[1-9]\d{4,14}$/'],
             'slack_channel' => ['sometimes', 'nullable', 'string', 'max:255'],
             'street' => ['sometimes', 'nullable', 'string', 'max:190'],
             'city' => ['sometimes', 'nullable', 'string', 'max:120'],

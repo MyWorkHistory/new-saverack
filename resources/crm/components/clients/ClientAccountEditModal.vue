@@ -155,8 +155,12 @@ watch(
 function normalizeWhatsappE164(v) {
   const t = String(v || "").trim();
   if (t === "") return null;
-  const digits = t.replace(/\D/g, "");
+  let digits = t.replace(/\D/g, "");
+  digits = digits.replace(/^0+/, "");
   if (!digits) return null;
+  if (digits.length > 15) {
+    digits = digits.slice(0, 15);
+  }
   return `+${digits}`;
 }
 

@@ -38,6 +38,7 @@ class ClientAccount extends Model
         'telegram_handle',
         'whatsapp_e164',
         'slack_channel',
+        'in_house_slack',
         'street',
         'city',
         'state',

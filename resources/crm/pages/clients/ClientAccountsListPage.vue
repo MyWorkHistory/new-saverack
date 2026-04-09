@@ -1210,6 +1210,8 @@ onUnmounted(() => {
                     :notify-email="!!row.notify_email"
                     :telegram-handle="row.telegram_handle || ''"
                     :whatsapp-e164="row.whatsapp_e164 || ''"
+                    :slack-channel="row.slack_channel || ''"
+                    :in-house-slack="row.in_house_slack || ''"
                   />
                 </div>
               </td>

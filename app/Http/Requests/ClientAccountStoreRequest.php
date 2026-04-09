@@ -52,6 +52,7 @@ class ClientAccountStoreRequest extends FormRequest
             'telegram_handle' => ['nullable', 'string', 'max:190'],
             'whatsapp_e164' => ['nullable', 'string', 'max:32'],
             'slack_channel' => ['nullable', 'string', 'max:255'],
+            'in_house_slack' => ['nullable', 'string', 'max:512'],
             'street' => ['nullable', 'string', 'max:190'],
             'city' => ['nullable', 'string', 'max:120'],
             'state' => ['nullable', 'string', 'max:64'],

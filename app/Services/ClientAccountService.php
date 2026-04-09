@@ -462,6 +462,7 @@ class ClientAccountService
             'telegram_handle' => $account->telegram_handle,
             'whatsapp_e164' => $account->whatsapp_e164,
             'slack_channel' => $account->slack_channel,
+            'in_house_slack' => $account->in_house_slack,
             'street' => $account->street,
             'city' => $account->city,
             'state' => $account->state,

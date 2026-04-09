@@ -12,7 +12,7 @@ import ClientStoresBulkEditModal from "../../components/clients/ClientStoresBulk
 import ClientAccountFeesPanel from "../../components/clients/ClientAccountFeesPanel.vue";
 import CrmIconRowActions from "../../components/common/CrmIconRowActions.vue";
 import { DEFAULT_PER_PAGE } from "../../constants/pagination";
-import { slackChannelHref, slackChannelLabel } from "../../utils/slackChannel.js";
+import { slackChannelHref } from "../../utils/slackChannel.js";
 import { crmIsAdmin } from "../../utils/crmUser";
 import { setCrmPageMeta } from "../../composables/useCrmPageMeta.js";
 import { useToast } from "../../composables/useToast";
@@ -1115,38 +1115,52 @@ onUnmounted(() => {
               </div>
               <div>
                 <dt class="staff-user-profile__dt">Channels</dt>
-                <dd
-                  class="staff-user-profile__dd d-flex justify-content-end flex-wrap gap-1"
-                >
-                  <ClientAccountChannelIcons
-                    :notify-email="!!account.notify_email"
-                    :telegram-handle="account.telegram_handle || ''"
-                    :whatsapp-e164="account.whatsapp_e164 || ''"
-                  />
+                <dd class="staff-user-profile__dd text-end">
+                  <div class="d-flex justify-content-end flex-wrap gap-1 mb-2">
+                    <ClientAccountChannelIcons
+                      :notify-email="!!account.notify_email"
+                      :telegram-handle="account.telegram_handle || ''"
+                      :whatsapp-e164="account.whatsapp_e164 || ''"
+                      :slack-channel="account.slack_channel || ''"
+                      :in-house-slack="account.in_house_slack || ''"
+                    />
+                  </div>
+                  <div v-if="account.slack_channel" class="mb-0 text-break">
+                    <div
+                      class="small text-secondary fw-semibold mb-1"
+                      style="font-size: 0.65rem"
+                    >
+                      Slack
+                    </div>
+                    <a
+                      v-if="slackChannelHref(account.slack_channel)"
+                      :href="slackChannelHref(account.slack_channel)"
+                      class="link-primary text-decoration-none"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                    >
+                      {{ account.slack_channel }}
+                    </a>
+                    <span v-else class="text-body">{{ account.slack_channel }}</span>
+                  </div>
                 </dd>
               </div>
-              <div v-if="account.slack_channel">
-                <dt class="staff-user-profile__dt">Slack</dt>
-                <dd class="staff-user-profile__dd text-break text-end">
-                  <a
-                    v-if="slackChannelHref(account.slack_channel)"
-                    :href="slackChannelHref(account.slack_channel)"
-                    class="link-primary text-decoration-none"
-                    target="_blank"
-                    rel="noopener noreferrer"
-                  >
-                    {{ slackChannelLabel(account.slack_channel) }}
-                  </a>
-                  <span v-else class="text-body">{{
-                    slackChannelLabel(account.slack_channel)
-                  }}</span>
-                  <span
-                    v-if="!slackChannelHref(account.slack_channel)"
-                    class="d-block small text-secondary mt-1"
-                  >
-                    Paste a full Slack URL in account settings to make this
-                    clickable.
-                  </span>
+              <div>
+                <dt class="staff-user-profile__dt">In-House Slack</dt>
+                <dd class="staff-user-profile__dd text-break client-account-in-house-slack-dd">
+                  <template v-if="account.in_house_slack">
+                    <a
+                      v-if="slackChannelHref(account.in_house_slack)"
+                      :href="slackChannelHref(account.in_house_slack)"
+                      class="link-primary text-decoration-none"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                    >
+                      {{ account.in_house_slack }}
+                    </a>
+                    <span v-else class="text-body">{{ account.in_house_slack }}</span>
+                  </template>
+                  <template v-else>{{ display(account.in_house_slack) }}</template>
                 </dd>
               </div>
             </dl>
@@ -2049,5 +2063,9 @@ onUnmounted(() => {
 }
 .object-fit-cover {
   object-fit: cover;
+}
+/* Override profile dl default `dd { text-align: right }` for this row */
+.client-account-in-house-slack-dd {
+  text-align: left !important;
 }
 </style>

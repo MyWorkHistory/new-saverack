@@ -64,6 +64,7 @@ class ClientAccountUpdateRequest extends FormRequest
             /* E.164: + then 6–15 digits (after leading-zero strip); max 32 matches column */
             'whatsapp_e164' => ['sometimes', 'nullable', 'string', 'max:32', 'regex:/^\+[1-9]\d{4,14}$/'],
             'slack_channel' => ['sometimes', 'nullable', 'string', 'max:255'],
+            'in_house_slack' => ['sometimes', 'nullable', 'string', 'max:512'],
             'street' => ['sometimes', 'nullable', 'string', 'max:190'],
             'city' => ['sometimes', 'nullable', 'string', 'max:120'],
             'state' => ['sometimes', 'nullable', 'string', 'max:64'],

@@ -32,6 +32,7 @@ const form = reactive({
   telegram_handle: "",
   whatsapp_e164: "",
   slack_channel: "",
+  in_house_slack: "",
   street: "",
   city: "",
   state: "",
@@ -124,6 +125,7 @@ async function load() {
     form.telegram_handle = data.telegram_handle || "";
     form.whatsapp_e164 = data.whatsapp_e164 || "";
     form.slack_channel = data.slack_channel || "";
+    form.in_house_slack = data.in_house_slack || "";
     form.street = data.street || "";
     form.city = data.city || "";
     form.state = data.state || "";
@@ -183,6 +185,7 @@ function buildPatch() {
       telegram_handle: trimOrNull(form.telegram_handle),
       whatsapp_e164: normalizeWhatsappE164(form.whatsapp_e164),
       slack_channel: trimOrNull(form.slack_channel),
+      in_house_slack: trimOrNull(form.in_house_slack),
       street: trimOrNull(form.street),
       city: trimOrNull(form.city),
       state: trimOrNull(form.state),
@@ -201,6 +204,7 @@ function buildPatch() {
       telegram_handle: trimOrNull(form.telegram_handle),
       whatsapp_e164: normalizeWhatsappE164(form.whatsapp_e164),
       slack_channel: trimOrNull(form.slack_channel),
+      in_house_slack: trimOrNull(form.in_house_slack),
       account_manager_id: form.account_manager_id
         ? Number(form.account_manager_id)
         : null,
@@ -524,7 +528,22 @@ async function onSubmit() {
                       search-placeholder="Search staff…"
                       empty-label="— None —"
                     />
-                    <div class="border rounded p-3">
+                    <div class="mt-3">
+                      <label
+                        class="form-label small mb-1 text-secondary"
+                        for="cae-in-house-slack"
+                        >In-House Slack</label
+                      >
+                      <input
+                        id="cae-in-house-slack"
+                        v-model="form.in_house_slack"
+                        type="text"
+                        class="form-control form-control-sm"
+                        placeholder="https://your-workspace.slack.com/archives/…"
+                        autocomplete="off"
+                      />
+                    </div>
+                    <div class="border rounded p-3 mt-3">
                       <p class="small fw-semibold text-secondary mb-2">Channels</p>
                       <div class="form-check">
                         <input
@@ -563,14 +582,14 @@ async function onSubmit() {
                       </div>
                       <div class="mt-2">
                         <label class="form-label small mb-1 text-secondary" for="cae-slack"
-                          >Slack channel</label
+                          >Slack</label
                         >
                         <input
                           id="cae-slack"
                           v-model="form.slack_channel"
                           type="text"
                           class="form-control form-control-sm"
-                          placeholder="#account-name or channel ID"
+                          placeholder="https://… (full Slack URL)"
                           autocomplete="off"
                         />
                       </div>

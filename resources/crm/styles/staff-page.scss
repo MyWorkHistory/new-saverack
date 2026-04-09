@@ -876,6 +876,20 @@ $staff-primary: #2563eb;
   gap: 0.25rem;
 }
 
+/* Channel column: keep a real table cell and center icon row cleanly. */
+.table.staff-data-table > tbody > tr > td.staff-table-cell--channel {
+  text-align: center;
+  vertical-align: middle;
+}
+
+.staff-table-cell--channel-inner {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  min-height: 1.5rem;
+}
+
 /* Teleported row menu (Vuexy dropdown) — position here so it works even if Tailwind `fixed` is absent */
 .staff-row-menu {
   position: fixed;

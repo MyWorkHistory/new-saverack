@@ -156,12 +156,11 @@ $vx-sidebar-collapsed: 80px;
   padding: 0.5rem 0.75rem 0.5rem 2rem;
   font-size: 0.875rem;
   margin-left: 0.25rem;
-  border-left: 2px solid var(--vx-nav-border);
 }
 
 .vx-nav-sublink.vx-nav-link--active,
 .vx-nav-sublink.router-link-active {
-  border-left-color: $vx-primary;
+  border-left-color: transparent;
 }
 
 .vx-nav-badge {

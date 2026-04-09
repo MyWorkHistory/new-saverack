@@ -1204,15 +1204,15 @@ onUnmounted(() => {
               >
                 {{ row.email }}
               </td>
-              <td
-                class="staff-table-cell--channel d-flex justify-content-center align-items-center"
-              >
-                <ClientAccountChannelIcons
-                  :notify-email="!!row.notify_email"
-                  :telegram-handle="row.telegram_handle || ''"
-                  :whatsapp-e164="row.whatsapp_e164 || ''"
-                  :slack-channel="row.slack_channel || ''"
-                />
+              <td class="staff-table-cell--channel text-center">
+                <div class="staff-table-cell--channel-inner">
+                  <ClientAccountChannelIcons
+                    :notify-email="!!row.notify_email"
+                    :telegram-handle="row.telegram_handle || ''"
+                    :whatsapp-e164="row.whatsapp_e164 || ''"
+                    :slack-channel="row.slack_channel || ''"
+                  />
+                </div>
               </td>
               <td class="text-secondary staff-table-cell__meta text-nowrap">
                 {{ formatDateUs(accountStartDate(row)) }}

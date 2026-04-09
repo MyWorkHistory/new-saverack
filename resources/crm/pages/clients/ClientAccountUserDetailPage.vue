@@ -66,32 +66,6 @@ const accountDetailLink = computed(() => ({
 
 const timelinePreview = computed(() => historyItems.value.slice(0, 5));
 
-function formatRelativeTime(iso) {
-  if (!iso) return "—";
-  const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return "—";
-  const diff = Date.now() - d.getTime();
-  const sec = Math.floor(diff / 1000);
-  if (sec < 45) return "Just now";
-  const min = Math.floor(sec / 60);
-  if (min < 60) return `${min} min ago`;
-  const hr = Math.floor(min / 60);
-  if (hr < 24) return `${hr} hr ago`;
-  const day = Math.floor(hr / 24);
-  if (day < 7) return `${day} day${day === 1 ? "" : "s"} ago`;
-  try {
-    return formatDateTimeUs(iso);
-  } catch {
-    return iso;
-  }
-}
-
-function timelineHeading(r) {
-  const t = (r.body || r.line || "Activity").trim();
-  if (t.length <= 72) return t;
-  return `${t.slice(0, 69)}…`;
-}
-
 function timelineActorAvatarUrl(r) {
   const raw = r?.actor_avatar_url;
   if (!raw) return "";
@@ -339,19 +313,21 @@ watch(
               aria-hidden="true"
               >{{ item.actor_initials || "?" }}</span
             >
-            <div class="staff-user-timeline__row">
-              <h3 class="staff-user-timeline__heading">
-                {{ timelineHeading(item) }}
-              </h3>
-              <time
-                class="staff-user-timeline__time"
-                :datetime="item.created_at"
-                >{{ formatRelativeTime(item.created_at) }}</time
-              >
+            <div class="staff-user-timeline__content min-w-0 flex-grow-1">
+              <div class="staff-user-timeline__row">
+                <h3 class="staff-user-timeline__heading">
+                  {{ item.actor_name || "System" }}
+                </h3>
+                <time
+                  class="staff-user-timeline__time"
+                  :datetime="item.created_at"
+                  >{{ formatDateTimeUs(item.created_at) }}</time
+                >
+              </div>
+              <p class="staff-user-timeline__body">
+                {{ item.body || item.line }}
+              </p>
             </div>
-            <p class="staff-user-timeline__body">
-              {{ item.body || item.line }}
-            </p>
           </div>
         </div>
         <p v-else class="staff-user-timeline__empty">

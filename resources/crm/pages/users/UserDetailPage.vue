@@ -138,32 +138,6 @@ function initials(name) {
   return parts.map((p) => p[0]?.toUpperCase() ?? "").join("") || "?";
 }
 
-function formatRelativeTime(iso) {
-  if (!iso) return "—";
-  const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return "—";
-  const diff = Date.now() - d.getTime();
-  const sec = Math.floor(diff / 1000);
-  if (sec < 45) return "Just now";
-  const min = Math.floor(sec / 60);
-  if (min < 60) return `${min} min ago`;
-  const hr = Math.floor(min / 60);
-  if (hr < 24) return `${hr} hr ago`;
-  const day = Math.floor(hr / 24);
-  if (day < 7) return `${day} day${day === 1 ? "" : "s"} ago`;
-  try {
-    return formatDateTimeUs(iso);
-  } catch {
-    return iso;
-  }
-}
-
-function timelineHeading(row) {
-  const t = (row.body || row.line || "Profile activity").trim();
-  if (t.length <= 72) return t;
-  return `${t.slice(0, 69)}…`;
-}
-
 const timelinePreview = computed(() => historyItems.value.slice(0, 5));
 
 function timelineActorAvatarUrl(row) {
@@ -661,30 +635,32 @@ function onPermissionsSaved() {
               :src="timelineActorAvatarUrl(row)"
               alt=""
               class="staff-user-timeline__avatar-img rounded-circle flex-shrink-0 object-fit-cover"
-              width="28"
-              height="28"
+              width="44"
+              height="44"
             />
             <span
               v-else
               class="staff-user-timeline__avatar-img rounded-circle flex-shrink-0 d-inline-flex align-items-center justify-content-center small fw-semibold"
-              style="width: 28px; height: 28px; font-size: 0.625rem"
+              style="width: 44px; height: 44px; font-size: 0.75rem"
               :class="avatarClassForTimelineActor(row.actor_name)"
               :title="row.actor_name || 'User'"
               aria-hidden="true"
               >{{ row.actor_initials || "?" }}</span
             >
-            <div class="staff-user-timeline__row">
-              <h3 class="staff-user-timeline__heading">
-                {{ timelineHeading(row) }}
-              </h3>
-              <time
-                class="staff-user-timeline__time"
-                :datetime="row.created_at"
-              >{{ formatRelativeTime(row.created_at) }}</time>
+            <div class="staff-user-timeline__content min-w-0 flex-grow-1">
+              <div class="staff-user-timeline__row">
+                <h3 class="staff-user-timeline__heading">
+                  {{ row.actor_name || "System" }}
+                </h3>
+                <time
+                  class="staff-user-timeline__time"
+                  :datetime="row.created_at"
+                >{{ formatDateTimeUs(row.created_at) }}</time>
+              </div>
+              <p class="staff-user-timeline__body">
+                {{ row.body || row.line }}
+              </p>
             </div>
-            <p class="staff-user-timeline__body">
-              {{ row.body || row.line }}
-            </p>
           </div>
         </div>
         <p v-else class="staff-user-timeline__empty">

@@ -61,6 +61,7 @@ const editingStore = ref(null);
 
 const storeDeleteTarget = ref(null);
 const storeDeleteBusy = ref(false);
+const storeMenuOpenId = ref(null);
 
 const storeSearch = ref("");
 const storeStatusFilter = ref("all");
@@ -292,32 +293,6 @@ function isImageMime(mime) {
   return typeof mime === "string" && mime.startsWith("image/");
 }
 
-function formatRelativeTime(iso) {
-  if (!iso) return "—";
-  const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return "—";
-  const diff = Date.now() - d.getTime();
-  const sec = Math.floor(diff / 1000);
-  if (sec < 45) return "Just now";
-  const min = Math.floor(sec / 60);
-  if (min < 60) return `${min} min ago`;
-  const hr = Math.floor(min / 60);
-  if (hr < 24) return `${hr} hr ago`;
-  const day = Math.floor(hr / 24);
-  if (day < 7) return `${day} day${day === 1 ? "" : "s"} ago`;
-  try {
-    return formatDateTimeUs(iso);
-  } catch {
-    return iso;
-  }
-}
-
-function timelineHeading(row) {
-  const t = (row.body || row.line || "Activity").trim();
-  if (t.length <= 72) return t;
-  return `${t.slice(0, 69)}…`;
-}
-
 const timelinePreview = computed(() => historyItems.value.slice(0, 5));
 
 const primaryAccountUserId = computed(
@@ -348,9 +323,18 @@ function closeNoteMenu() {
   noteMenuOpenId.value = null;
 }
 
+function closeStoreMenu() {
+  storeMenuOpenId.value = null;
+}
+
 function toggleNoteMenu(commentId, e) {
   e.stopPropagation();
   noteMenuOpenId.value = noteMenuOpenId.value === commentId ? null : commentId;
+}
+
+function toggleStoreMenu(storeId, e) {
+  e.stopPropagation();
+  storeMenuOpenId.value = storeMenuOpenId.value === storeId ? null : storeId;
 }
 
 function openEditNote(c) {
@@ -425,8 +409,15 @@ async function confirmDeleteNote() {
 }
 
 function onDocumentClickCloseNoteMenu(e) {
-  if (noteMenuOpenId.value === null) return;
   const t = e.target;
+
+  if (storeMenuOpenId.value !== null) {
+    if (!(t instanceof Element) || !t.closest("[data-store-menu-root]")) {
+      closeStoreMenu();
+    }
+  }
+
+  if (noteMenuOpenId.value === null) return;
   if (t instanceof Element && t.closest("[data-note-menu-root]")) return;
   closeNoteMenu();
 }
@@ -784,6 +775,7 @@ async function refreshStoresAndAccountCounts() {
 }
 
 function openEditStore(row) {
+  closeStoreMenu();
   editingStore.value = { ...row };
   editStoreOpen.value = true;
 }
@@ -1568,7 +1560,7 @@ onUnmounted(() => {
                         </th>
                         <th
                           v-if="canUpdateStore || canDeleteStore"
-                          class="staff-table-head__th staff-actions-col text-end"
+                          class="staff-table-head__th staff-actions-col text-center"
                           scope="col"
                         >
                           Actions
@@ -1643,47 +1635,52 @@ onUnmounted(() => {
                         </td>
                         <td
                           v-if="canUpdateStore || canDeleteStore"
-                          class="staff-actions-cell"
+                          class="staff-actions-cell text-center"
                         >
-                          <div class="staff-actions-inner">
+                          <div
+                            class="staff-actions-inner staff-actions-inner--single position-relative d-inline-flex"
+                            data-store-menu-root
+                          >
                             <button
-                              v-if="canUpdateStore"
                               type="button"
-                              class="staff-action-btn"
-                              aria-label="Edit store"
-                              @click="openEditStore(row)"
+                              class="staff-action-btn staff-action-btn--more"
+                              :class="{ 'is-open': storeMenuOpenId === row.id }"
+                              :aria-expanded="storeMenuOpenId === row.id"
+                              aria-haspopup="true"
+                              aria-label="Store actions"
+                              @click="toggleStoreMenu(row.id, $event)"
                             >
-                              <svg
-                                width="18"
-                                height="18"
-                                fill="currentColor"
-                                viewBox="0 0 24 24"
-                                aria-hidden="true"
-                              >
-                                <path
-                                  d="M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25zM20.71 7.04a1 1 0 000-1.41l-2.34-2.34a1 1 0 00-1.41 0l-1.83 1.83 3.75 3.75 1.83-1.83z"
-                                />
-                              </svg>
+                              <CrmIconRowActions variant="horizontal" />
                             </button>
-                            <button
-                              v-if="canDeleteStore"
-                              type="button"
-                              class="staff-action-btn text-danger"
-                              aria-label="Delete store"
-                              @click="storeDeleteTarget = row"
+                            <div
+                              v-if="storeMenuOpenId === row.id"
+                              class="staff-row-menu position-absolute end-0 mt-1 py-1 shadow border"
+                              style="min-width: 11rem; z-index: 400"
+                              role="menu"
+                              @click.stop
                             >
-                              <svg
-                                width="18"
-                                height="18"
-                                fill="currentColor"
-                                viewBox="0 0 24 24"
-                                aria-hidden="true"
+                              <button
+                                v-if="canUpdateStore"
+                                type="button"
+                                class="staff-row-menu__item"
+                                role="menuitem"
+                                @click="openEditStore(row)"
                               >
-                                <path
-                                  d="M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z"
-                                />
-                              </svg>
-                            </button>
+                                Edit
+                              </button>
+                              <button
+                                v-if="canDeleteStore"
+                                type="button"
+                                class="staff-row-menu__item staff-row-menu__item--danger"
+                                role="menuitem"
+                                @click="
+                                  closeStoreMenu();
+                                  storeDeleteTarget = row;
+                                "
+                              >
+                                Delete
+                              </button>
+                            </div>
                           </div>
                         </td>
                       </tr>
@@ -1880,19 +1877,21 @@ onUnmounted(() => {
               aria-hidden="true"
               >{{ row.actor_initials || "?" }}</span
             >
-            <div class="staff-user-timeline__row">
-              <h3 class="staff-user-timeline__heading">
-                {{ timelineHeading(row) }}
-              </h3>
-              <time
-                class="staff-user-timeline__time"
-                :datetime="row.created_at"
-                >{{ formatRelativeTime(row.created_at) }}</time
-              >
+            <div class="staff-user-timeline__content min-w-0 flex-grow-1">
+              <div class="staff-user-timeline__row">
+                <h3 class="staff-user-timeline__heading">
+                  {{ row.actor_name || "System" }}
+                </h3>
+                <time
+                  class="staff-user-timeline__time"
+                  :datetime="row.created_at"
+                  >{{ formatDateTimeUs(row.created_at) }}</time
+                >
+              </div>
+              <p class="staff-user-timeline__body">
+                {{ row.body || row.line }}
+              </p>
             </div>
-            <p class="staff-user-timeline__body">
-              {{ row.body || row.line }}
-            </p>
           </div>
         </div>
         <p v-else class="staff-user-timeline__empty">

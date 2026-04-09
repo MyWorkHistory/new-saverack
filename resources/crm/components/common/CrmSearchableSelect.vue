@@ -168,15 +168,15 @@ onUnmounted(() => document.removeEventListener("click", onDocClick));
         />
       </div>
       <ul
-        class="max-h-56 overflow-y-auto py-1"
+        class="max-h-56 overflow-y-auto py-1 bg-white dark:bg-gray-900"
         role="presentation"
       >
         <li v-if="allowEmpty">
           <button
             type="button"
-            class="flex w-full flex-col items-start gap-0.5 px-3 py-2.5 text-left text-sm transition hover:bg-gray-50 dark:hover:bg-white/5"
+            class="flex w-full flex-col items-start gap-0.5 px-3 py-2.5 text-left text-sm transition bg-white hover:bg-blue-50 dark:bg-gray-900 dark:hover:bg-white/5"
             :class="[
-              modelValue === '' ? 'bg-gray-50 dark:bg-white/[0.06]' : '',
+              modelValue === '' ? 'bg-blue-50 dark:bg-white/[0.06]' : '',
             ]"
             role="option"
             :aria-selected="modelValue === ''"
@@ -208,10 +208,10 @@ onUnmounted(() => document.removeEventListener("click", onDocClick));
         <li v-for="opt in filteredOptions" :key="opt.id">
           <button
             type="button"
-            class="flex w-full flex-col items-start gap-0.5 px-3 py-2.5 text-left text-sm transition hover:bg-gray-50 dark:hover:bg-white/5"
+            class="flex w-full flex-col items-start gap-0.5 px-3 py-2.5 text-left text-sm transition bg-white hover:bg-blue-50 dark:bg-gray-900 dark:hover:bg-white/5"
             :class="[
               String(modelValue) === String(opt.id)
-                ? 'bg-gray-50 dark:bg-white/[0.06]'
+                ? 'bg-blue-50 dark:bg-white/[0.06]'
                 : '',
             ]"
             role="option"

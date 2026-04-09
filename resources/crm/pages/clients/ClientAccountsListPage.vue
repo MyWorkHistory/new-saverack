@@ -1178,7 +1178,7 @@ onUnmounted(() => {
                       row.company_name
                     }}</span>
                     <span
-                      class="d-block text-truncate text-secondary staff-user-cell__meta"
+                      class="d-block text-truncate text-body staff-user-cell__meta"
                     >
                       {{
                         row.contact_full_name &&
@@ -1199,7 +1199,7 @@ onUnmounted(() => {
                 </span>
               </td>
               <td
-                class="text-secondary staff-table-cell__meta text-truncate"
+                class="text-body staff-table-cell__meta text-truncate"
                 style="max-width: 14rem"
               >
                 {{ row.email }}
@@ -1214,11 +1214,11 @@ onUnmounted(() => {
                   />
                 </div>
               </td>
-              <td class="text-secondary staff-table-cell__meta text-nowrap">
+              <td class="text-body staff-table-cell__meta text-nowrap">
                 {{ formatDateUs(accountStartDate(row)) }}
               </td>
               <td
-                class="text-secondary staff-table-cell__meta text-truncate"
+                class="text-body staff-table-cell__meta text-truncate"
                 style="max-width: 12rem"
                 :title="row.account_manager?.name"
               >

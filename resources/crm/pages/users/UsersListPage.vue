@@ -47,7 +47,7 @@ const showCheckboxColumn = computed(
   () => canUpdateUsers.value || canDeleteUsers.value,
 );
 
-/** Status, User, Position, Birthday, Hire date, Role (+ optional checkbox & actions). */
+/** User, Status, Position, Birthday, Hire date, Role (+ optional checkbox & actions). */
 const tableColspan = computed(() => {
   let n = 6;
   if (showCheckboxColumn.value) n += 1;
@@ -697,7 +697,7 @@ onUnmounted(() => {
       </div>
     </div>
 
-    <div class="staff-table-card staff-datatable-card">
+    <div class="staff-table-card staff-datatable-card staff-datatable-card--white">
       <div class="staff-table-toolbar">
         <div class="staff-table-toolbar--row">
           <input
@@ -859,23 +859,6 @@ onUnmounted(() => {
               <th
                 class="staff-table-head__th staff-table-head__th--sort"
                 scope="col"
-                :aria-sort="thAriaSort('status')"
-              >
-                <button
-                  type="button"
-                  class="staff-sort-btn"
-                  :disabled="loading"
-                  @click="toggleSort('status')"
-                >
-                  Status
-                  <span v-if="sortIndicator('status')" class="staff-sort-ind">{{
-                    sortIndicator("status")
-                  }}</span>
-                </button>
-              </th>
-              <th
-                class="staff-table-head__th staff-table-head__th--sort"
-                scope="col"
                 :aria-sort="thAriaSort('name')"
               >
                 <button
@@ -887,6 +870,23 @@ onUnmounted(() => {
                   User
                   <span v-if="sortIndicator('name')" class="staff-sort-ind">{{
                     sortIndicator("name")
+                  }}</span>
+                </button>
+              </th>
+              <th
+                class="staff-table-head__th staff-table-head__th--sort"
+                scope="col"
+                :aria-sort="thAriaSort('status')"
+              >
+                <button
+                  type="button"
+                  class="staff-sort-btn"
+                  :disabled="loading"
+                  @click="toggleSort('status')"
+                >
+                  Status
+                  <span v-if="sortIndicator('status')" class="staff-sort-ind">{{
+                    sortIndicator("status")
                   }}</span>
                 </button>
               </th>
@@ -996,14 +996,6 @@ onUnmounted(() => {
                 />
               </td>
               <td>
-                <span
-                  class="badge rounded-pill text-capitalize fw-medium"
-                  :class="statusBadgeClass(user.status)"
-                >
-                  {{ user.status }}
-                </span>
-              </td>
-              <td>
                 <div class="d-flex align-items-center gap-3 min-w-0">
                   <span
                     class="flex-shrink-0 rounded-circle overflow-hidden bg-body-secondary d-inline-flex"
@@ -1032,24 +1024,32 @@ onUnmounted(() => {
                     </RouterLink>
                     <RouterLink
                       :to="`/staff/${user.id}`"
-                      class="d-block text-truncate text-secondary text-decoration-none staff-user-cell__meta"
+                      class="d-block text-truncate text-body text-decoration-none staff-user-cell__meta"
                     >
                       {{ user.email }}
                     </RouterLink>
                   </div>
                 </div>
               </td>
+              <td>
+                <span
+                  class="badge rounded-pill text-capitalize fw-medium"
+                  :class="statusBadgeClass(user.status)"
+                >
+                  {{ user.status }}
+                </span>
+              </td>
               <td
-                class="text-secondary staff-table-cell__meta text-truncate"
+                class="text-body staff-table-cell__meta text-truncate"
                 style="max-width: 10rem"
                 :title="user.profile?.job_position || undefined"
               >
                 {{ user.profile?.job_position || "—" }}
               </td>
-              <td class="text-secondary staff-table-cell__meta text-nowrap">
+              <td class="text-body staff-table-cell__meta text-nowrap">
                 {{ formatBirthdayUs(user.profile?.birthday) }}
               </td>
-              <td class="text-secondary staff-table-cell__meta text-nowrap">
+              <td class="text-body staff-table-cell__meta text-nowrap">
                 {{ formatDateUs(user.profile?.hire_date) }}
               </td>
               <td>

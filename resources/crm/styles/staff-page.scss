@@ -132,6 +132,58 @@ $staff-primary: #2563eb;
   overflow: visible;
 }
 
+/*
+ * List/datatable panels: Bootstrap `table-light` + `--bs-table-bg` paint gray (#f9f9fb).
+ * Force a white grid for every staff table card (all CRM directory tables).
+ */
+.staff-table-card .table.staff-data-table {
+  --bs-table-bg: #fff;
+  --bs-table-striped-bg: #fff;
+  --bs-table-active-bg: #fff;
+  --bs-table-hover-bg: #f8f8fa;
+  background-color: #fff;
+  color: var(--bs-body-color);
+}
+
+.staff-table-card .table.staff-data-table > thead.staff-table-head.table-light,
+.staff-table-card .table.staff-data-table > thead.staff-table-head.table-light > tr > th {
+  --bs-table-bg: #fff;
+}
+
+.staff-table-card .table.staff-data-table > thead > tr > th.staff-table-head__th {
+  background-color: #fff !important;
+}
+
+.staff-table-card .table.staff-data-table > tbody > tr > td {
+  background-color: #fff !important;
+  box-shadow: none;
+}
+
+.staff-table-card .table.staff-data-table.table-hover > tbody > tr:hover > td {
+  background-color: var(--bs-table-hover-bg) !important;
+}
+
+[data-bs-theme="dark"] .staff-table-card .table.staff-data-table {
+  --bs-table-bg: var(--bs-body-bg);
+  --bs-table-striped-bg: var(--bs-body-bg);
+  --bs-table-active-bg: var(--bs-body-bg);
+  --bs-table-hover-bg: rgba(255, 255, 255, 0.04);
+  background-color: var(--bs-body-bg);
+}
+
+[data-bs-theme="dark"] .staff-table-card .table.staff-data-table > thead.staff-table-head.table-light,
+[data-bs-theme="dark"] .staff-table-card .table.staff-data-table > thead.staff-table-head.table-light > tr > th {
+  --bs-table-bg: var(--bs-body-bg);
+}
+
+[data-bs-theme="dark"] .staff-table-card .table.staff-data-table > thead > tr > th.staff-table-head__th {
+  background-color: var(--bs-body-bg) !important;
+}
+
+[data-bs-theme="dark"] .staff-table-card .table.staff-data-table > tbody > tr > td {
+  background-color: var(--bs-body-bg) !important;
+}
+
 .staff-datatable-card {
   width: 100%;
 }
@@ -143,6 +195,16 @@ $staff-primary: #2563eb;
 
 [data-bs-theme="dark"] .staff-datatable-card--white {
   background: var(--bs-body-bg) !important;
+}
+
+.staff-datatable-card--white .table.staff-data-table > thead > tr > th.staff-table-head__th {
+  background: #fff !important;
+  border-bottom: 1px solid #e6e6e8;
+}
+
+[data-bs-theme="dark"] .staff-datatable-card--white .table.staff-data-table > thead > tr > th.staff-table-head__th {
+  background: var(--bs-body-bg) !important;
+  border-bottom-color: var(--vx-nav-border);
 }
 
 .staff-datatable-card--white .staff-table-toolbar {

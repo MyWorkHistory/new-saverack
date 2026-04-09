@@ -475,13 +475,7 @@ function onPermissionsSaved() {
                     v-if="canUpdateUsers"
                     type="button"
                     class="btn btn-sm btn-primary staff-page-primary"
-                    @click="
-                      openSectionModal(
-                        ['address'],
-                        'Address',
-                        'Street, city, and country.',
-                      )
-                    "
+                    @click="openSectionModal(['address'], 'Address')"
                   >
                     Edit
                   </button>

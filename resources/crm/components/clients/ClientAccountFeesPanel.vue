@@ -292,7 +292,10 @@ async function removeStorageRow(row, idx) {
           <div class="col-12 col-md-6">
             <div class="crm-account-fees__metric crm-account-fees__metric--tall staff-surface h-100">
               <div class="crm-account-fees__metric-body">
-                <p class="crm-account-fees__metric-label mb-0">Returns 1st item returned</p>
+                <p class="crm-account-fees__metric-label mb-0">Returns</p>
+                <p class="crm-account-fees__metric-sub small text-secondary mb-0">
+                  1st item returned
+                </p>
               </div>
               <template v-if="editing && draft">
                 <input

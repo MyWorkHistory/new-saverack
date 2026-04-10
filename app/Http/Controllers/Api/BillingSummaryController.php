@@ -9,9 +9,12 @@ use Illuminate\Http\JsonResponse;
 
 class BillingSummaryController extends Controller
 {
-    public function __construct(
-        private InvoiceService $invoices,
-    ) {}
+    private InvoiceService $invoices;
+
+    public function __construct(InvoiceService $invoices)
+    {
+        $this->invoices = $invoices;
+    }
 
     public function __invoke(): JsonResponse
     {

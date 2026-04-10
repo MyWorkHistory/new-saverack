@@ -14,9 +14,12 @@ use Illuminate\Http\Request;
 
 class InvoiceController extends Controller
 {
-    public function __construct(
-        private InvoiceService $invoices,
-    ) {}
+    private InvoiceService $invoices;
+
+    public function __construct(InvoiceService $invoices)
+    {
+        $this->invoices = $invoices;
+    }
 
     public function meta(Request $request): JsonResponse
     {

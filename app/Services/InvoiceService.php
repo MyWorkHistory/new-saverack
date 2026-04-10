@@ -423,4 +423,61 @@ class InvoiceService
             'counts_by_status' => $countsByStatus,
         ];
     }
+
+    /**
+     * @return array<string, mixed>
+     */
+    public function pdfViewData(Invoice $invoice): array
+    {
+        $invoice->load(['items', 'clientAccount']);
+
+        $fmtLong = static function ($value) {
+            if ($value === null) {
+                return null;
+            }
+            try {
+                if ($value instanceof \Carbon\Carbon) {
+                    return $value->format('F j, Y');
+                }
+
+                return \Carbon\Carbon::parse($value)->format('F j, Y');
+            } catch (\Exception $e) {
+                return null;
+            }
+        };
+
+        $currency = $invoice->currency ?: 'USD';
+        $sym = $currency === 'USD' ? '$' : $currency.' ';
+        $money = static function ($cents) use ($sym) {
+            return $sym.number_format(((int) $cents) / 100, 2);
+        };
+
+        $items = [];
+        foreach ($invoice->items as $item) {
+            $items[] = [
+                'description' => $item->description,
+                'quantity' => $item->quantity,
+                'unit' => $money((int) $item->unit_price_cents),
+                'line_total' => $money((int) $item->line_total_cents),
+            ];
+        }
+
+        return [
+            'issuer_name' => config('app.name'),
+            'invoice_number' => $invoice->invoice_number,
+            'status' => $invoice->status,
+            'client_company_name' => $invoice->clientAccount !== null ? $invoice->clientAccount->company_name : '',
+            'issued_long' => $fmtLong($invoice->issued_at),
+            'due_long' => $fmtLong($invoice->due_at),
+            'payment_terms' => $invoice->payment_terms,
+            'po_number' => $invoice->po_number,
+            'items' => $items,
+            'subtotal' => $money((int) $invoice->subtotal_cents),
+            'tax' => $money((int) $invoice->tax_cents),
+            'total' => $money((int) $invoice->total_cents),
+            'amount_paid' => $money((int) $invoice->amount_paid_cents),
+            'balance_due' => $money((int) $invoice->balance_due_cents),
+            'customer_notes' => $invoice->customer_notes,
+        ];
+    }
 }

@@ -175,4 +175,57 @@ class BillingInvoiceApiTest extends TestCase
         $res->assertCreated();
         $res->assertJsonPath('invoice_number', 'INV-CUSTOM-001');
     }
+
+    public function test_user_with_billing_view_can_download_invoice_pdf(): void
+    {
+        $user = User::factory()->create();
+        $user->permissions()->attach($this->billingViewPermission()->id);
+        Sanctum::actingAs($user);
+
+        $client = ClientAccount::query()->create([
+            'status' => ClientAccount::STATUS_ACTIVE,
+            'company_name' => 'PDF Co',
+            'email' => 'pdf@acme.test',
+        ]);
+
+        $invoice = Invoice::query()->create([
+            'invoice_number' => 'INV-PDF-TEST-001',
+            'client_account_id' => $client->id,
+            'status' => Invoice::STATUS_DRAFT,
+            'currency' => 'USD',
+            'subtotal_cents' => 0,
+            'tax_cents' => 0,
+            'total_cents' => 0,
+            'amount_paid_cents' => 0,
+            'balance_due_cents' => 0,
+        ]);
+
+        $response = $this->get("/api/invoices/{$invoice->id}/pdf");
+        $response->assertOk();
+        $ctype = (string) $response->headers->get('content-type');
+        $this->assertStringContainsString('application/pdf', $ctype);
+        $this->assertNotSame('', $response->getContent());
+    }
+
+    public function test_guest_cannot_download_invoice_pdf(): void
+    {
+        $client = ClientAccount::query()->create([
+            'status' => ClientAccount::STATUS_ACTIVE,
+            'company_name' => 'PDF Co 2',
+            'email' => 'pdf2@acme.test',
+        ]);
+        $invoice = Invoice::query()->create([
+            'invoice_number' => 'INV-PDF-TEST-002',
+            'client_account_id' => $client->id,
+            'status' => Invoice::STATUS_DRAFT,
+            'currency' => 'USD',
+            'subtotal_cents' => 0,
+            'tax_cents' => 0,
+            'total_cents' => 0,
+            'amount_paid_cents' => 0,
+            'balance_due_cents' => 0,
+        ]);
+
+        $this->getJson("/api/invoices/{$invoice->id}/pdf")->assertUnauthorized();
+    }
 }

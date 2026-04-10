@@ -1184,6 +1184,16 @@ $staff-primary: #2563eb;
   text-align: center !important;
 }
 
+/* Billing invoices list — center kebab; global actions column uses end alignment */
+.table.staff-data-table > thead > tr > th.billing-invoices-actions-col,
+.table.staff-data-table > tbody > tr > td.billing-invoices-actions-cell {
+  text-align: center !important;
+}
+
+.staff-actions-inner.billing-invoices-actions-inner.staff-actions-inner--single {
+  justify-content: center !important;
+}
+
 .staff-actions-inner {
   display: inline-flex;
   align-items: center;

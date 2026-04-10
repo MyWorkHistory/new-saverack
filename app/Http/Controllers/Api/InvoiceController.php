@@ -9,6 +9,7 @@ use App\Http\Requests\InvoiceUpdateRequest;
 use App\Models\ClientAccount;
 use App\Models\Invoice;
 use App\Services\InvoiceService;
+use Barryvdh\DomPDF\Facade\Pdf;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 
@@ -83,6 +84,16 @@ class InvoiceController extends Controller
         $this->authorize('view', $invoice);
 
         return response()->json($this->invoices->toDetailArray($invoice));
+    }
+
+    public function pdf(Invoice $invoice)
+    {
+        $this->authorize('view', $invoice);
+
+        $data = $this->invoices->pdfViewData($invoice);
+        $filename = preg_replace('/[^A-Za-z0-9._-]+/', '_', $invoice->invoice_number).'.pdf';
+
+        return Pdf::loadView('billing.invoice-pdf', $data)->download($filename);
     }
 
     public function update(InvoiceUpdateRequest $request, Invoice $invoice): JsonResponse

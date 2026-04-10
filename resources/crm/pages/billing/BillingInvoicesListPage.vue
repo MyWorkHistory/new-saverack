@@ -990,7 +990,10 @@ onUnmounted(() => {
                   >
                 </button>
               </th>
-              <th class="staff-table-head__th staff-actions-col text-center" scope="col">
+              <th
+                class="staff-table-head__th staff-actions-col text-center billing-invoices-actions-col"
+                scope="col"
+              >
                 Actions
               </th>
             </tr>
@@ -1036,14 +1039,21 @@ onUnmounted(() => {
               </td>
               <td class="fw-medium text-body">
                 <RouterLink
-                  :to="`/billing/invoices/${row.id}`"
-                  class="text-decoration-none text-body"
+                  :to="{ name: 'billing-invoice-detail', params: { id: String(row.id) } }"
+                  class="text-decoration-none text-body billing-inv-row-link"
                 >
                   {{ row.invoice_number }}
                 </RouterLink>
               </td>
               <td class="text-secondary staff-table-cell__meta">
-                {{ row.client_company_name || "—" }}
+                <RouterLink
+                  v-if="row.client_company_name"
+                  :to="{ name: 'billing-invoice-detail', params: { id: String(row.id) } }"
+                  class="text-decoration-none text-secondary billing-inv-row-link"
+                >
+                  {{ row.client_company_name }}
+                </RouterLink>
+                <span v-else>—</span>
               </td>
               <td class="text-body staff-table-cell__meta">
                 {{ formatCents(row.total_cents, row.currency) }}
@@ -1057,9 +1067,10 @@ onUnmounted(() => {
               <td class="text-body staff-table-cell__meta">
                 {{ formatCents(row.balance_due_cents, row.currency) }}
               </td>
-              <td class="staff-actions-cell text-center">
-                <div                  data-row-actions
-                  class="staff-actions-inner staff-actions-inner--single justify-content-center"
+              <td class="staff-actions-cell text-center billing-invoices-actions-cell">
+                <div
+                  data-row-actions
+                  class="staff-actions-inner staff-actions-inner--single billing-invoices-actions-inner"
                 >
                   <button
                     type="button"

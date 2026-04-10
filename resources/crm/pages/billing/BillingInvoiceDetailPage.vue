@@ -1,7 +1,8 @@
 <script setup>
 import { computed, inject, onMounted, onUnmounted, ref } from "vue";
 import { useRouter } from "vue-router";
-import api from "../../services/api";
+import api, { getApiBaseUrl } from "../../services/api";
+import invoiceBrandLogoUrl from "@public/images/logo/logo.svg";
 import ConfirmModal from "../../components/common/ConfirmModal.vue";
 import CrmLoadingSpinner from "../../components/common/CrmLoadingSpinner.vue";
 import { useToast } from "../../composables/useToast";
@@ -43,6 +44,58 @@ const voidBusy = ref(false);
 
 const deleteModalOpen = ref(false);
 const deleteBusy = ref(false);
+
+const pdfDownloading = ref(false);
+
+const invoiceDateLong = new Intl.DateTimeFormat(undefined, {
+  year: "numeric",
+  month: "long",
+  day: "numeric",
+});
+
+function formatInvoiceLongDate(iso) {
+  if (!iso) return "—";
+  const s = String(iso);
+  const d = /^\d{4}-\d{2}-\d{2}$/.test(s) ? new Date(`${s}T12:00:00`) : new Date(s);
+  if (Number.isNaN(d.getTime())) return "—";
+  return invoiceDateLong.format(d);
+}
+
+async function downloadInvoicePdf() {
+  if (!invoice.value?.id || pdfDownloading.value) return;
+  pdfDownloading.value = true;
+  try {
+    const token = localStorage.getItem("auth_token");
+    const url = `${getApiBaseUrl()}/invoices/${invoice.value.id}/pdf`;
+    const res = await fetch(url, {
+      headers: {
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        Accept: "application/pdf",
+      },
+    });
+    if (!res.ok) {
+      toast.error("Could not download PDF.");
+      return;
+    }
+    const blob = await res.blob();
+    const a = document.createElement("a");
+    const baseName = String(invoice.value.invoice_number || "invoice").replace(
+      /[^A-Za-z0-9._-]+/g,
+      "_",
+    );
+    a.href = URL.createObjectURL(blob);
+    a.download = `${baseName}.pdf`;
+    a.rel = "noopener";
+    document.body.appendChild(a);
+    a.click();
+    URL.revokeObjectURL(a.href);
+    a.remove();
+  } catch {
+    toast.error("Could not download PDF.");
+  } finally {
+    pdfDownloading.value = false;
+  }
+}
 
 function syncEditFromInvoice() {
   const inv = invoice.value;
@@ -238,33 +291,32 @@ onMounted(() => {
 
 <template>
   <div class="staff-page staff-page--wide billing-invoice-detail">
-    <div class="d-flex flex-wrap align-items-center gap-2 mb-4">
-      <button
-        type="button"
-        class="btn btn-outline-secondary btn-sm"
-        @click="router.push('/billing/invoices')"
-      >
-        ← Invoices
-      </button>
-    </div>
-
     <div v-if="loading" class="d-flex justify-content-center py-5">
       <CrmLoadingSpinner message="Loading invoice…" />
     </div>
 
     <template v-else-if="invoice">
       <div
-        class="d-flex flex-column flex-md-row align-items-start align-items-md-center gap-3 mb-4"
+        class="d-flex flex-column flex-lg-row flex-wrap align-items-stretch align-items-lg-center gap-3 mb-4"
       >
-        <div class="min-w-0 flex-grow-1">
-          <h1 class="h4 mb-1 fw-semibold text-body">
-            {{ invoice.invoice_number }}
-          </h1>
-          <p class="text-secondary small mb-0">
-            {{ invoice.client_company_name || "Client" }}
-          </p>
+        <div class="d-flex flex-wrap align-items-center gap-2">
+          <button
+            type="button"
+            class="btn btn-outline-secondary btn-sm"
+            @click="router.push('/billing/invoices')"
+          >
+            ← Invoices
+          </button>
+          <button
+            type="button"
+            class="btn btn-outline-primary btn-sm"
+            :disabled="pdfDownloading"
+            @click="downloadInvoicePdf"
+          >
+            {{ pdfDownloading ? "Downloading…" : "Download PDF" }}
+          </button>
         </div>
-        <div class="d-flex flex-wrap gap-2 ms-md-auto">
+        <div class="d-flex flex-wrap gap-2 ms-lg-auto">
           <button
             v-if="canUpdate && invoice.status === 'draft'"
             type="button"
@@ -308,8 +360,69 @@ onMounted(() => {
 
       <div class="row g-4">
         <div class="col-lg-8">
-          <div class="staff-table-card staff-datatable-card staff-datatable-card--white p-4">
-            <div class="d-flex flex-wrap align-items-center gap-2 mb-3">
+          <div
+            class="staff-table-card staff-datatable-card staff-datatable-card--white p-4 billing-inv-preview"
+          >
+            <div class="billing-inv-preview-head border-bottom border-light pb-4 mb-4">
+              <div class="row g-4 align-items-start">
+                <div class="col-md-6 d-flex gap-3 align-items-start min-w-0">
+                  <img
+                    :src="invoiceBrandLogoUrl"
+                    alt=""
+                    class="billing-inv-logo flex-shrink-0"
+                    width="48"
+                    height="48"
+                  />
+                  <div class="min-w-0">
+                    <div class="text-uppercase small fw-semibold text-secondary billing-inv-brand-kicker">
+                      Save Rack
+                    </div>
+                    <div class="small text-secondary">Fulfillment billing</div>
+                    <div class="mt-3 small">
+                      <span class="text-secondary">Invoice to</span>
+                      <div class="fw-semibold text-body mt-1">
+                        {{ invoice.client_company_name || "—" }}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+                <div class="col-md-6 text-md-end min-w-0">
+                  <h1 class="h4 fw-bold text-body mb-3">
+                    {{ invoice.invoice_number }}
+                  </h1>
+                  <div class="small billing-inv-meta-list">
+                    <div class="mb-1">
+                      <span class="text-secondary">Issue date</span>
+                      <span class="fw-medium ms-1">{{
+                        formatInvoiceLongDate(invoice.issued_at)
+                      }}</span>
+                    </div>
+                    <div class="mb-1">
+                      <span class="text-secondary">Due date</span>
+                      <span class="fw-medium ms-1">
+                        {{
+                          invoice.status === "draft" && canUpdate
+                            ? editDueAt
+                              ? formatInvoiceLongDate(editDueAt)
+                              : "—"
+                            : formatInvoiceLongDate(invoice.due_at)
+                        }}
+                      </span>
+                    </div>
+                    <div v-if="invoice.payment_terms" class="mb-1">
+                      <span class="text-secondary">Terms</span>
+                      <span class="fw-medium ms-1">{{ invoice.payment_terms }}</span>
+                    </div>
+                    <div v-if="invoice.po_number" class="mb-1">
+                      <span class="text-secondary">PO number</span>
+                      <span class="fw-medium ms-1">{{ invoice.po_number }}</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div class="d-flex flex-wrap align-items-center gap-2 mb-4">
               <span
                 class="badge rounded-pill text-capitalize fw-medium"
                 :class="statusBadgeClass(invoice.status)"
@@ -323,24 +436,8 @@ onMounted(() => {
                 Overdue
               </span>
             </div>
-            <dl class="row small mb-0">
-              <dt class="col-sm-4 text-secondary">Issued</dt>
-              <dd class="col-sm-8">
-                {{ invoice.issued_at ? new Date(invoice.issued_at).toLocaleString() : "—" }}
-              </dd>
-              <template v-if="!(invoice.status === 'draft' && canUpdate)">
-                <dt class="col-sm-4 text-secondary">Due</dt>
-                <dd class="col-sm-8">
-                  {{ invoice.due_at ? new Date(invoice.due_at).toLocaleString() : "—" }}
-                </dd>
-              </template>
-              <dt class="col-sm-4 text-secondary">Payment terms</dt>
-              <dd class="col-sm-8">{{ invoice.payment_terms || "—" }}</dd>
-              <dt class="col-sm-4 text-secondary">PO number</dt>
-              <dd class="col-sm-8">{{ invoice.po_number || "—" }}</dd>
-            </dl>
-            <hr />
-            <h2 class="h6 fw-semibold">Line items</h2>
+
+            <h2 class="h6 fw-semibold mb-3">Line Items</h2>
 
             <template v-if="invoice.status === 'draft' && canUpdate">
               <div class="row g-3 mb-3">
@@ -599,3 +696,26 @@ onMounted(() => {
     />
   </div>
 </template>
+
+<style scoped>
+.billing-inv-preview {
+  box-shadow: 0 0.125rem 0.5rem rgba(15, 23, 42, 0.06);
+}
+.billing-inv-logo {
+  object-fit: contain;
+}
+.billing-inv-brand-kicker {
+  letter-spacing: 0.06em;
+  font-size: 0.7rem;
+}
+.billing-inv-meta-list .text-secondary {
+  min-width: 5.5rem;
+  display: inline-block;
+}
+@media (min-width: 768px) {
+  .billing-inv-meta-list .text-secondary {
+    text-align: right;
+    margin-right: 0.35rem;
+  }
+}
+</style>

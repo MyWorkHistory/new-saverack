@@ -43,6 +43,8 @@ Route::middleware('auth:sanctum')->group(function () {
         ->name('invoices.record-payment');
     Route::post('invoices/{invoice}/void', [InvoiceController::class, 'void'])
         ->name('invoices.void');
+    Route::get('invoices/{invoice}/pdf', [InvoiceController::class, 'pdf'])
+        ->name('invoices.pdf');
     Route::apiResource('invoices', InvoiceController::class);
 
     Route::get('/tickets/meta', [TicketController::class, 'meta']);

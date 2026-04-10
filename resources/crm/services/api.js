@@ -7,6 +7,10 @@ import axios from "axios";
  *
  * `/tickets-app/` build: assets stay under `/tickets-app/` but Laravel API stays at `/api`.
  */
+export function getApiBaseUrl() {
+  return resolveApiBase();
+}
+
 function resolveApiBase() {
   const raw = import.meta.env.BASE_URL || "/";
   let normalized = raw.replace(/\/$/, "");

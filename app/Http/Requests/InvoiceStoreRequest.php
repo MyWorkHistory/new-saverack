@@ -50,6 +50,9 @@ class InvoiceStoreRequest extends FormRequest
         if (! $this->has('currency') || $this->input('currency') === null || $this->input('currency') === '') {
             $this->merge(['currency' => 'USD']);
         }
+        if (! $this->has('due_at') || $this->input('due_at') === null || $this->input('due_at') === '') {
+            $this->merge(['due_at' => now()->format('Y-m-d')]);
+        }
         if (! $this->has('items') || ! is_array($this->input('items'))) {
             $this->merge(['items' => []]);
         }

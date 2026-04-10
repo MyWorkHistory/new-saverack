@@ -21,10 +21,18 @@ const form = reactive({
   due_at: "",
 });
 
+function localDateYmd() {
+  const d = new Date();
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
+}
+
 function reset() {
   form.invoice_number = "";
   form.client_account_id = "";
-  form.due_at = "";
+  form.due_at = localDateYmd();
   errorMsg.value = "";
 }
 

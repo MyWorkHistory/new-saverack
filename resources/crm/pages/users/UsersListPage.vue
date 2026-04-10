@@ -21,8 +21,6 @@ import { DEFAULT_PER_PAGE, PER_PAGE_OPTIONS } from "../../constants/pagination";
 import CrmIconRowActions from "../../components/common/CrmIconRowActions.vue";
 import StaffRoleIcon from "../../components/users/StaffRoleIcon.vue";
 import StaffBulkEditModal from "../../components/users/StaffBulkEditModal.vue";
-import StaffTableMobileExpandButton from "../../components/common/StaffTableMobileExpandButton.vue";
-import StaffTableRowDetailsModal from "../../components/common/StaffTableRowDetailsModal.vue";
 import { resolvePublicUrl } from "../../utils/resolvePublicUrl.js";
 import { formatBirthdayUs, formatDateUs } from "../../utils/formatUserDates";
 import { downloadListCsv } from "../../utils/downloadListCsv.js";
@@ -49,24 +47,13 @@ const showCheckboxColumn = computed(
   () => canUpdateUsers.value || canDeleteUsers.value,
 );
 
-/** Expand + User, Status, Position, Birthday, Hire date, Role (+ optional checkbox & actions). */
+/** User, Status, Position, Birthday, Hire date, Role (+ optional checkbox & actions). */
 const tableColspan = computed(() => {
-  let n = 1 + 6;
+  let n = 6;
   if (showCheckboxColumn.value) n += 1;
   if (showRowActions.value) n += 1;
   return n;
 });
-
-const mobileDetailsRow = ref(null);
-
-function openMobileRowDetails(row) {
-  manageOpenId.value = null;
-  mobileDetailsRow.value = row;
-}
-
-function closeMobileRowDetails() {
-  mobileDetailsRow.value = null;
-}
 
 /** Maps to API `sort_by` (User → name). */
 const STAFF_SORT_KEYS = [
@@ -852,17 +839,9 @@ onUnmounted(() => {
       </div>
 
       <div class="table-responsive staff-table-wrap">
-        <table
-          class="table table-hover align-middle mb-0 staff-data-table staff-data-table--mobile-expand"
-        >
+        <table class="table table-hover align-middle mb-0 staff-data-table">
           <thead class="table-light staff-table-head">
             <tr>
-              <th
-                class="staff-table-head__th staff-table-head__th--expand d-table-cell d-md-none"
-                scope="col"
-              >
-                <span class="visually-hidden">Row details</span>
-              </th>
               <th
                 v-if="showCheckboxColumn"
                 class="staff-table-head__th staff-table-head__th--select"
@@ -912,7 +891,7 @@ onUnmounted(() => {
                 </button>
               </th>
               <th
-                class="staff-table-head__th staff-table-head__th--sort d-none d-md-table-cell"
+                class="staff-table-head__th staff-table-head__th--sort"
                 scope="col"
                 :aria-sort="thAriaSort('job_position')"
               >
@@ -931,7 +910,7 @@ onUnmounted(() => {
                 </button>
               </th>
               <th
-                class="staff-table-head__th staff-table-head__th--sort d-none d-md-table-cell"
+                class="staff-table-head__th staff-table-head__th--sort"
                 scope="col"
                 :aria-sort="thAriaSort('birthday')"
               >
@@ -948,7 +927,7 @@ onUnmounted(() => {
                 </button>
               </th>
               <th
-                class="staff-table-head__th staff-table-head__th--sort d-none d-md-table-cell"
+                class="staff-table-head__th staff-table-head__th--sort"
                 scope="col"
                 :aria-sort="thAriaSort('hire_date')"
               >
@@ -967,7 +946,7 @@ onUnmounted(() => {
                 </button>
               </th>
               <th
-                class="staff-table-head__th staff-table-head__th--sort d-none d-md-table-cell"
+                class="staff-table-head__th staff-table-head__th--sort"
                 scope="col"
                 :aria-sort="thAriaSort('role')"
               >
@@ -985,7 +964,7 @@ onUnmounted(() => {
               </th>
               <th
                 v-if="showRowActions"
-                class="staff-table-head__th staff-actions-col d-none d-md-table-cell"
+                class="staff-table-head__th staff-actions-col"
                 scope="col"
                 aria-sort="none"
               >
@@ -1007,12 +986,6 @@ onUnmounted(() => {
               :key="user.id"
               class="align-middle"
             >
-              <td class="staff-table-cell--expand d-table-cell d-md-none">
-                <StaffTableMobileExpandButton
-                  :aria-label="`Details for ${user.name}`"
-                  @click="openMobileRowDetails(user)"
-                />
-              </td>
               <td v-if="showCheckboxColumn" class="staff-table-cell--tight-check">
                 <input
                   type="checkbox"
@@ -1067,19 +1040,19 @@ onUnmounted(() => {
                 </span>
               </td>
               <td
-                class="text-body staff-table-cell__meta text-truncate d-none d-md-table-cell"
+                class="text-body staff-table-cell__meta text-truncate"
                 style="max-width: 10rem"
                 :title="user.profile?.job_position || undefined"
               >
                 {{ user.profile?.job_position || "—" }}
               </td>
-              <td class="text-body staff-table-cell__meta text-nowrap d-none d-md-table-cell">
+              <td class="text-body staff-table-cell__meta text-nowrap">
                 {{ formatBirthdayUs(user.profile?.birthday) }}
               </td>
-              <td class="text-body staff-table-cell__meta text-nowrap d-none d-md-table-cell">
+              <td class="text-body staff-table-cell__meta text-nowrap">
                 {{ formatDateUs(user.profile?.hire_date) }}
               </td>
-              <td class="d-none d-md-table-cell">
+              <td>
                 <div class="d-flex align-items-center gap-2 min-w-0">
                   <StaffRoleIcon :roles="user.roles" />
                   <span class="text-body text-truncate staff-table-cell__meta">{{
@@ -1087,10 +1060,7 @@ onUnmounted(() => {
                   }}</span>
                 </div>
               </td>
-              <td
-                v-if="showRowActions"
-                class="staff-actions-cell text-center d-none d-md-table-cell"
-              >
+              <td v-if="showRowActions" class="staff-actions-cell text-center">
                 <div
                   data-row-actions
                   class="staff-actions-inner staff-actions-inner--single justify-content-center"
@@ -1117,6 +1087,9 @@ onUnmounted(() => {
           </tbody>
         </table>
       </div>
+      <p class="staff-table-mobile-scroll-cue d-md-none" aria-hidden="true">
+        Scroll sideways or swipe to see all columns.
+      </p>
 
       <div
         class="d-flex flex-column flex-lg-row align-items-lg-center justify-content-lg-between gap-3 border-top staff-table-footer"
@@ -1275,71 +1248,6 @@ onUnmounted(() => {
       :user-id="userEditModalUserId"
       @saved="refreshList"
     />
-
-    <StaffTableRowDetailsModal
-      :open="!!mobileDetailsRow"
-      :title="
-        mobileDetailsRow ? `Details — ${mobileDetailsRow.name}` : 'Details'
-      "
-      :subtitle="mobileDetailsRow?.email || ''"
-      @close="closeMobileRowDetails"
-    >
-      <template v-if="mobileDetailsRow">
-        <dl class="staff-table-row-details-dl">
-          <div class="staff-table-row-details-dl__row">
-            <dt>Status</dt>
-            <dd>
-              <span
-                class="badge rounded-pill text-capitalize fw-medium"
-                :class="statusBadgeClass(mobileDetailsRow.status)"
-              >
-                {{ mobileDetailsRow.status }}
-              </span>
-            </dd>
-          </div>
-          <div class="staff-table-row-details-dl__row">
-            <dt>Position</dt>
-            <dd>{{ mobileDetailsRow.profile?.job_position || "—" }}</dd>
-          </div>
-          <div class="staff-table-row-details-dl__row">
-            <dt>Birthday</dt>
-            <dd>{{ formatBirthdayUs(mobileDetailsRow.profile?.birthday) }}</dd>
-          </div>
-          <div class="staff-table-row-details-dl__row">
-            <dt>Hire date</dt>
-            <dd>{{ formatDateUs(mobileDetailsRow.profile?.hire_date) }}</dd>
-          </div>
-          <div class="staff-table-row-details-dl__row">
-            <dt>Role</dt>
-            <dd class="text-start">
-              <div class="d-flex align-items-center gap-2 justify-content-end flex-wrap">
-                <StaffRoleIcon :roles="mobileDetailsRow.roles" />
-                <span class="text-body staff-table-cell__meta">{{
-                  primaryRoleLabel(mobileDetailsRow)
-                }}</span>
-              </div>
-            </dd>
-          </div>
-        </dl>
-      </template>
-      <template #footer>
-        <button
-          type="button"
-          class="crm-vx-modal-btn crm-vx-modal-btn--secondary"
-          @click="closeMobileRowDetails"
-        >
-          Close
-        </button>
-        <RouterLink
-          v-if="mobileDetailsRow"
-          :to="`/staff/${mobileDetailsRow.id}`"
-          class="crm-vx-modal-btn crm-vx-modal-btn--primary text-decoration-none text-center d-inline-flex align-items-center justify-content-center"
-          @click="closeMobileRowDetails"
-        >
-          View User
-        </RouterLink>
-      </template>
-    </StaffTableRowDetailsModal>
 
     <ConfirmModal
       :open="deleteModalOpen"

@@ -19,8 +19,6 @@ import ClientAccountsBulkEditModal from "../../components/clients/ClientAccounts
 import CrmLoadingSpinner from "../../components/common/CrmLoadingSpinner.vue";
 import CrmSearchableSelect from "../../components/common/CrmSearchableSelect.vue";
 import CrmIconRowActions from "../../components/common/CrmIconRowActions.vue";
-import StaffTableMobileExpandButton from "../../components/common/StaffTableMobileExpandButton.vue";
-import StaffTableRowDetailsModal from "../../components/common/StaffTableRowDetailsModal.vue";
 import { useToast } from "../../composables/useToast";
 import { crmIsAdmin } from "../../utils/crmUser";
 import { DEFAULT_PER_PAGE, PER_PAGE_OPTIONS } from "../../constants/pagination";
@@ -52,22 +50,11 @@ const showRowActions = computed(() => canUpdate.value || canDelete.value);
 const showCheckboxCol = computed(() => canUpdate.value || canDelete.value);
 
 const tableColspan = computed(() => {
-  let n = 1 + 6; // mobile expand + account, status, email, channel, start, manager
-  if (showCheckboxCol.value) n += 1;
-  if (showRowActions.value) n += 1;
+  let n = 8;
+  if (!showCheckboxCol.value) n -= 1;
+  if (!showRowActions.value) n -= 1;
   return n;
 });
-
-const mobileDetailsRow = ref(null);
-
-function openMobileRowDetails(row) {
-  manageOpenId.value = null;
-  mobileDetailsRow.value = row;
-}
-
-function closeMobileRowDetails() {
-  mobileDetailsRow.value = null;
-}
 
 const loading = ref(true);
 const rows = ref([]);
@@ -1027,17 +1014,9 @@ onUnmounted(() => {
       </div>
 
       <div class="table-responsive staff-table-wrap">
-        <table
-          class="table table-hover align-middle mb-0 staff-data-table staff-data-table--mobile-expand"
-        >
+        <table class="table table-hover align-middle mb-0 staff-data-table">
           <thead class="table-light staff-table-head">
             <tr>
-              <th
-                class="staff-table-head__th staff-table-head__th--expand d-table-cell d-md-none"
-                scope="col"
-              >
-                <span class="visually-hidden">Row details</span>
-              </th>
               <th
                 v-if="showCheckboxCol"
                 class="staff-table-head__th staff-table-head__th--select"
@@ -1089,7 +1068,7 @@ onUnmounted(() => {
                 </button>
               </th>
               <th
-                class="staff-table-head__th staff-table-head__th--sort d-none d-md-table-cell"
+                class="staff-table-head__th staff-table-head__th--sort"
                 scope="col"
                 :aria-sort="thAriaSort('email')"
               >
@@ -1106,14 +1085,14 @@ onUnmounted(() => {
                 </button>
               </th>
               <th
-                class="staff-table-head__th text-center staff-table-head__th--channel d-none d-md-table-cell"
+                class="staff-table-head__th text-center staff-table-head__th--channel"
                 scope="col"
                 aria-sort="none"
               >
                 Channel
               </th>
               <th
-                class="staff-table-head__th staff-table-head__th--sort d-none d-md-table-cell"
+                class="staff-table-head__th staff-table-head__th--sort"
                 scope="col"
                 :aria-sort="thAriaSort('created_at')"
               >
@@ -1131,16 +1110,12 @@ onUnmounted(() => {
                   >
                 </button>
               </th>
-              <th
-                class="staff-table-head__th d-none d-md-table-cell"
-                scope="col"
-                aria-sort="none"
-              >
+              <th class="staff-table-head__th" scope="col" aria-sort="none">
                 Account manager
               </th>
               <th
                 v-if="showRowActions"
-                class="staff-table-head__th staff-actions-col text-center client-accounts-actions-col d-none d-md-table-cell"
+                class="staff-table-head__th staff-actions-col text-center client-accounts-actions-col"
                 scope="col"
                 aria-sort="none"
               >
@@ -1162,12 +1137,6 @@ onUnmounted(() => {
               :key="row.id"
               class="align-middle"
             >
-              <td class="staff-table-cell--expand d-table-cell d-md-none">
-                <StaffTableMobileExpandButton
-                  :aria-label="`Details for ${row.company_name}`"
-                  @click="openMobileRowDetails(row)"
-                />
-              </td>
               <td v-if="showCheckboxCol" class="staff-table-cell--tight-check">
                 <input
                   type="checkbox"
@@ -1230,12 +1199,12 @@ onUnmounted(() => {
                 </span>
               </td>
               <td
-                class="text-body staff-table-cell__meta text-truncate d-none d-md-table-cell"
+                class="text-body staff-table-cell__meta text-truncate"
                 style="max-width: 14rem"
               >
                 {{ row.email }}
               </td>
-              <td class="staff-table-cell--channel text-center d-none d-md-table-cell">
+              <td class="staff-table-cell--channel text-center">
                 <div class="staff-table-cell--channel-inner">
                   <ClientAccountChannelIcons
                     :notify-email="!!row.notify_email"
@@ -1246,20 +1215,17 @@ onUnmounted(() => {
                   />
                 </div>
               </td>
-              <td class="text-body staff-table-cell__meta text-nowrap d-none d-md-table-cell">
+              <td class="text-body staff-table-cell__meta text-nowrap">
                 {{ formatDateUs(accountStartDate(row)) }}
               </td>
               <td
-                class="text-body staff-table-cell__meta text-truncate d-none d-md-table-cell"
+                class="text-body staff-table-cell__meta text-truncate"
                 style="max-width: 12rem"
                 :title="row.account_manager?.name"
               >
                 {{ row.account_manager?.name || "—" }}
               </td>
-              <td
-                v-if="showRowActions"
-                class="staff-actions-cell text-center client-accounts-actions-cell d-none d-md-table-cell"
-              >
+              <td v-if="showRowActions" class="staff-actions-cell text-center client-accounts-actions-cell">
                 <div
                   data-row-actions
                   class="staff-actions-inner staff-actions-inner--single"
@@ -1290,6 +1256,9 @@ onUnmounted(() => {
           </tbody>
         </table>
       </div>
+      <p class="staff-table-mobile-scroll-cue d-md-none" aria-hidden="true">
+        Scroll sideways or swipe to see all columns.
+      </p>
 
       <div
         class="d-flex flex-column flex-lg-row align-items-lg-center justify-content-lg-between gap-3 border-top staff-table-footer"
@@ -1442,82 +1411,6 @@ onUnmounted(() => {
         </nav>
       </div>
     </div>
-
-    <StaffTableRowDetailsModal
-      :open="!!mobileDetailsRow"
-      :title="
-        mobileDetailsRow
-          ? `Details — ${mobileDetailsRow.company_name}`
-          : 'Details'
-      "
-      :subtitle="
-        mobileDetailsRow &&
-        mobileDetailsRow.contact_full_name &&
-        String(mobileDetailsRow.contact_full_name).trim()
-          ? mobileDetailsRow.contact_full_name
-          : ''
-      "
-      @close="closeMobileRowDetails"
-    >
-      <template v-if="mobileDetailsRow">
-        <dl class="staff-table-row-details-dl">
-          <div class="staff-table-row-details-dl__row">
-            <dt>Status</dt>
-            <dd>
-              <span
-                class="badge rounded-pill text-capitalize fw-medium"
-                :class="statusBadgeClass(mobileDetailsRow.status)"
-              >
-                {{ mobileDetailsRow.status }}
-              </span>
-            </dd>
-          </div>
-          <div class="staff-table-row-details-dl__row">
-            <dt>Email</dt>
-            <dd>{{ mobileDetailsRow.email || "—" }}</dd>
-          </div>
-          <div class="staff-table-row-details-dl__row">
-            <dt>Start date</dt>
-            <dd>{{ formatDateUs(accountStartDate(mobileDetailsRow)) }}</dd>
-          </div>
-          <div class="staff-table-row-details-dl__row">
-            <dt>Account manager</dt>
-            <dd>{{ mobileDetailsRow.account_manager?.name || "—" }}</dd>
-          </div>
-          <div class="staff-table-row-details-dl__row">
-            <dt>Channels</dt>
-            <dd class="text-start">
-              <div class="d-inline-flex justify-content-start">
-                <ClientAccountChannelIcons
-                  :notify-email="!!mobileDetailsRow.notify_email"
-                  :telegram-handle="mobileDetailsRow.telegram_handle || ''"
-                  :whatsapp-e164="mobileDetailsRow.whatsapp_e164 || ''"
-                  :slack-channel="mobileDetailsRow.slack_channel || ''"
-                  :in-house-slack="mobileDetailsRow.in_house_slack || ''"
-                />
-              </div>
-            </dd>
-          </div>
-        </dl>
-      </template>
-      <template #footer>
-        <button
-          type="button"
-          class="crm-vx-modal-btn crm-vx-modal-btn--secondary"
-          @click="closeMobileRowDetails"
-        >
-          Close
-        </button>
-        <RouterLink
-          v-if="mobileDetailsRow"
-          :to="`/clients/accounts/${mobileDetailsRow.id}`"
-          class="crm-vx-modal-btn crm-vx-modal-btn--primary text-decoration-none text-center d-inline-flex align-items-center justify-content-center"
-          @click="closeMobileRowDetails"
-        >
-          View Account
-        </RouterLink>
-      </template>
-    </StaffTableRowDetailsModal>
 
     <ConfirmModal
       :open="deleteModalOpen"

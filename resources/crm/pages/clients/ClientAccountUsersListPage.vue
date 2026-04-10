@@ -15,8 +15,6 @@ import ConfirmModal from "../../components/common/ConfirmModal.vue";
 import CrmLoadingSpinner from "../../components/common/CrmLoadingSpinner.vue";
 import CrmSearchableSelect from "../../components/common/CrmSearchableSelect.vue";
 import CrmIconRowActions from "../../components/common/CrmIconRowActions.vue";
-import StaffTableMobileExpandButton from "../../components/common/StaffTableMobileExpandButton.vue";
-import StaffTableRowDetailsModal from "../../components/common/StaffTableRowDetailsModal.vue";
 import ClientAccountUserEditModal from "../../components/clients/ClientAccountUserEditModal.vue";
 import ClientAccountUsersBulkEditModal from "../../components/clients/ClientAccountUsersBulkEditModal.vue";
 import { useToast } from "../../composables/useToast";
@@ -136,21 +134,11 @@ function onDocClick(e) {
 }
 
 const tableColspan = computed(() => {
-  let n = 1 + 5; // mobile expand + status, user, company, role, actions
+  let n = 5;
   if (showCheckboxCol.value) n += 1;
+  if (showRowActions.value) n += 1;
   return n;
 });
-
-const mobileDetailsRow = ref(null);
-
-function openMobileRowDetails(row) {
-  manageOpenId.value = null;
-  mobileDetailsRow.value = row;
-}
-
-function closeMobileRowDetails() {
-  mobileDetailsRow.value = null;
-}
 
 const selectedIds = ref([]);
 const bulkEditOpen = ref(false);
@@ -1113,17 +1101,9 @@ onUnmounted(() => {
       </div>
 
       <div class="table-responsive staff-table-wrap">
-        <table
-          class="table table-hover align-middle mb-0 staff-data-table staff-data-table--mobile-expand"
-        >
+        <table class="table table-hover align-middle mb-0 staff-data-table">
           <thead class="table-light staff-table-head">
             <tr>
-              <th
-                class="staff-table-head__th staff-table-head__th--expand d-table-cell d-md-none"
-                scope="col"
-              >
-                <span class="visually-hidden">Row details</span>
-              </th>
               <th
                 v-if="showCheckboxCol"
                 class="staff-table-head__th staff-table-head__th--select"
@@ -1173,7 +1153,7 @@ onUnmounted(() => {
                 </button>
               </th>
               <th
-                class="staff-table-head__th staff-table-head__th--sort d-none d-md-table-cell"
+                class="staff-table-head__th staff-table-head__th--sort"
                 scope="col"
                 :aria-sort="thAriaSort('company_name')"
               >
@@ -1192,7 +1172,7 @@ onUnmounted(() => {
                 </button>
               </th>
               <th
-                class="staff-table-head__th staff-table-head__th--sort d-none d-md-table-cell"
+                class="staff-table-head__th staff-table-head__th--sort"
                 scope="col"
                 :aria-sort="thAriaSort('account_user_role')"
               >
@@ -1212,7 +1192,7 @@ onUnmounted(() => {
               </th>
               <th
                 v-if="showRowActions"
-                class="staff-table-head__th staff-actions-col text-center d-none d-md-table-cell"
+                class="staff-table-head__th staff-actions-col text-center"
                 scope="col"
               >
                 Actions
@@ -1233,12 +1213,6 @@ onUnmounted(() => {
               :key="row.id"
               class="align-middle"
             >
-              <td class="staff-table-cell--expand d-table-cell d-md-none">
-                <StaffTableMobileExpandButton
-                  :aria-label="`Details for ${row.name}`"
-                  @click="openMobileRowDetails(row)"
-                />
-              </td>
               <td v-if="showCheckboxCol" class="staff-table-cell--tight-check">
                 <input
                   type="checkbox"
@@ -1293,13 +1267,13 @@ onUnmounted(() => {
                 </div>
               </td>
               <td
-                class="text-secondary staff-table-cell__meta text-truncate d-none d-md-table-cell"
+                class="text-secondary staff-table-cell__meta text-truncate"
                 style="max-width: 14rem"
                 :title="row.company_name || undefined"
               >
                 {{ row.company_name || "—" }}
               </td>
-              <td class="d-none d-md-table-cell">
+              <td>
                 <span class="text-body text-truncate staff-table-cell__meta">{{
                   row.account_user_role_label || row.account_user_role || "—"
                 }}</span>
@@ -1309,10 +1283,7 @@ onUnmounted(() => {
                   >Primary</span
                 >
               </td>
-              <td
-                v-if="showRowActions"
-                class="staff-actions-cell text-center d-none d-md-table-cell"
-              >
+              <td v-if="showRowActions" class="staff-actions-cell text-center">
                 <div
                   data-row-actions
                   class="staff-actions-inner staff-actions-inner--single justify-content-center"
@@ -1340,6 +1311,9 @@ onUnmounted(() => {
           </tbody>
         </table>
       </div>
+      <p class="staff-table-mobile-scroll-cue d-md-none" aria-hidden="true">
+        Scroll sideways or swipe to see all columns.
+      </p>
 
       <div
         class="d-flex flex-column flex-lg-row align-items-lg-center justify-content-lg-between gap-3 border-top staff-table-footer"
@@ -1476,67 +1450,6 @@ onUnmounted(() => {
       :busy="bulkEditBusy"
       @apply="onBulkApply"
     />
-
-    <StaffTableRowDetailsModal
-      :open="!!mobileDetailsRow"
-      :title="
-        mobileDetailsRow ? `Details — ${mobileDetailsRow.name}` : 'Details'
-      "
-      :subtitle="mobileDetailsRow?.email || ''"
-      @close="closeMobileRowDetails"
-    >
-      <template v-if="mobileDetailsRow">
-        <dl class="staff-table-row-details-dl">
-          <div class="staff-table-row-details-dl__row">
-            <dt>Status</dt>
-            <dd>
-              <span
-                class="badge rounded-pill text-capitalize fw-medium"
-                :class="statusBadgeClass(mobileDetailsRow.status)"
-              >
-                {{ mobileDetailsRow.status }}
-              </span>
-            </dd>
-          </div>
-          <div class="staff-table-row-details-dl__row">
-            <dt>Company</dt>
-            <dd>{{ mobileDetailsRow.company_name || "—" }}</dd>
-          </div>
-          <div class="staff-table-row-details-dl__row">
-            <dt>Role</dt>
-            <dd>
-              <span class="text-body staff-table-cell__meta">{{
-                mobileDetailsRow.account_user_role_label ||
-                mobileDetailsRow.account_user_role ||
-                "—"
-              }}</span>
-              <span
-                v-if="mobileDetailsRow.is_account_primary"
-                class="badge bg-body-secondary text-body-secondary ms-1"
-                >Primary</span
-              >
-            </dd>
-          </div>
-        </dl>
-      </template>
-      <template #footer>
-        <button
-          type="button"
-          class="crm-vx-modal-btn crm-vx-modal-btn--secondary"
-          @click="closeMobileRowDetails"
-        >
-          Close
-        </button>
-        <RouterLink
-          v-if="mobileDetailsRow"
-          :to="detailRoute(mobileDetailsRow)"
-          class="crm-vx-modal-btn crm-vx-modal-btn--primary text-decoration-none text-center d-inline-flex align-items-center justify-content-center"
-          @click="closeMobileRowDetails"
-        >
-          View User
-        </RouterLink>
-      </template>
-    </StaffTableRowDetailsModal>
 
     <ConfirmModal
       :open="deleteModalOpen"

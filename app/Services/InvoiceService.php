@@ -225,7 +225,7 @@ class InvoiceService
         string $action,
         ?string $fromStatus,
         ?string $toStatus,
-        array $meta,
+        array $meta
     ): void {
         InvoiceHistory::query()->create([
             'invoice_id' => $invoice->id,
@@ -375,7 +375,9 @@ class InvoiceService
         $perPage = (int) ($filters['per_page'] ?? 15);
         $perPage = max(1, min(100, $perPage));
 
-        return $q->paginate($perPage)->through(fn (Invoice $inv) => $this->toListArray($inv));
+        return $q->paginate($perPage)->through(function (Invoice $inv) {
+            return $this->toListArray($inv);
+        });
     }
 
     /**
@@ -408,7 +410,9 @@ class InvoiceService
             ->selectRaw('status, count(*) as c')
             ->groupBy('status')
             ->pluck('c', 'status')
-            ->map(fn ($n) => (int) $n)
+            ->map(function ($n) {
+                return (int) $n;
+            })
             ->all();
 
         return [

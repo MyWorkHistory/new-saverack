@@ -36,10 +36,12 @@ class InvoiceController extends Controller
 
         return response()->json([
             'statuses' => $statuses,
-            'client_accounts' => $clientAccounts->map(static fn (ClientAccount $c) => [
-                'id' => $c->id,
-                'name' => $c->company_name,
-            ])->values()->all(),
+            'client_accounts' => $clientAccounts->map(static function (ClientAccount $c) {
+                return [
+                    'id' => $c->id,
+                    'name' => $c->company_name,
+                ];
+            })->values()->all(),
         ]);
     }
 

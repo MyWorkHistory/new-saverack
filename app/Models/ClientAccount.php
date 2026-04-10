@@ -91,6 +91,11 @@ class ClientAccount extends Model
             ->orderBy('id');
     }
 
+    public function invoices(): HasMany
+    {
+        return $this->hasMany(Invoice::class, 'client_account_id');
+    }
+
     public function contactFullName(): string
     {
         $parts = array_filter([

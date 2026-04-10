@@ -28,6 +28,12 @@ const PAGE_META = {
     rowLabel: "Account users",
     order: 31,
   },
+  billing: {
+    moduleKey: "billing",
+    moduleLabel: "Billing",
+    rowLabel: "Billing",
+    order: 40,
+  },
 };
 
 const props = defineProps({

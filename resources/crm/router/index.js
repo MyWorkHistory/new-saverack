@@ -23,6 +23,9 @@ import ClientAccountsListPage from "../pages/clients/ClientAccountsListPage.vue"
 import ClientAccountDetailPage from "../pages/clients/ClientAccountDetailPage.vue";
 import ClientAccountUsersListPage from "../pages/clients/ClientAccountUsersListPage.vue";
 import ClientAccountUserDetailPage from "../pages/clients/ClientAccountUserDetailPage.vue";
+import BillingSummaryPage from "../pages/billing/BillingSummaryPage.vue";
+import BillingInvoicesListPage from "../pages/billing/BillingInvoicesListPage.vue";
+import BillingInvoiceDetailPage from "../pages/billing/BillingInvoiceDetailPage.vue";
 
 const meta = {
   login: {
@@ -76,6 +79,18 @@ const meta = {
   clientAccountUserDetail: {
     title: "Save Rack | Client user",
     description: "Portal user profile.",
+  },
+  billingSummary: {
+    title: "Save Rack | Billing Summary",
+    description: "Billing overview.",
+  },
+  billingInvoices: {
+    title: "Save Rack | Invoices",
+    description: "Client invoices.",
+  },
+  billingInvoiceDetail: {
+    title: "Save Rack | Invoice",
+    description: "Invoice detail.",
   },
 };
 
@@ -194,6 +209,26 @@ const routes = [
   },
   { path: "/clients", redirect: "/clients/accounts" },
   {
+    path: "/billing/summary",
+    name: "billing-summary",
+    component: BillingSummaryPage,
+    meta: meta.billingSummary,
+  },
+  {
+    path: "/billing/invoices",
+    name: "billing-invoices",
+    component: BillingInvoicesListPage,
+    meta: meta.billingInvoices,
+  },
+  {
+    path: "/billing/invoices/:id",
+    name: "billing-invoice-detail",
+    component: BillingInvoiceDetailPage,
+    props: true,
+    meta: meta.billingInvoiceDetail,
+  },
+  { path: "/billing", redirect: "/billing/summary" },
+  {
     path: "/webmaster",
     name: "webmaster",
     component: WebmasterTasksPage,
@@ -224,6 +259,9 @@ let usersNavCache = null;
 /** Clients module: per-action permissions from /auth/me (see setClientsNavFromUser). */
 let clientsNavCache = null;
 
+/** Billing module: permissions from /auth/me (see setBillingNavFromUser). */
+let billingNavCache = null;
+
 /** True when the signed-in CRM user is an administrator (`crmIsAdmin`); used for permissions routes only. */
 let usersMeIsAdmin = false;
 
@@ -231,6 +269,7 @@ export function clearCrmOwnerCache() {
   webmasterNavCache = null;
   usersNavCache = null;
   clientsNavCache = null;
+  billingNavCache = null;
   usersMeIsAdmin = false;
 }
 
@@ -294,6 +333,29 @@ export function setClientsNavFromUser(user) {
   };
 }
 
+export function setBillingNavFromUser(user) {
+  if (!user) {
+    billingNavCache = null;
+    return;
+  }
+  if (crmIsAdmin(user) || user.is_crm_owner) {
+    billingNavCache = {
+      view: true,
+      create: true,
+      update: true,
+      delete: true,
+    };
+    return;
+  }
+  const k = Array.isArray(user.permission_keys) ? user.permission_keys : [];
+  billingNavCache = {
+    view: k.includes("billing.view"),
+    create: k.includes("billing.create"),
+    update: k.includes("billing.update"),
+    delete: k.includes("billing.delete"),
+  };
+}
+
 async function ensureClientsRouteAccess(path) {
   if (clientsNavCache === null) {
     try {
@@ -301,10 +363,12 @@ async function ensureClientsRouteAccess(path) {
       setUsersNavFromUser(data);
       setClientsNavFromUser(data);
       setWebmasterNavFromUser(data);
+      setBillingNavFromUser(data);
     } catch (e) {
       if (e.response?.status === 401) {
         localStorage.removeItem("auth_token");
         clientsNavCache = null;
+        billingNavCache = null;
       }
       return false;
     }
@@ -322,10 +386,12 @@ async function ensureUsersRouteAccess(path) {
       setUsersNavFromUser(data);
       setClientsNavFromUser(data);
       setWebmasterNavFromUser(data);
+      setBillingNavFromUser(data);
     } catch (e) {
       if (e.response?.status === 401) {
         localStorage.removeItem("auth_token");
         usersNavCache = null;
+        billingNavCache = null;
       }
       return false;
     }
@@ -379,6 +445,8 @@ async function ensureWebmasterRouteAccess() {
     const { data } = await api.get("/auth/me");
     setUsersNavFromUser(data);
     setClientsNavFromUser(data);
+    setWebmasterNavFromUser(data);
+    setBillingNavFromUser(data);
     const ok = userCanWebmaster(data);
     webmasterNavCache = ok;
     return ok;
@@ -391,6 +459,28 @@ async function ensureWebmasterRouteAccess() {
     }
     return false;
   }
+}
+
+async function ensureBillingRouteAccess(path) {
+  if (billingNavCache === null) {
+    try {
+      const { data } = await api.get("/auth/me");
+      setUsersNavFromUser(data);
+      setClientsNavFromUser(data);
+      setWebmasterNavFromUser(data);
+      setBillingNavFromUser(data);
+    } catch (e) {
+      if (e.response?.status === 401) {
+        localStorage.removeItem("auth_token");
+        billingNavCache = null;
+      }
+      return false;
+    }
+  }
+  if (path === "/billing" || path.startsWith("/billing/")) {
+    return billingNavCache.view === true;
+  }
+  return true;
 }
 
 router.beforeEach(async (to) => {
@@ -437,6 +527,16 @@ router.beforeEach(async (to) => {
 
   if (to.path.startsWith("/clients")) {
     const ok = await ensureClientsRouteAccess(to.path);
+    if (!ok) {
+      if (!localStorage.getItem("auth_token")) {
+        return { name: "login", query: { redirect: to.fullPath } };
+      }
+      return { path: "/dashboard" };
+    }
+  }
+
+  if (to.path.startsWith("/billing")) {
+    const ok = await ensureBillingRouteAccess(to.path);
     if (!ok) {
       if (!localStorage.getItem("auth_token")) {
         return { name: "login", query: { redirect: to.fullPath } };

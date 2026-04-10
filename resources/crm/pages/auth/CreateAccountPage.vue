@@ -3,6 +3,7 @@ import { reactive, ref } from "vue";
 import { RouterLink, useRoute, useRouter } from "vue-router";
 import api from "../../services/api";
 import {
+  setBillingNavFromUser,
   setClientsNavFromUser,
   setUsersNavFromUser,
   setWebmasterNavFromUser,
@@ -40,6 +41,7 @@ const submit = async () => {
     setWebmasterNavFromUser(data.user);
     setUsersNavFromUser(data.user);
     setClientsNavFromUser(data.user);
+    setBillingNavFromUser(data.user);
     const r = route.query.redirect;
     const dest =
       typeof r === "string" && r.startsWith("/") ? r : "/dashboard";

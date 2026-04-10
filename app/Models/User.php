@@ -37,6 +37,10 @@ class User extends Authenticatable
         'client_users.create',
         'client_users.update',
         'client_users.delete',
+        'billing.view',
+        'billing.create',
+        'billing.update',
+        'billing.delete',
     ];
 
     /**

@@ -8,6 +8,7 @@ import CrmLoadingSpinner from "./components/common/CrmLoadingSpinner.vue";
 import ToastStack from "./components/common/ToastStack.vue";
 import {
   clearCrmOwnerCache,
+  setBillingNavFromUser,
   setClientsNavFromUser,
   setUsersNavFromUser,
   setWebmasterNavFromUser,
@@ -44,6 +45,7 @@ const loadMe = async () => {
     setWebmasterNavFromUser(data);
     setUsersNavFromUser(data);
     setClientsNavFromUser(data);
+    setBillingNavFromUser(data);
   } catch (e) {
     me.value = null;
     if (e.response?.status === 401) {

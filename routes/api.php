@@ -1,12 +1,14 @@
 <?php
 
 use App\Http\Controllers\Api\AuthController;
+use App\Http\Controllers\Api\BillingSummaryController;
 use App\Http\Controllers\Api\ClientAccountController;
 use App\Http\Controllers\Api\ClientAccountUserController;
 use App\Http\Controllers\Api\ClientStoreController;
 use App\Http\Controllers\Api\DashboardController;
 use App\Http\Controllers\Api\RoleController;
 use App\Http\Controllers\Api\TicketController;
+use App\Http\Controllers\Api\InvoiceController;
 use App\Http\Controllers\Api\UserController;
 use App\Http\Controllers\Api\WebmasterTaskController;
 use Illuminate\Support\Facades\Route;
@@ -29,6 +31,19 @@ Route::middleware('auth:sanctum')->group(function () {
 
     Route::get('/dashboard/summary', [DashboardController::class, 'summary'])
         ->middleware('can:view-dashboard');
+
+    Route::get('/billing/summary', BillingSummaryController::class)
+        ->name('billing.summary');
+
+    Route::get('invoices/meta', [InvoiceController::class, 'meta'])
+        ->name('invoices.meta');
+    Route::post('invoices/{invoice}/send', [InvoiceController::class, 'send'])
+        ->name('invoices.send');
+    Route::post('invoices/{invoice}/record-payment', [InvoiceController::class, 'recordPayment'])
+        ->name('invoices.record-payment');
+    Route::post('invoices/{invoice}/void', [InvoiceController::class, 'void'])
+        ->name('invoices.void');
+    Route::apiResource('invoices', InvoiceController::class);
 
     Route::get('/tickets/meta', [TicketController::class, 'meta']);
     Route::post('/tickets/{ticket}/comments', [TicketController::class, 'storeComment']);

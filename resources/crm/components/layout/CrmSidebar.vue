@@ -34,12 +34,23 @@ const canViewClients = computed(() => {
   return k.includes("clients.view") || k.includes("client_users.view");
 });
 
+const canViewBilling = computed(() => {
+  if (crmIsAdmin(props.user) || props.user?.is_crm_owner) return true;
+  const k = props.user?.permission_keys;
+  if (!Array.isArray(k)) return false;
+  return k.includes("billing.view");
+});
+
 const clientsGroupOpen = ref(route.path.startsWith("/clients"));
+const billingGroupOpen = ref(route.path.startsWith("/billing"));
 watch(
   () => route.path,
   (p) => {
     if (p.startsWith("/clients")) {
       clientsGroupOpen.value = true;
+    }
+    if (p.startsWith("/billing")) {
+      billingGroupOpen.value = true;
     }
   },
 );
@@ -255,6 +266,90 @@ function collapseNav() {
                 stroke-linecap="round"
                 stroke-linejoin="round"
                 d="M2.25 21h19.5m-18-18v18m10.5-18v18m6-13.5V21M6.75 6.75h.75m-.75 3h.75m-.75 3h.75m3-6h1.5m-1.5 3h1.5m-1.5 3h1.5M9 21v-3.375c0-.621.504-1.125 1.125-1.125h3.75c.621 0 1.125.504 1.125 1.125V21"
+              />
+            </svg>
+          </RouterLink>
+        </li>
+        <li v-if="canViewBilling">
+          <template v-if="isExpanded">
+            <div>
+              <button
+                type="button"
+                class="vx-nav-link"
+                :aria-expanded="billingGroupOpen"
+                @click="billingGroupOpen = !billingGroupOpen"
+              >
+                <svg
+                  fill="none"
+                  viewBox="0 0 24 24"
+                  stroke="currentColor"
+                  stroke-width="1.5"
+                >
+                  <path
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                    d="M19.5 14.25v-2.625a3.375 3.375 0 0 0-3.375-3.375h-1.5A1.125 1.125 0 0 1 13.5 7.125v-1.5a3.375 3.375 0 0 0-3.375-3.375H8.25m0 12.75h7.5m-7.5 3H12M10.5 2.25H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 0 0-9-9Z"
+                  />
+                </svg>
+                <span class="text-truncate">Billing</span>
+                <svg
+                  class="ms-auto flex-shrink-0 transition"
+                  :class="billingGroupOpen ? 'rotate-180' : ''"
+                  style="width: 1rem; height: 1rem"
+                  fill="none"
+                  viewBox="0 0 24 24"
+                  stroke="currentColor"
+                  stroke-width="1.5"
+                  aria-hidden="true"
+                >
+                  <path
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                    d="M19 9l-7 7-7-7"
+                  />
+                </svg>
+              </button>
+              <ul v-show="billingGroupOpen" class="list-unstyled mb-0 mt-1">
+                <li>
+                  <RouterLink
+                    to="/billing/summary"
+                    class="vx-nav-link vx-nav-sublink"
+                    :class="{ 'vx-nav-link--active': navActive('billing-summary') }"
+                    @click="closeMobile"
+                  >
+                    Summary
+                  </RouterLink>
+                </li>
+                <li>
+                  <RouterLink
+                    to="/billing/invoices"
+                    class="vx-nav-link vx-nav-sublink"
+                    :class="{ 'vx-nav-link--active': navActive('billing-invoices') }"
+                    @click="closeMobile"
+                  >
+                    Invoices
+                  </RouterLink>
+                </li>
+              </ul>
+            </div>
+          </template>
+          <RouterLink
+            v-else
+            to="/billing/summary"
+            class="vx-nav-link"
+            title="Billing"
+            @click="closeMobile"
+          >
+            <svg
+              fill="none"
+              viewBox="0 0 24 24"
+              stroke="currentColor"
+              stroke-width="1.5"
+            >
+              <path
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                d="M19.5 14.25v-2.625a3.375 3.375 0 0 0-3.375-3.375h-1.5A1.125 1.125 0 0 1 13.5 7.125v-1.5a3.375 3.375 0 0 0-3.375-3.375H8.25m0 12.75h7.5m-7.5 3H12M10.5 2.25H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 0 0-9-9Z"
               />
             </svg>
           </RouterLink>

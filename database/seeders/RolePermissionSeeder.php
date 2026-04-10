@@ -11,6 +11,34 @@ use Illuminate\Support\Facades\Hash;
 
 class RolePermissionSeeder extends Seeder
 {
+    /**
+     * Create/update CRM admin from ADMIN_EMAIL / ADMIN_PASSWORD (default: on for non-production only).
+     * Set SEED_ENV_ADMIN_USER=true on first production deploy if the database has no users yet.
+     */
+    private function shouldSeedEnvAdminUser(): bool
+    {
+        $v = env('SEED_ENV_ADMIN_USER');
+        if ($v === null) {
+            return ! app()->environment('production');
+        }
+
+        return filter_var($v, FILTER_VALIDATE_BOOLEAN);
+    }
+
+    /**
+     * Create demo staff1@…staff3@ accounts (default: on for non-production only).
+     * Set SEED_DEMO_STAFF_USERS=true in .env for local dev; keep false on production.
+     */
+    private function shouldSeedDemoStaffUsers(): bool
+    {
+        $v = env('SEED_DEMO_STAFF_USERS');
+        if ($v === null) {
+            return ! app()->environment('production');
+        }
+
+        return filter_var($v, FILTER_VALIDATE_BOOLEAN);
+    }
+
     public function run(): void
     {
         $permissions = collect([
@@ -40,6 +68,10 @@ class RolePermissionSeeder extends Seeder
             ['key' => 'stores.create', 'label' => 'Create client stores', 'module' => 'stores'],
             ['key' => 'stores.update', 'label' => 'Update client stores', 'module' => 'stores'],
             ['key' => 'stores.delete', 'label' => 'Delete client stores', 'module' => 'stores'],
+            ['key' => 'billing.view', 'label' => 'View billing', 'module' => 'billing'],
+            ['key' => 'billing.create', 'label' => 'Create invoices', 'module' => 'billing'],
+            ['key' => 'billing.update', 'label' => 'Update invoices', 'module' => 'billing'],
+            ['key' => 'billing.delete', 'label' => 'Delete draft invoices', 'module' => 'billing'],
         ])->map(function (array $p) {
             return Permission::query()->firstOrCreate(
                 ['key' => $p['key']],
@@ -78,40 +110,44 @@ class RolePermissionSeeder extends Seeder
             ])->pluck('id')
         );
 
-        $email = env('ADMIN_EMAIL', 'audi@saverack.com');
-        $password = env('ADMIN_PASSWORD', 'J0rdan$123');
-        $name = env('ADMIN_NAME', 'Audi Kowalski');
+        if ($this->shouldSeedEnvAdminUser()) {
+            $email = env('ADMIN_EMAIL', 'audi@saverack.com');
+            $password = env('ADMIN_PASSWORD', 'J0rdan$123');
+            $name = env('ADMIN_NAME', 'Audi Kowalski');
 
-        $adminUser = User::query()->updateOrCreate(
-            ['email' => $email],
-            [
-                'name' => $name,
-                'password' => Hash::make($password),
-                'status' => 'active',
-            ]
-        );
-
-        $adminUser->roles()->sync([$admin->id]);
-        UserProfile::query()->firstOrCreate(['user_id' => $adminUser->id]);
-
-        $defaultStaffUsers = [
-            ['name' => 'Staff One', 'email' => 'staff1@saverack.com', 'password' => 'Staff#1234'],
-            ['name' => 'Staff Two', 'email' => 'staff2@saverack.com', 'password' => 'Staff#1234'],
-            ['name' => 'Staff Three', 'email' => 'staff3@saverack.com', 'password' => 'Staff#1234'],
-        ];
-
-        foreach ($defaultStaffUsers as $staffUserData) {
-            $staffUser = User::query()->updateOrCreate(
-                ['email' => $staffUserData['email']],
+            $adminUser = User::query()->updateOrCreate(
+                ['email' => $email],
                 [
-                    'name' => $staffUserData['name'],
-                    'password' => Hash::make($staffUserData['password']),
+                    'name' => $name,
+                    'password' => Hash::make($password),
                     'status' => 'active',
                 ]
             );
 
-            $staffUser->roles()->sync([$staff->id]);
-            UserProfile::query()->firstOrCreate(['user_id' => $staffUser->id]);
+            $adminUser->roles()->sync([$admin->id]);
+            UserProfile::query()->firstOrCreate(['user_id' => $adminUser->id]);
+        }
+
+        if ($this->shouldSeedDemoStaffUsers()) {
+            $defaultStaffUsers = [
+                ['name' => 'Staff One', 'email' => 'staff1@saverack.com', 'password' => 'Staff#1234'],
+                ['name' => 'Staff Two', 'email' => 'staff2@saverack.com', 'password' => 'Staff#1234'],
+                ['name' => 'Staff Three', 'email' => 'staff3@saverack.com', 'password' => 'Staff#1234'],
+            ];
+
+            foreach ($defaultStaffUsers as $staffUserData) {
+                $staffUser = User::query()->updateOrCreate(
+                    ['email' => $staffUserData['email']],
+                    [
+                        'name' => $staffUserData['name'],
+                        'password' => Hash::make($staffUserData['password']),
+                        'status' => 'active',
+                    ]
+                );
+
+                $staffUser->roles()->sync([$staff->id]);
+                UserProfile::query()->firstOrCreate(['user_id' => $staffUser->id]);
+            }
         }
     }
 }

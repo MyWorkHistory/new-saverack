@@ -66,6 +66,10 @@ class Permission extends Model
             'client_users.create' => ['label' => 'Create client portal users', 'module' => 'client_users'],
             'client_users.update' => ['label' => 'Update client portal users', 'module' => 'client_users'],
             'client_users.delete' => ['label' => 'Delete client portal users', 'module' => 'client_users'],
+            'billing.view' => ['label' => 'View billing', 'module' => 'billing'],
+            'billing.create' => ['label' => 'Create invoices', 'module' => 'billing'],
+            'billing.update' => ['label' => 'Update invoices', 'module' => 'billing'],
+            'billing.delete' => ['label' => 'Delete draft invoices', 'module' => 'billing'],
         ];
 
         foreach (array_unique($keys) as $key) {

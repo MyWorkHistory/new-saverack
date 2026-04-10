@@ -38,11 +38,6 @@ return new class extends Migration
 
     public function down(): void
     {
-        Permission::query()->whereIn('key', [
-            'stores.view',
-            'stores.create',
-            'stores.update',
-            'stores.delete',
-        ])->delete();
+        // Do not delete permission rows: cascades on `permission_role` would strip role pivots.
     }
 };

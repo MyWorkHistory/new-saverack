@@ -121,6 +121,9 @@ const filterMenuOpen = ref(false);
 const addDrawerOpen = ref(false);
 const bulkEditOpen = ref(false);
 const bulkEditBusy = ref(false);
+const bulkMenuOpen = ref(false);
+const bulkDeleteOpen = ref(false);
+const bulkDeleteBusy = ref(false);
 const selectedIds = ref([]);
 const userEditModalOpen = ref(false);
 const userEditModalUserId = ref("");
@@ -443,6 +446,49 @@ const canDeleteRow = (user) => {
   return !(currentUser.value && user.id === currentUser.value.id);
 };
 
+const selectedDeletableIds = computed(() =>
+  selectedIds.value.filter((id) => {
+    const u = rows.value.find((r) => r.id === id);
+    return u && canDeleteRow(u);
+  }),
+);
+
+const bulkDeleteMessage = computed(() => {
+  const n = selectedDeletableIds.value.length;
+  if (n < 1) return "";
+  return `Delete ${n} user${n === 1 ? "" : "s"}? This cannot be undone.`;
+});
+
+function openBulkDelete() {
+  if (!selectedDeletableIds.value.length) {
+    toast.error("Select one or more users you can delete.");
+    return;
+  }
+  bulkDeleteOpen.value = true;
+}
+
+function closeBulkDelete() {
+  if (bulkDeleteBusy.value) return;
+  bulkDeleteOpen.value = false;
+}
+
+async function confirmBulkDelete() {
+  const ids = selectedDeletableIds.value;
+  if (!ids.length) return;
+  bulkDeleteBusy.value = true;
+  try {
+    await api.delete("/users/bulk", { data: { user_ids: ids } });
+    toast.success("Users deleted.");
+    bulkDeleteOpen.value = false;
+    selectedIds.value = [];
+    await refreshList();
+  } catch (e) {
+    toast.errorFrom(e, "Could not delete users.");
+  } finally {
+    bulkDeleteBusy.value = false;
+  }
+}
+
 const openDeleteModal = (user) => {
   manageOpenId.value = null;
   deleteError.value = "";
@@ -552,6 +598,9 @@ function onDocClick(e) {
   }
   if (!e.target.closest("[data-toolbar-filter]")) {
     filterMenuOpen.value = false;
+  }
+  if (!e.target.closest("[data-toolbar-bulk]")) {
+    bulkMenuOpen.value = false;
   }
   if (!e.target.closest("[data-row-actions]")) {
     manageOpenId.value = null;
@@ -717,7 +766,10 @@ onUnmounted(() => {
               aria-haspopup="true"
               aria-controls="staff-filter-panel"
               :disabled="loading"
-              @click.stop="filterMenuOpen = !filterMenuOpen"
+              @click.stop="
+                bulkMenuOpen = false;
+                filterMenuOpen = !filterMenuOpen;
+              "
             >
               <svg
                 width="18"
@@ -734,7 +786,7 @@ onUnmounted(() => {
                   d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2.586a1 1 0 01-.293.707l-6.414 6.414a1 1 0 00-.293.707V17l-4 4v-6.586a1 1 0 00-.293-.707L3.293 7.293A1 1 0 013 6.586V4z"
                 />
               </svg>
-              <span class="d-none d-sm-inline">Filters</span>
+              <span class="staff-toolbar-filter-text">Filters</span>
             </button>
             <div
               v-if="filterMenuOpen"
@@ -776,7 +828,7 @@ onUnmounted(() => {
             </div>
           </div>
           <div
-            class="d-flex flex-wrap align-items-center gap-2 gap-md-3 ms-md-auto flex-shrink-0"
+            class="staff-toolbar-row-actions d-flex flex-wrap align-items-center gap-2 gap-md-3 ms-md-auto flex-shrink-0"
           >
             <div class="position-relative" data-export-root>
               <button
@@ -784,7 +836,10 @@ onUnmounted(() => {
                 class="btn btn-outline-secondary staff-toolbar-btn d-inline-flex align-items-center gap-2"
                 :aria-expanded="exportOpen"
                 :disabled="loading || exportBusy"
-                @click.stop="exportOpen = !exportOpen"
+                @click.stop="
+                  bulkMenuOpen = false;
+                  exportOpen = !exportOpen;
+                "
               >
                 <svg
                   width="18"
@@ -825,14 +880,109 @@ onUnmounted(() => {
                 </button>
               </div>
             </div>
+            <div
+              v-if="canUpdateUsers || canDeleteUsers"
+              class="d-none d-md-flex align-items-center gap-2 flex-shrink-0"
+            >
+              <button
+                v-if="canUpdateUsers"
+                type="button"
+                class="btn btn-outline-secondary staff-toolbar-btn"
+                :disabled="!selectedIds.length || loading"
+                @click="openBulkEdit"
+              >
+                Bulk Edit
+              </button>
+              <button
+                v-if="canDeleteUsers"
+                type="button"
+                class="btn btn-outline-danger staff-toolbar-btn"
+                :disabled="!selectedDeletableIds.length || loading"
+                @click="openBulkDelete"
+              >
+                Bulk Delete
+              </button>
+            </div>
+            <div
+              v-if="canUpdateUsers && canDeleteUsers"
+              class="d-md-none position-relative flex-shrink-0"
+              data-toolbar-bulk
+            >
+              <button
+                type="button"
+                class="btn btn-outline-secondary staff-toolbar-btn d-inline-flex align-items-center gap-1"
+                :aria-expanded="bulkMenuOpen"
+                aria-haspopup="true"
+                :disabled="loading"
+                @click.stop="
+                  exportOpen = false;
+                  filterMenuOpen = false;
+                  bulkMenuOpen = !bulkMenuOpen;
+                "
+              >
+                Bulk Actions
+                <svg
+                  width="14"
+                  height="14"
+                  fill="currentColor"
+                  viewBox="0 0 24 24"
+                  class="text-secondary"
+                  aria-hidden="true"
+                >
+                  <path d="M7 10l5 5 5-5H7z" />
+                </svg>
+              </button>
+              <div
+                v-if="bulkMenuOpen"
+                class="dropdown-menu show shadow border px-0 py-1 mt-1 staff-toolbar-bulk-dropdown"
+                style="right: 0; left: auto"
+                role="menu"
+                aria-label="Bulk actions"
+                @click.stop
+              >
+                <button
+                  type="button"
+                  class="dropdown-item small"
+                  role="menuitem"
+                  :disabled="!selectedIds.length || loading"
+                  @click="
+                    bulkMenuOpen = false;
+                    openBulkEdit();
+                  "
+                >
+                  Bulk Edit
+                </button>
+                <button
+                  type="button"
+                  class="dropdown-item small text-danger"
+                  role="menuitem"
+                  :disabled="!selectedDeletableIds.length || loading"
+                  @click="
+                    bulkMenuOpen = false;
+                    openBulkDelete();
+                  "
+                >
+                  Bulk Delete
+                </button>
+              </div>
+            </div>
             <button
-              v-if="canUpdateUsers"
+              v-if="canUpdateUsers && !canDeleteUsers"
               type="button"
-              class="btn btn-outline-secondary staff-toolbar-btn"
+              class="btn btn-outline-secondary staff-toolbar-btn d-md-none flex-shrink-0"
               :disabled="!selectedIds.length || loading"
               @click="openBulkEdit"
             >
-              Bulk edit
+              Bulk Edit
+            </button>
+            <button
+              v-if="canDeleteUsers && !canUpdateUsers"
+              type="button"
+              class="btn btn-outline-danger staff-toolbar-btn d-md-none flex-shrink-0"
+              :disabled="!selectedDeletableIds.length || loading"
+              @click="openBulkDelete"
+            >
+              Bulk Delete
             </button>
           </div>
         </div>
@@ -1259,6 +1409,19 @@ onUnmounted(() => {
       :busy="deleteBusy"
       @close="closeDeleteModal"
       @confirm="confirmDelete"
+    />
+
+    <ConfirmModal
+      :open="bulkDeleteOpen"
+      title="Delete Users?"
+      subtitle="This action is permanent and may be audited."
+      :message="bulkDeleteMessage"
+      confirm-label="Delete"
+      cancel-label="Cancel"
+      :busy="bulkDeleteBusy"
+      danger
+      @close="closeBulkDelete"
+      @confirm="confirmBulkDelete"
     />
 
     <Teleport to="body">

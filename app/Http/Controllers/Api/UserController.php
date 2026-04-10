@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use App\Http\Requests\UserBulkDeleteRequest;
 use App\Http\Requests\UserBulkUpdateRequest;
 use App\Http\Requests\UserPermissionsUpdateRequest;
 use App\Http\Requests\UserStoreRequest;
@@ -57,6 +58,34 @@ class UserController extends Controller
         $updated = $this->userService->bulkUpdateStatusAndRoles($ids, $status, $roleIds, $request->user());
 
         return response()->json(['message' => 'Users updated.', 'updated' => $updated]);
+    }
+
+    public function bulkDestroy(UserBulkDeleteRequest $request): JsonResponse
+    {
+        $ids = array_values(array_unique(array_map('intval', $request->validated()['user_ids'])));
+        $actor = $request->user();
+        $deleted = 0;
+
+        foreach ($ids as $id) {
+            $user = User::query()->find($id);
+            if ($user === null) {
+                continue;
+            }
+            if ($user->client_account_id !== null) {
+                continue;
+            }
+            if ($actor !== null && $actor->id === $user->id) {
+                continue;
+            }
+            $this->authorize('delete', $user);
+            $this->userService->delete($user, $actor);
+            $deleted++;
+        }
+
+        return response()->json([
+            'message' => $deleted > 0 ? 'Users deleted.' : 'No users deleted.',
+            'deleted' => $deleted,
+        ]);
     }
 
     public function index(Request $request): JsonResponse

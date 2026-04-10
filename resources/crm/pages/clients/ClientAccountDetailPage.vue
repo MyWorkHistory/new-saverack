@@ -78,6 +78,7 @@ const selectedStoreIds = ref([]);
 const storeBulkEditOpen = ref(false);
 const storeBulkEditBusy = ref(false);
 const storeFilterMenuOpen = ref(false);
+const storeBulkMenuOpen = ref(false);
 const storeBulkDeleteOpen = ref(false);
 const storeBulkDeleteBusy = ref(false);
 
@@ -501,6 +502,14 @@ function onDocumentClickCloseNoteMenu(e) {
     !t.closest("[data-store-toolbar-filter]")
   ) {
     storeFilterMenuOpen.value = false;
+  }
+
+  if (
+    storeBulkMenuOpen.value &&
+    t instanceof Element &&
+    !t.closest("[data-store-toolbar-bulk]")
+  ) {
+    storeBulkMenuOpen.value = false;
   }
 
   if (storeMenuOpenId.value !== null) {
@@ -1564,7 +1573,10 @@ onUnmounted(() => {
                         aria-haspopup="true"
                         aria-controls="store-filter-panel"
                         :disabled="storesLoading"
-                        @click.stop="storeFilterMenuOpen = !storeFilterMenuOpen"
+                        @click.stop="
+                          storeBulkMenuOpen = false;
+                          storeFilterMenuOpen = !storeFilterMenuOpen;
+                        "
                       >
                         <svg
                           width="18"
@@ -1581,7 +1593,7 @@ onUnmounted(() => {
                             d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2.586a1 1 0 01-.293.707l-6.414 6.414a1 1 0 00-.293.707V17l-4 4v-6.586a1 1 0 00-.293-.707L3.293 7.293A1 1 0 013 6.586V4z"
                           />
                         </svg>
-                        <span class="d-none d-sm-inline">Filters</span>
+                        <span class="staff-toolbar-filter-text">Filters</span>
                       </button>
                       <div
                         v-if="storeFilterMenuOpen"
@@ -1624,29 +1636,114 @@ onUnmounted(() => {
                       </div>
                     </div>
                     <div
-                      class="d-flex flex-wrap align-items-center gap-2 gap-md-3 ms-md-auto flex-shrink-0"
+                      class="staff-toolbar-row-actions d-flex flex-wrap align-items-center gap-2 gap-md-3 ms-md-auto flex-shrink-0"
                     >
                       <button
                         v-if="canCreateStore"
                         type="button"
-                        class="btn btn-primary staff-page-primary btn-sm"
+                        class="btn btn-primary staff-page-primary staff-toolbar-btn"
                         @click="addStoreOpen = true"
                       >
                         Add Store
                       </button>
+                      <div
+                        v-if="canUpdateStore || canDeleteStore"
+                        class="d-none d-md-flex align-items-center gap-2 flex-shrink-0"
+                      >
+                        <button
+                          v-if="canUpdateStore"
+                          type="button"
+                          class="btn btn-outline-secondary staff-toolbar-btn"
+                          :disabled="!selectedStoreIds.length || storesLoading"
+                          @click="openStoreBulkEdit"
+                        >
+                          Bulk Edit
+                        </button>
+                        <button
+                          v-if="canDeleteStore"
+                          type="button"
+                          class="btn btn-outline-danger staff-toolbar-btn"
+                          :disabled="!selectedStoreIds.length || storesLoading"
+                          @click="openStoreBulkDelete"
+                        >
+                          Bulk Delete
+                        </button>
+                      </div>
+                      <div
+                        v-if="canUpdateStore && canDeleteStore"
+                        class="d-md-none position-relative flex-shrink-0"
+                        data-store-toolbar-bulk
+                      >
+                        <button
+                          type="button"
+                          class="btn btn-outline-secondary staff-toolbar-btn d-inline-flex align-items-center gap-1"
+                          :aria-expanded="storeBulkMenuOpen"
+                          aria-haspopup="true"
+                          :disabled="storesLoading"
+                          @click.stop="
+                            storeFilterMenuOpen = false;
+                            storeBulkMenuOpen = !storeBulkMenuOpen;
+                          "
+                        >
+                          Bulk Actions
+                          <svg
+                            width="14"
+                            height="14"
+                            fill="currentColor"
+                            viewBox="0 0 24 24"
+                            class="text-secondary"
+                            aria-hidden="true"
+                          >
+                            <path d="M7 10l5 5 5-5H7z" />
+                          </svg>
+                        </button>
+                        <div
+                          v-if="storeBulkMenuOpen"
+                          class="dropdown-menu show shadow border px-0 py-1 mt-1 staff-toolbar-bulk-dropdown"
+                          style="right: 0; left: auto"
+                          role="menu"
+                          aria-label="Bulk actions"
+                          @click.stop
+                        >
+                          <button
+                            type="button"
+                            class="dropdown-item small"
+                            role="menuitem"
+                            :disabled="!selectedStoreIds.length || storesLoading"
+                            @click="
+                              storeBulkMenuOpen = false;
+                              openStoreBulkEdit();
+                            "
+                          >
+                            Bulk Edit
+                          </button>
+                          <button
+                            type="button"
+                            class="dropdown-item small text-danger"
+                            role="menuitem"
+                            :disabled="!selectedStoreIds.length || storesLoading"
+                            @click="
+                              storeBulkMenuOpen = false;
+                              openStoreBulkDelete();
+                            "
+                          >
+                            Bulk Delete
+                          </button>
+                        </div>
+                      </div>
                       <button
-                        v-if="canUpdateStore"
+                        v-if="canUpdateStore && !canDeleteStore"
                         type="button"
-                        class="btn btn-outline-secondary staff-toolbar-btn"
+                        class="btn btn-outline-secondary staff-toolbar-btn d-md-none flex-shrink-0"
                         :disabled="!selectedStoreIds.length || storesLoading"
                         @click="openStoreBulkEdit"
                       >
                         Bulk Edit
                       </button>
                       <button
-                        v-if="canDeleteStore"
+                        v-if="canDeleteStore && !canUpdateStore"
                         type="button"
-                        class="btn btn-outline-danger staff-toolbar-btn"
+                        class="btn btn-outline-danger staff-toolbar-btn d-md-none flex-shrink-0"
                         :disabled="!selectedStoreIds.length || storesLoading"
                         @click="openStoreBulkDelete"
                       >

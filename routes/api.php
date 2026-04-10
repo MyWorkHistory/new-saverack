@@ -47,6 +47,8 @@ Route::middleware('auth:sanctum')->group(function () {
         ->name('users.avatar.destroy');
     Route::patch('users/bulk', [UserController::class, 'bulkUpdate'])
         ->name('users.bulk-update');
+    Route::delete('users/bulk', [UserController::class, 'bulkDestroy'])
+        ->name('users.bulk-destroy');
     Route::get('users/permissions/meta', [UserController::class, 'permissionsMeta'])
         ->name('users.permissions.meta');
     Route::get('users/export-csv', [UserController::class, 'exportCsv'])

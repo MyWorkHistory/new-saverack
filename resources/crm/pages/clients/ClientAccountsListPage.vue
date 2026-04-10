@@ -89,6 +89,7 @@ const manageMenuRow = computed(
 const addDrawerOpen = ref(false);
 const filterMenuOpen = ref(false);
 const exportOpen = ref(false);
+const bulkMenuOpen = ref(false);
 const exportBusy = ref(false);
 const bulkEditOpen = ref(false);
 const bulkEditBusy = ref(false);
@@ -634,6 +635,9 @@ function onDocClick(e) {
   if (!e.target.closest("[data-toolbar-filter]")) {
     filterMenuOpen.value = false;
   }
+  if (!e.target.closest("[data-toolbar-bulk]")) {
+    bulkMenuOpen.value = false;
+  }
   if (!e.target.closest("[data-row-actions]")) {
     manageOpenId.value = null;
     manageMenuSubMode.value = "main";
@@ -846,7 +850,10 @@ onUnmounted(() => {
               aria-haspopup="true"
               aria-controls="ca-filter-panel"
               :disabled="loading"
-              @click.stop="filterMenuOpen = !filterMenuOpen"
+              @click.stop="
+                bulkMenuOpen = false;
+                filterMenuOpen = !filterMenuOpen;
+              "
             >
               <svg
                 width="18"
@@ -863,7 +870,7 @@ onUnmounted(() => {
                   d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2.586a1 1 0 01-.293.707l-6.414 6.414a1 1 0 00-.293.707V17l-4 4v-6.586a1 1 0 00-.293-.707L3.293 7.293A1 1 0 013 6.586V4z"
                 />
               </svg>
-              <span class="d-none d-sm-inline">Filters</span>
+              <span class="staff-toolbar-filter-text">Filters</span>
             </button>
             <div
               v-if="filterMenuOpen"
@@ -919,7 +926,7 @@ onUnmounted(() => {
             </div>
           </div>
           <div
-            class="d-flex flex-wrap align-items-center gap-2 gap-md-3 ms-md-auto flex-shrink-0"
+            class="staff-toolbar-row-actions d-flex flex-wrap align-items-center gap-2 gap-md-3 ms-md-auto flex-shrink-0"
           >
             <div class="position-relative" data-export-root>
               <button
@@ -927,7 +934,10 @@ onUnmounted(() => {
                 class="btn btn-outline-secondary staff-toolbar-btn d-inline-flex align-items-center gap-2"
                 :aria-expanded="exportOpen"
                 :disabled="loading || exportBusy"
-                @click.stop="exportOpen = !exportOpen"
+                @click.stop="
+                  bulkMenuOpen = false;
+                  exportOpen = !exportOpen;
+                "
               >
                 <svg
                   width="18"
@@ -991,19 +1001,105 @@ onUnmounted(() => {
                 />
               </svg>
             </button>
+            <div
+              v-if="canUpdate || canDelete"
+              class="d-none d-md-flex align-items-center gap-2 flex-shrink-0"
+            >
+              <button
+                v-if="canUpdate"
+                type="button"
+                class="btn btn-outline-secondary staff-toolbar-btn"
+                :disabled="!selectedIds.length || loading"
+                @click="openBulkEdit"
+              >
+                Bulk Edit
+              </button>
+              <button
+                v-if="canDelete"
+                type="button"
+                class="btn btn-outline-danger staff-toolbar-btn"
+                :disabled="!selectedIds.length || loading"
+                @click="openBulkDelete"
+              >
+                Bulk Delete
+              </button>
+            </div>
+            <div
+              v-if="canUpdate && canDelete"
+              class="d-md-none position-relative flex-shrink-0"
+              data-toolbar-bulk
+            >
+              <button
+                type="button"
+                class="btn btn-outline-secondary staff-toolbar-btn d-inline-flex align-items-center gap-1"
+                :aria-expanded="bulkMenuOpen"
+                aria-haspopup="true"
+                :disabled="loading"
+                @click.stop="
+                  exportOpen = false;
+                  filterMenuOpen = false;
+                  bulkMenuOpen = !bulkMenuOpen;
+                "
+              >
+                Bulk Actions
+                <svg
+                  width="14"
+                  height="14"
+                  fill="currentColor"
+                  viewBox="0 0 24 24"
+                  class="text-secondary"
+                  aria-hidden="true"
+                >
+                  <path d="M7 10l5 5 5-5H7z" />
+                </svg>
+              </button>
+              <div
+                v-if="bulkMenuOpen"
+                class="dropdown-menu show shadow border px-0 py-1 mt-1 staff-toolbar-bulk-dropdown"
+                style="right: 0; left: auto"
+                role="menu"
+                aria-label="Bulk actions"
+                @click.stop
+              >
+                <button
+                  type="button"
+                  class="dropdown-item small"
+                  role="menuitem"
+                  :disabled="!selectedIds.length || loading"
+                  @click="
+                    bulkMenuOpen = false;
+                    openBulkEdit();
+                  "
+                >
+                  Bulk Edit
+                </button>
+                <button
+                  type="button"
+                  class="dropdown-item small text-danger"
+                  role="menuitem"
+                  :disabled="!selectedIds.length || loading"
+                  @click="
+                    bulkMenuOpen = false;
+                    openBulkDelete();
+                  "
+                >
+                  Bulk Delete
+                </button>
+              </div>
+            </div>
             <button
-              v-if="canUpdate"
+              v-if="canUpdate && !canDelete"
               type="button"
-              class="btn btn-outline-secondary staff-toolbar-btn"
+              class="btn btn-outline-secondary staff-toolbar-btn d-md-none flex-shrink-0"
               :disabled="!selectedIds.length || loading"
               @click="openBulkEdit"
             >
               Bulk Edit
             </button>
             <button
-              v-if="canDelete"
+              v-if="canDelete && !canUpdate"
               type="button"
-              class="btn btn-outline-danger staff-toolbar-btn"
+              class="btn btn-outline-danger staff-toolbar-btn d-md-none flex-shrink-0"
               :disabled="!selectedIds.length || loading"
               @click="openBulkDelete"
             >

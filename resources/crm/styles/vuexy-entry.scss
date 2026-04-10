@@ -93,6 +93,7 @@ body {
 
 .crm-main-wrap {
   min-height: 100vh;
+  min-width: 0;
   transition: margin-inline-start 0.25s ease;
   margin-inline-start: 0;
 }
@@ -113,10 +114,12 @@ body {
   z-index: 1030;
 }
 
+/* min-width:0 so wide tables scroll inside .staff-table-wrap instead of blowing out the flex column */
 .crm-content {
   max-width: 1440px;
   margin-inline: auto;
   padding: 0.75rem 1rem 1.5rem;
+  min-width: 0;
 }
 
 @media (min-width: 768px) {
@@ -133,6 +136,7 @@ body {
   width: 100%;
   margin-inline: 0;
   padding: 0.5rem 0.875rem 1.25rem;
+  min-width: 0;
 }
 
 @media (min-width: 768px) {

@@ -11,6 +11,8 @@ import ClientStoreEditModal from "../../components/clients/ClientStoreEditModal.
 import ClientStoresBulkEditModal from "../../components/clients/ClientStoresBulkEditModal.vue";
 import ClientAccountFeesPanel from "../../components/clients/ClientAccountFeesPanel.vue";
 import CrmIconRowActions from "../../components/common/CrmIconRowActions.vue";
+import StaffTableMobileExpandButton from "../../components/common/StaffTableMobileExpandButton.vue";
+import StaffTableRowDetailsModal from "../../components/common/StaffTableRowDetailsModal.vue";
 import { DEFAULT_PER_PAGE } from "../../constants/pagination";
 import {
   inHouseSlackDisplayLabel,
@@ -638,7 +640,7 @@ watch(
 const showStoreCheckboxCol = computed(() => canUpdateStore.value);
 
 const storeTableColspan = computed(() => {
-  let n = 3;
+  let n = 1 + 3; // mobile expand + store name, status, marketplace
   if (canUpdateStore.value || canDeleteStore.value) {
     n += 1;
   }
@@ -647,6 +649,17 @@ const storeTableColspan = computed(() => {
   }
   return n;
 });
+
+const storeMobileDetailsRow = ref(null);
+
+function openMobileStoreDetails(row) {
+  storeMenuOpenId.value = null;
+  storeMobileDetailsRow.value = row;
+}
+
+function closeMobileStoreDetails() {
+  storeMobileDetailsRow.value = null;
+}
 
 const filteredStores = computed(() => {
   let list = stores.value;
@@ -877,6 +890,14 @@ function openEditStore(row) {
   editStoreOpen.value = true;
 }
 
+function openEditStoreFromMobileDetails() {
+  const row = storeMobileDetailsRow.value;
+  closeMobileStoreDetails();
+  if (row) {
+    openEditStore(row);
+  }
+}
+
 function closeStoreDelete() {
   if (storeDeleteBusy.value) return;
   storeDeleteTarget.value = null;
@@ -982,6 +1003,70 @@ onUnmounted(() => {
       :store="editingStore"
       @saved="refreshStoresAndAccountCounts"
     />
+    <StaffTableRowDetailsModal
+      :open="!!storeMobileDetailsRow"
+      :title="
+        storeMobileDetailsRow
+          ? `Details — ${storeMobileDetailsRow.name}`
+          : 'Details'
+      "
+      @close="closeMobileStoreDetails"
+    >
+      <template v-if="storeMobileDetailsRow">
+        <dl class="staff-table-row-details-dl">
+          <div class="staff-table-row-details-dl__row">
+            <dt>Status</dt>
+            <dd>
+              <span
+                class="text-capitalize fw-medium"
+                :class="storeStatusBadgeClass(storeMobileDetailsRow.status)"
+              >
+                {{ storeMobileDetailsRow.status }}
+              </span>
+            </dd>
+          </div>
+          <div class="staff-table-row-details-dl__row">
+            <dt>Marketplace</dt>
+            <dd>{{ display(storeMobileDetailsRow.marketplace) }}</dd>
+          </div>
+          <div class="staff-table-row-details-dl__row">
+            <dt>Website</dt>
+            <dd>
+              <a
+                v-if="
+                  storeMobileDetailsRow.website &&
+                  storeWebsiteHref(storeMobileDetailsRow.website)
+                "
+                class="link-primary text-break"
+                :href="storeWebsiteHref(storeMobileDetailsRow.website)"
+                target="_blank"
+                rel="noopener noreferrer"
+              >
+                {{ storeWebsiteLinkLabel(storeMobileDetailsRow.website) }}
+              </a>
+              <template v-else>—</template>
+            </dd>
+          </div>
+        </dl>
+      </template>
+      <template #footer>
+        <button
+          type="button"
+          class="crm-vx-modal-btn crm-vx-modal-btn--secondary"
+          @click="closeMobileStoreDetails"
+        >
+          Close
+        </button>
+        <button
+          v-if="canUpdateStore && storeMobileDetailsRow"
+          type="button"
+          class="crm-vx-modal-btn crm-vx-modal-btn--primary"
+          @click="openEditStoreFromMobileDetails"
+        >
+          Edit Store
+        </button>
+      </template>
+    </StaffTableRowDetailsModal>
     <ClientStoresBulkEditModal
       v-if="canUpdateStore && canViewStores"
       v-model:open="storeBulkEditOpen"
@@ -1661,10 +1746,16 @@ onUnmounted(() => {
                   </div>
                   <table
                     v-else
-                    class="table table-hover align-middle mb-0 staff-data-table"
+                    class="table table-hover align-middle mb-0 staff-data-table staff-data-table--mobile-expand"
                   >
                     <thead class="table-light staff-table-head">
                       <tr>
+                        <th
+                          class="staff-table-head__th staff-table-head__th--expand d-table-cell d-md-none"
+                          scope="col"
+                        >
+                          <span class="visually-hidden">Row details</span>
+                        </th>
                         <th
                           v-if="showStoreCheckboxCol"
                           class="staff-table-head__th staff-table-head__th--select"
@@ -1685,12 +1776,15 @@ onUnmounted(() => {
                         <th class="staff-table-head__th" scope="col">
                           Status
                         </th>
-                        <th class="staff-table-head__th" scope="col">
+                        <th
+                          class="staff-table-head__th d-none d-md-table-cell"
+                          scope="col"
+                        >
                           Marketplace
                         </th>
                         <th
                           v-if="canUpdateStore || canDeleteStore"
-                          class="staff-table-head__th staff-actions-col text-center client-account-stores-actions-col"
+                          class="staff-table-head__th staff-actions-col text-center client-account-stores-actions-col d-none d-md-table-cell"
                           scope="col"
                         >
                           Actions
@@ -1712,6 +1806,12 @@ onUnmounted(() => {
                         :key="row.id"
                         class="align-middle"
                       >
+                        <td class="staff-table-cell--expand d-table-cell d-md-none">
+                          <StaffTableMobileExpandButton
+                            :aria-label="`Details for ${row.name}`"
+                            @click="openMobileStoreDetails(row)"
+                          />
+                        </td>
                         <td
                           v-if="showStoreCheckboxCol"
                           class="staff-table-cell--tight-check"
@@ -1757,12 +1857,12 @@ onUnmounted(() => {
                             {{ row.status }}
                           </span>
                         </td>
-                        <td class="text-secondary staff-table-cell__meta">
+                        <td class="text-secondary staff-table-cell__meta d-none d-md-table-cell">
                           {{ display(row.marketplace) }}
                         </td>
                         <td
                           v-if="canUpdateStore || canDeleteStore"
-                          class="staff-actions-cell text-center client-account-stores-actions-cell"
+                          class="staff-actions-cell text-center client-account-stores-actions-cell d-none d-md-table-cell"
                         >
                           <div
                             class="staff-actions-inner staff-actions-inner--single d-inline-flex"

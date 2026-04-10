@@ -43,7 +43,7 @@ class InvoiceService
                 $invoice->invoice_number = $this->allocateInvoiceNumber();
             }
             $invoice->status = Invoice::STATUS_DRAFT;
-            $invoice->created_by_user_id = $actor?->id;
+            $invoice->created_by_user_id = $actor !== null ? $actor->id : null;
             $invoice->amount_paid_cents = 0;
             $invoice->save();
 
@@ -229,7 +229,7 @@ class InvoiceService
     ): void {
         InvoiceHistory::query()->create([
             'invoice_id' => $invoice->id,
-            'user_id' => $actor?->id,
+            'user_id' => $actor !== null ? $actor->id : null,
             'action' => $action,
             'from_status' => $fromStatus,
             'to_status' => $toStatus,
@@ -251,11 +251,11 @@ class InvoiceService
             'is_overdue' => $this->isOverdue($invoice),
             'currency' => $invoice->currency,
             'client_account_id' => $invoice->client_account_id,
-            'client_company_name' => $invoice->clientAccount?->company_name,
+            'client_company_name' => $invoice->clientAccount !== null ? $invoice->clientAccount->company_name : null,
             'total_cents' => $invoice->total_cents,
             'balance_due_cents' => $invoice->balance_due_cents,
-            'issued_at' => $invoice->issued_at?->toIso8601String(),
-            'due_at' => $invoice->due_at?->toIso8601String(),
+            'issued_at' => $invoice->issued_at !== null ? $invoice->issued_at->toIso8601String() : null,
+            'due_at' => $invoice->due_at !== null ? $invoice->due_at->toIso8601String() : null,
             'created_at' => $invoice->created_at->toIso8601String(),
             'updated_at' => $invoice->updated_at->toIso8601String(),
         ];
@@ -275,13 +275,13 @@ class InvoiceService
             'subtotal_cents' => $invoice->subtotal_cents,
             'tax_cents' => $invoice->tax_cents,
             'tax_rate_basis_points' => $invoice->tax_rate_basis_points,
-            'billing_period_start' => $invoice->billing_period_start?->toDateString(),
-            'billing_period_end' => $invoice->billing_period_end?->toDateString(),
+            'billing_period_start' => $invoice->billing_period_start !== null ? $invoice->billing_period_start->toDateString() : null,
+            'billing_period_end' => $invoice->billing_period_end !== null ? $invoice->billing_period_end->toDateString() : null,
             'payment_terms' => $invoice->payment_terms,
             'po_number' => $invoice->po_number,
             'customer_notes' => $invoice->customer_notes,
             'internal_notes' => $invoice->internal_notes,
-            'paid_at' => $invoice->paid_at?->toIso8601String(),
+            'paid_at' => $invoice->paid_at !== null ? $invoice->paid_at->toIso8601String() : null,
             'created_by' => $invoice->createdBy ? [
                 'id' => $invoice->createdBy->id,
                 'name' => $invoice->createdBy->name,

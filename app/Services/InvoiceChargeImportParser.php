@@ -270,7 +270,8 @@ final class InvoiceChargeImportParser
             ],
             'avg_rate' => [
                 'avg rate', 'average rate', 'rate', 'unit rate', 'avg', 'unit price',
-                'price', 'cost', 'rate each',
+                'price', 'cost', 'rate each', 'each price', 'price each', 'per unit',
+                'unit cost', 'cost each', 'avg cost',
             ],
             'charge_subtotal' => [
                 'charge subtotal', 'subtotal', 'amount', 'total', 'charge total',
@@ -324,7 +325,7 @@ final class InvoiceChargeImportParser
         }
         $lineTotal = $subtotalCents > 0 ? $subtotalCents : (int) round($qty * $rateCents);
 
-        $routed = $this->routeLine($type, $nameRaw, $qty, $rateCents, $lineTotal);
+        $routed = $this->routeLine($type, $typeRaw, $nameRaw, $qty, $rateCents, $lineTotal);
         if ($routed === null) {
             return null;
         }
@@ -335,10 +336,11 @@ final class InvoiceChargeImportParser
     /**
      * @return array<string, mixed>|null
      */
-    private function routeLine(string $chargeType, string $chargeName, float $qty, int $rateCents, int $lineTotalCents): ?array
+    private function routeLine(string $chargeTypeLower, string $chargeTypeRaw, string $chargeName, float $qty, int $rateCents, int $lineTotalCents): ?array
     {
-        $t = strtolower($chargeType);
+        $t = $chargeTypeLower;
         $name = trim($chargeName);
+        $typeRawTrim = trim($chargeTypeRaw);
         $groupKey = null;
         $category = InvoiceLineCategory::OTHER;
         $display = $name !== '' ? $name : 'Charge';
@@ -386,16 +388,20 @@ final class InvoiceChargeImportParser
             }
         } else {
             $category = InvoiceLineCategory::AD_HOC;
-            $display = $name !== '' ? $name : 'Ad hoc ('.$chargeType.')';
+            $display = $name !== '' ? $name : 'Ad hoc ('.($typeRawTrim !== '' ? $typeRawTrim : $t).')';
             $groupKey = 'ad_hoc:'.Str::slug($display);
         }
+
+        $desc = $name !== '' ? $name : $display;
+        $code = $typeRawTrim !== '' ? $typeRawTrim : $t;
 
         return [
             'category' => $category,
             'subtype' => $subtype,
             'group_key' => $groupKey,
-            'description' => $display,
+            'description' => $desc,
             'display_name' => $display,
+            'service_code' => Str::limit($code, 128, ''),
             'quantity' => $qty,
             'unit_price_cents' => max(0, $rateCents),
             'line_total_cents' => max(0, $lineTotalCents),
@@ -419,6 +425,11 @@ final class InvoiceChargeImportParser
         if ($s === '') {
             return 0.0;
         }
+        $s = trim($s);
+        $s = preg_replace('/\s+/', '', $s) ?? '';
+        if (strpos($s, ',') !== false && strpos($s, '.') === false) {
+            $s = str_replace(',', '.', $s);
+        }
         $s = preg_replace('/[^0-9.\-]/', '', $s) ?? '';
 
         return (float) $s;
@@ -429,7 +440,34 @@ final class InvoiceChargeImportParser
         if ($s === '') {
             return 0;
         }
+        $s = trim($s);
+        if (strpos($s, '(') !== false) {
+            $s = str_replace(['(', ')'], '', $s);
+        }
+        $s = preg_replace('/^[\s\$€£]+/u', '', $s) ?? $s;
+        $s = trim($s);
+
+        $hasComma = strpos($s, ',') !== false;
+        $hasDot = strpos($s, '.') !== false;
+        if ($hasComma && $hasDot) {
+            if (strrpos($s, ',') > strrpos($s, '.')) {
+                $s = str_replace('.', '', $s);
+                $s = str_replace(',', '.', $s);
+            } else {
+                $s = str_replace(',', '', $s);
+            }
+        } elseif ($hasComma && ! $hasDot) {
+            if (preg_match('/,\d{2}$/', $s) === 1) {
+                $s = str_replace(',', '.', $s);
+            } else {
+                $s = str_replace(',', '', $s);
+            }
+        }
+
         $s = preg_replace('/[^0-9.\-]/', '', $s) ?? '';
+        if ($s === '' || $s === '.' || $s === '-') {
+            return 0;
+        }
 
         return (int) round(((float) $s) * 100);
     }

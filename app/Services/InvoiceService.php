@@ -686,4 +686,131 @@ class InvoiceService
             'customer_notes' => $invoice->customer_notes,
         ];
     }
+
+    /**
+     * Same keys as {@see pdfViewData}, plus `line_sections` for the public HTML invoice (grouped by category).
+     *
+     * @return array<string, mixed>
+     */
+    public function publicInvoiceHtmlData(Invoice $invoice): array
+    {
+        $base = $this->pdfViewData($invoice);
+        $invoice->loadMissing('items');
+        $currency = $invoice->currency ?: 'USD';
+        $sym = $currency === 'USD' ? '$' : $currency.' ';
+        $money = static function ($cents) use ($sym) {
+            return $sym.number_format(((int) $cents) / 100, 2);
+        };
+
+        $order = [
+            InvoiceLineCategory::FULFILLMENT,
+            InvoiceLineCategory::POSTAGE,
+            InvoiceLineCategory::PACKAGING,
+            InvoiceLineCategory::RETURNS,
+            InvoiceLineCategory::STORAGE,
+            InvoiceLineCategory::AD_HOC,
+            InvoiceLineCategory::CREDITS,
+            InvoiceLineCategory::OTHER,
+        ];
+
+        $byCat = [];
+        foreach ($invoice->items as $item) {
+            $cat = $item->category !== null && $item->category !== ''
+                ? (string) $item->category
+                : InvoiceLineCategory::OTHER;
+            if (! isset($byCat[$cat])) {
+                $byCat[$cat] = [];
+            }
+            $byCat[$cat][] = $item;
+        }
+
+        $sections = [];
+        $seen = [];
+        $push = function (string $cat) use (&$sections, &$seen, $byCat, $money) {
+            if (! isset($byCat[$cat]) || $byCat[$cat] === []) {
+                return;
+            }
+            $seen[$cat] = true;
+            $list = $byCat[$cat];
+            usort($list, static function ($a, $b) {
+                return (int) $a->sort_order <=> (int) $b->sort_order;
+            });
+            $totalCents = 0;
+            $qtySum = 0.0;
+            foreach ($list as $it) {
+                $totalCents += (int) $it->line_total_cents;
+                $qtySum += (float) $it->quantity;
+            }
+            $unitAvgCents = $qtySum > 0.0 ? (int) round($totalCents / $qtySum) : 0;
+            $lines = [];
+            foreach ($list as $it) {
+                $lines[] = $this->publicHtmlLineRow($it, $money);
+            }
+            $sections[] = [
+                'key' => $cat,
+                'label' => $this->invoiceCategoryPublicLabel($cat),
+                'qty_display' => number_format($qtySum, 1, '.', ''),
+                'unit' => $money($unitAvgCents),
+                'line_total' => $money($totalCents),
+                'lines' => $lines,
+            ];
+        };
+
+        foreach ($order as $cat) {
+            $push($cat);
+        }
+        foreach (array_keys($byCat) as $cat) {
+            if (! isset($seen[$cat])) {
+                $push($cat);
+            }
+        }
+
+        return array_merge($base, ['line_sections' => $sections]);
+    }
+
+    /**
+     * @param  callable(int): string  $money
+     * @return array{item: string, description: string, quantity: string, unit: string, line_total: string}
+     */
+    private function publicHtmlLineRow(InvoiceItem $item, callable $money): array
+    {
+        $disp = trim((string) ($item->display_name ?? ''));
+        $desc = trim((string) ($item->description ?? ''));
+        $primary = $disp !== '' ? $disp : ($desc !== '' ? $desc : '—');
+        $bits = [];
+        if ($desc !== '' && $desc !== $disp) {
+            $bits[] = $desc;
+        }
+        if ($item->service_code !== null && (string) $item->service_code !== '') {
+            $bits[] = (string) $item->service_code;
+        }
+        if ($item->sku !== null && (string) $item->sku !== '') {
+            $bits[] = (string) $item->sku;
+        }
+        $detail = $bits !== [] ? implode(' · ', $bits) : '—';
+
+        return [
+            'item' => $primary,
+            'description' => $detail,
+            'quantity' => number_format((float) $item->quantity, 1, '.', ''),
+            'unit' => $money((int) $item->unit_price_cents),
+            'line_total' => $money((int) $item->line_total_cents),
+        ];
+    }
+
+    private function invoiceCategoryPublicLabel(string $cat): string
+    {
+        $map = [
+            InvoiceLineCategory::FULFILLMENT => 'Fulfillment',
+            InvoiceLineCategory::POSTAGE => 'Postage',
+            InvoiceLineCategory::PACKAGING => 'Packaging',
+            InvoiceLineCategory::RETURNS => 'Returns',
+            InvoiceLineCategory::STORAGE => 'Storage',
+            InvoiceLineCategory::AD_HOC => 'Ad Hoc',
+            InvoiceLineCategory::CREDITS => 'Credits',
+            InvoiceLineCategory::OTHER => 'Other',
+        ];
+
+        return $map[$cat] ?? Str::title(str_replace('_', ' ', $cat));
+    }
 }

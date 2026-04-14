@@ -20,7 +20,7 @@
         .inv-meta strong { color: #222; }
         .section-label { font-size: 11px; text-transform: uppercase; letter-spacing: 0.06em; color: #888; margin: 18px 0 6px; }
         .bill-to { font-size: 15px; font-weight: 600; color: #111; }
-        table.lines { width: 100%; border-collapse: collapse; margin-top: 12px; }
+        table.lines { width: 100%; border-collapse: collapse; margin-top: 0; }
         table.lines th {
             text-align: left; font-size: 10px; text-transform: uppercase; letter-spacing: 0.04em;
             color: #666; border-bottom: 1px solid #ccc; padding: 10px 8px;
@@ -28,6 +28,28 @@
         table.lines th.num { text-align: right; }
         table.lines td { border-bottom: 1px solid #e8e8e8; padding: 10px 8px; vertical-align: top; }
         table.lines td.num { text-align: right; white-space: nowrap; }
+        .lines-nested { background: #fff; }
+        .lines-nested td { font-size: 13px; }
+        details.public-inv-sec { border-bottom: 1px solid #e8e8e8; }
+        details.public-inv-sec:last-of-type { border-bottom: none; }
+        summary.public-inv-summary { list-style: none; cursor: pointer; padding: 0; }
+        summary.public-inv-summary::-webkit-details-marker { display: none; }
+        .public-inv-sum-grid {
+            display: grid;
+            grid-template-columns: 18px minmax(0, 1.35fr) minmax(0, 1fr) minmax(0, 0.7fr) minmax(0, 0.5fr) minmax(0, 0.8fr);
+            gap: 8px;
+            align-items: center;
+            padding: 10px 8px;
+        }
+        .public-inv-chev {
+            font-size: 10px;
+            color: #666;
+            transition: transform 0.15s ease;
+            display: inline-block;
+        }
+        details.public-inv-sec[open] .public-inv-chev { transform: rotate(90deg); }
+        .public-inv-nested { background: #f6f7f9; padding: 0 4px 12px 12px; border-bottom: 1px solid #e8e8e8; }
+        .public-inv-lines-wrap { margin-top: 12px; border: 1px solid #e8e8e8; border-radius: 4px; overflow: hidden; }
         .totals { width: 280px; margin-left: auto; margin-top: 20px; font-size: 14px; }
         .totals table { width: 100%; border-collapse: collapse; }
         .totals td { padding: 6px 0; }
@@ -36,9 +58,11 @@
         .totals tr.due td { padding-top: 12px; font-size: 16px; border-top: 1px solid #ccc; }
         .notes { margin-top: 24px; font-size: 13px; color: #555; line-height: 1.45; }
         .footer { margin-top: 32px; font-size: 11px; color: #999; text-align: center; }
+        .public-inv-empty { color: #888; padding: 16px 8px; }
         @media print {
             .public-toolbar { display: none; }
             body { padding-top: 0; }
+            details.public-inv-sec > summary { page-break-inside: avoid; }
         }
     </style>
 </head>
@@ -77,32 +101,51 @@
 <div class="section-label">Invoice to</div>
 <div class="bill-to">{{ $client_company_name ?: '—' }}</div>
 
-<table class="lines">
-    <thead>
-    <tr>
-        <th style="width:30%">Item</th>
-        <th style="width:26%">Description</th>
-        <th class="num" style="width:12%">Qty</th>
-        <th class="num" style="width:14%">Cost</th>
-        <th class="num" style="width:14%">Price</th>
-    </tr>
-    </thead>
-    <tbody>
-    @forelse ($items as $row)
-        <tr>
-            <td>{{ $row['item'] }}</td>
-            <td style="color:#555;">{{ $row['description'] }}</td>
-            <td class="num">{{ $row['quantity'] }}</td>
-            <td class="num">{{ $row['unit'] }}</td>
-            <td class="num">{{ $row['line_total'] }}</td>
-        </tr>
-    @empty
-        <tr>
-            <td colspan="5" style="color:#888;">No line items.</td>
-        </tr>
-    @endforelse
-    </tbody>
-</table>
+<div class="section-label" style="margin-top: 20px;">Line items</div>
+<div class="public-inv-lines-wrap">
+@if (!empty($line_sections))
+    @foreach ($line_sections as $sec)
+        <details class="public-inv-sec">
+            <summary class="public-inv-summary">
+                <div class="public-inv-sum-grid">
+                    <span class="public-inv-chev" aria-hidden="true">&#9654;</span>
+                    <span class="public-inv-sum-service"><strong>{{ $sec['label'] }}</strong></span>
+                    <span style="color:#666;font-size:13px;">Category subtotal</span>
+                    <span class="num">{{ $sec['unit'] }}</span>
+                    <span class="num">{{ $sec['qty_display'] }}</span>
+                    <span class="num" style="font-weight:600;">{{ $sec['line_total'] }}</span>
+                </div>
+            </summary>
+            <div class="public-inv-nested">
+                <table class="lines lines-nested">
+                    <thead>
+                    <tr>
+                        <th style="width:30%">Service</th>
+                        <th style="width:28%">Description</th>
+                        <th class="num" style="width:12%">Qty</th>
+                        <th class="num" style="width:14%">Price</th>
+                        <th class="num" style="width:14%">Total</th>
+                    </tr>
+                    </thead>
+                    <tbody>
+                    @foreach ($sec['lines'] as $row)
+                        <tr>
+                            <td>{{ $row['item'] }}</td>
+                            <td style="color:#555;">{{ $row['description'] }}</td>
+                            <td class="num">{{ $row['quantity'] }}</td>
+                            <td class="num">{{ $row['unit'] }}</td>
+                            <td class="num">{{ $row['line_total'] }}</td>
+                        </tr>
+                    @endforeach
+                    </tbody>
+                </table>
+            </div>
+        </details>
+    @endforeach
+@else
+    <p class="public-inv-empty">No line items.</p>
+@endif
+</div>
 
 <div class="totals">
     <table>
@@ -136,5 +179,14 @@
 @endif
 
 <div class="footer">Thank you for your business.</div>
+<script>
+(function () {
+    window.addEventListener('beforeprint', function () {
+        document.querySelectorAll('details.public-inv-sec').forEach(function (d) {
+            d.setAttribute('open', 'open');
+        });
+    });
+})();
+</script>
 </body>
 </html>

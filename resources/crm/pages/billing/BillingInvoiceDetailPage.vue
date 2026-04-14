@@ -1,5 +1,33 @@
 <script setup>
 import { computed, inject, onMounted, ref } from "vue";
+
+const BILLING_CATEGORY_ORDER = [
+  "fulfillment",
+  "postage",
+  "packaging",
+  "returns",
+  "storage",
+  "ad_hoc",
+  "credits",
+  "other",
+];
+
+function billingCategoryLabel(cat) {
+  const m = {
+    fulfillment: "Fulfillment",
+    postage: "Postage",
+    packaging: "Packaging",
+    returns: "Returns",
+    storage: "Storage",
+    ad_hoc: "Ad Hoc",
+    credits: "Credits",
+    other: "Other",
+  };
+  if (m[cat]) return m[cat];
+  return String(cat || "other")
+    .replace(/_/g, " ")
+    .replace(/\b\w/g, (c) => c.toUpperCase());
+}
 import { useRouter } from "vue-router";
 import api, { getApiBaseUrl } from "../../services/api";
 import { BRAND_MARK_SRC } from "../../utils/brandAssets.js";
@@ -48,7 +76,77 @@ const deleteBusy = ref(false);
 const pdfDownloading = ref(false);
 const copyLinkBusy = ref(false);
 
+/** @type {import('vue').Ref<Record<string, boolean>>} */
+const expandedLineCategories = ref({});
+
 const invoiceLogoSrc = computed(() => BRAND_MARK_SRC());
+
+const lineItemSections = computed(() => {
+  const inv = invoice.value;
+  if (!inv?.items?.length) return [];
+  const byCat = new Map();
+  for (const item of inv.items) {
+    const cat =
+      item.category && String(item.category).trim() !== "" ? item.category : "other";
+    if (!byCat.has(cat)) byCat.set(cat, []);
+    byCat.get(cat).push(item);
+  }
+  const sections = [];
+  const seen = new Set();
+
+  const pushSection = (cat) => {
+    const list = byCat.get(cat);
+    if (!list?.length) return;
+    const sorted = [...list].sort(
+      (a, b) => (Number(a.sort_order) || 0) - (Number(b.sort_order) || 0),
+    );
+    const totalCents = sorted.reduce((s, i) => s + Number(i.line_total_cents || 0), 0);
+    const qtySum = sorted.reduce((s, i) => s + Number(i.quantity ?? 0), 0);
+    const unitAvgCents = qtySum > 0 ? Math.round(totalCents / qtySum) : 0;
+    sections.push({
+      key: cat,
+      label: billingCategoryLabel(cat),
+      qty: qtySum,
+      totalCents,
+      unitAvgCents,
+      items: sorted,
+    });
+    seen.add(cat);
+  };
+
+  for (const cat of BILLING_CATEGORY_ORDER) {
+    pushSection(cat);
+  }
+  for (const cat of byCat.keys()) {
+    if (!seen.has(cat)) pushSection(cat);
+  }
+  return sections;
+});
+
+function toggleLineCategory(catKey) {
+  expandedLineCategories.value = {
+    ...expandedLineCategories.value,
+    [catKey]: !expandedLineCategories.value[catKey],
+  };
+}
+
+function lineItemRowLabel(item) {
+  const d = item.display_name;
+  const n = item.description;
+  if (d != null && String(d).trim() !== "") return String(d).trim();
+  if (n != null && String(n).trim() !== "") return String(n).trim();
+  return "—";
+}
+
+function lineItemRowDetail(item) {
+  const primary = lineItemRowLabel(item);
+  const bits = [];
+  const desc = item.description != null ? String(item.description).trim() : "";
+  if (desc && desc !== primary) bits.push(desc);
+  if (item.service_code) bits.push(String(item.service_code));
+  if (item.sku) bits.push(String(item.sku));
+  return bits.length ? bits.join(" · ") : "—";
+}
 
 const invoiceDateLong = new Intl.DateTimeFormat(undefined, {
   year: "numeric",
@@ -151,7 +249,7 @@ function syncEditFromInvoice() {
   const items = inv.items || [];
   editLines.value = items.length
     ? items.map((i) => ({
-        description: i.description || "",
+        description: i.display_name || i.description || "",
         sku: i.sku != null && String(i.sku) !== "" ? String(i.sku) : "",
         quantity: formatQtyOneDecimal(i.quantity ?? 1),
         unit_price: (Number(i.unit_price_cents) / 100).toFixed(2),
@@ -648,29 +746,62 @@ onMounted(() => {
                 <table class="table table-sm align-middle mb-0 billing-inv-items-table">
                   <thead>
                     <tr>
-                      <th>Item</th>
+                      <th class="billing-inv-col-expand" aria-hidden="true" />
+                      <th>Service</th>
                       <th>Description</th>
-                      <th class="text-end">Cost</th>
-                      <th class="text-end">Qty</th>
                       <th class="text-end">Price</th>
+                      <th class="text-end">Qty</th>
+                      <th class="text-end">Total</th>
                     </tr>
                   </thead>
                   <tbody>
-                    <tr v-for="item in invoice.items" :key="item.id">
-                      <td class="fw-medium">{{ item.description }}</td>
-                      <td class="text-secondary small">
-                        {{ item.sku || item.service_code || "—" }}
-                      </td>
-                      <td class="text-end">
-                        {{ formatCents(item.unit_price_cents, invoice.currency) }}
-                      </td>
-                      <td class="text-end text-nowrap">
-                        {{ formatQtyOneDecimal(item.quantity) }}
-                      </td>
-                      <td class="text-end fw-semibold">
-                        {{ formatCents(item.line_total_cents, invoice.currency) }}
-                      </td>
-                    </tr>
+                    <template v-for="sec in lineItemSections" :key="sec.key">
+                      <tr
+                        class="billing-inv-cat-row"
+                        role="button"
+                        tabindex="0"
+                        :aria-expanded="!!expandedLineCategories[sec.key]"
+                        @click="toggleLineCategory(sec.key)"
+                        @keydown.enter.prevent="toggleLineCategory(sec.key)"
+                        @keydown.space.prevent="toggleLineCategory(sec.key)"
+                      >
+                        <td class="billing-inv-col-expand text-secondary small">
+                          <span class="billing-inv-chevron" aria-hidden="true">{{
+                            expandedLineCategories[sec.key] ? "\u25bc" : "\u25b6"
+                          }}</span>
+                        </td>
+                        <td class="fw-semibold">{{ sec.label }}</td>
+                        <td class="text-secondary small">Category subtotal</td>
+                        <td class="text-end">
+                          {{ formatCents(sec.unitAvgCents, invoice.currency) }}
+                        </td>
+                        <td class="text-end text-nowrap">
+                          {{ formatQtyOneDecimal(sec.qty) }}
+                        </td>
+                        <td class="text-end fw-semibold">
+                          {{ formatCents(sec.totalCents, invoice.currency) }}
+                        </td>
+                      </tr>
+                      <tr
+                        v-for="item in sec.items"
+                        v-show="expandedLineCategories[sec.key]"
+                        :key="item.id"
+                        class="billing-inv-line-detail"
+                      >
+                        <td class="billing-inv-col-expand" />
+                        <td class="fw-medium">{{ lineItemRowLabel(item) }}</td>
+                        <td class="text-secondary small">{{ lineItemRowDetail(item) }}</td>
+                        <td class="text-end">
+                          {{ formatCents(item.unit_price_cents, invoice.currency) }}
+                        </td>
+                        <td class="text-end text-nowrap">
+                          {{ formatQtyOneDecimal(item.quantity) }}
+                        </td>
+                        <td class="text-end">
+                          {{ formatCents(item.line_total_cents, invoice.currency) }}
+                        </td>
+                      </tr>
+                    </template>
                   </tbody>
                 </table>
               </div>
@@ -866,5 +997,20 @@ onMounted(() => {
 }
 .billing-inv-totals {
   max-width: 15rem;
+}
+.billing-inv-col-expand {
+  width: 2rem;
+  vertical-align: middle;
+}
+.billing-inv-cat-row {
+  cursor: pointer;
+  user-select: none;
+}
+.billing-inv-cat-row:hover {
+  background: rgba(15, 23, 42, 0.04);
+}
+.billing-inv-line-detail td {
+  background: var(--bs-tertiary-bg, #f8f9fa);
+  font-size: 0.925rem;
 }
 </style>

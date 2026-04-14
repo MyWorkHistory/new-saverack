@@ -21,7 +21,7 @@ class PublicInvoiceController extends Controller
         $invoice = $this->invoices->resolvePublicInvoice($slug, $token);
         abort_if($invoice === null, 404);
 
-        $data = $this->invoices->pdfViewData($invoice);
+        $data = $this->invoices->publicInvoiceHtmlData($invoice);
         $data['public_pdf_path'] = url('/billing-invoice/'.$slug.'/'.$token.'/pdf');
 
         return response()->view('public.invoice', $data);

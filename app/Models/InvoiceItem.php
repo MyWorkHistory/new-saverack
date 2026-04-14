@@ -10,7 +10,11 @@ class InvoiceItem extends Model
     protected $fillable = [
         'invoice_id',
         'sort_order',
+        'category',
+        'subtype',
+        'group_key',
         'description',
+        'display_name',
         'sku',
         'service_code',
         'quantity',

@@ -8,3 +8,13 @@
 | Add Blade routes or server-rendered pages here if needed.
 |--------------------------------------------------------------------------
 */
+
+use App\Http\Controllers\PublicInvoiceController;
+use Illuminate\Support\Facades\Route;
+
+Route::middleware(['throttle:public-invoice'])->group(function () {
+    Route::get('/billing-invoice/{slug}/{token}', [PublicInvoiceController::class, 'show'])
+        ->name('public.invoice.show');
+    Route::get('/billing-invoice/{slug}/{token}/pdf', [PublicInvoiceController::class, 'pdf'])
+        ->name('public.invoice.pdf');
+});

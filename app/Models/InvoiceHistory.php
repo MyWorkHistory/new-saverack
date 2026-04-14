@@ -10,6 +10,9 @@ class InvoiceHistory extends Model
     protected $fillable = [
         'invoice_id',
         'user_id',
+        'actor_name',
+        'event_type',
+        'message',
         'action',
         'from_status',
         'to_status',

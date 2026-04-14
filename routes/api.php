@@ -9,6 +9,7 @@ use App\Http\Controllers\Api\DashboardController;
 use App\Http\Controllers\Api\RoleController;
 use App\Http\Controllers\Api\TicketController;
 use App\Http\Controllers\Api\InvoiceController;
+use App\Http\Controllers\Api\InvoiceImportController;
 use App\Http\Controllers\Api\UserController;
 use App\Http\Controllers\Api\WebmasterTaskController;
 use Illuminate\Support\Facades\Route;
@@ -37,6 +38,14 @@ Route::middleware('auth:sanctum')->group(function () {
 
     Route::get('invoices/meta', [InvoiceController::class, 'meta'])
         ->name('invoices.meta');
+    Route::post('invoices/{invoice}/share-link', [InvoiceController::class, 'shareLink'])
+        ->name('invoices.share-link');
+    Route::delete('invoices/{invoice}/line-groups/{groupKey}', [InvoiceController::class, 'destroyLineGroup'])
+        ->where('groupKey', '[A-Za-z0-9_.:\-]+')
+        ->name('invoices.line-groups.destroy');
+    Route::put('invoices/{invoice}/line-groups/{groupKey}', [InvoiceController::class, 'replaceLineGroup'])
+        ->where('groupKey', '[A-Za-z0-9_.:\-]+')
+        ->name('invoices.line-groups.replace');
     Route::post('invoices/{invoice}/send', [InvoiceController::class, 'send'])
         ->name('invoices.send');
     Route::post('invoices/{invoice}/record-payment', [InvoiceController::class, 'recordPayment'])
@@ -100,6 +109,10 @@ Route::middleware('auth:sanctum')->group(function () {
         ->name('client-accounts.comments.destroy');
     Route::get('client-accounts/{client_account}/comments/{comment}/attachment', [ClientAccountController::class, 'downloadCommentAttachment'])
         ->name('client-accounts.comments.attachment');
+    Route::post('client-accounts/{client_account}/invoice-imports/charges', [InvoiceImportController::class, 'importCharges'])
+        ->name('client-accounts.invoice-imports.charges');
+    Route::post('client-accounts/{client_account}/invoice-imports/storage', [InvoiceImportController::class, 'importStorage'])
+        ->name('client-accounts.invoice-imports.storage');
     Route::put('client-accounts/{client_account}/fees', [ClientAccountController::class, 'syncFees'])
         ->name('client-accounts.fees.sync');
     Route::delete('client-accounts/{client_account}/fees/{fee}', [ClientAccountController::class, 'destroyFeeItem'])

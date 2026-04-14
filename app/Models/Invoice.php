@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Support\Billing\InvoiceLifecycleStatus;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
@@ -47,6 +48,9 @@ class Invoice extends Model
         'customer_notes',
         'internal_notes',
         'created_by_user_id',
+        'share_token',
+        'share_token_generated_at',
+        'manual_total_override_cents',
     ];
 
     protected $casts = [
@@ -55,6 +59,7 @@ class Invoice extends Model
         'paid_at' => 'datetime',
         'billing_period_start' => 'date',
         'billing_period_end' => 'date',
+        'share_token_generated_at' => 'datetime',
     ];
 
     public function clientAccount(): BelongsTo
@@ -77,6 +82,24 @@ class Invoice extends Model
         return $this->hasMany(InvoiceHistory::class)->orderByDesc('created_at');
     }
 
+    public function imports(): HasMany
+    {
+        return $this->hasMany(InvoiceImport::class);
+    }
+
+    /**
+     * Business “service period” shown on the invoice (same columns as billing_period_*).
+     */
+    public function getServicePeriodStartAttribute()
+    {
+        return $this->billing_period_start;
+    }
+
+    public function getServicePeriodEndAttribute()
+    {
+        return $this->billing_period_end;
+    }
+
     public function isEditableDraft(): bool
     {
         return $this->status === self::STATUS_DRAFT;
@@ -90,5 +113,11 @@ class Invoice extends Model
     public function isPaidLike(): bool
     {
         return in_array($this->status, [self::STATUS_PAID, self::STATUS_VOID], true);
+    }
+
+    /** Past due: open-like status and due date before today (see InvoiceLifecycleStatus). */
+    public function isPastDueDerived(): bool
+    {
+        return InvoiceLifecycleStatus::isPastDue($this);
     }
 }

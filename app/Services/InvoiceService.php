@@ -2,11 +2,17 @@
 
 namespace App\Services;
 
+use App\Mail\InvoiceSentMailable;
 use App\Models\Invoice;
+use App\Support\Billing\InvoiceHistoryEventType;
+use App\Support\Billing\InvoiceLineCategory;
 use App\Models\InvoiceHistory;
 use App\Models\InvoiceItem;
 use App\Models\User;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Mail;
+use Illuminate\Support\Str;
 
 class InvoiceService
 {
@@ -91,19 +97,155 @@ class InvoiceService
         $order = 0;
         foreach ($items as $row) {
             $order++;
-            InvoiceItem::query()->create([
-                'invoice_id' => $invoice->id,
-                'sort_order' => $order,
-                'description' => (string) ($row['description'] ?? ''),
-                'sku' => $row['sku'] ?? null,
-                'service_code' => $row['service_code'] ?? null,
-                'quantity' => $row['quantity'] ?? 1,
-                'unit' => $row['unit'] ?? null,
-                'unit_price_cents' => (int) ($row['unit_price_cents'] ?? 0),
-                'line_total_cents' => (int) ($row['line_total_cents'] ?? 0),
-                'metadata' => $row['metadata'] ?? null,
-            ]);
+            $this->insertInvoiceItemRow($invoice, $order, $row);
         }
+    }
+
+    /**
+     * @param  array<string, mixed>  $row
+     */
+    private function insertInvoiceItemRow(Invoice $invoice, int $sortOrder, array $row): void
+    {
+        $desc = (string) ($row['description'] ?? '');
+        InvoiceItem::query()->create([
+            'invoice_id' => $invoice->id,
+            'sort_order' => $sortOrder,
+            'category' => $row['category'] ?? InvoiceLineCategory::OTHER,
+            'subtype' => $row['subtype'] ?? null,
+            'group_key' => $row['group_key'] ?? null,
+            'description' => $desc,
+            'display_name' => $row['display_name'] ?? Str::limit($desc, 512, ''),
+            'sku' => $row['sku'] ?? null,
+            'service_code' => $row['service_code'] ?? null,
+            'quantity' => $row['quantity'] ?? 1,
+            'unit' => $row['unit'] ?? null,
+            'unit_price_cents' => (int) ($row['unit_price_cents'] ?? 0),
+            'line_total_cents' => (int) ($row['line_total_cents'] ?? 0),
+            'metadata' => $row['metadata'] ?? null,
+        ]);
+    }
+
+    public function deleteLineGroup(Invoice $invoice, string $groupKey, ?User $actor): Invoice
+    {
+        if (! $invoice->isEditableDraft()) {
+            throw new \RuntimeException('Only draft invoices can be edited.');
+        }
+
+        return DB::transaction(function () use ($invoice, $groupKey, $actor) {
+            $deleted = $invoice->items()->where('group_key', $groupKey)->delete();
+            if ($deleted === 0) {
+                throw new \InvalidArgumentException('No lines found for that group key.');
+            }
+            $this->recalculateTotals($invoice->refresh());
+            $invoice->save();
+            $this->logHistory($invoice, $actor, 'updated', Invoice::STATUS_DRAFT, Invoice::STATUS_DRAFT, [
+                'event_type' => InvoiceHistoryEventType::LINE_DELETE,
+                'history_message' => 'Deleted line group: '.$groupKey,
+            ]);
+
+            return $invoice->fresh(['items', 'clientAccount']);
+        });
+    }
+
+    /**
+     * @param  list<array<string, mixed>>  $items
+     */
+    public function replaceLineGroup(Invoice $invoice, string $groupKey, array $items, ?User $actor): Invoice
+    {
+        if (! $invoice->isEditableDraft()) {
+            throw new \RuntimeException('Only draft invoices can be edited.');
+        }
+
+        return DB::transaction(function () use ($invoice, $groupKey, $items, $actor) {
+            $invoice->items()->where('group_key', $groupKey)->delete();
+            $order = (int) $invoice->items()->max('sort_order');
+            foreach ($items as $row) {
+                $order++;
+                $row['group_key'] = $groupKey;
+                $this->insertInvoiceItemRow($invoice, $order, $row);
+            }
+            $this->recalculateTotals($invoice->refresh());
+            $invoice->save();
+            $this->logHistory($invoice, $actor, 'updated', Invoice::STATUS_DRAFT, Invoice::STATUS_DRAFT, [
+                'event_type' => InvoiceHistoryEventType::LINE_EDIT,
+                'history_message' => 'Replaced line group: '.$groupKey,
+            ]);
+
+            return $invoice->fresh(['items', 'clientAccount']);
+        });
+    }
+
+    public function ensureShareToken(Invoice $invoice): Invoice
+    {
+        if ($invoice->share_token !== null && $invoice->share_token !== '') {
+            return $invoice->fresh(['clientAccount']) ?? $invoice;
+        }
+
+        return DB::transaction(function () use ($invoice) {
+            $invoice->refresh();
+            if ($invoice->share_token !== null && $invoice->share_token !== '') {
+                return $invoice->fresh(['clientAccount']) ?? $invoice;
+            }
+            for ($i = 0; $i < 8; $i++) {
+                $token = Str::random(48);
+                $exists = Invoice::query()->where('share_token', $token)->exists();
+                if (! $exists) {
+                    $invoice->share_token = $token;
+                    $invoice->share_token_generated_at = now();
+                    $invoice->save();
+
+                    return $invoice->fresh(['clientAccount']) ?? $invoice;
+                }
+            }
+
+            throw new \RuntimeException('Could not allocate a unique share token.');
+        });
+    }
+
+    public function resolvePublicInvoice(string $accountSlug, string $shareToken): ?Invoice
+    {
+        if ($accountSlug === '' || $shareToken === '') {
+            return null;
+        }
+
+        $invoice = Invoice::query()
+            ->where('share_token', $shareToken)
+            ->where('status', '!=', Invoice::STATUS_VOID)
+            ->with(['items', 'clientAccount'])
+            ->first();
+
+        if ($invoice === null || $invoice->clientAccount === null) {
+            return null;
+        }
+
+        $slug = $invoice->clientAccount->invoice_share_slug;
+        if ($slug === null || $slug === '' || ! hash_equals((string) $slug, $accountSlug)) {
+            return null;
+        }
+
+        return $invoice;
+    }
+
+    public function publicCustomerViewUrl(Invoice $invoice): ?string
+    {
+        $invoice->loadMissing('clientAccount');
+        if ($invoice->clientAccount === null) {
+            return null;
+        }
+        $slug = $invoice->clientAccount->invoice_share_slug;
+        $token = $invoice->share_token;
+        if ($slug === null || $slug === '' || $token === null || $token === '') {
+            return null;
+        }
+
+        return url('/billing-invoice/'.$slug.'/'.$token);
+    }
+
+    public function publicCustomerPdfUrl(Invoice $invoice): ?string
+    {
+        $base = $this->publicCustomerViewUrl($invoice);
+
+        return $base !== null ? $base.'/pdf' : null;
     }
 
     public function recalculateTotals(Invoice $invoice): void
@@ -160,7 +302,27 @@ class InvoiceService
         $invoice->save();
         $this->logHistory($invoice, $actor, 'sent', $from, $invoice->status, []);
 
-        return $invoice->fresh(['items', 'clientAccount']);
+        $fresh = $invoice->fresh(['items', 'clientAccount']);
+        $this->sendInvoiceSentDevNotification($fresh);
+
+        return $fresh;
+    }
+
+    private function sendInvoiceSentDevNotification(Invoice $invoice): void
+    {
+        $email = config('billing.invoice_send_dev_email');
+        if (! is_string($email) || $email === '' || ! filter_var($email, FILTER_VALIDATE_EMAIL)) {
+            return;
+        }
+
+        try {
+            Mail::to($email)->send(new InvoiceSentMailable($invoice));
+        } catch (\Throwable $e) {
+            Log::warning('invoice.sent_dev_notification_failed', [
+                'invoice_id' => $invoice->id,
+                'error' => $e->getMessage(),
+            ]);
+        }
     }
 
     public function recordPayment(Invoice $invoice, int $amountCents, ?User $actor): Invoice
@@ -227,14 +389,42 @@ class InvoiceService
         ?string $toStatus,
         array $meta
     ): void {
+        $metaOut = $meta;
+        $message = null;
+        if (array_key_exists('history_message', $metaOut)) {
+            $message = $metaOut['history_message'];
+            unset($metaOut['history_message']);
+        }
+        $eventType = $metaOut['event_type'] ?? $this->inferHistoryEventType($action);
+        unset($metaOut['event_type']);
+
         InvoiceHistory::query()->create([
             'invoice_id' => $invoice->id,
             'user_id' => $actor !== null ? $actor->id : null,
+            'actor_name' => $actor !== null ? $actor->name : null,
+            'event_type' => $eventType,
+            'message' => $message,
             'action' => $action,
             'from_status' => $fromStatus,
             'to_status' => $toStatus,
-            'meta' => $meta ?: null,
+            'meta' => $metaOut ?: null,
         ]);
+    }
+
+    private function inferHistoryEventType(string $action): string
+    {
+        switch ($action) {
+            case 'created':
+                return InvoiceHistoryEventType::LINE_ADD;
+            case 'updated':
+                return InvoiceHistoryEventType::HEADER_EDIT;
+            case 'sent':
+            case 'payment_applied':
+            case 'voided':
+                return InvoiceHistoryEventType::STATUS;
+            default:
+                return InvoiceHistoryEventType::HEADER_EDIT;
+        }
     }
 
     /**
@@ -281,6 +471,8 @@ class InvoiceService
             'po_number' => $invoice->po_number,
             'customer_notes' => $invoice->customer_notes,
             'internal_notes' => $invoice->internal_notes,
+            'customer_view_url' => $this->publicCustomerViewUrl($invoice),
+            'customer_pdf_url' => $this->publicCustomerPdfUrl($invoice),
             'paid_at' => $invoice->paid_at !== null ? $invoice->paid_at->toIso8601String() : null,
             'created_by' => $invoice->createdBy ? [
                 'id' => $invoice->createdBy->id,
@@ -290,6 +482,10 @@ class InvoiceService
                 return [
                     'id' => $item->id,
                     'sort_order' => $item->sort_order,
+                    'category' => $item->category,
+                    'subtype' => $item->subtype,
+                    'group_key' => $item->group_key,
+                    'display_name' => $item->display_name,
                     'description' => $item->description,
                     'sku' => $item->sku,
                     'service_code' => $item->service_code,
@@ -303,10 +499,13 @@ class InvoiceService
             'histories' => $invoice->histories->take(50)->map(static function (InvoiceHistory $h) {
                 return [
                     'id' => $h->id,
+                    'event_type' => $h->event_type,
+                    'message' => $h->message,
                     'action' => $h->action,
                     'from_status' => $h->from_status,
                     'to_status' => $h->to_status,
                     'meta' => $h->meta,
+                    'actor_name' => $h->actor_name,
                     'user' => $h->user ? ['id' => $h->user->id, 'name' => $h->user->name] : null,
                     'created_at' => $h->created_at->toIso8601String(),
                 ];
@@ -454,9 +653,16 @@ class InvoiceService
 
         $items = [];
         foreach ($invoice->items as $item) {
+            $detail = $item->sku;
+            if ($detail === null || $detail === '') {
+                $detail = $item->service_code;
+            }
             $items[] = [
-                'description' => $item->description,
-                'quantity' => $item->quantity,
+                'item' => $item->display_name !== null && $item->display_name !== ''
+                    ? $item->display_name
+                    : $item->description,
+                'description' => $detail !== null && $detail !== '' ? $detail : '—',
+                'quantity' => number_format((float) $item->quantity, 1, '.', ''),
                 'unit' => $money((int) $item->unit_price_cents),
                 'line_total' => $money((int) $item->line_total_cents),
             ];

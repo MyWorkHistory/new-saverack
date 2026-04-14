@@ -1,8 +1,8 @@
 <script setup>
-import { computed, inject, onMounted, onUnmounted, ref } from "vue";
+import { computed, inject, onMounted, ref } from "vue";
 import { useRouter } from "vue-router";
 import api, { getApiBaseUrl } from "../../services/api";
-import invoiceBrandLogoUrl from "@public/images/logo/logo.svg";
+import { BRAND_MARK_SRC } from "../../utils/brandAssets.js";
 import ConfirmModal from "../../components/common/ConfirmModal.vue";
 import CrmLoadingSpinner from "../../components/common/CrmLoadingSpinner.vue";
 import { useToast } from "../../composables/useToast";
@@ -46,6 +46,9 @@ const deleteModalOpen = ref(false);
 const deleteBusy = ref(false);
 
 const pdfDownloading = ref(false);
+const copyLinkBusy = ref(false);
+
+const invoiceLogoSrc = computed(() => BRAND_MARK_SRC());
 
 const invoiceDateLong = new Intl.DateTimeFormat(undefined, {
   year: "numeric",
@@ -59,6 +62,12 @@ function formatInvoiceLongDate(iso) {
   const d = /^\d{4}-\d{2}-\d{2}$/.test(s) ? new Date(`${s}T12:00:00`) : new Date(s);
   if (Number.isNaN(d.getTime())) return "—";
   return invoiceDateLong.format(d);
+}
+
+function formatQtyOneDecimal(v) {
+  const n = Number(v);
+  if (!Number.isFinite(n)) return "0.0";
+  return n.toFixed(1);
 }
 
 async function downloadInvoicePdf() {
@@ -97,6 +106,40 @@ async function downloadInvoicePdf() {
   }
 }
 
+async function copyCustomerLink() {
+  if (!invoice.value?.id || copyLinkBusy.value) return;
+  copyLinkBusy.value = true;
+  try {
+    let url = invoice.value.customer_view_url;
+    if (!url) {
+      const { data } = await api.post(`/invoices/${invoice.value.id}/share-link`);
+      url = data?.customer_view_url;
+      if (url) {
+        invoice.value = {
+          ...invoice.value,
+          customer_view_url: data.customer_view_url,
+          customer_pdf_url: data.customer_pdf_url,
+        };
+      }
+    }
+    if (!url) {
+      toast.error("Could not create customer link.");
+      return;
+    }
+    try {
+      await navigator.clipboard.writeText(url);
+    } catch {
+      toast.error("Could not access clipboard.");
+      return;
+    }
+    toast.success("Customer link copied.");
+  } catch (e) {
+    toast.errorFrom(e, "Could not copy customer link.");
+  } finally {
+    copyLinkBusy.value = false;
+  }
+}
+
 function syncEditFromInvoice() {
   const inv = invoice.value;
   if (!inv || inv.status !== "draft") {
@@ -109,10 +152,18 @@ function syncEditFromInvoice() {
   editLines.value = items.length
     ? items.map((i) => ({
         description: i.description || "",
-        quantity: String(i.quantity ?? 1),
+        sku: i.sku != null && String(i.sku) !== "" ? String(i.sku) : "",
+        quantity: formatQtyOneDecimal(i.quantity ?? 1),
         unit_price: (Number(i.unit_price_cents) / 100).toFixed(2),
       }))
-    : [{ description: "", quantity: "1", unit_price: "0" }];
+    : [
+        {
+          description: "",
+          sku: "",
+          quantity: "1.0",
+          unit_price: "0.00",
+        },
+      ];
 }
 
 async function load() {
@@ -142,7 +193,7 @@ function dollarsToCents(s) {
 function addDraftLine() {
   editLines.value = [
     ...editLines.value,
-    { description: "", quantity: "1", unit_price: "0" },
+    { description: "", sku: "", quantity: "1.0", unit_price: "0.00" },
   ];
 }
 
@@ -157,10 +208,12 @@ async function saveDraft() {
   for (const line of editLines.value) {
     const desc = (line.description || "").trim();
     if (!desc) continue;
-    const qty = Number.parseFloat(line.quantity) || 0;
+    const qty = Number.parseFloat(String(line.quantity).replace(/,/g, "")) || 0;
     const unitCents = dollarsToCents(line.unit_price);
+    const skuTrim = (line.sku || "").trim();
     items.push({
       description: desc,
+      sku: skuTrim || null,
       quantity: qty,
       unit_price_cents: unitCents,
       line_total_cents: Math.max(0, Math.round(qty * unitCents)),
@@ -195,7 +248,9 @@ async function sendInvoice() {
   if (!invoice.value) return;
   try {
     await api.post(`/invoices/${invoice.value.id}/send`);
-    toast.success("Invoice sent.");
+    toast.success(
+      "Invoice sent. For now, email notification is sent to chaowang318915@gmail.com (development).",
+    );
     await load();
   } catch (e) {
     toast.errorFrom(e, "Could not send invoice.");
@@ -315,6 +370,15 @@ onMounted(() => {
           >
             {{ pdfDownloading ? "Downloading…" : "Download PDF" }}
           </button>
+          <button
+            v-if="invoice.status !== 'void'"
+            type="button"
+            class="btn btn-outline-secondary btn-sm"
+            :disabled="copyLinkBusy"
+            @click="copyCustomerLink"
+          >
+            {{ copyLinkBusy ? "Working…" : "Copy Customer Link" }}
+          </button>
         </div>
         <div class="d-flex flex-wrap gap-2 ms-lg-auto">
           <button
@@ -361,44 +425,42 @@ onMounted(() => {
       <div class="row g-4">
         <div class="col-lg-8">
           <div
-            class="staff-table-card staff-datatable-card staff-datatable-card--white p-4 billing-inv-preview"
+            class="staff-table-card staff-datatable-card staff-datatable-card--white p-4 p-md-5 billing-inv-preview billing-inv-vuexy"
           >
-            <div class="billing-inv-preview-head border-bottom border-light pb-4 mb-4">
+            <div class="billing-inv-preview-head border-bottom pb-4 mb-4">
               <div class="row g-4 align-items-start">
-                <div class="col-md-6 d-flex gap-3 align-items-start min-w-0">
+                <div class="col-lg-6 d-flex gap-3 align-items-start min-w-0">
                   <img
-                    :src="invoiceBrandLogoUrl"
+                    :src="invoiceLogoSrc"
                     alt=""
-                    class="billing-inv-logo flex-shrink-0"
-                    width="48"
-                    height="48"
+                    class="billing-inv-logo flex-shrink-0 rounded-1"
+                    width="44"
+                    height="44"
                   />
                   <div class="min-w-0">
-                    <div class="text-uppercase small fw-semibold text-secondary billing-inv-brand-kicker">
-                      Save Rack
-                    </div>
-                    <div class="small text-secondary">Fulfillment billing</div>
-                    <div class="mt-3 small">
-                      <span class="text-secondary">Invoice to</span>
-                      <div class="fw-semibold text-body mt-1">
-                        {{ invoice.client_company_name || "—" }}
-                      </div>
+                    <div class="fw-bold text-body fs-5 mb-1">Save Rack</div>
+                    <div class="small text-secondary lh-sm billing-inv-issuer-lines">
+                      <div>Fulfillment billing</div>
+                      <div class="mt-2">United States</div>
                     </div>
                   </div>
                 </div>
-                <div class="col-md-6 text-md-end min-w-0">
-                  <h1 class="h4 fw-bold text-body mb-3">
+                <div class="col-lg-6 text-lg-end min-w-0">
+                  <div class="text-secondary small text-uppercase fw-semibold billing-inv-invoice-label">
+                    Invoice
+                  </div>
+                  <h1 class="h3 fw-bold text-body mb-3">
                     {{ invoice.invoice_number }}
                   </h1>
                   <div class="small billing-inv-meta-list">
                     <div class="mb-1">
-                      <span class="text-secondary">Issue date</span>
+                      <span class="text-secondary">Date issued</span>
                       <span class="fw-medium ms-1">{{
                         formatInvoiceLongDate(invoice.issued_at)
                       }}</span>
                     </div>
                     <div class="mb-1">
-                      <span class="text-secondary">Due date</span>
+                      <span class="text-secondary">Date due</span>
                       <span class="fw-medium ms-1">
                         {{
                           invoice.status === "draft" && canUpdate
@@ -422,7 +484,26 @@ onMounted(() => {
               </div>
             </div>
 
-            <div class="d-flex flex-wrap align-items-center gap-2 mb-4">
+            <div class="row g-4 mb-4">
+              <div class="col-md-6">
+                <div class="billing-inv-section-label">Invoice to</div>
+                <div class="fw-semibold text-body">
+                  {{ invoice.client_company_name || "—" }}
+                </div>
+              </div>
+              <div class="col-md-6 text-md-end">
+                <div class="billing-inv-section-label">Bill to</div>
+                <div class="fw-semibold text-body fs-5">
+                  Total due:
+                  {{ formatCents(invoice.balance_due_cents, invoice.currency) }}
+                </div>
+                <div class="small text-secondary mt-2 billing-inv-billto-note">
+                  Bank / wire instructions can be added when billing goes live.
+                </div>
+              </div>
+            </div>
+
+            <div class="d-flex flex-wrap align-items-center gap-2 mb-3">
               <span
                 class="badge rounded-pill text-capitalize fw-medium"
                 :class="statusBadgeClass(invoice.status)"
@@ -437,7 +518,16 @@ onMounted(() => {
               </span>
             </div>
 
-            <h2 class="h6 fw-semibold mb-3">Line Items</h2>
+            <div
+              v-if="canUpdate && invoice.status !== 'draft'"
+              class="alert alert-light border small py-2 mb-3 mb-md-4"
+              role="status"
+            >
+              Line items can only be edited while this invoice is a draft. Save changes with
+              <strong>Save Draft</strong> before sending.
+            </div>
+
+            <h2 class="h6 fw-semibold mb-3">Line items</h2>
 
             <template v-if="invoice.status === 'draft' && canUpdate">
               <div class="row g-3 mb-3">
@@ -462,15 +552,16 @@ onMounted(() => {
                   Add Line
                 </button>
               </div>
-              <div class="table-responsive">
-                <table class="table table-sm align-middle mb-0">
+              <div class="table-responsive billing-inv-items-wrap">
+                <table class="table table-sm align-middle mb-0 billing-inv-items-table">
                   <thead>
-                    <tr class="text-secondary small">
+                    <tr>
+                      <th>Item</th>
                       <th>Description</th>
-                      <th class="text-end" style="width: 6rem">Qty</th>
-                      <th class="text-end" style="width: 7rem">Unit</th>
-                      <th class="text-end" style="width: 7rem">Line total</th>
-                      <th style="width: 3rem" />
+                      <th class="text-end">Cost</th>
+                      <th class="text-end" style="width: 5.5rem">Qty</th>
+                      <th class="text-end">Price</th>
+                      <th style="width: 3.25rem" />
                     </tr>
                   </thead>
                   <tbody>
@@ -480,15 +571,16 @@ onMounted(() => {
                           v-model="line.description"
                           type="text"
                           class="form-control form-control-sm"
-                          placeholder="Description"
+                          placeholder="Item"
                           :disabled="draftSaving"
                         />
                       </td>
-                      <td class="text-end">
+                      <td>
                         <input
-                          v-model="line.quantity"
+                          v-model="line.sku"
                           type="text"
-                          class="form-control form-control-sm text-end"
+                          class="form-control form-control-sm"
+                          placeholder="SKU or note"
                           :disabled="draftSaving"
                         />
                       </td>
@@ -501,14 +593,24 @@ onMounted(() => {
                           :disabled="draftSaving"
                         />
                       </td>
+                      <td class="text-end">
+                        <input
+                          v-model="line.quantity"
+                          type="text"
+                          inputmode="decimal"
+                          class="form-control form-control-sm text-end"
+                          :disabled="draftSaving"
+                          @blur="line.quantity = formatQtyOneDecimal(line.quantity)"
+                        />
+                      </td>
                       <td class="text-end small text-secondary">
                         {{
                           formatCents(
                             Math.max(
                               0,
                               Math.round(
-                                (Number.parseFloat(line.quantity) || 0) *
-                                  dollarsToCents(line.unit_price),
+                                (Number.parseFloat(String(line.quantity).replace(/,/g, "")) ||
+                                  0) * dollarsToCents(line.unit_price),
                               ),
                             ),
                             invoice.currency,
@@ -542,24 +644,30 @@ onMounted(() => {
             </template>
 
             <template v-else>
-              <div class="table-responsive">
-                <table class="table table-sm align-middle mb-0">
+              <div class="table-responsive billing-inv-items-wrap">
+                <table class="table table-sm align-middle mb-0 billing-inv-items-table">
                   <thead>
-                    <tr class="text-secondary small">
+                    <tr>
+                      <th>Item</th>
                       <th>Description</th>
+                      <th class="text-end">Cost</th>
                       <th class="text-end">Qty</th>
-                      <th class="text-end">Unit</th>
-                      <th class="text-end">Line total</th>
+                      <th class="text-end">Price</th>
                     </tr>
                   </thead>
                   <tbody>
                     <tr v-for="item in invoice.items" :key="item.id">
-                      <td>{{ item.description }}</td>
-                      <td class="text-end">{{ item.quantity }}</td>
+                      <td class="fw-medium">{{ item.description }}</td>
+                      <td class="text-secondary small">
+                        {{ item.sku || item.service_code || "—" }}
+                      </td>
                       <td class="text-end">
                         {{ formatCents(item.unit_price_cents, invoice.currency) }}
                       </td>
-                      <td class="text-end fw-medium">
+                      <td class="text-end text-nowrap">
+                        {{ formatQtyOneDecimal(item.quantity) }}
+                      </td>
+                      <td class="text-end fw-semibold">
                         {{ formatCents(item.line_total_cents, invoice.currency) }}
                       </td>
                     </tr>
@@ -567,38 +675,48 @@ onMounted(() => {
                 </table>
               </div>
             </template>
-            <div class="d-flex justify-content-end mt-3">
-              <div class="text-end small" style="min-width: 12rem">
-                <div class="d-flex justify-content-between">
-                  <span class="text-secondary">Subtotal</span>
-                  <span>{{ formatCents(invoice.subtotal_cents, invoice.currency) }}</span>
-                </div>
-                <div class="d-flex justify-content-between">
-                  <span class="text-secondary">Tax</span>
-                  <span>{{ formatCents(invoice.tax_cents, invoice.currency) }}</span>
-                </div>
-                <div class="d-flex justify-content-between fw-semibold mt-1">
-                  <span>Total</span>
-                  <span>{{ formatCents(invoice.total_cents, invoice.currency) }}</span>
-                </div>
-                <div class="d-flex justify-content-between">
-                  <span class="text-secondary">Paid</span>
-                  <span>{{ formatCents(invoice.amount_paid_cents, invoice.currency) }}</span>
-                </div>
-                <div class="d-flex justify-content-between fw-semibold text-primary">
-                  <span>Balance due</span>
-                  <span>{{ formatCents(invoice.balance_due_cents, invoice.currency) }}</span>
+
+            <div class="row align-items-end mt-4 pt-3 border-top">
+              <div class="col-md-6 small text-secondary mb-3 mb-md-0">
+                <div class="fw-medium text-body mb-1">Thanks for your business</div>
+                <div>Questions? Reply to your Save Rack account contact.</div>
+              </div>
+              <div class="col-md-6">
+                <div class="billing-inv-totals ms-md-auto">
+                  <div class="d-flex justify-content-between small">
+                    <span class="text-secondary">Subtotal</span>
+                    <span>{{ formatCents(invoice.subtotal_cents, invoice.currency) }}</span>
+                  </div>
+                  <div class="d-flex justify-content-between small">
+                    <span class="text-secondary">Tax</span>
+                    <span>{{ formatCents(invoice.tax_cents, invoice.currency) }}</span>
+                  </div>
+                  <div class="d-flex justify-content-between fw-semibold mt-1">
+                    <span>Total</span>
+                    <span>{{ formatCents(invoice.total_cents, invoice.currency) }}</span>
+                  </div>
+                  <div class="d-flex justify-content-between small">
+                    <span class="text-secondary">Paid</span>
+                    <span>{{ formatCents(invoice.amount_paid_cents, invoice.currency) }}</span>
+                  </div>
+                  <div
+                    class="d-flex justify-content-between fw-semibold text-primary pt-2 mt-2 border-top"
+                  >
+                    <span>Balance due</span>
+                    <span>{{ formatCents(invoice.balance_due_cents, invoice.currency) }}</span>
+                  </div>
                 </div>
               </div>
             </div>
+
             <template v-if="invoice.customer_notes || invoice.internal_notes">
-              <hr />
+              <hr class="my-4" />
               <p v-if="invoice.customer_notes" class="small mb-2">
-                <span class="text-secondary">Customer notes:</span>
+                <span class="fw-semibold">Note:</span>
                 {{ invoice.customer_notes }}
               </p>
-              <p v-if="invoice.internal_notes" class="small mb-0">
-                <span class="text-secondary">Internal notes:</span>
+              <p v-if="invoice.internal_notes" class="small mb-0 text-secondary">
+                <span class="fw-medium">Internal:</span>
                 {{ invoice.internal_notes }}
               </p>
             </template>
@@ -700,13 +818,26 @@ onMounted(() => {
 <style scoped>
 .billing-inv-preview {
   box-shadow: 0 0.125rem 0.5rem rgba(15, 23, 42, 0.06);
+  border-radius: 0.375rem;
+}
+.billing-inv-vuexy {
+  border: 1px solid rgba(47, 43, 61, 0.08);
 }
 .billing-inv-logo {
   object-fit: contain;
 }
-.billing-inv-brand-kicker {
+.billing-inv-invoice-label {
   letter-spacing: 0.06em;
   font-size: 0.7rem;
+  margin-bottom: 0.25rem;
+}
+.billing-inv-section-label {
+  font-size: 0.7rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--bs-secondary-color, #6c757d);
+  font-weight: 600;
+  margin-bottom: 0.35rem;
 }
 .billing-inv-meta-list .text-secondary {
   min-width: 5.5rem;
@@ -717,5 +848,23 @@ onMounted(() => {
     text-align: right;
     margin-right: 0.35rem;
   }
+}
+.billing-inv-items-table thead th {
+  font-size: 0.7rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--bs-secondary-color, #6c757d);
+  font-weight: 600;
+  border-bottom: 1px solid #e8e7ed;
+  padding-top: 0.65rem;
+  padding-bottom: 0.65rem;
+  white-space: nowrap;
+}
+.billing-inv-items-table tbody td {
+  border-bottom: 1px solid #f1f0f4;
+  vertical-align: middle;
+}
+.billing-inv-totals {
+  max-width: 15rem;
 }
 </style>

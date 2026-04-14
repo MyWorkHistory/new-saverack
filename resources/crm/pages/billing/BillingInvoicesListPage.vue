@@ -9,7 +9,7 @@ import {
   ref,
   watch,
 } from "vue";
-import { RouterLink } from "vue-router";
+import { RouterLink, useRouter } from "vue-router";
 import api from "../../services/api";
 import ConfirmModal from "../../components/common/ConfirmModal.vue";
 import CrmLoadingSpinner from "../../components/common/CrmLoadingSpinner.vue";
@@ -24,6 +24,7 @@ import { formatCents } from "../../utils/formatMoney.js";
 
 const crmUser = inject("crmUser", ref(null));
 const toast = useToast();
+const router = useRouter();
 
 function userHasPerm(key) {
   const u = crmUser.value;
@@ -126,6 +127,15 @@ function clearSelection() {
 
 const filterMenuOpen = ref(false);
 const addDrawerOpen = ref(false);
+const importModalOpen = ref(false);
+const importBusy = ref(false);
+const importForm = reactive({
+  import_type: "charges",
+  client_account_id: "",
+  due_at: "",
+  invoice_number: "",
+  file: null,
+});
 
 const manageOpenId = ref(null);
 const manageMenuRect = ref({ top: 0, left: 0 });
@@ -288,6 +298,74 @@ async function onInvoiceDrawerCreated() {
   toast.success("Invoice created.");
   await loadSummary();
   await fetchRows();
+}
+
+function openImportModal() {
+  importForm.import_type = "charges";
+  importForm.client_account_id = "";
+  importForm.due_at = new Date().toISOString().slice(0, 10);
+  importForm.invoice_number = "";
+  importForm.file = null;
+  importModalOpen.value = true;
+}
+
+function closeImportModal() {
+  if (importBusy.value) return;
+  importModalOpen.value = false;
+}
+
+function onImportFileChange(event) {
+  const input = event?.target;
+  const file = input?.files?.[0] ?? null;
+  importForm.file = file;
+}
+
+async function submitImportCsv() {
+  if (!importForm.client_account_id) {
+    toast.error("Select a client account.");
+    return;
+  }
+  if (!importForm.due_at) {
+    toast.error("Select a due date.");
+    return;
+  }
+  if (!importForm.file) {
+    toast.error("Choose a CSV file.");
+    return;
+  }
+
+  importBusy.value = true;
+  try {
+    const formData = new FormData();
+    formData.append("due_at", importForm.due_at);
+    formData.append("file", importForm.file);
+    const invNum = String(importForm.invoice_number || "").trim();
+    if (invNum) {
+      formData.append("invoice_number", invNum);
+    }
+
+    const accountId = encodeURIComponent(String(importForm.client_account_id));
+    const endpoint =
+      importForm.import_type === "storage"
+        ? `/client-accounts/${accountId}/invoice-imports/storage`
+        : `/client-accounts/${accountId}/invoice-imports/charges`;
+
+    const { data } = await api.post(endpoint, formData);
+    const newInvoiceId = data?.invoice?.id;
+    if (!newInvoiceId) {
+      throw new Error("Missing invoice id.");
+    }
+
+    toast.success("Invoice imported.");
+    closeImportModal();
+    await loadSummary();
+    await fetchRows();
+    router.push(`/billing/invoices/${newInvoiceId}`);
+  } catch (e) {
+    toast.errorFrom(e, "Could not import CSV.");
+  } finally {
+    importBusy.value = false;
+  }
 }
 
 function openPayModal(row) {
@@ -566,14 +644,22 @@ onUnmounted(() => {
           Fulfillment billing — search, filter, and manage client invoices
         </p>
       </div>
-      <button
-        v-if="canCreate"
-        type="button"
-        class="btn btn-primary staff-page-primary ms-md-auto flex-shrink-0"
-        @click="addDrawerOpen = true"
-      >
-        Add Invoice
-      </button>
+      <div v-if="canCreate" class="d-flex flex-wrap gap-2 ms-md-auto">
+        <button
+          type="button"
+          class="btn btn-outline-secondary flex-shrink-0"
+          @click="openImportModal"
+        >
+          Import CSV
+        </button>
+        <button
+          type="button"
+          class="btn btn-primary staff-page-primary flex-shrink-0"
+          @click="addDrawerOpen = true"
+        >
+          Add Invoice
+        </button>
+      </div>
     </div>
 
     <div v-if="summaryError" class="alert alert-warning mb-3" role="alert">
@@ -1241,6 +1327,92 @@ onUnmounted(() => {
       @created="onInvoiceDrawerCreated"
       @refresh-meta="fetchMeta"
     />
+
+    <Teleport to="body">
+      <Transition name="crm-vx-confirm">
+        <div
+          v-if="importModalOpen"
+          class="crm-vx-modal-overlay"
+          role="dialog"
+          aria-modal="true"
+          @click.self="closeImportModal"
+        >
+          <div class="crm-vx-modal crm-vx-modal--sm" @click.stop>
+            <header class="crm-vx-modal__head border-bottom">
+              <h2 class="crm-vx-modal__title mb-0">Import Invoice CSV</h2>
+            </header>
+            <div class="crm-vx-modal__body">
+              <div class="mb-3">
+                <label class="form-label" for="billing-import-type">Import Type</label>
+                <select id="billing-import-type" v-model="importForm.import_type" class="form-select">
+                  <option value="charges">Charge CSV</option>
+                  <option value="storage">Storage CSV</option>
+                </select>
+              </div>
+              <div class="mb-3">
+                <label class="form-label" for="billing-import-client">Client Account</label>
+                <CrmSearchableSelect
+                  v-model="importForm.client_account_id"
+                  appearance="staff"
+                  :options="meta.client_accounts"
+                  placeholder="Select client account"
+                  search-placeholder="Search clients…"
+                  empty-label="No client account selected"
+                  button-id="billing-import-client"
+                />
+              </div>
+              <div class="mb-3">
+                <label class="form-label" for="billing-import-due">Due Date</label>
+                <input
+                  id="billing-import-due"
+                  v-model="importForm.due_at"
+                  type="date"
+                  class="form-control"
+                />
+              </div>
+              <div class="mb-3">
+                <label class="form-label" for="billing-import-number">Invoice # (Optional)</label>
+                <input
+                  id="billing-import-number"
+                  v-model="importForm.invoice_number"
+                  type="text"
+                  class="form-control"
+                  placeholder="INV-2026-00001"
+                />
+              </div>
+              <div>
+                <label class="form-label" for="billing-import-file">CSV File</label>
+                <input
+                  id="billing-import-file"
+                  type="file"
+                  class="form-control"
+                  accept=".csv,text/csv,text/plain"
+                  @change="onImportFileChange"
+                />
+              </div>
+            </div>
+            <footer class="crm-vx-modal__footer d-flex gap-2 justify-content-end">
+              <button
+                type="button"
+                class="crm-vx-modal-btn crm-vx-modal-btn--secondary"
+                :disabled="importBusy"
+                @click="closeImportModal"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                class="crm-vx-modal-btn crm-vx-modal-btn--primary"
+                :disabled="importBusy"
+                @click="submitImportCsv"
+              >
+                {{ importBusy ? "Importing…" : "Import CSV" }}
+              </button>
+            </footer>
+          </div>
+        </div>
+      </Transition>
+    </Teleport>
 
     <Teleport to="body">
       <Transition name="crm-vx-confirm">

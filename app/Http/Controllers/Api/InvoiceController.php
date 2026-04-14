@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Http\Requests\InvoiceRecordPaymentRequest;
+use App\Http\Requests\InvoiceReplaceLineGroupRequest;
 use App\Http\Requests\InvoiceStoreRequest;
 use App\Http\Requests\InvoiceUpdateRequest;
 use App\Models\ClientAccount;
@@ -142,6 +143,44 @@ class InvoiceController extends Controller
     {
         $this->authorize('void', $invoice);
         $invoice = $this->invoices->voidInvoice($invoice, request()->user());
+
+        return response()->json($this->invoices->toDetailArray($invoice));
+    }
+
+    public function shareLink(Invoice $invoice): JsonResponse
+    {
+        $this->authorize('view', $invoice);
+        $invoice = $this->invoices->ensureShareToken($invoice);
+
+        return response()->json([
+            'customer_view_url' => $this->invoices->publicCustomerViewUrl($invoice),
+            'customer_pdf_url' => $this->invoices->publicCustomerPdfUrl($invoice),
+        ]);
+    }
+
+    public function destroyLineGroup(Invoice $invoice, string $groupKey): JsonResponse
+    {
+        $this->authorize('update', $invoice);
+        $groupKey = rawurldecode($groupKey);
+        try {
+            $invoice = $this->invoices->deleteLineGroup($invoice, $groupKey, request()->user());
+        } catch (\InvalidArgumentException $e) {
+            return response()->json(['message' => $e->getMessage()], 422);
+        }
+
+        return response()->json($this->invoices->toDetailArray($invoice));
+    }
+
+    public function replaceLineGroup(InvoiceReplaceLineGroupRequest $request, Invoice $invoice, string $groupKey): JsonResponse
+    {
+        $this->authorize('update', $invoice);
+        $groupKey = rawurldecode($groupKey);
+        $invoice = $this->invoices->replaceLineGroup(
+            $invoice,
+            $groupKey,
+            $request->itemsPayload(),
+            $request->user(),
+        );
 
         return response()->json($this->invoices->toDetailArray($invoice));
     }

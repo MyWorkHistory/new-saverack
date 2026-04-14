@@ -46,6 +46,11 @@ Route::get('/tickets-app/{any?}', function (?string $any = null) use ($ticketsIn
     return response()->file($ticketsIndex, $spaHtmlHeaders);
 })->where('any', '.*');
 
+/*
+| Public billing invoice pages are registered in routes/web.php and must not be
+| swallowed by the CRM SPA fallback below.
+*/
+
 Route::get('/{any?}', function () use ($spaHtmlHeaders) {
     $index = public_path('index.html');
     if (! File::exists($index)) {
@@ -56,4 +61,4 @@ Route::get('/{any?}', function () use ($spaHtmlHeaders) {
     }
 
     return response()->file($index, $spaHtmlHeaders);
-})->where('any', '^(?!(?:api|sanctum|storage|avatars)(?:/|$)).*$');
+})->where('any', '^(?!(?:api|sanctum|storage|avatars|billing-invoice)(?:/|$)).*$');

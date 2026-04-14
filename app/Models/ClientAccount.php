@@ -6,6 +6,7 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Relations\HasOne;
+use Illuminate\Support\Str;
 
 class ClientAccount extends Model
 {
@@ -54,6 +55,28 @@ class ClientAccount extends Model
         'contract_date' => 'date',
     ];
 
+    protected static function booted(): void
+    {
+        static::created(static function (ClientAccount $account) {
+            $base = Str::slug((string) $account->company_name);
+            if ($base === '') {
+                $base = 'account';
+            }
+            $account->invoice_share_slug = $base.'-'.$account->id;
+            $account->saveQuietly();
+        });
+
+        static::updating(static function (ClientAccount $account) {
+            if ($account->isDirty('company_name')) {
+                $base = Str::slug((string) $account->company_name);
+                if ($base === '') {
+                    $base = 'account';
+                }
+                $account->invoice_share_slug = $base.'-'.$account->id;
+            }
+        });
+    }
+
     public function accountManager(): BelongsTo
     {
         return $this->belongsTo(User::class, 'account_manager_id');
@@ -94,6 +117,11 @@ class ClientAccount extends Model
     public function invoices(): HasMany
     {
         return $this->hasMany(Invoice::class, 'client_account_id');
+    }
+
+    public function invoiceImports(): HasMany
+    {
+        return $this->hasMany(InvoiceImport::class, 'client_account_id');
     }
 
     public function contactFullName(): string

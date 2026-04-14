@@ -12,10 +12,17 @@ use Illuminate\Http\JsonResponse;
 
 class InvoiceImportController extends Controller
 {
-    public function __construct(
-        private InvoiceImportService $imports,
-        private InvoiceService $invoices
-    ) {}
+    /** @var InvoiceImportService */
+    private $imports;
+
+    /** @var InvoiceService */
+    private $invoices;
+
+    public function __construct(InvoiceImportService $imports, InvoiceService $invoices)
+    {
+        $this->imports = $imports;
+        $this->invoices = $invoices;
+    }
 
     public function importCharges(InvoiceCsvImportRequest $request, ClientAccount $client_account): JsonResponse
     {

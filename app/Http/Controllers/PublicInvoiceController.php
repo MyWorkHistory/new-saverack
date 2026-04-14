@@ -8,9 +8,13 @@ use Illuminate\Http\Response;
 
 class PublicInvoiceController extends Controller
 {
-    public function __construct(
-        private InvoiceService $invoices
-    ) {}
+    /** @var InvoiceService */
+    private $invoices;
+
+    public function __construct(InvoiceService $invoices)
+    {
+        $this->invoices = $invoices;
+    }
 
     public function show(string $slug, string $token): Response
     {

@@ -165,12 +165,68 @@ const invoiceTableRows = computed(() => {
   }));
 });
 
-const selectedTableRow = computed(() => {
-  if (!selectedTableRowId.value) return null;
-  return invoiceTableRows.value.find((r) => r.id === selectedTableRowId.value) || null;
+const invoiceVisibleRows = computed(() => {
+  if (invoiceTableRows.value.length) {
+    return invoiceTableRows.value;
+  }
+
+  const items = invoice.value?.items || [];
+  return items.map((item) => {
+    const service = fallbackServiceName(item);
+    const cat = fallbackCategoryKey(item.category);
+    return {
+      id: `raw-${item.id}`,
+      name: service,
+      type: fallbackCategoryLabel(cat, service),
+      qty: Number(item.quantity || 0),
+      price_cents: Number(item.unit_price_cents || 0),
+      total_cents: Number(item.line_total_cents || 0),
+      edit_group_key: item.group_key || null,
+      details: [
+        {
+          id: item.id,
+          name: service,
+          type: fallbackCategoryLabel(cat, service),
+          category_key: item.category || cat,
+          qty: Number(item.quantity || 0),
+          price_cents: Number(item.unit_price_cents || 0),
+          total_cents: Number(item.line_total_cents || 0),
+          display_name: item.display_name || null,
+          description: item.description || null,
+          sku: item.sku || null,
+          service_code: item.service_code || null,
+          group_key: item.group_key || null,
+          subtype: item.subtype || null,
+          unit: item.unit || null,
+          metadata: item.metadata || null,
+        },
+      ],
+    };
+  });
 });
 
-const selectedTableRowDetails = computed(() => selectedTableRow.value?.details || []);
+const selectedTableRow = computed(() => {
+  if (!selectedTableRowId.value) return null;
+  return invoiceVisibleRows.value.find((r) => r.id === selectedTableRowId.value) || null;
+});
+
+const selectedTableRowDetails = computed(() => {
+  const row = selectedTableRow.value;
+  if (!row) return [];
+  if (Array.isArray(row.details) && row.details.length) {
+    return row.details;
+  }
+  return [
+    {
+      id: row.id,
+      name: row.name,
+      type: row.type,
+      qty: row.qty,
+      price_cents: row.price_cents,
+      total_cents: row.total_cents,
+    },
+  ];
+});
 
 function openTableRow(row) {
   selectedTableRowId.value = row.id;
@@ -365,7 +421,7 @@ async function load() {
       draftEditMode.value = false;
     }
     if (selectedTableRowId.value) {
-      const stillExists = invoiceTableRows.value.some((r) => r.id === selectedTableRowId.value);
+      const stillExists = invoiceVisibleRows.value.some((r) => r.id === selectedTableRowId.value);
       if (!stillExists) selectedTableRowId.value = "";
     }
     syncEditFromInvoice();
@@ -826,7 +882,7 @@ onMounted(() => {
                     </tr>
                   </thead>
                   <tbody>
-                    <template v-for="row in invoiceTableRows" :key="row.id">
+                    <template v-for="row in invoiceVisibleRows" :key="row.id">
                       <tr
                         class="billing-inv-cat-row"
                         :role="row.details?.length ? 'button' : null"
@@ -848,7 +904,7 @@ onMounted(() => {
                         </td>
                       </tr>
                     </template>
-                    <tr v-if="!invoiceTableRows.length">
+                    <tr v-if="!invoiceVisibleRows.length">
                       <td colspan="5" class="text-center text-secondary py-3">No line items.</td>
                     </tr>
                   </tbody>

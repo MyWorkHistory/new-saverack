@@ -109,13 +109,93 @@ function formatQtyDisplay(v) {
   return Number.isInteger(n) ? String(n) : n.toFixed(2);
 }
 
+function toArray(input) {
+  if (Array.isArray(input)) return input;
+  if (input && typeof input === "object") return Object.values(input);
+  return [];
+}
+
+function normalizeDetailRow(raw, fallback = {}) {
+  const service = String(
+    raw?.name ||
+      raw?.service ||
+      raw?.display_name ||
+      raw?.description ||
+      fallback.service ||
+      "—",
+  ).trim();
+  const cat = fallbackCategoryKey(raw?.category_key || raw?.category || fallback.category);
+  return {
+    id: raw?.id ?? fallback.id ?? `detail-${Math.random()}`,
+    name: service || "—",
+    type: raw?.type || raw?.category_text || fallbackCategoryLabel(cat, service),
+    category_key: raw?.category_key || raw?.category || fallback.category || cat,
+    qty: Number(raw?.qty ?? raw?.quantity ?? 0),
+    price_cents: Number(raw?.price_cents ?? raw?.unit_price_cents ?? 0),
+    total_cents: Number(raw?.total_cents ?? raw?.line_total_cents ?? 0),
+    display_name: raw?.display_name || null,
+    description: raw?.description || null,
+    sku: raw?.sku || null,
+    service_code: raw?.service_code || null,
+    group_key: raw?.group_key || null,
+    subtype: raw?.subtype || null,
+    unit: raw?.unit || null,
+    metadata: raw?.metadata || null,
+  };
+}
+
+function normalizeTopRow(raw, index = 0) {
+  const service = String(
+    raw?.name || raw?.groupName || raw?.service || raw?.display_name || raw?.description || "—",
+  ).trim();
+  const cat = fallbackCategoryKey(raw?.category_key || raw?.category || raw?.type);
+  const detailsRaw = toArray(raw?.details?.length ? raw.details : raw?.items);
+  const details = detailsRaw.length
+    ? detailsRaw.map((d, i) =>
+        normalizeDetailRow(d, {
+          id: raw?.id ? `${raw.id}-detail-${i}` : `row-${index}-detail-${i}`,
+          service,
+          category: raw?.category || cat,
+        }),
+      )
+    : [
+        normalizeDetailRow(raw, {
+          id: raw?.id || `row-${index}`,
+          service,
+          category: raw?.category || cat,
+        }),
+      ];
+  const qty = Number(raw?.qty ?? raw?.quantity ?? details.reduce((sum, d) => sum + Number(d.qty || 0), 0));
+  const total = Number(
+    raw?.total_cents ??
+      raw?.line_total_cents ??
+      details.reduce((sum, d) => sum + Number(d.total_cents || 0), 0),
+  );
+  const price = Number(raw?.price_cents ?? raw?.unit_price_cents ?? (qty ? Math.round(total / qty) : 0));
+  return {
+    id: raw?.id || raw?.group_key || `row-${index}`,
+    name: service || "—",
+    type: raw?.type || raw?.category_text || fallbackCategoryLabel(cat, service),
+    qty,
+    price_cents: price,
+    total_cents: total,
+    edit_group_key: raw?.edit_group_key || raw?.group_key || null,
+    details,
+  };
+}
+
 const invoiceTableRows = computed(() => {
-  const presentationRows = invoice.value?.presentation?.rows;
-  if (Array.isArray(presentationRows) && presentationRows.length) {
-    return presentationRows;
+  const presentationRows = toArray(
+    invoice.value?.presentation?.rows ||
+      invoice.value?.presentation?.items ||
+      invoice.value?.rows ||
+      invoice.value?.line_groups,
+  );
+  if (presentationRows.length) {
+    return presentationRows.map((row, idx) => normalizeTopRow(row, idx));
   }
 
-  const items = invoice.value?.items || [];
+  const items = toArray(invoice.value?.items || invoice.value?.line_items || invoice.value?.lines);
   if (!items.length) return [];
 
   const groups = new Map();
@@ -170,38 +250,24 @@ const invoiceVisibleRows = computed(() => {
     return invoiceTableRows.value;
   }
 
-  const items = invoice.value?.items || [];
-  return items.map((item) => {
+  const items = toArray(invoice.value?.items || invoice.value?.line_items || invoice.value?.lines);
+  return items.map((item, idx) => {
     const service = fallbackServiceName(item);
     const cat = fallbackCategoryKey(item.category);
-    return {
-      id: `raw-${item.id}`,
-      name: service,
-      type: fallbackCategoryLabel(cat, service),
-      qty: Number(item.quantity || 0),
-      price_cents: Number(item.unit_price_cents || 0),
-      total_cents: Number(item.line_total_cents || 0),
-      edit_group_key: item.group_key || null,
-      details: [
-        {
-          id: item.id,
-          name: service,
-          type: fallbackCategoryLabel(cat, service),
-          category_key: item.category || cat,
-          qty: Number(item.quantity || 0),
-          price_cents: Number(item.unit_price_cents || 0),
-          total_cents: Number(item.line_total_cents || 0),
-          display_name: item.display_name || null,
-          description: item.description || null,
-          sku: item.sku || null,
-          service_code: item.service_code || null,
-          group_key: item.group_key || null,
-          subtype: item.subtype || null,
-          unit: item.unit || null,
-          metadata: item.metadata || null,
-        },
-      ],
-    };
+    return normalizeTopRow(
+      {
+        id: item.id ? `raw-${item.id}` : `raw-${idx}`,
+        name: service,
+        type: fallbackCategoryLabel(cat, service),
+        category: item.category || cat,
+        qty: Number(item.quantity || 0),
+        price_cents: Number(item.unit_price_cents || 0),
+        total_cents: Number(item.line_total_cents || 0),
+        edit_group_key: item.group_key || null,
+        details: [item],
+      },
+      idx,
+    );
   });
 });
 
@@ -416,8 +482,9 @@ async function load() {
   loading.value = true;
   try {
     const { data } = await api.get(`/invoices/${props.id}`);
-    invoice.value = data;
-    if (data?.status !== "draft") {
+    const payload = data?.data && typeof data.data === "object" ? data.data : data;
+    invoice.value = payload;
+    if (payload?.status !== "draft") {
       draftEditMode.value = false;
     }
     if (selectedTableRowId.value) {
@@ -426,7 +493,7 @@ async function load() {
     }
     syncEditFromInvoice();
     setCrmPageMeta({
-      title: `Save Rack | ${data?.invoice_number || "Invoice"}`,
+      title: `Save Rack | ${payload?.invoice_number || "Invoice"}`,
       description: "Invoice detail.",
     });
   } catch (e) {

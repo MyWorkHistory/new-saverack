@@ -29,6 +29,19 @@
     </style>
 </head>
 <body>
+@php
+    $pdfLogoSrc = '';
+    $logoPath = public_path('logo.jpg');
+    if (is_string($logoPath) && file_exists($logoPath) && is_readable($logoPath)) {
+        $raw = @file_get_contents($logoPath);
+        if ($raw !== false) {
+            $pdfLogoSrc = 'data:image/jpeg;base64,'.base64_encode($raw);
+        }
+    }
+    if ($pdfLogoSrc === '') {
+        $pdfLogoSrc = asset('logo.jpg').'?v=20260402a';
+    }
+@endphp
 <table class="invoice-head">
     <tr>
         <td width="55%">
@@ -51,7 +64,7 @@
             </div>
         </td>
         <td width="45%" class="invoice-right">
-            <img src="{{ public_path('logo.jpg') }}" alt="Save Rack" class="invoice-logo" />
+            <img src="{{ $pdfLogoSrc }}" alt="Save Rack" class="invoice-logo" />
             <div class="balance-label">Balance Due</div>
             <div class="balance-due">{{ $balance_due }}</div>
         </td>

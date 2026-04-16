@@ -15,7 +15,7 @@ class InvoiceSendWhatsappRequest extends FormRequest
     public function rules(): array
     {
         return [
-            'type' => ['nullable', Rule::in(['send_invoice', 'invoice_reminder'])],
+            'type' => ['nullable', Rule::in(['send_invoice', 'invoice_reminder', 'send_storage_invoice'])],
             'message' => ['nullable', 'string', 'max:5000'],
         ];
     }

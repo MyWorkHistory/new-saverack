@@ -1631,7 +1631,12 @@ class InvoiceService
         if ($type === 'invoice_reminder') {
             return 'Invoice reminder: '.$invoice->invoice_number.' ('.$label.'). Balance due $'.$balance.'. '.$invoiceUrl;
         }
+        if ($type === 'send_storage_invoice') {
+            return 'Hi! Here is your storage invoice for '.$label.': '.$invoiceUrl."\n"
+                .'Let me know if you have any questions-thanks!';
+        }
 
-        return 'Invoice '.$invoice->invoice_number.' is ready ('.$label.'). View invoice: '.$invoiceUrl;
+        return 'Hi! Here is your invoice for '.$label.': '.$invoiceUrl."\n"
+            .'Let me know if you have any questions-thanks!';
     }
 }

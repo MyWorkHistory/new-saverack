@@ -1318,9 +1318,17 @@ onMounted(() => {
                 v-if="canUpdate && invoice.status === 'draft'"
                 type="button"
                 class="billing-inv-action-btn billing-inv-action-btn--primary"
-                @click="sendInvoice"
+                @click="openSendEmailModal"
               >
                 Send Invoice
+              </button>
+              <button
+                v-if="canUpdate && invoice.status === 'draft'"
+                type="button"
+                class="billing-inv-action-btn"
+                @click="sendInvoice"
+              >
+                Mark As Sent
               </button>
               <button
                 v-if="canDelete && invoice.status === 'draft'"
@@ -1415,6 +1423,7 @@ onMounted(() => {
               <select v-model="sendWhatsappType" class="form-select mb-3">
                 <option value="send_invoice">Send Invoice</option>
                 <option value="invoice_reminder">Invoice Reminder</option>
+                <option value="send_storage_invoice">Send Storage Invoice</option>
               </select>
               <label class="form-label">Optional custom message</label>
               <textarea v-model="sendWhatsappMessage" rows="4" class="form-control" />

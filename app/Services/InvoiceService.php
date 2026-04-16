@@ -1487,75 +1487,17 @@ class InvoiceService
 
         $rows = $presentation['rows'] ?? [];
         $sections = [];
-
-        $postageRows = [];
-        $packagingRows = [];
-        $adHocRows = [];
-        $otherByType = [];
-
-        $normalizeLine = function (array $detail) use ($money): array {
-            $qty = (float) ($detail['qty'] ?? 0);
-            return [
-                'name' => (string) ($detail['name'] ?? '—'),
-                'qty' => number_format($qty, 3, '.', ''),
-                'qty_display' => $this->formatLegacyQty($qty),
-                'unit' => $money((int) ($detail['price_cents'] ?? 0)),
-                'line_total' => $money((int) ($detail['total_cents'] ?? 0)),
-                'unit_rate' => $money((int) ($detail['price_cents'] ?? 0)),
-                'total_cents' => (int) ($detail['total_cents'] ?? 0),
-                'qty_float' => $qty,
-            ];
-        };
-
         foreach ($rows as $row) {
-            $type = strtolower(trim((string) ($row['type'] ?? '')));
-            $detailRows = [];
-            foreach ((array) ($row['details'] ?? []) as $detail) {
-                if (! is_array($detail)) {
-                    continue;
-                }
-                $detailRows[] = $normalizeLine($detail);
-            }
-
-            if ($type === 'fulfillment') {
-                // Old CRM public table intentionally keeps fulfillment rows flat.
-                $sections[] = [
-                    'id' => (string) ($row['id'] ?? Str::uuid()),
-                    'label' => (string) ($row['name'] ?? '—'),
-                    'type' => (string) ($row['type'] ?? ''),
-                    'qty' => number_format((float) ($row['qty'] ?? 0), 3, '.', ''),
-                    'qty_display' => $this->formatLegacyQty((float) ($row['qty'] ?? 0)),
-                    'unit' => $money((int) ($row['price_cents'] ?? 0)),
-                    'line_total' => $money((int) ($row['total_cents'] ?? 0)),
-                    'has_breakdown' => false,
-                    'lines' => [],
+            $details = is_array($row['details'] ?? null) ? $row['details'] : [];
+            $lines = [];
+            foreach ($details as $detail) {
+                $lines[] = [
+                    'name' => (string) ($detail['name'] ?? '—'),
+                    'qty' => number_format((float) ($detail['qty'] ?? 0), 3, '.', ''),
+                    'qty_display' => $this->formatLegacyQty((float) ($detail['qty'] ?? 0)),
+                    'unit' => $money((int) ($detail['price_cents'] ?? 0)),
+                    'line_total' => $money((int) ($detail['total_cents'] ?? 0)),
                 ];
-                continue;
-            }
-
-            if ($type === 'postage') {
-                $postageRows[] = ['row' => $row, 'details' => $detailRows];
-                continue;
-            }
-            if ($type === 'packaging' || $type === 'bubble wrap' || $type === 'kraft paper' || $type === 'bubble wrap & kraft paper') {
-                $packagingRows[] = ['row' => $row, 'details' => $detailRows];
-                continue;
-            }
-            if ($type === 'ad hoc') {
-                $adHocRows[] = ['row' => $row, 'details' => $detailRows];
-                continue;
-            }
-
-            if (
-                ! in_array($type, ['returns'], true)
-                && $type !== 'product (on-demand)'
-            ) {
-                $bucket = (string) ($row['type'] ?? 'Other');
-                if (! isset($otherByType[$bucket])) {
-                    $otherByType[$bucket] = [];
-                }
-                $otherByType[$bucket][] = ['row' => $row, 'details' => $detailRows];
-                continue;
             }
 
             $sections[] = [
@@ -1566,52 +1508,9 @@ class InvoiceService
                 'qty_display' => $this->formatLegacyQty((float) ($row['qty'] ?? 0)),
                 'unit' => $money((int) ($row['price_cents'] ?? 0)),
                 'line_total' => $money((int) ($row['total_cents'] ?? 0)),
-                'has_breakdown' => $detailRows !== [],
-                'lines' => $detailRows,
-            ];
-        }
-
-        $buildRolled = function (string $label, string $type, array $entries) use ($money): ?array {
-            if ($entries === []) {
-                return null;
-            }
-            $qty = 0.0;
-            $totalCents = 0;
-            $lines = [];
-            foreach ($entries as $entry) {
-                $row = (array) ($entry['row'] ?? []);
-                $qty += (float) ($row['qty'] ?? 0);
-                $totalCents += (int) ($row['total_cents'] ?? 0);
-                foreach ((array) ($entry['details'] ?? []) as $line) {
-                    $lines[] = $line;
-                }
-            }
-
-            return [
-                'id' => Str::uuid()->toString(),
-                'label' => $label,
-                'type' => $type,
-                'qty' => number_format($qty, 3, '.', ''),
-                'qty_display' => $this->formatLegacyQty($qty),
-                'unit' => $money($qty > 0 ? (int) round($totalCents / $qty) : 0),
-                'line_total' => $money($totalCents),
                 'has_breakdown' => $lines !== [],
                 'lines' => $lines,
             ];
-        };
-
-        foreach ([['Postage', 'Postage', $postageRows], ['Packaging', 'Packaging', $packagingRows], ['Ad Hoc', 'Ad Hoc', $adHocRows]] as $rollup) {
-            $section = $buildRolled($rollup[0], $rollup[1], $rollup[2]);
-            if ($section !== null) {
-                $sections[] = $section;
-            }
-        }
-
-        foreach ($otherByType as $type => $entries) {
-            $section = $buildRolled($type, $type, $entries);
-            if ($section !== null) {
-                $sections[] = $section;
-            }
         }
 
         return ['sections' => $sections];
@@ -1670,6 +1569,15 @@ class InvoiceService
             : ($invoice->created_at !== null ? $invoice->created_at->toDateString() : null);
         $from = $invoice->billing_period_start !== null ? $invoice->billing_period_start->toDateString() : null;
         $to = $invoice->billing_period_end !== null ? $invoice->billing_period_end->toDateString() : null;
+        if ($date !== null && ($from === null || $to === null)) {
+            try {
+                $anchor = Carbon::parse($date);
+                $from = $anchor->copy()->startOfWeek(Carbon::MONDAY)->toDateString();
+                $to = $anchor->copy()->endOfWeek(Carbon::SUNDAY)->toDateString();
+            } catch (\Throwable $e) {
+                // Keep existing fallback behavior below.
+            }
+        }
         $label = '—';
         if ($from !== null && $to !== null) {
             $label = $this->dateToMdY($from).' - '.$this->dateToMdY($to);

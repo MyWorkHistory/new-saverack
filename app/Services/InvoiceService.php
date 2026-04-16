@@ -748,7 +748,7 @@ class InvoiceService
             $ai = $this->oldBetaTypeOrder($a['type']);
             $bi = $this->oldBetaTypeOrder($b['type']);
             if ($ai !== $bi) {
-                return $ai <=> $bi;
+                return $ai < $bi ? -1 : 1;
             }
             return strcasecmp((string) $a['name'], (string) $b['name']);
         });
@@ -1112,7 +1112,13 @@ class InvoiceService
             $seen[$cat] = true;
             $list = $byCat[$cat];
             usort($list, static function ($a, $b) {
-                return (int) $a->sort_order <=> (int) $b->sort_order;
+                $left = (int) $a->sort_order;
+                $right = (int) $b->sort_order;
+                if ($left === $right) {
+                    return 0;
+                }
+
+                return $left < $right ? -1 : 1;
             });
             $totalCents = 0;
             $qtySum = 0.0;

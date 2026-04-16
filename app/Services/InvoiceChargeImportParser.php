@@ -719,15 +719,22 @@ final class InvoiceChargeImportParser
     private function mapLegacyCategoryLabelToKey(string $label): string
     {
         $t = strtolower(trim($label));
-        return match ($t) {
-            'fulfillment' => InvoiceLineCategory::FULFILLMENT,
-            'postage' => InvoiceLineCategory::POSTAGE,
-            'packaging' => InvoiceLineCategory::PACKAGING,
-            'returns' => InvoiceLineCategory::RETURNS,
-            'product (on-demand)' => InvoiceLineCategory::ON_DEMAND,
-            'storage' => InvoiceLineCategory::STORAGE,
-            default => InvoiceLineCategory::AD_HOC,
-        };
+        switch ($t) {
+            case 'fulfillment':
+                return InvoiceLineCategory::FULFILLMENT;
+            case 'postage':
+                return InvoiceLineCategory::POSTAGE;
+            case 'packaging':
+                return InvoiceLineCategory::PACKAGING;
+            case 'returns':
+                return InvoiceLineCategory::RETURNS;
+            case 'product (on-demand)':
+                return InvoiceLineCategory::ON_DEMAND;
+            case 'storage':
+                return InvoiceLineCategory::STORAGE;
+            default:
+                return InvoiceLineCategory::AD_HOC;
+        }
     }
 
     private function defaultGroupKeyFor(string $category, string $name): string

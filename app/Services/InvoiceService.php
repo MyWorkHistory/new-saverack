@@ -459,6 +459,7 @@ class InvoiceService
         $invoice->load(['items', 'histories.user', 'clientAccount', 'createdBy']);
 
         $base = $this->toListArray($invoice);
+        $presentation = $this->staffDetailPresentation($invoice);
 
         return array_merge($base, [
             'amount_paid_cents' => $invoice->amount_paid_cents,
@@ -496,6 +497,7 @@ class InvoiceService
                     'metadata' => $item->metadata,
                 ];
             })->values()->all(),
+            'presentation' => $presentation,
             'histories' => $invoice->histories->take(50)->map(static function (InvoiceHistory $h) {
                 return [
                     'id' => $h->id,
@@ -511,6 +513,371 @@ class InvoiceService
                 ];
             })->values()->all(),
         ]);
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function staffDetailPresentation(Invoice $invoice): array
+    {
+        $invoice->loadMissing('items');
+
+        $fulfillment = [];
+        $postage = [];
+        $packaging = [];
+        $adHoc = [];
+        $returns = [];
+        $onDemand = [];
+        $otherItems = [];
+
+        foreach ($invoice->items as $item) {
+            $category = strtolower(trim((string) $item->category));
+            if ($category === InvoiceLineCategory::FULFILLMENT) {
+                $name = $this->oldBetaDisplayName($item);
+                $key = $name;
+                if (! isset($fulfillment[$key])) {
+                    $fulfillment[$key] = ['name' => $name, 'items' => [], 'qty_sum' => 0.0, 'total_sum' => 0];
+                }
+                $qty = (float) $item->quantity;
+                $total = (int) $item->line_total_cents;
+                $unitRate = (int) $item->unit_price_cents;
+                if ($unitRate === 0 && $qty != 0.0 && $total !== 0) {
+                    $unitRate = (int) round($total / $qty);
+                }
+                $fulfillment[$key]['items'][] = $this->detailLeafRow($item, 'Fulfillment', $name, $unitRate, $total);
+                $fulfillment[$key]['qty_sum'] += $qty;
+                $fulfillment[$key]['total_sum'] += $total;
+            } elseif ($category === InvoiceLineCategory::POSTAGE) {
+                $rawName = $this->oldBetaDisplayName($item, 'Other');
+                $key = strtolower($rawName);
+                if (! isset($postage[$key])) {
+                    $postage[$key] = ['name' => $rawName, 'items' => [], 'qty' => 0.0, 'total' => 0];
+                }
+                $qty = (float) $item->quantity;
+                $total = (int) $item->line_total_cents;
+                $unitRate = (int) $item->unit_price_cents;
+                if ($unitRate === 0 && $qty != 0.0 && $total !== 0) {
+                    $unitRate = (int) round($total / $qty);
+                }
+                $postage[$key]['items'][] = $this->detailLeafRow($item, 'Postage', $rawName, $unitRate, $total);
+                $postage[$key]['qty'] += $qty;
+                $postage[$key]['total'] += $total;
+            } elseif ($category === InvoiceLineCategory::PACKAGING) {
+                $rawName = $this->packagingDisplayName($this->oldBetaDisplayName($item, 'Other'));
+                $key = strtolower($rawName);
+                if (! isset($packaging[$key])) {
+                    $packaging[$key] = ['name' => $rawName, 'items' => [], 'qty' => 0.0, 'total' => 0];
+                }
+                $qty = (float) $item->quantity;
+                $total = (int) $item->line_total_cents;
+                $unitRate = (int) $item->unit_price_cents;
+                if ($unitRate === 0 && $qty != 0.0 && $total !== 0) {
+                    $unitRate = (int) round($total / $qty);
+                }
+                $packaging[$key]['items'][] = $this->detailLeafRow($item, $this->oldBetaPackagingType($rawName), $rawName, $unitRate, $total);
+                $packaging[$key]['qty'] += $qty;
+                $packaging[$key]['total'] += $total;
+            } elseif ($category === InvoiceLineCategory::AD_HOC || $category === 'ad hoc') {
+                $rawName = $this->oldBetaDisplayName($item, 'Ad Hoc');
+                $key = strtolower($rawName);
+                if (! isset($adHoc[$key])) {
+                    $adHoc[$key] = ['name' => $rawName, 'items' => [], 'qty' => 0.0, 'total' => 0];
+                }
+                $qty = (float) $item->quantity;
+                $total = (int) $item->line_total_cents;
+                $unitRate = (int) $item->unit_price_cents;
+                if ($unitRate === 0 && $qty != 0.0 && $total !== 0) {
+                    $unitRate = (int) round($total / $qty);
+                }
+                $adHoc[$key]['items'][] = $this->detailLeafRow($item, 'Ad Hoc', $rawName, $unitRate, $total);
+                $adHoc[$key]['qty'] += $qty;
+                $adHoc[$key]['total'] += $total;
+            } elseif ($category === InvoiceLineCategory::RETURNS) {
+                $name = $this->oldBetaDisplayName($item, 'Returns');
+                $key = $name;
+                if (! isset($returns[$key])) {
+                    $returns[$key] = ['name' => $name, 'items' => [], 'qty_sum' => 0.0, 'total_sum' => 0];
+                }
+                $qty = (float) $item->quantity;
+                $total = (int) $item->line_total_cents;
+                $unitRate = (int) $item->unit_price_cents;
+                if ($unitRate === 0 && $qty != 0.0 && $total !== 0) {
+                    $unitRate = (int) round($total / $qty);
+                }
+                $returns[$key]['items'][] = $this->detailLeafRow($item, 'Returns', $name, $unitRate, $total);
+                $returns[$key]['qty_sum'] += $qty;
+                $returns[$key]['total_sum'] += $total;
+            } elseif ($this->isOnDemandProductCategory($category)) {
+                $rawName = $this->oldBetaDisplayName($item, 'On-Demand Product');
+                $key = strtolower($rawName);
+                if (! isset($onDemand[$key])) {
+                    $onDemand[$key] = ['name' => $rawName, 'items' => [], 'qty' => 0.0, 'total' => 0];
+                }
+                $qty = (float) $item->quantity;
+                $total = (int) $item->line_total_cents;
+                $unitRate = (int) $item->unit_price_cents;
+                if ($unitRate === 0 && $qty != 0.0 && $total !== 0) {
+                    $unitRate = (int) round($total / $qty);
+                }
+                $onDemand[$key]['items'][] = $this->detailLeafRow($item, 'Product (On-Demand)', $rawName, $unitRate, $total);
+                $onDemand[$key]['qty'] += $qty;
+                $onDemand[$key]['total'] += $total;
+            } else {
+                $qty = (float) $item->quantity;
+                $total = (int) $item->line_total_cents;
+                $unitRate = (int) $item->unit_price_cents;
+                if ($unitRate === 0 && $qty != 0.0 && $total !== 0) {
+                    $unitRate = (int) round($total / $qty);
+                }
+                $name = $this->oldBetaDisplayName($item, $item->category ?: 'Other');
+                $type = $this->oldBetaCategoryLabel((string) $item->category, $name);
+                $otherItems[] = [
+                    'id' => 'other-'.$item->id,
+                    'name' => $name,
+                    'type' => $type,
+                    'qty' => $qty,
+                    'price_cents' => $unitRate,
+                    'total_cents' => $total,
+                    'groupKey' => strtolower((string) ($item->category ?: InvoiceLineCategory::OTHER)),
+                    'groupName' => $name,
+                    'details' => [],
+                ];
+            }
+        }
+
+        $rows = [];
+        foreach ($fulfillment as $fulfillKey => $agg) {
+            $qty = (float) $agg['qty_sum'];
+            $total = (int) $agg['total_sum'];
+            if ($qty != 0.0 || $total !== 0) {
+                $rows[] = [
+                    'id' => 'fulfillment-'.md5($fulfillKey),
+                    'name' => $agg['name'],
+                    'type' => 'Fulfillment',
+                    'qty' => $qty,
+                    'price_cents' => $qty != 0.0 ? (int) round($total / $qty) : 0,
+                    'total_cents' => $total,
+                    'groupKey' => 'fulfillment',
+                    'groupName' => $fulfillKey,
+                    'details' => $agg['items'],
+                ];
+            }
+        }
+        foreach ($postage as $carrierKey => $agg) {
+            $qty = (float) $agg['qty'];
+            $total = (int) $agg['total'];
+            $rows[] = [
+                'id' => 'post-'.$carrierKey,
+                'name' => $agg['name'],
+                'type' => 'Postage',
+                'qty' => $qty,
+                'price_cents' => $qty != 0.0 ? (int) round($total / $qty) : 0,
+                'total_cents' => $total,
+                'groupKey' => 'postage',
+                'groupName' => $agg['name'],
+                'details' => $agg['items'],
+            ];
+        }
+        foreach ($packaging as $boxKey => $agg) {
+            $qty = (float) $agg['qty'];
+            $total = (int) $agg['total'];
+            $rows[] = [
+                'id' => 'pkg-'.$boxKey,
+                'name' => $agg['name'],
+                'type' => $this->oldBetaPackagingType($agg['name']),
+                'qty' => $qty,
+                'price_cents' => $qty != 0.0 ? (int) round($total / $qty) : 0,
+                'total_cents' => $total,
+                'groupKey' => 'packaging',
+                'groupName' => $agg['name'],
+                'details' => $agg['items'],
+            ];
+        }
+        foreach ($adHoc as $key => $agg) {
+            $qty = (float) $agg['qty'];
+            $total = (int) $agg['total'];
+            $rows[] = [
+                'id' => 'adhoc-'.$key,
+                'name' => $agg['name'],
+                'type' => 'Ad Hoc',
+                'qty' => $qty,
+                'price_cents' => $qty != 0.0 ? (int) round($total / $qty) : 0,
+                'total_cents' => $total,
+                'groupKey' => 'ad_hoc',
+                'groupName' => $agg['name'],
+                'details' => $agg['items'],
+            ];
+        }
+        foreach ($returns as $returnKey => $agg) {
+            $qty = (float) $agg['qty_sum'];
+            $total = (int) $agg['total_sum'];
+            if ($qty != 0.0 || $total !== 0) {
+                $rows[] = [
+                    'id' => 'returns-'.md5($returnKey),
+                    'name' => $agg['name'],
+                    'type' => 'Returns',
+                    'qty' => $qty,
+                    'price_cents' => $qty != 0.0 ? (int) round($total / $qty) : 0,
+                    'total_cents' => $total,
+                    'groupKey' => 'returns',
+                    'groupName' => $returnKey,
+                    'details' => $agg['items'],
+                ];
+            }
+        }
+        foreach ($onDemand as $productKey => $agg) {
+            $qty = (float) $agg['qty'];
+            $total = (int) $agg['total'];
+            $rows[] = [
+                'id' => 'ondemand-'.$productKey,
+                'name' => $agg['name'],
+                'type' => 'Product (On-Demand)',
+                'qty' => $qty,
+                'price_cents' => $qty != 0.0 ? (int) round($total / $qty) : 0,
+                'total_cents' => $total,
+                'groupKey' => 'on_demand',
+                'groupName' => $agg['name'],
+                'details' => $agg['items'],
+            ];
+        }
+        foreach ($otherItems as $item) {
+            $rows[] = $item;
+        }
+
+        usort($rows, function (array $a, array $b) {
+            $ai = $this->oldBetaTypeOrder($a['type']);
+            $bi = $this->oldBetaTypeOrder($b['type']);
+            if ($ai !== $bi) {
+                return $ai <=> $bi;
+            }
+            return strcasecmp((string) $a['name'], (string) $b['name']);
+        });
+
+        return [
+            'rows' => $rows,
+            'has_grouped_rows' => collect($rows)->contains(fn (array $row) => $row['details'] !== []),
+        ];
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function detailLeafRow(InvoiceItem $item, string $type, string $name, int $unitRate, int $total): array
+    {
+        return [
+            'id' => $item->id,
+            'name' => $name,
+            'type' => $type,
+            'qty' => (float) $item->quantity,
+            'price_cents' => $unitRate,
+            'total_cents' => $total,
+            'display_name' => $item->display_name,
+            'description' => $item->description,
+            'sku' => $item->sku,
+            'service_code' => $item->service_code,
+            'group_key' => $item->group_key,
+        ];
+    }
+
+    private function oldBetaDisplayName(InvoiceItem $item, string $fallback = '—'): string
+    {
+        $name = trim((string) ($item->display_name ?: $item->description ?: ''));
+        if ($name === '') {
+            $name = $fallback;
+        }
+        $n = strtolower($name);
+        if ($n === 'first_pick_charge') return 'Fulfillment (First Pick)';
+        if ($n === 'pick_remainder_charge') return 'Fulfillment (Additional Pick)';
+        if ($n === 'first_return_charge') return 'Returns (First Item)';
+        if ($n === 'return_remainder_charge') return 'Returns (Additional Items)';
+        if (strtolower((string) $item->category) === InvoiceLineCategory::PACKAGING && strpos($n, 'basic box') !== false) {
+            return 'Ship As Is';
+        }
+        return $name;
+    }
+
+    private function oldBetaPackagingType(string $name): string
+    {
+        $norm = strtolower(trim($name));
+        if (in_array($norm, ['bubble wrap', 'kraft paper', 'bubble wrap & kraft paper'], true)) {
+            return $name;
+        }
+        return 'Packaging';
+    }
+
+    private function packagingDisplayName(string $name): string
+    {
+        $n = strtolower(trim($name));
+        $n = preg_replace('/\s+/', ' ', $n) ?? $n;
+        if ($n === '') {
+            return 'Other';
+        }
+        $hasBubble = strpos($n, 'bubble wrap') !== false;
+        $hasKraft = strpos($n, 'kraft paper') !== false;
+        if ($hasBubble && $hasKraft) {
+            return 'Bubble Wrap & Kraft Paper';
+        }
+        if ($hasBubble) {
+            return 'Bubble Wrap';
+        }
+        if ($hasKraft) {
+            return 'Kraft Paper';
+        }
+        if (strpos($n, 'basic box') !== false || strpos($n, 'ship as is') !== false) {
+            return 'Ship As Is';
+        }
+        if ($n === 'packaging') {
+            return 'Other';
+        }
+        return $name;
+    }
+
+    private function oldBetaCategoryLabel(string $category, string $name = ''): string
+    {
+        $cat = strtolower(trim(str_replace('-', '_', $category)));
+        return match ($cat) {
+            InvoiceLineCategory::FULFILLMENT => 'Fulfillment',
+            InvoiceLineCategory::POSTAGE => 'Postage',
+            InvoiceLineCategory::PACKAGING => $this->oldBetaPackagingType($name),
+            InvoiceLineCategory::RETURNS => 'Returns',
+            InvoiceLineCategory::ON_DEMAND => 'Product (On-Demand)',
+            InvoiceLineCategory::AD_HOC => 'Ad Hoc',
+            InvoiceLineCategory::STORAGE => 'Storage',
+            InvoiceLineCategory::CREDITS => 'Credits',
+            default => Str::title(str_replace('_', ' ', $cat !== '' ? $cat : InvoiceLineCategory::OTHER)),
+        };
+    }
+
+    private function oldBetaTypeOrder(string $type): int
+    {
+        $normalized = strtolower(trim($type));
+        $map = [
+            'fulfillment' => 10,
+            'postage' => 20,
+            'packaging' => 30,
+            'bubble wrap' => 31,
+            'kraft paper' => 32,
+            'bubble wrap & kraft paper' => 33,
+            'ad hoc' => 40,
+            'returns' => 50,
+            'product (on-demand)' => 60,
+            'storage' => 70,
+            'credits' => 80,
+        ];
+        return $map[$normalized] ?? 90;
+    }
+
+    private function isOnDemandProductCategory(string $category): bool
+    {
+        $c = strtolower(trim((string) preg_replace('/\s+/', ' ', $category)));
+        return $c === 'product (on-demand)'
+            || $c === 'product (on demand)'
+            || $c === 'product on demand'
+            || $c === 'on-demand'
+            || $c === 'on demand'
+            || $c === 'on_demand'
+            || $c === 'skincare'
+            || $c === 'skin care';
     }
 
     public function isOverdue(Invoice $invoice): bool
@@ -707,6 +1074,7 @@ class InvoiceService
             InvoiceLineCategory::POSTAGE,
             InvoiceLineCategory::PACKAGING,
             InvoiceLineCategory::RETURNS,
+            InvoiceLineCategory::ON_DEMAND,
             InvoiceLineCategory::STORAGE,
             InvoiceLineCategory::AD_HOC,
             InvoiceLineCategory::CREDITS,
@@ -777,6 +1145,9 @@ class InvoiceService
         $disp = trim((string) ($item->display_name ?? ''));
         $desc = trim((string) ($item->description ?? ''));
         $primary = $disp !== '' ? $disp : ($desc !== '' ? $desc : '—');
+        if (preg_match('/^(Postage|Packaging|Fulfillment)\s*\((.+)\)$/i', $primary, $m) === 1 && isset($m[2])) {
+            $primary = trim((string) $m[2]);
+        }
         $bits = [];
         if ($desc !== '' && $desc !== $disp) {
             $bits[] = $desc;
@@ -788,9 +1159,10 @@ class InvoiceService
             $bits[] = (string) $item->sku;
         }
         $detail = $bits !== [] ? implode(' · ', $bits) : '—';
+        $serviceText = $detail !== '—' ? $primary.' — '.$detail : $primary;
 
         return [
-            'item' => $primary,
+            'item' => $serviceText,
             'description' => $detail,
             'quantity' => number_format((float) $item->quantity, 1, '.', ''),
             'unit' => $money((int) $item->unit_price_cents),
@@ -805,6 +1177,7 @@ class InvoiceService
             InvoiceLineCategory::POSTAGE => 'Postage',
             InvoiceLineCategory::PACKAGING => 'Packaging',
             InvoiceLineCategory::RETURNS => 'Returns',
+            InvoiceLineCategory::ON_DEMAND => 'Product (On-Demand)',
             InvoiceLineCategory::STORAGE => 'Storage',
             InvoiceLineCategory::AD_HOC => 'Ad Hoc',
             InvoiceLineCategory::CREDITS => 'Credits',

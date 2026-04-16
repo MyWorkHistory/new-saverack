@@ -36,7 +36,7 @@
         summary.public-inv-summary::-webkit-details-marker { display: none; }
         .public-inv-sum-grid {
             display: grid;
-            grid-template-columns: 18px minmax(0, 1.35fr) minmax(0, 1fr) minmax(0, 0.7fr) minmax(0, 0.5fr) minmax(0, 0.8fr);
+            grid-template-columns: 18px minmax(0, 1.75fr) minmax(0, 0.55fr) minmax(0, 0.65fr) minmax(0, 0.8fr);
             gap: 8px;
             align-items: center;
             padding: 10px 8px;
@@ -110,9 +110,8 @@
                 <div class="public-inv-sum-grid">
                     <span class="public-inv-chev" aria-hidden="true">&#9654;</span>
                     <span class="public-inv-sum-service"><strong>{{ $sec['label'] }}</strong></span>
-                    <span style="color:#666;font-size:13px;">Category subtotal</span>
-                    <span class="num">{{ $sec['unit'] }}</span>
                     <span class="num">{{ $sec['qty_display'] }}</span>
+                    <span class="num">{{ $sec['unit'] }}</span>
                     <span class="num" style="font-weight:600;">{{ $sec['line_total'] }}</span>
                 </div>
             </summary>
@@ -120,8 +119,7 @@
                 <table class="lines lines-nested">
                     <thead>
                     <tr>
-                        <th style="width:30%">Service</th>
-                        <th style="width:28%">Description</th>
+                        <th style="width:56%">Service</th>
                         <th class="num" style="width:12%">Qty</th>
                         <th class="num" style="width:14%">Price</th>
                         <th class="num" style="width:14%">Total</th>
@@ -131,7 +129,6 @@
                     @foreach ($sec['lines'] as $row)
                         <tr>
                             <td>{{ $row['item'] }}</td>
-                            <td style="color:#555;">{{ $row['description'] }}</td>
                             <td class="num">{{ $row['quantity'] }}</td>
                             <td class="num">{{ $row['unit'] }}</td>
                             <td class="num">{{ $row['line_total'] }}</td>

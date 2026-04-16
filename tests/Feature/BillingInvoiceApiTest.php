@@ -477,4 +477,139 @@ class BillingInvoiceApiTest extends TestCase
         $res->assertStatus(201);
         $res->assertJsonPath('invoice.status', Invoice::STATUS_DRAFT);
     }
+
+    public function test_import_charge_csv_skincare_category_maps_to_on_demand_not_fulfillment(): void
+    {
+        $user = User::factory()->create();
+        $user->permissions()->sync([
+            $this->billingViewPermission()->id,
+            $this->billingCreatePermission()->id,
+            $this->clientsViewPermission()->id,
+        ]);
+        Sanctum::actingAs($user);
+
+        $client = ClientAccount::query()->create([
+            'status' => ClientAccount::STATUS_ACTIVE,
+            'company_name' => 'Skincare Import Co',
+            'email' => 'skin@acme.test',
+        ]);
+        $client->refresh();
+
+        $csv = "Category,Charge Name,Charge Type,Qty,Rate,Subtotal\n"
+            ."Skincare,Face Oil Serum,first_pick_charge,2,1.50,3.00\n";
+        $file = UploadedFile::fake()->createWithContent('charges.csv', $csv);
+
+        $res = $this->post(
+            "/api/client-accounts/{$client->id}/invoice-imports/charges",
+            [
+                'due_at' => '2026-06-15',
+                'file' => $file,
+            ],
+            ['Accept' => 'application/json']
+        );
+
+        $res->assertStatus(201);
+        $items = $res->json('invoice.items') ?? [];
+        $this->assertCount(1, $items);
+        $this->assertSame('on_demand', $items[0]['category']);
+        $this->assertStringContainsString('Face Oil Serum', (string) ($items[0]['display_name'] ?? ''));
+        $this->assertStringNotContainsStringIgnoringCase('Fulfillment', (string) ($items[0]['display_name'] ?? ''));
+    }
+
+    public function test_import_charge_csv_normalizes_packaging_and_inserts_like_old_beta(): void
+    {
+        $user = User::factory()->create();
+        $user->permissions()->sync([
+            $this->billingViewPermission()->id,
+            $this->billingCreatePermission()->id,
+            $this->clientsViewPermission()->id,
+        ]);
+        Sanctum::actingAs($user);
+
+        $client = ClientAccount::query()->create([
+            'status' => ClientAccount::STATUS_ACTIVE,
+            'company_name' => 'Packaging Import Co',
+            'email' => 'pack@acme.test',
+        ]);
+        $client->refresh();
+
+        $csv = "Charge Name,Charge Type,Qty,Rate,Subtotal\n"
+            ."Box BUBBLE MAILER #0 (6 x 10 x 2) used for shipping label 9400150105496091309392,box_charge,2,0.50,1.00\n"
+            ."Marketing Insert,order_value_charge,4,0.25,1.00\n";
+        $file = UploadedFile::fake()->createWithContent('charges.csv', $csv);
+
+        $res = $this->post(
+            "/api/client-accounts/{$client->id}/invoice-imports/charges",
+            [
+                'due_at' => '2026-06-15',
+                'file' => $file,
+            ],
+            ['Accept' => 'application/json']
+        );
+
+        $res->assertStatus(201);
+        $items = collect($res->json('invoice.items') ?? []);
+        $this->assertTrue($items->contains(fn ($item) => $item['category'] === 'packaging' && $item['display_name'] === 'BUBBLE MAILER #0'));
+        $this->assertTrue($items->contains(fn ($item) => $item['category'] === 'packaging' && $item['display_name'] === 'Inserts'));
+    }
+
+    public function test_invoice_detail_returns_old_beta_presentation_rows(): void
+    {
+        $user = User::factory()->create();
+        $user->permissions()->sync([
+            $this->billingViewPermission()->id,
+        ]);
+        Sanctum::actingAs($user);
+
+        $client = ClientAccount::query()->create([
+            'status' => ClientAccount::STATUS_ACTIVE,
+            'company_name' => 'Presentation Co',
+            'email' => 'present@acme.test',
+        ]);
+
+        $invoice = Invoice::query()->create([
+            'invoice_number' => 'INV-PRES-001',
+            'client_account_id' => $client->id,
+            'status' => Invoice::STATUS_DRAFT,
+            'currency' => 'USD',
+            'subtotal_cents' => 1100,
+            'tax_cents' => 0,
+            'total_cents' => 1100,
+            'amount_paid_cents' => 0,
+            'balance_due_cents' => 1100,
+        ]);
+
+        InvoiceItem::query()->create([
+            'invoice_id' => $invoice->id,
+            'sort_order' => 1,
+            'category' => 'packaging',
+            'group_key' => 'packaging:bubble-mailer-0',
+            'description' => 'Box BUBBLE MAILER #0 (6 x 10 x 2)',
+            'display_name' => 'BUBBLE MAILER #0',
+            'quantity' => 2,
+            'unit_price_cents' => 50,
+            'line_total_cents' => 100,
+        ]);
+        InvoiceItem::query()->create([
+            'invoice_id' => $invoice->id,
+            'sort_order' => 2,
+            'category' => 'on_demand',
+            'group_key' => 'on_demand:face-oil-serum-sku-1',
+            'description' => 'Face Oil Serum',
+            'display_name' => 'Face Oil Serum (SKU-1)',
+            'sku' => 'SKU-1',
+            'quantity' => 2,
+            'unit_price_cents' => 500,
+            'line_total_cents' => 1000,
+        ]);
+
+        $res = $this->getJson("/api/invoices/{$invoice->id}");
+        $res->assertOk();
+        $res->assertJsonPath('presentation.rows.0.name', 'BUBBLE MAILER #0');
+        $res->assertJsonPath('presentation.rows.0.type', 'Packaging');
+        $res->assertJsonPath('presentation.rows.1.name', 'Face Oil Serum (SKU-1)');
+        $res->assertJsonPath('presentation.rows.1.type', 'Product (On-Demand)');
+        $this->assertCount(1, $res->json('presentation.rows.0.details'));
+        $this->assertCount(1, $res->json('presentation.rows.1.details'));
+    }
 }

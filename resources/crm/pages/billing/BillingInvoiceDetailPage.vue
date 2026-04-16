@@ -1,33 +1,6 @@
 <script setup>
 import { computed, inject, onMounted, ref } from "vue";
 
-const BILLING_CATEGORY_ORDER = [
-  "fulfillment",
-  "postage",
-  "packaging",
-  "returns",
-  "storage",
-  "ad_hoc",
-  "credits",
-  "other",
-];
-
-function billingCategoryLabel(cat) {
-  const m = {
-    fulfillment: "Fulfillment",
-    postage: "Postage",
-    packaging: "Packaging",
-    returns: "Returns",
-    storage: "Storage",
-    ad_hoc: "Ad Hoc",
-    credits: "Credits",
-    other: "Other",
-  };
-  if (m[cat]) return m[cat];
-  return String(cat || "other")
-    .replace(/_/g, " ")
-    .replace(/\b\w/g, (c) => c.toUpperCase());
-}
 import { useRouter } from "vue-router";
 import api, { getApiBaseUrl } from "../../services/api";
 import { BRAND_MARK_SRC } from "../../utils/brandAssets.js";
@@ -62,6 +35,7 @@ const invoice = ref(null);
 const editDueAt = ref("");
 const editLines = ref([]);
 const draftSaving = ref(false);
+const draftEditMode = ref(false);
 
 const payModalOpen = ref(false);
 const payAmount = ref("");
@@ -75,78 +49,60 @@ const deleteBusy = ref(false);
 
 const pdfDownloading = ref(false);
 const copyLinkBusy = ref(false);
-
-/** @type {import('vue').Ref<Record<string, boolean>>} */
-const expandedLineCategories = ref({});
+const selectedTableRowId = ref("");
 
 const invoiceLogoSrc = computed(() => BRAND_MARK_SRC());
 
-const lineItemSections = computed(() => {
-  const inv = invoice.value;
-  if (!inv?.items?.length) return [];
-  const byCat = new Map();
-  for (const item of inv.items) {
-    const cat =
-      item.category && String(item.category).trim() !== "" ? item.category : "other";
-    if (!byCat.has(cat)) byCat.set(cat, []);
-    byCat.get(cat).push(item);
-  }
-  const sections = [];
-  const seen = new Set();
+function formatQtyDisplay(v) {
+  const n = Number(v);
+  if (!Number.isFinite(n)) return "0.000";
+  if (Math.abs(n) < 1) return n.toFixed(3);
+  return Number.isInteger(n) ? String(n) : n.toFixed(2);
+}
 
-  const pushSection = (cat) => {
-    const list = byCat.get(cat);
-    if (!list?.length) return;
-    const sorted = [...list].sort(
-      (a, b) => (Number(a.sort_order) || 0) - (Number(b.sort_order) || 0),
-    );
-    const totalCents = sorted.reduce((s, i) => s + Number(i.line_total_cents || 0), 0);
-    const qtySum = sorted.reduce((s, i) => s + Number(i.quantity ?? 0), 0);
-    const unitAvgCents = qtySum > 0 ? Math.round(totalCents / qtySum) : 0;
-    sections.push({
-      key: cat,
-      label: billingCategoryLabel(cat),
-      qty: qtySum,
-      totalCents,
-      unitAvgCents,
-      items: sorted,
-    });
-    seen.add(cat);
-  };
+const invoiceTableRows = computed(() => invoice.value?.presentation?.rows || []);
 
-  for (const cat of BILLING_CATEGORY_ORDER) {
-    pushSection(cat);
-  }
-  for (const cat of byCat.keys()) {
-    if (!seen.has(cat)) pushSection(cat);
-  }
-  return sections;
+const selectedTableRow = computed(() => {
+  if (!selectedTableRowId.value) return null;
+  return invoiceTableRows.value.find((r) => r.id === selectedTableRowId.value) || null;
 });
 
-function toggleLineCategory(catKey) {
-  expandedLineCategories.value = {
-    ...expandedLineCategories.value,
-    [catKey]: !expandedLineCategories.value[catKey],
-  };
+const selectedTableRowDetails = computed(() => selectedTableRow.value?.details || []);
+
+function openTableRow(row) {
+  selectedTableRowId.value = row.id;
 }
 
-function lineItemRowLabel(item) {
-  const d = item.display_name;
-  const n = item.description;
-  if (d != null && String(d).trim() !== "") return String(d).trim();
-  if (n != null && String(n).trim() !== "") return String(n).trim();
-  return "—";
+function closeTableRow() {
+  selectedTableRowId.value = "";
 }
 
-function lineItemRowDetail(item) {
-  const primary = lineItemRowLabel(item);
-  const bits = [];
-  const desc = item.description != null ? String(item.description).trim() : "";
-  if (desc && desc !== primary) bits.push(desc);
-  if (item.service_code) bits.push(String(item.service_code));
-  if (item.sku) bits.push(String(item.sku));
-  return bits.length ? bits.join(" · ") : "—";
+function isPastDueByLogic(inv) {
+  if (!inv) return false;
+  const dueIn = Number(inv.due_in);
+  if (Number.isFinite(dueIn) && dueIn < 0) return true;
+  const dueAt = inv.due_at ? new Date(String(inv.due_at)) : null;
+  if (!dueAt || Number.isNaN(dueAt.getTime())) return false;
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  dueAt.setHours(0, 0, 0, 0);
+  return dueAt < today;
 }
+
+const statusDisplayText = computed(() => {
+  const inv = invoice.value;
+  if (!inv) return "";
+  const raw = String(inv.status || "").toLowerCase();
+  if (
+    (raw === "open" || raw === "sent" || raw === "partial") &&
+    isPastDueByLogic(inv)
+  ) {
+    return "Past Due";
+  }
+  return String(inv.status || "")
+    .replace(/_/g, " ")
+    .replace(/\b\w/g, (c) => c.toUpperCase());
+});
 
 const invoiceDateLong = new Intl.DateTimeFormat(undefined, {
   year: "numeric",
@@ -253,6 +209,13 @@ function syncEditFromInvoice() {
         sku: i.sku != null && String(i.sku) !== "" ? String(i.sku) : "",
         quantity: formatQtyOneDecimal(i.quantity ?? 1),
         unit_price: (Number(i.unit_price_cents) / 100).toFixed(2),
+        category: i.category || null,
+        subtype: i.subtype || null,
+        group_key: i.group_key || null,
+        display_name: i.display_name || null,
+        service_code: i.service_code || null,
+        unit: i.unit || null,
+        metadata: i.metadata || null,
       }))
     : [
         {
@@ -269,6 +232,13 @@ async function load() {
   try {
     const { data } = await api.get(`/invoices/${props.id}`);
     invoice.value = data;
+    if (data?.status !== "draft") {
+      draftEditMode.value = false;
+    }
+    if (selectedTableRowId.value) {
+      const stillExists = invoiceTableRows.value.some((r) => r.id === selectedTableRowId.value);
+      if (!stillExists) selectedTableRowId.value = "";
+    }
     syncEditFromInvoice();
     setCrmPageMeta({
       title: `Save Rack | ${data?.invoice_number || "Invoice"}`,
@@ -312,9 +282,16 @@ async function saveDraft() {
     items.push({
       description: desc,
       sku: skuTrim || null,
+      category: line.category || null,
+      subtype: line.subtype || null,
+      group_key: line.group_key || null,
+      display_name: line.display_name || desc,
+      service_code: line.service_code || null,
       quantity: qty,
+      unit: line.unit || null,
       unit_price_cents: unitCents,
       line_total_cents: Math.max(0, Math.round(qty * unitCents)),
+      metadata: line.metadata || null,
     });
   }
   draftSaving.value = true;
@@ -338,6 +315,7 @@ function statusBadgeClass(status) {
   if (s === "draft") return "bg-secondary-subtle text-secondary";
   if (s === "void") return "bg-dark-subtle text-secondary";
   if (s === "partial") return "bg-info-subtle text-info-emphasis";
+  if (s === "past due") return "bg-danger-subtle text-danger-emphasis";
   if (s === "sent") return "bg-primary-subtle text-primary-emphasis";
   return "bg-body-secondary text-body-secondary";
 }
@@ -604,15 +582,9 @@ onMounted(() => {
             <div class="d-flex flex-wrap align-items-center gap-2 mb-3">
               <span
                 class="badge rounded-pill text-capitalize fw-medium"
-                :class="statusBadgeClass(invoice.status)"
+                :class="statusBadgeClass(statusDisplayText)"
               >
-                {{ invoice.status }}
-              </span>
-              <span
-                v-if="invoice.is_overdue"
-                class="badge rounded-pill bg-danger-subtle text-danger-emphasis"
-              >
-                Overdue
+                {{ statusDisplayText }}
               </span>
             </div>
 
@@ -626,8 +598,21 @@ onMounted(() => {
             </div>
 
             <h2 class="h6 fw-semibold mb-3">Line items</h2>
+            <div
+              v-if="invoice.status === 'draft' && canUpdate"
+              class="d-flex justify-content-end mb-2"
+            >
+              <button
+                type="button"
+                class="btn btn-sm btn-outline-secondary"
+                :disabled="draftSaving"
+                @click="draftEditMode = !draftEditMode"
+              >
+                {{ draftEditMode ? "View Grouped Lines" : "Edit Draft Lines" }}
+              </button>
+            </div>
 
-            <template v-if="invoice.status === 'draft' && canUpdate">
+            <template v-if="invoice.status === 'draft' && canUpdate && draftEditMode">
               <div class="row g-3 mb-3">
                 <div class="col-md-4">
                   <label class="form-label small" for="inv-detail-due">Due date</label>
@@ -742,68 +727,85 @@ onMounted(() => {
             </template>
 
             <template v-else>
-              <div class="table-responsive billing-inv-items-wrap">
+              <div v-if="!selectedTableRow" class="table-responsive billing-inv-items-wrap">
                 <table class="table table-sm align-middle mb-0 billing-inv-items-table">
                   <thead>
                     <tr>
-                      <th class="billing-inv-col-expand" aria-hidden="true" />
                       <th>Service</th>
-                      <th>Description</th>
-                      <th class="text-end">Price</th>
+                      <th>Category</th>
                       <th class="text-end">Qty</th>
+                      <th class="text-end">Price</th>
                       <th class="text-end">Total</th>
                     </tr>
                   </thead>
                   <tbody>
-                    <template v-for="sec in lineItemSections" :key="sec.key">
+                    <template v-for="row in invoiceTableRows" :key="row.id">
                       <tr
                         class="billing-inv-cat-row"
-                        role="button"
-                        tabindex="0"
-                        :aria-expanded="!!expandedLineCategories[sec.key]"
-                        @click="toggleLineCategory(sec.key)"
-                        @keydown.enter.prevent="toggleLineCategory(sec.key)"
-                        @keydown.space.prevent="toggleLineCategory(sec.key)"
+                        :role="row.details?.length ? 'button' : null"
+                        :tabindex="row.details?.length ? 0 : null"
+                        @click="row.details?.length ? openTableRow(row) : null"
+                        @keydown.enter.prevent="row.details?.length ? openTableRow(row) : null"
+                        @keydown.space.prevent="row.details?.length ? openTableRow(row) : null"
                       >
-                        <td class="billing-inv-col-expand text-secondary small">
-                          <span class="billing-inv-chevron" aria-hidden="true">{{
-                            expandedLineCategories[sec.key] ? "\u25bc" : "\u25b6"
-                          }}</span>
-                        </td>
-                        <td class="fw-semibold">{{ sec.label }}</td>
-                        <td class="text-secondary small">Category subtotal</td>
-                        <td class="text-end">
-                          {{ formatCents(sec.unitAvgCents, invoice.currency) }}
-                        </td>
+                        <td class="fw-semibold">{{ row.name }}</td>
+                        <td>{{ row.type }}</td>
                         <td class="text-end text-nowrap">
-                          {{ formatQtyOneDecimal(sec.qty) }}
+                          {{ formatQtyDisplay(row.qty) }}
+                        </td>
+                        <td class="text-end">
+                          {{ formatCents(row.price_cents, invoice.currency) }}
                         </td>
                         <td class="text-end fw-semibold">
-                          {{ formatCents(sec.totalCents, invoice.currency) }}
-                        </td>
-                      </tr>
-                      <tr
-                        v-for="item in sec.items"
-                        v-show="expandedLineCategories[sec.key]"
-                        :key="item.id"
-                        class="billing-inv-line-detail"
-                      >
-                        <td class="billing-inv-col-expand" />
-                        <td class="fw-medium">{{ lineItemRowLabel(item) }}</td>
-                        <td class="text-secondary small">{{ lineItemRowDetail(item) }}</td>
-                        <td class="text-end">
-                          {{ formatCents(item.unit_price_cents, invoice.currency) }}
-                        </td>
-                        <td class="text-end text-nowrap">
-                          {{ formatQtyOneDecimal(item.quantity) }}
-                        </td>
-                        <td class="text-end">
-                          {{ formatCents(item.line_total_cents, invoice.currency) }}
+                          {{ formatCents(row.total_cents, invoice.currency) }}
                         </td>
                       </tr>
                     </template>
+                    <tr v-if="!invoiceTableRows.length">
+                      <td colspan="5" class="text-center text-secondary py-3">No line items.</td>
+                    </tr>
                   </tbody>
                 </table>
+              </div>
+
+              <div v-if="selectedTableRow" class="billing-inv-drill mt-3">
+                <div class="d-flex align-items-center justify-content-between mb-2">
+                  <h3 class="h6 fw-semibold mb-0">
+                    {{ selectedTableRow.name }} — Detail
+                  </h3>
+                  <button
+                    type="button"
+                    class="btn btn-sm btn-outline-secondary"
+                    @click="closeTableRow"
+                  >
+                    Back to Invoice Items
+                  </button>
+                </div>
+                <div class="table-responsive">
+                  <table class="table table-sm align-middle mb-0 billing-inv-items-table">
+                    <thead>
+                      <tr>
+                        <th>Service</th>
+                        <th>Category</th>
+                        <th class="text-end">Qty</th>
+                        <th class="text-end">Price</th>
+                        <th class="text-end">Total</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      <tr v-for="row in selectedTableRowDetails" :key="row.id" class="billing-inv-line-detail">
+                        <td class="fw-medium">{{ row.name }}</td>
+                        <td>{{ row.type }}</td>
+                        <td class="text-end text-nowrap">{{ formatQtyDisplay(row.qty) }}</td>
+                        <td class="text-end">{{ formatCents(row.price_cents, invoice.currency) }}</td>
+                        <td class="text-end">{{ formatCents(row.total_cents, invoice.currency) }}</td>
+                      </tr>
+                      <tr v-if="!selectedTableRowDetails.length">
+                        <td colspan="5" class="text-center text-secondary py-3">No line items.</td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
               </div>
             </template>
 

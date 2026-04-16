@@ -31,7 +31,9 @@ final class InvoiceChargeImportParser
                 && (isset($map['charge_type_new']) || isset($map['charge_type']));
 
             if (! $isChargeSummary && ! isset($map['billing_category'], $map['fee'], $map['charge_type'])) {
-                $seen = array_values(array_filter(array_map(fn ($raw) => $this->normalizeHeaderKey((string) $raw), $headerRow)));
+                $seen = array_values(array_filter(array_map(function ($raw) {
+                    return $this->normalizeHeaderKey((string) $raw);
+                }, $headerRow)));
                 $hint = $seen !== [] ? ' Found headers: '.implode(', ', $seen).'.' : '';
                 throw new \RuntimeException('Could not detect billing CSV columns.'.$hint);
             }
@@ -378,7 +380,9 @@ final class InvoiceChargeImportParser
      */
     private function getFeeType(array $row, array $index): ?string
     {
-        $get = fn (string $key): string => strtolower($this->cell($row, $index[$key] ?? -1));
+        $get = function (string $key) use ($row, $index): string {
+            return strtolower($this->cell($row, $index[$key] ?? -1));
+        };
 
         $try = function (string $val): ?string {
             $val = trim((string) preg_replace('/\s+/', ' ', $val));
@@ -423,7 +427,9 @@ final class InvoiceChargeImportParser
      */
     private function inferFeeType(array $row, array $index): ?string
     {
-        $get = fn (string $key, string $default = ''): string => $this->cell($row, $index[$key] ?? -1) ?: $default;
+        $get = function (string $key, string $default = '') use ($row, $index): string {
+            return $this->cell($row, $index[$key] ?? -1) ?: $default;
+        };
 
         if ($get('carrier') !== '') return 'Postage';
         if ($get('box') !== '') return 'Packaging';

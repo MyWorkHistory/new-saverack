@@ -755,7 +755,9 @@ class InvoiceService
 
         return [
             'rows' => $rows,
-            'has_grouped_rows' => collect($rows)->contains(fn (array $row) => $row['details'] !== []),
+            'has_grouped_rows' => collect($rows)->contains(function (array $row) {
+                return $row['details'] !== [];
+            }),
         ];
     }
 
@@ -835,17 +837,26 @@ class InvoiceService
     private function oldBetaCategoryLabel(string $category, string $name = ''): string
     {
         $cat = strtolower(trim(str_replace('-', '_', $category)));
-        return match ($cat) {
-            InvoiceLineCategory::FULFILLMENT => 'Fulfillment',
-            InvoiceLineCategory::POSTAGE => 'Postage',
-            InvoiceLineCategory::PACKAGING => $this->oldBetaPackagingType($name),
-            InvoiceLineCategory::RETURNS => 'Returns',
-            InvoiceLineCategory::ON_DEMAND => 'Product (On-Demand)',
-            InvoiceLineCategory::AD_HOC => 'Ad Hoc',
-            InvoiceLineCategory::STORAGE => 'Storage',
-            InvoiceLineCategory::CREDITS => 'Credits',
-            default => Str::title(str_replace('_', ' ', $cat !== '' ? $cat : InvoiceLineCategory::OTHER)),
-        };
+        switch ($cat) {
+            case InvoiceLineCategory::FULFILLMENT:
+                return 'Fulfillment';
+            case InvoiceLineCategory::POSTAGE:
+                return 'Postage';
+            case InvoiceLineCategory::PACKAGING:
+                return $this->oldBetaPackagingType($name);
+            case InvoiceLineCategory::RETURNS:
+                return 'Returns';
+            case InvoiceLineCategory::ON_DEMAND:
+                return 'Product (On-Demand)';
+            case InvoiceLineCategory::AD_HOC:
+                return 'Ad Hoc';
+            case InvoiceLineCategory::STORAGE:
+                return 'Storage';
+            case InvoiceLineCategory::CREDITS:
+                return 'Credits';
+            default:
+                return Str::title(str_replace('_', ' ', $cat !== '' ? $cat : InvoiceLineCategory::OTHER));
+        }
     }
 
     private function oldBetaTypeOrder(string $type): int

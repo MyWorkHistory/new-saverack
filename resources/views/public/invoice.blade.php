@@ -22,19 +22,28 @@
         .invoice-right { text-align: right; min-width: 240px; }
         .invoice-logo { width: 150px; max-width: 100%; object-fit: contain; margin-bottom: 20px; }
         .balance-due { color: #ea5455; font-size: 28px; font-weight: 700; margin: 0; }
-        .invoice-table { width: 100%; border-collapse: collapse; margin-top: 18px; }
-        .invoice-table thead th { background: #2573ba; color: #fff; padding: 10px 12px; font-size: 12px; font-weight: 700; text-transform: uppercase; }
+        .invoice-table { width: 100%; border-collapse: collapse; margin-top: 18px; border: 1px solid #e8e7ed; border-radius: 8px; overflow: hidden; }
+        .invoice-table thead th {
+            background: #fff;
+            color: #6c757d;
+            padding: 10px 12px;
+            font-size: 11px;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.04em;
+            border-bottom: 1px solid #e8e7ed;
+        }
         .invoice-table thead th.num { text-align: center; }
         details.public-inv-sec { border-bottom: 1px solid #e8e7ed; }
         details.public-inv-sec:last-child { border-bottom: none; }
         summary.public-inv-summary { list-style: none; cursor: pointer; }
         summary.public-inv-summary::-webkit-details-marker { display: none; }
         .public-inv-row { display: grid; grid-template-columns: 34px minmax(0, 1.6fr) minmax(72px, 0.3fr) minmax(88px, 0.4fr) minmax(88px, 0.4fr); align-items: center; gap: 10px; padding: 10px 12px; }
-        .public-inv-row:hover { background: #f8f8fc; }
+        .public-inv-row:hover { background: rgba(115, 103, 240, 0.05); }
         .public-inv-row-num { text-align: center; }
         .public-inv-chev { display: inline-block; color: #6c757d; transition: transform 0.15s ease; }
         details.public-inv-sec[open] .public-inv-chev { transform: rotate(90deg); }
-        .public-inv-breakdown { background: #f8f8fc; border-top: 1px solid #eef0f6; }
+        .public-inv-breakdown { background: #fff; border-top: 1px solid #eef0f6; }
         .public-inv-breakdown table { width: 100%; border-collapse: collapse; }
         .public-inv-breakdown td { padding: 9px 12px; border-bottom: 1px solid #eef0f6; }
         .public-inv-breakdown tr:last-child td { border-bottom: none; }
@@ -92,7 +101,7 @@
             </div>
 
             <div class="invoice-right">
-                <img src="{{ asset('assets/images/dark-logo.png') }}" alt="Save Rack" class="invoice-logo" />
+                <img src="{{ url('/assets/images/dark-logo.png') }}" alt="Save Rack" class="invoice-logo" />
                 <div class="balance-label">Balance Due</div>
                 <p class="balance-due">{{ $balance_due }}</p>
             </div>

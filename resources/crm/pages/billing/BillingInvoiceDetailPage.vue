@@ -1925,8 +1925,12 @@ onMounted(() => {
   min-width: 8rem;
 }
 .billing-pay-modal {
-  max-width: 64rem;
-  max-height: min(92dvh, 900px);
+  max-width: 78rem;
+  max-height: min(92dvh, 940px);
+}
+.billing-pay-modal .crm-vx-modal__body {
+  overflow: auto;
+  scroll-behavior: smooth;
 }
 .billing-pay-form-grid {
   display: grid;
@@ -1952,13 +1956,19 @@ onMounted(() => {
   background: var(--bs-tertiary-bg, #f8f9fa);
 }
 .billing-pay-table thead th {
-  background: #2573ba;
-  color: #fff;
-  border-bottom: none;
-  font-size: 0.72rem;
+  background: transparent;
+  color: var(--bs-secondary-color, #6c757d);
+  border-bottom: 1px solid #e8e7ed;
+  font-size: 0.7rem;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  font-weight: 600;
 }
 .billing-pay-table tbody td {
   border-bottom: 1px solid #f1f0f4;
+}
+.billing-pay-table tbody tr:hover td {
+  background: rgba(115, 103, 240, 0.04);
 }
 .billing-pay-stat-stack {
   display: grid;

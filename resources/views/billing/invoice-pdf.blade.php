@@ -51,7 +51,7 @@
             </div>
         </td>
         <td width="45%" class="invoice-right">
-            <img src="{{ asset('assets/images/dark-logo.png') }}" alt="Save Rack" class="invoice-logo" />
+            <img src="{{ url('/assets/images/dark-logo.png') }}" alt="Save Rack" class="invoice-logo" />
             <div class="balance-label">Balance Due</div>
             <div class="balance-due">{{ $balance_due }}</div>
         </td>

@@ -61,7 +61,6 @@ const sendWhatsappBusy = ref(false);
 const sendWhatsappModalOpen = ref(false);
 const sendWhatsappType = ref("send_invoice");
 const sendWhatsappMessage = ref("");
-const invoiceMenuOpen = ref(false);
 const lineMenuOpenId = ref(null);
 const lineEditModalOpen = ref(false);
 const lineEditBusy = ref(false);
@@ -98,6 +97,35 @@ const ccFeeLabel = ref("Credit Card Fee");
 const ccFeeAmount = ref("");
 
 const invoiceLogoSrc = computed(() => BRAND_MARK_SRC());
+const activityCardRef = ref(null);
+
+const canPayInvoice = computed(
+  () =>
+    !!invoice.value &&
+    canUpdate.value &&
+    invoice.value.status !== "draft" &&
+    invoice.value.status !== "paid" &&
+    invoice.value.status !== "void" &&
+    Number(invoice.value.balance_due_cents) > 0,
+);
+
+const canAddCharge = computed(
+  () => !!invoice.value && canUpdate.value && invoice.value.status !== "void",
+);
+
+const canVoidInvoice = computed(
+  () =>
+    !!invoice.value &&
+    canUpdate.value &&
+    invoice.value.status !== "draft" &&
+    invoice.value.status !== "void",
+);
+
+const canShareInvoice = computed(() => !!invoice.value && invoice.value.status !== "void");
+
+const canSendWhatsapp = computed(
+  () => !!invoice.value && canUpdate.value && invoice.value.status !== "void",
+);
 
 function formatQtyDisplay(v) {
   const n = Number(v);
@@ -123,6 +151,10 @@ function openTableRow(row) {
 function closeTableRow() {
   selectedTableRowId.value = "";
   lineMenuOpenId.value = null;
+}
+
+function jumpToHistory() {
+  activityCardRef.value?.scrollIntoView({ behavior: "smooth", block: "start" });
 }
 
 function isPastDueByLogic(inv) {
@@ -157,24 +189,37 @@ const invoiceDateRangeLabel = computed(() => {
   if (!inv) return "—";
   const from = inv.invoice_date_from;
   const to = inv.invoice_date_to;
-  if (from && to) return `${formatInvoiceLongDate(from)} - ${formatInvoiceLongDate(to)}`;
-  if (from) return formatInvoiceLongDate(from);
-  if (to) return formatInvoiceLongDate(to);
-  return formatInvoiceLongDate(inv.invoice_date || inv.issued_at);
+  if (from && to) return `${formatInvoiceShortDate(from)} - ${formatInvoiceShortDate(to)}`;
+  if (from) return formatInvoiceShortDate(from);
+  if (to) return formatInvoiceShortDate(to);
+  return formatInvoiceShortDate(inv.invoice_date || inv.issued_at);
 });
 
-const invoiceDateLong = new Intl.DateTimeFormat(undefined, {
+const invoiceDateShort = new Intl.DateTimeFormat("en-US", {
   year: "numeric",
-  month: "long",
-  day: "numeric",
+  month: "2-digit",
+  day: "2-digit",
 });
 
-function formatInvoiceLongDate(iso) {
+function formatInvoiceShortDate(iso) {
   if (!iso) return "—";
   const s = String(iso);
   const d = /^\d{4}-\d{2}-\d{2}$/.test(s) ? new Date(`${s}T12:00:00`) : new Date(s);
   if (Number.isNaN(d.getTime())) return "—";
-  return invoiceDateLong.format(d);
+  return invoiceDateShort.format(d);
+}
+
+function formatHistoryTimestamp(iso) {
+  if (!iso) return "—";
+  const value = new Date(String(iso));
+  if (Number.isNaN(value.getTime())) return "—";
+  const date = invoiceDateShort.format(value);
+  let hour = value.getHours();
+  const minute = String(value.getMinutes()).padStart(2, "0");
+  const second = String(value.getSeconds()).padStart(2, "0");
+  const meridiem = hour >= 12 ? "PM" : "AM";
+  hour = hour % 12 || 12;
+  return `${date} ${hour}:${minute}:${second} ${meridiem}`;
 }
 
 function formatQtyOneDecimal(v) {
@@ -292,7 +337,6 @@ async function load() {
       const stillExists = invoiceTableRows.value.some((r) => r.id === selectedTableRowId.value);
       if (!stillExists) selectedTableRowId.value = "";
     }
-    invoiceMenuOpen.value = false;
     lineMenuOpenId.value = null;
     syncEditFromInvoice();
     setCrmPageMeta({
@@ -443,14 +487,6 @@ async function confirmSendWhatsapp() {
   }
 }
 
-function toggleInvoiceMenu() {
-  invoiceMenuOpen.value = !invoiceMenuOpen.value;
-}
-
-function closeInvoiceMenu() {
-  invoiceMenuOpen.value = false;
-}
-
 function toggleLineMenu(lineId) {
   lineMenuOpenId.value = lineMenuOpenId.value === lineId ? null : lineId;
 }
@@ -535,7 +571,6 @@ async function confirmLineDelete() {
 }
 
 function openAddItemModal() {
-  closeInvoiceMenu();
   addItemForm.value = {
     description: "",
     display_name: "",
@@ -584,7 +619,6 @@ async function confirmAddItem() {
 }
 
 function openCcFeeModal() {
-  closeInvoiceMenu();
   ccFeeLabel.value = "Credit Card Fee";
   ccFeeAmount.value = "";
   ccFeeModalOpen.value = true;
@@ -747,95 +781,6 @@ onMounted(() => {
             {{ copyLinkBusy ? "Working…" : "Copy Customer Link" }}
           </button>
         </div>
-        <div class="d-flex flex-wrap gap-2 ms-lg-auto">
-          <div class="position-relative">
-            <button
-              type="button"
-              class="staff-action-btn staff-action-btn--more"
-              :class="{ 'is-open': invoiceMenuOpen }"
-              :aria-expanded="invoiceMenuOpen"
-              aria-haspopup="true"
-              aria-label="Invoice actions"
-              @click="toggleInvoiceMenu"
-            >
-              <CrmIconRowActions variant="horizontal" />
-            </button>
-            <div v-if="invoiceMenuOpen" class="billing-inline-menu" role="menu">
-              <button
-                v-if="canUpdate && invoice.status !== 'draft' && invoice.status !== 'paid' && invoice.status !== 'void' && invoice.balance_due_cents > 0"
-                type="button"
-                class="staff-row-menu__item"
-                role="menuitem"
-                @click="openPayModal(); closeInvoiceMenu();"
-              >
-                Pay Invoice
-              </button>
-              <button
-                v-if="canUpdate && invoice.status !== 'void'"
-                type="button"
-                class="staff-row-menu__item"
-                role="menuitem"
-                @click="openAddItemModal"
-              >
-                Add To Invoice
-              </button>
-              <button
-                v-if="canUpdate && invoice.status !== 'void'"
-                type="button"
-                class="staff-row-menu__item"
-                role="menuitem"
-                @click="openCcFeeModal"
-              >
-                Add CC Fee
-              </button>
-              <button
-                v-if="canUpdate && invoice.status !== 'draft' && invoice.status !== 'void'"
-                type="button"
-                class="staff-row-menu__item staff-row-menu__item--danger"
-                role="menuitem"
-                @click="openVoidModal(); closeInvoiceMenu();"
-              >
-                Void Invoice
-              </button>
-              <button
-                v-if="invoice.status !== 'void'"
-                type="button"
-                class="staff-row-menu__item"
-                role="menuitem"
-                @click="copyCustomerLink(); closeInvoiceMenu();"
-              >
-                Share Invoice
-              </button>
-              <button
-                v-if="canUpdate && invoice.status === 'draft'"
-                type="button"
-                class="staff-row-menu__item"
-                role="menuitem"
-                @click="sendInvoice(); closeInvoiceMenu();"
-              >
-                Send Invoice
-              </button>
-              <button
-                v-if="canUpdate && invoice.status !== 'void'"
-                type="button"
-                class="staff-row-menu__item"
-                role="menuitem"
-                @click="openSendWhatsappModal(); closeInvoiceMenu();"
-              >
-                Send via WhatsApp
-              </button>
-              <button
-                v-if="canDelete && invoice.status === 'draft'"
-                type="button"
-                class="staff-row-menu__item staff-row-menu__item--danger"
-                role="menuitem"
-                @click="openDeleteModal(); closeInvoiceMenu();"
-              >
-                Delete Draft
-              </button>
-            </div>
-          </div>
-        </div>
       </div>
 
       <div class="row g-4">
@@ -879,9 +824,9 @@ onMounted(() => {
                         {{
                           invoice.status === "draft" && canUpdate
                             ? editDueAt
-                              ? formatInvoiceLongDate(editDueAt)
+                              ? formatInvoiceShortDate(editDueAt)
                               : "—"
-                            : formatInvoiceLongDate(invoice.due_at)
+                            : formatInvoiceShortDate(invoice.due_at)
                         }}
                       </span>
                     </div>
@@ -1219,8 +1164,85 @@ onMounted(() => {
           </div>
         </div>
         <div class="col-lg-4">
-          <div class="staff-surface p-4">
-            <h2 class="h6 fw-semibold mb-3">Activity</h2>
+          <div class="staff-surface p-4 mb-4">
+            <div class="billing-inv-action-stack">
+              <button
+                v-if="canPayInvoice"
+                type="button"
+                class="billing-inv-action-btn"
+                @click="openPayModal"
+              >
+                Pay Invoice
+              </button>
+              <button
+                v-if="canAddCharge"
+                type="button"
+                class="billing-inv-action-btn"
+                @click="openAddItemModal"
+              >
+                Add To Invoice
+              </button>
+              <button
+                v-if="canAddCharge"
+                type="button"
+                class="billing-inv-action-btn"
+                @click="openCcFeeModal"
+              >
+                Add CC Fee
+              </button>
+              <button
+                v-if="canVoidInvoice"
+                type="button"
+                class="billing-inv-action-btn billing-inv-action-btn--danger"
+                @click="openVoidModal"
+              >
+                Void Invoice
+              </button>
+              <button
+                v-if="canShareInvoice"
+                type="button"
+                class="billing-inv-action-btn"
+                :disabled="copyLinkBusy"
+                @click="copyCustomerLink"
+              >
+                {{ copyLinkBusy ? "Sharing..." : "Share Invoice" }}
+              </button>
+              <button
+                v-if="canSendWhatsapp"
+                type="button"
+                class="billing-inv-action-btn"
+                @click="openSendWhatsappModal"
+              >
+                Send To Whatsapp
+              </button>
+              <button
+                type="button"
+                class="billing-inv-action-btn"
+                @click="jumpToHistory"
+              >
+                History
+              </button>
+              <button
+                v-if="canUpdate && invoice.status === 'draft'"
+                type="button"
+                class="billing-inv-action-btn billing-inv-action-btn--primary"
+                @click="sendInvoice"
+              >
+                Send Invoice
+              </button>
+              <button
+                v-if="canDelete && invoice.status === 'draft'"
+                type="button"
+                class="billing-inv-action-btn billing-inv-action-btn--danger"
+                @click="openDeleteModal"
+              >
+                Delete Draft
+              </button>
+            </div>
+          </div>
+
+          <div ref="activityCardRef" class="staff-surface p-4">
+            <h2 class="h6 fw-semibold mb-3">History</h2>
             <ul class="list-unstyled small mb-0">
               <li
                 v-for="h in invoice.histories"
@@ -1228,9 +1250,10 @@ onMounted(() => {
                 class="border-bottom border-light py-2"
               >
                 <div class="fw-medium text-capitalize">{{ h.action.replace(/_/g, " ") }}</div>
+                <div v-if="h.message" class="text-body">{{ h.message }}</div>
                 <div class="text-secondary">
                   {{ h.user?.name || "System" }} ·
-                  {{ new Date(h.created_at).toLocaleString() }}
+                  {{ formatHistoryTimestamp(h.created_at) }}
                 </div>
               </li>
               <li v-if="!invoice.histories?.length" class="text-secondary py-2">No history.</li>
@@ -1598,6 +1621,41 @@ onMounted(() => {
 }
 .billing-inv-totals {
   max-width: 15rem;
+}
+.billing-inv-action-stack {
+  display: grid;
+  gap: 0.75rem;
+}
+.billing-inv-action-btn {
+  width: 100%;
+  border: 1px solid rgba(47, 43, 61, 0.12);
+  border-radius: 0.5rem;
+  background: var(--bs-body-bg, #fff);
+  color: var(--bs-body-color, #2f2b3d);
+  padding: 0.8rem 0.95rem;
+  text-align: left;
+  font-weight: 500;
+  transition:
+    background-color 0.15s ease,
+    border-color 0.15s ease,
+    color 0.15s ease,
+    box-shadow 0.15s ease;
+}
+.billing-inv-action-btn:hover:not(:disabled) {
+  background: rgba(115, 103, 240, 0.06);
+  border-color: rgba(115, 103, 240, 0.26);
+}
+.billing-inv-action-btn:disabled {
+  opacity: 0.65;
+  cursor: not-allowed;
+}
+.billing-inv-action-btn--primary {
+  background: rgba(115, 103, 240, 0.1);
+  border-color: rgba(115, 103, 240, 0.28);
+  color: #5e50ee;
+}
+.billing-inv-action-btn--danger {
+  color: #ea5455;
 }
 .billing-inv-col-expand {
   width: 2rem;

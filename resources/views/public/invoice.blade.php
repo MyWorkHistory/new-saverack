@@ -6,181 +6,174 @@
     <title>{{ $invoice_number }} — {{ $issuer_name }}</title>
     <style>
         * { box-sizing: border-box; }
-        body { font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif; font-size: 14px; color: #2f2f2f; margin: 0; padding: 24px 20px 40px; max-width: 920px; margin-left: auto; margin-right: auto; }
-        .public-toolbar { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; justify-content: flex-end; margin-bottom: 20px; padding-bottom: 16px; border-bottom: 1px solid #e5e5e5; }
-        .public-toolbar a { display: inline-block; padding: 8px 14px; border-radius: 6px; font-size: 13px; font-weight: 600; text-decoration: none; }
-        .public-toolbar a.primary { background: #111; color: #fff; }
-        .public-toolbar a.secondary { background: #f3f3f3; color: #222; }
-        .brand-wrap { display: flex; align-items: center; gap: 10px; }
-        .brand-logo { width: 36px; height: 36px; object-fit: contain; }
-        .brand { font-size: 20px; font-weight: 700; color: #111; margin-bottom: 0; }
-        .brand-sub { font-size: 12px; color: #666; }
-        .top { width: 100%; margin-bottom: 22px; border-collapse: collapse; }
-        .top td { vertical-align: top; }
-        .inv-title { font-size: 22px; font-weight: 700; color: #111; text-align: right; }
-        .inv-meta { text-align: right; font-size: 12px; color: #555; margin-top: 8px; line-height: 1.5; }
-        .inv-meta strong { color: #222; }
-        .section-label { font-size: 11px; text-transform: uppercase; letter-spacing: 0.06em; color: #888; margin: 18px 0 6px; }
-        .bill-to { font-size: 15px; font-weight: 600; color: #111; }
-        table.lines { width: 100%; border-collapse: collapse; margin-top: 0; }
-        table.lines th {
-            text-align: left; font-size: 10px; text-transform: uppercase; letter-spacing: 0.04em;
-            color: #666; border-bottom: 1px solid #ccc; padding: 10px 8px;
-        }
-        table.lines th.num { text-align: right; }
-        table.lines td { border-bottom: 1px solid #e8e8e8; padding: 10px 8px; vertical-align: top; }
-        table.lines td.num { text-align: right; white-space: nowrap; }
-        .lines-nested { background: #fff; }
-        .lines-nested td { font-size: 13px; }
-        details.public-inv-sec { border-bottom: 1px solid #e8e8e8; }
-        details.public-inv-sec:last-of-type { border-bottom: none; }
-        summary.public-inv-summary { list-style: none; cursor: pointer; padding: 0; }
+        body { font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif; font-size: 14px; color: #2f2f2f; margin: 0; background: #f6f7fb; }
+        .page { max-width: 1040px; margin: 0 auto; padding: 24px 20px 40px; }
+        .public-toolbar { display: flex; flex-wrap: wrap; gap: 10px; justify-content: flex-end; margin-bottom: 18px; }
+        .public-toolbar a { display: inline-block; padding: 10px 16px; border-radius: 8px; font-size: 13px; font-weight: 600; text-decoration: none; }
+        .public-toolbar a.primary { background: #2573ba; color: #fff; }
+        .public-toolbar a.secondary { background: #fff; color: #2f2b3d; border: 1px solid rgba(47, 43, 61, 0.12); }
+        .invoice-card { background: #fff; border: 1px solid rgba(47, 43, 61, 0.08); border-radius: 14px; padding: 26px 24px 30px; box-shadow: 0 8px 24px rgba(15, 23, 42, 0.06); }
+        .invoice-head { display: flex; justify-content: space-between; gap: 20px; align-items: flex-start; margin-bottom: 22px; }
+        .invoice-title { font-size: 34px; font-weight: 700; color: #1f2430; margin: 0 0 4px; }
+        .meta-line { margin: 2px 0; color: #555; }
+        .bill-to { margin-top: 28px; }
+        .bill-to-title, .balance-label { font-size: 22px; font-weight: 700; margin: 0 0 6px; color: #1f2430; }
+        .bill-to-body { color: #555; line-height: 1.5; }
+        .invoice-right { text-align: right; min-width: 240px; }
+        .invoice-logo { width: 150px; max-width: 100%; object-fit: contain; margin-bottom: 20px; }
+        .balance-due { color: #ea5455; font-size: 28px; font-weight: 700; margin: 0; }
+        .invoice-table { width: 100%; border-collapse: collapse; margin-top: 18px; }
+        .invoice-table thead th { background: #2573ba; color: #fff; padding: 10px 12px; font-size: 12px; font-weight: 700; text-transform: uppercase; }
+        .invoice-table thead th.num { text-align: center; }
+        details.public-inv-sec { border-bottom: 1px solid #e8e7ed; }
+        details.public-inv-sec:last-child { border-bottom: none; }
+        summary.public-inv-summary { list-style: none; cursor: pointer; }
         summary.public-inv-summary::-webkit-details-marker { display: none; }
-        .public-inv-sum-grid {
-            display: grid;
-            grid-template-columns: 18px minmax(0, 1.75fr) minmax(0, 0.55fr) minmax(0, 0.65fr) minmax(0, 0.8fr);
-            gap: 8px;
-            align-items: center;
-            padding: 10px 8px;
-        }
-        .public-inv-chev { font-size: 10px; color: #666; transition: transform 0.15s ease; display: inline-block; }
+        .public-inv-row { display: grid; grid-template-columns: 34px minmax(0, 1.6fr) minmax(72px, 0.3fr) minmax(88px, 0.4fr) minmax(88px, 0.4fr); align-items: center; gap: 10px; padding: 10px 12px; }
+        .public-inv-row:hover { background: #f8f8fc; }
+        .public-inv-row-num { text-align: center; }
+        .public-inv-chev { display: inline-block; color: #6c757d; transition: transform 0.15s ease; }
         details.public-inv-sec[open] .public-inv-chev { transform: rotate(90deg); }
-        .public-inv-nested { background: #f6f7f9; padding: 0 4px 12px 12px; border-bottom: 1px solid #e8e8e8; }
-        .public-inv-lines-wrap { margin-top: 12px; border: 1px solid #e8e8e8; border-radius: 4px; overflow: hidden; background: #fff; }
-        .totals { width: 280px; margin-left: auto; margin-top: 20px; font-size: 14px; }
-        .totals table { width: 100%; border-collapse: collapse; }
-        .totals td { padding: 6px 0; }
-        .totals td.lbl { color: #666; }
-        .totals td.amt { text-align: right; font-weight: 600; }
-        .totals tr.due td { padding-top: 12px; font-size: 16px; border-top: 1px solid #ccc; }
-        .notes { margin-top: 24px; font-size: 13px; color: #555; line-height: 1.45; }
-        .footer { margin-top: 32px; font-size: 11px; color: #999; text-align: center; }
-        .public-inv-empty { color: #888; padding: 16px 8px; }
+        .public-inv-breakdown { background: #f8f8fc; border-top: 1px solid #eef0f6; }
+        .public-inv-breakdown table { width: 100%; border-collapse: collapse; }
+        .public-inv-breakdown td { padding: 9px 12px; border-bottom: 1px solid #eef0f6; }
+        .public-inv-breakdown tr:last-child td { border-bottom: none; }
+        .public-inv-breakdown .num { text-align: center; white-space: nowrap; }
+        .invoice-summary { margin-top: 18px; margin-left: auto; width: 260px; text-align: right; line-height: 1.85; }
+        .invoice-summary .danger { color: #ea5455; }
+        .invoice-summary .success { color: #28c76f; }
+        .payment-note { margin-top: 28px; color: #555; line-height: 1.55; }
+        .payment-note strong { color: #1f2430; }
         @media print {
             .public-toolbar { display: none; }
-            body { padding-top: 0; }
-            details.public-inv-sec > summary { page-break-inside: avoid; }
+            body { background: #fff; }
+            .page { padding: 0; max-width: none; }
+            .invoice-card { box-shadow: none; border: none; padding: 0; }
+            details.public-inv-sec { break-inside: avoid; }
+            details.public-inv-sec[open] .public-inv-chev,
+            details.public-inv-sec .public-inv-chev { transform: rotate(90deg); }
+        }
+        @media (max-width: 720px) {
+            .invoice-head { flex-direction: column; }
+            .invoice-right { text-align: left; min-width: 0; }
+            .public-inv-row { grid-template-columns: 24px minmax(0, 1fr); }
+            .public-inv-row-num:nth-child(n+3) { text-align: left; }
+            .public-inv-breakdown td.num { text-align: left; }
         }
     </style>
 </head>
 <body>
-<div class="public-toolbar">
-    <a class="secondary" href="javascript:window.print()">Print</a>
-    <a class="primary" href="{{ $public_pdf_path ?? '#' }}">Download PDF</a>
-</div>
-<table class="top">
-    <tr>
-        <td width="55%">
-            <div class="brand-wrap">
-                <img src="{{ asset('assets/images/dark-logo.png') }}" alt="Save Rack" class="brand-logo" />
-                <div class="brand">Save Rack</div>
-            </div>
-            <div class="brand-sub">Fulfillment billing</div>
-        </td>
-        <td width="45%">
-            <div class="inv-title">Invoice {{ $invoice_number }}</div>
-            <div class="inv-meta">
-                <div><strong>Invoice Date:</strong> {{ $invoice_date_label ?? '—' }}</div>
-                @if (!empty($due_long))
-                    <div><strong>Due date:</strong> {{ $due_long }}</div>
-                @endif
-                @if (!empty($payment_terms))
-                    <div><strong>Terms:</strong> {{ $payment_terms }}</div>
-                @endif
-                @if (!empty($po_number))
-                    <div><strong>PO:</strong> {{ $po_number }}</div>
-                @endif
-                <div><strong>Status:</strong> {{ ucfirst($status) }}</div>
-            </div>
-        </td>
-    </tr>
-</table>
-
-<div class="section-label">Invoice to</div>
-<div class="bill-to">{{ $client_company_name ?: '—' }}</div>
-
-<div class="section-label" style="margin-top: 20px;">Line items</div>
-<div class="public-inv-lines-wrap">
-@if (!empty($line_sections))
-    @foreach ($line_sections as $sec)
-        <details class="public-inv-sec">
-            <summary class="public-inv-summary">
-                <div class="public-inv-sum-grid">
-                    <span class="public-inv-chev" aria-hidden="true">&#9654;</span>
-                    <span class="public-inv-sum-service"><strong>{{ $sec['label'] }}</strong></span>
-                    <span class="num">{{ $sec['qty_display'] }}</span>
-                    <span class="num">{{ $sec['unit'] }}</span>
-                    <span class="num" style="font-weight:600;">{{ $sec['line_total'] }}</span>
-                </div>
-            </summary>
-            <div class="public-inv-nested">
-                <table class="lines lines-nested">
-                    <thead>
-                    <tr>
-                        <th style="width:56%">Service</th>
-                        <th class="num" style="width:12%">Qty</th>
-                        <th class="num" style="width:14%">Price</th>
-                        <th class="num" style="width:14%">Total</th>
-                    </tr>
-                    </thead>
-                    <tbody>
-                    @foreach ($sec['lines'] as $row)
-                        <tr>
-                            <td>{{ $row['item'] }}</td>
-                            <td class="num">{{ $row['quantity'] }}</td>
-                            <td class="num">{{ $row['unit'] }}</td>
-                            <td class="num">{{ $row['line_total'] }}</td>
-                        </tr>
-                    @endforeach
-                    </tbody>
-                </table>
-            </div>
-        </details>
-    @endforeach
-@else
-    <p class="public-inv-empty">No line items.</p>
-@endif
-</div>
-
-<div class="totals">
-    <table>
-        <tr>
-            <td class="lbl">Subtotal</td>
-            <td class="amt">{{ $subtotal }}</td>
-        </tr>
-        <tr>
-            <td class="lbl">Tax</td>
-            <td class="amt">{{ $tax }}</td>
-        </tr>
-        <tr>
-            <td class="lbl">Total</td>
-            <td class="amt">{{ $total }}</td>
-        </tr>
-        <tr>
-            <td class="lbl">Amount paid</td>
-            <td class="amt">{{ $amount_paid }}</td>
-        </tr>
-        <tr class="due">
-            <td class="lbl"><strong>Balance due</strong></td>
-            <td class="amt">{{ $balance_due }}</td>
-        </tr>
-    </table>
-</div>
-
-@if (!empty($customer_notes))
-    <div class="notes">
-        <strong>Note:</strong> {{ $customer_notes }}
+<div class="page">
+    <div class="public-toolbar">
+        <a class="secondary" href="javascript:window.print()">Print</a>
+        <a class="primary" href="{{ $public_pdf_path ?? '#' }}">Download PDF</a>
     </div>
-@endif
 
-<div class="notes">
-    <strong>Please send payment to:</strong><br>
-    Save Rack LLC<br>
-    3025 Whitten Rd<br>
-    Lakeland, FL 33815
+    <div class="invoice-card">
+        <div class="invoice-head">
+            <div>
+                <h1 class="invoice-title">Invoice #{{ $invoice_number }}</h1>
+                <div class="meta-line">Invoice Date : {{ $invoice_date_label ?? '—' }}</div>
+                <div class="meta-line">Invoice Due : {{ $due_long ?? '—' }}</div>
+
+                <div class="bill-to">
+                    <h2 class="bill-to-title">BILL TO : {{ $client_company_name ?: '—' }}</h2>
+                    @if (!empty($account_address))
+                        <div class="bill-to-body">
+                            @if (!empty($account_address['line1'])){{ $account_address['line1'] }}<br>@endif
+                            @if (!empty($account_address['line2'])){{ $account_address['line2'] }}<br>@endif
+                            {{ trim(implode(' ', array_filter([$account_address['city'] ?? '', !empty($account_address['state']) ? ',' : '', $account_address['state'] ?? '', $account_address['zip'] ?? '']))) }}
+                            @if (!empty($account_address['country']))
+                                , {{ $account_address['country'] }}
+                            @endif
+                        </div>
+                    @endif
+                </div>
+            </div>
+
+            <div class="invoice-right">
+                <img src="{{ asset('assets/images/dark-logo.png') }}" alt="Save Rack" class="invoice-logo" />
+                <div class="balance-label">Balance Due</div>
+                <p class="balance-due">{{ $balance_due }}</p>
+            </div>
+        </div>
+
+        <table class="invoice-table">
+            <thead>
+            <tr>
+                <th style="width:34px"></th>
+                <th style="width:56%">Service</th>
+                <th class="num" style="width:12%">QTY</th>
+                <th class="num" style="width:14%">Price</th>
+                <th class="num" style="width:18%">Total</th>
+            </tr>
+            </thead>
+            <tbody>
+            @forelse (($line_sections ?? []) as $sec)
+                <tr>
+                    <td colspan="5" style="padding:0;">
+                        <details class="public-inv-sec" open>
+                            <summary class="public-inv-summary">
+                                <div class="public-inv-row">
+                                    <div class="public-inv-row-num"><span class="public-inv-chev">&#9654;</span></div>
+                                    <div><strong>{{ $sec['label'] }}</strong></div>
+                                    <div class="public-inv-row-num">{{ $sec['qty_display'] }}</div>
+                                    <div class="public-inv-row-num">{{ $sec['unit'] }}</div>
+                                    <div class="public-inv-row-num"><strong>{{ $sec['line_total'] }}</strong></div>
+                                </div>
+                            </summary>
+
+                            @if (!empty($sec['lines']))
+                                <div class="public-inv-breakdown">
+                                    <table>
+                                        <tbody>
+                                        @foreach ($sec['lines'] as $line)
+                                            <tr>
+                                                <td style="width:34px;"></td>
+                                                <td style="width:56%; padding-left: 18px;">{{ $line['name'] }}</td>
+                                                <td class="num" style="width:12%;">{{ $line['qty_display'] }}</td>
+                                                <td class="num" style="width:14%;">{{ $line['unit'] }}</td>
+                                                <td class="num" style="width:18%;">{{ $line['line_total'] }}</td>
+                                            </tr>
+                                        @endforeach
+                                        </tbody>
+                                    </table>
+                                </div>
+                            @endif
+                        </details>
+                    </td>
+                </tr>
+            @empty
+                <tr>
+                    <td colspan="5" style="padding:16px; color:#888;">No line items.</td>
+                </tr>
+            @endforelse
+            </tbody>
+        </table>
+
+        <div class="invoice-summary">
+            <strong>Total :</strong> {{ $total }}<br>
+            <strong>Paid :</strong> <span class="success">{{ $amount_paid }}</span><br>
+            <strong>Balance Due :</strong> <span class="danger">{{ $balance_due }}</span>
+        </div>
+
+        @if (!empty($customer_notes))
+            <div class="payment-note">
+                <strong>Note:</strong> {{ $customer_notes }}
+            </div>
+        @endif
+
+        <div class="payment-note">
+            <strong>Please send payment to:</strong><br><br>
+            Save Rack LLC<br>
+            3025 Whitten Rd<br>
+            Lakeland, FL 33815<br><br>
+            Routing #: 063107513<br>
+            Account #: 1157249176<br>
+            Wire #: 121000248
+        </div>
+    </div>
 </div>
-
-<div class="footer">Thank you for your business.</div>
 <script>
 (function () {
     window.addEventListener('beforeprint', function () {

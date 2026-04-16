@@ -4,6 +4,7 @@ namespace Tests\Feature;
 
 use App\Mail\InvoiceSentMailable;
 use App\Models\ClientAccount;
+use App\Services\InvoiceService;
 use App\Models\Invoice;
 use App\Models\InvoiceItem;
 use App\Models\Permission;
@@ -486,7 +487,8 @@ class BillingInvoiceApiTest extends TestCase
 
         $this->get("/billing-invoice/{$slug}/{$invoice->share_token}")
             ->assertOk()
-            ->assertSee('Invoice '.$invoice->invoice_number, false);
+            ->assertSee('Invoice '.$invoice->invoice_number, false)
+            ->assertSee('favicon.svg', false);
     }
 
     public function test_public_invoice_returns_404_for_void_status(): void
@@ -822,6 +824,74 @@ class BillingInvoiceApiTest extends TestCase
         $res->assertJsonPath('presentation.rows.1.type', 'Product (On-Demand)');
         $this->assertCount(1, $res->json('presentation.rows.0.details'));
         $this->assertCount(1, $res->json('presentation.rows.1.details'));
+    }
+
+    public function test_public_invoice_line_sections_match_old_crm_expand_rules(): void
+    {
+        $client = ClientAccount::query()->create([
+            'status' => ClientAccount::STATUS_ACTIVE,
+            'company_name' => 'Expand Rules Co',
+            'email' => 'expand@acme.test',
+        ]);
+
+        $invoice = Invoice::query()->create([
+            'invoice_number' => 'INV-EXP-RULES-001',
+            'client_account_id' => $client->id,
+            'status' => Invoice::STATUS_SENT,
+            'currency' => 'USD',
+            'subtotal_cents' => 300,
+            'tax_cents' => 0,
+            'total_cents' => 300,
+            'amount_paid_cents' => 0,
+            'balance_due_cents' => 300,
+        ]);
+
+        InvoiceItem::query()->create([
+            'invoice_id' => $invoice->id,
+            'sort_order' => 1,
+            'category' => 'fulfillment',
+            'group_key' => 'fulfillment:first-pick',
+            'description' => 'First pick',
+            'display_name' => 'Fulfillment (First Pick)',
+            'quantity' => 1,
+            'unit_price_cents' => 100,
+            'line_total_cents' => 100,
+        ]);
+        InvoiceItem::query()->create([
+            'invoice_id' => $invoice->id,
+            'sort_order' => 2,
+            'category' => 'fulfillment',
+            'group_key' => 'fulfillment:first-pick',
+            'description' => 'Another line',
+            'display_name' => 'Fulfillment (First Pick)',
+            'quantity' => 1,
+            'unit_price_cents' => 100,
+            'line_total_cents' => 100,
+        ]);
+        InvoiceItem::query()->create([
+            'invoice_id' => $invoice->id,
+            'sort_order' => 3,
+            'category' => 'postage',
+            'group_key' => 'postage:usps',
+            'description' => 'USPS',
+            'display_name' => 'USPS Ground',
+            'quantity' => 1,
+            'unit_price_cents' => 100,
+            'line_total_cents' => 100,
+        ]);
+
+        $invoice->refresh()->load('items');
+        $data = app(InvoiceService::class)->publicInvoiceHtmlData($invoice);
+        $sections = $data['line_sections'];
+        $fulfillment = collect($sections)->first(fn (array $s) => ($s['type'] ?? '') === 'Fulfillment');
+        $postage = collect($sections)->first(fn (array $s) => ($s['type'] ?? '') === 'Postage');
+
+        $this->assertNotNull($fulfillment);
+        $this->assertNotEmpty($fulfillment['lines']);
+        $this->assertFalse($fulfillment['is_expandable']);
+
+        $this->assertNotNull($postage);
+        $this->assertTrue($postage['is_expandable']);
     }
 
     public function test_invoice_whatsapp_endpoint_sends_provider_payload(): void

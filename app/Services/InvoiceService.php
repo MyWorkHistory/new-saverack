@@ -1519,15 +1519,21 @@ class InvoiceService
                 ];
             }
 
+            $type = (string) ($row['type'] ?? '');
+            $hasLines = $lines !== [];
+            // Old CRM: Fulfillment subtotals stay flat (no chevron / no drill-down). Other categories accordion.
+            $isExpandable = $hasLines && $type !== 'Fulfillment';
+
             $sections[] = [
                 'id' => (string) ($row['id'] ?? Str::uuid()),
                 'label' => (string) ($row['name'] ?? '—'),
-                'type' => (string) ($row['type'] ?? ''),
+                'type' => $type,
                 'qty' => number_format((float) ($row['qty'] ?? 0), 3, '.', ''),
                 'qty_display' => $this->formatLegacyQty((float) ($row['qty'] ?? 0)),
                 'unit' => $money((int) ($row['price_cents'] ?? 0)),
                 'line_total' => $money((int) ($row['total_cents'] ?? 0)),
-                'has_breakdown' => $lines !== [],
+                'has_breakdown' => $hasLines,
+                'is_expandable' => $isExpandable,
                 'lines' => $lines,
             ];
         }

@@ -4,6 +4,7 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>{{ $invoice_number }} — {{ $issuer_name }}</title>
+    <link rel="icon" href="{{ asset('brand/favicon.svg') }}" type="image/svg+xml">
     <style>
         * { box-sizing: border-box; }
         body { font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif; font-size: 14px; color: #2f2f2f; margin: 0; background: #f6f7fb; }
@@ -22,30 +23,33 @@
         .invoice-right { text-align: right; min-width: 240px; }
         .invoice-logo { width: 150px; max-width: 100%; object-fit: contain; margin-bottom: 20px; }
         .balance-due { color: #ea5455; font-size: 28px; font-weight: 700; margin: 0; }
-        .invoice-table { width: 100%; border-collapse: collapse; margin-top: 18px; border: 1px solid #e8e7ed; border-radius: 8px; overflow: hidden; }
+        .invoice-table { width: 100%; border-collapse: collapse; margin-top: 18px; border: 1px solid #c5d9eb; border-radius: 0; overflow: hidden; }
         .invoice-table thead th {
-            background: #fff;
-            color: #6c757d;
+            background: #2573ba;
+            color: #fff;
             padding: 10px 12px;
-            font-size: 11px;
-            font-weight: 600;
-            text-transform: uppercase;
-            letter-spacing: 0.04em;
-            border-bottom: 1px solid #e8e7ed;
+            font-size: 13px;
+            font-weight: 700;
+            text-transform: none;
+            letter-spacing: normal;
+            border-bottom: none;
         }
         .invoice-table thead th.num { text-align: center; }
-        details.public-inv-sec { border-bottom: 1px solid #e8e7ed; }
-        details.public-inv-sec:last-child { border-bottom: none; }
-        summary.public-inv-summary { list-style: none; cursor: pointer; }
-        summary.public-inv-summary::-webkit-details-marker { display: none; }
+        .public-inv-sec { border-bottom: 1px solid #d8dee6; }
+        .public-inv-sec:last-child { border-bottom: none; }
+        details.public-inv-sec--expandable > summary.public-inv-summary { list-style: none; cursor: pointer; }
+        details.public-inv-sec--expandable > summary.public-inv-summary::-webkit-details-marker { display: none; }
         .public-inv-row { display: grid; grid-template-columns: 34px minmax(0, 1.6fr) minmax(72px, 0.3fr) minmax(88px, 0.4fr) minmax(88px, 0.4fr); align-items: center; gap: 10px; padding: 10px 12px; }
-        .public-inv-row:hover { background: rgba(115, 103, 240, 0.05); }
+        tbody > tr:nth-child(odd) .public-inv-row { background: #eceff2; }
+        tbody > tr:nth-child(even) .public-inv-row { background: #fff; }
         .public-inv-row-num { text-align: center; }
-        .public-inv-chev { display: inline-block; color: #6c757d; transition: transform 0.15s ease; }
-        details.public-inv-sec[open] .public-inv-chev { transform: rotate(90deg); }
-        .public-inv-breakdown { background: #fff; border-top: 1px solid #eef0f6; }
+        .public-inv-chev { display: inline-block; color: #4a5568; font-size: 11px; transition: transform 0.15s ease; }
+        details.public-inv-sec--expandable[open] .public-inv-chev { transform: rotate(90deg); }
+        .public-inv-breakdown { background: #f7f8fa; border-top: 1px solid #d8dee6; }
         .public-inv-breakdown table { width: 100%; border-collapse: collapse; }
-        .public-inv-breakdown td { padding: 9px 12px; border-bottom: 1px solid #eef0f6; }
+        .public-inv-breakdown tbody tr:nth-child(odd) td { background: #eef1f4; }
+        .public-inv-breakdown tbody tr:nth-child(even) td { background: #f7f8fa; }
+        .public-inv-breakdown td { padding: 9px 12px; border-bottom: 1px solid #dde3ea; }
         .public-inv-breakdown tr:last-child td { border-bottom: none; }
         .public-inv-breakdown .num { text-align: center; white-space: nowrap; }
         .invoice-summary { margin-top: 18px; margin-left: auto; width: 260px; text-align: right; line-height: 1.85; }
@@ -58,9 +62,9 @@
             body { background: #fff; }
             .page { padding: 0; max-width: none; }
             .invoice-card { box-shadow: none; border: none; padding: 0; }
-            details.public-inv-sec { break-inside: avoid; }
-            details.public-inv-sec[open] .public-inv-chev,
-            details.public-inv-sec .public-inv-chev { transform: rotate(90deg); }
+            details.public-inv-sec--expandable { break-inside: avoid; }
+            details.public-inv-sec--expandable[open] .public-inv-chev,
+            details.public-inv-sec--expandable .public-inv-chev { transform: rotate(90deg); }
         }
         @media (max-width: 720px) {
             .invoice-head { flex-direction: column; }
@@ -121,35 +125,47 @@
             @forelse (($line_sections ?? []) as $sec)
                 <tr>
                     <td colspan="5" style="padding:0;">
-                        <details class="public-inv-sec" open>
-                            <summary class="public-inv-summary">
+                        @if (!empty($sec['is_expandable']))
+                            <details class="public-inv-sec public-inv-sec--expandable">
+                                <summary class="public-inv-summary">
+                                    <div class="public-inv-row">
+                                        <div class="public-inv-row-num"><span class="public-inv-chev" aria-hidden="true">&#9654;</span></div>
+                                        <div><strong>{{ $sec['label'] }}</strong></div>
+                                        <div class="public-inv-row-num">{{ $sec['qty_display'] }}</div>
+                                        <div class="public-inv-row-num">{{ $sec['unit'] }}</div>
+                                        <div class="public-inv-row-num"><strong>{{ $sec['line_total'] }}</strong></div>
+                                    </div>
+                                </summary>
+
+                                @if (!empty($sec['lines']))
+                                    <div class="public-inv-breakdown">
+                                        <table>
+                                            <tbody>
+                                            @foreach ($sec['lines'] as $line)
+                                                <tr>
+                                                    <td style="width:34px;"></td>
+                                                    <td style="width:56%; padding-left: 18px;">{{ $line['name'] }}</td>
+                                                    <td class="num" style="width:12%;">{{ $line['qty_display'] }}</td>
+                                                    <td class="num" style="width:14%;">{{ $line['unit'] }}</td>
+                                                    <td class="num" style="width:18%;">{{ $line['line_total'] }}</td>
+                                                </tr>
+                                            @endforeach
+                                            </tbody>
+                                        </table>
+                                    </div>
+                                @endif
+                            </details>
+                        @else
+                            <div class="public-inv-sec public-inv-sec--flat">
                                 <div class="public-inv-row">
-                                    <div class="public-inv-row-num"><span class="public-inv-chev">&#9654;</span></div>
+                                    <div class="public-inv-row-num"></div>
                                     <div><strong>{{ $sec['label'] }}</strong></div>
                                     <div class="public-inv-row-num">{{ $sec['qty_display'] }}</div>
                                     <div class="public-inv-row-num">{{ $sec['unit'] }}</div>
                                     <div class="public-inv-row-num"><strong>{{ $sec['line_total'] }}</strong></div>
                                 </div>
-                            </summary>
-
-                            @if (!empty($sec['lines']))
-                                <div class="public-inv-breakdown">
-                                    <table>
-                                        <tbody>
-                                        @foreach ($sec['lines'] as $line)
-                                            <tr>
-                                                <td style="width:34px;"></td>
-                                                <td style="width:56%; padding-left: 18px;">{{ $line['name'] }}</td>
-                                                <td class="num" style="width:12%;">{{ $line['qty_display'] }}</td>
-                                                <td class="num" style="width:14%;">{{ $line['unit'] }}</td>
-                                                <td class="num" style="width:18%;">{{ $line['line_total'] }}</td>
-                                            </tr>
-                                        @endforeach
-                                        </tbody>
-                                    </table>
-                                </div>
-                            @endif
-                        </details>
+                            </div>
+                        @endif
                     </td>
                 </tr>
             @empty
@@ -185,9 +201,21 @@
 </div>
 <script>
 (function () {
+    function expandableSections() {
+        return document.querySelectorAll('details.public-inv-sec--expandable');
+    }
     window.addEventListener('beforeprint', function () {
-        document.querySelectorAll('details.public-inv-sec').forEach(function (d) {
+        expandableSections().forEach(function (d) {
+            d.dataset.wasOpen = d.open ? '1' : '0';
             d.setAttribute('open', 'open');
+        });
+    });
+    window.addEventListener('afterprint', function () {
+        expandableSections().forEach(function (d) {
+            if (d.dataset.wasOpen !== '1') {
+                d.removeAttribute('open');
+            }
+            delete d.dataset.wasOpen;
         });
     });
 })();

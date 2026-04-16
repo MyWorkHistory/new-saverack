@@ -539,6 +539,145 @@ class InvoiceService
         });
     }
 
+    /**
+     * @return array<string, mixed>
+     */
+    public function paymentAllocationContext(Invoice $invoice): array
+    {
+        $invoice->loadMissing('clientAccount');
+        if ($invoice->clientAccount === null) {
+            throw new \RuntimeException('Invoice account is unavailable.');
+        }
+
+        $payable = Invoice::query()
+            ->where('client_account_id', $invoice->client_account_id)
+            ->where('status', '!=', Invoice::STATUS_DRAFT)
+            ->where('status', '!=', Invoice::STATUS_VOID)
+            ->where('balance_due_cents', '>', 0)
+            ->orderByRaw('CASE WHEN due_at IS NULL THEN 1 ELSE 0 END')
+            ->orderBy('due_at')
+            ->orderBy('id')
+            ->get();
+
+        $pending = Invoice::query()
+            ->where('client_account_id', $invoice->client_account_id)
+            ->where('status', Invoice::STATUS_DRAFT)
+            ->sum('balance_due_cents');
+
+        $open = 0;
+        $pastDue = 0;
+        $rows = [];
+        foreach ($payable as $row) {
+            $isPastDue = $this->isOverdue($row);
+            $balance = (int) $row->balance_due_cents;
+            if ($isPastDue) {
+                $pastDue += $balance;
+            } else {
+                $open += $balance;
+            }
+
+            $rows[] = [
+                'id' => (int) $row->id,
+                'row_key' => 'b-'.(int) $row->id,
+                'type' => 'Beta',
+                'status' => (string) $row->status,
+                'is_overdue' => $isPastDue,
+                'invoice_number' => (string) $row->invoice_number,
+                'due_in' => $row->due_at !== null ? now()->startOfDay()->diffInDays($row->due_at->copy()->startOfDay(), false) : null,
+                'due_date' => $row->due_at !== null ? $row->due_at->toDateString() : null,
+                'balance_cents' => $balance,
+            ];
+        }
+
+        return [
+            'account' => [
+                'id' => (int) $invoice->clientAccount->id,
+                'name' => (string) $invoice->clientAccount->company_name,
+            ],
+            'current_invoice_id' => (int) $invoice->id,
+            'available_funds_cents' => 0,
+            'open_balance_cents' => $open,
+            'past_due_balance_cents' => $pastDue,
+            'pending_balance_cents' => (int) $pending,
+            'rows' => $rows,
+        ];
+    }
+
+    /**
+     * @param  list<int>  $invoiceIds
+     * @param  array<string, mixed>  $paymentMeta
+     * @return array{invoice: Invoice, allocations: list<array<string, mixed>>, remaining_amount_cents: int}
+     */
+    public function allocatePaymentAcrossInvoices(
+        Invoice $rootInvoice,
+        array $invoiceIds,
+        int $amountCents,
+        ?User $actor,
+        array $paymentMeta = []
+    ): array {
+        if ($rootInvoice->isVoid() || $rootInvoice->status === Invoice::STATUS_DRAFT) {
+            throw new \RuntimeException('Cannot record payment on this invoice.');
+        }
+        if ($amountCents <= 0) {
+            throw new \InvalidArgumentException('Amount must be positive.');
+        }
+        if ($invoiceIds === []) {
+            throw new \InvalidArgumentException('Select at least one invoice.');
+        }
+
+        $rootInvoice->loadMissing('clientAccount');
+        $invoiceIds = array_values(array_unique(array_map('intval', $invoiceIds)));
+
+        return DB::transaction(function () use ($rootInvoice, $invoiceIds, $amountCents, $actor, $paymentMeta) {
+            $selected = Invoice::query()
+                ->where('client_account_id', $rootInvoice->client_account_id)
+                ->whereIn('id', $invoiceIds)
+                ->lockForUpdate()
+                ->get()
+                ->keyBy('id');
+
+            if (count($selected) !== count($invoiceIds)) {
+                throw new \RuntimeException('Selected invoice set is invalid.');
+            }
+
+            $remaining = $amountCents;
+            $allocations = [];
+            foreach ($invoiceIds as $invoiceId) {
+                /** @var Invoice $target */
+                $target = $selected[$invoiceId];
+                if ($target->isVoid() || $target->status === Invoice::STATUS_DRAFT) {
+                    throw new \RuntimeException('Draft or void invoices cannot be paid from this flow.');
+                }
+
+                $target->refresh();
+                $balance = (int) $target->balance_due_cents;
+                if ($balance <= 0 || $remaining <= 0) {
+                    continue;
+                }
+
+                $apply = min($balance, $remaining);
+                $updated = $this->recordPayment($target, $apply, $actor, $paymentMeta + [
+                    'allocated_via_invoice_id' => (int) $rootInvoice->id,
+                ]);
+                $remaining -= $apply;
+
+                $allocations[] = [
+                    'invoice_id' => (int) $updated->id,
+                    'invoice_number' => (string) $updated->invoice_number,
+                    'applied_cents' => $apply,
+                    'remaining_balance_cents' => (int) $updated->balance_due_cents,
+                    'status' => (string) $updated->status,
+                ];
+            }
+
+            return [
+                'invoice' => $rootInvoice->fresh(['items', 'histories.user', 'clientAccount', 'createdBy']) ?? $rootInvoice,
+                'allocations' => $allocations,
+                'remaining_amount_cents' => $remaining,
+            ];
+        });
+    }
+
     public function voidInvoice(Invoice $invoice, ?User $actor): Invoice
     {
         if ($invoice->isVoid()) {

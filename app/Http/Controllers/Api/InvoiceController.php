@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use App\Http\Requests\InvoiceAllocatePaymentRequest;
 use App\Http\Requests\InvoiceRecordPaymentRequest;
 use App\Http\Requests\InvoiceReplaceLineGroupRequest;
 use App\Http\Requests\InvoiceAddItemRequest;
@@ -182,6 +183,32 @@ class InvoiceController extends Controller
     public function pay(InvoiceRecordPaymentRequest $request, Invoice $invoice): JsonResponse
     {
         return $this->recordPayment($request, $invoice);
+    }
+
+    public function payContext(Invoice $invoice): JsonResponse
+    {
+        $this->authorize('recordPayment', $invoice);
+
+        return response()->json($this->invoices->paymentAllocationContext($invoice));
+    }
+
+    public function payAllocate(InvoiceAllocatePaymentRequest $request, Invoice $invoice): JsonResponse
+    {
+        $this->authorize('recordPayment', $invoice);
+
+        $result = $this->invoices->allocatePaymentAcrossInvoices(
+            $invoice,
+            $request->invoiceIds(),
+            $request->amountCents(),
+            $request->user(),
+            $request->paymentMeta(),
+        );
+
+        return response()->json([
+            'invoice' => $this->invoices->toDetailArray($result['invoice']),
+            'allocations' => $result['allocations'],
+            'remaining_amount_cents' => $result['remaining_amount_cents'],
+        ]);
     }
 
     public function addItem(InvoiceAddItemRequest $request, Invoice $invoice): JsonResponse

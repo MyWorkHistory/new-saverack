@@ -44,6 +44,14 @@ const payType = ref("ACH");
 const payDate = ref("");
 const payNotes = ref("");
 const payBusy = ref(false);
+const payContextBusy = ref(false);
+const payFundsCents = ref(0);
+const payOpenBalanceCents = ref(0);
+const payPastDueBalanceCents = ref(0);
+const payPendingBalanceCents = ref(0);
+const payRows = ref([]);
+const paySelectedInvoiceIds = ref([]);
+const payFilterStatus = ref("all");
 
 const voidModalOpen = ref(false);
 const voidBusy = ref(false);
@@ -127,6 +135,41 @@ const canSendWhatsapp = computed(
   () => !!invoice.value && canUpdate.value && invoice.value.status !== "void",
 );
 
+const payCanAddFunds = computed(() => {
+  return (
+    !!payDate.value &&
+    !!String(payType.value || "").trim() &&
+    dollarsToCents(payAmount.value) > 0
+  );
+});
+
+const payCanSubmit = computed(
+  () => payFundsCents.value > 0 && paySelectedInvoiceIds.value.length > 0,
+);
+
+const payFilteredRows = computed(() => {
+  if (payFilterStatus.value === "past_due") {
+    return payRows.value.filter((row) => row.is_overdue);
+  }
+  if (payFilterStatus.value === "pending") {
+    return [];
+  }
+  if (payFilterStatus.value === "open") {
+    return payRows.value.filter((row) => !row.is_overdue);
+  }
+  return payRows.value;
+});
+
+const paySelectedBalanceCents = computed(() =>
+  payRows.value
+    .filter((row) => paySelectedInvoiceIds.value.includes(row.id))
+    .reduce((sum, row) => sum + Number(row.balance_cents || 0), 0),
+);
+
+const payAvailablePreviewCents = computed(
+  () => payFundsCents.value - paySelectedBalanceCents.value,
+);
+
 function formatQtyDisplay(v) {
   const n = Number(v);
   if (!Number.isFinite(n)) return "0.000";
@@ -155,6 +198,14 @@ function closeTableRow() {
 
 function jumpToHistory() {
   activityCardRef.value?.scrollIntoView({ behavior: "smooth", block: "start" });
+}
+
+function payDueInLabel(days) {
+  const n = Number(days);
+  if (!Number.isFinite(n)) return "—";
+  const abs = Math.abs(n);
+  if (abs === 0) return "0 days";
+  return `${abs} day${abs === 1 ? "" : "s"}`;
 }
 
 function isPastDueByLogic(inv) {
@@ -652,42 +703,80 @@ async function confirmCcFee() {
   }
 }
 
-function openPayModal() {
-  if (!invoice.value) return;
-  payAmount.value = invoice.value.balance_due_cents
-    ? (Number(invoice.value.balance_due_cents) / 100).toFixed(2)
-    : "";
-  payType.value = "ACH";
-  payDate.value = new Date().toISOString().slice(0, 10);
-  payNotes.value = "";
-  payModalOpen.value = true;
+function closePayModal() {
+  if (payBusy.value || payContextBusy.value) return;
+  payModalOpen.value = false;
 }
 
-function closePayModal() {
-  if (payBusy.value) return;
-  payModalOpen.value = false;
+async function openPayModal() {
+  if (!invoice.value) return;
+  payAmount.value = "";
+  payType.value = "";
+  payDate.value = new Date().toISOString().slice(0, 10);
+  payNotes.value = "";
+  payFundsCents.value = 0;
+  payOpenBalanceCents.value = 0;
+  payPastDueBalanceCents.value = 0;
+  payPendingBalanceCents.value = 0;
+  payRows.value = [];
+  paySelectedInvoiceIds.value = [];
+  payFilterStatus.value = "all";
+  payModalOpen.value = true;
+  payContextBusy.value = true;
+  try {
+    const { data } = await api.get(`/invoices/${invoice.value.id}/pay-context`);
+    payRows.value = Array.isArray(data?.rows) ? data.rows : [];
+    payOpenBalanceCents.value = Number(data?.open_balance_cents || 0);
+    payPastDueBalanceCents.value = Number(data?.past_due_balance_cents || 0);
+    payPendingBalanceCents.value = Number(data?.pending_balance_cents || 0);
+  } catch (e) {
+    toast.errorFrom(e, "Could not load payment info.");
+    payModalOpen.value = false;
+  } finally {
+    payContextBusy.value = false;
+  }
+}
+
+function addFundsToPayPool() {
+  if (!payCanAddFunds.value) {
+    toast.error("Enter payment date, type, and amount first.");
+    return;
+  }
+  payFundsCents.value += dollarsToCents(payAmount.value);
+  payAmount.value = "";
+}
+
+function togglePayInvoiceSelection(invoiceId) {
+  const id = Number(invoiceId);
+  if (!Number.isFinite(id)) return;
+  if (paySelectedInvoiceIds.value.includes(id)) {
+    paySelectedInvoiceIds.value = paySelectedInvoiceIds.value.filter((value) => value !== id);
+    return;
+  }
+  paySelectedInvoiceIds.value = [...paySelectedInvoiceIds.value, id];
 }
 
 async function confirmPay() {
   if (!invoice.value) return;
-  const cents = dollarsToCents(payAmount.value);
-  if (cents < 1) {
-    toast.error("Enter a valid payment amount.");
+  if (!payCanSubmit.value) {
+    toast.error("Add funds and select at least one invoice.");
     return;
   }
   payBusy.value = true;
   try {
-    await api.post(`/invoices/${invoice.value.id}/pay`, {
-      amount_cents: cents,
+    const { data } = await api.post(`/invoices/${invoice.value.id}/pay-allocate`, {
+      amount_cents: payFundsCents.value,
+      invoice_ids: paySelectedInvoiceIds.value,
       payment_type: payType.value || null,
       payment_date: payDate.value || null,
       notes: payNotes.value || null,
     });
-    toast.success("Payment recorded.");
+    const allocations = Array.isArray(data?.allocations) ? data.allocations.length : 0;
+    toast.success(allocations > 0 ? "Payment allocated." : "No payment applied.");
     closePayModal();
     await load();
   } catch (e) {
-    toast.errorFrom(e, "Could not record payment.");
+    toast.errorFrom(e, "Could not allocate payment.");
   } finally {
     payBusy.value = false;
   }
@@ -1485,32 +1574,180 @@ onMounted(() => {
           aria-modal="true"
           @click.self="closePayModal"
         >
-          <div class="crm-vx-modal crm-vx-modal--sm" @click.stop>
+          <div class="crm-vx-modal billing-pay-modal" @click.stop>
             <header class="crm-vx-modal__head">
               <h2 class="crm-vx-modal__title">Pay Invoice</h2>
             </header>
             <div class="crm-vx-modal__body">
-              <label class="form-label">Payment Date</label>
-              <input v-model="payDate" type="date" class="form-control mb-2" />
-              <label class="form-label">Payment Type</label>
-              <select v-model="payType" class="form-select mb-2">
-                <option>ACH</option>
-                <option>Wire</option>
-                <option>Check</option>
-                <option>Credit Card</option>
-                <option>Paypal</option>
-                <option>Varies</option>
-              </select>
-              <label class="form-label">Amount (USD)</label>
-              <input v-model="payAmount" type="text" class="form-control mb-2" />
-              <label class="form-label">Notes</label>
-              <textarea v-model="payNotes" rows="2" class="form-control" />
+              <div v-if="payContextBusy" class="py-4">
+                <CrmLoadingSpinner message="Loading payment info…" />
+              </div>
+              <div v-else class="row g-4">
+                <div class="col-lg-8">
+                  <div class="billing-pay-form-grid">
+                    <div class="billing-pay-field">
+                      <label class="billing-pay-label">Account *</label>
+                      <div class="billing-pay-value">
+                        {{ invoice?.client_company_name || "—" }}
+                      </div>
+                    </div>
+                    <div class="billing-pay-field">
+                      <label class="billing-pay-label" for="billing-pay-date">Payment Date *</label>
+                      <input
+                        id="billing-pay-date"
+                        v-model="payDate"
+                        type="date"
+                        class="form-control"
+                      />
+                    </div>
+                    <div class="billing-pay-field">
+                      <label class="billing-pay-label" for="billing-pay-type">Payment Type *</label>
+                      <select id="billing-pay-type" v-model="payType" class="form-select">
+                        <option value="">Select Payment Type</option>
+                        <option value="ACH">ACH</option>
+                        <option value="Wire">Wire</option>
+                        <option value="Check">Check</option>
+                        <option value="Credit Card">Credit Card</option>
+                        <option value="Paypal">Paypal</option>
+                        <option value="Varies">Varies</option>
+                      </select>
+                    </div>
+                    <div class="billing-pay-field">
+                      <label class="billing-pay-label" for="billing-pay-amount">Amount *</label>
+                      <input
+                        id="billing-pay-amount"
+                        v-model="payAmount"
+                        type="text"
+                        inputmode="decimal"
+                        class="form-control text-end"
+                        placeholder="0.00"
+                      />
+                    </div>
+                    <div class="billing-pay-field billing-pay-field--full">
+                      <label class="billing-pay-label" for="billing-pay-notes">Notes</label>
+                      <textarea
+                        id="billing-pay-notes"
+                        v-model="payNotes"
+                        rows="2"
+                        class="form-control"
+                      />
+                    </div>
+                  </div>
+
+                  <div class="d-flex justify-content-end mt-3 mb-3">
+                    <button
+                      type="button"
+                      class="btn btn-success"
+                      :disabled="!payCanAddFunds"
+                      @click="addFundsToPayPool"
+                    >
+                      Add Funds
+                    </button>
+                  </div>
+
+                  <div class="table-responsive">
+                    <table class="table table-sm align-middle billing-pay-table mb-0">
+                      <thead>
+                        <tr>
+                          <th class="text-center" style="width: 5rem">Select</th>
+                          <th class="text-center" style="width: 6rem">Type</th>
+                          <th class="text-center" style="width: 8rem">Status</th>
+                          <th class="text-center">Invoice #</th>
+                          <th class="text-center">Due In</th>
+                          <th class="text-center">Due Date</th>
+                          <th class="text-end">Balance</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        <tr v-for="row in payFilteredRows" :key="row.id">
+                          <td class="text-center">
+                            <input
+                              type="checkbox"
+                              :checked="paySelectedInvoiceIds.includes(row.id)"
+                              @change="togglePayInvoiceSelection(row.id)"
+                            />
+                          </td>
+                          <td class="text-center">
+                            <span class="badge bg-info-subtle text-info-emphasis">Beta</span>
+                          </td>
+                          <td class="text-center">
+                            <span
+                              class="badge rounded-pill"
+                              :class="row.is_overdue ? 'bg-danger-subtle text-danger-emphasis' : 'bg-primary-subtle text-primary-emphasis'"
+                            >
+                              {{ row.is_overdue ? "Past Due" : "Open" }}
+                            </span>
+                          </td>
+                          <td class="text-center fw-medium">{{ row.invoice_number }}</td>
+                          <td class="text-center">{{ payDueInLabel(row.due_in) }}</td>
+                          <td class="text-center">{{ formatInvoiceShortDate(row.due_date) }}</td>
+                          <td class="text-end">{{ formatCents(row.balance_cents, invoice?.currency || 'USD') }}</td>
+                        </tr>
+                        <tr v-if="!payFilteredRows.length">
+                          <td colspan="7" class="text-center text-secondary py-4">
+                            No invoices in this view.
+                          </td>
+                        </tr>
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+
+                <div class="col-lg-4">
+                  <div class="billing-pay-stat-stack">
+                    <button
+                      type="button"
+                      class="billing-pay-stat billing-pay-stat--blue"
+                      :class="{ 'is-active': payFilterStatus === 'all' }"
+                      @click="payFilterStatus = 'all'"
+                    >
+                      <div class="billing-pay-stat__value">
+                        {{ formatCents(payAvailablePreviewCents, invoice?.currency || 'USD') }}
+                      </div>
+                      <div class="billing-pay-stat__label">Available Funds</div>
+                    </button>
+                    <button
+                      type="button"
+                      class="billing-pay-stat billing-pay-stat--green"
+                      :class="{ 'is-active': payFilterStatus === 'open' }"
+                      @click="payFilterStatus = 'open'"
+                    >
+                      <div class="billing-pay-stat__value">
+                        {{ formatCents(payOpenBalanceCents, invoice?.currency || 'USD') }}
+                      </div>
+                      <div class="billing-pay-stat__label">Open Balance</div>
+                    </button>
+                    <button
+                      type="button"
+                      class="billing-pay-stat billing-pay-stat--red"
+                      :class="{ 'is-active': payFilterStatus === 'past_due' }"
+                      @click="payFilterStatus = 'past_due'"
+                    >
+                      <div class="billing-pay-stat__value">
+                        {{ formatCents(payPastDueBalanceCents, invoice?.currency || 'USD') }}
+                      </div>
+                      <div class="billing-pay-stat__label">Past Due Balance</div>
+                    </button>
+                    <button
+                      type="button"
+                      class="billing-pay-stat billing-pay-stat--orange"
+                      :class="{ 'is-active': payFilterStatus === 'pending' }"
+                      @click="payFilterStatus = 'pending'"
+                    >
+                      <div class="billing-pay-stat__value">
+                        {{ formatCents(payPendingBalanceCents, invoice?.currency || 'USD') }}
+                      </div>
+                      <div class="billing-pay-stat__label">Pending Balance</div>
+                    </button>
+                  </div>
+                </div>
+              </div>
             </div>
             <footer class="crm-vx-modal__footer d-flex gap-2 justify-content-end">
               <button
                 type="button"
                 class="crm-vx-modal-btn crm-vx-modal-btn--secondary"
-                :disabled="payBusy"
+                :disabled="payBusy || payContextBusy"
                 @click="closePayModal"
               >
                 Cancel
@@ -1518,10 +1755,10 @@ onMounted(() => {
               <button
                 type="button"
                 class="crm-vx-modal-btn crm-vx-modal-btn--primary"
-                :disabled="payBusy"
+                :disabled="payBusy || payContextBusy || !payCanSubmit"
                 @click="confirmPay"
               >
-                {{ payBusy ? "Saving…" : "Pay Invoice" }}
+                {{ payBusy ? "Paying…" : "Pay Invoice" }}
               </button>
             </footer>
           </div>
@@ -1686,5 +1923,80 @@ onMounted(() => {
 }
 .billing-inline-menu--row {
   min-width: 8rem;
+}
+.billing-pay-modal {
+  max-width: 64rem;
+  max-height: min(92dvh, 900px);
+}
+.billing-pay-form-grid {
+  display: grid;
+  gap: 0.85rem;
+}
+.billing-pay-field--full {
+  grid-column: 1 / -1;
+}
+.billing-pay-label {
+  display: block;
+  font-size: 0.8rem;
+  font-weight: 600;
+  margin-bottom: 0.35rem;
+  color: var(--bs-secondary-color, #6c757d);
+}
+.billing-pay-value {
+  min-height: 2.625rem;
+  display: flex;
+  align-items: center;
+  border: 1px solid #dbdade;
+  border-radius: 0.375rem;
+  padding: 0.625rem 0.75rem;
+  background: var(--bs-tertiary-bg, #f8f9fa);
+}
+.billing-pay-table thead th {
+  background: #2573ba;
+  color: #fff;
+  border-bottom: none;
+  font-size: 0.72rem;
+}
+.billing-pay-table tbody td {
+  border-bottom: 1px solid #f1f0f4;
+}
+.billing-pay-stat-stack {
+  display: grid;
+  gap: 1rem;
+}
+.billing-pay-stat {
+  width: 100%;
+  border: none;
+  border-radius: 0.85rem;
+  padding: 1.1rem 1rem;
+  color: #fff;
+  text-align: left;
+  box-shadow: 0 10px 20px rgba(47, 43, 61, 0.12);
+  opacity: 0.92;
+}
+.billing-pay-stat.is-active {
+  outline: 2px solid rgba(255, 255, 255, 0.75);
+  opacity: 1;
+}
+.billing-pay-stat--blue {
+  background: #2f80ed;
+}
+.billing-pay-stat--green {
+  background: #15a05d;
+}
+.billing-pay-stat--red {
+  background: #ea5455;
+}
+.billing-pay-stat--orange {
+  background: #ff9f43;
+}
+.billing-pay-stat__value {
+  font-size: 1.85rem;
+  font-weight: 700;
+  line-height: 1.1;
+}
+.billing-pay-stat__label {
+  margin-top: 0.25rem;
+  font-size: 0.95rem;
 }
 </style>

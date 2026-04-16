@@ -142,6 +142,131 @@ class BillingInvoiceApiTest extends TestCase
         $pay->assertJsonPath('balance_due_cents', 0);
     }
 
+    public function test_pay_context_returns_same_account_invoice_balances(): void
+    {
+        $user = User::factory()->create();
+        $user->permissions()->sync([
+            $this->billingViewPermission()->id,
+            $this->billingUpdatePermission()->id,
+        ]);
+        Sanctum::actingAs($user);
+
+        $client = ClientAccount::query()->create([
+            'status' => ClientAccount::STATUS_ACTIVE,
+            'company_name' => 'Context Co',
+            'email' => 'context@acme.test',
+        ]);
+
+        $current = Invoice::query()->create([
+            'invoice_number' => 'INV-CONTEXT-001',
+            'client_account_id' => $client->id,
+            'status' => Invoice::STATUS_SENT,
+            'currency' => 'USD',
+            'due_at' => now()->addDay(),
+            'subtotal_cents' => 5000,
+            'tax_cents' => 0,
+            'total_cents' => 5000,
+            'amount_paid_cents' => 0,
+            'balance_due_cents' => 5000,
+        ]);
+
+        Invoice::query()->create([
+            'invoice_number' => 'INV-CONTEXT-002',
+            'client_account_id' => $client->id,
+            'status' => Invoice::STATUS_PARTIAL,
+            'currency' => 'USD',
+            'due_at' => now()->subDay(),
+            'subtotal_cents' => 3000,
+            'tax_cents' => 0,
+            'total_cents' => 3000,
+            'amount_paid_cents' => 1000,
+            'balance_due_cents' => 2000,
+        ]);
+
+        Invoice::query()->create([
+            'invoice_number' => 'INV-CONTEXT-003',
+            'client_account_id' => $client->id,
+            'status' => Invoice::STATUS_DRAFT,
+            'currency' => 'USD',
+            'subtotal_cents' => 1500,
+            'tax_cents' => 0,
+            'total_cents' => 1500,
+            'amount_paid_cents' => 0,
+            'balance_due_cents' => 1500,
+        ]);
+
+        $this->getJson("/api/invoices/{$current->id}/pay-context")
+            ->assertOk()
+            ->assertJsonPath('account.name', 'Context Co')
+            ->assertJsonPath('open_balance_cents', 5000)
+            ->assertJsonPath('past_due_balance_cents', 2000)
+            ->assertJsonPath('pending_balance_cents', 1500)
+            ->assertJsonCount(2, 'rows');
+    }
+
+    public function test_pay_allocate_distributes_payment_across_selected_invoices(): void
+    {
+        $user = User::factory()->create();
+        $user->permissions()->sync([
+            $this->billingViewPermission()->id,
+            $this->billingUpdatePermission()->id,
+        ]);
+        Sanctum::actingAs($user);
+
+        $client = ClientAccount::query()->create([
+            'status' => ClientAccount::STATUS_ACTIVE,
+            'company_name' => 'Allocate Co',
+            'email' => 'allocate@acme.test',
+        ]);
+
+        $invoiceA = Invoice::query()->create([
+            'invoice_number' => 'INV-ALLOC-001',
+            'client_account_id' => $client->id,
+            'status' => Invoice::STATUS_SENT,
+            'currency' => 'USD',
+            'due_at' => now()->addDay(),
+            'subtotal_cents' => 5000,
+            'tax_cents' => 0,
+            'total_cents' => 5000,
+            'amount_paid_cents' => 0,
+            'balance_due_cents' => 5000,
+        ]);
+
+        $invoiceB = Invoice::query()->create([
+            'invoice_number' => 'INV-ALLOC-002',
+            'client_account_id' => $client->id,
+            'status' => Invoice::STATUS_SENT,
+            'currency' => 'USD',
+            'due_at' => now()->subDay(),
+            'subtotal_cents' => 3000,
+            'tax_cents' => 0,
+            'total_cents' => 3000,
+            'amount_paid_cents' => 0,
+            'balance_due_cents' => 3000,
+        ]);
+
+        $res = $this->postJson("/api/invoices/{$invoiceA->id}/pay-allocate", [
+            'amount_cents' => 6000,
+            'invoice_ids' => [$invoiceB->id, $invoiceA->id],
+            'payment_type' => 'ACH',
+            'payment_date' => now()->toDateString(),
+        ]);
+
+        $res->assertOk()
+            ->assertJsonPath('remaining_amount_cents', 0)
+            ->assertJsonCount(2, 'allocations');
+
+        $invoiceA->refresh();
+        $invoiceB->refresh();
+
+        $this->assertSame(3000, (int) $invoiceA->amount_paid_cents);
+        $this->assertSame(2000, (int) $invoiceA->balance_due_cents);
+        $this->assertSame(Invoice::STATUS_PARTIAL, $invoiceA->status);
+        $this->assertSame(3000, (int) $invoiceB->amount_paid_cents);
+        $this->assertSame(0, (int) $invoiceB->balance_due_cents);
+        $this->assertSame(Invoice::STATUS_PAID, $invoiceB->status);
+    }
+
     public function test_user_without_billing_view_cannot_list_invoices(): void
     {
         $user = User::factory()->create();

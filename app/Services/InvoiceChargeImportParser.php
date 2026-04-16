@@ -228,7 +228,7 @@ final class InvoiceChargeImportParser
         }
         if (strpos($t, 'shipping_label') !== false) {
             $carrier = $this->postageServiceName($chargeName !== '' ? $chargeName : 'Other', $chargeTypeRaw);
-            return $this->buildItem(InvoiceLineCategory::POSTAGE, $carrier, $chargeName, $qty, $rateCents, $lineTotalCents, null, 'postage', $chargeTypeRaw);
+            return $this->buildItem(InvoiceLineCategory::POSTAGE, $carrier, $chargeName, $qty, $rateCents, $lineTotalCents, null, 'postage:'.$this->slug($carrier), $chargeTypeRaw);
         }
         if (strpos($t, 'box_charge') !== false) {
             $pkg = $this->packagingDisplayName($chargeName !== '' ? $chargeName : 'Other');
@@ -293,7 +293,7 @@ final class InvoiceChargeImportParser
 
         if (preg_match('/\b(shipping_label|shipping label|postage|mail class|priority mail|parcel select|ground advantage|media mail|first[- ]class parcel|endicia|stamps?\.com|shipstation|shippo|easy_post|easy post|usps|ups|fedex|dhl|ontrac|lasership|pitney|flat rate|intl|international|zone|delivery confirmation)\b/i', $hay)) {
             $carrier = $this->postageServiceName($chargeName !== '' ? $chargeName : 'Other', $chargeTypeRaw);
-            return $this->buildItem(InvoiceLineCategory::POSTAGE, $carrier, $chargeName, $qty, $rateCents, $lineTotalCents, null, 'postage', $chargeTypeRaw);
+            return $this->buildItem(InvoiceLineCategory::POSTAGE, $carrier, $chargeName, $qty, $rateCents, $lineTotalCents, null, 'postage:'.$this->slug($carrier), $chargeTypeRaw);
         }
         if (preg_match('/\b(box_charge|box charge|bubble|kraft|void fill|voidfill|mailer|poly bag|polybag|tape|carton|void_fill|package material|packaging material|mailing tube|stretch wrap)\b/i', $hay)) {
             $pkg = $this->packagingDisplayName($chargeName !== '' ? $chargeName : 'Other');
@@ -937,6 +937,10 @@ final class InvoiceChargeImportParser
         if ($s === '') {
             return '';
         }
+        $original = $s;
+        if (preg_match('/^box\s*\(\s*\d+(\s*[x×]\s*\d+)+\s*\)$/iu', $original) === 1) {
+            return trim($original);
+        }
         $s = preg_replace('/\s+used\s+for\s+shipping\s+label\b.*$/iu', '', $s) ?? '';
         $s = trim($s);
         $s = preg_replace('/^box\s+/iu', '', $s) ?? '';
@@ -946,6 +950,10 @@ final class InvoiceChargeImportParser
             $prev = $s;
             $s = preg_replace('/\(\s*\d+(\s*[x×]\s*\d+)+(\s*[^)0-9]*)?\)/iu', '', $s) ?? '';
             $s = trim(preg_replace('/\s+/', ' ', $s) ?? '');
+        }
+
+        if (preg_match('/^\d+\s*[x×]\s*\d+(\s*[x×]\s*\d+)+$/i', $s) === 1 && preg_match('/^box\b/i', $original) === 1) {
+            return 'Box ('.$s.')';
         }
 
         return trim($s);

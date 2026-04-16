@@ -1,5 +1,5 @@
 <script setup>
-import { computed, inject, onMounted, ref } from "vue";
+import { computed, inject, onMounted, ref, watch } from "vue";
 
 import { useRouter } from "vue-router";
 import api, { getApiBaseUrl } from "../../services/api";
@@ -36,6 +36,7 @@ const editDueAt = ref("");
 const editLines = ref([]);
 const draftSaving = ref(false);
 const draftEditMode = ref(false);
+const draftGroupLines = ref([]);
 
 const payModalOpen = ref(false);
 const payAmount = ref("");
@@ -227,6 +228,32 @@ function syncEditFromInvoice() {
       ];
 }
 
+function syncDraftGroupFromSelection() {
+  const row = selectedTableRow.value;
+  draftGroupLines.value =
+    row?.details?.length && draftEditMode.value
+      ? row.details.map((detail) => ({
+          id: detail.id,
+          service: detail.name || "",
+          categoryText: detail.type || "",
+          category: detail.category_key || null,
+          subtype: detail.subtype || null,
+          display_name: detail.display_name || detail.name || "",
+          description: detail.description || detail.name || "",
+          sku: detail.sku || "",
+          service_code: detail.service_code || null,
+          quantity: formatQtyOneDecimal(detail.qty ?? 1),
+          unit_price: (Number(detail.price_cents || 0) / 100).toFixed(2),
+          unit: detail.unit || null,
+          metadata: detail.metadata || null,
+        }))
+      : [];
+}
+
+watch([selectedTableRow, draftEditMode], () => {
+  syncDraftGroupFromSelection();
+});
+
 async function load() {
   loading.value = true;
   try {
@@ -304,6 +331,78 @@ async function saveDraft() {
     await load();
   } catch (e) {
     toast.errorFrom(e, "Could not save draft.");
+  } finally {
+    draftSaving.value = false;
+  }
+}
+
+function addDraftGroupLine() {
+  const row = selectedTableRow.value;
+  draftGroupLines.value = [
+    ...draftGroupLines.value,
+    {
+      id: `new-${Date.now()}`,
+      service: "",
+      categoryText: row?.type || "",
+      category: row?.details?.[0]?.category_key || null,
+      subtype: row?.details?.[0]?.subtype || null,
+      display_name: "",
+      description: "",
+      sku: "",
+      service_code: row?.details?.[0]?.service_code || null,
+      quantity: "1.0",
+      unit_price: "0.00",
+      unit: row?.details?.[0]?.unit || null,
+      metadata: row?.details?.[0]?.metadata || null,
+    },
+  ];
+}
+
+function removeDraftGroupLine(idx) {
+  if (draftGroupLines.value.length <= 1) return;
+  draftGroupLines.value = draftGroupLines.value.filter((_, i) => i !== idx);
+}
+
+async function saveDraftGroup() {
+  if (!invoice.value || invoice.value.status !== "draft") return;
+  const row = selectedTableRow.value;
+  const groupKey = row?.edit_group_key;
+  if (!groupKey) {
+    toast.error("This group cannot be edited yet.");
+    return;
+  }
+
+  const items = [];
+  for (const line of draftGroupLines.value) {
+    const service = (line.service || "").trim();
+    if (!service) continue;
+    const qty = Number.parseFloat(String(line.quantity).replace(/,/g, "")) || 0;
+    const unitCents = dollarsToCents(line.unit_price);
+    const skuTrim = (line.sku || "").trim();
+    items.push({
+      description: service,
+      display_name: service,
+      category: line.category || null,
+      subtype: line.subtype || null,
+      sku: skuTrim || null,
+      service_code: line.service_code || null,
+      quantity: qty,
+      unit: line.unit || null,
+      unit_price_cents: unitCents,
+      line_total_cents: Math.max(0, Math.round(qty * unitCents)),
+      metadata: line.metadata || null,
+    });
+  }
+
+  draftSaving.value = true;
+  try {
+    await api.put(`/invoices/${invoice.value.id}/line-groups/${encodeURIComponent(groupKey)}`, {
+      items,
+    });
+    toast.success("Draft group saved.");
+    await load();
+  } catch (e) {
+    toast.errorFrom(e, "Could not save draft group.");
   } finally {
     draftSaving.value = false;
   }
@@ -612,121 +711,7 @@ onMounted(() => {
               </button>
             </div>
 
-            <template v-if="invoice.status === 'draft' && canUpdate && draftEditMode">
-              <div class="row g-3 mb-3">
-                <div class="col-md-4">
-                  <label class="form-label small" for="inv-detail-due">Due date</label>
-                  <input
-                    id="inv-detail-due"
-                    v-model="editDueAt"
-                    type="date"
-                    class="form-control form-control-sm"
-                    :disabled="draftSaving"
-                  />
-                </div>
-              </div>
-              <div class="d-flex justify-content-end mb-2">
-                <button
-                  type="button"
-                  class="btn btn-sm btn-outline-secondary"
-                  :disabled="draftSaving"
-                  @click="addDraftLine"
-                >
-                  Add Line
-                </button>
-              </div>
-              <div class="table-responsive billing-inv-items-wrap">
-                <table class="table table-sm align-middle mb-0 billing-inv-items-table">
-                  <thead>
-                    <tr>
-                      <th>Item</th>
-                      <th>Description</th>
-                      <th class="text-end">Cost</th>
-                      <th class="text-end" style="width: 5.5rem">Qty</th>
-                      <th class="text-end">Price</th>
-                      <th style="width: 3.25rem" />
-                    </tr>
-                  </thead>
-                  <tbody>
-                    <tr v-for="(line, idx) in editLines" :key="idx">
-                      <td>
-                        <input
-                          v-model="line.description"
-                          type="text"
-                          class="form-control form-control-sm"
-                          placeholder="Item"
-                          :disabled="draftSaving"
-                        />
-                      </td>
-                      <td>
-                        <input
-                          v-model="line.sku"
-                          type="text"
-                          class="form-control form-control-sm"
-                          placeholder="SKU or note"
-                          :disabled="draftSaving"
-                        />
-                      </td>
-                      <td class="text-end">
-                        <input
-                          v-model="line.unit_price"
-                          type="text"
-                          class="form-control form-control-sm text-end"
-                          placeholder="0.00"
-                          :disabled="draftSaving"
-                        />
-                      </td>
-                      <td class="text-end">
-                        <input
-                          v-model="line.quantity"
-                          type="text"
-                          inputmode="decimal"
-                          class="form-control form-control-sm text-end"
-                          :disabled="draftSaving"
-                          @blur="line.quantity = formatQtyOneDecimal(line.quantity)"
-                        />
-                      </td>
-                      <td class="text-end small text-secondary">
-                        {{
-                          formatCents(
-                            Math.max(
-                              0,
-                              Math.round(
-                                (Number.parseFloat(String(line.quantity).replace(/,/g, "")) ||
-                                  0) * dollarsToCents(line.unit_price),
-                              ),
-                            ),
-                            invoice.currency,
-                          )
-                        }}
-                      </td>
-                      <td class="text-end">
-                        <button
-                          type="button"
-                          class="btn btn-link btn-sm text-danger p-0"
-                          :disabled="draftSaving || editLines.length <= 1"
-                          @click="removeDraftLine(idx)"
-                        >
-                          Remove
-                        </button>
-                      </td>
-                    </tr>
-                  </tbody>
-                </table>
-              </div>
-              <div class="mt-3">
-                <button
-                  type="button"
-                  class="btn btn-primary staff-page-primary btn-sm"
-                  :disabled="draftSaving"
-                  @click="saveDraft"
-                >
-                  {{ draftSaving ? "Saving…" : "Save Draft" }}
-                </button>
-              </div>
-            </template>
-
-            <template v-else>
+            <template>
               <div v-if="!selectedTableRow" class="table-responsive billing-inv-items-wrap">
                 <table class="table table-sm align-middle mb-0 billing-inv-items-table">
                   <thead>
@@ -771,15 +756,26 @@ onMounted(() => {
               <div v-if="selectedTableRow" class="billing-inv-drill mt-3">
                 <div class="d-flex align-items-center justify-content-between mb-2">
                   <h3 class="h6 fw-semibold mb-0">
-                    {{ selectedTableRow.name }} — Detail
+                    {{ selectedTableRow.name }} — {{ draftEditMode ? "Edit Group" : "Detail" }}
                   </h3>
-                  <button
-                    type="button"
-                    class="btn btn-sm btn-outline-secondary"
-                    @click="closeTableRow"
-                  >
-                    Back to Invoice Items
-                  </button>
+                  <div class="d-flex gap-2">
+                    <button
+                      v-if="invoice.status === 'draft' && canUpdate && draftEditMode"
+                      type="button"
+                      class="btn btn-sm btn-outline-secondary"
+                      :disabled="draftSaving"
+                      @click="addDraftGroupLine"
+                    >
+                      Add Line
+                    </button>
+                    <button
+                      type="button"
+                      class="btn btn-sm btn-outline-secondary"
+                      @click="closeTableRow"
+                    >
+                      Back to Invoice Items
+                    </button>
+                  </div>
                 </div>
                 <div class="table-responsive">
                   <table class="table table-sm align-middle mb-0 billing-inv-items-table">
@@ -793,18 +789,94 @@ onMounted(() => {
                       </tr>
                     </thead>
                     <tbody>
-                      <tr v-for="row in selectedTableRowDetails" :key="row.id" class="billing-inv-line-detail">
-                        <td class="fw-medium">{{ row.name }}</td>
-                        <td>{{ row.type }}</td>
-                        <td class="text-end text-nowrap">{{ formatQtyDisplay(row.qty) }}</td>
-                        <td class="text-end">{{ formatCents(row.price_cents, invoice.currency) }}</td>
-                        <td class="text-end">{{ formatCents(row.total_cents, invoice.currency) }}</td>
+                      <tr
+                        v-for="(row, idx) in draftEditMode ? draftGroupLines : selectedTableRowDetails"
+                        :key="row.id"
+                        class="billing-inv-line-detail"
+                      >
+                        <template v-if="draftEditMode && invoice.status === 'draft' && canUpdate">
+                          <td>
+                            <input
+                              v-model="row.service"
+                              type="text"
+                              class="form-control form-control-sm"
+                              placeholder="Service"
+                              :disabled="draftSaving"
+                            />
+                          </td>
+                          <td>{{ row.categoryText }}</td>
+                          <td class="text-end text-nowrap">
+                            <input
+                              v-model="row.quantity"
+                              type="text"
+                              inputmode="decimal"
+                              class="form-control form-control-sm text-end"
+                              :disabled="draftSaving"
+                              @blur="row.quantity = formatQtyOneDecimal(row.quantity)"
+                            />
+                          </td>
+                          <td class="text-end">
+                            <input
+                              v-model="row.unit_price"
+                              type="text"
+                              class="form-control form-control-sm text-end"
+                              placeholder="0.00"
+                              :disabled="draftSaving"
+                            />
+                          </td>
+                          <td class="text-end">
+                            <div class="d-flex align-items-center justify-content-end gap-2">
+                              <span>
+                                {{
+                                  formatCents(
+                                    Math.max(
+                                      0,
+                                      Math.round(
+                                        (Number.parseFloat(String(row.quantity).replace(/,/g, "")) || 0) *
+                                          dollarsToCents(row.unit_price),
+                                      ),
+                                    ),
+                                    invoice.currency,
+                                  )
+                                }}
+                              </span>
+                              <button
+                                type="button"
+                                class="btn btn-link btn-sm text-danger p-0"
+                                :disabled="draftSaving || draftGroupLines.length <= 1"
+                                @click="removeDraftGroupLine(idx)"
+                              >
+                                Remove
+                              </button>
+                            </div>
+                          </td>
+                        </template>
+                        <template v-else>
+                          <td class="fw-medium">{{ row.name }}</td>
+                          <td>{{ row.type }}</td>
+                          <td class="text-end text-nowrap">{{ formatQtyDisplay(row.qty) }}</td>
+                          <td class="text-end">{{ formatCents(row.price_cents, invoice.currency) }}</td>
+                          <td class="text-end">{{ formatCents(row.total_cents, invoice.currency) }}</td>
+                        </template>
                       </tr>
-                      <tr v-if="!selectedTableRowDetails.length">
+                      <tr v-if="!(draftEditMode ? draftGroupLines : selectedTableRowDetails).length">
                         <td colspan="5" class="text-center text-secondary py-3">No line items.</td>
                       </tr>
                     </tbody>
                   </table>
+                </div>
+                <div
+                  v-if="invoice.status === 'draft' && canUpdate && draftEditMode"
+                  class="mt-3 d-flex justify-content-end"
+                >
+                  <button
+                    type="button"
+                    class="btn btn-primary staff-page-primary btn-sm"
+                    :disabled="draftSaving || !selectedTableRow?.edit_group_key"
+                    @click="saveDraftGroup"
+                  >
+                    {{ draftSaving ? "Saving…" : "Save Group" }}
+                  </button>
                 </div>
               </div>
             </template>

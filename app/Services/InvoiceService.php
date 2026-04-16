@@ -21,19 +21,24 @@ class InvoiceService
      */
     public function allocateInvoiceNumber(): string
     {
-        $year = now()->year;
-        $prefix = 'INV-'.$year.'-';
         $max = Invoice::query()
-            ->where('invoice_number', 'like', $prefix.'%')
+            ->select('invoice_number')
             ->lockForUpdate()
-            ->orderByDesc('invoice_number')
-            ->value('invoice_number');
+            ->get()
+            ->pluck('invoice_number')
+            ->filter(static function ($value) {
+                return is_string($value) && preg_match('/^\d+$/', $value) === 1;
+            })
+            ->map(static function ($value) {
+                return (int) $value;
+            })
+            ->max();
         $next = 1;
-        if (is_string($max) && preg_match('/^'.preg_quote($prefix, '/').'(\d+)$/', $max, $m)) {
-            $next = (int) $m[1] + 1;
+        if (is_int($max) && $max > 0) {
+            $next = $max + 1;
         }
 
-        return $prefix.str_pad((string) $next, 5, '0', STR_PAD_LEFT);
+        return str_pad((string) $next, 5, '0', STR_PAD_LEFT);
     }
 
     /**
@@ -640,6 +645,7 @@ class InvoiceService
                     'total_cents' => $total,
                     'groupKey' => strtolower((string) ($item->category ?: InvoiceLineCategory::OTHER)),
                     'groupName' => $name,
+                    'edit_group_key' => $item->group_key,
                     'details' => [],
                 ];
             }
@@ -659,6 +665,7 @@ class InvoiceService
                     'total_cents' => $total,
                     'groupKey' => 'fulfillment',
                     'groupName' => $fulfillKey,
+                    'edit_group_key' => $this->sharedGroupKey($agg['items']),
                     'details' => $agg['items'],
                 ];
             }
@@ -675,6 +682,7 @@ class InvoiceService
                 'total_cents' => $total,
                 'groupKey' => 'postage',
                 'groupName' => $agg['name'],
+                'edit_group_key' => $this->sharedGroupKey($agg['items']),
                 'details' => $agg['items'],
             ];
         }
@@ -690,6 +698,7 @@ class InvoiceService
                 'total_cents' => $total,
                 'groupKey' => 'packaging',
                 'groupName' => $agg['name'],
+                'edit_group_key' => $this->sharedGroupKey($agg['items']),
                 'details' => $agg['items'],
             ];
         }
@@ -705,6 +714,7 @@ class InvoiceService
                 'total_cents' => $total,
                 'groupKey' => 'ad_hoc',
                 'groupName' => $agg['name'],
+                'edit_group_key' => $this->sharedGroupKey($agg['items']),
                 'details' => $agg['items'],
             ];
         }
@@ -721,6 +731,7 @@ class InvoiceService
                     'total_cents' => $total,
                     'groupKey' => 'returns',
                     'groupName' => $returnKey,
+                    'edit_group_key' => $this->sharedGroupKey($agg['items']),
                     'details' => $agg['items'],
                 ];
             }
@@ -737,6 +748,7 @@ class InvoiceService
                 'total_cents' => $total,
                 'groupKey' => 'on_demand',
                 'groupName' => $agg['name'],
+                'edit_group_key' => $this->sharedGroupKey($agg['items']),
                 'details' => $agg['items'],
             ];
         }
@@ -770,6 +782,7 @@ class InvoiceService
             'id' => $item->id,
             'name' => $name,
             'type' => $type,
+            'category_key' => (string) $item->category,
             'qty' => (float) $item->quantity,
             'price_cents' => $unitRate,
             'total_cents' => $total,
@@ -778,7 +791,33 @@ class InvoiceService
             'sku' => $item->sku,
             'service_code' => $item->service_code,
             'group_key' => $item->group_key,
+            'subtype' => $item->subtype,
+            'unit' => $item->unit,
+            'metadata' => $item->metadata,
         ];
+    }
+
+    /**
+     * @param  list<array<string, mixed>>  $details
+     */
+    private function sharedGroupKey(array $details): ?string
+    {
+        $key = null;
+        foreach ($details as $detail) {
+            $current = isset($detail['group_key']) ? (string) $detail['group_key'] : '';
+            if ($current === '') {
+                return null;
+            }
+            if ($key === null) {
+                $key = $current;
+                continue;
+            }
+            if ($key !== $current) {
+                return null;
+            }
+        }
+
+        return $key;
     }
 
     private function oldBetaDisplayName(InvoiceItem $item, string $fallback = '—'): string

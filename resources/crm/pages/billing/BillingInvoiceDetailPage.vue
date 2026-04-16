@@ -238,6 +238,9 @@ const statusDisplayText = computed(() => {
 const invoiceDateRangeLabel = computed(() => {
   const inv = invoice.value;
   if (!inv) return "—";
+  if (inv.invoice_date_label && String(inv.invoice_date_label).trim() !== "") {
+    return String(inv.invoice_date_label);
+  }
   const from = inv.invoice_date_from;
   const to = inv.invoice_date_to;
   if (from && to) return `${formatInvoiceShortDate(from)} - ${formatInvoiceShortDate(to)}`;

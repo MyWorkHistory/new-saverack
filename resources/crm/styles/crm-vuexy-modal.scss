@@ -13,6 +13,29 @@ $vx-modal-primary: #2563eb;
   padding: 1rem;
 }
 
+.crm-vx-confirm-enter-active,
+.crm-vx-confirm-leave-active {
+  transition: opacity 0.22s ease;
+}
+
+.crm-vx-confirm-enter-from,
+.crm-vx-confirm-leave-to {
+  opacity: 0;
+}
+
+.crm-vx-confirm-enter-active .crm-vx-modal,
+.crm-vx-confirm-leave-active .crm-vx-modal {
+  transition:
+    transform 0.22s cubic-bezier(0.2, 0.8, 0.2, 1),
+    opacity 0.22s ease;
+}
+
+.crm-vx-confirm-enter-from .crm-vx-modal,
+.crm-vx-confirm-leave-to .crm-vx-modal {
+  transform: translateY(8px) scale(0.985);
+  opacity: 0;
+}
+
 @media (min-width: 576px) {
   .crm-vx-modal-overlay {
     padding: 1.5rem;

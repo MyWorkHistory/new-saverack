@@ -421,36 +421,53 @@ class InvoiceService
     /**
      * @return array{recipients: list<string>}
      */
-    public function sendInvoiceEmail(Invoice $invoice, ?User $actor, ?string $customMessage = null): array
+    public function sendInvoiceEmail(
+        Invoice $invoice,
+        ?User $actor,
+        ?string $customMessage = null,
+        array $selectedRecipients = []
+    ): array
     {
         if ($invoice->isVoid()) {
             throw new \RuntimeException('Void invoices cannot be emailed.');
         }
         $invoice = $this->ensureShareToken($invoice);
         $invoice->loadMissing('clientAccount');
-        $recipients = $this->invoiceRecipientEmails($invoice);
-        if ($recipients === []) {
+        $available = $this->invoiceRecipientEmails($invoice);
+        if ($available === []) {
             throw new \RuntimeException('Client account does not have a valid billing email.');
+        }
+        $selectedRecipients = array_values(array_unique(array_map(static function ($value) {
+            return strtolower(trim((string) $value));
+        }, $selectedRecipients)));
+        $selectedRecipients = array_values(array_filter($selectedRecipients, static function ($value) {
+            return $value !== '' && filter_var($value, FILTER_VALIDATE_EMAIL);
+        }));
+        $selected = $selectedRecipients === []
+            ? $available
+            : array_values(array_intersect($available, $selectedRecipients));
+        if ($selected === []) {
+            throw new \RuntimeException('Select at least one valid recipient email.');
         }
         $url = $this->publicCustomerViewUrl($invoice);
 
         try {
-            Mail::to($recipients)->send(new InvoiceSentMailable($invoice, $url, $customMessage));
+            Mail::to($selected)->send(new InvoiceSentMailable($invoice, $url, $customMessage));
             $this->logHistory($invoice, $actor, 'emailed', $invoice->status, $invoice->status, [
                 'event_type' => InvoiceHistoryEventType::STATUS,
                 'history_message' => 'Invoice email sent.',
-                'recipients' => $recipients,
+                'recipients' => $selected,
             ]);
         } catch (\Throwable $e) {
             Log::warning('invoice.send_email_failed', [
                 'invoice_id' => $invoice->id,
-                'recipients' => $recipients,
+                'recipients' => $selected,
                 'error' => $e->getMessage(),
             ]);
             throw $e;
         }
 
-        return ['recipients' => $recipients];
+        return ['recipients' => $selected];
     }
 
     /**
@@ -812,6 +829,7 @@ class InvoiceService
             'po_number' => $invoice->po_number,
             'customer_notes' => $invoice->customer_notes,
             'internal_notes' => $invoice->internal_notes,
+            'email_recipient_options' => $this->invoiceRecipientEmails($invoice),
             'customer_view_url' => $this->publicCustomerViewUrl($invoice),
             'customer_pdf_url' => $this->publicCustomerPdfUrl($invoice),
             'paid_at' => $invoice->paid_at !== null ? $invoice->paid_at->toIso8601String() : null,
@@ -1615,10 +1633,19 @@ class InvoiceService
      */
     private function invoiceRecipientEmails(Invoice $invoice): array
     {
+        $invoice->loadMissing('clientAccount.accountUsers');
         $emails = [];
         $account = $invoice->clientAccount;
         if ($account !== null && is_string($account->email) && filter_var($account->email, FILTER_VALIDATE_EMAIL)) {
             $emails[] = strtolower(trim($account->email));
+        }
+        if ($account !== null && $account->relationLoaded('accountUsers')) {
+            foreach ($account->accountUsers as $user) {
+                $email = is_string($user->email ?? null) ? strtolower(trim((string) $user->email)) : '';
+                if ($email !== '' && filter_var($email, FILTER_VALIDATE_EMAIL)) {
+                    $emails[] = $email;
+                }
+            }
         }
 
         return array_values(array_unique(array_filter($emails)));
@@ -1626,13 +1653,21 @@ class InvoiceService
 
     private function defaultWhatsappMessage(Invoice $invoice, string $invoiceUrl, string $type): string
     {
-        $label = $this->invoiceDatePayload($invoice)['invoice_date_label'];
+        $date = $this->invoiceDatePayload($invoice);
+        $from = $date['invoice_date_from'] !== null ? $this->dateToMdY($date['invoice_date_from']) : null;
+        $to = $date['invoice_date_to'] !== null ? $this->dateToMdY($date['invoice_date_to']) : null;
+        $label = $date['invoice_date_label'];
         $balance = number_format(((int) $invoice->balance_due_cents) / 100, 2);
         if ($type === 'invoice_reminder') {
             return 'Invoice reminder: '.$invoice->invoice_number.' ('.$label.'). Balance due $'.$balance.'. '.$invoiceUrl;
         }
         if ($type === 'send_storage_invoice') {
-            return 'Hi! Here is your storage invoice for '.$label.': '.$invoiceUrl."\n"
+            return 'Hi! Here is your storage invoice: '.$invoiceUrl."\n"
+                .'Let me know if you have any questions-thanks!';
+        }
+
+        if ($from !== null && $to !== null) {
+            return 'Hi! Here is your invoice for '.$from.' to '.$to.': '.$invoiceUrl."\n"
                 .'Let me know if you have any questions-thanks!';
         }
 

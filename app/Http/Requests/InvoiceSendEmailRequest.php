@@ -15,6 +15,8 @@ class InvoiceSendEmailRequest extends FormRequest
     {
         return [
             'message' => ['nullable', 'string', 'max:5000'],
+            'recipients' => ['nullable', 'array', 'max:50'],
+            'recipients.*' => ['email:rfc,dns', 'max:255'],
         ];
     }
 
@@ -27,5 +29,25 @@ class InvoiceSendEmailRequest extends FormRequest
         $msg = trim($msg);
 
         return $msg === '' ? null : $msg;
+    }
+
+    /**
+     * @return list<string>
+     */
+    public function recipientEmails(): array
+    {
+        $list = $this->validated()['recipients'] ?? [];
+        if (! is_array($list)) {
+            return [];
+        }
+
+        $clean = array_map(static function ($value) {
+            return strtolower(trim((string) $value));
+        }, $list);
+        $clean = array_values(array_unique(array_filter($clean, static function ($value) {
+            return $value !== '' && filter_var($value, FILTER_VALIDATE_EMAIL);
+        })));
+
+        return $clean;
     }
 }

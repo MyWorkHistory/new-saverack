@@ -141,7 +141,12 @@ class InvoiceController extends Controller
     public function sendEmail(InvoiceSendEmailRequest $request, Invoice $invoice): JsonResponse
     {
         $this->authorize('view', $invoice);
-        $result = $this->invoices->sendInvoiceEmail($invoice, $request->user(), $request->messageText());
+        $result = $this->invoices->sendInvoiceEmail(
+            $invoice,
+            $request->user(),
+            $request->messageText(),
+            $request->recipientEmails(),
+        );
         $invoice = $invoice->fresh(['items', 'clientAccount']);
 
         return response()->json([

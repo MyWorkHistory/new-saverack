@@ -142,6 +142,85 @@ class BillingInvoiceApiTest extends TestCase
         $pay->assertJsonPath('balance_due_cents', 0);
     }
 
+    public function test_send_email_can_target_selected_recipients(): void
+    {
+        Mail::fake();
+
+        $user = User::factory()->create();
+        $user->permissions()->sync([
+            $this->billingViewPermission()->id,
+            $this->billingUpdatePermission()->id,
+        ]);
+        Sanctum::actingAs($user);
+
+        $client = ClientAccount::query()->create([
+            'status' => ClientAccount::STATUS_ACTIVE,
+            'company_name' => 'Recipients Co',
+            'email' => 'billing@recipients.test',
+        ]);
+
+        User::factory()->create([
+            'client_account_id' => $client->id,
+            'email' => 'ap@recipients.test',
+        ]);
+
+        $invoice = Invoice::query()->create([
+            'invoice_number' => 'INV-RECIPIENTS-001',
+            'client_account_id' => $client->id,
+            'status' => Invoice::STATUS_SENT,
+            'currency' => 'USD',
+            'subtotal_cents' => 1000,
+            'tax_cents' => 0,
+            'total_cents' => 1000,
+            'amount_paid_cents' => 0,
+            'balance_due_cents' => 1000,
+        ]);
+
+        $res = $this->postJson("/api/invoices/{$invoice->id}/email", [
+            'recipients' => ['ap@recipients.test'],
+        ]);
+        $res->assertOk()->assertJsonCount(1, 'recipients');
+        $res->assertJsonPath('recipients.0', 'ap@recipients.test');
+    }
+
+    public function test_whatsapp_request_accepts_send_storage_invoice_type(): void
+    {
+        Http::fake([
+            '*' => Http::response(['ok' => true], 200),
+        ]);
+        config()->set('billing.whatsapp.endpoint', 'https://example.com/send');
+
+        $user = User::factory()->create();
+        $user->permissions()->sync([
+            $this->billingViewPermission()->id,
+            $this->billingUpdatePermission()->id,
+        ]);
+        Sanctum::actingAs($user);
+
+        $client = ClientAccount::query()->create([
+            'status' => ClientAccount::STATUS_ACTIVE,
+            'company_name' => 'WA Type Co',
+            'email' => 'wa@type.test',
+            'whatsapp_e164' => '+15555550123',
+        ]);
+
+        $invoice = Invoice::query()->create([
+            'invoice_number' => 'INV-WA-TYPE-001',
+            'client_account_id' => $client->id,
+            'status' => Invoice::STATUS_SENT,
+            'currency' => 'USD',
+            'subtotal_cents' => 1000,
+            'tax_cents' => 0,
+            'total_cents' => 1000,
+            'amount_paid_cents' => 0,
+            'balance_due_cents' => 1000,
+        ]);
+
+        $this->postJson("/api/invoices/{$invoice->id}/whatsapp", [
+            'type' => 'send_storage_invoice',
+        ])->assertOk();
+    }
+
     public function test_pay_context_returns_same_account_invoice_balances(): void
     {
         $user = User::factory()->create();

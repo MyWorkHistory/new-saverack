@@ -1,5 +1,5 @@
 <script setup>
-import { computed, inject, onMounted, ref } from "vue";
+import { computed, inject, onMounted, ref, watch } from "vue";
 
 import { useRouter } from "vue-router";
 import api from "../../services/api";
@@ -65,6 +65,7 @@ const selectedTableRowId = ref("");
 const sendEmailBusy = ref(false);
 const sendEmailModalOpen = ref(false);
 const sendEmailMessage = ref("");
+const sendEmailRecipients = ref([]);
 const sendWhatsappBusy = ref(false);
 const sendWhatsappModalOpen = ref(false);
 const sendWhatsappType = ref("send_invoice");
@@ -169,6 +170,18 @@ const paySelectedBalanceCents = computed(() =>
 const payAvailablePreviewCents = computed(
   () => payFundsCents.value - paySelectedBalanceCents.value,
 );
+
+const emailRecipientOptionList = computed(() =>
+  Array.isArray(invoice.value?.email_recipient_options) ? invoice.value.email_recipient_options : [],
+);
+
+const allEmailRecipientsSelected = computed(() => {
+  const opts = emailRecipientOptionList.value;
+  if (!opts.length) return false;
+  return opts.every((e) => sendEmailRecipients.value.includes(e));
+});
+
+const someEmailRecipientsSelected = computed(() => sendEmailRecipients.value.length > 0);
 
 function formatQtyDisplay(v) {
   const n = Number(v);
@@ -486,7 +499,16 @@ async function sendInvoice() {
 
 function openSendEmailModal() {
   sendEmailMessage.value = "";
+  sendEmailRecipients.value = [...emailRecipientOptionList.value];
   sendEmailModalOpen.value = true;
+}
+
+function selectAllEmailRecipients() {
+  sendEmailRecipients.value = [...emailRecipientOptionList.value];
+}
+
+function unselectAllEmailRecipients() {
+  sendEmailRecipients.value = [];
 }
 
 function closeSendEmailModal() {
@@ -496,10 +518,15 @@ function closeSendEmailModal() {
 
 async function confirmSendEmail() {
   if (!invoice.value) return;
+  if (!sendEmailRecipients.value.length) {
+    toast.error("Select at least one email recipient.");
+    return;
+  }
   sendEmailBusy.value = true;
   try {
     const { data } = await api.post(`/invoices/${invoice.value.id}/email`, {
       message: sendEmailMessage.value || null,
+      recipients: sendEmailRecipients.value,
     });
     const toCount = Array.isArray(data?.recipients) ? data.recipients.length : 0;
     toast.success(toCount ? `Email sent to ${toCount} recipient(s).` : "Email sent.");
@@ -512,10 +539,42 @@ async function confirmSendEmail() {
   }
 }
 
+function buildWhatsappDefaultMessage(type) {
+  const inv = invoice.value;
+  if (!inv) return "";
+  const link = inv.customer_view_url || "";
+  const range = invoiceDateRangeLabel.value;
+  const balance = formatCents(inv.balance_due_cents || 0, inv.currency || "USD");
+  if (type === "invoice_reminder") {
+    return `Invoice reminder: ${inv.invoice_number} (${range}). Balance due ${balance}. ${link}`.trim();
+  }
+  if (type === "send_storage_invoice") {
+    return `Hi! Here is your storage invoice: ${link}\nLet me know if you have any questions-thanks!`.trim();
+  }
+  return `Hi! Here is your invoice for ${range}: ${link}\nLet me know if you have any questions-thanks!`.trim();
+}
+
+async function ensureShareLinkForMessaging() {
+  if (!invoice.value?.id || invoice.value.customer_view_url) return;
+  const { data } = await api.post(`/invoices/${invoice.value.id}/share-link`);
+  if (data?.customer_view_url) {
+    invoice.value = {
+      ...invoice.value,
+      customer_view_url: data.customer_view_url,
+      customer_pdf_url: data.customer_pdf_url,
+    };
+  }
+}
+
 function openSendWhatsappModal() {
   sendWhatsappType.value = "send_invoice";
-  sendWhatsappMessage.value = "";
+  sendWhatsappMessage.value = buildWhatsappDefaultMessage(sendWhatsappType.value);
   sendWhatsappModalOpen.value = true;
+  ensureShareLinkForMessaging()
+    .then(() => {
+      sendWhatsappMessage.value = buildWhatsappDefaultMessage(sendWhatsappType.value);
+    })
+    .catch(() => {});
 }
 
 function closeSendWhatsappModal() {
@@ -527,6 +586,9 @@ async function confirmSendWhatsapp() {
   if (!invoice.value) return;
   sendWhatsappBusy.value = true;
   try {
+    if (!sendWhatsappMessage.value.trim()) {
+      sendWhatsappMessage.value = buildWhatsappDefaultMessage(sendWhatsappType.value);
+    }
     await api.post(`/invoices/${invoice.value.id}/whatsapp`, {
       type: sendWhatsappType.value,
       message: sendWhatsappMessage.value || null,
@@ -540,6 +602,11 @@ async function confirmSendWhatsapp() {
     sendWhatsappBusy.value = false;
   }
 }
+
+watch(sendWhatsappType, (value) => {
+  if (!sendWhatsappModalOpen.value) return;
+  sendWhatsappMessage.value = buildWhatsappDefaultMessage(value);
+});
 
 function toggleLineMenu(lineId) {
   lineMenuOpenId.value = lineMenuOpenId.value === lineId ? null : lineId;
@@ -1379,8 +1446,52 @@ onMounted(() => {
               <h2 class="crm-vx-modal__title">Send Email</h2>
             </header>
             <div class="crm-vx-modal__body">
-              <label class="form-label">Optional message</label>
-              <textarea v-model="sendEmailMessage" rows="4" class="form-control" />
+              <label class="billing-pay-label">Recipients</label>
+              <div v-if="emailRecipientOptionList.length" class="billing-send-email-recipients mb-3">
+                <div class="billing-send-email-recipients__toolbar">
+                  <span class="billing-send-email-recipients__count text-secondary">
+                    {{ sendEmailRecipients.length }} of {{ emailRecipientOptionList.length }} selected
+                  </span>
+                  <div class="billing-send-email-recipients__actions">
+                    <button
+                      type="button"
+                      class="billing-send-email-recipients__action"
+                      :disabled="sendEmailBusy || allEmailRecipientsSelected"
+                      @click="selectAllEmailRecipients"
+                    >
+                      Select All
+                    </button>
+                    <button
+                      type="button"
+                      class="billing-send-email-recipients__action"
+                      :disabled="sendEmailBusy || !someEmailRecipientsSelected"
+                      @click="unselectAllEmailRecipients"
+                    >
+                      Unselect All
+                    </button>
+                  </div>
+                </div>
+                <div class="billing-send-email-recipients__list">
+                  <label
+                    v-for="email in emailRecipientOptionList"
+                    :key="email"
+                    class="billing-send-email-recipients__row"
+                  >
+                    <input
+                      v-model="sendEmailRecipients"
+                      class="billing-send-email-recipients__check"
+                      type="checkbox"
+                      :value="email"
+                    />
+                    <span class="billing-send-email-recipients__email">{{ email }}</span>
+                  </label>
+                </div>
+              </div>
+              <div v-else class="alert alert-warning py-2 small">
+                No customer email options found.
+              </div>
+              <label class="billing-pay-label">Optional message</label>
+              <textarea v-model="sendEmailMessage" rows="4" class="form-control billing-send-email-message" />
             </div>
             <footer class="crm-vx-modal__footer d-flex gap-2 justify-content-end">
               <button
@@ -1426,7 +1537,11 @@ onMounted(() => {
                 <option value="send_storage_invoice">Send Storage Invoice</option>
               </select>
               <label class="form-label">Optional custom message</label>
-              <textarea v-model="sendWhatsappMessage" rows="4" class="form-control" />
+              <textarea
+                v-model="sendWhatsappMessage"
+                rows="4"
+                class="form-control"
+              />
             </div>
             <footer class="crm-vx-modal__footer d-flex gap-2 justify-content-end">
               <button
@@ -2020,5 +2135,86 @@ onMounted(() => {
 .billing-pay-stat__label {
   margin-top: 0.25rem;
   font-size: 0.95rem;
+}
+.billing-send-email-recipients {
+  border: 1px solid #dbdade;
+  border-radius: 0.5rem;
+  background: var(--bs-tertiary-bg, #f8f9fa);
+  overflow: hidden;
+}
+.billing-send-email-recipients__toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem 1rem;
+  padding: 0.55rem 0.75rem;
+  border-bottom: 1px solid #e8e7ed;
+  background: var(--bs-body-bg, #fff);
+}
+.billing-send-email-recipients__count {
+  font-size: 0.8rem;
+  font-weight: 500;
+}
+.billing-send-email-recipients__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem 0.75rem;
+}
+.billing-send-email-recipients__action {
+  border: none;
+  background: none;
+  padding: 0.2rem 0;
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: #5e50ee;
+  text-decoration: none;
+  cursor: pointer;
+  transition: color 0.15s ease, opacity 0.15s ease;
+}
+.billing-send-email-recipients__action:hover:not(:disabled) {
+  color: #4b3fd4;
+  text-decoration: underline;
+}
+.billing-send-email-recipients__action:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+  text-decoration: none;
+}
+.billing-send-email-recipients__list {
+  max-height: 10rem;
+  overflow: auto;
+  padding: 0.35rem 0;
+  background: var(--bs-body-bg, #fff);
+}
+.billing-send-email-recipients__row {
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+  margin: 0;
+  padding: 0.45rem 0.75rem;
+  cursor: pointer;
+  font-size: 0.875rem;
+  color: var(--bs-body-color, #2f2b3d);
+  transition: background-color 0.12s ease;
+}
+.billing-send-email-recipients__row:hover {
+  background: rgba(115, 103, 240, 0.06);
+}
+.billing-send-email-recipients__check {
+  width: 1.05rem;
+  height: 1.05rem;
+  margin: 0;
+  flex-shrink: 0;
+  border-radius: 0.25rem;
+  border: 1px solid #c9c6d3;
+  accent-color: #7367f0;
+}
+.billing-send-email-recipients__email {
+  word-break: break-all;
+  line-height: 1.35;
+}
+.billing-send-email-message {
+  margin-top: 0.35rem;
 }
 </style>

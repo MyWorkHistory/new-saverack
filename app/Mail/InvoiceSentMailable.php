@@ -15,9 +15,17 @@ class InvoiceSentMailable extends Mailable
     /** @var Invoice */
     public $invoice;
 
-    public function __construct(Invoice $invoice)
+    /** @var string|null */
+    public $customerViewUrl;
+
+    /** @var string|null */
+    public $customMessage;
+
+    public function __construct(Invoice $invoice, ?string $customerViewUrl = null, ?string $customMessage = null)
     {
         $this->invoice = $invoice;
+        $this->customerViewUrl = $customerViewUrl;
+        $this->customMessage = $customMessage;
     }
 
     public function build()

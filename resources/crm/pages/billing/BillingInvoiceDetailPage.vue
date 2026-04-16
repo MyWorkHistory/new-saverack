@@ -2,7 +2,7 @@
 import { computed, inject, onMounted, ref } from "vue";
 
 import { useRouter } from "vue-router";
-import api, { getApiBaseUrl } from "../../services/api";
+import api from "../../services/api";
 import { BRAND_MARK_SRC } from "../../utils/brandAssets.js";
 import ConfirmModal from "../../components/common/ConfirmModal.vue";
 import CrmLoadingSpinner from "../../components/common/CrmLoadingSpinner.vue";
@@ -50,6 +50,19 @@ const deleteBusy = ref(false);
 const pdfDownloading = ref(false);
 const copyLinkBusy = ref(false);
 const selectedTableRowId = ref("");
+const sendEmailBusy = ref(false);
+const sendEmailModalOpen = ref(false);
+const sendEmailMessage = ref("");
+const sendWhatsappBusy = ref(false);
+const sendWhatsappModalOpen = ref(false);
+const sendWhatsappType = ref("send_invoice");
+const sendWhatsappMessage = ref("");
+const groupEditModalOpen = ref(false);
+const groupEditBusy = ref(false);
+const groupDeleteModalOpen = ref(false);
+const groupDeleteBusy = ref(false);
+const groupEditTarget = ref(null);
+const groupEditLines = ref([]);
 
 const invoiceLogoSrc = computed(() => BRAND_MARK_SRC());
 
@@ -68,6 +81,12 @@ const selectedTableRow = computed(() => {
 });
 
 const selectedTableRowDetails = computed(() => selectedTableRow.value?.details || []);
+
+const hasEditableLineGroup = computed(() => {
+  const row = selectedTableRow.value;
+  if (!row) return false;
+  return Boolean(row.line_group_key);
+});
 
 function openTableRow(row) {
   selectedTableRowId.value = row.id;
@@ -104,6 +123,17 @@ const statusDisplayText = computed(() => {
     .replace(/\b\w/g, (c) => c.toUpperCase());
 });
 
+const invoiceDateRangeLabel = computed(() => {
+  const inv = invoice.value;
+  if (!inv) return "—";
+  const from = inv.invoice_date_from;
+  const to = inv.invoice_date_to;
+  if (from && to) return `${formatInvoiceLongDate(from)} - ${formatInvoiceLongDate(to)}`;
+  if (from) return formatInvoiceLongDate(from);
+  if (to) return formatInvoiceLongDate(to);
+  return formatInvoiceLongDate(inv.invoice_date || inv.issued_at);
+});
+
 const invoiceDateLong = new Intl.DateTimeFormat(undefined, {
   year: "numeric",
   month: "long",
@@ -128,21 +158,15 @@ async function downloadInvoicePdf() {
   if (!invoice.value?.id || pdfDownloading.value) return;
   pdfDownloading.value = true;
   try {
-    const token = localStorage.getItem("auth_token");
-    const url = `${getApiBaseUrl()}/invoices/${invoice.value.id}/pdf`;
-    const res = await fetch(url, {
-      headers: {
-        ...(token ? { Authorization: `Bearer ${token}` } : {}),
-        Accept: "application/pdf",
-      },
+    const res = await api.get(`/invoices/${invoice.value.id}/pdf`, {
+      responseType: "blob",
+      headers: { Accept: "application/pdf" },
     });
-    if (!res.ok) {
-      toast.error("Could not download PDF.");
-      return;
-    }
-    const blob = await res.blob();
+    const blob = res.data;
     const a = document.createElement("a");
-    const baseName = String(invoice.value.invoice_number || "invoice").replace(
+    const baseName = String(
+      `Fulfillment Summary - Invoice #${invoice.value.invoice_number || "invoice"}`,
+    ).replace(
       /[^A-Za-z0-9._-]+/g,
       "_",
     );
@@ -324,12 +348,155 @@ async function sendInvoice() {
   if (!invoice.value) return;
   try {
     await api.post(`/invoices/${invoice.value.id}/send`);
-    toast.success(
-      "Invoice sent. For now, email notification is sent to chaowang318915@gmail.com (development).",
-    );
+    toast.success("Invoice sent.");
     await load();
   } catch (e) {
     toast.errorFrom(e, "Could not send invoice.");
+  }
+}
+
+function openSendEmailModal() {
+  sendEmailMessage.value = "";
+  sendEmailModalOpen.value = true;
+}
+
+function closeSendEmailModal() {
+  if (sendEmailBusy.value) return;
+  sendEmailModalOpen.value = false;
+}
+
+async function confirmSendEmail() {
+  if (!invoice.value) return;
+  sendEmailBusy.value = true;
+  try {
+    const { data } = await api.post(`/invoices/${invoice.value.id}/email`, {
+      message: sendEmailMessage.value || null,
+    });
+    const toCount = Array.isArray(data?.recipients) ? data.recipients.length : 0;
+    toast.success(toCount ? `Email sent to ${toCount} recipient(s).` : "Email sent.");
+    closeSendEmailModal();
+    await load();
+  } catch (e) {
+    toast.errorFrom(e, "Could not send email.");
+  } finally {
+    sendEmailBusy.value = false;
+  }
+}
+
+function openSendWhatsappModal() {
+  sendWhatsappType.value = "send_invoice";
+  sendWhatsappMessage.value = "";
+  sendWhatsappModalOpen.value = true;
+}
+
+function closeSendWhatsappModal() {
+  if (sendWhatsappBusy.value) return;
+  sendWhatsappModalOpen.value = false;
+}
+
+async function confirmSendWhatsapp() {
+  if (!invoice.value) return;
+  sendWhatsappBusy.value = true;
+  try {
+    await api.post(`/invoices/${invoice.value.id}/whatsapp`, {
+      type: sendWhatsappType.value,
+      message: sendWhatsappMessage.value || null,
+    });
+    toast.success("WhatsApp message sent.");
+    closeSendWhatsappModal();
+    await load();
+  } catch (e) {
+    toast.errorFrom(e, "Could not send via WhatsApp.");
+  } finally {
+    sendWhatsappBusy.value = false;
+  }
+}
+
+function openGroupEditModal() {
+  const row = selectedTableRow.value;
+  if (!row || !row.line_group_key) return;
+  groupEditTarget.value = row;
+  groupEditLines.value = (row.details || []).map((line) => ({
+    ...line,
+    quantity: formatQtyOneDecimal(line.qty ?? 0),
+    unit_price: (Number(line.price_cents || 0) / 100).toFixed(2),
+  }));
+  groupEditModalOpen.value = true;
+}
+
+function closeGroupEditModal() {
+  if (groupEditBusy.value) return;
+  groupEditModalOpen.value = false;
+  groupEditTarget.value = null;
+  groupEditLines.value = [];
+}
+
+async function confirmGroupEdit() {
+  const inv = invoice.value;
+  const target = groupEditTarget.value;
+  if (!inv || !target?.line_group_key) return;
+  groupEditBusy.value = true;
+  try {
+    const items = groupEditLines.value
+      .map((line) => {
+        const qty = Number.parseFloat(String(line.quantity).replace(/,/g, "")) || 0;
+        const unitCents = dollarsToCents(line.unit_price);
+        return {
+          description: line.description || line.display_name || line.name || "",
+          category: line.category || null,
+          subtype: line.subtype || null,
+          display_name: line.display_name || line.name || null,
+          sku: line.sku || null,
+          service_code: line.service_code || null,
+          quantity: qty,
+          unit: line.unit || null,
+          unit_price_cents: unitCents,
+          line_total_cents: Math.max(0, Math.round(qty * unitCents)),
+          metadata: line.metadata || null,
+        };
+      })
+      .filter((line) => String(line.description || "").trim() !== "");
+    await api.put(
+      `/invoices/${inv.id}/line-groups/${encodeURIComponent(target.line_group_key)}`,
+      { items },
+    );
+    toast.success("Line group updated.");
+    closeGroupEditModal();
+    await load();
+  } catch (e) {
+    toast.errorFrom(e, "Could not update line group.");
+  } finally {
+    groupEditBusy.value = false;
+  }
+}
+
+function openGroupDeleteModal() {
+  const row = selectedTableRow.value;
+  if (!row || !row.line_group_key) return;
+  groupEditTarget.value = row;
+  groupDeleteModalOpen.value = true;
+}
+
+function closeGroupDeleteModal() {
+  if (groupDeleteBusy.value) return;
+  groupDeleteModalOpen.value = false;
+}
+
+async function confirmGroupDelete() {
+  const inv = invoice.value;
+  const target = groupEditTarget.value;
+  if (!inv || !target?.line_group_key) return;
+  groupDeleteBusy.value = true;
+  try {
+    await api.delete(`/invoices/${inv.id}/line-groups/${encodeURIComponent(target.line_group_key)}`);
+    toast.success("Line group deleted.");
+    selectedTableRowId.value = "";
+    closeGroupDeleteModal();
+    await load();
+  } catch (e) {
+    toast.errorFrom(e, "Could not delete line group.");
+  } finally {
+    groupDeleteBusy.value = false;
   }
 }
 
@@ -466,6 +633,30 @@ onMounted(() => {
             Send Invoice
           </button>
           <button
+            v-if="canUpdate && invoice.status !== 'void'"
+            type="button"
+            class="btn btn-outline-primary btn-sm"
+            @click="openSendEmailModal"
+          >
+            Send Email
+          </button>
+          <button
+            v-if="canUpdate && invoice.status !== 'void'"
+            type="button"
+            class="btn btn-outline-primary btn-sm"
+            @click="openSendWhatsappModal"
+          >
+            Send via WhatsApp
+          </button>
+          <button
+            v-if="canUpdate && invoice.status !== 'draft' && invoice.status !== 'void'"
+            type="button"
+            class="btn btn-outline-danger btn-sm"
+            @click="openVoidModal"
+          >
+            Void
+          </button>
+          <button
             v-if="
               canUpdate &&
               invoice.status !== 'draft' &&
@@ -478,14 +669,6 @@ onMounted(() => {
             @click="openPayModal"
           >
             Record Payment
-          </button>
-          <button
-            v-if="canUpdate && invoice.status !== 'draft' && invoice.status !== 'void'"
-            type="button"
-            class="btn btn-outline-danger btn-sm"
-            @click="openVoidModal"
-          >
-            Void
           </button>
           <button
             v-if="canDelete && invoice.status === 'draft'"
@@ -530,10 +713,8 @@ onMounted(() => {
                   </h1>
                   <div class="small billing-inv-meta-list">
                     <div class="mb-1">
-                      <span class="text-secondary">Date issued</span>
-                      <span class="fw-medium ms-1">{{
-                        formatInvoiceLongDate(invoice.issued_at)
-                      }}</span>
+                      <span class="text-secondary">Invoice Date</span>
+                      <span class="fw-medium ms-1">{{ invoiceDateRangeLabel }}</span>
                     </div>
                     <div class="mb-1">
                       <span class="text-secondary">Date due</span>
@@ -722,6 +903,13 @@ onMounted(() => {
                       <th class="text-end">Qty</th>
                       <th class="text-end">Price</th>
                       <th class="text-end">Total</th>
+                      <th
+                        v-if="invoice.status === 'draft' && canUpdate"
+                        class="text-end"
+                        style="width: 9rem"
+                      >
+                        Actions
+                      </th>
                     </tr>
                   </thead>
                   <tbody>
@@ -745,10 +933,25 @@ onMounted(() => {
                         <td class="text-end fw-semibold">
                           {{ formatCents(row.total_cents, invoice.currency) }}
                         </td>
+                        <td v-if="invoice.status === 'draft' && canUpdate" class="text-end">
+                          <button
+                            v-if="row.line_group_key"
+                            type="button"
+                            class="btn btn-link btn-sm p-0"
+                            @click.stop="openTableRow(row)"
+                          >
+                            Manage
+                          </button>
+                        </td>
                       </tr>
                     </template>
                     <tr v-if="!invoiceTableRows.length">
-                      <td colspan="5" class="text-center text-secondary py-3">No line items.</td>
+                      <td
+                        :colspan="invoice.status === 'draft' && canUpdate ? 6 : 5"
+                        class="text-center text-secondary py-3"
+                      >
+                        No line items.
+                      </td>
                     </tr>
                   </tbody>
                 </table>
@@ -776,6 +979,13 @@ onMounted(() => {
                         <th class="text-end">Qty</th>
                         <th class="text-end">Price</th>
                         <th class="text-end">Total</th>
+                      <th
+                        v-if="invoice.status === 'draft' && canUpdate && hasEditableLineGroup"
+                        class="text-end"
+                        style="width: 9rem"
+                      >
+                        Actions
+                      </th>
                       </tr>
                     </thead>
                     <tbody>
@@ -785,12 +995,38 @@ onMounted(() => {
                         <td class="text-end text-nowrap">{{ formatQtyDisplay(row.qty) }}</td>
                         <td class="text-end">{{ formatCents(row.price_cents, invoice.currency) }}</td>
                         <td class="text-end">{{ formatCents(row.total_cents, invoice.currency) }}</td>
+                        <td
+                          v-if="invoice.status === 'draft' && canUpdate && hasEditableLineGroup"
+                          class="text-end"
+                        />
                       </tr>
                       <tr v-if="!selectedTableRowDetails.length">
-                        <td colspan="5" class="text-center text-secondary py-3">No line items.</td>
+                        <td
+                          :colspan="
+                            invoice.status === 'draft' && canUpdate && hasEditableLineGroup ? 6 : 5
+                          "
+                          class="text-center text-secondary py-3"
+                        >
+                          No line items.
+                        </td>
                       </tr>
                     </tbody>
                   </table>
+                </div>
+                <div
+                  v-if="invoice.status === 'draft' && canUpdate && hasEditableLineGroup"
+                  class="d-flex justify-content-end gap-2 mt-2"
+                >
+                  <button
+                    type="button"
+                    class="btn btn-outline-secondary btn-sm"
+                    @click="openGroupEditModal"
+                  >
+                    Edit Group
+                  </button>
+                  <button type="button" class="btn btn-outline-danger btn-sm" @click="openGroupDeleteModal">
+                    Delete Group
+                  </button>
                 </div>
               </div>
             </template>
@@ -868,6 +1104,183 @@ onMounted(() => {
     <Teleport to="body">
       <Transition name="crm-vx-confirm">
         <div
+          v-if="sendEmailModalOpen"
+          class="crm-vx-modal-overlay"
+          role="dialog"
+          aria-modal="true"
+          @click.self="closeSendEmailModal"
+        >
+          <div class="crm-vx-modal crm-vx-modal--sm" @click.stop>
+            <header class="crm-vx-modal__head">
+              <h2 class="crm-vx-modal__title">Send Email</h2>
+            </header>
+            <div class="crm-vx-modal__body">
+              <label class="form-label">Optional message</label>
+              <textarea v-model="sendEmailMessage" rows="4" class="form-control" />
+            </div>
+            <footer class="crm-vx-modal__footer d-flex gap-2 justify-content-end">
+              <button
+                type="button"
+                class="crm-vx-modal-btn crm-vx-modal-btn--secondary"
+                :disabled="sendEmailBusy"
+                @click="closeSendEmailModal"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                class="crm-vx-modal-btn crm-vx-modal-btn--primary"
+                :disabled="sendEmailBusy"
+                @click="confirmSendEmail"
+              >
+                {{ sendEmailBusy ? "Sending…" : "Send Email" }}
+              </button>
+            </footer>
+          </div>
+        </div>
+      </Transition>
+    </Teleport>
+
+    <Teleport to="body">
+      <Transition name="crm-vx-confirm">
+        <div
+          v-if="sendWhatsappModalOpen"
+          class="crm-vx-modal-overlay"
+          role="dialog"
+          aria-modal="true"
+          @click.self="closeSendWhatsappModal"
+        >
+          <div class="crm-vx-modal crm-vx-modal--sm" @click.stop>
+            <header class="crm-vx-modal__head">
+              <h2 class="crm-vx-modal__title">Send via WhatsApp</h2>
+            </header>
+            <div class="crm-vx-modal__body">
+              <label class="form-label">Message type</label>
+              <select v-model="sendWhatsappType" class="form-select mb-3">
+                <option value="send_invoice">Send Invoice</option>
+                <option value="invoice_reminder">Invoice Reminder</option>
+              </select>
+              <label class="form-label">Optional custom message</label>
+              <textarea v-model="sendWhatsappMessage" rows="4" class="form-control" />
+            </div>
+            <footer class="crm-vx-modal__footer d-flex gap-2 justify-content-end">
+              <button
+                type="button"
+                class="crm-vx-modal-btn crm-vx-modal-btn--secondary"
+                :disabled="sendWhatsappBusy"
+                @click="closeSendWhatsappModal"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                class="crm-vx-modal-btn crm-vx-modal-btn--primary"
+                :disabled="sendWhatsappBusy"
+                @click="confirmSendWhatsapp"
+              >
+                {{ sendWhatsappBusy ? "Sending…" : "Send via WhatsApp" }}
+              </button>
+            </footer>
+          </div>
+        </div>
+      </Transition>
+    </Teleport>
+
+    <Teleport to="body">
+      <Transition name="crm-vx-confirm">
+        <div
+          v-if="groupEditModalOpen"
+          class="crm-vx-modal-overlay"
+          role="dialog"
+          aria-modal="true"
+          @click.self="closeGroupEditModal"
+        >
+          <div class="crm-vx-modal crm-vx-modal--lg" @click.stop>
+            <header class="crm-vx-modal__head">
+              <h2 class="crm-vx-modal__title">Edit Line Group</h2>
+            </header>
+            <div class="crm-vx-modal__body">
+              <div class="table-responsive">
+                <table class="table table-sm align-middle mb-0 billing-inv-items-table">
+                  <thead>
+                    <tr>
+                      <th>Service</th>
+                      <th>Category</th>
+                      <th class="text-end">Qty</th>
+                      <th class="text-end">Price</th>
+                      <th class="text-end">Total</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr v-for="(line, idx) in groupEditLines" :key="line.id || idx">
+                      <td class="fw-medium">{{ line.name }}</td>
+                      <td>{{ line.type }}</td>
+                      <td class="text-end">
+                        <input
+                          v-model="line.quantity"
+                          type="text"
+                          inputmode="decimal"
+                          class="form-control form-control-sm text-end"
+                          :disabled="groupEditBusy"
+                        />
+                      </td>
+                      <td class="text-end">
+                        <input
+                          v-model="line.unit_price"
+                          type="text"
+                          inputmode="decimal"
+                          class="form-control form-control-sm text-end"
+                          :disabled="groupEditBusy"
+                        />
+                      </td>
+                      <td class="text-end">
+                        {{
+                          formatCents(
+                            Math.max(
+                              0,
+                              Math.round(
+                                (Number.parseFloat(String(line.quantity).replace(/,/g, "")) || 0) *
+                                  dollarsToCents(line.unit_price),
+                              ),
+                            ),
+                            invoice?.currency,
+                          )
+                        }}
+                      </td>
+                    </tr>
+                    <tr v-if="!groupEditLines.length">
+                      <td colspan="5" class="text-center text-secondary py-3">No line items.</td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+            <footer class="crm-vx-modal__footer d-flex gap-2 justify-content-end">
+              <button
+                type="button"
+                class="crm-vx-modal-btn crm-vx-modal-btn--secondary"
+                :disabled="groupEditBusy"
+                @click="closeGroupEditModal"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                class="crm-vx-modal-btn crm-vx-modal-btn--primary"
+                :disabled="groupEditBusy"
+                @click="confirmGroupEdit"
+              >
+                {{ groupEditBusy ? "Saving…" : "Save Group" }}
+              </button>
+            </footer>
+          </div>
+        </div>
+      </Transition>
+    </Teleport>
+
+    <Teleport to="body">
+      <Transition name="crm-vx-confirm">
+        <div
           v-if="payModalOpen"
           class="crm-vx-modal-overlay"
           role="dialog"
@@ -904,6 +1317,20 @@ onMounted(() => {
         </div>
       </Transition>
     </Teleport>
+
+    <ConfirmModal
+      :open="groupDeleteModalOpen"
+      title="Delete Line Group?"
+      :message="
+        groupEditTarget ? `Delete ${groupEditTarget.name}? This cannot be undone.` : ''
+      "
+      confirm-label="Delete"
+      cancel-label="Cancel"
+      :busy="groupDeleteBusy"
+      danger
+      @close="closeGroupDeleteModal"
+      @confirm="confirmGroupDelete"
+    />
 
     <ConfirmModal
       :open="voidModalOpen"

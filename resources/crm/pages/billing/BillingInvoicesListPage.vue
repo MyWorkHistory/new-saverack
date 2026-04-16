@@ -1145,7 +1145,7 @@ onUnmounted(() => {
                 {{ formatCents(row.total_cents, row.currency) }}
               </td>
               <td class="text-body staff-table-cell__meta text-nowrap">
-                {{ row.issued_at ? new Date(row.issued_at).toLocaleDateString() : "—" }}
+                {{ row.invoice_date_label || (row.issued_at ? new Date(row.issued_at).toLocaleDateString() : "—") }}
               </td>
               <td class="text-body staff-table-cell__meta text-nowrap">
                 {{ row.due_at ? new Date(row.due_at).toLocaleDateString() : "—" }}

@@ -10,6 +10,7 @@ use App\Models\Permission;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\UploadedFile;
+use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Mail;
 use Laravel\Sanctum\Sanctum;
 use Tests\TestCase;
@@ -122,8 +123,14 @@ class BillingInvoiceApiTest extends TestCase
             Invoice::query()->find($invoiceId)->status
         );
 
+        Mail::assertNothingSent();
+
+        $this->postJson("/api/invoices/{$invoiceId}/email")
+            ->assertOk()
+            ->assertJsonCount(1, 'recipients');
+
         Mail::assertSent(InvoiceSentMailable::class, function (InvoiceSentMailable $mail) use ($invoiceId) {
-            return $mail->hasTo('chaowang318915@gmail.com')
+            return $mail->hasTo('billing@acme.test')
                 && (int) $mail->invoice->id === (int) $invoiceId;
         });
 
@@ -611,5 +618,152 @@ class BillingInvoiceApiTest extends TestCase
         $res->assertJsonPath('presentation.rows.1.type', 'Product (On-Demand)');
         $this->assertCount(1, $res->json('presentation.rows.0.details'));
         $this->assertCount(1, $res->json('presentation.rows.1.details'));
+    }
+
+    public function test_invoice_whatsapp_endpoint_sends_provider_payload(): void
+    {
+        Http::fake([
+            'https://wa.example.test/*' => Http::response(['ok' => true], 200),
+        ]);
+        config()->set('billing.whatsapp.endpoint', 'https://wa.example.test/send');
+        config()->set('billing.whatsapp.api_token', 'token-123');
+
+        $user = User::factory()->create();
+        $user->permissions()->sync([
+            $this->billingViewPermission()->id,
+            $this->billingUpdatePermission()->id,
+        ]);
+        Sanctum::actingAs($user);
+
+        $client = ClientAccount::query()->create([
+            'status' => ClientAccount::STATUS_ACTIVE,
+            'company_name' => 'WhatsApp Co',
+            'email' => 'wa@acme.test',
+            'whatsapp_e164' => '+15555550123',
+        ]);
+        $client->refresh();
+
+        $invoice = Invoice::query()->create([
+            'invoice_number' => 'INV-WA-001',
+            'client_account_id' => $client->id,
+            'status' => Invoice::STATUS_SENT,
+            'currency' => 'USD',
+            'subtotal_cents' => 1000,
+            'tax_cents' => 0,
+            'total_cents' => 1000,
+            'amount_paid_cents' => 0,
+            'balance_due_cents' => 1000,
+            'billing_period_start' => '2026-04-01',
+            'billing_period_end' => '2026-04-30',
+        ]);
+
+        $this->postJson("/api/invoices/{$invoice->id}/whatsapp", ['type' => 'invoice_reminder'])
+            ->assertOk()
+            ->assertJsonPath('whatsapp.to', '+15555550123')
+            ->assertJsonPath('whatsapp.type', 'invoice_reminder');
+
+        Http::assertSent(function ($request) use ($invoice) {
+            $data = $request->data();
+            return $request->url() === 'https://wa.example.test/send'
+                && ($data['invoice_id'] ?? null) === $invoice->id
+                && ($data['type'] ?? null) === 'invoice_reminder'
+                && ! empty($data['url']);
+        });
+    }
+
+    public function test_replace_line_group_updates_draft_group_items(): void
+    {
+        $user = User::factory()->create();
+        $user->permissions()->sync([
+            $this->billingViewPermission()->id,
+            $this->billingUpdatePermission()->id,
+        ]);
+        Sanctum::actingAs($user);
+
+        $client = ClientAccount::query()->create([
+            'status' => ClientAccount::STATUS_ACTIVE,
+            'company_name' => 'Replace Group Co',
+            'email' => 'replace@acme.test',
+        ]);
+
+        $invoice = Invoice::query()->create([
+            'invoice_number' => 'INV-GROUP-REPLACE-001',
+            'client_account_id' => $client->id,
+            'status' => Invoice::STATUS_DRAFT,
+            'currency' => 'USD',
+            'subtotal_cents' => 1000,
+            'tax_cents' => 0,
+            'total_cents' => 1000,
+            'amount_paid_cents' => 0,
+            'balance_due_cents' => 1000,
+        ]);
+        InvoiceItem::query()->create([
+            'invoice_id' => $invoice->id,
+            'sort_order' => 1,
+            'category' => 'packaging',
+            'group_key' => 'packaging:bubble',
+            'description' => 'BUBBLE MAILER #0',
+            'display_name' => 'BUBBLE MAILER #0',
+            'quantity' => 1,
+            'unit_price_cents' => 1000,
+            'line_total_cents' => 1000,
+        ]);
+
+        $this->putJson("/api/invoices/{$invoice->id}/line-groups/packaging%3Abubble", [
+            'items' => [
+                [
+                    'description' => 'BUBBLE MAILER #0',
+                    'display_name' => 'BUBBLE MAILER #0',
+                    'category' => 'packaging',
+                    'quantity' => 2,
+                    'unit_price_cents' => 500,
+                    'line_total_cents' => 1000,
+                ],
+            ],
+        ])->assertOk()->assertJsonPath('presentation.rows.0.line_group_key', 'packaging:bubble');
+    }
+
+    public function test_invoice_detail_and_public_payload_include_invoice_date_fields(): void
+    {
+        $user = User::factory()->create();
+        $user->permissions()->sync([
+            $this->billingViewPermission()->id,
+        ]);
+        Sanctum::actingAs($user);
+
+        $client = ClientAccount::query()->create([
+            'status' => ClientAccount::STATUS_ACTIVE,
+            'company_name' => 'Date Co',
+            'email' => 'date@acme.test',
+        ]);
+        $client->refresh();
+
+        $invoice = Invoice::query()->create([
+            'invoice_number' => 'INV-DATE-001',
+            'client_account_id' => $client->id,
+            'status' => Invoice::STATUS_SENT,
+            'currency' => 'USD',
+            'issued_at' => '2026-04-16 00:00:00',
+            'billing_period_start' => '2026-04-01',
+            'billing_period_end' => '2026-04-15',
+            'share_token' => 'date-token-001',
+            'subtotal_cents' => 0,
+            'tax_cents' => 0,
+            'total_cents' => 0,
+            'amount_paid_cents' => 0,
+            'balance_due_cents' => 0,
+        ]);
+
+        $this->getJson("/api/invoices/{$invoice->id}")
+            ->assertOk()
+            ->assertJsonPath('invoice_date_from', '2026-04-01')
+            ->assertJsonPath('invoice_date_to', '2026-04-15')
+            ->assertJsonPath('invoice_date_label', '04/01/2026 - 04/15/2026');
+
+        $slug = (string) $client->invoice_share_slug;
+        $this->get("/billing-invoice/{$slug}/{$invoice->share_token}")
+            ->assertOk()
+            ->assertSee('Invoice Dates From', false)
+            ->assertSee('Invoice Dates To', false);
     }
 }

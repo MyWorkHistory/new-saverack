@@ -33,7 +33,11 @@ class PublicInvoiceController extends Controller
         abort_if($invoice === null, 404);
 
         $data = $this->invoices->pdfViewData($invoice);
-        $filename = preg_replace('/[^A-Za-z0-9._-]+/', '_', $invoice->invoice_number).'.pdf';
+        $filename = preg_replace(
+            '/[^A-Za-z0-9._ -]+/',
+            '_',
+            'Fulfillment Summary - Invoice #'.$invoice->invoice_number
+        ).'.pdf';
 
         return Pdf::loadView('billing.invoice-pdf', $data)->download($filename);
     }

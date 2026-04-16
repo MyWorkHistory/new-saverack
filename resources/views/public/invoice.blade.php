@@ -80,9 +80,9 @@
         <td width="45%">
             <div class="inv-title">Invoice {{ $invoice_number }}</div>
             <div class="inv-meta">
-                @if (!empty($issued_long))
-                    <div><strong>Issue date:</strong> {{ $issued_long }}</div>
-                @endif
+                <div><strong>Invoice Date:</strong> {{ $invoice_date_label ?? ($issued_long ?? '—') }}</div>
+                <div><strong>Invoice Dates From:</strong> {{ !empty($invoice_date_from) ? \Carbon\Carbon::parse($invoice_date_from)->format('m/d/Y') : '—' }}</div>
+                <div><strong>Invoice Dates To:</strong> {{ !empty($invoice_date_to) ? \Carbon\Carbon::parse($invoice_date_to)->format('m/d/Y') : '—' }}</div>
                 @if (!empty($due_long))
                     <div><strong>Due date:</strong> {{ $due_long }}</div>
                 @endif
@@ -174,6 +174,13 @@
         <strong>Note:</strong> {{ $customer_notes }}
     </div>
 @endif
+
+<div class="notes">
+    <strong>Please send payment to:</strong><br>
+    Save Rack LLC<br>
+    3025 Whitten Rd<br>
+    Lakeland, FL 33815
+</div>
 
 <div class="footer">Thank you for your business.</div>
 <script>

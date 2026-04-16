@@ -48,6 +48,10 @@ Route::middleware('auth:sanctum')->group(function () {
         ->name('invoices.line-groups.replace');
     Route::post('invoices/{invoice}/send', [InvoiceController::class, 'send'])
         ->name('invoices.send');
+    Route::post('invoices/{invoice}/email', [InvoiceController::class, 'sendEmail'])
+        ->name('invoices.email');
+    Route::post('invoices/{invoice}/whatsapp', [InvoiceController::class, 'sendWhatsapp'])
+        ->name('invoices.whatsapp');
     Route::post('invoices/{invoice}/record-payment', [InvoiceController::class, 'recordPayment'])
         ->name('invoices.record-payment');
     Route::post('invoices/{invoice}/void', [InvoiceController::class, 'void'])

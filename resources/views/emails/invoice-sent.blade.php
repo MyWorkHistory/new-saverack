@@ -7,6 +7,9 @@
 </head>
 <body style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; font-size: 15px; line-height: 1.5; color: #2f2f2f;">
     <p style="margin: 0 0 12px;">Hello,</p>
+    @if (!empty($customMessage))
+        <p style="margin: 0 0 12px;">{{ $customMessage }}</p>
+    @endif
     <p style="margin: 0 0 12px;">
         Invoice <strong>{{ $invoice->invoice_number }}</strong>
         @if ($invoice->clientAccount)
@@ -29,8 +32,10 @@
             <strong>Due:</strong> {{ $invoice->due_at->format('F j, Y') }}
         </p>
     @endif
-    <p style="margin: 24px 0 0; font-size: 13px; color: #888;">
-        This message was sent because billing email is still in development and notifications are routed to a fixed address.
-    </p>
+    @if (!empty($customerViewUrl))
+        <p style="margin: 0 0 12px;">
+            <a href="{{ $customerViewUrl }}">View Invoice</a>
+        </p>
+    @endif
 </body>
 </html>

@@ -5,6 +5,8 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\InvoiceRecordPaymentRequest;
 use App\Http\Requests\InvoiceReplaceLineGroupRequest;
+use App\Http\Requests\InvoiceSendEmailRequest;
+use App\Http\Requests\InvoiceSendWhatsappRequest;
 use App\Http\Requests\InvoiceStoreRequest;
 use App\Http\Requests\InvoiceUpdateRequest;
 use App\Models\ClientAccount;
@@ -92,7 +94,11 @@ class InvoiceController extends Controller
         $this->authorize('view', $invoice);
 
         $data = $this->invoices->pdfViewData($invoice);
-        $filename = preg_replace('/[^A-Za-z0-9._-]+/', '_', $invoice->invoice_number).'.pdf';
+        $filename = preg_replace(
+            '/[^A-Za-z0-9._ -]+/',
+            '_',
+            'Fulfillment Summary - Invoice #'.$invoice->invoice_number
+        ).'.pdf';
 
         return Pdf::loadView('billing.invoice-pdf', $data)->download($filename);
     }
@@ -125,6 +131,35 @@ class InvoiceController extends Controller
         $invoice = $this->invoices->markSent($invoice, request()->user());
 
         return response()->json($this->invoices->toDetailArray($invoice));
+    }
+
+    public function sendEmail(InvoiceSendEmailRequest $request, Invoice $invoice): JsonResponse
+    {
+        $this->authorize('view', $invoice);
+        $result = $this->invoices->sendInvoiceEmail($invoice, $request->user(), $request->messageText());
+        $invoice = $invoice->fresh(['items', 'clientAccount']);
+
+        return response()->json([
+            'invoice' => $this->invoices->toDetailArray($invoice),
+            'recipients' => $result['recipients'],
+        ]);
+    }
+
+    public function sendWhatsapp(InvoiceSendWhatsappRequest $request, Invoice $invoice): JsonResponse
+    {
+        $this->authorize('view', $invoice);
+        $result = $this->invoices->sendInvoiceWhatsapp(
+            $invoice,
+            $request->user(),
+            $request->actionType(),
+            $request->messageText(),
+        );
+        $invoice = $invoice->fresh(['items', 'clientAccount']);
+
+        return response()->json([
+            'invoice' => $this->invoices->toDetailArray($invoice),
+            'whatsapp' => $result,
+        ]);
     }
 
     public function recordPayment(InvoiceRecordPaymentRequest $request, Invoice $invoice): JsonResponse

@@ -9,7 +9,9 @@ use App\Support\Billing\InvoiceLineCategory;
 use App\Models\InvoiceHistory;
 use App\Models\InvoiceItem;
 use App\Models\User;
+use Carbon\Carbon;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Str;
@@ -301,27 +303,99 @@ class InvoiceService
         $invoice->save();
         $this->logHistory($invoice, $actor, 'sent', $from, $invoice->status, []);
 
-        $fresh = $invoice->fresh(['items', 'clientAccount']);
-        $this->sendInvoiceSentDevNotification($fresh);
-
-        return $fresh;
+        return $invoice->fresh(['items', 'clientAccount']);
     }
 
-    private function sendInvoiceSentDevNotification(Invoice $invoice): void
+    /**
+     * @return array{recipients: list<string>}
+     */
+    public function sendInvoiceEmail(Invoice $invoice, ?User $actor, ?string $customMessage = null): array
     {
-        $email = config('billing.invoice_send_dev_email');
-        if (! is_string($email) || $email === '' || ! filter_var($email, FILTER_VALIDATE_EMAIL)) {
-            return;
+        if ($invoice->isVoid()) {
+            throw new \RuntimeException('Void invoices cannot be emailed.');
         }
+        $invoice = $this->ensureShareToken($invoice);
+        $invoice->loadMissing('clientAccount');
+        $recipients = $this->invoiceRecipientEmails($invoice);
+        if ($recipients === []) {
+            throw new \RuntimeException('Client account does not have a valid billing email.');
+        }
+        $url = $this->publicCustomerViewUrl($invoice);
 
         try {
-            Mail::to($email)->send(new InvoiceSentMailable($invoice));
+            Mail::to($recipients)->send(new InvoiceSentMailable($invoice, $url, $customMessage));
+            $this->logHistory($invoice, $actor, 'emailed', $invoice->status, $invoice->status, [
+                'event_type' => InvoiceHistoryEventType::STATUS,
+                'history_message' => 'Invoice email sent.',
+                'recipients' => $recipients,
+            ]);
         } catch (\Throwable $e) {
-            Log::warning('invoice.sent_dev_notification_failed', [
+            Log::warning('invoice.send_email_failed', [
                 'invoice_id' => $invoice->id,
+                'recipients' => $recipients,
                 'error' => $e->getMessage(),
             ]);
+            throw $e;
         }
+
+        return ['recipients' => $recipients];
+    }
+
+    /**
+     * @return array{provider_status: int, to: string, type: string}
+     */
+    public function sendInvoiceWhatsapp(Invoice $invoice, ?User $actor, string $type = 'send_invoice', ?string $customMessage = null): array
+    {
+        if ($invoice->isVoid()) {
+            throw new \RuntimeException('Void invoices cannot be sent via WhatsApp.');
+        }
+        $invoice = $this->ensureShareToken($invoice);
+        $invoice->loadMissing('clientAccount');
+        $target = trim((string) ($invoice->clientAccount->whatsapp_e164 ?? ''));
+        if ($target === '') {
+            throw new \RuntimeException('Client account does not have a WhatsApp number.');
+        }
+        $endpoint = (string) config('billing.whatsapp.endpoint', '');
+        if ($endpoint === '') {
+            throw new \RuntimeException('WhatsApp provider endpoint is not configured.');
+        }
+        $invoiceUrl = $this->publicCustomerViewUrl($invoice);
+        if ($invoiceUrl === null) {
+            throw new \RuntimeException('Could not generate invoice public link.');
+        }
+        $message = $customMessage ?: $this->defaultWhatsappMessage($invoice, $invoiceUrl, $type);
+        $timeout = max(3, (int) config('billing.whatsapp.timeout_seconds', 20));
+
+        $req = Http::timeout($timeout)->acceptJson();
+        $token = trim((string) config('billing.whatsapp.api_token', ''));
+        if ($token !== '') {
+            $req = $req->withToken($token);
+        }
+
+        $response = $req->post($endpoint, [
+            'chat_id' => $target,
+            'message' => $message,
+            'invoice_id' => $invoice->id,
+            'invoice_number' => $invoice->invoice_number,
+            'type' => $type,
+            'url' => $invoiceUrl,
+        ]);
+        if (! $response->successful()) {
+            throw new \RuntimeException('WhatsApp provider rejected the request.');
+        }
+
+        $this->logHistory($invoice, $actor, 'whatsapp_sent', $invoice->status, $invoice->status, [
+            'event_type' => InvoiceHistoryEventType::STATUS,
+            'history_message' => 'Invoice WhatsApp message sent.',
+            'to' => $target,
+            'type' => $type,
+        ]);
+
+        return [
+            'provider_status' => $response->status(),
+            'to' => $target,
+            'type' => $type,
+        ];
     }
 
     public function recordPayment(Invoice $invoice, int $amountCents, ?User $actor): Invoice
@@ -420,6 +494,8 @@ class InvoiceService
             case 'sent':
             case 'payment_applied':
             case 'voided':
+            case 'emailed':
+            case 'whatsapp_sent':
                 return InvoiceHistoryEventType::STATUS;
             default:
                 return InvoiceHistoryEventType::HEADER_EDIT;
@@ -432,6 +508,7 @@ class InvoiceService
     public function toListArray(Invoice $invoice): array
     {
         $invoice->loadMissing('clientAccount');
+        $date = $this->invoiceDatePayload($invoice);
 
         return [
             'id' => $invoice->id,
@@ -443,8 +520,13 @@ class InvoiceService
             'client_company_name' => $invoice->clientAccount !== null ? $invoice->clientAccount->company_name : null,
             'total_cents' => $invoice->total_cents,
             'balance_due_cents' => $invoice->balance_due_cents,
+            'due_in' => $invoice->due_at !== null ? now()->startOfDay()->diffInDays($invoice->due_at->copy()->startOfDay(), false) : null,
             'issued_at' => $invoice->issued_at !== null ? $invoice->issued_at->toIso8601String() : null,
             'due_at' => $invoice->due_at !== null ? $invoice->due_at->toIso8601String() : null,
+            'invoice_date' => $date['invoice_date'],
+            'invoice_date_from' => $date['invoice_date_from'],
+            'invoice_date_to' => $date['invoice_date_to'],
+            'invoice_date_label' => $date['invoice_date_label'],
             'created_at' => $invoice->created_at->toIso8601String(),
             'updated_at' => $invoice->updated_at->toIso8601String(),
         ];
@@ -459,6 +541,7 @@ class InvoiceService
 
         $base = $this->toListArray($invoice);
         $presentation = $this->staffDetailPresentation($invoice);
+        $date = $this->invoiceDatePayload($invoice);
 
         return array_merge($base, [
             'amount_paid_cents' => $invoice->amount_paid_cents,
@@ -467,6 +550,10 @@ class InvoiceService
             'tax_rate_basis_points' => $invoice->tax_rate_basis_points,
             'billing_period_start' => $invoice->billing_period_start !== null ? $invoice->billing_period_start->toDateString() : null,
             'billing_period_end' => $invoice->billing_period_end !== null ? $invoice->billing_period_end->toDateString() : null,
+            'invoice_date' => $date['invoice_date'],
+            'invoice_date_from' => $date['invoice_date_from'],
+            'invoice_date_to' => $date['invoice_date_to'],
+            'invoice_date_label' => $date['invoice_date_label'],
             'payment_terms' => $invoice->payment_terms,
             'po_number' => $invoice->po_number,
             'customer_notes' => $invoice->customer_notes,
@@ -639,6 +726,7 @@ class InvoiceService
                     'total_cents' => $total,
                     'groupKey' => strtolower((string) ($item->category ?: InvoiceLineCategory::OTHER)),
                     'groupName' => $name,
+                    'line_group_key' => $item->group_key,
                     'details' => [],
                 ];
             }
@@ -658,6 +746,7 @@ class InvoiceService
                     'total_cents' => $total,
                     'groupKey' => 'fulfillment',
                     'groupName' => $fulfillKey,
+                    'line_group_key' => $this->singleGroupKey($agg['items']),
                     'details' => $agg['items'],
                 ];
             }
@@ -674,6 +763,7 @@ class InvoiceService
                 'total_cents' => $total,
                 'groupKey' => 'postage',
                 'groupName' => $agg['name'],
+                'line_group_key' => $this->singleGroupKey($agg['items']),
                 'details' => $agg['items'],
             ];
         }
@@ -689,6 +779,7 @@ class InvoiceService
                 'total_cents' => $total,
                 'groupKey' => 'packaging',
                 'groupName' => $agg['name'],
+                'line_group_key' => $this->singleGroupKey($agg['items']),
                 'details' => $agg['items'],
             ];
         }
@@ -704,6 +795,7 @@ class InvoiceService
                 'total_cents' => $total,
                 'groupKey' => 'ad_hoc',
                 'groupName' => $agg['name'],
+                'line_group_key' => $this->singleGroupKey($agg['items']),
                 'details' => $agg['items'],
             ];
         }
@@ -720,6 +812,7 @@ class InvoiceService
                     'total_cents' => $total,
                     'groupKey' => 'returns',
                     'groupName' => $returnKey,
+                    'line_group_key' => $this->singleGroupKey($agg['items']),
                     'details' => $agg['items'],
                 ];
             }
@@ -736,6 +829,7 @@ class InvoiceService
                 'total_cents' => $total,
                 'groupKey' => 'on_demand',
                 'groupName' => $agg['name'],
+                'line_group_key' => $this->singleGroupKey($agg['items']),
                 'details' => $agg['items'],
             ];
         }
@@ -777,7 +871,31 @@ class InvoiceService
             'sku' => $item->sku,
             'service_code' => $item->service_code,
             'group_key' => $item->group_key,
+            'category' => $item->category,
+            'subtype' => $item->subtype,
+            'unit' => $item->unit,
+            'metadata' => $item->metadata,
         ];
+    }
+
+    /**
+     * @param  list<array<string, mixed>>  $items
+     */
+    private function singleGroupKey(array $items): ?string
+    {
+        $keys = [];
+        foreach ($items as $item) {
+            $key = trim((string) ($item['group_key'] ?? ''));
+            if ($key !== '') {
+                $keys[$key] = true;
+            }
+        }
+        $all = array_keys($keys);
+        if (count($all) !== 1) {
+            return null;
+        }
+
+        return $all[0];
     }
 
     private function oldBetaDisplayName(InvoiceItem $item, string $fallback = '—'): string
@@ -1014,6 +1132,8 @@ class InvoiceService
     public function pdfViewData(Invoice $invoice): array
     {
         $invoice->load(['items', 'clientAccount']);
+        $date = $this->invoiceDatePayload($invoice);
+        $presentation = $this->staffDetailPresentation($invoice);
 
         $fmtLong = static function ($value) {
             if ($value === null) {
@@ -1053,6 +1173,16 @@ class InvoiceService
             ];
         }
 
+        $groupedItems = [];
+        foreach (($presentation['rows'] ?? []) as $row) {
+            $groupedItems[] = [
+                'name' => (string) ($row['name'] ?? '—'),
+                'qty' => (float) ($row['qty'] ?? 0),
+                'price' => ((int) ($row['price_cents'] ?? 0)) / 100,
+                'total' => ((int) ($row['total_cents'] ?? 0)) / 100,
+            ];
+        }
+
         return [
             'issuer_name' => config('app.name'),
             'invoice_number' => $invoice->invoice_number,
@@ -1060,14 +1190,31 @@ class InvoiceService
             'client_company_name' => $invoice->clientAccount !== null ? $invoice->clientAccount->company_name : '',
             'issued_long' => $fmtLong($invoice->issued_at),
             'due_long' => $fmtLong($invoice->due_at),
+            'invoice_date' => $date['invoice_date'],
+            'invoice_date_from' => $date['invoice_date_from'],
+            'invoice_date_to' => $date['invoice_date_to'],
+            'invoice_date_label' => $date['invoice_date_label'],
             'payment_terms' => $invoice->payment_terms,
             'po_number' => $invoice->po_number,
             'items' => $items,
+            'grouped_items' => $groupedItems,
             'subtotal' => $money((int) $invoice->subtotal_cents),
             'tax' => $money((int) $invoice->tax_cents),
             'total' => $money((int) $invoice->total_cents),
             'amount_paid' => $money((int) $invoice->amount_paid_cents),
             'balance_due' => $money((int) $invoice->balance_due_cents),
+            'total_amount' => ((int) $invoice->total_cents) / 100,
+            'paid_amount' => ((int) $invoice->amount_paid_cents) / 100,
+            'balance_amount' => ((int) $invoice->balance_due_cents) / 100,
+            'invoice' => [
+                'invoice_number' => $invoice->invoice_number,
+                'invoice_date' => $date['invoice_date'],
+                'invoice_date_from' => $date['invoice_date_from'],
+                'invoice_date_to' => $date['invoice_date_to'],
+                'due_date' => $invoice->due_at !== null ? $invoice->due_at->toDateString() : null,
+                'account' => $invoice->clientAccount !== null ? $invoice->clientAccount->company_name : '',
+                'amount' => ((int) $invoice->balance_due_cents) / 100,
+            ],
             'customer_notes' => $invoice->customer_notes,
         ];
     }
@@ -1209,5 +1356,71 @@ class InvoiceService
         ];
 
         return $map[$cat] ?? Str::title(str_replace('_', ' ', $cat));
+    }
+
+    /**
+     * @return array{invoice_date: string|null, invoice_date_from: string|null, invoice_date_to: string|null, invoice_date_label: string}
+     */
+    private function invoiceDatePayload(Invoice $invoice): array
+    {
+        $date = $invoice->issued_at !== null
+            ? $invoice->issued_at->toDateString()
+            : ($invoice->created_at !== null ? $invoice->created_at->toDateString() : null);
+        $from = $invoice->billing_period_start !== null ? $invoice->billing_period_start->toDateString() : null;
+        $to = $invoice->billing_period_end !== null ? $invoice->billing_period_end->toDateString() : null;
+        $label = '—';
+        if ($from !== null && $to !== null) {
+            $label = $this->dateToMdY($from).' - '.$this->dateToMdY($to);
+        } elseif ($from !== null) {
+            $label = $this->dateToMdY($from);
+        } elseif ($to !== null) {
+            $label = $this->dateToMdY($to);
+        } elseif ($date !== null) {
+            $label = $this->dateToMdY($date);
+        }
+
+        return [
+            'invoice_date' => $date,
+            'invoice_date_from' => $from,
+            'invoice_date_to' => $to,
+            'invoice_date_label' => $label,
+        ];
+    }
+
+    private function dateToMdY(?string $date): string
+    {
+        if ($date === null || trim($date) === '') {
+            return '—';
+        }
+        try {
+            return Carbon::parse($date)->format('m/d/Y');
+        } catch (\Throwable $e) {
+            return '—';
+        }
+    }
+
+    /**
+     * @return list<string>
+     */
+    private function invoiceRecipientEmails(Invoice $invoice): array
+    {
+        $emails = [];
+        $account = $invoice->clientAccount;
+        if ($account !== null && is_string($account->email) && filter_var($account->email, FILTER_VALIDATE_EMAIL)) {
+            $emails[] = strtolower(trim($account->email));
+        }
+
+        return array_values(array_unique(array_filter($emails)));
+    }
+
+    private function defaultWhatsappMessage(Invoice $invoice, string $invoiceUrl, string $type): string
+    {
+        $label = $this->invoiceDatePayload($invoice)['invoice_date_label'];
+        $balance = number_format(((int) $invoice->balance_due_cents) / 100, 2);
+        if ($type === 'invoice_reminder') {
+            return 'Invoice reminder: '.$invoice->invoice_number.' ('.$label.'). Balance due $'.$balance.'. '.$invoiceUrl;
+        }
+
+        return 'Invoice '.$invoice->invoice_number.' is ready ('.$label.'). View invoice: '.$invoiceUrl;
     }
 }

@@ -43,9 +43,9 @@
         <td width="45%">
             <div class="inv-title">Invoice {{ $invoice_number }}</div>
             <div class="inv-meta">
-                @if (!empty($issued_long))
-                    <div><strong>Issue date:</strong> {{ $issued_long }}</div>
-                @endif
+                <div><strong>Invoice Date:</strong> {{ $invoice_date_label ?? ($issued_long ?? '—') }}</div>
+                <div><strong>Invoice Dates From:</strong> {{ !empty($invoice_date_from) ? \Carbon\Carbon::parse($invoice_date_from)->format('m/d/Y') : '—' }}</div>
+                <div><strong>Invoice Dates To:</strong> {{ !empty($invoice_date_to) ? \Carbon\Carbon::parse($invoice_date_to)->format('m/d/Y') : '—' }}</div>
                 @if (!empty($due_long))
                     <div><strong>Due date:</strong> {{ $due_long }}</div>
                 @endif
@@ -67,25 +67,35 @@
 <table class="lines">
     <thead>
     <tr>
-        <th style="width:30%">Item</th>
-        <th style="width:26%">Description</th>
+        <th style="width:58%">Service</th>
         <th class="num" style="width:12%">Qty</th>
-        <th class="num" style="width:14%">Cost</th>
         <th class="num" style="width:14%">Price</th>
+        <th class="num" style="width:16%">Total</th>
     </tr>
     </thead>
     <tbody>
-    @forelse ($items as $row)
+    @forelse (($grouped_items ?? $items) as $row)
         <tr>
-            <td>{{ $row['item'] }}</td>
-            <td style="color:#555;">{{ $row['description'] }}</td>
-            <td class="num">{{ $row['quantity'] }}</td>
-            <td class="num">{{ $row['unit'] }}</td>
-            <td class="num">{{ $row['line_total'] }}</td>
+            <td>{{ $row['name'] ?? $row['item'] }}</td>
+            <td class="num">{{ $row['qty'] ?? $row['quantity'] }}</td>
+            <td class="num">
+                @if(isset($row['price']))
+                    ${{ number_format((float) $row['price'], 2) }}
+                @else
+                    {{ $row['unit'] }}
+                @endif
+            </td>
+            <td class="num">
+                @if(isset($row['total']))
+                    ${{ number_format((float) $row['total'], 2) }}
+                @else
+                    {{ $row['line_total'] }}
+                @endif
+            </td>
         </tr>
     @empty
         <tr>
-            <td colspan="5" style="color:#888;">No line items.</td>
+            <td colspan="4" style="color:#888;">No line items.</td>
         </tr>
     @endforelse
     </tbody>
@@ -121,6 +131,13 @@
         <strong>Note:</strong> {{ $customer_notes }}
     </div>
 @endif
+
+<div class="notes" style="font-size: 11px;">
+    <strong>Please send payment to:</strong><br>
+    Save Rack LLC<br>
+    3025 Whitten Rd<br>
+    Lakeland, FL 33815
+</div>
 
 <div class="footer">Thank you for your business.</div>
 </body>

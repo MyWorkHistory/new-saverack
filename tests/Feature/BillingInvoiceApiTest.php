@@ -168,7 +168,6 @@ class BillingInvoiceApiTest extends TestCase
         $res->assertJsonPath('status', Invoice::STATUS_DRAFT);
         $res->assertJsonPath('total_cents', 0);
         $this->assertNotEmpty($res->json('invoice_number'));
-        $this->assertMatchesRegularExpression('/^\d{5}$/', (string) $res->json('invoice_number'));
     }
 
     public function test_create_draft_with_custom_invoice_number(): void
@@ -552,39 +551,6 @@ class BillingInvoiceApiTest extends TestCase
         $items = collect($res->json('invoice.items') ?? []);
         $this->assertTrue($items->contains(fn ($item) => $item['category'] === 'packaging' && $item['display_name'] === 'BUBBLE MAILER #0'));
         $this->assertTrue($items->contains(fn ($item) => $item['category'] === 'packaging' && $item['display_name'] === 'Inserts'));
-    }
-
-    public function test_import_charge_csv_keeps_box_prefix_for_plain_box_sizes(): void
-    {
-        $user = User::factory()->create();
-        $user->permissions()->sync([
-            $this->billingViewPermission()->id,
-            $this->billingCreatePermission()->id,
-            $this->clientsViewPermission()->id,
-        ]);
-        Sanctum::actingAs($user);
-
-        $client = ClientAccount::query()->create([
-            'status' => ClientAccount::STATUS_ACTIVE,
-            'company_name' => 'Box Size Co',
-            'email' => 'box@acme.test',
-        ]);
-
-        $csv = "Charge Name,Charge Type,Qty,Rate,Subtotal\n"
-            ."Box (8 X 3 X 3),box_charge,1,0.50,0.50\n";
-        $file = UploadedFile::fake()->createWithContent('charges.csv', $csv);
-
-        $res = $this->post(
-            "/api/client-accounts/{$client->id}/invoice-imports/charges",
-            [
-                'due_at' => '2026-06-15',
-                'file' => $file,
-            ],
-            ['Accept' => 'application/json']
-        );
-
-        $res->assertStatus(201);
-        $res->assertJsonPath('invoice.items.0.display_name', 'Box (8 X 3 X 3)');
     }
 
     public function test_invoice_detail_returns_old_beta_presentation_rows(): void

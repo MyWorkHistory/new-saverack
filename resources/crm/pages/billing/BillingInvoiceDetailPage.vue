@@ -1,5 +1,5 @@
 <script setup>
-import { computed, inject, onMounted, ref, watch } from "vue";
+import { computed, inject, onMounted, ref } from "vue";
 
 import { useRouter } from "vue-router";
 import api, { getApiBaseUrl } from "../../services/api";
@@ -36,7 +36,6 @@ const editDueAt = ref("");
 const editLines = ref([]);
 const draftSaving = ref(false);
 const draftEditMode = ref(false);
-const draftGroupLines = ref([]);
 
 const payModalOpen = ref(false);
 const payAmount = ref("");
@@ -54,54 +53,6 @@ const selectedTableRowId = ref("");
 
 const invoiceLogoSrc = computed(() => BRAND_MARK_SRC());
 
-function fallbackCategoryKey(raw) {
-  const s = String(raw || "")
-    .trim()
-    .toLowerCase()
-    .replace(/-/g, "_")
-    .replace(/\s+/g, "_");
-  if (!s) return "other";
-  if (s === "ondemand" || s === "on_demand") return "on_demand";
-  if (s.includes("on_demand")) return "on_demand";
-  if (s.includes("product") && s.includes("demand")) return "on_demand";
-  if (s === "adhoc" || s === "ad_hoc") return "ad_hoc";
-  if (s === "credit" || s === "credits") return "credits";
-  if (s === "storage") return "storage";
-  if (["fulfillment", "postage", "packaging", "returns"].includes(s)) return s;
-  return "other";
-}
-
-function fallbackCategoryLabel(cat, serviceName = "") {
-  if (cat === "on_demand") return "Product (On-Demand)";
-  if (cat === "ad_hoc") return "Ad Hoc";
-  if (
-    cat === "packaging" &&
-    ["bubble wrap", "kraft paper", "bubble wrap & kraft paper"].includes(
-      String(serviceName || "").trim().toLowerCase(),
-    )
-  ) {
-    return serviceName;
-  }
-  const labels = {
-    fulfillment: "Fulfillment",
-    postage: "Postage",
-    packaging: "Packaging",
-    returns: "Returns",
-    storage: "Storage",
-    credits: "Credits",
-    other: "Other",
-  };
-  return labels[cat] || "Other";
-}
-
-function fallbackServiceName(item) {
-  const base = String(item?.display_name || item?.description || "—").trim();
-  if (!base) return "—";
-  const m = base.match(/^(Postage|Packaging|Fulfillment)\s*\((.+)\)$/i);
-  if (m && m[2]) return String(m[2]).trim();
-  return base;
-}
-
 function formatQtyDisplay(v) {
   const n = Number(v);
   if (!Number.isFinite(n)) return "0.000";
@@ -109,190 +60,14 @@ function formatQtyDisplay(v) {
   return Number.isInteger(n) ? String(n) : n.toFixed(2);
 }
 
-function toArray(input) {
-  if (Array.isArray(input)) return input;
-  if (input && typeof input === "object") return Object.values(input);
-  return [];
-}
-
-function normalizeDetailRow(raw, fallback = {}) {
-  const service = String(
-    raw?.name ||
-      raw?.service ||
-      raw?.display_name ||
-      raw?.description ||
-      fallback.service ||
-      "—",
-  ).trim();
-  const cat = fallbackCategoryKey(raw?.category_key || raw?.category || fallback.category);
-  return {
-    id: raw?.id ?? fallback.id ?? `detail-${Math.random()}`,
-    name: service || "—",
-    type: raw?.type || raw?.category_text || fallbackCategoryLabel(cat, service),
-    category_key: raw?.category_key || raw?.category || fallback.category || cat,
-    qty: Number(raw?.qty ?? raw?.quantity ?? 0),
-    price_cents: Number(raw?.price_cents ?? raw?.unit_price_cents ?? 0),
-    total_cents: Number(raw?.total_cents ?? raw?.line_total_cents ?? 0),
-    display_name: raw?.display_name || null,
-    description: raw?.description || null,
-    sku: raw?.sku || null,
-    service_code: raw?.service_code || null,
-    group_key: raw?.group_key || null,
-    subtype: raw?.subtype || null,
-    unit: raw?.unit || null,
-    metadata: raw?.metadata || null,
-  };
-}
-
-function normalizeTopRow(raw, index = 0) {
-  const service = String(
-    raw?.name || raw?.groupName || raw?.service || raw?.display_name || raw?.description || "—",
-  ).trim();
-  const cat = fallbackCategoryKey(raw?.category_key || raw?.category || raw?.type);
-  const detailsRaw = toArray(raw?.details?.length ? raw.details : raw?.items);
-  const details = detailsRaw.length
-    ? detailsRaw.map((d, i) =>
-        normalizeDetailRow(d, {
-          id: raw?.id ? `${raw.id}-detail-${i}` : `row-${index}-detail-${i}`,
-          service,
-          category: raw?.category || cat,
-        }),
-      )
-    : [
-        normalizeDetailRow(raw, {
-          id: raw?.id || `row-${index}`,
-          service,
-          category: raw?.category || cat,
-        }),
-      ];
-  const qty = Number(raw?.qty ?? raw?.quantity ?? details.reduce((sum, d) => sum + Number(d.qty || 0), 0));
-  const total = Number(
-    raw?.total_cents ??
-      raw?.line_total_cents ??
-      details.reduce((sum, d) => sum + Number(d.total_cents || 0), 0),
-  );
-  const price = Number(raw?.price_cents ?? raw?.unit_price_cents ?? (qty ? Math.round(total / qty) : 0));
-  return {
-    id: raw?.id || raw?.group_key || `row-${index}`,
-    name: service || "—",
-    type: raw?.type || raw?.category_text || fallbackCategoryLabel(cat, service),
-    qty,
-    price_cents: price,
-    total_cents: total,
-    edit_group_key: raw?.edit_group_key || raw?.group_key || null,
-    details,
-  };
-}
-
-const invoiceTableRows = computed(() => {
-  const presentationRows = toArray(
-    invoice.value?.presentation?.rows ||
-      invoice.value?.presentation?.items ||
-      invoice.value?.rows ||
-      invoice.value?.line_groups,
-  );
-  if (presentationRows.length) {
-    return presentationRows.map((row, idx) => normalizeTopRow(row, idx));
-  }
-
-  const items = toArray(invoice.value?.items || invoice.value?.line_items || invoice.value?.lines);
-  if (!items.length) return [];
-
-  const groups = new Map();
-  for (const item of items) {
-    const cat = fallbackCategoryKey(item.category);
-    const service = fallbackServiceName(item);
-    const key = `${cat}::${String(item.group_key || service || "").toLowerCase()}`;
-    if (!groups.has(key)) {
-      groups.set(key, {
-        id: key,
-        name: service,
-        type: fallbackCategoryLabel(cat, service),
-        qty: 0,
-        price_cents: 0,
-        total_cents: 0,
-        edit_group_key: item.group_key || null,
-        details: [],
-      });
-    }
-    const row = groups.get(key);
-    const qty = Number(item.quantity || 0);
-    const total = Number(item.line_total_cents || 0);
-    row.qty += qty;
-    row.total_cents += total;
-    row.details.push({
-      id: item.id,
-      name: service,
-      type: fallbackCategoryLabel(cat, service),
-      category_key: item.category || cat,
-      qty,
-      price_cents: Number(item.unit_price_cents || 0),
-      total_cents: total,
-      display_name: item.display_name || null,
-      description: item.description || null,
-      sku: item.sku || null,
-      service_code: item.service_code || null,
-      group_key: item.group_key || null,
-      subtype: item.subtype || null,
-      unit: item.unit || null,
-      metadata: item.metadata || null,
-    });
-  }
-
-  return [...groups.values()].map((row) => ({
-    ...row,
-    price_cents: row.qty > 0 ? Math.round(row.total_cents / row.qty) : 0,
-  }));
-});
-
-const invoiceVisibleRows = computed(() => {
-  if (invoiceTableRows.value.length) {
-    return invoiceTableRows.value;
-  }
-
-  const items = toArray(invoice.value?.items || invoice.value?.line_items || invoice.value?.lines);
-  return items.map((item, idx) => {
-    const service = fallbackServiceName(item);
-    const cat = fallbackCategoryKey(item.category);
-    return normalizeTopRow(
-      {
-        id: item.id ? `raw-${item.id}` : `raw-${idx}`,
-        name: service,
-        type: fallbackCategoryLabel(cat, service),
-        category: item.category || cat,
-        qty: Number(item.quantity || 0),
-        price_cents: Number(item.unit_price_cents || 0),
-        total_cents: Number(item.line_total_cents || 0),
-        edit_group_key: item.group_key || null,
-        details: [item],
-      },
-      idx,
-    );
-  });
-});
+const invoiceTableRows = computed(() => invoice.value?.presentation?.rows || []);
 
 const selectedTableRow = computed(() => {
   if (!selectedTableRowId.value) return null;
-  return invoiceVisibleRows.value.find((r) => r.id === selectedTableRowId.value) || null;
+  return invoiceTableRows.value.find((r) => r.id === selectedTableRowId.value) || null;
 });
 
-const selectedTableRowDetails = computed(() => {
-  const row = selectedTableRow.value;
-  if (!row) return [];
-  if (Array.isArray(row.details) && row.details.length) {
-    return row.details;
-  }
-  return [
-    {
-      id: row.id,
-      name: row.name,
-      type: row.type,
-      qty: row.qty,
-      price_cents: row.price_cents,
-      total_cents: row.total_cents,
-    },
-  ];
-});
+const selectedTableRowDetails = computed(() => selectedTableRow.value?.details || []);
 
 function openTableRow(row) {
   selectedTableRowId.value = row.id;
@@ -452,48 +227,21 @@ function syncEditFromInvoice() {
       ];
 }
 
-function syncDraftGroupFromSelection() {
-  const row = selectedTableRow.value;
-  draftGroupLines.value =
-    row?.details?.length && draftEditMode.value
-      ? row.details.map((detail) => ({
-          id: detail.id,
-          service: detail.name || "",
-          categoryText: detail.type || "",
-          category: detail.category_key || null,
-          subtype: detail.subtype || null,
-          display_name: detail.display_name || detail.name || "",
-          description: detail.description || detail.name || "",
-          sku: detail.sku || "",
-          service_code: detail.service_code || null,
-          quantity: formatQtyOneDecimal(detail.qty ?? 1),
-          unit_price: (Number(detail.price_cents || 0) / 100).toFixed(2),
-          unit: detail.unit || null,
-          metadata: detail.metadata || null,
-        }))
-      : [];
-}
-
-watch([selectedTableRow, draftEditMode], () => {
-  syncDraftGroupFromSelection();
-});
-
 async function load() {
   loading.value = true;
   try {
     const { data } = await api.get(`/invoices/${props.id}`);
-    const payload = data?.data && typeof data.data === "object" ? data.data : data;
-    invoice.value = payload;
-    if (payload?.status !== "draft") {
+    invoice.value = data;
+    if (data?.status !== "draft") {
       draftEditMode.value = false;
     }
     if (selectedTableRowId.value) {
-      const stillExists = invoiceVisibleRows.value.some((r) => r.id === selectedTableRowId.value);
+      const stillExists = invoiceTableRows.value.some((r) => r.id === selectedTableRowId.value);
       if (!stillExists) selectedTableRowId.value = "";
     }
     syncEditFromInvoice();
     setCrmPageMeta({
-      title: `Save Rack | ${payload?.invoice_number || "Invoice"}`,
+      title: `Save Rack | ${data?.invoice_number || "Invoice"}`,
       description: "Invoice detail.",
     });
   } catch (e) {
@@ -556,78 +304,6 @@ async function saveDraft() {
     await load();
   } catch (e) {
     toast.errorFrom(e, "Could not save draft.");
-  } finally {
-    draftSaving.value = false;
-  }
-}
-
-function addDraftGroupLine() {
-  const row = selectedTableRow.value;
-  draftGroupLines.value = [
-    ...draftGroupLines.value,
-    {
-      id: `new-${Date.now()}`,
-      service: "",
-      categoryText: row?.type || "",
-      category: row?.details?.[0]?.category_key || null,
-      subtype: row?.details?.[0]?.subtype || null,
-      display_name: "",
-      description: "",
-      sku: "",
-      service_code: row?.details?.[0]?.service_code || null,
-      quantity: "1.0",
-      unit_price: "0.00",
-      unit: row?.details?.[0]?.unit || null,
-      metadata: row?.details?.[0]?.metadata || null,
-    },
-  ];
-}
-
-function removeDraftGroupLine(idx) {
-  if (draftGroupLines.value.length <= 1) return;
-  draftGroupLines.value = draftGroupLines.value.filter((_, i) => i !== idx);
-}
-
-async function saveDraftGroup() {
-  if (!invoice.value || invoice.value.status !== "draft") return;
-  const row = selectedTableRow.value;
-  const groupKey = row?.edit_group_key;
-  if (!groupKey) {
-    toast.error("This group cannot be edited yet.");
-    return;
-  }
-
-  const items = [];
-  for (const line of draftGroupLines.value) {
-    const service = (line.service || "").trim();
-    if (!service) continue;
-    const qty = Number.parseFloat(String(line.quantity).replace(/,/g, "")) || 0;
-    const unitCents = dollarsToCents(line.unit_price);
-    const skuTrim = (line.sku || "").trim();
-    items.push({
-      description: service,
-      display_name: service,
-      category: line.category || null,
-      subtype: line.subtype || null,
-      sku: skuTrim || null,
-      service_code: line.service_code || null,
-      quantity: qty,
-      unit: line.unit || null,
-      unit_price_cents: unitCents,
-      line_total_cents: Math.max(0, Math.round(qty * unitCents)),
-      metadata: line.metadata || null,
-    });
-  }
-
-  draftSaving.value = true;
-  try {
-    await api.put(`/invoices/${invoice.value.id}/line-groups/${encodeURIComponent(groupKey)}`, {
-      items,
-    });
-    toast.success("Draft group saved.");
-    await load();
-  } catch (e) {
-    toast.errorFrom(e, "Could not save draft group.");
   } finally {
     draftSaving.value = false;
   }
@@ -922,21 +598,121 @@ onMounted(() => {
             </div>
 
             <h2 class="h6 fw-semibold mb-3">Line items</h2>
-            <div
-              v-if="invoice.status === 'draft' && canUpdate"
-              class="d-flex justify-content-end mb-2"
-            >
-              <button
-                type="button"
-                class="btn btn-sm btn-outline-secondary"
-                :disabled="draftSaving"
-                @click="draftEditMode = !draftEditMode"
-              >
-                {{ draftEditMode ? "View Grouped Lines" : "Edit Draft Lines" }}
-              </button>
-            </div>
+            <template v-if="invoice.status === 'draft' && canUpdate && false">
+              <div class="row g-3 mb-3">
+                <div class="col-md-4">
+                  <label class="form-label small" for="inv-detail-due">Due date</label>
+                  <input
+                    id="inv-detail-due"
+                    v-model="editDueAt"
+                    type="date"
+                    class="form-control form-control-sm"
+                    :disabled="draftSaving"
+                  />
+                </div>
+              </div>
+              <div class="d-flex justify-content-end mb-2">
+                <button
+                  type="button"
+                  class="btn btn-sm btn-outline-secondary"
+                  :disabled="draftSaving"
+                  @click="addDraftLine"
+                >
+                  Add Line
+                </button>
+              </div>
+              <div class="table-responsive billing-inv-items-wrap">
+                <table class="table table-sm align-middle mb-0 billing-inv-items-table">
+                  <thead>
+                    <tr>
+                      <th>Item</th>
+                      <th>Description</th>
+                      <th class="text-end">Cost</th>
+                      <th class="text-end" style="width: 5.5rem">Qty</th>
+                      <th class="text-end">Price</th>
+                      <th style="width: 3.25rem" />
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr v-for="(line, idx) in editLines" :key="idx">
+                      <td>
+                        <input
+                          v-model="line.description"
+                          type="text"
+                          class="form-control form-control-sm"
+                          placeholder="Item"
+                          :disabled="draftSaving"
+                        />
+                      </td>
+                      <td>
+                        <input
+                          v-model="line.sku"
+                          type="text"
+                          class="form-control form-control-sm"
+                          placeholder="SKU or note"
+                          :disabled="draftSaving"
+                        />
+                      </td>
+                      <td class="text-end">
+                        <input
+                          v-model="line.unit_price"
+                          type="text"
+                          class="form-control form-control-sm text-end"
+                          placeholder="0.00"
+                          :disabled="draftSaving"
+                        />
+                      </td>
+                      <td class="text-end">
+                        <input
+                          v-model="line.quantity"
+                          type="text"
+                          inputmode="decimal"
+                          class="form-control form-control-sm text-end"
+                          :disabled="draftSaving"
+                          @blur="line.quantity = formatQtyOneDecimal(line.quantity)"
+                        />
+                      </td>
+                      <td class="text-end small text-secondary">
+                        {{
+                          formatCents(
+                            Math.max(
+                              0,
+                              Math.round(
+                                (Number.parseFloat(String(line.quantity).replace(/,/g, "")) ||
+                                  0) * dollarsToCents(line.unit_price),
+                              ),
+                            ),
+                            invoice.currency,
+                          )
+                        }}
+                      </td>
+                      <td class="text-end">
+                        <button
+                          type="button"
+                          class="btn btn-link btn-sm text-danger p-0"
+                          :disabled="draftSaving || editLines.length <= 1"
+                          @click="removeDraftLine(idx)"
+                        >
+                          Remove
+                        </button>
+                      </td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+              <div class="mt-3">
+                <button
+                  type="button"
+                  class="btn btn-primary staff-page-primary btn-sm"
+                  :disabled="draftSaving"
+                  @click="saveDraft"
+                >
+                  {{ draftSaving ? "Saving…" : "Save Draft" }}
+                </button>
+              </div>
+            </template>
 
-            <template>
+            <template v-else>
               <div v-if="!selectedTableRow" class="table-responsive billing-inv-items-wrap">
                 <table class="table table-sm align-middle mb-0 billing-inv-items-table">
                   <thead>
@@ -949,7 +725,7 @@ onMounted(() => {
                     </tr>
                   </thead>
                   <tbody>
-                    <template v-for="row in invoiceVisibleRows" :key="row.id">
+                    <template v-for="row in invoiceTableRows" :key="row.id">
                       <tr
                         class="billing-inv-cat-row"
                         :role="row.details?.length ? 'button' : null"
@@ -971,7 +747,7 @@ onMounted(() => {
                         </td>
                       </tr>
                     </template>
-                    <tr v-if="!invoiceVisibleRows.length">
+                    <tr v-if="!invoiceTableRows.length">
                       <td colspan="5" class="text-center text-secondary py-3">No line items.</td>
                     </tr>
                   </tbody>
@@ -981,26 +757,15 @@ onMounted(() => {
               <div v-if="selectedTableRow" class="billing-inv-drill mt-3">
                 <div class="d-flex align-items-center justify-content-between mb-2">
                   <h3 class="h6 fw-semibold mb-0">
-                    {{ selectedTableRow.name }} — {{ draftEditMode ? "Edit Group" : "Detail" }}
+                    {{ selectedTableRow.name }} — Detail
                   </h3>
-                  <div class="d-flex gap-2">
-                    <button
-                      v-if="invoice.status === 'draft' && canUpdate && draftEditMode"
-                      type="button"
-                      class="btn btn-sm btn-outline-secondary"
-                      :disabled="draftSaving"
-                      @click="addDraftGroupLine"
-                    >
-                      Add Line
-                    </button>
-                    <button
-                      type="button"
-                      class="btn btn-sm btn-outline-secondary"
-                      @click="closeTableRow"
-                    >
-                      Back to Invoice Items
-                    </button>
-                  </div>
+                  <button
+                    type="button"
+                    class="btn btn-sm btn-outline-secondary"
+                    @click="closeTableRow"
+                  >
+                    Back to Invoice Items
+                  </button>
                 </div>
                 <div class="table-responsive">
                   <table class="table table-sm align-middle mb-0 billing-inv-items-table">
@@ -1014,94 +779,18 @@ onMounted(() => {
                       </tr>
                     </thead>
                     <tbody>
-                      <tr
-                        v-for="(row, idx) in draftEditMode ? draftGroupLines : selectedTableRowDetails"
-                        :key="row.id"
-                        class="billing-inv-line-detail"
-                      >
-                        <template v-if="draftEditMode && invoice.status === 'draft' && canUpdate">
-                          <td>
-                            <input
-                              v-model="row.service"
-                              type="text"
-                              class="form-control form-control-sm"
-                              placeholder="Service"
-                              :disabled="draftSaving"
-                            />
-                          </td>
-                          <td>{{ row.categoryText }}</td>
-                          <td class="text-end text-nowrap">
-                            <input
-                              v-model="row.quantity"
-                              type="text"
-                              inputmode="decimal"
-                              class="form-control form-control-sm text-end"
-                              :disabled="draftSaving"
-                              @blur="row.quantity = formatQtyOneDecimal(row.quantity)"
-                            />
-                          </td>
-                          <td class="text-end">
-                            <input
-                              v-model="row.unit_price"
-                              type="text"
-                              class="form-control form-control-sm text-end"
-                              placeholder="0.00"
-                              :disabled="draftSaving"
-                            />
-                          </td>
-                          <td class="text-end">
-                            <div class="d-flex align-items-center justify-content-end gap-2">
-                              <span>
-                                {{
-                                  formatCents(
-                                    Math.max(
-                                      0,
-                                      Math.round(
-                                        (Number.parseFloat(String(row.quantity).replace(/,/g, "")) || 0) *
-                                          dollarsToCents(row.unit_price),
-                                      ),
-                                    ),
-                                    invoice.currency,
-                                  )
-                                }}
-                              </span>
-                              <button
-                                type="button"
-                                class="btn btn-link btn-sm text-danger p-0"
-                                :disabled="draftSaving || draftGroupLines.length <= 1"
-                                @click="removeDraftGroupLine(idx)"
-                              >
-                                Remove
-                              </button>
-                            </div>
-                          </td>
-                        </template>
-                        <template v-else>
-                          <td class="fw-medium">{{ row.name }}</td>
-                          <td>{{ row.type }}</td>
-                          <td class="text-end text-nowrap">{{ formatQtyDisplay(row.qty) }}</td>
-                          <td class="text-end">{{ formatCents(row.price_cents, invoice.currency) }}</td>
-                          <td class="text-end">{{ formatCents(row.total_cents, invoice.currency) }}</td>
-                        </template>
+                      <tr v-for="row in selectedTableRowDetails" :key="row.id" class="billing-inv-line-detail">
+                        <td class="fw-medium">{{ row.name }}</td>
+                        <td>{{ row.type }}</td>
+                        <td class="text-end text-nowrap">{{ formatQtyDisplay(row.qty) }}</td>
+                        <td class="text-end">{{ formatCents(row.price_cents, invoice.currency) }}</td>
+                        <td class="text-end">{{ formatCents(row.total_cents, invoice.currency) }}</td>
                       </tr>
-                      <tr v-if="!(draftEditMode ? draftGroupLines : selectedTableRowDetails).length">
+                      <tr v-if="!selectedTableRowDetails.length">
                         <td colspan="5" class="text-center text-secondary py-3">No line items.</td>
                       </tr>
                     </tbody>
                   </table>
-                </div>
-                <div
-                  v-if="invoice.status === 'draft' && canUpdate && draftEditMode"
-                  class="mt-3 d-flex justify-content-end"
-                >
-                  <button
-                    type="button"
-                    class="btn btn-primary staff-page-primary btn-sm"
-                    :disabled="draftSaving || !selectedTableRow?.edit_group_key"
-                    @click="saveDraftGroup"
-                  >
-                    {{ draftSaving ? "Saving…" : "Save Group" }}
-                  </button>
                 </div>
               </div>
             </template>

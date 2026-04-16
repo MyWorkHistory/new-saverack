@@ -1417,6 +1417,7 @@ class InvoiceService
         foreach (($presentation['rows'] ?? []) as $row) {
             $groupedItems[] = [
                 'name' => (string) ($row['name'] ?? '—'),
+                'type' => (string) ($row['type'] ?? '—'),
                 'qty' => (float) ($row['qty'] ?? 0),
                 'price' => ((int) ($row['price_cents'] ?? 0)) / 100,
                 'total' => ((int) ($row['total_cents'] ?? 0)) / 100,

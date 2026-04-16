@@ -40,6 +40,9 @@ const draftEditMode = ref(false);
 
 const payModalOpen = ref(false);
 const payAmount = ref("");
+const payType = ref("ACH");
+const payDate = ref("");
+const payNotes = ref("");
 const payBusy = ref(false);
 
 const voidModalOpen = ref(false);
@@ -620,6 +623,9 @@ function openPayModal() {
   payAmount.value = invoice.value.balance_due_cents
     ? (Number(invoice.value.balance_due_cents) / 100).toFixed(2)
     : "";
+  payType.value = "ACH";
+  payDate.value = new Date().toISOString().slice(0, 10);
+  payNotes.value = "";
   payModalOpen.value = true;
 }
 
@@ -637,8 +643,11 @@ async function confirmPay() {
   }
   payBusy.value = true;
   try {
-    await api.post(`/invoices/${invoice.value.id}/record-payment`, {
+    await api.post(`/invoices/${invoice.value.id}/pay`, {
       amount_cents: cents,
+      payment_type: payType.value || null,
+      payment_date: payDate.value || null,
+      notes: payNotes.value || null,
     });
     toast.success("Payment recorded.");
     closePayModal();
@@ -780,6 +789,24 @@ onMounted(() => {
                 Add CC Fee
               </button>
               <button
+                v-if="canUpdate && invoice.status !== 'draft' && invoice.status !== 'void'"
+                type="button"
+                class="staff-row-menu__item staff-row-menu__item--danger"
+                role="menuitem"
+                @click="openVoidModal(); closeInvoiceMenu();"
+              >
+                Void Invoice
+              </button>
+              <button
+                v-if="invoice.status !== 'void'"
+                type="button"
+                class="staff-row-menu__item"
+                role="menuitem"
+                @click="copyCustomerLink(); closeInvoiceMenu();"
+              >
+                Share Invoice
+              </button>
+              <button
                 v-if="canUpdate && invoice.status === 'draft'"
                 type="button"
                 class="staff-row-menu__item"
@@ -796,24 +823,6 @@ onMounted(() => {
                 @click="openSendWhatsappModal(); closeInvoiceMenu();"
               >
                 Send via WhatsApp
-              </button>
-              <button
-                v-if="canUpdate && invoice.status !== 'void'"
-                type="button"
-                class="staff-row-menu__item"
-                role="menuitem"
-                @click="openSendEmailModal(); closeInvoiceMenu();"
-              >
-                Send Email
-              </button>
-              <button
-                v-if="canUpdate && invoice.status !== 'draft' && invoice.status !== 'void'"
-                type="button"
-                class="staff-row-menu__item staff-row-menu__item--danger"
-                role="menuitem"
-                @click="openVoidModal(); closeInvoiceMenu();"
-              >
-                Void Invoice
               </button>
               <button
                 v-if="canDelete && invoice.status === 'draft'"
@@ -1455,11 +1464,24 @@ onMounted(() => {
         >
           <div class="crm-vx-modal crm-vx-modal--sm" @click.stop>
             <header class="crm-vx-modal__head">
-              <h2 class="crm-vx-modal__title">Record Payment</h2>
+              <h2 class="crm-vx-modal__title">Pay Invoice</h2>
             </header>
             <div class="crm-vx-modal__body">
+              <label class="form-label">Payment Date</label>
+              <input v-model="payDate" type="date" class="form-control mb-2" />
+              <label class="form-label">Payment Type</label>
+              <select v-model="payType" class="form-select mb-2">
+                <option>ACH</option>
+                <option>Wire</option>
+                <option>Check</option>
+                <option>Credit Card</option>
+                <option>Paypal</option>
+                <option>Varies</option>
+              </select>
               <label class="form-label">Amount (USD)</label>
-              <input v-model="payAmount" type="text" class="form-control" />
+              <input v-model="payAmount" type="text" class="form-control mb-2" />
+              <label class="form-label">Notes</label>
+              <textarea v-model="payNotes" rows="2" class="form-control" />
             </div>
             <footer class="crm-vx-modal__footer d-flex gap-2 justify-content-end">
               <button
@@ -1476,7 +1498,7 @@ onMounted(() => {
                 :disabled="payBusy"
                 @click="confirmPay"
               >
-                {{ payBusy ? "Saving…" : "Record" }}
+                {{ payBusy ? "Saving…" : "Pay Invoice" }}
               </button>
             </footer>
           </div>

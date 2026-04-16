@@ -173,6 +173,7 @@ class InvoiceController extends Controller
             $invoice,
             (int) $request->validated()['amount_cents'],
             $request->user(),
+            $request->paymentMeta(),
         );
 
         return response()->json($this->invoices->toDetailArray($invoice));

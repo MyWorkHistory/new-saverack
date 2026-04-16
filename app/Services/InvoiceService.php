@@ -510,7 +510,10 @@ class InvoiceService
         ];
     }
 
-    public function recordPayment(Invoice $invoice, int $amountCents, ?User $actor): Invoice
+    /**
+     * @param  array<string, mixed>  $paymentMeta
+     */
+    public function recordPayment(Invoice $invoice, int $amountCents, ?User $actor, array $paymentMeta = []): Invoice
     {
         if ($invoice->isVoid() || $invoice->status === Invoice::STATUS_DRAFT) {
             throw new \RuntimeException('Cannot record payment on this invoice.');
@@ -519,7 +522,7 @@ class InvoiceService
             throw new \InvalidArgumentException('Amount must be positive.');
         }
 
-        return DB::transaction(function () use ($invoice, $amountCents, $actor) {
+        return DB::transaction(function () use ($invoice, $amountCents, $actor, $paymentMeta) {
             $invoice->refresh();
             $from = $invoice->status;
             $invoice->amount_paid_cents = min(
@@ -530,7 +533,7 @@ class InvoiceService
             $invoice->save();
             $this->logHistory($invoice, $actor, 'payment_applied', $from, $invoice->status, [
                 'amount_cents' => $amountCents,
-            ]);
+            ] + $paymentMeta);
 
             return $invoice->fresh(['items', 'clientAccount']);
         });

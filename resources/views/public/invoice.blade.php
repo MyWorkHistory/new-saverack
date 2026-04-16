@@ -119,24 +119,24 @@
             </thead>
             <tbody>
             @forelse (($line_sections ?? []) as $sec)
-                <tr>
-                    <td colspan="5" style="padding:0;">
-                        <details class="public-inv-sec" open>
-                            <summary class="public-inv-summary">
-                                <div class="public-inv-row">
-                                    <div class="public-inv-row-num"><span class="public-inv-chev">&#9654;</span></div>
-                                    <div><strong>{{ $sec['label'] }}</strong></div>
-                                    <div class="public-inv-row-num">{{ $sec['qty_display'] }}</div>
-                                    <div class="public-inv-row-num">{{ $sec['unit'] }}</div>
-                                    <div class="public-inv-row-num"><strong>{{ $sec['line_total'] }}</strong></div>
-                                </div>
-                            </summary>
+                @if (!empty($sec['has_breakdown']))
+                    <tr>
+                        <td colspan="5" style="padding:0;">
+                            <details class="public-inv-sec">
+                                <summary class="public-inv-summary">
+                                    <div class="public-inv-row">
+                                        <div class="public-inv-row-num"><span class="public-inv-chev">&#9654;</span></div>
+                                        <div><strong>{{ $sec['label'] }}</strong></div>
+                                        <div class="public-inv-row-num">{{ $sec['qty_display'] }}</div>
+                                        <div class="public-inv-row-num">{{ $sec['unit'] }}</div>
+                                        <div class="public-inv-row-num"><strong>{{ $sec['line_total'] }}</strong></div>
+                                    </div>
+                                </summary>
 
-                            @if (!empty($sec['lines']))
                                 <div class="public-inv-breakdown">
                                     <table>
                                         <tbody>
-                                        @foreach ($sec['lines'] as $line)
+                                        @foreach (($sec['lines'] ?? []) as $line)
                                             <tr>
                                                 <td style="width:34px;"></td>
                                                 <td style="width:56%; padding-left: 18px;">{{ $line['name'] }}</td>
@@ -148,10 +148,18 @@
                                         </tbody>
                                     </table>
                                 </div>
-                            @endif
-                        </details>
-                    </td>
-                </tr>
+                            </details>
+                        </td>
+                    </tr>
+                @else
+                    <tr>
+                        <td></td>
+                        <td><strong>{{ $sec['label'] }}</strong></td>
+                        <td class="num">{{ $sec['qty_display'] }}</td>
+                        <td class="num">{{ $sec['unit'] }}</td>
+                        <td class="num"><strong>{{ $sec['line_total'] }}</strong></td>
+                    </tr>
+                @endif
             @empty
                 <tr>
                     <td colspan="5" style="padding:16px; color:#888;">No line items.</td>

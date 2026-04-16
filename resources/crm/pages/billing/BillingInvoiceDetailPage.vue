@@ -54,6 +54,54 @@ const selectedTableRowId = ref("");
 
 const invoiceLogoSrc = computed(() => BRAND_MARK_SRC());
 
+function fallbackCategoryKey(raw) {
+  const s = String(raw || "")
+    .trim()
+    .toLowerCase()
+    .replace(/-/g, "_")
+    .replace(/\s+/g, "_");
+  if (!s) return "other";
+  if (s === "ondemand" || s === "on_demand") return "on_demand";
+  if (s.includes("on_demand")) return "on_demand";
+  if (s.includes("product") && s.includes("demand")) return "on_demand";
+  if (s === "adhoc" || s === "ad_hoc") return "ad_hoc";
+  if (s === "credit" || s === "credits") return "credits";
+  if (s === "storage") return "storage";
+  if (["fulfillment", "postage", "packaging", "returns"].includes(s)) return s;
+  return "other";
+}
+
+function fallbackCategoryLabel(cat, serviceName = "") {
+  if (cat === "on_demand") return "Product (On-Demand)";
+  if (cat === "ad_hoc") return "Ad Hoc";
+  if (
+    cat === "packaging" &&
+    ["bubble wrap", "kraft paper", "bubble wrap & kraft paper"].includes(
+      String(serviceName || "").trim().toLowerCase(),
+    )
+  ) {
+    return serviceName;
+  }
+  const labels = {
+    fulfillment: "Fulfillment",
+    postage: "Postage",
+    packaging: "Packaging",
+    returns: "Returns",
+    storage: "Storage",
+    credits: "Credits",
+    other: "Other",
+  };
+  return labels[cat] || "Other";
+}
+
+function fallbackServiceName(item) {
+  const base = String(item?.display_name || item?.description || "—").trim();
+  if (!base) return "—";
+  const m = base.match(/^(Postage|Packaging|Fulfillment)\s*\((.+)\)$/i);
+  if (m && m[2]) return String(m[2]).trim();
+  return base;
+}
+
 function formatQtyDisplay(v) {
   const n = Number(v);
   if (!Number.isFinite(n)) return "0.000";
@@ -61,7 +109,61 @@ function formatQtyDisplay(v) {
   return Number.isInteger(n) ? String(n) : n.toFixed(2);
 }
 
-const invoiceTableRows = computed(() => invoice.value?.presentation?.rows || []);
+const invoiceTableRows = computed(() => {
+  const presentationRows = invoice.value?.presentation?.rows;
+  if (Array.isArray(presentationRows) && presentationRows.length) {
+    return presentationRows;
+  }
+
+  const items = invoice.value?.items || [];
+  if (!items.length) return [];
+
+  const groups = new Map();
+  for (const item of items) {
+    const cat = fallbackCategoryKey(item.category);
+    const service = fallbackServiceName(item);
+    const key = `${cat}::${String(item.group_key || service || "").toLowerCase()}`;
+    if (!groups.has(key)) {
+      groups.set(key, {
+        id: key,
+        name: service,
+        type: fallbackCategoryLabel(cat, service),
+        qty: 0,
+        price_cents: 0,
+        total_cents: 0,
+        edit_group_key: item.group_key || null,
+        details: [],
+      });
+    }
+    const row = groups.get(key);
+    const qty = Number(item.quantity || 0);
+    const total = Number(item.line_total_cents || 0);
+    row.qty += qty;
+    row.total_cents += total;
+    row.details.push({
+      id: item.id,
+      name: service,
+      type: fallbackCategoryLabel(cat, service),
+      category_key: item.category || cat,
+      qty,
+      price_cents: Number(item.unit_price_cents || 0),
+      total_cents: total,
+      display_name: item.display_name || null,
+      description: item.description || null,
+      sku: item.sku || null,
+      service_code: item.service_code || null,
+      group_key: item.group_key || null,
+      subtype: item.subtype || null,
+      unit: item.unit || null,
+      metadata: item.metadata || null,
+    });
+  }
+
+  return [...groups.values()].map((row) => ({
+    ...row,
+    price_cents: row.qty > 0 ? Math.round(row.total_cents / row.qty) : 0,
+  }));
+});
 
 const selectedTableRow = computed(() => {
   if (!selectedTableRowId.value) return null;

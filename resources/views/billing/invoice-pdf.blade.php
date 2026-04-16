@@ -20,8 +20,6 @@
         table.lines th.num, table.lines td.num { text-align: center; }
         table.lines td { padding: 8px 10px; border-bottom: 1px solid #e8e7ed; vertical-align: top; }
         tr.group-row td { font-weight: 700; }
-        tr.detail-row td { background: #f6f7fb; font-size: 10px; }
-        .detail-service { padding-left: 22px !important; }
         .invoice-summary { width: 240px; margin-left: auto; margin-top: 16px; text-align: right; line-height: 1.8; }
         .invoice-summary .success { color: #28c76f; }
         .invoice-summary .danger { color: #ea5455; }
@@ -29,19 +27,6 @@
     </style>
 </head>
 <body>
-@php
-    $pdfLogoSrc = '';
-    $logoPath = public_path('logo.jpg');
-    if (is_string($logoPath) && file_exists($logoPath) && is_readable($logoPath)) {
-        $raw = @file_get_contents($logoPath);
-        if ($raw !== false) {
-            $pdfLogoSrc = 'data:image/jpeg;base64,'.base64_encode($raw);
-        }
-    }
-    if ($pdfLogoSrc === '') {
-        $pdfLogoSrc = asset('logo.jpg').'?v=20260402a';
-    }
-@endphp
 <table class="invoice-head">
     <tr>
         <td width="55%">
@@ -64,7 +49,7 @@
             </div>
         </td>
         <td width="45%" class="invoice-right">
-            <img src="{{ $pdfLogoSrc }}" alt="Save Rack" class="invoice-logo" />
+            <img src="{{ public_path('logo.jpg') }}" alt="Save Rack" class="invoice-logo" />
             <div class="balance-label">Balance Due</div>
             <div class="balance-due">{{ $balance_due }}</div>
         </td>
@@ -81,21 +66,13 @@
     </tr>
     </thead>
     <tbody>
-    @forelse (($public_sections ?? []) as $row)
+    @forelse (($grouped_items ?? []) as $row)
         <tr class="group-row">
-            <td>{{ $row['label'] }}</td>
-            <td class="num">{{ $row['qty_display'] }}</td>
-            <td class="num">{{ $row['unit'] }}</td>
-            <td class="num">{{ $row['line_total'] }}</td>
+            <td>{{ $row['name'] ?? '—' }}</td>
+            <td class="num">{{ isset($row['qty']) ? number_format((float) $row['qty'], 3, '.', '') : '0.000' }}</td>
+            <td class="num">${{ number_format((float) ($row['price'] ?? 0), 2) }}</td>
+            <td class="num">${{ number_format((float) ($row['total'] ?? 0), 2) }}</td>
         </tr>
-        @foreach (($row['lines'] ?? []) as $line)
-            <tr class="detail-row">
-                <td class="detail-service">{{ $line['name'] }}</td>
-                <td class="num">{{ $line['qty_display'] }}</td>
-                <td class="num">{{ $line['unit'] }}</td>
-                <td class="num">{{ $line['line_total'] }}</td>
-            </tr>
-        @endforeach
     @empty
         <tr>
             <td colspan="4" style="color:#888;">No line items.</td>

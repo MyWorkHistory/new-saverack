@@ -15,11 +15,29 @@
         .invoice-logo { width: 120px; margin-bottom: 14px; }
         .invoice-right { text-align: right; }
         .balance-due { color: #ea5455; font-size: 22px; font-weight: 700; margin: 0; }
-        table.lines { width: 100%; border-collapse: collapse; margin-top: 14px; }
-        table.lines th { background: #2573ba; color: #fff; padding: 8px 10px; font-size: 10px; text-transform: uppercase; text-align: left; }
+        table.lines {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 14px;
+            border: 1px solid #e8e7ed;
+        }
+        table.lines th {
+            background: #fff;
+            color: #6c757d;
+            padding: 8px 10px;
+            font-size: 9px;
+            text-transform: uppercase;
+            letter-spacing: 0.04em;
+            text-align: left;
+            border-bottom: 1px solid #e8e7ed;
+        }
         table.lines th.num, table.lines td.num { text-align: center; }
-        table.lines td { padding: 8px 10px; border-bottom: 1px solid #e8e7ed; vertical-align: top; }
-        tr.group-row td { font-weight: 700; }
+        table.lines td {
+            padding: 8px 10px;
+            border-bottom: 1px solid #f1f0f4;
+            vertical-align: top;
+        }
+        tr.group-row td { font-weight: 600; }
         .invoice-summary { width: 240px; margin-left: auto; margin-top: 16px; text-align: right; line-height: 1.8; }
         .invoice-summary .success { color: #28c76f; }
         .invoice-summary .danger { color: #ea5455; }
@@ -59,23 +77,25 @@
 <table class="lines">
     <thead>
     <tr>
-        <th style="width:58%">Service</th>
+        <th style="width:44%">Service</th>
+        <th style="width:20%">Category</th>
         <th class="num" style="width:12%">Qty</th>
-        <th class="num" style="width:14%">Price</th>
-        <th class="num" style="width:16%">Total</th>
+        <th class="num" style="width:12%">Price</th>
+        <th class="num" style="width:12%">Total</th>
     </tr>
     </thead>
     <tbody>
     @forelse (($grouped_items ?? []) as $row)
         <tr class="group-row">
             <td>{{ $row['name'] ?? '—' }}</td>
-            <td class="num">{{ isset($row['qty']) ? number_format((float) $row['qty'], 3, '.', '') : '0.000' }}</td>
+            <td>{{ $row['type'] ?? '—' }}</td>
+            <td class="num">{{ isset($row['qty']) ? number_format((float) $row['qty'], 1, '.', '') : '0.0' }}</td>
             <td class="num">${{ number_format((float) ($row['price'] ?? 0), 2) }}</td>
             <td class="num">${{ number_format((float) ($row['total'] ?? 0), 2) }}</td>
         </tr>
     @empty
         <tr>
-            <td colspan="4" style="color:#888;">No line items.</td>
+            <td colspan="5" style="color:#888;">No line items.</td>
         </tr>
     @endforelse
     </tbody>

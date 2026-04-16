@@ -11,7 +11,9 @@
         .public-toolbar a { display: inline-block; padding: 8px 14px; border-radius: 6px; font-size: 13px; font-weight: 600; text-decoration: none; }
         .public-toolbar a.primary { background: #111; color: #fff; }
         .public-toolbar a.secondary { background: #f3f3f3; color: #222; }
-        .brand { font-size: 20px; font-weight: 700; color: #111; margin-bottom: 4px; }
+        .brand-wrap { display: flex; align-items: center; gap: 10px; }
+        .brand-logo { width: 36px; height: 36px; object-fit: contain; }
+        .brand { font-size: 20px; font-weight: 700; color: #111; margin-bottom: 0; }
         .brand-sub { font-size: 12px; color: #666; }
         .top { width: 100%; margin-bottom: 22px; border-collapse: collapse; }
         .top td { vertical-align: top; }
@@ -28,28 +30,7 @@
         table.lines th.num { text-align: right; }
         table.lines td { border-bottom: 1px solid #e8e8e8; padding: 10px 8px; vertical-align: top; }
         table.lines td.num { text-align: right; white-space: nowrap; }
-        .lines-nested { background: #fff; }
-        .lines-nested td { font-size: 13px; }
-        details.public-inv-sec { border-bottom: 1px solid #e8e8e8; }
-        details.public-inv-sec:last-of-type { border-bottom: none; }
-        summary.public-inv-summary { list-style: none; cursor: pointer; padding: 0; }
-        summary.public-inv-summary::-webkit-details-marker { display: none; }
-        .public-inv-sum-grid {
-            display: grid;
-            grid-template-columns: 18px minmax(0, 1.75fr) minmax(0, 0.55fr) minmax(0, 0.65fr) minmax(0, 0.8fr);
-            gap: 8px;
-            align-items: center;
-            padding: 10px 8px;
-        }
-        .public-inv-chev {
-            font-size: 10px;
-            color: #666;
-            transition: transform 0.15s ease;
-            display: inline-block;
-        }
-        details.public-inv-sec[open] .public-inv-chev { transform: rotate(90deg); }
-        .public-inv-nested { background: #f6f7f9; padding: 0 4px 12px 12px; border-bottom: 1px solid #e8e8e8; }
-        .public-inv-lines-wrap { margin-top: 12px; border: 1px solid #e8e8e8; border-radius: 4px; overflow: hidden; }
+        .public-inv-lines-wrap { margin-top: 12px; border: 1px solid #e8e8e8; border-radius: 4px; overflow: hidden; background: #fff; }
         .totals { width: 280px; margin-left: auto; margin-top: 20px; font-size: 14px; }
         .totals table { width: 100%; border-collapse: collapse; }
         .totals td { padding: 6px 0; }
@@ -62,7 +43,6 @@
         @media print {
             .public-toolbar { display: none; }
             body { padding-top: 0; }
-            details.public-inv-sec > summary { page-break-inside: avoid; }
         }
     </style>
 </head>
@@ -74,15 +54,16 @@
 <table class="top">
     <tr>
         <td width="55%">
-            <div class="brand">{{ $issuer_name }}</div>
+            <div class="brand-wrap">
+                <img src="{{ asset('assets/images/dark-logo.png') }}" alt="Save Rack" class="brand-logo" />
+                <div class="brand">Save Rack</div>
+            </div>
             <div class="brand-sub">Fulfillment billing</div>
         </td>
         <td width="45%">
             <div class="inv-title">Invoice {{ $invoice_number }}</div>
             <div class="inv-meta">
-                <div><strong>Invoice Date:</strong> {{ $invoice_date_label ?? ($issued_long ?? '—') }}</div>
-                <div><strong>Invoice Dates From:</strong> {{ !empty($invoice_date_from) ? \Carbon\Carbon::parse($invoice_date_from)->format('m/d/Y') : '—' }}</div>
-                <div><strong>Invoice Dates To:</strong> {{ !empty($invoice_date_to) ? \Carbon\Carbon::parse($invoice_date_to)->format('m/d/Y') : '—' }}</div>
+                <div><strong>Invoice Date:</strong> {{ $invoice_date_label ?? '—' }}</div>
                 @if (!empty($due_long))
                     <div><strong>Due date:</strong> {{ $due_long }}</div>
                 @endif
@@ -103,45 +84,42 @@
 
 <div class="section-label" style="margin-top: 20px;">Line items</div>
 <div class="public-inv-lines-wrap">
-@if (!empty($line_sections))
-    @foreach ($line_sections as $sec)
-        <details class="public-inv-sec">
-            <summary class="public-inv-summary">
-                <div class="public-inv-sum-grid">
-                    <span class="public-inv-chev" aria-hidden="true">&#9654;</span>
-                    <span class="public-inv-sum-service"><strong>{{ $sec['label'] }}</strong></span>
-                    <span class="num">{{ $sec['qty_display'] }}</span>
-                    <span class="num">{{ $sec['unit'] }}</span>
-                    <span class="num" style="font-weight:600;">{{ $sec['line_total'] }}</span>
-                </div>
-            </summary>
-            <div class="public-inv-nested">
-                <table class="lines lines-nested">
-                    <thead>
-                    <tr>
-                        <th style="width:56%">Service</th>
-                        <th class="num" style="width:12%">Qty</th>
-                        <th class="num" style="width:14%">Price</th>
-                        <th class="num" style="width:14%">Total</th>
-                    </tr>
-                    </thead>
-                    <tbody>
-                    @foreach ($sec['lines'] as $row)
-                        <tr>
-                            <td>{{ $row['item'] }}</td>
-                            <td class="num">{{ $row['quantity'] }}</td>
-                            <td class="num">{{ $row['unit'] }}</td>
-                            <td class="num">{{ $row['line_total'] }}</td>
-                        </tr>
-                    @endforeach
-                    </tbody>
-                </table>
-            </div>
-        </details>
-    @endforeach
-@else
-    <p class="public-inv-empty">No line items.</p>
-@endif
+    <table class="lines">
+        <thead>
+        <tr>
+            <th style="width:58%">Service</th>
+            <th class="num" style="width:12%">QTY</th>
+            <th class="num" style="width:14%">Price</th>
+            <th class="num" style="width:16%">Total</th>
+        </tr>
+        </thead>
+        <tbody>
+        @forelse (($grouped_items ?? $items) as $row)
+            <tr>
+                <td>{{ $row['name'] ?? $row['item'] }}</td>
+                <td class="num">{{ $row['qty'] ?? $row['quantity'] }}</td>
+                <td class="num">
+                    @if(isset($row['price']))
+                        ${{ number_format((float) $row['price'], 2) }}
+                    @else
+                        {{ $row['unit'] }}
+                    @endif
+                </td>
+                <td class="num">
+                    @if(isset($row['total']))
+                        ${{ number_format((float) $row['total'], 2) }}
+                    @else
+                        {{ $row['line_total'] }}
+                    @endif
+                </td>
+            </tr>
+        @empty
+            <tr>
+                <td colspan="4" class="public-inv-empty">No line items.</td>
+            </tr>
+        @endforelse
+        </tbody>
+    </table>
 </div>
 
 <div class="totals">
@@ -183,14 +161,5 @@
 </div>
 
 <div class="footer">Thank you for your business.</div>
-<script>
-(function () {
-    window.addEventListener('beforeprint', function () {
-        document.querySelectorAll('details.public-inv-sec').forEach(function (d) {
-            d.setAttribute('open', 'open');
-        });
-    });
-})();
-</script>
 </body>
 </html>

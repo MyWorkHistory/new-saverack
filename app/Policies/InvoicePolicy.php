@@ -71,4 +71,13 @@ class InvoicePolicy
 
         return $this->canManageBilling($user) || $user->hasPermission('billing.update');
     }
+
+    public function addCharge(User $user, Invoice $invoice): bool
+    {
+        if ($invoice->isVoid()) {
+            return false;
+        }
+
+        return $this->canManageBilling($user) || $user->hasPermission('billing.update');
+    }
 }

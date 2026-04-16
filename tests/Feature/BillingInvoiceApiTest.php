@@ -763,7 +763,99 @@ class BillingInvoiceApiTest extends TestCase
         $slug = (string) $client->invoice_share_slug;
         $this->get("/billing-invoice/{$slug}/{$invoice->share_token}")
             ->assertOk()
-            ->assertSee('Invoice Dates From', false)
-            ->assertSee('Invoice Dates To', false);
+            ->assertSee('Invoice Date:', false)
+            ->assertSee('04/01/2026 - 04/15/2026', false)
+            ->assertSee('Save Rack', false);
+    }
+
+    public function test_add_to_invoice_and_add_cc_fee_endpoints_update_totals(): void
+    {
+        $user = User::factory()->create();
+        $user->permissions()->sync([
+            $this->billingViewPermission()->id,
+            $this->billingUpdatePermission()->id,
+        ]);
+        Sanctum::actingAs($user);
+
+        $client = ClientAccount::query()->create([
+            'status' => ClientAccount::STATUS_ACTIVE,
+            'company_name' => 'Fee Co',
+            'email' => 'fee@acme.test',
+        ]);
+
+        $invoice = Invoice::query()->create([
+            'invoice_number' => 'INV-FEE-001',
+            'client_account_id' => $client->id,
+            'status' => Invoice::STATUS_SENT,
+            'currency' => 'USD',
+            'subtotal_cents' => 0,
+            'tax_cents' => 0,
+            'total_cents' => 0,
+            'amount_paid_cents' => 0,
+            'balance_due_cents' => 0,
+        ]);
+
+        $this->postJson("/api/invoices/{$invoice->id}/add-item", [
+            'description' => 'Manual add',
+            'display_name' => 'Manual add',
+            'quantity' => 2,
+            'unit_price_cents' => 500,
+        ])->assertOk()->assertJsonPath('total_cents', 1000);
+
+        $this->postJson("/api/invoices/{$invoice->id}/add-cc-fee", [
+            'amount_cents' => 325,
+            'label' => 'CC Fee',
+        ])->assertOk()->assertJsonPath('total_cents', 1325);
+    }
+
+    public function test_draft_breakdown_line_can_be_updated_and_deleted(): void
+    {
+        $user = User::factory()->create();
+        $user->permissions()->sync([
+            $this->billingViewPermission()->id,
+            $this->billingUpdatePermission()->id,
+        ]);
+        Sanctum::actingAs($user);
+
+        $client = ClientAccount::query()->create([
+            'status' => ClientAccount::STATUS_ACTIVE,
+            'company_name' => 'Line Edit Co',
+            'email' => 'line@acme.test',
+        ]);
+
+        $invoice = Invoice::query()->create([
+            'invoice_number' => 'INV-LINE-001',
+            'client_account_id' => $client->id,
+            'status' => Invoice::STATUS_DRAFT,
+            'currency' => 'USD',
+            'subtotal_cents' => 1000,
+            'tax_cents' => 0,
+            'total_cents' => 1000,
+            'amount_paid_cents' => 0,
+            'balance_due_cents' => 1000,
+        ]);
+        $item = InvoiceItem::query()->create([
+            'invoice_id' => $invoice->id,
+            'sort_order' => 1,
+            'category' => 'ad_hoc',
+            'group_key' => 'manual:test',
+            'description' => 'Test line',
+            'display_name' => 'Test line',
+            'quantity' => 1,
+            'unit_price_cents' => 1000,
+            'line_total_cents' => 1000,
+        ]);
+
+        $this->putJson("/api/invoices/{$invoice->id}/items/{$item->id}", [
+            'description' => 'Edited line',
+            'display_name' => 'Edited line',
+            'category' => 'ad_hoc',
+            'quantity' => 2,
+            'unit_price_cents' => 500,
+        ])->assertOk()->assertJsonPath('items.0.display_name', 'Edited line');
+
+        $this->deleteJson("/api/invoices/{$invoice->id}/items/{$item->id}")
+            ->assertOk()
+            ->assertJsonPath('total_cents', 0);
     }
 }

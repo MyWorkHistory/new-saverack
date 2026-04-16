@@ -176,6 +176,118 @@ class InvoiceService
         });
     }
 
+    /**
+     * @param  array<string, mixed>  $item
+     */
+    public function addInvoiceItem(Invoice $invoice, array $item, ?User $actor): Invoice
+    {
+        if ($invoice->isVoid()) {
+            throw new \RuntimeException('Cannot add items to a void invoice.');
+        }
+
+        return DB::transaction(function () use ($invoice, $item, $actor) {
+            $invoice->refresh();
+            $order = (int) $invoice->items()->max('sort_order') + 1;
+            if (! isset($item['group_key']) || trim((string) $item['group_key']) === '') {
+                $seed = (string) ($item['display_name'] ?? $item['description'] ?? 'item');
+                $item['group_key'] = 'manual:'.Str::slug($seed !== '' ? $seed : 'item');
+            }
+            $this->insertInvoiceItemRow($invoice, $order, $item);
+            $from = $invoice->status;
+            $this->recalculateTotals($invoice->refresh());
+            $invoice->save();
+            $this->logHistory($invoice, $actor, 'item_added', $from, $invoice->status, [
+                'event_type' => InvoiceHistoryEventType::LINE_ADD,
+                'history_message' => 'Added invoice line item.',
+            ]);
+
+            return $invoice->fresh(['items', 'clientAccount']);
+        });
+    }
+
+    public function addCcFee(Invoice $invoice, int $amountCents, string $label, ?User $actor): Invoice
+    {
+        if ($amountCents <= 0) {
+            throw new \InvalidArgumentException('CC fee amount must be positive.');
+        }
+
+        return $this->addInvoiceItem($invoice, [
+            'description' => $label,
+            'display_name' => $label,
+            'category' => InvoiceLineCategory::AD_HOC,
+            'quantity' => 1,
+            'unit_price_cents' => $amountCents,
+            'line_total_cents' => $amountCents,
+            'group_key' => 'cc_fee:'.Str::slug($label),
+        ], $actor);
+    }
+
+    /**
+     * @param  array<string, mixed>  $item
+     */
+    public function updateInvoiceItem(Invoice $invoice, int $itemId, array $item, ?User $actor): Invoice
+    {
+        if (! $invoice->isEditableDraft()) {
+            throw new \RuntimeException('Only draft invoice items can be edited.');
+        }
+
+        return DB::transaction(function () use ($invoice, $itemId, $item, $actor) {
+            $target = $invoice->items()->whereKey($itemId)->first();
+            if ($target === null) {
+                throw new \InvalidArgumentException('Invoice item was not found.');
+            }
+            $target->fill([
+                'category' => $item['category'] ?? $target->category,
+                'subtype' => $item['subtype'] ?? $target->subtype,
+                'group_key' => $item['group_key'] ?? $target->group_key,
+                'description' => $item['description'] ?? $target->description,
+                'display_name' => $item['display_name'] ?? $target->display_name,
+                'sku' => $item['sku'] ?? $target->sku,
+                'service_code' => $item['service_code'] ?? $target->service_code,
+                'quantity' => $item['quantity'] ?? $target->quantity,
+                'unit' => $item['unit'] ?? $target->unit,
+                'unit_price_cents' => $item['unit_price_cents'] ?? $target->unit_price_cents,
+                'line_total_cents' => $item['line_total_cents'] ?? $target->line_total_cents,
+                'metadata' => $item['metadata'] ?? $target->metadata,
+            ]);
+            $target->save();
+
+            $this->recalculateTotals($invoice->refresh());
+            $invoice->save();
+            $this->logHistory($invoice, $actor, 'item_updated', Invoice::STATUS_DRAFT, Invoice::STATUS_DRAFT, [
+                'event_type' => InvoiceHistoryEventType::LINE_EDIT,
+                'history_message' => 'Updated invoice line item.',
+                'item_id' => $itemId,
+            ]);
+
+            return $invoice->fresh(['items', 'clientAccount']);
+        });
+    }
+
+    public function deleteInvoiceItem(Invoice $invoice, int $itemId, ?User $actor): Invoice
+    {
+        if (! $invoice->isEditableDraft()) {
+            throw new \RuntimeException('Only draft invoice items can be deleted.');
+        }
+
+        return DB::transaction(function () use ($invoice, $itemId, $actor) {
+            $deleted = $invoice->items()->whereKey($itemId)->delete();
+            if ($deleted < 1) {
+                throw new \InvalidArgumentException('Invoice item was not found.');
+            }
+
+            $this->recalculateTotals($invoice->refresh());
+            $invoice->save();
+            $this->logHistory($invoice, $actor, 'item_deleted', Invoice::STATUS_DRAFT, Invoice::STATUS_DRAFT, [
+                'event_type' => InvoiceHistoryEventType::LINE_DELETE,
+                'history_message' => 'Deleted invoice line item.',
+                'item_id' => $itemId,
+            ]);
+
+            return $invoice->fresh(['items', 'clientAccount']);
+        });
+    }
+
     public function ensureShareToken(Invoice $invoice): Invoice
     {
         if ($invoice->share_token !== null && $invoice->share_token !== '') {
@@ -1184,7 +1296,7 @@ class InvoiceService
         }
 
         return [
-            'issuer_name' => config('app.name'),
+            'issuer_name' => 'Save Rack',
             'invoice_number' => $invoice->invoice_number,
             'status' => $invoice->status,
             'client_company_name' => $invoice->clientAccount !== null ? $invoice->clientAccount->company_name : '',

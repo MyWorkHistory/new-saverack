@@ -52,8 +52,18 @@ Route::middleware('auth:sanctum')->group(function () {
         ->name('invoices.email');
     Route::post('invoices/{invoice}/whatsapp', [InvoiceController::class, 'sendWhatsapp'])
         ->name('invoices.whatsapp');
+    Route::post('invoices/{invoice}/pay', [InvoiceController::class, 'pay'])
+        ->name('invoices.pay');
     Route::post('invoices/{invoice}/record-payment', [InvoiceController::class, 'recordPayment'])
         ->name('invoices.record-payment');
+    Route::post('invoices/{invoice}/add-item', [InvoiceController::class, 'addItem'])
+        ->name('invoices.add-item');
+    Route::post('invoices/{invoice}/add-cc-fee', [InvoiceController::class, 'addCcFee'])
+        ->name('invoices.add-cc-fee');
+    Route::put('invoices/{invoice}/items/{item}', [InvoiceController::class, 'updateItem'])
+        ->name('invoices.items.update');
+    Route::delete('invoices/{invoice}/items/{item}', [InvoiceController::class, 'destroyItem'])
+        ->name('invoices.items.destroy');
     Route::post('invoices/{invoice}/void', [InvoiceController::class, 'void'])
         ->name('invoices.void');
     Route::get('invoices/{invoice}/pdf', [InvoiceController::class, 'pdf'])

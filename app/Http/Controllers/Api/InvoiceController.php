@@ -5,12 +5,16 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\InvoiceRecordPaymentRequest;
 use App\Http\Requests\InvoiceReplaceLineGroupRequest;
+use App\Http\Requests\InvoiceAddItemRequest;
+use App\Http\Requests\InvoiceAddCcFeeRequest;
 use App\Http\Requests\InvoiceSendEmailRequest;
 use App\Http\Requests\InvoiceSendWhatsappRequest;
 use App\Http\Requests\InvoiceStoreRequest;
+use App\Http\Requests\InvoiceUpdateItemRequest;
 use App\Http\Requests\InvoiceUpdateRequest;
 use App\Models\ClientAccount;
 use App\Models\Invoice;
+use App\Models\InvoiceItem;
 use App\Services\InvoiceService;
 use Barryvdh\DomPDF\Facade\Pdf;
 use Illuminate\Http\JsonResponse;
@@ -174,6 +178,27 @@ class InvoiceController extends Controller
         return response()->json($this->invoices->toDetailArray($invoice));
     }
 
+    public function pay(InvoiceRecordPaymentRequest $request, Invoice $invoice): JsonResponse
+    {
+        return $this->recordPayment($request, $invoice);
+    }
+
+    public function addItem(InvoiceAddItemRequest $request, Invoice $invoice): JsonResponse
+    {
+        $this->authorize('addCharge', $invoice);
+        $invoice = $this->invoices->addInvoiceItem($invoice, $request->itemPayload(), $request->user());
+
+        return response()->json($this->invoices->toDetailArray($invoice));
+    }
+
+    public function addCcFee(InvoiceAddCcFeeRequest $request, Invoice $invoice): JsonResponse
+    {
+        $this->authorize('addCharge', $invoice);
+        $invoice = $this->invoices->addCcFee($invoice, $request->amountCents(), $request->label(), $request->user());
+
+        return response()->json($this->invoices->toDetailArray($invoice));
+    }
+
     public function void(Invoice $invoice): JsonResponse
     {
         $this->authorize('void', $invoice);
@@ -216,6 +241,33 @@ class InvoiceController extends Controller
             $request->itemsPayload(),
             $request->user(),
         );
+
+        return response()->json($this->invoices->toDetailArray($invoice));
+    }
+
+    public function updateItem(InvoiceUpdateItemRequest $request, Invoice $invoice, InvoiceItem $item): JsonResponse
+    {
+        $this->authorize('update', $invoice);
+        if ((int) $item->invoice_id !== (int) $invoice->id) {
+            return response()->json(['message' => 'Line item does not belong to this invoice.'], 422);
+        }
+        $invoice = $this->invoices->updateInvoiceItem(
+            $invoice,
+            (int) $item->id,
+            $request->itemPayload(),
+            $request->user(),
+        );
+
+        return response()->json($this->invoices->toDetailArray($invoice));
+    }
+
+    public function destroyItem(Invoice $invoice, InvoiceItem $item): JsonResponse
+    {
+        $this->authorize('update', $invoice);
+        if ((int) $item->invoice_id !== (int) $invoice->id) {
+            return response()->json(['message' => 'Line item does not belong to this invoice.'], 422);
+        }
+        $invoice = $this->invoices->deleteInvoiceItem($invoice, (int) $item->id, request()->user());
 
         return response()->json($this->invoices->toDetailArray($invoice));
     }

@@ -6,7 +6,11 @@
     <style>
         * { box-sizing: border-box; }
         body { font-family: DejaVu Sans, sans-serif; font-size: 11px; color: #2f2f2f; margin: 28px 36px; }
-        .brand { font-size: 18px; font-weight:700; color: #111; margin-bottom: 4px; }
+        .brand-wrap { display: table; }
+        .brand-logo-wrap { display: table-cell; width: 42px; vertical-align: middle; }
+        .brand-logo { width: 34px; height: 34px; object-fit: contain; }
+        .brand-text-wrap { display: table-cell; vertical-align: middle; }
+        .brand { font-size: 18px; font-weight:700; color: #111; margin-bottom: 0; }
         .brand-sub { font-size: 10px; color: #666; }
         .top { width: 100%; margin-bottom: 22px; }
         .top td { vertical-align: top; }
@@ -37,15 +41,20 @@
 <table class="top">
     <tr>
         <td width="55%">
-            <div class="brand">{{ $issuer_name }}</div>
+            <div class="brand-wrap">
+                <div class="brand-logo-wrap">
+                    <img src="{{ asset('assets/images/dark-logo.png') }}" alt="Save Rack" class="brand-logo" />
+                </div>
+                <div class="brand-text-wrap">
+                    <div class="brand">Save Rack</div>
+                </div>
+            </div>
             <div class="brand-sub">Fulfillment billing</div>
         </td>
         <td width="45%">
             <div class="inv-title">Invoice {{ $invoice_number }}</div>
             <div class="inv-meta">
-                <div><strong>Invoice Date:</strong> {{ $invoice_date_label ?? ($issued_long ?? '—') }}</div>
-                <div><strong>Invoice Dates From:</strong> {{ !empty($invoice_date_from) ? \Carbon\Carbon::parse($invoice_date_from)->format('m/d/Y') : '—' }}</div>
-                <div><strong>Invoice Dates To:</strong> {{ !empty($invoice_date_to) ? \Carbon\Carbon::parse($invoice_date_to)->format('m/d/Y') : '—' }}</div>
+                <div><strong>Invoice Date:</strong> {{ $invoice_date_label ?? '—' }}</div>
                 @if (!empty($due_long))
                     <div><strong>Due date:</strong> {{ $due_long }}</div>
                 @endif

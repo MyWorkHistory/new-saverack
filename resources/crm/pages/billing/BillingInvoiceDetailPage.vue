@@ -1449,7 +1449,7 @@ function onDocKeydown(e) {
                         <th class="text-end">Qty</th>
                         <th class="text-end">Price</th>
                         <th class="text-end">Total</th>
-                        <th>Order #</th>
+                        <th class="text-end">Order #</th>
                         <th
                           v-if="invoice.status !== 'void' && canUpdate"
                           class="text-end"
@@ -1466,7 +1466,7 @@ function onDocKeydown(e) {
                         <td class="text-end text-nowrap">{{ formatQtyDisplay(row.qty) }}</td>
                         <td class="text-end">{{ formatCents(row.price_cents, invoice.currency) }}</td>
                         <td class="text-end">{{ formatCents(row.total_cents, invoice.currency) }}</td>
-                        <td>{{ row.order_number || "—" }}</td>
+                        <td class="text-end">{{ row.order_number || "—" }}</td>
                         <td v-if="invoice.status !== 'void' && canUpdate" class="text-end">
                           <div data-row-actions class="position-relative d-inline-block">
                             <button

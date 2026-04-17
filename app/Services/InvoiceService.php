@@ -1131,6 +1131,11 @@ class InvoiceService
      */
     private function detailLeafRow(InvoiceItem $item, string $type, string $name, int $unitRate, int $total): array
     {
+        $orderNumber = $this->extractOrderNumber($item->metadata);
+        if (($orderNumber === null || $orderNumber === '') && is_string($item->service_code) && trim($item->service_code) !== '') {
+            $orderNumber = trim($item->service_code);
+        }
+
         return [
             'id' => $item->id,
             'name' => $name,
@@ -1147,8 +1152,37 @@ class InvoiceService
             'subtype' => $item->subtype,
             'unit' => $item->unit,
             'metadata' => $item->metadata,
-            'order_number' => is_array($item->metadata) ? ($item->metadata['order_number'] ?? null) : null,
+            'order_number' => $orderNumber,
         ];
+    }
+
+    /**
+     * @param mixed $metadata
+     */
+    private function extractOrderNumber($metadata): ?string
+    {
+        $value = null;
+        if (is_array($metadata)) {
+            $value = $metadata['order_number'] ?? ($metadata['order_number_shipment'] ?? ($metadata['order # (shipment)'] ?? null));
+        } elseif (is_object($metadata)) {
+            $arr = (array) $metadata;
+            $value = $arr['order_number'] ?? ($arr['order_number_shipment'] ?? ($arr['order # (shipment)'] ?? null));
+        } elseif (is_string($metadata) && trim($metadata) !== '') {
+            try {
+                $decoded = json_decode($metadata, true, 512, JSON_THROW_ON_ERROR);
+                if (is_array($decoded)) {
+                    $value = $decoded['order_number'] ?? ($decoded['order_number_shipment'] ?? ($decoded['order # (shipment)'] ?? null));
+                }
+            } catch (\Throwable $e) {
+                return null;
+            }
+        }
+        if (! is_string($value)) {
+            return null;
+        }
+        $value = trim($value);
+
+        return $value !== '' ? $value : null;
     }
 
     /**

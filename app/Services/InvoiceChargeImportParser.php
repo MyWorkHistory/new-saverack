@@ -48,7 +48,7 @@ final class InvoiceChargeImportParser
                     ? $this->parseChargeSummaryRow($row, $map)
                     : $this->parseLegacyRow($row, $map);
                 if ($line !== null) {
-                    $lines[] = $line;
+                    $lines[] = $this->attachOrderMetadata($line, $this->shipmentOrderNumber($row, $map));
                 }
             }
 
@@ -1044,7 +1044,8 @@ final class InvoiceChargeImportParser
 
     private function shipmentOrderNumber(array $row, array $map): ?string
     {
-        $value = trim($this->cell($row, $map['shipment_order_number'] ?? -1));
+        $idx = $map['shipment_order_number'] ?? ($map['service_code'] ?? -1);
+        $value = trim($this->cell($row, $idx));
         return $value !== '' ? $value : null;
     }
 
@@ -1077,6 +1078,6 @@ final class InvoiceChargeImportParser
             return false;
         }
 
-        return strpos($hay, 'return') !== false && strpos($hay, 'label') !== false;
+        return preg_match('/\breturn\b.*\blab(?:el)?\b|\blab(?:el)?\b.*\breturn\b/i', $hay) === 1;
     }
 }

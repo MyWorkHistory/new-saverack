@@ -114,6 +114,7 @@ final class InvoiceChargeImportParser
             'label_charge' => ['label (charge)', 'label'],
             'fee_charge' => ['fee (charge)'],
             'charge_sku' => ['sku', 'sku (product)', 'product sku'],
+            'shipment_order_number' => ['order # (shipment)', 'order# (shipment)', 'order number (shipment)', 'order #', 'order number'],
             'name_product' => ['name (product)', 'product name'],
             'qty_product' => ['units order', 'units ordered', 'quantity (product)', 'qty (product)'],
             'price_product' => ['price (product)', 'unit price (product)', 'price'],
@@ -168,18 +169,22 @@ final class InvoiceChargeImportParser
         }
         $lineTotalCents = $subtotalCents > 0 ? $subtotalCents : (int) round($qty * $rateCents);
         $sku = $this->cell($row, $map['charge_sku'] ?? -1);
+        $orderNumber = $this->shipmentOrderNumber($row, $map);
 
         $item = $this->mapChargeSummaryPrimary($chargeName, $chargeTypeRaw, $categoryRaw, $sku, $qty, $rateCents, $lineTotalCents);
         if ($item !== null) {
-            return $item;
+            return $this->attachOrderMetadata($item, $orderNumber);
         }
 
         $item = $this->mapChargeSummaryRowByHeuristics($chargeName, $chargeTypeRaw, $sku, $qty, $rateCents, $lineTotalCents);
         if ($item !== null) {
-            return $item;
+            return $this->attachOrderMetadata($item, $orderNumber);
         }
 
-        return $this->buildChargeSummaryFallbackItem($chargeName, $chargeTypeRaw, $categoryRaw, $sku, $qty, $rateCents, $lineTotalCents);
+        return $this->attachOrderMetadata(
+            $this->buildChargeSummaryFallbackItem($chargeName, $chargeTypeRaw, $categoryRaw, $sku, $qty, $rateCents, $lineTotalCents),
+            $orderNumber
+        );
     }
 
     /**
@@ -227,6 +232,9 @@ final class InvoiceChargeImportParser
             return $this->buildOnDemandItem($chargeName, $chargeTypeRaw, $skuFromColumn, $qty, $rateCents, $lineTotalCents);
         }
         if (strpos($t, 'shipping_label') !== false) {
+            if ($this->isReturnLabelCharge($chargeName, $chargeTypeRaw)) {
+                return $this->buildItem(InvoiceLineCategory::POSTAGE, 'Return Label', $chargeName, $qty, $rateCents, $lineTotalCents, null, 'postage:return-label', $chargeTypeRaw);
+            }
             $carrier = $this->postageServiceName($chargeName !== '' ? $chargeName : 'Other', $chargeTypeRaw);
             return $this->buildItem(InvoiceLineCategory::POSTAGE, $carrier, $chargeName, $qty, $rateCents, $lineTotalCents, null, 'postage', $chargeTypeRaw);
         }
@@ -292,6 +300,9 @@ final class InvoiceChargeImportParser
         }
 
         if (preg_match('/\b(shipping_label|shipping label|postage|mail class|priority mail|parcel select|ground advantage|media mail|first[- ]class parcel|endicia|stamps?\.com|shipstation|shippo|easy_post|easy post|usps|ups|fedex|dhl|ontrac|lasership|pitney|flat rate|intl|international|zone|delivery confirmation)\b/i', $hay)) {
+            if ($this->isReturnLabelCharge($chargeName, $chargeTypeRaw)) {
+                return $this->buildItem(InvoiceLineCategory::POSTAGE, 'Return Label', $chargeName, $qty, $rateCents, $lineTotalCents, null, 'postage:return-label', $chargeTypeRaw);
+            }
             $carrier = $this->postageServiceName($chargeName !== '' ? $chargeName : 'Other', $chargeTypeRaw);
             return $this->buildItem(InvoiceLineCategory::POSTAGE, $carrier, $chargeName, $qty, $rateCents, $lineTotalCents, null, 'postage', $chargeTypeRaw);
         }
@@ -1029,5 +1040,43 @@ final class InvoiceChargeImportParser
         }
 
         return true;
+    }
+
+    private function shipmentOrderNumber(array $row, array $map): ?string
+    {
+        $value = trim($this->cell($row, $map['shipment_order_number'] ?? -1));
+        return $value !== '' ? $value : null;
+    }
+
+    /**
+     * @param array<string, mixed>|null $item
+     * @return array<string, mixed>|null
+     */
+    private function attachOrderMetadata(?array $item, ?string $orderNumber): ?array
+    {
+        if ($item === null || $orderNumber === null || $orderNumber === '') {
+            return $item;
+        }
+        $meta = [];
+        if (isset($item['metadata']) && is_array($item['metadata'])) {
+            $meta = $item['metadata'];
+        }
+        $meta['order_number'] = $orderNumber;
+        $item['metadata'] = $meta;
+        if (! isset($item['service_code']) || trim((string) $item['service_code']) === '') {
+            $item['service_code'] = $orderNumber;
+        }
+
+        return $item;
+    }
+
+    private function isReturnLabelCharge(string $chargeName, string $chargeTypeRaw): bool
+    {
+        $hay = strtolower(trim($chargeName.' '.$chargeTypeRaw));
+        if ($hay === '') {
+            return false;
+        }
+
+        return strpos($hay, 'return') !== false && strpos($hay, 'label') !== false;
     }
 }

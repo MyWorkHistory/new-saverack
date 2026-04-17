@@ -71,6 +71,7 @@ const sendWhatsappModalOpen = ref(false);
 const sendWhatsappType = ref("send_invoice");
 const sendWhatsappMessage = ref("");
 const lineMenuOpenId = ref(null);
+const groupMenuOpenId = ref(null);
 const lineEditModalOpen = ref(false);
 const lineEditBusy = ref(false);
 const lineDeleteModalOpen = ref(false);
@@ -104,6 +105,12 @@ const ccFeeModalOpen = ref(false);
 const ccFeeBusy = ref(false);
 const ccFeeLabel = ref("Credit Card Fee");
 const ccFeeAmount = ref("");
+const groupEditModalOpen = ref(false);
+const groupEditBusy = ref(false);
+const groupDeleteModalOpen = ref(false);
+const groupDeleteBusy = ref(false);
+const groupEditTarget = ref(null);
+const groupEditLines = ref([]);
 
 const invoiceLogoSrc = computed(() => BRAND_MARK_SRC());
 const activityCardRef = ref(null);
@@ -202,11 +209,13 @@ const selectedTableRowDetails = computed(() => selectedTableRow.value?.details |
 function openTableRow(row) {
   selectedTableRowId.value = row.id;
   lineMenuOpenId.value = null;
+  groupMenuOpenId.value = null;
 }
 
 function closeTableRow() {
   selectedTableRowId.value = "";
   lineMenuOpenId.value = null;
+  groupMenuOpenId.value = null;
 }
 
 function jumpToHistory() {
@@ -610,6 +619,121 @@ watch(sendWhatsappType, (value) => {
 
 function toggleLineMenu(lineId) {
   lineMenuOpenId.value = lineMenuOpenId.value === lineId ? null : lineId;
+}
+
+function toggleGroupMenu(rowId) {
+  groupMenuOpenId.value = groupMenuOpenId.value === rowId ? null : rowId;
+}
+
+function openGroupEditModal(row) {
+  groupMenuOpenId.value = null;
+  groupEditTarget.value = row;
+  groupEditLines.value = Array.isArray(row.details)
+    ? row.details.map((line) => ({
+        description: line.description || line.name || "",
+        display_name: line.display_name || line.name || "",
+        category: line.category || "",
+        subtype: line.subtype || "",
+        sku: line.sku || "",
+        service_code: line.service_code || "",
+        quantity: formatQtyOneDecimal(line.qty ?? 1),
+        unit: line.unit || "",
+        unit_price: (Number(line.price_cents || 0) / 100).toFixed(2),
+        metadata: line.metadata && typeof line.metadata === "object" ? { ...line.metadata } : {},
+      }))
+    : [];
+  groupEditModalOpen.value = true;
+}
+
+function closeGroupEditModal() {
+  if (groupEditBusy.value) return;
+  groupEditModalOpen.value = false;
+  groupEditTarget.value = null;
+}
+
+function addGroupEditLine() {
+  groupEditLines.value = [
+    ...groupEditLines.value,
+    {
+      description: "",
+      display_name: "",
+      category: "",
+      subtype: "",
+      sku: "",
+      service_code: "",
+      quantity: "1.0",
+      unit: "",
+      unit_price: "0.00",
+      metadata: {},
+    },
+  ];
+}
+
+function removeGroupEditLine(idx) {
+  groupEditLines.value = groupEditLines.value.filter((_, i) => i !== idx);
+}
+
+async function confirmGroupEdit() {
+  if (!invoice.value || !groupEditTarget.value?.line_group_key) return;
+  groupEditBusy.value = true;
+  try {
+    const payloadItems = groupEditLines.value.map((line) => {
+      const qty = Number.parseFloat(String(line.quantity).replace(/,/g, "")) || 0;
+      const unitCents = dollarsToCents(line.unit_price);
+      return {
+        description: line.description || line.display_name || "Item",
+        display_name: line.display_name || line.description || "Item",
+        category: line.category || null,
+        subtype: line.subtype || null,
+        sku: line.sku || null,
+        service_code: line.service_code || null,
+        quantity: qty,
+        unit: line.unit || null,
+        unit_price_cents: unitCents,
+        line_total_cents: Math.max(0, Math.round(qty * unitCents)),
+        metadata: line.metadata || null,
+      };
+    });
+    await api.put(
+      `/invoices/${invoice.value.id}/line-groups/${encodeURIComponent(groupEditTarget.value.line_group_key)}`,
+      { items: payloadItems },
+    );
+    toast.success("Grouped line items updated.");
+    closeGroupEditModal();
+    await load();
+  } catch (e) {
+    toast.errorFrom(e, "Could not update grouped line items.");
+  } finally {
+    groupEditBusy.value = false;
+  }
+}
+
+function openGroupDeleteModal(row) {
+  groupMenuOpenId.value = null;
+  groupEditTarget.value = row;
+  groupDeleteModalOpen.value = true;
+}
+
+function closeGroupDeleteModal() {
+  if (groupDeleteBusy.value) return;
+  groupDeleteModalOpen.value = false;
+}
+
+async function confirmGroupDelete() {
+  if (!invoice.value || !groupEditTarget.value?.line_group_key) return;
+  groupDeleteBusy.value = true;
+  try {
+    await api.delete(
+      `/invoices/${invoice.value.id}/line-groups/${encodeURIComponent(groupEditTarget.value.line_group_key)}`,
+    );
+    toast.success("Grouped line items deleted.");
+    closeGroupDeleteModal();
+    await load();
+  } catch (e) {
+    toast.errorFrom(e, "Could not delete grouped line items.");
+  } finally {
+    groupDeleteBusy.value = false;
+  }
 }
 
 function openLineEditModal(line) {
@@ -1030,15 +1154,6 @@ onMounted(() => {
               </span>
             </div>
 
-            <div
-              v-if="canUpdate && invoice.status !== 'draft'"
-              class="alert alert-light border small py-2 mb-3 mb-md-4"
-              role="status"
-            >
-              Line items can only be edited while this invoice is a draft. Save changes with
-              <strong>Save Draft</strong> before sending.
-            </div>
-
             <h2 class="h6 fw-semibold mb-3">Line items</h2>
             <template v-if="invoice.status === 'draft' && canUpdate && false">
               <div class="row g-3 mb-3">
@@ -1164,6 +1279,7 @@ onMounted(() => {
                       <th class="text-end">Qty</th>
                       <th class="text-end">Price</th>
                       <th class="text-end">Total</th>
+                      <th v-if="canUpdate && invoice.status !== 'void'" class="text-end">Actions</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -1187,10 +1303,34 @@ onMounted(() => {
                         <td class="text-end fw-semibold">
                           {{ formatCents(row.total_cents, invoice.currency) }}
                         </td>
+                        <td v-if="canUpdate && invoice.status !== 'void'" class="text-end" @click.stop>
+                          <div class="position-relative d-inline-block">
+                            <button
+                              v-if="row.line_group_key"
+                              type="button"
+                              class="staff-action-btn staff-action-btn--more"
+                              :class="{ 'is-open': groupMenuOpenId === row.id }"
+                              :aria-expanded="groupMenuOpenId === row.id"
+                              aria-haspopup="true"
+                              aria-label="Grouped row actions"
+                              @click.stop="toggleGroupMenu(row.id)"
+                            >
+                              <CrmIconRowActions variant="horizontal" />
+                            </button>
+                            <div v-if="groupMenuOpenId === row.id" class="billing-inline-menu billing-inline-menu--row" role="menu">
+                              <button type="button" class="staff-row-menu__item" role="menuitem" @click="openGroupEditModal(row)">
+                                Edit
+                              </button>
+                              <button type="button" class="staff-row-menu__item staff-row-menu__item--danger" role="menuitem" @click="openGroupDeleteModal(row)">
+                                Delete
+                              </button>
+                            </div>
+                          </div>
+                        </td>
                       </tr>
                     </template>
                     <tr v-if="!invoiceTableRows.length">
-                      <td colspan="5" class="text-center text-secondary py-3">
+                      <td :colspan="canUpdate && invoice.status !== 'void' ? 6 : 5" class="text-center text-secondary py-3">
                         No line items.
                       </td>
                     </tr>
@@ -1220,8 +1360,9 @@ onMounted(() => {
                         <th class="text-end">Qty</th>
                         <th class="text-end">Price</th>
                         <th class="text-end">Total</th>
+                        <th>Order #</th>
                         <th
-                          v-if="invoice.status === 'draft' && canUpdate"
+                          v-if="invoice.status !== 'void' && canUpdate"
                           class="text-end"
                           style="width: 3.5rem"
                         >
@@ -1236,7 +1377,8 @@ onMounted(() => {
                         <td class="text-end text-nowrap">{{ formatQtyDisplay(row.qty) }}</td>
                         <td class="text-end">{{ formatCents(row.price_cents, invoice.currency) }}</td>
                         <td class="text-end">{{ formatCents(row.total_cents, invoice.currency) }}</td>
-                        <td v-if="invoice.status === 'draft' && canUpdate" class="text-end">
+                        <td>{{ row.order_number || "—" }}</td>
+                        <td v-if="invoice.status !== 'void' && canUpdate" class="text-end">
                           <div class="position-relative d-inline-block">
                             <button
                               type="button"
@@ -1266,7 +1408,7 @@ onMounted(() => {
                         </td>
                       </tr>
                       <tr v-if="!selectedTableRowDetails.length">
-                        <td :colspan="invoice.status === 'draft' && canUpdate ? 6 : 5" class="text-center text-secondary py-3">
+                        <td :colspan="invoice.status !== 'void' && canUpdate ? 7 : 6" class="text-center text-secondary py-3">
                           No line items.
                         </td>
                       </tr>
@@ -1431,6 +1573,61 @@ onMounted(() => {
     </template>
 
     <div v-else class="alert alert-warning">Invoice not found.</div>
+
+    <Teleport to="body">
+      <Transition name="crm-vx-confirm">
+        <div
+          v-if="groupEditModalOpen"
+          class="crm-vx-modal-overlay"
+          role="dialog"
+          aria-modal="true"
+          @click.self="closeGroupEditModal"
+        >
+          <div class="crm-vx-modal" @click.stop>
+            <header class="crm-vx-modal__head">
+              <h2 class="crm-vx-modal__title">Edit Grouped Line Items</h2>
+            </header>
+            <div class="crm-vx-modal__body">
+              <div class="d-flex justify-content-end mb-2">
+                <button type="button" class="btn btn-sm btn-outline-secondary" :disabled="groupEditBusy" @click="addGroupEditLine">
+                  Add Line
+                </button>
+              </div>
+              <div class="table-responsive">
+                <table class="table table-sm align-middle mb-0 billing-inv-items-table">
+                  <thead>
+                    <tr>
+                      <th>Service</th>
+                      <th>Category</th>
+                      <th>Order #</th>
+                      <th class="text-end">Qty</th>
+                      <th class="text-end">Price</th>
+                      <th class="text-end">Total</th>
+                      <th />
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr v-for="(line, idx) in groupEditLines" :key="idx">
+                      <td><input v-model="line.display_name" type="text" class="form-control form-control-sm" /></td>
+                      <td><input v-model="line.category" type="text" class="form-control form-control-sm" /></td>
+                      <td><input v-model="line.metadata.order_number" type="text" class="form-control form-control-sm" /></td>
+                      <td><input v-model="line.quantity" type="text" class="form-control form-control-sm text-end" /></td>
+                      <td><input v-model="line.unit_price" type="text" class="form-control form-control-sm text-end" /></td>
+                      <td class="text-end">{{ formatCents(Math.max(0, Math.round((Number.parseFloat(String(line.quantity).replace(/,/g, "")) || 0) * dollarsToCents(line.unit_price))), invoice.currency) }}</td>
+                      <td class="text-end"><button type="button" class="btn btn-link btn-sm text-danger p-0" @click="removeGroupEditLine(idx)">Delete</button></td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+            <footer class="crm-vx-modal__footer d-flex gap-2 justify-content-end">
+              <button type="button" class="crm-vx-modal-btn crm-vx-modal-btn--secondary" :disabled="groupEditBusy" @click="closeGroupEditModal">Cancel</button>
+              <button type="button" class="crm-vx-modal-btn crm-vx-modal-btn--primary" :disabled="groupEditBusy" @click="confirmGroupEdit">{{ groupEditBusy ? "Saving…" : "Save" }}</button>
+            </footer>
+          </div>
+        </div>
+      </Transition>
+    </Teleport>
 
     <Teleport to="body">
       <Transition name="crm-vx-confirm">
@@ -1892,6 +2089,18 @@ onMounted(() => {
         </div>
       </Transition>
     </Teleport>
+
+    <ConfirmModal
+      :open="groupDeleteModalOpen"
+      title="Delete Group?"
+      :message="groupEditTarget ? `Delete grouped items for ${groupEditTarget.name}? This cannot be undone.` : ''"
+      confirm-label="Delete"
+      cancel-label="Cancel"
+      :busy="groupDeleteBusy"
+      danger
+      @close="closeGroupDeleteModal"
+      @confirm="confirmGroupDelete"
+    />
 
     <ConfirmModal
       :open="lineDeleteModalOpen"

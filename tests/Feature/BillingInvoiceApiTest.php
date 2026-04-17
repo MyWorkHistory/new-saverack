@@ -1132,4 +1132,148 @@ class BillingInvoiceApiTest extends TestCase
             ->assertOk()
             ->assertJsonPath('total_cents', 0);
     }
+
+    public function test_import_return_label_maps_to_postage_and_preserves_order_number(): void
+    {
+        $user = User::factory()->create();
+        $user->permissions()->sync([
+            $this->billingViewPermission()->id,
+            $this->billingCreatePermission()->id,
+            $this->clientsViewPermission()->id,
+        ]);
+        Sanctum::actingAs($user);
+
+        $client = ClientAccount::query()->create([
+            'status' => ClientAccount::STATUS_ACTIVE,
+            'company_name' => 'Return Label Co',
+            'email' => 'returns@acme.test',
+        ]);
+        $client->refresh();
+
+        $csv = "Charge Name,Charge Type,Charge Qty,Avg Rate,Charge Subtotal,Order # (shipment)\n"
+            ."Endicia return label,shipping_label_charge,1,4.25,4.25,ORD-123\n";
+        $file = UploadedFile::fake()->createWithContent('charges.csv', $csv);
+
+        $res = $this->post(
+            "/api/client-accounts/{$client->id}/invoice-imports/charges",
+            [
+                'due_at' => '2026-06-15',
+                'file' => $file,
+            ],
+            ['Accept' => 'application/json']
+        );
+
+        $res->assertStatus(201)
+            ->assertJsonPath('invoice.items.0.category', 'postage')
+            ->assertJsonPath('invoice.items.0.display_name', 'Return Label')
+            ->assertJsonPath('invoice.items.0.metadata.order_number', 'ORD-123');
+
+        $invoiceId = $res->json('invoice.id');
+        $this->assertIsInt($invoiceId);
+        $show = $this->getJson("/api/invoices/{$invoiceId}");
+        $show->assertOk()
+            ->assertJsonPath('presentation.rows.0.details.0.order_number', 'ORD-123');
+    }
+
+    public function test_group_and_item_edit_delete_allowed_for_sent_non_void_invoice(): void
+    {
+        $user = User::factory()->create();
+        $user->permissions()->sync([
+            $this->billingViewPermission()->id,
+            $this->billingUpdatePermission()->id,
+        ]);
+        Sanctum::actingAs($user);
+
+        $client = ClientAccount::query()->create([
+            'status' => ClientAccount::STATUS_ACTIVE,
+            'company_name' => 'Non Draft Edit Co',
+            'email' => 'non-draft@acme.test',
+        ]);
+
+        $invoice = Invoice::query()->create([
+            'invoice_number' => 'INV-NON-DRAFT-001',
+            'client_account_id' => $client->id,
+            'status' => Invoice::STATUS_SENT,
+            'currency' => 'USD',
+            'subtotal_cents' => 1000,
+            'tax_cents' => 0,
+            'total_cents' => 1000,
+            'amount_paid_cents' => 0,
+            'balance_due_cents' => 1000,
+        ]);
+        $item = InvoiceItem::query()->create([
+            'invoice_id' => $invoice->id,
+            'sort_order' => 1,
+            'category' => 'postage',
+            'group_key' => 'postage:return-label',
+            'description' => 'Return Label',
+            'display_name' => 'Return Label',
+            'quantity' => 1,
+            'unit_price_cents' => 1000,
+            'line_total_cents' => 1000,
+            'metadata' => ['order_number' => 'ORD-999'],
+        ]);
+
+        $this->putJson("/api/invoices/{$invoice->id}/items/{$item->id}", [
+            'description' => 'Return Label',
+            'display_name' => 'Return Label',
+            'category' => 'postage',
+            'quantity' => 1,
+            'unit_price_cents' => 1000,
+            'line_total_cents' => 1000,
+            'metadata' => ['order_number' => 'ORD-999'],
+        ])->assertOk();
+
+        $this->putJson("/api/invoices/{$invoice->id}/line-groups/postage%3Areturn-label", [
+            'items' => [
+                [
+                    'description' => 'Return Label',
+                    'display_name' => 'Return Label',
+                    'category' => 'postage',
+                    'quantity' => 2,
+                    'unit_price_cents' => 500,
+                    'line_total_cents' => 1000,
+                    'metadata' => ['order_number' => 'ORD-999'],
+                ],
+            ],
+        ])->assertOk();
+
+        $this->deleteJson("/api/invoices/{$invoice->id}/line-groups/postage%3Areturn-label")
+            ->assertOk();
+    }
+
+    public function test_public_and_pdf_include_updated_payment_address(): void
+    {
+        $user = User::factory()->create();
+        $user->permissions()->sync([$this->billingViewPermission()->id]);
+        Sanctum::actingAs($user);
+
+        $client = ClientAccount::query()->create([
+            'status' => ClientAccount::STATUS_ACTIVE,
+            'company_name' => 'Address Co',
+            'email' => 'address@acme.test',
+        ]);
+        $client->refresh();
+        $invoice = Invoice::query()->create([
+            'invoice_number' => 'INV-ADDR-001',
+            'client_account_id' => $client->id,
+            'status' => Invoice::STATUS_SENT,
+            'currency' => 'USD',
+            'share_token' => 'addr-token',
+            'subtotal_cents' => 0,
+            'tax_cents' => 0,
+            'total_cents' => 0,
+            'amount_paid_cents' => 0,
+            'balance_due_cents' => 0,
+        ]);
+
+        $slug = (string) $client->invoice_share_slug;
+        $this->get("/billing-invoice/{$slug}/{$invoice->share_token}")
+            ->assertOk()
+            ->assertSee('3135 Drane Field Rd #20', false);
+
+        $pdfData = app(InvoiceService::class)->pdfViewData($invoice);
+        $html = view('billing.invoice-pdf', $pdfData)->render();
+        $this->assertStringContainsString('3135 Drane Field Rd #20', $html);
+    }
 }

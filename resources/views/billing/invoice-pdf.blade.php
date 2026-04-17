@@ -116,7 +116,7 @@
 <div class="notes" style="font-size: 11px;">
     <strong>Please send payment to:</strong><br>
     Save Rack LLC<br>
-    3025 Whitten Rd<br>
+    3135 Drane Field Rd #20<br>
     Lakeland, FL 33815<br><br>
     Routing #: 063107513<br>
     Account #: 1157249176<br>

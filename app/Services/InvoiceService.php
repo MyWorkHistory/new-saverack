@@ -71,8 +71,8 @@ class InvoiceService
      */
     public function updateDraft(Invoice $invoice, array $header, array $items, ?User $actor): Invoice
     {
-        if (! $invoice->isEditableDraft()) {
-            throw new \RuntimeException('Only draft invoices can be updated.');
+        if ($invoice->isVoid()) {
+            throw new \RuntimeException('Void invoices cannot be updated.');
         }
 
         return DB::transaction(function () use ($invoice, $header, $items, $actor) {
@@ -128,8 +128,8 @@ class InvoiceService
 
     public function deleteLineGroup(Invoice $invoice, string $groupKey, ?User $actor): Invoice
     {
-        if (! $invoice->isEditableDraft()) {
-            throw new \RuntimeException('Only draft invoices can be edited.');
+        if ($invoice->isVoid()) {
+            throw new \RuntimeException('Void invoices cannot be edited.');
         }
 
         return DB::transaction(function () use ($invoice, $groupKey, $actor) {
@@ -139,7 +139,7 @@ class InvoiceService
             }
             $this->recalculateTotals($invoice->refresh());
             $invoice->save();
-            $this->logHistory($invoice, $actor, 'updated', Invoice::STATUS_DRAFT, Invoice::STATUS_DRAFT, [
+            $this->logHistory($invoice, $actor, 'updated', $invoice->status, $invoice->status, [
                 'event_type' => InvoiceHistoryEventType::LINE_DELETE,
                 'history_message' => 'Deleted line group: '.$groupKey,
             ]);
@@ -153,8 +153,8 @@ class InvoiceService
      */
     public function replaceLineGroup(Invoice $invoice, string $groupKey, array $items, ?User $actor): Invoice
     {
-        if (! $invoice->isEditableDraft()) {
-            throw new \RuntimeException('Only draft invoices can be edited.');
+        if ($invoice->isVoid()) {
+            throw new \RuntimeException('Void invoices cannot be edited.');
         }
 
         return DB::transaction(function () use ($invoice, $groupKey, $items, $actor) {
@@ -167,7 +167,7 @@ class InvoiceService
             }
             $this->recalculateTotals($invoice->refresh());
             $invoice->save();
-            $this->logHistory($invoice, $actor, 'updated', Invoice::STATUS_DRAFT, Invoice::STATUS_DRAFT, [
+            $this->logHistory($invoice, $actor, 'updated', $invoice->status, $invoice->status, [
                 'event_type' => InvoiceHistoryEventType::LINE_EDIT,
                 'history_message' => 'Replaced line group: '.$groupKey,
             ]);
@@ -227,8 +227,8 @@ class InvoiceService
      */
     public function updateInvoiceItem(Invoice $invoice, int $itemId, array $item, ?User $actor): Invoice
     {
-        if (! $invoice->isEditableDraft()) {
-            throw new \RuntimeException('Only draft invoice items can be edited.');
+        if ($invoice->isVoid()) {
+            throw new \RuntimeException('Void invoice items cannot be edited.');
         }
 
         return DB::transaction(function () use ($invoice, $itemId, $item, $actor) {
@@ -254,7 +254,7 @@ class InvoiceService
 
             $this->recalculateTotals($invoice->refresh());
             $invoice->save();
-            $this->logHistory($invoice, $actor, 'item_updated', Invoice::STATUS_DRAFT, Invoice::STATUS_DRAFT, [
+            $this->logHistory($invoice, $actor, 'item_updated', $invoice->status, $invoice->status, [
                 'event_type' => InvoiceHistoryEventType::LINE_EDIT,
                 'history_message' => 'Updated invoice line item.',
                 'item_id' => $itemId,
@@ -266,8 +266,8 @@ class InvoiceService
 
     public function deleteInvoiceItem(Invoice $invoice, int $itemId, ?User $actor): Invoice
     {
-        if (! $invoice->isEditableDraft()) {
-            throw new \RuntimeException('Only draft invoice items can be deleted.');
+        if ($invoice->isVoid()) {
+            throw new \RuntimeException('Void invoice items cannot be deleted.');
         }
 
         return DB::transaction(function () use ($invoice, $itemId, $actor) {
@@ -278,7 +278,7 @@ class InvoiceService
 
             $this->recalculateTotals($invoice->refresh());
             $invoice->save();
-            $this->logHistory($invoice, $actor, 'item_deleted', Invoice::STATUS_DRAFT, Invoice::STATUS_DRAFT, [
+            $this->logHistory($invoice, $actor, 'item_deleted', $invoice->status, $invoice->status, [
                 'event_type' => InvoiceHistoryEventType::LINE_DELETE,
                 'history_message' => 'Deleted invoice line item.',
                 'item_id' => $itemId,
@@ -1147,6 +1147,7 @@ class InvoiceService
             'subtype' => $item->subtype,
             'unit' => $item->unit,
             'metadata' => $item->metadata,
+            'order_number' => is_array($item->metadata) ? ($item->metadata['order_number'] ?? null) : null,
         ];
     }
 

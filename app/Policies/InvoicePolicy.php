@@ -29,7 +29,7 @@ class InvoicePolicy
 
     public function update(User $user, Invoice $invoice): bool
     {
-        if (! $invoice->isEditableDraft()) {
+        if ($invoice->isVoid()) {
             return false;
         }
 
@@ -38,7 +38,7 @@ class InvoicePolicy
 
     public function delete(User $user, Invoice $invoice): bool
     {
-        if (! $invoice->isEditableDraft()) {
+        if ($invoice->isVoid()) {
             return false;
         }
 

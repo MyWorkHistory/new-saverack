@@ -170,6 +170,22 @@ final class InvoiceChargeImportParser
         $lineTotalCents = $subtotalCents > 0 ? $subtotalCents : (int) round($qty * $rateCents);
         $sku = $this->cell($row, $map['charge_sku'] ?? -1);
         $orderNumber = $this->shipmentOrderNumber($row, $map);
+        if ($this->isReturnLabelCharge($chargeName, $chargeTypeRaw)) {
+            return $this->attachOrderMetadata(
+                $this->buildItem(
+                    InvoiceLineCategory::POSTAGE,
+                    'Return Label',
+                    $chargeName !== '' ? $chargeName : 'Return Label',
+                    $qty,
+                    $rateCents,
+                    $lineTotalCents,
+                    null,
+                    'postage:return-label',
+                    $chargeTypeRaw
+                ),
+                $orderNumber
+            );
+        }
 
         $item = $this->mapChargeSummaryPrimary($chargeName, $chargeTypeRaw, $categoryRaw, $sku, $qty, $rateCents, $lineTotalCents);
         if ($item !== null) {
@@ -194,6 +210,36 @@ final class InvoiceChargeImportParser
      */
     private function parseLegacyRow(array $row, array $map): ?array
     {
+        $legacyChargeName = $this->firstNonEmpty([
+            $this->cell($row, $map['charge_name'] ?? -1),
+            $this->cell($row, $map['label_charge'] ?? -1),
+            $this->cell($row, $map['ad_hoc_name'] ?? -1),
+            $this->cell($row, $map['fee_charge'] ?? -1),
+            $this->cell($row, $map['fee'] ?? -1),
+        ]) ?? '';
+        $legacyChargeType = $this->cell($row, $map['charge_type'] ?? -1);
+        if ($this->isReturnLabelCharge($legacyChargeName, $legacyChargeType)) {
+            $qty = $this->parseQty($this->cell($row, $map['quantity'] ?? -1));
+            $unitRate = $this->parseMoneyToCents($this->cell($row, $map['unit_rate'] ?? -1));
+            $total = $this->parseMoneyToCents($this->cell($row, $map['total'] ?? -1));
+            if ($total === 0 && $qty !== 0.0 && $unitRate !== 0) $total = (int) round($qty * $unitRate);
+            if ($unitRate === 0 && $qty !== 0.0 && $total !== 0) $unitRate = (int) round($total / $qty);
+            if ($qty === 0.0 && $total !== 0 && $unitRate !== 0) $qty = round($total / $unitRate, 4);
+            if ($qty === 0.0) $qty = 1.0;
+
+            return $this->buildItem(
+                InvoiceLineCategory::POSTAGE,
+                'Return Label',
+                $legacyChargeName !== '' ? $legacyChargeName : 'Return Label',
+                $qty,
+                $unitRate,
+                $total,
+                null,
+                'postage:return-label',
+                $legacyChargeType
+            );
+        }
+
         $feeType = $this->getFeeType($row, $map);
         if ($feeType === null) {
             $feeType = $this->inferFeeType($row, $map);

@@ -1,5 +1,5 @@
 <script setup>
-import { computed, inject, onMounted, ref, watch } from "vue";
+import { computed, inject, nextTick, onMounted, onUnmounted, ref, watch } from "vue";
 
 import { useRouter } from "vue-router";
 import api from "../../services/api";
@@ -72,6 +72,8 @@ const sendWhatsappType = ref("send_invoice");
 const sendWhatsappMessage = ref("");
 const lineMenuOpenId = ref(null);
 const groupMenuOpenId = ref(null);
+const lineMenuPos = ref({ top: 0, left: 0 });
+const groupMenuPos = ref({ top: 0, left: 0 });
 const lineEditModalOpen = ref(false);
 const lineEditBusy = ref(false);
 const lineDeleteModalOpen = ref(false);
@@ -205,6 +207,19 @@ const selectedTableRow = computed(() => {
 });
 
 const selectedTableRowDetails = computed(() => selectedTableRow.value?.details || []);
+const lineMenuStyle = computed(() => ({
+  position: "fixed",
+  top: `${lineMenuPos.value.top}px`,
+  left: `${lineMenuPos.value.left}px`,
+}));
+const groupMenuStyle = computed(() => ({
+  position: "fixed",
+  top: `${groupMenuPos.value.top}px`,
+  left: `${groupMenuPos.value.left}px`,
+}));
+
+const MENU_W = 128;
+const MENU_H = 96;
 
 function openTableRow(row) {
   selectedTableRowId.value = row.id;
@@ -617,12 +632,50 @@ watch(sendWhatsappType, (value) => {
   sendWhatsappMessage.value = buildWhatsappDefaultMessage(value);
 });
 
-function toggleLineMenu(lineId) {
-  lineMenuOpenId.value = lineMenuOpenId.value === lineId ? null : lineId;
+function placeOverlayMenu(targetEl, setPos) {
+  if (!(targetEl instanceof HTMLElement)) return;
+  const rect = targetEl.getBoundingClientRect();
+  let top = rect.bottom + 4;
+  let left = rect.right - MENU_W;
+  left = Math.max(8, Math.min(left, window.innerWidth - MENU_W - 8));
+  if (top + MENU_H > window.innerHeight - 8) {
+    top = Math.max(8, rect.top - MENU_H - 4);
+  }
+  setPos({ top, left });
 }
 
-function toggleGroupMenu(rowId) {
-  groupMenuOpenId.value = groupMenuOpenId.value === rowId ? null : rowId;
+async function toggleLineMenu(lineId, event) {
+  event?.stopPropagation?.();
+  if (lineMenuOpenId.value === lineId) {
+    lineMenuOpenId.value = null;
+    return;
+  }
+  const btn = event?.currentTarget;
+  groupMenuOpenId.value = null;
+  lineMenuOpenId.value = lineId;
+  await nextTick();
+  requestAnimationFrame(() => {
+    placeOverlayMenu(btn, (v) => {
+      lineMenuPos.value = v;
+    });
+  });
+}
+
+async function toggleGroupMenu(rowId, event) {
+  event?.stopPropagation?.();
+  if (groupMenuOpenId.value === rowId) {
+    groupMenuOpenId.value = null;
+    return;
+  }
+  const btn = event?.currentTarget;
+  lineMenuOpenId.value = null;
+  groupMenuOpenId.value = rowId;
+  await nextTick();
+  requestAnimationFrame(() => {
+    placeOverlayMenu(btn, (v) => {
+      groupMenuPos.value = v;
+    });
+  });
 }
 
 function openGroupEditModal(row) {
@@ -1024,8 +1077,38 @@ async function confirmDelete() {
 }
 
 onMounted(() => {
+  document.addEventListener("click", onDocClick);
+  window.addEventListener("scroll", onWindowScrollOrResize, true);
+  window.addEventListener("resize", onWindowScrollOrResize);
+  document.addEventListener("keydown", onDocKeydown);
   load();
 });
+
+onUnmounted(() => {
+  document.removeEventListener("click", onDocClick);
+  window.removeEventListener("scroll", onWindowScrollOrResize, true);
+  window.removeEventListener("resize", onWindowScrollOrResize);
+  document.removeEventListener("keydown", onDocKeydown);
+});
+
+function onDocClick(e) {
+  if (!e.target?.closest?.("[data-row-actions]")) {
+    lineMenuOpenId.value = null;
+    groupMenuOpenId.value = null;
+  }
+}
+
+function onWindowScrollOrResize() {
+  lineMenuOpenId.value = null;
+  groupMenuOpenId.value = null;
+}
+
+function onDocKeydown(e) {
+  if (e.key === "Escape") {
+    lineMenuOpenId.value = null;
+    groupMenuOpenId.value = null;
+  }
+}
 </script>
 
 <template>
@@ -1304,7 +1387,7 @@ onMounted(() => {
                           {{ formatCents(row.total_cents, invoice.currency) }}
                         </td>
                         <td v-if="canUpdate && invoice.status !== 'void'" class="text-end" @click.stop>
-                          <div class="position-relative d-inline-block">
+                          <div data-row-actions class="position-relative d-inline-block">
                             <button
                               v-if="row.line_group_key"
                               type="button"
@@ -1313,11 +1396,17 @@ onMounted(() => {
                               :aria-expanded="groupMenuOpenId === row.id"
                               aria-haspopup="true"
                               aria-label="Grouped row actions"
-                              @click.stop="toggleGroupMenu(row.id)"
+                              @click.stop="toggleGroupMenu(row.id, $event)"
                             >
                               <CrmIconRowActions variant="horizontal" />
                             </button>
-                            <div v-if="groupMenuOpenId === row.id" class="billing-inline-menu billing-inline-menu--row" role="menu">
+                            <div
+                              v-if="groupMenuOpenId === row.id"
+                              data-row-actions
+                              class="billing-inline-menu billing-inline-menu--row"
+                              role="menu"
+                              :style="groupMenuStyle"
+                            >
                               <button type="button" class="staff-row-menu__item" role="menuitem" @click="openGroupEditModal(row)">
                                 Edit
                               </button>
@@ -1379,7 +1468,7 @@ onMounted(() => {
                         <td class="text-end">{{ formatCents(row.total_cents, invoice.currency) }}</td>
                         <td>{{ row.order_number || "—" }}</td>
                         <td v-if="invoice.status !== 'void' && canUpdate" class="text-end">
-                          <div class="position-relative d-inline-block">
+                          <div data-row-actions class="position-relative d-inline-block">
                             <button
                               type="button"
                               class="staff-action-btn staff-action-btn--more"
@@ -1387,11 +1476,17 @@ onMounted(() => {
                               :aria-expanded="lineMenuOpenId === row.id"
                               aria-haspopup="true"
                               aria-label="Line item actions"
-                              @click.stop="toggleLineMenu(row.id)"
+                              @click.stop="toggleLineMenu(row.id, $event)"
                             >
                               <CrmIconRowActions variant="horizontal" />
                             </button>
-                            <div v-if="lineMenuOpenId === row.id" class="billing-inline-menu billing-inline-menu--row" role="menu">
+                            <div
+                              v-if="lineMenuOpenId === row.id"
+                              data-row-actions
+                              class="billing-inline-menu billing-inline-menu--row"
+                              role="menu"
+                              :style="lineMenuStyle"
+                            >
                               <button type="button" class="staff-row-menu__item" role="menuitem" @click="openLineEditModal(row)">
                                 Edit
                               </button>
@@ -2246,15 +2341,13 @@ onMounted(() => {
   font-size: 0.925rem;
 }
 .billing-inline-menu {
-  position: absolute;
-  right: 0;
-  top: calc(100% + 0.25rem);
+  position: fixed;
   min-width: 12rem;
   background: #fff;
   border: 1px solid #e8e7ed;
   border-radius: 0.5rem;
   box-shadow: 0 0.5rem 1rem rgba(47, 43, 61, 0.12);
-  z-index: 20;
+  z-index: 2200;
   overflow: hidden;
 }
 .billing-inline-menu--row {

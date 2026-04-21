@@ -766,6 +766,126 @@ class BillingInvoiceApiTest extends TestCase
         $this->assertTrue($items->contains(fn ($item) => $item['category'] === 'packaging' && $item['display_name'] === 'Inserts'));
     }
 
+    public function test_import_charge_csv_flags_basic_box_6x9x1_as_box_not_selected_and_groups(): void
+    {
+        $user = User::factory()->create();
+        $user->permissions()->sync([
+            $this->billingViewPermission()->id,
+            $this->billingCreatePermission()->id,
+            $this->clientsViewPermission()->id,
+        ]);
+        Sanctum::actingAs($user);
+
+        $client = ClientAccount::query()->create([
+            'status' => ClientAccount::STATUS_ACTIVE,
+            'company_name' => 'Basic Box Import Co',
+            'email' => 'bbox@acme.test',
+        ]);
+        $client->refresh();
+
+        $csv = "Charge Name,Charge Type,Qty,Rate,Subtotal\n"
+            ."Basic box (6 x 9 x 1) used for shipping label 940015010549609039198772,box_charge,1,0.25,0.25\n"
+            ."Basic box (6 x 9 x 1) used for shipping label 940015010549609039198773,box_charge,1,0.25,0.25\n"
+            ."Basic box (6 x 9 x 1) used for shipping label 940015010549609039198774,box_charge,1,0.25,0.25\n";
+        $file = UploadedFile::fake()->createWithContent('charges.csv', $csv);
+
+        $res = $this->post(
+            "/api/client-accounts/{$client->id}/invoice-imports/charges",
+            [
+                'due_at' => '2026-06-15',
+                'file' => $file,
+            ],
+            ['Accept' => 'application/json']
+        );
+
+        $res->assertStatus(201);
+        $items = collect($res->json('invoice.items') ?? [])->values();
+
+        // All Basic Box (6x9x1) collapse into a single grouped line.
+        $boxNotSelected = $items->filter(fn ($i) => ($i['category'] ?? null) === 'packaging' && ($i['display_name'] ?? null) === 'Box Not Selected');
+        $this->assertCount(1, $boxNotSelected);
+        $this->assertSame(3.0, (float) $boxNotSelected->first()['quantity']);
+        $this->assertSame('packaging:box-not-selected', $boxNotSelected->first()['group_key']);
+        $this->assertTrue((bool) ($boxNotSelected->first()['metadata']['box_not_selected'] ?? false));
+    }
+
+    public function test_import_charge_csv_maps_manually_fulfilled_label_to_manual_label_zero_cost(): void
+    {
+        $user = User::factory()->create();
+        $user->permissions()->sync([
+            $this->billingViewPermission()->id,
+            $this->billingCreatePermission()->id,
+            $this->clientsViewPermission()->id,
+        ]);
+        Sanctum::actingAs($user);
+
+        $client = ClientAccount::query()->create([
+            'status' => ClientAccount::STATUS_ACTIVE,
+            'company_name' => 'Manual Label Import Co',
+            'email' => 'ml@acme.test',
+        ]);
+        $client->refresh();
+
+        $csv = "Charge Name,Charge Type,Qty,Rate,Subtotal\n"
+            ."Shipping label for carrier Manually Fulfilled.,shipping_label_charge,1,6.88,6.88\n";
+        $file = UploadedFile::fake()->createWithContent('charges.csv', $csv);
+
+        $res = $this->post(
+            "/api/client-accounts/{$client->id}/invoice-imports/charges",
+            [
+                'due_at' => '2026-06-15',
+                'file' => $file,
+            ],
+            ['Accept' => 'application/json']
+        );
+
+        $res->assertStatus(201);
+        $items = collect($res->json('invoice.items') ?? []);
+        $manual = $items->first(fn ($i) => ($i['category'] ?? null) === 'postage' && ($i['display_name'] ?? null) === 'Manual Label');
+        $this->assertNotNull($manual);
+        $this->assertSame(0, (int) ($manual['unit_price_cents'] ?? -1));
+        $this->assertSame(0, (int) ($manual['line_total_cents'] ?? -1));
+        $this->assertSame('postage:manual-label', (string) ($manual['group_key'] ?? ''));
+    }
+
+    public function test_import_charge_csv_maps_purchase_receiving_category_to_receiving_not_ad_hoc(): void
+    {
+        $user = User::factory()->create();
+        $user->permissions()->sync([
+            $this->billingViewPermission()->id,
+            $this->billingCreatePermission()->id,
+            $this->clientsViewPermission()->id,
+        ]);
+        Sanctum::actingAs($user);
+
+        $client = ClientAccount::query()->create([
+            'status' => ClientAccount::STATUS_ACTIVE,
+            'company_name' => 'Receiving Import Co',
+            'email' => 'recv@acme.test',
+        ]);
+        $client->refresh();
+
+        // Simulates the “new kind of CSV” receiving rows: billing category indicates purchase receiving.
+        $csv = "Charge Name,Charge Type,Category (charge),Charge Qty,Avg Rate,Charge Subtotal\n"
+            ."Receiving,receiving_by_item_charge,purchase_c_receiving,1,8.50,8.50\n";
+        $file = UploadedFile::fake()->createWithContent('charges.csv', $csv);
+
+        $res = $this->post(
+            "/api/client-accounts/{$client->id}/invoice-imports/charges",
+            [
+                'due_at' => '2026-06-15',
+                'file' => $file,
+            ],
+            ['Accept' => 'application/json']
+        );
+
+        $res->assertStatus(201);
+        $items = collect($res->json('invoice.items') ?? []);
+        $recv = $items->first(fn ($i) => ($i['display_name'] ?? null) === 'Receiving');
+        $this->assertNotNull($recv);
+        $this->assertSame('receiving', (string) ($recv['category'] ?? ''));
+    }
+
     public function test_invoice_detail_returns_old_beta_presentation_rows(): void
     {
         $user = User::factory()->create();

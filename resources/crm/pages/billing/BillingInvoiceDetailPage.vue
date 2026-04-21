@@ -1460,8 +1460,15 @@ function onDocKeydown(e) {
                       </tr>
                     </thead>
                     <tbody>
-                      <tr v-for="row in selectedTableRowDetails" :key="row.id" class="billing-inv-line-detail">
-                        <td class="fw-medium">{{ row.name }}</td>
+                      <tr
+                        v-for="row in selectedTableRowDetails"
+                        :key="row.id"
+                        class="billing-inv-line-detail"
+                        :class="{ 'billing-inv-line-detail--danger': row?.metadata?.box_not_selected }"
+                      >
+                        <td class="fw-medium" :class="{ 'text-danger fw-semibold': row?.metadata?.box_not_selected }">
+                          {{ row.name }}
+                        </td>
                         <td>{{ row.type }}</td>
                         <td class="text-end text-nowrap">{{ formatQtyDisplay(row.qty) }}</td>
                         <td class="text-end">{{ formatCents(row.price_cents, invoice.currency) }}</td>
@@ -2339,6 +2346,9 @@ function onDocKeydown(e) {
 .billing-inv-line-detail td {
   background: var(--bs-tertiary-bg, #f8f9fa);
   font-size: 0.925rem;
+}
+.billing-inv-line-detail--danger td {
+  background: rgba(234, 84, 85, 0.08);
 }
 .billing-inline-menu {
   position: fixed;

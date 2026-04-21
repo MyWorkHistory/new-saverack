@@ -10,6 +10,21 @@ use Illuminate\Support\Str;
  */
 final class InvoiceChargeImportParser
 {
+    private function isBasicBox6x9x1(string $raw): bool
+    {
+        $s = strtolower(trim($raw));
+        if ($s === '') {
+            return false;
+        }
+        // Flexible match for: "Basic box (6 x 9 x 1)" with optional spaces/parens and ×.
+        return preg_match('/\bbasic\s*box\b.*\b6\s*[x×]\s*9\s*[x×]\s*1\b/i', $s) === 1;
+    }
+
+    private function containsManuallyFulfilled(string $raw): bool
+    {
+        return stripos($raw, 'manually fulfilled') !== false;
+    }
+
     /**
      * @return list<array<string, mixed>>
      */
@@ -278,6 +293,19 @@ final class InvoiceChargeImportParser
             return $this->buildOnDemandItem($chargeName, $chargeTypeRaw, $skuFromColumn, $qty, $rateCents, $lineTotalCents);
         }
         if (strpos($t, 'shipping_label') !== false) {
+            if ($this->containsManuallyFulfilled($chargeName.' '.$chargeTypeRaw)) {
+                return $this->buildItem(
+                    InvoiceLineCategory::POSTAGE,
+                    'Manual Label',
+                    $chargeName !== '' ? $chargeName : 'Manual Label',
+                    $qty,
+                    0,
+                    0,
+                    null,
+                    'postage:manual-label',
+                    $chargeTypeRaw
+                );
+            }
             if ($this->isReturnLabelCharge($chargeName, $chargeTypeRaw)) {
                 return $this->buildItem(InvoiceLineCategory::POSTAGE, 'Return Label', $chargeName, $qty, $rateCents, $lineTotalCents, null, 'postage:return-label', $chargeTypeRaw);
             }
@@ -285,6 +313,21 @@ final class InvoiceChargeImportParser
             return $this->buildItem(InvoiceLineCategory::POSTAGE, $carrier, $chargeName, $qty, $rateCents, $lineTotalCents, null, 'postage', $chargeTypeRaw);
         }
         if (strpos($t, 'box_charge') !== false) {
+            if ($this->isBasicBox6x9x1($chargeName)) {
+                $item = $this->buildItem(
+                    InvoiceLineCategory::PACKAGING,
+                    'Box Not Selected',
+                    $chargeName !== '' ? $chargeName : 'Box Not Selected',
+                    $qty,
+                    $rateCents,
+                    $lineTotalCents,
+                    null,
+                    'packaging:box-not-selected',
+                    $chargeTypeRaw
+                );
+                $item['metadata'] = ['box_not_selected' => true];
+                return $item;
+            }
             $pkg = $this->packagingDisplayName($chargeName !== '' ? $chargeName : 'Other');
             return $this->buildItem(InvoiceLineCategory::PACKAGING, $pkg, $chargeName, $qty, $rateCents, $lineTotalCents, null, 'packaging:'.$this->slug($pkg), $chargeTypeRaw);
         }
@@ -346,6 +389,19 @@ final class InvoiceChargeImportParser
         }
 
         if (preg_match('/\b(shipping_label|shipping label|postage|mail class|priority mail|parcel select|ground advantage|media mail|first[- ]class parcel|endicia|stamps?\.com|shipstation|shippo|easy_post|easy post|usps|ups|fedex|dhl|ontrac|lasership|pitney|flat rate|intl|international|zone|delivery confirmation)\b/i', $hay)) {
+            if ($this->containsManuallyFulfilled($chargeName.' '.$chargeTypeRaw)) {
+                return $this->buildItem(
+                    InvoiceLineCategory::POSTAGE,
+                    'Manual Label',
+                    $chargeName !== '' ? $chargeName : 'Manual Label',
+                    $qty,
+                    0,
+                    0,
+                    null,
+                    'postage:manual-label',
+                    $chargeTypeRaw
+                );
+            }
             if ($this->isReturnLabelCharge($chargeName, $chargeTypeRaw)) {
                 return $this->buildItem(InvoiceLineCategory::POSTAGE, 'Return Label', $chargeName, $qty, $rateCents, $lineTotalCents, null, 'postage:return-label', $chargeTypeRaw);
             }
@@ -447,6 +503,7 @@ final class InvoiceChargeImportParser
             if ($val === 'postage') return 'Postage';
             if ($val === 'inserts') return 'Inserts';
             if ($val === 'packaging') return 'Packaging';
+            if (strpos($val, 'receiving') !== false) return 'Receiving';
             if (in_array($val, ['skincare', 'skin care', 'product (on-demand)', 'product (on demand)', 'on-demand', 'on demand'], true)) return 'Product (On-Demand)';
             if ($val === 'returns') return 'Returns';
             if ($val === 'order_value_charge' || strpos($val, 'order_value_charge') !== false) return 'Inserts';
@@ -470,7 +527,7 @@ final class InvoiceChargeImportParser
         $blob = $get('billing_category') !== '' ? $get('billing_category') : $get('fee');
         if ($blob !== '') {
             $norm = $this->normalizeBillingCategoryFromCsv($blob);
-            if (in_array($norm, ['Fulfillment', 'Postage', 'Packaging', 'Returns', 'Bank Fee', 'Duties & Taxes', 'Ad Hoc', 'Product (On-Demand)'], true)) {
+            if (in_array($norm, ['Fulfillment', 'Postage', 'Packaging', 'Returns', 'Bank Fee', 'Duties & Taxes', 'Ad Hoc', 'Product (On-Demand)', 'Receiving'], true)) {
                 return $norm;
             }
         }
@@ -491,6 +548,7 @@ final class InvoiceChargeImportParser
         if ($get('carrier') !== '') return 'Postage';
         if ($get('box') !== '') return 'Packaging';
         $ct = strtolower($get('charge_type'));
+        if (strpos($ct, 'receiving') !== false) return 'Receiving';
         if (strpos($ct, 'order_value_charge') !== false || $ct === 'inserts') return 'Inserts';
         if (strpos($ct, 'first_return_charge') !== false || strpos($ct, 'return_remainder_charge') !== false) return 'Returns';
         if (strpos($ct, 'first') !== false || strpos($ct, 'remainder') !== false || strpos($ct, 'additional') !== false || $ct === 'first_pick_charge' || $ct === 'pick_remainder_charge') return 'Fulfillment';
@@ -621,6 +679,21 @@ final class InvoiceChargeImportParser
             $this->cell($row, $index['fee_charge'] ?? -1),
             $this->cell($row, $index['fee'] ?? -1),
         ]) ?? 'Other';
+        if ($this->isBasicBox6x9x1($boxRaw)) {
+            $item = $this->buildItem(
+                InvoiceLineCategory::PACKAGING,
+                'Box Not Selected',
+                $boxRaw,
+                $qty,
+                $unitRate,
+                $total,
+                null,
+                'packaging:box-not-selected',
+                ''
+            );
+            $item['metadata'] = ['box_not_selected' => true];
+            return $item;
+        }
         $box = $this->packagingDisplayName($boxRaw);
 
         return $this->buildItem(InvoiceLineCategory::PACKAGING, $box, $boxRaw, $qty, $unitRate, $total, null, 'packaging:'.$this->slug($box), '');
@@ -735,6 +808,7 @@ final class InvoiceChargeImportParser
             'packaging' => 'Packaging',
             'returns' => 'Returns',
             'inserts' => 'Packaging',
+            'receiving' => 'Receiving',
             'skincare' => 'Product (On-Demand)',
             'skin care' => 'Product (On-Demand)',
             'on-demand' => 'Product (On-Demand)',
@@ -754,6 +828,7 @@ final class InvoiceChargeImportParser
         if (strpos($t, 'fulfill') !== false) return 'Fulfillment';
         if (strpos($t, 'postage') !== false || preg_match('/\b(ship|shipping|carrier|parcel|mail)\b/', $t)) return 'Postage';
         if (strpos($t, 'packag') !== false || preg_match('/\b(box|mailer|bubble|kraft)\b/', $t)) return 'Packaging';
+        if (strpos($t, 'receiv') !== false) return 'Receiving';
         if (strpos($t, 'skincare') !== false || preg_match('/\b(on[- ]?demand|product)\b/', $t)) return 'Product (On-Demand)';
         if (strpos($t, 'return') !== false) return 'Returns';
         if (strpos($t, 'duties') !== false && strpos($t, 'tax') !== false) return 'Duties & Taxes';
@@ -789,6 +864,8 @@ final class InvoiceChargeImportParser
                 return InvoiceLineCategory::ON_DEMAND;
             case 'storage':
                 return InvoiceLineCategory::STORAGE;
+            case 'receiving':
+                return InvoiceLineCategory::RECEIVING;
             default:
                 return InvoiceLineCategory::AD_HOC;
         }

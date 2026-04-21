@@ -23,6 +23,8 @@ final class InvoiceLineCategory
 
     public const ON_DEMAND = 'on_demand';
 
+    public const RECEIVING = 'receiving';
+
     public const CREDITS = 'credits';
 
     public const OTHER = 'other';
@@ -38,6 +40,7 @@ final class InvoiceLineCategory
             self::AD_HOC,
             self::STORAGE,
             self::ON_DEMAND,
+            self::RECEIVING,
             self::CREDITS,
             self::OTHER,
         ];

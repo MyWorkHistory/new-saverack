@@ -883,6 +883,7 @@ class InvoiceService
         $fulfillment = [];
         $postage = [];
         $packaging = [];
+        $receiving = [];
         $adHoc = [];
         $returns = [];
         $onDemand = [];
@@ -935,6 +936,21 @@ class InvoiceService
                 $packaging[$key]['items'][] = $this->detailLeafRow($item, $this->oldBetaPackagingType($rawName), $rawName, $unitRate, $total);
                 $packaging[$key]['qty'] += $qty;
                 $packaging[$key]['total'] += $total;
+            } elseif ($category === InvoiceLineCategory::RECEIVING) {
+                $rawName = $this->oldBetaDisplayName($item, 'Receiving');
+                $key = strtolower($rawName);
+                if (! isset($receiving[$key])) {
+                    $receiving[$key] = ['name' => $rawName, 'items' => [], 'qty' => 0.0, 'total' => 0];
+                }
+                $qty = (float) $item->quantity;
+                $total = (int) $item->line_total_cents;
+                $unitRate = (int) $item->unit_price_cents;
+                if ($unitRate === 0 && $qty != 0.0 && $total !== 0) {
+                    $unitRate = (int) round($total / $qty);
+                }
+                $receiving[$key]['items'][] = $this->detailLeafRow($item, 'Receiving', $rawName, $unitRate, $total);
+                $receiving[$key]['qty'] += $qty;
+                $receiving[$key]['total'] += $total;
             } elseif ($category === InvoiceLineCategory::AD_HOC || $category === 'ad hoc') {
                 $rawName = $this->oldBetaDisplayName($item, 'Ad Hoc');
                 $key = strtolower($rawName);
@@ -1050,6 +1066,22 @@ class InvoiceService
                 'price_cents' => $qty != 0.0 ? (int) round($total / $qty) : 0,
                 'total_cents' => $total,
                 'groupKey' => 'packaging',
+                'groupName' => $agg['name'],
+                'line_group_key' => $this->singleGroupKey($agg['items']),
+                'details' => $agg['items'],
+            ];
+        }
+        foreach ($receiving as $key => $agg) {
+            $qty = (float) $agg['qty'];
+            $total = (int) $agg['total'];
+            $rows[] = [
+                'id' => 'recv-'.$key,
+                'name' => $agg['name'],
+                'type' => 'Receiving',
+                'qty' => $qty,
+                'price_cents' => $qty != 0.0 ? (int) round($total / $qty) : 0,
+                'total_cents' => $total,
+                'groupKey' => 'receiving',
                 'groupName' => $agg['name'],
                 'line_group_key' => $this->singleGroupKey($agg['items']),
                 'details' => $agg['items'],
@@ -1284,6 +1316,8 @@ class InvoiceService
                 return 'Ad Hoc';
             case InvoiceLineCategory::STORAGE:
                 return 'Storage';
+            case InvoiceLineCategory::RECEIVING:
+                return 'Receiving';
             case InvoiceLineCategory::CREDITS:
                 return 'Credits';
             default:
@@ -1301,6 +1335,7 @@ class InvoiceService
             'bubble wrap' => 31,
             'kraft paper' => 32,
             'bubble wrap & kraft paper' => 33,
+            'receiving' => 35,
             'ad hoc' => 40,
             'returns' => 50,
             'product (on-demand)' => 60,

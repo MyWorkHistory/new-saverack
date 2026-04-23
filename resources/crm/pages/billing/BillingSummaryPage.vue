@@ -1,6 +1,6 @@
 <script setup>
 import { computed, onMounted, ref } from "vue";
-import { RouterLink } from "vue-router";
+import { RouterLink, useRouter } from "vue-router";
 import api from "../../services/api";
 import CrmLoadingSpinner from "../../components/common/CrmLoadingSpinner.vue";
 import { setCrmPageMeta } from "../../composables/useCrmPageMeta.js";
@@ -17,6 +17,16 @@ const summary = ref({
 });
 
 const nf = new Intl.NumberFormat(undefined, { maximumFractionDigits: 0 });
+const router = useRouter();
+
+function goToInvoicesBucket(bucket) {
+  let status = "all";
+  if (bucket === "open") status = "open";
+  else if (bucket === "past_due") status = "overdue";
+  else if (bucket === "draft") status = "draft";
+  else if (bucket === "paid") status = "paid";
+  router.push({ path: "/billing/invoices", query: { status } });
+}
 
 async function load() {
   loading.value = true;
@@ -82,8 +92,12 @@ onMounted(() => {
     <template v-else>
       <div class="row g-4 mb-4">
         <div class="col-12 col-sm-6 col-xl-3">
-          <div class="staff-stat-card h-100">
-            <p class="staff-stat-card__label">Open balance due</p>
+          <button
+            type="button"
+            class="staff-stat-card h-100 text-start w-100 border-0 billing-summary-stat-btn"
+            @click="goToInvoicesBucket('open')"
+          >
+            <p class="staff-stat-card__label">Open Balance Due</p>
             <p class="staff-stat-card__value">
               {{ formatCents(summary.open_balance_due_cents) }}
             </p>
@@ -99,11 +113,15 @@ onMounted(() => {
                 />
               </svg>
             </div>
-          </div>
+          </button>
         </div>
         <div class="col-12 col-sm-6 col-xl-3">
-          <div class="staff-stat-card h-100">
-            <p class="staff-stat-card__label">Overdue invoices</p>
+          <button
+            type="button"
+            class="staff-stat-card h-100 text-start w-100 border-0 billing-summary-stat-btn"
+            @click="goToInvoicesBucket('past_due')"
+          >
+            <p class="staff-stat-card__label">Past Due Invoices</p>
             <p class="staff-stat-card__value">
               {{ nf.format(summary.overdue_invoice_count) }}
             </p>
@@ -118,11 +136,15 @@ onMounted(() => {
                 />
               </svg>
             </div>
-          </div>
+          </button>
         </div>
         <div class="col-12 col-sm-6 col-xl-3">
-          <div class="staff-stat-card h-100">
-            <p class="staff-stat-card__label">Draft invoices</p>
+          <button
+            type="button"
+            class="staff-stat-card h-100 text-start w-100 border-0 billing-summary-stat-btn"
+            @click="goToInvoicesBucket('draft')"
+          >
+            <p class="staff-stat-card__label">Draft Invoices</p>
             <p class="staff-stat-card__value">
               {{ nf.format(summary.draft_invoice_count) }}
             </p>
@@ -137,11 +159,15 @@ onMounted(() => {
                 />
               </svg>
             </div>
-          </div>
+          </button>
         </div>
         <div class="col-12 col-sm-6 col-xl-3">
-          <div class="staff-stat-card h-100">
-            <p class="staff-stat-card__label">Paid (month to date)</p>
+          <button
+            type="button"
+            class="staff-stat-card h-100 text-start w-100 border-0 billing-summary-stat-btn"
+            @click="goToInvoicesBucket('paid')"
+          >
+            <p class="staff-stat-card__label">Paid (Month to Date)</p>
             <p class="staff-stat-card__value">
               {{ formatCents(summary.paid_mtd_cents) }}
             </p>
@@ -156,7 +182,7 @@ onMounted(() => {
                 />
               </svg>
             </div>
-          </div>
+          </button>
         </div>
       </div>
 
@@ -183,3 +209,18 @@ onMounted(() => {
     </template>
   </div>
 </template>
+
+<style scoped>
+.billing-summary-stat-btn {
+  cursor: pointer;
+  font: inherit;
+  color: inherit;
+  transition:
+    box-shadow 0.15s ease,
+    transform 0.15s ease;
+}
+.billing-summary-stat-btn:hover {
+  box-shadow: 0 0.45rem 1rem rgba(47, 43, 61, 0.1);
+  transform: translateY(-1px);
+}
+</style>

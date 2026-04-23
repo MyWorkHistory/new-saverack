@@ -185,7 +185,7 @@ const payFilteredRows = computed(() => {
     return payRows.value.filter((row) => row.is_overdue);
   }
   if (payFilterStatus.value === "pending") {
-    return [];
+    return payRows.value;
   }
   if (payFilterStatus.value === "open") {
     return payRows.value.filter((row) => !row.is_overdue);
@@ -218,6 +218,24 @@ const allEmailRecipientsSelected = computed(() => {
 });
 
 const someEmailRecipientsSelected = computed(() => sendEmailRecipients.value.length > 0);
+
+/** City, state ZIP for invoice “Invoice to” block */
+const invoiceClientCityStateZip = computed(() => {
+  const inv = invoice.value;
+  if (!inv) return "";
+  const city = String(inv.client_account_city || "").trim();
+  const st = String(inv.client_account_state || "").trim();
+  const zip = String(inv.client_account_zip || "").trim();
+  const line2 = [st, zip].filter(Boolean).join(" ");
+  return [city, line2].filter(Boolean).join(city && line2 ? ", " : "");
+});
+
+/** Account default payment type shown on invoice face */
+const invoicePaymentTypeDisplay = computed(() => {
+  const t = invoice.value?.client_account_default_payment_type;
+  if (t == null || String(t).trim() === "") return "";
+  return String(t).trim();
+});
 
 function formatQtyDisplay(v) {
   const n = Number(v);
@@ -739,7 +757,14 @@ function openGroupEditModal(row) {
         quantity: formatQtyOneDecimal(line.qty ?? 1),
         unit: line.unit || "",
         unit_price: (Number(line.price_cents || 0) / 100).toFixed(2),
-        metadata: line.metadata && typeof line.metadata === "object" ? { ...line.metadata } : {},
+        metadata: (() => {
+          const m = line.metadata && typeof line.metadata === "object" ? { ...line.metadata } : {};
+          const on = String(line.order_number || "").trim();
+          if (on && !String(m.order_number || "").trim()) {
+            m.order_number = on;
+          }
+          return m;
+        })(),
       }))
     : [];
   groupEditModalOpen.value = true;
@@ -1000,7 +1025,7 @@ async function confirmAddItem() {
       metadata: orderNumber ? { order_number: orderNumber } : null,
     });
     toast.success("Item added to invoice.");
-    closeAddItemModal();
+    addItemModalOpen.value = false;
     await load();
   } catch (e) {
     toast.errorFrom(e, "Could not add item.");
@@ -1329,11 +1354,33 @@ function onDocKeydown(e) {
                     width="44"
                     height="44"
                   />
-                  <div class="min-w-0">
-                    <div class="fw-bold text-body fs-5 mb-1">Save Rack</div>
+                  <div class="min-w-0 billing-inv-invoice-to-block">
+                    <div class="billing-inv-section-label">Invoice to</div>
+                    <div class="fw-bold text-body fs-5 mb-1">
+                      {{ invoice.client_company_name || "—" }}
+                    </div>
+                    <div
+                      v-if="invoice.client_account_contact_name"
+                      class="small text-body mb-1"
+                    >
+                      {{ invoice.client_account_contact_name }}
+                    </div>
                     <div class="small text-secondary lh-sm billing-inv-issuer-lines">
-                      <div>Fulfillment billing</div>
-                      <div class="mt-2">United States</div>
+                      <div v-if="invoice.client_account_street">
+                        {{ invoice.client_account_street }}
+                      </div>
+                      <div v-if="invoiceClientCityStateZip">
+                        {{ invoiceClientCityStateZip }}
+                      </div>
+                      <div v-if="invoice.client_account_country" class="mt-1">
+                        {{ invoice.client_account_country }}
+                      </div>
+                      <div v-if="invoice.client_account_email" class="mt-2">
+                        <a
+                          class="text-decoration-none text-body"
+                          :href="`mailto:${invoice.client_account_email}`"
+                        >{{ invoice.client_account_email }}</a>
+                      </div>
                     </div>
                   </div>
                 </div>
@@ -1376,9 +1423,9 @@ function onDocKeydown(e) {
 
             <div class="row g-4 mb-4">
               <div class="col-md-6">
-                <div class="billing-inv-section-label">Invoice to</div>
-                <div class="fw-semibold text-body">
-                  {{ invoice.client_company_name || "—" }}
+                <div class="billing-inv-section-label">Payment type</div>
+                <div class="fw-medium text-body">
+                  {{ invoicePaymentTypeDisplay || "—" }}
                 </div>
               </div>
               <div class="col-md-6 text-md-end">
@@ -1387,13 +1434,10 @@ function onDocKeydown(e) {
                   Total due:
                   {{ formatCents(invoice.balance_due_cents, invoice.currency) }}
                 </div>
-                <div class="small text-secondary mt-2 billing-inv-billto-note">
-                  Bank / wire instructions can be added when billing goes live.
-                </div>
               </div>
             </div>
 
-            <div class="d-flex flex-wrap align-items-center gap-2 mb-3">
+            <div class="d-flex flex-wrap align-items-center gap-2 mb-2">
               <span
                 class="badge rounded-pill text-capitalize fw-medium"
                 :class="statusBadgeClass(statusDisplayText)"
@@ -1402,7 +1446,17 @@ function onDocKeydown(e) {
               </span>
             </div>
 
-            <h2 class="h6 fw-semibold mb-3">Line items</h2>
+            <div class="d-flex flex-wrap align-items-center justify-content-between gap-2 mb-3">
+              <h2 class="h6 fw-semibold mb-0">Fulfillment Services</h2>
+              <button
+                v-if="canAddCharge"
+                type="button"
+                class="btn btn-primary btn-sm staff-page-primary flex-shrink-0"
+                @click="openAddItemModal"
+              >
+                Add To Invoice
+              </button>
+            </div>
             <template v-if="invoice.status === 'draft' && canUpdate && false">
               <div class="row g-3 mb-3">
                 <div class="col-md-4">
@@ -1586,7 +1640,7 @@ function onDocKeydown(e) {
                       </tr>
                     </template>
                     <tr v-if="!invoiceTableRows.length">
-                      <td :colspan="canUpdate && invoice.status !== 'void' ? 6 : 5" class="text-center text-secondary py-3">
+                      <td :colspan="canUpdate && invoice.status !== 'void' ? 7 : 6" class="text-center text-secondary py-3">
                         No line items.
                       </td>
                     </tr>
@@ -1613,10 +1667,10 @@ function onDocKeydown(e) {
                       <tr>
                         <th>Service</th>
                         <th>Category</th>
+                        <th class="text-end">Order #</th>
                         <th class="text-end">Qty</th>
                         <th class="text-end">Price</th>
                         <th class="text-end">Total</th>
-                        <th class="text-end">Order #</th>
                         <th
                           v-if="invoice.status !== 'void' && canUpdate"
                           class="text-end"
@@ -1637,10 +1691,10 @@ function onDocKeydown(e) {
                           {{ row.name }}
                         </td>
                         <td>{{ row.type }}</td>
+                        <td class="text-end text-nowrap">{{ row.order_number || "—" }}</td>
                         <td class="text-end text-nowrap">{{ formatQtyDisplay(row.qty) }}</td>
                         <td class="text-end">{{ formatCents(row.price_cents, invoice.currency) }}</td>
                         <td class="text-end">{{ formatCents(row.total_cents, invoice.currency) }}</td>
-                        <td class="text-end">{{ row.order_number || "—" }}</td>
                         <td v-if="invoice.status !== 'void' && canUpdate" class="text-end">
                           <div data-row-actions class="position-relative d-inline-block">
                             <button
@@ -1687,12 +1741,8 @@ function onDocKeydown(e) {
               </div>
             </template>
 
-            <div class="row align-items-end mt-4 pt-3 border-top">
-              <div class="col-md-6 small text-secondary mb-3 mb-md-0">
-                <div class="fw-medium text-body mb-1">Thanks for your business</div>
-                <div>Questions? Reply to your Save Rack account contact.</div>
-              </div>
-              <div class="col-md-6">
+            <div class="row mt-4 pt-3 border-top">
+              <div class="col-12 col-md-10 col-lg-8 ms-md-auto">
                 <div class="billing-inv-totals ms-md-auto">
                   <div class="d-flex justify-content-between small">
                     <span class="text-secondary">Subtotal</span>
@@ -1780,7 +1830,7 @@ function onDocKeydown(e) {
             <div class="billing-inv-summary-grid mb-3">
               <button
                 type="button"
-                class="staff-stat-card billing-inv-summary-card h-100"
+                class="staff-stat-card billing-inv-summary-card h-100 text-start"
                 :disabled="accountBalanceLoading"
                 @click="goToInvoiceBucket('open')"
               >
@@ -1788,11 +1838,22 @@ function onDocKeydown(e) {
                 <p class="staff-stat-card__value">
                   {{ formatCents(payOpenBalanceCents, invoice.currency) }}
                 </p>
-                <p class="staff-stat-card__sub">Sent and partial invoices</p>
+                <p class="staff-stat-card__sub">Sent and partial — unpaid total</p>
+                <div
+                  class="staff-stat-card__icon text-white"
+                  style="background: #2563eb"
+                  aria-hidden="true"
+                >
+                  <svg width="22" height="22" fill="currentColor" viewBox="0 0 24 24">
+                    <path
+                      d="M11.8 10.9c-2.27-.59-3-1.2-3-2.15 0-1.09 1.01-1.85 2.7-1.85 1.78 0 2.44.85 2.5 2.1h2.21c-.07-1.72-1.12-3.3-3.21-3.81V3h-3v2.16c-1.94.42-3.5 1.68-3.5 3.61 0 2.31 1.91 3.46 4.7 4.13 2.5.6 3 1.48 3 2.41 0 .69-.49 1.79-2.7 1.79-2.06 0-2.87-.92-2.98-2.1h-2.2c.12 2.19 1.76 3.42 3.68 3.83V21h3v-2.15c1.95-.37 3.5-1.5 3.5-3.55 0-2.84-2.43-3.81-4.7-4.4z"
+                    />
+                  </svg>
+                </div>
               </button>
               <button
                 type="button"
-                class="staff-stat-card billing-inv-summary-card h-100"
+                class="staff-stat-card billing-inv-summary-card h-100 text-start"
                 :disabled="accountBalanceLoading"
                 @click="goToInvoiceBucket('past_due')"
               >
@@ -1800,11 +1861,21 @@ function onDocKeydown(e) {
                 <p class="staff-stat-card__value">
                   {{ formatCents(payPastDueBalanceCents, invoice.currency) }}
                 </p>
-                <p class="staff-stat-card__sub">Past due with remaining balance</p>
+                <p class="staff-stat-card__sub">Past due date with balance</p>
+                <div
+                  class="staff-stat-card__icon bg-warning-subtle text-warning-emphasis"
+                  aria-hidden="true"
+                >
+                  <svg width="22" height="22" fill="currentColor" viewBox="0 0 24 24">
+                    <path
+                      d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-2h2v2zm0-4h-2V7h2v6z"
+                    />
+                  </svg>
+                </div>
               </button>
               <button
                 type="button"
-                class="staff-stat-card billing-inv-summary-card h-100"
+                class="staff-stat-card billing-inv-summary-card h-100 text-start"
                 :disabled="accountBalanceLoading"
                 @click="goToInvoiceBucket('draft')"
               >
@@ -1812,7 +1883,17 @@ function onDocKeydown(e) {
                 <p class="staff-stat-card__value">
                   {{ formatCents(payPendingBalanceCents, invoice.currency) }}
                 </p>
-                <p class="staff-stat-card__sub">Draft invoices not yet sent</p>
+                <p class="staff-stat-card__sub">Not yet sent</p>
+                <div
+                  class="staff-stat-card__icon bg-secondary-subtle text-secondary"
+                  aria-hidden="true"
+                >
+                  <svg width="22" height="22" fill="currentColor" viewBox="0 0 24 24">
+                    <path
+                      d="M14 2H6c-1.1 0-1.99.9-1.99 2L4 20c0 1.1.89 2 1.99 2H18c1.1 0 2-.9 2-2V8l-6-6zm2 16H8v-2h8v2zm0-4H8v-2h8v2zm-3-5V3.5L18.5 9H13z"
+                    />
+                  </svg>
+                </div>
               </button>
             </div>
 
@@ -1840,14 +1921,6 @@ function onDocKeydown(e) {
                 @click="openSendWhatsappModal"
               >
                 Send To Whatsapp
-              </button>
-              <button
-                v-if="canAddCharge"
-                type="button"
-                class="billing-inv-action-btn billing-inv-action-btn--add"
-                @click="openAddItemModal"
-              >
-                Add To Invoice
               </button>
             </div>
           </div>
@@ -1890,7 +1963,9 @@ function onDocKeydown(e) {
               <h2 class="crm-vx-modal__title">Edit Grouped Line Items</h2>
             </header>
             <div class="crm-vx-modal__body">
-              <div class="billing-group-edit-toolbar mb-2">
+              <div class="billing-group-edit-bulk-panel">
+                <div class="billing-group-edit-bulk-panel__title">Bulk edit</div>
+                <div class="billing-group-edit-toolbar mb-0">
                 <div class="billing-group-edit-bulk">
                   <input
                     v-model="groupBulkQty"
@@ -1918,6 +1993,7 @@ function onDocKeydown(e) {
                 <button type="button" class="btn btn-sm btn-outline-secondary" :disabled="groupEditBusy" @click="addGroupEditLine">
                   Add Line
                 </button>
+              </div>
               </div>
               <div class="table-responsive">
                 <table class="table table-sm align-middle mb-0 billing-inv-items-table">
@@ -2331,8 +2407,9 @@ function onDocKeydown(e) {
                       >
                         Add Funds
                       </button>
-                      <div class="small text-secondary mt-1">
-                        Added funds are allocated to selected invoices and only pay what is available.
+                      <div class="small text-secondary mt-1" style="max-width: 22rem; margin-left: auto">
+                        Add funds to the pool, select invoice(s), then Pay Invoice. Only the pool amount is applied;
+                        the invoice stays past due until the balance is fully paid.
                       </div>
                     </div>
                   </div>
@@ -2389,8 +2466,11 @@ function onDocKeydown(e) {
                   <div class="billing-pay-stat-stack">
                     <button
                       type="button"
-                      class="billing-pay-stat staff-stat-card"
-                      :class="{ 'is-active': payFilterStatus === 'all' }"
+                      class="billing-pay-stat"
+                      :class="[
+                        'billing-pay-stat--blue',
+                        { 'is-active': payFilterStatus === 'all' },
+                      ]"
                       @click="payFilterStatus = 'all'"
                     >
                       <div class="billing-pay-stat__value">
@@ -2400,8 +2480,11 @@ function onDocKeydown(e) {
                     </button>
                     <button
                       type="button"
-                      class="billing-pay-stat staff-stat-card"
-                      :class="{ 'is-active': payFilterStatus === 'open' }"
+                      class="billing-pay-stat"
+                      :class="[
+                        'billing-pay-stat--green',
+                        { 'is-active': payFilterStatus === 'open' },
+                      ]"
                       @click="payFilterStatus = 'open'"
                     >
                       <div class="billing-pay-stat__value">
@@ -2411,8 +2494,11 @@ function onDocKeydown(e) {
                     </button>
                     <button
                       type="button"
-                      class="billing-pay-stat staff-stat-card"
-                      :class="{ 'is-active': payFilterStatus === 'past_due' }"
+                      class="billing-pay-stat"
+                      :class="[
+                        'billing-pay-stat--red',
+                        { 'is-active': payFilterStatus === 'past_due' },
+                      ]"
                       @click="payFilterStatus = 'past_due'"
                     >
                       <div class="billing-pay-stat__value">
@@ -2422,8 +2508,11 @@ function onDocKeydown(e) {
                     </button>
                     <button
                       type="button"
-                      class="billing-pay-stat staff-stat-card"
-                      :class="{ 'is-active': payFilterStatus === 'pending' }"
+                      class="billing-pay-stat"
+                      :class="[
+                        'billing-pay-stat--orange',
+                        { 'is-active': payFilterStatus === 'pending' },
+                      ]"
                       @click="payFilterStatus = 'pending'"
                     >
                       <div class="billing-pay-stat__value">
@@ -2450,7 +2539,7 @@ function onDocKeydown(e) {
                 :disabled="payBusy || payContextBusy || !payCanSubmit"
                 @click="confirmPay"
               >
-                {{ payBusy ? "Applying…" : "Apply Funds" }}
+                {{ payBusy ? "Paying…" : "Pay Invoice" }}
               </button>
             </footer>
           </div>
@@ -2580,22 +2669,38 @@ function onDocKeydown(e) {
   gap: 0.75rem;
 }
 .billing-inv-summary-card {
-  border: 1px solid rgba(47, 43, 61, 0.12);
-  padding: 0.85rem 0.9rem;
+  width: 100%;
+  cursor: pointer;
   text-align: left;
+  font: inherit;
+  color: inherit;
   transition:
     border-color 0.15s ease,
     box-shadow 0.15s ease,
     transform 0.15s ease;
 }
 .billing-inv-summary-card:hover:not(:disabled) {
-  border-color: rgba(115, 103, 240, 0.26);
-  box-shadow: 0 0.45rem 1rem rgba(47, 43, 61, 0.09);
+  box-shadow: 0 0.45rem 1rem rgba(47, 43, 61, 0.12);
   transform: translateY(-1px);
 }
 .billing-inv-summary-card:disabled {
   opacity: 0.75;
   cursor: not-allowed;
+}
+.billing-group-edit-bulk-panel {
+  border: 1px solid rgba(47, 43, 61, 0.1);
+  border-radius: 0.5rem;
+  padding: 0.75rem 1rem;
+  margin-bottom: 0.75rem;
+  background: var(--bs-tertiary-bg, #f8f9fa);
+}
+.billing-group-edit-bulk-panel__title {
+  font-size: 0.75rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--bs-secondary-color, #6c757d);
+  margin-bottom: 0.5rem;
 }
 .billing-inv-action-stack {
   display: grid;
@@ -2740,27 +2845,53 @@ function onDocKeydown(e) {
 }
 .billing-pay-stat {
   width: 100%;
-  border: 1px solid rgba(47, 43, 61, 0.12);
+  border: none;
   border-radius: 0.85rem;
   padding: 0.95rem 1rem;
-  color: var(--bs-body-color, #2f2b3d);
   text-align: left;
-  box-shadow: none;
-  background: var(--bs-body-bg, #fff);
+  cursor: pointer;
+  font: inherit;
+  box-shadow: 0 2px 8px rgba(47, 43, 61, 0.08);
+  transition:
+    transform 0.15s ease,
+    box-shadow 0.15s ease,
+    opacity 0.15s ease;
+}
+.billing-pay-stat:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 0.35rem 0.85rem rgba(47, 43, 61, 0.12);
 }
 .billing-pay-stat.is-active {
-  border-color: rgba(115, 103, 240, 0.35);
-  box-shadow: 0 0.45rem 1rem rgba(47, 43, 61, 0.08);
+  box-shadow:
+    0 0 0 2px rgba(255, 255, 255, 0.85),
+    0 0 0 4px rgba(94, 80, 238, 0.45);
+}
+.billing-pay-stat--blue {
+  background: #2563eb;
+  color: #fff;
+}
+.billing-pay-stat--green {
+  background: #28c76f;
+  color: #fff;
+}
+.billing-pay-stat--red {
+  background: #ea5455;
+  color: #fff;
+}
+.billing-pay-stat--orange {
+  background: #ff9f43;
+  color: #fff;
 }
 .billing-pay-stat__value {
   font-size: 1.4rem;
   font-weight: 600;
   line-height: 1.1;
+  color: inherit;
 }
 .billing-pay-stat__label {
   margin-top: 0.25rem;
   font-size: 0.82rem;
-  color: var(--bs-secondary-color, #6c757d);
+  color: rgba(255, 255, 255, 0.92);
 }
 .billing-send-email-recipients {
   border: 1px solid #dbdade;

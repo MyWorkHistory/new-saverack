@@ -809,6 +809,7 @@ class InvoiceService
     public function toDetailArray(Invoice $invoice): array
     {
         $invoice->load(['items', 'histories.user', 'clientAccount', 'createdBy']);
+        $account = $invoice->clientAccount;
 
         $base = $this->toListArray($invoice);
         $presentation = $this->staffDetailPresentation($invoice);
@@ -829,9 +830,16 @@ class InvoiceService
             'po_number' => $invoice->po_number,
             'customer_notes' => $invoice->customer_notes,
             'internal_notes' => $invoice->internal_notes,
-            'client_account_default_payment_type' => $invoice->clientAccount !== null
-                ? $invoice->clientAccount->default_payment_type
+            'client_account_default_payment_type' => $account !== null
+                ? $account->default_payment_type
                 : null,
+            'client_account_email' => $account !== null ? $account->email : null,
+            'client_account_contact_name' => $account !== null ? $account->contactFullName() : null,
+            'client_account_street' => $account !== null ? $account->street : null,
+            'client_account_city' => $account !== null ? $account->city : null,
+            'client_account_state' => $account !== null ? $account->state : null,
+            'client_account_zip' => $account !== null ? $account->zip : null,
+            'client_account_country' => $account !== null ? $account->country : null,
             'email_recipient_options' => $this->invoiceRecipientEmails($invoice),
             'customer_view_url' => $this->publicCustomerViewUrl($invoice),
             'customer_pdf_url' => $this->publicCustomerPdfUrl($invoice),

@@ -9,7 +9,7 @@ import {
   ref,
   watch,
 } from "vue";
-import { RouterLink, useRouter } from "vue-router";
+import { RouterLink, useRoute, useRouter } from "vue-router";
 import api from "../../services/api";
 import ConfirmModal from "../../components/common/ConfirmModal.vue";
 import CrmLoadingSpinner from "../../components/common/CrmLoadingSpinner.vue";
@@ -25,6 +25,7 @@ import { formatCents } from "../../utils/formatMoney.js";
 const crmUser = inject("crmUser", ref(null));
 const toast = useToast();
 const router = useRouter();
+const route = useRoute();
 
 function userHasPerm(key) {
   const u = crmUser.value;
@@ -258,6 +259,14 @@ async function loadSummary() {
   } finally {
     summaryLoading.value = false;
   }
+}
+
+function setSummaryFilterBucket(bucket) {
+  if (bucket === "open") query.status = "open";
+  else if (bucket === "past_due") query.status = "overdue";
+  else if (bucket === "draft") query.status = "draft";
+  else if (bucket === "paid") query.status = "paid";
+  else query.status = "all";
 }
 
 async function fetchRows() {
@@ -617,6 +626,14 @@ onMounted(async () => {
     title: "Save Rack | Invoices",
     description: "Client invoices and balances.",
   });
+  const qStatus = route.query.status;
+  if (typeof qStatus === "string" && qStatus.trim()) {
+    query.status = qStatus.trim();
+  }
+  const qClient = route.query.client_account_id;
+  if (typeof qClient === "string" && qClient.trim()) {
+    query.client_account_id = qClient.trim();
+  }
   try {
     await Promise.all([fetchMeta(), loadSummary()]);
   } catch {
@@ -671,8 +688,12 @@ onUnmounted(() => {
     </div>
     <div v-else class="row g-4 mb-4">
       <div class="col-12 col-sm-6 col-xl-3">
-        <div class="staff-stat-card h-100">
-          <p class="staff-stat-card__label">Open balance due</p>
+        <button
+          type="button"
+          class="staff-stat-card h-100 text-start w-100 border-0 billing-inv-list-summary-btn"
+          @click="setSummaryFilterBucket('open')"
+        >
+          <p class="staff-stat-card__label">Open Balance Due</p>
           <p class="staff-stat-card__value">
             {{ formatCents(summary.open_balance_due_cents) }}
           </p>
@@ -688,11 +709,15 @@ onUnmounted(() => {
               />
             </svg>
           </div>
-        </div>
+        </button>
       </div>
       <div class="col-12 col-sm-6 col-xl-3">
-        <div class="staff-stat-card h-100">
-          <p class="staff-stat-card__label">Overdue invoices</p>
+        <button
+          type="button"
+          class="staff-stat-card h-100 text-start w-100 border-0 billing-inv-list-summary-btn"
+          @click="setSummaryFilterBucket('past_due')"
+        >
+          <p class="staff-stat-card__label">Past Due Invoices</p>
           <p class="staff-stat-card__value">
             {{ nf.format(summary.overdue_invoice_count) }}
           </p>
@@ -707,11 +732,15 @@ onUnmounted(() => {
               />
             </svg>
           </div>
-        </div>
+        </button>
       </div>
       <div class="col-12 col-sm-6 col-xl-3">
-        <div class="staff-stat-card h-100">
-          <p class="staff-stat-card__label">Draft invoices</p>
+        <button
+          type="button"
+          class="staff-stat-card h-100 text-start w-100 border-0 billing-inv-list-summary-btn"
+          @click="setSummaryFilterBucket('draft')"
+        >
+          <p class="staff-stat-card__label">Draft Invoices</p>
           <p class="staff-stat-card__value">
             {{ nf.format(summary.draft_invoice_count) }}
           </p>
@@ -726,11 +755,15 @@ onUnmounted(() => {
               />
             </svg>
           </div>
-        </div>
+        </button>
       </div>
       <div class="col-12 col-sm-6 col-xl-3">
-        <div class="staff-stat-card h-100">
-          <p class="staff-stat-card__label">Paid (month to date)</p>
+        <button
+          type="button"
+          class="staff-stat-card h-100 text-start w-100 border-0 billing-inv-list-summary-btn"
+          @click="setSummaryFilterBucket('paid')"
+        >
+          <p class="staff-stat-card__label">Paid (Month to Date)</p>
           <p class="staff-stat-card__value">
             {{ formatCents(summary.paid_mtd_cents) }}
           </p>
@@ -743,7 +776,7 @@ onUnmounted(() => {
               <path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z" />
             </svg>
           </div>
-        </div>
+        </button>
       </div>
     </div>
 
@@ -1521,3 +1554,17 @@ onUnmounted(() => {
   </div>
 </template>
 
+<style scoped>
+.billing-inv-list-summary-btn {
+  cursor: pointer;
+  font: inherit;
+  color: inherit;
+  transition:
+    box-shadow 0.15s ease,
+    transform 0.15s ease;
+}
+.billing-inv-list-summary-btn:hover {
+  box-shadow: 0 0.45rem 1rem rgba(47, 43, 61, 0.1);
+  transform: translateY(-1px);
+}
+</style>

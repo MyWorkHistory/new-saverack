@@ -65,7 +65,7 @@ class InvoicePolicy
 
     public function void(User $user, Invoice $invoice): bool
     {
-        if ($invoice->isVoid() || $invoice->status === Invoice::STATUS_DRAFT) {
+        if ($invoice->isVoid()) {
             return false;
         }
 

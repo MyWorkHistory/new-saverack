@@ -136,26 +136,40 @@ const accountBalanceLoading = ref(false);
 const invoiceLogoSrc = computed(() => BRAND_MARK_SRC());
 const activityCardRef = ref(null);
 
-const canPayInvoice = computed(
+/** Show Pay in sidebar whenever invoice might eventually accept payment (not paid/void). */
+const payInvoiceVisible = computed(
   () =>
     !!invoice.value &&
     canUpdate.value &&
-    invoice.value.status !== "draft" &&
     invoice.value.status !== "paid" &&
-    invoice.value.status !== "void" &&
+    invoice.value.status !== "void",
+);
+
+/** Enabled only when API recordPayment policy would allow (sent/partial with balance). */
+const payInvoiceEnabled = computed(
+  () =>
+    !!invoice.value &&
+    canUpdate.value &&
+    (invoice.value.status === "sent" || invoice.value.status === "partial") &&
     Number(invoice.value.balance_due_cents) > 0,
 );
+
+const payInvoiceDisabledTitle = computed(() => {
+  const inv = invoice.value;
+  if (!inv || !payInvoiceVisible.value) return "";
+  if (inv.status === "draft") return "Send the invoice before recording payment.";
+  if (inv.status === "sent" || inv.status === "partial") {
+    if (Number(inv.balance_due_cents) <= 0) return "No balance due.";
+  }
+  return "";
+});
 
 const canAddCharge = computed(
   () => !!invoice.value && canUpdate.value && invoice.value.status !== "void",
 );
 
 const canVoidInvoice = computed(
-  () =>
-    !!invoice.value &&
-    canUpdate.value &&
-    invoice.value.status !== "draft" &&
-    invoice.value.status !== "void",
+  () => !!invoice.value && canUpdate.value && invoice.value.status !== "void",
 );
 
 const canShareInvoice = computed(() => !!invoice.value && invoice.value.status !== "void");
@@ -800,28 +814,53 @@ function removeGroupEditLine(idx) {
   groupEditLines.value = groupEditLines.value.filter((_, i) => i !== idx);
 }
 
-function applyGroupBulkQty() {
+/** Replace all lines in the group editor with one row (qty × unit price = line total). */
+function applyGroupBulkConsolidate() {
   const qtyRaw = String(groupBulkQty.value || "").trim();
+  const priceRaw = String(groupBulkPrice.value || "").trim();
   if (!qtyRaw) {
-    toast.error("Enter a quantity to apply.");
+    toast.error("Enter a quantity.");
     return;
   }
-  groupEditLines.value = groupEditLines.value.map((line) => ({
-    ...line,
-    quantity: qtyRaw,
-  }));
+  if (!priceRaw) {
+    toast.error("Enter a unit price.");
+    return;
+  }
+  const parsedPrice = Number.parseFloat(String(priceRaw).replace(/,/g, ""));
+  if (!Number.isFinite(parsedPrice) || parsedPrice < 0) {
+    toast.error("Enter a valid unit price.");
+    return;
+  }
+  const first = groupEditLines.value.length ? groupEditLines.value[0] : null;
+  const target = groupEditTarget.value;
+  const label = target?.name || first?.display_name || first?.description || "Item";
+  const priceStr = parsedPrice.toFixed(2);
+  const qtyNum = Number.parseFloat(String(qtyRaw).replace(/,/g, ""));
+  const qtyStr = Number.isFinite(qtyNum) ? formatQtyOneDecimal(qtyNum) : qtyRaw;
+  const md = first?.metadata && typeof first.metadata === "object" ? { ...first.metadata } : {};
+  groupEditLines.value = [
+    {
+      description: label,
+      display_name: label,
+      category: first?.category || "",
+      subtype: first?.subtype || "",
+      sku: first?.sku || "",
+      service_code: first?.service_code || "",
+      quantity: qtyStr,
+      unit: first?.unit || "",
+      unit_price: priceStr,
+      metadata: md,
+    },
+  ];
 }
 
-function applyGroupBulkPrice() {
-  const priceRaw = String(groupBulkPrice.value || "").trim();
-  if (!priceRaw) {
-    toast.error("Enter a price to apply.");
-    return;
-  }
-  groupEditLines.value = groupEditLines.value.map((line) => ({
-    ...line,
-    unit_price: priceRaw,
-  }));
+function openGroupDeleteFromGroupEditModal() {
+  if (!groupEditTarget.value?.line_group_key || groupEditBusy.value) return;
+  groupEditModalOpen.value = false;
+  groupEditLines.value = [];
+  groupBulkQty.value = "";
+  groupBulkPrice.value = "";
+  groupDeleteModalOpen.value = true;
 }
 
 async function confirmGroupEdit() {
@@ -1145,7 +1184,7 @@ function goToInvoiceBucket(bucket) {
 }
 
 async function openPayModal() {
-  if (!invoice.value) return;
+  if (!invoice.value || !payInvoiceEnabled.value) return;
   payAmount.value = "";
   payType.value = String(invoice.value.client_account_default_payment_type || "");
   payDate.value = new Date().toISOString().slice(0, 10);
@@ -1899,9 +1938,11 @@ function onDocKeydown(e) {
 
             <div class="billing-inv-action-stack">
               <button
-                v-if="canPayInvoice"
+                v-if="payInvoiceVisible"
                 type="button"
                 class="billing-inv-action-btn billing-inv-action-btn--primary"
+                :disabled="!payInvoiceEnabled"
+                :title="payInvoiceDisabledTitle || undefined"
                 @click="openPayModal"
               >
                 Pay Invoice
@@ -1966,34 +2007,37 @@ function onDocKeydown(e) {
               <div class="billing-group-edit-bulk-panel">
                 <div class="billing-group-edit-bulk-panel__title">Bulk edit</div>
                 <div class="billing-group-edit-toolbar mb-0">
-                <div class="billing-group-edit-bulk">
-                  <input
-                    v-model="groupBulkQty"
-                    type="text"
-                    class="form-control form-control-sm text-end"
-                    placeholder="Bulk Qty"
-                    :disabled="groupEditBusy"
-                  />
-                  <button type="button" class="btn btn-sm btn-outline-secondary" :disabled="groupEditBusy" @click="applyGroupBulkQty">
-                    Apply Qty
-                  </button>
+                  <div class="billing-group-edit-bulk billing-group-edit-bulk--wrap">
+                    <input
+                      v-model="groupBulkQty"
+                      type="text"
+                      class="form-control form-control-sm text-end"
+                      placeholder="Qty"
+                      :disabled="groupEditBusy"
+                    />
+                    <input
+                      v-model="groupBulkPrice"
+                      type="text"
+                      class="form-control form-control-sm text-end"
+                      placeholder="Unit price"
+                      :disabled="groupEditBusy"
+                    />
+                    <button
+                      type="button"
+                      class="btn btn-sm btn-primary"
+                      :disabled="groupEditBusy"
+                      @click="applyGroupBulkConsolidate"
+                    >
+                      Update
+                    </button>
+                    <button type="button" class="btn btn-sm btn-outline-secondary" :disabled="groupEditBusy" @click="addGroupEditLine">
+                      Add Line
+                    </button>
+                  </div>
                 </div>
-                <div class="billing-group-edit-bulk">
-                  <input
-                    v-model="groupBulkPrice"
-                    type="text"
-                    class="form-control form-control-sm text-end"
-                    placeholder="Bulk Price"
-                    :disabled="groupEditBusy"
-                  />
-                  <button type="button" class="btn btn-sm btn-outline-secondary" :disabled="groupEditBusy" @click="applyGroupBulkPrice">
-                    Apply Price
-                  </button>
-                </div>
-                <button type="button" class="btn btn-sm btn-outline-secondary" :disabled="groupEditBusy" @click="addGroupEditLine">
-                  Add Line
-                </button>
-              </div>
+                <p class="small text-secondary mb-0 mt-2">
+                  Update replaces all rows with one line at this quantity and unit price (per-line details such as order # are dropped unless you edit the row below).
+                </p>
               </div>
               <div class="table-responsive">
                 <table class="table table-sm align-middle mb-0 billing-inv-items-table">
@@ -2033,9 +2077,19 @@ function onDocKeydown(e) {
                 </table>
               </div>
             </div>
-            <footer class="crm-vx-modal__footer d-flex gap-2 justify-content-end">
-              <button type="button" class="crm-vx-modal-btn crm-vx-modal-btn--secondary" :disabled="groupEditBusy" @click="closeGroupEditModal">Cancel</button>
-              <button type="button" class="crm-vx-modal-btn crm-vx-modal-btn--primary" :disabled="groupEditBusy" @click="confirmGroupEdit">{{ groupEditBusy ? "Saving…" : "Save" }}</button>
+            <footer class="crm-vx-modal__footer d-flex flex-wrap gap-2 align-items-center justify-content-between">
+              <button
+                type="button"
+                class="btn btn-sm btn-outline-danger"
+                :disabled="groupEditBusy"
+                @click="openGroupDeleteFromGroupEditModal"
+              >
+                Delete entire group
+              </button>
+              <div class="d-flex gap-2">
+                <button type="button" class="crm-vx-modal-btn crm-vx-modal-btn--secondary" :disabled="groupEditBusy" @click="closeGroupEditModal">Cancel</button>
+                <button type="button" class="crm-vx-modal-btn crm-vx-modal-btn--primary" :disabled="groupEditBusy" @click="confirmGroupEdit">{{ groupEditBusy ? "Saving…" : "Save" }}</button>
+              </div>
             </footer>
           </div>
         </div>
@@ -2674,12 +2728,14 @@ function onDocKeydown(e) {
   text-align: left;
   font: inherit;
   color: inherit;
+  border: 1px solid rgba(47, 43, 61, 0.14) !important;
   transition:
     border-color 0.15s ease,
     box-shadow 0.15s ease,
     transform 0.15s ease;
 }
 .billing-inv-summary-card:hover:not(:disabled) {
+  border-color: rgba(115, 103, 240, 0.35) !important;
   box-shadow: 0 0.45rem 1rem rgba(47, 43, 61, 0.12);
   transform: translateY(-1px);
 }
@@ -2731,9 +2787,20 @@ function onDocKeydown(e) {
   cursor: not-allowed;
 }
 .billing-inv-action-btn--primary {
-  background: #fff;
-  border-color: #d6d3ef;
-  color: #5e50ee;
+  background: #2563eb;
+  border-color: #2563eb;
+  color: #fff;
+}
+.billing-inv-action-btn--primary:hover:not(:disabled) {
+  background: #1d4ed8;
+  border-color: #1d4ed8;
+  color: #fff;
+}
+.billing-inv-action-btn--primary:disabled {
+  opacity: 0.55;
+  background: #93c5fd;
+  border-color: #93c5fd;
+  color: #fff;
 }
 .billing-inv-action-btn--add {
   background: #2563eb;
@@ -2779,6 +2846,10 @@ function onDocKeydown(e) {
 }
 .billing-group-edit-bulk .form-control {
   width: 8rem;
+}
+.billing-group-edit-bulk--wrap {
+  flex-wrap: wrap;
+  justify-content: flex-start;
 }
 .billing-inline-menu {
   position: fixed;

@@ -25,6 +25,15 @@ class ClientAccount extends Model
         self::STATUS_INACTIVE,
     ];
 
+    public const DEFAULT_PAYMENT_TYPES = [
+        'ACH',
+        'Wire',
+        'Check',
+        'Credit Card',
+        'Paypal',
+        'Varies',
+    ];
+
     protected $fillable = [
         'legacy_customer_id',
         'status',
@@ -48,6 +57,7 @@ class ClientAccount extends Model
         'notes',
         'account_manager_id',
         'contract_date',
+        'default_payment_type',
     ];
 
     protected $casts = [

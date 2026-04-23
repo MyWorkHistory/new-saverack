@@ -18,12 +18,14 @@ const toast = useToast();
 const saving = ref(false);
 const errorMsg = ref("");
 const showPortalPassword = ref(false);
+const paymentTypeOptions = ["ACH", "Wire", "Check", "Credit Card", "Paypal", "Varies"];
 
 const form = reactive({
   company_name: "",
   full_name: "",
   email: "",
   phone: "",
+  default_payment_type: "",
   password: "",
   password_confirmation: "",
 });
@@ -33,6 +35,7 @@ function reset() {
   form.full_name = "";
   form.email = "";
   form.phone = "";
+  form.default_payment_type = "";
   form.password = "";
   form.password_confirmation = "";
   errorMsg.value = "";
@@ -64,6 +67,7 @@ async function onSubmit() {
       full_name: form.full_name.trim(),
       email: form.email.trim(),
       phone: form.phone.trim() || null,
+      default_payment_type: form.default_payment_type || null,
       password: rawPw,
       password_confirmation: (form.password_confirmation || "").trim(),
     };
@@ -198,6 +202,25 @@ async function onSubmit() {
                       autocomplete="tel"
                       class="h-10 w-full rounded-lg border border-gray-300 bg-white px-3 text-sm dark:border-gray-600 dark:bg-gray-800 dark:text-white"
                     />
+                  </div>
+                  <div>
+                    <label
+                      class="mb-1 block text-xs font-medium text-gray-600 dark:text-gray-400"
+                      >Default payment type</label
+                    >
+                    <select
+                      v-model="form.default_payment_type"
+                      class="h-10 w-full rounded-lg border border-gray-300 bg-white px-3 text-sm dark:border-gray-600 dark:bg-gray-800 dark:text-white"
+                    >
+                      <option value="">No default</option>
+                      <option
+                        v-for="paymentType in paymentTypeOptions"
+                        :key="`new-account-payment-${paymentType}`"
+                        :value="paymentType"
+                      >
+                        {{ paymentType }}
+                      </option>
+                    </select>
                   </div>
 
                   <div

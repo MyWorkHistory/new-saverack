@@ -40,7 +40,7 @@ class InvoiceController extends Controller
 
         $statuses = array_values(array_unique(array_merge(
             Invoice::STATUSES,
-            ['overdue', 'all'],
+            ['open', 'overdue', 'all'],
         )));
 
         return response()->json([

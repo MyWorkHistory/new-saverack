@@ -19,6 +19,7 @@ const toast = useToast();
 const loading = ref(false);
 const saving = ref(false);
 const errorMsg = ref("");
+const paymentTypeOptions = ["ACH", "Wire", "Check", "Credit Card", "Paypal", "Varies"];
 
 const form = reactive({
   company_name: "",
@@ -39,6 +40,7 @@ const form = reactive({
   zip: "",
   country: "",
   account_manager_id: "",
+  default_payment_type: "",
 });
 
 const showAll = computed(() => !props.section);
@@ -134,6 +136,7 @@ async function load() {
     form.account_manager_id = data.account_manager_id
       ? String(data.account_manager_id)
       : "";
+    form.default_payment_type = data.default_payment_type || "";
   } catch (e) {
     errorMsg.value = "Could not load account.";
     toast.errorFrom(e, "Could not load account.");
@@ -182,6 +185,7 @@ function buildPatch() {
       account_manager_id: form.account_manager_id
         ? Number(form.account_manager_id)
         : null,
+      default_payment_type: trimOrNull(form.default_payment_type),
     };
   }
   if (props.section === "left") {
@@ -207,6 +211,7 @@ function buildPatch() {
       contact_last_name: trimOrNull(form.contact_last_name),
       email: form.email.trim(),
       phone: trimOrNull(form.phone),
+      default_payment_type: trimOrNull(form.default_payment_type),
     };
   }
   if (props.section === "address") {
@@ -356,6 +361,25 @@ async function onSubmit() {
                           autocomplete="tel"
                         />
                       </div>
+                      <div class="col-md-6">
+                        <label class="form-label small mb-1 text-secondary" for="cae-payment-type-personal"
+                          >Default payment type</label
+                        >
+                        <select
+                          id="cae-payment-type-personal"
+                          v-model="form.default_payment_type"
+                          class="form-select"
+                        >
+                          <option value="">No default</option>
+                          <option
+                            v-for="paymentType in paymentTypeOptions"
+                            :key="`edit-account-payment-personal-${paymentType}`"
+                            :value="paymentType"
+                          >
+                            {{ paymentType }}
+                          </option>
+                        </select>
+                      </div>
                     </div>
                   </template>
                   <template v-else-if="showAccount && showAll">
@@ -417,6 +441,21 @@ async function onSubmit() {
                           type="url"
                           class="form-control"
                         />
+                      </div>
+                      <div class="col-sm-6">
+                        <label class="form-label small mb-1 text-secondary" for="cae-payment-type"
+                          >Default payment type</label
+                        >
+                        <select id="cae-payment-type" v-model="form.default_payment_type" class="form-select">
+                          <option value="">No default</option>
+                          <option
+                            v-for="paymentType in paymentTypeOptions"
+                            :key="`edit-account-payment-${paymentType}`"
+                            :value="paymentType"
+                          >
+                            {{ paymentType }}
+                          </option>
+                        </select>
                       </div>
                     </div>
                   </template>

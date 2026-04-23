@@ -40,7 +40,7 @@ const draftEditMode = ref(false);
 
 const payModalOpen = ref(false);
 const payAmount = ref("");
-const payType = ref("ACH");
+const payType = ref("");
 const payDate = ref("");
 const payNotes = ref("");
 const payBusy = ref(false);
@@ -79,6 +79,18 @@ const lineEditBusy = ref(false);
 const lineDeleteModalOpen = ref(false);
 const lineDeleteBusy = ref(false);
 const lineEditTarget = ref(null);
+const invoiceCategoryOptions = [
+  { value: "fulfillment", label: "Fulfillment" },
+  { value: "postage", label: "Postage" },
+  { value: "packaging", label: "Packaging" },
+  { value: "returns", label: "Returns" },
+  { value: "ad_hoc", label: "Ad Hoc" },
+  { value: "storage", label: "Storage" },
+  { value: "on_demand", label: "On Demand" },
+  { value: "receiving", label: "Receiving" },
+  { value: "credits", label: "Credits" },
+  { value: "other", label: "Other" },
+];
 const lineEditForm = ref({
   description: "",
   display_name: "",
@@ -89,6 +101,8 @@ const lineEditForm = ref({
   quantity: "1.0",
   unit: "",
   unit_price: "0.00",
+  order_number: "",
+  metadata: {},
 });
 const addItemModalOpen = ref(false);
 const addItemBusy = ref(false);
@@ -102,6 +116,7 @@ const addItemForm = ref({
   quantity: "1.0",
   unit: "",
   unit_price: "0.00",
+  order_number: "",
 });
 const ccFeeModalOpen = ref(false);
 const ccFeeBusy = ref(false);
@@ -113,6 +128,10 @@ const groupDeleteModalOpen = ref(false);
 const groupDeleteBusy = ref(false);
 const groupEditTarget = ref(null);
 const groupEditLines = ref([]);
+const groupBulkQty = ref("");
+const groupBulkPrice = ref("");
+const rightActionsMenuOpen = ref(false);
+const accountBalanceLoading = ref(false);
 
 const invoiceLogoSrc = computed(() => BRAND_MARK_SRC());
 const activityCardRef = ref(null);
@@ -140,6 +159,10 @@ const canVoidInvoice = computed(
 );
 
 const canShareInvoice = computed(() => !!invoice.value && invoice.value.status !== "void");
+
+const canEmailInvoice = computed(
+  () => !!invoice.value && canUpdate.value && invoice.value.status !== "void",
+);
 
 const canSendWhatsapp = computed(
   () => !!invoice.value && canUpdate.value && invoice.value.status !== "void",
@@ -180,6 +203,10 @@ const payAvailablePreviewCents = computed(
   () => payFundsCents.value - paySelectedBalanceCents.value,
 );
 
+const payAvailableDisplayCents = computed(
+  () => Math.max(0, payAvailablePreviewCents.value),
+);
+
 const emailRecipientOptionList = computed(() =>
   Array.isArray(invoice.value?.email_recipient_options) ? invoice.value.email_recipient_options : [],
 );
@@ -197,6 +224,23 @@ function formatQtyDisplay(v) {
   if (!Number.isFinite(n)) return "0.000";
   if (Math.abs(n) < 1) return n.toFixed(3);
   return Number.isInteger(n) ? String(n) : n.toFixed(2);
+}
+
+function displayRowOrderNumber(row) {
+  const direct = String(row?.order_number || "").trim();
+  if (direct) return direct;
+  const details = Array.isArray(row?.details) ? row.details : [];
+  if (!details.length) return "—";
+  const unique = [
+    ...new Set(
+      details
+        .map((detail) => String(detail?.order_number || "").trim())
+        .filter(Boolean),
+    ),
+  ];
+  if (!unique.length) return "—";
+  if (unique.length === 1) return unique[0];
+  return "Multiple";
 }
 
 const invoiceTableRows = computed(() => invoice.value?.presentation?.rows || []);
@@ -430,6 +474,7 @@ async function load() {
     }
     lineMenuOpenId.value = null;
     syncEditFromInvoice();
+    await loadAccountBalanceSummary();
     setCrmPageMeta({
       title: `Save Rack | ${data?.invoice_number || "Invoice"}`,
       description: "Invoice detail.",
@@ -681,6 +726,8 @@ async function toggleGroupMenu(rowId, event) {
 function openGroupEditModal(row) {
   groupMenuOpenId.value = null;
   groupEditTarget.value = row;
+  groupBulkQty.value = "";
+  groupBulkPrice.value = "";
   groupEditLines.value = Array.isArray(row.details)
     ? row.details.map((line) => ({
         description: line.description || line.name || "",
@@ -702,6 +749,8 @@ function closeGroupEditModal() {
   if (groupEditBusy.value) return;
   groupEditModalOpen.value = false;
   groupEditTarget.value = null;
+  groupBulkQty.value = "";
+  groupBulkPrice.value = "";
 }
 
 function addGroupEditLine() {
@@ -724,6 +773,30 @@ function addGroupEditLine() {
 
 function removeGroupEditLine(idx) {
   groupEditLines.value = groupEditLines.value.filter((_, i) => i !== idx);
+}
+
+function applyGroupBulkQty() {
+  const qtyRaw = String(groupBulkQty.value || "").trim();
+  if (!qtyRaw) {
+    toast.error("Enter a quantity to apply.");
+    return;
+  }
+  groupEditLines.value = groupEditLines.value.map((line) => ({
+    ...line,
+    quantity: qtyRaw,
+  }));
+}
+
+function applyGroupBulkPrice() {
+  const priceRaw = String(groupBulkPrice.value || "").trim();
+  if (!priceRaw) {
+    toast.error("Enter a price to apply.");
+    return;
+  }
+  groupEditLines.value = groupEditLines.value.map((line) => ({
+    ...line,
+    unit_price: priceRaw,
+  }));
 }
 
 async function confirmGroupEdit() {
@@ -792,6 +865,11 @@ async function confirmGroupDelete() {
 function openLineEditModal(line) {
   lineMenuOpenId.value = null;
   lineEditTarget.value = line;
+  const metadata =
+    line.metadata && typeof line.metadata === "object" ? { ...line.metadata } : {};
+  const orderNumber = String(
+    metadata.order_number ?? line.order_number ?? "",
+  );
   lineEditForm.value = {
     description: line.description || line.name || "",
     display_name: line.display_name || line.name || "",
@@ -802,6 +880,8 @@ function openLineEditModal(line) {
     quantity: formatQtyOneDecimal(line.qty ?? 1),
     unit: line.unit || "",
     unit_price: (Number(line.price_cents || 0) / 100).toFixed(2),
+    order_number: orderNumber,
+    metadata,
   };
   lineEditModalOpen.value = true;
 }
@@ -816,6 +896,16 @@ async function confirmLineEdit() {
   if (!invoice.value || !lineEditTarget.value) return;
   lineEditBusy.value = true;
   try {
+    const metadata =
+      lineEditForm.value.metadata && typeof lineEditForm.value.metadata === "object"
+        ? { ...lineEditForm.value.metadata }
+        : {};
+    const orderNumber = String(lineEditForm.value.order_number || "").trim();
+    if (orderNumber) {
+      metadata.order_number = orderNumber;
+    } else {
+      delete metadata.order_number;
+    }
     const qty = Number.parseFloat(String(lineEditForm.value.quantity).replace(/,/g, "")) || 0;
     const unitCents = dollarsToCents(lineEditForm.value.unit_price);
     await api.put(`/invoices/${invoice.value.id}/items/${lineEditTarget.value.id}`, {
@@ -830,7 +920,7 @@ async function confirmLineEdit() {
       unit: lineEditForm.value.unit || null,
       unit_price_cents: unitCents,
       line_total_cents: Math.max(0, Math.round(qty * unitCents)),
-      metadata: lineEditTarget.value.metadata || null,
+      metadata: Object.keys(metadata).length ? metadata : null,
     });
     toast.success("Line item updated.");
     closeLineEditModal();
@@ -879,6 +969,7 @@ function openAddItemModal() {
     quantity: "1.0",
     unit: "",
     unit_price: "0.00",
+    order_number: "",
   };
   addItemModalOpen.value = true;
 }
@@ -892,6 +983,7 @@ async function confirmAddItem() {
   if (!invoice.value) return;
   addItemBusy.value = true;
   try {
+    const orderNumber = String(addItemForm.value.order_number || "").trim();
     const qty = Number.parseFloat(String(addItemForm.value.quantity).replace(/,/g, "")) || 0;
     const unitCents = dollarsToCents(addItemForm.value.unit_price);
     await api.post(`/invoices/${invoice.value.id}/add-item`, {
@@ -905,6 +997,7 @@ async function confirmAddItem() {
       unit: addItemForm.value.unit || null,
       unit_price_cents: unitCents,
       line_total_cents: Math.max(0, Math.round(qty * unitCents)),
+      metadata: orderNumber ? { order_number: orderNumber } : null,
     });
     toast.success("Item added to invoice.");
     closeAddItemModal();
@@ -955,10 +1048,81 @@ function closePayModal() {
   payModalOpen.value = false;
 }
 
+async function loadPayContext(options = {}) {
+  if (!invoice.value?.id) return null;
+  const includeRows = options.includeRows === true;
+  const { data } = await api.get(`/invoices/${invoice.value.id}/pay-context`);
+  payOpenBalanceCents.value = Number(data?.open_balance_cents || 0);
+  payPastDueBalanceCents.value = Number(data?.past_due_balance_cents || 0);
+  payPendingBalanceCents.value = Number(data?.pending_balance_cents || 0);
+  if (includeRows) {
+    payRows.value = Array.isArray(data?.rows) ? data.rows : [];
+  }
+  return data;
+}
+
+async function loadAccountBalanceSummary() {
+  if (!invoice.value?.id || !canUpdate.value || invoice.value.status === "void") {
+    payOpenBalanceCents.value = 0;
+    payPastDueBalanceCents.value = 0;
+    payPendingBalanceCents.value = 0;
+    return;
+  }
+  accountBalanceLoading.value = true;
+  try {
+    await loadPayContext();
+  } catch {
+    payOpenBalanceCents.value = 0;
+    payPastDueBalanceCents.value = 0;
+    payPendingBalanceCents.value = 0;
+  } finally {
+    accountBalanceLoading.value = false;
+  }
+}
+
+function toggleRightActionsMenu(event) {
+  event?.stopPropagation?.();
+  rightActionsMenuOpen.value = !rightActionsMenuOpen.value;
+}
+
+function closeRightActionsMenu() {
+  rightActionsMenuOpen.value = false;
+}
+
+function openRightMenuVoid() {
+  closeRightActionsMenu();
+  openVoidModal();
+}
+
+function openRightMenuDownloadPdf() {
+  closeRightActionsMenu();
+  downloadInvoicePdf();
+}
+
+function openRightMenuCcFee() {
+  closeRightActionsMenu();
+  openCcFeeModal();
+}
+
+function goToInvoiceBucket(bucket) {
+  if (!invoice.value?.client_account_id) return;
+  let status = "all";
+  if (bucket === "open") status = "open";
+  if (bucket === "past_due") status = "overdue";
+  if (bucket === "draft") status = "draft";
+  router.push({
+    path: "/billing/invoices",
+    query: {
+      status,
+      client_account_id: String(invoice.value.client_account_id),
+    },
+  });
+}
+
 async function openPayModal() {
   if (!invoice.value) return;
   payAmount.value = "";
-  payType.value = "";
+  payType.value = String(invoice.value.client_account_default_payment_type || "");
   payDate.value = new Date().toISOString().slice(0, 10);
   payNotes.value = "";
   payFundsCents.value = 0;
@@ -971,11 +1135,7 @@ async function openPayModal() {
   payModalOpen.value = true;
   payContextBusy.value = true;
   try {
-    const { data } = await api.get(`/invoices/${invoice.value.id}/pay-context`);
-    payRows.value = Array.isArray(data?.rows) ? data.rows : [];
-    payOpenBalanceCents.value = Number(data?.open_balance_cents || 0);
-    payPastDueBalanceCents.value = Number(data?.past_due_balance_cents || 0);
-    payPendingBalanceCents.value = Number(data?.pending_balance_cents || 0);
+    await loadPayContext({ includeRows: true });
   } catch (e) {
     toast.errorFrom(e, "Could not load payment info.");
     payModalOpen.value = false;
@@ -1096,17 +1256,22 @@ function onDocClick(e) {
     lineMenuOpenId.value = null;
     groupMenuOpenId.value = null;
   }
+  if (!e.target?.closest?.("[data-right-actions]")) {
+    rightActionsMenuOpen.value = false;
+  }
 }
 
 function onWindowScrollOrResize() {
   lineMenuOpenId.value = null;
   groupMenuOpenId.value = null;
+  rightActionsMenuOpen.value = false;
 }
 
 function onDocKeydown(e) {
   if (e.key === "Escape") {
     lineMenuOpenId.value = null;
     groupMenuOpenId.value = null;
+    rightActionsMenuOpen.value = false;
   }
 }
 </script>
@@ -1359,6 +1524,7 @@ function onDocKeydown(e) {
                     <tr>
                       <th>Service</th>
                       <th>Category</th>
+                      <th class="text-end">Order #</th>
                       <th class="text-end">Qty</th>
                       <th class="text-end">Price</th>
                       <th class="text-end">Total</th>
@@ -1377,6 +1543,7 @@ function onDocKeydown(e) {
                       >
                         <td class="fw-semibold">{{ row.name }}</td>
                         <td>{{ row.type }}</td>
+                        <td class="text-end">{{ displayRowOrderNumber(row) }}</td>
                         <td class="text-end text-nowrap">
                           {{ formatQtyDisplay(row.qty) }}
                         </td>
@@ -1568,86 +1735,119 @@ function onDocKeydown(e) {
         </div>
         <div class="col-lg-4">
           <div class="staff-surface p-4 mb-4">
+            <div class="billing-inv-right-top mb-3" data-right-actions>
+              <button
+                type="button"
+                class="staff-action-btn staff-action-btn--more"
+                :aria-expanded="rightActionsMenuOpen"
+                aria-label="Invoice options"
+                @click="toggleRightActionsMenu"
+              >
+                <CrmIconRowActions variant="horizontal" />
+              </button>
+              <div v-if="rightActionsMenuOpen" class="staff-row-menu billing-inv-right-menu">
+                <button
+                  v-if="canVoidInvoice"
+                  type="button"
+                  class="staff-row-menu__item staff-row-menu__item--danger"
+                  role="menuitem"
+                  @click="openRightMenuVoid"
+                >
+                  Void Invoice
+                </button>
+                <button
+                  v-if="canShareInvoice"
+                  type="button"
+                  class="staff-row-menu__item"
+                  role="menuitem"
+                  :disabled="pdfDownloading"
+                  @click="openRightMenuDownloadPdf"
+                >
+                  {{ pdfDownloading ? "Downloading..." : "Download PDF" }}
+                </button>
+                <button
+                  v-if="canAddCharge"
+                  type="button"
+                  class="staff-row-menu__item"
+                  role="menuitem"
+                  @click="openRightMenuCcFee"
+                >
+                  Add CC Fee
+                </button>
+              </div>
+            </div>
+
+            <div class="billing-inv-summary-grid mb-3">
+              <button
+                type="button"
+                class="staff-stat-card billing-inv-summary-card h-100"
+                :disabled="accountBalanceLoading"
+                @click="goToInvoiceBucket('open')"
+              >
+                <p class="staff-stat-card__label">Open Balance Due</p>
+                <p class="staff-stat-card__value">
+                  {{ formatCents(payOpenBalanceCents, invoice.currency) }}
+                </p>
+                <p class="staff-stat-card__sub">Sent and partial invoices</p>
+              </button>
+              <button
+                type="button"
+                class="staff-stat-card billing-inv-summary-card h-100"
+                :disabled="accountBalanceLoading"
+                @click="goToInvoiceBucket('past_due')"
+              >
+                <p class="staff-stat-card__label">Past Due Balance</p>
+                <p class="staff-stat-card__value">
+                  {{ formatCents(payPastDueBalanceCents, invoice.currency) }}
+                </p>
+                <p class="staff-stat-card__sub">Past due with remaining balance</p>
+              </button>
+              <button
+                type="button"
+                class="staff-stat-card billing-inv-summary-card h-100"
+                :disabled="accountBalanceLoading"
+                @click="goToInvoiceBucket('draft')"
+              >
+                <p class="staff-stat-card__label">Draft Balance</p>
+                <p class="staff-stat-card__value">
+                  {{ formatCents(payPendingBalanceCents, invoice.currency) }}
+                </p>
+                <p class="staff-stat-card__sub">Draft invoices not yet sent</p>
+              </button>
+            </div>
+
             <div class="billing-inv-action-stack">
               <button
                 v-if="canPayInvoice"
                 type="button"
-                class="billing-inv-action-btn"
+                class="billing-inv-action-btn billing-inv-action-btn--primary"
                 @click="openPayModal"
               >
                 Pay Invoice
               </button>
               <button
-                v-if="canAddCharge"
+                v-if="canEmailInvoice"
                 type="button"
-                class="billing-inv-action-btn"
-                @click="openAddItemModal"
+                class="billing-inv-action-btn billing-inv-action-btn--primary"
+                @click="openSendEmailModal"
               >
-                Add To Invoice
-              </button>
-              <button
-                v-if="canAddCharge"
-                type="button"
-                class="billing-inv-action-btn"
-                @click="openCcFeeModal"
-              >
-                Add CC Fee
-              </button>
-              <button
-                v-if="canVoidInvoice"
-                type="button"
-                class="billing-inv-action-btn billing-inv-action-btn--danger"
-                @click="openVoidModal"
-              >
-                Void Invoice
-              </button>
-              <button
-                v-if="canShareInvoice"
-                type="button"
-                class="billing-inv-action-btn"
-                :disabled="copyLinkBusy"
-                @click="copyCustomerLink"
-              >
-                {{ copyLinkBusy ? "Sharing..." : "Share Invoice" }}
+                Email Invoice
               </button>
               <button
                 v-if="canSendWhatsapp"
                 type="button"
-                class="billing-inv-action-btn"
+                class="billing-inv-action-btn billing-inv-action-btn--primary"
                 @click="openSendWhatsappModal"
               >
                 Send To Whatsapp
               </button>
               <button
+                v-if="canAddCharge"
                 type="button"
-                class="billing-inv-action-btn"
-                @click="jumpToHistory"
+                class="billing-inv-action-btn billing-inv-action-btn--add"
+                @click="openAddItemModal"
               >
-                History
-              </button>
-              <button
-                v-if="canUpdate && invoice.status === 'draft'"
-                type="button"
-                class="billing-inv-action-btn billing-inv-action-btn--primary"
-                @click="openSendEmailModal"
-              >
-                Send Invoice
-              </button>
-              <button
-                v-if="canUpdate && invoice.status === 'draft'"
-                type="button"
-                class="billing-inv-action-btn"
-                @click="sendInvoice"
-              >
-                Mark As Sent
-              </button>
-              <button
-                v-if="canDelete && invoice.status === 'draft'"
-                type="button"
-                class="billing-inv-action-btn billing-inv-action-btn--danger"
-                @click="openDeleteModal"
-              >
-                Delete Draft
+                Add To Invoice
               </button>
             </div>
           </div>
@@ -1690,7 +1890,31 @@ function onDocKeydown(e) {
               <h2 class="crm-vx-modal__title">Edit Grouped Line Items</h2>
             </header>
             <div class="crm-vx-modal__body">
-              <div class="d-flex justify-content-end mb-2">
+              <div class="billing-group-edit-toolbar mb-2">
+                <div class="billing-group-edit-bulk">
+                  <input
+                    v-model="groupBulkQty"
+                    type="text"
+                    class="form-control form-control-sm text-end"
+                    placeholder="Bulk Qty"
+                    :disabled="groupEditBusy"
+                  />
+                  <button type="button" class="btn btn-sm btn-outline-secondary" :disabled="groupEditBusy" @click="applyGroupBulkQty">
+                    Apply Qty
+                  </button>
+                </div>
+                <div class="billing-group-edit-bulk">
+                  <input
+                    v-model="groupBulkPrice"
+                    type="text"
+                    class="form-control form-control-sm text-end"
+                    placeholder="Bulk Price"
+                    :disabled="groupEditBusy"
+                  />
+                  <button type="button" class="btn btn-sm btn-outline-secondary" :disabled="groupEditBusy" @click="applyGroupBulkPrice">
+                    Apply Price
+                  </button>
+                </div>
                 <button type="button" class="btn btn-sm btn-outline-secondary" :disabled="groupEditBusy" @click="addGroupEditLine">
                   Add Line
                 </button>
@@ -1711,7 +1935,18 @@ function onDocKeydown(e) {
                   <tbody>
                     <tr v-for="(line, idx) in groupEditLines" :key="idx">
                       <td><input v-model="line.display_name" type="text" class="form-control form-control-sm" /></td>
-                      <td><input v-model="line.category" type="text" class="form-control form-control-sm" /></td>
+                      <td>
+                        <select v-model="line.category" class="form-select form-select-sm">
+                          <option value="">Select category</option>
+                          <option
+                            v-for="category in invoiceCategoryOptions"
+                            :key="`group-category-${category.value}`"
+                            :value="category.value"
+                          >
+                            {{ category.label }}
+                          </option>
+                        </select>
+                      </td>
                       <td><input v-model="line.metadata.order_number" type="text" class="form-control form-control-sm" /></td>
                       <td><input v-model="line.quantity" type="text" class="form-control form-control-sm text-end" /></td>
                       <td><input v-model="line.unit_price" type="text" class="form-control form-control-sm text-end" /></td>
@@ -1883,6 +2118,19 @@ function onDocKeydown(e) {
               <input v-model="lineEditForm.display_name" type="text" class="form-control mb-2" />
               <label class="form-label">Description</label>
               <textarea v-model="lineEditForm.description" rows="2" class="form-control mb-2" />
+              <label class="form-label">Category</label>
+              <select v-model="lineEditForm.category" class="form-select mb-2">
+                <option value="">Select category</option>
+                <option
+                  v-for="category in invoiceCategoryOptions"
+                  :key="`line-category-${category.value}`"
+                  :value="category.value"
+                >
+                  {{ category.label }}
+                </option>
+              </select>
+              <label class="form-label">Order #</label>
+              <input v-model="lineEditForm.order_number" type="text" class="form-control mb-2" />
               <div class="row g-2">
                 <div class="col-6">
                   <label class="form-label">Qty</label>
@@ -1935,6 +2183,19 @@ function onDocKeydown(e) {
               <input v-model="addItemForm.display_name" type="text" class="form-control mb-2" />
               <label class="form-label">Description</label>
               <textarea v-model="addItemForm.description" rows="2" class="form-control mb-2" />
+              <label class="form-label">Category</label>
+              <select v-model="addItemForm.category" class="form-select mb-2">
+                <option value="">Select category</option>
+                <option
+                  v-for="category in invoiceCategoryOptions"
+                  :key="`add-category-${category.value}`"
+                  :value="category.value"
+                >
+                  {{ category.label }}
+                </option>
+              </select>
+              <label class="form-label">Order #</label>
+              <input v-model="addItemForm.order_number" type="text" class="form-control mb-2" />
               <div class="row g-2">
                 <div class="col-6">
                   <label class="form-label">Qty</label>
@@ -2061,14 +2322,19 @@ function onDocKeydown(e) {
                   </div>
 
                   <div class="d-flex justify-content-end mt-3 mb-3">
-                    <button
-                      type="button"
-                      class="btn btn-success"
-                      :disabled="!payCanAddFunds"
-                      @click="addFundsToPayPool"
-                    >
-                      Add Funds
-                    </button>
+                    <div class="text-end">
+                      <button
+                        type="button"
+                        class="btn btn-success"
+                        :disabled="!payCanAddFunds"
+                        @click="addFundsToPayPool"
+                      >
+                        Add Funds
+                      </button>
+                      <div class="small text-secondary mt-1">
+                        Added funds are allocated to selected invoices and only pay what is available.
+                      </div>
+                    </div>
                   </div>
 
                   <div class="table-responsive">
@@ -2123,29 +2389,29 @@ function onDocKeydown(e) {
                   <div class="billing-pay-stat-stack">
                     <button
                       type="button"
-                      class="billing-pay-stat billing-pay-stat--blue"
+                      class="billing-pay-stat staff-stat-card"
                       :class="{ 'is-active': payFilterStatus === 'all' }"
                       @click="payFilterStatus = 'all'"
                     >
                       <div class="billing-pay-stat__value">
-                        {{ formatCents(payAvailablePreviewCents, invoice?.currency || 'USD') }}
+                        {{ formatCents(payAvailableDisplayCents, invoice?.currency || 'USD') }}
                       </div>
                       <div class="billing-pay-stat__label">Available Funds</div>
                     </button>
                     <button
                       type="button"
-                      class="billing-pay-stat billing-pay-stat--green"
+                      class="billing-pay-stat staff-stat-card"
                       :class="{ 'is-active': payFilterStatus === 'open' }"
                       @click="payFilterStatus = 'open'"
                     >
                       <div class="billing-pay-stat__value">
                         {{ formatCents(payOpenBalanceCents, invoice?.currency || 'USD') }}
                       </div>
-                      <div class="billing-pay-stat__label">Open Balance</div>
+                      <div class="billing-pay-stat__label">Open Balance Due</div>
                     </button>
                     <button
                       type="button"
-                      class="billing-pay-stat billing-pay-stat--red"
+                      class="billing-pay-stat staff-stat-card"
                       :class="{ 'is-active': payFilterStatus === 'past_due' }"
                       @click="payFilterStatus = 'past_due'"
                     >
@@ -2156,14 +2422,14 @@ function onDocKeydown(e) {
                     </button>
                     <button
                       type="button"
-                      class="billing-pay-stat billing-pay-stat--orange"
+                      class="billing-pay-stat staff-stat-card"
                       :class="{ 'is-active': payFilterStatus === 'pending' }"
                       @click="payFilterStatus = 'pending'"
                     >
                       <div class="billing-pay-stat__value">
                         {{ formatCents(payPendingBalanceCents, invoice?.currency || 'USD') }}
                       </div>
-                      <div class="billing-pay-stat__label">Pending Balance</div>
+                      <div class="billing-pay-stat__label">Draft Balance</div>
                     </button>
                   </div>
                 </div>
@@ -2184,7 +2450,7 @@ function onDocKeydown(e) {
                 :disabled="payBusy || payContextBusy || !payCanSubmit"
                 @click="confirmPay"
               >
-                {{ payBusy ? "Paying…" : "Pay Invoice" }}
+                {{ payBusy ? "Applying…" : "Apply Funds" }}
               </button>
             </footer>
           </div>
@@ -2297,6 +2563,40 @@ function onDocKeydown(e) {
 .billing-inv-totals {
   max-width: 15rem;
 }
+.billing-inv-right-top {
+  display: flex;
+  justify-content: flex-end;
+  position: relative;
+}
+.billing-inv-right-menu {
+  position: absolute;
+  top: calc(100% + 0.35rem);
+  right: 0;
+  z-index: 20;
+  min-width: 12rem;
+}
+.billing-inv-summary-grid {
+  display: grid;
+  gap: 0.75rem;
+}
+.billing-inv-summary-card {
+  border: 1px solid rgba(47, 43, 61, 0.12);
+  padding: 0.85rem 0.9rem;
+  text-align: left;
+  transition:
+    border-color 0.15s ease,
+    box-shadow 0.15s ease,
+    transform 0.15s ease;
+}
+.billing-inv-summary-card:hover:not(:disabled) {
+  border-color: rgba(115, 103, 240, 0.26);
+  box-shadow: 0 0.45rem 1rem rgba(47, 43, 61, 0.09);
+  transform: translateY(-1px);
+}
+.billing-inv-summary-card:disabled {
+  opacity: 0.75;
+  cursor: not-allowed;
+}
 .billing-inv-action-stack {
   display: grid;
   gap: 0.75rem;
@@ -2304,12 +2604,13 @@ function onDocKeydown(e) {
 .billing-inv-action-btn {
   width: 100%;
   border: 1px solid rgba(47, 43, 61, 0.12);
-  border-radius: 0.5rem;
+  border-radius: 0.7rem;
   background: var(--bs-body-bg, #fff);
   color: var(--bs-body-color, #2f2b3d);
-  padding: 0.8rem 0.95rem;
-  text-align: left;
-  font-weight: 500;
+  padding: 0.75rem 0.95rem;
+  text-align: center;
+  font-weight: 600;
+  min-height: 2.9rem;
   transition:
     background-color 0.15s ease,
     border-color 0.15s ease,
@@ -2325,9 +2626,19 @@ function onDocKeydown(e) {
   cursor: not-allowed;
 }
 .billing-inv-action-btn--primary {
-  background: rgba(115, 103, 240, 0.1);
-  border-color: rgba(115, 103, 240, 0.28);
+  background: #fff;
+  border-color: #d6d3ef;
   color: #5e50ee;
+}
+.billing-inv-action-btn--add {
+  background: #2563eb;
+  border-color: #2563eb;
+  color: #fff;
+}
+.billing-inv-action-btn--add:hover:not(:disabled) {
+  background: #1d4ed8;
+  border-color: #1d4ed8;
+  color: #fff;
 }
 .billing-inv-action-btn--danger {
   color: #ea5455;
@@ -2349,6 +2660,20 @@ function onDocKeydown(e) {
 }
 .billing-inv-line-detail--danger td {
   background: rgba(234, 84, 85, 0.08);
+}
+.billing-group-edit-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  justify-content: space-between;
+}
+.billing-group-edit-bulk {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+}
+.billing-group-edit-bulk .form-control {
+  width: 8rem;
 }
 .billing-inline-menu {
   position: fixed;
@@ -2415,38 +2740,27 @@ function onDocKeydown(e) {
 }
 .billing-pay-stat {
   width: 100%;
-  border: none;
+  border: 1px solid rgba(47, 43, 61, 0.12);
   border-radius: 0.85rem;
-  padding: 1.1rem 1rem;
-  color: #fff;
+  padding: 0.95rem 1rem;
+  color: var(--bs-body-color, #2f2b3d);
   text-align: left;
-  box-shadow: 0 10px 20px rgba(47, 43, 61, 0.12);
-  opacity: 0.92;
+  box-shadow: none;
+  background: var(--bs-body-bg, #fff);
 }
 .billing-pay-stat.is-active {
-  outline: 2px solid rgba(255, 255, 255, 0.75);
-  opacity: 1;
-}
-.billing-pay-stat--blue {
-  background: #2f80ed;
-}
-.billing-pay-stat--green {
-  background: #15a05d;
-}
-.billing-pay-stat--red {
-  background: #ea5455;
-}
-.billing-pay-stat--orange {
-  background: #ff9f43;
+  border-color: rgba(115, 103, 240, 0.35);
+  box-shadow: 0 0.45rem 1rem rgba(47, 43, 61, 0.08);
 }
 .billing-pay-stat__value {
-  font-size: 1.85rem;
-  font-weight: 700;
+  font-size: 1.4rem;
+  font-weight: 600;
   line-height: 1.1;
 }
 .billing-pay-stat__label {
   margin-top: 0.25rem;
-  font-size: 0.95rem;
+  font-size: 0.82rem;
+  color: var(--bs-secondary-color, #6c757d);
 }
 .billing-send-email-recipients {
   border: 1px solid #dbdade;

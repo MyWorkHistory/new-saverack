@@ -60,6 +60,7 @@ class ClientAccountStoreRequest extends FormRequest
             'country' => ['nullable', 'string', 'max:120'],
             'account_manager_id' => ['nullable', 'integer', $accountManagerRule],
             'contract_date' => ['nullable', 'date'],
+            'default_payment_type' => ['nullable', 'string', Rule::in(ClientAccount::DEFAULT_PAYMENT_TYPES)],
         ];
     }
 

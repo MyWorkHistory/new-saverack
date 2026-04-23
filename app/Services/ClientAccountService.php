@@ -470,6 +470,7 @@ class ClientAccountService
             'country' => $account->country,
             'notes' => $account->notes,
             'account_manager_id' => $account->account_manager_id,
+            'default_payment_type' => $account->default_payment_type,
             'account_manager' => $manager !== null
                 ? ['id' => $manager->id, 'name' => $manager->name, 'email' => $manager->email]
                 : null,

@@ -829,6 +829,9 @@ class InvoiceService
             'po_number' => $invoice->po_number,
             'customer_notes' => $invoice->customer_notes,
             'internal_notes' => $invoice->internal_notes,
+            'client_account_default_payment_type' => $invoice->clientAccount !== null
+                ? $invoice->clientAccount->default_payment_type
+                : null,
             'email_recipient_options' => $this->invoiceRecipientEmails($invoice),
             'customer_view_url' => $this->publicCustomerViewUrl($invoice),
             'customer_pdf_url' => $this->publicCustomerPdfUrl($invoice),
@@ -1375,7 +1378,10 @@ class InvoiceService
         $q = Invoice::query()->with('clientAccount');
 
         if (! empty($filters['status']) && $filters['status'] !== 'all') {
-            if ($filters['status'] === 'overdue') {
+            if ($filters['status'] === 'open') {
+                $q->whereIn('status', [Invoice::STATUS_SENT, Invoice::STATUS_PARTIAL])
+                    ->where('balance_due_cents', '>', 0);
+            } elseif ($filters['status'] === 'overdue') {
                 $q->where('status', '!=', Invoice::STATUS_VOID)
                     ->where('status', '!=', Invoice::STATUS_PAID)
                     ->where('status', '!=', Invoice::STATUS_DRAFT)

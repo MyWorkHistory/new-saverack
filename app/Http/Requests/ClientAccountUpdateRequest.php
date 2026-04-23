@@ -76,6 +76,7 @@ class ClientAccountUpdateRequest extends FormRequest
             'notes' => ['sometimes', 'nullable', 'string', 'max:65535'],
             'account_manager_id' => ['sometimes', 'nullable', 'integer', $accountManagerRule],
             'contract_date' => ['sometimes', 'nullable', 'date'],
+            'default_payment_type' => ['sometimes', 'nullable', 'string', Rule::in(ClientAccount::DEFAULT_PAYMENT_TYPES)],
         ];
     }
 }

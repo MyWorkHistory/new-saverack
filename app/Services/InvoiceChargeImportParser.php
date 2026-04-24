@@ -783,12 +783,7 @@ final class InvoiceChargeImportParser
     private function parseLegacyReturnsRow(array $row, array $index): ?array
     {
         $chargeTypeRaw = strtolower($this->cell($row, $index['charge_type'] ?? -1));
-        $qty = $this->parseQty($this->cell($row, $index['quantity'] ?? -1));
-        $unitRate = $this->parseMoneyToCents($this->cell($row, $index['unit_rate'] ?? -1));
-        $total = $this->parseMoneyToCents($this->cell($row, $index['total'] ?? -1));
-        if ($total === 0 && $qty !== 0.0 && $unitRate !== 0) $total = (int) round($qty * $unitRate);
-        if ($unitRate === 0 && $qty !== 0.0 && $total !== 0) $unitRate = (int) round($total / $qty);
-        if ($qty === 0.0 && $total !== 0 && $unitRate !== 0) $qty = round($total / $unitRate, 4);
+        ['qty' => $qty, 'unit_rate' => $unitRate, 'total' => $total] = $this->resolveRowAmounts($row, $index);
         if ($qty === 0.0 && $unitRate === 0 && $total === 0) return null;
         if ($qty === 0.0) $qty = 1.0;
         $isAdditional = strpos($chargeTypeRaw, 'return_remainder') !== false || strpos($chargeTypeRaw, 'remainder') !== false;
@@ -808,6 +803,9 @@ final class InvoiceChargeImportParser
             $carrier = 'Other';
         }
         $total = $this->parseMoneyToCents($this->cell($row, $index['total'] ?? -1));
+        if ($total === 0) {
+            $total = $this->parseMoneyToCents($this->cell($row, $index['charge_subtotal'] ?? -1));
+        }
 
         return $this->buildItem(InvoiceLineCategory::POSTAGE, 'Postage ('.trim($carrier).')', trim($carrier), 1.0, 0, $total, null, 'postage', '');
     }
@@ -819,12 +817,7 @@ final class InvoiceChargeImportParser
      */
     private function parseLegacyPackagingRow(array $row, array $index, string $feeType): ?array
     {
-        $qty = $this->parseQty($this->cell($row, $index['quantity'] ?? -1));
-        $unitRate = $this->parseMoneyToCents($this->cell($row, $index['unit_rate'] ?? -1));
-        $total = $this->parseMoneyToCents($this->cell($row, $index['total'] ?? -1));
-        if ($total === 0 && $qty !== 0.0 && $unitRate !== 0) $total = (int) round($qty * $unitRate);
-        if ($unitRate === 0 && $qty !== 0.0 && $total !== 0) $unitRate = (int) round($total / $qty);
-        if ($qty === 0.0 && $total !== 0 && $unitRate !== 0) $qty = round($total / $unitRate, 4);
+        ['qty' => $qty, 'unit_rate' => $unitRate, 'total' => $total] = $this->resolveRowAmounts($row, $index);
         if ($qty === 0.0 && $unitRate === 0 && $total === 0) return null;
         if ($qty === 0.0) $qty = 1.0;
 

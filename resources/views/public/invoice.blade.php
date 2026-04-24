@@ -9,13 +9,18 @@
         * { box-sizing: border-box; }
         body { font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif; font-size: 14px; color: #2f2f2f; margin: 0; background: #f6f7fb; }
         .page { max-width: 1040px; margin: 0 auto; padding: 24px 20px 40px; }
-        .public-toolbar { display: flex; flex-wrap: wrap; gap: 10px; justify-content: flex-end; margin-bottom: 10px; }
+        .public-toolbar { display: flex; flex-wrap: wrap; gap: 10px; justify-content: flex-end; margin-bottom: 10px; align-items: center; }
         .public-toolbar a { display: inline-block; padding: 10px 16px; border-radius: 8px; font-size: 13px; font-weight: 600; text-decoration: none; }
         .public-toolbar a.primary { background: #2573ba; color: #fff; }
         .public-toolbar a.secondary { background: #fff; color: #2f2b3d; border: 1px solid rgba(47, 43, 61, 0.12); }
         .public-toolbar a.success { background: #28c76f; color: #fff; }
-        .public-status-row { display: flex; justify-content: center; margin-bottom: 10px; }
         .public-status-chip { background: #eef2ff; color: #2f2b3d; border: 1px solid rgba(47, 43, 61, 0.12); padding: 5px 12px; border-radius: 999px; font-size: 13px; font-weight: 600; }
+        .public-status-chip.status-paid { background: #e8f7ef; color: #0f7a43; border-color: #b9e7cd; }
+        .public-status-chip.status-past-due { background: #ffe9ea; color: #b4232d; border-color: #f4b8bc; }
+        .public-status-chip.status-void { background: #eceef1; color: #4b5563; border-color: #d3d9e1; }
+        .public-status-chip.status-open { background: #eaf2ff; color: #1e58b7; border-color: #c7dafd; }
+        .public-status-chip.status-draft { background: #f1f3f5; color: #495057; border-color: #d8dee3; }
+        .public-status-chip.status-collection { background: #fff4e6; color: #b35a00; border-color: #f7d7ae; }
         .invoice-card { background: #fff; border: 1px solid rgba(47, 43, 61, 0.08); border-radius: 14px; padding: 26px 24px 30px; box-shadow: 0 8px 24px rgba(15, 23, 42, 0.06); }
         .invoice-head { display: flex; justify-content: space-between; gap: 20px; align-items: flex-start; margin-bottom: 22px; }
         .invoice-title { font-size: 34px; font-weight: 700; color: #1f2430; margin: 0 0 4px; }
@@ -65,7 +70,6 @@
         .pay-feedback.error { color: #ea5455; }
         @media print {
             .public-toolbar { display: none; }
-            .public-status-row { display: none; }
             body { background: #fff; }
             .page { padding: 0; max-width: none; }
             .invoice-card { box-shadow: none; border: none; padding: 0; }
@@ -84,12 +88,15 @@
 </head>
 <body>
 <div class="page">
+    @php
+        $statusText = trim((string) ($status_label ?? 'Draft'));
+        $statusSlug = strtolower(str_replace('_', '-', $statusText));
+        $statusClass = 'status-'.$statusSlug;
+    @endphp
     <div class="public-toolbar">
+        <span class="public-status-chip {{ $statusClass }}">{{ $statusText }}</span>
         <a class="success" href="{{ $public_pay_path ?? '#' }}">Pay Now</a>
         <a class="primary" href="{{ $public_pdf_path ?? '#' }}">Download PDF</a>
-    </div>
-    <div class="public-status-row">
-        <span class="public-status-chip">Status: {{ $status_label ?? 'Draft' }}</span>
     </div>
     @php($paymentState = request()->query('payment'))
     @if($paymentState === 'success')

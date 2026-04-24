@@ -19,7 +19,7 @@ const toast = useToast();
 const loading = ref(false);
 const saving = ref(false);
 const errorMsg = ref("");
-const paymentTypeOptions = ["ACH", "Wire", "Check", "Credit Card", "Paypal", "Varies"];
+const paymentTypeOptions = ["ACH", "Wire", "Check", "Manual", "Credit Card", "Paypal", "Varies"];
 
 const form = reactive({
   company_name: "",

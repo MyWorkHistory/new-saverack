@@ -921,7 +921,7 @@ class InvoiceService
         foreach ($invoice->items as $item) {
             $category = strtolower(trim((string) $item->category));
             if ($category === InvoiceLineCategory::FULFILLMENT) {
-                $name = $this->oldBetaDisplayName($item);
+                $name = $this->normalizeLegacyServiceLabel($this->oldBetaDisplayName($item));
                 $key = $name;
                 if (! isset($fulfillment[$key])) {
                     $fulfillment[$key] = ['name' => $name, 'items' => [], 'qty_sum' => 0.0, 'total_sum' => 0];
@@ -936,7 +936,7 @@ class InvoiceService
                 $fulfillment[$key]['qty_sum'] += $qty;
                 $fulfillment[$key]['total_sum'] += $total;
             } elseif ($category === InvoiceLineCategory::POSTAGE) {
-                $rawName = $this->oldBetaDisplayName($item, 'Other');
+                $rawName = $this->normalizeLegacyServiceLabel($this->oldBetaDisplayName($item, 'Other'));
                 $key = strtolower($rawName);
                 if (! isset($postage[$key])) {
                     $postage[$key] = ['name' => $rawName, 'items' => [], 'qty' => 0.0, 'total' => 0];
@@ -1184,6 +1184,21 @@ class InvoiceService
             if ($ai !== $bi) {
                 return $ai < $bi ? -1 : 1;
             }
+            $aType = strtolower((string) ($a['type'] ?? ''));
+            $bType = strtolower((string) ($b['type'] ?? ''));
+            if ($aType === 'fulfillment' && $bType === 'fulfillment') {
+                $rank = static function (string $name): int {
+                    $n = strtolower($name);
+                    if (str_contains($n, 'first pick')) return 0;
+                    if (str_contains($n, 'additional pick')) return 1;
+                    return 2;
+                };
+                $ar = $rank((string) ($a['name'] ?? ''));
+                $br = $rank((string) ($b['name'] ?? ''));
+                if ($ar !== $br) {
+                    return $ar <=> $br;
+                }
+            }
             return strcasecmp((string) $a['name'], (string) $b['name']);
         });
 
@@ -1296,6 +1311,14 @@ class InvoiceService
             return 'Ship As Is';
         }
         return $name;
+    }
+
+    private function normalizeLegacyServiceLabel(string $label): string
+    {
+        if (strcasecmp(trim($label), 'Endicia (USPS)') === 0) {
+            return 'USPS';
+        }
+        return $label;
     }
 
     private function oldBetaPackagingType(string $name): string

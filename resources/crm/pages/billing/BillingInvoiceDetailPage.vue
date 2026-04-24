@@ -2631,6 +2631,7 @@ function onDocKeydown(e) {
                         <option value="ACH">ACH</option>
                         <option value="Wire">Wire</option>
                         <option value="Check">Check</option>
+                        <option value="Manual">Manual</option>
                         <option value="Credit Card">Credit Card</option>
                         <option value="Paypal">Paypal</option>
                         <option value="Varies">Varies</option>
@@ -2734,10 +2735,21 @@ function onDocKeydown(e) {
                       ]"
                       @click="payFilterStatus = 'all'"
                     >
-                      <div class="billing-pay-stat__value">
-                        {{ formatCents(payAvailableDisplayCents, invoice?.currency || 'USD') }}
+                      <div class="billing-pay-stat__body">
+                        <div>
+                          <div class="billing-pay-stat__value">
+                            {{ formatCents(payAvailableDisplayCents, invoice?.currency || 'USD') }}
+                          </div>
+                          <div class="billing-pay-stat__label">Available Funds</div>
+                        </div>
+                        <span class="billing-pay-stat__icon billing-pay-stat__icon--blue" aria-hidden="true">
+                          <svg width="20" height="20" fill="currentColor" viewBox="0 0 24 24">
+                            <path
+                              d="M11.8 10.9c-2.27-.59-3-1.2-3-2.15 0-1.09 1.01-1.85 2.7-1.85 1.78 0 2.44.85 2.5 2.1h2.21c-.07-1.72-1.12-3.3-3.21-3.81V3h-3v2.16c-1.94.42-3.5 1.68-3.5 3.61 0 2.31 1.91 3.46 4.7 4.13 2.5.6 3 1.48 3 2.41 0 .69-.49 1.79-2.7 1.79-2.06 0-2.87-.92-2.98-2.1h-2.2c.12 2.19 1.76 3.42 3.68 3.83V21h3v-2.15c1.95-.37 3.5-1.5 3.5-3.55 0-2.84-2.43-3.81-4.7-4.4z"
+                            />
+                          </svg>
+                        </span>
                       </div>
-                      <div class="billing-pay-stat__label">Available Funds</div>
                     </button>
                     <button
                       type="button"
@@ -2748,10 +2760,21 @@ function onDocKeydown(e) {
                       ]"
                       @click="payFilterStatus = 'open'"
                     >
-                      <div class="billing-pay-stat__value">
-                        {{ formatCents(payOpenBalanceCents, invoice?.currency || 'USD') }}
+                      <div class="billing-pay-stat__body">
+                        <div>
+                          <div class="billing-pay-stat__value">
+                            {{ formatCents(payOpenBalanceCents, invoice?.currency || 'USD') }}
+                          </div>
+                          <div class="billing-pay-stat__label">Open Balance Due</div>
+                        </div>
+                        <span class="billing-pay-stat__icon billing-pay-stat__icon--green" aria-hidden="true">
+                          <svg width="20" height="20" fill="currentColor" viewBox="0 0 24 24">
+                            <path
+                              d="M11.8 10.9c-2.27-.59-3-1.2-3-2.15 0-1.09 1.01-1.85 2.7-1.85 1.78 0 2.44.85 2.5 2.1h2.21c-.07-1.72-1.12-3.3-3.21-3.81V3h-3v2.16c-1.94.42-3.5 1.68-3.5 3.61 0 2.31 1.91 3.46 4.7 4.13 2.5.6 3 1.48 3 2.41 0 .69-.49 1.79-2.7 1.79-2.06 0-2.87-.92-2.98-2.1h-2.2c.12 2.19 1.76 3.42 3.68 3.83V21h3v-2.15c1.95-.37 3.5-1.5 3.5-3.55 0-2.84-2.43-3.81-4.7-4.4z"
+                            />
+                          </svg>
+                        </span>
                       </div>
-                      <div class="billing-pay-stat__label">Open Balance Due</div>
                     </button>
                     <button
                       type="button"
@@ -2762,10 +2785,21 @@ function onDocKeydown(e) {
                       ]"
                       @click="payFilterStatus = 'past_due'"
                     >
-                      <div class="billing-pay-stat__value">
-                        {{ formatCents(payPastDueBalanceCents, invoice?.currency || 'USD') }}
+                      <div class="billing-pay-stat__body">
+                        <div>
+                          <div class="billing-pay-stat__value">
+                            {{ formatCents(payPastDueBalanceCents, invoice?.currency || 'USD') }}
+                          </div>
+                          <div class="billing-pay-stat__label">Past Due Balance</div>
+                        </div>
+                        <span class="billing-pay-stat__icon billing-pay-stat__icon--red" aria-hidden="true">
+                          <svg width="20" height="20" fill="currentColor" viewBox="0 0 24 24">
+                            <path
+                              d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-2h2v2zm0-4h-2V7h2v6z"
+                            />
+                          </svg>
+                        </span>
                       </div>
-                      <div class="billing-pay-stat__label">Past Due Balance</div>
                     </button>
                     <button
                       type="button"
@@ -2776,10 +2810,21 @@ function onDocKeydown(e) {
                       ]"
                       @click="payFilterStatus = 'pending'"
                     >
-                      <div class="billing-pay-stat__value">
-                        {{ formatCents(payPendingBalanceCents, invoice?.currency || 'USD') }}
+                      <div class="billing-pay-stat__body">
+                        <div>
+                          <div class="billing-pay-stat__value">
+                            {{ formatCents(payPendingBalanceCents, invoice?.currency || 'USD') }}
+                          </div>
+                          <div class="billing-pay-stat__label">Draft Balance</div>
+                        </div>
+                        <span class="billing-pay-stat__icon billing-pay-stat__icon--gray" aria-hidden="true">
+                          <svg width="20" height="20" fill="currentColor" viewBox="0 0 24 24">
+                            <path
+                              d="M14 2H6c-1.1 0-1.99.9-1.99 2L4 20c0 1.1.89 2 1.99 2H18c1.1 0 2-.9 2-2V8l-6-6zm2 16H8v-2h8v2zm0-4H8v-2h8v2zm-3-5V3.5L18.5 9H13z"
+                            />
+                          </svg>
+                        </span>
                       </div>
-                      <div class="billing-pay-stat__label">Draft Balance</div>
                     </button>
                   </div>
                 </div>
@@ -3075,53 +3120,71 @@ function onDocKeydown(e) {
 }
 .billing-pay-stat {
   width: 100%;
-  border: none;
+  border: 1px solid rgba(47, 43, 61, 0.14);
   border-radius: 0.85rem;
-  padding: 0.95rem 1rem;
+  padding: 1rem 1.1rem;
   text-align: left;
   cursor: pointer;
   font: inherit;
-  box-shadow: 0 2px 8px rgba(47, 43, 61, 0.08);
+  background: #fff;
+  color: #2f2b3d;
+  box-shadow: 0 2px 10px rgba(47, 43, 61, 0.06);
   transition:
+    border-color 0.15s ease,
     transform 0.15s ease,
     box-shadow 0.15s ease,
     opacity 0.15s ease;
 }
 .billing-pay-stat:hover {
   transform: translateY(-1px);
-  box-shadow: 0 0.35rem 0.85rem rgba(47, 43, 61, 0.12);
+  border-color: rgba(115, 103, 240, 0.3);
+  box-shadow: 0 0.45rem 1rem rgba(47, 43, 61, 0.12);
 }
 .billing-pay-stat.is-active {
-  box-shadow:
-    0 0 0 2px rgba(255, 255, 255, 0.85),
-    0 0 0 4px rgba(94, 80, 238, 0.45);
+  border-color: rgba(94, 80, 238, 0.6);
+  box-shadow: 0 0 0 3px rgba(94, 80, 238, 0.12);
 }
-.billing-pay-stat--blue {
-  background: #2563eb;
-  color: #fff;
-}
-.billing-pay-stat--green {
-  background: #28c76f;
-  color: #fff;
-}
-.billing-pay-stat--red {
-  background: #ea5455;
-  color: #fff;
-}
-.billing-pay-stat--orange {
-  background: #ff9f43;
-  color: #fff;
+.billing-pay-stat__body {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.85rem;
 }
 .billing-pay-stat__value {
   font-size: 1.4rem;
   font-weight: 600;
   line-height: 1.1;
-  color: inherit;
+  color: #2f2b3d;
 }
 .billing-pay-stat__label {
   margin-top: 0.25rem;
   font-size: 0.82rem;
-  color: rgba(255, 255, 255, 0.92);
+  color: #6c757d;
+}
+.billing-pay-stat__icon {
+  width: 3rem;
+  height: 3rem;
+  border-radius: 0.65rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+.billing-pay-stat__icon--blue {
+  background: #2563eb;
+  color: #fff;
+}
+.billing-pay-stat__icon--green {
+  background: #28c76f;
+  color: #fff;
+}
+.billing-pay-stat__icon--red {
+  background: rgba(234, 84, 85, 0.2);
+  color: #7f1d1d;
+}
+.billing-pay-stat__icon--gray {
+  background: #e5e7eb;
+  color: #6b7280;
 }
 .billing-send-email-recipients {
   border: 1px solid #dbdade;

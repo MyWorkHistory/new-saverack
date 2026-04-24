@@ -29,6 +29,7 @@ class ClientAccount extends Model
         'ACH',
         'Wire',
         'Check',
+        'Manual',
         'Credit Card',
         'Paypal',
         'Varies',

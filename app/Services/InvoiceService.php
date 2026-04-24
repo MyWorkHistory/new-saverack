@@ -947,6 +947,14 @@ class InvoiceService
                 $postage[$key]['total'] += $total;
             } elseif ($category === InvoiceLineCategory::PACKAGING) {
                 $rawName = $this->packagingDisplayName($this->oldBetaDisplayName($item, 'Other'));
+                if (
+                    strtolower(trim($rawName)) === 'other'
+                    && (int) $item->unit_price_cents === 0
+                    && (int) $item->line_total_cents === 0
+                ) {
+                    // Old beta displayed zero-cost generic packaging rows as "Ship As Is".
+                    $rawName = 'Ship As Is';
+                }
                 $key = strtolower($rawName);
                 if (! isset($packaging[$key])) {
                     $packaging[$key] = ['name' => $rawName, 'items' => [], 'qty' => 0.0, 'total' => 0];
@@ -1267,6 +1275,9 @@ class InvoiceService
         if ($name === '') {
             $name = $fallback;
         }
+        if (strtolower((string) $item->category) === InvoiceLineCategory::POSTAGE) {
+            $name = $this->legacyPostageRowName($name);
+        }
         $n = strtolower($name);
         if ($n === 'first_pick_charge') return 'Fulfillment (First Pick)';
         if ($n === 'pick_remainder_charge') return 'Fulfillment (Additional Pick)';
@@ -1298,7 +1309,8 @@ class InvoiceService
 
     private function packagingDisplayName(string $name): string
     {
-        $n = strtolower(trim($name));
+        $name = trim($name);
+        $n = strtolower($name);
         $n = preg_replace('/\s+/', ' ', $n) ?? $n;
         if ($n === '') {
             return 'Other';
@@ -1320,18 +1332,26 @@ class InvoiceService
         if (strpos($n, 'basic box') !== false || strpos($n, 'ship as is') !== false) {
             return 'Ship As Is';
         }
-        if (preg_match('/^\(?\s*(\d+(?:\.\d+)?)\s*[x×]\s*(\d+(?:\.\d+)?)(?:\s*[x×]\s*(\d+(?:\.\d+)?))?\s*\)?$/i', $n, $m) === 1) {
+        if (preg_match('/^box\s*\(?\s*(\d+(?:\.\d+)?)\s*[x×]\s*(\d+(?:\.\d+)?)(?:\s*[x×]\s*(\d+(?:\.\d+)?))?\s*\)?$/i', $n, $m) === 1) {
             $parts = [$m[1], $m[2]];
             if (isset($m[3]) && trim((string) $m[3]) !== '') {
                 $parts[] = $m[3];
             }
-
-            return 'Box ('.implode(' X ', $parts).')';
+            return 'BOX '.implode('x', $parts);
         }
         if ($n === 'packaging') {
             return 'Other';
         }
         return $name;
+    }
+
+    private function legacyPostageRowName(string $name): string
+    {
+        $trimmed = trim($name);
+        if (preg_match('/^postage\s*\((.+)\)$/i', $trimmed, $m) === 1) {
+            return trim((string) $m[1]);
+        }
+        return $trimmed;
     }
 
     private function oldBetaCategoryLabel(string $category, string $name = ''): string

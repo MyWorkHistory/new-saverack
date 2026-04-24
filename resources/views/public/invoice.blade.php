@@ -9,10 +9,13 @@
         * { box-sizing: border-box; }
         body { font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif; font-size: 14px; color: #2f2f2f; margin: 0; background: #f6f7fb; }
         .page { max-width: 1040px; margin: 0 auto; padding: 24px 20px 40px; }
-        .public-toolbar { display: flex; flex-wrap: wrap; gap: 10px; justify-content: flex-end; margin-bottom: 18px; }
+        .public-toolbar { display: flex; flex-wrap: wrap; gap: 10px; justify-content: flex-end; margin-bottom: 10px; }
         .public-toolbar a { display: inline-block; padding: 10px 16px; border-radius: 8px; font-size: 13px; font-weight: 600; text-decoration: none; }
         .public-toolbar a.primary { background: #2573ba; color: #fff; }
         .public-toolbar a.secondary { background: #fff; color: #2f2b3d; border: 1px solid rgba(47, 43, 61, 0.12); }
+        .public-toolbar a.success { background: #28c76f; color: #fff; }
+        .public-status-row { display: flex; justify-content: center; margin-bottom: 10px; }
+        .public-status-chip { background: #eef2ff; color: #2f2b3d; border: 1px solid rgba(47, 43, 61, 0.12); padding: 5px 12px; border-radius: 999px; font-size: 13px; font-weight: 600; }
         .invoice-card { background: #fff; border: 1px solid rgba(47, 43, 61, 0.08); border-radius: 14px; padding: 26px 24px 30px; box-shadow: 0 8px 24px rgba(15, 23, 42, 0.06); }
         .invoice-head { display: flex; justify-content: space-between; gap: 20px; align-items: flex-start; margin-bottom: 22px; }
         .invoice-title { font-size: 34px; font-weight: 700; color: #1f2430; margin: 0 0 4px; }
@@ -55,10 +58,14 @@
         .invoice-summary { margin-top: 18px; margin-left: auto; width: 260px; text-align: right; line-height: 1.85; }
         .invoice-summary .danger { color: #ea5455; }
         .invoice-summary .success { color: #28c76f; }
-        .payment-note { margin-top: 28px; color: #555; line-height: 1.55; }
-        .payment-note strong { color: #1f2430; }
+        .detail-note { margin-top: 16px; color: #555; line-height: 1.55; }
+        .footer-note { margin-top: 28px; color: #555; line-height: 1.7; text-align: center; max-width: 820px; margin-left: auto; margin-right: auto; }
+        .pay-feedback { margin: 0 0 12px; font-size: 13px; text-align: right; }
+        .pay-feedback.success { color: #28c76f; }
+        .pay-feedback.error { color: #ea5455; }
         @media print {
             .public-toolbar { display: none; }
+            .public-status-row { display: none; }
             body { background: #fff; }
             .page { padding: 0; max-width: none; }
             .invoice-card { box-shadow: none; border: none; padding: 0; }
@@ -78,9 +85,20 @@
 <body>
 <div class="page">
     <div class="public-toolbar">
-        <a class="secondary" href="javascript:window.print()">Print</a>
+        <a class="success" href="{{ $public_pay_path ?? '#' }}">Pay Now</a>
         <a class="primary" href="{{ $public_pdf_path ?? '#' }}">Download PDF</a>
     </div>
+    <div class="public-status-row">
+        <span class="public-status-chip">Status: {{ $status_label ?? 'Draft' }}</span>
+    </div>
+    @php($paymentState = request()->query('payment'))
+    @if($paymentState === 'success')
+        <div class="pay-feedback success">Payment submitted successfully. Please allow a short moment for invoice status updates.</div>
+    @elseif($paymentState === 'cancel')
+        <div class="pay-feedback error">Payment was canceled.</div>
+    @elseif($paymentState === 'error')
+        <div class="pay-feedback error">Could not start payment. Please try again.</div>
+    @endif
 
     <div class="invoice-card">
         <div class="invoice-head">
@@ -106,8 +124,8 @@
 
             <div class="invoice-right">
                 <img src="{{ asset('logo.jpg') }}?v=20260402a" alt="Save Rack" class="invoice-logo" />
-                <div class="balance-label">Balance Due</div>
-                <p class="balance-due">{{ $balance_due }}</p>
+                <div class="balance-label">Invoice Amount</div>
+                <p class="balance-due">{{ $total }}</p>
             </div>
         </div>
 
@@ -176,26 +194,18 @@
             </tbody>
         </table>
 
+        <div class="detail-note">
+            For a detailed breakdown of charges associated with each order, please log in to your account.
+        </div>
+
         <div class="invoice-summary">
             <strong>Total :</strong> {{ $total }}<br>
             <strong>Paid :</strong> <span class="success">{{ $amount_paid }}</span><br>
             <strong>Balance Due :</strong> <span class="danger">{{ $balance_due }}</span>
         </div>
 
-        @if (!empty($customer_notes))
-            <div class="payment-note">
-                <strong>Note:</strong> {{ $customer_notes }}
-            </div>
-        @endif
-
-        <div class="payment-note">
-            <strong>Please send payment to:</strong><br><br>
-            Save Rack LLC<br>
-            3135 Drane Field Rd #20<br>
-            Lakeland, FL 33815<br><br>
-            Routing #: 063107513<br>
-            Account #: 1157249176<br>
-            Wire #: 121000248
+        <div class="footer-note">
+            We truly appreciate your business! Please kindly submit payment at your earliest convenience. If your account is set up for autopay, no action is needed-this invoice is simply for your records. If you have any questions, feel free to reach out or email us at billing@saverack.com
         </div>
     </div>
 </div>

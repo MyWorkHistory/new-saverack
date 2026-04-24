@@ -17,4 +17,6 @@ Route::middleware(['throttle:public-invoice'])->group(function () {
         ->name('public.invoice.show');
     Route::get('/billing-invoice/{slug}/{token}/pdf', [PublicInvoiceController::class, 'pdf'])
         ->name('public.invoice.pdf');
+    Route::get('/billing-invoice/{slug}/{token}/pay', [PublicInvoiceController::class, 'pay'])
+        ->name('public.invoice.pay');
 });

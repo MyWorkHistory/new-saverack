@@ -116,7 +116,6 @@ const lineEditForm = ref({
 const addItemModalOpen = ref(false);
 const addItemBusy = ref(false);
 const addItemForm = ref({
-  description: "",
   display_name: "",
   category: "",
   subtype: "",
@@ -1063,7 +1062,6 @@ async function confirmLineDelete() {
 
 function openAddItemModal() {
   addItemForm.value = {
-    description: "",
     display_name: "",
     category: "",
     subtype: "",
@@ -1089,9 +1087,10 @@ async function confirmAddItem() {
     const orderNumber = String(addItemForm.value.order_number || "").trim();
     const qty = Number.parseFloat(String(addItemForm.value.quantity).replace(/,/g, "")) || 0;
     const unitCents = dollarsToCents(addItemForm.value.unit_price);
+    const serviceName = String(addItemForm.value.display_name || "").trim();
     await api.post(`/invoices/${invoice.value.id}/add-item`, {
-      description: addItemForm.value.description,
-      display_name: addItemForm.value.display_name || addItemForm.value.description,
+      description: serviceName || "Service",
+      display_name: serviceName || "Service",
       category: addItemForm.value.category || null,
       subtype: addItemForm.value.subtype || null,
       sku: addItemForm.value.sku || null,
@@ -2521,8 +2520,6 @@ function onDocKeydown(e) {
             <div class="crm-vx-modal__body">
               <label class="form-label">Service</label>
               <input v-model="addItemForm.display_name" type="text" class="form-control mb-2" />
-              <label class="form-label">Description</label>
-              <textarea v-model="addItemForm.description" rows="2" class="form-control mb-2" />
               <label class="form-label">Category</label>
               <select v-model="addItemForm.category" class="form-select mb-2">
                 <option value="">Select category</option>

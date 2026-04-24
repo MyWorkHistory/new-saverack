@@ -23,8 +23,26 @@ class PublicInvoiceController extends Controller
 
         $data = $this->invoices->publicInvoiceHtmlData($invoice);
         $data['public_pdf_path'] = url('/billing-invoice/'.$slug.'/'.$token.'/pdf');
+        $data['public_pay_path'] = url('/billing-invoice/'.$slug.'/'.$token.'/pay');
+        $data['status_label'] = $this->invoices->legacyStatusLabel($invoice);
 
         return response()->view('public.invoice', $data);
+    }
+
+    public function pay(string $slug, string $token, \App\Services\StripeInvoicePaymentService $stripePayments)
+    {
+        $invoice = $this->invoices->resolvePublicInvoice($slug, $token);
+        abort_if($invoice === null, 404);
+
+        try {
+            $successUrl = url('/billing-invoice/'.$slug.'/'.$token.'?payment=success');
+            $cancelUrl = url('/billing-invoice/'.$slug.'/'.$token.'?payment=cancel');
+            $url = $stripePayments->createPublicCheckoutUrl($invoice, $successUrl, $cancelUrl);
+        } catch (\Throwable $e) {
+            return redirect('/billing-invoice/'.$slug.'/'.$token.'?payment=error');
+        }
+
+        return redirect()->away($url);
     }
 
     public function pdf(string $slug, string $token)

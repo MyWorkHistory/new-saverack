@@ -533,6 +533,37 @@ class BillingInvoiceApiTest extends TestCase
             ->assertSee('favicon.svg', false);
     }
 
+    public function test_public_invoice_html_shows_pay_now_and_updated_copy(): void
+    {
+        $client = ClientAccount::query()->create([
+            'status' => ClientAccount::STATUS_ACTIVE,
+            'company_name' => 'Public Copy Co',
+            'email' => 'public-copy@acme.test',
+        ]);
+        $client->refresh();
+
+        $invoice = Invoice::query()->create([
+            'invoice_number' => 'INV-PUB-COPY-001',
+            'client_account_id' => $client->id,
+            'status' => Invoice::STATUS_SENT,
+            'currency' => 'USD',
+            'subtotal_cents' => 4994,
+            'tax_cents' => 0,
+            'total_cents' => 4994,
+            'amount_paid_cents' => 0,
+            'balance_due_cents' => 4994,
+            'share_token' => 'public-copy-token',
+        ]);
+
+        $slug = (string) $client->invoice_share_slug;
+        $this->get("/billing-invoice/{$slug}/{$invoice->share_token}")
+            ->assertOk()
+            ->assertSee('Pay Now', false)
+            ->assertDontSee('javascript:window.print()', false)
+            ->assertSee('Invoice Amount', false)
+            ->assertSee('For a detailed breakdown of charges associated with each order, please log in to your account.', false);
+    }
+
     public function test_public_invoice_returns_404_for_void_status(): void
     {
         $client = ClientAccount::query()->create([
@@ -559,6 +590,72 @@ class BillingInvoiceApiTest extends TestCase
 
         $this->get("/billing-invoice/{$slug}/{$invoice->share_token}")
             ->assertNotFound();
+    }
+
+    public function test_public_pay_route_redirects_to_checkout_url_when_service_returns_url(): void
+    {
+        $client = ClientAccount::query()->create([
+            'status' => ClientAccount::STATUS_ACTIVE,
+            'company_name' => 'Public Pay Co',
+            'email' => 'public-pay@acme.test',
+        ]);
+        $client->refresh();
+
+        $invoice = Invoice::query()->create([
+            'invoice_number' => 'INV-PUB-PAY-001',
+            'client_account_id' => $client->id,
+            'status' => Invoice::STATUS_SENT,
+            'currency' => 'USD',
+            'subtotal_cents' => 1500,
+            'tax_cents' => 0,
+            'total_cents' => 1500,
+            'amount_paid_cents' => 0,
+            'balance_due_cents' => 1500,
+            'share_token' => 'public-pay-token',
+        ]);
+
+        $mock = Mockery::mock(StripeInvoicePaymentService::class);
+        $mock->shouldReceive('createPublicCheckoutUrl')
+            ->once()
+            ->andReturn('https://checkout.stripe.test/session/abc123');
+        $this->app->instance(StripeInvoicePaymentService::class, $mock);
+
+        $slug = (string) $client->invoice_share_slug;
+        $this->get("/billing-invoice/{$slug}/{$invoice->share_token}/pay")
+            ->assertRedirect('https://checkout.stripe.test/session/abc123');
+    }
+
+    public function test_public_pay_route_redirects_back_with_error_when_checkout_fails(): void
+    {
+        $client = ClientAccount::query()->create([
+            'status' => ClientAccount::STATUS_ACTIVE,
+            'company_name' => 'Public Pay Error Co',
+            'email' => 'public-pay-error@acme.test',
+        ]);
+        $client->refresh();
+
+        $invoice = Invoice::query()->create([
+            'invoice_number' => 'INV-PUB-PAY-ERR-001',
+            'client_account_id' => $client->id,
+            'status' => Invoice::STATUS_SENT,
+            'currency' => 'USD',
+            'subtotal_cents' => 1500,
+            'tax_cents' => 0,
+            'total_cents' => 1500,
+            'amount_paid_cents' => 0,
+            'balance_due_cents' => 1500,
+            'share_token' => 'public-pay-error-token',
+        ]);
+
+        $mock = Mockery::mock(StripeInvoicePaymentService::class);
+        $mock->shouldReceive('createPublicCheckoutUrl')
+            ->once()
+            ->andThrow(new \RuntimeException('Stripe unavailable'));
+        $this->app->instance(StripeInvoicePaymentService::class, $mock);
+
+        $slug = (string) $client->invoice_share_slug;
+        $this->get("/billing-invoice/{$slug}/{$invoice->share_token}/pay")
+            ->assertRedirect("/billing-invoice/{$slug}/{$invoice->share_token}?payment=error");
     }
 
     public function test_share_link_creates_token_and_returns_customer_urls(): void

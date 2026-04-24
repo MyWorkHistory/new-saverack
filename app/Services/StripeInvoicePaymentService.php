@@ -4,6 +4,7 @@ namespace App\Services;
 
 use App\Models\Invoice;
 use App\Models\User;
+use Illuminate\Support\Str;
 use Stripe\Exception\ApiErrorException;
 use Stripe\Exception\SignatureVerificationException;
 use Stripe\PaymentIntent;
@@ -255,6 +256,86 @@ class StripeInvoicePaymentService
             'event_type' => $type,
             'applied' => ($result['result'] ?? '') === 'succeeded',
         ];
+    }
+
+    public function createPublicCheckoutUrl(Invoice $invoice, string $successUrl, string $cancelUrl): string
+    {
+        $invoice->loadMissing('clientAccount');
+        $account = $invoice->clientAccount;
+        if ($account === null) {
+            throw new \RuntimeException('Invoice account is unavailable.');
+        }
+        $balance = (int) $invoice->balance_due_cents;
+        if ($balance <= 0) {
+            throw new \RuntimeException('Invoice has no balance due.');
+        }
+        $currency = strtolower((string) ($invoice->currency ?: 'usd'));
+        if ($currency !== 'usd') {
+            throw new \RuntimeException('Public checkout currently supports USD invoices only.');
+        }
+
+        $stripe = $this->client();
+        $customerId = trim((string) ($account->stripe_customer_id ?? ''));
+        if ($customerId === '') {
+            try {
+                $created = $stripe->customers->create([
+                    'name' => (string) ($account->company_name ?: 'Save Rack Customer'),
+                    'email' => filter_var((string) $account->email, FILTER_VALIDATE_EMAIL) ? (string) $account->email : null,
+                    'metadata' => [
+                        'source' => 'new_crm_public_invoice',
+                        'client_account_id' => (string) $account->id,
+                    ],
+                ]);
+            } catch (ApiErrorException $e) {
+                throw new \RuntimeException($e->getMessage());
+            }
+            $customerId = trim((string) ($created->id ?? ''));
+            if ($customerId === '') {
+                throw new \RuntimeException('Could not create Stripe customer.');
+            }
+            $account->stripe_customer_id = $customerId;
+            $account->save();
+        }
+
+        try {
+            $session = $stripe->checkout->sessions->create([
+                'mode' => 'payment',
+                'payment_method_types' => ['card', 'us_bank_account'],
+                'customer' => $customerId,
+                'success_url' => $successUrl,
+                'cancel_url' => $cancelUrl,
+                'line_items' => [[
+                    'quantity' => 1,
+                    'price_data' => [
+                        'currency' => $currency,
+                        'unit_amount' => $balance,
+                        'product_data' => [
+                            'name' => 'Invoice #'.$invoice->invoice_number,
+                            'description' => 'Save Rack invoice payment',
+                        ],
+                    ],
+                ]],
+                'payment_intent_data' => [
+                    'description' => 'Invoice #'.$invoice->invoice_number,
+                    'metadata' => [
+                        'source' => 'new_crm_public_checkout',
+                        'invoice_id' => (string) $invoice->id,
+                        'invoice_number' => (string) $invoice->invoice_number,
+                        'client_account_id' => (string) $invoice->client_account_id,
+                        'checkout_session_ref' => (string) Str::uuid(),
+                    ],
+                ],
+            ]);
+        } catch (ApiErrorException $e) {
+            throw new \RuntimeException($e->getMessage());
+        }
+
+        $url = trim((string) ($session->url ?? ''));
+        if ($url === '') {
+            throw new \RuntimeException('Stripe checkout URL was not returned.');
+        }
+
+        return $url;
     }
 
     private function client(): StripeClient

@@ -1784,7 +1784,7 @@ class InvoiceService
                 if ($orderNumber === '') {
                     $orderNumber = '—';
                 }
-                $orderLabel = 'Order #'.$orderNumber;
+                $orderLabel = $orderNumber;
                 $categories[$categoryKey]['services'][$serviceKey]['orders'][] = [
                     'id' => (string) Str::uuid(),
                     'label' => $orderLabel,

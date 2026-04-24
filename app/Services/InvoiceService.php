@@ -1373,6 +1373,8 @@ class InvoiceService
             'bubble wrap & kraft paper' => 33,
             'receiving' => 35,
             'ad hoc' => 40,
+            'bank fee' => 41,
+            'duties & taxes' => 42,
             'returns' => 50,
             'product (on-demand)' => 60,
             'storage' => 70,
@@ -1391,7 +1393,11 @@ class InvoiceService
             || $c === 'on demand'
             || $c === 'on_demand'
             || $c === 'skincare'
-            || $c === 'skin care';
+            || $c === 'skin care'
+            || $c === 'scion cbd'
+            || $c === 'scion cbo'
+            || $c === 'scion cbd oil'
+            || str_contains($c, 'cbd oil');
     }
 
     public function isOverdue(Invoice $invoice): bool

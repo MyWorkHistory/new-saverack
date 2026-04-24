@@ -87,10 +87,13 @@ const lineDeleteBusy = ref(false);
 const lineEditTarget = ref(null);
 const invoiceCategoryOptions = [
   { value: "fulfillment", label: "Fulfillment" },
+  { value: "amazon prep", label: "Amazon Prep" },
   { value: "postage", label: "Postage" },
   { value: "packaging", label: "Packaging" },
   { value: "returns", label: "Returns" },
   { value: "ad_hoc", label: "Ad Hoc" },
+  { value: "bank fee", label: "Bank Fee" },
+  { value: "duties & taxes", label: "Duties & Taxes" },
   { value: "storage", label: "Storage" },
   { value: "on_demand", label: "On Demand" },
   { value: "receiving", label: "Receiving" },

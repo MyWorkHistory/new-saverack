@@ -3120,7 +3120,7 @@ function onDocKeydown(e) {
 }
 .billing-pay-stat {
   width: 100%;
-  border: 1px solid rgba(47, 43, 61, 0.14);
+  border: 1px solid #d7d8e0;
   border-radius: 0.85rem;
   padding: 1rem 1.1rem;
   text-align: left;
@@ -3143,6 +3143,18 @@ function onDocKeydown(e) {
 .billing-pay-stat.is-active {
   border-color: rgba(94, 80, 238, 0.6);
   box-shadow: 0 0 0 3px rgba(94, 80, 238, 0.12);
+}
+.billing-pay-stat--blue {
+  border-color: #c9d8ff;
+}
+.billing-pay-stat--green {
+  border-color: #bfe9d1;
+}
+.billing-pay-stat--red {
+  border-color: #f2c4c7;
+}
+.billing-pay-stat--orange {
+  border-color: #ffd8ad;
 }
 .billing-pay-stat__body {
   display: flex;

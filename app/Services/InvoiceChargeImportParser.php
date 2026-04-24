@@ -45,7 +45,11 @@ final class InvoiceChargeImportParser
             $isChargeSummary = isset($map['charge_name'], $map['charge_subtotal'])
                 && (isset($map['charge_type_new']) || isset($map['charge_type']));
 
-            if (! $isChargeSummary && ! isset($map['billing_category'], $map['fee'], $map['charge_type'])) {
+            if (
+                ! $isChargeSummary
+                && ! isset($map['billing_category'], $map['fee'])
+                && ! (isset($map['charge_type']) || isset($map['charge_type_new']))
+            ) {
                 $seen = array_values(array_filter(array_map(function ($raw) {
                     return $this->normalizeHeaderKey((string) $raw);
                 }, $headerRow)));
@@ -104,6 +108,9 @@ final class InvoiceChargeImportParser
 
         if (! isset($index['charge_type_new']) && isset($index['charge_type'])) {
             $index['charge_type_new'] = $index['charge_type'];
+        }
+        if (! isset($index['charge_type']) && isset($index['charge_type_new'])) {
+            $index['charge_type'] = $index['charge_type_new'];
         }
 
         return $index;

@@ -42,6 +42,15 @@ class ClientAccountUpdateRequest extends FormRequest
                 $this->merge(['whatsapp_e164' => trim((string) $raw)]);
             }
         }
+
+        if ($this->exists('stripe_customer_id')) {
+            $raw = $this->input('stripe_customer_id');
+            if ($raw === null || $raw === '') {
+                $this->merge(['stripe_customer_id' => null]);
+            } else {
+                $this->merge(['stripe_customer_id' => trim((string) $raw)]);
+            }
+        }
     }
 
     public function rules(): array
@@ -77,6 +86,7 @@ class ClientAccountUpdateRequest extends FormRequest
             'account_manager_id' => ['sometimes', 'nullable', 'integer', $accountManagerRule],
             'contract_date' => ['sometimes', 'nullable', 'date'],
             'default_payment_type' => ['sometimes', 'nullable', 'string', Rule::in(ClientAccount::DEFAULT_PAYMENT_TYPES)],
+            'stripe_customer_id' => ['sometimes', 'nullable', 'string', 'max:191'],
         ];
     }
 }

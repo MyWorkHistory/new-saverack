@@ -9,7 +9,7 @@ const props = defineProps({
   open: { type: Boolean, default: false },
   accountId: { type: String, default: "" },
   accountManagers: { type: Array, default: () => [] },
-  /** "", "left" (sidebar contact & channels), "account", "address" */
+  /** "", "left" (sidebar contact & channels), "account", "address", "payment" */
   section: { type: String, default: "" },
 });
 
@@ -41,12 +41,14 @@ const form = reactive({
   country: "",
   account_manager_id: "",
   default_payment_type: "",
+  stripe_customer_id: "",
 });
 
 const showAll = computed(() => !props.section);
 const showLeft = computed(() => showAll.value || props.section === "left");
 const showAccount = computed(() => showAll.value || props.section === "account");
 const showAddress = computed(() => showAll.value || props.section === "address");
+const showPayment = computed(() => showAll.value || props.section === "payment");
 const isAccountSectionOnly = computed(() => props.section === "account");
 
 const contactFullName = computed({
@@ -73,6 +75,8 @@ const modalTitle = computed(() => {
       return "Personal information";
     case "address":
       return "Address";
+    case "payment":
+      return "Payment";
     default:
       return "Edit account";
   }
@@ -86,6 +90,8 @@ const modalSubtitle = computed(() => {
       return "Company, email, contact name, and phone.";
     case "address":
       return "Street, city, and country.";
+    case "payment":
+      return "Payment defaults and Stripe customer mapping.";
     default:
       return "Update company profile, contacts, and notification channels.";
   }
@@ -137,6 +143,7 @@ async function load() {
       ? String(data.account_manager_id)
       : "";
     form.default_payment_type = data.default_payment_type || "";
+    form.stripe_customer_id = data.stripe_customer_id || "";
   } catch (e) {
     errorMsg.value = "Could not load account.";
     toast.errorFrom(e, "Could not load account.");
@@ -186,6 +193,7 @@ function buildPatch() {
         ? Number(form.account_manager_id)
         : null,
       default_payment_type: trimOrNull(form.default_payment_type),
+      stripe_customer_id: trimOrNull(form.stripe_customer_id),
     };
   }
   if (props.section === "left") {
@@ -212,6 +220,12 @@ function buildPatch() {
       email: form.email.trim(),
       phone: trimOrNull(form.phone),
       default_payment_type: trimOrNull(form.default_payment_type),
+    };
+  }
+  if (props.section === "payment") {
+    return {
+      default_payment_type: trimOrNull(form.default_payment_type),
+      stripe_customer_id: trimOrNull(form.stripe_customer_id),
     };
   }
   if (props.section === "address") {
@@ -542,6 +556,43 @@ async function onSubmit() {
                           v-model="form.country"
                           type="text"
                           class="form-control"
+                        />
+                      </div>
+                    </div>
+                  </template>
+                  <template v-if="showPayment">
+                    <p class="small fw-semibold text-secondary mb-0">Payment</p>
+                    <div class="row g-3">
+                      <div class="col-sm-6">
+                        <label class="form-label small mb-1 text-secondary" for="cae-payment-type-main"
+                          >Default payment type</label
+                        >
+                        <select
+                          id="cae-payment-type-main"
+                          v-model="form.default_payment_type"
+                          class="form-select"
+                        >
+                          <option value="">No default</option>
+                          <option
+                            v-for="paymentType in paymentTypeOptions"
+                            :key="`edit-account-payment-main-${paymentType}`"
+                            :value="paymentType"
+                          >
+                            {{ paymentType }}
+                          </option>
+                        </select>
+                      </div>
+                      <div class="col-sm-6">
+                        <label class="form-label small mb-1 text-secondary" for="cae-stripe-customer-id"
+                          >Stripe customer id</label
+                        >
+                        <input
+                          id="cae-stripe-customer-id"
+                          v-model="form.stripe_customer_id"
+                          type="text"
+                          class="form-control"
+                          placeholder="cus_..."
+                          autocomplete="off"
                         />
                       </div>
                     </div>

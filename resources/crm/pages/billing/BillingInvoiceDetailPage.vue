@@ -189,12 +189,29 @@ const canSendWhatsapp = computed(
   () => !!invoice.value && canUpdate.value && invoice.value.status !== "void",
 );
 
+const hasStripeCustomerId = computed(() => {
+  const inv = invoice.value;
+  if (!inv) return false;
+  return !!String(inv.client_account_stripe_customer_id || "").trim();
+});
+
 const canStripeCharge = computed(() => {
   const inv = invoice.value;
   if (!inv || !canUpdate.value) return false;
   if (inv.status === "void" || inv.status === "paid") return false;
   if (Number(inv.balance_due_cents) <= 0) return false;
-  return !!String(inv.client_account_stripe_customer_id || "").trim();
+  return hasStripeCustomerId.value;
+});
+
+const creditChargeDisabledTitle = computed(() => {
+  const inv = invoice.value;
+  if (!inv) return "";
+  if (!canUpdate.value) return "You do not have permission to charge this invoice.";
+  if (!hasStripeCustomerId.value) return "Set Stripe customer id in Client Account > Payment.";
+  if (inv.status === "paid") return "Invoice is already paid.";
+  if (inv.status === "void") return "Void invoices cannot be charged.";
+  if (Number(inv.balance_due_cents) <= 0) return "No balance due.";
+  return "";
 });
 
 const payCanAddFunds = computed(() => {
@@ -2047,12 +2064,14 @@ function onDocKeydown(e) {
                 Send To Whatsapp
               </button>
               <button
-                v-if="canStripeCharge"
+                v-if="invoice && invoice.status !== 'paid' && invoice.status !== 'void'"
                 type="button"
                 class="billing-inv-action-btn billing-inv-action-btn--primary"
+                :disabled="!canStripeCharge"
+                :title="creditChargeDisabledTitle"
                 @click="openStripeModal"
               >
-                Pay with Stripe
+                Credit Charge
               </button>
             </div>
           </div>

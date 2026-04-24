@@ -1273,6 +1273,50 @@ onUnmounted(() => {
               <div
                 class="d-flex flex-wrap align-items-start justify-content-between gap-2 mb-3"
               >
+                <h3 class="staff-user-section-title mb-0">Payment</h3>
+                <button
+                  v-if="canUpdateAccount"
+                  type="button"
+                  class="btn btn-sm btn-primary staff-page-primary"
+                  @click="openAccountEdit('payment')"
+                >
+                  Edit
+                </button>
+              </div>
+              <div class="row g-3">
+                <div class="col-md-6">
+                  <dl class="mb-0 small">
+                    <dt
+                      class="text-secondary text-uppercase fw-semibold mb-1"
+                      style="font-size: 0.65rem"
+                    >
+                      Default payment type
+                    </dt>
+                    <dd class="mb-0 fw-semibold text-body">
+                      {{ display(account.default_payment_type) }}
+                    </dd>
+                  </dl>
+                </div>
+                <div class="col-md-6">
+                  <dl class="mb-0 small">
+                    <dt
+                      class="text-secondary text-uppercase fw-semibold mb-1"
+                      style="font-size: 0.65rem"
+                    >
+                      Stripe customer id
+                    </dt>
+                    <dd class="mb-0 fw-semibold text-body text-break">
+                      {{ display(account.stripe_customer_id) }}
+                    </dd>
+                  </dl>
+                </div>
+              </div>
+            </div>
+
+            <div class="staff-surface p-3 p-md-4 mb-4">
+              <div
+                class="d-flex flex-wrap align-items-start justify-content-between gap-2 mb-3"
+              >
                 <h3 class="staff-user-section-title mb-0">Address</h3>
                 <button
                   v-if="canUpdateAccount"

@@ -61,6 +61,7 @@ class ClientAccountStoreRequest extends FormRequest
             'account_manager_id' => ['nullable', 'integer', $accountManagerRule],
             'contract_date' => ['nullable', 'date'],
             'default_payment_type' => ['nullable', 'string', Rule::in(ClientAccount::DEFAULT_PAYMENT_TYPES)],
+            'stripe_customer_id' => ['nullable', 'string', 'max:191'],
         ];
     }
 
@@ -82,6 +83,15 @@ class ClientAccountStoreRequest extends FormRequest
                 $s = ltrim($s, '#');
                 $s = trim($s);
                 $this->merge(['in_house_slack' => $s !== '' ? $s : null]);
+            }
+        }
+
+        if ($this->exists('stripe_customer_id')) {
+            $raw = $this->input('stripe_customer_id');
+            if ($raw === null || $raw === '') {
+                $this->merge(['stripe_customer_id' => null]);
+            } else {
+                $this->merge(['stripe_customer_id' => trim((string) $raw)]);
             }
         }
 

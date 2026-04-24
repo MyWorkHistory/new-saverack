@@ -1481,6 +1481,42 @@ function onDocKeydown(e) {
           >
             {{ copyLinkBusy ? "Working…" : "Copy Customer Link" }}
           </button>
+          <button
+            v-if="payInvoiceVisible"
+            type="button"
+            class="btn btn-outline-primary btn-sm"
+            :disabled="!payInvoiceEnabled"
+            :title="payInvoiceDisabledTitle || undefined"
+            @click="openPayModal"
+          >
+            Pay Invoice
+          </button>
+          <button
+            v-if="canEmailInvoice"
+            type="button"
+            class="btn btn-outline-primary btn-sm"
+            @click="openSendEmailModal"
+          >
+            Email Invoice
+          </button>
+          <button
+            v-if="canSendWhatsapp"
+            type="button"
+            class="btn btn-outline-primary btn-sm"
+            @click="openSendWhatsappModal"
+          >
+            Send To Whatsapp
+          </button>
+          <button
+            v-if="invoice && invoice.status !== 'paid' && invoice.status !== 'void'"
+            type="button"
+            class="btn btn-outline-primary btn-sm"
+            :disabled="!canStripeCharge"
+            :title="creditChargeDisabledTitle"
+            @click="openStripeModal"
+          >
+            Credit Charge
+          </button>
         </div>
       </div>
 
@@ -2042,44 +2078,6 @@ function onDocKeydown(e) {
               </button>
             </div>
 
-            <div class="billing-inv-action-stack">
-              <button
-                v-if="payInvoiceVisible"
-                type="button"
-                class="billing-inv-action-btn billing-inv-action-btn--primary"
-                :disabled="!payInvoiceEnabled"
-                :title="payInvoiceDisabledTitle || undefined"
-                @click="openPayModal"
-              >
-                Pay Invoice
-              </button>
-              <button
-                v-if="canEmailInvoice"
-                type="button"
-                class="billing-inv-action-btn billing-inv-action-btn--primary"
-                @click="openSendEmailModal"
-              >
-                Email Invoice
-              </button>
-              <button
-                v-if="canSendWhatsapp"
-                type="button"
-                class="billing-inv-action-btn billing-inv-action-btn--primary"
-                @click="openSendWhatsappModal"
-              >
-                Send To Whatsapp
-              </button>
-              <button
-                v-if="invoice && invoice.status !== 'paid' && invoice.status !== 'void'"
-                type="button"
-                class="billing-inv-action-btn billing-inv-action-btn--primary"
-                :disabled="!canStripeCharge"
-                :title="creditChargeDisabledTitle"
-                @click="openStripeModal"
-              >
-                Credit Charge
-              </button>
-            </div>
           </div>
 
           <div ref="activityCardRef" class="staff-surface p-4">
@@ -2934,63 +2932,6 @@ function onDocKeydown(e) {
   letter-spacing: 0.04em;
   color: var(--bs-secondary-color, #6c757d);
   margin-bottom: 0.5rem;
-}
-.billing-inv-action-stack {
-  display: grid;
-  gap: 0.75rem;
-}
-.billing-inv-action-btn {
-  width: 100%;
-  border: 1px solid rgba(47, 43, 61, 0.12);
-  border-radius: 0.7rem;
-  background: var(--bs-body-bg, #fff);
-  color: var(--bs-body-color, #2f2b3d);
-  padding: 0.75rem 0.95rem;
-  text-align: center;
-  font-weight: 600;
-  min-height: 2.9rem;
-  transition:
-    background-color 0.15s ease,
-    border-color 0.15s ease,
-    color 0.15s ease,
-    box-shadow 0.15s ease;
-}
-.billing-inv-action-btn:hover:not(:disabled) {
-  background: rgba(115, 103, 240, 0.06);
-  border-color: rgba(115, 103, 240, 0.26);
-}
-.billing-inv-action-btn:disabled {
-  opacity: 0.65;
-  cursor: not-allowed;
-}
-.billing-inv-action-btn--primary {
-  background: #2563eb;
-  border-color: #2563eb;
-  color: #fff;
-}
-.billing-inv-action-btn--primary:hover:not(:disabled) {
-  background: #1d4ed8;
-  border-color: #1d4ed8;
-  color: #fff;
-}
-.billing-inv-action-btn--primary:disabled {
-  opacity: 0.55;
-  background: #93c5fd;
-  border-color: #93c5fd;
-  color: #fff;
-}
-.billing-inv-action-btn--add {
-  background: #2563eb;
-  border-color: #2563eb;
-  color: #fff;
-}
-.billing-inv-action-btn--add:hover:not(:disabled) {
-  background: #1d4ed8;
-  border-color: #1d4ed8;
-  color: #fff;
-}
-.billing-inv-action-btn--danger {
-  color: #ea5455;
 }
 .billing-inv-col-expand {
   width: 2rem;

@@ -133,6 +133,8 @@ const importBusy = ref(false);
 const importForm = reactive({
   import_type: "charges",
   client_account_id: "",
+  invoice_date_from: "",
+  invoice_date_to: "",
   due_at: "",
   invoice_number: "",
   file: null,
@@ -338,6 +340,8 @@ async function onInvoiceDrawerCreated() {
 function openImportModal() {
   importForm.import_type = "charges";
   importForm.client_account_id = "";
+  importForm.invoice_date_from = "";
+  importForm.invoice_date_to = "";
   importForm.due_at = new Date().toISOString().slice(0, 10);
   importForm.invoice_number = "";
   importForm.file = null;
@@ -353,6 +357,118 @@ function onImportFileChange(event) {
   const input = event?.target;
   const file = input?.files?.[0] ?? null;
   importForm.file = file;
+  if (!file) return;
+
+  const inferred = parseInvoiceImportFilename(file.name);
+  if (!inferred) return;
+
+  if (inferred.invoiceNumber) {
+    importForm.invoice_number = inferred.invoiceNumber;
+  }
+  if (inferred.invoiceDateFrom) {
+    importForm.invoice_date_from = inferred.invoiceDateFrom;
+  }
+  if (inferred.invoiceDateTo) {
+    importForm.invoice_date_to = inferred.invoiceDateTo;
+    const due = addDaysIso(inferred.invoiceDateTo, 1);
+    if (due) importForm.due_at = due;
+  }
+
+  const match = findBestClientMatchBySlug(inferred.clientSlug);
+  if (match) {
+    importForm.client_account_id = String(match.id);
+  } else if (inferred.clientSlug) {
+    toast.warning("Could not confidently match client from filename. Please choose the client account.");
+  }
+}
+
+function parseInvoiceImportFilename(filename) {
+  const raw = String(filename || "").trim();
+  if (!raw) return null;
+  const noExt = raw.replace(/\.[^.]+$/, "");
+  const cleaned = noExt.replace(/\s+\(\d+\)\s*$/i, "");
+  const lower = cleaned.toLowerCase();
+
+  const marker = lower.includes("saverack_bill_for_")
+    ? "saverack_bill_for_"
+    : lower.includes("savereack_bill_for_")
+      ? "savereack_bill_for_"
+      : null;
+  if (!marker) return null;
+
+  const markerIdx = lower.indexOf(marker);
+  const suffix = cleaned.slice(markerIdx + marker.length);
+  const dateRangeMatch = suffix.match(/(\d{4}-\d{2}-\d{2})--(\d{4}-\d{2}-\d{2})/);
+  const invoiceDateFrom = dateRangeMatch?.[1] || "";
+  const invoiceDateTo = dateRangeMatch?.[2] || "";
+  const beforeDates = dateRangeMatch ? suffix.slice(0, dateRangeMatch.index) : suffix;
+  const tokens = beforeDates
+    .split("_")
+    .map((t) => t.trim())
+    .filter(Boolean);
+
+  let invoiceNumber = "";
+  let clientTokens = tokens;
+  const firstDigitsIdx = tokens.findIndex((t) => /^\d+$/.test(t));
+  if (firstDigitsIdx >= 0) {
+    invoiceNumber = tokens[firstDigitsIdx];
+    clientTokens = tokens.slice(0, firstDigitsIdx);
+  }
+
+  return {
+    clientSlug: clientTokens.join("_"),
+    invoiceNumber,
+    invoiceDateFrom,
+    invoiceDateTo,
+  };
+}
+
+function addDaysIso(isoDate, days) {
+  if (!isoDate) return "";
+  const d = new Date(`${isoDate}T12:00:00`);
+  if (Number.isNaN(d.getTime())) return "";
+  d.setDate(d.getDate() + days);
+  return d.toISOString().slice(0, 10);
+}
+
+function normalizeClientKey(value) {
+  return String(value || "").toLowerCase().replace(/[^a-z0-9]/g, "");
+}
+
+function normalizeClientTokens(value) {
+  return String(value || "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, " ")
+    .trim()
+    .split(/\s+/)
+    .filter(Boolean);
+}
+
+function findBestClientMatchBySlug(clientSlug) {
+  const slugNorm = normalizeClientKey(clientSlug);
+  const slugTokens = normalizeClientTokens(clientSlug);
+  if (!slugNorm && !slugTokens.length) return null;
+
+  let best = null;
+  let bestScore = 0;
+  for (const account of meta.value.client_accounts || []) {
+    const nameNorm = normalizeClientKey(account?.name);
+    const nameTokens = normalizeClientTokens(account?.name);
+    let score = 0;
+    if (slugNorm && nameNorm === slugNorm) score += 100;
+    if (slugNorm && (nameNorm.includes(slugNorm) || slugNorm.includes(nameNorm))) score += 35;
+    const tokenOverlap = slugTokens.filter((t) => nameTokens.includes(t)).length;
+    score += tokenOverlap * 12;
+    for (const t of slugTokens) {
+      if (t.length >= 4 && nameNorm.includes(t)) score += 4;
+    }
+    if (score > bestScore) {
+      best = account;
+      bestScore = score;
+    }
+  }
+
+  return bestScore >= 12 ? best : null;
 }
 
 async function submitImportCsv() {
@@ -374,6 +490,14 @@ async function submitImportCsv() {
     const formData = new FormData();
     formData.append("due_at", importForm.due_at);
     formData.append("file", importForm.file);
+    const invoiceDateFrom = String(importForm.invoice_date_from || "").trim();
+    const invoiceDateTo = String(importForm.invoice_date_to || "").trim();
+    if (invoiceDateFrom) {
+      formData.append("invoice_date_from", invoiceDateFrom);
+    }
+    if (invoiceDateTo) {
+      formData.append("invoice_date_to", invoiceDateTo);
+    }
     const invNum = String(importForm.invoice_number || "").trim();
     if (invNum) {
       formData.append("invoice_number", invNum);
@@ -509,6 +633,18 @@ async function sendInvoice(row) {
     await fetchRows();
   } catch (e) {
     toast.errorFrom(e, "Could not send invoice.");
+  }
+}
+
+async function restoreDraft(row) {
+  manageOpenId.value = null;
+  try {
+    await api.post(`/invoices/${row.id}/status`, { status: "draft" });
+    toast.success("Invoice moved to draft.");
+    await loadSummary();
+    await fetchRows();
+  } catch (e) {
+    toast.errorFrom(e, "Could not move invoice to draft.");
   }
 }
 
@@ -1362,6 +1498,15 @@ onUnmounted(() => {
             Void Invoice
           </button>
           <button
+            v-if="canUpdate && legacyStatusKey(manageMenuRow) === 'void'"
+            type="button"
+            class="staff-row-menu__item"
+            role="menuitem"
+            @click="restoreDraft(manageMenuRow)"
+          >
+            Make Draft
+          </button>
+          <button
             v-if="canDelete && legacyStatusKey(manageMenuRow) === 'draft'"
             type="button"
             class="staff-row-menu__item staff-row-menu__item--danger"
@@ -1412,6 +1557,24 @@ onUnmounted(() => {
                   search-placeholder="Search clients…"
                   empty-label="No client account selected"
                   button-id="billing-import-client"
+                />
+              </div>
+              <div class="mb-3">
+                <label class="form-label" for="billing-import-date-from">Invoice Date From</label>
+                <input
+                  id="billing-import-date-from"
+                  v-model="importForm.invoice_date_from"
+                  type="date"
+                  class="form-control"
+                />
+              </div>
+              <div class="mb-3">
+                <label class="form-label" for="billing-import-date-to">Invoice Date To</label>
+                <input
+                  id="billing-import-date-to"
+                  v-model="importForm.invoice_date_to"
+                  type="date"
+                  class="form-control"
                 />
               </div>
               <div class="mb-3">

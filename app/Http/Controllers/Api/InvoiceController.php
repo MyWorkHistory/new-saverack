@@ -289,7 +289,7 @@ class InvoiceController extends Controller
 
     public function updateStatus(Request $request, Invoice $invoice): JsonResponse
     {
-        $this->authorize('update', $invoice);
+        $this->authorize('updateStatus', $invoice);
         $validated = $request->validate([
             'status' => ['required', 'string'],
         ]);

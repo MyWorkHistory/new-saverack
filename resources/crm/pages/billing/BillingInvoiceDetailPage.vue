@@ -190,6 +190,10 @@ const canVoidInvoice = computed(
   () => !!invoice.value && canUpdate.value && currentStatusKey.value !== "void",
 );
 
+const canRestoreDraft = computed(
+  () => !!invoice.value && canUpdate.value && currentStatusKey.value === "void",
+);
+
 const canShareInvoice = computed(() => !!invoice.value && currentStatusKey.value !== "void");
 
 const canEmailInvoice = computed(
@@ -617,7 +621,7 @@ function statusBadgeClass(status) {
   if (s === "draft") return "bg-secondary-subtle text-secondary";
   if (s === "void") return "bg-dark-subtle text-secondary";
   if (s === "collection") return "bg-warning-subtle text-warning-emphasis";
-  if (s === "past due") return "bg-danger-subtle text-danger-emphasis";
+  if (s === "past due" || s === "past_due") return "bg-danger-subtle text-danger-emphasis";
   if (s === "open") return "bg-primary-subtle text-primary-emphasis";
   return "bg-body-secondary text-body-secondary";
 }
@@ -1203,6 +1207,11 @@ function openRightMenuCcFee() {
   openCcFeeModal();
 }
 
+function openRightMenuRestoreDraft() {
+  closeRightActionsMenu();
+  restoreInvoiceDraft();
+}
+
 async function openStripeModal() {
   if (!invoice.value || !canStripeCharge.value) return;
   if (!hasStripeCustomerId.value) {
@@ -1386,6 +1395,17 @@ async function confirmVoid() {
     toast.errorFrom(e, "Could not void invoice.");
   } finally {
     voidBusy.value = false;
+  }
+}
+
+async function restoreInvoiceDraft() {
+  if (!invoice.value) return;
+  try {
+    await api.post(`/invoices/${invoice.value.id}/status`, { status: "draft" });
+    toast.success("Invoice moved to draft.");
+    await load();
+  } catch (e) {
+    toast.errorFrom(e, "Could not move invoice to draft.");
   }
 }
 
@@ -1993,6 +2013,15 @@ function onDocKeydown(e) {
                   Void Invoice
                 </button>
                 <button
+                  v-if="canRestoreDraft"
+                  type="button"
+                  class="staff-row-menu__item"
+                  role="menuitem"
+                  @click="openRightMenuRestoreDraft"
+                >
+                  Make Draft
+                </button>
+                <button
                   v-if="canShareInvoice"
                   type="button"
                   class="staff-row-menu__item"
@@ -2050,7 +2079,7 @@ function onDocKeydown(e) {
                 </p>
                 <p class="staff-stat-card__sub">Past due date with balance</p>
                 <div
-                  class="staff-stat-card__icon bg-warning-subtle text-warning-emphasis"
+                  class="staff-stat-card__icon bg-danger-subtle text-danger-emphasis"
                   aria-hidden="true"
                 >
                   <svg width="22" height="22" fill="currentColor" viewBox="0 0 24 24">
@@ -2923,6 +2952,14 @@ function onDocKeydown(e) {
 .billing-inv-summary-card:disabled {
   opacity: 0.75;
   cursor: not-allowed;
+}
+.billing-inv-summary-card .staff-stat-card__icon {
+  width: 3rem;
+  height: 3rem;
+}
+.billing-inv-summary-card .staff-stat-card__icon svg {
+  width: 1.35rem;
+  height: 1.35rem;
 }
 .billing-group-edit-bulk-panel {
   border: 1px solid rgba(47, 43, 61, 0.1);

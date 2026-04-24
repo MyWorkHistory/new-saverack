@@ -84,4 +84,9 @@ class InvoicePolicy
 
         return $this->canManageBilling($user) || $user->hasPermission('billing.update');
     }
+
+    public function updateStatus(User $user, Invoice $invoice): bool
+    {
+        return $this->canManageBilling($user) || $user->hasPermission('billing.update');
+    }
 }

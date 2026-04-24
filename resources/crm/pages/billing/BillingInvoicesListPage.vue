@@ -338,7 +338,7 @@ async function onInvoiceDrawerCreated() {
 function openImportModal() {
   importForm.import_type = "charges";
   importForm.client_account_id = "";
-  importForm.due_at = new Date().toISOString().slice(0, 10);
+  importForm.due_at = tomorrowIsoDate();
   importForm.invoice_number = "";
   importForm.file = null;
   importModalOpen.value = true;
@@ -361,10 +361,7 @@ function onImportFileChange(event) {
   if (inferred.invoiceNumber) {
     importForm.invoice_number = inferred.invoiceNumber;
   }
-  if (inferred.invoiceDateTo) {
-    const due = addDaysIso(inferred.invoiceDateTo, 1);
-    if (due) importForm.due_at = due;
-  }
+  importForm.due_at = tomorrowIsoDate();
 
   const match = findBestClientMatchBySlug(inferred.clientSlug);
   if (match) {
@@ -419,6 +416,13 @@ function addDaysIso(isoDate, days) {
   if (Number.isNaN(d.getTime())) return "";
   d.setDate(d.getDate() + days);
   return d.toISOString().slice(0, 10);
+}
+
+function tomorrowIsoDate() {
+  const now = new Date();
+  now.setHours(12, 0, 0, 0);
+  now.setDate(now.getDate() + 1);
+  return now.toISOString().slice(0, 10);
 }
 
 function normalizeClientKey(value) {

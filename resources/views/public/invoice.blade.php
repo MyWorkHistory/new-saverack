@@ -162,17 +162,51 @@
                                     </div>
                                 </summary>
 
-                                @if (!empty($sec['lines']))
+                                @if (!empty($sec['services']))
                                     <div class="public-inv-breakdown">
                                         <table>
                                             <tbody>
-                                            @foreach ($sec['lines'] as $line)
+                                            @foreach ($sec['services'] as $service)
                                                 <tr>
                                                     <td style="width:34px;"></td>
-                                                    <td style="width:56%; padding-left: 18px;">{{ $line['name'] }}</td>
-                                                    <td class="num" style="width:12%;">{{ $line['qty_display'] }}</td>
-                                                    <td class="num" style="width:14%;">{{ $line['unit'] }}</td>
-                                                    <td class="num" style="width:18%;">{{ $line['line_total'] }}</td>
+                                                    <td colspan="4" style="padding:0;">
+                                                        @if (!empty($service['is_expandable']))
+                                                            <details class="public-inv-sec public-inv-sec--expandable">
+                                                                <summary class="public-inv-summary">
+                                                                    <div class="public-inv-row">
+                                                                        <div class="public-inv-row-num"><span class="public-inv-chev" aria-hidden="true">&#9654;</span></div>
+                                                                        <div><strong>{{ $service['label'] }}</strong></div>
+                                                                        <div class="public-inv-row-num">{{ $service['qty_display'] }}</div>
+                                                                        <div class="public-inv-row-num">{{ $service['unit'] }}</div>
+                                                                        <div class="public-inv-row-num"><strong>{{ $service['line_total'] }}</strong></div>
+                                                                    </div>
+                                                                </summary>
+                                                                <div class="public-inv-breakdown">
+                                                                    <table>
+                                                                        <tbody>
+                                                                        @foreach (($service['orders'] ?? []) as $order)
+                                                                            <tr>
+                                                                                <td style="width:34px;"></td>
+                                                                                <td style="width:56%; padding-left: 18px;">{{ $order['label'] }}</td>
+                                                                                <td class="num" style="width:12%;">{{ $order['qty_display'] }}</td>
+                                                                                <td class="num" style="width:14%;">{{ $order['unit'] }}</td>
+                                                                                <td class="num" style="width:18%;">{{ $order['line_total'] }}</td>
+                                                                            </tr>
+                                                                        @endforeach
+                                                                        </tbody>
+                                                                    </table>
+                                                                </div>
+                                                            </details>
+                                                        @else
+                                                            <div class="public-inv-row">
+                                                                <div class="public-inv-row-num"></div>
+                                                                <div><strong>{{ $service['label'] }}</strong></div>
+                                                                <div class="public-inv-row-num">{{ $service['qty_display'] }}</div>
+                                                                <div class="public-inv-row-num">{{ $service['unit'] }}</div>
+                                                                <div class="public-inv-row-num"><strong>{{ $service['line_total'] }}</strong></div>
+                                                            </div>
+                                                        @endif
+                                                    </td>
                                                 </tr>
                                             @endforeach
                                             </tbody>

@@ -1736,36 +1736,113 @@ class InvoiceService
         };
 
         $rows = $presentation['rows'] ?? [];
-        $sections = [];
+        $categories = [];
         foreach ($rows as $row) {
-            $details = is_array($row['details'] ?? null) ? $row['details'] : [];
-            $lines = [];
-            foreach ($details as $detail) {
-                $lines[] = [
-                    'name' => (string) ($detail['name'] ?? '—'),
-                    'qty' => number_format((float) ($detail['qty'] ?? 0), 3, '.', ''),
-                    'qty_display' => $this->formatLegacyQty((float) ($detail['qty'] ?? 0)),
-                    'unit' => $money((int) ($detail['price_cents'] ?? 0)),
-                    'line_total' => $money((int) ($detail['total_cents'] ?? 0)),
+            $type = trim((string) ($row['type'] ?? 'Other'));
+            if ($type === '') {
+                $type = 'Other';
+            }
+            $categoryKey = strtolower($type);
+            if (! isset($categories[$categoryKey])) {
+                $categories[$categoryKey] = [
+                    'key' => $categoryKey,
+                    'label' => $type,
+                    'qty' => 0.0,
+                    'total_cents' => 0,
+                    'services' => [],
                 ];
             }
 
-            $type = (string) ($row['type'] ?? '');
-            $hasLines = $lines !== [];
-            // Old CRM: Fulfillment subtotals stay flat (no chevron / no drill-down). Other categories accordion.
-            $isExpandable = $hasLines && $type !== 'Fulfillment';
+            $serviceLabel = (string) ($row['name'] ?? '—');
+            $serviceKey = strtolower($serviceLabel);
+            if (! isset($categories[$categoryKey]['services'][$serviceKey])) {
+                $categories[$categoryKey]['services'][$serviceKey] = [
+                    'id' => 'service-'.md5($categoryKey.'|'.$serviceKey),
+                    'label' => $serviceLabel,
+                    'qty' => 0.0,
+                    'total_cents' => 0,
+                    'orders' => [],
+                ];
+            }
 
+            $details = is_array($row['details'] ?? null) ? $row['details'] : [];
+            if ($details === []) {
+                $details = [[
+                    'name' => $serviceLabel,
+                    'qty' => (float) ($row['qty'] ?? 0),
+                    'price_cents' => (int) ($row['price_cents'] ?? 0),
+                    'total_cents' => (int) ($row['total_cents'] ?? 0),
+                    'order_number' => null,
+                ]];
+            }
+
+            foreach ($details as $detail) {
+                $qty = (float) ($detail['qty'] ?? 0);
+                $totalCents = (int) ($detail['total_cents'] ?? 0);
+                $priceCents = (int) ($detail['price_cents'] ?? 0);
+                $orderNumber = trim((string) ($detail['order_number'] ?? ''));
+                if ($orderNumber === '') {
+                    $orderNumber = '—';
+                }
+                $orderLabel = 'Order #'.$orderNumber;
+                $categories[$categoryKey]['services'][$serviceKey]['orders'][] = [
+                    'id' => (string) Str::uuid(),
+                    'label' => $orderLabel,
+                    'qty' => number_format($qty, 3, '.', ''),
+                    'qty_display' => $this->formatLegacyQty($qty),
+                    'unit' => $money($priceCents),
+                    'line_total' => $money($totalCents),
+                ];
+                $categories[$categoryKey]['services'][$serviceKey]['qty'] += $qty;
+                $categories[$categoryKey]['services'][$serviceKey]['total_cents'] += $totalCents;
+                $categories[$categoryKey]['qty'] += $qty;
+                $categories[$categoryKey]['total_cents'] += $totalCents;
+            }
+        }
+
+        $sections = [];
+        uasort($categories, function (array $a, array $b) {
+            $ai = $this->oldBetaTypeOrder((string) ($a['label'] ?? ''));
+            $bi = $this->oldBetaTypeOrder((string) ($b['label'] ?? ''));
+            if ($ai !== $bi) {
+                return $ai <=> $bi;
+            }
+            return strcasecmp((string) ($a['label'] ?? ''), (string) ($b['label'] ?? ''));
+        });
+
+        foreach ($categories as $cat) {
+            $services = array_values($cat['services']);
+            usort($services, static function (array $a, array $b) {
+                return strcasecmp((string) ($a['label'] ?? ''), (string) ($b['label'] ?? ''));
+            });
+            $serviceRows = [];
+            foreach ($services as $service) {
+                $orders = $service['orders'] ?? [];
+                $serviceQty = (float) ($service['qty'] ?? 0);
+                $serviceTotal = (int) ($service['total_cents'] ?? 0);
+                $serviceRows[] = [
+                    'id' => (string) ($service['id'] ?? Str::uuid()),
+                    'label' => (string) ($service['label'] ?? '—'),
+                    'qty' => number_format($serviceQty, 3, '.', ''),
+                    'qty_display' => $this->formatLegacyQty($serviceQty),
+                    'unit' => $money($serviceQty != 0.0 ? (int) round($serviceTotal / $serviceQty) : 0),
+                    'line_total' => $money($serviceTotal),
+                    'is_expandable' => $orders !== [],
+                    'orders' => $orders,
+                ];
+            }
+
+            $catQty = (float) ($cat['qty'] ?? 0);
+            $catTotal = (int) ($cat['total_cents'] ?? 0);
             $sections[] = [
-                'id' => (string) ($row['id'] ?? Str::uuid()),
-                'label' => (string) ($row['name'] ?? '—'),
-                'type' => $type,
-                'qty' => number_format((float) ($row['qty'] ?? 0), 3, '.', ''),
-                'qty_display' => $this->formatLegacyQty((float) ($row['qty'] ?? 0)),
-                'unit' => $money((int) ($row['price_cents'] ?? 0)),
-                'line_total' => $money((int) ($row['total_cents'] ?? 0)),
-                'has_breakdown' => $hasLines,
-                'is_expandable' => $isExpandable,
-                'lines' => $lines,
+                'id' => 'cat-'.$cat['key'],
+                'label' => (string) $cat['label'],
+                'qty' => number_format($catQty, 3, '.', ''),
+                'qty_display' => $this->formatLegacyQty($catQty),
+                'unit' => $money($catQty != 0.0 ? (int) round($catTotal / $catQty) : 0),
+                'line_total' => $money($catTotal),
+                'is_expandable' => $serviceRows !== [],
+                'services' => $serviceRows,
             ];
         }
 

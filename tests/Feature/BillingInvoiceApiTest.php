@@ -564,6 +564,66 @@ class BillingInvoiceApiTest extends TestCase
             ->assertSee('For a detailed breakdown of charges associated with each order, please log in to your account.', false);
     }
 
+    public function test_public_invoice_html_renders_nested_category_service_order_breakdown(): void
+    {
+        $client = ClientAccount::query()->create([
+            'status' => ClientAccount::STATUS_ACTIVE,
+            'company_name' => 'Nested Public Co',
+            'email' => 'nested-public@acme.test',
+        ]);
+        $client->refresh();
+
+        $invoice = Invoice::query()->create([
+            'invoice_number' => 'INV-PUB-NESTED-001',
+            'client_account_id' => $client->id,
+            'status' => Invoice::STATUS_SENT,
+            'currency' => 'USD',
+            'subtotal_cents' => 0,
+            'tax_cents' => 0,
+            'total_cents' => 0,
+            'amount_paid_cents' => 0,
+            'balance_due_cents' => 0,
+            'share_token' => 'nested-public-token',
+        ]);
+
+        InvoiceItem::query()->create([
+            'invoice_id' => $invoice->id,
+            'sort_order' => 1,
+            'category' => 'postage',
+            'group_key' => 'postage:endicia',
+            'description' => 'Postage',
+            'display_name' => 'Endicia (USPS)',
+            'quantity' => 1,
+            'unit_price_cents' => 629,
+            'line_total_cents' => 629,
+            'metadata' => ['order_number' => 'A1001'],
+        ]);
+
+        InvoiceItem::query()->create([
+            'invoice_id' => $invoice->id,
+            'sort_order' => 2,
+            'category' => 'postage',
+            'group_key' => 'postage:endicia',
+            'description' => 'Postage',
+            'display_name' => 'Endicia (USPS)',
+            'quantity' => 1,
+            'unit_price_cents' => 609,
+            'line_total_cents' => 609,
+            'metadata' => [],
+        ]);
+
+        app(InvoiceService::class)->recalculateTotals($invoice);
+        $invoice->save();
+
+        $slug = (string) $client->invoice_share_slug;
+        $this->get("/billing-invoice/{$slug}/{$invoice->share_token}")
+            ->assertOk()
+            ->assertSee('Postage', false)
+            ->assertSee('Endicia (USPS)', false)
+            ->assertSee('Order #A1001', false)
+            ->assertSee('Order #—', false);
+    }
+
     public function test_public_invoice_returns_404_for_void_status(): void
     {
         $client = ClientAccount::query()->create([

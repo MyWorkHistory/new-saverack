@@ -86,11 +86,18 @@ final class InvoiceChargeImportParser
             if ($key === '') {
                 continue;
             }
+            $keySansSuffix = $this->stripTrailingHeaderScope($key);
+            $candidates = array_values(array_unique(array_filter([$key, $keySansSuffix])));
 
             foreach ($this->headerAliases() as $field => $aliases) {
-                if (in_array($key, $aliases, true) && ! isset($index[$field])) {
-                    $index[$field] = (int) $i;
-                    break;
+                if (isset($index[$field])) {
+                    continue;
+                }
+                foreach ($candidates as $candidate) {
+                    if (in_array($candidate, $aliases, true)) {
+                        $index[$field] = (int) $i;
+                        break 2;
+                    }
                 }
             }
         }
@@ -169,7 +176,9 @@ final class InvoiceChargeImportParser
         if (str_starts_with($h, "\xEF\xBB\xBF")) {
             $h = substr($h, 3);
         }
+        $h = preg_replace('/[\x{200B}-\x{200D}\x{FEFF}]/u', '', $h) ?? $h;
         $h = preg_replace('/^\$+/u', '', $h) ?? $h;
+        $h = preg_replace('/\p{Z}+/u', ' ', $h) ?? $h;
         $h = strtolower(trim($h));
         $h = str_replace(['_', '-', '.'], ' ', $h);
         $h = preg_replace('/\s+/', ' ', $h) ?? '';
@@ -177,6 +186,12 @@ final class InvoiceChargeImportParser
         $h = preg_replace('/\s*\)\s*/', ') ', $h) ?? $h;
 
         return trim((string) preg_replace('/\s+/', ' ', $h));
+    }
+
+    private function stripTrailingHeaderScope(string $header): string
+    {
+        $base = trim((string) preg_replace('/\s*\([^)]*\)\s*$/u', '', $header));
+        return $base !== '' ? $base : $header;
     }
 
     /**

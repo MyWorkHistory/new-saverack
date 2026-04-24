@@ -198,17 +198,14 @@ const hasStripeCustomerId = computed(() => {
 const canStripeCharge = computed(() => {
   const inv = invoice.value;
   if (!inv || !canUpdate.value) return false;
-  if (inv.status === "void" || inv.status === "paid") return false;
-  if (Number(inv.balance_due_cents) <= 0) return false;
-  return hasStripeCustomerId.value;
+  if (inv.status === "void") return false;
+  return Number(inv.balance_due_cents) > 0;
 });
 
 const creditChargeDisabledTitle = computed(() => {
   const inv = invoice.value;
   if (!inv) return "";
   if (!canUpdate.value) return "You do not have permission to charge this invoice.";
-  if (!hasStripeCustomerId.value) return "Set Stripe customer id in Client Account > Payment.";
-  if (inv.status === "paid") return "Invoice is already paid.";
   if (inv.status === "void") return "Void invoices cannot be charged.";
   if (Number(inv.balance_due_cents) <= 0) return "No balance due.";
   return "";
@@ -1202,6 +1199,10 @@ function openRightMenuCcFee() {
 
 async function openStripeModal() {
   if (!invoice.value || !canStripeCharge.value) return;
+  if (!hasStripeCustomerId.value) {
+    toast.error("Set Stripe customer id in Client Account > Payment first.");
+    return;
+  }
   stripeModalOpen.value = true;
   stripeMethods.value = [];
   stripePaymentMethodId.value = "";
@@ -1244,11 +1245,16 @@ async function confirmStripeCharge() {
     toast.error("Choose a payment method and valid amount.");
     return;
   }
+  const fullBalanceCents = Number(invoice.value.balance_due_cents || 0);
+  if (fullBalanceCents <= 0) {
+    toast.error("No balance due.");
+    return;
+  }
   stripeChargeBusy.value = true;
   try {
     const { data } = await api.post(`/invoices/${invoice.value.id}/stripe-charge`, {
       payment_method_id: stripePaymentMethodId.value,
-      amount_cents: stripeAmountCents.value,
+      amount_cents: fullBalanceCents,
       payment_type: "Credit Card",
       payment_date: new Date().toISOString().slice(0, 10),
     });

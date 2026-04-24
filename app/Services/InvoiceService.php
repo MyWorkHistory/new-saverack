@@ -453,6 +453,10 @@ class InvoiceService
 
         try {
             Mail::to($selected)->send(new InvoiceSentMailable($invoice, $url, $customMessage));
+            if ($invoice->status === Invoice::STATUS_DRAFT) {
+                // Email send from draft should promote invoice to sent immediately.
+                $invoice = $this->markSent($invoice, $actor);
+            }
             $this->logHistory($invoice, $actor, 'emailed', $invoice->status, $invoice->status, [
                 'event_type' => InvoiceHistoryEventType::STATUS,
                 'history_message' => 'Invoice email sent.',

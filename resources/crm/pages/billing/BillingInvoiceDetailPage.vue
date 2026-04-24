@@ -3151,7 +3151,7 @@ function onDocKeydown(e) {
 }
 .billing-pay-stat {
   width: 100%;
-  border: 2px solid #c8cad6;
+  border: 2px solid #c8cad6!important;
   border-radius: 0.85rem;
   padding: 1rem 1.1rem;
   text-align: left;

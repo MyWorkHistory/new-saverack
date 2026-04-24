@@ -1754,6 +1754,9 @@ class InvoiceService
             }
 
             $serviceLabel = (string) ($row['name'] ?? '—');
+            if (strcasecmp(trim($serviceLabel), 'Endicia (USPS)') === 0) {
+                $serviceLabel = 'USPS';
+            }
             $serviceKey = strtolower($serviceLabel);
             if (! isset($categories[$categoryKey]['services'][$serviceKey])) {
                 $categories[$categoryKey]['services'][$serviceKey] = [
@@ -1812,8 +1815,24 @@ class InvoiceService
 
         foreach ($categories as $cat) {
             $services = array_values($cat['services']);
-            usort($services, static function (array $a, array $b) {
-                return strcasecmp((string) ($a['label'] ?? ''), (string) ($b['label'] ?? ''));
+            usort($services, function (array $a, array $b) use ($cat) {
+                $aLabel = (string) ($a['label'] ?? '');
+                $bLabel = (string) ($b['label'] ?? '');
+                $catLabel = strtolower((string) ($cat['label'] ?? ''));
+                if ($catLabel === 'fulfillment') {
+                    $rank = static function (string $label): int {
+                        $l = strtolower($label);
+                        if (str_contains($l, 'first pick')) return 0;
+                        if (str_contains($l, 'additional pick')) return 1;
+                        return 2;
+                    };
+                    $ra = $rank($aLabel);
+                    $rb = $rank($bLabel);
+                    if ($ra !== $rb) {
+                        return $ra <=> $rb;
+                    }
+                }
+                return strcasecmp($aLabel, $bLabel);
             });
             $serviceRows = [];
             foreach ($services as $service) {

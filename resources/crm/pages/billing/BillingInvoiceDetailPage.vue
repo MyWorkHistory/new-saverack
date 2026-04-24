@@ -3170,24 +3170,24 @@ function onDocKeydown(e) {
 }
 .billing-pay-stat:hover {
   transform: translateY(-1px);
-  border-color: rgba(115, 103, 240, 0.3);
+  border-color: #b7bac8;
   box-shadow: 0 0.45rem 1rem rgba(47, 43, 61, 0.12);
 }
 .billing-pay-stat.is-active {
-  border-color: rgba(94, 80, 238, 0.6);
-  box-shadow: 0 0 0 3px rgba(94, 80, 238, 0.12);
+  border-color: #8f94a8;
+  box-shadow: 0 0 0 3px rgba(143, 148, 168, 0.2);
 }
 .billing-pay-stat--blue {
-  border-color: #b9cbff;
+  border-color: #c8cad6;
 }
 .billing-pay-stat--green {
-  border-color: #aee0c4;
+  border-color: #c8cad6;
 }
 .billing-pay-stat--red {
-  border-color: #ebb0b5;
+  border-color: #c8cad6;
 }
 .billing-pay-stat--orange {
-  border-color: #ffc98f;
+  border-color: #c8cad6;
 }
 .billing-pay-stat__body {
   display: flex;

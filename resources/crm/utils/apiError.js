@@ -4,12 +4,6 @@ export function errorMessage(e, fallback = "Something Went Wrong.") {
   if (!d) {
     return typeof e?.message === "string" && e.message ? e.message : fallback;
   }
-  if (typeof d.message === "string" && d.message) {
-    return d.message;
-  }
-  if (d.error && typeof d.error === "string") {
-    return d.error;
-  }
   if (d.errors && typeof d.errors === "object") {
     const vals = Object.values(d.errors);
     const first = vals[0];
@@ -19,6 +13,12 @@ export function errorMessage(e, fallback = "Something Went Wrong.") {
     if (typeof first === "string") {
       return first;
     }
+  }
+  if (typeof d.message === "string" && d.message) {
+    return d.message;
+  }
+  if (d.error && typeof d.error === "string") {
+    return d.error;
   }
   return fallback;
 }

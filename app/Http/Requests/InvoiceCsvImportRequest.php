@@ -23,7 +23,21 @@ class InvoiceCsvImportRequest extends FormRequest
                 'max:64',
                 Rule::unique('invoices', 'invoice_number'),
             ],
-            'file' => ['required', 'file', 'mimes:csv,txt', 'max:10240'],
+            // Keep parity with legacy CRM import allowance (50 MB).
+            'file' => ['required', 'file', 'mimes:csv,txt', 'max:51200'],
+        ];
+    }
+
+    public function messages(): array
+    {
+        return [
+            'due_at.required' => 'Due date is required.',
+            'due_at.date' => 'Due date must be a valid date.',
+            'invoice_number.unique' => 'This invoice number is already in use.',
+            'file.required' => 'CSV file is required.',
+            'file.file' => 'Upload a valid file.',
+            'file.mimes' => 'File must be a CSV or TXT file.',
+            'file.max' => 'CSV file must be 50 MB or smaller.',
         ];
     }
 

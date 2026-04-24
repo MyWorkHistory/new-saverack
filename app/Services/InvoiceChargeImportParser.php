@@ -211,14 +211,15 @@ final class InvoiceChargeImportParser
         $chargeName = $this->cell($row, $map['charge_name'] ?? -1);
         $chargeTypeRaw = $this->cell($row, $map['charge_type_new'] ?? ($map['charge_type'] ?? -1));
         $categoryRaw = $this->cell($row, $map['billing_category'] ?? -1);
-
-        if ($chargeName === '' && $chargeTypeRaw === '' && $categoryRaw === '') {
-            return null;
-        }
-
         $qty = $this->parseQty($this->cell($row, $map['charge_qty'] ?? -1));
         $rateCents = $this->parseMoneyToCents($this->cell($row, $map['avg_rate'] ?? -1));
         $subtotalCents = $this->parseMoneyToCents($this->cell($row, $map['charge_subtotal'] ?? -1));
+        if (
+            $chargeName === '' && $chargeTypeRaw === '' && $categoryRaw === ''
+            && $qty <= 0 && $rateCents <= 0 && $subtotalCents <= 0
+        ) {
+            return null;
+        }
         if ($qty <= 0 && $rateCents > 0 && $subtotalCents > 0) {
             $qty = $subtotalCents / $rateCents;
         }
@@ -560,6 +561,8 @@ final class InvoiceChargeImportParser
             if ($val === 'ad hoc' || $val === 'ad_hoc' || strpos($val, 'ad_hoc') !== false || strpos($val, 'ad hoc') !== false) return 'Ad Hoc';
             if ($val === 'bank fee' || $val === 'bank_fee' || str_replace([' ', '_'], '', $val) === 'bankfee') return 'Bank Fee';
             if (in_array($val, ['duties & taxes', 'duties and taxes', 'duties_taxes'], true) || str_replace([' ', '_'], '', $val) === 'duties&taxes') return 'Duties & Taxes';
+            if (strpos($val, 'amazon prep') !== false || strpos($val, 'amazon_prep') !== false) return 'Fulfillment';
+            if (strpos($val, 'photo') !== false) return 'Ad Hoc';
             return null;
         };
 
@@ -607,10 +610,41 @@ final class InvoiceChargeImportParser
         if ($get('charge_sku') !== '' || $get('name_product') !== '' || strpos(strtolower($get('billing_category')), 'skincare') !== false || strpos(strtolower($get('fee')), 'skincare') !== false) {
             return 'Product (On-Demand)';
         }
+        $rowBlob = strtolower(implode(' ', array_map(function ($v): string {
+            return trim((string) $v);
+        }, $row)));
+        $rowBlob = (string) preg_replace('/\s+/', ' ', $rowBlob);
+        if (preg_match('/\b(inserts?|collateral|marketing insert|gift note|greeting card)\b/i', $rowBlob) === 1) {
+            return 'Inserts';
+        }
+        if (preg_match('/\b(shipping label|postage|mail class|usps|ups|fedex|dhl|ontrac|lasership)\b/i', $rowBlob) === 1) {
+            return 'Postage';
+        }
+        if (preg_match('/\b(return|rma|restock|reverse logistics)\b/i', $rowBlob) === 1) {
+            return 'Returns';
+        }
+        if (preg_match('/\b(bubble wrap|kraft paper|box charge|packaging)\b/i', $rowBlob) === 1) {
+            return 'Packaging';
+        }
+        if (preg_match('/\b(amazon prep|amazon_prep)\b/i', $rowBlob) === 1) {
+            return 'Fulfillment';
+        }
+        if (preg_match('/\b(photo|photos)\b/i', $rowBlob) === 1) {
+            return 'Ad Hoc';
+        }
 
         $totalVal = $this->parseMoneyToCents($get('total', '0'));
         $qtyNum = $this->parseQty($get('quantity', '0'));
         $urNum = $this->parseMoneyToCents($get('unit_rate', '0'));
+        if ($totalVal === 0) {
+            $totalVal = $this->parseMoneyToCents($get('charge_subtotal', '0'));
+        }
+        if ($qtyNum == 0.0) {
+            $qtyNum = $this->parseQty($get('charge_qty', '0'));
+        }
+        if ($urNum === 0) {
+            $urNum = $this->parseMoneyToCents($get('avg_rate', '0'));
+        }
         if ($totalVal !== 0 || ($qtyNum != 0.0 && $urNum !== 0)) {
             $hasLabel = $get('fee') !== '' || $get('fee_charge') !== '' || $get('billing_category') !== ''
                 || $get('charge_type') !== '' || $get('ad_hoc_name') !== '' || $get('label_charge') !== '';
@@ -784,12 +818,7 @@ final class InvoiceChargeImportParser
      */
     private function parseLegacyAdHocCategoryRow(array $row, array $index, string $categoryLabel): ?array
     {
-        $qty = $this->parseQty($this->cell($row, $index['quantity'] ?? -1));
-        $unitRate = $this->parseMoneyToCents($this->cell($row, $index['unit_rate'] ?? -1));
-        $total = $this->parseMoneyToCents($this->cell($row, $index['total'] ?? -1));
-        if ($total === 0 && $qty !== 0.0 && $unitRate !== 0) $total = (int) round($qty * $unitRate);
-        if ($unitRate === 0 && $qty !== 0.0 && $total !== 0) $unitRate = (int) round($total / $qty);
-        if ($qty === 0.0 && $total !== 0 && $unitRate !== 0) $qty = round($total / $unitRate, 4);
+        ['qty' => $qty, 'unit_rate' => $unitRate, 'total' => $total] = $this->resolveRowAmounts($row, $index);
         if ($qty === 0.0 && $unitRate === 0 && $total === 0) return null;
         if ($qty === 0.0) $qty = 1.0;
 
@@ -817,6 +846,35 @@ final class InvoiceChargeImportParser
     private function parseAdHocFallbackRow(array $row, array $index): ?array
     {
         return $this->parseLegacyAdHocCategoryRow($row, $index, 'Ad Hoc');
+    }
+
+    /**
+     * @param list<string|null> $row
+     * @param array<string, int> $index
+     * @return array{qty: float, unit_rate: int, total: int}
+     */
+    private function resolveRowAmounts(array $row, array $index): array
+    {
+        $qty = $this->parseQty($this->cell($row, $index['quantity'] ?? -1));
+        if ($qty == 0.0) {
+            $qty = $this->parseQty($this->cell($row, $index['charge_qty'] ?? -1));
+        }
+
+        $unitRate = $this->parseMoneyToCents($this->cell($row, $index['unit_rate'] ?? -1));
+        if ($unitRate === 0) {
+            $unitRate = $this->parseMoneyToCents($this->cell($row, $index['avg_rate'] ?? -1));
+        }
+
+        $total = $this->parseMoneyToCents($this->cell($row, $index['total'] ?? -1));
+        if ($total === 0) {
+            $total = $this->parseMoneyToCents($this->cell($row, $index['charge_subtotal'] ?? -1));
+        }
+
+        if ($total === 0 && $qty != 0.0 && $unitRate !== 0) $total = (int) round($qty * $unitRate);
+        if ($unitRate === 0 && $qty != 0.0 && $total !== 0) $unitRate = (int) round($total / $qty);
+        if ($qty == 0.0 && $total !== 0 && $unitRate !== 0) $qty = round($total / $unitRate, 4);
+
+        return ['qty' => $qty, 'unit_rate' => $unitRate, 'total' => $total];
     }
 
     /**

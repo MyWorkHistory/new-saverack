@@ -700,42 +700,6 @@ class BillingInvoiceApiTest extends TestCase
         $this->assertGreaterThanOrEqual(1, count($res->json('invoice.items') ?? []));
     }
 
-    public function test_import_charge_csv_persists_invoice_period_dates_when_provided(): void
-    {
-        $user = User::factory()->create();
-        $user->permissions()->sync([
-            $this->billingViewPermission()->id,
-            $this->billingCreatePermission()->id,
-            $this->clientsViewPermission()->id,
-        ]);
-        Sanctum::actingAs($user);
-
-        $client = ClientAccount::query()->create([
-            'status' => ClientAccount::STATUS_ACTIVE,
-            'company_name' => 'Import Period Co',
-            'email' => 'import-period@acme.test',
-        ]);
-        $client->refresh();
-
-        $csv = "Charge Name,Charge Type,Qty,Rate,Subtotal\nShip,shipping_label_charge,1,5.00,5.00\n";
-        $file = UploadedFile::fake()->createWithContent('charges.csv', $csv);
-
-        $res = $this->post(
-            "/api/client-accounts/{$client->id}/invoice-imports/charges",
-            [
-                'due_at' => '2026-06-15',
-                'invoice_date_from' => '2026-04-13',
-                'invoice_date_to' => '2026-04-19',
-                'file' => $file,
-            ],
-            ['Accept' => 'application/json']
-        );
-
-        $res->assertStatus(201);
-        $res->assertJsonPath('invoice.billing_period_start', '2026-04-13');
-        $res->assertJsonPath('invoice.billing_period_end', '2026-04-19');
-    }
-
     public function test_import_charge_csv_accepts_category_fee_type_and_unit_rate_aliases(): void
     {
         $user = User::factory()->create();

@@ -133,8 +133,6 @@ const importBusy = ref(false);
 const importForm = reactive({
   import_type: "charges",
   client_account_id: "",
-  invoice_date_from: "",
-  invoice_date_to: "",
   due_at: "",
   invoice_number: "",
   file: null,
@@ -340,8 +338,6 @@ async function onInvoiceDrawerCreated() {
 function openImportModal() {
   importForm.import_type = "charges";
   importForm.client_account_id = "";
-  importForm.invoice_date_from = "";
-  importForm.invoice_date_to = "";
   importForm.due_at = new Date().toISOString().slice(0, 10);
   importForm.invoice_number = "";
   importForm.file = null;
@@ -365,11 +361,7 @@ function onImportFileChange(event) {
   if (inferred.invoiceNumber) {
     importForm.invoice_number = inferred.invoiceNumber;
   }
-  if (inferred.invoiceDateFrom) {
-    importForm.invoice_date_from = inferred.invoiceDateFrom;
-  }
   if (inferred.invoiceDateTo) {
-    importForm.invoice_date_to = inferred.invoiceDateTo;
     const due = addDaysIso(inferred.invoiceDateTo, 1);
     if (due) importForm.due_at = due;
   }
@@ -399,7 +391,6 @@ function parseInvoiceImportFilename(filename) {
   const markerIdx = lower.indexOf(marker);
   const suffix = cleaned.slice(markerIdx + marker.length);
   const dateRangeMatch = suffix.match(/(\d{4}-\d{2}-\d{2})--(\d{4}-\d{2}-\d{2})/);
-  const invoiceDateFrom = dateRangeMatch?.[1] || "";
   const invoiceDateTo = dateRangeMatch?.[2] || "";
   const beforeDates = dateRangeMatch ? suffix.slice(0, dateRangeMatch.index) : suffix;
   const tokens = beforeDates
@@ -418,7 +409,6 @@ function parseInvoiceImportFilename(filename) {
   return {
     clientSlug: clientTokens.join("_"),
     invoiceNumber,
-    invoiceDateFrom,
     invoiceDateTo,
   };
 }
@@ -490,14 +480,6 @@ async function submitImportCsv() {
     const formData = new FormData();
     formData.append("due_at", importForm.due_at);
     formData.append("file", importForm.file);
-    const invoiceDateFrom = String(importForm.invoice_date_from || "").trim();
-    const invoiceDateTo = String(importForm.invoice_date_to || "").trim();
-    if (invoiceDateFrom) {
-      formData.append("invoice_date_from", invoiceDateFrom);
-    }
-    if (invoiceDateTo) {
-      formData.append("invoice_date_to", invoiceDateTo);
-    }
     const invNum = String(importForm.invoice_number || "").trim();
     if (invNum) {
       formData.append("invoice_number", invNum);
@@ -1548,6 +1530,16 @@ onUnmounted(() => {
                 </select>
               </div>
               <div class="mb-3">
+                <label class="form-label" for="billing-import-file">CSV File</label>
+                <input
+                  id="billing-import-file"
+                  type="file"
+                  class="form-control"
+                  accept=".csv,text/csv,text/plain"
+                  @change="onImportFileChange"
+                />
+              </div>
+              <div class="mb-3">
                 <label class="form-label" for="billing-import-client">Client Account</label>
                 <CrmSearchableSelect
                   v-model="importForm.client_account_id"
@@ -1557,24 +1549,6 @@ onUnmounted(() => {
                   search-placeholder="Search clients…"
                   empty-label="No client account selected"
                   button-id="billing-import-client"
-                />
-              </div>
-              <div class="mb-3">
-                <label class="form-label" for="billing-import-date-from">Invoice Date From</label>
-                <input
-                  id="billing-import-date-from"
-                  v-model="importForm.invoice_date_from"
-                  type="date"
-                  class="form-control"
-                />
-              </div>
-              <div class="mb-3">
-                <label class="form-label" for="billing-import-date-to">Invoice Date To</label>
-                <input
-                  id="billing-import-date-to"
-                  v-model="importForm.invoice_date_to"
-                  type="date"
-                  class="form-control"
                 />
               </div>
               <div class="mb-3">
@@ -1594,16 +1568,6 @@ onUnmounted(() => {
                   type="text"
                   class="form-control"
                   placeholder="INV-2026-00001"
-                />
-              </div>
-              <div>
-                <label class="form-label" for="billing-import-file">CSV File</label>
-                <input
-                  id="billing-import-file"
-                  type="file"
-                  class="form-control"
-                  accept=".csv,text/csv,text/plain"
-                  @change="onImportFileChange"
                 />
               </div>
             </div>

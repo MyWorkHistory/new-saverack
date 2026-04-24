@@ -2954,12 +2954,13 @@ function onDocKeydown(e) {
   cursor: not-allowed;
 }
 .billing-inv-summary-card .staff-stat-card__icon {
-  width: 3rem;
-  height: 3rem;
+  width: 6.2rem;
+  height: 6.2rem;
+  border-radius: 0.6rem;
 }
 .billing-inv-summary-card .staff-stat-card__icon svg {
-  width: 1.35rem;
-  height: 1.35rem;
+  width: 1.85rem;
+  height: 1.85rem;
 }
 .billing-group-edit-bulk-panel {
   border: 1px solid rgba(47, 43, 61, 0.1);

@@ -27,8 +27,6 @@ class InvoiceImportService
         UploadedFile $file,
         string $dueDateYmd,
         ?string $invoiceNumber,
-        ?string $invoiceDateFrom,
-        ?string $invoiceDateTo,
         ?User $actor
     ): array {
         $path = $file->getRealPath();
@@ -52,22 +50,11 @@ class InvoiceImportService
         $import->save();
 
         try {
-            $invoice = DB::transaction(function () use (
-                $account,
-                $lines,
-                $dueDateYmd,
-                $invoiceNumber,
-                $invoiceDateFrom,
-                $invoiceDateTo,
-                $actor,
-                $import
-            ) {
+            $invoice = DB::transaction(function () use ($account, $lines, $dueDateYmd, $invoiceNumber, $actor, $import) {
                 $header = [
                     'client_account_id' => $account->id,
                     'currency' => 'USD',
                     'due_at' => $dueDateYmd,
-                    'billing_period_start' => $invoiceDateFrom,
-                    'billing_period_end' => $invoiceDateTo,
                 ];
                 $inv = $this->invoices->createDraft($header, $lines, $actor, $invoiceNumber);
                 $this->invoices->logHistory($inv, $actor, 'updated', $inv->status, $inv->status, [
@@ -102,8 +89,6 @@ class InvoiceImportService
         UploadedFile $file,
         string $dueDateYmd,
         ?string $invoiceNumber,
-        ?string $invoiceDateFrom,
-        ?string $invoiceDateTo,
         ?User $actor
     ): array {
         $path = $file->getRealPath();
@@ -140,23 +125,11 @@ class InvoiceImportService
         $import->save();
 
         try {
-            $invoice = DB::transaction(function () use (
-                $account,
-                $lines,
-                $dueDateYmd,
-                $invoiceNumber,
-                $invoiceDateFrom,
-                $invoiceDateTo,
-                $actor,
-                $import,
-                $skipped
-            ) {
+            $invoice = DB::transaction(function () use ($account, $lines, $dueDateYmd, $invoiceNumber, $actor, $import, $skipped) {
                 $header = [
                     'client_account_id' => $account->id,
                     'currency' => 'USD',
                     'due_at' => $dueDateYmd,
-                    'billing_period_start' => $invoiceDateFrom,
-                    'billing_period_end' => $invoiceDateTo,
                 ];
                 $inv = $this->invoices->createDraft($header, $lines, $actor, $invoiceNumber);
                 $this->invoices->logHistory($inv, $actor, 'updated', $inv->status, $inv->status, [

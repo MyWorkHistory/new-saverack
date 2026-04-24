@@ -34,8 +34,6 @@ class InvoiceImportController extends Controller
             $request->file('file'),
             $request->dueDateString(),
             $request->optionalInvoiceNumber(),
-            $request->optionalInvoiceDateFrom(),
-            $request->optionalInvoiceDateTo(),
             $request->user(),
         );
 
@@ -60,8 +58,6 @@ class InvoiceImportController extends Controller
             $request->file('file'),
             $request->dueDateString(),
             $request->optionalInvoiceNumber(),
-            $request->optionalInvoiceDateFrom(),
-            $request->optionalInvoiceDateTo(),
             $request->user(),
         );
 

@@ -532,7 +532,7 @@ class InvoiceService
      */
     public function recordPayment(Invoice $invoice, int $amountCents, ?User $actor, array $paymentMeta = []): Invoice
     {
-        if ($invoice->isVoid() || $invoice->status === Invoice::STATUS_DRAFT) {
+        if ($invoice->isVoid()) {
             throw new \RuntimeException('Cannot record payment on this invoice.');
         }
         if ($amountCents <= 0) {
@@ -568,9 +568,9 @@ class InvoiceService
 
         $payable = Invoice::query()
             ->where('client_account_id', $invoice->client_account_id)
-            ->where('status', '!=', Invoice::STATUS_DRAFT)
             ->where('status', '!=', Invoice::STATUS_VOID)
             ->where('balance_due_cents', '>', 0)
+            ->orderByRaw("case when status = '".Invoice::STATUS_DRAFT."' then 1 else 0 end")
             ->orderByRaw('CASE WHEN due_at IS NULL THEN 1 ELSE 0 END')
             ->orderBy('due_at')
             ->orderBy('id')
@@ -585,12 +585,16 @@ class InvoiceService
         $pastDue = 0;
         $rows = [];
         foreach ($payable as $row) {
-            $isPastDue = $this->isOverdue($row);
             $balance = (int) $row->balance_due_cents;
-            if ($isPastDue) {
-                $pastDue += $balance;
+            if ($row->status !== Invoice::STATUS_DRAFT) {
+                $isPastDue = $this->isOverdue($row);
+                if ($isPastDue) {
+                    $pastDue += $balance;
+                } else {
+                    $open += $balance;
+                }
             } else {
-                $open += $balance;
+                $isPastDue = false;
             }
 
             $rows[] = [
@@ -598,7 +602,7 @@ class InvoiceService
                 'row_key' => 'b-'.(int) $row->id,
                 'type' => 'Beta',
                 'status' => (string) $row->status,
-                'is_overdue' => $isPastDue,
+                'is_overdue' => $row->status !== Invoice::STATUS_DRAFT && $this->isOverdue($row),
                 'invoice_number' => (string) $row->invoice_number,
                 'due_in' => $row->due_at !== null ? now()->startOfDay()->diffInDays($row->due_at->copy()->startOfDay(), false) : null,
                 'due_date' => $row->due_at !== null ? $row->due_at->toDateString() : null,
@@ -632,7 +636,7 @@ class InvoiceService
         ?User $actor,
         array $paymentMeta = []
     ): array {
-        if ($rootInvoice->isVoid() || $rootInvoice->status === Invoice::STATUS_DRAFT) {
+        if ($rootInvoice->isVoid()) {
             throw new \RuntimeException('Cannot record payment on this invoice.');
         }
         if ($amountCents <= 0) {
@@ -662,8 +666,11 @@ class InvoiceService
             foreach ($invoiceIds as $invoiceId) {
                 /** @var Invoice $target */
                 $target = $selected[$invoiceId];
-                if ($target->isVoid() || $target->status === Invoice::STATUS_DRAFT) {
-                    throw new \RuntimeException('Draft or void invoices cannot be paid from this flow.');
+                if ($target->isVoid()) {
+                    throw new \RuntimeException('Void invoices cannot be paid from this flow.');
+                }
+                if ($target->status === Invoice::STATUS_DRAFT && (int) $target->balance_due_cents <= 0) {
+                    throw new \RuntimeException('Draft invoices with no balance cannot be paid from this flow.');
                 }
 
                 $target->refresh();
@@ -789,6 +796,7 @@ class InvoiceService
             'currency' => $invoice->currency,
             'client_account_id' => $invoice->client_account_id,
             'client_company_name' => $invoice->clientAccount !== null ? $invoice->clientAccount->company_name : null,
+            'client_account_stripe_customer_id' => $invoice->clientAccount !== null ? $invoice->clientAccount->stripe_customer_id : null,
             'total_cents' => $invoice->total_cents,
             'balance_due_cents' => $invoice->balance_due_cents,
             'due_in' => $invoice->due_at !== null ? now()->startOfDay()->diffInDays($invoice->due_at->copy()->startOfDay(), false) : null,
@@ -840,6 +848,7 @@ class InvoiceService
             'client_account_state' => $account !== null ? $account->state : null,
             'client_account_zip' => $account !== null ? $account->zip : null,
             'client_account_country' => $account !== null ? $account->country : null,
+            'client_account_stripe_customer_id' => $account !== null ? $account->stripe_customer_id : null,
             'email_recipient_options' => $this->invoiceRecipientEmails($invoice),
             'customer_view_url' => $this->publicCustomerViewUrl($invoice),
             'customer_pdf_url' => $this->publicCustomerPdfUrl($invoice),
@@ -1260,6 +1269,10 @@ class InvoiceService
         if ($n === 'first_return_charge') return 'Returns (First Item)';
         if ($n === 'return_remainder_charge') return 'Returns (Additional Items)';
         if (strtolower((string) $item->category) === InvoiceLineCategory::PACKAGING && strpos($n, 'basic box') !== false) {
+            if ($this->isBasicBox6x9x1PackagingName($n)) {
+                return $name;
+            }
+
             return 'Ship As Is';
         }
         return $name;
@@ -1272,6 +1285,11 @@ class InvoiceService
             return $name;
         }
         return 'Packaging';
+    }
+
+    private function isBasicBox6x9x1PackagingName(string $normalizedLower): bool
+    {
+        return preg_match('/\bbasic\s*box\b.*\b6\s*[x×]\s*9\s*[x×]\s*1\b/i', $normalizedLower) === 1;
     }
 
     private function packagingDisplayName(string $name): string
@@ -1291,6 +1309,9 @@ class InvoiceService
         }
         if ($hasKraft) {
             return 'Kraft Paper';
+        }
+        if ($this->isBasicBox6x9x1PackagingName($n)) {
+            return 'Box Not Selected';
         }
         if (strpos($n, 'basic box') !== false || strpos($n, 'ship as is') !== false) {
             return 'Ship As Is';

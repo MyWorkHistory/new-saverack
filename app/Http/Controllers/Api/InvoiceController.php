@@ -11,12 +11,14 @@ use App\Http\Requests\InvoiceAddCcFeeRequest;
 use App\Http\Requests\InvoiceSendEmailRequest;
 use App\Http\Requests\InvoiceSendWhatsappRequest;
 use App\Http\Requests\InvoiceStoreRequest;
+use App\Http\Requests\InvoiceStripeChargeRequest;
 use App\Http\Requests\InvoiceUpdateItemRequest;
 use App\Http\Requests\InvoiceUpdateRequest;
 use App\Models\ClientAccount;
 use App\Models\Invoice;
 use App\Models\InvoiceItem;
 use App\Services\InvoiceService;
+use App\Services\StripeInvoicePaymentService;
 use Barryvdh\DomPDF\Facade\Pdf;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -213,6 +215,52 @@ class InvoiceController extends Controller
             'invoice' => $this->invoices->toDetailArray($result['invoice']),
             'allocations' => $result['allocations'],
             'remaining_amount_cents' => $result['remaining_amount_cents'],
+        ]);
+    }
+
+    public function stripePaymentMethods(Invoice $invoice, StripeInvoicePaymentService $stripePayments): JsonResponse
+    {
+        $this->authorize('recordPayment', $invoice);
+        try {
+            $rows = $stripePayments->listPaymentMethods($invoice);
+        } catch (\RuntimeException $e) {
+            return response()->json(['message' => $e->getMessage()], 422);
+        }
+
+        return response()->json([
+            'invoice_id' => (int) $invoice->id,
+            'methods' => $rows,
+        ]);
+    }
+
+    public function stripeCharge(
+        InvoiceStripeChargeRequest $request,
+        Invoice $invoice,
+        StripeInvoicePaymentService $stripePayments
+    ): JsonResponse {
+        $this->authorize('recordPayment', $invoice);
+        try {
+            $result = $stripePayments->chargeInvoice(
+                $invoice,
+                $request->paymentMethodId(),
+                $request->amountCents(),
+                $request->user(),
+                $request->paymentMeta(),
+                $this->invoices
+            );
+        } catch (\RuntimeException $e) {
+            return response()->json(['message' => $e->getMessage()], 422);
+        }
+
+        /** @var \App\Models\Invoice $updated */
+        $updated = $result['invoice'];
+
+        return response()->json([
+            'result' => $result['result'],
+            'status' => $result['status'] ?? null,
+            'applied_amount_cents' => (int) ($result['applied_amount_cents'] ?? 0),
+            'payment_intent_id' => $result['payment_intent_id'] ?? null,
+            'invoice' => $this->invoices->toDetailArray($updated),
         ]);
     }
 

@@ -70,6 +70,12 @@ const sendWhatsappBusy = ref(false);
 const sendWhatsappModalOpen = ref(false);
 const sendWhatsappType = ref("send_invoice");
 const sendWhatsappMessage = ref("");
+const stripeModalOpen = ref(false);
+const stripeMethodsLoading = ref(false);
+const stripeChargeBusy = ref(false);
+const stripeAmount = ref("");
+const stripePaymentMethodId = ref("");
+const stripeMethods = ref([]);
 const lineMenuOpenId = ref(null);
 const groupMenuOpenId = ref(null);
 const lineMenuPos = ref({ top: 0, left: 0 });
@@ -145,19 +151,20 @@ const payInvoiceVisible = computed(
     invoice.value.status !== "void",
 );
 
-/** Enabled only when API recordPayment policy would allow (sent/partial with balance). */
-const payInvoiceEnabled = computed(
-  () =>
-    !!invoice.value &&
-    canUpdate.value &&
-    (invoice.value.status === "sent" || invoice.value.status === "partial") &&
-    Number(invoice.value.balance_due_cents) > 0,
-);
+/** Matches recordPayment policy: positive balance; draft, sent, or partial (not paid/void). */
+const payInvoiceEnabled = computed(() => {
+  const inv = invoice.value;
+  if (!inv || !canUpdate.value) return false;
+  if (Number(inv.balance_due_cents) <= 0) return false;
+  return inv.status === "draft" || inv.status === "sent" || inv.status === "partial";
+});
 
 const payInvoiceDisabledTitle = computed(() => {
   const inv = invoice.value;
   if (!inv || !payInvoiceVisible.value) return "";
-  if (inv.status === "draft") return "Send the invoice before recording payment.";
+  if (inv.status === "draft" && Number(inv.balance_due_cents) <= 0) {
+    return "Add line items or totals before paying.";
+  }
   if (inv.status === "sent" || inv.status === "partial") {
     if (Number(inv.balance_due_cents) <= 0) return "No balance due.";
   }
@@ -181,6 +188,14 @@ const canEmailInvoice = computed(
 const canSendWhatsapp = computed(
   () => !!invoice.value && canUpdate.value && invoice.value.status !== "void",
 );
+
+const canStripeCharge = computed(() => {
+  const inv = invoice.value;
+  if (!inv || !canUpdate.value) return false;
+  if (inv.status === "void" || inv.status === "paid") return false;
+  if (Number(inv.balance_due_cents) <= 0) return false;
+  return !!String(inv.client_account_stripe_customer_id || "").trim();
+});
 
 const payCanAddFunds = computed(() => {
   return (
@@ -1168,6 +1183,74 @@ function openRightMenuCcFee() {
   openCcFeeModal();
 }
 
+async function openStripeModal() {
+  if (!invoice.value || !canStripeCharge.value) return;
+  stripeModalOpen.value = true;
+  stripeMethods.value = [];
+  stripePaymentMethodId.value = "";
+  stripeAmount.value = (Number(invoice.value.balance_due_cents || 0) / 100).toFixed(2);
+  stripeMethodsLoading.value = true;
+  try {
+    const { data } = await api.get(`/invoices/${invoice.value.id}/stripe-payment-methods`);
+    stripeMethods.value = Array.isArray(data?.methods) ? data.methods : [];
+    const defaultMethod = stripeMethods.value.find((m) => m?.is_default);
+    stripePaymentMethodId.value = String(defaultMethod?.id || stripeMethods.value[0]?.id || "");
+  } catch (e) {
+    toast.errorFrom(e, "Could not load Stripe payment methods.");
+    stripeModalOpen.value = false;
+  } finally {
+    stripeMethodsLoading.value = false;
+  }
+}
+
+function closeStripeModal() {
+  if (stripeChargeBusy.value) return;
+  stripeModalOpen.value = false;
+}
+
+const stripeAmountCents = computed(() => {
+  const n = Number.parseFloat(String(stripeAmount.value || "").replace(/,/g, ""));
+  if (!Number.isFinite(n) || n <= 0) return 0;
+  return Math.round(n * 100);
+});
+
+const stripeCanSubmit = computed(
+  () =>
+    !!invoice.value &&
+    !!String(stripePaymentMethodId.value || "").trim() &&
+    stripeAmountCents.value > 0 &&
+    stripeAmountCents.value <= Number(invoice.value?.balance_due_cents || 0),
+);
+
+async function confirmStripeCharge() {
+  if (!invoice.value || !stripeCanSubmit.value) {
+    toast.error("Choose a payment method and valid amount.");
+    return;
+  }
+  stripeChargeBusy.value = true;
+  try {
+    const { data } = await api.post(`/invoices/${invoice.value.id}/stripe-charge`, {
+      payment_method_id: stripePaymentMethodId.value,
+      amount_cents: stripeAmountCents.value,
+      payment_type: "Credit Card",
+      payment_date: new Date().toISOString().slice(0, 10),
+    });
+    if (data?.result === "pending") {
+      toast.success("Stripe payment submitted and pending settlement.");
+    } else if (data?.result === "succeeded") {
+      toast.success("Stripe payment completed.");
+    } else {
+      toast.error("Stripe payment failed.");
+    }
+    closeStripeModal();
+    await load();
+  } catch (e) {
+    toast.errorFrom(e, "Could not process Stripe payment.");
+  } finally {
+    stripeChargeBusy.value = false;
+  }
+}
+
 function goToInvoiceBucket(bucket) {
   if (!invoice.value?.client_account_id) return;
   let status = "all";
@@ -1963,6 +2046,14 @@ function onDocKeydown(e) {
               >
                 Send To Whatsapp
               </button>
+              <button
+                v-if="canStripeCharge"
+                type="button"
+                class="billing-inv-action-btn billing-inv-action-btn--primary"
+                @click="openStripeModal"
+              >
+                Pay with Stripe
+              </button>
             </div>
           </div>
 
@@ -2090,6 +2181,67 @@ function onDocKeydown(e) {
                 <button type="button" class="crm-vx-modal-btn crm-vx-modal-btn--secondary" :disabled="groupEditBusy" @click="closeGroupEditModal">Cancel</button>
                 <button type="button" class="crm-vx-modal-btn crm-vx-modal-btn--primary" :disabled="groupEditBusy" @click="confirmGroupEdit">{{ groupEditBusy ? "Saving…" : "Save" }}</button>
               </div>
+            </footer>
+          </div>
+        </div>
+      </Transition>
+    </Teleport>
+
+    <Teleport to="body">
+      <Transition name="crm-vx-confirm">
+        <div
+          v-if="stripeModalOpen"
+          class="crm-vx-modal-overlay"
+          role="dialog"
+          aria-modal="true"
+          @click.self="closeStripeModal"
+        >
+          <div class="crm-vx-modal crm-vx-modal--sm" @click.stop>
+            <header class="crm-vx-modal__head">
+              <h2 class="crm-vx-modal__title">Pay with Stripe</h2>
+            </header>
+            <div class="crm-vx-modal__body">
+              <div v-if="stripeMethodsLoading" class="py-3">
+                <CrmLoadingSpinner message="Loading payment methods…" />
+              </div>
+              <template v-else>
+                <label class="form-label">Payment Method</label>
+                <select v-model="stripePaymentMethodId" class="form-select mb-3">
+                  <option value="">Select payment method</option>
+                  <option v-for="m in stripeMethods" :key="m.id" :value="m.id">
+                    {{ m.label }}
+                  </option>
+                </select>
+                <label class="form-label">Amount</label>
+                <input
+                  v-model="stripeAmount"
+                  type="text"
+                  class="form-control text-end"
+                  inputmode="decimal"
+                  placeholder="0.00"
+                />
+                <div class="small text-secondary mt-2">
+                  Balance due: {{ formatCents(invoice?.balance_due_cents || 0, invoice?.currency || "USD") }}
+                </div>
+              </template>
+            </div>
+            <footer class="crm-vx-modal__footer d-flex gap-2 justify-content-end">
+              <button
+                type="button"
+                class="crm-vx-modal-btn crm-vx-modal-btn--secondary"
+                :disabled="stripeChargeBusy"
+                @click="closeStripeModal"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                class="crm-vx-modal-btn crm-vx-modal-btn--primary"
+                :disabled="stripeChargeBusy || stripeMethodsLoading || !stripeCanSubmit"
+                @click="confirmStripeCharge"
+              >
+                {{ stripeChargeBusy ? "Charging…" : "Charge Stripe" }}
+              </button>
             </footer>
           </div>
         </div>

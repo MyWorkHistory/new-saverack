@@ -56,7 +56,11 @@ class InvoicePolicy
 
     public function recordPayment(User $user, Invoice $invoice): bool
     {
-        if ($invoice->isVoid() || $invoice->status === Invoice::STATUS_DRAFT) {
+        if ($invoice->isVoid()) {
+            return false;
+        }
+
+        if ($invoice->status === Invoice::STATUS_DRAFT && (int) $invoice->balance_due_cents <= 0) {
             return false;
         }
 

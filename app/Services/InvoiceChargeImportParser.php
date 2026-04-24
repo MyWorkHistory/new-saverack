@@ -109,20 +109,46 @@ final class InvoiceChargeImportParser
     {
         return [
             'order_date' => ['date (order)', 'order date', 'date'],
-            'billing_category' => ['category (charge)', 'category', 'fee type'],
+            'billing_category' => [
+                'category (charge)', 'category', 'fee type',
+                'category (fee type)', 'category (fee_type)',
+            ],
             'fee' => ['fee (charge)', 'fee', 'type', 'fee type'],
             'charge_name' => ['charge name'],
-            'charge_type_new' => ['charge type'],
-            'avg_rate' => ['avg rate', 'average rate'],
-            'charge_qty' => ['charge qty', 'charge quantity', 'charge count', 'qty', 'quantity'],
-            'charge_subtotal' => ['charge subtotal', 'subtotal'],
+            'charge_type_new' => [
+                'charge type',
+                'charge type (charge)', 'charge type(charge)',
+                'type (charge)', 'type(charge)',
+            ],
+            'avg_rate' => [
+                'avg rate', 'average rate',
+                'unit rate (charge)', 'unit rate(charge)', 'unit rate (to charge)',
+                'rate (charge)', 'unit rate',
+            ],
+            'charge_qty' => [
+                'charge qty', 'charge quantity', 'charge count',
+                'qty', 'quantity',
+                'quantity (charge)', 'quantity(charge)', 'quantity (to charge)',
+                'qty (charge)', 'qty(charge)', 'qty (to charge)',
+                'quantity to charge', 'qty to charge',
+            ],
+            'charge_subtotal' => [
+                'charge subtotal', 'subtotal',
+                'subtotal (charge)', 'total (charge)', 'line total (charge)', 'amount (charge)',
+            ],
             'charge_type' => [
                 'charge type', 'charge type (charge)', 'charge_type', 'chargetype',
                 'type of charge', 'charge type(charge)', 'type (charge)',
             ],
-            'quantity' => ['quantity', 'quantity (charge)', 'qty', 'qty (charge)'],
-            'unit_rate' => ['unit rate (charge)', 'unit rate', 'unit_rate', 'unit price'],
-            'total' => ['total (charge)', 'total', 'amount', 'line total'],
+            'quantity' => [
+                'quantity', 'quantity (charge)', 'quantity(charge)', 'quantity (to charge)',
+                'qty', 'qty (charge)', 'qty(charge)', 'qty (to charge)',
+            ],
+            'unit_rate' => [
+                'unit rate (charge)', 'unit rate(charge)', 'unit rate (to charge)',
+                'unit rate', 'unit_rate', 'unit price',
+            ],
+            'total' => ['total (charge)', 'total', 'amount', 'line total', 'amount (charge)'],
             'carrier' => ['carrier (shipment)', 'carrier'],
             'box' => ['box (shipment)', 'box'],
             'ad_hoc_name' => ['name', 'description', 'item', 'item name', 'description (charge)'],
@@ -143,6 +169,7 @@ final class InvoiceChargeImportParser
         if (str_starts_with($h, "\xEF\xBB\xBF")) {
             $h = substr($h, 3);
         }
+        $h = preg_replace('/^\$+/u', '', $h) ?? $h;
         $h = strtolower(trim($h));
         $h = str_replace(['_', '-', '.'], ' ', $h);
         $h = preg_replace('/\s+/', ' ', $h) ?? '';
@@ -808,9 +835,17 @@ final class InvoiceChargeImportParser
             'packaging' => 'Packaging',
             'returns' => 'Returns',
             'inserts' => 'Packaging',
+            'photos' => 'Ad Hoc',
             'receiving' => 'Receiving',
+            'purchase_receiving' => 'Receiving',
+            'purchase receiving' => 'Receiving',
+            'amazon prep' => 'Fulfillment',
+            'amazon_prep' => 'Fulfillment',
             'skincare' => 'Product (On-Demand)',
             'skin care' => 'Product (On-Demand)',
+            'scion cbo' => 'Product (On-Demand)',
+            'scion cbd' => 'Product (On-Demand)',
+            'scion cbd oil' => 'Product (On-Demand)',
             'on-demand' => 'Product (On-Demand)',
             'on demand' => 'Product (On-Demand)',
             'product (on-demand)' => 'Product (On-Demand)',
@@ -826,6 +861,8 @@ final class InvoiceChargeImportParser
         ];
         if (isset($exact[$t])) return $exact[$t];
         if (strpos($t, 'fulfill') !== false) return 'Fulfillment';
+        if (strpos($t, 'amazon prep') !== false || strpos($t, 'amazon_prep') !== false) return 'Fulfillment';
+        if (strpos($t, 'photo') !== false) return 'Ad Hoc';
         if (strpos($t, 'postage') !== false || preg_match('/\b(ship|shipping|carrier|parcel|mail)\b/', $t)) return 'Postage';
         if (strpos($t, 'packag') !== false || preg_match('/\b(box|mailer|bubble|kraft)\b/', $t)) return 'Packaging';
         if (strpos($t, 'receiv') !== false) return 'Receiving';
@@ -1054,6 +1091,9 @@ final class InvoiceChargeImportParser
         }
         if ($hasKraft) {
             return 'Kraft Paper';
+        }
+        if ($this->isBasicBox6x9x1($n)) {
+            return 'Box Not Selected';
         }
         if (strpos($n, 'basic box') !== false || strpos($n, 'ship as is') !== false) {
             return 'Ship As Is';

@@ -57,6 +57,7 @@ class ClientAccount extends Model
         'notes',
         'account_manager_id',
         'contract_date',
+        'stripe_customer_id',
         'default_payment_type',
     ];
 

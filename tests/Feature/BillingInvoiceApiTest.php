@@ -5,6 +5,7 @@ namespace Tests\Feature;
 use App\Mail\InvoiceSentMailable;
 use App\Models\ClientAccount;
 use App\Services\InvoiceService;
+use App\Services\StripeInvoicePaymentService;
 use App\Models\Invoice;
 use App\Models\InvoiceItem;
 use App\Models\Permission;
@@ -14,6 +15,7 @@ use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Mail;
 use Laravel\Sanctum\Sanctum;
+use Mockery;
 use Tests\TestCase;
 
 class BillingInvoiceApiTest extends TestCase
@@ -281,7 +283,47 @@ class BillingInvoiceApiTest extends TestCase
             ->assertJsonPath('open_balance_cents', 5000)
             ->assertJsonPath('past_due_balance_cents', 2000)
             ->assertJsonPath('pending_balance_cents', 1500)
-            ->assertJsonCount(2, 'rows');
+            ->assertJsonCount(3, 'rows');
+    }
+
+    public function test_pay_allocate_applies_to_draft_invoice_with_balance(): void
+    {
+        $user = User::factory()->create();
+        $user->permissions()->sync([
+            $this->billingViewPermission()->id,
+            $this->billingUpdatePermission()->id,
+        ]);
+        Sanctum::actingAs($user);
+
+        $client = ClientAccount::query()->create([
+            'status' => ClientAccount::STATUS_ACTIVE,
+            'company_name' => 'Draft Pay Co',
+            'email' => 'draft-pay@acme.test',
+        ]);
+
+        $draft = Invoice::query()->create([
+            'invoice_number' => 'INV-DRAFT-PAY-001',
+            'client_account_id' => $client->id,
+            'status' => Invoice::STATUS_DRAFT,
+            'currency' => 'USD',
+            'subtotal_cents' => 4000,
+            'tax_cents' => 0,
+            'total_cents' => 4000,
+            'amount_paid_cents' => 0,
+            'balance_due_cents' => 4000,
+        ]);
+
+        $this->postJson("/api/invoices/{$draft->id}/pay-allocate", [
+            'amount_cents' => 4000,
+            'invoice_ids' => [$draft->id],
+            'payment_type' => 'ACH',
+            'payment_date' => now()->toDateString(),
+        ])->assertOk();
+
+        $draft->refresh();
+        $this->assertSame(4000, (int) $draft->amount_paid_cents);
+        $this->assertSame(0, (int) $draft->balance_due_cents);
+        $this->assertSame(Invoice::STATUS_PAID, $draft->status);
     }
 
     public function test_pay_allocate_distributes_payment_across_selected_invoices(): void
@@ -655,6 +697,40 @@ class BillingInvoiceApiTest extends TestCase
 
         $res->assertStatus(201);
         $res->assertJsonPath('invoice.status', Invoice::STATUS_DRAFT);
+        $this->assertGreaterThanOrEqual(1, count($res->json('invoice.items') ?? []));
+    }
+
+    public function test_import_charge_csv_accepts_category_fee_type_and_unit_rate_aliases(): void
+    {
+        $user = User::factory()->create();
+        $user->permissions()->sync([
+            $this->billingViewPermission()->id,
+            $this->billingCreatePermission()->id,
+            $this->clientsViewPermission()->id,
+        ]);
+        Sanctum::actingAs($user);
+
+        $client = ClientAccount::query()->create([
+            'status' => ClientAccount::STATUS_ACTIVE,
+            'company_name' => 'Import Alias Co',
+            'email' => 'ia@acme.test',
+        ]);
+        $client->refresh();
+
+        $csv = "Charge Name,Charge Type,Category (fee type),Charge Qty,Unit rate (to charge),Line total (charge)\n"
+            . "Label,shipping_label_charge,Fulfillment,1,3.00,3.00\n";
+        $file = UploadedFile::fake()->createWithContent('charges.csv', $csv);
+
+        $res = $this->post(
+            "/api/client-accounts/{$client->id}/invoice-imports/charges",
+            [
+                'due_at' => '2026-07-01',
+                'file' => $file,
+            ],
+            ['Accept' => 'application/json']
+        );
+
+        $res->assertStatus(201);
         $this->assertGreaterThanOrEqual(1, count($res->json('invoice.items') ?? []));
     }
 
@@ -1392,6 +1468,84 @@ class BillingInvoiceApiTest extends TestCase
 
         $this->deleteJson("/api/invoices/{$invoice->id}/line-groups/postage%3Areturn-label")
             ->assertOk();
+    }
+
+    public function test_stripe_payment_methods_requires_customer_id(): void
+    {
+        $user = User::factory()->create();
+        $user->permissions()->sync([
+            $this->billingViewPermission()->id,
+            $this->billingUpdatePermission()->id,
+        ]);
+        Sanctum::actingAs($user);
+
+        $client = ClientAccount::query()->create([
+            'status' => ClientAccount::STATUS_ACTIVE,
+            'company_name' => 'No Stripe Co',
+            'email' => 'nostripe@acme.test',
+        ]);
+        $invoice = Invoice::query()->create([
+            'invoice_number' => 'INV-STRIPE-NONE-001',
+            'client_account_id' => $client->id,
+            'status' => Invoice::STATUS_SENT,
+            'currency' => 'USD',
+            'subtotal_cents' => 2500,
+            'tax_cents' => 0,
+            'total_cents' => 2500,
+            'amount_paid_cents' => 0,
+            'balance_due_cents' => 2500,
+        ]);
+
+        $this->getJson("/api/invoices/{$invoice->id}/stripe-payment-methods")
+            ->assertStatus(422)
+            ->assertJsonPath('message', 'Stripe Customer ID is missing for this account.');
+    }
+
+    public function test_stripe_charge_endpoint_returns_service_result(): void
+    {
+        $user = User::factory()->create();
+        $user->permissions()->sync([
+            $this->billingViewPermission()->id,
+            $this->billingUpdatePermission()->id,
+        ]);
+        Sanctum::actingAs($user);
+
+        $client = ClientAccount::query()->create([
+            'status' => ClientAccount::STATUS_ACTIVE,
+            'company_name' => 'Stripe Mock Co',
+            'email' => 'stripe-mock@acme.test',
+            'stripe_customer_id' => 'cus_test_mock',
+        ]);
+        $invoice = Invoice::query()->create([
+            'invoice_number' => 'INV-STRIPE-001',
+            'client_account_id' => $client->id,
+            'status' => Invoice::STATUS_SENT,
+            'currency' => 'USD',
+            'subtotal_cents' => 3000,
+            'tax_cents' => 0,
+            'total_cents' => 3000,
+            'amount_paid_cents' => 0,
+            'balance_due_cents' => 3000,
+        ]);
+
+        $mock = Mockery::mock(StripeInvoicePaymentService::class);
+        $mock->shouldReceive('chargeInvoice')
+            ->once()
+            ->andReturn([
+                'result' => 'succeeded',
+                'status' => 'succeeded',
+                'applied_amount_cents' => 3000,
+                'payment_intent_id' => 'pi_test_123',
+                'invoice' => $invoice->fresh(),
+            ]);
+        $this->app->instance(StripeInvoicePaymentService::class, $mock);
+
+        $this->postJson("/api/invoices/{$invoice->id}/stripe-charge", [
+            'payment_method_id' => 'pm_test_123',
+            'amount_cents' => 3000,
+        ])->assertOk()
+            ->assertJsonPath('result', 'succeeded')
+            ->assertJsonPath('payment_intent_id', 'pi_test_123');
     }
 
     public function test_public_and_pdf_include_updated_payment_address(): void

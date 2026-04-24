@@ -12,6 +12,7 @@ use App\Http\Controllers\Api\InvoiceController;
 use App\Http\Controllers\Api\InvoiceImportController;
 use App\Http\Controllers\Api\UserController;
 use App\Http\Controllers\Api\WebmasterTaskController;
+use App\Http\Controllers\StripeWebhookController;
 use Illuminate\Support\Facades\Route;
 
 Route::prefix('auth')->group(function () {
@@ -21,6 +22,8 @@ Route::prefix('auth')->group(function () {
     Route::post('/forgot-password', [AuthController::class, 'forgotPassword']);
     Route::post('/reset-password', [AuthController::class, 'resetPassword']);
 });
+
+Route::post('stripe/webhook', [StripeWebhookController::class, 'handle']);
 
 Route::middleware('auth:sanctum')->group(function () {
     Route::prefix('auth')->group(function () {
@@ -60,6 +63,10 @@ Route::middleware('auth:sanctum')->group(function () {
         ->name('invoices.pay');
     Route::post('invoices/{invoice}/record-payment', [InvoiceController::class, 'recordPayment'])
         ->name('invoices.record-payment');
+    Route::get('invoices/{invoice}/stripe-payment-methods', [InvoiceController::class, 'stripePaymentMethods'])
+        ->name('invoices.stripe-methods');
+    Route::post('invoices/{invoice}/stripe-charge', [InvoiceController::class, 'stripeCharge'])
+        ->name('invoices.stripe-charge');
     Route::post('invoices/{invoice}/add-item', [InvoiceController::class, 'addItem'])
         ->name('invoices.add-item');
     Route::post('invoices/{invoice}/add-cc-fee', [InvoiceController::class, 'addCcFee'])

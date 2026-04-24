@@ -1582,4 +1582,81 @@ class BillingInvoiceApiTest extends TestCase
         $html = view('billing.invoice-pdf', $pdfData)->render();
         $this->assertStringContainsString('3135 Drane Field Rd #20', $html);
     }
+
+    public function test_invoice_payload_exposes_legacy_status_mapping_fields(): void
+    {
+        $user = User::factory()->create();
+        $user->permissions()->sync([$this->billingViewPermission()->id]);
+        Sanctum::actingAs($user);
+
+        $client = ClientAccount::query()->create([
+            'status' => ClientAccount::STATUS_ACTIVE,
+            'company_name' => 'Legacy Status Co',
+            'email' => 'legacy-status@acme.test',
+        ]);
+        $invoice = Invoice::query()->create([
+            'invoice_number' => 'INV-LEGACY-STATUS-001',
+            'client_account_id' => $client->id,
+            'status' => Invoice::STATUS_SENT,
+            'currency' => 'USD',
+            'due_at' => now()->subDays(2),
+            'subtotal_cents' => 1000,
+            'tax_cents' => 0,
+            'total_cents' => 1000,
+            'amount_paid_cents' => 0,
+            'balance_due_cents' => 1000,
+        ]);
+
+        $this->getJson("/api/invoices/{$invoice->id}")
+            ->assertOk()
+            ->assertJsonPath('status_key', 'past_due')
+            ->assertJsonPath('status_label', 'Past Due')
+            ->assertJsonPath('status_code', 2);
+    }
+
+    public function test_manual_legacy_status_update_requires_zero_balance_for_paid(): void
+    {
+        $user = User::factory()->create();
+        $user->permissions()->sync([
+            $this->billingViewPermission()->id,
+            $this->billingUpdatePermission()->id,
+        ]);
+        Sanctum::actingAs($user);
+
+        $client = ClientAccount::query()->create([
+            'status' => ClientAccount::STATUS_ACTIVE,
+            'company_name' => 'Manual Status Co',
+            'email' => 'manual-status@acme.test',
+        ]);
+        $invoice = Invoice::query()->create([
+            'invoice_number' => 'INV-MANUAL-STATUS-001',
+            'client_account_id' => $client->id,
+            'status' => Invoice::STATUS_SENT,
+            'currency' => 'USD',
+            'subtotal_cents' => 1000,
+            'tax_cents' => 0,
+            'total_cents' => 1000,
+            'amount_paid_cents' => 0,
+            'balance_due_cents' => 1000,
+        ]);
+
+        $this->postJson("/api/invoices/{$invoice->id}/status", [
+            'status' => 'paid',
+        ])->assertStatus(422);
+
+        $invoice->refresh();
+        $this->assertSame(Invoice::STATUS_SENT, $invoice->status);
+
+        $invoice->update([
+            'amount_paid_cents' => 1000,
+            'balance_due_cents' => 0,
+        ]);
+
+        $this->postJson("/api/invoices/{$invoice->id}/status", [
+            'status' => 'paid',
+        ])->assertOk()
+            ->assertJsonPath('status_key', 'paid')
+            ->assertJsonPath('status_label', 'Paid')
+            ->assertJsonPath('status_code', 3);
+    }
 }

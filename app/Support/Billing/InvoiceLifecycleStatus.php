@@ -18,6 +18,8 @@ final class InvoiceLifecycleStatus
 
     public const PAST_DUE = 'past_due';
 
+    public const COLLECTION = 'collection';
+
     public const PAID = 'paid';
 
     public const VOID = 'void';
@@ -30,6 +32,7 @@ final class InvoiceLifecycleStatus
             self::PENDING,
             self::OPEN,
             self::PAST_DUE,
+            self::COLLECTION,
             self::PAID,
             self::VOID,
         ];
@@ -49,6 +52,7 @@ final class InvoiceLifecycleStatus
             self::PENDING => self::PENDING,
             self::OPEN => self::OPEN,
             self::PAST_DUE => self::PAST_DUE,
+            self::COLLECTION => self::COLLECTION,
             self::PAID => self::PAID,
             self::VOID => self::VOID,
             self::DRAFT => self::DRAFT,

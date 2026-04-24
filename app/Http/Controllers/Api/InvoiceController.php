@@ -41,8 +41,7 @@ class InvoiceController extends Controller
             ->get(['id', 'company_name']);
 
         $statuses = array_values(array_unique(array_merge(
-            Invoice::STATUSES,
-            ['open', 'overdue', 'all'],
+            ['draft', 'open', 'past_due', 'collection', 'paid', 'void', 'all'],
         )));
 
         return response()->json([
@@ -284,6 +283,25 @@ class InvoiceController extends Controller
     {
         $this->authorize('void', $invoice);
         $invoice = $this->invoices->voidInvoice($invoice, request()->user());
+
+        return response()->json($this->invoices->toDetailArray($invoice));
+    }
+
+    public function updateStatus(Request $request, Invoice $invoice): JsonResponse
+    {
+        $this->authorize('update', $invoice);
+        $validated = $request->validate([
+            'status' => ['required', 'string'],
+        ]);
+        try {
+            $invoice = $this->invoices->updateLegacyStatus(
+                $invoice,
+                (string) $validated['status'],
+                $request->user()
+            );
+        } catch (\InvalidArgumentException $e) {
+            return response()->json(['message' => $e->getMessage()], 422);
+        }
 
         return response()->json($this->invoices->toDetailArray($invoice));
     }

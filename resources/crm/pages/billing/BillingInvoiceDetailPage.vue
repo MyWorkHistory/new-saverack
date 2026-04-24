@@ -145,13 +145,19 @@ const accountBalanceLoading = ref(false);
 const invoiceLogoSrc = computed(() => BRAND_MARK_SRC());
 const activityCardRef = ref(null);
 
+function invoiceStatusKey(inv) {
+  return String(inv?.status_key || inv?.status || "").toLowerCase();
+}
+
+const currentStatusKey = computed(() => invoiceStatusKey(invoice.value));
+
 /** Show Pay in sidebar whenever invoice might eventually accept payment (not paid/void). */
 const payInvoiceVisible = computed(
   () =>
     !!invoice.value &&
     canUpdate.value &&
-    invoice.value.status !== "paid" &&
-    invoice.value.status !== "void",
+    currentStatusKey.value !== "paid" &&
+    currentStatusKey.value !== "void",
 );
 
 /** Matches recordPayment policy: positive balance; draft, sent, or partial (not paid/void). */
@@ -159,37 +165,39 @@ const payInvoiceEnabled = computed(() => {
   const inv = invoice.value;
   if (!inv || !canUpdate.value) return false;
   if (Number(inv.balance_due_cents) <= 0) return false;
-  return inv.status === "draft" || inv.status === "sent" || inv.status === "partial";
+  const s = invoiceStatusKey(inv);
+  return s !== "paid" && s !== "void";
 });
 
 const payInvoiceDisabledTitle = computed(() => {
   const inv = invoice.value;
   if (!inv || !payInvoiceVisible.value) return "";
-  if (inv.status === "draft" && Number(inv.balance_due_cents) <= 0) {
+  const s = invoiceStatusKey(inv);
+  if (s === "draft" && Number(inv.balance_due_cents) <= 0) {
     return "Add line items or totals before paying.";
   }
-  if (inv.status === "sent" || inv.status === "partial") {
+  if (s === "open" || s === "past_due" || s === "collection") {
     if (Number(inv.balance_due_cents) <= 0) return "No balance due.";
   }
   return "";
 });
 
 const canAddCharge = computed(
-  () => !!invoice.value && canUpdate.value && invoice.value.status !== "void",
+  () => !!invoice.value && canUpdate.value && currentStatusKey.value !== "void",
 );
 
 const canVoidInvoice = computed(
-  () => !!invoice.value && canUpdate.value && invoice.value.status !== "void",
+  () => !!invoice.value && canUpdate.value && currentStatusKey.value !== "void",
 );
 
-const canShareInvoice = computed(() => !!invoice.value && invoice.value.status !== "void");
+const canShareInvoice = computed(() => !!invoice.value && currentStatusKey.value !== "void");
 
 const canEmailInvoice = computed(
-  () => !!invoice.value && canUpdate.value && invoice.value.status !== "void",
+  () => !!invoice.value && canUpdate.value && currentStatusKey.value !== "void",
 );
 
 const canSendWhatsapp = computed(
-  () => !!invoice.value && canUpdate.value && invoice.value.status !== "void",
+  () => !!invoice.value && canUpdate.value && currentStatusKey.value !== "void",
 );
 
 const hasStripeCustomerId = computed(() => {
@@ -201,7 +209,7 @@ const hasStripeCustomerId = computed(() => {
 const canStripeCharge = computed(() => {
   const inv = invoice.value;
   if (!inv || !canUpdate.value) return false;
-  if (inv.status === "void") return false;
+  if (invoiceStatusKey(inv) === "void") return false;
   return Number(inv.balance_due_cents) > 0;
 });
 
@@ -209,7 +217,7 @@ const creditChargeDisabledTitle = computed(() => {
   const inv = invoice.value;
   if (!inv) return "";
   if (!canUpdate.value) return "You do not have permission to charge this invoice.";
-  if (inv.status === "void") return "Void invoices cannot be charged.";
+  if (invoiceStatusKey(inv) === "void") return "Void invoices cannot be charged.";
   if (Number(inv.balance_due_cents) <= 0) return "No balance due.";
   return "";
 });
@@ -368,13 +376,8 @@ function isPastDueByLogic(inv) {
 const statusDisplayText = computed(() => {
   const inv = invoice.value;
   if (!inv) return "";
-  const raw = String(inv.status || "").toLowerCase();
-  if (
-    (raw === "open" || raw === "sent" || raw === "partial") &&
-    isPastDueByLogic(inv)
-  ) {
-    return "Past Due";
-  }
+  const label = String(inv.status_label || "").trim();
+  if (label) return label;
   return String(inv.status || "")
     .replace(/_/g, " ")
     .replace(/\b\w/g, (c) => c.toUpperCase());
@@ -493,7 +496,7 @@ async function copyCustomerLink() {
 
 function syncEditFromInvoice() {
   const inv = invoice.value;
-  if (!inv || inv.status !== "draft") {
+  if (!inv || invoiceStatusKey(inv) !== "draft") {
     editDueAt.value = "";
     editLines.value = [];
     return;
@@ -613,9 +616,9 @@ function statusBadgeClass(status) {
   if (s === "paid") return "bg-success-subtle text-success";
   if (s === "draft") return "bg-secondary-subtle text-secondary";
   if (s === "void") return "bg-dark-subtle text-secondary";
-  if (s === "partial") return "bg-info-subtle text-info-emphasis";
+  if (s === "collection") return "bg-warning-subtle text-warning-emphasis";
   if (s === "past due") return "bg-danger-subtle text-danger-emphasis";
-  if (s === "sent") return "bg-primary-subtle text-primary-emphasis";
+  if (s === "open") return "bg-primary-subtle text-primary-emphasis";
   return "bg-body-secondary text-body-secondary";
 }
 
@@ -1476,7 +1479,7 @@ function onDocKeydown(e) {
             {{ pdfDownloading ? "Downloading…" : "Download PDF" }}
           </button>
           <button
-            v-if="invoice.status !== 'void'"
+            v-if="currentStatusKey !== 'void'"
             type="button"
             class="btn btn-outline-secondary btn-sm"
             :disabled="copyLinkBusy"
@@ -1511,7 +1514,7 @@ function onDocKeydown(e) {
             Send To Whatsapp
           </button>
           <button
-            v-if="invoice && invoice.status !== 'paid' && invoice.status !== 'void'"
+            v-if="invoice && currentStatusKey !== 'paid' && currentStatusKey !== 'void'"
             type="button"
             class="btn btn-outline-primary btn-sm"
             :disabled="!canStripeCharge"
@@ -1584,7 +1587,7 @@ function onDocKeydown(e) {
                       <span class="text-secondary">Date due</span>
                       <span class="fw-medium ms-1">
                         {{
-                          invoice.status === "draft" && canUpdate
+                          currentStatusKey === "draft" && canUpdate
                             ? editDueAt
                               ? formatInvoiceShortDate(editDueAt)
                               : "—"
@@ -1641,7 +1644,7 @@ function onDocKeydown(e) {
                 Add To Invoice
               </button>
             </div>
-            <template v-if="invoice.status === 'draft' && canUpdate && false">
+            <template v-if="currentStatusKey === 'draft' && canUpdate && false">
               <div class="row g-3 mb-3">
                 <div class="col-md-4">
                   <label class="form-label small" for="inv-detail-due">Due date</label>
@@ -1766,7 +1769,7 @@ function onDocKeydown(e) {
                       <th class="text-end">Qty</th>
                       <th class="text-end">Price</th>
                       <th class="text-end">Total</th>
-                      <th v-if="canUpdate && invoice.status !== 'void'" class="text-end">Actions</th>
+                      <th v-if="canUpdate && currentStatusKey !== 'void'" class="text-end">Actions</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -1791,7 +1794,7 @@ function onDocKeydown(e) {
                         <td class="text-end fw-semibold">
                           {{ formatCents(row.total_cents, invoice.currency) }}
                         </td>
-                        <td v-if="canUpdate && invoice.status !== 'void'" class="text-end" @click.stop>
+                        <td v-if="canUpdate && currentStatusKey !== 'void'" class="text-end" @click.stop>
                           <div data-row-actions class="position-relative d-inline-block">
                             <button
                               v-if="row.line_group_key"
@@ -1824,7 +1827,7 @@ function onDocKeydown(e) {
                       </tr>
                     </template>
                     <tr v-if="!invoiceTableRows.length">
-                      <td :colspan="canUpdate && invoice.status !== 'void' ? 7 : 6" class="text-center text-secondary py-3">
+                      <td :colspan="canUpdate && currentStatusKey !== 'void' ? 7 : 6" class="text-center text-secondary py-3">
                         No line items.
                       </td>
                     </tr>
@@ -1856,7 +1859,7 @@ function onDocKeydown(e) {
                         <th class="text-end">Price</th>
                         <th class="text-end">Total</th>
                         <th
-                          v-if="invoice.status !== 'void' && canUpdate"
+                          v-if="currentStatusKey !== 'void' && canUpdate"
                           class="text-end"
                           style="width: 3.5rem"
                         >
@@ -1879,7 +1882,7 @@ function onDocKeydown(e) {
                         <td class="text-end text-nowrap">{{ formatQtyDisplay(row.qty) }}</td>
                         <td class="text-end">{{ formatCents(row.price_cents, invoice.currency) }}</td>
                         <td class="text-end">{{ formatCents(row.total_cents, invoice.currency) }}</td>
-                        <td v-if="invoice.status !== 'void' && canUpdate" class="text-end">
+                        <td v-if="currentStatusKey !== 'void' && canUpdate" class="text-end">
                           <div data-row-actions class="position-relative d-inline-block">
                             <button
                               type="button"
@@ -1915,7 +1918,7 @@ function onDocKeydown(e) {
                         </td>
                       </tr>
                       <tr v-if="!selectedTableRowDetails.length">
-                        <td :colspan="invoice.status !== 'void' && canUpdate ? 7 : 6" class="text-center text-secondary py-3">
+                        <td :colspan="currentStatusKey !== 'void' && canUpdate ? 7 : 6" class="text-center text-secondary py-3">
                           No line items.
                         </td>
                       </tr>

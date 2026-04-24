@@ -211,9 +211,35 @@ function statusBadgeClass(status) {
   if (s === "paid") return "bg-success-subtle text-success";
   if (s === "draft") return "bg-secondary-subtle text-secondary";
   if (s === "void") return "bg-dark-subtle text-secondary";
-  if (s === "partial") return "bg-info-subtle text-info-emphasis";
-  if (s === "sent") return "bg-primary-subtle text-primary-emphasis";
+  if (s === "collection") return "bg-warning-subtle text-warning-emphasis";
+  if (s === "past_due") return "bg-danger-subtle text-danger-emphasis";
+  if (s === "open") return "bg-primary-subtle text-primary-emphasis";
   return "bg-body-secondary text-body-secondary";
+}
+
+function legacyStatusKey(row) {
+  return String(row?.status_key || row?.status || "").toLowerCase();
+}
+
+function displayStatusText(row) {
+  const label = String(row?.status_label || "").trim();
+  if (label) return label;
+  return String(row?.status || "")
+    .replace(/_/g, " ")
+    .replace(/\b\w/g, (c) => c.toUpperCase());
+}
+
+function statusFilterLabel(status) {
+  const map = {
+    all: "All statuses",
+    draft: "Draft",
+    open: "Open",
+    past_due: "Past Due",
+    collection: "Collection",
+    paid: "Paid",
+    void: "Void",
+  };
+  return map[String(status || "").toLowerCase()] || String(status || "");
 }
 
 function sortIndicator(column) {
@@ -263,7 +289,7 @@ async function loadSummary() {
 
 function setSummaryFilterBucket(bucket) {
   if (bucket === "open") query.status = "open";
-  else if (bucket === "past_due") query.status = "overdue";
+  else if (bucket === "past_due") query.status = "past_due";
   else if (bucket === "draft") query.status = "draft";
   else if (bucket === "paid") query.status = "paid";
   else query.status = "all";
@@ -852,7 +878,7 @@ onUnmounted(() => {
                     :key="st"
                     :value="st"
                   >
-                    {{ st === "all" ? "All statuses" : st }}
+                    {{ statusFilterLabel(st) }}
                   </option>
                 </select>
                 <label class="form-label" for="inv-filter-client">Client</label>
@@ -1144,15 +1170,9 @@ onUnmounted(() => {
                 <span class="d-flex flex-wrap align-items-center gap-1">
                   <span
                     class="badge rounded-pill text-capitalize fw-medium"
-                    :class="statusBadgeClass(row.status)"
+                    :class="statusBadgeClass(legacyStatusKey(row))"
                   >
-                    {{ row.status }}
-                  </span>
-                  <span
-                    v-if="row.is_overdue"
-                    class="badge rounded-pill bg-danger-subtle text-danger-emphasis small"
-                  >
-                    Overdue
+                    {{ displayStatusText(row) }}
                   </span>
                 </span>
               </td>
@@ -1309,7 +1329,7 @@ onUnmounted(() => {
             View
           </RouterLink>
           <button
-            v-if="canUpdate && manageMenuRow.status === 'draft'"
+            v-if="canUpdate && legacyStatusKey(manageMenuRow) === 'draft'"
             type="button"
             class="staff-row-menu__item"
             role="menuitem"
@@ -1320,9 +1340,9 @@ onUnmounted(() => {
           <button
             v-if="
               canUpdate &&
-              manageMenuRow.status !== 'draft' &&
-              manageMenuRow.status !== 'paid' &&
-              manageMenuRow.status !== 'void' &&
+              legacyStatusKey(manageMenuRow) !== 'draft' &&
+              legacyStatusKey(manageMenuRow) !== 'paid' &&
+              legacyStatusKey(manageMenuRow) !== 'void' &&
               manageMenuRow.balance_due_cents > 0
             "
             type="button"
@@ -1333,7 +1353,7 @@ onUnmounted(() => {
             Record Payment
           </button>
           <button
-            v-if="canUpdate && manageMenuRow.status !== 'draft' && manageMenuRow.status !== 'void'"
+            v-if="canUpdate && legacyStatusKey(manageMenuRow) !== 'draft' && legacyStatusKey(manageMenuRow) !== 'void'"
             type="button"
             class="staff-row-menu__item staff-row-menu__item--danger"
             role="menuitem"
@@ -1342,7 +1362,7 @@ onUnmounted(() => {
             Void Invoice
           </button>
           <button
-            v-if="canDelete && manageMenuRow.status === 'draft'"
+            v-if="canDelete && legacyStatusKey(manageMenuRow) === 'draft'"
             type="button"
             class="staff-row-menu__item staff-row-menu__item--danger"
             role="menuitem"

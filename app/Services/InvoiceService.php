@@ -791,11 +791,16 @@ class InvoiceService
     {
         $invoice->loadMissing('clientAccount');
         $date = $this->invoiceDatePayload($invoice);
+        $legacyKey = $this->legacyStatusKey($invoice);
+        $legacyLabel = $this->legacyStatusLabel($invoice);
 
         return [
             'id' => $invoice->id,
             'invoice_number' => $invoice->invoice_number,
             'status' => $invoice->status,
+            'status_key' => $legacyKey,
+            'status_label' => $legacyLabel,
+            'status_code' => $this->legacyStatusCode($legacyKey),
             'is_overdue' => $this->isOverdue($invoice),
             'currency' => $invoice->currency,
             'client_account_id' => $invoice->client_account_id,
@@ -1432,23 +1437,114 @@ class InvoiceService
         return $invoice->due_at->isPast() && $invoice->balance_due_cents > 0;
     }
 
+    public function legacyStatusKey(Invoice $invoice): string
+    {
+        $raw = strtolower(trim((string) $invoice->status));
+        if ($raw === 'void') return 'void';
+        if ($raw === 'paid') return 'paid';
+        if ($raw === 'collection') return 'collection';
+        if ($raw === 'pending' || $raw === 'draft') return 'draft';
+        if ($raw === 'past_due') return 'past_due';
+        if ($raw === 'open') return $this->isOverdue($invoice) ? 'past_due' : 'open';
+        if ($raw === 'sent' || $raw === 'partial') {
+            return $this->isOverdue($invoice) ? 'past_due' : 'open';
+        }
+        return $raw !== '' ? $raw : 'draft';
+    }
+
+    public function legacyStatusLabel(Invoice $invoice): string
+    {
+        $key = $this->legacyStatusKey($invoice);
+        if ($key === 'past_due') return 'Past Due';
+        if ($key === 'collection') return 'Collection';
+        if ($key === 'paid') return 'Paid';
+        if ($key === 'void') return 'Void';
+        if ($key === 'open') return 'Open';
+        return 'Draft';
+    }
+
+    public function legacyStatusCode(string $key): int
+    {
+        switch ($key) {
+            case 'open':
+            case 'past_due':
+                return 2;
+            case 'paid':
+                return 3;
+            case 'void':
+                return 5;
+            case 'draft':
+                return 6;
+            case 'collection':
+                return 7;
+            default:
+                return 6;
+        }
+    }
+
+    /**
+     * Update invoice to the closest new-domain status while honoring old CRM requested status.
+     */
+    public function updateLegacyStatus(Invoice $invoice, string $requestedStatus, ?User $actor): Invoice
+    {
+        $requested = strtolower(trim($requestedStatus));
+        $allowed = ['pending', 'open', 'past_due', 'collection', 'paid', 'void', 'draft'];
+        if (! in_array($requested, $allowed, true)) {
+            throw new \InvalidArgumentException('Valid status is required.');
+        }
+        if ($requested === 'paid' && (int) $invoice->balance_due_cents > 0) {
+            throw new \InvalidArgumentException('Cannot mark as paid while balance due is greater than 0.');
+        }
+
+        $from = $invoice->status;
+        if ($requested === 'void') {
+            return $this->voidInvoice($invoice, $actor);
+        }
+        if ($requested === 'paid') {
+            $invoice->status = Invoice::STATUS_PAID;
+            $invoice->paid_at = now();
+        } elseif ($requested === 'draft' || $requested === 'pending') {
+            $invoice->status = Invoice::STATUS_DRAFT;
+            $invoice->paid_at = null;
+        } elseif ($requested === 'collection') {
+            $invoice->status = 'collection';
+        } elseif ($requested === 'past_due') {
+            $invoice->status = 'past_due';
+        } else {
+            $invoice->status = Invoice::STATUS_SENT;
+        }
+        $invoice->save();
+        $this->logHistory($invoice, $actor, 'updated', $from, $invoice->status, [
+            'event_type' => InvoiceHistoryEventType::STATUS,
+            'history_message' => 'Status changed to '.$this->legacyStatusLabel($invoice).'.',
+        ]);
+        return $invoice->fresh(['items', 'clientAccount']);
+    }
+
     public function paginate(array $filters): \Illuminate\Contracts\Pagination\LengthAwarePaginator
     {
         $q = Invoice::query()->with('clientAccount');
 
         if (! empty($filters['status']) && $filters['status'] !== 'all') {
-            if ($filters['status'] === 'open') {
+            $statusFilter = strtolower((string) $filters['status']);
+            if ($statusFilter === 'open') {
                 $q->whereIn('status', [Invoice::STATUS_SENT, Invoice::STATUS_PARTIAL])
+                    ->whereNotNull('due_at')
+                    ->where('due_at', '>=', now()->startOfDay())
                     ->where('balance_due_cents', '>', 0);
-            } elseif ($filters['status'] === 'overdue') {
+            } elseif ($statusFilter === 'past_due' || $statusFilter === 'overdue') {
                 $q->where('status', '!=', Invoice::STATUS_VOID)
                     ->where('status', '!=', Invoice::STATUS_PAID)
                     ->where('status', '!=', Invoice::STATUS_DRAFT)
                     ->where('balance_due_cents', '>', 0)
                     ->whereNotNull('due_at')
                     ->where('due_at', '<', now()->startOfDay());
+            } elseif ($statusFilter === 'draft') {
+                $q->whereIn('status', [Invoice::STATUS_DRAFT, 'pending']);
+            } elseif ($statusFilter === 'collection') {
+                $q->where('status', 'collection');
             } else {
-                $q->where('status', $filters['status']);
+                $q->where('status', $statusFilter);
             }
         }
 

@@ -590,6 +590,8 @@ class InvoiceService
         $rows = [];
         foreach ($payable as $row) {
             $balance = (int) $row->balance_due_cents;
+            $legacyKey = $this->legacyStatusKey($row);
+            $legacyLabel = $this->legacyStatusLabel($row);
             if ($row->status !== Invoice::STATUS_DRAFT) {
                 $isPastDue = $this->isOverdue($row);
                 if ($isPastDue) {
@@ -606,6 +608,8 @@ class InvoiceService
                 'row_key' => 'b-'.(int) $row->id,
                 'type' => 'Beta',
                 'status' => (string) $row->status,
+                'status_key' => $legacyKey,
+                'status_label' => $legacyLabel,
                 'is_overdue' => $row->status !== Invoice::STATUS_DRAFT && $this->isOverdue($row),
                 'invoice_number' => (string) $row->invoice_number,
                 'due_in' => $row->due_at !== null ? now()->startOfDay()->diffInDays($row->due_at->copy()->startOfDay(), false) : null,

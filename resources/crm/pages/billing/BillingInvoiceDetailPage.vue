@@ -148,6 +148,37 @@ function invoiceStatusKey(inv) {
   return String(inv?.status_key || inv?.status || "").toLowerCase();
 }
 
+function payRowStatusKey(row) {
+  const key = String(row?.status_key || "").toLowerCase();
+  if (key) return key;
+  if (String(row?.status || "").toLowerCase() === "draft") return "draft";
+  return row?.is_overdue ? "past_due" : "open";
+}
+
+function payRowStatusLabel(row) {
+  const label = String(row?.status_label || "").trim();
+  if (label) return label;
+
+  const key = payRowStatusKey(row);
+  if (key === "past_due") return "Past Due";
+  if (key === "draft") return "Draft";
+  if (key === "collection") return "Collection";
+  if (key === "paid") return "Paid";
+  if (key === "void") return "Void";
+  return "Open";
+}
+
+function payRowStatusBadgeClass(row) {
+  const key = payRowStatusKey(row);
+  if (key === "past_due" || key === "collection") {
+    return "bg-danger-subtle text-danger-emphasis";
+  }
+  if (key === "paid") return "bg-success-subtle text-success-emphasis";
+  if (key === "void") return "bg-secondary-subtle text-secondary-emphasis";
+  if (key === "draft") return "bg-warning-subtle text-warning-emphasis";
+  return "bg-primary-subtle text-primary-emphasis";
+}
+
 const currentStatusKey = computed(() => invoiceStatusKey(invoice.value));
 
 /** Show Pay in sidebar whenever invoice might eventually accept payment (not paid/void). */
@@ -239,13 +270,13 @@ const payCanSubmit = computed(
 
 const payFilteredRows = computed(() => {
   if (payFilterStatus.value === "past_due") {
-    return payRows.value.filter((row) => row.is_overdue);
+    return payRows.value.filter((row) => payRowStatusKey(row) === "past_due");
   }
   if (payFilterStatus.value === "pending") {
-    return payRows.value;
+    return payRows.value.filter((row) => payRowStatusKey(row) === "draft");
   }
   if (payFilterStatus.value === "open") {
-    return payRows.value.filter((row) => !row.is_overdue);
+    return payRows.value.filter((row) => payRowStatusKey(row) === "open");
   }
   return payRows.value;
 });
@@ -2704,9 +2735,9 @@ function onDocKeydown(e) {
                           <td class="text-center">
                             <span
                               class="badge rounded-pill"
-                              :class="row.is_overdue ? 'bg-danger-subtle text-danger-emphasis' : 'bg-primary-subtle text-primary-emphasis'"
+                              :class="payRowStatusBadgeClass(row)"
                             >
-                              {{ row.is_overdue ? "Past Due" : "Open" }}
+                              {{ payRowStatusLabel(row) }}
                             </span>
                           </td>
                           <td class="text-center fw-medium">{{ row.invoice_number }}</td>
@@ -3120,7 +3151,7 @@ function onDocKeydown(e) {
 }
 .billing-pay-stat {
   width: 100%;
-  border: 1px solid #d7d8e0;
+  border: 2px solid #c8cad6;
   border-radius: 0.85rem;
   padding: 1rem 1.1rem;
   text-align: left;
@@ -3128,7 +3159,9 @@ function onDocKeydown(e) {
   font: inherit;
   background: #fff;
   color: #2f2b3d;
-  box-shadow: 0 2px 10px rgba(47, 43, 61, 0.06);
+  box-shadow:
+    inset 0 0 0 1px rgba(255, 255, 255, 0.85),
+    0 2px 10px rgba(47, 43, 61, 0.06);
   transition:
     border-color 0.15s ease,
     transform 0.15s ease,
@@ -3145,16 +3178,16 @@ function onDocKeydown(e) {
   box-shadow: 0 0 0 3px rgba(94, 80, 238, 0.12);
 }
 .billing-pay-stat--blue {
-  border-color: #c9d8ff;
+  border-color: #b9cbff;
 }
 .billing-pay-stat--green {
-  border-color: #bfe9d1;
+  border-color: #aee0c4;
 }
 .billing-pay-stat--red {
-  border-color: #f2c4c7;
+  border-color: #ebb0b5;
 }
 .billing-pay-stat--orange {
-  border-color: #ffd8ad;
+  border-color: #ffc98f;
 }
 .billing-pay-stat__body {
   display: flex;

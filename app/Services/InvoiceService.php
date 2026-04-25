@@ -431,6 +431,9 @@ class InvoiceService
         if ($invoice->isVoid()) {
             throw new \RuntimeException('Void invoices cannot be emailed.');
         }
+        if ($invoice->status === Invoice::STATUS_DRAFT) {
+            throw new \RuntimeException('Send the invoice first before emailing the customer.');
+        }
         $invoice = $this->ensureShareToken($invoice);
         $invoice->loadMissing('clientAccount');
         $available = $this->invoiceRecipientEmails($invoice);
@@ -452,11 +455,7 @@ class InvoiceService
         $url = $this->publicCustomerViewUrl($invoice);
 
         try {
-            Mail::to($selected)->send(new InvoiceSentMailable($invoice, $url, $customMessage));
-            if ($invoice->status === Invoice::STATUS_DRAFT) {
-                // Email send from draft should promote invoice to sent immediately.
-                $invoice = $this->markSent($invoice, $actor);
-            }
+            Mail::to($selected)->send(new InvoiceSentMailable($invoice, $url, $customMessage, $selected));
             $this->logHistory($invoice, $actor, 'emailed', $invoice->status, $invoice->status, [
                 'event_type' => InvoiceHistoryEventType::STATUS,
                 'history_message' => 'Invoice email sent.',
@@ -481,6 +480,9 @@ class InvoiceService
     {
         if ($invoice->isVoid()) {
             throw new \RuntimeException('Void invoices cannot be sent via WhatsApp.');
+        }
+        if ($invoice->status === Invoice::STATUS_DRAFT) {
+            throw new \RuntimeException('Send the invoice first before messaging via WhatsApp.');
         }
         $invoice = $this->ensureShareToken($invoice);
         $invoice->loadMissing('clientAccount');
@@ -730,10 +732,19 @@ class InvoiceService
 
     public function deleteDraft(Invoice $invoice): void
     {
-        if (! $invoice->isEditableDraft()) {
+        $this->deleteInvoice($invoice, false);
+    }
+
+    /**
+     * Permanently remove an invoice. Non-privileged users may only delete drafts.
+     */
+    public function deleteInvoice(Invoice $invoice, bool $force = false): void
+    {
+        if (! $force && ! $invoice->isEditableDraft()) {
             throw new \RuntimeException('Only draft invoices can be deleted.');
         }
         DB::transaction(function () use ($invoice) {
+            $invoice->imports()->delete();
             $invoice->items()->delete();
             $invoice->histories()->delete();
             $invoice->delete();
@@ -862,6 +873,7 @@ class InvoiceService
             'client_account_zip' => $account !== null ? $account->zip : null,
             'client_account_country' => $account !== null ? $account->country : null,
             'client_account_stripe_customer_id' => $account !== null ? $account->stripe_customer_id : null,
+            'client_account_whatsapp_e164' => $account !== null ? $account->whatsapp_e164 : null,
             'email_recipient_options' => $this->invoiceRecipientEmails($invoice),
             'customer_view_url' => $this->publicCustomerViewUrl($invoice),
             'customer_pdf_url' => $this->publicCustomerPdfUrl($invoice),
@@ -1598,7 +1610,7 @@ class InvoiceService
 
         $sortBy = $filters['sort_by'] ?? 'issued_at';
         $sortDir = strtolower((string) ($filters['sort_dir'] ?? 'desc')) === 'asc' ? 'asc' : 'desc';
-        $allowedSort = ['invoice_number', 'status', 'issued_at', 'due_at', 'total_cents', 'balance_due_cents', 'created_at'];
+        $allowedSort = ['id', 'invoice_number', 'status', 'issued_at', 'due_at', 'total_cents', 'balance_due_cents', 'created_at'];
         if (! in_array($sortBy, $allowedSort, true)) {
             $sortBy = 'created_at';
         }

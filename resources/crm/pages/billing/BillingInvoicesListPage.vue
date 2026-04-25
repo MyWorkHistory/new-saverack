@@ -37,6 +37,12 @@ function userHasPerm(key) {
 const canCreate = computed(() => userHasPerm("billing.create"));
 const canUpdate = computed(() => userHasPerm("billing.update"));
 const canDelete = computed(() => userHasPerm("billing.delete"));
+/** Administrator / CRM owner: may delete invoices in any status (backend-enforced). */
+const canHardDeleteInvoices = computed(() => {
+  const u = crmUser.value;
+  if (!u) return false;
+  return crmIsAdmin(u) || u.is_crm_owner;
+});
 
 const showCheckboxColumn = computed(() => canUpdate.value || canDelete.value);
 const tableColspan = computed(() => (showCheckboxColumn.value ? 9 : 8));
@@ -68,7 +74,7 @@ const query = reactive({
   search: "",
   per_page: DEFAULT_PER_PAGE,
   page: 1,
-  sort_by: "issued_at",
+  sort_by: "id",
   sort_dir: "desc",
   status: "all",
   client_account_id: "",
@@ -220,6 +226,24 @@ function statusBadgeClass(status) {
 function legacyStatusKey(row) {
   return String(row?.status_key || row?.status || "").toLowerCase();
 }
+
+const deleteModalTitle = computed(() => {
+  const row = deleteTarget.value;
+  if (!row) return "Delete draft?";
+  if (canHardDeleteInvoices.value && legacyStatusKey(row) !== "draft") {
+    return "Delete invoice?";
+  }
+  return "Delete draft?";
+});
+
+const deleteModalMessage = computed(() => {
+  const row = deleteTarget.value;
+  if (!row) return "";
+  if (canHardDeleteInvoices.value && legacyStatusKey(row) !== "draft") {
+    return `Permanently delete invoice ${row.invoice_number}? This cannot be undone.`;
+  }
+  return `Delete ${row.invoice_number}? This cannot be undone.`;
+});
 
 function displayStatusText(row) {
   const label = String(row?.status_label || "").trim();
@@ -665,9 +689,11 @@ const bulkVoidMessage = computed(() => {
 
 const bulkDeleteMessage = computed(() => {
   const n = selectedIds.value.length;
-  return n
-    ? `Delete ${n} selected draft invoice${n === 1 ? "" : "s"}? This cannot be undone. Non-drafts are skipped.`
-    : "";
+  if (!n) return "";
+  if (canHardDeleteInvoices.value) {
+    return `Delete ${n} selected invoice${n === 1 ? "" : "s"}? This cannot be undone.`;
+  }
+  return `Delete ${n} selected draft invoice${n === 1 ? "" : "s"}? This cannot be undone. Non-drafts are skipped.`;
 });
 
 async function confirmBulkSend() {
@@ -746,11 +772,19 @@ async function confirmBulkDelete() {
   await fetchRows();
   bulkBusy.value = false;
   if (ok && !fail) {
-    toast.success(`Deleted ${ok} draft${ok === 1 ? "" : "s"}.`);
+    toast.success(
+      canHardDeleteInvoices.value
+        ? `Deleted ${ok} invoice${ok === 1 ? "" : "s"}.`
+        : `Deleted ${ok} draft${ok === 1 ? "" : "s"}.`,
+    );
   } else if (ok) {
     toast.success(`Deleted ${ok}; ${fail} skipped or failed.`);
   } else {
-    toast.error("No invoices were deleted. Only drafts can be deleted.");
+    toast.error(
+      canHardDeleteInvoices.value
+        ? "No invoices were deleted."
+        : "No invoices were deleted. Only drafts can be deleted.",
+    );
   }
 }
 
@@ -1493,13 +1527,17 @@ onUnmounted(() => {
             Make Draft
           </button>
           <button
-            v-if="canDelete && legacyStatusKey(manageMenuRow) === 'draft'"
+            v-if="canDelete && (legacyStatusKey(manageMenuRow) === 'draft' || canHardDeleteInvoices)"
             type="button"
             class="staff-row-menu__item staff-row-menu__item--danger"
             role="menuitem"
             @click="openDeleteModal(manageMenuRow)"
           >
-            Delete Draft
+            {{
+              canHardDeleteInvoices && legacyStatusKey(manageMenuRow) !== "draft"
+                ? "Delete Invoice"
+                : "Delete Draft"
+            }}
           </button>
         </div>
       </Transition>
@@ -1653,12 +1691,8 @@ onUnmounted(() => {
 
     <ConfirmModal
       :open="deleteModalOpen"
-      title="Delete Draft?"
-      :message="
-        deleteTarget
-          ? `Delete ${deleteTarget.invoice_number}? This cannot be undone.`
-          : ''
-      "
+      :title="deleteModalTitle"
+      :message="deleteModalMessage"
       confirm-label="Delete"
       cancel-label="Cancel"
       :busy="deleteBusy"
@@ -1693,7 +1727,7 @@ onUnmounted(() => {
 
     <ConfirmModal
       :open="bulkDeleteOpen"
-      title="Bulk Delete Drafts?"
+      :title="canHardDeleteInvoices ? 'Bulk delete invoices?' : 'Bulk delete drafts?'"
       :message="bulkDeleteMessage"
       confirm-label="Delete"
       cancel-label="Cancel"

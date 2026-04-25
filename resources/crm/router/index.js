@@ -26,6 +26,7 @@ import ClientAccountUserDetailPage from "../pages/clients/ClientAccountUserDetai
 import BillingSummaryPage from "../pages/billing/BillingSummaryPage.vue";
 import BillingInvoicesListPage from "../pages/billing/BillingInvoicesListPage.vue";
 import BillingInvoiceDetailPage from "../pages/billing/BillingInvoiceDetailPage.vue";
+import InventoryPage from "../pages/inventory/InventoryPage.vue";
 
 const meta = {
   login: {
@@ -91,6 +92,10 @@ const meta = {
   billingInvoiceDetail: {
     title: "Save Rack | Invoice",
     description: "Invoice detail.",
+  },
+  inventory: {
+    title: "Save Rack | Inventory",
+    description: "ShipHero live inventory.",
   },
 };
 
@@ -229,6 +234,12 @@ const routes = [
   },
   { path: "/billing", redirect: "/billing/summary" },
   {
+    path: "/inventory",
+    name: "inventory",
+    component: InventoryPage,
+    meta: meta.inventory,
+  },
+  {
     path: "/webmaster",
     name: "webmaster",
     component: WebmasterTasksPage,
@@ -262,6 +273,9 @@ let clientsNavCache = null;
 /** Billing module: permissions from /auth/me (see setBillingNavFromUser). */
 let billingNavCache = null;
 
+/** Inventory (ShipHero): permissions from /auth/me (see setInventoryNavFromUser). */
+let inventoryNavCache = null;
+
 /** True when the signed-in CRM user is an administrator (`crmIsAdmin`); used for permissions routes only. */
 let usersMeIsAdmin = false;
 
@@ -270,6 +284,7 @@ export function clearCrmOwnerCache() {
   usersNavCache = null;
   clientsNavCache = null;
   billingNavCache = null;
+  inventoryNavCache = null;
   usersMeIsAdmin = false;
 }
 
@@ -356,6 +371,22 @@ export function setBillingNavFromUser(user) {
   };
 }
 
+export function setInventoryNavFromUser(user) {
+  if (!user) {
+    inventoryNavCache = null;
+    return;
+  }
+  if (crmIsAdmin(user) || user.is_crm_owner) {
+    inventoryNavCache = { view: true, update: true };
+    return;
+  }
+  const k = Array.isArray(user.permission_keys) ? user.permission_keys : [];
+  inventoryNavCache = {
+    view: k.includes("inventory.view"),
+    update: k.includes("inventory.update"),
+  };
+}
+
 async function ensureClientsRouteAccess(path) {
   if (clientsNavCache === null) {
     try {
@@ -364,11 +395,13 @@ async function ensureClientsRouteAccess(path) {
       setClientsNavFromUser(data);
       setWebmasterNavFromUser(data);
       setBillingNavFromUser(data);
+      setInventoryNavFromUser(data);
     } catch (e) {
       if (e.response?.status === 401) {
         localStorage.removeItem("auth_token");
         clientsNavCache = null;
         billingNavCache = null;
+        inventoryNavCache = null;
       }
       return false;
     }
@@ -387,11 +420,13 @@ async function ensureUsersRouteAccess(path) {
       setClientsNavFromUser(data);
       setWebmasterNavFromUser(data);
       setBillingNavFromUser(data);
+      setInventoryNavFromUser(data);
     } catch (e) {
       if (e.response?.status === 401) {
         localStorage.removeItem("auth_token");
         usersNavCache = null;
         billingNavCache = null;
+        inventoryNavCache = null;
       }
       return false;
     }
@@ -447,6 +482,7 @@ async function ensureWebmasterRouteAccess() {
     setClientsNavFromUser(data);
     setWebmasterNavFromUser(data);
     setBillingNavFromUser(data);
+    setInventoryNavFromUser(data);
     const ok = userCanWebmaster(data);
     webmasterNavCache = ok;
     return ok;
@@ -469,16 +505,42 @@ async function ensureBillingRouteAccess(path) {
       setClientsNavFromUser(data);
       setWebmasterNavFromUser(data);
       setBillingNavFromUser(data);
+      setInventoryNavFromUser(data);
     } catch (e) {
       if (e.response?.status === 401) {
         localStorage.removeItem("auth_token");
         billingNavCache = null;
+        inventoryNavCache = null;
       }
       return false;
     }
   }
   if (path === "/billing" || path.startsWith("/billing/")) {
     return billingNavCache.view === true;
+  }
+  return true;
+}
+
+async function ensureInventoryRouteAccess(path) {
+  if (inventoryNavCache === null) {
+    try {
+      const { data } = await api.get("/auth/me");
+      setUsersNavFromUser(data);
+      setClientsNavFromUser(data);
+      setWebmasterNavFromUser(data);
+      setBillingNavFromUser(data);
+      setInventoryNavFromUser(data);
+    } catch (e) {
+      if (e.response?.status === 401) {
+        localStorage.removeItem("auth_token");
+        inventoryNavCache = null;
+        billingNavCache = null;
+      }
+      return false;
+    }
+  }
+  if (path === "/inventory" || path.startsWith("/inventory/")) {
+    return inventoryNavCache.view === true;
   }
   return true;
 }
@@ -537,6 +599,16 @@ router.beforeEach(async (to) => {
 
   if (to.path.startsWith("/billing")) {
     const ok = await ensureBillingRouteAccess(to.path);
+    if (!ok) {
+      if (!localStorage.getItem("auth_token")) {
+        return { name: "login", query: { redirect: to.fullPath } };
+      }
+      return { path: "/dashboard" };
+    }
+  }
+
+  if (to.path.startsWith("/inventory")) {
+    const ok = await ensureInventoryRouteAccess(to.path);
     if (!ok) {
       if (!localStorage.getItem("auth_token")) {
         return { name: "login", query: { redirect: to.fullPath } };

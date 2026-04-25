@@ -40,4 +40,11 @@ return [
         'webhook_secret' => env('STRIPE_WEBHOOK_SECRET'),
     ],
 
+    'shiphero' => [
+        'api_url' => env('SHIPHERO_API_URL', 'https://public-api.shiphero.com/graphql'),
+        'auth_url' => env('SHIPHERO_AUTH_URL', 'https://public-api.shiphero.com/auth'),
+        'refresh_token' => env('SHIPHERO_REFRESH_TOKEN'),
+        'customer_account_id' => env('SHIPHERO_CUSTOMER_ACCOUNT_ID'),
+    ],
+
 ];

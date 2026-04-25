@@ -27,8 +27,24 @@ function userHasPerm(key) {
   return Array.isArray(u.permission_keys) && u.permission_keys.includes(key);
 }
 
+const CLIENT_PAYMENT_TYPE_OPTIONS = [
+  "ACH",
+  "Wire",
+  "Check",
+  "Manual",
+  "Credit Card",
+  "Paypal",
+  "Varies",
+];
+
 const canUpdate = computed(() => userHasPerm("billing.update"));
+const canUpdateClientAccount = computed(() => userHasPerm("clients.update"));
 const canDelete = computed(() => userHasPerm("billing.delete"));
+const canHardDeleteInvoices = computed(() => {
+  const u = crmUser.value;
+  if (!u) return false;
+  return crmIsAdmin(u) || u.is_crm_owner;
+});
 
 const loading = ref(true);
 const invoice = ref(null);
@@ -61,6 +77,14 @@ const deleteBusy = ref(false);
 
 const pdfDownloading = ref(false);
 const copyLinkBusy = ref(false);
+const openInvoiceTabBusy = ref(false);
+const editBillingPeriodStart = ref("");
+const editBillingPeriodEnd = ref("");
+const editPaymentType = ref("");
+const paymentTypeSaving = ref(false);
+const whatsappCaptureModalOpen = ref(false);
+const whatsappCaptureE164 = ref("");
+const whatsappCaptureBusy = ref(false);
 const selectedTableRowId = ref("");
 const sendEmailBusy = ref(false);
 const sendEmailModalOpen = ref(false);
@@ -226,12 +250,19 @@ const canRestoreDraft = computed(
 
 const canShareInvoice = computed(() => !!invoice.value && currentStatusKey.value !== "void");
 
-const canEmailInvoice = computed(
+/** Show Email / WhatsApp actions for non-void invoices with billing update (disabled while draft). */
+const canShowMessagingActions = computed(
   () => !!invoice.value && canUpdate.value && currentStatusKey.value !== "void",
 );
 
-const canSendWhatsapp = computed(
-  () => !!invoice.value && canUpdate.value && currentStatusKey.value !== "void",
+const messagingActionsDisabled = computed(() => currentStatusKey.value === "draft");
+
+const messagingActionsDisabledTitle = computed(() =>
+  messagingActionsDisabled.value ? "Send the invoice first to enable messaging." : "",
+);
+
+const canSendInvoiceFromDraft = computed(
+  () => !!invoice.value && canUpdate.value && currentStatusKey.value === "draft",
 );
 
 const hasStripeCustomerId = computed(() => {
@@ -323,6 +354,12 @@ const invoicePaymentTypeDisplay = computed(() => {
   const t = invoice.value?.client_account_default_payment_type;
   if (t == null || String(t).trim() === "") return "";
   return String(t).trim();
+});
+
+const clientAccountDetailHref = computed(() => {
+  const id = invoice.value?.client_account_id;
+  if (id == null || id === "") return "";
+  return `/clients/accounts/${encodeURIComponent(String(id))}`;
 });
 
 function formatQtyDisplay(v) {
@@ -498,18 +535,7 @@ async function copyCustomerLink() {
   if (!invoice.value?.id || copyLinkBusy.value) return;
   copyLinkBusy.value = true;
   try {
-    let url = invoice.value.customer_view_url;
-    if (!url) {
-      const { data } = await api.post(`/invoices/${invoice.value.id}/share-link`);
-      url = data?.customer_view_url;
-      if (url) {
-        invoice.value = {
-          ...invoice.value,
-          customer_view_url: data.customer_view_url,
-          customer_pdf_url: data.customer_pdf_url,
-        };
-      }
-    }
+    const url = await ensureCustomerViewUrl();
     if (!url) {
       toast.error("Could not create customer link.");
       return;
@@ -528,14 +554,77 @@ async function copyCustomerLink() {
   }
 }
 
+async function ensureCustomerViewUrl() {
+  if (!invoice.value?.id) return null;
+  let url = invoice.value.customer_view_url;
+  if (!url) {
+    const { data } = await api.post(`/invoices/${invoice.value.id}/share-link`);
+    url = data?.customer_view_url;
+    if (url) {
+      invoice.value = {
+        ...invoice.value,
+        customer_view_url: data.customer_view_url,
+        customer_pdf_url: data.customer_pdf_url,
+      };
+    }
+  }
+  return url || null;
+}
+
+async function openPublicInvoiceInNewTab() {
+  if (!invoice.value?.id || openInvoiceTabBusy.value) return;
+  openInvoiceTabBusy.value = true;
+  try {
+    const url = await ensureCustomerViewUrl();
+    if (!url) {
+      toast.error("Could not open customer invoice link.");
+      return;
+    }
+    window.open(url, "_blank", "noopener,noreferrer");
+  } catch (e) {
+    toast.errorFrom(e, "Could not open invoice.");
+  } finally {
+    openInvoiceTabBusy.value = false;
+  }
+}
+
+async function saveClientPaymentType() {
+  if (!invoice.value?.client_account_id || !canUpdateClientAccount.value) {
+    toast.error("You do not have permission to update this client account.");
+    return;
+  }
+  const v = String(editPaymentType.value || "").trim();
+  paymentTypeSaving.value = true;
+  try {
+    await api.patch(`/client-accounts/${invoice.value.client_account_id}`, {
+      default_payment_type: v || null,
+    });
+    toast.success("Payment type updated.");
+    await load();
+  } catch (e) {
+    toast.errorFrom(e, "Could not update payment type.");
+  } finally {
+    paymentTypeSaving.value = false;
+  }
+}
+
 function syncEditFromInvoice() {
   const inv = invoice.value;
+  editPaymentType.value = String(inv?.client_account_default_payment_type || "").trim();
   if (!inv || invoiceStatusKey(inv) !== "draft") {
     editDueAt.value = "";
+    editBillingPeriodStart.value = "";
+    editBillingPeriodEnd.value = "";
     editLines.value = [];
     return;
   }
   editDueAt.value = inv.due_at ? String(inv.due_at).slice(0, 10) : "";
+  editBillingPeriodStart.value = inv.billing_period_start
+    ? String(inv.billing_period_start).slice(0, 10)
+    : "";
+  editBillingPeriodEnd.value = inv.billing_period_end
+    ? String(inv.billing_period_end).slice(0, 10)
+    : "";
   const items = inv.items || [];
   editLines.value = items.length
     ? items.map((i) => ({
@@ -634,6 +723,8 @@ async function saveDraft() {
   try {
     await api.patch(`/invoices/${invoice.value.id}`, {
       due_at: editDueAt.value || null,
+      billing_period_start: editBillingPeriodStart.value || null,
+      billing_period_end: editBillingPeriodEnd.value || null,
       items,
     });
     toast.success("Draft saved.");
@@ -668,6 +759,7 @@ async function sendInvoice() {
 }
 
 function openSendEmailModal() {
+  if (messagingActionsDisabled.value) return;
   sendEmailMessage.value = "";
   sendEmailRecipients.value = [...emailRecipientOptionList.value];
   sendEmailModalOpen.value = true;
@@ -700,7 +792,7 @@ async function confirmSendEmail() {
     });
     const toCount = Array.isArray(data?.recipients) ? data.recipients.length : 0;
     toast.success(toCount ? `Email sent to ${toCount} recipient(s).` : "Email sent.");
-    closeSendEmailModal();
+    sendEmailModalOpen.value = false;
     await load();
   } catch (e) {
     toast.errorFrom(e, "Could not send email.");
@@ -737,6 +829,17 @@ async function ensureShareLinkForMessaging() {
 }
 
 function openSendWhatsappModal() {
+  if (!invoice.value || messagingActionsDisabled.value) return;
+  const wa = String(invoice.value.client_account_whatsapp_e164 || "").trim();
+  if (!wa) {
+    if (!canUpdateClientAccount.value) {
+      toast.error("Add a WhatsApp number on the client account first.");
+      return;
+    }
+    whatsappCaptureE164.value = "";
+    whatsappCaptureModalOpen.value = true;
+    return;
+  }
   sendWhatsappType.value = "send_invoice";
   sendWhatsappMessage.value = buildWhatsappDefaultMessage(sendWhatsappType.value);
   sendWhatsappModalOpen.value = true;
@@ -745,6 +848,40 @@ function openSendWhatsappModal() {
       sendWhatsappMessage.value = buildWhatsappDefaultMessage(sendWhatsappType.value);
     })
     .catch(() => {});
+}
+
+function closeWhatsappCaptureModal() {
+  if (whatsappCaptureBusy.value) return;
+  whatsappCaptureModalOpen.value = false;
+}
+
+async function confirmWhatsappCapture() {
+  if (!invoice.value?.client_account_id || !canUpdateClientAccount.value) {
+    toast.error("You do not have permission to update this client account.");
+    return;
+  }
+  const raw = String(whatsappCaptureE164.value || "").trim();
+  if (!raw) {
+    toast.error("Enter a WhatsApp number (E.164, e.g. +15551234567).");
+    return;
+  }
+  whatsappCaptureBusy.value = true;
+  try {
+    await api.patch(`/client-accounts/${invoice.value.client_account_id}`, {
+      whatsapp_e164: raw,
+    });
+    invoice.value = {
+      ...invoice.value,
+      client_account_whatsapp_e164: raw,
+    };
+    toast.success("WhatsApp number saved.");
+    whatsappCaptureModalOpen.value = false;
+    openSendWhatsappModal();
+  } catch (e) {
+    toast.errorFrom(e, "Could not save WhatsApp number.");
+  } finally {
+    whatsappCaptureBusy.value = false;
+  }
 }
 
 function closeSendWhatsappModal() {
@@ -764,7 +901,7 @@ async function confirmSendWhatsapp() {
       message: sendWhatsappMessage.value || null,
     });
     toast.success("WhatsApp message sent.");
-    closeSendWhatsappModal();
+    sendWhatsappModalOpen.value = false;
     await load();
   } catch (e) {
     toast.errorFrom(e, "Could not send via WhatsApp.");
@@ -958,7 +1095,10 @@ async function confirmGroupEdit() {
       { items: payloadItems },
     );
     toast.success("Grouped line items updated.");
-    closeGroupEditModal();
+    groupEditModalOpen.value = false;
+    groupEditTarget.value = null;
+    groupBulkQty.value = "";
+    groupBulkPrice.value = "";
     await load();
   } catch (e) {
     toast.errorFrom(e, "Could not update grouped line items.");
@@ -986,7 +1126,10 @@ async function confirmGroupDelete() {
       `/invoices/${invoice.value.id}/line-groups/${encodeURIComponent(groupEditTarget.value.line_group_key)}`,
     );
     toast.success("Grouped line items deleted.");
-    closeGroupDeleteModal();
+    groupDeleteModalOpen.value = false;
+    groupEditTarget.value = null;
+    groupEditModalOpen.value = false;
+    groupEditLines.value = [];
     await load();
   } catch (e) {
     toast.errorFrom(e, "Could not delete grouped line items.");
@@ -1056,7 +1199,8 @@ async function confirmLineEdit() {
       metadata: Object.keys(metadata).length ? metadata : null,
     });
     toast.success("Line item updated.");
-    closeLineEditModal();
+    lineEditModalOpen.value = false;
+    lineEditTarget.value = null;
     await load();
   } catch (e) {
     toast.errorFrom(e, "Could not update line item.");
@@ -1082,7 +1226,8 @@ async function confirmLineDelete() {
   try {
     await api.delete(`/invoices/${invoice.value.id}/items/${lineEditTarget.value.id}`);
     toast.success("Line item deleted.");
-    closeLineDeleteModal();
+    lineDeleteModalOpen.value = false;
+    lineEditTarget.value = null;
     await load();
   } catch (e) {
     toast.errorFrom(e, "Could not delete line item.");
@@ -1232,6 +1377,11 @@ function openRightMenuDownloadPdf() {
   downloadInvoicePdf();
 }
 
+function openRightMenuOpenInvoice() {
+  closeRightActionsMenu();
+  openPublicInvoiceInNewTab();
+}
+
 function openRightMenuCcFee() {
   closeRightActionsMenu();
   openCcFeeModal();
@@ -1240,6 +1390,11 @@ function openRightMenuCcFee() {
 function openRightMenuRestoreDraft() {
   closeRightActionsMenu();
   restoreInvoiceDraft();
+}
+
+function openRightMenuDelete() {
+  closeRightActionsMenu();
+  openDeleteModal();
 }
 
 async function openStripeModal() {
@@ -1531,11 +1686,19 @@ function onDocKeydown(e) {
           <button
             v-if="currentStatusKey !== 'void'"
             type="button"
-            class="btn btn-outline-secondary btn-sm"
+            class="btn btn-outline-primary btn-sm"
             :disabled="copyLinkBusy"
             @click="copyCustomerLink"
           >
             {{ copyLinkBusy ? "Working…" : "Copy Customer Link" }}
+          </button>
+          <button
+            v-if="canSendInvoiceFromDraft"
+            type="button"
+            class="btn btn-outline-primary btn-sm"
+            @click="sendInvoice"
+          >
+            Send Invoice
           </button>
           <button
             v-if="payInvoiceVisible"
@@ -1548,17 +1711,23 @@ function onDocKeydown(e) {
             Pay Invoice
           </button>
           <button
-            v-if="canEmailInvoice"
+            v-if="canShowMessagingActions"
             type="button"
-            class="btn btn-outline-primary btn-sm"
+            class="btn btn-sm"
+            :class="messagingActionsDisabled ? 'btn-outline-secondary' : 'btn-outline-primary'"
+            :disabled="messagingActionsDisabled"
+            :title="messagingActionsDisabledTitle || undefined"
             @click="openSendEmailModal"
           >
             Email Invoice
           </button>
           <button
-            v-if="canSendWhatsapp"
+            v-if="canShowMessagingActions"
             type="button"
-            class="btn btn-outline-primary btn-sm"
+            class="btn btn-sm"
+            :class="messagingActionsDisabled ? 'btn-outline-secondary' : 'btn-outline-primary'"
+            :disabled="messagingActionsDisabled"
+            :title="messagingActionsDisabledTitle || undefined"
             @click="openSendWhatsappModal"
           >
             Send To Whatsapp
@@ -1594,7 +1763,14 @@ function onDocKeydown(e) {
                   <div class="min-w-0 billing-inv-invoice-to-block">
                     <div class="billing-inv-section-label">Invoice to</div>
                     <div class="fw-bold text-body fs-5 mb-1">
-                      {{ invoice.client_company_name || "—" }}
+                      <a
+                        v-if="invoice.client_account_id && clientAccountDetailHref"
+                        :href="clientAccountDetailHref"
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        class="text-body text-decoration-none billing-inv-client-link"
+                      >{{ invoice.client_company_name || "—" }}</a>
+                      <template v-else>{{ invoice.client_company_name || "—" }}</template>
                     </div>
                     <div
                       v-if="invoice.client_account_contact_name"
@@ -1629,21 +1805,24 @@ function onDocKeydown(e) {
                     {{ invoice.invoice_number }}
                   </h1>
                   <div class="small billing-inv-meta-list">
-                    <div class="mb-1">
+                    <div v-if="currentStatusKey === 'draft' && canUpdate" class="mb-2 text-lg-end">
+                      <div class="text-secondary mb-1">Invoice Date (service period)</div>
+                      <div class="d-inline-flex flex-wrap align-items-center gap-1 justify-content-lg-end">
+                        <input v-model="editBillingPeriodStart" type="date" class="form-control form-control-sm billing-inv-date-input" />
+                        <span class="text-secondary">–</span>
+                        <input v-model="editBillingPeriodEnd" type="date" class="form-control form-control-sm billing-inv-date-input" />
+                      </div>
+                    </div>
+                    <div v-else class="mb-1">
                       <span class="text-secondary">Invoice Date</span>
                       <span class="fw-medium ms-1">{{ invoiceDateRangeLabel }}</span>
                     </div>
                     <div class="mb-1">
-                      <span class="text-secondary">Date due</span>
-                      <span class="fw-medium ms-1">
-                        {{
-                          currentStatusKey === "draft" && canUpdate
-                            ? editDueAt
-                              ? formatInvoiceShortDate(editDueAt)
-                              : "—"
-                            : formatInvoiceShortDate(invoice.due_at)
-                        }}
-                      </span>
+                      <span class="text-secondary d-lg-block">Date due</span>
+                      <template v-if="currentStatusKey === 'draft' && canUpdate">
+                        <input v-model="editDueAt" type="date" class="form-control form-control-sm billing-inv-date-input d-inline-block mt-1 mt-lg-0 ms-lg-1" />
+                      </template>
+                      <span v-else class="fw-medium ms-1">{{ formatInvoiceShortDate(invoice.due_at) }}</span>
                     </div>
                     <div v-if="invoice.payment_terms" class="mb-1">
                       <span class="text-secondary">Terms</span>
@@ -1661,7 +1840,21 @@ function onDocKeydown(e) {
             <div class="row g-4 mb-4">
               <div class="col-md-6">
                 <div class="billing-inv-section-label">Payment type</div>
-                <div class="fw-medium text-body">
+                <div v-if="canUpdateClientAccount && invoice.client_account_id" class="d-flex flex-wrap align-items-center gap-2">
+                  <select v-model="editPaymentType" class="form-select form-select-sm billing-inv-payment-select">
+                    <option value="">—</option>
+                    <option v-for="opt in CLIENT_PAYMENT_TYPE_OPTIONS" :key="opt" :value="opt">{{ opt }}</option>
+                  </select>
+                  <button
+                    type="button"
+                    class="btn btn-sm btn-primary"
+                    :disabled="paymentTypeSaving"
+                    @click="saveClientPaymentType"
+                  >
+                    {{ paymentTypeSaving ? "Saving…" : "Save" }}
+                  </button>
+                </div>
+                <div v-else class="fw-medium text-body">
                   {{ invoicePaymentTypeDisplay || "—" }}
                 </div>
               </div>
@@ -2052,6 +2245,19 @@ function onDocKeydown(e) {
                   Make Draft
                 </button>
                 <button
+                  v-if="canDelete && (currentStatusKey === 'draft' || canHardDeleteInvoices)"
+                  type="button"
+                  class="staff-row-menu__item staff-row-menu__item--danger"
+                  role="menuitem"
+                  @click="openRightMenuDelete"
+                >
+                  {{
+                    canHardDeleteInvoices && currentStatusKey !== "draft"
+                      ? "Delete Invoice"
+                      : "Delete Draft"
+                  }}
+                </button>
+                <button
                   v-if="canShareInvoice"
                   type="button"
                   class="staff-row-menu__item"
@@ -2060,6 +2266,16 @@ function onDocKeydown(e) {
                   @click="openRightMenuDownloadPdf"
                 >
                   {{ pdfDownloading ? "Downloading..." : "Download PDF" }}
+                </button>
+                <button
+                  v-if="canShareInvoice"
+                  type="button"
+                  class="staff-row-menu__item"
+                  role="menuitem"
+                  :disabled="openInvoiceTabBusy"
+                  @click="openRightMenuOpenInvoice"
+                >
+                  {{ openInvoiceTabBusy ? "Opening…" : "Open Invoice" }}
                 </button>
                 <button
                   v-if="canAddCharge"
@@ -2413,6 +2629,56 @@ function onDocKeydown(e) {
                 @click="confirmSendEmail"
               >
                 {{ sendEmailBusy ? "Sending…" : "Send Email" }}
+              </button>
+            </footer>
+          </div>
+        </div>
+      </Transition>
+    </Teleport>
+
+    <Teleport to="body">
+      <Transition name="crm-vx-confirm">
+        <div
+          v-if="whatsappCaptureModalOpen"
+          class="crm-vx-modal-overlay"
+          role="dialog"
+          aria-modal="true"
+          @click.self="closeWhatsappCaptureModal"
+        >
+          <div class="crm-vx-modal crm-vx-modal--sm" @click.stop>
+            <header class="crm-vx-modal__head">
+              <h2 class="crm-vx-modal__title">Add WhatsApp number</h2>
+            </header>
+            <div class="crm-vx-modal__body">
+              <p class="small text-secondary mb-3">
+                This client account does not have a WhatsApp number on file. Enter an E.164 number (e.g. +15551234567). It will be saved to the client profile.
+              </p>
+              <label class="form-label" for="billing-inv-wa-capture">WhatsApp (E.164)</label>
+              <input
+                id="billing-inv-wa-capture"
+                v-model="whatsappCaptureE164"
+                type="text"
+                class="form-control"
+                placeholder="+15551234567"
+                autocomplete="tel"
+              />
+            </div>
+            <footer class="crm-vx-modal__footer d-flex gap-2 justify-content-end">
+              <button
+                type="button"
+                class="crm-vx-modal-btn crm-vx-modal-btn--secondary"
+                :disabled="whatsappCaptureBusy"
+                @click="closeWhatsappCaptureModal"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                class="crm-vx-modal-btn crm-vx-modal-btn--primary"
+                :disabled="whatsappCaptureBusy"
+                @click="confirmWhatsappCapture"
+              >
+                {{ whatsappCaptureBusy ? "Saving…" : "Save & continue" }}
               </button>
             </footer>
           </div>
@@ -2923,9 +3189,17 @@ function onDocKeydown(e) {
 
     <ConfirmModal
       :open="deleteModalOpen"
-      title="Delete Draft?"
+      :title="
+        invoice && canHardDeleteInvoices && currentStatusKey !== 'draft'
+          ? 'Delete invoice?'
+          : 'Delete draft?'
+      "
       :message="
-        invoice ? `Delete ${invoice.invoice_number}? This cannot be undone.` : ''
+        invoice && canHardDeleteInvoices && currentStatusKey !== 'draft'
+          ? `Permanently delete invoice ${invoice.invoice_number}? This cannot be undone.`
+          : invoice
+            ? `Delete ${invoice.invoice_number}? This cannot be undone.`
+            : ''
       "
       confirm-label="Delete"
       cancel-label="Cancel"
@@ -3311,5 +3585,16 @@ function onDocKeydown(e) {
 }
 .billing-send-email-message {
   margin-top: 0.35rem;
+}
+.billing-inv-client-link:hover {
+  text-decoration: underline !important;
+}
+.billing-inv-date-input {
+  width: auto;
+  min-width: 9.5rem;
+  max-width: 100%;
+}
+.billing-inv-payment-select {
+  max-width: 12rem;
 }
 </style>

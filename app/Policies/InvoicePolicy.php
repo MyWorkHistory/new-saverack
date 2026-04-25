@@ -38,7 +38,15 @@ class InvoicePolicy
 
     public function delete(User $user, Invoice $invoice): bool
     {
+        if ($user->isAdministrator() || $user->isCrmOwner()) {
+            return true;
+        }
+
         if ($invoice->isVoid()) {
+            return false;
+        }
+
+        if (! $invoice->isEditableDraft()) {
             return false;
         }
 

@@ -10,6 +10,7 @@ import {
   clearCrmOwnerCache,
   setBillingNavFromUser,
   setClientsNavFromUser,
+  setInventoryNavFromUser,
   setUsersNavFromUser,
   setWebmasterNavFromUser,
 } from "./router";
@@ -46,6 +47,7 @@ const loadMe = async () => {
     setUsersNavFromUser(data);
     setClientsNavFromUser(data);
     setBillingNavFromUser(data);
+    setInventoryNavFromUser(data);
   } catch (e) {
     me.value = null;
     if (e.response?.status === 401) {

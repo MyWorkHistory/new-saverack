@@ -72,6 +72,8 @@ class RolePermissionSeeder extends Seeder
             ['key' => 'billing.create', 'label' => 'Create invoices', 'module' => 'billing'],
             ['key' => 'billing.update', 'label' => 'Update invoices', 'module' => 'billing'],
             ['key' => 'billing.delete', 'label' => 'Delete draft invoices', 'module' => 'billing'],
+            ['key' => 'inventory.view', 'label' => 'View inventory', 'module' => 'inventory'],
+            ['key' => 'inventory.update', 'label' => 'Update inventory quantities', 'module' => 'inventory'],
         ])->map(function (array $p) {
             return Permission::query()->firstOrCreate(
                 ['key' => $p['key']],

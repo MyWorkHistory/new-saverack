@@ -41,6 +41,13 @@ const canViewBilling = computed(() => {
   return k.includes("billing.view");
 });
 
+const canViewInventory = computed(() => {
+  if (crmIsAdmin(props.user) || props.user?.is_crm_owner) return true;
+  const k = props.user?.permission_keys;
+  if (!Array.isArray(k)) return false;
+  return k.includes("inventory.view");
+});
+
 const clientsGroupOpen = ref(route.path.startsWith("/clients"));
 const billingGroupOpen = ref(route.path.startsWith("/billing"));
 watch(
@@ -68,6 +75,7 @@ function navActive(mode) {
   if (mode === "clients") return p.startsWith("/clients");
   if (mode === "clients-accounts") return p.startsWith("/clients/accounts");
   if (mode === "clients-users") return p.startsWith("/clients/users");
+  if (mode === "inventory") return p.startsWith("/inventory");
   return false;
 }
 
@@ -352,6 +360,29 @@ function collapseNav() {
                 d="M19.5 14.25v-2.625a3.375 3.375 0 0 0-3.375-3.375h-1.5A1.125 1.125 0 0 1 13.5 7.125v-1.5a3.375 3.375 0 0 0-3.375-3.375H8.25m0 12.75h7.5m-7.5 3H12M10.5 2.25H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 0 0-9-9Z"
               />
             </svg>
+          </RouterLink>
+        </li>
+        <li v-if="canViewInventory">
+          <RouterLink
+            to="/inventory"
+            class="vx-nav-link"
+            :class="{ 'vx-nav-link--active': navActive('inventory') }"
+            :title="!isExpanded ? 'Inventory' : undefined"
+            @click="closeMobile"
+          >
+            <svg
+              fill="none"
+              viewBox="0 0 24 24"
+              stroke="currentColor"
+              stroke-width="1.5"
+            >
+              <path
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                d="m20.25 7.5-.625 10.632a2.25 2.25 0 0 1-2.247 2.118H6.622a2.25 2.25 0 0 1-2.247-2.118L3.75 7.5M10 11.25h4M3.375 7.5h17.25c.621 0 1.125-.504 1.125-1.125v-1.5c0-.621-.504-1.125-1.125-1.125H3.375c-.621 0-1.125.504-1.125 1.125v1.5c0 .621.504 1.125 1.125 1.125Z"
+              />
+            </svg>
+            <span v-if="isExpanded">Inventory</span>
           </RouterLink>
         </li>
         <li v-if="canViewWebmaster">

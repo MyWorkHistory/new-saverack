@@ -9,6 +9,7 @@ use App\Services\StripeInvoicePaymentService;
 use App\Models\Invoice;
 use App\Models\InvoiceItem;
 use App\Models\Permission;
+use App\Models\Role;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\UploadedFile;
@@ -43,6 +44,14 @@ class BillingInvoiceApiTest extends TestCase
         return Permission::query()->firstOrCreate(
             ['key' => 'billing.update'],
             ['label' => 'Update invoices', 'module' => 'billing']
+        );
+    }
+
+    private function billingDeletePermission(): Permission
+    {
+        return Permission::query()->firstOrCreate(
+            ['key' => 'billing.delete'],
+            ['label' => 'Delete draft invoices', 'module' => 'billing']
         );
     }
 
@@ -1849,5 +1858,147 @@ class BillingInvoiceApiTest extends TestCase
             ->assertJsonPath('status', Invoice::STATUS_DRAFT)
             ->assertJsonPath('status_key', 'draft')
             ->assertJsonPath('status_label', 'Draft');
+    }
+
+    public function test_administrator_can_delete_invoice_regardless_of_status(): void
+    {
+        $adminRole = Role::query()->firstOrCreate(
+            ['name' => 'admin'],
+            ['label' => 'Administrator', 'description' => 'Full access', 'is_system' => true]
+        );
+        $user = User::factory()->create();
+        $user->roles()->attach($adminRole->id);
+        Sanctum::actingAs($user);
+
+        $client = ClientAccount::query()->create([
+            'status' => ClientAccount::STATUS_ACTIVE,
+            'company_name' => 'Admin Delete Co',
+            'email' => 'admin-del@acme.test',
+        ]);
+        $invoice = Invoice::query()->create([
+            'invoice_number' => 'INV-ADMIN-DEL-001',
+            'client_account_id' => $client->id,
+            'status' => Invoice::STATUS_SENT,
+            'currency' => 'USD',
+            'subtotal_cents' => 1000,
+            'tax_cents' => 0,
+            'total_cents' => 1000,
+            'amount_paid_cents' => 0,
+            'balance_due_cents' => 1000,
+        ]);
+
+        $this->deleteJson("/api/invoices/{$invoice->id}")
+            ->assertOk()
+            ->assertJsonPath('message', 'Invoice deleted.');
+
+        $this->assertDatabaseMissing('invoices', ['id' => $invoice->id]);
+    }
+
+    public function test_staff_with_billing_delete_cannot_delete_sent_invoice(): void
+    {
+        $user = User::factory()->create();
+        $user->permissions()->sync([
+            $this->billingViewPermission()->id,
+            $this->billingDeletePermission()->id,
+        ]);
+        Sanctum::actingAs($user);
+
+        $client = ClientAccount::query()->create([
+            'status' => ClientAccount::STATUS_ACTIVE,
+            'company_name' => 'Staff Delete Co',
+            'email' => 'staff-del@acme.test',
+        ]);
+        $invoice = Invoice::query()->create([
+            'invoice_number' => 'INV-STAFF-DEL-001',
+            'client_account_id' => $client->id,
+            'status' => Invoice::STATUS_SENT,
+            'currency' => 'USD',
+            'subtotal_cents' => 1000,
+            'tax_cents' => 0,
+            'total_cents' => 1000,
+            'amount_paid_cents' => 0,
+            'balance_due_cents' => 1000,
+        ]);
+
+        $this->deleteJson("/api/invoices/{$invoice->id}")->assertForbidden();
+        $this->assertDatabaseHas('invoices', ['id' => $invoice->id]);
+    }
+
+    public function test_email_invoice_rejected_when_status_is_draft(): void
+    {
+        Mail::fake();
+
+        $user = User::factory()->create();
+        $user->permissions()->sync([
+            $this->billingViewPermission()->id,
+            $this->billingUpdatePermission()->id,
+        ]);
+        Sanctum::actingAs($user);
+
+        $client = ClientAccount::query()->create([
+            'status' => ClientAccount::STATUS_ACTIVE,
+            'company_name' => 'Draft Mail Co',
+            'email' => 'draft-mail@test.example',
+        ]);
+
+        $invoice = Invoice::query()->create([
+            'invoice_number' => 'INV-DRAFT-EMAIL-001',
+            'client_account_id' => $client->id,
+            'status' => Invoice::STATUS_DRAFT,
+            'currency' => 'USD',
+            'subtotal_cents' => 100,
+            'tax_cents' => 0,
+            'total_cents' => 100,
+            'amount_paid_cents' => 0,
+            'balance_due_cents' => 100,
+        ]);
+
+        $this->postJson("/api/invoices/{$invoice->id}/email", [
+            'recipients' => ['draft-mail@test.example'],
+        ])
+            ->assertStatus(422)
+            ->assertJsonFragment(['message' => 'Send the invoice first before emailing the customer.']);
+
+        Mail::assertNothingSent();
+    }
+
+    public function test_whatsapp_rejected_when_status_is_draft(): void
+    {
+        Http::fake([
+            '*' => Http::response(['ok' => true], 200),
+        ]);
+        config()->set('billing.whatsapp.endpoint', 'https://example.com/send');
+
+        $user = User::factory()->create();
+        $user->permissions()->sync([
+            $this->billingViewPermission()->id,
+            $this->billingUpdatePermission()->id,
+        ]);
+        Sanctum::actingAs($user);
+
+        $client = ClientAccount::query()->create([
+            'status' => ClientAccount::STATUS_ACTIVE,
+            'company_name' => 'Draft WA Co',
+            'email' => 'draft-wa@test.example',
+            'whatsapp_e164' => '+15555550199',
+        ]);
+
+        $invoice = Invoice::query()->create([
+            'invoice_number' => 'INV-DRAFT-WA-001',
+            'client_account_id' => $client->id,
+            'status' => Invoice::STATUS_DRAFT,
+            'currency' => 'USD',
+            'subtotal_cents' => 100,
+            'tax_cents' => 0,
+            'total_cents' => 100,
+            'amount_paid_cents' => 0,
+            'balance_due_cents' => 100,
+        ]);
+
+        $this->postJson("/api/invoices/{$invoice->id}/whatsapp", [
+            'type' => 'send_invoice',
+        ])
+            ->assertStatus(422)
+            ->assertJsonFragment(['message' => 'Send the invoice first before messaging via WhatsApp.']);
     }
 }

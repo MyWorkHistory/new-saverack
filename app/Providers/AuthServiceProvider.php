@@ -15,6 +15,7 @@ use App\Policies\TaskPolicy;
 use App\Policies\TicketPolicy;
 use App\Policies\UserPolicy;
 use Illuminate\Foundation\Support\Providers\AuthServiceProvider as ServiceProvider;
+use Illuminate\Support\Facades\Gate;
 
 class AuthServiceProvider extends ServiceProvider
 {
@@ -40,5 +41,27 @@ class AuthServiceProvider extends ServiceProvider
     public function boot()
     {
         $this->registerPolicies();
+
+        Gate::define('inventory.view', function ($user) {
+            if (! $user) {
+                return false;
+            }
+            if ($user->isAdministrator() || $user->isCrmOwner()) {
+                return true;
+            }
+
+            return in_array('inventory.view', $user->allPermissionKeys(), true);
+        });
+
+        Gate::define('inventory.update', function ($user) {
+            if (! $user) {
+                return false;
+            }
+            if ($user->isAdministrator() || $user->isCrmOwner()) {
+                return true;
+            }
+
+            return in_array('inventory.update', $user->allPermissionKeys(), true);
+        });
     }
 }

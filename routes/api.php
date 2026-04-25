@@ -10,6 +10,7 @@ use App\Http\Controllers\Api\RoleController;
 use App\Http\Controllers\Api\TicketController;
 use App\Http\Controllers\Api\InvoiceController;
 use App\Http\Controllers\Api\InvoiceImportController;
+use App\Http\Controllers\Api\InventoryController;
 use App\Http\Controllers\Api\UserController;
 use App\Http\Controllers\Api\WebmasterTaskController;
 use App\Http\Controllers\StripeWebhookController;
@@ -38,6 +39,15 @@ Route::middleware('auth:sanctum')->group(function () {
 
     Route::get('/billing/summary', BillingSummaryController::class)
         ->name('billing.summary');
+
+    Route::prefix('inventory')->group(function () {
+        Route::get('/warehouses', [InventoryController::class, 'warehouses'])
+            ->middleware('can:inventory.view');
+        Route::get('/search', [InventoryController::class, 'search'])
+            ->middleware('can:inventory.view');
+        Route::post('/replace', [InventoryController::class, 'replaceQuantity'])
+            ->middleware('can:inventory.update');
+    });
 
     Route::get('invoices/meta', [InvoiceController::class, 'meta'])
         ->name('invoices.meta');

@@ -126,7 +126,9 @@ class InvoiceController extends Controller
     public function destroy(Invoice $invoice): JsonResponse
     {
         $this->authorize('delete', $invoice);
-        $this->invoices->deleteDraft($invoice);
+        $user = request()->user();
+        $force = $user !== null && ($user->isAdministrator() || $user->isCrmOwner());
+        $this->invoices->deleteInvoice($invoice, $force);
 
         return response()->json(['message' => 'Invoice deleted.']);
     }
@@ -142,12 +144,16 @@ class InvoiceController extends Controller
     public function sendEmail(InvoiceSendEmailRequest $request, Invoice $invoice): JsonResponse
     {
         $this->authorize('view', $invoice);
-        $result = $this->invoices->sendInvoiceEmail(
-            $invoice,
-            $request->user(),
-            $request->messageText(),
-            $request->recipientEmails(),
-        );
+        try {
+            $result = $this->invoices->sendInvoiceEmail(
+                $invoice,
+                $request->user(),
+                $request->messageText(),
+                $request->recipientEmails(),
+            );
+        } catch (\RuntimeException $e) {
+            return response()->json(['message' => $e->getMessage()], 422);
+        }
         $invoice = $invoice->fresh(['items', 'clientAccount']);
 
         return response()->json([
@@ -159,12 +165,16 @@ class InvoiceController extends Controller
     public function sendWhatsapp(InvoiceSendWhatsappRequest $request, Invoice $invoice): JsonResponse
     {
         $this->authorize('view', $invoice);
-        $result = $this->invoices->sendInvoiceWhatsapp(
-            $invoice,
-            $request->user(),
-            $request->actionType(),
-            $request->messageText(),
-        );
+        try {
+            $result = $this->invoices->sendInvoiceWhatsapp(
+                $invoice,
+                $request->user(),
+                $request->actionType(),
+                $request->messageText(),
+            );
+        } catch (\RuntimeException $e) {
+            return response()->json(['message' => $e->getMessage()], 422);
+        }
         $invoice = $invoice->fresh(['items', 'clientAccount']);
 
         return response()->json([

@@ -10,6 +10,7 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Validation\ValidationException;
 use RuntimeException;
+use Throwable;
 
 class InventoryController extends Controller
 {
@@ -23,23 +24,34 @@ class InventoryController extends Controller
 
     public function clientAccountOptions(): JsonResponse
     {
-        $accounts = ClientAccount::query()
-            ->where('status', ClientAccount::STATUS_ACTIVE)
-            ->orderBy('company_name')
-            ->limit(500)
-            ->get(['id', 'company_name', 'shiphero_customer_account_id']);
+        try {
+            $accounts = ClientAccount::query()
+                ->where('status', ClientAccount::STATUS_ACTIVE)
+                ->orderBy('company_name')
+                ->limit(500)
+                ->get(['id', 'company_name', 'shiphero_customer_account_id']);
 
-        return response()->json([
-            'accounts' => $accounts->map(static function (ClientAccount $a) {
-                $sid = $a->shiphero_customer_account_id;
+            return response()->json([
+                'accounts' => $accounts->map(static function (ClientAccount $a) {
+                    $sid = $a->shiphero_customer_account_id;
 
-                return [
-                    'id' => $a->id,
-                    'company_name' => $a->company_name,
-                    'has_shiphero_customer' => is_string($sid) && trim($sid) !== '',
-                ];
-            })->values(),
-        ]);
+                    return [
+                        'id' => $a->id,
+                        'company_name' => $a->company_name,
+                        'has_shiphero_customer' => is_string($sid) && trim($sid) !== '',
+                    ];
+                })->values(),
+            ]);
+        } catch (Throwable $e) {
+            report($e);
+
+            return response()->json([
+                'message' => config('app.debug')
+                    ? $e->getMessage()
+                    : 'Could not load client accounts. If you recently deployed, run migrations on the server.',
+                'accounts' => [],
+            ], 500);
+        }
     }
 
     public function warehouses(): JsonResponse
@@ -48,8 +60,18 @@ class InventoryController extends Controller
             return response()->json([
                 'warehouses' => $this->inventory->listWarehouses(),
             ]);
+        } catch (ValidationException $e) {
+            throw $e;
         } catch (RuntimeException $e) {
             return response()->json(['message' => $e->getMessage()], 502);
+        } catch (Throwable $e) {
+            report($e);
+
+            return response()->json([
+                'message' => config('app.debug')
+                    ? $e->getMessage()
+                    : 'Could not reach ShipHero. Check SHIPHERO_* in .env and server logs.',
+            ], 502);
         }
     }
 
@@ -80,8 +102,18 @@ class InventoryController extends Controller
             return response()->json([
                 'product' => $product,
             ]);
+        } catch (ValidationException $e) {
+            throw $e;
         } catch (RuntimeException $e) {
             return response()->json(['message' => $e->getMessage()], 502);
+        } catch (Throwable $e) {
+            report($e);
+
+            return response()->json([
+                'message' => config('app.debug')
+                    ? $e->getMessage()
+                    : 'Could not reach ShipHero. Check SHIPHERO_* in .env and server logs.',
+            ], 502);
         }
     }
 
@@ -122,8 +154,18 @@ class InventoryController extends Controller
             return response()->json([
                 'warehouse' => $updated,
             ]);
+        } catch (ValidationException $e) {
+            throw $e;
         } catch (RuntimeException $e) {
             return response()->json(['message' => $e->getMessage()], 502);
+        } catch (Throwable $e) {
+            report($e);
+
+            return response()->json([
+                'message' => config('app.debug')
+                    ? $e->getMessage()
+                    : 'Could not reach ShipHero. Check SHIPHERO_* in .env and server logs.',
+            ], 502);
         }
     }
 

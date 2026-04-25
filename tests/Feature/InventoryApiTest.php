@@ -94,7 +94,7 @@ class InventoryApiTest extends TestCase
         $mock->shouldReceive('listWarehouses')->never();
         $mock->shouldReceive('searchProduct')
             ->once()
-            ->with('SKU-1', null)
+            ->with('SKU-1', null, null)
             ->andReturn($payload);
         $this->app->instance(ShipHeroInventoryService::class, $mock);
 
@@ -131,7 +131,7 @@ class InventoryApiTest extends TestCase
         $mock = Mockery::mock(ShipHeroInventoryService::class);
         $mock->shouldReceive('replaceLocationQuantity')
             ->once()
-            ->with('SKU-1', 'WH1', 'LOC1', 7, 'CRM inventory adjustment')
+            ->with('SKU-1', 'WH1', 'LOC1', 7, 'CRM inventory adjustment', null)
             ->andReturn([
                 'warehouse_id' => 'WH1',
                 'warehouse_name' => 'Main',

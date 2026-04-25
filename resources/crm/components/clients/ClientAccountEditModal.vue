@@ -42,6 +42,7 @@ const form = reactive({
   account_manager_id: "",
   default_payment_type: "",
   stripe_customer_id: "",
+  shiphero_customer_account_id: "",
 });
 
 const showAll = computed(() => !props.section);
@@ -91,7 +92,7 @@ const modalSubtitle = computed(() => {
     case "address":
       return "Street, city, and country.";
     case "payment":
-      return "Payment defaults and Stripe customer mapping.";
+      return "Payment defaults, Stripe, and ShipHero 3PL customer id.";
     default:
       return "Update company profile, contacts, and notification channels.";
   }
@@ -144,6 +145,7 @@ async function load() {
       : "";
     form.default_payment_type = data.default_payment_type || "";
     form.stripe_customer_id = data.stripe_customer_id || "";
+    form.shiphero_customer_account_id = data.shiphero_customer_account_id || "";
   } catch (e) {
     errorMsg.value = "Could not load account.";
     toast.errorFrom(e, "Could not load account.");
@@ -194,6 +196,7 @@ function buildPatch() {
         : null,
       default_payment_type: trimOrNull(form.default_payment_type),
       stripe_customer_id: trimOrNull(form.stripe_customer_id),
+      shiphero_customer_account_id: trimOrNull(form.shiphero_customer_account_id),
     };
   }
   if (props.section === "left") {
@@ -226,6 +229,7 @@ function buildPatch() {
     return {
       default_payment_type: trimOrNull(form.default_payment_type),
       stripe_customer_id: trimOrNull(form.stripe_customer_id),
+      shiphero_customer_account_id: trimOrNull(form.shiphero_customer_account_id),
     };
   }
   if (props.section === "address") {
@@ -594,6 +598,25 @@ async function onSubmit() {
                           placeholder="cus_..."
                           autocomplete="off"
                         />
+                      </div>
+                      <div class="col-12">
+                        <label
+                          class="form-label small mb-1 text-secondary"
+                          for="cae-shiphero-customer-account-id"
+                          >ShipHero customer account ID (3PL)</label
+                        >
+                        <input
+                          id="cae-shiphero-customer-account-id"
+                          v-model="form.shiphero_customer_account_id"
+                          type="text"
+                          class="form-control"
+                          placeholder="GraphQL customer_account_id from ShipHero"
+                          autocomplete="off"
+                        />
+                        <p class="small text-secondary mb-0 mt-1">
+                          Used when this client is selected on the Inventory page. Leave empty if not
+                          applicable.
+                        </p>
                       </div>
                     </div>
                   </template>

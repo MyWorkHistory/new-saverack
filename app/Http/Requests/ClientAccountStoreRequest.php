@@ -62,6 +62,7 @@ class ClientAccountStoreRequest extends FormRequest
             'contract_date' => ['nullable', 'date'],
             'default_payment_type' => ['nullable', 'string', Rule::in(ClientAccount::DEFAULT_PAYMENT_TYPES)],
             'stripe_customer_id' => ['nullable', 'string', 'max:191'],
+            'shiphero_customer_account_id' => ['nullable', 'string', 'max:191'],
         ];
     }
 
@@ -92,6 +93,15 @@ class ClientAccountStoreRequest extends FormRequest
                 $this->merge(['stripe_customer_id' => null]);
             } else {
                 $this->merge(['stripe_customer_id' => trim((string) $raw)]);
+            }
+        }
+
+        if ($this->exists('shiphero_customer_account_id')) {
+            $raw = $this->input('shiphero_customer_account_id');
+            if ($raw === null || $raw === '') {
+                $this->merge(['shiphero_customer_account_id' => null]);
+            } else {
+                $this->merge(['shiphero_customer_account_id' => trim((string) $raw)]);
             }
         }
 

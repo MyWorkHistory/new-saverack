@@ -69,16 +69,19 @@ GQL;
     /**
      * @return array<string, mixed>|null Normalized product payload or null if not found
      */
-    public function searchProduct(string $term, ?string $warehouseId = null): ?array
+    /**
+     * @param  string|null  $customerAccountId  ShipHero GraphQL `customer_account_id` (3PL), or null for brand-level
+     */
+    public function searchProduct(string $term, ?string $warehouseId = null, ?string $customerAccountId = null): ?array
     {
         $term = trim($term);
         if ($term === '') {
             return null;
         }
 
-        $data = $this->fetchProductBySku($term);
+        $data = $this->fetchProductBySku($term, $customerAccountId);
         if ($data === null) {
-            $data = $this->fetchProductByBarcode($term);
+            $data = $this->fetchProductByBarcode($term, $customerAccountId);
         }
 
         if ($data === null) {
@@ -93,12 +96,16 @@ GQL;
      *
      * @return array<string, mixed> Normalized single-warehouse slice (same shape as search warehouses entries)
      */
+    /**
+     * @param  string|null  $customerAccountId  ShipHero GraphQL `customer_account_id` (3PL), or null
+     */
     public function replaceLocationQuantity(
         string $sku,
         string $warehouseId,
         string $locationId,
         int $quantity,
         string $reason,
+        ?string $customerAccountId = null,
     ): array {
         $sku = trim($sku);
         if ($sku === '') {
@@ -121,9 +128,8 @@ GQL;
             'reason' => $reason !== '' ? $reason : 'CRM inventory replace',
             'includes_non_sellable' => false,
         ];
-        $cid = config('services.shiphero.customer_account_id');
-        if (is_string($cid) && $cid !== '') {
-            $input['customer_account_id'] = $cid;
+        if (is_string($customerAccountId) && trim($customerAccountId) !== '') {
+            $input['customer_account_id'] = trim($customerAccountId);
         }
 
         $graphql = <<<'GQL'
@@ -173,7 +179,7 @@ GQL;
     /**
      * @return array<string, mixed>|null  product.data
      */
-    private function fetchProductBySku(string $sku): ?array
+    private function fetchProductBySku(string $sku, ?string $customerAccountId): ?array
     {
         $graphql = <<<'GQL'
 query ShipHeroProductBySku($sku: String!, $customer_account_id: String) {
@@ -206,7 +212,7 @@ query ShipHeroProductBySku($sku: String!, $customer_account_id: String) {
   }
 }
 GQL;
-        $vars = array_merge(['sku' => $sku], $this->customerAccountVariables());
+        $vars = array_merge(['sku' => $sku], $this->customerAccountVariables($customerAccountId));
         $json = $this->client->query($graphql, $vars);
         $data = data_get($json, 'data.product.data');
 
@@ -216,7 +222,7 @@ GQL;
     /**
      * @return array<string, mixed>|null  product.data
      */
-    private function fetchProductByBarcode(string $barcode): ?array
+    private function fetchProductByBarcode(string $barcode, ?string $customerAccountId): ?array
     {
         $graphql = <<<'GQL'
 query ShipHeroProductByBarcode($barcode: String!, $customer_account_id: String) {
@@ -249,7 +255,7 @@ query ShipHeroProductByBarcode($barcode: String!, $customer_account_id: String) 
   }
 }
 GQL;
-        $vars = array_merge(['barcode' => $barcode], $this->customerAccountVariables());
+        $vars = array_merge(['barcode' => $barcode], $this->customerAccountVariables($customerAccountId));
         $json = $this->client->query($graphql, $vars);
         $data = data_get($json, 'data.product.data');
 
@@ -360,12 +366,12 @@ GQL;
     /**
      * @return array{customer_account_id: string|null}
      */
-    private function customerAccountVariables(): array
+    private function customerAccountVariables(?string $customerAccountId): array
     {
-        $cid = config('services.shiphero.customer_account_id');
+        $id = is_string($customerAccountId) && trim($customerAccountId) !== ''
+            ? trim($customerAccountId)
+            : null;
 
-        return [
-            'customer_account_id' => (is_string($cid) && $cid !== '') ? $cid : null,
-        ];
+        return ['customer_account_id' => $id];
     }
 }

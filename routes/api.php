@@ -41,6 +41,8 @@ Route::middleware('auth:sanctum')->group(function () {
         ->name('billing.summary');
 
     Route::prefix('inventory')->group(function () {
+        Route::get('/client-account-options', [InventoryController::class, 'clientAccountOptions'])
+            ->middleware('can:inventory.view');
         Route::get('/warehouses', [InventoryController::class, 'warehouses'])
             ->middleware('can:inventory.view');
         Route::get('/search', [InventoryController::class, 'search'])

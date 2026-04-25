@@ -59,6 +59,7 @@ class ClientAccount extends Model
         'account_manager_id',
         'contract_date',
         'stripe_customer_id',
+        'shiphero_customer_account_id',
         'default_payment_type',
     ];
 

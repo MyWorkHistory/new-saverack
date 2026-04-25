@@ -472,6 +472,7 @@ class ClientAccountService
             'account_manager_id' => $account->account_manager_id,
             'default_payment_type' => $account->default_payment_type,
             'stripe_customer_id' => $account->stripe_customer_id,
+            'shiphero_customer_account_id' => $account->shiphero_customer_account_id,
             'account_manager' => $manager !== null
                 ? ['id' => $manager->id, 'name' => $manager->name, 'email' => $manager->email]
                 : null,

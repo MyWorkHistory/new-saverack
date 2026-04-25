@@ -14,6 +14,11 @@ const warehouses = ref([]);
 /** Empty string = all warehouses */
 const selectedWarehouseId = ref("");
 
+const clientAccountsLoading = ref(false);
+const clientAccountOptions = ref([]);
+/** Empty string = no CRM row selected (uses optional SHIPHERO_CUSTOMER_ACCOUNT_ID in .env if set) */
+const selectedClientAccountId = ref("");
+
 const queryInput = ref("");
 const searchBusy = ref(false);
 const product = ref(null);
@@ -59,6 +64,7 @@ onMounted(() => {
     description: "ShipHero live inventory search and location quantities.",
   });
   loadWarehouses();
+  loadClientAccountOptions();
 });
 
 async function loadWarehouses() {
@@ -76,6 +82,18 @@ async function loadWarehouses() {
   }
 }
 
+async function loadClientAccountOptions() {
+  clientAccountsLoading.value = true;
+  try {
+    const { data } = await api.get("/inventory/client-account-options");
+    clientAccountOptions.value = Array.isArray(data?.accounts) ? data.accounts : [];
+  } catch (e) {
+    toast.errorFrom(e, "Could not load client account list.");
+  } finally {
+    clientAccountsLoading.value = false;
+  }
+}
+
 async function runSearch() {
   const q = queryInput.value.trim();
   if (!q) {
@@ -89,6 +107,9 @@ async function runSearch() {
     const params = { q };
     if (selectedWarehouseId.value) {
       params.warehouse_id = selectedWarehouseId.value;
+    }
+    if (selectedClientAccountId.value) {
+      params.client_account_id = Number(selectedClientAccountId.value);
     }
     const { data } = await api.get("/inventory/search", { params });
     product.value = data?.product ?? null;
@@ -117,13 +138,17 @@ async function saveRow(warehouseBlock, loc) {
 
   savingRowKey.value = key;
   try {
-    const { data } = await api.post("/inventory/replace", {
+    const body = {
       sku: p.sku,
       warehouse_id: warehouseBlock.warehouse_id,
       location_id: loc.location_id,
       quantity: qty,
       reason: "CRM inventory adjustment",
-    });
+    };
+    if (selectedClientAccountId.value) {
+      body.client_account_id = Number(selectedClientAccountId.value);
+    }
+    const { data } = await api.post("/inventory/replace", body);
     const updated = data?.warehouse;
     if (updated?.warehouse_id && Array.isArray(p.warehouses)) {
       const idx = p.warehouses.findIndex((w) => w.warehouse_id === updated.warehouse_id);
@@ -165,6 +190,32 @@ async function saveRow(warehouseBlock, loc) {
 
     <template v-else>
       <p v-if="pageError" class="alert alert-warning small">{{ pageError }}</p>
+
+      <div class="row g-3 align-items-end mb-4">
+        <div class="col-12 col-md-6">
+          <label class="form-label small text-secondary mb-1">CRM client (3PL)</label>
+          <select
+            v-model="selectedClientAccountId"
+            class="form-select"
+            :disabled="clientAccountsLoading"
+          >
+            <option value="">Default (see .env SHIPHERO_CUSTOMER_ACCOUNT_ID if set)</option>
+            <option
+              v-for="a in clientAccountOptions"
+              :key="a.id"
+              :value="String(a.id)"
+              :disabled="!a.has_shiphero_customer"
+            >
+              {{ a.company_name }}
+              {{ a.has_shiphero_customer ? "" : " (no ShipHero ID)" }}
+            </option>
+          </select>
+          <p class="small text-secondary mb-0 mt-1">
+            For 3PL, set each client’s ShipHero customer account ID on the account profile, then select
+            the client here. Optional env fallback when none is selected.
+          </p>
+        </div>
+      </div>
 
       <div class="row g-3 align-items-end mb-4">
         <div class="col-12 col-md-4">

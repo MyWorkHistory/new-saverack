@@ -1310,6 +1310,19 @@ onUnmounted(() => {
                     </dd>
                   </dl>
                 </div>
+                <div class="col-md-6">
+                  <dl class="mb-0 small">
+                    <dt
+                      class="text-secondary text-uppercase fw-semibold mb-1"
+                      style="font-size: 0.65rem"
+                    >
+                      ShipHero customer account ID
+                    </dt>
+                    <dd class="mb-0 fw-semibold text-body text-break">
+                      {{ display(account.shiphero_customer_account_id) }}
+                    </dd>
+                  </dl>
+                </div>
               </div>
             </div>
 

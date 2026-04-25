@@ -109,7 +109,7 @@ GQL;
         string $locationId,
         int $quantity,
         string $reason,
-        ?string $customerAccountId = null,
+        ?string $customerAccountId = null
     ): array {
         $sku = trim($sku);
         if ($sku === '') {
@@ -321,9 +321,11 @@ GQL;
     }
 
     /**
-     * @return list<array{item_location_id: string, location_id: string, location_name: string|null, quantity: int}>
+     * @param  mixed  $locations
+     *
+     * @return array<int, array{item_location_id: string, location_id: string, location_name: string|null, quantity: int}>
      */
-    private function normalizeLocations(mixed $locations): array
+    private function normalizeLocations($locations): array
     {
         $edges = null;
         if (is_array($locations)) {

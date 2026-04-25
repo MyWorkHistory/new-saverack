@@ -13,9 +13,13 @@ use RuntimeException;
 
 class InventoryController extends Controller
 {
-    public function __construct(
-        private readonly ShipHeroInventoryService $inventory,
-    ) {}
+    /** @var ShipHeroInventoryService */
+    protected $inventory;
+
+    public function __construct(ShipHeroInventoryService $inventory)
+    {
+        $this->inventory = $inventory;
+    }
 
     public function clientAccountOptions(): JsonResponse
     {

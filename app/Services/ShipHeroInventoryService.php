@@ -7,9 +7,13 @@ use RuntimeException;
 
 class ShipHeroInventoryService
 {
-    public function __construct(
-        private readonly ShipHeroClient $client,
-    ) {}
+    /** @var ShipHeroClient */
+    protected $client;
+
+    public function __construct(ShipHeroClient $client)
+    {
+        $this->client = $client;
+    }
 
     /**
      * @return list<array{id: string, legacy_id: int|null, identifier: string|null, label: string}>

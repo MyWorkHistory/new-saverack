@@ -132,9 +132,8 @@ class InventoryController extends Controller
 
         $checks[] = $this->runDiagnosticCheck('https_get', function () {
             $authBase = rtrim((string) config('services.shiphero.auth_url', 'https://public-api.shiphero.com/auth'), '/');
-            $response = Http::connectTimeout(3)
+            $response = Http::withOptions(['connect_timeout' => 3])
                 ->timeout(5)
-                ->throw(false)
                 ->get($authBase);
             if ($response->status() === 0) {
                 throw new RuntimeException('HTTPS request failed before response.');

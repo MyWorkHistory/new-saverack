@@ -22,9 +22,8 @@ class ShipHeroClient
         return Cache::remember('shiphero.access_token', now()->addDays(20), function () use ($refresh) {
             $authBase = rtrim((string) config('services.shiphero.auth_url', 'https://public-api.shiphero.com/auth'), '/');
             try {
-                $response = Http::connectTimeout(5)
+                $response = Http::withOptions(['connect_timeout' => 5])
                     ->timeout(8)
-                    ->throw(false)
                     ->asJson()
                     ->post($authBase.'/refresh', [
                         'refresh_token' => $refresh,
@@ -64,9 +63,8 @@ class ShipHeroClient
         }
 
         try {
-            $response = Http::connectTimeout(5)
+            $response = Http::withOptions(['connect_timeout' => 5])
                 ->timeout(10)
-                ->throw(false)
                 ->withToken($token)
                 ->asJson()
                 ->post($url, $payload);

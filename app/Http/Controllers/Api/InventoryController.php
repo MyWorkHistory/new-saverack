@@ -4,10 +4,12 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Models\ClientAccount;
+use App\Services\ShipHeroClient;
 use App\Services\ShipHeroInventoryService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Gate;
+use Illuminate\Support\Facades\Http;
 use Illuminate\Validation\ValidationException;
 use RuntimeException;
 use Throwable;
@@ -16,10 +18,13 @@ class InventoryController extends Controller
 {
     /** @var ShipHeroInventoryService */
     protected $inventory;
+    /** @var ShipHeroClient */
+    protected $shipHeroClient;
 
-    public function __construct(ShipHeroInventoryService $inventory)
+    public function __construct(ShipHeroInventoryService $inventory, ShipHeroClient $shipHeroClient)
     {
         $this->inventory = $inventory;
+        $this->shipHeroClient = $shipHeroClient;
     }
 
     public function clientAccountOptions(): JsonResponse
@@ -73,6 +78,91 @@ class InventoryController extends Controller
                     : 'Could not reach ShipHero. Check SHIPHERO_* in .env and server logs.',
             ], 502);
         }
+    }
+
+    public function diagnostic(): JsonResponse
+    {
+        $checks = [];
+
+        $checks[] = $this->runDiagnosticCheck('env_present', function () {
+            $missing = [];
+
+            $refreshToken = config('services.shiphero.refresh_token');
+            if (! is_string($refreshToken) || trim($refreshToken) === '') {
+                $missing[] = 'SHIPHERO_REFRESH_TOKEN';
+            }
+
+            $authUrl = config('services.shiphero.auth_url');
+            if (! is_string($authUrl) || trim($authUrl) === '') {
+                $missing[] = 'SHIPHERO_AUTH_URL';
+            }
+
+            $apiUrl = config('services.shiphero.api_url');
+            if (! is_string($apiUrl) || trim($apiUrl) === '') {
+                $missing[] = 'SHIPHERO_API_URL';
+            }
+
+            if ($missing !== []) {
+                throw new RuntimeException('Missing env keys: '.implode(', ', $missing));
+            }
+        });
+
+        $checks[] = $this->runDiagnosticCheck('dns_lookup', function () {
+            $host = parse_url((string) config('services.shiphero.auth_url'), PHP_URL_HOST);
+            $host = is_string($host) && $host !== '' ? $host : 'public-api.shiphero.com';
+            $resolved = gethostbynamel($host);
+
+            if (! is_array($resolved) || $resolved === []) {
+                throw new RuntimeException('Could not resolve host: '.$host);
+            }
+        });
+
+        $checks[] = $this->runDiagnosticCheck('tcp_connect', function () {
+            $host = parse_url((string) config('services.shiphero.auth_url'), PHP_URL_HOST);
+            $host = is_string($host) && $host !== '' ? $host : 'public-api.shiphero.com';
+            $errno = 0;
+            $errstr = '';
+            $socket = @fsockopen($host, 443, $errno, $errstr, 3.0);
+            if (! is_resource($socket)) {
+                throw new RuntimeException('TCP 443 connect failed: '.$host.' ('.$errno.') '.$errstr);
+            }
+
+            fclose($socket);
+        });
+
+        $checks[] = $this->runDiagnosticCheck('https_get', function () {
+            $authBase = rtrim((string) config('services.shiphero.auth_url', 'https://public-api.shiphero.com/auth'), '/');
+            $response = Http::connectTimeout(3)
+                ->timeout(5)
+                ->throw(false)
+                ->get($authBase);
+            if ($response->status() === 0) {
+                throw new RuntimeException('HTTPS request failed before response.');
+            }
+        });
+
+        $checks[] = $this->runDiagnosticCheck('auth_refresh', function () {
+            $token = $this->shipHeroClient->accessToken();
+            if (! is_string($token) || trim($token) === '') {
+                throw new RuntimeException('Token refresh returned an empty token.');
+            }
+        });
+
+        $firstFailed = null;
+        foreach ($checks as $check) {
+            if (($check['ok'] ?? false) !== true) {
+                $firstFailed = (string) ($check['step'] ?? 'unknown');
+                break;
+            }
+        }
+
+        return response()->json([
+            'ok' => $firstFailed === null,
+            'checks' => $checks,
+            'summary' => $firstFailed === null
+                ? 'all checks passed'
+                : 'blocked at: '.$firstFailed,
+        ]);
     }
 
     public function search(Request $request): JsonResponse
@@ -200,5 +290,33 @@ class InventoryController extends Controller
         $env = config('services.shiphero.customer_account_id');
 
         return (is_string($env) && trim($env) !== '') ? trim($env) : null;
+    }
+
+    /**
+     * @param  callable():void  $callback
+     * @return array<string, mixed>
+     */
+    private function runDiagnosticCheck(string $step, callable $callback): array
+    {
+        $startedAt = microtime(true);
+
+        try {
+            $callback();
+
+            return [
+                'step' => $step,
+                'ok' => true,
+                'ms' => (int) round((microtime(true) - $startedAt) * 1000),
+            ];
+        } catch (Throwable $e) {
+            report($e);
+
+            return [
+                'step' => $step,
+                'ok' => false,
+                'ms' => (int) round((microtime(true) - $startedAt) * 1000),
+                'error' => $e->getMessage(),
+            ];
+        }
     }
 }

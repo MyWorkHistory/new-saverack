@@ -13,6 +13,7 @@ const warehousesLoading = ref(true);
 const warehouses = ref([]);
 /** Empty string = all warehouses */
 const selectedWarehouseId = ref("");
+const warehouseWarning = ref("");
 
 const clientAccountsLoading = ref(false);
 const clientAccountOptions = ref([]);
@@ -23,6 +24,8 @@ const queryInput = ref("");
 const searchBusy = ref(false);
 const product = ref(null);
 const pageError = ref("");
+const diagnosticBusy = ref(false);
+const diagnosticResult = ref("");
 
 /** key: `${warehouse_id}::${location_id}` -> quantity string */
 const editQty = ref({});
@@ -69,14 +72,15 @@ onMounted(() => {
 
 async function loadWarehouses() {
   warehousesLoading.value = true;
-  pageError.value = "";
+  warehouseWarning.value = "";
   try {
     const { data } = await api.get("/inventory/warehouses");
     warehouses.value = Array.isArray(data?.warehouses) ? data.warehouses : [];
   } catch (e) {
-    pageError.value =
-      e.response?.data?.message || "Could not load warehouses from ShipHero.";
-    toast.errorFrom(e, "Could not load warehouses.");
+    warehouses.value = [];
+    warehouseWarning.value =
+      e.response?.data?.message ||
+      "Warehouses unavailable from ShipHero. Search will use all warehouses.";
   } finally {
     warehousesLoading.value = false;
   }
@@ -172,6 +176,24 @@ async function saveRow(warehouseBlock, loc) {
     savingRowKey.value = null;
   }
 }
+
+async function runDiagnostic() {
+  diagnosticBusy.value = true;
+  diagnosticResult.value = "";
+  try {
+    const { data } = await api.get("/inventory/diagnostic");
+    diagnosticResult.value = JSON.stringify(data ?? {}, null, 2);
+  } catch (e) {
+    const fallback = {
+      ok: false,
+      message: e.response?.data?.message || "Could not run diagnostic.",
+    };
+    diagnosticResult.value = JSON.stringify(fallback, null, 2);
+    toast.errorFrom(e, "Could not run diagnostic.");
+  } finally {
+    diagnosticBusy.value = false;
+  }
+}
 </script>
 
 <template>
@@ -237,6 +259,9 @@ async function saveRow(warehouseBlock, loc) {
               {{ w.label || w.identifier || w.id }}
             </option>
           </select>
+          <p v-if="warehouseWarning" class="small text-warning mb-0 mt-1">
+            {{ warehouseWarning }}
+          </p>
         </div>
         <div class="col-12 col-md-4 d-grid d-md-block">
           <button
@@ -249,6 +274,22 @@ async function saveRow(warehouseBlock, loc) {
             Search
           </button>
         </div>
+      </div>
+
+      <div class="mb-4">
+        <button
+          type="button"
+          class="btn btn-sm btn-outline-secondary"
+          :disabled="diagnosticBusy"
+          @click="runDiagnostic"
+        >
+          <span v-if="diagnosticBusy" class="spinner-border spinner-border-sm me-1" />
+          Run diagnostic
+        </button>
+        <pre
+          v-if="diagnosticResult"
+          class="mt-2 mb-0 p-3 bg-light border rounded small"
+        ><code>{{ diagnosticResult }}</code></pre>
       </div>
 
       <div v-if="!product" class="text-secondary small py-4 text-center">

@@ -6,10 +6,11 @@ use App\Http\Controllers\Controller;
 use App\Models\ClientAccount;
 use App\Services\ShipHeroClient;
 use App\Services\ShipHeroInventoryService;
+use GuzzleHttp\Client;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Gate;
-use Illuminate\Support\Facades\Http;
 use Illuminate\Validation\ValidationException;
 use RuntimeException;
 use Throwable;
@@ -132,19 +133,27 @@ class InventoryController extends Controller
 
         $checks[] = $this->runDiagnosticCheck('https_get', function () {
             $authBase = rtrim((string) config('services.shiphero.auth_url', 'https://public-api.shiphero.com/auth'), '/');
-            $response = Http::withOptions(['connect_timeout' => 3])
-                ->timeout(5)
-                ->get($authBase);
-            if ($response->status() === 0) {
-                throw new RuntimeException('HTTPS request failed before response.');
-            }
+            $client = new Client(['http_errors' => false]);
+            $client->get($authBase, [
+                'connect_timeout' => 3,
+                'timeout' => 5,
+            ]);
         });
 
         $checks[] = $this->runDiagnosticCheck('auth_refresh', function () {
+            Cache::forget('shiphero.access_token');
             $token = $this->shipHeroClient->accessToken();
             if (! is_string($token) || trim($token) === '') {
                 throw new RuntimeException('Token refresh returned an empty token.');
             }
+        });
+
+        $checks[] = $this->runDiagnosticCheck('graphql_warehouses', function () {
+            Cache::forget('shiphero.warehouses');
+
+            return [
+                'warehouse_count' => count($this->inventory->listWarehouses()),
+            ];
         });
 
         $firstFailed = null;
@@ -292,7 +301,7 @@ class InventoryController extends Controller
     }
 
     /**
-     * @param  callable():void  $callback
+     * @param  callable():mixed  $callback
      * @return array<string, mixed>
      */
     private function runDiagnosticCheck(string $step, callable $callback): array
@@ -300,13 +309,18 @@ class InventoryController extends Controller
         $startedAt = microtime(true);
 
         try {
-            $callback();
-
-            return [
+            $details = $callback();
+            $result = [
                 'step' => $step,
                 'ok' => true,
                 'ms' => (int) round((microtime(true) - $startedAt) * 1000),
             ];
+
+            if (is_array($details) && $details !== []) {
+                $result['details'] = $details;
+            }
+
+            return $result;
         } catch (Throwable $e) {
             report($e);
 

@@ -2,8 +2,8 @@
 
 namespace App\Services;
 
+use GuzzleHttp\Client;
 use Illuminate\Support\Facades\Cache;
-use Illuminate\Support\Facades\Http;
 use RuntimeException;
 use Throwable;
 
@@ -22,21 +22,22 @@ class ShipHeroClient
         return Cache::remember('shiphero.access_token', now()->addDays(20), function () use ($refresh) {
             $authBase = rtrim((string) config('services.shiphero.auth_url', 'https://public-api.shiphero.com/auth'), '/');
             try {
-                $response = Http::withOptions(['connect_timeout' => 5])
-                    ->timeout(8)
-                    ->asJson()
-                    ->post($authBase.'/refresh', [
+                $response = $this->http()->post($authBase.'/refresh', [
+                    'json' => [
                         'refresh_token' => $refresh,
-                    ]);
+                    ],
+                    'connect_timeout' => 3,
+                    'timeout' => 6,
+                ]);
             } catch (Throwable $e) {
                 throw new RuntimeException('ShipHero token refresh request failed: '.$e->getMessage(), 0, $e);
             }
 
-            if (! $response->successful()) {
-                throw new RuntimeException('ShipHero token refresh failed (HTTP '.$response->status().').');
+            if ($response->getStatusCode() < 200 || $response->getStatusCode() >= 300) {
+                throw new RuntimeException('ShipHero token refresh failed (HTTP '.$response->getStatusCode().').');
             }
 
-            $body = $response->json();
+            $body = json_decode((string) $response->getBody(), true);
             $token = is_array($body) ? ($body['access_token'] ?? null) : null;
             if (! is_string($token) || $token === '') {
                 throw new RuntimeException('ShipHero token refresh returned no access_token.');
@@ -63,26 +64,30 @@ class ShipHeroClient
         }
 
         try {
-            $response = Http::withOptions(['connect_timeout' => 5])
-                ->timeout(10)
-                ->withToken($token)
-                ->asJson()
-                ->post($url, $payload);
+            $response = $this->http()->post($url, [
+                'headers' => [
+                    'Authorization' => 'Bearer '.$token,
+                    'Accept' => 'application/json',
+                ],
+                'json' => $payload,
+                'connect_timeout' => 3,
+                'timeout' => 6,
+            ]);
         } catch (Throwable $e) {
             throw new RuntimeException('ShipHero GraphQL request failed before response: '.$e->getMessage(), 0, $e);
         }
 
-        if ($response->status() === 401 && $allowTokenRetry) {
+        if ($response->getStatusCode() === 401 && $allowTokenRetry) {
             Cache::forget('shiphero.access_token');
 
             return $this->query($graphql, $variables, false);
         }
 
-        if (! $response->successful()) {
-            throw new RuntimeException('ShipHero GraphQL request failed (HTTP '.$response->status().').');
+        if ($response->getStatusCode() < 200 || $response->getStatusCode() >= 300) {
+            throw new RuntimeException('ShipHero GraphQL request failed (HTTP '.$response->getStatusCode().').');
         }
 
-        $json = $response->json();
+        $json = json_decode((string) $response->getBody(), true);
         if (! is_array($json)) {
             throw new RuntimeException('ShipHero returned invalid JSON.');
         }
@@ -97,5 +102,16 @@ class ShipHeroClient
         }
 
         return $json;
+    }
+
+    private function http(): Client
+    {
+        return new Client([
+            'http_errors' => false,
+            'headers' => [
+                'Accept' => 'application/json',
+                'Content-Type' => 'application/json',
+            ],
+        ]);
     }
 }

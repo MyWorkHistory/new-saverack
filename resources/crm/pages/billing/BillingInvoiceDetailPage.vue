@@ -807,8 +807,8 @@ function unselectAllEmailRecipients() {
   sendEmailRecipients.value = [];
 }
 
-function closeSendEmailModal() {
-  if (sendEmailBusy.value) return;
+function closeSendEmailModal(force = false) {
+  if (sendEmailBusy.value && !force) return;
   sendEmailModalOpen.value = false;
 }
 
@@ -826,7 +826,7 @@ async function confirmSendEmail() {
     });
     const toCount = Array.isArray(data?.recipients) ? data.recipients.length : 0;
     toast.success(toCount ? `Email sent to ${toCount} recipient(s).` : "Email sent.");
-    sendEmailModalOpen.value = false;
+    closeSendEmailModal(true);
     await load();
   } catch (e) {
     toast.errorFrom(e, "Could not send email.");
@@ -884,8 +884,8 @@ function openSendWhatsappModal() {
     .catch(() => {});
 }
 
-function closeWhatsappCaptureModal() {
-  if (whatsappCaptureBusy.value) return;
+function closeWhatsappCaptureModal(force = false) {
+  if (whatsappCaptureBusy.value && !force) return;
   whatsappCaptureModalOpen.value = false;
 }
 
@@ -909,7 +909,7 @@ async function confirmWhatsappCapture() {
       client_account_whatsapp_api_id: raw,
     };
     toast.success("WhatsApp API ID saved.");
-    whatsappCaptureModalOpen.value = false;
+    closeWhatsappCaptureModal(true);
     openSendWhatsappModal();
   } catch (e) {
     toast.errorFrom(e, "Could not save WhatsApp API ID.");
@@ -918,8 +918,8 @@ async function confirmWhatsappCapture() {
   }
 }
 
-function closeSendWhatsappModal() {
-  if (sendWhatsappBusy.value) return;
+function closeSendWhatsappModal(force = false) {
+  if (sendWhatsappBusy.value && !force) return;
   sendWhatsappModalOpen.value = false;
 }
 
@@ -935,7 +935,7 @@ async function confirmSendWhatsapp() {
       message: sendWhatsappMessage.value || null,
     });
     toast.success("WhatsApp message sent.");
-    sendWhatsappModalOpen.value = false;
+    closeSendWhatsappModal(true);
     await load();
   } catch (e) {
     toast.errorFrom(e, "Could not send via WhatsApp.");
@@ -1327,8 +1327,8 @@ function openCcFeeModal() {
   ccFeeModalOpen.value = true;
 }
 
-function closeCcFeeModal() {
-  if (ccFeeBusy.value) return;
+function closeCcFeeModal(force = false) {
+  if (ccFeeBusy.value && !force) return;
   ccFeeModalOpen.value = false;
 }
 
@@ -1346,7 +1346,7 @@ async function confirmCcFee() {
       label: ccFeeLabel.value || "Credit Card Fee",
     });
     toast.success("CC fee added.");
-    closeCcFeeModal();
+    closeCcFeeModal(true);
     await load();
   } catch (e) {
     toast.errorFrom(e, "Could not add CC fee.");
@@ -1355,8 +1355,8 @@ async function confirmCcFee() {
   }
 }
 
-function closePayModal() {
-  if (payBusy.value || payContextBusy.value) return;
+function closePayModal(force = false) {
+  if ((payBusy.value || payContextBusy.value) && !force) return;
   payModalOpen.value = false;
 }
 
@@ -1455,8 +1455,8 @@ async function openStripeModal() {
   }
 }
 
-function closeStripeModal() {
-  if (stripeChargeBusy.value) return;
+function closeStripeModal(force = false) {
+  if (stripeChargeBusy.value && !force) return;
   stripeModalOpen.value = false;
 }
 
@@ -1499,7 +1499,7 @@ async function confirmStripeCharge() {
     } else {
       toast.error("Stripe payment failed.");
     }
-    closeStripeModal();
+    closeStripeModal(true);
     await load();
   } catch (e) {
     toast.errorFrom(e, "Could not process Stripe payment.");
@@ -1584,7 +1584,7 @@ async function confirmPay() {
     });
     const allocations = Array.isArray(data?.allocations) ? data.allocations.length : 0;
     toast.success(allocations > 0 ? "Payment allocated." : "No payment applied.");
-    closePayModal();
+    closePayModal(true);
     await load();
   } catch (e) {
     toast.errorFrom(e, "Could not allocate payment.");
@@ -1597,8 +1597,8 @@ function openVoidModal() {
   voidModalOpen.value = true;
 }
 
-function closeVoidModal() {
-  if (voidBusy.value) return;
+function closeVoidModal(force = false) {
+  if (voidBusy.value && !force) return;
   voidModalOpen.value = false;
 }
 
@@ -1608,7 +1608,7 @@ async function confirmVoid() {
   try {
     await api.post(`/invoices/${invoice.value.id}/void`);
     toast.success("Invoice voided.");
-    closeVoidModal();
+    closeVoidModal(true);
     await load();
   } catch (e) {
     toast.errorFrom(e, "Could not void invoice.");
@@ -1646,8 +1646,8 @@ function openDeleteModal() {
   deleteModalOpen.value = true;
 }
 
-function closeDeleteModal() {
-  if (deleteBusy.value) return;
+function closeDeleteModal(force = false) {
+  if (deleteBusy.value && !force) return;
   deleteModalOpen.value = false;
 }
 
@@ -1657,6 +1657,7 @@ async function confirmDelete() {
   try {
     await api.delete(`/invoices/${invoice.value.id}`);
     toast.success("Invoice deleted.");
+    closeDeleteModal(true);
     router.replace("/billing/invoices");
   } catch (e) {
     toast.errorFrom(e, "Could not delete invoice.");

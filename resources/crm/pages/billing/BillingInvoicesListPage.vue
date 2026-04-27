@@ -9,7 +9,7 @@ import {
   ref,
   watch,
 } from "vue";
-import { RouterLink, useRoute, useRouter } from "vue-router";
+import { useRoute, useRouter } from "vue-router";
 import api from "../../services/api";
 import ConfirmModal from "../../components/common/ConfirmModal.vue";
 import CrmLoadingSpinner from "../../components/common/CrmLoadingSpinner.vue";
@@ -177,6 +177,13 @@ function placeManageMenu(anchorEl) {
 
 function closeManageMenu() {
   manageOpenId.value = null;
+}
+
+function invoiceDetailHref(row) {
+  return router.resolve({
+    name: "billing-invoice-detail",
+    params: { id: String(row?.id || "") },
+  }).href;
 }
 
 async function toggleManageMenu(rowId, e) {
@@ -1334,21 +1341,25 @@ onUnmounted(() => {
                 </span>
               </td>
               <td class="fw-medium text-body">
-                <RouterLink
-                  :to="{ name: 'billing-invoice-detail', params: { id: String(row.id) } }"
+                <a
+                  :href="invoiceDetailHref(row)"
+                  target="_blank"
+                  rel="noopener noreferrer"
                   class="text-decoration-none text-body billing-inv-row-link"
                 >
                   {{ row.invoice_number }}
-                </RouterLink>
+                </a>
               </td>
               <td class="text-secondary staff-table-cell__meta">
-                <RouterLink
+                <a
                   v-if="row.client_company_name"
-                  :to="{ name: 'billing-invoice-detail', params: { id: String(row.id) } }"
+                  :href="invoiceDetailHref(row)"
+                  target="_blank"
+                  rel="noopener noreferrer"
                   class="text-decoration-none text-secondary billing-inv-row-link"
                 >
                   {{ row.client_company_name }}
-                </RouterLink>
+                </a>
                 <span v-else>—</span>
               </td>
               <td class="text-body staff-table-cell__meta">
@@ -1477,14 +1488,16 @@ onUnmounted(() => {
           }"
           @click.stop
         >
-          <RouterLink
+          <a
             class="staff-row-menu__item text-decoration-none text-body"
             role="menuitem"
-            :to="`/billing/invoices/${manageMenuRow.id}`"
+            :href="invoiceDetailHref(manageMenuRow)"
+            target="_blank"
+            rel="noopener noreferrer"
             @click="closeManageMenu"
           >
             View
-          </RouterLink>
+          </a>
           <button
             v-if="canUpdate && legacyStatusKey(manageMenuRow) === 'draft'"
             type="button"

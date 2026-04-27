@@ -90,6 +90,32 @@ class InvoiceService
     }
 
     /**
+     * @param  array{due_at?: string|null, billing_period_start?: string|null, billing_period_end?: string|null}  $dates
+     */
+    public function updateInvoiceDates(Invoice $invoice, array $dates, ?User $actor): Invoice
+    {
+        if ($invoice->isVoid()) {
+            throw new \RuntimeException('Void invoices cannot be updated.');
+        }
+
+        return DB::transaction(function () use ($invoice, $dates, $actor) {
+            $fromStatus = $invoice->status;
+            $invoice->fill($dates);
+            $invoice->save();
+
+            $this->logHistory($invoice, $actor, 'updated', $fromStatus, $invoice->status, [
+                'event_type' => InvoiceHistoryEventType::HEADER_EDIT,
+                'history_message' => 'Updated invoice dates.',
+                'due_at' => $dates['due_at'] ?? null,
+                'billing_period_start' => $dates['billing_period_start'] ?? null,
+                'billing_period_end' => $dates['billing_period_end'] ?? null,
+            ]);
+
+            return $invoice->fresh(['items', 'clientAccount']);
+        });
+    }
+
+    /**
      * @param  list<array<string, mixed>>  $items
      */
     private function replaceItems(Invoice $invoice, array $items): void

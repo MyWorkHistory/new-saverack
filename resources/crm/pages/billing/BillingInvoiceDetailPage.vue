@@ -86,6 +86,7 @@ const copyLinkBusy = ref(false);
 const openInvoiceTabBusy = ref(false);
 const editBillingPeriodStart = ref("");
 const editBillingPeriodEnd = ref("");
+const invoiceDatesSaving = ref(false);
 const editPaymentType = ref("");
 const paymentTypeSaving = ref(false);
 const whatsappCaptureModalOpen = ref(false);
@@ -244,6 +245,10 @@ const payInvoiceDisabledTitle = computed(() => {
 });
 
 const canAddCharge = computed(
+  () => !!invoice.value && canUpdate.value && currentStatusKey.value !== "void",
+);
+
+const canEditInvoiceDates = computed(
   () => !!invoice.value && canUpdate.value && currentStatusKey.value !== "void",
 );
 
@@ -615,7 +620,7 @@ async function saveClientPaymentType() {
 function syncEditFromInvoice() {
   const inv = invoice.value;
   editPaymentType.value = String(inv?.client_account_default_payment_type || "").trim();
-  if (!inv || invoiceStatusKey(inv) !== "draft") {
+  if (!inv) {
     editDueAt.value = "";
     editBillingPeriodStart.value = "";
     editBillingPeriodEnd.value = "";
@@ -633,14 +638,18 @@ function syncEditFromInvoice() {
     null;
   editBillingPeriodStart.value = toDateInputValue(periodStart);
   editBillingPeriodEnd.value = toDateInputValue(periodEnd);
+  if (invoiceStatusKey(inv) !== "draft") {
+    editLines.value = [];
+    return;
+  }
   const items = inv.items || [];
   editLines.value = items.length
     ? items.map((i) => ({
         description: i.display_name || i.description || "",
         sku: i.sku != null && String(i.sku) !== "" ? String(i.sku) : "",
         quantity: formatQtyOneDecimal(i.quantity ?? 1),
-        unit_price: (Number(i.unit_price_cents) / 100).toFixed(2),
         category: i.category || null,
+        unit_price: formPriceDollarsFromCents(i.unit_price_cents, i.category),
         subtype: i.subtype || null,
         group_key: i.group_key || null,
         display_name: i.display_name || null,
@@ -674,7 +683,7 @@ async function load() {
     syncEditFromInvoice();
     await loadAccountBalanceSummary();
     setCrmPageMeta({
-      title: `Save Rack | ${data?.invoice_number || "Invoice"}`,
+      title: `Invoice # ${data?.invoice_number || "Invoice"} - Save Rack`,
       description: "Invoice detail.",
     });
   } catch (e) {
@@ -689,6 +698,28 @@ function dollarsToCents(s) {
   const n = Number.parseFloat(String(s).replace(/,/g, ""));
   if (!Number.isFinite(n)) return 0;
   return Math.round(n * 100);
+}
+
+function isCreditCategory(category) {
+  return String(category || "").toLowerCase() === "credits";
+}
+
+function formPriceDollarsFromCents(cents, category) {
+  const n = Number(cents || 0);
+  const signed = isCreditCategory(category) ? Math.abs(n) : n;
+  return (signed / 100).toFixed(2);
+}
+
+function signedUnitCents(category, value) {
+  const cents = dollarsToCents(value);
+  return isCreditCategory(category) ? -Math.abs(cents) : Math.abs(cents);
+}
+
+function signedLineTotalCents(category, quantity, unitPrice) {
+  const qty = Math.abs(Number.parseFloat(String(quantity).replace(/,/g, "")) || 0);
+  const unit = signedUnitCents(category, unitPrice);
+  const total = Math.round(qty * Math.abs(unit));
+  return isCreditCategory(category) ? -total : total;
 }
 
 function addDraftLine() {
@@ -710,7 +741,7 @@ async function saveDraft() {
     const desc = (line.description || "").trim();
     if (!desc) continue;
     const qty = Number.parseFloat(String(line.quantity).replace(/,/g, "")) || 0;
-    const unitCents = dollarsToCents(line.unit_price);
+    const unitCents = signedUnitCents(line.category, line.unit_price);
     const skuTrim = (line.sku || "").trim();
     items.push({
       description: desc,
@@ -723,7 +754,7 @@ async function saveDraft() {
       quantity: qty,
       unit: line.unit || null,
       unit_price_cents: unitCents,
-      line_total_cents: Math.max(0, Math.round(qty * unitCents)),
+      line_total_cents: signedLineTotalCents(line.category, qty, line.unit_price),
       metadata: line.metadata || null,
     });
   }
@@ -741,6 +772,26 @@ async function saveDraft() {
     toast.errorFrom(e, "Could not save draft.");
   } finally {
     draftSaving.value = false;
+  }
+}
+
+async function saveInvoiceDates() {
+  if (!invoice.value || !canEditInvoiceDates.value || invoiceDatesSaving.value) return;
+  invoiceDatesSaving.value = true;
+  try {
+    const { data } = await api.patch(`/invoices/${invoice.value.id}/dates`, {
+      due_at: editDueAt.value || null,
+      billing_period_start: editBillingPeriodStart.value || null,
+      billing_period_end: editBillingPeriodEnd.value || null,
+    });
+    invoice.value = data;
+    syncEditFromInvoice();
+    toast.success("Invoice dates updated.");
+    await loadAccountBalanceSummary();
+  } catch (e) {
+    toast.errorFrom(e, "Could not update invoice dates.");
+  } finally {
+    invoiceDatesSaving.value = false;
   }
 }
 
@@ -1010,7 +1061,7 @@ function openGroupEditModal(row) {
         service_code: line.service_code || "",
         quantity: formatQtyOneDecimal(line.qty ?? 1),
         unit: line.unit || "",
-        unit_price: (Number(line.price_cents || 0) / 100).toFixed(2),
+        unit_price: formPriceDollarsFromCents(line.price_cents, line.category),
         metadata: (() => {
           const m = line.metadata && typeof line.metadata === "object" ? { ...line.metadata } : {};
           const on = String(line.order_number || "").trim();
@@ -1109,7 +1160,7 @@ async function confirmGroupEdit() {
   try {
     const payloadItems = groupEditLines.value.map((line) => {
       const qty = Number.parseFloat(String(line.quantity).replace(/,/g, "")) || 0;
-      const unitCents = dollarsToCents(line.unit_price);
+      const unitCents = signedUnitCents(line.category, line.unit_price);
       return {
         description: line.description || line.display_name || "Item",
         display_name: line.display_name || line.description || "Item",
@@ -1120,7 +1171,7 @@ async function confirmGroupEdit() {
         quantity: qty,
         unit: line.unit || null,
         unit_price_cents: unitCents,
-        line_total_cents: Math.max(0, Math.round(qty * unitCents)),
+        line_total_cents: signedLineTotalCents(line.category, qty, line.unit_price),
         metadata: line.metadata || null,
       };
     });
@@ -1189,7 +1240,7 @@ function openLineEditModal(line) {
     service_code: line.service_code || "",
     quantity: formatQtyOneDecimal(line.qty ?? 1),
     unit: line.unit || "",
-    unit_price: (Number(line.price_cents || 0) / 100).toFixed(2),
+    unit_price: formPriceDollarsFromCents(line.price_cents, line.category),
     order_number: orderNumber,
     metadata,
   };
@@ -1217,7 +1268,7 @@ async function confirmLineEdit() {
       delete metadata.order_number;
     }
     const qty = Number.parseFloat(String(lineEditForm.value.quantity).replace(/,/g, "")) || 0;
-    const unitCents = dollarsToCents(lineEditForm.value.unit_price);
+    const unitCents = signedUnitCents(lineEditForm.value.category, lineEditForm.value.unit_price);
     await api.put(`/invoices/${invoice.value.id}/items/${lineEditTarget.value.id}`, {
       description: lineEditForm.value.description || lineEditTarget.value.name,
       display_name: lineEditForm.value.display_name || lineEditForm.value.description,
@@ -1229,7 +1280,11 @@ async function confirmLineEdit() {
       quantity: qty,
       unit: lineEditForm.value.unit || null,
       unit_price_cents: unitCents,
-      line_total_cents: Math.max(0, Math.round(qty * unitCents)),
+      line_total_cents: signedLineTotalCents(
+        lineEditForm.value.category,
+        qty,
+        lineEditForm.value.unit_price,
+      ),
       metadata: Object.keys(metadata).length ? metadata : null,
     });
     toast.success("Line item updated.");
@@ -1296,7 +1351,7 @@ async function confirmAddItem() {
   try {
     const orderNumber = String(addItemForm.value.order_number || "").trim();
     const qty = Number.parseFloat(String(addItemForm.value.quantity).replace(/,/g, "")) || 0;
-    const unitCents = dollarsToCents(addItemForm.value.unit_price);
+    const unitCents = signedUnitCents(addItemForm.value.category, addItemForm.value.unit_price);
     const serviceName = String(addItemForm.value.display_name || "").trim();
     await api.post(`/invoices/${invoice.value.id}/add-item`, {
       description: serviceName || "Service",
@@ -1308,7 +1363,11 @@ async function confirmAddItem() {
       quantity: qty,
       unit: addItemForm.value.unit || null,
       unit_price_cents: unitCents,
-      line_total_cents: Math.max(0, Math.round(qty * unitCents)),
+      line_total_cents: signedLineTotalCents(
+        addItemForm.value.category,
+        qty,
+        addItemForm.value.unit_price,
+      ),
       metadata: orderNumber ? { order_number: orderNumber } : null,
     });
     toast.success("Item added to invoice.");
@@ -1854,7 +1913,7 @@ function onDocKeydown(e) {
                     {{ invoice.invoice_number }}
                   </h1>
                   <div class="small billing-inv-meta-list">
-                    <div v-if="currentStatusKey === 'draft' && canUpdate" class="mb-2 text-lg-end">
+                    <div v-if="canEditInvoiceDates" class="mb-2 text-lg-end">
                       <div class="text-secondary mb-1">Invoice Date (service period)</div>
                       <div
                         v-if="invoiceDateRangeLabel && invoiceDateRangeLabel !== '—'"
@@ -1865,9 +1924,19 @@ function onDocKeydown(e) {
                       <div
                         class="d-inline-flex flex-wrap align-items-center justify-content-lg-end billing-inv-date-range"
                       >
-                        <input v-model="editBillingPeriodStart" type="date" class="form-control form-control-sm billing-inv-date-input" />
+                        <input
+                          v-model="editBillingPeriodStart"
+                          type="date"
+                          class="form-control form-control-sm billing-inv-date-input"
+                          :disabled="invoiceDatesSaving"
+                        />
                         <span class="text-secondary billing-inv-date-sep" aria-hidden="true">–</span>
-                        <input v-model="editBillingPeriodEnd" type="date" class="form-control form-control-sm billing-inv-date-input" />
+                        <input
+                          v-model="editBillingPeriodEnd"
+                          type="date"
+                          class="form-control form-control-sm billing-inv-date-input"
+                          :disabled="invoiceDatesSaving"
+                        />
                       </div>
                     </div>
                     <div v-else class="mb-1">
@@ -1876,10 +1945,25 @@ function onDocKeydown(e) {
                     </div>
                     <div class="mb-1">
                       <span class="text-secondary d-lg-block">Date due</span>
-                      <template v-if="currentStatusKey === 'draft' && canUpdate">
-                        <input v-model="editDueAt" type="date" class="form-control form-control-sm billing-inv-date-input d-inline-block mt-1 mt-lg-0 ms-lg-1" />
+                      <template v-if="canEditInvoiceDates">
+                        <input
+                          v-model="editDueAt"
+                          type="date"
+                          class="form-control form-control-sm billing-inv-date-input d-inline-block mt-1 mt-lg-0 ms-lg-1"
+                          :disabled="invoiceDatesSaving"
+                        />
                       </template>
                       <span v-else class="fw-medium ms-1">{{ formatInvoiceShortDate(invoice.due_at) }}</span>
+                    </div>
+                    <div v-if="canEditInvoiceDates" class="mt-2">
+                      <button
+                        type="button"
+                        class="btn btn-sm btn-primary"
+                        :disabled="invoiceDatesSaving"
+                        @click="saveInvoiceDates"
+                      >
+                        {{ invoiceDatesSaving ? "Saving…" : "Save Dates" }}
+                      </button>
                     </div>
                     <div v-if="invoice.payment_terms" class="mb-1">
                       <span class="text-secondary">Terms</span>
@@ -2032,13 +2116,7 @@ function onDocKeydown(e) {
                       <td class="text-end small text-secondary">
                         {{
                           formatCents(
-                            Math.max(
-                              0,
-                              Math.round(
-                                (Number.parseFloat(String(line.quantity).replace(/,/g, "")) ||
-                                  0) * dollarsToCents(line.unit_price),
-                              ),
-                            ),
+                            signedLineTotalCents(line.category, line.quantity, line.unit_price),
                             invoice.currency,
                           )
                         }}
@@ -2533,7 +2611,7 @@ function onDocKeydown(e) {
                       <td><input v-model="line.metadata.order_number" type="text" class="form-control form-control-sm" /></td>
                       <td><input v-model="line.quantity" type="text" class="form-control form-control-sm text-end" /></td>
                       <td><input v-model="line.unit_price" type="text" class="form-control form-control-sm text-end" /></td>
-                      <td class="text-end">{{ formatCents(Math.max(0, Math.round((Number.parseFloat(String(line.quantity).replace(/,/g, "")) || 0) * dollarsToCents(line.unit_price))), invoice.currency) }}</td>
+                      <td class="text-end">{{ formatCents(signedLineTotalCents(line.category, line.quantity, line.unit_price), invoice.currency) }}</td>
                       <td class="text-end"><button type="button" class="btn btn-link btn-sm text-danger p-0" @click="removeGroupEditLine(idx)">Delete</button></td>
                     </tr>
                   </tbody>

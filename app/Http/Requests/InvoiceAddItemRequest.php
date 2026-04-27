@@ -25,8 +25,8 @@ class InvoiceAddItemRequest extends FormRequest
             'service_code' => ['nullable', 'string', 'max:128'],
             'quantity' => ['nullable', 'numeric', 'min:0', 'max:9999999'],
             'unit' => ['nullable', 'string', 'max:32'],
-            'unit_price_cents' => ['required', 'integer', 'min:0'],
-            'line_total_cents' => ['nullable', 'integer', 'min:0'],
+            'unit_price_cents' => ['required', 'integer'],
+            'line_total_cents' => ['nullable', 'integer'],
             'metadata' => ['nullable', 'array'],
         ];
     }
@@ -38,8 +38,14 @@ class InvoiceAddItemRequest extends FormRequest
     {
         $v = $this->validated();
         $qty = array_key_exists('quantity', $v) ? (float) $v['quantity'] : 1.0;
-        $unit = (int) $v['unit_price_cents'];
+        $isCredit = ($v['category'] ?? null) === InvoiceLineCategory::CREDITS;
+        $unit = $isCredit ? -abs((int) $v['unit_price_cents']) : abs((int) $v['unit_price_cents']);
         $line = array_key_exists('line_total_cents', $v) ? (int) $v['line_total_cents'] : (int) round($qty * $unit);
+        if ($isCredit) {
+            $line = -abs($line);
+        } else {
+            $line = max(0, $line);
+        }
 
         return [
             'description' => (string) $v['description'],
@@ -52,7 +58,7 @@ class InvoiceAddItemRequest extends FormRequest
             'quantity' => $qty,
             'unit' => $v['unit'] ?? null,
             'unit_price_cents' => $unit,
-            'line_total_cents' => max(0, $line),
+            'line_total_cents' => $line,
             'metadata' => $v['metadata'] ?? null,
         ];
     }

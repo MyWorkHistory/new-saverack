@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
     <meta charset="utf-8">
-    <title>{{ $invoice_number }} — {{ $issuer_name }}</title>
+    <title>Invoice # {{ $invoice_number }} - Save Rack</title>
     <style>
         * { box-sizing: border-box; }
         body { font-family: DejaVu Sans, sans-serif; font-size: 11px; color: #2f2f2f; margin: 26px 30px; }

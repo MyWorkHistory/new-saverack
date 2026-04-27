@@ -133,6 +133,7 @@ class InvoiceService
      */
     private function insertInvoiceItemRow(Invoice $invoice, int $sortOrder, array $row): void
     {
+        $row = $this->normalizeCreditItemMoney($row);
         $desc = (string) ($row['description'] ?? '');
         InvoiceItem::query()->create([
             'invoice_id' => $invoice->id,
@@ -262,6 +263,7 @@ class InvoiceService
             if ($target === null) {
                 throw new \InvalidArgumentException('Invoice item was not found.');
             }
+            $item = $this->normalizeCreditItemMoney($item);
             $target->fill([
                 'category' => $item['category'] ?? $target->category,
                 'subtype' => $item['subtype'] ?? $target->subtype,
@@ -288,6 +290,38 @@ class InvoiceService
 
             return $invoice->fresh(['items', 'clientAccount']);
         });
+    }
+
+    /**
+     * Credits are entered as positive amounts in the UI, but always reduce invoice totals.
+     *
+     * @param  array<string, mixed>  $row
+     * @return array<string, mixed>
+     */
+    private function normalizeCreditItemMoney(array $row): array
+    {
+        $category = strtolower(trim((string) ($row['category'] ?? '')));
+        if ($category !== InvoiceLineCategory::CREDITS) {
+            if (array_key_exists('unit_price_cents', $row)) {
+                $row['unit_price_cents'] = abs((int) $row['unit_price_cents']);
+            }
+            if (array_key_exists('line_total_cents', $row)) {
+                $row['line_total_cents'] = max(0, (int) $row['line_total_cents']);
+            }
+            return $row;
+        }
+
+        $qty = abs((float) ($row['quantity'] ?? 1));
+        $unit = -abs((int) ($row['unit_price_cents'] ?? 0));
+        $line = array_key_exists('line_total_cents', $row)
+            ? -abs((int) $row['line_total_cents'])
+            : -abs((int) round($qty * abs($unit)));
+
+        $row['quantity'] = $qty;
+        $row['unit_price_cents'] = $unit;
+        $row['line_total_cents'] = $line;
+
+        return $row;
     }
 
     public function deleteInvoiceItem(Invoice $invoice, int $itemId, ?User $actor): Invoice

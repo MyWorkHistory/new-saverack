@@ -3,7 +3,7 @@
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>Invoice {{ $invoice->invoice_number }}</title>
+    <title>Invoice # {{ $invoice->invoice_number }} - Save Rack</title>
 </head>
 <body style="margin:0;padding:0;background:#ffffff;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;color:#151515;">
 <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="background:#ffffff;">

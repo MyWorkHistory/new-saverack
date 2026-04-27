@@ -87,6 +87,8 @@ Route::middleware('auth:sanctum')->group(function () {
         ->name('invoices.add-cc-fee');
     Route::post('invoices/{invoice}/status', [InvoiceController::class, 'updateStatus'])
         ->name('invoices.status');
+    Route::patch('invoices/{invoice}/dates', [InvoiceController::class, 'updateDates'])
+        ->name('invoices.dates');
     Route::put('invoices/{invoice}/items/{item}', [InvoiceController::class, 'updateItem'])
         ->name('invoices.items.update');
     Route::delete('invoices/{invoice}/items/{item}', [InvoiceController::class, 'destroyItem'])

@@ -39,8 +39,8 @@ class InvoiceStoreRequest extends FormRequest
             'items.*.service_code' => ['nullable', 'string', 'max:128'],
             'items.*.quantity' => ['nullable', 'numeric', 'min:0', 'max:9999999'],
             'items.*.unit' => ['nullable', 'string', 'max:32'],
-            'items.*.unit_price_cents' => ['required', 'integer', 'min:0'],
-            'items.*.line_total_cents' => ['required', 'integer', 'min:0'],
+            'items.*.unit_price_cents' => ['required', 'integer'],
+            'items.*.line_total_cents' => ['required', 'integer'],
             'items.*.metadata' => ['nullable', 'array'],
         ];
     }

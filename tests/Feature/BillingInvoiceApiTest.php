@@ -1488,6 +1488,48 @@ class BillingInvoiceApiTest extends TestCase
         ])->assertOk()->assertJsonPath('total_cents', 1325);
     }
 
+    public function test_credit_items_are_saved_as_negative_from_positive_input(): void
+    {
+        $user = User::factory()->create();
+        $user->permissions()->sync([
+            $this->billingViewPermission()->id,
+            $this->billingUpdatePermission()->id,
+        ]);
+        Sanctum::actingAs($user);
+
+        $client = ClientAccount::query()->create([
+            'status' => ClientAccount::STATUS_ACTIVE,
+            'company_name' => 'Credit Co',
+            'email' => 'credit@acme.test',
+        ]);
+
+        $invoice = Invoice::query()->create([
+            'invoice_number' => 'INV-CREDIT-001',
+            'client_account_id' => $client->id,
+            'status' => Invoice::STATUS_SENT,
+            'currency' => 'USD',
+            'subtotal_cents' => 1000,
+            'tax_cents' => 0,
+            'total_cents' => 1000,
+            'amount_paid_cents' => 0,
+            'balance_due_cents' => 1000,
+        ]);
+
+        $this->postJson("/api/invoices/{$invoice->id}/add-item", [
+            'description' => 'Manual credit',
+            'display_name' => 'Manual credit',
+            'category' => 'credits',
+            'quantity' => 1,
+            'unit_price_cents' => 1100,
+            'line_total_cents' => 1100,
+        ])
+            ->assertOk()
+            ->assertJsonPath('subtotal_cents', -1100)
+            ->assertJsonPath('total_cents', -1100)
+            ->assertJsonPath('items.0.unit_price_cents', -1100)
+            ->assertJsonPath('items.0.line_total_cents', -1100);
+    }
+
     public function test_draft_breakdown_line_can_be_updated_and_deleted(): void
     {
         $user = User::factory()->create();

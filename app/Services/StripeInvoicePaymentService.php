@@ -105,6 +105,7 @@ class StripeInvoicePaymentService
         if ($currency !== 'usd') {
             throw new \RuntimeException('Stripe charge currently supports USD invoices only.');
         }
+        $paymentTitle = $this->invoiceTitle($invoice);
 
         $stripe = $this->client();
         $pmId = trim($paymentMethodId);
@@ -120,7 +121,7 @@ class StripeInvoicePaymentService
                 'payment_method' => $pmId,
                 'confirm' => true,
                 'off_session' => true,
-                'description' => 'Invoice #'.$invoice->invoice_number,
+                'description' => $paymentTitle,
                 'metadata' => [
                     'source' => 'new_crm_invoice',
                     'invoice_id' => (string) $invoice->id,
@@ -273,6 +274,7 @@ class StripeInvoicePaymentService
         if ($currency !== 'usd') {
             throw new \RuntimeException('Public checkout currently supports USD invoices only.');
         }
+        $checkoutTitle = $this->invoiceTitle($invoice);
 
         $stripe = $this->client();
         $customerId = trim((string) ($account->stripe_customer_id ?? ''));
@@ -310,13 +312,13 @@ class StripeInvoicePaymentService
                         'currency' => $currency,
                         'unit_amount' => $balance,
                         'product_data' => [
-                            'name' => 'Invoice #'.$invoice->invoice_number,
+                            'name' => $checkoutTitle,
                             'description' => 'Save Rack invoice payment',
                         ],
                     ],
                 ]],
                 'payment_intent_data' => [
-                    'description' => 'Invoice #'.$invoice->invoice_number,
+                    'description' => $checkoutTitle,
                     'metadata' => [
                         'source' => 'new_crm_public_checkout',
                         'invoice_id' => (string) $invoice->id,
@@ -346,6 +348,11 @@ class StripeInvoicePaymentService
         }
 
         return new StripeClient($secret);
+    }
+
+    private function invoiceTitle(Invoice $invoice): string
+    {
+        return 'Invoice # '.$invoice->invoice_number.' - Save Rack';
     }
 
     /**

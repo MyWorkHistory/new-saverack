@@ -3,7 +3,7 @@
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>{{ $invoice_number }} — {{ $issuer_name }}</title>
+    <title>Invoice # {{ $invoice_number }} - Save Rack</title>
     <link rel="icon" href="{{ asset('brand/favicon.svg') }}" type="image/svg+xml">
     <style>
         * { box-sizing: border-box; }

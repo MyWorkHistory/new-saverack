@@ -2,25 +2,32 @@
 import { onUnmounted, watch } from "vue";
 
 const props = defineProps({
+  title: { type: String, default: "Update status" },
+  subtitle: { type: String, default: "Choose a new status." },
+  label: { type: String, default: "Status" },
   statuses: { type: Array, default: () => [] },
   busy: { type: Boolean, default: false },
 });
 
 const open = defineModel("open", { type: Boolean, default: false });
-const status = defineModel("status", { type: String, default: "pending" });
+const status = defineModel("status", { type: String, default: "" });
 
 const emit = defineEmits(["save"]);
 
-function onBackdrop() {
-  if (!props.busy) {
-    open.value = false;
-  }
+function displayStatus(value) {
+  return String(value || "")
+    .replace(/_/g, " ")
+    .replace(/\b\w/g, (c) => c.toUpperCase());
+}
+
+function close() {
+  if (!props.busy) open.value = false;
 }
 
 function onEsc(e) {
   if (e.key === "Escape" && open.value && !props.busy) {
     e.preventDefault();
-    open.value = false;
+    close();
   }
 }
 
@@ -35,10 +42,6 @@ watch(open, (o) => {
 onUnmounted(() => {
   document.removeEventListener("keydown", onEsc);
 });
-
-function submit() {
-  emit("save");
-}
 </script>
 
 <template>
@@ -49,9 +52,9 @@ function submit() {
         class="crm-vx-modal-overlay"
         aria-modal="true"
         role="dialog"
-        aria-labelledby="client-account-status-modal-title"
+        aria-labelledby="crm-status-update-modal-title"
       >
-        <div class="crm-vx-modal-backdrop" aria-hidden="true" @click="onBackdrop" />
+        <div class="crm-vx-modal-backdrop" aria-hidden="true" @click="close" />
         <Transition name="modal-panel" appear>
           <div class="crm-vx-modal crm-vx-modal--sm" @click.stop>
             <button
@@ -59,7 +62,7 @@ function submit() {
               class="crm-vx-modal__close"
               aria-label="Close"
               :disabled="busy"
-              @click="open = false"
+              @click="close"
             >
               <svg
                 width="20"
@@ -79,25 +82,34 @@ function submit() {
             </button>
 
             <header class="crm-vx-modal__head">
-              <h2 id="client-account-status-modal-title" class="crm-vx-modal__title">
-                Account status
+              <h2 id="crm-status-update-modal-title" class="crm-vx-modal__title">
+                {{ title }}
               </h2>
-              <p class="crm-vx-modal__subtitle">
-                Choose the directory status for this client account.
+              <p v-if="subtitle" class="crm-vx-modal__subtitle">
+                {{ subtitle }}
               </p>
             </header>
 
             <div class="crm-vx-modal__body">
-              <form id="client-account-status-form" class="d-flex flex-column gap-3" @submit.prevent="submit">
+              <form
+                id="crm-status-update-modal-form"
+                class="d-flex flex-column gap-3"
+                @submit.prevent="$emit('save')"
+              >
                 <div>
-                  <label class="form-label small mb-1 text-secondary" for="cast-status">Status</label>
+                  <label class="form-label small mb-1 text-secondary" for="crm-status-update-value">
+                    {{ label }}
+                  </label>
                   <select
-                    id="cast-status"
+                    id="crm-status-update-value"
                     v-model="status"
                     class="form-select text-capitalize"
                     :disabled="busy"
+                    required
                   >
-                    <option v-for="st in statuses" :key="st" :value="st">{{ st }}</option>
+                    <option v-for="st in statuses" :key="st" :value="st">
+                      {{ displayStatus(st) }}
+                    </option>
                   </select>
                 </div>
               </form>
@@ -108,17 +120,17 @@ function submit() {
                 type="button"
                 class="crm-vx-modal-btn crm-vx-modal-btn--secondary"
                 :disabled="busy"
-                @click="open = false"
+                @click="close"
               >
                 Cancel
               </button>
               <button
                 type="submit"
-                form="client-account-status-form"
+                form="crm-status-update-modal-form"
                 class="crm-vx-modal-btn crm-vx-modal-btn--primary"
                 :disabled="busy"
               >
-                {{ busy ? "Saving…" : "Save" }}
+                {{ busy ? "Saving..." : "Save" }}
               </button>
             </footer>
           </div>

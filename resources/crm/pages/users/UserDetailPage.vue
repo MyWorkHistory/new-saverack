@@ -9,6 +9,7 @@ import {
 import { RouterLink, useRoute, useRouter } from "vue-router";
 import api from "../../services/api";
 import CrmLoadingSpinner from "../../components/common/CrmLoadingSpinner.vue";
+import CrmStatusUpdateModal from "../../components/common/CrmStatusUpdateModal.vue";
 import UserEditSectionModal from "../../components/users/UserEditSectionModal.vue";
 import UserPermissionsPanel from "../../components/users/UserPermissionsPanel.vue";
 import StaffRoleIcon from "../../components/users/StaffRoleIcon.vue";
@@ -73,12 +74,22 @@ const sectionModalOpen = ref(false);
 const sectionModalKeys = ref([]);
 const sectionModalTitle = ref("");
 const sectionModalSubtitle = ref("");
+const statusModalOpen = ref(false);
+const statusForm = ref("pending");
+const statusSaving = ref(false);
+const userStatuses = ["pending", "active", "inactive"];
 
 function openSectionModal(keys, title, subtitle = "") {
   sectionModalKeys.value = keys;
   sectionModalTitle.value = title;
   sectionModalSubtitle.value = subtitle;
   sectionModalOpen.value = true;
+}
+
+function openStatusModal() {
+  if (!user.value || !canUpdateUsers.value) return;
+  statusForm.value = user.value.status || "pending";
+  statusModalOpen.value = true;
 }
 
 function userHasPerm(key) {
@@ -177,6 +188,26 @@ async function loadPageData() {
     }
   } finally {
     loading.value = false;
+  }
+}
+
+async function saveStatusFromModal() {
+  if (!user.value || !canUpdateUsers.value) return;
+  const next = statusForm.value;
+  if (next === user.value.status) {
+    statusModalOpen.value = false;
+    return;
+  }
+  statusSaving.value = true;
+  try {
+    await api.patch(`/users/${props.id}`, { status: next });
+    toast.success("Status updated.");
+    await loadPageData();
+    statusModalOpen.value = false;
+  } catch (err) {
+    toast.errorFrom(err, "Could not update status.");
+  } finally {
+    statusSaving.value = false;
   }
 }
 
@@ -311,8 +342,19 @@ function onPermissionsSaved() {
               {{ user.name }}
             </h2>
             <div class="staff-user-profile__role-pill w-100">
+              <button
+                v-if="canUpdateUsers"
+                type="button"
+                class="staff-status-badge text-capitalize"
+                :class="statusBadgeClass(user.status)"
+                title="Change status"
+                @click="openStatusModal"
+              >
+                {{ user.status }}
+              </button>
               <span
-                class="text-capitalize"
+                v-else
+                class="staff-status-badge text-capitalize"
                 :class="statusBadgeClass(user.status)"
               >{{ user.status }}</span>
             </div>
@@ -670,6 +712,16 @@ function onPermissionsSaved() {
       :title="sectionModalTitle"
       :subtitle="sectionModalSubtitle"
       @saved="loadPageData"
+    />
+
+    <CrmStatusUpdateModal
+      v-model:open="statusModalOpen"
+      v-model:status="statusForm"
+      title="Staff status"
+      subtitle="Choose the login status for this staff user."
+      :statuses="userStatuses"
+      :busy="statusSaving"
+      @save="saveStatusFromModal"
     />
 
   </div>

@@ -36,10 +36,10 @@ class UserUpdateRequest extends FormRequest
         return [
             'role_ids' => ['sometimes', 'array', 'min:1'],
             'role_ids.*' => ['integer', 'exists:roles,id'],
-            'name' => ['required', 'string', 'max:150'],
-            'email' => ['required', 'email', 'max:190', Rule::unique('users', 'email')->ignore($userId)],
+            'name' => ['sometimes', 'required', 'string', 'max:150'],
+            'email' => ['sometimes', 'required', 'email', 'max:190', Rule::unique('users', 'email')->ignore($userId)],
             'password' => ['nullable', 'string', 'min:8'],
-            'status' => ['required', Rule::in(['pending', 'active', 'inactive'])],
+            'status' => ['sometimes', 'required', Rule::in(['pending', 'active', 'inactive'])],
             'phone' => ['nullable', 'string', 'max:50'],
             'personal_email' => ['nullable', 'email', 'max:190'],
             'birthday' => ['nullable', 'date'],

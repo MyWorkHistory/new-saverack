@@ -7,6 +7,7 @@ import { BRAND_MARK_SRC } from "../../utils/brandAssets.js";
 import ConfirmModal from "../../components/common/ConfirmModal.vue";
 import CrmIconRowActions from "../../components/common/CrmIconRowActions.vue";
 import CrmLoadingSpinner from "../../components/common/CrmLoadingSpinner.vue";
+import CrmStatusUpdateModal from "../../components/common/CrmStatusUpdateModal.vue";
 import { useToast } from "../../composables/useToast";
 import { crmIsAdmin } from "../../utils/crmUser";
 import { setCrmPageMeta } from "../../composables/useCrmPageMeta.js";
@@ -72,6 +73,10 @@ const payFilterStatus = ref("all");
 
 const voidModalOpen = ref(false);
 const voidBusy = ref(false);
+const statusModalOpen = ref(false);
+const statusForm = ref("draft");
+const statusSaving = ref(false);
+const invoiceStatuses = ["draft", "open", "past_due", "collection", "paid", "void"];
 
 const deleteModalOpen = ref(false);
 const deleteBusy = ref(false);
@@ -205,6 +210,7 @@ function payRowStatusBadgeClass(row) {
 }
 
 const currentStatusKey = computed(() => invoiceStatusKey(invoice.value));
+const canUpdateInvoiceStatus = computed(() => canUpdate.value && !!invoice.value);
 
 /** Show Pay in sidebar whenever invoice might eventually accept payment (not paid/void). */
 const payInvoiceVisible = computed(
@@ -747,6 +753,32 @@ function statusBadgeClass(status) {
   if (s === "past due" || s === "past_due") return "bg-danger-subtle text-danger-emphasis";
   if (s === "open") return "bg-primary-subtle text-primary-emphasis";
   return "bg-body-secondary text-body-secondary";
+}
+
+function openStatusModal() {
+  if (!canUpdateInvoiceStatus.value || !invoice.value) return;
+  statusForm.value = currentStatusKey.value || "draft";
+  statusModalOpen.value = true;
+}
+
+async function saveStatusFromModal() {
+  if (!canUpdateInvoiceStatus.value || !invoice.value) return;
+  const next = statusForm.value;
+  if (next === currentStatusKey.value) {
+    statusModalOpen.value = false;
+    return;
+  }
+  statusSaving.value = true;
+  try {
+    await api.post(`/invoices/${invoice.value.id}/status`, { status: next });
+    toast.success("Invoice status updated.");
+    await load();
+    statusModalOpen.value = false;
+  } catch (e) {
+    toast.errorFrom(e, "Could not update invoice status.");
+  } finally {
+    statusSaving.value = false;
+  }
 }
 
 async function sendInvoice() {
@@ -1878,8 +1910,19 @@ function onDocKeydown(e) {
             </div>
 
             <div class="d-flex flex-wrap align-items-center gap-2 mb-2">
+              <button
+                v-if="canUpdateInvoiceStatus"
+                type="button"
+                class="staff-status-badge text-capitalize"
+                :class="statusBadgeClass(statusDisplayText)"
+                title="Change invoice status"
+                @click="openStatusModal"
+              >
+                {{ statusDisplayText }}
+              </button>
               <span
-                class="badge rounded-pill text-capitalize fw-medium"
+                v-else
+                class="staff-status-badge text-capitalize"
                 :class="statusBadgeClass(statusDisplayText)"
               >
                 {{ statusDisplayText }}
@@ -3217,6 +3260,15 @@ function onDocKeydown(e) {
       danger
       @close="closeDeleteModal"
       @confirm="confirmDelete"
+    />
+    <CrmStatusUpdateModal
+      v-model:open="statusModalOpen"
+      v-model:status="statusForm"
+      title="Invoice status"
+      subtitle="Choose the billing status for this invoice."
+      :statuses="invoiceStatuses"
+      :busy="statusSaving"
+      @save="saveStatusFromModal"
     />
   </div>
 </template>

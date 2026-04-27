@@ -1,11 +1,14 @@
 <script setup>
-import { computed, onMounted, ref, watch } from "vue";
+import { computed, inject, onMounted, ref, watch } from "vue";
 import { RouterLink } from "vue-router";
 import api from "../../services/api";
+import CrmStatusUpdateModal from "../../components/common/CrmStatusUpdateModal.vue";
 import CrmLoadingSpinner from "../../components/common/CrmLoadingSpinner.vue";
 import { formatDateTimeUs, formatDateUs } from "../../utils/formatUserDates";
 import { setCrmPageMeta } from "../../composables/useCrmPageMeta.js";
 import { resolvePublicUrl } from "../../utils/resolvePublicUrl.js";
+import { crmIsAdmin } from "../../utils/crmUser";
+import { useToast } from "../../composables/useToast";
 
 const props = defineProps({
   accountId: { type: String, required: true },
@@ -16,6 +19,21 @@ const loading = ref(true);
 const errorMsg = ref("");
 const row = ref(null);
 const historyItems = ref([]);
+const crmUser = inject("crmUser", ref(null));
+const toast = useToast();
+const statusModalOpen = ref(false);
+const statusForm = ref("pending");
+const statusSaving = ref(false);
+const userStatuses = ["pending", "active", "inactive"];
+
+function userHasPerm(key) {
+  const u = crmUser.value;
+  if (!u) return false;
+  if (crmIsAdmin(u) || u.is_crm_owner) return true;
+  return Array.isArray(u.permission_keys) && u.permission_keys.includes(key);
+}
+
+const canUpdate = computed(() => userHasPerm("client_users.update"));
 
 const avatarPalettes = [
   "bg-primary-subtle text-primary-emphasis",
@@ -57,6 +75,34 @@ function statusBadgeClass(status) {
 function display(val) {
   if (val == null || val === "") return "—";
   return String(val);
+}
+
+function openStatusModal() {
+  if (!row.value || !canUpdate.value) return;
+  statusForm.value = row.value.status || "pending";
+  statusModalOpen.value = true;
+}
+
+async function saveStatusFromModal() {
+  if (!row.value || !canUpdate.value) return;
+  const next = statusForm.value;
+  if (next === row.value.status) {
+    statusModalOpen.value = false;
+    return;
+  }
+  statusSaving.value = true;
+  try {
+    await api.patch(`/client-accounts/${props.accountId}/account-users/${props.userId}`, {
+      status: next,
+    });
+    toast.success("Status updated.");
+    await load();
+    statusModalOpen.value = false;
+  } catch (e) {
+    toast.errorFrom(e, "Could not update status.");
+  } finally {
+    statusSaving.value = false;
+  }
 }
 
 const accountDetailLink = computed(() => ({
@@ -236,7 +282,22 @@ watch(
               <div>
                 <dt class="staff-user-profile__dt">Status</dt>
                 <dd class="staff-user-profile__dd text-capitalize">
-                  <span :class="statusBadgeClass(row.status)">{{ row.status }}</span>
+                  <button
+                    v-if="canUpdate"
+                    type="button"
+                    class="staff-status-badge text-capitalize"
+                    :class="statusBadgeClass(row.status)"
+                    title="Change status"
+                    @click="openStatusModal"
+                  >
+                    {{ row.status }}
+                  </button>
+                  <span
+                    v-else
+                    class="staff-status-badge text-capitalize"
+                    :class="statusBadgeClass(row.status)"
+                    >{{ row.status }}</span
+                  >
                 </dd>
               </div>
               <div>
@@ -334,6 +395,16 @@ watch(
           No activity logged yet.
         </p>
       </section>
+
+      <CrmStatusUpdateModal
+        v-model:open="statusModalOpen"
+        v-model:status="statusForm"
+        title="Portal user status"
+        subtitle="Choose the login status for this portal user."
+        :statuses="userStatuses"
+        :busy="statusSaving"
+        @save="saveStatusFromModal"
+      />
     </template>
 
   </div>

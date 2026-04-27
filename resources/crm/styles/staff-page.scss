@@ -1039,6 +1039,34 @@ button.staff-stat-card {
   padding: 0.35em 0.75em;
 }
 
+.staff-status-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 1.75rem;
+  padding: 0.45rem 0.95rem;
+  border-radius: 999rem;
+  font-size: 0.875rem;
+  font-weight: 600;
+  line-height: 1.15;
+  white-space: nowrap;
+}
+
+button.staff-status-badge {
+  cursor: pointer;
+  border: 0;
+  appearance: none;
+}
+
+button.staff-status-badge:hover {
+  filter: brightness(0.96);
+}
+
+button.staff-status-badge:focus-visible {
+  outline: 2px solid var(--bs-primary);
+  outline-offset: 2px;
+}
+
 .staff-role-icon {
   width: 1.875rem;
   height: 1.875rem;

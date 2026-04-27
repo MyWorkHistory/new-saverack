@@ -5,7 +5,7 @@ import api from "../../services/api";
 import CrmLoadingSpinner from "../../components/common/CrmLoadingSpinner.vue";
 import ConfirmModal from "../../components/common/ConfirmModal.vue";
 import ClientAccountEditModal from "../../components/clients/ClientAccountEditModal.vue";
-import ClientAccountStatusModal from "../../components/clients/ClientAccountStatusModal.vue";
+import CrmStatusUpdateModal from "../../components/common/CrmStatusUpdateModal.vue";
 import ClientAccountChannelIcons from "../../components/clients/ClientAccountChannelIcons.vue";
 import ClientStoreCreateDrawer from "../../components/clients/ClientStoreCreateDrawer.vue";
 import ClientStoreEditModal from "../../components/clients/ClientStoreEditModal.vue";
@@ -1017,10 +1017,12 @@ onUnmounted(() => {
         loadHistory();
       "
     />
-    <ClientAccountStatusModal
+    <CrmStatusUpdateModal
       v-if="canUpdateAccount"
       v-model:open="accountStatusModalOpen"
       v-model:status="accountStatusForm"
+      title="Account status"
+      subtitle="Choose the directory status for this client account."
       :statuses="accountStatuses"
       :busy="accountStatusSaving"
       @save="saveAccountStatusFromModal"
@@ -1108,7 +1110,7 @@ onUnmounted(() => {
               <button
                 v-if="canUpdateAccount"
                 type="button"
-                class="ca-account-status-trigger text-capitalize border-0 bg-transparent p-0"
+                class="staff-status-badge text-capitalize"
                 :class="accountStatusBadgeClass(account.status)"
                 title="Change account status"
                 @click="openAccountStatusModal"
@@ -1324,7 +1326,7 @@ onUnmounted(() => {
                       <button
                         v-if="canUpdateAccount"
                         type="button"
-                        class="ca-account-status-trigger fw-semibold text-body text-capitalize border-0 bg-transparent p-0 text-start"
+                        class="staff-status-badge text-capitalize"
                         :class="accountStatusBadgeClass(account.status)"
                         title="Change account status"
                         @click="openAccountStatusModal"
@@ -2326,16 +2328,5 @@ onUnmounted(() => {
 }
 .object-fit-cover {
   object-fit: cover;
-}
-.ca-account-status-trigger {
-  cursor: pointer;
-  border-radius: 0.25rem;
-}
-.ca-account-status-trigger:hover {
-  filter: brightness(0.95);
-}
-.ca-account-status-trigger:focus-visible {
-  outline: 2px solid var(--bs-primary);
-  outline-offset: 2px;
 }
 </style>

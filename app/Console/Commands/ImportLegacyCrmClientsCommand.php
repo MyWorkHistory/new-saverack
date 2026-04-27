@@ -267,6 +267,9 @@ class ImportLegacyCrmClientsCommand extends Command
         $telegram = $this->nonEmptyString($row->c_telegram ?? null)
             ?? $this->nonEmptyString($row->b_telegram ?? null);
 
+        $stripeCustomerId = $this->nullableTruncate($row->stripe_customer_id ?? null, 191);
+        $whatsappApiId = $this->nullableTruncate($row->wp_chat_id ?? null, 191);
+
         $website = $this->nonEmptyString($row->website_url ?? null);
         $website = $this->truncate($website ?? '', 512);
 
@@ -287,6 +290,8 @@ class ImportLegacyCrmClientsCommand extends Command
             'phone' => $phone !== null ? $this->truncate($phone, 64) : null,
             'notify_email' => true,
             'telegram_handle' => $telegram !== null ? $this->truncate(ltrim($telegram, '@'), 190) : null,
+            'stripe_customer_id' => $stripeCustomerId,
+            'whatsapp_api_id' => $whatsappApiId,
             'street' => $street !== '' ? $this->truncate($street, 190) : null,
             'city' => $city !== null ? $this->truncate($city, 120) : null,
             'state' => $state !== null ? $this->truncate($state, 64) : null,

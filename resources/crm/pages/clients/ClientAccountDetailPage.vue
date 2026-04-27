@@ -5,6 +5,7 @@ import api from "../../services/api";
 import CrmLoadingSpinner from "../../components/common/CrmLoadingSpinner.vue";
 import ConfirmModal from "../../components/common/ConfirmModal.vue";
 import ClientAccountEditModal from "../../components/clients/ClientAccountEditModal.vue";
+import ClientAccountStatusModal from "../../components/clients/ClientAccountStatusModal.vue";
 import ClientAccountChannelIcons from "../../components/clients/ClientAccountChannelIcons.vue";
 import ClientStoreCreateDrawer from "../../components/clients/ClientStoreCreateDrawer.vue";
 import ClientStoreEditModal from "../../components/clients/ClientStoreEditModal.vue";
@@ -55,6 +56,10 @@ const stores = ref([]);
 const editAccountOpen = ref(false);
 const editAccountSection = ref("");
 const accountManagers = ref([]);
+const accountStatuses = ref(["pending", "active", "paused", "inactive"]);
+const accountStatusModalOpen = ref(false);
+const accountStatusForm = ref("pending");
+const accountStatusSaving = ref(false);
 
 const historyItems = ref([]);
 
@@ -535,6 +540,33 @@ function openAccountEdit(section = "") {
   editAccountOpen.value = true;
 }
 
+function openAccountStatusModal() {
+  if (!account.value || !canUpdateAccount.value) return;
+  accountStatusForm.value = account.value.status || "pending";
+  accountStatusModalOpen.value = true;
+}
+
+async function saveAccountStatusFromModal() {
+  if (!account.value || !canUpdateAccount.value) return;
+  const next = accountStatusForm.value;
+  if (next === account.value.status) {
+    accountStatusModalOpen.value = false;
+    return;
+  }
+  accountStatusSaving.value = true;
+  try {
+    await api.patch(`/client-accounts/${props.id}`, { status: next });
+    account.value = { ...account.value, status: next };
+    toast.success("Account status updated.");
+    await loadHistory();
+    accountStatusModalOpen.value = false;
+  } catch (e) {
+    toast.errorFrom(e, "Could not update status.");
+  } finally {
+    accountStatusSaving.value = false;
+  }
+}
+
 function onAccountFeesUpdated(payload) {
   account.value = payload;
 }
@@ -835,6 +867,9 @@ async function fetchMeta() {
   try {
     const { data } = await api.get("/client-accounts/meta");
     accountManagers.value = normalizeAccountManagersFromMeta(data);
+    if (Array.isArray(data?.statuses) && data.statuses.length) {
+      accountStatuses.value = data.statuses;
+    }
   } catch (e) {
     accountManagers.value = [];
     toast.errorFrom(e, "Could not load account manager list.");
@@ -982,6 +1017,14 @@ onUnmounted(() => {
         loadHistory();
       "
     />
+    <ClientAccountStatusModal
+      v-if="canUpdateAccount"
+      v-model:open="accountStatusModalOpen"
+      v-model:status="accountStatusForm"
+      :statuses="accountStatuses"
+      :busy="accountStatusSaving"
+      @save="saveAccountStatusFromModal"
+    />
     <ClientStoreCreateDrawer
       v-if="canCreateStore && canViewStores"
       v-model:open="addStoreOpen"
@@ -1062,7 +1105,18 @@ onUnmounted(() => {
               {{ account.company_name }}
             </h2>
             <div class="text-center mb-3">
+              <button
+                v-if="canUpdateAccount"
+                type="button"
+                class="ca-account-status-trigger text-capitalize border-0 bg-transparent p-0"
+                :class="accountStatusBadgeClass(account.status)"
+                title="Change account status"
+                @click="openAccountStatusModal"
+              >
+                {{ account.status }}
+              </button>
               <span
+                v-else
                 class="text-capitalize"
                 :class="accountStatusBadgeClass(account.status)"
               >{{ account.status }}</span>
@@ -1255,6 +1309,34 @@ onUnmounted(() => {
                     </dt>
                     <dd class="mb-0 fw-semibold text-body">
                       {{ display(account.phone) }}
+                    </dd>
+                  </dl>
+                </div>
+                <div class="col-md-6">
+                  <dl class="mb-0 small">
+                    <dt
+                      class="text-secondary text-uppercase fw-semibold mb-1"
+                      style="font-size: 0.65rem"
+                    >
+                      Account status
+                    </dt>
+                    <dd class="mb-0">
+                      <button
+                        v-if="canUpdateAccount"
+                        type="button"
+                        class="ca-account-status-trigger fw-semibold text-body text-capitalize border-0 bg-transparent p-0 text-start"
+                        :class="accountStatusBadgeClass(account.status)"
+                        title="Change account status"
+                        @click="openAccountStatusModal"
+                      >
+                        {{ account.status }}
+                      </button>
+                      <span
+                        v-else
+                        class="fw-semibold text-body text-capitalize"
+                        :class="accountStatusBadgeClass(account.status)"
+                        >{{ account.status }}</span
+                      >
                     </dd>
                   </dl>
                 </div>
@@ -2244,5 +2326,16 @@ onUnmounted(() => {
 }
 .object-fit-cover {
   object-fit: cover;
+}
+.ca-account-status-trigger {
+  cursor: pointer;
+  border-radius: 0.25rem;
+}
+.ca-account-status-trigger:hover {
+  filter: brightness(0.95);
+}
+.ca-account-status-trigger:focus-visible {
+  outline: 2px solid var(--bs-primary);
+  outline-offset: 2px;
 }
 </style>

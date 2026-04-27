@@ -83,9 +83,18 @@ GQL;
             return null;
         }
 
-        $data = $this->fetchProductBySku($term, $customerAccountId);
-        if ($data === null) {
-            $data = $this->fetchProductByBarcode($term, $customerAccountId);
+        $barcodeTerm = $this->normalizeBarcodeTerm($term);
+
+        if ($this->looksLikeBarcode($term)) {
+            $data = $this->fetchProductByBarcode($barcodeTerm, $customerAccountId);
+            if ($data === null) {
+                $data = $this->fetchProductBySku($term, $customerAccountId);
+            }
+        } else {
+            $data = $this->fetchProductBySku($term, $customerAccountId);
+            if ($data === null) {
+                $data = $this->fetchProductByBarcode($term, $customerAccountId);
+            }
         }
 
         if ($data === null) {
@@ -379,5 +388,24 @@ GQL;
             : null;
 
         return ['customer_account_id' => $id];
+    }
+
+    private function looksLikeBarcode(string $term): bool
+    {
+        $normalized = $this->normalizeBarcodeTerm($term);
+
+        return $normalized !== ''
+            && ctype_digit($normalized)
+            && strlen($normalized) >= 6;
+    }
+
+    private function normalizeBarcodeTerm(string $term): string
+    {
+        $normalized = preg_replace('/[\s-]+/', '', $term);
+
+        return is_string($normalized)
+            && $normalized !== ''
+            ? $normalized
+            : $term;
     }
 }

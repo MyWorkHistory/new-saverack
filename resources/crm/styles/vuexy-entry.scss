@@ -206,7 +206,7 @@ body {
  */
 body button:not(.btn):not(.btn-close):not(.staff-page-pager-tile):not(
     .page-link
-  ):not(.crm-vx-modal-btn) {
+  ):not(.crm-vx-modal-btn):not(.staff-stat-card) {
   border: 0 solid transparent;
   box-shadow: none;
   -webkit-appearance: none;
@@ -215,7 +215,7 @@ body button:not(.btn):not(.btn-close):not(.staff-page-pager-tile):not(
 
 body button:not(.btn):not(.btn-close):not(.staff-page-pager-tile):not(
     .page-link
-  ):not(.crm-vx-modal-btn)::-moz-focus-inner {
+  ):not(.crm-vx-modal-btn):not(.staff-stat-card)::-moz-focus-inner {
   border: 0;
   padding: 0;
 }

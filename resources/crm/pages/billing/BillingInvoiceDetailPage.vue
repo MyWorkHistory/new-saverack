@@ -11,7 +11,7 @@ import { useToast } from "../../composables/useToast";
 import { crmIsAdmin } from "../../utils/crmUser";
 import { setCrmPageMeta } from "../../composables/useCrmPageMeta.js";
 import { formatCents } from "../../utils/formatMoney.js";
-import { formatIsoDate } from "../../utils/formatUserDates.js";
+import { formatIsoDate, parseCalendarDay, toDateInputValue } from "../../utils/formatUserDates.js";
 
 const props = defineProps({
   id: { type: String, required: true },
@@ -437,12 +437,13 @@ function isPastDueByLogic(inv) {
   if (!inv) return false;
   const dueIn = Number(inv.due_in);
   if (Number.isFinite(dueIn) && dueIn < 0) return true;
-  const dueAt = inv.due_at ? new Date(String(inv.due_at)) : null;
-  if (!dueAt || Number.isNaN(dueAt.getTime())) return false;
+  const dueAt = inv.due_at ? parseCalendarDay(inv.due_at) : null;
+  if (!dueAt) return false;
   const today = new Date();
   today.setHours(0, 0, 0, 0);
-  dueAt.setHours(0, 0, 0, 0);
-  return dueAt < today;
+  const due0 = new Date(dueAt.getFullYear(), dueAt.getMonth(), dueAt.getDate());
+  due0.setHours(0, 0, 0, 0);
+  return due0 < today;
 }
 
 const statusDisplayText = computed(() => {
@@ -615,7 +616,7 @@ function syncEditFromInvoice() {
     editLines.value = [];
     return;
   }
-  editDueAt.value = inv.due_at ? String(inv.due_at).slice(0, 10) : "";
+  editDueAt.value = toDateInputValue(inv.due_at);
   const periodStart =
     inv.billing_period_start ||
     inv.invoice_date_from ||
@@ -624,8 +625,8 @@ function syncEditFromInvoice() {
     inv.billing_period_end ||
     inv.invoice_date_to ||
     null;
-  editBillingPeriodStart.value = periodStart ? String(periodStart).slice(0, 10) : "";
-  editBillingPeriodEnd.value = periodEnd ? String(periodEnd).slice(0, 10) : "";
+  editBillingPeriodStart.value = toDateInputValue(periodStart);
+  editBillingPeriodEnd.value = toDateInputValue(periodEnd);
   const items = inv.items || [];
   editLines.value = items.length
     ? items.map((i) => ({

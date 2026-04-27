@@ -1,13 +1,36 @@
 /** Leap year so Feb 29 is valid when syncing month/day to `birthday`. */
 export const BIRTHDAY_SENTINEL_YEAR = 2004;
 
+/**
+ * Calendar day in local timezone (noon) from API date/datetime strings.
+ * Use for due dates, issue dates, etc. so `YYYY-MM-DDT00:00:00.000000Z` does not
+ * shift the displayed day in US timezones.
+ * @param {unknown} val
+ * @returns {Date|null}
+ */
+export function parseCalendarDay(val) {
+  if (val == null || val === "") return null;
+  if (val instanceof Date) {
+    if (Number.isNaN(val.getTime())) return null;
+    return new Date(val.getFullYear(), val.getMonth(), val.getDate(), 12, 0, 0, 0);
+  }
+  const s = String(val);
+  const iso = s.match(/^(\d{4}-\d{2}-\d{2})/);
+  if (!iso) return null;
+  const d = new Date(`${iso[1]}T12:00:00`);
+  return Number.isNaN(d.getTime()) ? null : d;
+}
+
 /** @param {unknown} val */
 function parseToLocalDate(val) {
   if (val == null || val === "") return null;
+  if (val instanceof Date) {
+    return Number.isNaN(val.getTime()) ? null : val;
+  }
   const s = String(val);
   const iso = s.match(/^(\d{4}-\d{2}-\d{2})/);
-  if (iso) {
-    const d = new Date(s.includes("T") ? s : `${iso[0]}T12:00:00`);
+  if (iso && !s.includes("T")) {
+    const d = new Date(`${iso[1]}T12:00:00`);
     return Number.isNaN(d.getTime()) ? null : d;
   }
   const d = new Date(s);
@@ -20,7 +43,7 @@ function parseToLocalDate(val) {
  */
 export function formatDateUs(val) {
   if (val == null || val === "") return "—";
-  const d = val instanceof Date ? val : parseToLocalDate(val);
+  const d = parseCalendarDay(val);
   if (!d) return "—";
   return new Intl.DateTimeFormat("en-US", {
     month: "2-digit",
@@ -52,6 +75,20 @@ export function formatBirthdayMonthDay(val) {
 /** Alias: ISO date strings displayed as MM/DD/YYYY. */
 export function formatIsoDate(val) {
   return formatDateUs(val);
+}
+
+/**
+ * Value for `<input type="date">` — same calendar day as {@link formatIsoDate}.
+ * @param {unknown} val
+ */
+export function toDateInputValue(val) {
+  if (val == null || val === "") return "";
+  const d = parseCalendarDay(val);
+  if (!d || Number.isNaN(d.getTime())) return "";
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
 }
 
 /**

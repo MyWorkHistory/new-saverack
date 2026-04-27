@@ -21,6 +21,12 @@ $staff-primary: #2563eb;
   overflow: hidden;
 }
 
+/* Plain <button.staff-stat-card>: global CRM reset skips this class so border/shadow apply */
+button.staff-stat-card {
+  -webkit-appearance: none;
+  appearance: none;
+}
+
 .staff-stat-card__label {
   font-size: 1rem;
   font-weight: 500;

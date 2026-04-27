@@ -60,6 +60,7 @@ class ClientAccount extends Model
         'contract_date',
         'stripe_customer_id',
         'shiphero_customer_account_id',
+        'whatsapp_api_id',
         'default_payment_type',
     ];
 

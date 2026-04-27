@@ -9,7 +9,7 @@ const props = defineProps({
   open: { type: Boolean, default: false },
   accountId: { type: String, default: "" },
   accountManagers: { type: Array, default: () => [] },
-  /** "", "left" (sidebar contact & channels), "account", "address", "payment" */
+  /** "", "left" (sidebar contact & channels), "account", "address", "billing", "settings" */
   section: { type: String, default: "" },
 });
 
@@ -43,13 +43,17 @@ const form = reactive({
   default_payment_type: "",
   stripe_customer_id: "",
   shiphero_customer_account_id: "",
+  whatsapp_api_id: "",
 });
 
 const showAll = computed(() => !props.section);
 const showLeft = computed(() => showAll.value || props.section === "left");
 const showAccount = computed(() => showAll.value || props.section === "account");
 const showAddress = computed(() => showAll.value || props.section === "address");
-const showPayment = computed(() => showAll.value || props.section === "payment");
+const showBilling = computed(
+  () => showAll.value || props.section === "billing" || props.section === "payment",
+);
+const showSettings = computed(() => showAll.value || props.section === "settings");
 const isAccountSectionOnly = computed(() => props.section === "account");
 
 const contactFullName = computed({
@@ -76,8 +80,12 @@ const modalTitle = computed(() => {
       return "Personal information";
     case "address":
       return "Address";
+    case "billing":
+      return "Billing";
     case "payment":
-      return "Payment";
+      return "Billing";
+    case "settings":
+      return "Settings";
     default:
       return "Edit account";
   }
@@ -91,8 +99,12 @@ const modalSubtitle = computed(() => {
       return "Company, email, contact name, and phone.";
     case "address":
       return "Street, city, and country.";
+    case "billing":
+      return "Default payment type.";
     case "payment":
-      return "Payment defaults, Stripe, and ShipHero 3PL customer id.";
+      return "Default payment type.";
+    case "settings":
+      return "External API identifiers for integrations.";
     default:
       return "Update company profile, contacts, and notification channels.";
   }
@@ -146,6 +158,7 @@ async function load() {
     form.default_payment_type = data.default_payment_type || "";
     form.stripe_customer_id = data.stripe_customer_id || "";
     form.shiphero_customer_account_id = data.shiphero_customer_account_id || "";
+    form.whatsapp_api_id = data.whatsapp_api_id || "";
   } catch (e) {
     errorMsg.value = "Could not load account.";
     toast.errorFrom(e, "Could not load account.");
@@ -197,6 +210,7 @@ function buildPatch() {
       default_payment_type: trimOrNull(form.default_payment_type),
       stripe_customer_id: trimOrNull(form.stripe_customer_id),
       shiphero_customer_account_id: trimOrNull(form.shiphero_customer_account_id),
+      whatsapp_api_id: trimOrNull(form.whatsapp_api_id),
     };
   }
   if (props.section === "left") {
@@ -222,12 +236,16 @@ function buildPatch() {
       contact_last_name: trimOrNull(form.contact_last_name),
       email: form.email.trim(),
       phone: trimOrNull(form.phone),
+    };
+  }
+  if (props.section === "billing" || props.section === "payment") {
+    return {
       default_payment_type: trimOrNull(form.default_payment_type),
     };
   }
-  if (props.section === "payment") {
+  if (props.section === "settings") {
     return {
-      default_payment_type: trimOrNull(form.default_payment_type),
+      whatsapp_api_id: trimOrNull(form.whatsapp_api_id),
       stripe_customer_id: trimOrNull(form.stripe_customer_id),
       shiphero_customer_account_id: trimOrNull(form.shiphero_customer_account_id),
     };
@@ -379,25 +397,6 @@ async function onSubmit() {
                           autocomplete="tel"
                         />
                       </div>
-                      <div class="col-md-6">
-                        <label class="form-label small mb-1 text-secondary" for="cae-payment-type-personal"
-                          >Default payment type</label
-                        >
-                        <select
-                          id="cae-payment-type-personal"
-                          v-model="form.default_payment_type"
-                          class="form-select"
-                        >
-                          <option value="">No default</option>
-                          <option
-                            v-for="paymentType in paymentTypeOptions"
-                            :key="`edit-account-payment-personal-${paymentType}`"
-                            :value="paymentType"
-                          >
-                            {{ paymentType }}
-                          </option>
-                        </select>
-                      </div>
                     </div>
                   </template>
                   <template v-else-if="showAccount && showAll">
@@ -459,21 +458,6 @@ async function onSubmit() {
                           type="url"
                           class="form-control"
                         />
-                      </div>
-                      <div class="col-sm-6">
-                        <label class="form-label small mb-1 text-secondary" for="cae-payment-type"
-                          >Default payment type</label
-                        >
-                        <select id="cae-payment-type" v-model="form.default_payment_type" class="form-select">
-                          <option value="">No default</option>
-                          <option
-                            v-for="paymentType in paymentTypeOptions"
-                            :key="`edit-account-payment-${paymentType}`"
-                            :value="paymentType"
-                          >
-                            {{ paymentType }}
-                          </option>
-                        </select>
                       </div>
                     </div>
                   </template>
@@ -564,8 +548,8 @@ async function onSubmit() {
                       </div>
                     </div>
                   </template>
-                  <template v-if="showPayment">
-                    <p class="small fw-semibold text-secondary mb-0">Payment</p>
+                  <template v-if="showBilling">
+                    <p class="small fw-semibold text-secondary mb-0">Billing</p>
                     <div class="row g-3">
                       <div class="col-sm-6">
                         <label class="form-label small mb-1 text-secondary" for="cae-payment-type-main"
@@ -586,9 +570,27 @@ async function onSubmit() {
                           </option>
                         </select>
                       </div>
+                    </div>
+                  </template>
+                  <template v-if="showSettings">
+                    <p class="small fw-semibold text-secondary mb-0">Settings</p>
+                    <div class="row g-3">
+                      <div class="col-sm-6">
+                        <label class="form-label small mb-1 text-secondary" for="cae-whatsapp-api-id"
+                          >WhatsApp API ID</label
+                        >
+                        <input
+                          id="cae-whatsapp-api-id"
+                          v-model="form.whatsapp_api_id"
+                          type="text"
+                          class="form-control"
+                          placeholder="WhatsApp provider/API identifier"
+                          autocomplete="off"
+                        />
+                      </div>
                       <div class="col-sm-6">
                         <label class="form-label small mb-1 text-secondary" for="cae-stripe-customer-id"
-                          >Stripe customer id</label
+                          >Stripe customer ID</label
                         >
                         <input
                           id="cae-stripe-customer-id"

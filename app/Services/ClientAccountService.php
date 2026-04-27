@@ -473,6 +473,7 @@ class ClientAccountService
             'default_payment_type' => $account->default_payment_type,
             'stripe_customer_id' => $account->stripe_customer_id,
             'shiphero_customer_account_id' => $account->shiphero_customer_account_id,
+            'whatsapp_api_id' => $account->whatsapp_api_id,
             'account_manager' => $manager !== null
                 ? ['id' => $manager->id, 'name' => $manager->name, 'email' => $manager->email]
                 : null,

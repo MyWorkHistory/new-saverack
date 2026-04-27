@@ -21,6 +21,7 @@ import { crmIsAdmin } from "../../utils/crmUser";
 import { DEFAULT_PER_PAGE, PER_PAGE_OPTIONS } from "../../constants/pagination";
 import { setCrmPageMeta } from "../../composables/useCrmPageMeta.js";
 import { formatCents } from "../../utils/formatMoney.js";
+import { formatIsoDate } from "../../utils/formatUserDates.js";
 
 const crmUser = inject("crmUser", ref(null));
 const toast = useToast();
@@ -872,7 +873,7 @@ onUnmounted(() => {
       <div class="col-12 col-sm-6 col-xl-3">
         <button
           type="button"
-          class="staff-stat-card h-100 text-start w-100 border-0 billing-inv-list-summary-btn"
+          class="staff-stat-card h-100 text-start w-100 billing-inv-list-summary-btn"
           @click="setSummaryFilterBucket('open')"
         >
           <p class="staff-stat-card__label">Open Balance Due</p>
@@ -896,7 +897,7 @@ onUnmounted(() => {
       <div class="col-12 col-sm-6 col-xl-3">
         <button
           type="button"
-          class="staff-stat-card h-100 text-start w-100 border-0 billing-inv-list-summary-btn"
+          class="staff-stat-card h-100 text-start w-100 billing-inv-list-summary-btn"
           @click="setSummaryFilterBucket('past_due')"
         >
           <p class="staff-stat-card__label">Past Due Invoices</p>
@@ -919,7 +920,7 @@ onUnmounted(() => {
       <div class="col-12 col-sm-6 col-xl-3">
         <button
           type="button"
-          class="staff-stat-card h-100 text-start w-100 border-0 billing-inv-list-summary-btn"
+          class="staff-stat-card h-100 text-start w-100 billing-inv-list-summary-btn"
           @click="setSummaryFilterBucket('draft')"
         >
           <p class="staff-stat-card__label">Draft Invoices</p>
@@ -942,7 +943,7 @@ onUnmounted(() => {
       <div class="col-12 col-sm-6 col-xl-3">
         <button
           type="button"
-          class="staff-stat-card h-100 text-start w-100 border-0 billing-inv-list-summary-btn"
+          class="staff-stat-card h-100 text-start w-100 billing-inv-list-summary-btn"
           @click="setSummaryFilterBucket('paid')"
         >
           <p class="staff-stat-card__label">Paid (Month to Date)</p>
@@ -1354,10 +1355,10 @@ onUnmounted(() => {
                 {{ formatCents(row.total_cents, row.currency) }}
               </td>
               <td class="text-body staff-table-cell__meta text-nowrap">
-                {{ row.invoice_date_label || (row.issued_at ? new Date(row.issued_at).toLocaleDateString() : "—") }}
+                {{ row.invoice_date_label || formatIsoDate(row.issued_at) }}
               </td>
               <td class="text-body staff-table-cell__meta text-nowrap">
-                {{ row.due_at ? new Date(row.due_at).toLocaleDateString() : "—" }}
+                {{ formatIsoDate(row.due_at) }}
               </td>
               <td class="text-body staff-table-cell__meta">
                 {{ formatCents(row.balance_due_cents, row.currency) }}
@@ -1744,12 +1745,20 @@ onUnmounted(() => {
   cursor: pointer;
   font: inherit;
   color: inherit;
+  /* Match .staff-surface / account list stat cards (button reset can flatten appearance) */
+  box-shadow: 0 2px 10px rgba(47, 43, 61, 0.06);
   transition:
     box-shadow 0.15s ease,
     transform 0.15s ease;
 }
+[data-bs-theme="dark"] .billing-inv-list-summary-btn {
+  box-shadow: 0 2px 14px rgba(0, 0, 0, 0.22);
+}
 .billing-inv-list-summary-btn:hover {
   box-shadow: 0 0.45rem 1rem rgba(47, 43, 61, 0.1);
   transform: translateY(-1px);
+}
+[data-bs-theme="dark"] .billing-inv-list-summary-btn:hover {
+  box-shadow: 0 0.5rem 1.15rem rgba(0, 0, 0, 0.28);
 }
 </style>

@@ -60,6 +60,15 @@ class ClientAccountUpdateRequest extends FormRequest
                 $this->merge(['shiphero_customer_account_id' => trim((string) $raw)]);
             }
         }
+
+        if ($this->exists('whatsapp_api_id')) {
+            $raw = $this->input('whatsapp_api_id');
+            if ($raw === null || $raw === '') {
+                $this->merge(['whatsapp_api_id' => null]);
+            } else {
+                $this->merge(['whatsapp_api_id' => trim((string) $raw)]);
+            }
+        }
     }
 
     public function rules(): array
@@ -97,6 +106,7 @@ class ClientAccountUpdateRequest extends FormRequest
             'default_payment_type' => ['sometimes', 'nullable', 'string', Rule::in(ClientAccount::DEFAULT_PAYMENT_TYPES)],
             'stripe_customer_id' => ['sometimes', 'nullable', 'string', 'max:191'],
             'shiphero_customer_account_id' => ['sometimes', 'nullable', 'string', 'max:191'],
+            'whatsapp_api_id' => ['sometimes', 'nullable', 'string', 'max:191'],
         ];
     }
 }

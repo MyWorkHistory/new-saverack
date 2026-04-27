@@ -11,6 +11,7 @@ import { useToast } from "../../composables/useToast";
 import { crmIsAdmin } from "../../utils/crmUser";
 import { setCrmPageMeta } from "../../composables/useCrmPageMeta.js";
 import { formatCents } from "../../utils/formatMoney.js";
+import { formatIsoDate } from "../../utils/formatUserDates.js";
 
 const props = defineProps({
   id: { type: String, required: true },
@@ -475,11 +476,7 @@ const invoiceDateShort = new Intl.DateTimeFormat("en-US", {
 });
 
 function formatInvoiceShortDate(iso) {
-  if (!iso) return "—";
-  const s = String(iso);
-  const d = /^\d{4}-\d{2}-\d{2}$/.test(s) ? new Date(`${s}T12:00:00`) : new Date(s);
-  if (Number.isNaN(d.getTime())) return "—";
-  return invoiceDateShort.format(d);
+  return formatIsoDate(iso);
 }
 
 function formatHistoryTimestamp(iso) {
@@ -619,12 +616,16 @@ function syncEditFromInvoice() {
     return;
   }
   editDueAt.value = inv.due_at ? String(inv.due_at).slice(0, 10) : "";
-  editBillingPeriodStart.value = inv.billing_period_start
-    ? String(inv.billing_period_start).slice(0, 10)
-    : "";
-  editBillingPeriodEnd.value = inv.billing_period_end
-    ? String(inv.billing_period_end).slice(0, 10)
-    : "";
+  const periodStart =
+    inv.billing_period_start ||
+    inv.invoice_date_from ||
+    null;
+  const periodEnd =
+    inv.billing_period_end ||
+    inv.invoice_date_to ||
+    null;
+  editBillingPeriodStart.value = periodStart ? String(periodStart).slice(0, 10) : "";
+  editBillingPeriodEnd.value = periodEnd ? String(periodEnd).slice(0, 10) : "";
   const items = inv.items || [];
   editLines.value = items.length
     ? items.map((i) => ({
@@ -1400,7 +1401,7 @@ function openRightMenuDelete() {
 async function openStripeModal() {
   if (!invoice.value || !canStripeCharge.value) return;
   if (!hasStripeCustomerId.value) {
-    toast.error("Set Stripe customer id in Client Account > Payment first.");
+    toast.error("Set Stripe customer ID in Client Account > Settings first.");
     return;
   }
   stripeModalOpen.value = true;
@@ -1807,9 +1808,17 @@ function onDocKeydown(e) {
                   <div class="small billing-inv-meta-list">
                     <div v-if="currentStatusKey === 'draft' && canUpdate" class="mb-2 text-lg-end">
                       <div class="text-secondary mb-1">Invoice Date (service period)</div>
-                      <div class="d-inline-flex flex-wrap align-items-center gap-1 justify-content-lg-end">
+                      <div
+                        v-if="invoiceDateRangeLabel && invoiceDateRangeLabel !== '—'"
+                        class="small text-body mb-2 billing-inv-service-period-readonly"
+                      >
+                        {{ invoiceDateRangeLabel }}
+                      </div>
+                      <div
+                        class="d-inline-flex flex-wrap align-items-center justify-content-lg-end billing-inv-date-range"
+                      >
                         <input v-model="editBillingPeriodStart" type="date" class="form-control form-control-sm billing-inv-date-input" />
-                        <span class="text-secondary">–</span>
+                        <span class="text-secondary billing-inv-date-sep" aria-hidden="true">–</span>
                         <input v-model="editBillingPeriodEnd" type="date" class="form-control form-control-sm billing-inv-date-input" />
                       </div>
                     </div>
@@ -3589,10 +3598,23 @@ function onDocKeydown(e) {
 .billing-inv-client-link:hover {
   text-decoration: underline !important;
 }
-.billing-inv-date-input {
-  width: auto;
-  min-width: 9.5rem;
+.billing-inv-date-range {
+  gap: 0.35rem;
   max-width: 100%;
+}
+.billing-inv-date-input {
+  flex: 0 0 auto;
+  width: 10.25rem;
+  min-width: 0;
+  max-width: 100%;
+}
+.billing-inv-date-sep {
+  flex: 0 0 auto;
+  line-height: 1;
+  padding: 0 0.1rem;
+}
+.billing-inv-service-period-readonly {
+  opacity: 0.92;
 }
 .billing-inv-payment-select {
   max-width: 12rem;

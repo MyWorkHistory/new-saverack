@@ -1485,7 +1485,20 @@ class BillingInvoiceApiTest extends TestCase
         $this->postJson("/api/invoices/{$invoice->id}/add-cc-fee", [
             'amount_cents' => 325,
             'label' => 'CC Fee',
-        ])->assertOk()->assertJsonPath('total_cents', 1325);
+        ])
+            ->assertOk()
+            ->assertJsonPath('total_cents', 1325)
+            ->assertJsonFragment([
+                'name' => 'CC Fee',
+                'type' => 'Credit Card Fee',
+                'total_cents' => 325,
+                'groupKey' => 'cc_fee',
+            ]);
+
+        $this->postJson("/api/invoices/{$invoice->id}/add-cc-fee", [
+            'amount_cents' => 325,
+            'label' => 'CC Fee',
+        ])->assertStatus(422);
     }
 
     public function test_credit_items_are_saved_as_negative_from_positive_input(): void

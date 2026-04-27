@@ -15,6 +15,7 @@ use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Str;
+use Illuminate\Validation\ValidationException;
 
 class InvoiceService
 {
@@ -236,6 +237,13 @@ class InvoiceService
     {
         if ($amountCents <= 0) {
             throw new \InvalidArgumentException('CC fee amount must be positive.');
+        }
+
+        $invoice->loadMissing('items', 'clientAccount');
+        if ($invoice->items->contains(fn (InvoiceItem $item): bool => $this->isCreditCardFeeItem($item))) {
+            throw ValidationException::withMessages([
+                'amount_cents' => 'A credit card fee has already been added to this invoice.',
+            ]);
         }
 
         return $this->addInvoiceItem($invoice, [
@@ -999,13 +1007,29 @@ class InvoiceService
         $packaging = [];
         $receiving = [];
         $adHoc = [];
+        $ccFees = [];
         $returns = [];
         $onDemand = [];
         $otherItems = [];
 
         foreach ($invoice->items as $item) {
             $category = strtolower(trim((string) $item->category));
-            if ($category === InvoiceLineCategory::FULFILLMENT) {
+            if ($this->isCreditCardFeeItem($item)) {
+                $name = $this->oldBetaDisplayName($item, 'Credit Card Fee');
+                $key = strtolower($name);
+                if (! isset($ccFees[$key])) {
+                    $ccFees[$key] = ['name' => $name, 'items' => [], 'qty' => 0.0, 'total' => 0];
+                }
+                $qty = (float) $item->quantity;
+                $total = (int) $item->line_total_cents;
+                $unitRate = (int) $item->unit_price_cents;
+                if ($unitRate === 0 && $qty != 0.0 && $total !== 0) {
+                    $unitRate = (int) round($total / $qty);
+                }
+                $ccFees[$key]['items'][] = $this->detailLeafRow($item, 'Credit Card Fee', $name, $unitRate, $total);
+                $ccFees[$key]['qty'] += $qty;
+                $ccFees[$key]['total'] += $total;
+            } elseif ($category === InvoiceLineCategory::FULFILLMENT) {
                 $name = $this->normalizeLegacyServiceLabel($this->oldBetaDisplayName($item));
                 $key = $name;
                 if (! isset($fulfillment[$key])) {
@@ -1225,6 +1249,22 @@ class InvoiceService
                 'details' => $agg['items'],
             ];
         }
+        foreach ($ccFees as $key => $agg) {
+            $qty = (float) $agg['qty'];
+            $total = (int) $agg['total'];
+            $rows[] = [
+                'id' => 'ccfee-'.$key,
+                'name' => $agg['name'],
+                'type' => 'Credit Card Fee',
+                'qty' => $qty,
+                'price_cents' => $qty != 0.0 ? (int) round($total / $qty) : 0,
+                'total_cents' => $total,
+                'groupKey' => 'cc_fee',
+                'groupName' => $agg['name'],
+                'line_group_key' => $this->singleGroupKey($agg['items']),
+                'details' => $agg['items'],
+            ];
+        }
         foreach ($returns as $returnKey => $agg) {
             $qty = (float) $agg['qty_sum'];
             $total = (int) $agg['total_sum'];
@@ -1374,6 +1414,18 @@ class InvoiceService
         return $all[0];
     }
 
+    private function isCreditCardFeeItem(InvoiceItem $item): bool
+    {
+        $groupKey = strtolower(trim((string) $item->group_key));
+        if (str_starts_with($groupKey, 'cc_fee:')) {
+            return true;
+        }
+
+        $name = strtolower(trim((string) ($item->display_name ?: $item->description)));
+
+        return $name === 'credit card fee' || $name === 'cc fee';
+    }
+
     private function oldBetaDisplayName(InvoiceItem $item, string $fallback = '—'): string
     {
         $name = trim((string) ($item->display_name ?: $item->description ?: ''));
@@ -1510,6 +1562,7 @@ class InvoiceService
             'ad hoc' => 40,
             'bank fee' => 41,
             'duties & taxes' => 42,
+            'credit card fee' => 43,
             'returns' => 50,
             'product (on-demand)' => 60,
             'storage' => 70,

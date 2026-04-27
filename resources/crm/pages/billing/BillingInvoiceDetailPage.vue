@@ -368,6 +368,24 @@ const invoicePaymentTypeDisplay = computed(() => {
   return String(t).trim();
 });
 
+const isCreditCardPaymentType = computed(
+  () => invoicePaymentTypeDisplay.value.toLowerCase() === "credit card",
+);
+
+const hasCreditCardFee = computed(() => {
+  const items = Array.isArray(invoice.value?.items) ? invoice.value.items : [];
+  return items.some((item) => {
+    const groupKey = String(item?.group_key || "").trim().toLowerCase();
+    if (groupKey.startsWith("cc_fee:")) return true;
+    const name = String(item?.display_name || item?.description || "").trim().toLowerCase();
+    return name === "credit card fee" || name === "cc fee";
+  });
+});
+
+const canAddCcFee = computed(
+  () => canAddCharge.value && isCreditCardPaymentType.value && !hasCreditCardFee.value,
+);
+
 const clientAccountDetailHref = computed(() => {
   const id = invoice.value?.client_account_id;
   if (id == null || id === "") return "";
@@ -1476,6 +1494,7 @@ function openRightMenuOpenInvoice() {
 }
 
 function openRightMenuCcFee() {
+  if (!canAddCcFee.value) return;
   closeRightActionsMenu();
   openCcFeeModal();
 }
@@ -2424,7 +2443,7 @@ function onDocKeydown(e) {
                   {{ openInvoiceTabBusy ? "Updating..." : "Open Invoice" }}
                 </button>
                 <button
-                  v-if="canAddCharge"
+                  v-if="canAddCcFee"
                   type="button"
                   class="staff-row-menu__item"
                   role="menuitem"

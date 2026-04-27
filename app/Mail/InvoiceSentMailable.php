@@ -68,7 +68,8 @@ class InvoiceSentMailable extends Mailable
     {
         $subject = 'You have a new invoice for '.$this->invoiceAmountFormatted;
 
-        return $this->subject($subject)
+        return $this->from('billing@saverack.com', 'Save Rack Billing')
+            ->subject($subject)
             ->view('emails.invoice-sent');
     }
 

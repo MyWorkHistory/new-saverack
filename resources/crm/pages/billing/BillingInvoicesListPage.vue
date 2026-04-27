@@ -369,8 +369,8 @@ function openImportModal() {
   importModalOpen.value = true;
 }
 
-function closeImportModal() {
-  if (importBusy.value) return;
+function closeImportModal(force = false) {
+  if (importBusy.value && !force) return;
   importModalOpen.value = false;
 }
 
@@ -527,7 +527,7 @@ async function submitImportCsv() {
     }
 
     toast.success("Invoice imported.");
-    closeImportModal();
+    closeImportModal(true);
     await loadSummary();
     await fetchRows();
     router.push(`/billing/invoices/${newInvoiceId}`);
@@ -547,8 +547,8 @@ function openPayModal(row) {
   payModalOpen.value = true;
 }
 
-function closePayModal() {
-  if (payBusy.value) return;
+function closePayModal(force = false) {
+  if (payBusy.value && !force) return;
   payModalOpen.value = false;
   payTarget.value = null;
 }
@@ -567,7 +567,7 @@ async function confirmPay() {
       amount_cents: cents,
     });
     toast.success("Payment recorded.");
-    closePayModal();
+    closePayModal(true);
     await loadSummary();
     await fetchRows();
   } catch (e) {
@@ -583,8 +583,8 @@ function openVoidModal(row) {
   voidModalOpen.value = true;
 }
 
-function closeVoidModal() {
-  if (voidBusy.value) return;
+function closeVoidModal(force = false) {
+  if (voidBusy.value && !force) return;
   voidModalOpen.value = false;
   voidTarget.value = null;
 }
@@ -596,7 +596,7 @@ async function confirmVoid() {
   try {
     await api.post(`/invoices/${row.id}/void`);
     toast.success("Invoice voided.");
-    closeVoidModal();
+    closeVoidModal(true);
     await loadSummary();
     await fetchRows();
   } catch (e) {
@@ -612,8 +612,8 @@ function openDeleteModal(row) {
   deleteModalOpen.value = true;
 }
 
-function closeDeleteModal() {
-  if (deleteBusy.value) return;
+function closeDeleteModal(force = false) {
+  if (deleteBusy.value && !force) return;
   deleteModalOpen.value = false;
   deleteTarget.value = null;
 }
@@ -625,7 +625,7 @@ async function confirmDelete() {
   try {
     await api.delete(`/invoices/${row.id}`);
     toast.success("Invoice deleted.");
-    closeDeleteModal();
+    closeDeleteModal(true);
     await loadSummary();
     await fetchRows();
   } catch (e) {

@@ -1339,10 +1339,6 @@ class InvoiceService
 
     private function oldBetaPackagingType(string $name): string
     {
-        $norm = strtolower(trim($name));
-        if (in_array($norm, ['bubble wrap', 'kraft paper', 'bubble wrap & kraft paper'], true)) {
-            return $name;
-        }
         return 'Packaging';
     }
 
@@ -1407,6 +1403,12 @@ class InvoiceService
             case InvoiceLineCategory::POSTAGE:
                 return 'Postage';
             case InvoiceLineCategory::PACKAGING:
+            case 'bubble_wrap':
+            case 'bubble wrap':
+            case 'kraft_paper':
+            case 'kraft paper':
+            case 'bubble_wrap_&_kraft_paper':
+            case 'bubble wrap & kraft paper':
                 return $this->oldBetaPackagingType($name);
             case InvoiceLineCategory::RETURNS:
                 return 'Returns';
@@ -2005,22 +2007,13 @@ class InvoiceService
      */
     private function invoiceRecipientEmails(Invoice $invoice): array
     {
-        $invoice->loadMissing('clientAccount.accountUsers');
-        $emails = [];
+        $invoice->loadMissing('clientAccount');
         $account = $invoice->clientAccount;
         if ($account !== null && is_string($account->email) && filter_var($account->email, FILTER_VALIDATE_EMAIL)) {
-            $emails[] = strtolower(trim($account->email));
-        }
-        if ($account !== null && $account->relationLoaded('accountUsers')) {
-            foreach ($account->accountUsers as $user) {
-                $email = is_string($user->email ?? null) ? strtolower(trim((string) $user->email)) : '';
-                if ($email !== '' && filter_var($email, FILTER_VALIDATE_EMAIL)) {
-                    $emails[] = $email;
-                }
-            }
+            return [strtolower(trim($account->email))];
         }
 
-        return array_values(array_unique(array_filter($emails)));
+        return [];
     }
 
     private function defaultWhatsappMessage(Invoice $invoice, string $invoiceUrl, string $type): string

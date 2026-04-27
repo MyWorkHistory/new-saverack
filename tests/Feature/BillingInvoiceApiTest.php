@@ -143,6 +143,7 @@ class BillingInvoiceApiTest extends TestCase
 
         Mail::assertSent(InvoiceSentMailable::class, function (InvoiceSentMailable $mail) use ($invoiceId) {
             return $mail->hasTo('billing@acme.test')
+                && $mail->hasFrom('billing@saverack.com', 'Save Rack Billing')
                 && (int) $mail->invoice->id === (int) $invoiceId;
         });
 
@@ -154,7 +155,7 @@ class BillingInvoiceApiTest extends TestCase
         $pay->assertJsonPath('balance_due_cents', 0);
     }
 
-    public function test_send_email_can_target_selected_recipients(): void
+    public function test_send_email_is_limited_to_account_email(): void
     {
         Mail::fake();
 
@@ -168,12 +169,12 @@ class BillingInvoiceApiTest extends TestCase
         $client = ClientAccount::query()->create([
             'status' => ClientAccount::STATUS_ACTIVE,
             'company_name' => 'Recipients Co',
-            'email' => 'billing@recipients.test',
+            'email' => 'billing@example.com',
         ]);
 
         User::factory()->create([
             'client_account_id' => $client->id,
-            'email' => 'ap@recipients.test',
+            'email' => 'ap@example.com',
         ]);
 
         $invoice = Invoice::query()->create([
@@ -188,11 +189,13 @@ class BillingInvoiceApiTest extends TestCase
             'balance_due_cents' => 1000,
         ]);
 
-        $res = $this->postJson("/api/invoices/{$invoice->id}/email", [
-            'recipients' => ['ap@recipients.test'],
-        ]);
+        $this->postJson("/api/invoices/{$invoice->id}/email", [
+            'recipients' => ['ap@example.com'],
+        ])->assertStatus(422);
+
+        $res = $this->postJson("/api/invoices/{$invoice->id}/email");
         $res->assertOk()->assertJsonCount(1, 'recipients');
-        $res->assertJsonPath('recipients.0', 'ap@recipients.test');
+        $res->assertJsonPath('recipients.0', 'billing@example.com');
     }
 
     public function test_whatsapp_request_accepts_send_storage_invoice_type(): void

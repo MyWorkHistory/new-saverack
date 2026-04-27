@@ -1,10 +1,10 @@
 <script setup>
 import { computed } from "vue";
 import telegramIconUrl from "@public/images/telegram-icon.png";
-import { inHouseSlackHref, slackChannelHref } from "../../utils/slackChannel.js";
+import { slackChannelHref } from "../../utils/slackChannel.js";
 
 /**
- * Channel indicators: email, Telegram, WhatsApp, Slack (client and/or in-house URL).
+ * Channel indicators: email, Telegram, WhatsApp, normal/client Slack.
  */
 const props = defineProps({
   telegramTitle: { type: String, default: "Telegram" },
@@ -19,11 +19,8 @@ const props = defineProps({
   sizeClass: { type: String, default: "h-5 w-5" },
 });
 
-/** Prefer client Slack URL; else in-house app_redirect (or legacy URL). */
 const slackIconHref = computed(() => {
-  const client = slackChannelHref(props.slackChannel);
-  if (client) return client;
-  return inHouseSlackHref(props.inHouseSlack);
+  return slackChannelHref(props.slackChannel);
 });
 </script>
 
@@ -72,7 +69,7 @@ const slackIconHref = computed(() => {
       </svg>
     </span>
     <a
-      v-if="(slackChannel || inHouseSlack) && slackIconHref"
+      v-if="slackChannel && slackIconHref"
       class="inline-flex shrink-0 text-[#4A154B] dark:text-[#e01e5a] text-decoration-none"
       :href="slackIconHref"
       :title="slackTitle"
@@ -87,7 +84,7 @@ const slackIconHref = computed(() => {
       </svg>
     </a>
     <span
-      v-else-if="slackChannel || inHouseSlack"
+      v-else-if="slackChannel"
       class="inline-flex text-[#4A154B] dark:text-[#e01e5a]"
       :title="slackTitle"
     >
@@ -98,7 +95,7 @@ const slackIconHref = computed(() => {
       </svg>
     </span>
     <span
-      v-if="!notifyEmail && !telegramHandle && !whatsappE164 && !slackChannel && !inHouseSlack"
+      v-if="!notifyEmail && !telegramHandle && !whatsappE164 && !slackChannel"
       class="text-gray-400"
       >—</span
     >

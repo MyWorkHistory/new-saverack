@@ -29,7 +29,7 @@ const form = reactive({
   contact_last_name: "",
   email: "",
   phone: "",
-  notify_email: true,
+  notify_email: false,
   telegram_handle: "",
   whatsapp_e164: "",
   slack_channel: "",

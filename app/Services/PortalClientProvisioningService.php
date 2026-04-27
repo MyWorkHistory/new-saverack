@@ -52,7 +52,7 @@ class PortalClientProvisioningService
                 'contact_last_name' => $last,
                 'email' => $email,
                 'phone' => $phone !== '' ? $phone : null,
-                'notify_email' => true,
+                'notify_email' => false,
             ]);
 
             return $this->createPortalUserForAccount($account, $fullName, $email, $phone, $plainPassword);

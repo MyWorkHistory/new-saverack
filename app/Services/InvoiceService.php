@@ -372,9 +372,9 @@ class InvoiceService
         }
 
         $invoice->total_cents = (int) $invoice->subtotal_cents + (int) $invoice->tax_cents;
-        $paid = min($invoice->amount_paid_cents, $invoice->total_cents);
+        $paid = min((int) $invoice->amount_paid_cents, max(0, (int) $invoice->total_cents));
         $invoice->amount_paid_cents = $paid;
-        $invoice->balance_due_cents = max(0, $invoice->total_cents - $paid);
+        $invoice->balance_due_cents = max(0, (int) $invoice->total_cents - $paid);
         $this->syncPaymentDerivedFields($invoice);
     }
 

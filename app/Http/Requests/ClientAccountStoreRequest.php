@@ -70,7 +70,7 @@ class ClientAccountStoreRequest extends FormRequest
     protected function prepareForValidation(): void
     {
         if (! $this->has('notify_email')) {
-            $this->merge(['notify_email' => true]);
+            $this->merge(['notify_email' => false]);
         }
         if ($this->input('account_manager_id') === '') {
             $this->merge(['account_manager_id' => null]);

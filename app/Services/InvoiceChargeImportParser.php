@@ -1013,6 +1013,12 @@ final class InvoiceChargeImportParser
      */
     private function buildItem(string $category, string $display, string $description, float $qty, int $rateCents, int $lineTotalCents, ?string $subtype, ?string $groupKey, string $serviceCode, ?string $sku = null): array
     {
+        // Credits/adjustments can arrive with a negative quantity. Store quantity as
+        // a physical count and keep the credit sign on the money columns.
+        if ($qty < 0) {
+            $qty = abs($qty);
+        }
+
         return [
             'category' => $category,
             'subtype' => $subtype,

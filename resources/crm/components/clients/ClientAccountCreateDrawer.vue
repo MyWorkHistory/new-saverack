@@ -67,6 +67,7 @@ async function onSubmit() {
       full_name: form.full_name.trim(),
       email: form.email.trim(),
       phone: form.phone.trim() || null,
+      notify_email: false,
       default_payment_type: form.default_payment_type || null,
       password: rawPw,
       password_confirmation: (form.password_confirmation || "").trim(),

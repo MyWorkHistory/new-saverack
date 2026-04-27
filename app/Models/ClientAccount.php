@@ -46,6 +46,7 @@ class ClientAccount extends Model
         'email',
         'phone',
         'notify_email',
+        'notification_email',
         'telegram_handle',
         'whatsapp_e164',
         'slack_channel',

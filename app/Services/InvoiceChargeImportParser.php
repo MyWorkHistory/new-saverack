@@ -306,6 +306,17 @@ final class InvoiceChargeImportParser
         }
 
         $feeType = $this->getFeeType($row, $map);
+        $materialText = implode(' ', array_filter([
+            $legacyChargeName,
+            $legacyChargeType,
+            $this->cell($row, $map['box'] ?? -1),
+            $this->cell($row, $map['ad_hoc_name'] ?? -1),
+            $this->cell($row, $map['label_charge'] ?? -1),
+            $this->cell($row, $map['fee_charge'] ?? -1),
+        ]));
+        if ($this->isPackagingMaterialText($materialText)) {
+            $feeType = 'Packaging';
+        }
         if ($feeType === null) {
             $feeType = $this->inferFeeType($row, $map);
         }
@@ -458,7 +469,7 @@ final class InvoiceChargeImportParser
             $carrier = $this->postageServiceName($chargeName !== '' ? $chargeName : 'Other', $chargeTypeRaw);
             return $this->buildItem(InvoiceLineCategory::POSTAGE, $carrier, $chargeName, $qty, $rateCents, $lineTotalCents, null, 'postage', $chargeTypeRaw);
         }
-        if (preg_match('/\b(box_charge|box charge|bubble|kraft|void fill|voidfill|mailer|poly bag|polybag|tape|carton|void_fill|package material|packaging material|mailing tube|stretch wrap)\b/i', $hay)) {
+        if ($this->isPackagingMaterialText($hay)) {
             $pkg = $this->packagingDisplayName($chargeName !== '' ? $chargeName : 'Other');
             return $this->buildItem(InvoiceLineCategory::PACKAGING, $pkg, $chargeName, $qty, $rateCents, $lineTotalCents, null, 'packaging:'.$this->slug($pkg), $chargeTypeRaw);
         }
@@ -666,7 +677,7 @@ final class InvoiceChargeImportParser
         if (preg_match('/\b(return|rma|restock|reverse logistics)\b/i', $rowBlob) === 1) {
             return 'Returns';
         }
-        if (preg_match('/\b(bubble wrap|kraft paper|box charge|packaging)\b/i', $rowBlob) === 1) {
+        if ($this->isPackagingMaterialText($rowBlob)) {
             return 'Packaging';
         }
         if (preg_match('/\b(amazon prep|amazon_prep)\b/i', $rowBlob) === 1) {
@@ -997,6 +1008,19 @@ final class InvoiceChargeImportParser
             return false;
         }
         return preg_match('/\b(inserts?|collateral|marketing insert|gift note|greeting card)\b/i', $hay) === 1;
+    }
+
+    private function isPackagingMaterialText(string $text): bool
+    {
+        $hay = strtolower(trim((string) preg_replace('/\s+/', ' ', $text)));
+        if ($hay === '') {
+            return false;
+        }
+
+        return preg_match(
+            '/\b(box_charge|box charge|bubble|bubble wrap|kraft|kraft paper|void fill|voidfill|mailer|poly bag|polybag|clear poly bag|envelope|card envelope|tape|carton|void_fill|package material|packaging material|packaging|mailing tube|stretch wrap)\b/i',
+            $hay
+        ) === 1;
     }
 
     /**

@@ -30,6 +30,7 @@ const form = reactive({
   email: "",
   phone: "",
   notify_email: false,
+  notification_email: "",
   telegram_handle: "",
   whatsapp_e164: "",
   slack_channel: "",
@@ -143,6 +144,7 @@ async function load() {
     form.email = data.email || "";
     form.phone = data.phone || "";
     form.notify_email = !!data.notify_email;
+    form.notification_email = data.notification_email || "";
     form.telegram_handle = data.telegram_handle || "";
     form.whatsapp_e164 = data.whatsapp_e164 || "";
     form.slack_channel = data.slack_channel || "";
@@ -194,7 +196,8 @@ function buildPatch() {
       contact_last_name: trimOrNull(form.contact_last_name),
       email: form.email.trim(),
       phone: trimOrNull(form.phone),
-      notify_email: !!form.notify_email,
+      notify_email: !!trimOrNull(form.notification_email),
+      notification_email: trimOrNull(form.notification_email),
       telegram_handle: trimOrNull(form.telegram_handle),
       whatsapp_e164: trimOrNull(form.whatsapp_e164),
       slack_channel: trimOrNull(form.slack_channel),
@@ -217,7 +220,8 @@ function buildPatch() {
     return {
       email: form.email.trim(),
       phone: trimOrNull(form.phone),
-      notify_email: !!form.notify_email,
+      notify_email: !!trimOrNull(form.notification_email),
+      notification_email: trimOrNull(form.notification_email),
       telegram_handle: trimOrNull(form.telegram_handle),
       whatsapp_e164: trimOrNull(form.whatsapp_e164),
       slack_channel: trimOrNull(form.slack_channel),
@@ -651,18 +655,21 @@ async function onSubmit() {
                     </div>
                     <div class="border rounded p-3 mt-3">
                       <p class="small fw-semibold text-secondary mb-2">Channels</p>
-                      <div class="form-check">
-                        <input
-                          id="cae-notify-email"
-                          v-model="form.notify_email"
-                          type="checkbox"
-                          class="form-check-input"
-                        />
-                        <label
-                          class="form-check-label"
-                          for="cae-notify-email"
-                          >Email</label
+                      <div>
+                        <label class="form-label small mb-1 text-secondary" for="cae-notification-email"
+                          >Email channel</label
                         >
+                        <input
+                          id="cae-notification-email"
+                          v-model="form.notification_email"
+                          type="email"
+                          class="form-control form-control-sm"
+                          placeholder="notifications@example.com"
+                          autocomplete="email"
+                        />
+                        <p class="small text-secondary mb-0 mt-1">
+                          Optional notification email. This is separate from the account login/contact email.
+                        </p>
                       </div>
                       <div class="mt-2">
                         <label class="form-label small mb-1 text-secondary" for="cae-tg"

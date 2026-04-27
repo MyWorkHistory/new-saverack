@@ -1304,6 +1304,7 @@ onUnmounted(() => {
                 <div class="staff-table-cell--channel-inner">
                   <ClientAccountChannelIcons
                     :notify-email="!!row.notify_email"
+                    :notification-email="row.notification_email || ''"
                     :telegram-handle="row.telegram_handle || ''"
                     :whatsapp-e164="row.whatsapp_e164 || ''"
                     :slack-channel="row.slack_channel || ''"

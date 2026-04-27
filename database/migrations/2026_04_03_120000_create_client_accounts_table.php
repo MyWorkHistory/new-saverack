@@ -16,6 +16,7 @@ return new class extends Migration
             $table->string('contact_last_name', 100)->nullable();
             $table->string('email', 190);
             $table->boolean('notify_email')->default(false);
+            $table->string('notification_email', 190)->nullable();
             $table->string('telegram_handle', 190)->nullable();
             $table->string('whatsapp_e164', 32)->nullable();
             $table->foreignId('account_manager_id')->nullable()->constrained('users')->nullOnDelete();

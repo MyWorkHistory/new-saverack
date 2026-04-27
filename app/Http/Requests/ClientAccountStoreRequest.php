@@ -49,6 +49,7 @@ class ClientAccountStoreRequest extends FormRequest
             'password' => ['required', 'string', 'min:8', 'confirmed'],
             'phone' => ['nullable', 'string', 'max:64'],
             'notify_email' => ['sometimes', 'boolean'],
+            'notification_email' => ['nullable', 'email', 'max:190'],
             'telegram_handle' => ['nullable', 'string', 'max:190'],
             'whatsapp_e164' => ['nullable', 'string', 'max:65535'],
             'slack_channel' => ['nullable', 'string', 'max:255'],
@@ -71,6 +72,17 @@ class ClientAccountStoreRequest extends FormRequest
     {
         if (! $this->has('notify_email')) {
             $this->merge(['notify_email' => false]);
+        }
+        if ($this->exists('notification_email')) {
+            $raw = $this->input('notification_email');
+            if ($raw === null || $raw === '') {
+                $this->merge(['notification_email' => null, 'notify_email' => false]);
+            } else {
+                $this->merge([
+                    'notification_email' => trim((string) $raw),
+                    'notify_email' => true,
+                ]);
+            }
         }
         if ($this->input('account_manager_id') === '') {
             $this->merge(['account_manager_id' => null]);

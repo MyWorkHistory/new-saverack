@@ -11,7 +11,7 @@ const props = defineProps({
   emailTitle: { type: String, default: "Email" },
   whatsappTitle: { type: String, default: "WhatsApp" },
   slackTitle: { type: String, default: "Slack" },
-  notifyEmail: { type: Boolean, default: false },
+  notificationEmail: { type: String, default: "" },
   telegramHandle: { type: String, default: "" },
   whatsappE164: { type: String, default: "" },
   slackChannel: { type: String, default: "" },
@@ -26,7 +26,13 @@ const slackIconHref = computed(() => {
 
 <template>
   <div class="flex items-center gap-2 text-gray-500 dark:text-gray-400">
-    <span v-if="notifyEmail" class="inline-flex text-violet-600 dark:text-violet-400" :title="emailTitle">
+    <a
+      v-if="notificationEmail"
+      class="inline-flex text-violet-600 dark:text-violet-400 text-decoration-none"
+      :href="`mailto:${notificationEmail}`"
+      :title="emailTitle"
+      :aria-label="`${emailTitle}: ${notificationEmail}`"
+    >
       <svg
         :class="sizeClass"
         fill="none"
@@ -41,7 +47,7 @@ const slackIconHref = computed(() => {
           d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"
         />
       </svg>
-    </span>
+    </a>
     <span
       v-if="telegramHandle"
       class="inline-flex shrink-0 items-center justify-center bg-transparent"
@@ -95,7 +101,7 @@ const slackIconHref = computed(() => {
       </svg>
     </span>
     <span
-      v-if="!notifyEmail && !telegramHandle && !whatsappE164 && !slackChannel"
+      v-if="!notificationEmail && !telegramHandle && !whatsappE164 && !slackChannel"
       class="text-gray-400"
       >—</span
     >

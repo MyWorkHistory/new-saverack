@@ -1190,6 +1190,7 @@ onUnmounted(() => {
                   <div class="d-flex justify-content-end flex-wrap gap-1">
                     <ClientAccountChannelIcons
                       :notify-email="!!account.notify_email"
+                      :notification-email="account.notification_email || ''"
                       :telegram-handle="account.telegram_handle || ''"
                       :whatsapp-e164="account.whatsapp_e164 || ''"
                       :slack-channel="account.slack_channel || ''"

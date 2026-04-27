@@ -1413,7 +1413,7 @@ function openRightMenuDownloadPdf() {
 
 function openRightMenuOpenInvoice() {
   closeRightActionsMenu();
-  openPublicInvoiceInNewTab();
+  markInvoiceOpen();
 }
 
 function openRightMenuCcFee() {
@@ -1625,6 +1625,20 @@ async function restoreInvoiceDraft() {
     await load();
   } catch (e) {
     toast.errorFrom(e, "Could not move invoice to draft.");
+  }
+}
+
+async function markInvoiceOpen() {
+  if (!invoice.value || openInvoiceTabBusy.value) return;
+  openInvoiceTabBusy.value = true;
+  try {
+    await api.post(`/invoices/${invoice.value.id}/status`, { status: "open" });
+    toast.success("Invoice moved to open.");
+    await load();
+  } catch (e) {
+    toast.errorFrom(e, "Could not move invoice to open.");
+  } finally {
+    openInvoiceTabBusy.value = false;
   }
 }
 
@@ -2321,14 +2335,14 @@ function onDocKeydown(e) {
                   {{ pdfDownloading ? "Downloading..." : "Download PDF" }}
                 </button>
                 <button
-                  v-if="canShareInvoice"
+                  v-if="canUpdateInvoiceStatus && currentStatusKey !== 'open'"
                   type="button"
                   class="staff-row-menu__item"
                   role="menuitem"
                   :disabled="openInvoiceTabBusy"
                   @click="openRightMenuOpenInvoice"
                 >
-                  {{ openInvoiceTabBusy ? "Opening…" : "Open Invoice" }}
+                  {{ openInvoiceTabBusy ? "Updating..." : "Open Invoice" }}
                 </button>
                 <button
                   v-if="canAddCharge"

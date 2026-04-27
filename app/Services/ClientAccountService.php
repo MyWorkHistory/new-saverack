@@ -459,6 +459,7 @@ class ClientAccountService
             'email' => $account->email,
             'phone' => $account->phone,
             'notify_email' => (bool) $account->notify_email,
+            'notification_email' => $account->notification_email,
             'telegram_handle' => $account->telegram_handle,
             'whatsapp_e164' => $account->whatsapp_e164,
             'slack_channel' => $account->slack_channel,

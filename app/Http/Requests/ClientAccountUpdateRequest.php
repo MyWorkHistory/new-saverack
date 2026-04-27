@@ -43,6 +43,18 @@ class ClientAccountUpdateRequest extends FormRequest
             }
         }
 
+        if ($this->exists('notification_email')) {
+            $raw = $this->input('notification_email');
+            if ($raw === null || $raw === '') {
+                $this->merge(['notification_email' => null, 'notify_email' => false]);
+            } else {
+                $this->merge([
+                    'notification_email' => trim((string) $raw),
+                    'notify_email' => true,
+                ]);
+            }
+        }
+
         if ($this->exists('stripe_customer_id')) {
             $raw = $this->input('stripe_customer_id');
             if ($raw === null || $raw === '') {
@@ -90,6 +102,7 @@ class ClientAccountUpdateRequest extends FormRequest
             ],
             'phone' => ['sometimes', 'nullable', 'string', 'max:64'],
             'notify_email' => ['sometimes', 'boolean'],
+            'notification_email' => ['sometimes', 'nullable', 'email', 'max:190'],
             'telegram_handle' => ['sometimes', 'nullable', 'string', 'max:190'],
             /* Phone numbers, wa.me links, etc. — stored as TEXT in DB */
             'whatsapp_e164' => ['sometimes', 'nullable', 'string', 'max:65535'],

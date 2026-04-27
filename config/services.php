@@ -47,4 +47,11 @@ return [
         'customer_account_id' => env('SHIPHERO_CUSTOMER_ACCOUNT_ID'),
     ],
 
+    'whatsapp' => [
+        'endpoint' => env('WHATSAPP_ENDPOINT', 'https://api.periskope.app/v1/message/send'),
+        'token' => env('WHATSAPP_TOKEN'),
+        'phone' => env('WHATSAPP_NUMBER'),
+        'chat_id' => env('WHATSAPP_GROUP_ID'),
+    ],
+
 ];

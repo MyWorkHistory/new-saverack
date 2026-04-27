@@ -15,8 +15,8 @@ return [
     'invoice_send_dev_email' => env('BILLING_INVOICE_SEND_DEV_EMAIL', 'chaowang318915@gmail.com'),
 
     'whatsapp' => [
-        'endpoint' => env('BILLING_WHATSAPP_ENDPOINT'),
-        'api_token' => env('BILLING_WHATSAPP_API_TOKEN'),
+        'endpoint' => env('BILLING_WHATSAPP_ENDPOINT', env('WHATSAPP_ENDPOINT', 'https://api.periskope.app/v1/message/send')),
+        'api_token' => env('BILLING_WHATSAPP_API_TOKEN', env('WHATSAPP_TOKEN')),
         'timeout_seconds' => (int) env('BILLING_WHATSAPP_TIMEOUT_SECONDS', 20),
     ],
 

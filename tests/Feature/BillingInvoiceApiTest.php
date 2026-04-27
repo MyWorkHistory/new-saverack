@@ -204,6 +204,8 @@ class BillingInvoiceApiTest extends TestCase
             '*' => Http::response(['ok' => true], 200),
         ]);
         config()->set('billing.whatsapp.endpoint', 'https://example.com/send');
+        config()->set('billing.whatsapp.api_token', 'token-123');
+        config()->set('services.whatsapp.phone', '17272554885');
 
         $user = User::factory()->create();
         $user->permissions()->sync([
@@ -1266,6 +1268,7 @@ class BillingInvoiceApiTest extends TestCase
         ]);
         config()->set('billing.whatsapp.endpoint', 'https://wa.example.test/send');
         config()->set('billing.whatsapp.api_token', 'token-123');
+        config()->set('services.whatsapp.phone', '17272554885');
 
         $user = User::factory()->create();
         $user->permissions()->sync([
@@ -1307,6 +1310,7 @@ class BillingInvoiceApiTest extends TestCase
                 && ($data['chat_id'] ?? null) === 'wa-chat-15555550123'
                 && ($data['invoice_id'] ?? null) === $invoice->id
                 && ($data['type'] ?? null) === 'invoice_reminder'
+                && $request->hasHeader('x-phone', '17272554885')
                 && ! empty($data['url']);
         });
     }

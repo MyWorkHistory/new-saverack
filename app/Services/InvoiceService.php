@@ -494,6 +494,10 @@ class InvoiceService
         if ($endpoint === '') {
             throw new \RuntimeException('WhatsApp provider endpoint is not configured.');
         }
+        $phone = trim((string) config('services.whatsapp.phone', ''));
+        if ($phone === '') {
+            throw new \RuntimeException('WhatsApp provider phone number is not configured.');
+        }
         $invoiceUrl = $this->publicCustomerViewUrl($invoice);
         if ($invoiceUrl === null) {
             throw new \RuntimeException('Could not generate invoice public link.');
@@ -505,9 +509,13 @@ class InvoiceService
         $token = trim((string) config('billing.whatsapp.api_token', ''));
         if ($token !== '') {
             $req = $req->withToken($token);
+        } else {
+            throw new \RuntimeException('WhatsApp provider token is not configured.');
         }
 
-        $response = $req->post($endpoint, [
+        $response = $req->withHeaders([
+            'x-phone' => $phone,
+        ])->post($endpoint, [
             'chat_id' => $target,
             'message' => $message,
             'invoice_id' => $invoice->id,

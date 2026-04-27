@@ -486,9 +486,9 @@ class InvoiceService
         }
         $invoice = $this->ensureShareToken($invoice);
         $invoice->loadMissing('clientAccount');
-        $target = trim((string) ($invoice->clientAccount->whatsapp_e164 ?? ''));
+        $target = trim((string) ($invoice->clientAccount->whatsapp_api_id ?? ''));
         if ($target === '') {
-            throw new \RuntimeException('Client account does not have a WhatsApp number.');
+            throw new \RuntimeException('Client account does not have a WhatsApp API ID.');
         }
         $endpoint = (string) config('billing.whatsapp.endpoint', '');
         if ($endpoint === '') {
@@ -874,6 +874,7 @@ class InvoiceService
             'client_account_country' => $account !== null ? $account->country : null,
             'client_account_stripe_customer_id' => $account !== null ? $account->stripe_customer_id : null,
             'client_account_whatsapp_e164' => $account !== null ? $account->whatsapp_e164 : null,
+            'client_account_whatsapp_api_id' => $account !== null ? $account->whatsapp_api_id : null,
             'email_recipient_options' => $this->invoiceRecipientEmails($invoice),
             'customer_view_url' => $this->publicCustomerViewUrl($invoice),
             'customer_pdf_url' => $this->publicCustomerPdfUrl($invoice),

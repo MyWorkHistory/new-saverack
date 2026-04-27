@@ -89,7 +89,7 @@ const editBillingPeriodEnd = ref("");
 const editPaymentType = ref("");
 const paymentTypeSaving = ref(false);
 const whatsappCaptureModalOpen = ref(false);
-const whatsappCaptureE164 = ref("");
+const whatsappCaptureApiId = ref("");
 const whatsappCaptureBusy = ref(false);
 const selectedTableRowId = ref("");
 const sendEmailBusy = ref(false);
@@ -864,13 +864,13 @@ async function ensureShareLinkForMessaging() {
 
 function openSendWhatsappModal() {
   if (!invoice.value || messagingActionsDisabled.value) return;
-  const wa = String(invoice.value.client_account_whatsapp_e164 || "").trim();
+  const wa = String(invoice.value.client_account_whatsapp_api_id || "").trim();
   if (!wa) {
     if (!canUpdateClientAccount.value) {
-      toast.error("Add a WhatsApp number on the client account first.");
+      toast.error("Add a WhatsApp API ID on the client account first.");
       return;
     }
-    whatsappCaptureE164.value = "";
+    whatsappCaptureApiId.value = "";
     whatsappCaptureModalOpen.value = true;
     return;
   }
@@ -894,25 +894,25 @@ async function confirmWhatsappCapture() {
     toast.error("You do not have permission to update this client account.");
     return;
   }
-  const raw = String(whatsappCaptureE164.value || "").trim();
+  const raw = String(whatsappCaptureApiId.value || "").trim();
   if (!raw) {
-    toast.error("Enter a WhatsApp number (E.164, e.g. +15551234567).");
+    toast.error("Enter a WhatsApp API ID.");
     return;
   }
   whatsappCaptureBusy.value = true;
   try {
     await api.patch(`/client-accounts/${invoice.value.client_account_id}`, {
-      whatsapp_e164: raw,
+      whatsapp_api_id: raw,
     });
     invoice.value = {
       ...invoice.value,
-      client_account_whatsapp_e164: raw,
+      client_account_whatsapp_api_id: raw,
     };
-    toast.success("WhatsApp number saved.");
+    toast.success("WhatsApp API ID saved.");
     whatsappCaptureModalOpen.value = false;
     openSendWhatsappModal();
   } catch (e) {
-    toast.errorFrom(e, "Could not save WhatsApp number.");
+    toast.errorFrom(e, "Could not save WhatsApp API ID.");
   } finally {
     whatsappCaptureBusy.value = false;
   }
@@ -2714,20 +2714,20 @@ function onDocKeydown(e) {
         >
           <div class="crm-vx-modal crm-vx-modal--sm" @click.stop>
             <header class="crm-vx-modal__head">
-              <h2 class="crm-vx-modal__title">Add WhatsApp number</h2>
+              <h2 class="crm-vx-modal__title">Add WhatsApp API ID</h2>
             </header>
             <div class="crm-vx-modal__body">
               <p class="small text-secondary mb-3">
-                This client account does not have a WhatsApp number on file. Enter an E.164 number (e.g. +15551234567). It will be saved to the client profile.
+                This client account does not have a WhatsApp API ID on file. Enter the API chat/customer ID used by the WhatsApp provider. It will be saved to the client account settings.
               </p>
-              <label class="form-label" for="billing-inv-wa-capture">WhatsApp (E.164)</label>
+              <label class="form-label" for="billing-inv-wa-capture">WhatsApp API ID</label>
               <input
                 id="billing-inv-wa-capture"
-                v-model="whatsappCaptureE164"
+                v-model="whatsappCaptureApiId"
                 type="text"
                 class="form-control"
-                placeholder="+15551234567"
-                autocomplete="tel"
+                placeholder="WhatsApp provider/API ID"
+                autocomplete="off"
               />
             </div>
             <footer class="crm-vx-modal__footer d-flex gap-2 justify-content-end">

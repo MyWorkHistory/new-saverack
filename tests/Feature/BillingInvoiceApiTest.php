@@ -216,7 +216,7 @@ class BillingInvoiceApiTest extends TestCase
             'status' => ClientAccount::STATUS_ACTIVE,
             'company_name' => 'WA Type Co',
             'email' => 'wa@type.test',
-            'whatsapp_e164' => '+15555550123',
+            'whatsapp_api_id' => 'wa-chat-15555550123',
         ]);
 
         $invoice = Invoice::query()->create([
@@ -1278,7 +1278,7 @@ class BillingInvoiceApiTest extends TestCase
             'status' => ClientAccount::STATUS_ACTIVE,
             'company_name' => 'WhatsApp Co',
             'email' => 'wa@acme.test',
-            'whatsapp_e164' => '+15555550123',
+            'whatsapp_api_id' => 'wa-chat-15555550123',
         ]);
         $client->refresh();
 
@@ -1298,12 +1298,13 @@ class BillingInvoiceApiTest extends TestCase
 
         $this->postJson("/api/invoices/{$invoice->id}/whatsapp", ['type' => 'invoice_reminder'])
             ->assertOk()
-            ->assertJsonPath('whatsapp.to', '+15555550123')
+            ->assertJsonPath('whatsapp.to', 'wa-chat-15555550123')
             ->assertJsonPath('whatsapp.type', 'invoice_reminder');
 
         Http::assertSent(function ($request) use ($invoice) {
             $data = $request->data();
             return $request->url() === 'https://wa.example.test/send'
+                && ($data['chat_id'] ?? null) === 'wa-chat-15555550123'
                 && ($data['invoice_id'] ?? null) === $invoice->id
                 && ($data['type'] ?? null) === 'invoice_reminder'
                 && ! empty($data['url']);

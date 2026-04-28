@@ -60,8 +60,7 @@ class InvoiceSentMailable extends Mailable
         $this->accountName = $invoice->clientAccount !== null
             ? (string) $invoice->clientAccount->company_name
             : 'Your account';
-        $base = rtrim((string) config('app.url'), '/');
-        $this->logoUrl = $base.'/images/logo/logo.svg';
+        $this->logoUrl = url('/logo.jpg');
     }
 
     public function build()

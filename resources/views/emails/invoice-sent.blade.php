@@ -59,13 +59,12 @@
         </tr>
     @endif
     <tr>
-        <td align="center" style="padding:8px 8px 0 8px;font-size:16px;line-height:1.28;color:#333333;">
+        <td align="left" style="padding:8px 8px 0 8px;font-size:16px;line-height:1.28;color:#333333;text-align:left;">
             We truly appreciate your business!<br>
             Please kindly submit payment at your earliest convenience.<br>
             If your account is set up for autopay, no action is needed.<br>
-            this invoice is simply for your records.<br>
-            If you have any questions, feel free to reach out or email us at
-            <a href="mailto:billing@saverack.com" style="color:#333333;text-decoration:none;">billing@saverack.com</a>
+            This invoice is simply for your records.<br>
+            If you have any questions, feel free to reach out or email us at billing@saverack.com
         </td>
     </tr>
     <tr>

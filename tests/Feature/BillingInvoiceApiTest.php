@@ -1151,6 +1151,60 @@ class BillingInvoiceApiTest extends TestCase
         $this->assertSame(650, (int) $res->json('invoice.total_cents'));
     }
 
+    public function test_import_charge_csv_charge_summary_uses_sku_column_for_on_demand_matching_case_insensitive(): void
+    {
+        $user = User::factory()->create();
+        $user->permissions()->sync([
+            $this->billingViewPermission()->id,
+            $this->billingCreatePermission()->id,
+            $this->clientsViewPermission()->id,
+        ]);
+        Sanctum::actingAs($user);
+
+        $client = ClientAccount::query()->create([
+            'status' => ClientAccount::STATUS_ACTIVE,
+            'company_name' => 'Charge Summary SKU Co',
+            'email' => 'charge-summary-sku@example.test',
+        ]);
+        ClientAccountOnDemandProduct::query()->create([
+            'client_account_id' => $client->id,
+            'sku' => 'AURA-ESSENCE-SKIN-CREAM-COMPLETED',
+            'name' => 'Aura Essence Skin Cream - Women',
+            'category' => ClientAccountOnDemandProduct::CATEGORY_SKIN_CREAM,
+            'price_cents' => 325,
+        ]);
+
+        $csv = "Charge Name,Charge Type,SKU (product),Charge Qty,Avg Rate,Charge Subtotal\n"
+            ."First pick for SKU profile,first_pick_charge,aura-essence-skin-cream-completed,1,1.00,1.00\n"
+            ."Additional pick for SKU profile,pick_remainder_charge,AURAESSENCE-SERUM-REFILL,1,0.50,0.50\n";
+        $file = UploadedFile::fake()->createWithContent('charge-summary-sku.csv', $csv);
+
+        $res = $this->post(
+            "/api/client-accounts/{$client->id}/invoice-imports/charges",
+            [
+                'due_at' => '2026-06-15',
+                'file' => $file,
+            ],
+            ['Accept' => 'application/json']
+        );
+
+        $res->assertStatus(201);
+        $items = collect($res->json('invoice.items') ?? []);
+
+        $onDemand = $items->first(static fn (array $item): bool => strtolower((string) ($item['category'] ?? '')) === 'on_demand');
+        $this->assertNotNull($onDemand);
+        $this->assertSame('AURA-ESSENCE-SKIN-CREAM-COMPLETED', $onDemand['sku']);
+        $this->assertSame(1.0, (float) $onDemand['quantity']);
+        $this->assertSame(325, (int) $onDemand['line_total_cents']);
+
+        $this->assertTrue(
+            $items->contains(static fn (array $item): bool =>
+                strtolower((string) ($item['category'] ?? '')) === 'fulfillment'
+                && strtoupper(trim((string) ($item['sku'] ?? ''))) === 'AURAESSENCE-SERUM-REFILL'
+            )
+        );
+    }
+
     public function test_import_charge_csv_keeps_unconfigured_pick_sku_as_fulfillment(): void
     {
         $user = User::factory()->create();

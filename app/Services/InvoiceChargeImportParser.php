@@ -246,7 +246,8 @@ final class InvoiceChargeImportParser
                     $lineTotalCents,
                     null,
                     'postage:return-label',
-                    $chargeTypeRaw
+                    $chargeTypeRaw,
+                    $this->trimmedSkuOrNull($sku)
                 ),
                 $orderNumber
             );
@@ -366,14 +367,15 @@ final class InvoiceChargeImportParser
                     0,
                     null,
                     'postage:manual-label',
-                    $chargeTypeRaw
+                    $chargeTypeRaw,
+                    $this->trimmedSkuOrNull($skuFromColumn)
                 );
             }
             if ($this->isReturnLabelCharge($chargeName, $chargeTypeRaw)) {
-                return $this->buildItem(InvoiceLineCategory::POSTAGE, 'Return Label', $chargeName, $qty, $rateCents, $lineTotalCents, null, 'postage:return-label', $chargeTypeRaw);
+                return $this->buildItem(InvoiceLineCategory::POSTAGE, 'Return Label', $chargeName, $qty, $rateCents, $lineTotalCents, null, 'postage:return-label', $chargeTypeRaw, $this->trimmedSkuOrNull($skuFromColumn));
             }
             $carrier = $this->postageServiceName($chargeName !== '' ? $chargeName : 'Other', $chargeTypeRaw);
-            return $this->buildItem(InvoiceLineCategory::POSTAGE, 'Postage ('.$carrier.')', $chargeName, $qty, $rateCents, $lineTotalCents, null, 'postage', $chargeTypeRaw);
+            return $this->buildItem(InvoiceLineCategory::POSTAGE, 'Postage ('.$carrier.')', $chargeName, $qty, $rateCents, $lineTotalCents, null, 'postage', $chargeTypeRaw, $this->trimmedSkuOrNull($skuFromColumn));
         }
         if (strpos($t, 'box_charge') !== false) {
             if ($this->isBasicBox6x9x1($chargeName)) {
@@ -386,16 +388,17 @@ final class InvoiceChargeImportParser
                     $lineTotalCents,
                     null,
                     'packaging:box-not-selected',
-                    $chargeTypeRaw
+                    $chargeTypeRaw,
+                    $this->trimmedSkuOrNull($skuFromColumn)
                 );
                 $item['metadata'] = ['box_not_selected' => true];
                 return $item;
             }
             $pkg = $this->packagingDisplayName($chargeName !== '' ? $chargeName : 'Other');
-            return $this->buildItem(InvoiceLineCategory::PACKAGING, $pkg, $chargeName, $qty, $rateCents, $lineTotalCents, null, 'packaging:'.$this->slug($pkg), $chargeTypeRaw);
+            return $this->buildItem(InvoiceLineCategory::PACKAGING, $pkg, $chargeName, $qty, $rateCents, $lineTotalCents, null, 'packaging:'.$this->slug($pkg), $chargeTypeRaw, $this->trimmedSkuOrNull($skuFromColumn));
         }
         if ((strpos($t, 'order_value_charge') !== false || $t === 'inserts') && $this->isExplicitInsertLikeText($chargeName.' '.$chargeTypeRaw)) {
-            return $this->buildItem(InvoiceLineCategory::PACKAGING, 'Inserts', 'Inserts', $qty, $rateCents, $lineTotalCents, null, 'packaging:inserts', $chargeTypeRaw);
+            return $this->buildItem(InvoiceLineCategory::PACKAGING, 'Inserts', 'Inserts', $qty, $rateCents, $lineTotalCents, null, 'packaging:inserts', $chargeTypeRaw, $this->trimmedSkuOrNull($skuFromColumn));
         }
         if (strpos($t, 'first_return_charge') !== false || strpos($t, 'return_remainder_charge') !== false) {
             $isAdditional = strpos($t, 'return_remainder_charge') !== false;
@@ -408,7 +411,8 @@ final class InvoiceChargeImportParser
                 $lineTotalCents,
                 $isAdditional ? 'additional' : 'first',
                 $isAdditional ? 'returns:additional' : 'returns:first',
-                $chargeTypeRaw
+                $chargeTypeRaw,
+                $this->trimmedSkuOrNull($skuFromColumn)
             );
         }
         if (strpos($t, 'first_pick_charge') !== false || strpos($t, 'pick_remainder_charge') !== false) {
@@ -431,7 +435,8 @@ final class InvoiceChargeImportParser
                 $lineTotalCents,
                 $isAdditional ? 'additional' : 'first',
                 'fulfillment:'.$this->slug($display),
-                $chargeTypeRaw
+                $chargeTypeRaw,
+                $this->trimmedSkuOrNull($skuFromColumn)
             );
         }
         if ($this->isOnDemandChargeTypeOrCategory($t, $chargeTypeRaw)) {
@@ -462,21 +467,22 @@ final class InvoiceChargeImportParser
                     0,
                     null,
                     'postage:manual-label',
-                    $chargeTypeRaw
+                    $chargeTypeRaw,
+                    $this->trimmedSkuOrNull($skuFromColumn)
                 );
             }
             if ($this->isReturnLabelCharge($chargeName, $chargeTypeRaw)) {
-                return $this->buildItem(InvoiceLineCategory::POSTAGE, 'Return Label', $chargeName, $qty, $rateCents, $lineTotalCents, null, 'postage:return-label', $chargeTypeRaw);
+                return $this->buildItem(InvoiceLineCategory::POSTAGE, 'Return Label', $chargeName, $qty, $rateCents, $lineTotalCents, null, 'postage:return-label', $chargeTypeRaw, $this->trimmedSkuOrNull($skuFromColumn));
             }
             $carrier = $this->postageServiceName($chargeName !== '' ? $chargeName : 'Other', $chargeTypeRaw);
-            return $this->buildItem(InvoiceLineCategory::POSTAGE, $carrier, $chargeName, $qty, $rateCents, $lineTotalCents, null, 'postage', $chargeTypeRaw);
+            return $this->buildItem(InvoiceLineCategory::POSTAGE, $carrier, $chargeName, $qty, $rateCents, $lineTotalCents, null, 'postage', $chargeTypeRaw, $this->trimmedSkuOrNull($skuFromColumn));
         }
         if ($this->isPackagingMaterialText($hay)) {
             $pkg = $this->packagingDisplayName($chargeName !== '' ? $chargeName : 'Other');
-            return $this->buildItem(InvoiceLineCategory::PACKAGING, $pkg, $chargeName, $qty, $rateCents, $lineTotalCents, null, 'packaging:'.$this->slug($pkg), $chargeTypeRaw);
+            return $this->buildItem(InvoiceLineCategory::PACKAGING, $pkg, $chargeName, $qty, $rateCents, $lineTotalCents, null, 'packaging:'.$this->slug($pkg), $chargeTypeRaw, $this->trimmedSkuOrNull($skuFromColumn));
         }
         if ($this->isExplicitInsertLikeText($hay)) {
-            return $this->buildItem(InvoiceLineCategory::PACKAGING, 'Inserts', 'Inserts', $qty, $rateCents, $lineTotalCents, null, 'packaging:inserts', $chargeTypeRaw);
+            return $this->buildItem(InvoiceLineCategory::PACKAGING, 'Inserts', 'Inserts', $qty, $rateCents, $lineTotalCents, null, 'packaging:inserts', $chargeTypeRaw, $this->trimmedSkuOrNull($skuFromColumn));
         }
         if (preg_match('/\b(amazon prep|amazon_prep)\b/i', $hay)) {
             return $this->buildItem(
@@ -488,7 +494,8 @@ final class InvoiceChargeImportParser
                 $lineTotalCents,
                 null,
                 'fulfillment:amazon-prep',
-                $chargeTypeRaw
+                $chargeTypeRaw,
+                $this->trimmedSkuOrNull($skuFromColumn)
             );
         }
         if (preg_match('/\b(return|rma|restock|reverse logistics)\b/i', $hay)) {
@@ -506,7 +513,8 @@ final class InvoiceChargeImportParser
                 $lineTotalCents,
                 $isAdditional ? 'additional' : 'first',
                 $isAdditional ? 'returns:additional' : 'returns:first',
-                $chargeTypeRaw
+                $chargeTypeRaw,
+                $this->trimmedSkuOrNull($skuFromColumn)
             );
         }
         if (preg_match('/\b(pick|fulfill|picker|picking|pick_pack|pick & pack|unit pick|bundle fee|kit fee|assembly)\b/i', $hay)) {
@@ -522,7 +530,8 @@ final class InvoiceChargeImportParser
                 $lineTotalCents,
                 $isAdditional ? 'additional' : 'first',
                 $isAdditional ? 'fulfillment:additional-pick' : 'fulfillment:first-pick',
-                $chargeTypeRaw
+                $chargeTypeRaw,
+                $this->trimmedSkuOrNull($skuFromColumn)
             );
         }
         if (preg_match('/\b(skincare|on[- ]?demand|product)\b/i', $hay)) {
@@ -559,7 +568,8 @@ final class InvoiceChargeImportParser
             $lineTotalCents,
             null,
             $this->defaultGroupKeyFor($this->mapLegacyCategoryLabelToKey($category), $display),
-            $chargeTypeRaw
+            $chargeTypeRaw,
+            $this->trimmedSkuOrNull($skuFromColumn)
         );
     }
 
@@ -1074,6 +1084,13 @@ final class InvoiceChargeImportParser
             'unit_price_cents' => $rateCents,
             'line_total_cents' => $lineTotalCents,
         ];
+    }
+
+    private function trimmedSkuOrNull(string $sku): ?string
+    {
+        $trimmed = trim($sku);
+
+        return $trimmed !== '' ? $trimmed : null;
     }
 
     private function normalizeBillingCategoryFromCsv(string $raw): string

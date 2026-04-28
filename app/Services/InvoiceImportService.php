@@ -234,8 +234,11 @@ class InvoiceImportService
     {
         $catalog = $account->onDemandProducts()
             ->get()
-            ->keyBy(static function (ClientAccountOnDemandProduct $product): string {
-                return strtoupper(trim((string) $product->sku));
+            ->keyBy(function (ClientAccountOnDemandProduct $product): string {
+                return $this->normalizeSkuKey((string) $product->sku) ?? '';
+            })
+            ->filter(static function ($product, string $key): bool {
+                return $key !== '';
             });
 
         if ($catalog->isEmpty()) {
@@ -248,7 +251,7 @@ class InvoiceImportService
         $pendingCatalogPickLines = [];
 
         foreach ($lines as $line) {
-            $skuKey = $this->normalizeSpreadsheetSkuForCatalog((string) ($line['sku'] ?? ''));
+            $skuKey = $this->normalizeSkuKey((string) ($line['sku'] ?? ''));
             $product = $skuKey !== null ? $catalog->get($skuKey) : null;
 
             if ($product === null) {
@@ -344,9 +347,10 @@ class InvoiceImportService
     /**
      * Normalized key for catalog lookup (matches `ClientAccountOnDemandProduct` keying).
      */
-    private function normalizeSpreadsheetSkuForCatalog(string $raw): ?string
+    private function normalizeSkuKey(string $raw): ?string
     {
-        $sku = strtoupper(trim($raw, " \t\n\r\0\x0B."));
+        $sku = trim((string) preg_replace('/[\x{200B}-\x{200D}\x{FEFF}]/u', '', $raw), " \t\n\r\0\x0B.\"'");
+        $sku = mb_strtolower($sku);
 
         return $sku !== '' ? $sku : null;
     }

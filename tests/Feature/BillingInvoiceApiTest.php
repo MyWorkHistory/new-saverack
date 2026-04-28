@@ -1270,7 +1270,7 @@ class BillingInvoiceApiTest extends TestCase
         ]);
         ClientAccountOnDemandProduct::query()->create([
             'client_account_id' => $client->id,
-            'sku' => 'CAT-SKU',
+            'sku' => 'AURA-ESSENCE-SKIN-CREAM-COMPLETED',
             'name' => 'Catalog Item',
             'category' => 'Test',
             'price_cents' => 100,
@@ -1278,8 +1278,8 @@ class BillingInvoiceApiTest extends TestCase
         ]);
 
         $csv = "\"Date (charge)\",\"Category (charge)\",\"Fee (charge)\",\"Type (charge)\",\"Label (charge)\",\"Description (charge)\",\"Unit rate (charge)\",\"Quantity (charge)\",\"Total (charge)\",\"Order # (shipment)\",\"Carrier (shipment)\",\"Box (shipment)\",\"SKU (product)\",\"Name (product)\"\n"
-            ."\"2026-04-20\",\"order\",\"Postage\",\"shipping_label_charge\",\"shipping label\",\"Shipping label 1ZTEST for carrier UPS, method UPS SurePost.\",\"5.44\",\"1\",\"5.44\",\"ORD-P\",\"UPS\",\"POLY 6x9\",\"CAT-SKU\",\"Cat\"\n"
-            ."\"2026-04-21\",\"order\",\"Fulfillment\",\"first_pick_charge\",\"first pick\",\"First pick line.\",\"1.50\",\"1\",\"1.50\",\"ORD-F\",\"UPS\",\"POLY 9x12\",\"CAT-SKU\",\"Cat\"\n"
+            ."\"2026-04-20\",\"order\",\"Postage\",\"shipping_label_charge\",\"shipping label\",\"Shipping label 1ZTEST for carrier UPS, method UPS SurePost.\",\"5.44\",\"1\",\"5.44\",\"ORD-P\",\"UPS\",\"POLY 6x9\",\"aura-essence-skin-cream-completed\",\"Cat\"\n"
+            ."\"2026-04-21\",\"order\",\"Fulfillment\",\"first_pick_charge\",\"first pick\",\"First pick line.\",\"1.50\",\"1\",\"1.50\",\"ORD-F\",\"UPS\",\"POLY 9x12\",\" aura-essence-skin-cream-completed \",\"Cat\"\n"
             ."\"2026-04-21\",\"order\",\"Fulfillment\",\"first_pick_charge\",\"first pick\",\"Other pick.\",\"2.00\",\"1\",\"2.00\",\"ORD-O\",\"UPS\",\"POLY 9x12\",\"OTHER-X\",\"Other\"\n";
         $file = UploadedFile::fake()->createWithContent('mixed-od-sku.csv', $csv);
 
@@ -1296,7 +1296,7 @@ class BillingInvoiceApiTest extends TestCase
         $items = $res->json('invoice.items') ?? [];
         $onDemand = collect($items)->first(static fn (array $item): bool => strtolower((string) ($item['category'] ?? '')) === 'on_demand');
         $this->assertNotNull($onDemand);
-        $this->assertSame('CAT-SKU', $onDemand['sku']);
+        $this->assertSame('AURA-ESSENCE-SKIN-CREAM-COMPLETED', $onDemand['sku']);
         $this->assertSame(2.0, (float) $onDemand['quantity']);
         $this->assertSame(200, (int) $onDemand['line_total_cents']);
         $this->assertTrue(

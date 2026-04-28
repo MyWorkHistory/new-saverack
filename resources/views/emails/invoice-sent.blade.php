@@ -59,7 +59,7 @@
         </tr>
     @endif
     <tr>
-        <td align="left" style="padding:8px 8px 0 8px;font-size:16px;line-height:1.28;color:#333333;text-align:left;">
+        <td align="left" style="padding:8px 8px 0 8px;font-size:16px;line-height:1.28;color:#333333;text-align:center;">
             We truly appreciate your business!<br>
             Please kindly submit payment at your earliest convenience.<br>
             If your account is set up for autopay, no action is needed.<br>

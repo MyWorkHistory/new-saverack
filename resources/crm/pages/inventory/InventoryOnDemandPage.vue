@@ -380,7 +380,7 @@ function onDocClick(e) {
       <button
         v-if="canUpdateInventory"
         type="button"
-        class="btn btn-primary staff-page-primary d-inline-flex align-items-center gap-2"
+        class="btn btn-primary staff-page-primary d-inline-flex align-items-center gap-2 text-nowrap"
         @click="openCreateDrawer"
       >
         <svg width="18" height="18" fill="currentColor" viewBox="0 0 24 24" aria-hidden="true">
@@ -638,16 +638,20 @@ function onDocClick(e) {
       <div
         v-if="manageOpenId !== null && manageMenuProduct"
         data-row-actions
-        class="dropdown-menu show shadow border px-0 py-1"
-        style="position: fixed; z-index: 1300; min-width: 11rem"
+        class="staff-row-menu fixed z-[300] overflow-hidden"
         :style="{ top: manageMenuRect.top + 'px', left: manageMenuRect.left + 'px' }"
         role="menu"
         @click.stop
       >
-        <button type="button" class="dropdown-item small" role="menuitem" @click="openEditDrawer(manageMenuProduct)">
+        <button type="button" class="staff-row-menu__item" role="menuitem" @click="openEditDrawer(manageMenuProduct)">
           Edit SKU
         </button>
-        <button type="button" class="dropdown-item small text-danger" role="menuitem" @click="openDeleteModal(manageMenuProduct)">
+        <button
+          type="button"
+          class="staff-row-menu__item staff-row-menu__item--danger"
+          role="menuitem"
+          @click="openDeleteModal(manageMenuProduct)"
+        >
           Delete SKU
         </button>
       </div>

@@ -146,7 +146,7 @@
     @elseif($paymentState === 'cancel')
         <div class="pay-feedback error">Payment was canceled.</div>
     @elseif($paymentState === 'error')
-        <div class="pay-feedback error">Could not start payment. Please try again.</div>
+        <div class="pay-feedback error">Invoice is already paid!</div>
     @endif
     @php
         $iconCalendar = '<span class="public-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/></svg></span>';

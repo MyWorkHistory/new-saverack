@@ -44,6 +44,7 @@ class InvoiceImportController extends Controller
                 'status' => $result['import']->status,
                 'import_type' => $result['import']->import_type,
                 'rows_processed' => $result['import']->rows_processed,
+                'on_demand_debug' => $result['on_demand_debug'] ?? null,
             ],
         ], 201);
     }

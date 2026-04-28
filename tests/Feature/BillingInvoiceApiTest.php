@@ -1332,7 +1332,7 @@ class BillingInvoiceApiTest extends TestCase
         ]);
 
         $csv = "\"Date (charge)\",\"Category (charge)\",\"Fee (charge)\",\"Type (charge)\",\"Label (charge)\",\"Description (charge)\",\"Unit rate (charge)\",\"Quantity (charge)\",\"Total (charge)\",\"Order # (shipment)\",\"Carrier (shipment)\",\"Box (shipment)\",\"SKU (product)\",\"Name (product)\"\n"
-            ."\"2026-04-20\",\"order\",\"Postage\",\"shipping_label_charge\",\"shipping label\",\"Shipping label 1ZTEST for carrier UPS, method UPS SurePost.\",\"5.44\",\"1\",\"5.44\",\"ORD-P\",\"UPS\",\"POLY 6x9\",\"aura-essence-skin-cream-completed\",\"Cat\"\n"
+            ."\"2026-04-20\",\"order\",\"Postage\",\"shipping_label_charge\",\"shipping label\",\"Shipping label 1ZTEST for carrier UPS, method UPS SurePost.\",\"5.44\",\"1\",\"5.44\",\"ORD-P\",\"UPS\",\"POLY 6x9\",\"1 aura-essence-skin-cream-completed\",\"Cat\"\n"
             ."\"2026-04-21\",\"order\",\"Fulfillment\",\"first_pick_charge\",\"first pick\",\"First pick line.\",\"1.50\",\"1\",\"1.50\",\"ORD-F\",\"UPS\",\"POLY 9x12\",\" aura-essence-skin-cream-completed \",\"Cat\"\n"
             ."\"2026-04-21\",\"order\",\"Fulfillment\",\"first_pick_charge\",\"first pick\",\"Other pick.\",\"2.00\",\"1\",\"2.00\",\"ORD-O\",\"UPS\",\"POLY 9x12\",\"OTHER-X\",\"Other\"\n";
         $file = UploadedFile::fake()->createWithContent('mixed-od-sku.csv', $csv);

@@ -24,7 +24,17 @@ class InvoiceImportService
     }
 
     /**
-     * @return array{invoice: \App\Models\Invoice, import: InvoiceImport}
+     * @return array{
+     *   invoice: \App\Models\Invoice,
+     *   import: InvoiceImport,
+     *   on_demand_debug: array{
+     *     catalog_rows: int,
+     *     sku_candidate_rows: int,
+     *     matched_sku_rows: int,
+     *     unmatched_sku_rows: int,
+     *     unmatched_sku_samples: list<string>
+     *   }
+     * }
      */
     public function importChargeCsv(
         ClientAccount $account,
@@ -40,7 +50,9 @@ class InvoiceImportService
 
         $parser = new InvoiceChargeImportParser();
         $lines = $parser->parseFile($path);
-        $lines = $this->aggregateOnDemandCatalogPickLines($account, $lines);
+        $aggregate = $this->aggregateOnDemandCatalogPickLines($account, $lines);
+        $lines = $aggregate['lines'];
+        $onDemandDebug = $aggregate['debug'];
         if (count($lines) === 0) {
             throw new \RuntimeException('No billable rows found in CSV.');
         }
@@ -87,12 +99,17 @@ class InvoiceImportService
                 'line_count' => count($lines),
                 'billing_period_start' => $billingPeriod['start'] ?? null,
                 'billing_period_end' => $billingPeriod['end'] ?? null,
+                'on_demand_debug' => $onDemandDebug,
             ], static function ($value) {
                 return $value !== null;
             });
             $import->save();
 
-            return ['invoice' => $invoice->fresh(['items', 'clientAccount']), 'import' => $import];
+            return [
+                'invoice' => $invoice->fresh(['items', 'clientAccount']),
+                'import' => $import,
+                'on_demand_debug' => $onDemandDebug,
+            ];
         } catch (\Throwable $e) {
             $import->status = InvoiceImport::STATUS_FAILED;
             $import->error_message = $e->getMessage();
@@ -228,11 +245,27 @@ class InvoiceImportService
 
     /**
      * @param list<array<string, mixed>> $lines
-     * @return list<array<string, mixed>>
+     * @return array{
+     *   lines: list<array<string, mixed>>,
+     *   debug: array{
+     *     catalog_rows: int,
+     *     sku_candidate_rows: int,
+     *     matched_sku_rows: int,
+     *     unmatched_sku_rows: int,
+     *     unmatched_sku_samples: list<string>
+     *   }
+     * }
      */
     private function aggregateOnDemandCatalogPickLines(ClientAccount $account, array $lines): array
     {
         $catalogRows = $account->onDemandProducts()->get();
+        $debug = [
+            'catalog_rows' => (int) $catalogRows->count(),
+            'sku_candidate_rows' => 0,
+            'matched_sku_rows' => 0,
+            'unmatched_sku_rows' => 0,
+            'unmatched_sku_samples' => [],
+        ];
         $catalog = [];
         $catalogCompact = [];
         foreach ($catalogRows as $product) {
@@ -247,7 +280,7 @@ class InvoiceImportService
         }
 
         if ($catalog === [] && $catalogCompact === []) {
-            return $lines;
+            return ['lines' => $lines, 'debug' => $debug];
         }
 
         $kept = [];
@@ -259,6 +292,9 @@ class InvoiceImportService
             $lineSkuRaw = $this->extractLineSkuForCatalog((array) $line);
             $skuKey = $this->normalizeSkuKey($lineSkuRaw);
             $compactKey = $this->normalizeSkuCompactKey($lineSkuRaw);
+            if ($skuKey !== null || $compactKey !== null) {
+                $debug['sku_candidate_rows']++;
+            }
             $product = $skuKey !== null ? ($catalog[$skuKey] ?? null) : null;
             if ($product === null && $compactKey !== null) {
                 $product = $catalogCompact[$compactKey] ?? null;
@@ -266,6 +302,12 @@ class InvoiceImportService
             $aggregateKey = $skuKey ?? $compactKey;
 
             if ($product === null || $aggregateKey === null) {
+                if ($aggregateKey !== null) {
+                    $debug['unmatched_sku_rows']++;
+                    if (count($debug['unmatched_sku_samples']) < 10) {
+                        $debug['unmatched_sku_samples'][] = $lineSkuRaw;
+                    }
+                }
                 $kept[] = $line;
                 continue;
             }
@@ -278,6 +320,7 @@ class InvoiceImportService
             }
 
             $aggregates[$aggregateKey]['quantity'] += 1.0;
+            $debug['matched_sku_rows']++;
             if (! isset($insertedAggregateKey[$aggregateKey])) {
                 $insertedAggregateKey[$aggregateKey] = count($kept);
             }
@@ -285,7 +328,7 @@ class InvoiceImportService
         }
 
         if ($aggregates === []) {
-            return $lines;
+            return ['lines' => $lines, 'debug' => $debug];
         }
 
         $aggregateLines = [];
@@ -324,7 +367,7 @@ class InvoiceImportService
                     $result[] = $sourceLine;
                 }
             }
-            return $result;
+            return ['lines' => $result, 'debug' => $debug];
         }
 
         $result = [];
@@ -352,7 +395,7 @@ class InvoiceImportService
             }
         }
 
-        return $result;
+        return ['lines' => $result, 'debug' => $debug];
     }
 
     /**
@@ -387,7 +430,7 @@ class InvoiceImportService
     {
         $sku = trim((string) ($line['sku'] ?? ''));
         if ($sku !== '') {
-            return $sku;
+            return $this->extractCatalogSkuCandidate($sku);
         }
 
         $text = trim((string) ($line['description'] ?? ''));
@@ -396,5 +439,24 @@ class InvoiceImportService
         }
 
         return '';
+    }
+
+    private function extractCatalogSkuCandidate(string $rawSku): string
+    {
+        $value = trim($rawSku);
+        if ($value === '') {
+            return '';
+        }
+
+        // Some exports prefix product SKU with a unit count, e.g. "1 aura-essence...".
+        if (preg_match('/^\d+(?:\.\d+)?\s+(.+)$/', $value, $m) === 1) {
+            $value = trim((string) $m[1]);
+        }
+
+        if (preg_match('/\b([A-Z0-9][A-Z0-9._\-]*-[A-Z0-9._\-]+)\b/i', $value, $m) === 1) {
+            return trim((string) $m[1], " \t\n\r\0\x0B.\"'");
+        }
+
+        return trim($value, " \t\n\r\0\x0B.\"'");
     }
 }

@@ -1,0 +1,349 @@
+<?php
+
+namespace App\Services;
+
+use RuntimeException;
+
+class ShipHeroOrderService
+{
+    /** @var ShipHeroClient */
+    protected $client;
+
+    public function __construct(ShipHeroClient $client)
+    {
+        $this->client = $client;
+    }
+
+    /**
+     * @param  array<string, mixed>  $filters
+     * @return array<string, mixed>
+     */
+    public function listOrders(array $filters): array
+    {
+        $customerAccountId = trim((string) ($filters['customer_account_id'] ?? ''));
+        if ($customerAccountId === '') {
+            throw new RuntimeException('customer_account_id is required.');
+        }
+
+        $first = (int) ($filters['first'] ?? 20);
+        $first = max(1, min(100, $first));
+        $after = isset($filters['after']) ? trim((string) $filters['after']) : null;
+        $after = $after !== '' ? $after : null;
+
+        $vars = [
+            'customer_account_id' => $customerAccountId,
+            'first' => $first,
+            'after' => $after,
+            'order_date_from' => $this->nullableIso($filters['order_date_from'] ?? null),
+            'order_date_to' => $this->nullableIso($filters['order_date_to'] ?? null),
+            'has_hold' => null,
+            'ready_to_ship' => null,
+            'fulfillment_status' => null,
+        ];
+
+        $tab = strtolower(trim((string) ($filters['tab'] ?? 'manage')));
+        if ($tab === 'on_hold') {
+            $vars['has_hold'] = true;
+        } elseif ($tab === 'awaiting') {
+            $vars['ready_to_ship'] = true;
+        } elseif ($tab === 'shipped') {
+            $vars['fulfillment_status'] = 'shipped';
+        }
+
+        $graphql = <<<'GQL'
+query ShipHeroOrders(
+  $customer_account_id: String!,
+  $order_date_from: ISODateTime,
+  $order_date_to: ISODateTime,
+  $has_hold: Boolean,
+  $ready_to_ship: Boolean,
+  $fulfillment_status: String,
+  $first: Int!,
+  $after: String
+) {
+  orders(
+    customer_account_id: $customer_account_id,
+    order_date_from: $order_date_from,
+    order_date_to: $order_date_to,
+    has_hold: $has_hold,
+    ready_to_ship: $ready_to_ship,
+    fulfillment_status: $fulfillment_status
+  ) {
+    request_id
+    complexity
+    data(first: $first, after: $after) {
+      edges {
+        cursor
+        node {
+          id
+          legacy_id
+          order_number
+          shop_name
+          fulfillment_status
+          order_date
+          required_ship_date
+          profile
+          source
+          email
+          shipping_address {
+            country
+          }
+          shipping_lines {
+            carrier
+            method
+          }
+          line_items(first: 1) {
+            edges {
+              node {
+                sku
+              }
+            }
+          }
+        }
+      }
+      pageInfo {
+        hasNextPage
+        endCursor
+      }
+    }
+  }
+}
+GQL;
+
+        $json = $this->client->query($graphql, $vars);
+        $data = data_get($json, 'data.orders.data');
+        if (! is_array($data)) {
+            throw new RuntimeException('ShipHero did not return orders data.');
+        }
+
+        $edges = is_array($data['edges'] ?? null) ? $data['edges'] : [];
+        $rows = [];
+        foreach ($edges as $edge) {
+            if (! is_array($edge)) {
+                continue;
+            }
+            $node = is_array($edge['node'] ?? null) ? $edge['node'] : null;
+            if ($node === null) {
+                continue;
+            }
+            $rows[] = $this->normalizeOrderRow($node, $edge['cursor'] ?? null);
+        }
+
+        $pageInfo = is_array($data['pageInfo'] ?? null) ? $data['pageInfo'] : [];
+
+        return [
+            'rows' => $rows,
+            'pagination' => [
+                'has_next_page' => (bool) ($pageInfo['hasNextPage'] ?? false),
+                'end_cursor' => isset($pageInfo['endCursor']) && is_string($pageInfo['endCursor'])
+                    ? $pageInfo['endCursor']
+                    : null,
+            ],
+        ];
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    public function getOrder(string $orderId, string $customerAccountId): array
+    {
+        $id = trim($orderId);
+        $customer = trim($customerAccountId);
+        if ($id === '' || $customer === '') {
+            throw new RuntimeException('Order id and customer account id are required.');
+        }
+
+        $graphql = <<<'GQL'
+query ShipHeroOrderDetail($ids: [String], $customer_account_id: String!) {
+  orders(ids: $ids, customer_account_id: $customer_account_id) {
+    data(first: 1) {
+      edges {
+        node {
+          id
+          legacy_id
+          order_number
+          partner_order_id
+          shop_name
+          fulfillment_status
+          order_date
+          required_ship_date
+          profile
+          source
+          email
+          subtotal
+          total_tax
+          total_price
+          total_discounts
+          gift_invoice
+          allow_partial
+          require_signature
+          packing_note
+          shipping_address {
+            name
+            address1
+            address2
+            city
+            state
+            zip
+            country
+          }
+          billing_address {
+            name
+            address1
+            address2
+            city
+            state
+            zip
+            country
+          }
+          shipping_lines {
+            carrier
+            method
+            shipping_cost
+          }
+          line_items(first: 100) {
+            edges {
+              node {
+                id
+                sku
+                quantity
+                quantity_allocated
+                quantity_pending_fulfillment
+                backorder_quantity
+                product_name
+                custom_options
+              }
+            }
+          }
+          order_history {
+            created_at
+            information
+            user_id
+          }
+        }
+      }
+    }
+  }
+}
+GQL;
+
+        $json = $this->client->query($graphql, [
+            'ids' => [$id],
+            'customer_account_id' => $customer,
+        ]);
+
+        $edges = data_get($json, 'data.orders.data.edges');
+        if (! is_array($edges) || $edges === []) {
+            throw new RuntimeException('Order not found in ShipHero.');
+        }
+        $node = data_get($edges, '0.node');
+        if (! is_array($node)) {
+            throw new RuntimeException('Order payload is invalid.');
+        }
+
+        return $this->normalizeOrderDetail($node);
+    }
+
+    /**
+     * @param  array<string, mixed>  $node
+     * @return array<string, mixed>
+     */
+    private function normalizeOrderRow(array $node, $cursor): array
+    {
+        $shippingLines = is_array($node['shipping_lines'] ?? null) ? $node['shipping_lines'] : [];
+        $shippingLine = is_array($shippingLines[0] ?? null) ? $shippingLines[0] : [];
+        $shippingAddress = is_array($node['shipping_address'] ?? null) ? $node['shipping_address'] : [];
+
+        return [
+            'id' => (string) ($node['id'] ?? ''),
+            'legacy_id' => is_numeric($node['legacy_id'] ?? null) ? (int) $node['legacy_id'] : null,
+            'cursor' => is_string($cursor) ? $cursor : null,
+            'status' => (string) ($node['fulfillment_status'] ?? ''),
+            'order_number' => (string) ($node['order_number'] ?? ''),
+            'order_date' => $this->nullableIso($node['order_date'] ?? null),
+            'account' => (string) ($node['shop_name'] ?? ''),
+            'country' => (string) ($shippingAddress['country'] ?? ''),
+            'shipping_carrier' => (string) ($shippingLine['carrier'] ?? ''),
+            'method' => (string) ($shippingLine['method'] ?? ''),
+            'email' => (string) ($node['email'] ?? ''),
+        ];
+    }
+
+    /**
+     * @param  array<string, mixed>  $node
+     * @return array<string, mixed>
+     */
+    private function normalizeOrderDetail(array $node): array
+    {
+        $lineEdges = data_get($node, 'line_items.edges');
+        $lineEdges = is_array($lineEdges) ? $lineEdges : [];
+        $items = [];
+        foreach ($lineEdges as $edge) {
+            if (! is_array($edge) || ! is_array($edge['node'] ?? null)) {
+                continue;
+            }
+            $line = $edge['node'];
+            $items[] = [
+                'id' => (string) ($line['id'] ?? ''),
+                'sku' => (string) ($line['sku'] ?? ''),
+                'name' => (string) ($line['product_name'] ?? ''),
+                'quantity' => (float) ($line['quantity'] ?? 0),
+                'quantity_allocated' => (float) ($line['quantity_allocated'] ?? 0),
+                'quantity_pending_fulfillment' => (float) ($line['quantity_pending_fulfillment'] ?? 0),
+                'backorder_quantity' => (float) ($line['backorder_quantity'] ?? 0),
+                'custom_options' => is_string($line['custom_options'] ?? null) ? $line['custom_options'] : null,
+            ];
+        }
+
+        $history = is_array($node['order_history'] ?? null) ? $node['order_history'] : [];
+        $shippingLines = is_array($node['shipping_lines'] ?? null) ? $node['shipping_lines'] : [];
+        $shippingLine = is_array($shippingLines[0] ?? null) ? $shippingLines[0] : [];
+
+        return [
+            'id' => (string) ($node['id'] ?? ''),
+            'legacy_id' => is_numeric($node['legacy_id'] ?? null) ? (int) $node['legacy_id'] : null,
+            'order_number' => (string) ($node['order_number'] ?? ''),
+            'partner_order_id' => (string) ($node['partner_order_id'] ?? ''),
+            'status' => (string) ($node['fulfillment_status'] ?? ''),
+            'order_date' => $this->nullableIso($node['order_date'] ?? null),
+            'required_ship_date' => $this->nullableIso($node['required_ship_date'] ?? null),
+            'account' => (string) ($node['shop_name'] ?? ''),
+            'email' => (string) ($node['email'] ?? ''),
+            'shipping_carrier' => (string) ($shippingLine['carrier'] ?? ''),
+            'method' => (string) ($shippingLine['method'] ?? ''),
+            'shipping_cost' => is_numeric($shippingLine['shipping_cost'] ?? null) ? (float) $shippingLine['shipping_cost'] : null,
+            'subtotal' => is_numeric($node['subtotal'] ?? null) ? (float) $node['subtotal'] : null,
+            'total_tax' => is_numeric($node['total_tax'] ?? null) ? (float) $node['total_tax'] : null,
+            'total_discounts' => is_numeric($node['total_discounts'] ?? null) ? (float) $node['total_discounts'] : null,
+            'total_price' => is_numeric($node['total_price'] ?? null) ? (float) $node['total_price'] : null,
+            'gift_invoice' => (bool) ($node['gift_invoice'] ?? false),
+            'allow_partial' => (bool) ($node['allow_partial'] ?? false),
+            'require_signature' => (bool) ($node['require_signature'] ?? false),
+            'packing_note' => is_string($node['packing_note'] ?? null) ? $node['packing_note'] : null,
+            'shipping_address' => is_array($node['shipping_address'] ?? null) ? $node['shipping_address'] : null,
+            'billing_address' => is_array($node['billing_address'] ?? null) ? $node['billing_address'] : null,
+            'items' => $items,
+            'history' => array_values(array_filter(array_map(function ($row) {
+                if (! is_array($row)) {
+                    return null;
+                }
+                return [
+                    'created_at' => $this->nullableIso($row['created_at'] ?? null),
+                    'information' => (string) ($row['information'] ?? ''),
+                    'user_id' => (string) ($row['user_id'] ?? ''),
+                ];
+            }, $history))),
+        ];
+    }
+
+    private function nullableIso($value): ?string
+    {
+        if (! is_string($value)) {
+            return null;
+        }
+        $v = trim($value);
+
+        return $v !== '' ? $v : null;
+    }
+}
+

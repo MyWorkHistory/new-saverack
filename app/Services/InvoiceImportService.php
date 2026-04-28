@@ -333,14 +333,19 @@ class InvoiceImportService
             return null;
         }
 
+        $subtype = strtolower(trim((string) ($line['subtype'] ?? '')));
+        $serviceCode = strtolower(trim((string) ($line['service_code'] ?? '')));
         $text = strtolower(trim(implode(' ', array_filter([
             (string) ($line['display_name'] ?? ''),
             (string) ($line['description'] ?? ''),
             (string) ($line['service_code'] ?? ''),
-            (string) ($line['subtype'] ?? ''),
         ]))));
 
-        if (strpos($text, 'pick') === false && strpos($text, 'additional item') === false) {
+        $isPickCharge = in_array($subtype, ['first', 'additional'], true)
+            || str_contains($serviceCode, 'first_pick_charge')
+            || str_contains($serviceCode, 'pick_remainder_charge')
+            || preg_match('/\b(first pick|additional item\(s\) picked|pick remainder)\b/i', $text) === 1;
+        if (! $isPickCharge) {
             return null;
         }
 

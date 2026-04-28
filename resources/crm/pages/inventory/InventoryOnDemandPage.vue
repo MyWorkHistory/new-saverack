@@ -290,7 +290,7 @@ async function saveProduct() {
   try {
     const payload = {
       client_account_id: Number(form.client_account_id),
-      sku: form.sku.trim().toUpperCase(),
+      sku: form.sku.trim(),
       name: form.name.trim(),
       category: form.category,
       price_cents: priceCents,
@@ -703,7 +703,7 @@ function onDocClick(e) {
                   </div>
                   <div>
                     <label class="mb-1 block text-sm font-medium text-gray-700">SKU</label>
-                    <input v-model="form.sku" type="text" class="form-control text-uppercase" maxlength="128" required :disabled="saving" />
+                    <input v-model="form.sku" type="text" class="form-control" maxlength="128" required :disabled="saving" />
                   </div>
                   <div>
                     <label class="mb-1 block text-sm font-medium text-gray-700">Name</label>
@@ -769,7 +769,7 @@ function onDocClick(e) {
                 </div>
                 <div>
                   <label class="mb-1 block text-sm font-medium text-gray-700">SKU</label>
-                  <input v-model="form.sku" type="text" class="form-control text-uppercase" maxlength="128" required :disabled="saving" />
+                  <input v-model="form.sku" type="text" class="form-control" maxlength="128" required :disabled="saving" />
                 </div>
                 <div>
                   <label class="mb-1 block text-sm font-medium text-gray-700">Name</label>

@@ -48,8 +48,11 @@ const canViewInventory = computed(() => {
   return k.includes("inventory.view");
 });
 
+const canViewOrders = computed(() => canViewInventory.value);
+
 const clientsGroupOpen = ref(route.path.startsWith("/clients"));
 const billingGroupOpen = ref(route.path.startsWith("/billing"));
+const ordersGroupOpen = ref(route.path.startsWith("/orders"));
 const inventoryGroupOpen = ref(route.path.startsWith("/inventory"));
 watch(
   () => route.path,
@@ -59,6 +62,9 @@ watch(
     }
     if (p.startsWith("/billing")) {
       billingGroupOpen.value = true;
+    }
+    if (p.startsWith("/orders")) {
+      ordersGroupOpen.value = true;
     }
     if (p.startsWith("/inventory")) {
       inventoryGroupOpen.value = true;
@@ -79,6 +85,11 @@ function navActive(mode) {
   if (mode === "clients") return p.startsWith("/clients");
   if (mode === "clients-accounts") return p.startsWith("/clients/accounts");
   if (mode === "clients-users") return p.startsWith("/clients/users");
+  if (mode === "orders") return p.startsWith("/orders");
+  if (mode === "orders-manage") return p.startsWith("/orders/manage");
+  if (mode === "orders-awaiting") return p.startsWith("/orders/awaiting");
+  if (mode === "orders-on-hold") return p.startsWith("/orders/on-hold");
+  if (mode === "orders-shipped") return p.startsWith("/orders/shipped");
   if (mode === "inventory") return p.startsWith("/inventory");
   if (mode === "inventory-search") return p === "/inventory";
   if (mode === "inventory-on-demand") return p.startsWith("/inventory/on-demand");
@@ -364,6 +375,107 @@ function collapseNav() {
                 stroke-linecap="round"
                 stroke-linejoin="round"
                 d="M19.5 14.25v-2.625a3.375 3.375 0 0 0-3.375-3.375h-1.5A1.125 1.125 0 0 1 13.5 7.125v-1.5a3.375 3.375 0 0 0-3.375-3.375H8.25m0 12.75h7.5m-7.5 3H12M10.5 2.25H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 0 0-9-9Z"
+              />
+            </svg>
+          </RouterLink>
+        </li>
+        <li v-if="canViewOrders">
+          <template v-if="isExpanded">
+            <div>
+              <button
+                type="button"
+                class="vx-nav-link"
+                :class="{ 'vx-nav-link--active': navActive('orders') }"
+                :aria-expanded="ordersGroupOpen"
+                @click="ordersGroupOpen = !ordersGroupOpen"
+              >
+                <svg
+                  fill="none"
+                  viewBox="0 0 24 24"
+                  stroke="currentColor"
+                  stroke-width="1.5"
+                >
+                  <path
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                    d="M3 6.75A2.25 2.25 0 0 1 5.25 4.5h13.5A2.25 2.25 0 0 1 21 6.75v10.5A2.25 2.25 0 0 1 18.75 19.5H5.25A2.25 2.25 0 0 1 3 17.25V6.75Zm3 1.5h12M7.5 12h3m-3 3h6"
+                  />
+                </svg>
+                <span class="text-truncate">Orders</span>
+                <svg
+                  class="ms-auto flex-shrink-0 transition"
+                  :class="ordersGroupOpen ? 'rotate-180' : ''"
+                  style="width: 1rem; height: 1rem"
+                  fill="none"
+                  viewBox="0 0 24 24"
+                  stroke="currentColor"
+                  stroke-width="1.5"
+                  aria-hidden="true"
+                >
+                  <path stroke-linecap="round" stroke-linejoin="round" d="M19 9l-7 7-7-7" />
+                </svg>
+              </button>
+              <ul v-show="ordersGroupOpen" class="list-unstyled mb-0 mt-1">
+                <li>
+                  <RouterLink
+                    to="/orders/manage"
+                    class="vx-nav-link vx-nav-sublink"
+                    :class="{ 'vx-nav-link--active': navActive('orders-manage') }"
+                    @click="closeMobile"
+                  >
+                    Manage
+                  </RouterLink>
+                </li>
+                <li>
+                  <RouterLink
+                    to="/orders/awaiting"
+                    class="vx-nav-link vx-nav-sublink"
+                    :class="{ 'vx-nav-link--active': navActive('orders-awaiting') }"
+                    @click="closeMobile"
+                  >
+                    Awaiting Shipment
+                  </RouterLink>
+                </li>
+                <li>
+                  <RouterLink
+                    to="/orders/on-hold"
+                    class="vx-nav-link vx-nav-sublink"
+                    :class="{ 'vx-nav-link--active': navActive('orders-on-hold') }"
+                    @click="closeMobile"
+                  >
+                    On-Hold
+                  </RouterLink>
+                </li>
+                <li>
+                  <RouterLink
+                    to="/orders/shipped"
+                    class="vx-nav-link vx-nav-sublink"
+                    :class="{ 'vx-nav-link--active': navActive('orders-shipped') }"
+                    @click="closeMobile"
+                  >
+                    Shipped
+                  </RouterLink>
+                </li>
+              </ul>
+            </div>
+          </template>
+          <RouterLink
+            v-else
+            to="/orders/manage"
+            class="vx-nav-link"
+            title="Orders"
+            @click="closeMobile"
+          >
+            <svg
+              fill="none"
+              viewBox="0 0 24 24"
+              stroke="currentColor"
+              stroke-width="1.5"
+            >
+              <path
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                d="M3 6.75A2.25 2.25 0 0 1 5.25 4.5h13.5A2.25 2.25 0 0 1 21 6.75v10.5A2.25 2.25 0 0 1 18.75 19.5H5.25A2.25 2.25 0 0 1 3 17.25V6.75Zm3 1.5h12M7.5 12h3m-3 3h6"
               />
             </svg>
           </RouterLink>

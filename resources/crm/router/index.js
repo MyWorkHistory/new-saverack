@@ -28,6 +28,8 @@ import BillingInvoicesListPage from "../pages/billing/BillingInvoicesListPage.vu
 import BillingInvoiceDetailPage from "../pages/billing/BillingInvoiceDetailPage.vue";
 import InventoryPage from "../pages/inventory/InventoryPage.vue";
 import InventoryOnDemandPage from "../pages/inventory/InventoryOnDemandPage.vue";
+import OrdersListPage from "../pages/orders/OrdersListPage.vue";
+import OrderDetailPage from "../pages/orders/OrderDetailPage.vue";
 
 const meta = {
   login: {
@@ -101,6 +103,26 @@ const meta = {
   inventoryOnDemand: {
     title: "Save Rack | On-Demand Inventory",
     description: "Account On-Demand SKU catalog.",
+  },
+  ordersManage: {
+    title: "Save Rack | Orders | Manage",
+    description: "ShipHero orders management.",
+  },
+  ordersAwaiting: {
+    title: "Save Rack | Orders | Awaiting Shipment",
+    description: "ShipHero orders awaiting shipment.",
+  },
+  ordersOnHold: {
+    title: "Save Rack | Orders | On-Hold",
+    description: "ShipHero on-hold orders.",
+  },
+  ordersShipped: {
+    title: "Save Rack | Orders | Shipped",
+    description: "ShipHero shipped orders.",
+  },
+  orderDetail: {
+    title: "Save Rack | Order",
+    description: "ShipHero order detail.",
   },
 };
 
@@ -249,6 +271,37 @@ const routes = [
     name: "inventory-on-demand",
     component: InventoryOnDemandPage,
     meta: meta.inventoryOnDemand,
+  },
+  {
+    path: "/orders/manage",
+    name: "orders-manage",
+    component: OrdersListPage,
+    meta: { ...meta.ordersManage, orderTab: "manage" },
+  },
+  {
+    path: "/orders/awaiting",
+    name: "orders-awaiting",
+    component: OrdersListPage,
+    meta: { ...meta.ordersAwaiting, orderTab: "awaiting" },
+  },
+  {
+    path: "/orders/on-hold",
+    name: "orders-on-hold",
+    component: OrdersListPage,
+    meta: { ...meta.ordersOnHold, orderTab: "on_hold" },
+  },
+  {
+    path: "/orders/shipped",
+    name: "orders-shipped",
+    component: OrdersListPage,
+    meta: { ...meta.ordersShipped, orderTab: "shipped" },
+  },
+  {
+    path: "/orders/:shipheroOrderId",
+    name: "order-detail",
+    component: OrderDetailPage,
+    props: true,
+    meta: meta.orderDetail,
   },
   {
     path: "/webmaster",
@@ -550,7 +603,12 @@ async function ensureInventoryRouteAccess(path) {
       return false;
     }
   }
-  if (path === "/inventory" || path.startsWith("/inventory/")) {
+  if (
+    path === "/inventory" ||
+    path.startsWith("/inventory/") ||
+    path === "/orders" ||
+    path.startsWith("/orders/")
+  ) {
     return inventoryNavCache.view === true;
   }
   return true;
@@ -619,6 +677,16 @@ router.beforeEach(async (to) => {
   }
 
   if (to.path.startsWith("/inventory")) {
+    const ok = await ensureInventoryRouteAccess(to.path);
+    if (!ok) {
+      if (!localStorage.getItem("auth_token")) {
+        return { name: "login", query: { redirect: to.fullPath } };
+      }
+      return { path: "/dashboard" };
+    }
+  }
+
+  if (to.path.startsWith("/orders")) {
     const ok = await ensureInventoryRouteAccess(to.path);
     if (!ok) {
       if (!localStorage.getItem("auth_token")) {

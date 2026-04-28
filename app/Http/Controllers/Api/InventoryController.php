@@ -389,14 +389,14 @@ class InventoryController extends Controller
                 'string',
                 'max:128',
                 function (string $attribute, $value, \Closure $fail) use ($request, $product): void {
-                    $sku = strtoupper(trim((string) $value));
+                    $sku = trim((string) $value);
                     if ($sku === '') {
                         return;
                     }
 
                     $exists = ClientAccountOnDemandProduct::query()
                         ->where('client_account_id', (int) $request->input('client_account_id'))
-                        ->where('sku', $sku)
+                        ->whereRaw('LOWER(sku) = ?', [mb_strtolower($sku)])
                         ->when($product !== null, function ($query) use ($product) {
                             $query->whereKeyNot($product->id);
                         })
@@ -414,7 +414,7 @@ class InventoryController extends Controller
 
         return [
             'client_account_id' => (int) $validated['client_account_id'],
-            'sku' => strtoupper(trim((string) $validated['sku'])),
+            'sku' => trim((string) $validated['sku']),
             'name' => trim((string) $validated['name']),
             'category' => (string) $validated['category'],
             'price_cents' => (int) $validated['price_cents'],

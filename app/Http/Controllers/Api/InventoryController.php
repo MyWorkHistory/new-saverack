@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Models\ClientAccount;
+use App\Models\ClientAccountOnDemandProduct;
 use App\Services\ShipHeroClient;
 use App\Services\ShipHeroInventoryService;
 use GuzzleHttp\Client;
@@ -11,6 +12,7 @@ use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Gate;
+use Illuminate\Validation\Rule;
 use Illuminate\Validation\ValidationException;
 use RuntimeException;
 use Throwable;
@@ -265,6 +267,147 @@ class InventoryController extends Controller
                     : 'Could not reach ShipHero. Check SHIPHERO_* in .env and server logs.',
             ], 502);
         }
+    }
+
+    public function onDemandProducts(Request $request): JsonResponse
+    {
+        $validated = $request->validate([
+            'q' => ['nullable', 'string', 'max:255'],
+            'client_account_id' => ['nullable', 'integer', 'exists:client_accounts,id'],
+            'category' => ['nullable', 'string', Rule::in(ClientAccountOnDemandProduct::CATEGORIES)],
+        ]);
+
+        $query = ClientAccountOnDemandProduct::query()
+            ->with('clientAccount:id,company_name')
+            ->orderBy('sku');
+
+        if (isset($validated['client_account_id']) && (int) $validated['client_account_id'] > 0) {
+            $query->where('client_account_id', (int) $validated['client_account_id']);
+        }
+
+        if (isset($validated['category']) && is_string($validated['category']) && $validated['category'] !== '') {
+            $query->where('category', $validated['category']);
+        }
+
+        if (isset($validated['q']) && is_string($validated['q']) && trim($validated['q']) !== '') {
+            $needle = trim($validated['q']);
+            $query->where(function ($q) use ($needle) {
+                $q->where('sku', 'like', '%'.$needle.'%')
+                    ->orWhere('name', 'like', '%'.$needle.'%')
+                    ->orWhereHas('clientAccount', function ($accountQuery) use ($needle) {
+                        $accountQuery->where('company_name', 'like', '%'.$needle.'%');
+                    });
+            });
+        }
+
+        $products = $query->limit(500)->get();
+
+        return response()->json([
+            'products' => $products->map(function (ClientAccountOnDemandProduct $product) {
+                return $this->onDemandProductPayload($product);
+            })->values(),
+            'categories' => ClientAccountOnDemandProduct::CATEGORIES,
+        ]);
+    }
+
+    public function storeOnDemandProduct(Request $request): JsonResponse
+    {
+        $data = $this->validatedOnDemandProductData($request);
+        $account = ClientAccount::query()->findOrFail($data['client_account_id']);
+        Gate::forUser($request->user())->authorize('view', $account);
+
+        $product = new ClientAccountOnDemandProduct($data);
+        $product->save();
+        $product->load('clientAccount:id,company_name');
+
+        return response()->json([
+            'product' => $this->onDemandProductPayload($product),
+        ], 201);
+    }
+
+    public function updateOnDemandProduct(Request $request, ClientAccountOnDemandProduct $product): JsonResponse
+    {
+        $data = $this->validatedOnDemandProductData($request, $product);
+        $account = ClientAccount::query()->findOrFail($data['client_account_id']);
+        Gate::forUser($request->user())->authorize('view', $account);
+
+        $product->fill($data);
+        $product->save();
+        $product->load('clientAccount:id,company_name');
+
+        return response()->json([
+            'product' => $this->onDemandProductPayload($product),
+        ]);
+    }
+
+    public function destroyOnDemandProduct(Request $request, ClientAccountOnDemandProduct $product): JsonResponse
+    {
+        Gate::forUser($request->user())->authorize('view', $product->clientAccount);
+        $product->delete();
+
+        return response()->json(['deleted' => true]);
+    }
+
+    /**
+     * @return array{client_account_id:int, sku:string, name:string, category:string, price_cents:int}
+     */
+    private function validatedOnDemandProductData(Request $request, ?ClientAccountOnDemandProduct $product = null): array
+    {
+        $validated = $request->validate([
+            'client_account_id' => ['required', 'integer', 'exists:client_accounts,id'],
+            'sku' => [
+                'required',
+                'string',
+                'max:128',
+                function (string $attribute, $value, \Closure $fail) use ($request, $product): void {
+                    $sku = strtoupper(trim((string) $value));
+                    if ($sku === '') {
+                        return;
+                    }
+
+                    $exists = ClientAccountOnDemandProduct::query()
+                        ->where('client_account_id', (int) $request->input('client_account_id'))
+                        ->where('sku', $sku)
+                        ->when($product !== null, function ($query) use ($product) {
+                            $query->whereKeyNot($product->id);
+                        })
+                        ->exists();
+
+                    if ($exists) {
+                        $fail('The sku has already been taken for this account.');
+                    }
+                },
+            ],
+            'name' => ['required', 'string', 'max:255'],
+            'category' => ['required', 'string', Rule::in(ClientAccountOnDemandProduct::CATEGORIES)],
+            'price_cents' => ['required', 'integer', 'min:1'],
+        ]);
+
+        return [
+            'client_account_id' => (int) $validated['client_account_id'],
+            'sku' => strtoupper(trim((string) $validated['sku'])),
+            'name' => trim((string) $validated['name']),
+            'category' => (string) $validated['category'],
+            'price_cents' => (int) $validated['price_cents'],
+        ];
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function onDemandProductPayload(ClientAccountOnDemandProduct $product): array
+    {
+        return [
+            'id' => $product->id,
+            'client_account_id' => $product->client_account_id,
+            'account_name' => optional($product->clientAccount)->company_name,
+            'sku' => $product->sku,
+            'name' => $product->name,
+            'category' => $product->category,
+            'price_cents' => $product->price_cents,
+            'created_at' => optional($product->created_at)->toIso8601String(),
+            'updated_at' => optional($product->updated_at)->toIso8601String(),
+        ];
     }
 
     /**

@@ -141,6 +141,11 @@ class ClientAccount extends Model
         return $this->hasMany(InvoiceImport::class, 'client_account_id');
     }
 
+    public function onDemandProducts(): HasMany
+    {
+        return $this->hasMany(ClientAccountOnDemandProduct::class, 'client_account_id');
+    }
+
     public function contactFullName(): string
     {
         $parts = array_filter([

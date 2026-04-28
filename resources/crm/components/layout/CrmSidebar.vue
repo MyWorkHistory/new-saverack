@@ -50,6 +50,7 @@ const canViewInventory = computed(() => {
 
 const clientsGroupOpen = ref(route.path.startsWith("/clients"));
 const billingGroupOpen = ref(route.path.startsWith("/billing"));
+const inventoryGroupOpen = ref(route.path.startsWith("/inventory"));
 watch(
   () => route.path,
   (p) => {
@@ -58,6 +59,9 @@ watch(
     }
     if (p.startsWith("/billing")) {
       billingGroupOpen.value = true;
+    }
+    if (p.startsWith("/inventory")) {
+      inventoryGroupOpen.value = true;
     }
   },
 );
@@ -76,6 +80,8 @@ function navActive(mode) {
   if (mode === "clients-accounts") return p.startsWith("/clients/accounts");
   if (mode === "clients-users") return p.startsWith("/clients/users");
   if (mode === "inventory") return p.startsWith("/inventory");
+  if (mode === "inventory-search") return p === "/inventory";
+  if (mode === "inventory-on-demand") return p.startsWith("/inventory/on-demand");
   return false;
 }
 
@@ -363,11 +369,74 @@ function collapseNav() {
           </RouterLink>
         </li>
         <li v-if="canViewInventory">
+          <template v-if="isExpanded">
+            <div>
+              <button
+                type="button"
+                class="vx-nav-link"
+                :class="{ 'vx-nav-link--active': navActive('inventory') }"
+                :aria-expanded="inventoryGroupOpen"
+                @click="inventoryGroupOpen = !inventoryGroupOpen"
+              >
+                <svg
+                  fill="none"
+                  viewBox="0 0 24 24"
+                  stroke="currentColor"
+                  stroke-width="1.5"
+                >
+                  <path
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                    d="m20.25 7.5-.625 10.632a2.25 2.25 0 0 1-2.247 2.118H6.622a2.25 2.25 0 0 1-2.247-2.118L3.75 7.5M10 11.25h4M3.375 7.5h17.25c.621 0 1.125-.504 1.125-1.125v-1.5c0-.621-.504-1.125-1.125-1.125H3.375c-.621 0-1.125.504-1.125 1.125v1.5c0 .621.504 1.125 1.125 1.125Z"
+                  />
+                </svg>
+                <span class="text-truncate">Inventory</span>
+                <svg
+                  class="ms-auto flex-shrink-0 transition"
+                  :class="inventoryGroupOpen ? 'rotate-180' : ''"
+                  style="width: 1rem; height: 1rem"
+                  fill="none"
+                  viewBox="0 0 24 24"
+                  stroke="currentColor"
+                  stroke-width="1.5"
+                  aria-hidden="true"
+                >
+                  <path
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                    d="M19 9l-7 7-7-7"
+                  />
+                </svg>
+              </button>
+              <ul v-show="inventoryGroupOpen" class="list-unstyled mb-0 mt-1">
+                <li>
+                  <RouterLink
+                    to="/inventory"
+                    class="vx-nav-link vx-nav-sublink"
+                    :class="{ 'vx-nav-link--active': navActive('inventory-search') }"
+                    @click="closeMobile"
+                  >
+                    Search
+                  </RouterLink>
+                </li>
+                <li>
+                  <RouterLink
+                    to="/inventory/on-demand"
+                    class="vx-nav-link vx-nav-sublink"
+                    :class="{ 'vx-nav-link--active': navActive('inventory-on-demand') }"
+                    @click="closeMobile"
+                  >
+                    On-Demand
+                  </RouterLink>
+                </li>
+              </ul>
+            </div>
+          </template>
           <RouterLink
+            v-else
             to="/inventory"
             class="vx-nav-link"
-            :class="{ 'vx-nav-link--active': navActive('inventory') }"
-            :title="!isExpanded ? 'Inventory' : undefined"
+            title="Inventory"
             @click="closeMobile"
           >
             <svg
@@ -382,7 +451,6 @@ function collapseNav() {
                 d="m20.25 7.5-.625 10.632a2.25 2.25 0 0 1-2.247 2.118H6.622a2.25 2.25 0 0 1-2.247-2.118L3.75 7.5M10 11.25h4M3.375 7.5h17.25c.621 0 1.125-.504 1.125-1.125v-1.5c0-.621-.504-1.125-1.125-1.125H3.375c-.621 0-1.125.504-1.125 1.125v1.5c0 .621.504 1.125 1.125 1.125Z"
               />
             </svg>
-            <span v-if="isExpanded">Inventory</span>
           </RouterLink>
         </li>
         <li v-if="canViewWebmaster">

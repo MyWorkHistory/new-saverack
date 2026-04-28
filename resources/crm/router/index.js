@@ -27,6 +27,7 @@ import BillingSummaryPage from "../pages/billing/BillingSummaryPage.vue";
 import BillingInvoicesListPage from "../pages/billing/BillingInvoicesListPage.vue";
 import BillingInvoiceDetailPage from "../pages/billing/BillingInvoiceDetailPage.vue";
 import InventoryPage from "../pages/inventory/InventoryPage.vue";
+import InventoryOnDemandPage from "../pages/inventory/InventoryOnDemandPage.vue";
 
 const meta = {
   login: {
@@ -96,6 +97,10 @@ const meta = {
   inventory: {
     title: "Save Rack | Inventory",
     description: "ShipHero live inventory.",
+  },
+  inventoryOnDemand: {
+    title: "Save Rack | On-Demand Inventory",
+    description: "Account On-Demand SKU catalog.",
   },
 };
 
@@ -238,6 +243,12 @@ const routes = [
     name: "inventory",
     component: InventoryPage,
     meta: meta.inventory,
+  },
+  {
+    path: "/inventory/on-demand",
+    name: "inventory-on-demand",
+    component: InventoryOnDemandPage,
+    meta: meta.inventoryOnDemand,
   },
   {
     path: "/webmaster",

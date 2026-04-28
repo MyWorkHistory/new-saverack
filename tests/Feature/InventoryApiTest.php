@@ -2,6 +2,7 @@
 
 namespace Tests\Feature;
 
+use App\Models\ClientAccount;
 use App\Models\Permission;
 use App\Models\User;
 use App\Services\ShipHeroInventoryService;
@@ -162,5 +163,40 @@ class InventoryApiTest extends TestCase
         ])
             ->assertOk()
             ->assertJsonPath('warehouse.locations.0.quantity', 7);
+    }
+
+    public function test_user_can_create_and_list_on_demand_products(): void
+    {
+        $user = User::factory()->create();
+        $user->permissions()->sync([
+            $this->inventoryViewPermission()->id,
+            $this->inventoryUpdatePermission()->id,
+        ]);
+        Sanctum::actingAs($user);
+
+        $account = ClientAccount::query()->create([
+            'status' => ClientAccount::STATUS_ACTIVE,
+            'company_name' => 'On Demand Co',
+            'email' => 'on-demand@example.test',
+        ]);
+
+        $this->postJson('/api/inventory/on-demand-products', [
+            'client_account_id' => $account->id,
+            'sku' => ' gso-cbd-gm ',
+            'name' => 'CBD Gummies',
+            'category' => 'Gummies',
+            'price_cents' => 325,
+        ])
+            ->assertCreated()
+            ->assertJsonPath('product.sku', 'GSO-CBD-GM')
+            ->assertJsonPath('product.name', 'CBD Gummies')
+            ->assertJsonPath('product.category', 'Gummies')
+            ->assertJsonPath('product.price_cents', 325);
+
+        $this->getJson('/api/inventory/on-demand-products?q=gso-cbd-gm')
+            ->assertOk()
+            ->assertJsonCount(1, 'products')
+            ->assertJsonPath('products.0.account_name', 'On Demand Co')
+            ->assertJsonPath('products.0.sku', 'GSO-CBD-GM');
     }
 }

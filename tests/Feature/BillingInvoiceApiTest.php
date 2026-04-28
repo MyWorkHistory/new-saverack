@@ -4,6 +4,7 @@ namespace Tests\Feature;
 
 use App\Mail\InvoiceSentMailable;
 use App\Models\ClientAccount;
+use App\Models\ClientAccountOnDemandProduct;
 use App\Services\InvoiceService;
 use App\Services\StripeInvoicePaymentService;
 use App\Models\Invoice;
@@ -1059,6 +1060,91 @@ class BillingInvoiceApiTest extends TestCase
         $this->assertSame('on_demand', $items[0]['category']);
         $this->assertStringContainsString('Face Oil Serum', (string) ($items[0]['display_name'] ?? ''));
         $this->assertStringNotContainsStringIgnoringCase('Fulfillment', (string) ($items[0]['display_name'] ?? ''));
+    }
+
+    public function test_import_charge_csv_aggregates_configured_on_demand_pick_sku(): void
+    {
+        $user = User::factory()->create();
+        $user->permissions()->sync([
+            $this->billingViewPermission()->id,
+            $this->billingCreatePermission()->id,
+            $this->clientsViewPermission()->id,
+        ]);
+        Sanctum::actingAs($user);
+
+        $client = ClientAccount::query()->create([
+            'status' => ClientAccount::STATUS_ACTIVE,
+            'company_name' => 'Gummy Import Co',
+            'email' => 'gummies@example.test',
+        ]);
+        ClientAccountOnDemandProduct::query()->create([
+            'client_account_id' => $client->id,
+            'sku' => 'GSO-CBD-GM',
+            'name' => 'CBD Gummies',
+            'category' => 'Gummies',
+            'price_cents' => 325,
+        ]);
+
+        $csv = "Charge Name,Charge Type,Qty,Rate,Subtotal\n"
+            ."First pick for the default product profile, of SKU GSO-CBD-GM.,first_pick_charge,1,1.00,1.00\n"
+            ."2 additional item(s) picked for the default product profile, of SKU GSO-CBD-GM.,pick_remainder_charge,1,0.50,0.50\n";
+        $file = UploadedFile::fake()->createWithContent('charges.csv', $csv);
+
+        $res = $this->post(
+            "/api/client-accounts/{$client->id}/invoice-imports/charges",
+            [
+                'due_at' => '2026-06-15',
+                'file' => $file,
+            ],
+            ['Accept' => 'application/json']
+        );
+
+        $res->assertStatus(201);
+        $items = $res->json('invoice.items') ?? [];
+        $this->assertCount(1, $items);
+        $this->assertSame('on_demand', $items[0]['category']);
+        $this->assertSame('CBD Gummies (GSO-CBD-GM)', $items[0]['display_name']);
+        $this->assertSame('GSO-CBD-GM', $items[0]['sku']);
+        $this->assertSame(3, (int) $items[0]['quantity']);
+        $this->assertSame(325, (int) $items[0]['unit_price_cents']);
+        $this->assertSame(975, (int) $items[0]['line_total_cents']);
+        $this->assertSame(975, (int) $res->json('invoice.total_cents'));
+    }
+
+    public function test_import_charge_csv_keeps_unconfigured_pick_sku_as_fulfillment(): void
+    {
+        $user = User::factory()->create();
+        $user->permissions()->sync([
+            $this->billingViewPermission()->id,
+            $this->billingCreatePermission()->id,
+            $this->clientsViewPermission()->id,
+        ]);
+        Sanctum::actingAs($user);
+
+        $client = ClientAccount::query()->create([
+            'status' => ClientAccount::STATUS_ACTIVE,
+            'company_name' => 'Regular Import Co',
+            'email' => 'regular@example.test',
+        ]);
+
+        $csv = "Charge Name,Charge Type,Qty,Rate,Subtotal\n"
+            ."First pick for the default product profile, of SKU NOT-CONFIGURED.,first_pick_charge,1,1.00,1.00\n";
+        $file = UploadedFile::fake()->createWithContent('charges.csv', $csv);
+
+        $res = $this->post(
+            "/api/client-accounts/{$client->id}/invoice-imports/charges",
+            [
+                'due_at' => '2026-06-15',
+                'file' => $file,
+            ],
+            ['Accept' => 'application/json']
+        );
+
+        $res->assertStatus(201);
+        $items = $res->json('invoice.items') ?? [];
+        $this->assertCount(1, $items);
+        $this->assertSame('fulfillment', $items[0]['category']);
+        $this->assertStringContainsString('Fulfillment', (string) ($items[0]['display_name'] ?? ''));
     }
 
     public function test_import_charge_csv_normalizes_packaging_and_inserts_like_old_beta(): void

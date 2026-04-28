@@ -30,6 +30,7 @@ const saving = ref(false);
 const deleteBusy = ref(false);
 const filterMenuOpen = ref(false);
 const drawerOpen = ref(false);
+const editModalOpen = ref(false);
 const editingProduct = ref(null);
 const deleteTarget = ref(null);
 const manageOpenId = ref(null);
@@ -243,6 +244,7 @@ function resetForm() {
 function openCreateDrawer() {
   editingProduct.value = null;
   resetForm();
+  editModalOpen.value = false;
   drawerOpen.value = true;
 }
 
@@ -253,12 +255,17 @@ function openEditDrawer(product) {
   form.name = product.name ?? "";
   form.category = product.category ?? categories.value[0] ?? "Capsules";
   form.price_dollars = centsToDollars(product.price_cents);
-  drawerOpen.value = true;
+  drawerOpen.value = false;
+  editModalOpen.value = true;
   closeManageMenu();
 }
 
 function closeDrawer() {
   if (!saving.value) drawerOpen.value = false;
+}
+
+function closeEditModal() {
+  if (!saving.value) editModalOpen.value = false;
 }
 
 function centsToDollars(cents) {
@@ -295,7 +302,11 @@ async function saveProduct() {
       await api.post("/inventory/on-demand-products", payload);
       toast.success("On-Demand SKU added.");
     }
-    drawerOpen.value = false;
+    if (editingProduct.value?.id) {
+      editModalOpen.value = false;
+    } else {
+      drawerOpen.value = false;
+    }
     await loadProducts();
   } catch (e) {
     toast.errorFrom(e, "Could not save On-Demand SKU.");
@@ -723,6 +734,70 @@ function onDocClick(e) {
               </footer>
             </aside>
           </Transition>
+        </div>
+      </Transition>
+    </Teleport>
+
+    <Teleport to="body">
+      <Transition name="drawer-fade">
+        <div
+          v-if="editModalOpen"
+          class="fixed inset-0 z-[1200] flex items-center justify-center p-3"
+          aria-modal="true"
+          role="dialog"
+        >
+          <div class="absolute inset-0 bg-gray-900/40 backdrop-blur-[1px]" aria-hidden="true" @click="closeEditModal" />
+          <div class="relative w-full max-w-lg rounded-xl border border-gray-200 bg-white shadow-2xl">
+            <header class="flex items-center justify-between border-b border-gray-200 px-4 py-3">
+              <h2 class="text-lg font-semibold text-gray-900">Edit On-Demand SKU</h2>
+              <button type="button" class="rounded-lg p-2 text-gray-500 transition hover:bg-gray-100 hover:text-gray-800" aria-label="Close" :disabled="saving" @click="closeEditModal">
+                <svg class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                  <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </header>
+            <div class="px-4 py-3">
+              <form id="on-demand-product-edit-form" class="space-y-3" @submit.prevent="saveProduct">
+                <div>
+                  <label class="mb-1 block text-sm font-medium text-gray-700">Account</label>
+                  <select v-model="form.client_account_id" class="form-select" required :disabled="saving">
+                    <option value="">Select account</option>
+                    <option v-for="account in accounts" :key="account.id" :value="String(account.id)">
+                      {{ account.company_name }}
+                    </option>
+                  </select>
+                </div>
+                <div>
+                  <label class="mb-1 block text-sm font-medium text-gray-700">SKU</label>
+                  <input v-model="form.sku" type="text" class="form-control text-uppercase" maxlength="128" required :disabled="saving" />
+                </div>
+                <div>
+                  <label class="mb-1 block text-sm font-medium text-gray-700">Name</label>
+                  <input v-model="form.name" type="text" class="form-control" required :disabled="saving" />
+                </div>
+                <div>
+                  <label class="mb-1 block text-sm font-medium text-gray-700">Category</label>
+                  <select v-model="form.category" class="form-select" required :disabled="saving">
+                    <option v-for="category in categories" :key="category" :value="category">
+                      {{ category }}
+                    </option>
+                  </select>
+                </div>
+                <div>
+                  <label class="mb-1 block text-sm font-medium text-gray-700">Price</label>
+                  <input v-model="form.price_dollars" type="number" class="form-control" min="0.01" step="0.01" required :disabled="saving" />
+                </div>
+              </form>
+            </div>
+            <footer class="flex items-center justify-end gap-2 border-t border-gray-200 bg-gray-50 px-4 py-3">
+              <button type="button" class="btn btn-outline-secondary" :disabled="saving" @click="closeEditModal">
+                Cancel
+              </button>
+              <button type="submit" form="on-demand-product-edit-form" class="btn btn-primary" :disabled="saving">
+                {{ saving ? "Saving..." : "Save SKU" }}
+              </button>
+            </footer>
+          </div>
         </div>
       </Transition>
     </Teleport>

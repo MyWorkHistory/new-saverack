@@ -131,6 +131,18 @@ class StripeInvoicePaymentService
                 'receipt_email' => filter_var((string) $account->email, FILTER_VALIDATE_EMAIL) ? (string) $account->email : null,
             ]);
         } catch (ApiErrorException $e) {
+            $fromStatus = (string) $invoice->status;
+            if ($invoice->status !== Invoice::STATUS_PAYMENT_FAILED) {
+                $invoice->status = Invoice::STATUS_PAYMENT_FAILED;
+                $invoice->paid_at = null;
+                $invoice->save();
+            }
+            $invoiceService->logHistory($invoice, $actor, 'payment_applied', $fromStatus, $invoice->status, [
+                'event_type' => 'status',
+                'history_message' => 'Stripe payment failed.',
+                'stripe_status' => 'api_error',
+                'stripe_error_message' => $e->getMessage(),
+            ] + $paymentMeta);
             throw new \RuntimeException($e->getMessage());
         }
 

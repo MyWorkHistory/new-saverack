@@ -518,7 +518,10 @@ function isPastDueByLogic(inv) {
 const statusDisplayText = computed(() => {
   const inv = invoice.value;
   if (!inv) return "";
+  const statusKey = String(inv.status_key || inv.status || "").trim().toLowerCase();
+  if (statusKey === "payment_failed") return "Failed";
   const label = String(inv.status_label || "").trim();
+  if (label.toLowerCase() === "payment failed") return "Failed";
   if (label) return label;
   return String(inv.status || "")
     .replace(/_/g, " ")

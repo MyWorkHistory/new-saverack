@@ -258,7 +258,10 @@ const deleteModalMessage = computed(() => {
 });
 
 function displayStatusText(row) {
+  const key = String(row?.status_key || row?.status || "").trim().toLowerCase();
+  if (key === "payment_failed") return "Failed";
   const label = String(row?.status_label || "").trim();
+  if (label.toLowerCase() === "payment failed") return "Failed";
   if (label) return label;
   return String(row?.status || "")
     .replace(/_/g, " ")

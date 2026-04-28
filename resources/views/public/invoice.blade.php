@@ -138,7 +138,9 @@
         <a class="success" href="{{ $public_pay_path ?? '#' }}">Pay Now</a>
         <a class="primary" href="{{ $public_pdf_path ?? '#' }}">Download PDF</a>
     </div>
-    @php($paymentState = request()->query('payment'))
+    @php
+        $paymentState = request()->query('payment');
+    @endphp
     @if($paymentState === 'success')
         <div class="pay-feedback success">Payment submitted successfully. Please allow a short moment for invoice status updates.</div>
     @elseif($paymentState === 'cancel')
@@ -159,11 +161,11 @@
         $iconOther = '<span class="public-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M12 8v8M8 12h8"/></svg></span>';
         $mobileIconFor = static function ($type) use ($iconGift, $iconTruck, $iconBox, $iconCard, $iconCredit, $iconOther) {
             $key = strtolower(trim((string) $type));
-            if (str_contains($key, 'postage')) return ['icon' => $iconTruck, 'class' => 'postage'];
-            if (str_contains($key, 'packaging')) return ['icon' => $iconBox, 'class' => 'packaging'];
-            if (str_contains($key, 'credit card')) return ['icon' => $iconCard, 'class' => 'cc_fee'];
-            if (str_contains($key, 'credit')) return ['icon' => $iconCredit, 'class' => 'credits'];
-            if (str_contains($key, 'fulfillment')) return ['icon' => $iconGift, 'class' => 'fulfillment'];
+            if (strpos($key, 'postage') !== false) return ['icon' => $iconTruck, 'class' => 'postage'];
+            if (strpos($key, 'packaging') !== false) return ['icon' => $iconBox, 'class' => 'packaging'];
+            if (strpos($key, 'credit card') !== false) return ['icon' => $iconCard, 'class' => 'cc_fee'];
+            if (strpos($key, 'credit') !== false) return ['icon' => $iconCredit, 'class' => 'credits'];
+            if (strpos($key, 'fulfillment') !== false) return ['icon' => $iconGift, 'class' => 'fulfillment'];
             return ['icon' => $iconOther, 'class' => 'other'];
         };
     @endphp
@@ -306,7 +308,9 @@
         <div class="mobile-invoice-details">
             <h2>Invoice Details</h2>
             @forelse (($line_sections ?? []) as $sec)
-                @php($mobileIcon = $mobileIconFor($sec['label'] ?? $sec['type'] ?? ''))
+                @php
+                    $mobileIcon = $mobileIconFor($sec['label'] ?? $sec['type'] ?? '');
+                @endphp
                 <div class="mobile-inv-card">
                     <div class="mobile-inv-card-icon mobile-inv-card-icon--{{ $mobileIcon['class'] }}">{!! $mobileIcon['icon'] !!}</div>
                     <div>

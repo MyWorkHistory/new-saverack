@@ -55,9 +55,9 @@ Route::middleware('auth:sanctum')->group(function () {
             ->middleware('can:inventory.view');
         Route::post('/on-demand-products', [InventoryController::class, 'storeOnDemandProduct'])
             ->middleware('can:inventory.update');
-        Route::patch('/on-demand-products/{product}', [InventoryController::class, 'updateOnDemandProduct'])
+        Route::patch('/on-demand-products/{onDemandProduct}', [InventoryController::class, 'updateOnDemandProduct'])
             ->middleware('can:inventory.update');
-        Route::delete('/on-demand-products/{product}', [InventoryController::class, 'destroyOnDemandProduct'])
+        Route::delete('/on-demand-products/{onDemandProduct}', [InventoryController::class, 'destroyOnDemandProduct'])
             ->middleware('can:inventory.update');
     });
 

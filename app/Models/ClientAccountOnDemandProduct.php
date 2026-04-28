@@ -35,4 +35,9 @@ class ClientAccountOnDemandProduct extends Model
     {
         return $this->belongsTo(ClientAccount::class, 'client_account_id');
     }
+
+    public static function normalizeSku(string $sku): string
+    {
+        return strtoupper(trim($sku));
+    }
 }

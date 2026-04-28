@@ -17,8 +17,8 @@ return new class extends Migration
             $table->unsignedBigInteger('price_cents');
             $table->timestamps();
 
-            $table->unique(['client_account_id', 'sku'], 'client_account_on_demand_products_account_sku_unique');
-            $table->index(['category', 'sku'], 'client_account_on_demand_products_category_sku_index');
+            $table->unique(['client_account_id', 'sku'], 'ca_on_demand_products_account_sku_unique');
+            $table->index(['category', 'sku']);
         });
     }
 

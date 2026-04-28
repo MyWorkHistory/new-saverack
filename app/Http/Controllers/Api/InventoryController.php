@@ -275,11 +275,18 @@ class InventoryController extends Controller
             'q' => ['nullable', 'string', 'max:255'],
             'client_account_id' => ['nullable', 'integer', 'exists:client_accounts,id'],
             'category' => ['nullable', 'string', Rule::in(ClientAccountOnDemandProduct::CATEGORIES)],
+            'page' => ['nullable', 'integer', 'min:1'],
+            'per_page' => ['nullable', 'integer', 'min:1', 'max:500'],
+            'sort_by' => ['nullable', 'string', Rule::in(['sku', 'account', 'name', 'category', 'price_cents', 'created_at'])],
+            'sort_dir' => ['nullable', 'string', Rule::in(['asc', 'desc'])],
         ]);
 
+        $sortBy = (string) ($validated['sort_by'] ?? 'sku');
+        $sortDir = (string) ($validated['sort_dir'] ?? 'asc');
+        $perPage = min(max((int) ($validated['per_page'] ?? 25), 1), 500);
+
         $query = ClientAccountOnDemandProduct::query()
-            ->with('clientAccount:id,company_name')
-            ->orderBy('sku');
+            ->with('clientAccount:id,company_name');
 
         if (isset($validated['client_account_id']) && (int) $validated['client_account_id'] > 0) {
             $query->where('client_account_id', (int) $validated['client_account_id']);
@@ -300,18 +307,38 @@ class InventoryController extends Controller
             });
         }
 
-        $products = $query->limit(500)->get();
+        if ($sortBy === 'account') {
+            $query
+                ->leftJoin('client_accounts', 'client_account_on_demand_products.client_account_id', '=', 'client_accounts.id')
+                ->orderBy('client_accounts.company_name', $sortDir)
+                ->select('client_account_on_demand_products.*');
+        } else {
+            $query->orderBy($sortBy, $sortDir);
+        }
+
+        if ($sortBy !== 'sku') {
+            $query->orderBy('sku');
+        }
+
+        $products = $query->paginate($perPage);
 
         return response()->json([
-            'products' => $products->map(function (ClientAccountOnDemandProduct $product) {
+            'products' => $products->getCollection()->map(function (ClientAccountOnDemandProduct $product) {
                 return $this->onDemandProductPayload($product);
             })->values(),
+            'pagination' => [
+                'current_page' => $products->currentPage(),
+                'last_page' => $products->lastPage(),
+                'per_page' => $products->perPage(),
+                'total' => $products->total(),
+            ],
             'categories' => ClientAccountOnDemandProduct::CATEGORIES,
         ]);
     }
 
     public function storeOnDemandProduct(Request $request): JsonResponse
     {
+        Gate::forUser($request->user())->authorize('create', ClientAccountOnDemandProduct::class);
         $data = $this->validatedOnDemandProductData($request);
         $account = ClientAccount::query()->findOrFail($data['client_account_id']);
         Gate::forUser($request->user())->authorize('view', $account);
@@ -325,25 +352,27 @@ class InventoryController extends Controller
         ], 201);
     }
 
-    public function updateOnDemandProduct(Request $request, ClientAccountOnDemandProduct $product): JsonResponse
+    public function updateOnDemandProduct(Request $request, ClientAccountOnDemandProduct $onDemandProduct): JsonResponse
     {
-        $data = $this->validatedOnDemandProductData($request, $product);
+        Gate::forUser($request->user())->authorize('update', $onDemandProduct);
+        $data = $this->validatedOnDemandProductData($request, $onDemandProduct);
         $account = ClientAccount::query()->findOrFail($data['client_account_id']);
         Gate::forUser($request->user())->authorize('view', $account);
 
-        $product->fill($data);
-        $product->save();
-        $product->load('clientAccount:id,company_name');
+        $onDemandProduct->fill($data);
+        $onDemandProduct->save();
+        $onDemandProduct->load('clientAccount:id,company_name');
 
         return response()->json([
-            'product' => $this->onDemandProductPayload($product),
+            'product' => $this->onDemandProductPayload($onDemandProduct),
         ]);
     }
 
-    public function destroyOnDemandProduct(Request $request, ClientAccountOnDemandProduct $product): JsonResponse
+    public function destroyOnDemandProduct(Request $request, ClientAccountOnDemandProduct $onDemandProduct): JsonResponse
     {
-        Gate::forUser($request->user())->authorize('view', $product->clientAccount);
-        $product->delete();
+        Gate::forUser($request->user())->authorize('delete', $onDemandProduct);
+        Gate::forUser($request->user())->authorize('view', $onDemandProduct->clientAccount);
+        $onDemandProduct->delete();
 
         return response()->json(['deleted' => true]);
     }

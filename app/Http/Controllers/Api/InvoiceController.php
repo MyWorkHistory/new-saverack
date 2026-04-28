@@ -42,7 +42,7 @@ class InvoiceController extends Controller
             ->get(['id', 'company_name']);
 
         $statuses = array_values(array_unique(array_merge(
-            ['draft', 'open', 'past_due', 'collection', 'paid', 'void', 'all'],
+            ['draft', 'open', 'past_due', 'collection', 'processing', 'payment_failed', 'paid', 'void', 'all'],
         )));
 
         return response()->json([

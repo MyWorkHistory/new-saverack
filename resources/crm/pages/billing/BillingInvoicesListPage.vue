@@ -228,6 +228,8 @@ function statusBadgeClass(status) {
   if (s === "draft") return "bg-secondary-subtle text-secondary";
   if (s === "void") return "bg-dark-subtle text-secondary";
   if (s === "collection") return "bg-warning-subtle text-warning-emphasis";
+  if (s === "processing") return "bg-warning-subtle text-warning-emphasis";
+  if (s === "payment_failed") return "bg-danger-subtle text-danger-emphasis";
   if (s === "past_due") return "bg-danger-subtle text-danger-emphasis";
   if (s === "open") return "bg-primary-subtle text-primary-emphasis";
   return "bg-body-secondary text-body-secondary";
@@ -270,6 +272,8 @@ function statusFilterLabel(status) {
     open: "Open",
     past_due: "Past Due",
     collection: "Collection",
+    processing: "Processing",
+    payment_failed: "Failed",
     paid: "Paid",
     void: "Void",
   };

@@ -76,7 +76,16 @@ const voidBusy = ref(false);
 const statusModalOpen = ref(false);
 const statusForm = ref("draft");
 const statusSaving = ref(false);
-const invoiceStatuses = ["draft", "open", "past_due", "collection", "paid", "void"];
+const invoiceStatuses = [
+  "draft",
+  "open",
+  "past_due",
+  "collection",
+  "processing",
+  "payment_failed",
+  "paid",
+  "void",
+];
 
 const deleteModalOpen = ref(false);
 const deleteBusy = ref(false);
@@ -193,6 +202,8 @@ function payRowStatusLabel(row) {
   if (key === "past_due") return "Past Due";
   if (key === "draft") return "Draft";
   if (key === "collection") return "Collection";
+  if (key === "processing") return "Processing";
+  if (key === "payment_failed") return "Failed";
   if (key === "paid") return "Paid";
   if (key === "void") return "Void";
   return "Open";
@@ -203,6 +214,8 @@ function payRowStatusBadgeClass(row) {
   if (key === "past_due" || key === "collection") {
     return "bg-danger-subtle text-danger-emphasis";
   }
+  if (key === "payment_failed") return "bg-danger-subtle text-danger-emphasis";
+  if (key === "processing") return "bg-warning-subtle text-warning-emphasis";
   if (key === "paid") return "bg-success-subtle text-success-emphasis";
   if (key === "void") return "bg-secondary-subtle text-secondary-emphasis";
   if (key === "draft") return "bg-warning-subtle text-warning-emphasis";
@@ -286,6 +299,7 @@ const canStripeCharge = computed(() => {
   const inv = invoice.value;
   if (!inv || !canUpdate.value) return false;
   if (invoiceStatusKey(inv) === "void") return false;
+  if (invoiceStatusKey(inv) === "processing") return false;
   return Number(inv.balance_due_cents) > 0;
 });
 
@@ -294,6 +308,7 @@ const creditChargeDisabledTitle = computed(() => {
   if (!inv) return "";
   if (!canUpdate.value) return "You do not have permission to charge this invoice.";
   if (invoiceStatusKey(inv) === "void") return "Void invoices cannot be charged.";
+  if (invoiceStatusKey(inv) === "processing") return "Payment is processing. Wait for Stripe settlement.";
   if (Number(inv.balance_due_cents) <= 0) return "No balance due.";
   return "";
 });
@@ -844,6 +859,10 @@ function statusBadgeClass(status) {
   if (s === "draft") return "bg-secondary-subtle text-secondary";
   if (s === "void") return "bg-dark-subtle text-secondary";
   if (s === "collection") return "bg-warning-subtle text-warning-emphasis";
+  if (s === "processing") return "bg-warning-subtle text-warning-emphasis";
+  if (s === "failed" || s === "payment failed" || s === "payment_failed") {
+    return "bg-danger-subtle text-danger-emphasis";
+  }
   if (s === "past due" || s === "past_due") return "bg-danger-subtle text-danger-emphasis";
   if (s === "open") return "bg-primary-subtle text-primary-emphasis";
   return "bg-body-secondary text-body-secondary";

@@ -18,6 +18,7 @@ use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Mail;
 use Laravel\Sanctum\Sanctum;
 use Mockery;
+use Stripe\PaymentIntent;
 use Tests\TestCase;
 
 class BillingInvoiceApiTest extends TestCase
@@ -1946,6 +1947,131 @@ class BillingInvoiceApiTest extends TestCase
         ])->assertOk()
             ->assertJsonPath('result', 'succeeded')
             ->assertJsonPath('payment_intent_id', 'pi_test_123');
+    }
+
+    public function test_stripe_processing_intent_sets_invoice_processing_and_webhook_success_marks_paid(): void
+    {
+        $client = ClientAccount::query()->create([
+            'status' => ClientAccount::STATUS_ACTIVE,
+            'company_name' => 'Stripe ACH Co',
+            'email' => 'ach@acme.test',
+            'stripe_customer_id' => 'cus_ach_test',
+        ]);
+        $invoice = Invoice::query()->create([
+            'invoice_number' => 'INV-STRIPE-ACH-001',
+            'client_account_id' => $client->id,
+            'status' => Invoice::STATUS_SENT,
+            'currency' => 'USD',
+            'subtotal_cents' => 1200,
+            'tax_cents' => 0,
+            'total_cents' => 1200,
+            'amount_paid_cents' => 0,
+            'balance_due_cents' => 1200,
+        ]);
+
+        $payments = app(StripeInvoicePaymentService::class);
+        $invoiceService = app(InvoiceService::class);
+
+        $pending = PaymentIntent::constructFrom([
+            'id' => 'pi_ach_test_001',
+            'status' => 'processing',
+            'amount' => 1200,
+            'amount_received' => 0,
+            'latest_charge' => 'ch_ach_test_001',
+        ]);
+
+        $pendingResult = $payments->applyIntentToInvoice($invoice, $pending, null, [], $invoiceService);
+        $this->assertSame('pending', $pendingResult['result']);
+
+        $invoice->refresh();
+        $this->assertSame(Invoice::STATUS_PROCESSING, $invoice->status);
+        $this->assertSame(0, (int) $invoice->amount_paid_cents);
+        $this->assertSame(1200, (int) $invoice->balance_due_cents);
+
+        $payload = json_encode([
+            'id' => 'evt_pi_success_001',
+            'type' => 'payment_intent.succeeded',
+            'data' => [
+                'object' => [
+                    'id' => 'pi_ach_test_001',
+                    'object' => 'payment_intent',
+                    'status' => 'succeeded',
+                    'amount' => 1200,
+                    'amount_received' => 1200,
+                    'latest_charge' => 'ch_ach_test_001',
+                    'metadata' => [
+                        'invoice_id' => (string) $invoice->id,
+                    ],
+                ],
+            ],
+        ], JSON_THROW_ON_ERROR);
+        $secret = 'whsec_test_001';
+        $timestamp = time();
+        $signature = hash_hmac('sha256', $timestamp.'.'.$payload, $secret);
+        $header = "t={$timestamp},v1={$signature}";
+
+        $result = $payments->handleWebhook($payload, $header, $secret, $invoiceService);
+        $this->assertTrue((bool) ($result['handled'] ?? false));
+        $this->assertSame('payment_intent.succeeded', $result['event_type'] ?? null);
+        $this->assertTrue((bool) ($result['applied'] ?? false));
+
+        $invoice->refresh();
+        $this->assertSame(Invoice::STATUS_PAID, $invoice->status);
+        $this->assertSame(1200, (int) $invoice->amount_paid_cents);
+        $this->assertSame(0, (int) $invoice->balance_due_cents);
+    }
+
+    public function test_stripe_payment_failed_webhook_sets_invoice_failed(): void
+    {
+        $client = ClientAccount::query()->create([
+            'status' => ClientAccount::STATUS_ACTIVE,
+            'company_name' => 'Stripe Fail Co',
+            'email' => 'fail@acme.test',
+            'stripe_customer_id' => 'cus_fail_test',
+        ]);
+        $invoice = Invoice::query()->create([
+            'invoice_number' => 'INV-STRIPE-FAIL-001',
+            'client_account_id' => $client->id,
+            'status' => Invoice::STATUS_SENT,
+            'currency' => 'USD',
+            'subtotal_cents' => 2200,
+            'tax_cents' => 0,
+            'total_cents' => 2200,
+            'amount_paid_cents' => 0,
+            'balance_due_cents' => 2200,
+        ]);
+
+        $payments = app(StripeInvoicePaymentService::class);
+        $invoiceService = app(InvoiceService::class);
+
+        $payload = json_encode([
+            'id' => 'evt_pi_failed_001',
+            'type' => 'payment_intent.payment_failed',
+            'data' => [
+                'object' => [
+                    'id' => 'pi_fail_test_001',
+                    'object' => 'payment_intent',
+                    'status' => 'requires_payment_method',
+                    'metadata' => [
+                        'invoice_id' => (string) $invoice->id,
+                    ],
+                ],
+            ],
+        ], JSON_THROW_ON_ERROR);
+        $secret = 'whsec_test_002';
+        $timestamp = time();
+        $signature = hash_hmac('sha256', $timestamp.'.'.$payload, $secret);
+        $header = "t={$timestamp},v1={$signature}";
+
+        $result = $payments->handleWebhook($payload, $header, $secret, $invoiceService);
+        $this->assertTrue((bool) ($result['handled'] ?? false));
+        $this->assertSame('payment_intent.payment_failed', $result['event_type'] ?? null);
+        $this->assertFalse((bool) ($result['applied'] ?? false));
+
+        $invoice->refresh();
+        $this->assertSame(Invoice::STATUS_PAYMENT_FAILED, $invoice->status);
+        $this->assertSame(0, (int) $invoice->amount_paid_cents);
+        $this->assertSame(2200, (int) $invoice->balance_due_cents);
     }
 
     public function test_public_and_pdf_include_updated_payment_address(): void

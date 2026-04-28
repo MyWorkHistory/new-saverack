@@ -1636,6 +1636,8 @@ class InvoiceService
         $raw = strtolower(trim((string) $invoice->status));
         if ($raw === 'void') return 'void';
         if ($raw === 'paid') return 'paid';
+        if ($raw === Invoice::STATUS_PROCESSING) return Invoice::STATUS_PROCESSING;
+        if ($raw === Invoice::STATUS_PAYMENT_FAILED) return Invoice::STATUS_PAYMENT_FAILED;
         if ($raw === 'collection') return 'collection';
         if ($raw === 'pending' || $raw === 'draft') return 'draft';
         if ($raw === 'past_due') return 'past_due';
@@ -1652,6 +1654,8 @@ class InvoiceService
         if ($key === 'past_due') return 'Past Due';
         if ($key === 'collection') return 'Collection';
         if ($key === 'paid') return 'Paid';
+        if ($key === Invoice::STATUS_PROCESSING) return 'Processing';
+        if ($key === Invoice::STATUS_PAYMENT_FAILED) return 'Failed';
         if ($key === 'void') return 'Void';
         if ($key === 'open') return 'Open';
         return 'Draft';
@@ -1665,8 +1669,12 @@ class InvoiceService
                 return 2;
             case 'paid':
                 return 3;
+            case Invoice::STATUS_PROCESSING:
+                return 4;
             case 'void':
                 return 5;
+            case Invoice::STATUS_PAYMENT_FAILED:
+                return 8;
             case 'draft':
                 return 6;
             case 'collection':
@@ -1682,7 +1690,7 @@ class InvoiceService
     public function updateLegacyStatus(Invoice $invoice, string $requestedStatus, ?User $actor): Invoice
     {
         $requested = strtolower(trim($requestedStatus));
-        $allowed = ['pending', 'open', 'past_due', 'collection', 'paid', 'void', 'draft'];
+        $allowed = ['pending', 'open', 'past_due', 'collection', 'paid', 'void', 'draft', Invoice::STATUS_PROCESSING, Invoice::STATUS_PAYMENT_FAILED];
         if (! in_array($requested, $allowed, true)) {
             throw new \InvalidArgumentException('Valid status is required.');
         }
@@ -1704,6 +1712,12 @@ class InvoiceService
             $invoice->status = 'collection';
         } elseif ($requested === 'past_due') {
             $invoice->status = 'past_due';
+        } elseif ($requested === Invoice::STATUS_PROCESSING) {
+            $invoice->status = Invoice::STATUS_PROCESSING;
+            $invoice->paid_at = null;
+        } elseif ($requested === Invoice::STATUS_PAYMENT_FAILED) {
+            $invoice->status = Invoice::STATUS_PAYMENT_FAILED;
+            $invoice->paid_at = null;
         } else {
             $invoice->status = Invoice::STATUS_SENT;
         }
@@ -1722,7 +1736,7 @@ class InvoiceService
         if (! empty($filters['status']) && $filters['status'] !== 'all') {
             $statusFilter = strtolower((string) $filters['status']);
             if ($statusFilter === 'open') {
-                $q->whereIn('status', [Invoice::STATUS_SENT, Invoice::STATUS_PARTIAL])
+                $q->whereIn('status', [Invoice::STATUS_SENT, Invoice::STATUS_PARTIAL, Invoice::STATUS_PROCESSING, Invoice::STATUS_PAYMENT_FAILED])
                     ->whereNotNull('due_at')
                     ->where('due_at', '>=', now()->startOfDay())
                     ->where('balance_due_cents', '>', 0);
@@ -1791,7 +1805,7 @@ class InvoiceService
      */
     public function summary(): array
     {
-        $openStatuses = [Invoice::STATUS_SENT, Invoice::STATUS_PARTIAL];
+        $openStatuses = [Invoice::STATUS_SENT, Invoice::STATUS_PARTIAL, Invoice::STATUS_PROCESSING, Invoice::STATUS_PAYMENT_FAILED];
         $openBalance = (int) Invoice::query()
             ->whereIn('status', $openStatuses)
             ->sum('balance_due_cents');

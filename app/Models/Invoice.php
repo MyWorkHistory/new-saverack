@@ -19,12 +19,18 @@ class Invoice extends Model
 
     public const STATUS_VOID = 'void';
 
+    public const STATUS_PROCESSING = 'processing';
+
+    public const STATUS_PAYMENT_FAILED = 'payment_failed';
+
     public const STATUSES = [
         self::STATUS_DRAFT,
         self::STATUS_SENT,
         self::STATUS_PARTIAL,
         self::STATUS_PAID,
         self::STATUS_VOID,
+        self::STATUS_PROCESSING,
+        self::STATUS_PAYMENT_FAILED,
     ];
 
     protected $fillable = [

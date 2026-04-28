@@ -181,7 +181,13 @@ class StripeInvoicePaymentService
         }
 
         if ($status === 'processing' || $status === 'requires_action' || $status === 'requires_capture') {
-            $invoiceService->logHistory($invoice, $actor, 'payment_applied', $invoice->status, $invoice->status, [
+            $fromStatus = (string) $invoice->status;
+            if ($invoice->status !== Invoice::STATUS_PROCESSING) {
+                $invoice->status = Invoice::STATUS_PROCESSING;
+                $invoice->paid_at = null;
+                $invoice->save();
+            }
+            $invoiceService->logHistory($invoice, $actor, 'payment_applied', $fromStatus, $invoice->status, [
                 'event_type' => 'status',
                 'history_message' => 'Stripe payment submitted and pending settlement.',
             ] + $meta);
@@ -195,7 +201,13 @@ class StripeInvoicePaymentService
             ];
         }
 
-        $invoiceService->logHistory($invoice, $actor, 'payment_applied', $invoice->status, $invoice->status, [
+        $fromStatus = (string) $invoice->status;
+        if ($invoice->status !== Invoice::STATUS_PAYMENT_FAILED) {
+            $invoice->status = Invoice::STATUS_PAYMENT_FAILED;
+            $invoice->paid_at = null;
+            $invoice->save();
+        }
+        $invoiceService->logHistory($invoice, $actor, 'payment_applied', $fromStatus, $invoice->status, [
             'event_type' => 'status',
             'history_message' => 'Stripe payment failed.',
         ] + $meta);
@@ -223,7 +235,7 @@ class StripeInvoicePaymentService
         }
 
         $type = (string) $event->type;
-        if ($type !== 'payment_intent.succeeded') {
+        if ($type !== 'payment_intent.succeeded' && $type !== 'payment_intent.payment_failed') {
             return ['handled' => true, 'event_type' => $type, 'applied' => false];
         }
 
@@ -244,10 +256,32 @@ class StripeInvoicePaymentService
             $already = $invoice->histories()
                 ->where('action', 'payment_applied')
                 ->where('meta->stripe_payment_intent', $intentId)
+                ->where('meta->stripe_status', 'succeeded')
                 ->exists();
             if ($already) {
                 return ['handled' => true, 'event_type' => $type, 'applied' => false, 'duplicate' => true];
             }
+        }
+
+        if ($type === 'payment_intent.payment_failed') {
+            $fromStatus = (string) $invoice->status;
+            if ($invoice->status !== Invoice::STATUS_PAYMENT_FAILED) {
+                $invoice->status = Invoice::STATUS_PAYMENT_FAILED;
+                $invoice->paid_at = null;
+                $invoice->save();
+            }
+            $invoiceService->logHistory($invoice, null, 'payment_applied', $fromStatus, $invoice->status, [
+                'event_type' => 'status',
+                'history_message' => 'Stripe payment failed.',
+                'stripe_payment_intent' => $intentId !== '' ? $intentId : null,
+                'stripe_status' => 'payment_failed',
+            ]);
+
+            return [
+                'handled' => true,
+                'event_type' => $type,
+                'applied' => false,
+            ];
         }
 
         $result = $this->applyIntentToInvoice($invoice, $intent, null, [], $invoiceService);

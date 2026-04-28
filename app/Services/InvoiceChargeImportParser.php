@@ -773,16 +773,27 @@ final class InvoiceChargeImportParser
             $subtype = 'first';
         }
 
+        $sourceDescription = $this->firstNonEmpty([
+            $this->cell($row, $index['ad_hoc_name'] ?? -1),
+            $this->cell($row, $index['label_charge'] ?? -1),
+            $chargeTypeName,
+        ]) ?? $chargeTypeName;
+        $sourceSku = $this->firstNonEmpty([
+            $this->cell($row, $index['charge_sku'] ?? -1),
+            $this->cell($row, $index['name_product'] ?? -1),
+        ]);
+
         return $this->buildItem(
             InvoiceLineCategory::FULFILLMENT,
             $chargeTypeName,
-            $chargeTypeName,
+            $sourceDescription,
             $qty,
             $unitRate,
             $total,
             $subtype,
             'fulfillment:'.$this->slug($chargeTypeName),
-            $chargeTypeVal !== '' ? $chargeTypeVal : $chargeTypeRaw
+            $chargeTypeVal !== '' ? $chargeTypeVal : $chargeTypeRaw,
+            $sourceSku !== null ? trim($sourceSku) : null
         );
     }
 

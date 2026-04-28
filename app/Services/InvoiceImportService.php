@@ -245,6 +245,7 @@ class InvoiceImportService
         $kept = [];
         $aggregates = [];
         $insertedAggregateKey = [];
+        $pendingCatalogPickLines = [];
 
         foreach ($lines as $line) {
             $sku = $this->extractOnDemandPickSku($line);
@@ -266,6 +267,7 @@ class InvoiceImportService
             if (! isset($insertedAggregateKey[$sku])) {
                 $insertedAggregateKey[$sku] = count($kept);
             }
+            $pendingCatalogPickLines[$sku][] = $line;
         }
 
         if ($aggregates === []) {
@@ -302,7 +304,13 @@ class InvoiceImportService
         }
 
         if ($aggregateLines === []) {
-            return $kept;
+            $result = $kept;
+            foreach ($pendingCatalogPickLines as $skuLines) {
+                foreach ($skuLines as $sourceLine) {
+                    $result[] = $sourceLine;
+                }
+            }
+            return $result;
         }
 
         $result = [];
@@ -318,6 +326,15 @@ class InvoiceImportService
         foreach ($insertedAggregateKey as $sku => $insertAt) {
             if ($insertAt >= count($kept) && isset($aggregateLines[$sku])) {
                 $result[] = $aggregateLines[$sku];
+            }
+        }
+
+        foreach ($pendingCatalogPickLines as $sku => $skuLines) {
+            if (isset($aggregateLines[$sku])) {
+                continue;
+            }
+            foreach ($skuLines as $sourceLine) {
+                $result[] = $sourceLine;
             }
         }
 

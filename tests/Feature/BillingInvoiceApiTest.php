@@ -1187,6 +1187,124 @@ class BillingInvoiceApiTest extends TestCase
         $this->assertStringContainsString('Fulfillment', (string) ($items[0]['display_name'] ?? ''));
     }
 
+    public function test_import_charge_csv_legacy_rows_keep_postage_fulfillment_packaging_returns_and_on_demand(): void
+    {
+        $user = User::factory()->create();
+        $user->permissions()->sync([
+            $this->billingViewPermission()->id,
+            $this->billingCreatePermission()->id,
+            $this->clientsViewPermission()->id,
+        ]);
+        Sanctum::actingAs($user);
+
+        $client = ClientAccount::query()->create([
+            'status' => ClientAccount::STATUS_ACTIVE,
+            'company_name' => 'Legacy Mix Co',
+            'email' => 'legacy-mix@acme.test',
+        ]);
+        ClientAccountOnDemandProduct::query()->create([
+            'client_account_id' => $client->id,
+            'sku' => 'GSO-CBD-GM',
+            'name' => 'GSO GM',
+            'category' => 'Skincare',
+            'price_cents' => 250,
+            'is_active' => true,
+        ]);
+
+        $csv = "\"Date (charge)\",\"Category (charge)\",\"Fee (charge)\",\"Type (charge)\",\"Label (charge)\",\"Description (charge)\",\"Unit rate (charge)\",\"Quantity (charge)\",\"Total (charge)\",\"Order # (shipment)\",\"Carrier (shipment)\",\"Box (shipment)\",\"SKU (product)\",\"Name (product)\"\n"
+            ."\"2026-04-20\",\"order\",\"Postage\",\"shipping_label_charge\",\"shipping label\",\"Shipping label 1ZTEST for carrier UPS, method UPS SurePost.\",\"5.44\",\"1\",\"5.44\",\"ORD-POST\",\"UPS\",\"POLY 6x9\",\"\",\"\"\n"
+            ."\"2026-04-21\",\"order\",\"Fulfillment\",\"first_pick_charge\",\"first pick\",\"First pick for the default product profile, of SKU GSO-CBD-GM.\",\"1.50\",\"1\",\"1.50\",\"ORD-OD\",\"UPS\",\"POLY 9x12\",\"GSO-CBD-GM\",\"GSO GM\"\n"
+            ."\"2026-04-21\",\"order\",\"Fulfillment\",\"pick_remainder_charge\",\"rest of items\",\"2 additional item(s) picked for the default product profile, of SKU GSO-CBD-GM.\",\"0.00\",\"2\",\"0.00\",\"ORD-OD\",\"UPS\",\"POLY 9x12\",\"GSO-CBD-GM\",\"GSO GM\"\n"
+            ."\"2026-04-21\",\"order\",\"Fulfillment\",\"first_pick_charge\",\"first pick\",\"First pick for the default product profile, of SKU OTHER-SKU.\",\"1.50\",\"1\",\"1.50\",\"ORD-FUL\",\"UPS\",\"POLY 9x12\",\"OTHER-SKU\",\"Other\"\n"
+            ."\"2026-04-21\",\"order\",\"Packaging\",\"box_charge\",\"Packaging\",\"Box BUBBLE MAILER #0 (6 x 10 x 2) used for shipping label 1ZTEST.\",\"0.00\",\"1\",\"0.30\",\"ORD-PKG\",\"UPS\",\"BUBBLE MAILER #0\",\"\",\"\"\n"
+            ."\"2026-04-22\",\"returns\",\"Returns\",\"first_return_charge\",\"first return\",\"First return for the default product profile, of SKU Crestline-Pain.\",\"1.85\",\"1\",\"1.85\",\"ORD-RET\",\"\",\"\",\"Crestline-Pain\",\"Crestline Pain\"\n";
+        $file = UploadedFile::fake()->createWithContent('legacy-mix-charges.csv', $csv);
+
+        $res = $this->post(
+            "/api/client-accounts/{$client->id}/invoice-imports/charges",
+            [
+                'due_at' => '2026-06-15',
+                'file' => $file,
+            ],
+            ['Accept' => 'application/json']
+        );
+
+        $res->assertStatus(201);
+        $items = $res->json('invoice.items') ?? [];
+        $this->assertGreaterThanOrEqual(5, count($items));
+
+        $categories = collect($items)->pluck('category')->map(static fn ($v) => strtolower((string) $v))->values()->all();
+        $this->assertContains('postage', $categories);
+        $this->assertContains('fulfillment', $categories);
+        $this->assertContains('packaging', $categories);
+        $this->assertContains('returns', $categories);
+        $this->assertContains('on_demand', $categories);
+
+        $onDemand = collect($items)->first(static fn (array $item): bool => strtolower((string) ($item['category'] ?? '')) === 'on_demand');
+        $this->assertNotNull($onDemand);
+        $this->assertSame('GSO-CBD-GM', $onDemand['sku']);
+        $this->assertSame(3.0, (float) $onDemand['quantity']);
+    }
+
+    public function test_import_charge_csv_legacy_rows_keep_postage_fulfillment_packaging_returns_and_on_demand(): void
+    {
+        $user = User::factory()->create();
+        $user->permissions()->sync([
+            $this->billingViewPermission()->id,
+            $this->billingCreatePermission()->id,
+            $this->clientsViewPermission()->id,
+        ]);
+        Sanctum::actingAs($user);
+
+        $client = ClientAccount::query()->create([
+            'status' => ClientAccount::STATUS_ACTIVE,
+            'company_name' => 'Legacy Mix Co',
+            'email' => 'legacy-mix@acme.test',
+        ]);
+        ClientAccountOnDemandProduct::query()->create([
+            'client_account_id' => $client->id,
+            'sku' => 'GSO-CBD-GM',
+            'name' => 'GSO GM',
+            'category' => 'Skincare',
+            'price_cents' => 250,
+            'is_active' => true,
+        ]);
+
+        $csv = "\"Date (charge)\",\"Category (charge)\",\"Fee (charge)\",\"Type (charge)\",\"Label (charge)\",\"Description (charge)\",\"Unit rate (charge)\",\"Quantity (charge)\",\"Total (charge)\",\"Order # (shipment)\",\"Carrier (shipment)\",\"Box (shipment)\",\"SKU (product)\",\"Name (product)\"\n"
+            ."\"2026-04-20\",\"order\",\"Postage\",\"shipping_label_charge\",\"shipping label\",\"Shipping label 1ZTEST for carrier UPS, method UPS SurePost.\",\"5.44\",\"1\",\"5.44\",\"ORD-POST\",\"UPS\",\"POLY 6x9\",\"\",\"\"\n"
+            ."\"2026-04-21\",\"order\",\"Fulfillment\",\"first_pick_charge\",\"first pick\",\"First pick for the default product profile, of SKU GSO-CBD-GM.\",\"1.50\",\"1\",\"1.50\",\"ORD-OD\",\"UPS\",\"POLY 9x12\",\"GSO-CBD-GM\",\"GSO GM\"\n"
+            ."\"2026-04-21\",\"order\",\"Fulfillment\",\"pick_remainder_charge\",\"rest of items\",\"2 additional item(s) picked for the default product profile, of SKU GSO-CBD-GM.\",\"0.00\",\"2\",\"0.00\",\"ORD-OD\",\"UPS\",\"POLY 9x12\",\"GSO-CBD-GM\",\"GSO GM\"\n"
+            ."\"2026-04-21\",\"order\",\"Fulfillment\",\"first_pick_charge\",\"first pick\",\"First pick for the default product profile, of SKU OTHER-SKU.\",\"1.50\",\"1\",\"1.50\",\"ORD-FUL\",\"UPS\",\"POLY 9x12\",\"OTHER-SKU\",\"Other\"\n"
+            ."\"2026-04-21\",\"order\",\"Packaging\",\"box_charge\",\"Packaging\",\"Box BUBBLE MAILER #0 (6 x 10 x 2) used for shipping label 1ZTEST.\",\"0.00\",\"1\",\"0.30\",\"ORD-PKG\",\"UPS\",\"BUBBLE MAILER #0\",\"\",\"\"\n"
+            ."\"2026-04-22\",\"returns\",\"Returns\",\"first_return_charge\",\"first return\",\"First return for the default product profile, of SKU Crestline-Pain.\",\"1.85\",\"1\",\"1.85\",\"ORD-RET\",\"\",\"\",\"Crestline-Pain\",\"Crestline Pain\"\n";
+        $file = UploadedFile::fake()->createWithContent('legacy-mix-charges.csv', $csv);
+
+        $res = $this->post(
+            "/api/client-accounts/{$client->id}/invoice-imports/charges",
+            [
+                'due_at' => '2026-06-15',
+                'file' => $file,
+            ],
+            ['Accept' => 'application/json']
+        );
+
+        $res->assertStatus(201);
+        $items = $res->json('invoice.items') ?? [];
+        $this->assertGreaterThanOrEqual(5, count($items));
+
+        $categories = collect($items)->pluck('category')->map(static fn ($v) => strtolower((string) $v))->values()->all();
+        $this->assertContains('postage', $categories);
+        $this->assertContains('fulfillment', $categories);
+        $this->assertContains('packaging', $categories);
+        $this->assertContains('returns', $categories);
+        $this->assertContains('on_demand', $categories);
+
+        $onDemand = collect($items)->first(static fn (array $item): bool => strtolower((string) ($item['category'] ?? '')) === 'on_demand');
+        $this->assertNotNull($onDemand);
+        $this->assertSame('GSO-CBD-GM', $onDemand['sku']);
+        $this->assertSame(3.0, (float) $onDemand['quantity']);
+    }
+
     public function test_import_charge_csv_normalizes_packaging_and_inserts_like_old_beta(): void
     {
         $user = User::factory()->create();

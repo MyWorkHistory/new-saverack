@@ -622,9 +622,24 @@ final class InvoiceChargeImportParser
             return $this->cell($row, $index[$key] ?? -1) ?: $default;
         };
 
+        $ct = strtolower($get('charge_type'));
+        if ($ct !== '') {
+            if (str_contains($ct, 'shipping_label_charge')) return 'Postage';
+            if (str_contains($ct, 'box_charge')) return 'Packaging';
+            if (str_contains($ct, 'first_return_charge') || str_contains($ct, 'return_remainder_charge')) return 'Returns';
+            if (
+                str_contains($ct, 'first_pick_charge')
+                || str_contains($ct, 'pick_remainder_charge')
+                || str_contains($ct, 'first')
+                || str_contains($ct, 'remainder')
+                || str_contains($ct, 'additional')
+            ) return 'Fulfillment';
+            if (str_contains($ct, 'ad_hoc') || str_contains($ct, 'ad hoc')) return 'Ad Hoc';
+            if ($ct === 'bank fee' || $ct === 'bank_fee' || str_contains($ct, 'bank fee')) return 'Bank Fee';
+            if (str_contains($ct, 'duties') && (str_contains($ct, 'tax') || str_contains($ct, 'taxes'))) return 'Duties & Taxes';
+        }
         if ($get('carrier') !== '') return 'Postage';
         if ($get('box') !== '') return 'Packaging';
-        $ct = strtolower($get('charge_type'));
         if (
             strpos($ct, 'receiv') !== false
             || strpos(strtolower($get('billing_category')), 'receiv') !== false

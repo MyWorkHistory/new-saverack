@@ -750,6 +750,45 @@ class BillingInvoiceApiTest extends TestCase
             ->assertRedirect('https://checkout.stripe.test/session/abc123');
     }
 
+    public function test_public_pay_route_passes_checkout_session_placeholder_in_success_url(): void
+    {
+        $client = ClientAccount::query()->create([
+            'status' => ClientAccount::STATUS_ACTIVE,
+            'company_name' => 'Public Pay Placeholder Co',
+            'email' => 'public-pay-placeholder@acme.test',
+        ]);
+        $client->refresh();
+
+        $invoice = Invoice::query()->create([
+            'invoice_number' => 'INV-PUB-PAY-PLACEHOLDER-001',
+            'client_account_id' => $client->id,
+            'status' => Invoice::STATUS_SENT,
+            'currency' => 'USD',
+            'subtotal_cents' => 1500,
+            'tax_cents' => 0,
+            'total_cents' => 1500,
+            'amount_paid_cents' => 0,
+            'balance_due_cents' => 1500,
+            'share_token' => 'public-pay-placeholder-token',
+        ]);
+
+        $mock = Mockery::mock(StripeInvoicePaymentService::class);
+        $mock->shouldReceive('createPublicCheckoutUrl')
+            ->once()
+            ->withArgs(function ($inv, $successUrl, $cancelUrl) use ($invoice): bool {
+                return (int) $inv->id === (int) $invoice->id
+                    && str_contains((string) $successUrl, 'payment=success')
+                    && str_contains((string) $successUrl, 'session_id={CHECKOUT_SESSION_ID}')
+                    && str_contains((string) $cancelUrl, 'payment=cancel');
+            })
+            ->andReturn('https://checkout.stripe.test/session/placeholder123');
+        $this->app->instance(StripeInvoicePaymentService::class, $mock);
+
+        $slug = (string) $client->invoice_share_slug;
+        $this->get("/billing-invoice/{$slug}/{$invoice->share_token}/pay")
+            ->assertRedirect('https://checkout.stripe.test/session/placeholder123');
+    }
+
     public function test_public_pay_route_redirects_back_with_error_when_checkout_fails(): void
     {
         $client = ClientAccount::query()->create([

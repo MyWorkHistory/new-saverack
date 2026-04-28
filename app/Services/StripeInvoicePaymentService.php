@@ -386,6 +386,64 @@ class StripeInvoicePaymentService
         return $url;
     }
 
+    /**
+     * Reconcile public checkout success return when webhook is delayed/missed.
+     *
+     * @return array<string, mixed>|null
+     */
+    public function reconcilePublicCheckoutSession(
+        Invoice $invoice,
+        string $checkoutSessionId,
+        InvoiceService $invoiceService
+    ): ?array {
+        $sessionId = trim($checkoutSessionId);
+        if ($sessionId === '' || $invoice->isVoid()) {
+            return null;
+        }
+
+        $stripe = $this->client();
+        try {
+            $session = $stripe->checkout->sessions->retrieve($sessionId, [
+                'expand' => ['payment_intent'],
+            ]);
+        } catch (ApiErrorException $e) {
+            return null;
+        }
+
+        $sessionArr = is_array($session) ? $session : $session->toArray();
+        $intentRef = $sessionArr['payment_intent'] ?? null;
+        if ($intentRef === null) {
+            return null;
+        }
+
+        $intent = $intentRef instanceof PaymentIntent
+            ? $intentRef
+            : $stripe->paymentIntents->retrieve((string) $intentRef, []);
+
+        $intentArr = $intent->toArray();
+        $meta = (array) ($intentArr['metadata'] ?? []);
+        $intentInvoiceId = (int) ($meta['invoice_id'] ?? 0);
+        if ($intentInvoiceId > 0 && $intentInvoiceId !== (int) $invoice->id) {
+            return null;
+        }
+
+        $intentId = trim((string) ($intentArr['id'] ?? ''));
+        if ($intentId !== '') {
+            $already = $invoice->histories()
+                ->where('action', 'payment_applied')
+                ->where('meta->stripe_payment_intent', $intentId)
+                ->where('meta->stripe_status', 'succeeded')
+                ->exists();
+            if ($already) {
+                return null;
+            }
+        }
+
+        return $this->applyIntentToInvoice($invoice, $intent, null, [
+            'stripe_checkout_session' => $sessionId,
+        ], $invoiceService);
+    }
+
     private function client(): StripeClient
     {
         $secret = trim((string) config('services.stripe.secret', ''));

@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Services\InvoiceService;
+use App\Services\StripeInvoicePaymentService;
 use Barryvdh\DomPDF\Facade\Pdf;
 use Illuminate\Http\Response;
 
@@ -21,6 +22,18 @@ class PublicInvoiceController extends Controller
         $invoice = $this->invoices->resolvePublicInvoice($slug, $token);
         abort_if($invoice === null, 404);
 
+        if ((string) request()->query('payment') === 'success') {
+            $sessionId = trim((string) request()->query('session_id', ''));
+            if ($sessionId !== '') {
+                try {
+                    app(StripeInvoicePaymentService::class)->reconcilePublicCheckoutSession($invoice, $sessionId, $this->invoices);
+                    $invoice = $this->invoices->resolvePublicInvoice($slug, $token);
+                } catch (\Throwable $e) {
+                    // Keep page render resilient; webhook may still settle.
+                }
+            }
+        }
+
         $data = $this->invoices->publicInvoiceHtmlData($invoice);
         $data['public_pdf_path'] = url('/billing-invoice/'.$slug.'/'.$token.'/pdf');
         $data['public_pay_path'] = url('/billing-invoice/'.$slug.'/'.$token.'/pay');
@@ -35,7 +48,7 @@ class PublicInvoiceController extends Controller
         abort_if($invoice === null, 404);
 
         try {
-            $successUrl = url('/billing-invoice/'.$slug.'/'.$token.'?payment=success');
+            $successUrl = url('/billing-invoice/'.$slug.'/'.$token.'?payment=success&session_id={CHECKOUT_SESSION_ID}');
             $cancelUrl = url('/billing-invoice/'.$slug.'/'.$token.'?payment=cancel');
             $url = $stripePayments->createPublicCheckoutUrl($invoice, $successUrl, $cancelUrl);
         } catch (\Throwable $e) {

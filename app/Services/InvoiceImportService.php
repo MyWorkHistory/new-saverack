@@ -232,16 +232,21 @@ class InvoiceImportService
      */
     private function aggregateOnDemandCatalogPickLines(ClientAccount $account, array $lines): array
     {
-        $catalog = $account->onDemandProducts()
-            ->get()
-            ->keyBy(function (ClientAccountOnDemandProduct $product): string {
-                return $this->normalizeSkuKey((string) $product->sku) ?? '';
-            })
-            ->filter(static function ($product, string $key): bool {
-                return $key !== '';
-            });
+        $catalogRows = $account->onDemandProducts()->get();
+        $catalog = [];
+        $catalogCompact = [];
+        foreach ($catalogRows as $product) {
+            $exactKey = $this->normalizeSkuKey((string) $product->sku);
+            if ($exactKey !== null) {
+                $catalog[$exactKey] = $product;
+            }
+            $compactKey = $this->normalizeSkuCompactKey((string) $product->sku);
+            if ($compactKey !== null) {
+                $catalogCompact[$compactKey] = $product;
+            }
+        }
 
-        if ($catalog->isEmpty()) {
+        if ($catalog === [] && $catalogCompact === []) {
             return $lines;
         }
 
@@ -251,26 +256,32 @@ class InvoiceImportService
         $pendingCatalogPickLines = [];
 
         foreach ($lines as $line) {
-            $skuKey = $this->normalizeSkuKey((string) ($line['sku'] ?? ''));
-            $product = $skuKey !== null ? $catalog->get($skuKey) : null;
+            $lineSkuRaw = $this->extractLineSkuForCatalog((array) $line);
+            $skuKey = $this->normalizeSkuKey($lineSkuRaw);
+            $compactKey = $this->normalizeSkuCompactKey($lineSkuRaw);
+            $product = $skuKey !== null ? ($catalog[$skuKey] ?? null) : null;
+            if ($product === null && $compactKey !== null) {
+                $product = $catalogCompact[$compactKey] ?? null;
+            }
+            $aggregateKey = $skuKey ?? $compactKey;
 
-            if ($product === null) {
+            if ($product === null || $aggregateKey === null) {
                 $kept[] = $line;
                 continue;
             }
 
-            if (! isset($aggregates[$skuKey])) {
-                $aggregates[$skuKey] = [
+            if (! isset($aggregates[$aggregateKey])) {
+                $aggregates[$aggregateKey] = [
                     'product' => $product,
                     'quantity' => 0.0,
                 ];
             }
 
-            $aggregates[$skuKey]['quantity'] += 1.0;
-            if (! isset($insertedAggregateKey[$skuKey])) {
-                $insertedAggregateKey[$skuKey] = count($kept);
+            $aggregates[$aggregateKey]['quantity'] += 1.0;
+            if (! isset($insertedAggregateKey[$aggregateKey])) {
+                $insertedAggregateKey[$aggregateKey] = count($kept);
             }
-            $pendingCatalogPickLines[$skuKey][] = $line;
+            $pendingCatalogPickLines[$aggregateKey][] = $line;
         }
 
         if ($aggregates === []) {
@@ -350,8 +361,40 @@ class InvoiceImportService
     private function normalizeSkuKey(string $raw): ?string
     {
         $sku = trim((string) preg_replace('/[\x{200B}-\x{200D}\x{FEFF}]/u', '', $raw), " \t\n\r\0\x0B.\"'");
+        $sku = str_replace(["\u{2010}", "\u{2011}", "\u{2012}", "\u{2013}", "\u{2014}", "\u{2212}"], '-', $sku);
         $sku = mb_strtolower($sku);
 
         return $sku !== '' ? $sku : null;
+    }
+
+    private function normalizeSkuCompactKey(string $raw): ?string
+    {
+        $sku = $this->normalizeSkuKey($raw);
+        if ($sku === null) {
+            return null;
+        }
+        $compact = (string) preg_replace('/[^a-z0-9]/', '', $sku);
+
+        return $compact !== '' ? $compact : null;
+    }
+
+    /**
+     * Pull SKU from parsed line, falling back to description patterns.
+     *
+     * @param array<string, mixed> $line
+     */
+    private function extractLineSkuForCatalog(array $line): string
+    {
+        $sku = trim((string) ($line['sku'] ?? ''));
+        if ($sku !== '') {
+            return $sku;
+        }
+
+        $text = trim((string) ($line['description'] ?? ''));
+        if ($text !== '' && preg_match('/\bof\s+sku\s+([A-Z0-9._\-]+)/i', $text, $m) === 1) {
+            return (string) $m[1];
+        }
+
+        return '';
     }
 }

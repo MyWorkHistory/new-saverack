@@ -63,11 +63,13 @@ class ClientAccount extends Model
         'shiphero_customer_account_id',
         'whatsapp_api_id',
         'default_payment_type',
+        'cc_fee_percent',
     ];
 
     protected $casts = [
         'notify_email' => 'boolean',
         'contract_date' => 'date',
+        'cc_fee_percent' => 'decimal:2',
     ];
 
     protected static function booted(): void

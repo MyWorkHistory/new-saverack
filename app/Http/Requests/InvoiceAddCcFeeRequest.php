@@ -14,14 +14,8 @@ class InvoiceAddCcFeeRequest extends FormRequest
     public function rules(): array
     {
         return [
-            'amount_cents' => ['required', 'integer', 'min:1', 'max:99999999999'],
             'label' => ['nullable', 'string', 'max:255'],
         ];
-    }
-
-    public function amountCents(): int
-    {
-        return (int) $this->validated()['amount_cents'];
     }
 
     public function label(): string

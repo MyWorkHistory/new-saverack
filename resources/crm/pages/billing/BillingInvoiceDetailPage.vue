@@ -160,7 +160,6 @@ const addItemForm = ref({
 const ccFeeModalOpen = ref(false);
 const ccFeeBusy = ref(false);
 const ccFeeLabel = ref("Credit Card Fee");
-const ccFeeAmount = ref("");
 const groupEditModalOpen = ref(false);
 const groupEditBusy = ref(false);
 const groupDeleteModalOpen = ref(false);
@@ -382,8 +381,34 @@ const hasCreditCardFee = computed(() => {
   });
 });
 
+const ccFeePercent = computed(() => {
+  const n = Number(invoice.value?.client_account_cc_fee_percent);
+  return Number.isFinite(n) ? n : 0;
+});
+
+const ccFeeBaseCents = computed(() => {
+  const items = Array.isArray(invoice.value?.items) ? invoice.value.items : [];
+  return items
+    .filter((item) => {
+      const groupKey = String(item?.group_key || "").trim().toLowerCase();
+      if (groupKey.startsWith("cc_fee:")) return false;
+      const name = String(item?.display_name || item?.description || "").trim().toLowerCase();
+      return name !== "credit card fee" && name !== "cc fee";
+    })
+    .reduce((sum, item) => sum + Number(item?.line_total_cents || 0), 0);
+});
+
+const ccFeePreviewCents = computed(() =>
+  Math.round(ccFeeBaseCents.value * (ccFeePercent.value / 100)),
+);
+
 const canAddCcFee = computed(
-  () => canAddCharge.value && isCreditCardPaymentType.value && !hasCreditCardFee.value,
+  () =>
+    canAddCharge.value &&
+    isCreditCardPaymentType.value &&
+    !hasCreditCardFee.value &&
+    ccFeePercent.value > 0 &&
+    ccFeePreviewCents.value > 0,
 );
 
 const clientAccountDetailHref = computed(() => {
@@ -1400,7 +1425,6 @@ async function confirmAddItem() {
 
 function openCcFeeModal() {
   ccFeeLabel.value = "Credit Card Fee";
-  ccFeeAmount.value = "";
   ccFeeModalOpen.value = true;
 }
 
@@ -1411,15 +1435,13 @@ function closeCcFeeModal(force = false) {
 
 async function confirmCcFee() {
   if (!invoice.value) return;
-  const amountCents = dollarsToCents(ccFeeAmount.value);
-  if (amountCents < 1) {
-    toast.error("Enter a valid fee amount.");
+  if (!canAddCcFee.value) {
+    toast.error("Credit card fee cannot be added for this invoice.");
     return;
   }
   ccFeeBusy.value = true;
   try {
     await api.post(`/invoices/${invoice.value.id}/add-cc-fee`, {
-      amount_cents: amountCents,
       label: ccFeeLabel.value || "Credit Card Fee",
     });
     toast.success("CC fee added.");
@@ -3035,8 +3057,15 @@ function onDocKeydown(e) {
             <div class="crm-vx-modal__body">
               <label class="form-label">Fee Label</label>
               <input v-model="ccFeeLabel" type="text" class="form-control mb-2" />
-              <label class="form-label">Amount</label>
-              <input v-model="ccFeeAmount" type="text" class="form-control text-end" />
+              <div class="small text-secondary">
+                Account CC fee: {{ ccFeePercent.toFixed(2) }}%
+              </div>
+              <div class="small text-secondary">
+                Base invoice total: {{ formatCents(ccFeeBaseCents, invoice.currency) }}
+              </div>
+              <div class="mt-2 fw-semibold">
+                Fee to add: {{ formatCents(ccFeePreviewCents, invoice.currency) }}
+              </div>
             </div>
             <footer class="crm-vx-modal__footer d-flex gap-2 justify-content-end">
               <button type="button" class="crm-vx-modal-btn crm-vx-modal-btn--secondary" :disabled="ccFeeBusy" @click="closeCcFeeModal">

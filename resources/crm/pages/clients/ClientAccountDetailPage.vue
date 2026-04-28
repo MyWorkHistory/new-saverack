@@ -2152,6 +2152,23 @@ onUnmounted(() => {
                     </dd>
                   </dl>
                 </div>
+                <div class="col-md-6">
+                  <dl class="mb-0 small">
+                    <dt
+                      class="text-secondary text-uppercase fw-semibold mb-1"
+                      style="font-size: 0.65rem"
+                    >
+                      Credit card fee
+                    </dt>
+                    <dd class="mb-0 fw-semibold text-body">
+                      {{
+                        account.cc_fee_percent != null
+                          ? `${Number(account.cc_fee_percent).toFixed(2)}%`
+                          : "—"
+                      }}
+                    </dd>
+                  </dl>
+                </div>
               </div>
             </div>
           </template>

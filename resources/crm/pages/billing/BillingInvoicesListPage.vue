@@ -70,6 +70,7 @@ const bulkBusy = ref(false);
 const rows = ref([]);
 const pagination = ref({ current_page: 1, last_page: 1, total: 0 });
 const meta = ref({ statuses: [], client_accounts: [] });
+const paymentTypeOptions = ["ACH", "Wire", "Check", "Manual", "Credit Card", "Paypal", "Varies"];
 
 const query = reactive({
   search: "",
@@ -79,6 +80,7 @@ const query = reactive({
   sort_dir: "desc",
   status: "all",
   client_account_id: "",
+  payment_type: "",
 });
 
 let searchDebounce = null;
@@ -95,7 +97,7 @@ watch(
 );
 
 watch(
-  () => [query.status, query.client_account_id],
+  () => [query.status, query.client_account_id, query.payment_type],
   () => {
     query.page = 1;
     selectedIds.value = [];
@@ -339,6 +341,7 @@ async function fetchRows() {
         sort_dir: query.sort_dir,
         status: query.status === "all" ? undefined : query.status,
         client_account_id: query.client_account_id || undefined,
+        payment_type: query.payment_type || undefined,
       },
     });
     rows.value = data?.data ?? [];
@@ -824,6 +827,10 @@ onMounted(async () => {
   if (typeof qClient === "string" && qClient.trim()) {
     query.client_account_id = qClient.trim();
   }
+  const qPaymentType = route.query.payment_type;
+  if (typeof qPaymentType === "string" && qPaymentType.trim()) {
+    query.payment_type = qPaymentType.trim();
+  }
   try {
     await Promise.all([fetchMeta(), loadSummary()]);
   } catch {
@@ -1024,6 +1031,7 @@ onUnmounted(() => {
                   @click="
                     query.status = 'all';
                     query.client_account_id = '';
+                    query.payment_type = '';
                     filterMenuOpen = false;
                   "
                 >
@@ -1056,6 +1064,21 @@ onUnmounted(() => {
                   empty-label="All clients"
                   button-id="inv-filter-client"
                 />
+                <label class="form-label mt-3" for="inv-filter-payment-type">Payment Type</label>
+                <select
+                  id="inv-filter-payment-type"
+                  v-model="query.payment_type"
+                  class="form-select staff-datatable-filters__select"
+                >
+                  <option value="">All payment types</option>
+                  <option
+                    v-for="paymentType in paymentTypeOptions"
+                    :key="`inv-filter-payment-${paymentType}`"
+                    :value="paymentType"
+                  >
+                    {{ paymentType }}
+                  </option>
+                </select>
               </div>
             </div>
           </div>

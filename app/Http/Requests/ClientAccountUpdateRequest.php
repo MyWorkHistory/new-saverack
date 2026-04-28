@@ -117,6 +117,7 @@ class ClientAccountUpdateRequest extends FormRequest
             'account_manager_id' => ['sometimes', 'nullable', 'integer', $accountManagerRule],
             'contract_date' => ['sometimes', 'nullable', 'date'],
             'default_payment_type' => ['sometimes', 'nullable', 'string', Rule::in(ClientAccount::DEFAULT_PAYMENT_TYPES)],
+            'cc_fee_percent' => ['sometimes', 'nullable', 'numeric', 'min:0', 'max:100'],
             'stripe_customer_id' => ['sometimes', 'nullable', 'string', 'max:191'],
             'shiphero_customer_account_id' => ['sometimes', 'nullable', 'string', 'max:191'],
             'whatsapp_api_id' => ['sometimes', 'nullable', 'string', 'max:191'],

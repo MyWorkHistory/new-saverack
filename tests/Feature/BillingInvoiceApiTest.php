@@ -93,6 +93,55 @@ class BillingInvoiceApiTest extends TestCase
             ]);
     }
 
+    public function test_invoice_list_can_filter_by_client_payment_type(): void
+    {
+        $user = User::factory()->create();
+        $user->permissions()->attach($this->billingViewPermission()->id);
+        Sanctum::actingAs($user);
+
+        $cardClient = ClientAccount::query()->create([
+            'status' => ClientAccount::STATUS_ACTIVE,
+            'company_name' => 'Card Client',
+            'email' => 'card@example.test',
+            'default_payment_type' => 'Credit Card',
+        ]);
+        $wireClient = ClientAccount::query()->create([
+            'status' => ClientAccount::STATUS_ACTIVE,
+            'company_name' => 'Wire Client',
+            'email' => 'wire@example.test',
+            'default_payment_type' => 'Wire',
+        ]);
+
+        Invoice::query()->create([
+            'invoice_number' => 'INV-CARD-001',
+            'client_account_id' => $cardClient->id,
+            'status' => Invoice::STATUS_SENT,
+            'currency' => 'USD',
+            'subtotal_cents' => 1000,
+            'tax_cents' => 0,
+            'total_cents' => 1000,
+            'amount_paid_cents' => 0,
+            'balance_due_cents' => 1000,
+        ]);
+        Invoice::query()->create([
+            'invoice_number' => 'INV-WIRE-001',
+            'client_account_id' => $wireClient->id,
+            'status' => Invoice::STATUS_SENT,
+            'currency' => 'USD',
+            'subtotal_cents' => 2000,
+            'tax_cents' => 0,
+            'total_cents' => 2000,
+            'amount_paid_cents' => 0,
+            'balance_due_cents' => 2000,
+        ]);
+
+        $this->getJson('/api/invoices?payment_type=Credit%20Card')
+            ->assertOk()
+            ->assertJsonCount(1, 'data')
+            ->assertJsonPath('data.0.invoice_number', 'INV-CARD-001')
+            ->assertJsonPath('data.0.client_account_default_payment_type', 'Credit Card');
+    }
+
     public function test_user_with_billing_permissions_can_create_draft_send_and_record_payment(): void
     {
         Mail::fake();
@@ -1461,6 +1510,8 @@ class BillingInvoiceApiTest extends TestCase
             'status' => ClientAccount::STATUS_ACTIVE,
             'company_name' => 'Fee Co',
             'email' => 'fee@acme.test',
+            'default_payment_type' => 'Credit Card',
+            'cc_fee_percent' => 3.50,
         ]);
 
         $invoice = Invoice::query()->create([
@@ -1483,20 +1534,18 @@ class BillingInvoiceApiTest extends TestCase
         ])->assertOk()->assertJsonPath('total_cents', 1000);
 
         $this->postJson("/api/invoices/{$invoice->id}/add-cc-fee", [
-            'amount_cents' => 325,
             'label' => 'CC Fee',
         ])
             ->assertOk()
-            ->assertJsonPath('total_cents', 1325)
+            ->assertJsonPath('total_cents', 1035)
             ->assertJsonFragment([
                 'name' => 'CC Fee',
                 'type' => 'Credit Card Fee',
-                'total_cents' => 325,
+                'total_cents' => 35,
                 'groupKey' => 'cc_fee',
             ]);
 
         $this->postJson("/api/invoices/{$invoice->id}/add-cc-fee", [
-            'amount_cents' => 325,
             'label' => 'CC Fee',
         ])->assertStatus(422);
     }

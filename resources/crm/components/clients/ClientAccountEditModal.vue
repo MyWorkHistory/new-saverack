@@ -42,6 +42,7 @@ const form = reactive({
   country: "",
   account_manager_id: "",
   default_payment_type: "",
+  cc_fee_percent: "3.50",
   stripe_customer_id: "",
   shiphero_customer_account_id: "",
   whatsapp_api_id: "",
@@ -158,6 +159,10 @@ async function load() {
       ? String(data.account_manager_id)
       : "";
     form.default_payment_type = data.default_payment_type || "";
+    form.cc_fee_percent =
+      data.cc_fee_percent != null && data.cc_fee_percent !== ""
+        ? Number(data.cc_fee_percent).toFixed(2)
+        : "3.50";
     form.stripe_customer_id = data.stripe_customer_id || "";
     form.shiphero_customer_account_id = data.shiphero_customer_account_id || "";
     form.whatsapp_api_id = data.whatsapp_api_id || "";
@@ -211,6 +216,7 @@ function buildPatch() {
         ? Number(form.account_manager_id)
         : null,
       default_payment_type: trimOrNull(form.default_payment_type),
+      cc_fee_percent: trimOrNull(form.cc_fee_percent),
       stripe_customer_id: trimOrNull(form.stripe_customer_id),
       shiphero_customer_account_id: trimOrNull(form.shiphero_customer_account_id),
       whatsapp_api_id: trimOrNull(form.whatsapp_api_id),
@@ -245,6 +251,7 @@ function buildPatch() {
   if (props.section === "billing" || props.section === "payment") {
     return {
       default_payment_type: trimOrNull(form.default_payment_type),
+      cc_fee_percent: trimOrNull(form.cc_fee_percent),
     };
   }
   if (props.section === "settings") {
@@ -573,6 +580,20 @@ async function onSubmit() {
                             {{ paymentType }}
                           </option>
                         </select>
+                      </div>
+                      <div class="col-sm-6">
+                        <label class="form-label small mb-1 text-secondary" for="cae-cc-fee-percent"
+                          >Credit card fee (%)</label
+                        >
+                        <input
+                          id="cae-cc-fee-percent"
+                          v-model="form.cc_fee_percent"
+                          type="number"
+                          min="0"
+                          max="100"
+                          step="0.01"
+                          class="form-control"
+                        />
                       </div>
                     </div>
                   </template>

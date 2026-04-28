@@ -26,6 +26,7 @@ const form = reactive({
   email: "",
   phone: "",
   default_payment_type: "",
+  cc_fee_percent: "3.50",
   password: "",
   password_confirmation: "",
 });
@@ -36,6 +37,7 @@ function reset() {
   form.email = "";
   form.phone = "";
   form.default_payment_type = "";
+  form.cc_fee_percent = "3.50";
   form.password = "";
   form.password_confirmation = "";
   errorMsg.value = "";
@@ -69,6 +71,7 @@ async function onSubmit() {
       phone: form.phone.trim() || null,
       notify_email: false,
       default_payment_type: form.default_payment_type || null,
+      cc_fee_percent: form.cc_fee_percent || null,
       password: rawPw,
       password_confirmation: (form.password_confirmation || "").trim(),
     };
@@ -222,6 +225,20 @@ async function onSubmit() {
                         {{ paymentType }}
                       </option>
                     </select>
+                  </div>
+                  <div>
+                    <label
+                      class="mb-1 block text-xs font-medium text-gray-600 dark:text-gray-400"
+                      >Credit card fee (%)</label
+                    >
+                    <input
+                      v-model="form.cc_fee_percent"
+                      type="number"
+                      min="0"
+                      max="100"
+                      step="0.01"
+                      class="h-10 w-full rounded-lg border border-gray-300 bg-white px-3 text-sm dark:border-gray-600 dark:bg-gray-800 dark:text-white"
+                    />
                   </div>
 
                   <div

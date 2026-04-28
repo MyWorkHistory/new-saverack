@@ -233,16 +233,39 @@ class InvoiceService
         });
     }
 
-    public function addCcFee(Invoice $invoice, int $amountCents, string $label, ?User $actor): Invoice
+    public function addCcFee(Invoice $invoice, string $label, ?User $actor): Invoice
     {
-        if ($amountCents <= 0) {
-            throw new \InvalidArgumentException('CC fee amount must be positive.');
-        }
-
         $invoice->loadMissing('items', 'clientAccount');
+        $account = $invoice->clientAccount;
+        if ($account === null) {
+            throw ValidationException::withMessages([
+                'amount_cents' => 'Invoice account was not found.',
+            ]);
+        }
+        if (strcasecmp(trim((string) $account->default_payment_type), 'Credit Card') !== 0) {
+            throw ValidationException::withMessages([
+                'amount_cents' => 'Credit card fees can only be added to Credit Card accounts.',
+            ]);
+        }
         if ($invoice->items->contains(fn (InvoiceItem $item): bool => $this->isCreditCardFeeItem($item))) {
             throw ValidationException::withMessages([
                 'amount_cents' => 'A credit card fee has already been added to this invoice.',
+            ]);
+        }
+        $percent = (float) ($account->cc_fee_percent ?? 0);
+        if ($percent <= 0.0) {
+            throw ValidationException::withMessages([
+                'amount_cents' => 'This account does not have a credit card fee percent configured.',
+            ]);
+        }
+
+        $baseCents = (int) $invoice->items
+            ->reject(fn (InvoiceItem $item): bool => $this->isCreditCardFeeItem($item))
+            ->sum('line_total_cents');
+        $amountCents = (int) round($baseCents * ($percent / 100));
+        if ($amountCents <= 0) {
+            throw ValidationException::withMessages([
+                'amount_cents' => 'Credit card fee could not be calculated because the invoice total is zero.',
             ]);
         }
 
@@ -254,6 +277,10 @@ class InvoiceService
             'unit_price_cents' => $amountCents,
             'line_total_cents' => $amountCents,
             'group_key' => 'cc_fee:'.Str::slug($label),
+            'metadata' => [
+                'cc_fee_percent' => $percent,
+                'cc_fee_base_cents' => $baseCents,
+            ],
         ], $actor);
     }
 
@@ -896,6 +923,7 @@ class InvoiceService
             'currency' => $invoice->currency,
             'client_account_id' => $invoice->client_account_id,
             'client_company_name' => $invoice->clientAccount !== null ? $invoice->clientAccount->company_name : null,
+            'client_account_default_payment_type' => $invoice->clientAccount !== null ? $invoice->clientAccount->default_payment_type : null,
             'client_account_stripe_customer_id' => $invoice->clientAccount !== null ? $invoice->clientAccount->stripe_customer_id : null,
             'total_cents' => $invoice->total_cents,
             'balance_due_cents' => $invoice->balance_due_cents,
@@ -940,6 +968,9 @@ class InvoiceService
             'internal_notes' => $invoice->internal_notes,
             'client_account_default_payment_type' => $account !== null
                 ? $account->default_payment_type
+                : null,
+            'client_account_cc_fee_percent' => $account !== null && $account->cc_fee_percent !== null
+                ? (float) $account->cc_fee_percent
                 : null,
             'client_account_email' => $account !== null ? $account->email : null,
             'client_account_contact_name' => $account !== null ? $account->contactFullName() : null,
@@ -1713,6 +1744,13 @@ class InvoiceService
 
         if (! empty($filters['client_account_id'])) {
             $q->where('client_account_id', (int) $filters['client_account_id']);
+        }
+
+        if (! empty($filters['payment_type'])) {
+            $paymentType = trim((string) $filters['payment_type']);
+            $q->whereHas('clientAccount', function ($account) use ($paymentType) {
+                $account->where('default_payment_type', $paymentType);
+            });
         }
 
         if (! empty($filters['issued_from'])) {

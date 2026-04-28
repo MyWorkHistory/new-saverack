@@ -14,6 +14,9 @@
         .public-toolbar a.primary { background: #2573ba; color: #fff; }
         .public-toolbar a.secondary { background: #fff; color: #2f2b3d; border: 1px solid rgba(47, 43, 61, 0.12); }
         .public-toolbar a.success { background: #28c76f; color: #fff; }
+        .public-mobile-actions, .mobile-invoice-details { display: none; }
+        .public-icon { display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0; }
+        .public-icon svg { width: 1em; height: 1em; display: block; }
         .public-status-chip { background: #eef2ff; color: #2f2b3d; border: 1px solid rgba(47, 43, 61, 0.12); padding: 5px 12px; border-radius: 999px; font-size: 13px; font-weight: 600; }
         .public-status-chip.status-paid { background: #e8f7ef; color: #0f7a43; border-color: #b9e7cd; }
         .public-status-chip.status-past-due { background: #ffe9ea; color: #b4232d; border-color: #f4b8bc; }
@@ -70,6 +73,7 @@
         .pay-feedback.error { color: #ea5455; }
         @media print {
             .public-toolbar { display: none; }
+            .public-mobile-actions, .mobile-invoice-details { display: none !important; }
             body { background: #fff; }
             .page { padding: 0; max-width: none; }
             .invoice-card { box-shadow: none; border: none; padding: 0; }
@@ -78,11 +82,47 @@
             details.public-inv-sec--expandable .public-inv-chev { transform: rotate(90deg); }
         }
         @media (max-width: 720px) {
-            .invoice-head { flex-direction: column; }
-            .invoice-right { text-align: left; min-width: 0; }
-            .public-inv-row { grid-template-columns: 24px minmax(0, 1fr); }
-            .public-inv-row-num:nth-child(n+3) { text-align: left; }
-            .public-inv-breakdown td.num { text-align: left; }
+            body { background: #fff; font-size: 13px; color: #202938; }
+            .page { max-width: none; padding: 12px; }
+            .public-toolbar { display: none; }
+            .invoice-card { border: none; border-radius: 0; box-shadow: none; padding: 0; }
+            .invoice-head { display: block; margin-bottom: 18px; }
+            .invoice-title { font-size: 26px; line-height: 1.15; margin-bottom: 14px; }
+            .meta-line { display: flex; align-items: center; gap: 10px; margin: 9px 0; color: #596579; font-size: 13px; }
+            .meta-line .public-icon { width: 18px; height: 18px; color: #2573ba; font-size: 18px; }
+            .meta-line-label { min-width: 86px; color: #596579; }
+            .meta-line-value { color: #475166; font-weight: 600; }
+            .bill-to { margin-top: 22px; border-top: 1px solid #eef1f5; padding-top: 14px; }
+            .bill-to-title { color: #596579; font-size: 12px; text-transform: uppercase; letter-spacing: .02em; margin-bottom: 8px; }
+            .bill-to-company { display: block; color: #202938; font-size: 15px; text-transform: none; letter-spacing: 0; margin-top: 2px; }
+            .bill-to-body { color: #394456; font-size: 12px; line-height: 1.45; }
+            .invoice-right { text-align: left; min-width: 0; margin-top: 16px; }
+            .invoice-logo { width: 86px; margin-bottom: 12px; }
+            .balance-label { font-size: 12px; color: #596579; margin-bottom: 4px; }
+            .balance-due { font-size: 24px; line-height: 1.1; }
+            .invoice-right .balance-box { border: 1px solid #d6e4ff; background: linear-gradient(180deg, #f9fbff 0%, #f4f8ff 100%); border-radius: 6px; padding: 12px 14px; }
+            .public-mobile-actions { display: grid; gap: 10px; margin: 14px 0 18px; }
+            .public-mobile-actions a { display: inline-flex; align-items: center; justify-content: center; gap: 8px; width: 100%; padding: 12px 14px; border-radius: 6px; color: #fff; text-decoration: none; font-weight: 700; }
+            .public-mobile-actions a.success { background: #22c76f; }
+            .public-mobile-actions a.primary { background: #2573ba; }
+            .public-mobile-actions .public-icon { font-size: 16px; }
+            .invoice-table { display: none; }
+            .mobile-invoice-details { display: block; margin-top: 8px; }
+            .mobile-invoice-details h2 { font-size: 16px; color: #202938; margin: 0 0 10px; }
+            .mobile-inv-card { display: grid; grid-template-columns: 42px minmax(0, 1fr) auto; align-items: center; gap: 12px; border: 1px solid #edf0f4; border-radius: 7px; background: #fff; box-shadow: 0 1px 3px rgba(16, 24, 40, .06); padding: 12px; margin-bottom: 10px; }
+            .mobile-inv-card-icon { display: flex; align-items: center; justify-content: center; width: 38px; height: 38px; border-radius: 50%; color: #2573ba; background: #eef6ff; font-size: 20px; }
+            .mobile-inv-card-icon--postage { color: #22a06b; background: #eafaf2; }
+            .mobile-inv-card-icon--packaging { color: #7c4dff; background: #f2edff; }
+            .mobile-inv-card-icon--credits { color: #dc3545; background: #fff1f2; }
+            .mobile-inv-card-icon--cc_fee { color: #ea8a00; background: #fff7e6; }
+            .mobile-inv-card-title { font-weight: 800; color: #202938; margin-bottom: 2px; }
+            .mobile-inv-card-meta { color: #596579; font-size: 12px; line-height: 1.35; }
+            .mobile-inv-card-total { font-weight: 800; font-size: 15px; color: #202938; white-space: nowrap; }
+            .detail-note { display: none; }
+            .invoice-summary { width: 100%; margin-top: 18px; padding: 13px 14px; border: 1px solid #d7dde8; border-radius: 6px; background: linear-gradient(180deg, #f5f7fa 0%, #e8edf3 100%); text-align: right; line-height: 1.65; }
+            .invoice-summary strong:first-child { color: #596579; }
+            .invoice-summary .danger { font-size: 18px; font-weight: 800; }
+            .footer-note { margin-top: 22px; padding: 0 12px 12px; color: #6b7280; font-size: 13px; line-height: 1.55; }
         }
     </style>
 </head>
@@ -106,16 +146,37 @@
     @elseif($paymentState === 'error')
         <div class="pay-feedback error">Could not start payment. Please try again.</div>
     @endif
+    @php
+        $iconCalendar = '<span class="public-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/></svg></span>';
+        $iconClock = '<span class="public-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg></span>';
+        $iconLock = '<span class="public-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V8a4 4 0 018 0v3"/></svg></span>';
+        $iconDoc = '<span class="public-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><path d="M14 2v6h6M8 13h8M8 17h5"/></svg></span>';
+        $iconGift = '<span class="public-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="8" width="18" height="13" rx="2"/><path d="M12 8v13M3 12h18M7.5 8A2.5 2.5 0 1112 6.5V8M16.5 8A2.5 2.5 0 1012 6.5V8"/></svg></span>';
+        $iconTruck = '<span class="public-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 7h11v10H3zM14 11h4l3 3v3h-7z"/><circle cx="7" cy="18" r="2"/><circle cx="18" cy="18" r="2"/></svg></span>';
+        $iconBox = '<span class="public-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 8l-9-5-9 5 9 5 9-5z"/><path d="M3 8v8l9 5 9-5V8M12 13v8"/></svg></span>';
+        $iconCard = '<span class="public-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="M3 10h18M7 15h4"/></svg></span>';
+        $iconCredit = '<span class="public-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M8 12h8"/></svg></span>';
+        $iconOther = '<span class="public-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M12 8v8M8 12h8"/></svg></span>';
+        $mobileIconFor = static function ($type) use ($iconGift, $iconTruck, $iconBox, $iconCard, $iconCredit, $iconOther) {
+            $key = strtolower(trim((string) $type));
+            if (str_contains($key, 'postage')) return ['icon' => $iconTruck, 'class' => 'postage'];
+            if (str_contains($key, 'packaging')) return ['icon' => $iconBox, 'class' => 'packaging'];
+            if (str_contains($key, 'credit card')) return ['icon' => $iconCard, 'class' => 'cc_fee'];
+            if (str_contains($key, 'credit')) return ['icon' => $iconCredit, 'class' => 'credits'];
+            if (str_contains($key, 'fulfillment')) return ['icon' => $iconGift, 'class' => 'fulfillment'];
+            return ['icon' => $iconOther, 'class' => 'other'];
+        };
+    @endphp
 
     <div class="invoice-card">
         <div class="invoice-head">
             <div>
                 <h1 class="invoice-title">Invoice #{{ $invoice_number }}</h1>
-                <div class="meta-line">Invoice Date : {{ $invoice_date_label ?? '—' }}</div>
-                <div class="meta-line">Invoice Due : {{ $due_long ?? '—' }}</div>
+                <div class="meta-line">{!! $iconCalendar !!}<span class="meta-line-label">Invoice Date</span><span class="meta-line-value">{{ $invoice_date_label ?? '—' }}</span></div>
+                <div class="meta-line">{!! $iconClock !!}<span class="meta-line-label">Invoice Due</span><span class="meta-line-value">{{ $due_long ?? '—' }}</span></div>
 
                 <div class="bill-to">
-                    <h2 class="bill-to-title">BILL TO : {{ $client_company_name ?: '—' }}</h2>
+                    <h2 class="bill-to-title">BILL TO <span class="bill-to-company">{{ $client_company_name ?: '—' }}</span></h2>
                     @if (!empty($account_address))
                         <div class="bill-to-body">
                             @if (!empty($account_address['line1'])){{ $account_address['line1'] }}<br>@endif
@@ -131,9 +192,16 @@
 
             <div class="invoice-right">
                 <img src="{{ asset('logo.jpg') }}?v=20260402a" alt="Save Rack" class="invoice-logo" />
-                <div class="balance-label">Invoice Amount</div>
-                <p class="balance-due">{{ $total }}</p>
+                <div class="balance-box">
+                    <div class="balance-label">Amount Due</div>
+                    <p class="balance-due">{{ $balance_due }}</p>
+                </div>
             </div>
+        </div>
+
+        <div class="public-mobile-actions">
+            <a class="success" href="{{ $public_pay_path ?? '#' }}">{!! $iconLock !!} Pay Now</a>
+            <a class="primary" href="{{ $public_pdf_path ?? '#' }}">{!! $iconDoc !!} Download PDF</a>
         </div>
 
         <table class="invoice-table">
@@ -234,6 +302,30 @@
             @endforelse
             </tbody>
         </table>
+
+        <div class="mobile-invoice-details">
+            <h2>Invoice Details</h2>
+            @forelse (($line_sections ?? []) as $sec)
+                @php($mobileIcon = $mobileIconFor($sec['label'] ?? $sec['type'] ?? ''))
+                <div class="mobile-inv-card">
+                    <div class="mobile-inv-card-icon mobile-inv-card-icon--{{ $mobileIcon['class'] }}">{!! $mobileIcon['icon'] !!}</div>
+                    <div>
+                        <div class="mobile-inv-card-title">{{ $sec['label'] }}</div>
+                        <div class="mobile-inv-card-meta">Qty: {{ $sec['qty_display'] }}</div>
+                        <div class="mobile-inv-card-meta">Price: {{ $sec['unit'] }}</div>
+                    </div>
+                    <div class="mobile-inv-card-total">{{ $sec['line_total'] }}</div>
+                </div>
+            @empty
+                <div class="mobile-inv-card">
+                    <div class="mobile-inv-card-icon mobile-inv-card-icon--other">{!! $iconOther !!}</div>
+                    <div>
+                        <div class="mobile-inv-card-title">No line items</div>
+                    </div>
+                    <div class="mobile-inv-card-total">—</div>
+                </div>
+            @endforelse
+        </div>
 
         <div class="detail-note">
             For a detailed breakdown of charges associated with each order, please log in to your account.

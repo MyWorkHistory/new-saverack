@@ -62,6 +62,7 @@ class ClientAccountStoreRequest extends FormRequest
             'account_manager_id' => ['nullable', 'integer', $accountManagerRule],
             'contract_date' => ['nullable', 'date'],
             'default_payment_type' => ['nullable', 'string', Rule::in(ClientAccount::DEFAULT_PAYMENT_TYPES)],
+            'cc_fee_percent' => ['nullable', 'numeric', 'min:0', 'max:100'],
             'stripe_customer_id' => ['nullable', 'string', 'max:191'],
             'shiphero_customer_account_id' => ['nullable', 'string', 'max:191'],
             'whatsapp_api_id' => ['nullable', 'string', 'max:191'],

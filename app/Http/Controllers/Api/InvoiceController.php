@@ -64,6 +64,7 @@ class InvoiceController extends Controller
             'search',
             'status',
             'client_account_id',
+            'payment_type',
             'issued_from',
             'issued_to',
             'sort_by',
@@ -298,7 +299,7 @@ class InvoiceController extends Controller
     public function addCcFee(InvoiceAddCcFeeRequest $request, Invoice $invoice): JsonResponse
     {
         $this->authorize('addCharge', $invoice);
-        $invoice = $this->invoices->addCcFee($invoice, $request->amountCents(), $request->label(), $request->user());
+        $invoice = $this->invoices->addCcFee($invoice, $request->label(), $request->user());
 
         return response()->json($this->invoices->toDetailArray($invoice));
     }

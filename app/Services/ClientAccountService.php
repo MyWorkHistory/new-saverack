@@ -472,6 +472,7 @@ class ClientAccountService
             'notes' => $account->notes,
             'account_manager_id' => $account->account_manager_id,
             'default_payment_type' => $account->default_payment_type,
+            'cc_fee_percent' => $account->cc_fee_percent !== null ? (float) $account->cc_fee_percent : null,
             'stripe_customer_id' => $account->stripe_customer_id,
             'shiphero_customer_account_id' => $account->shiphero_customer_account_id,
             'whatsapp_api_id' => $account->whatsapp_api_id,

@@ -7,8 +7,8 @@ use Illuminate\Console\Command;
 use Illuminate\Support\Facades\DB;
 
 /**
- * One-off sync: copies Stripe customer id and WhatsApp Cloud API chat id from the old CRM
- * `customers` table (`stripe_customer_id`, `wp_chat_id`) into `client_accounts`
+ * One-off sync: copies Stripe customer id, WhatsApp Cloud API chat id, and CC fee percent from
+ * the old CRM `customers` table (`stripe_customer_id`, `wp_chat_id`, `cc_charge`) into `client_accounts`
  * matched by {@see ClientAccount::$legacy_customer_id}.
  *
  * Prerequisites: import `database/customers (1).sql` (or your dump) into MySQL and set
@@ -23,7 +23,7 @@ class SyncLegacyStripeWhatsappCommand extends Command
                             {--force : Overwrite non-empty stripe_customer_id / whatsapp_api_id on client_accounts}
                             {--dry-run : List changes without saving}';
 
-    protected $description = 'Sync Stripe + WhatsApp API ids from legacy customers into client_accounts (by legacy_customer_id)';
+    protected $description = 'Sync Stripe + WhatsApp API ids + CC fee percent from legacy customers into client_accounts (by legacy_customer_id)';
 
     public function handle(): int
     {
@@ -65,8 +65,9 @@ class SyncLegacyStripeWhatsappCommand extends Command
 
         $hasStripe = $schema->hasColumn($table, 'stripe_customer_id');
         $hasWp = $schema->hasColumn($table, 'wp_chat_id');
-        if (! $hasStripe && ! $hasWp) {
-            $this->error("Legacy table [{$table}] has neither stripe_customer_id nor wp_chat_id.");
+        $hasCcCharge = $schema->hasColumn($table, 'cc_charge');
+        if (! $hasStripe && ! $hasWp && ! $hasCcCharge) {
+            $this->error("Legacy table [{$table}] has none of stripe_customer_id, wp_chat_id, or cc_charge.");
 
             return self::FAILURE;
         }
@@ -77,6 +78,9 @@ class SyncLegacyStripeWhatsappCommand extends Command
         }
         if ($hasWp) {
             $select[] = 'wp_chat_id';
+        }
+        if ($hasCcCharge) {
+            $select[] = 'cc_charge';
         }
 
         $query = $legacy->table($table)->select($select);
@@ -94,6 +98,7 @@ class SyncLegacyStripeWhatsappCommand extends Command
         $query->orderBy('id')->chunkById(200, function ($rows) use (
             $hasStripe,
             $hasWp,
+            $hasCcCharge,
             $force,
             $dryRun,
             &$wouldUpdate,
@@ -112,8 +117,9 @@ class SyncLegacyStripeWhatsappCommand extends Command
 
                 $stripe = $hasStripe ? $this->normalizeScalar($row->stripe_customer_id ?? null) : null;
                 $wa = $hasWp ? $this->normalizeScalar($row->wp_chat_id ?? null) : null;
+                $ccFee = $hasCcCharge && is_numeric($row->cc_charge ?? null) ? (float) $row->cc_charge : null;
 
-                if (($stripe === null || $stripe === '') && ($wa === null || $wa === '')) {
+                if (($stripe === null || $stripe === '') && ($wa === null || $wa === '') && $ccFee === null) {
                     $skippedNoLegacyData++;
 
                     continue;
@@ -130,6 +136,12 @@ class SyncLegacyStripeWhatsappCommand extends Command
                     $currentWa = (string) ($account->whatsapp_api_id ?? '');
                     if ($force || $currentWa === '') {
                         $attrs['whatsapp_api_id'] = substr($wa, 0, 191);
+                    }
+                }
+                if ($ccFee !== null) {
+                    $currentCcFee = $account->cc_fee_percent !== null ? (float) $account->cc_fee_percent : null;
+                    if ($force || $currentCcFee === null || abs($currentCcFee - 3.50) < 0.00001) {
+                        $attrs['cc_fee_percent'] = $ccFee;
                     }
                 }
 
@@ -154,7 +166,7 @@ class SyncLegacyStripeWhatsappCommand extends Command
             [
                 [$dryRun ? 'Rows that would update' : 'Rows updated', (string) $wouldUpdate],
                 ['Skipped (no client_account for legacy id)', (string) $skippedNoAccount],
-                ['Skipped (no stripe / wp_chat_id in legacy)', (string) $skippedNoLegacyData],
+                ['Skipped (no stripe / wp_chat_id / cc_charge in legacy)', (string) $skippedNoLegacyData],
                 ['Skipped (target fields already set; use --force)', (string) $skippedAlreadyFilled],
             ]
         );

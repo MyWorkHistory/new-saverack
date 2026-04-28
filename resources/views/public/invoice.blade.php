@@ -24,6 +24,8 @@
         .public-status-chip.status-open { background: #eaf2ff; color: #1e58b7; border-color: #c7dafd; }
         .public-status-chip.status-draft { background: #f1f3f5; color: #495057; border-color: #d8dee3; }
         .public-status-chip.status-collection { background: #fff4e6; color: #b35a00; border-color: #f7d7ae; }
+        .public-toolbar a.is-disabled,
+        .public-mobile-actions a.is-disabled { pointer-events: none; opacity: .55; cursor: not-allowed; }
         .invoice-card { background: #fff; border: 1px solid rgba(47, 43, 61, 0.08); border-radius: 14px; padding: 26px 24px 30px; box-shadow: 0 8px 24px rgba(15, 23, 42, 0.06); }
         .invoice-head { display: flex; justify-content: space-between; gap: 20px; align-items: flex-start; margin-bottom: 22px; }
         .invoice-title { font-size: 34px; font-weight: 700; color: #1f2430; margin: 0 0 4px; }
@@ -132,10 +134,13 @@
         $statusText = trim((string) ($status_label ?? 'Draft'));
         $statusSlug = strtolower(str_replace('_', '-', $statusText));
         $statusClass = 'status-'.$statusSlug;
+        $statusKeyRaw = strtolower(trim((string) ($status_key ?? $status ?? $statusText)));
+        $isPayDisabled = in_array($statusKeyRaw, ['paid', 'processing'], true);
+        $payHref = $isPayDisabled ? '#' : ($public_pay_path ?? '#');
     @endphp
     <div class="public-toolbar">
         <span class="public-status-chip {{ $statusClass }}">{{ $statusText }}</span>
-        <a class="success" href="{{ $public_pay_path ?? '#' }}">Pay Now</a>
+        <a class="success {{ $isPayDisabled ? 'is-disabled' : '' }}" href="{{ $payHref }}" aria-disabled="{{ $isPayDisabled ? 'true' : 'false' }}">Pay Now</a>
         <a class="primary" href="{{ $public_pdf_path ?? '#' }}">Download PDF</a>
     </div>
     @php
@@ -202,7 +207,7 @@
         </div>
 
         <div class="public-mobile-actions">
-            <a class="success" href="{{ $public_pay_path ?? '#' }}">{!! $iconLock !!} Pay Now</a>
+            <a class="success {{ $isPayDisabled ? 'is-disabled' : '' }}" href="{{ $payHref }}" aria-disabled="{{ $isPayDisabled ? 'true' : 'false' }}">{!! $iconLock !!} Pay Now</a>
             <a class="primary" href="{{ $public_pdf_path ?? '#' }}">{!! $iconDoc !!} Download PDF</a>
         </div>
 

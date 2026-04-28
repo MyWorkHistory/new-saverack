@@ -248,26 +248,26 @@ class InvoiceImportService
         $pendingCatalogPickLines = [];
 
         foreach ($lines as $line) {
-            $sku = $this->extractOnDemandPickSku($line);
-            $product = $sku !== null ? $catalog->get($sku) : null;
+            $skuKey = $this->normalizeSpreadsheetSkuForCatalog((string) ($line['sku'] ?? ''));
+            $product = $skuKey !== null ? $catalog->get($skuKey) : null;
 
             if ($product === null) {
                 $kept[] = $line;
                 continue;
             }
 
-            if (! isset($aggregates[$sku])) {
-                $aggregates[$sku] = [
+            if (! isset($aggregates[$skuKey])) {
+                $aggregates[$skuKey] = [
                     'product' => $product,
                     'quantity' => 0.0,
                 ];
             }
 
-            $aggregates[$sku]['quantity'] += $this->onDemandPickQuantity($line);
-            if (! isset($insertedAggregateKey[$sku])) {
-                $insertedAggregateKey[$sku] = count($kept);
+            $aggregates[$skuKey]['quantity'] += 1.0;
+            if (! isset($insertedAggregateKey[$skuKey])) {
+                $insertedAggregateKey[$skuKey] = count($kept);
             }
-            $pendingCatalogPickLines[$sku][] = $line;
+            $pendingCatalogPickLines[$skuKey][] = $line;
         }
 
         if ($aggregates === []) {
@@ -275,7 +275,7 @@ class InvoiceImportService
         }
 
         $aggregateLines = [];
-        foreach ($aggregates as $sku => $aggregate) {
+        foreach ($aggregates as $skuKey => $aggregate) {
             /** @var ClientAccountOnDemandProduct $product */
             $product = $aggregate['product'];
             $quantity = (float) $aggregate['quantity'];
@@ -284,7 +284,7 @@ class InvoiceImportService
             }
 
             $display = trim((string) $product->name).' ('.$product->sku.')';
-            $aggregateLines[$sku] = [
+            $aggregateLines[$skuKey] = [
                 'category' => InvoiceLineCategory::ON_DEMAND,
                 'subtype' => null,
                 'group_key' => 'on_demand:'.Str::slug($product->sku),
@@ -342,55 +342,12 @@ class InvoiceImportService
     }
 
     /**
-     * @param array<string, mixed> $line
+     * Normalized key for catalog lookup (matches `ClientAccountOnDemandProduct` keying).
      */
-    private function extractOnDemandPickSku(array $line): ?string
+    private function normalizeSpreadsheetSkuForCatalog(string $raw): ?string
     {
-        if (($line['category'] ?? null) !== InvoiceLineCategory::FULFILLMENT) {
-            return null;
-        }
-
-        $subtype = strtolower(trim((string) ($line['subtype'] ?? '')));
-        $serviceCode = strtolower(trim((string) ($line['service_code'] ?? '')));
-        $text = strtolower(trim(implode(' ', array_filter([
-            (string) ($line['display_name'] ?? ''),
-            (string) ($line['description'] ?? ''),
-            (string) ($line['service_code'] ?? ''),
-        ]))));
-
-        $isPickCharge = in_array($subtype, ['first', 'additional'], true)
-            || str_contains($serviceCode, 'first_pick_charge')
-            || str_contains($serviceCode, 'pick_remainder_charge')
-            || preg_match('/\b(first pick|additional item\(s\) picked|pick remainder)\b/i', $text) === 1;
-        if (! $isPickCharge) {
-            return null;
-        }
-
-        $sku = trim((string) ($line['sku'] ?? ''));
-        if ($sku === '' && preg_match('/\bof\s+sku\s+([A-Z0-9._\-]+)\b/i', (string) ($line['description'] ?? ''), $m) === 1) {
-            $sku = $m[1];
-        }
-        if ($sku === '' && preg_match('/\bsku\s+([A-Z0-9._\-]+)\b/i', (string) ($line['display_name'] ?? '').' '.(string) ($line['service_code'] ?? ''), $m) === 1) {
-            $sku = $m[1];
-        }
-
-        $sku = strtoupper(trim($sku, " \t\n\r\0\x0B."));
+        $sku = strtoupper(trim($raw, " \t\n\r\0\x0B."));
 
         return $sku !== '' ? $sku : null;
-    }
-
-    /**
-     * @param array<string, mixed> $line
-     */
-    private function onDemandPickQuantity(array $line): float
-    {
-        $description = (string) ($line['description'] ?? '');
-        if (preg_match('/\b(\d+(?:\.\d+)?)\s+additional\s+item/i', $description, $m) === 1) {
-            return max(0.0, (float) $m[1]);
-        }
-
-        $quantity = (float) ($line['quantity'] ?? 0);
-
-        return $quantity > 0 ? $quantity : 1.0;
     }
 }

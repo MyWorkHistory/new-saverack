@@ -306,6 +306,8 @@ final class InvoiceChargeImportParser
         }
 
         $feeType = $this->getFeeType($row, $map);
+        $chargeTypeLower = strtolower(trim((string) $legacyChargeType));
+        $isExplicitPickFulfillmentCharge = preg_match('/\b(first[_\s]*pick[_\s]*charge|pick[_\s]*remainder[_\s]*charge)\b/i', $chargeTypeLower) === 1;
         $materialText = implode(' ', array_filter([
             $legacyChargeName,
             $legacyChargeType,
@@ -314,7 +316,7 @@ final class InvoiceChargeImportParser
             $this->cell($row, $map['label_charge'] ?? -1),
             $this->cell($row, $map['fee_charge'] ?? -1),
         ]));
-        if ($this->isPackagingMaterialText($materialText)) {
+        if ($this->isPackagingMaterialText($materialText) && ! $isExplicitPickFulfillmentCharge) {
             $feeType = 'Packaging';
         }
         if ($feeType === null) {
@@ -623,21 +625,6 @@ final class InvoiceChargeImportParser
         };
 
         $ct = strtolower($get('charge_type'));
-        if ($ct !== '') {
-            if (str_contains($ct, 'shipping_label_charge')) return 'Postage';
-            if (str_contains($ct, 'box_charge')) return 'Packaging';
-            if (str_contains($ct, 'first_return_charge') || str_contains($ct, 'return_remainder_charge')) return 'Returns';
-            if (
-                str_contains($ct, 'first_pick_charge')
-                || str_contains($ct, 'pick_remainder_charge')
-                || str_contains($ct, 'first')
-                || str_contains($ct, 'remainder')
-                || str_contains($ct, 'additional')
-            ) return 'Fulfillment';
-            if (str_contains($ct, 'ad_hoc') || str_contains($ct, 'ad hoc')) return 'Ad Hoc';
-            if ($ct === 'bank fee' || $ct === 'bank_fee' || str_contains($ct, 'bank fee')) return 'Bank Fee';
-            if (str_contains($ct, 'duties') && (str_contains($ct, 'tax') || str_contains($ct, 'taxes'))) return 'Duties & Taxes';
-        }
         if ($get('carrier') !== '') return 'Postage';
         if ($get('box') !== '') return 'Packaging';
         if (
@@ -793,10 +780,7 @@ final class InvoiceChargeImportParser
             $this->cell($row, $index['label_charge'] ?? -1),
             $chargeTypeName,
         ]) ?? $chargeTypeName;
-        $sourceSku = $this->firstNonEmpty([
-            $this->cell($row, $index['charge_sku'] ?? -1),
-            $this->cell($row, $index['name_product'] ?? -1),
-        ]);
+        $sourceSku = $this->legacyRowProductSku($row, $index);
 
         return $this->buildItem(
             InvoiceLineCategory::FULFILLMENT,
@@ -825,7 +809,9 @@ final class InvoiceChargeImportParser
         if ($qty === 0.0) $qty = 1.0;
         $isAdditional = strpos($chargeTypeRaw, 'return_remainder') !== false || strpos($chargeTypeRaw, 'remainder') !== false;
 
-        return $this->buildItem(InvoiceLineCategory::RETURNS, $isAdditional ? 'Returns (Additional Items)' : 'Returns (First Item)', '', $qty, $unitRate, $total, $isAdditional ? 'additional' : 'first', $isAdditional ? 'returns:additional' : 'returns:first', $chargeTypeRaw);
+        $sku = $this->legacyRowProductSku($row, $index);
+
+        return $this->buildItem(InvoiceLineCategory::RETURNS, $isAdditional ? 'Returns (Additional Items)' : 'Returns (First Item)', '', $qty, $unitRate, $total, $isAdditional ? 'additional' : 'first', $isAdditional ? 'returns:additional' : 'returns:first', $chargeTypeRaw, $sku);
     }
 
     /**
@@ -844,7 +830,9 @@ final class InvoiceChargeImportParser
             $total = $this->parseMoneyToCents($this->cell($row, $index['charge_subtotal'] ?? -1));
         }
 
-        return $this->buildItem(InvoiceLineCategory::POSTAGE, 'Postage ('.trim($carrier).')', trim($carrier), 1.0, 0, $total, null, 'postage', '');
+        $sku = $this->legacyRowProductSku($row, $index);
+
+        return $this->buildItem(InvoiceLineCategory::POSTAGE, 'Postage ('.trim($carrier).')', trim($carrier), 1.0, 0, $total, null, 'postage', '', $sku);
     }
 
     /**
@@ -858,8 +846,10 @@ final class InvoiceChargeImportParser
         if ($qty === 0.0 && $unitRate === 0 && $total === 0) return null;
         if ($qty === 0.0) $qty = 1.0;
 
+        $sku = $this->legacyRowProductSku($row, $index);
+
         if ($feeType === 'Inserts') {
-            return $this->buildItem(InvoiceLineCategory::PACKAGING, 'Inserts', 'Inserts', $qty, $unitRate, $total, null, 'packaging:inserts', '');
+            return $this->buildItem(InvoiceLineCategory::PACKAGING, 'Inserts', 'Inserts', $qty, $unitRate, $total, null, 'packaging:inserts', '', $sku);
         }
 
         $boxRaw = $this->cell($row, $index['box'] ?? -1);
@@ -883,14 +873,15 @@ final class InvoiceChargeImportParser
                 $total,
                 null,
                 'packaging:box-not-selected',
-                ''
+                '',
+                $sku
             );
             $item['metadata'] = ['box_not_selected' => true];
             return $item;
         }
         $box = $this->packagingDisplayName($boxRaw);
 
-        return $this->buildItem(InvoiceLineCategory::PACKAGING, $box, $boxRaw, $qty, $unitRate, $total, null, 'packaging:'.$this->slug($box), '');
+        return $this->buildItem(InvoiceLineCategory::PACKAGING, $box, $boxRaw, $qty, $unitRate, $total, null, 'packaging:'.$this->slug($box), '', $sku);
     }
 
     /**
@@ -963,7 +954,9 @@ final class InvoiceChargeImportParser
         }
 
         $categoryKey = $this->mapLegacyCategoryLabelToKey($categoryLabel);
-        return $this->buildItem($categoryKey, $name, $name, $qty, $unitRate, $total, null, $this->defaultGroupKeyFor($categoryKey, $name), $this->cell($row, $index['charge_type'] ?? -1));
+        $sku = $this->legacyRowProductSku($row, $index);
+
+        return $this->buildItem($categoryKey, $name, $name, $qty, $unitRate, $total, null, $this->defaultGroupKeyFor($categoryKey, $name), $this->cell($row, $index['charge_type'] ?? -1), $sku);
     }
 
     /**
@@ -1475,6 +1468,19 @@ final class InvoiceChargeImportParser
         $idx = $map['shipment_order_number'] ?? ($map['service_code'] ?? -1);
         $value = trim($this->cell($row, $idx));
         return $value !== '' ? $value : null;
+    }
+
+    /**
+     * `SKU (product)` from the charge CSV, when mapped to `charge_sku`.
+     *
+     * @param list<string|null> $row
+     * @param array<string, int> $index
+     */
+    private function legacyRowProductSku(array $row, array $index): ?string
+    {
+        $s = trim((string) $this->cell($row, $index['charge_sku'] ?? -1));
+
+        return $s !== '' ? $s : null;
     }
 
     /**

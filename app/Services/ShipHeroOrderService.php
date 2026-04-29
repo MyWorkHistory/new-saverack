@@ -466,8 +466,7 @@ GQL;
      */
     private function normalizeOrderRow(array $node, $cursor): array
     {
-        $shippingLines = is_array($node['shipping_lines'] ?? null) ? $node['shipping_lines'] : [];
-        $shippingLine = is_array($shippingLines[0] ?? null) ? $shippingLines[0] : [];
+        $shippingLine = $this->resolveShippingLine($node['shipping_lines'] ?? null);
         $shippingAddress = is_array($node['shipping_address'] ?? null) ? $node['shipping_address'] : [];
 
         return [
@@ -491,8 +490,7 @@ GQL;
      */
     private function normalizeOrderDetail(array $node, array $items, array $history = []): array
     {
-        $shippingLines = is_array($node['shipping_lines'] ?? null) ? $node['shipping_lines'] : [];
-        $shippingLine = is_array($shippingLines[0] ?? null) ? $shippingLines[0] : [];
+        $shippingLine = $this->resolveShippingLine($node['shipping_lines'] ?? null);
 
         return [
             'id' => (string) ($node['id'] ?? ''),
@@ -576,6 +574,42 @@ GQL;
         }
 
         return null;
+    }
+
+    /**
+     * @param mixed $shippingLines
+     * @return array<string, mixed>
+     */
+    private function resolveShippingLine($shippingLines): array
+    {
+        if (is_array($shippingLines) && $this->isAssoc($shippingLines)) {
+            return $shippingLines;
+        }
+        if (! is_array($shippingLines)) {
+            return [];
+        }
+
+        $fallback = [];
+        foreach ($shippingLines as $line) {
+            if (! is_array($line)) {
+                continue;
+            }
+            if ($fallback === []) {
+                $fallback = $line;
+            }
+            $carrier = trim((string) ($line['carrier'] ?? ''));
+            $method = trim((string) ($line['method'] ?? ''));
+            if ($carrier !== '' || $method !== '') {
+                return $line;
+            }
+        }
+
+        return $fallback;
+    }
+
+    private function isAssoc(array $value): bool
+    {
+        return array_keys($value) !== range(0, count($value) - 1);
     }
 
     private function debugHeaderQueryByVariant(string $variant): string

@@ -34,6 +34,12 @@ const accountOptions = computed(() =>
 );
 
 const headingOrderNumber = computed(() => order.value?.order_number || "—");
+const statusClass = computed(() => {
+  const raw = String(order.value?.status || "").toLowerCase();
+  if (raw.includes("hold") || raw.includes("backorder")) return "text-danger bg-danger-subtle";
+  if (raw.includes("ship")) return "text-success bg-success-subtle";
+  return "text-secondary bg-secondary-subtle";
+});
 
 function fmtMoney(v) {
   const n = Number(v);
@@ -46,6 +52,52 @@ function fmtDate(iso) {
   const d = new Date(iso);
   if (Number.isNaN(d.getTime())) return "—";
   return d.toLocaleString();
+}
+
+function escapeHtml(value) {
+  return String(value)
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
+
+function sanitizeHistoryHtml(value) {
+  const raw = String(value || "");
+  if (!raw.trim()) return "—";
+  if (typeof window === "undefined" || typeof DOMParser === "undefined") {
+    return escapeHtml(raw);
+  }
+
+  const allowedTags = new Set(["P", "UL", "OL", "LI", "BR", "STRONG", "EM", "B", "I"]);
+  const parser = new DOMParser();
+  const doc = parser.parseFromString(raw, "text/html");
+  const nodes = [doc.body];
+
+  while (nodes.length > 0) {
+    const current = nodes.pop();
+    if (!current || !current.childNodes) continue;
+    const children = Array.from(current.childNodes);
+    for (const child of children) {
+      if (child.nodeType === Node.ELEMENT_NODE) {
+        const el = child;
+        const tag = el.tagName.toUpperCase();
+        if (!allowedTags.has(tag)) {
+          const replacement = doc.createTextNode(el.textContent || "");
+          el.replaceWith(replacement);
+          continue;
+        }
+        Array.from(el.attributes || []).forEach((attr) => {
+          el.removeAttribute(attr.name);
+        });
+        nodes.push(el);
+      }
+    }
+  }
+
+  const cleaned = (doc.body.innerHTML || "").trim();
+  return cleaned !== "" ? cleaned : escapeHtml(raw);
 }
 
 function extractErrorMessage(e) {
@@ -205,14 +257,16 @@ onMounted(async () => {
 </script>
 
 <template>
-  <div class="staff-page staff-page--wide">
+  <div class="staff-page staff-page--wide order-detail-page">
     <div class="d-flex align-items-start justify-content-between gap-3 flex-wrap mb-4">
       <div>
         <button type="button" class="btn btn-link px-0 text-decoration-none" @click="router.back()">
           ← Orders
         </button>
         <h1 class="h4 mb-1 fw-semibold text-body">Order #{{ headingOrderNumber }}</h1>
-        <p class="staff-page__intro mb-0">{{ order?.status || "—" }}</p>
+        <p class="staff-page__intro mb-0">
+          <span class="badge rounded-pill fw-medium" :class="statusClass">{{ order?.status || "—" }}</span>
+        </p>
       </div>
     </div>
 
@@ -301,15 +355,6 @@ onMounted(async () => {
             <p class="staff-table-mobile-scroll-cue d-md-none" aria-hidden="true">
               Scroll sideways or swipe to see all columns.
             </p>
-            <div class="px-4 py-3 border-top d-flex justify-content-end">
-              <dl class="mb-0 small" style="min-width: 260px">
-                <div class="d-flex justify-content-between mb-1"><dt>Subtotal</dt><dd>{{ fmtMoney(order.subtotal) }}</dd></div>
-                <div class="d-flex justify-content-between mb-1"><dt>Shipping</dt><dd>{{ fmtMoney(order.shipping_cost) }}</dd></div>
-                <div class="d-flex justify-content-between mb-1"><dt>Discount</dt><dd>{{ fmtMoney(order.total_discounts) }}</dd></div>
-                <div class="d-flex justify-content-between mb-1"><dt>Tax</dt><dd>{{ fmtMoney(order.total_tax) }}</dd></div>
-                <div class="d-flex justify-content-between fw-semibold"><dt>Total</dt><dd>{{ fmtMoney(order.total_price) }}</dd></div>
-              </dl>
-            </div>
           </div>
 
           <div class="staff-table-card staff-datatable-card staff-datatable-card--white p-0">
@@ -319,7 +364,7 @@ onMounted(async () => {
             <div class="px-4 py-3">
               <div v-for="(h, i) in order.history || []" :key="`${h.created_at}-${i}`" class="border-bottom py-3">
                 <div class="small text-secondary mb-1">{{ fmtDate(h.created_at) }}</div>
-                <div class="small">{{ h.information || "—" }}</div>
+                <div class="small order-detail-page__history-html" v-html="sanitizeHistoryHtml(h.information || '')"></div>
               </div>
               <p v-if="!(order.history || []).length" class="small text-secondary mb-0">No history available.</p>
             </div>
@@ -327,9 +372,9 @@ onMounted(async () => {
         </div>
 
         <div class="col-lg-4">
-          <div class="staff-table-card staff-datatable-card staff-datatable-card--white p-4 mb-4">
+          <div class="staff-table-card staff-datatable-card staff-datatable-card--white p-4 order-detail-page__side-panel">
             <h3 class="h6 fw-semibold mb-3">Order details</h3>
-            <dl class="small mb-0">
+            <dl class="small mb-3">
               <dt class="text-secondary">Order date</dt>
               <dd>{{ fmtDate(order.order_date) }}</dd>
               <dt class="text-secondary">Required ship date</dt>
@@ -338,34 +383,66 @@ onMounted(async () => {
               <dd>{{ order.account || "—" }}</dd>
               <dt class="text-secondary">Email</dt>
               <dd>{{ order.email || "—" }}</dd>
-              <dt class="text-secondary">Shipping Carrier</dt>
+            </dl>
+
+            <h3 class="h6 fw-semibold mb-2 mt-3">Shipping details</h3>
+            <dl class="small mb-3">
+              <dt class="text-secondary">Carrier</dt>
               <dd>{{ order.shipping_carrier || "—" }}</dd>
               <dt class="text-secondary">Method</dt>
               <dd>{{ order.method || "—" }}</dd>
             </dl>
-          </div>
-
-          <div class="staff-table-card staff-datatable-card staff-datatable-card--white p-4 mb-4">
-            <h3 class="h6 fw-semibold mb-3">Shipping details</h3>
-            <p class="small mb-0">
-              {{ order.shipping_address?.name || "" }}<br />
+            <p class="small mb-3">
               {{ order.shipping_address?.address1 || "" }} {{ order.shipping_address?.address2 || "" }}<br />
               {{ order.shipping_address?.city || "" }}, {{ order.shipping_address?.state || "" }} {{ order.shipping_address?.zip || "" }}<br />
               {{ order.shipping_address?.country || "—" }}
             </p>
-          </div>
 
-          <div class="staff-table-card staff-datatable-card staff-datatable-card--white p-4 mb-4">
-            <h3 class="h6 fw-semibold mb-2">Fraud analysis</h3>
-            <p class="small text-secondary mb-0">Not available from ShipHero API.</p>
-          </div>
+            <h3 class="h6 fw-semibold mb-2">Billing details</h3>
+            <p class="small mb-3">
+              {{ order.billing_address?.address1 || "" }} {{ order.billing_address?.address2 || "" }}<br />
+              {{ order.billing_address?.city || "" }}, {{ order.billing_address?.state || "" }} {{ order.billing_address?.zip || "" }}<br />
+              {{ order.billing_address?.country || "—" }}
+            </p>
 
-          <div class="staff-table-card staff-datatable-card staff-datatable-card--white p-4">
-            <h3 class="h6 fw-semibold mb-2">Attachments</h3>
-            <p class="small text-secondary mb-0">Not available from ShipHero API.</p>
+            <h3 class="h6 fw-semibold mb-2">Summary</h3>
+            <dl class="mb-0 small">
+              <div class="d-flex justify-content-between mb-1"><dt>Subtotal</dt><dd>{{ fmtMoney(order.subtotal) }}</dd></div>
+              <div class="d-flex justify-content-between mb-1"><dt>Shipping</dt><dd>{{ fmtMoney(order.shipping_cost) }}</dd></div>
+              <div class="d-flex justify-content-between mb-1"><dt>Discount</dt><dd>{{ fmtMoney(order.total_discounts) }}</dd></div>
+              <div class="d-flex justify-content-between mb-1"><dt>Tax</dt><dd>{{ fmtMoney(order.total_tax) }}</dd></div>
+              <div class="d-flex justify-content-between fw-semibold order-detail-page__summary-total"><dt>Total</dt><dd>{{ fmtMoney(order.total_price) }}</dd></div>
+            </dl>
           </div>
         </div>
       </div>
     </template>
   </div>
 </template>
+
+<style scoped>
+.order-detail-page__history-html :deep(p) {
+  margin-bottom: 0.4rem;
+}
+
+.order-detail-page__history-html :deep(ul),
+.order-detail-page__history-html :deep(ol) {
+  margin: 0.25rem 0 0.35rem 1.1rem;
+  padding: 0;
+}
+
+.order-detail-page__history-html :deep(li) {
+  margin-bottom: 0.2rem;
+}
+
+.order-detail-page__side-panel {
+  position: sticky;
+  top: 1rem;
+}
+
+.order-detail-page__summary-total {
+  border-top: 1px solid rgba(0, 0, 0, 0.08);
+  margin-top: 0.35rem;
+  padding-top: 0.35rem;
+}
+</style>

@@ -20,6 +20,8 @@ const selectedAccountId = ref(String(route.query.client_account_id || ""));
 const loadError = ref("");
 const loadNotice = ref("");
 const activeLoadKey = ref("");
+const itemSortKey = ref("name");
+const itemSortDir = ref("asc");
 
 const orderId = computed(() => String(route.params.shipheroOrderId || ""));
 
@@ -33,12 +35,35 @@ const accountOptions = computed(() =>
     })),
 );
 
-const headingOrderNumber = computed(() => order.value?.order_number || "—");
+const headingOrderNumber = computed(() => String(order.value?.order_number || "—").replace(/^#\s*/, ""));
 const statusClass = computed(() => {
   const raw = String(order.value?.status || "").toLowerCase();
   if (raw.includes("hold") || raw.includes("backorder")) return "text-danger bg-danger-subtle";
   if (raw.includes("ship")) return "text-success bg-success-subtle";
   return "text-secondary bg-secondary-subtle";
+});
+const sortedItems = computed(() => {
+  const rows = Array.isArray(order.value?.items) ? [...order.value.items] : [];
+  const dir = itemSortDir.value === "desc" ? -1 : 1;
+  rows.sort((a, b) => {
+    const av = a?.[itemSortKey.value];
+    const bv = b?.[itemSortKey.value];
+    if (typeof av === "number" || typeof bv === "number") {
+      const na = Number(av ?? 0);
+      const nb = Number(bv ?? 0);
+      return (na - nb) * dir;
+    }
+    const sa = String(av ?? "").toLowerCase();
+    const sb = String(bv ?? "").toLowerCase();
+    return sa.localeCompare(sb) * dir;
+  });
+  return rows;
+});
+const taxPercentLabel = computed(() => {
+  const subtotal = Number(order.value?.subtotal ?? 0);
+  const tax = Number(order.value?.total_tax ?? 0);
+  if (!Number.isFinite(subtotal) || subtotal <= 0 || !Number.isFinite(tax)) return "0.00%";
+  return `${((tax / subtotal) * 100).toFixed(2)}%`;
 });
 
 function fmtMoney(v) {
@@ -98,6 +123,20 @@ function sanitizeHistoryHtml(value) {
 
   const cleaned = (doc.body.innerHTML || "").trim();
   return cleaned !== "" ? cleaned : escapeHtml(raw);
+}
+
+function toggleItemSort(key) {
+  if (itemSortKey.value === key) {
+    itemSortDir.value = itemSortDir.value === "asc" ? "desc" : "asc";
+    return;
+  }
+  itemSortKey.value = key;
+  itemSortDir.value = "asc";
+}
+
+function sortIndicator(key) {
+  if (itemSortKey.value !== key) return "↕";
+  return itemSortDir.value === "asc" ? "↑" : "↓";
 }
 
 function extractErrorMessage(e) {
@@ -258,12 +297,16 @@ onMounted(async () => {
 
 <template>
   <div class="staff-page staff-page--wide order-detail-page">
+    <div v-if="loading" class="order-detail-page__fullscreen-loading">
+      <CrmLoadingSpinner message="Loading order detail..." :center="true" />
+    </div>
+    <template v-else>
     <div class="d-flex align-items-start justify-content-between gap-3 flex-wrap mb-4">
       <div>
         <button type="button" class="btn btn-link px-0 text-decoration-none" @click="router.back()">
           ← Orders
         </button>
-        <h1 class="h4 mb-1 fw-semibold text-body">Order #{{ headingOrderNumber }}</h1>
+        <h1 class="h4 mb-1 fw-semibold text-body">Order {{ headingOrderNumber }}</h1>
         <p class="staff-page__intro mb-0">
           <span class="badge rounded-pill fw-medium" :class="statusClass">{{ order?.status || "—" }}</span>
         </p>
@@ -304,10 +347,7 @@ onMounted(async () => {
       </div>
     </div>
 
-    <div v-if="loading" class="py-5 text-center">
-      <CrmLoadingSpinner message="Loading order detail..." :center="true" />
-    </div>
-    <div v-else-if="!selectedAccountId" class="alert alert-light border mb-0">
+    <div v-if="!selectedAccountId" class="alert alert-light border mb-0">
       Select an account above to view this order.
     </div>
     <div v-else-if="loadError" class="alert alert-warning small mb-0" role="alert">
@@ -331,22 +371,42 @@ onMounted(async () => {
               <table class="table table-hover align-middle mb-0 staff-data-table">
                 <thead class="table-light staff-table-head">
                   <tr>
-                    <th class="staff-table-head__th">Item</th>
-                    <th class="staff-table-head__th">SKU</th>
-                    <th class="staff-table-head__th text-end">Quantity</th>
-                    <th class="staff-table-head__th text-end">Allocated</th>
-                    <th class="staff-table-head__th text-end">To Ship</th>
+                    <th class="staff-table-head__th">
+                      <button class="order-detail-page__sort-btn" type="button" @click="toggleItemSort('name')">
+                        Item <span class="order-detail-page__sort-icon">{{ sortIndicator("name") }}</span>
+                      </button>
+                    </th>
+                    <th class="staff-table-head__th">
+                      <button class="order-detail-page__sort-btn" type="button" @click="toggleItemSort('sku')">
+                        SKU <span class="order-detail-page__sort-icon">{{ sortIndicator("sku") }}</span>
+                      </button>
+                    </th>
+                    <th class="staff-table-head__th text-end">
+                      <button class="order-detail-page__sort-btn order-detail-page__sort-btn--right" type="button" @click="toggleItemSort('quantity')">
+                        Quantity <span class="order-detail-page__sort-icon">{{ sortIndicator("quantity") }}</span>
+                      </button>
+                    </th>
+                    <th class="staff-table-head__th text-end">
+                      <button class="order-detail-page__sort-btn order-detail-page__sort-btn--right" type="button" @click="toggleItemSort('quantity_allocated')">
+                        Allocated <span class="order-detail-page__sort-icon">{{ sortIndicator("quantity_allocated") }}</span>
+                      </button>
+                    </th>
+                    <th class="staff-table-head__th text-end">
+                      <button class="order-detail-page__sort-btn order-detail-page__sort-btn--right" type="button" @click="toggleItemSort('quantity_pending_fulfillment')">
+                        To Ship <span class="order-detail-page__sort-icon">{{ sortIndicator("quantity_pending_fulfillment") }}</span>
+                      </button>
+                    </th>
                   </tr>
                 </thead>
                 <tbody>
-                  <tr v-for="item in order.items || []" :key="item.id || item.sku">
+                  <tr v-for="item in sortedItems" :key="item.id || item.sku">
                     <td>{{ item.name || "—" }}</td>
                     <td>{{ item.sku || "—" }}</td>
                     <td class="text-end">{{ item.quantity ?? 0 }}</td>
                     <td class="text-end">{{ item.quantity_allocated ?? 0 }}</td>
                     <td class="text-end">{{ item.quantity_pending_fulfillment ?? 0 }}</td>
                   </tr>
-                  <tr v-if="!(order.items || []).length">
+                  <tr v-if="!sortedItems.length">
                     <td colspan="5" class="text-center text-secondary py-4">No items</td>
                   </tr>
                 </tbody>
@@ -355,6 +415,15 @@ onMounted(async () => {
             <p class="staff-table-mobile-scroll-cue d-md-none" aria-hidden="true">
               Scroll sideways or swipe to see all columns.
             </p>
+            <div class="px-4 py-3 border-top d-flex justify-content-end">
+              <dl class="mb-0 small order-detail-page__items-summary">
+                <div class="order-detail-page__summary-row"><dt>Subtotal</dt><dd class="text-secondary">{{ sortedItems.length }} items</dd><dd>{{ fmtMoney(order.subtotal) }}</dd></div>
+                <div class="order-detail-page__summary-row"><dt>Shipping</dt><dd class="text-secondary"></dd><dd>{{ fmtMoney(order.shipping_cost) }}</dd></div>
+                <div class="order-detail-page__summary-row"><dt>Discount</dt><dd class="text-secondary"></dd><dd>{{ fmtMoney(order.total_discounts) }}</dd></div>
+                <div class="order-detail-page__summary-row"><dt>Tax</dt><dd class="text-secondary">{{ taxPercentLabel }}</dd><dd>{{ fmtMoney(order.total_tax) }}</dd></div>
+                <div class="order-detail-page__summary-row fw-semibold order-detail-page__summary-total"><dt>Total</dt><dd class="text-secondary"></dd><dd>{{ fmtMoney(order.total_price) }}</dd></div>
+              </dl>
+            </div>
           </div>
 
           <div class="staff-table-card staff-datatable-card staff-datatable-card--white p-0">
@@ -405,22 +474,42 @@ onMounted(async () => {
               {{ order.billing_address?.country || "—" }}
             </p>
 
-            <h3 class="h6 fw-semibold mb-2">Summary</h3>
-            <dl class="mb-0 small">
-              <div class="d-flex justify-content-between mb-1"><dt>Subtotal</dt><dd>{{ fmtMoney(order.subtotal) }}</dd></div>
-              <div class="d-flex justify-content-between mb-1"><dt>Shipping</dt><dd>{{ fmtMoney(order.shipping_cost) }}</dd></div>
-              <div class="d-flex justify-content-between mb-1"><dt>Discount</dt><dd>{{ fmtMoney(order.total_discounts) }}</dd></div>
-              <div class="d-flex justify-content-between mb-1"><dt>Tax</dt><dd>{{ fmtMoney(order.total_tax) }}</dd></div>
-              <div class="d-flex justify-content-between fw-semibold order-detail-page__summary-total"><dt>Total</dt><dd>{{ fmtMoney(order.total_price) }}</dd></div>
-            </dl>
           </div>
         </div>
       </div>
+    </template>
     </template>
   </div>
 </template>
 
 <style scoped>
+.order-detail-page__fullscreen-loading {
+  min-height: 70vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.order-detail-page__sort-btn {
+  background: transparent;
+  border: 0;
+  padding: 0;
+  font: inherit;
+  color: inherit;
+  text-align: left;
+}
+
+.order-detail-page__sort-icon {
+  opacity: 0.7;
+  font-size: 0.8em;
+  margin-left: 0.2rem;
+}
+
+.order-detail-page__sort-btn--right {
+  width: 100%;
+  text-align: right;
+}
+
 .order-detail-page__history-html :deep(p) {
   margin-bottom: 0.4rem;
 }
@@ -444,5 +533,26 @@ onMounted(async () => {
   border-top: 1px solid rgba(0, 0, 0, 0.08);
   margin-top: 0.35rem;
   padding-top: 0.35rem;
+}
+
+.order-detail-page__items-summary {
+  min-width: 300px;
+}
+
+.order-detail-page__summary-row {
+  display: grid;
+  grid-template-columns: minmax(90px, 1fr) minmax(60px, auto) minmax(80px, auto);
+  align-items: baseline;
+  gap: 0.75rem;
+  margin-bottom: 0.3rem;
+}
+
+.order-detail-page__summary-row dt {
+  margin: 0;
+}
+
+.order-detail-page__summary-row dd {
+  margin: 0;
+  text-align: right;
 }
 </style>

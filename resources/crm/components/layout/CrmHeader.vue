@@ -70,7 +70,7 @@ const accountOptions = computed(() => {
   const workspace = {
     id: "workspace",
     kind: "workspace",
-    title: "Save Rack",
+    title: "Chao's Fulfillment",
     subtitle: props.user?.email || "Primary workspace",
     accountId: null,
   };

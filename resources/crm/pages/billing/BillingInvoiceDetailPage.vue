@@ -65,7 +65,6 @@ const payBusy = ref(false);
 const payContextBusy = ref(false);
 const payFundsCents = ref(0);
 const payOpenBalanceCents = ref(0);
-const payPastDueBalanceCents = ref(0);
 const payPendingBalanceCents = ref(0);
 const payRows = ref([]);
 const paySelectedInvoiceIds = ref([]);
@@ -79,7 +78,6 @@ const statusSaving = ref(false);
 const invoiceStatuses = [
   "draft",
   "open",
-  "past_due",
   "collection",
   "processing",
   "payment_failed",
@@ -191,7 +189,7 @@ function payRowStatusKey(row) {
   const key = String(row?.status_key || "").toLowerCase();
   if (key) return key;
   if (String(row?.status || "").toLowerCase() === "draft") return "draft";
-  return row?.is_overdue ? "past_due" : "open";
+  return "open";
 }
 
 function payRowStatusLabel(row) {
@@ -199,7 +197,7 @@ function payRowStatusLabel(row) {
   if (label) return label;
 
   const key = payRowStatusKey(row);
-  if (key === "past_due") return "Past Due";
+  if (key === "past_due") return "Open";
   if (key === "draft") return "Draft";
   if (key === "collection") return "Collection";
   if (key === "processing") return "Processing";
@@ -211,7 +209,7 @@ function payRowStatusLabel(row) {
 
 function payRowStatusBadgeClass(row) {
   const key = payRowStatusKey(row);
-  if (key === "past_due" || key === "collection") {
+  if (key === "collection") {
     return "bg-danger-subtle text-danger-emphasis";
   }
   if (key === "payment_failed") return "bg-danger-subtle text-danger-emphasis";
@@ -250,7 +248,7 @@ const payInvoiceDisabledTitle = computed(() => {
   if (s === "draft" && Number(inv.balance_due_cents) <= 0) {
     return "Add line items or totals before paying.";
   }
-  if (s === "open" || s === "past_due" || s === "collection") {
+  if (s === "open" || s === "collection") {
     if (Number(inv.balance_due_cents) <= 0) return "No balance due.";
   }
   return "";
@@ -326,9 +324,6 @@ const payCanSubmit = computed(
 );
 
 const payFilteredRows = computed(() => {
-  if (payFilterStatus.value === "past_due") {
-    return payRows.value.filter((row) => payRowStatusKey(row) === "past_due");
-  }
   if (payFilterStatus.value === "pending") {
     return payRows.value.filter((row) => payRowStatusKey(row) === "draft");
   }
@@ -866,7 +861,7 @@ function statusBadgeClass(status) {
   if (s === "failed" || s === "payment failed" || s === "payment_failed") {
     return "bg-danger-subtle text-danger-emphasis";
   }
-  if (s === "past due" || s === "past_due") return "bg-danger-subtle text-danger-emphasis";
+  if (s === "past due" || s === "past_due") return "bg-primary-subtle text-primary-emphasis";
   if (s === "open") return "bg-primary-subtle text-primary-emphasis";
   return "bg-body-secondary text-body-secondary";
 }
@@ -1486,7 +1481,6 @@ async function loadPayContext(options = {}) {
   const includeRows = options.includeRows === true;
   const { data } = await api.get(`/invoices/${invoice.value.id}/pay-context`);
   payOpenBalanceCents.value = Number(data?.open_balance_cents || 0);
-  payPastDueBalanceCents.value = Number(data?.past_due_balance_cents || 0);
   payPendingBalanceCents.value = Number(data?.pending_balance_cents || 0);
   if (includeRows) {
     payRows.value = Array.isArray(data?.rows) ? data.rows : [];
@@ -1497,7 +1491,6 @@ async function loadPayContext(options = {}) {
 async function loadAccountBalanceSummary() {
   if (!invoice.value?.id || !canUpdate.value || invoice.value.status === "void") {
     payOpenBalanceCents.value = 0;
-    payPastDueBalanceCents.value = 0;
     payPendingBalanceCents.value = 0;
     return;
   }
@@ -1506,7 +1499,6 @@ async function loadAccountBalanceSummary() {
     await loadPayContext();
   } catch {
     payOpenBalanceCents.value = 0;
-    payPastDueBalanceCents.value = 0;
     payPendingBalanceCents.value = 0;
   } finally {
     accountBalanceLoading.value = false;
@@ -1634,7 +1626,7 @@ function goToInvoiceBucket(bucket) {
   if (!invoice.value?.client_account_id) return;
   let status = "all";
   if (bucket === "open") status = "open";
-  if (bucket === "past_due") status = "overdue";
+  if (bucket === "past_due") status = "open";
   if (bucket === "draft") status = "draft";
   router.push({
     path: "/billing/invoices",
@@ -1653,7 +1645,6 @@ async function openPayModal() {
   payNotes.value = "";
   payFundsCents.value = 0;
   payOpenBalanceCents.value = 0;
-  payPastDueBalanceCents.value = 0;
   payPendingBalanceCents.value = 0;
   payRows.value = [];
   paySelectedInvoiceIds.value = [];
@@ -2526,28 +2517,6 @@ function onDocKeydown(e) {
                 type="button"
                 class="staff-stat-card billing-inv-summary-card h-100 text-start"
                 :disabled="accountBalanceLoading"
-                @click="goToInvoiceBucket('past_due')"
-              >
-                <p class="staff-stat-card__label">Past Due Balance</p>
-                <p class="staff-stat-card__value">
-                  {{ formatCents(payPastDueBalanceCents, invoice.currency) }}
-                </p>
-                <p class="staff-stat-card__sub">Past due date with balance</p>
-                <div
-                  class="staff-stat-card__icon bg-danger-subtle text-danger-emphasis"
-                  aria-hidden="true"
-                >
-                  <svg width="22" height="22" fill="currentColor" viewBox="0 0 24 24">
-                    <path
-                      d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-2h2v2zm0-4h-2V7h2v6z"
-                    />
-                  </svg>
-                </div>
-              </button>
-              <button
-                type="button"
-                class="staff-stat-card billing-inv-summary-card h-100 text-start"
-                :disabled="accountBalanceLoading"
                 @click="goToInvoiceBucket('draft')"
               >
                 <p class="staff-stat-card__label">Draft Balance</p>
@@ -3284,31 +3253,6 @@ function onDocKeydown(e) {
                           <svg width="20" height="20" fill="currentColor" viewBox="0 0 24 24">
                             <path
                               d="M11.8 10.9c-2.27-.59-3-1.2-3-2.15 0-1.09 1.01-1.85 2.7-1.85 1.78 0 2.44.85 2.5 2.1h2.21c-.07-1.72-1.12-3.3-3.21-3.81V3h-3v2.16c-1.94.42-3.5 1.68-3.5 3.61 0 2.31 1.91 3.46 4.7 4.13 2.5.6 3 1.48 3 2.41 0 .69-.49 1.79-2.7 1.79-2.06 0-2.87-.92-2.98-2.1h-2.2c.12 2.19 1.76 3.42 3.68 3.83V21h3v-2.15c1.95-.37 3.5-1.5 3.5-3.55 0-2.84-2.43-3.81-4.7-4.4z"
-                            />
-                          </svg>
-                        </span>
-                      </div>
-                    </button>
-                    <button
-                      type="button"
-                      class="billing-pay-stat"
-                      :class="[
-                        'billing-pay-stat--red',
-                        { 'is-active': payFilterStatus === 'past_due' },
-                      ]"
-                      @click="payFilterStatus = 'past_due'"
-                    >
-                      <div class="billing-pay-stat__body">
-                        <div>
-                          <div class="billing-pay-stat__value">
-                            {{ formatCents(payPastDueBalanceCents, invoice?.currency || 'USD') }}
-                          </div>
-                          <div class="billing-pay-stat__label">Past Due Balance</div>
-                        </div>
-                        <span class="billing-pay-stat__icon billing-pay-stat__icon--red" aria-hidden="true">
-                          <svg width="20" height="20" fill="currentColor" viewBox="0 0 24 24">
-                            <path
-                              d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-2h2v2zm0-4h-2V7h2v6z"
                             />
                           </svg>
                         </span>

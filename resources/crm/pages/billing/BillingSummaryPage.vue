@@ -10,7 +10,6 @@ const loading = ref(true);
 const errorMsg = ref("");
 const summary = ref({
   open_balance_due_cents: 0,
-  overdue_invoice_count: 0,
   draft_invoice_count: 0,
   paid_mtd_cents: 0,
   counts_by_status: {},
@@ -22,7 +21,6 @@ const router = useRouter();
 function goToInvoicesBucket(bucket) {
   let status = "all";
   if (bucket === "open") status = "open";
-  else if (bucket === "past_due") status = "overdue";
   else if (bucket === "draft") status = "draft";
   else if (bucket === "paid") status = "paid";
   router.push({ path: "/billing/invoices", query: { status } });
@@ -35,7 +33,6 @@ async function load() {
     const { data } = await api.get("/billing/summary");
     summary.value = {
       open_balance_due_cents: data?.open_balance_due_cents ?? 0,
-      overdue_invoice_count: data?.overdue_invoice_count ?? 0,
       draft_invoice_count: data?.draft_invoice_count ?? 0,
       paid_mtd_cents: data?.paid_mtd_cents ?? 0,
       counts_by_status: data?.counts_by_status ?? {},
@@ -70,7 +67,7 @@ onMounted(() => {
       <div class="min-w-0 flex-grow-1">
         <h1 class="h4 mb-1 fw-semibold text-body">Billing Summary</h1>
         <p class="text-secondary small mb-0">
-          Open balances, overdue invoices, and payment activity
+          Open balances and payment activity
         </p>
       </div>
       <RouterLink
@@ -110,29 +107,6 @@ onMounted(() => {
               <svg width="22" height="22" fill="currentColor" viewBox="0 0 24 24">
                 <path
                   d="M11.8 10.9c-2.27-.59-3-1.2-3-2.15 0-1.09 1.01-1.85 2.7-1.85 1.78 0 2.44.85 2.5 2.1h2.21c-.07-1.72-1.12-3.3-3.21-3.81V3h-3v2.16c-1.94.42-3.5 1.68-3.5 3.61 0 2.31 1.91 3.46 4.7 4.13 2.5.6 3 1.48 3 2.41 0 .69-.49 1.79-2.7 1.79-2.06 0-2.87-.92-2.98-2.1h-2.2c.12 2.19 1.76 3.42 3.68 3.83V21h3v-2.15c1.95-.37 3.5-1.5 3.5-3.55 0-2.84-2.43-3.81-4.7-4.4z"
-                />
-              </svg>
-            </div>
-          </button>
-        </div>
-        <div class="col-12 col-sm-6 col-xl-3">
-          <button
-            type="button"
-            class="staff-stat-card h-100 text-start w-100 border-0 billing-summary-stat-btn"
-            @click="goToInvoicesBucket('past_due')"
-          >
-            <p class="staff-stat-card__label">Past Due Invoices</p>
-            <p class="staff-stat-card__value">
-              {{ nf.format(summary.overdue_invoice_count) }}
-            </p>
-            <p class="staff-stat-card__sub">Past due date with balance</p>
-            <div
-              class="staff-stat-card__icon bg-warning-subtle text-warning-emphasis"
-              aria-hidden="true"
-            >
-              <svg width="22" height="22" fill="currentColor" viewBox="0 0 24 24">
-                <path
-                  d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-2h2v2zm0-4h-2V7h2v6z"
                 />
               </svg>
             </div>

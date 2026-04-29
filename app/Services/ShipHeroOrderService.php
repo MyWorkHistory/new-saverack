@@ -476,6 +476,9 @@ GQL;
             'legacy_id' => is_numeric($node['legacy_id'] ?? null) ? (int) $node['legacy_id'] : null,
             'cursor' => is_string($cursor) ? $cursor : null,
             'status' => $this->normalizeFulfillmentStatus($node),
+            'raw_fulfillment_status' => (string) ($node['fulfillment_status'] ?? ''),
+            'raw_status' => (string) ($node['status'] ?? ''),
+            'raw_profile' => (string) ($node['profile'] ?? ''),
             'order_number' => (string) ($node['order_number'] ?? ''),
             'order_date' => $this->nullableIso($node['order_date'] ?? null),
             'account' => (string) ($node['shop_name'] ?? ''),
@@ -622,11 +625,31 @@ GQL;
     private function normalizeFulfillmentStatus(array $node): string
     {
         $status = trim((string) ($node['fulfillment_status'] ?? ''));
-        if ($status !== '') {
+        if ($this->isPlausibleOrderStatus($status)) {
             return $status;
         }
 
-        return trim((string) ($node['status'] ?? ''));
+        $fallback = trim((string) ($node['status'] ?? ''));
+        if ($this->isPlausibleOrderStatus($fallback)) {
+            return $fallback;
+        }
+
+        return '';
+    }
+
+    private function isPlausibleOrderStatus(string $value): bool
+    {
+        $v = strtolower(trim($value));
+        if ($v === '') {
+            return false;
+        }
+
+        // Reject obvious non-status profile/shop labels like "Antonia".
+        if (! preg_match('/(ship|hold|pend|await|fulfill|ready|back|cancel|open|close|partial|deliver|test)/', $v)) {
+            return false;
+        }
+
+        return true;
     }
 
     private function debugHeaderQueryByVariant(string $variant): string

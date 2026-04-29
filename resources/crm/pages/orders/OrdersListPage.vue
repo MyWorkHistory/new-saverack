@@ -363,7 +363,7 @@ onUnmounted(() => {
                       id="orders-filter-from"
                       v-model="query.from"
                       type="date"
-                      class="form-control mb-3"
+                      class="form-control staff-datatable-filters__select mb-3"
                       :disabled="loading"
                     />
                     <label class="form-label" for="orders-filter-to">To</label>
@@ -371,7 +371,7 @@ onUnmounted(() => {
                       id="orders-filter-to"
                       v-model="query.to"
                       type="date"
-                      class="form-control mb-3"
+                      class="form-control staff-datatable-filters__select mb-3"
                       :disabled="loading"
                     />
                   </template>
@@ -517,4 +517,12 @@ onUnmounted(() => {
     </Teleport>
   </div>
 </template>
+
+<style scoped>
+.staff-toolbar-filter-dropdown {
+  min-width: 19rem;
+  max-width: 22rem;
+  z-index: 1200;
+}
+</style>
 

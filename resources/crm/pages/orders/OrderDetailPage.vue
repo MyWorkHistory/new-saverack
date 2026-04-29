@@ -132,18 +132,68 @@ async function loadOrder() {
       toast.error("Order not found.");
     }
   } catch (e) {
-    const fallback = fallbackOrderSnapshot();
+    const fallback = await fallbackOrderFromApiList();
     if (fallback) {
       order.value = fallback;
-      loadError.value = "Live order details are temporarily unavailable. Showing cached summary from the list.";
+      loadError.value = "Live order details are temporarily unavailable. Showing fallback summary data.";
     } else {
-      loadError.value = extractErrorMessage(e);
-      order.value = null;
+      const cached = fallbackOrderSnapshot();
+      if (cached) {
+        order.value = cached;
+        loadError.value = "Live order details are temporarily unavailable. Showing cached summary from the list.";
+      } else {
+        loadError.value = extractErrorMessage(e);
+        order.value = null;
+      }
     }
     toast.errorFrom(e, "Could not load order details.");
   } finally {
     loading.value = false;
   }
+}
+
+async function fallbackOrderFromApiList() {
+  if (!selectedAccountId.value || !orderId.value) return null;
+  const tabs = ["manage", "awaiting", "on_hold", "shipped"];
+  for (const tab of tabs) {
+    try {
+      const { data } = await api.get("/orders", {
+        params: {
+          client_account_id: Number(selectedAccountId.value),
+          tab,
+          first: 50,
+        },
+      });
+      const rows = Array.isArray(data?.rows) ? data.rows : [];
+      const row = rows.find((r) => String(r?.id || "") === String(orderId.value));
+      if (!row) continue;
+      return {
+        id: String(row.id || orderId.value),
+        legacy_id: row.legacy_id ?? null,
+        order_number: row.order_number || "",
+        partner_order_id: "",
+        status: row.status || "",
+        order_date: row.order_date || null,
+        required_ship_date: null,
+        account: row.account || "",
+        email: row.email || "",
+        shipping_carrier: row.shipping_carrier || "",
+        method: row.method || "",
+        shipping_cost: null,
+        subtotal: null,
+        total_tax: null,
+        total_discounts: null,
+        total_price: null,
+        shipping_address: { country: row.country || "" },
+        billing_address: {},
+        items: [],
+        history: [],
+      };
+    } catch (_) {
+      // Continue to next tab fallback.
+    }
+  }
+  return null;
 }
 
 watch(

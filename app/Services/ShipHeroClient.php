@@ -63,45 +63,102 @@ class ShipHeroClient
             $payload['variables'] = $variables;
         }
 
-        try {
-            $response = $this->http()->post($url, [
-                'headers' => [
-                    'Authorization' => 'Bearer '.$token,
-                    'Accept' => 'application/json',
-                ],
-                'json' => $payload,
-                'connect_timeout' => 3,
-                'timeout' => 6,
-            ]);
-        } catch (Throwable $e) {
-            throw new RuntimeException('ShipHero GraphQL request failed before response: '.$e->getMessage(), 0, $e);
+        $maxAttempts = 3;
+        $lastTransportError = null;
+        for ($attempt = 1; $attempt <= $maxAttempts; $attempt++) {
+            try {
+                $response = $this->http()->post($url, [
+                    'headers' => [
+                        'Authorization' => 'Bearer '.$token,
+                        'Accept' => 'application/json',
+                    ],
+                    'json' => $payload,
+                    'connect_timeout' => 4,
+                    'timeout' => 10,
+                ]);
+            } catch (Throwable $e) {
+                $lastTransportError = $e;
+                if ($attempt < $maxAttempts) {
+                    usleep($this->retrySleepMicros($attempt));
+                    continue;
+                }
+                throw new RuntimeException('ShipHero GraphQL request failed before response: '.$e->getMessage(), 0, $e);
+            }
+
+            $status = $response->getStatusCode();
+            if ($status === 401 && $allowTokenRetry) {
+                Cache::forget('shiphero.access_token');
+
+                return $this->query($graphql, $variables, false);
+            }
+
+            if (($status < 200 || $status >= 300) && $this->isTransientHttpStatus($status) && $attempt < $maxAttempts) {
+                usleep($this->retrySleepMicros($attempt));
+                continue;
+            }
+
+            if ($status < 200 || $status >= 300) {
+                throw new RuntimeException('ShipHero GraphQL request failed (HTTP '.$status.').');
+            }
+
+            $json = json_decode((string) $response->getBody(), true);
+            if (! is_array($json)) {
+                if ($attempt < $maxAttempts) {
+                    usleep($this->retrySleepMicros($attempt));
+                    continue;
+                }
+                throw new RuntimeException('ShipHero returned invalid JSON.');
+            }
+
+            if (! empty($json['errors']) && is_array($json['errors'])) {
+                $first = $json['errors'][0];
+                $message = is_array($first)
+                    ? (string) ($first['message'] ?? json_encode($first))
+                    : (string) $first;
+
+                if ($this->isTransientApiErrorMessage($message) && $attempt < $maxAttempts) {
+                    usleep($this->retrySleepMicros($attempt));
+                    continue;
+                }
+
+                throw new RuntimeException('ShipHero: '.$message);
+            }
+
+            return $json;
         }
 
-        if ($response->getStatusCode() === 401 && $allowTokenRetry) {
-            Cache::forget('shiphero.access_token');
+        throw new RuntimeException(
+            'ShipHero request failed after retries.'
+            .($lastTransportError ? ' Last error: '.$lastTransportError->getMessage() : '')
+        );
+    }
 
-            return $this->query($graphql, $variables, false);
+    private function isTransientHttpStatus(int $status): bool
+    {
+        return in_array($status, [429, 500, 502, 503, 504, 520, 521, 522, 523, 524], true);
+    }
+
+    private function isTransientApiErrorMessage(string $message): bool
+    {
+        $m = strtolower(trim($message));
+        return str_contains($m, '502')
+            || str_contains($m, '503')
+            || str_contains($m, '504')
+            || str_contains($m, 'cloudflare')
+            || str_contains($m, 'bad gateway')
+            || str_contains($m, 'temporarily unavailable')
+            || str_contains($m, 'timeout');
+    }
+
+    private function retrySleepMicros(int $attempt): int
+    {
+        if ($attempt <= 1) {
+            return 200000;
         }
-
-        if ($response->getStatusCode() < 200 || $response->getStatusCode() >= 300) {
-            throw new RuntimeException('ShipHero GraphQL request failed (HTTP '.$response->getStatusCode().').');
+        if ($attempt === 2) {
+            return 700000;
         }
-
-        $json = json_decode((string) $response->getBody(), true);
-        if (! is_array($json)) {
-            throw new RuntimeException('ShipHero returned invalid JSON.');
-        }
-
-        if (! empty($json['errors']) && is_array($json['errors'])) {
-            $first = $json['errors'][0];
-            $message = is_array($first)
-                ? (string) ($first['message'] ?? json_encode($first))
-                : (string) $first;
-
-            throw new RuntimeException('ShipHero: '.$message);
-        }
-
-        return $json;
+        return 1200000;
     }
 
     private function http(): Client

@@ -55,6 +55,7 @@ function extractErrorMessage(e) {
       typeof payload.what_you_should_do === "string"
         ? payload.what_you_should_do.replace(/\*\*/g, "").trim()
         : "";
+    if (title && ownerAction) return `${title} ${ownerAction}`;
     if (title && detail) return `${title} ${detail}`;
     if (title) return title;
     if (detail) return detail;
@@ -160,13 +161,14 @@ onMounted(async () => {
       </div>
     </div>
 
-    <div class="staff-table-card staff-datatable-card staff-datatable-card--white mb-4">
+    <div class="staff-table-card staff-datatable-card staff-datatable-card--white w-100 mb-4">
       <div class="staff-table-toolbar">
         <div class="staff-table-toolbar--row flex-wrap align-items-end gap-2 gap-md-3">
-          <div class="flex-grow-1" style="min-width: 220px; max-width: 420px">
+          <div class="flex-grow-1" style="min-width: 280px">
             <label class="form-label small text-secondary mb-1" for="order-detail-account-trigger">Account</label>
             <CrmSearchableSelect
               v-model="selectedAccountId"
+              class="staff-toolbar-search staff-toolbar-search--inline"
               appearance="staff"
               aria-label="Client account"
               :options="accountOptions"
@@ -199,7 +201,7 @@ onMounted(async () => {
     <div v-else-if="!selectedAccountId" class="alert alert-light border mb-0">
       Select an account above to view this order.
     </div>
-    <div v-else-if="loadError" class="alert alert-danger mb-0" role="alert">
+    <div v-else-if="loadError" class="alert alert-warning small mb-0" role="alert">
       {{ loadError }}
     </div>
     <div v-else-if="!order" class="alert alert-warning mb-0">

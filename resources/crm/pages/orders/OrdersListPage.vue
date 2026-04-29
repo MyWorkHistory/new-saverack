@@ -267,13 +267,14 @@ onUnmounted(() => {
       </div>
     </div>
 
-    <div class="staff-table-card staff-datatable-card staff-datatable-card--white">
+    <div class="staff-table-card staff-datatable-card staff-datatable-card--white w-100">
       <div class="staff-table-toolbar">
         <div class="staff-table-toolbar--row flex-wrap align-items-end gap-2 gap-md-3">
-          <div class="flex-grow-1" style="min-width: 220px; max-width: 420px">
+          <div class="flex-grow-1" style="min-width: 280px">
             <label class="form-label small text-secondary mb-1" for="orders-list-account-trigger">Account</label>
             <CrmSearchableSelect
               v-model="selectedAccountId"
+              class="staff-toolbar-search staff-toolbar-search--inline"
               appearance="staff"
               aria-label="Client account"
               :options="accountOptions"
@@ -326,9 +327,7 @@ onUnmounted(() => {
             </select>
           </template>
         </div>
-        <p class="small text-secondary mb-0 mt-2 px-1">
-          Only accounts with a ShipHero customer ID appear here.
-        </p>
+        <p class="small text-secondary mb-0 mt-2 px-1">Only accounts with a ShipHero customer ID appear here.</p>
       </div>
 
       <div class="table-responsive staff-table-wrap">

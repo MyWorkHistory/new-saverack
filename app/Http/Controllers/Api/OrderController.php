@@ -76,6 +76,16 @@ class OrderController extends Controller
         } catch (ValidationException $e) {
             throw $e;
         } catch (RuntimeException $e) {
+            $customerId = $this->resolveShipHeroCustomerAccountId((int) $validated['client_account_id'], $request);
+            $summary = $this->orders->findOrderSummaryById($orderId, $customerId);
+            if (is_array($summary)) {
+                return response()->json([
+                    'order' => $this->hydrateOrderFallbackFromSummary($orderId, $summary),
+                    'fallback' => [
+                        'source' => 'orders_list_summary',
+                    ],
+                ]);
+            }
             return response()->json(['message' => $e->getMessage()], 502);
         } catch (Throwable $e) {
             report($e);
@@ -126,6 +136,42 @@ class OrderController extends Controller
         }
 
         return \Carbon\Carbon::parse($value)->endOfDay()->toIso8601String();
+    }
+
+    /**
+     * @param array<string, mixed> $summary
+     * @return array<string, mixed>
+     */
+    private function hydrateOrderFallbackFromSummary(string $orderId, array $summary): array
+    {
+        return [
+            'id' => (string) ($summary['id'] ?? $orderId),
+            'legacy_id' => is_numeric($summary['legacy_id'] ?? null) ? (int) $summary['legacy_id'] : null,
+            'order_number' => (string) ($summary['order_number'] ?? ''),
+            'partner_order_id' => '',
+            'status' => (string) ($summary['status'] ?? ''),
+            'order_date' => is_string($summary['order_date'] ?? null) ? $summary['order_date'] : null,
+            'required_ship_date' => null,
+            'account' => (string) ($summary['account'] ?? ''),
+            'email' => (string) ($summary['email'] ?? ''),
+            'shipping_carrier' => (string) ($summary['shipping_carrier'] ?? ''),
+            'method' => (string) ($summary['method'] ?? ''),
+            'shipping_cost' => null,
+            'subtotal' => null,
+            'total_tax' => null,
+            'total_discounts' => null,
+            'total_price' => null,
+            'gift_invoice' => false,
+            'allow_partial' => false,
+            'require_signature' => false,
+            'packing_note' => null,
+            'shipping_address' => [
+                'country' => (string) ($summary['country'] ?? ''),
+            ],
+            'billing_address' => null,
+            'items' => [],
+            'history' => [],
+        ];
     }
 }
 

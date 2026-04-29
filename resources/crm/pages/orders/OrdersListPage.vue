@@ -520,8 +520,14 @@ onUnmounted(() => {
 
 <style scoped>
 .staff-toolbar-filter-dropdown {
-  min-width: 19rem;
-  max-width: 22rem;
+  position: absolute;
+  top: calc(100% + 0.375rem);
+  right: 0;
+  left: auto;
+  width: min(22rem, calc(100vw - 1.25rem));
+  max-width: calc(100vw - 1.25rem);
+  min-width: 16rem;
+  margin-top: 0 !important;
   z-index: 1200;
 }
 </style>

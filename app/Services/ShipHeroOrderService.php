@@ -168,6 +168,47 @@ GQL;
     }
 
     /**
+     * Best-effort fallback using list API rows when detail API fails.
+     *
+     * @return array<string, mixed>|null
+     */
+    public function findOrderSummaryById(string $orderId, string $customerAccountId): ?array
+    {
+        $id = trim($orderId);
+        $customer = trim($customerAccountId);
+        if ($id === '' || $customer === '') {
+            return null;
+        }
+
+        foreach (['manage', 'awaiting', 'on_hold', 'shipped'] as $tab) {
+            try {
+                $payload = $this->listOrders([
+                    'customer_account_id' => $customer,
+                    'tab' => $tab,
+                    'first' => 100,
+                ]);
+            } catch (\Throwable $e) {
+                continue;
+            }
+
+            $rows = is_array($payload['rows'] ?? null) ? $payload['rows'] : [];
+            foreach ($rows as $row) {
+                if (! is_array($row)) {
+                    continue;
+                }
+                $rowId = trim((string) ($row['id'] ?? ''));
+                $rowLegacy = isset($row['legacy_id']) ? trim((string) $row['legacy_id']) : '';
+                $rowOrderNumber = trim((string) ($row['order_number'] ?? ''));
+                if ($rowId === $id || ($rowLegacy !== '' && $rowLegacy === $id) || ($rowOrderNumber !== '' && $rowOrderNumber === $id)) {
+                    return $row;
+                }
+            }
+        }
+
+        return null;
+    }
+
+    /**
      * @return array<string, mixed>|null
      */
     private function fetchOrderDetailNode(string $customerAccountId, string $id): ?array

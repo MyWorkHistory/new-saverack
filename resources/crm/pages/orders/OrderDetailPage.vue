@@ -67,6 +67,41 @@ function extractErrorMessage(e) {
   return "Could not load order details.";
 }
 
+function fallbackOrderSnapshot() {
+  if (!selectedAccountId.value || !orderId.value) return null;
+  const key = `orders.snapshot.${selectedAccountId.value}.${orderId.value}`;
+  try {
+    const raw = sessionStorage.getItem(key);
+    if (!raw) return null;
+    const row = JSON.parse(raw);
+    if (!row || typeof row !== "object") return null;
+    return {
+      id: String(row.id || orderId.value),
+      legacy_id: row.legacy_id ?? null,
+      order_number: row.order_number || "",
+      partner_order_id: "",
+      status: row.status || "",
+      order_date: row.order_date || null,
+      required_ship_date: null,
+      account: row.account || "",
+      email: row.email || "",
+      shipping_carrier: row.shipping_carrier || "",
+      method: row.method || "",
+      shipping_cost: null,
+      subtotal: null,
+      total_tax: null,
+      total_discounts: null,
+      total_price: null,
+      shipping_address: { country: row.country || "" },
+      billing_address: {},
+      items: [],
+      history: [],
+    };
+  } catch (_) {
+    return null;
+  }
+}
+
 async function loadAccounts() {
   accountsLoading.value = true;
   try {
@@ -97,8 +132,14 @@ async function loadOrder() {
       toast.error("Order not found.");
     }
   } catch (e) {
-    loadError.value = extractErrorMessage(e);
-    order.value = null;
+    const fallback = fallbackOrderSnapshot();
+    if (fallback) {
+      order.value = fallback;
+      loadError.value = "Live order details are temporarily unavailable. Showing cached summary from the list.";
+    } else {
+      loadError.value = extractErrorMessage(e);
+      order.value = null;
+    }
     toast.errorFrom(e, "Could not load order details.");
   } finally {
     loading.value = false;

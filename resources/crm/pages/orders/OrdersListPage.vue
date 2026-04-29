@@ -90,6 +90,12 @@ function openOrderViewNewTab(row) {
     toast.error("Select an account first.");
     return;
   }
+  const key = `orders.snapshot.${selectedAccountId.value}.${String(row.id)}`;
+  try {
+    sessionStorage.setItem(key, JSON.stringify(row));
+  } catch (_) {
+    // Best-effort cache for detail fallback.
+  }
   const url = orderDetailHref(row);
   window.open(url, "_blank", "noopener,noreferrer");
   manageOpenId.value = null;

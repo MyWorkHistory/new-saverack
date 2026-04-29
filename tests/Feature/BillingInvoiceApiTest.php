@@ -1140,15 +1140,21 @@ class BillingInvoiceApiTest extends TestCase
         );
 
         $res->assertStatus(201);
-        $items = $res->json('invoice.items') ?? [];
-        $this->assertCount(1, $items);
-        $this->assertSame('on_demand', $items[0]['category']);
-        $this->assertSame('CBD Gummies (GSO-CBD-GM)', $items[0]['display_name']);
-        $this->assertSame('GSO-CBD-GM', $items[0]['sku']);
-        $this->assertSame(2, (int) $items[0]['quantity']);
-        $this->assertSame(325, (int) $items[0]['unit_price_cents']);
-        $this->assertSame(650, (int) $items[0]['line_total_cents']);
-        $this->assertSame(650, (int) $res->json('invoice.total_cents'));
+        $items = collect($res->json('invoice.items') ?? []);
+        $onDemand = $items->first(static fn (array $item): bool => strtolower((string) ($item['category'] ?? '')) === 'on_demand');
+        $this->assertNotNull($onDemand);
+        $this->assertSame('CBD Gummies (GSO-CBD-GM)', $onDemand['display_name']);
+        $this->assertSame('GSO-CBD-GM', $onDemand['sku']);
+        $this->assertSame(2, (int) $onDemand['quantity']);
+        $this->assertSame(325, (int) $onDemand['unit_price_cents']);
+        $this->assertSame(650, (int) $onDemand['line_total_cents']);
+        $this->assertTrue(
+            $items->contains(static fn (array $item): bool =>
+                strtolower((string) ($item['category'] ?? '')) === 'fulfillment'
+                && strtoupper(trim((string) ($item['sku'] ?? ''))) === 'GSO-CBD-GM'
+            )
+        );
+        $this->assertSame(800, (int) $res->json('invoice.total_cents'));
     }
 
     public function test_import_charge_csv_charge_summary_uses_sku_column_for_on_demand_matching_case_insensitive(): void

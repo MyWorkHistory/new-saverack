@@ -280,13 +280,24 @@ class InvoiceImportService
         }
 
         if ($catalog === [] && $catalogCompact === []) {
+            foreach ($lines as $line) {
+                $lineSkuRaw = $this->extractLineSkuForCatalog((array) $line);
+                $skuKey = $this->normalizeSkuKey($lineSkuRaw);
+                $compactKey = $this->normalizeSkuCompactKey($lineSkuRaw);
+                if ($skuKey === null && $compactKey === null) {
+                    continue;
+                }
+                $debug['sku_candidate_rows']++;
+                $debug['unmatched_sku_rows']++;
+                if (count($debug['unmatched_sku_samples']) < 10) {
+                    $debug['unmatched_sku_samples'][] = $lineSkuRaw;
+                }
+            }
             return ['lines' => $lines, 'debug' => $debug];
         }
 
-        $kept = [];
+        $kept = $lines;
         $aggregates = [];
-        $insertedAggregateKey = [];
-        $pendingCatalogPickLines = [];
 
         foreach ($lines as $line) {
             $lineSkuRaw = $this->extractLineSkuForCatalog((array) $line);
@@ -308,7 +319,6 @@ class InvoiceImportService
                         $debug['unmatched_sku_samples'][] = $lineSkuRaw;
                     }
                 }
-                $kept[] = $line;
                 continue;
             }
 
@@ -316,15 +326,16 @@ class InvoiceImportService
                 $aggregates[$aggregateKey] = [
                     'product' => $product,
                     'quantity' => 0.0,
+                    'order_numbers' => [],
                 ];
             }
 
             $aggregates[$aggregateKey]['quantity'] += 1.0;
-            $debug['matched_sku_rows']++;
-            if (! isset($insertedAggregateKey[$aggregateKey])) {
-                $insertedAggregateKey[$aggregateKey] = count($kept);
+            $orderNumber = $this->extractLineOrderNumber((array) $line);
+            if ($orderNumber !== null) {
+                $aggregates[$aggregateKey]['order_numbers'][$orderNumber] = true;
             }
-            $pendingCatalogPickLines[$aggregateKey][] = $line;
+            $debug['matched_sku_rows']++;
         }
 
         if ($aggregates === []) {
@@ -338,6 +349,12 @@ class InvoiceImportService
             $quantity = (float) $aggregate['quantity'];
             if ($quantity <= 0) {
                 continue;
+            }
+            $orderNumbers = array_keys((array) ($aggregate['order_numbers'] ?? []));
+            sort($orderNumbers, SORT_STRING);
+            $orderNumberValue = 'Multiple';
+            if (count($orderNumbers) === 1) {
+                $orderNumberValue = $orderNumbers[0];
             }
 
             $display = trim((string) $product->name).' ('.$product->sku.')';
@@ -356,46 +373,30 @@ class InvoiceImportService
                     'on_demand_product_id' => $product->id,
                     'on_demand_category' => $product->category,
                     'source' => 'billing_import_sku_catalog',
+                    'order_number' => $orderNumberValue,
+                    'order_numbers' => $orderNumbers,
                 ],
             ];
         }
 
         if ($aggregateLines === []) {
-            $result = $kept;
-            foreach ($pendingCatalogPickLines as $skuLines) {
-                foreach ($skuLines as $sourceLine) {
-                    $result[] = $sourceLine;
-                }
-            }
-            return ['lines' => $result, 'debug' => $debug];
+            return ['lines' => $kept, 'debug' => $debug];
         }
 
-        $result = [];
-        foreach ($kept as $index => $line) {
-            foreach ($insertedAggregateKey as $sku => $insertAt) {
-                if ($insertAt === $index && isset($aggregateLines[$sku])) {
-                    $result[] = $aggregateLines[$sku];
-                }
-            }
-            $result[] = $line;
-        }
-
-        foreach ($insertedAggregateKey as $sku => $insertAt) {
-            if ($insertAt >= count($kept) && isset($aggregateLines[$sku])) {
-                $result[] = $aggregateLines[$sku];
-            }
-        }
-
-        foreach ($pendingCatalogPickLines as $sku => $skuLines) {
-            if (isset($aggregateLines[$sku])) {
-                continue;
-            }
-            foreach ($skuLines as $sourceLine) {
-                $result[] = $sourceLine;
-            }
-        }
-
+        $result = array_values(array_merge($kept, array_values($aggregateLines)));
         return ['lines' => $result, 'debug' => $debug];
+    }
+
+    /**
+     * @param array<string, mixed> $line
+     */
+    private function extractLineOrderNumber(array $line): ?string
+    {
+        $metadata = isset($line['metadata']) && is_array($line['metadata']) ? $line['metadata'] : [];
+        $raw = $metadata['order_number'] ?? $line['order_number'] ?? null;
+        $value = trim((string) $raw);
+
+        return $value !== '' ? $value : null;
     }
 
     /**

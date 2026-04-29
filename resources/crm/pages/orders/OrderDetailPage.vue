@@ -1,8 +1,9 @@
 <script setup>
-import { computed, inject, onMounted, ref } from "vue";
+import { computed, inject, onMounted, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import api from "../../services/api";
 import CrmLoadingSpinner from "../../components/common/CrmLoadingSpinner.vue";
+import CrmSearchableSelect from "../../components/common/CrmSearchableSelect.vue";
 import { setCrmPageMeta } from "../../composables/useCrmPageMeta.js";
 import { useToast } from "../../composables/useToast.js";
 
@@ -16,8 +17,21 @@ const order = ref(null);
 const accounts = ref([]);
 const accountsLoading = ref(false);
 const selectedAccountId = ref(String(route.query.client_account_id || ""));
+const loadError = ref("");
 
 const orderId = computed(() => String(route.params.shipheroOrderId || ""));
+
+const accountOptions = computed(() =>
+  (accounts.value || [])
+    .filter((a) => a?.has_shiphero_customer)
+    .map((a) => ({
+      id: a.id,
+      name: a.company_name || `Account #${a.id}`,
+      email: a.email ? String(a.email) : "",
+    })),
+);
+
+const headingOrderNumber = computed(() => order.value?.order_number || "—");
 
 function fmtMoney(v) {
   const n = Number(v);
@@ -30,6 +44,13 @@ function fmtDate(iso) {
   const d = new Date(iso);
   if (Number.isNaN(d.getTime())) return "—";
   return d.toLocaleString();
+}
+
+function extractErrorMessage(e) {
+  const msg = e?.response?.data?.message;
+  if (typeof msg === "string" && msg.trim() !== "") return msg;
+  if (e?.message) return String(e.message);
+  return "Could not load order details.";
 }
 
 async function loadAccounts() {
@@ -45,25 +66,65 @@ async function loadAccounts() {
 }
 
 async function loadOrder() {
-  if (!selectedAccountId.value) {
+  loadError.value = "";
+  if (!selectedAccountId.value || !orderId.value) {
     order.value = null;
     return;
   }
   loading.value = true;
+  order.value = null;
   try {
     const { data } = await api.get(`/orders/${encodeURIComponent(orderId.value)}`, {
       params: { client_account_id: Number(selectedAccountId.value) },
     });
     order.value = data?.order ?? null;
     if (!order.value) {
+      loadError.value = "ShipHero returned no order for this id and account.";
       toast.error("Order not found.");
     }
   } catch (e) {
+    loadError.value = extractErrorMessage(e);
+    order.value = null;
     toast.errorFrom(e, "Could not load order details.");
   } finally {
     loading.value = false;
   }
 }
+
+watch(
+  () => route.query.client_account_id,
+  (q) => {
+    const next = q != null && String(q) !== "" ? String(q) : "";
+    if (next !== selectedAccountId.value) {
+      selectedAccountId.value = next;
+    }
+  },
+);
+
+watch(selectedAccountId, (id) => {
+  const current = route.query.client_account_id != null ? String(route.query.client_account_id) : "";
+  if (id === current) return;
+  const nextQuery = { ...route.query };
+  if (id) {
+    nextQuery.client_account_id = id;
+  } else {
+    delete nextQuery.client_account_id;
+  }
+  router.replace({ query: nextQuery });
+});
+
+watch(
+  () => [orderId.value, selectedAccountId.value],
+  () => {
+    if (selectedAccountId.value && orderId.value) {
+      loadOrder();
+    } else {
+      order.value = null;
+      loadError.value = "";
+    }
+  },
+  { immediate: true },
+);
 
 onMounted(async () => {
   setCrmPageMeta({
@@ -71,44 +132,65 @@ onMounted(async () => {
     description: "ShipHero order detail.",
   });
   await loadAccounts();
-  await loadOrder();
 });
 </script>
 
 <template>
   <div class="staff-page staff-page--wide">
-    <div class="d-flex align-items-center justify-content-between mb-4">
+    <div class="d-flex align-items-start justify-content-between gap-3 flex-wrap mb-4">
       <div>
         <button type="button" class="btn btn-link px-0 text-decoration-none" @click="router.back()">
           ← Orders
         </button>
-        <h1 class="h4 mb-1 fw-semibold text-body">Order #{{ order?.order_number || "—" }}</h1>
+        <h1 class="h4 mb-1 fw-semibold text-body">Order #{{ headingOrderNumber }}</h1>
         <p class="staff-page__intro mb-0">{{ order?.status || "—" }}</p>
       </div>
-      <div style="min-width: 320px; max-width: 420px" class="w-100">
-        <label class="form-label small text-secondary mb-1">Account</label>
-        <div class="d-flex gap-2">
-          <select v-model="selectedAccountId" class="form-select" :disabled="accountsLoading || loading">
-            <option value="">Select account</option>
-            <option v-for="a in accounts" :key="a.id" :value="String(a.id)" :disabled="!a.has_shiphero_customer">
-              {{ a.company_name }}{{ a.has_shiphero_customer ? "" : " (no ShipHero ID)" }}
-            </option>
-          </select>
-          <button type="button" class="btn btn-outline-secondary" :disabled="!selectedAccountId || loading" @click="loadOrder">
-            Load
+    </div>
+
+    <div class="staff-table-card staff-datatable-card staff-datatable-card--white mb-4">
+      <div class="staff-table-toolbar">
+        <div class="staff-table-toolbar--row flex-wrap align-items-end gap-2 gap-md-3">
+          <div class="flex-grow-1" style="min-width: 220px; max-width: 420px">
+            <label class="form-label small text-secondary mb-1" for="order-detail-account-trigger">Account</label>
+            <CrmSearchableSelect
+              v-model="selectedAccountId"
+              appearance="staff"
+              aria-label="Client account"
+              :options="accountOptions"
+              :disabled="accountsLoading || loading"
+              placeholder="Select account"
+              search-placeholder="Search accounts…"
+              :allow-empty="true"
+              empty-label="Select account"
+              button-id="order-detail-account-trigger"
+            />
+          </div>
+          <button
+            type="button"
+            class="btn btn-outline-secondary staff-toolbar-btn align-self-end"
+            :disabled="!selectedAccountId || !orderId || loading"
+            @click="loadOrder"
+          >
+            Refresh
           </button>
         </div>
+        <p class="small text-secondary mb-0 mt-2">
+          Only accounts with a ShipHero customer ID can load orders.
+        </p>
       </div>
     </div>
 
     <div v-if="loading" class="py-5 text-center">
       <CrmLoadingSpinner message="Loading order detail..." :center="true" />
     </div>
-    <div v-else-if="!selectedAccountId" class="alert alert-light border">
-      Select an account to view this order.
+    <div v-else-if="!selectedAccountId" class="alert alert-light border mb-0">
+      Select an account above to view this order.
     </div>
-    <div v-else-if="!order" class="alert alert-warning">
-      Order details are unavailable.
+    <div v-else-if="loadError" class="alert alert-danger mb-0" role="alert">
+      {{ loadError }}
+    </div>
+    <div v-else-if="!order" class="alert alert-warning mb-0">
+      No order data loaded. Choose another account or use Refresh.
     </div>
     <template v-else>
       <div class="row g-4">
@@ -118,15 +200,15 @@ onMounted(async () => {
               <h2 class="h6 mb-0 fw-semibold">Items</h2>
               <span class="small text-secondary">{{ order.items?.length || 0 }} items</span>
             </div>
-            <div class="table-responsive">
-              <table class="table align-middle mb-0">
-                <thead class="table-light">
+            <div class="table-responsive staff-table-wrap">
+              <table class="table table-hover align-middle mb-0 staff-data-table">
+                <thead class="table-light staff-table-head">
                   <tr>
-                    <th>Item</th>
-                    <th>SKU</th>
-                    <th class="text-end">Quantity</th>
-                    <th class="text-end">Allocated</th>
-                    <th class="text-end">To Ship</th>
+                    <th class="staff-table-head__th">Item</th>
+                    <th class="staff-table-head__th">SKU</th>
+                    <th class="staff-table-head__th text-end">Quantity</th>
+                    <th class="staff-table-head__th text-end">Allocated</th>
+                    <th class="staff-table-head__th text-end">To Ship</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -211,4 +293,3 @@ onMounted(async () => {
     </template>
   </div>
 </template>
-

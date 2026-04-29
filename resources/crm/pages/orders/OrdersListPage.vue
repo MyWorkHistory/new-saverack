@@ -4,6 +4,7 @@ import { useRoute, useRouter } from "vue-router";
 import api from "../../services/api";
 import CrmLoadingSpinner from "../../components/common/CrmLoadingSpinner.vue";
 import CrmIconRowActions from "../../components/common/CrmIconRowActions.vue";
+import CrmSearchableSelect from "../../components/common/CrmSearchableSelect.vue";
 import { setCrmPageMeta } from "../../composables/useCrmPageMeta.js";
 import { useToast } from "../../composables/useToast.js";
 
@@ -64,6 +65,35 @@ const displayedRows = computed(() => {
 const manageMenuRow = computed(
   () => rows.value.find((row) => row.id === manageOpenId.value) ?? null,
 );
+
+const accountOptions = computed(() =>
+  (accounts.value || [])
+    .filter((a) => a?.has_shiphero_customer)
+    .map((a) => ({
+      id: a.id,
+      name: a.company_name || `Account #${a.id}`,
+      email: a.email ? String(a.email) : "",
+    })),
+);
+
+function orderDetailHref(row) {
+  if (!row?.id || !selectedAccountId.value) return "#";
+  return router.resolve({
+    name: "order-detail",
+    params: { shipheroOrderId: String(row.id) },
+    query: { client_account_id: String(selectedAccountId.value) },
+  }).href;
+}
+
+function openOrderViewNewTab(row) {
+  if (!row?.id || !selectedAccountId.value) {
+    toast.error("Select an account first.");
+    return;
+  }
+  const url = orderDetailHref(row);
+  window.open(url, "_blank", "noopener,noreferrer");
+  manageOpenId.value = null;
+}
 
 function statusClass(status) {
   const s = String(status || "").toLowerCase();
@@ -167,11 +197,7 @@ async function fetchOrders(reset = true) {
 }
 
 function openOrder(row) {
-  if (!row?.id) return;
-  router.push({
-    path: `/orders/${encodeURIComponent(String(row.id))}`,
-    query: { client_account_id: String(selectedAccountId.value) },
-  });
+  openOrderViewNewTab(row);
 }
 
 function onDocClick(e) {
@@ -243,22 +269,22 @@ onUnmounted(() => {
 
     <div class="staff-table-card staff-datatable-card staff-datatable-card--white">
       <div class="staff-table-toolbar">
-        <div class="staff-table-toolbar--row">
-          <select
-            v-model="selectedAccountId"
-            class="form-select staff-toolbar-search staff-toolbar-search--inline"
-            :disabled="accountsLoading || loading"
-          >
-            <option value="">Select account to load orders</option>
-            <option
-              v-for="account in accounts"
-              :key="account.id"
-              :value="String(account.id)"
-              :disabled="!account.has_shiphero_customer"
-            >
-              {{ account.company_name }}{{ account.has_shiphero_customer ? "" : " (no ShipHero ID)" }}
-            </option>
-          </select>
+        <div class="staff-table-toolbar--row flex-wrap align-items-end gap-2 gap-md-3">
+          <div class="flex-grow-1" style="min-width: 220px; max-width: 420px">
+            <label class="form-label small text-secondary mb-1" for="orders-list-account-trigger">Account</label>
+            <CrmSearchableSelect
+              v-model="selectedAccountId"
+              appearance="staff"
+              aria-label="Client account"
+              :options="accountOptions"
+              :disabled="accountsLoading || loading"
+              placeholder="Select account to load orders"
+              search-placeholder="Search accounts…"
+              :allow-empty="true"
+              empty-label="Select account to load orders"
+              button-id="orders-list-account-trigger"
+            />
+          </div>
 
           <template v-if="showManageFilters">
             <select v-model="query.datePreset" class="form-select staff-toolbar-btn" :disabled="loading">
@@ -300,6 +326,9 @@ onUnmounted(() => {
             </select>
           </template>
         </div>
+        <p class="small text-secondary mb-0 mt-2 px-1">
+          Only accounts with a ShipHero customer ID appear here.
+        </p>
       </div>
 
       <div class="table-responsive staff-table-wrap">
@@ -340,7 +369,18 @@ onUnmounted(() => {
                   {{ row.status || "—" }}
                 </span>
               </td>
-              <td class="fw-semibold">{{ row.order_number || "—" }}</td>
+              <td class="fw-semibold">
+                <a
+                  v-if="selectedAccountId"
+                  :href="orderDetailHref(row)"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  class="text-decoration-none"
+                >
+                  {{ row.order_number || "—" }}
+                </a>
+                <span v-else :title="'Select an account'">{{ row.order_number || "—" }}</span>
+              </td>
               <td>{{ formatDate(row.order_date) }}</td>
               <td>{{ row.account || "—" }}</td>
               <td>{{ row.country || "—" }}</td>

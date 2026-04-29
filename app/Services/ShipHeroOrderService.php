@@ -312,7 +312,6 @@ query ShipHeroOrderHeader($id: String!) {
       require_signature
       packing_note
       shipping_address {
-        name
         address1
         address2
         city
@@ -321,7 +320,6 @@ query ShipHeroOrderHeader($id: String!) {
         country
       }
       billing_address {
-        name
         address1
         address2
         city

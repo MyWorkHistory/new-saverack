@@ -65,9 +65,9 @@ class OrderController extends Controller
         $validated = $request->validate([
             'client_account_id' => ['required', 'integer', 'exists:client_accounts,id'],
         ]);
+        $customerId = $this->resolveShipHeroCustomerAccountId((int) $validated['client_account_id'], $request);
 
         try {
-            $customerId = $this->resolveShipHeroCustomerAccountId((int) $validated['client_account_id'], $request);
             $order = $this->orders->getOrder($orderId, $customerId);
 
             return response()->json([
@@ -76,9 +76,10 @@ class OrderController extends Controller
         } catch (ValidationException $e) {
             throw $e;
         } catch (RuntimeException $e) {
-            $customerId = $this->resolveShipHeroCustomerAccountId((int) $validated['client_account_id'], $request);
-            $summary = $this->orders->findOrderSummaryById($orderId, $customerId);
-            if (is_array($summary)) {
+            $message = (string) $e->getMessage();
+            $canFallback = $this->isTransientUpstreamErrorMessage($message) || $this->isNotFoundMessage($message);
+            $summary = $canFallback ? $this->orders->findOrderSummaryById($orderId, $customerId) : null;
+            if ($canFallback && is_array($summary)) {
                 return response()->json([
                     'order' => $this->hydrateOrderFallbackFromSummary($orderId, $summary),
                     'fallback' => [
@@ -86,7 +87,7 @@ class OrderController extends Controller
                     ],
                 ]);
             }
-            return response()->json(['message' => $e->getMessage()], 502);
+            return response()->json(['message' => $message], 502);
         } catch (Throwable $e) {
             report($e);
 
@@ -136,6 +137,24 @@ class OrderController extends Controller
         }
 
         return \Carbon\Carbon::parse($value)->endOfDay()->toIso8601String();
+    }
+
+    private function isTransientUpstreamErrorMessage(string $message): bool
+    {
+        $m = strtolower(trim($message));
+        return str_contains($m, '502')
+            || str_contains($m, '503')
+            || str_contains($m, '504')
+            || str_contains($m, 'cloudflare')
+            || str_contains($m, 'bad gateway')
+            || str_contains($m, 'temporarily unavailable')
+            || str_contains($m, 'timeout')
+            || str_contains($m, 'failed before response');
+    }
+
+    private function isNotFoundMessage(string $message): bool
+    {
+        return str_contains(strtolower(trim($message)), 'not found');
     }
 
     /**

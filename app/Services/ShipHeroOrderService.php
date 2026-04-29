@@ -153,18 +153,24 @@ GQL;
             throw new RuntimeException('Order id and customer account id are required.');
         }
 
-        $node = $this->fetchOrderDetailNode($customer, $id);
-        if ($node === null && ctype_digit($id)) {
-            // Some accounts resolve better using legacy numeric id lookup.
-            $node = $this->fetchOrderDetailNode($customer, (string) ((int) $id));
+        $node = null;
+        $resolvedId = $id;
+        foreach ($this->buildOrderIdCandidates($id) as $candidateId) {
+            $node = $this->fetchOrderHeaderNode($customer, $candidateId);
+            if ($node !== null) {
+                $resolvedId = $candidateId;
+                break;
+            }
         }
         if ($node === null) {
             throw new RuntimeException('Order not found in ShipHero.');
         }
 
-        $history = $this->fetchOrderHistory($customer, (string) ($node['id'] ?? $id));
+        $relayId = (string) ($node['id'] ?? $resolvedId);
+        $lineItems = $this->fetchOrderLineItems($customer, $relayId);
+        $history = $this->fetchOrderHistory($customer, $relayId);
 
-        return $this->normalizeOrderDetail($node, $history);
+        return $this->normalizeOrderDetail($node, $lineItems, $history);
     }
 
     /**
@@ -211,10 +217,10 @@ GQL;
     /**
      * @return array<string, mixed>|null
      */
-    private function fetchOrderDetailNode(string $customerAccountId, string $id): ?array
+    private function fetchOrderHeaderNode(string $customerAccountId, string $id): ?array
     {
         $graphql = <<<'GQL'
-query ShipHeroOrderDetail($ids: [String], $customer_account_id: String!) {
+query ShipHeroOrderHeader($ids: [String], $customer_account_id: String!) {
   orders(ids: $ids, customer_account_id: $customer_account_id) {
     data(first: 1) {
       edges {
@@ -261,20 +267,6 @@ query ShipHeroOrderDetail($ids: [String], $customer_account_id: String!) {
             method
             shipping_cost
           }
-          line_items(first: 40) {
-            edges {
-              node {
-                id
-                sku
-                quantity
-                quantity_allocated
-                quantity_pending_fulfillment
-                backorder_quantity
-                product_name
-                custom_options
-              }
-            }
-          }
         }
       }
     }
@@ -297,6 +289,80 @@ GQL;
         }
 
         return $node;
+    }
+
+    /**
+     * @return list<array<string, mixed>>
+     */
+    private function fetchOrderLineItems(string $customerAccountId, string $id): array
+    {
+        $items = [];
+        $after = null;
+        $safety = 0;
+        do {
+            $graphql = <<<'GQL'
+query ShipHeroOrderLineItems($ids: [String], $customer_account_id: String!, $first: Int!, $after: String) {
+  orders(ids: $ids, customer_account_id: $customer_account_id) {
+    data(first: 1) {
+      edges {
+        node {
+          id
+          line_items(first: $first, after: $after) {
+            edges {
+              node {
+                id
+                sku
+                quantity
+                quantity_allocated
+                quantity_pending_fulfillment
+                backorder_quantity
+                product_name
+                custom_options
+              }
+            }
+            pageInfo {
+              hasNextPage
+              endCursor
+            }
+          }
+        }
+      }
+    }
+  }
+}
+GQL;
+            $json = $this->client->query($graphql, [
+                'ids' => [$id],
+                'customer_account_id' => $customerAccountId,
+                'first' => 25,
+                'after' => $after,
+            ]);
+            $edges = data_get($json, 'data.orders.data.edges.0.node.line_items.edges');
+            $edges = is_array($edges) ? $edges : [];
+            foreach ($edges as $edge) {
+                if (! is_array($edge) || ! is_array($edge['node'] ?? null)) {
+                    continue;
+                }
+                $line = $edge['node'];
+                $items[] = [
+                    'id' => (string) ($line['id'] ?? ''),
+                    'sku' => (string) ($line['sku'] ?? ''),
+                    'name' => (string) ($line['product_name'] ?? ''),
+                    'quantity' => (float) ($line['quantity'] ?? 0),
+                    'quantity_allocated' => (float) ($line['quantity_allocated'] ?? 0),
+                    'quantity_pending_fulfillment' => (float) ($line['quantity_pending_fulfillment'] ?? 0),
+                    'backorder_quantity' => (float) ($line['backorder_quantity'] ?? 0),
+                    'custom_options' => is_string($line['custom_options'] ?? null) ? $line['custom_options'] : null,
+                ];
+            }
+            $pageInfo = data_get($json, 'data.orders.data.edges.0.node.line_items.pageInfo');
+            $hasNext = (bool) (is_array($pageInfo) ? ($pageInfo['hasNextPage'] ?? false) : false);
+            $endCursor = is_array($pageInfo) ? ($pageInfo['endCursor'] ?? null) : null;
+            $after = is_string($endCursor) && $endCursor !== '' ? $endCursor : null;
+            $safety++;
+        } while ($hasNext && $after !== null && $safety < 20);
+
+        return $items;
     }
 
     /**
@@ -365,28 +431,8 @@ GQL;
      * @param  array<string, mixed>  $node
      * @return array<string, mixed>
      */
-    private function normalizeOrderDetail(array $node, array $history = []): array
+    private function normalizeOrderDetail(array $node, array $items, array $history = []): array
     {
-        $lineEdges = data_get($node, 'line_items.edges');
-        $lineEdges = is_array($lineEdges) ? $lineEdges : [];
-        $items = [];
-        foreach ($lineEdges as $edge) {
-            if (! is_array($edge) || ! is_array($edge['node'] ?? null)) {
-                continue;
-            }
-            $line = $edge['node'];
-            $items[] = [
-                'id' => (string) ($line['id'] ?? ''),
-                'sku' => (string) ($line['sku'] ?? ''),
-                'name' => (string) ($line['product_name'] ?? ''),
-                'quantity' => (float) ($line['quantity'] ?? 0),
-                'quantity_allocated' => (float) ($line['quantity_allocated'] ?? 0),
-                'quantity_pending_fulfillment' => (float) ($line['quantity_pending_fulfillment'] ?? 0),
-                'backorder_quantity' => (float) ($line['backorder_quantity'] ?? 0),
-                'custom_options' => is_string($line['custom_options'] ?? null) ? $line['custom_options'] : null,
-            ];
-        }
-
         $shippingLines = is_array($node['shipping_lines'] ?? null) ? $node['shipping_lines'] : [];
         $shippingLine = is_array($shippingLines[0] ?? null) ? $shippingLines[0] : [];
 
@@ -425,6 +471,32 @@ GQL;
                 ];
             }, $history))),
         ];
+    }
+
+    /**
+     * @return list<string>
+     */
+    private function buildOrderIdCandidates(string $orderId): array
+    {
+        $candidates = [];
+        $push = static function (array &$target, string $value): void {
+            $v = trim($value);
+            if ($v !== '' && ! in_array($v, $target, true)) {
+                $target[] = $v;
+            }
+        };
+
+        $push($candidates, $orderId);
+        if (ctype_digit($orderId)) {
+            $push($candidates, (string) ((int) $orderId));
+        }
+
+        $decoded = base64_decode($orderId, true);
+        if (is_string($decoded) && preg_match('/^Order:(\d+)$/i', trim($decoded), $m) === 1) {
+            $push($candidates, (string) $m[1]);
+        }
+
+        return $candidates;
     }
 
     private function nullableIso($value): ?string

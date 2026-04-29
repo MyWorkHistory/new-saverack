@@ -18,6 +18,7 @@ const accounts = ref([]);
 const accountsLoading = ref(false);
 const selectedAccountId = ref(String(route.query.client_account_id || ""));
 const loadError = ref("");
+const loadNotice = ref("");
 
 const orderId = computed(() => String(route.params.shipheroOrderId || ""));
 
@@ -116,6 +117,7 @@ async function loadAccounts() {
 
 async function loadOrder() {
   loadError.value = "";
+  loadNotice.value = "";
   if (!selectedAccountId.value || !orderId.value) {
     order.value = null;
     return;
@@ -127,6 +129,9 @@ async function loadOrder() {
       params: { client_account_id: Number(selectedAccountId.value) },
     });
     order.value = data?.order ?? null;
+    if (data?.fallback?.source) {
+      loadNotice.value = "Live detail endpoint was temporarily unavailable. Showing summary data from orders list.";
+    }
     if (!order.value) {
       loadError.value = "ShipHero returned no order for this id and account.";
       toast.error("Order not found.");
@@ -135,12 +140,12 @@ async function loadOrder() {
     const fallback = await fallbackOrderFromApiList();
     if (fallback) {
       order.value = fallback;
-      loadError.value = "Live order details are temporarily unavailable. Showing fallback summary data.";
+      loadNotice.value = "Live detail endpoint was temporarily unavailable. Showing summary data from orders list.";
     } else {
       const cached = fallbackOrderSnapshot();
       if (cached) {
         order.value = cached;
-        loadError.value = "Live order details are temporarily unavailable. Showing cached summary from the list.";
+        loadNotice.value = "Live detail endpoint was temporarily unavailable. Showing cached summary from this browser.";
       } else {
         loadError.value = extractErrorMessage(e);
         order.value = null;
@@ -299,6 +304,9 @@ onMounted(async () => {
       No order data loaded. Choose another account or use Refresh.
     </div>
     <template v-else>
+      <div v-if="loadNotice" class="alert alert-warning small mb-4" role="status">
+        {{ loadNotice }}
+      </div>
       <div class="row g-4">
         <div class="col-lg-8">
           <div class="staff-table-card staff-datatable-card staff-datatable-card--white p-0 mb-4">

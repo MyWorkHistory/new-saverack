@@ -475,7 +475,7 @@ GQL;
             'id' => (string) ($node['id'] ?? ''),
             'legacy_id' => is_numeric($node['legacy_id'] ?? null) ? (int) $node['legacy_id'] : null,
             'cursor' => is_string($cursor) ? $cursor : null,
-            'status' => (string) ($node['fulfillment_status'] ?? ''),
+            'status' => $this->normalizeFulfillmentStatus($node),
             'order_number' => (string) ($node['order_number'] ?? ''),
             'order_date' => $this->nullableIso($node['order_date'] ?? null),
             'account' => (string) ($node['shop_name'] ?? ''),
@@ -499,7 +499,7 @@ GQL;
             'legacy_id' => is_numeric($node['legacy_id'] ?? null) ? (int) $node['legacy_id'] : null,
             'order_number' => (string) ($node['order_number'] ?? ''),
             'partner_order_id' => (string) ($node['partner_order_id'] ?? ''),
-            'status' => (string) ($node['fulfillment_status'] ?? ''),
+            'status' => $this->normalizeFulfillmentStatus($node),
             'order_date' => $this->nullableIso($node['order_date'] ?? null),
             'required_ship_date' => $this->nullableIso($node['required_ship_date'] ?? null),
             'account' => (string) ($node['shop_name'] ?? ''),
@@ -612,6 +612,21 @@ GQL;
     private function isAssoc(array $value): bool
     {
         return array_keys($value) !== range(0, count($value) - 1);
+    }
+
+    /**
+     * Prefer ShipHero fulfillment_status as canonical order status.
+     *
+     * @param array<string, mixed> $node
+     */
+    private function normalizeFulfillmentStatus(array $node): string
+    {
+        $status = trim((string) ($node['fulfillment_status'] ?? ''));
+        if ($status !== '') {
+            return $status;
+        }
+
+        return trim((string) ($node['status'] ?? ''));
     }
 
     private function debugHeaderQueryByVariant(string $variant): string
@@ -767,14 +782,23 @@ GQL;
 
     private function statusMatchesTab(string $status, string $tab): bool
     {
+        $normalized = strtolower(trim($status));
         if ($tab === 'on_hold') {
-            return str_contains($status, 'hold');
+            return str_contains($normalized, 'hold');
         }
         if ($tab === 'shipped') {
-            return str_contains($status, 'ship');
+            return $normalized === 'shipped'
+                || $normalized === 'fulfilled'
+                || $normalized === 'complete'
+                || str_starts_with($normalized, 'shipped');
         }
         if ($tab === 'awaiting') {
-            return ! str_contains($status, 'hold') && ! str_contains($status, 'ship');
+            return $normalized !== ''
+                && ! str_contains($normalized, 'hold')
+                && ! ($normalized === 'shipped'
+                    || $normalized === 'fulfilled'
+                    || $normalized === 'complete'
+                    || str_starts_with($normalized, 'shipped'));
         }
 
         return true;

@@ -152,6 +152,41 @@ class ShipHeroClient
         );
     }
 
+    /**
+     * Execute a single GraphQL request and return raw HTTP diagnostics.
+     *
+     * @param  array<string, mixed>  $variables
+     * @return array{status:int, body:string}
+     */
+    public function queryRawDiagnostic(string $graphql, array $variables = []): array
+    {
+        $url = rtrim((string) config('services.shiphero.api_url', 'https://public-api.shiphero.com/graphql'), '/');
+        $token = $this->accessToken();
+        $payload = ['query' => $graphql];
+        if ($variables !== []) {
+            $payload['variables'] = $variables;
+        }
+
+        try {
+            $response = $this->http()->post($url, [
+                'headers' => [
+                    'Authorization' => 'Bearer '.$token,
+                    'Accept' => 'application/json',
+                ],
+                'json' => $payload,
+                'connect_timeout' => 4,
+                'timeout' => 10,
+            ]);
+        } catch (Throwable $e) {
+            throw new RuntimeException('ShipHero diagnostic request failed before response: '.$e->getMessage(), 0, $e);
+        }
+
+        return [
+            'status' => (int) $response->getStatusCode(),
+            'body' => (string) $response->getBody(),
+        ];
+    }
+
     private function extractOperationName(string $graphql): string
     {
         if (preg_match('/\b(query|mutation)\s+([A-Za-z0-9_]+)/', $graphql, $matches) === 1) {

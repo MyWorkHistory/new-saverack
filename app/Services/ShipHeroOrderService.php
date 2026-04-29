@@ -207,6 +207,40 @@ GQL;
     }
 
     /**
+     * Raw diagnostic for order-detail header query variants.
+     *
+     * @return array<string, mixed>
+     */
+    public function debugOrderDetailRaw(string $orderId, string $customerAccountId, string $variant = 'core'): array
+    {
+        $id = trim($orderId);
+        $customer = trim($customerAccountId);
+        if ($id === '' || $customer === '') {
+            throw new RuntimeException('Order id and customer account id are required.');
+        }
+
+        $candidateId = $this->buildOrderIdCandidates($id)[0];
+        $query = $this->debugHeaderQueryByVariant($variant);
+        $variables = [
+            'ids' => [$candidateId],
+            'customer_account_id' => $customer,
+        ];
+
+        $raw = $this->client->queryRawDiagnostic($query, $variables);
+        $body = (string) ($raw['body'] ?? '');
+
+        return [
+            'variant' => $variant,
+            'candidate_id' => $candidateId,
+            'query' => $query,
+            'variables' => $variables,
+            'shiphero_http_status' => (int) ($raw['status'] ?? 0),
+            'shiphero_body_length' => strlen($body),
+            'shiphero_body_preview' => mb_substr($body, 0, 500),
+        ];
+    }
+
+    /**
      * Best-effort fallback using list API rows when detail API fails.
      *
      * @return array<string, mixed>|null
@@ -551,6 +585,128 @@ GQL;
         $v = trim($value);
 
         return $v !== '' ? $v : null;
+    }
+
+    private function debugHeaderQueryByVariant(string $variant): string
+    {
+        $v = strtolower(trim($variant));
+        if ($v === 'minimal') {
+            return <<<'GQL'
+query ShipHeroOrderHeaderDebugMinimal($ids: [String], $customer_account_id: String!) {
+  orders(ids: $ids, customer_account_id: $customer_account_id) {
+    request_id
+    complexity
+    data(first: 1) {
+      edges {
+        node {
+          id
+          legacy_id
+          order_number
+          fulfillment_status
+        }
+      }
+    }
+  }
+}
+GQL;
+        }
+
+        if ($v === 'pricing') {
+            return <<<'GQL'
+query ShipHeroOrderHeaderDebugPricing($ids: [String], $customer_account_id: String!) {
+  orders(ids: $ids, customer_account_id: $customer_account_id) {
+    request_id
+    complexity
+    data(first: 1) {
+      edges {
+        node {
+          id
+          legacy_id
+          order_number
+          subtotal
+          total_tax
+          total_price
+          total_discounts
+          gift_invoice
+          allow_partial
+          require_signature
+        }
+      }
+    }
+  }
+}
+GQL;
+        }
+
+        if ($v === 'addresses') {
+            return <<<'GQL'
+query ShipHeroOrderHeaderDebugAddresses($ids: [String], $customer_account_id: String!) {
+  orders(ids: $ids, customer_account_id: $customer_account_id) {
+    request_id
+    complexity
+    data(first: 1) {
+      edges {
+        node {
+          id
+          legacy_id
+          order_number
+          shipping_address {
+            name
+            address1
+            address2
+            city
+            state
+            zip
+            country
+          }
+          billing_address {
+            name
+            address1
+            address2
+            city
+            state
+            zip
+            country
+          }
+          shipping_lines {
+            carrier
+            method
+            shipping_cost
+          }
+        }
+      }
+    }
+  }
+}
+GQL;
+        }
+
+        return <<<'GQL'
+query ShipHeroOrderHeaderDebugCore($ids: [String], $customer_account_id: String!) {
+  orders(ids: $ids, customer_account_id: $customer_account_id) {
+    request_id
+    complexity
+    data(first: 1) {
+      edges {
+        node {
+          id
+          legacy_id
+          order_number
+          partner_order_id
+          shop_name
+          fulfillment_status
+          order_date
+          required_ship_date
+          profile
+          source
+          email
+          packing_note
+        }
+      }
+    }
+  }
+}
+GQL;
     }
 }
 

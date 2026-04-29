@@ -65,10 +65,22 @@ class OrderController extends Controller
     {
         $validated = $request->validate([
             'client_account_id' => ['required', 'integer', 'exists:client_accounts,id'],
+            'debug_shiphero_raw' => ['nullable', 'boolean'],
+            'debug_variant' => ['nullable', 'string', 'in:minimal,core,pricing,addresses'],
         ]);
         $customerId = $this->resolveShipHeroCustomerAccountId((int) $validated['client_account_id'], $request);
 
         try {
+            if ((bool) ($validated['debug_shiphero_raw'] ?? false)) {
+                $debug = $this->orders->debugOrderDetailRaw(
+                    $orderId,
+                    $customerId,
+                    (string) ($validated['debug_variant'] ?? 'core')
+                );
+
+                return response()->json($debug);
+            }
+
             Log::info('shiphero.order_detail.request.start', [
                 'order_id' => $orderId,
                 'client_account_id' => (int) $validated['client_account_id'],

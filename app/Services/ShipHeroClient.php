@@ -117,7 +117,10 @@ class ShipHeroClient
             }
 
             if ($status < 200 || $status >= 300) {
-                throw new RuntimeException('ShipHero GraphQL request failed (HTTP '.$status.').');
+                $preview = mb_substr($bodyRaw, 0, 500);
+                throw new RuntimeException(
+                    'ShipHero GraphQL request failed (HTTP '.$status.'). Body preview: '.$preview
+                );
             }
 
             $json = json_decode($bodyRaw, true);

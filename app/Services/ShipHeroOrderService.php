@@ -287,54 +287,52 @@ GQL;
     private function fetchOrderHeaderNode(string $customerAccountId, string $id): ?array
     {
         $graphql = <<<'GQL'
-query ShipHeroOrderHeader($ids: [String], $customer_account_id: String!) {
-  orders(ids: $ids, customer_account_id: $customer_account_id) {
-    data(first: 1) {
-      edges {
-        node {
-          id
-          legacy_id
-          order_number
-          partner_order_id
-          shop_name
-          fulfillment_status
-          order_date
-          required_ship_date
-          profile
-          source
-          email
-          subtotal
-          total_tax
-          total_price
-          total_discounts
-          gift_invoice
-          allow_partial
-          require_signature
-          packing_note
-          shipping_address {
-            name
-            address1
-            address2
-            city
-            state
-            zip
-            country
-          }
-          billing_address {
-            name
-            address1
-            address2
-            city
-            state
-            zip
-            country
-          }
-          shipping_lines {
-            carrier
-            method
-            shipping_cost
-          }
-        }
+query ShipHeroOrderHeader($id: String!) {
+  order(id: $id) {
+    request_id
+    complexity
+    data {
+      id
+      legacy_id
+      order_number
+      partner_order_id
+      shop_name
+      fulfillment_status
+      order_date
+      required_ship_date
+      profile
+      source
+      email
+      subtotal
+      total_tax
+      total_price
+      total_discounts
+      gift_invoice
+      allow_partial
+      require_signature
+      packing_note
+      shipping_address {
+        name
+        address1
+        address2
+        city
+        state
+        zip
+        country
+      }
+      billing_address {
+        name
+        address1
+        address2
+        city
+        state
+        zip
+        country
+      }
+      shipping_lines {
+        carrier
+        method
+        price
       }
     }
   }
@@ -342,15 +340,9 @@ query ShipHeroOrderHeader($ids: [String], $customer_account_id: String!) {
 GQL;
 
         $json = $this->client->query($graphql, [
-            'ids' => [$id],
-            'customer_account_id' => $customerAccountId,
+            'id' => $id,
         ]);
-
-        $edges = data_get($json, 'data.orders.data.edges');
-        if (! is_array($edges) || $edges === []) {
-            return null;
-        }
-        $node = data_get($edges, '0.node');
+        $node = data_get($json, 'data.order.data');
         if (! is_array($node)) {
             return null;
         }
@@ -370,30 +362,26 @@ GQL;
         $perPage = 50;
         do {
             $graphql = <<<'GQL'
-query ShipHeroOrderLineItems($ids: [String], $customer_account_id: String!, $first: Int!, $after: String) {
-  orders(ids: $ids, customer_account_id: $customer_account_id) {
-    data(first: 1) {
-      edges {
-        node {
-          id
-          line_items(first: $first, after: $after) {
-            edges {
-              node {
-                id
-                sku
-                quantity
-                quantity_allocated
-                quantity_pending_fulfillment
-                backorder_quantity
-                product_name
-                custom_options
-              }
-            }
-            pageInfo {
-              hasNextPage
-              endCursor
-            }
+query ShipHeroOrderLineItems($id: String!, $first: Int!, $after: String) {
+  order(id: $id) {
+    data {
+      id
+      line_items(first: $first, after: $after) {
+        edges {
+          node {
+            id
+            sku
+            quantity
+            quantity_allocated
+            quantity_pending_fulfillment
+            backorder_quantity
+            product_name
+            custom_options
           }
+        }
+        pageInfo {
+          hasNextPage
+          endCursor
         }
       }
     }
@@ -401,12 +389,11 @@ query ShipHeroOrderLineItems($ids: [String], $customer_account_id: String!, $fir
 }
 GQL;
             $json = $this->client->query($graphql, [
-                'ids' => [$id],
-                'customer_account_id' => $customerAccountId,
+                'id' => $id,
                 'first' => $perPage,
                 'after' => $after,
             ]);
-            $edges = data_get($json, 'data.orders.data.edges.0.node.line_items.edges');
+            $edges = data_get($json, 'data.order.data.line_items.edges');
             $edges = is_array($edges) ? $edges : [];
             foreach ($edges as $edge) {
                 if (! is_array($edge) || ! is_array($edge['node'] ?? null)) {
@@ -424,7 +411,7 @@ GQL;
                     'custom_options' => is_string($line['custom_options'] ?? null) ? $line['custom_options'] : null,
                 ];
             }
-            $pageInfo = data_get($json, 'data.orders.data.edges.0.node.line_items.pageInfo');
+            $pageInfo = data_get($json, 'data.order.data.line_items.pageInfo');
             $hasNext = (bool) (is_array($pageInfo) ? ($pageInfo['hasNextPage'] ?? false) : false);
             $endCursor = is_array($pageInfo) ? ($pageInfo['endCursor'] ?? null) : null;
             $after = is_string($endCursor) && $endCursor !== '' ? $endCursor : null;
@@ -449,18 +436,14 @@ GQL;
     private function fetchOrderHistory(string $customerAccountId, string $id): array
     {
         $graphql = <<<'GQL'
-query ShipHeroOrderHistory($ids: [String], $customer_account_id: String!) {
-  orders(ids: $ids, customer_account_id: $customer_account_id) {
-    data(first: 1) {
-      edges {
-        node {
-          id
-          order_history {
-            created_at
-            information
-            user_id
-          }
-        }
+query ShipHeroOrderHistory($id: String!) {
+  order(id: $id) {
+    data {
+      id
+      order_history {
+        created_at
+        information
+        user_id
       }
     }
   }
@@ -469,10 +452,9 @@ GQL;
 
         try {
             $json = $this->client->query($graphql, [
-                'ids' => [$id],
-                'customer_account_id' => $customerAccountId,
+                'id' => $id,
             ]);
-            $raw = data_get($json, 'data.orders.data.edges.0.node.order_history');
+            $raw = data_get($json, 'data.order.data.order_history');
             return is_array($raw) ? $raw : [];
         } catch (\Throwable $e) {
             // History is supplemental; do not fail detail page on this call.
@@ -526,7 +508,9 @@ GQL;
             'email' => (string) ($node['email'] ?? ''),
             'shipping_carrier' => (string) ($shippingLine['carrier'] ?? ''),
             'method' => (string) ($shippingLine['method'] ?? ''),
-            'shipping_cost' => is_numeric($shippingLine['shipping_cost'] ?? null) ? (float) $shippingLine['shipping_cost'] : null,
+            'shipping_cost' => $this->nullableNumber(
+                $shippingLine['shipping_cost'] ?? ($shippingLine['price'] ?? null)
+            ),
             'subtotal' => is_numeric($node['subtotal'] ?? null) ? (float) $node['subtotal'] : null,
             'total_tax' => is_numeric($node['total_tax'] ?? null) ? (float) $node['total_tax'] : null,
             'total_discounts' => is_numeric($node['total_discounts'] ?? null) ? (float) $node['total_discounts'] : null,
@@ -585,6 +569,15 @@ GQL;
         $v = trim($value);
 
         return $v !== '' ? $v : null;
+    }
+
+    private function nullableNumber($value): ?float
+    {
+        if (is_numeric($value)) {
+            return (float) $value;
+        }
+
+        return null;
     }
 
     private function debugHeaderQueryByVariant(string $variant): string

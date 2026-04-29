@@ -691,7 +691,6 @@ class InvoiceService
             ->sum('balance_due_cents');
 
         $open = 0;
-        $pastDue = 0;
         $rows = [];
         foreach ($payable as $row) {
             $balance = (int) $row->balance_due_cents;
@@ -699,11 +698,7 @@ class InvoiceService
             $legacyLabel = $this->legacyStatusLabel($row);
             if ($row->status !== Invoice::STATUS_DRAFT) {
                 $isPastDue = $this->isOverdue($row);
-                if ($isPastDue) {
-                    $pastDue += $balance;
-                } else {
-                    $open += $balance;
-                }
+                $open += $balance;
             } else {
                 $isPastDue = false;
             }
@@ -731,7 +726,7 @@ class InvoiceService
             'current_invoice_id' => (int) $invoice->id,
             'available_funds_cents' => 0,
             'open_balance_cents' => $open,
-            'past_due_balance_cents' => $pastDue,
+            'past_due_balance_cents' => 0,
             'pending_balance_cents' => (int) $pending,
             'rows' => $rows,
         ];

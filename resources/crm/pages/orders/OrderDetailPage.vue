@@ -19,6 +19,7 @@ const accountsLoading = ref(false);
 const selectedAccountId = ref(String(route.query.client_account_id || ""));
 const loadError = ref("");
 const loadNotice = ref("");
+const activeLoadKey = ref("");
 
 const orderId = computed(() => String(route.params.shipheroOrderId || ""));
 
@@ -122,6 +123,11 @@ async function loadOrder() {
     order.value = null;
     return;
   }
+  const requestKey = `${selectedAccountId.value}:${orderId.value}`;
+  if (loading.value && activeLoadKey.value === requestKey) {
+    return;
+  }
+  activeLoadKey.value = requestKey;
   loading.value = true;
   order.value = null;
   try {
@@ -137,68 +143,21 @@ async function loadOrder() {
       toast.error("Order not found.");
     }
   } catch (e) {
-    const fallback = await fallbackOrderFromApiList();
-    if (fallback) {
-      order.value = fallback;
-      loadNotice.value = "Live detail endpoint was temporarily unavailable. Showing summary data from orders list.";
+    const cached = fallbackOrderSnapshot();
+    if (cached) {
+      order.value = cached;
+      loadNotice.value = "Live detail endpoint was temporarily unavailable. Showing cached summary from this browser.";
     } else {
-      const cached = fallbackOrderSnapshot();
-      if (cached) {
-        order.value = cached;
-        loadNotice.value = "Live detail endpoint was temporarily unavailable. Showing cached summary from this browser.";
-      } else {
-        loadError.value = extractErrorMessage(e);
-        order.value = null;
-      }
+      loadError.value = extractErrorMessage(e);
+      order.value = null;
     }
     toast.errorFrom(e, "Could not load order details.");
   } finally {
     loading.value = false;
-  }
-}
-
-async function fallbackOrderFromApiList() {
-  if (!selectedAccountId.value || !orderId.value) return null;
-  const tabs = ["manage", "awaiting", "on_hold", "shipped"];
-  for (const tab of tabs) {
-    try {
-      const { data } = await api.get("/orders", {
-        params: {
-          client_account_id: Number(selectedAccountId.value),
-          tab,
-          first: 50,
-        },
-      });
-      const rows = Array.isArray(data?.rows) ? data.rows : [];
-      const row = rows.find((r) => String(r?.id || "") === String(orderId.value));
-      if (!row) continue;
-      return {
-        id: String(row.id || orderId.value),
-        legacy_id: row.legacy_id ?? null,
-        order_number: row.order_number || "",
-        partner_order_id: "",
-        status: row.status || "",
-        order_date: row.order_date || null,
-        required_ship_date: null,
-        account: row.account || "",
-        email: row.email || "",
-        shipping_carrier: row.shipping_carrier || "",
-        method: row.method || "",
-        shipping_cost: null,
-        subtotal: null,
-        total_tax: null,
-        total_discounts: null,
-        total_price: null,
-        shipping_address: { country: row.country || "" },
-        billing_address: {},
-        items: [],
-        history: [],
-      };
-    } catch (_) {
-      // Continue to next tab fallback.
+    if (activeLoadKey.value === requestKey) {
+      activeLoadKey.value = "";
     }
   }
-  return null;
 }
 
 watch(

@@ -4,6 +4,7 @@ namespace App\Services;
 
 use GuzzleHttp\Client;
 use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\Log;
 use RuntimeException;
 use Throwable;
 
@@ -57,6 +58,7 @@ class ShipHeroClient
     {
         $url = rtrim((string) config('services.shiphero.api_url', 'https://public-api.shiphero.com/graphql'), '/');
         $token = $this->accessToken();
+        $operation = $this->extractOperationName($graphql);
 
         $payload = ['query' => $graphql];
         if ($variables !== []) {
@@ -66,6 +68,11 @@ class ShipHeroClient
         $maxAttempts = 3;
         $lastTransportError = null;
         for ($attempt = 1; $attempt <= $maxAttempts; $attempt++) {
+            Log::info('shiphero.graphql.request.start', [
+                'operation' => $operation,
+                'attempt' => $attempt,
+                'allow_token_retry' => $allowTokenRetry,
+            ]);
             try {
                 $response = $this->http()->post($url, [
                     'headers' => [
@@ -78,6 +85,11 @@ class ShipHeroClient
                 ]);
             } catch (Throwable $e) {
                 $lastTransportError = $e;
+                Log::warning('shiphero.graphql.request.transport_exception', [
+                    'operation' => $operation,
+                    'attempt' => $attempt,
+                    'message' => $e->getMessage(),
+                ]);
                 if ($attempt < $maxAttempts) {
                     usleep($this->retrySleepMicros($attempt));
                     continue;
@@ -86,6 +98,13 @@ class ShipHeroClient
             }
 
             $status = $response->getStatusCode();
+            $bodyRaw = (string) $response->getBody();
+            Log::info('shiphero.graphql.response.received', [
+                'operation' => $operation,
+                'attempt' => $attempt,
+                'status' => $status,
+                'body_bytes' => strlen($bodyRaw),
+            ]);
             if ($status === 401 && $allowTokenRetry) {
                 Cache::forget('shiphero.access_token');
 
@@ -101,7 +120,7 @@ class ShipHeroClient
                 throw new RuntimeException('ShipHero GraphQL request failed (HTTP '.$status.').');
             }
 
-            $json = json_decode((string) $response->getBody(), true);
+            $json = json_decode($bodyRaw, true);
             if (! is_array($json)) {
                 if ($attempt < $maxAttempts) {
                     usleep($this->retrySleepMicros($attempt));
@@ -131,6 +150,15 @@ class ShipHeroClient
             'ShipHero request failed after retries.'
             .($lastTransportError ? ' Last error: '.$lastTransportError->getMessage() : '')
         );
+    }
+
+    private function extractOperationName(string $graphql): string
+    {
+        if (preg_match('/\b(query|mutation)\s+([A-Za-z0-9_]+)/', $graphql, $matches) === 1) {
+            return (string) $matches[2];
+        }
+
+        return 'anonymous_operation';
     }
 
     private function isTransientHttpStatus(int $status): bool

@@ -8,6 +8,7 @@ use App\Services\ShipHeroOrderService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Gate;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Validation\ValidationException;
 use RuntimeException;
 use Throwable;
@@ -68,8 +69,20 @@ class OrderController extends Controller
         $customerId = $this->resolveShipHeroCustomerAccountId((int) $validated['client_account_id'], $request);
 
         try {
+            Log::info('shiphero.order_detail.request.start', [
+                'order_id' => $orderId,
+                'client_account_id' => (int) $validated['client_account_id'],
+                'shiphero_customer_account_id' => $customerId,
+                'user_id' => optional($request->user())->id,
+            ]);
             $order = $this->orders->getOrder($orderId, $customerId);
 
+            Log::info('shiphero.order_detail.request.success', [
+                'order_id' => $orderId,
+                'shiphero_customer_account_id' => $customerId,
+                'items_count' => is_array($order['items'] ?? null) ? count($order['items']) : 0,
+                'history_count' => is_array($order['history'] ?? null) ? count($order['history']) : 0,
+            ]);
             return response()->json([
                 'order' => $order,
             ]);
@@ -77,9 +90,18 @@ class OrderController extends Controller
             throw $e;
         } catch (RuntimeException $e) {
             $message = (string) $e->getMessage();
-            $canFallback = $this->isTransientUpstreamErrorMessage($message) || $this->isNotFoundMessage($message);
+            Log::warning('shiphero.order_detail.runtime_exception', [
+                'order_id' => $orderId,
+                'shiphero_customer_account_id' => $customerId,
+                'message' => $message,
+            ]);
+            $canFallback = $this->isNotFoundMessage($message);
             $summary = $canFallback ? $this->orders->findOrderSummaryById($orderId, $customerId) : null;
             if ($canFallback && is_array($summary)) {
+                Log::info('shiphero.order_detail.fallback.summary_used', [
+                    'order_id' => $orderId,
+                    'shiphero_customer_account_id' => $customerId,
+                ]);
                 return response()->json([
                     'order' => $this->hydrateOrderFallbackFromSummary($orderId, $summary),
                     'fallback' => [
@@ -87,14 +109,25 @@ class OrderController extends Controller
                     ],
                 ]);
             }
-            return response()->json(['message' => $message], 502);
+            return response()->json([
+                'message' => $message,
+                'error_code' => 'shiphero_order_detail_upstream_error',
+            ], 502);
         } catch (Throwable $e) {
             report($e);
+            Log::error('shiphero.order_detail.unhandled_exception', [
+                'order_id' => $orderId,
+                'shiphero_customer_account_id' => $customerId,
+                'message' => $e->getMessage(),
+                'file' => $e->getFile(),
+                'line' => $e->getLine(),
+            ]);
 
             return response()->json([
                 'message' => config('app.debug')
                     ? $e->getMessage()
                     : 'Could not load order details from ShipHero.',
+                'error_code' => 'shiphero_order_detail_internal_error',
             ], 502);
         }
     }

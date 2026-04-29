@@ -2,6 +2,7 @@
 
 namespace App\Services;
 
+use Illuminate\Support\Facades\Log;
 use RuntimeException;
 
 class ShipHeroOrderService
@@ -155,6 +156,10 @@ GQL;
 
         $node = null;
         $resolvedId = $id;
+        Log::info('shiphero.order_detail.header_lookup.start', [
+            'order_id' => $id,
+            'customer_account_id' => $customer,
+        ]);
         foreach ($this->buildOrderIdCandidates($id) as $candidateId) {
             $node = $this->fetchOrderHeaderNode($customer, $candidateId);
             if ($node !== null) {
@@ -167,9 +172,37 @@ GQL;
         }
 
         $relayId = (string) ($node['id'] ?? $resolvedId);
-        $lineItems = $this->fetchOrderLineItems($customer, $relayId);
+        $lineItems = [];
+        try {
+            Log::info('shiphero.order_detail.line_items.start', [
+                'order_id' => $id,
+                'relay_id' => $relayId,
+                'customer_account_id' => $customer,
+            ]);
+            $lineItems = $this->fetchOrderLineItems($customer, $relayId);
+        } catch (\Throwable $e) {
+            Log::warning('shiphero.order_detail.line_items.failed', [
+                'order_id' => $id,
+                'relay_id' => $relayId,
+                'customer_account_id' => $customer,
+                'exception' => $e->getMessage(),
+            ]);
+            $lineItems = [];
+        }
+
+        Log::info('shiphero.order_detail.history.start', [
+            'order_id' => $id,
+            'relay_id' => $relayId,
+            'customer_account_id' => $customer,
+        ]);
         $history = $this->fetchOrderHistory($customer, $relayId);
 
+        Log::info('shiphero.order_detail.normalize.done', [
+            'order_id' => $id,
+            'relay_id' => $relayId,
+            'line_items_count' => count($lineItems),
+            'history_count' => count($history),
+        ]);
         return $this->normalizeOrderDetail($node, $lineItems, $history);
     }
 
@@ -299,6 +332,8 @@ GQL;
         $items = [];
         $after = null;
         $safety = 0;
+        $maxPages = 6;
+        $perPage = 50;
         do {
             $graphql = <<<'GQL'
 query ShipHeroOrderLineItems($ids: [String], $customer_account_id: String!, $first: Int!, $after: String) {
@@ -334,7 +369,7 @@ GQL;
             $json = $this->client->query($graphql, [
                 'ids' => [$id],
                 'customer_account_id' => $customerAccountId,
-                'first' => 25,
+                'first' => $perPage,
                 'after' => $after,
             ]);
             $edges = data_get($json, 'data.orders.data.edges.0.node.line_items.edges');
@@ -360,7 +395,16 @@ GQL;
             $endCursor = is_array($pageInfo) ? ($pageInfo['endCursor'] ?? null) : null;
             $after = is_string($endCursor) && $endCursor !== '' ? $endCursor : null;
             $safety++;
-        } while ($hasNext && $after !== null && $safety < 20);
+        } while ($hasNext && $after !== null && $safety < $maxPages);
+
+        if ($hasNext && $after !== null) {
+            Log::warning('shiphero.order_detail.line_items.pagination_truncated', [
+                'order_id' => $id,
+                'customer_account_id' => $customerAccountId,
+                'max_pages' => $maxPages,
+                'loaded_items' => count($items),
+            ]);
+        }
 
         return $items;
     }

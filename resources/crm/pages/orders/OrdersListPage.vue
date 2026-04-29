@@ -363,7 +363,7 @@ onUnmounted(() => {
                 No orders found.
               </td>
             </tr>
-            <tr v-for="row in displayedRows" :key="row.id">
+            <tr v-for="row in displayedRows" :key="row.id" class="align-middle">
               <td>
                 <span class="badge rounded-pill fw-medium" :class="statusClass(row.status)">
                   {{ row.status || "—" }}
@@ -405,11 +405,19 @@ onUnmounted(() => {
           </tbody>
         </table>
       </div>
+      <p class="staff-table-mobile-scroll-cue d-md-none" aria-hidden="true">
+        Scroll sideways or swipe to see all columns.
+      </p>
 
-      <div class="staff-table-footer d-flex justify-content-end">
+      <div
+        class="staff-table-footer card-footer d-flex flex-column flex-lg-row align-items-stretch align-items-lg-center justify-content-between gap-3"
+      >
+        <div class="small text-secondary order-2 order-lg-1">
+          Loaded <span class="fw-semibold text-body">{{ rows.length }}</span> order{{ rows.length === 1 ? "" : "s" }}.
+        </div>
         <button
           type="button"
-          class="btn btn-outline-secondary"
+          class="btn btn-outline-secondary order-1 order-lg-2 ms-lg-auto"
           :disabled="loading || !hasNextPage || !selectedAccountId"
           @click="fetchOrders(false)"
         >

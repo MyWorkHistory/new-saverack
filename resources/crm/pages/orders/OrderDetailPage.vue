@@ -47,6 +47,19 @@ function fmtDate(iso) {
 }
 
 function extractErrorMessage(e) {
+  const payload = e?.response?.data;
+  if (payload && typeof payload === "object") {
+    const title = typeof payload.title === "string" ? payload.title.trim() : "";
+    const detail = typeof payload.detail === "string" ? payload.detail.trim() : "";
+    const ownerAction =
+      typeof payload.what_you_should_do === "string"
+        ? payload.what_you_should_do.replace(/\*\*/g, "").trim()
+        : "";
+    if (title && detail) return `${title} ${detail}`;
+    if (title) return title;
+    if (detail) return detail;
+    if (ownerAction) return ownerAction;
+  }
   const msg = e?.response?.data?.message;
   if (typeof msg === "string" && msg.trim() !== "") return msg;
   if (e?.message) return String(e.message);
@@ -225,6 +238,9 @@ onMounted(async () => {
                 </tbody>
               </table>
             </div>
+            <p class="staff-table-mobile-scroll-cue d-md-none" aria-hidden="true">
+              Scroll sideways or swipe to see all columns.
+            </p>
             <div class="px-4 py-3 border-top d-flex justify-content-end">
               <dl class="mb-0 small" style="min-width: 260px">
                 <div class="d-flex justify-content-between mb-1"><dt>Subtotal</dt><dd>{{ fmtMoney(order.subtotal) }}</dd></div>

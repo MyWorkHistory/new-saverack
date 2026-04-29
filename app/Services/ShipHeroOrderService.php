@@ -153,6 +153,25 @@ GQL;
             throw new RuntimeException('Order id and customer account id are required.');
         }
 
+        $node = $this->fetchOrderDetailNode($customer, $id);
+        if ($node === null && ctype_digit($id)) {
+            // Some accounts resolve better using legacy numeric id lookup.
+            $node = $this->fetchOrderDetailNode($customer, (string) ((int) $id));
+        }
+        if ($node === null) {
+            throw new RuntimeException('Order not found in ShipHero.');
+        }
+
+        $history = $this->fetchOrderHistory($customer, (string) ($node['id'] ?? $id));
+
+        return $this->normalizeOrderDetail($node, $history);
+    }
+
+    /**
+     * @return array<string, mixed>|null
+     */
+    private function fetchOrderDetailNode(string $customerAccountId, string $id): ?array
+    {
         $graphql = <<<'GQL'
 query ShipHeroOrderDetail($ids: [String], $customer_account_id: String!) {
   orders(ids: $ids, customer_account_id: $customer_account_id) {
@@ -201,7 +220,7 @@ query ShipHeroOrderDetail($ids: [String], $customer_account_id: String!) {
             method
             shipping_cost
           }
-          line_items(first: 100) {
+          line_items(first: 40) {
             edges {
               node {
                 id
@@ -215,6 +234,42 @@ query ShipHeroOrderDetail($ids: [String], $customer_account_id: String!) {
               }
             }
           }
+        }
+      }
+    }
+  }
+}
+GQL;
+
+        $json = $this->client->query($graphql, [
+            'ids' => [$id],
+            'customer_account_id' => $customerAccountId,
+        ]);
+
+        $edges = data_get($json, 'data.orders.data.edges');
+        if (! is_array($edges) || $edges === []) {
+            return null;
+        }
+        $node = data_get($edges, '0.node');
+        if (! is_array($node)) {
+            return null;
+        }
+
+        return $node;
+    }
+
+    /**
+     * @return list<array<string, mixed>>
+     */
+    private function fetchOrderHistory(string $customerAccountId, string $id): array
+    {
+        $graphql = <<<'GQL'
+query ShipHeroOrderHistory($ids: [String], $customer_account_id: String!) {
+  orders(ids: $ids, customer_account_id: $customer_account_id) {
+    data(first: 1) {
+      edges {
+        node {
+          id
           order_history {
             created_at
             information
@@ -227,21 +282,17 @@ query ShipHeroOrderDetail($ids: [String], $customer_account_id: String!) {
 }
 GQL;
 
-        $json = $this->client->query($graphql, [
-            'ids' => [$id],
-            'customer_account_id' => $customer,
-        ]);
-
-        $edges = data_get($json, 'data.orders.data.edges');
-        if (! is_array($edges) || $edges === []) {
-            throw new RuntimeException('Order not found in ShipHero.');
+        try {
+            $json = $this->client->query($graphql, [
+                'ids' => [$id],
+                'customer_account_id' => $customerAccountId,
+            ]);
+            $raw = data_get($json, 'data.orders.data.edges.0.node.order_history');
+            return is_array($raw) ? $raw : [];
+        } catch (\Throwable $e) {
+            // History is supplemental; do not fail detail page on this call.
+            return [];
         }
-        $node = data_get($edges, '0.node');
-        if (! is_array($node)) {
-            throw new RuntimeException('Order payload is invalid.');
-        }
-
-        return $this->normalizeOrderDetail($node);
     }
 
     /**
@@ -273,7 +324,7 @@ GQL;
      * @param  array<string, mixed>  $node
      * @return array<string, mixed>
      */
-    private function normalizeOrderDetail(array $node): array
+    private function normalizeOrderDetail(array $node, array $history = []): array
     {
         $lineEdges = data_get($node, 'line_items.edges');
         $lineEdges = is_array($lineEdges) ? $lineEdges : [];
@@ -295,7 +346,6 @@ GQL;
             ];
         }
 
-        $history = is_array($node['order_history'] ?? null) ? $node['order_history'] : [];
         $shippingLines = is_array($node['shipping_lines'] ?? null) ? $node['shipping_lines'] : [];
         $shippingLine = is_array($shippingLines[0] ?? null) ? $shippingLines[0] : [];
 

@@ -24,6 +24,7 @@ const hasNextPage = ref(false);
 
 const manageOpenId = ref(null);
 const manageMenuRect = ref({ top: 0, left: 0 });
+const filterMenuOpen = ref(false);
 
 const query = reactive({
   datePreset: "today",
@@ -208,6 +209,7 @@ function openOrder(row) {
 
 function onDocClick(e) {
   if (!e.target?.closest?.("[data-row-actions]")) manageOpenId.value = null;
+  if (!e.target?.closest?.("[data-toolbar-filter]")) filterMenuOpen.value = false;
 }
 
 function placeManageMenu(anchorEl) {
@@ -294,43 +296,108 @@ onUnmounted(() => {
           </div>
 
           <template v-if="showManageFilters">
-            <select v-model="query.datePreset" class="form-select staff-toolbar-btn" :disabled="loading">
-              <option value="today">Today</option>
-              <option value="last_7">Last 7 days</option>
-              <option value="last_30">Last 30 days</option>
-              <option value="custom">Custom range</option>
-            </select>
-            <input
-              v-if="isCustomDate"
-              v-model="query.from"
-              type="date"
-              class="form-control staff-toolbar-btn"
-              :disabled="loading"
-            />
-            <input
-              v-if="isCustomDate"
-              v-model="query.to"
-              type="date"
-              class="form-control staff-toolbar-btn"
-              :disabled="loading"
-            />
-            <button
-              v-if="isCustomDate"
-              type="button"
-              class="btn btn-outline-secondary staff-toolbar-btn"
-              :disabled="loading || !selectedAccountId"
-              @click="fetchOrders(true)"
-            >
-              Apply
-            </button>
-            <select v-model="query.sortBy" class="form-select staff-toolbar-btn" :disabled="loading">
-              <option value="order_date">Order Date</option>
-              <option value="account">Account</option>
-            </select>
-            <select v-model="query.sortDir" class="form-select staff-toolbar-btn" :disabled="loading">
-              <option value="desc">Desc</option>
-              <option value="asc">Asc</option>
-            </select>
+            <div class="position-relative flex-shrink-0" data-toolbar-filter>
+              <button
+                type="button"
+                class="btn btn-outline-secondary staff-toolbar-btn d-inline-flex align-items-center gap-2"
+                :aria-expanded="filterMenuOpen"
+                @click.stop="filterMenuOpen = !filterMenuOpen"
+              >
+                <svg
+                  width="18"
+                  height="18"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="2"
+                  viewBox="0 0 24 24"
+                  aria-hidden="true"
+                >
+                  <path
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                    d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2.586a1 1 0 01-.293.707l-6.414 6.414a1 1 0 00-.293.707V17l-4 4v-6.586a1 1 0 00-.293-.707L3.293 7.293A1 1 0 013 6.586V4z"
+                  />
+                </svg>
+                <span class="staff-toolbar-filter-text">Filters</span>
+              </button>
+              <div
+                v-if="filterMenuOpen"
+                class="dropdown-menu dropdown-menu-end show shadow border p-0 staff-toolbar-filter-dropdown"
+                role="dialog"
+                aria-label="Order filters"
+                @click.stop
+              >
+                <div class="staff-toolbar-filter-dropdown__head">
+                  <span>Filters</span>
+                  <button
+                    type="button"
+                    class="btn btn-link btn-sm text-secondary text-decoration-none p-0"
+                    @click="
+                      query.datePreset = 'today';
+                      query.from = '';
+                      query.to = '';
+                      query.sortBy = 'order_date';
+                      query.sortDir = 'desc';
+                      filterMenuOpen = false;
+                    "
+                  >
+                    Reset
+                  </button>
+                </div>
+                <div class="staff-toolbar-filter-dropdown__body">
+                  <label class="form-label" for="orders-filter-date-preset">Date Range</label>
+                  <select
+                    id="orders-filter-date-preset"
+                    v-model="query.datePreset"
+                    class="form-select staff-datatable-filters__select mb-3"
+                    :disabled="loading"
+                  >
+                    <option value="today">Today</option>
+                    <option value="last_7">Last 7 days</option>
+                    <option value="last_30">Last 30 days</option>
+                    <option value="custom">Custom range</option>
+                  </select>
+                  <template v-if="isCustomDate">
+                    <label class="form-label" for="orders-filter-from">From</label>
+                    <input
+                      id="orders-filter-from"
+                      v-model="query.from"
+                      type="date"
+                      class="form-control mb-3"
+                      :disabled="loading"
+                    />
+                    <label class="form-label" for="orders-filter-to">To</label>
+                    <input
+                      id="orders-filter-to"
+                      v-model="query.to"
+                      type="date"
+                      class="form-control mb-3"
+                      :disabled="loading"
+                    />
+                  </template>
+                  <label class="form-label" for="orders-filter-sort-by">Sort By</label>
+                  <select
+                    id="orders-filter-sort-by"
+                    v-model="query.sortBy"
+                    class="form-select staff-datatable-filters__select mb-3"
+                    :disabled="loading"
+                  >
+                    <option value="order_date">Order Date</option>
+                    <option value="account">Account</option>
+                  </select>
+                  <label class="form-label" for="orders-filter-sort-dir">Sort Direction</label>
+                  <select
+                    id="orders-filter-sort-dir"
+                    v-model="query.sortDir"
+                    class="form-select staff-datatable-filters__select"
+                    :disabled="loading"
+                  >
+                    <option value="desc">Desc</option>
+                    <option value="asc">Asc</option>
+                  </select>
+                </div>
+              </div>
+            </div>
           </template>
         </div>
         <p class="small text-secondary mb-0 mt-2 px-1">Only accounts with a ShipHero customer ID appear here.</p>

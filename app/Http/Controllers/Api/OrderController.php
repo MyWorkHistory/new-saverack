@@ -172,7 +172,7 @@ class OrderController extends Controller
             return null;
         }
 
-        return \Carbon\Carbon::parse($value)->startOfDay()->toIso8601String();
+        return \Carbon\Carbon::parse($value)->toDateString();
     }
 
     private function dateEndIso($value): ?string
@@ -181,7 +181,7 @@ class OrderController extends Controller
             return null;
         }
 
-        return \Carbon\Carbon::parse($value)->endOfDay()->toIso8601String();
+        return \Carbon\Carbon::parse($value)->toDateString();
     }
 
     private function isTransientUpstreamErrorMessage(string $message): bool

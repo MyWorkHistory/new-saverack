@@ -2,6 +2,7 @@
 
 namespace App\Services;
 
+use Carbon\Carbon;
 use Illuminate\Support\Facades\Log;
 use RuntimeException;
 
@@ -129,6 +130,7 @@ GQL;
             }
             $rows[] = $this->normalizeOrderRow($node, $edge['cursor'] ?? null);
         }
+        $rows = $this->applyListFilters($rows, $filters);
 
         $pageInfo = is_array($data['pageInfo'] ?? null) ? $data['pageInfo'] : [];
 
@@ -732,6 +734,90 @@ query ShipHeroOrderHeaderDebugCore($ids: [String], $customer_account_id: String!
   }
 }
 GQL;
+    }
+
+    /**
+     * @param list<array<string, mixed>> $rows
+     * @param array<string, mixed> $filters
+     * @return list<array<string, mixed>>
+     */
+    private function applyListFilters(array $rows, array $filters): array
+    {
+        $tab = strtolower(trim((string) ($filters['tab'] ?? 'manage')));
+        $from = $this->normalizeDateBoundary($filters['order_date_from'] ?? null, true);
+        $to = $this->normalizeDateBoundary($filters['order_date_to'] ?? null, false);
+
+        $out = [];
+        foreach ($rows as $row) {
+            if (! is_array($row)) {
+                continue;
+            }
+            $status = strtolower(trim((string) ($row['status'] ?? '')));
+            if (! $this->statusMatchesTab($status, $tab)) {
+                continue;
+            }
+            if (! $this->rowInDateRange($row, $from, $to)) {
+                continue;
+            }
+            $out[] = $row;
+        }
+
+        return $out;
+    }
+
+    private function statusMatchesTab(string $status, string $tab): bool
+    {
+        if ($tab === 'on_hold') {
+            return str_contains($status, 'hold');
+        }
+        if ($tab === 'shipped') {
+            return str_contains($status, 'ship');
+        }
+        if ($tab === 'awaiting') {
+            return ! str_contains($status, 'hold') && ! str_contains($status, 'ship');
+        }
+
+        return true;
+    }
+
+    private function rowInDateRange(array $row, ?Carbon $from, ?Carbon $to): bool
+    {
+        if ($from === null && $to === null) {
+            return true;
+        }
+        $raw = $row['order_date'] ?? null;
+        if (! is_string($raw) || trim($raw) === '') {
+            return false;
+        }
+
+        try {
+            $date = Carbon::parse($raw);
+        } catch (\Throwable $e) {
+            return false;
+        }
+
+        if ($from !== null && $date->lt($from)) {
+            return false;
+        }
+        if ($to !== null && $date->gt($to)) {
+            return false;
+        }
+
+        return true;
+    }
+
+    private function normalizeDateBoundary($value, bool $startOfDay): ?Carbon
+    {
+        if (! is_string($value) || trim($value) === '') {
+            return null;
+        }
+        try {
+            $date = Carbon::parse($value);
+        } catch (\Throwable $e) {
+            return null;
+        }
+
+        return $startOfDay ? $date->startOfDay() : $date->endOfDay();
     }
 }
 

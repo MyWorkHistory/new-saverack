@@ -2113,7 +2113,7 @@ onUnmounted(() => {
           </template>
 
           <template v-else-if="activeTab === TAB_FEES">
-            <div class="staff-surface p-3 p-md-4">
+            <div class="p-3 p-md-4">
               <ClientAccountFeesPanel
                 :account="account"
                 :account-id="String(props.id)"

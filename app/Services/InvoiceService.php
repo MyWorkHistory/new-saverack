@@ -1031,6 +1031,7 @@ class InvoiceService
         $fulfillment = [];
         $postage = [];
         $packaging = [];
+        $storage = [];
         $receiving = [];
         $adHoc = [];
         $ccFees = [];
@@ -1108,6 +1109,21 @@ class InvoiceService
                 $packaging[$key]['items'][] = $this->detailLeafRow($item, $this->oldBetaPackagingType($rawName), $rawName, $unitRate, $total);
                 $packaging[$key]['qty'] += $qty;
                 $packaging[$key]['total'] += $total;
+            } elseif ($category === InvoiceLineCategory::STORAGE) {
+                $rawName = $this->oldBetaDisplayName($item, 'Storage');
+                $key = strtolower($rawName);
+                if (! isset($storage[$key])) {
+                    $storage[$key] = ['name' => $rawName, 'items' => [], 'qty' => 0.0, 'total' => 0];
+                }
+                $qty = (float) $item->quantity;
+                $total = (int) $item->line_total_cents;
+                $unitRate = (int) $item->unit_price_cents;
+                if ($unitRate === 0 && $qty != 0.0 && $total !== 0) {
+                    $unitRate = (int) round($total / $qty);
+                }
+                $storage[$key]['items'][] = $this->detailLeafRow($item, 'Storage', $rawName, $unitRate, $total);
+                $storage[$key]['qty'] += $qty;
+                $storage[$key]['total'] += $total;
             } elseif ($category === InvoiceLineCategory::RECEIVING) {
                 $rawName = $this->oldBetaDisplayName($item, 'Receiving');
                 $key = strtolower($rawName);
@@ -1238,6 +1254,22 @@ class InvoiceService
                 'price_cents' => $qty != 0.0 ? (int) round($total / $qty) : 0,
                 'total_cents' => $total,
                 'groupKey' => 'packaging',
+                'groupName' => $agg['name'],
+                'line_group_key' => $this->singleGroupKey($agg['items']),
+                'details' => $agg['items'],
+            ];
+        }
+        foreach ($storage as $storageKey => $agg) {
+            $qty = (float) $agg['qty'];
+            $total = (int) $agg['total'];
+            $rows[] = [
+                'id' => 'storage-'.$storageKey,
+                'name' => $agg['name'],
+                'type' => 'Storage',
+                'qty' => $qty,
+                'price_cents' => $qty != 0.0 ? (int) round($total / $qty) : 0,
+                'total_cents' => $total,
+                'groupKey' => 'storage',
                 'groupName' => $agg['name'],
                 'line_group_key' => $this->singleGroupKey($agg['items']),
                 'details' => $agg['items'],

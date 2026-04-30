@@ -234,7 +234,7 @@ async function removeStorageRow(row, idx) {
 
     <!-- Fulfillment Fee -->
     <section class="crm-account-fees__section mb-4" aria-labelledby="crm-fees-fulfillment">
-      <div class="staff-surface crm-account-fees__section-card">
+      <div class="crm-account-fees__section-card">
         <div class="crm-account-fees__section-head">
           <span class="crm-account-fees__icon crm-account-fees__icon--primary" aria-hidden="true">
             <svg width="22" height="22" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.75">
@@ -252,7 +252,7 @@ async function removeStorageRow(row, idx) {
 
         <div class="row g-3 mt-1">
           <div class="col-12 col-md-6">
-            <div class="crm-account-fees__metric crm-account-fees__metric--tall h-100">
+            <div class="crm-account-fees__metric crm-account-fees__metric--tall staff-surface h-100">
               <div class="crm-account-fees__metric-body">
                 <p class="crm-account-fees__metric-label mb-0">Fulfillment</p>
                 <p class="crm-account-fees__metric-sub small text-secondary mb-0">
@@ -275,7 +275,7 @@ async function removeStorageRow(row, idx) {
             </div>
           </div>
           <div class="col-12 col-md-6">
-            <div class="crm-account-fees__metric crm-account-fees__metric--tall h-100">
+            <div class="crm-account-fees__metric crm-account-fees__metric--tall staff-surface h-100">
               <div class="crm-account-fees__metric-body">
                 <p class="crm-account-fees__metric-label mb-0">Additional Picks</p>
                 <p class="crm-account-fees__metric-sub small text-secondary mb-0">
@@ -303,7 +303,7 @@ async function removeStorageRow(row, idx) {
 
     <!-- Returns Fee -->
     <section class="crm-account-fees__section mb-4" aria-labelledby="crm-fees-returns">
-      <div class="staff-surface crm-account-fees__section-card">
+      <div class="crm-account-fees__section-card">
         <div class="crm-account-fees__section-head">
           <span class="crm-account-fees__icon crm-account-fees__icon--amber" aria-hidden="true">
             <svg width="22" height="22" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.75">
@@ -319,7 +319,7 @@ async function removeStorageRow(row, idx) {
 
         <div class="row g-3 mt-1">
           <div class="col-12 col-md-6">
-            <div class="crm-account-fees__metric crm-account-fees__metric--tall h-100">
+            <div class="crm-account-fees__metric crm-account-fees__metric--tall staff-surface h-100">
               <div class="crm-account-fees__metric-body">
                 <p class="crm-account-fees__metric-label mb-0">Returns</p>
                 <p class="crm-account-fees__metric-sub small text-secondary mb-0">
@@ -342,7 +342,7 @@ async function removeStorageRow(row, idx) {
             </div>
           </div>
           <div class="col-12 col-md-6">
-            <div class="crm-account-fees__metric crm-account-fees__metric--tall h-100">
+            <div class="crm-account-fees__metric crm-account-fees__metric--tall staff-surface h-100">
               <div class="crm-account-fees__metric-body">
                 <p class="crm-account-fees__metric-label mb-0">Additional Items</p>
                 <p class="crm-account-fees__metric-sub small text-secondary mb-0">
@@ -370,7 +370,7 @@ async function removeStorageRow(row, idx) {
 
     <!-- Storage -->
     <section class="crm-account-fees__section" aria-labelledby="crm-fees-storage">
-      <div class="staff-surface crm-account-fees__section-card">
+      <div class="crm-account-fees__section-card">
         <div
           class="crm-account-fees__section-head flex-wrap"
           :class="editing ? 'justify-content-between' : ''"
@@ -402,7 +402,7 @@ async function removeStorageRow(row, idx) {
           class="list-unstyled mb-0 mt-3 row g-3"
         >
           <li v-for="(row, idx) in storageRowsForDisplay" :key="'st-' + (row.id ?? idx)" class="col-12">
-            <div class="crm-account-fees__metric">
+            <div class="crm-account-fees__metric staff-surface">
               <div class="crm-account-fees__metric-body">
                 <p class="crm-account-fees__metric-label mb-0">{{ row.label }}</p>
               </div>
@@ -418,7 +418,7 @@ async function removeStorageRow(row, idx) {
           class="list-unstyled mb-0 mt-3 row g-3"
         >
           <li v-for="(row, idx) in draft.storage" :key="row.id ?? 'new-' + idx" class="col-12">
-            <div class="crm-account-fees__metric align-items-start flex-column flex-md-row">
+            <div class="crm-account-fees__metric staff-surface align-items-start flex-column flex-md-row">
               <div class="crm-account-fees__metric-body flex-grow-1 w-100 min-w-0">
                 <label class="form-label small text-secondary mb-1">Label</label>
                 <input v-model="row.label" type="text" class="form-control form-control-sm mb-2" />
@@ -443,7 +443,7 @@ async function removeStorageRow(row, idx) {
         </ul>
 
         <div v-else-if="!editing" class="mt-3">
-          <div class="crm-account-fees__metric">
+          <div class="crm-account-fees__metric staff-surface">
             <div class="crm-account-fees__metric-body">
               <p class="crm-account-fees__metric-label mb-0 text-secondary small">
                 No storage fees on file

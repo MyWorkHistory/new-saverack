@@ -400,7 +400,19 @@ onMounted(async () => {
                 </thead>
                 <tbody>
                   <tr v-for="item in sortedItems" :key="item.id || item.sku">
-                    <td>{{ item.name || "—" }}</td>
+                    <td>
+                      <div class="order-detail-page__item-cell">
+                        <img
+                          v-if="item.image_url"
+                          :src="item.image_url"
+                          alt=""
+                          class="order-detail-page__item-thumb"
+                          loading="lazy"
+                        />
+                        <div v-else class="order-detail-page__item-thumb order-detail-page__item-thumb--empty" aria-hidden="true"></div>
+                        <span>{{ item.name || "—" }}</span>
+                      </div>
+                    </td>
                     <td>{{ item.sku || "—" }}</td>
                     <td class="text-end">{{ item.quantity ?? 0 }}</td>
                     <td class="text-end">{{ item.quantity_allocated ?? 0 }}</td>
@@ -508,6 +520,26 @@ onMounted(async () => {
 .order-detail-page__sort-btn--right {
   width: 100%;
   text-align: right;
+}
+
+.order-detail-page__item-cell {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.order-detail-page__item-thumb {
+  width: 32px;
+  height: 32px;
+  border-radius: 0.35rem;
+  object-fit: cover;
+  border: 1px solid rgba(0, 0, 0, 0.08);
+  background: #fff;
+  flex-shrink: 0;
+}
+
+.order-detail-page__item-thumb--empty {
+  background: rgba(0, 0, 0, 0.04);
 }
 
 .order-detail-page__history-html :deep(p) {

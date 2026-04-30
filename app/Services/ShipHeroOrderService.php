@@ -371,6 +371,7 @@ query ShipHeroOrderLineItems($id: String!, $first: Int!, $after: String) {
           node {
             id
             sku
+            product_id
             quantity
             quantity_allocated
             quantity_pending_fulfillment
@@ -403,12 +404,14 @@ GQL;
                 $items[] = [
                     'id' => (string) ($line['id'] ?? ''),
                     'sku' => (string) ($line['sku'] ?? ''),
+                    'product_id' => (string) ($line['product_id'] ?? ''),
                     'name' => (string) ($line['product_name'] ?? ''),
                     'quantity' => (float) ($line['quantity'] ?? 0),
                     'quantity_allocated' => (float) ($line['quantity_allocated'] ?? 0),
                     'quantity_pending_fulfillment' => (float) ($line['quantity_pending_fulfillment'] ?? 0),
                     'backorder_quantity' => (float) ($line['backorder_quantity'] ?? 0),
                     'custom_options' => is_string($line['custom_options'] ?? null) ? $line['custom_options'] : null,
+                    'image_url' => null,
                 ];
             }
             $pageInfo = data_get($json, 'data.order.data.line_items.pageInfo');
@@ -426,6 +429,8 @@ GQL;
                 'loaded_items' => count($items),
             ]);
         }
+
+        $items = $this->attachLineItemImages($items);
 
         return $items;
     }
@@ -865,6 +870,88 @@ GQL;
         }
 
         return $startOfDay ? $date->startOfDay() : $date->endOfDay();
+    }
+
+    /**
+     * @param list<array<string,mixed>> $items
+     * @return list<array<string,mixed>>
+     */
+    private function attachLineItemImages(array $items): array
+    {
+        $productIds = [];
+        foreach ($items as $item) {
+            if (! is_array($item)) {
+                continue;
+            }
+            $pid = trim((string) ($item['product_id'] ?? ''));
+            if ($pid !== '' && ! in_array($pid, $productIds, true)) {
+                $productIds[] = $pid;
+            }
+        }
+        if ($productIds === []) {
+            return $items;
+        }
+
+        $imageMap = [];
+        foreach ($productIds as $pid) {
+            $imageMap[$pid] = $this->fetchProductPrimaryImage($pid);
+        }
+
+        foreach ($items as $idx => $item) {
+            if (! is_array($item)) {
+                continue;
+            }
+            $pid = trim((string) ($item['product_id'] ?? ''));
+            $items[$idx]['image_url'] = ($pid !== '' && isset($imageMap[$pid])) ? $imageMap[$pid] : null;
+        }
+
+        return $items;
+    }
+
+    private function fetchProductPrimaryImage(string $productId): ?string
+    {
+        $graphql = <<<'GQL'
+query ShipHeroProductImage($id: String!) {
+  product(id: $id) {
+    data {
+      id
+      images {
+        src
+        position
+      }
+    }
+  }
+}
+GQL;
+
+        try {
+            $json = $this->client->query($graphql, ['id' => $productId]);
+        } catch (\Throwable $e) {
+            return null;
+        }
+        $images = data_get($json, 'data.product.data.images');
+        if (! is_array($images) || $images === []) {
+            return null;
+        }
+
+        $chosen = null;
+        $bestPos = PHP_INT_MAX;
+        foreach ($images as $img) {
+            if (! is_array($img)) {
+                continue;
+            }
+            $src = trim((string) ($img['src'] ?? ''));
+            if ($src === '') {
+                continue;
+            }
+            $pos = isset($img['position']) && is_numeric($img['position']) ? (int) $img['position'] : 999999;
+            if ($chosen === null || $pos < $bestPos) {
+                $chosen = $src;
+                $bestPos = $pos;
+            }
+        }
+
+        return $chosen;
     }
 }
 

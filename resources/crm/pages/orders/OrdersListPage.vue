@@ -29,9 +29,10 @@ const readySummary = ref({
   priority_orders_total: 0,
 });
 const READY_SUMMARY_CACHE_KEY = "orders.manage.readySummary.v1";
-const readySummaryPageSize = 5;
+const readySummaryPageSize = 7;
 const readySummaryOffset = ref(0);
 const readySummaryHasMore = ref(false);
+const readySummaryLoadingMore = ref(false);
 
 const manageOpenId = ref(null);
 const manageMenuRect = ref({ top: 0, left: 0 });
@@ -204,7 +205,11 @@ async function fetchOrders(reset = true) {
 
 async function fetchReadySummary(reset = true) {
   if (!showManageFilters.value || tabKey.value !== "manage") return;
-  readySummaryLoading.value = true;
+  if (reset) {
+    readySummaryLoading.value = true;
+  } else {
+    readySummaryLoadingMore.value = true;
+  }
   try {
     const range = dateRangeFromPreset();
     const { data } = await api.get("/orders/summary", {
@@ -235,7 +240,11 @@ async function fetchReadySummary(reset = true) {
   } catch (e) {
     toast.errorFrom(e, "Could not load Ready to Ship summary.");
   } finally {
-    readySummaryLoading.value = false;
+    if (reset) {
+      readySummaryLoading.value = false;
+    } else {
+      readySummaryLoadingMore.value = false;
+    }
   }
 }
 
@@ -472,10 +481,10 @@ onUnmounted(() => {
 
       <div v-if="showManageFilters" class="px-3 px-md-4 pb-2">
         <p class="mb-1 fw-semibold">
-          <template v-if="readySummaryLoading">Loading summary...</template>
+          <template v-if="readySummaryLoading && !readySummaryVisibleAccounts.length">Loading summary...</template>
           <template v-else>{{ readySummary.ready_to_ship_total }} Ready to Ship Orders</template>
         </p>
-        <div v-if="!readySummaryLoading && readySummary.ready_to_ship_by_account.length" class="small text-secondary">
+        <div v-if="readySummary.ready_to_ship_by_account.length" class="small text-secondary">
           <span
             v-for="(row, idx) in readySummaryVisibleAccounts"
             :key="`${row.account_id}-${idx}`"
@@ -487,9 +496,10 @@ onUnmounted(() => {
             v-if="canLoadMoreReadySummary"
             type="button"
             class="btn btn-link btn-sm p-0 ms-1 align-baseline text-decoration-none"
+            :disabled="readySummaryLoadingMore"
             @click="fetchReadySummary(false)"
           >
-            Load More
+            {{ readySummaryLoadingMore ? "Loading..." : "Load More" }}
           </button>
         </div>
       </div>

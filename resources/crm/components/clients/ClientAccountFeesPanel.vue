@@ -18,11 +18,32 @@ const toast = useToast();
 const editing = ref(false);
 const saving = ref(false);
 const deletingId = ref(null);
+const DEFAULT_STORAGE_FEE_TYPES = [
+  "Bin (Large)",
+  "Bin (Medium)",
+  "Bin (Small)",
+  "Bin (X-Large)",
+  "Custom",
+  "Pallet (Large)",
+  "Pallet (Medium)",
+  "Pallet (Small)",
+  "Pallet (X-Large)",
+  "Shelf (Large)",
+  "Shelf (Medium)",
+  "Shelf (Small)",
+  "Shelf (X-Large)",
+  "Sleeve",
+];
 
 /** @type {import('vue').Ref<null | { firstPick: string, additionalPicks: string, processing: string, additionalItems: string, storage: { id: number | null, label: string, amount: string, currency: string }[] }>} */
 const draft = ref(null);
 
 const data = computed(() => normalizeAccountFees(props.account));
+const storageRowsForDisplay = computed(() =>
+  data.value.storageRows.length
+    ? data.value.storageRows
+    : DEFAULT_STORAGE_FEE_TYPES.map((label) => ({ id: null, label, value: "$0.00" })),
+);
 
 function showCell(v) {
   return v ?? "—";
@@ -45,17 +66,25 @@ function initDraft() {
   const f = props.account?.fees ?? {};
   const ful = f.fulfillment ?? {};
   const ret = f.returns ?? {};
+  const storageRows = Array.isArray(f.storage) ? f.storage : [];
   draft.value = {
     firstPick: amountToInput(ful.first_pick_fee),
     additionalPicks: amountToInput(ful.additional_picks_fee),
     processing: amountToInput(ret.processing_fee),
     additionalItems: amountToInput(ret.additional_items_fee),
-    storage: (Array.isArray(f.storage) ? f.storage : []).map((row) => ({
-      id: row.id != null ? Number(row.id) : null,
-      label: row.label != null ? String(row.label) : "",
-      amount: amountToInput(row.amount),
-      currency: row.currency != null && String(row.currency).length === 3 ? String(row.currency) : "USD",
-    })),
+    storage: storageRows.length
+      ? storageRows.map((row) => ({
+          id: row.id != null ? Number(row.id) : null,
+          label: row.label != null ? String(row.label) : "",
+          amount: amountToInput(row.amount),
+          currency: row.currency != null && String(row.currency).length === 3 ? String(row.currency) : "USD",
+        }))
+      : DEFAULT_STORAGE_FEE_TYPES.map((label) => ({
+          id: null,
+          label,
+          amount: "0",
+          currency: "USD",
+        })),
   };
 }
 
@@ -130,8 +159,8 @@ function addStorageRow() {
   if (!draft.value) return;
   draft.value.storage.push({
     id: null,
-    label: "",
-    amount: "",
+    label: "Storage",
+    amount: "0",
     currency: "USD",
   });
 }
@@ -223,7 +252,7 @@ async function removeStorageRow(row, idx) {
 
         <div class="row g-3 mt-1">
           <div class="col-12 col-md-6">
-            <div class="crm-account-fees__metric crm-account-fees__metric--tall staff-surface h-100">
+            <div class="crm-account-fees__metric crm-account-fees__metric--tall h-100">
               <div class="crm-account-fees__metric-body">
                 <p class="crm-account-fees__metric-label mb-0">Fulfillment</p>
                 <p class="crm-account-fees__metric-sub small text-secondary mb-0">
@@ -246,7 +275,7 @@ async function removeStorageRow(row, idx) {
             </div>
           </div>
           <div class="col-12 col-md-6">
-            <div class="crm-account-fees__metric crm-account-fees__metric--tall staff-surface h-100">
+            <div class="crm-account-fees__metric crm-account-fees__metric--tall h-100">
               <div class="crm-account-fees__metric-body">
                 <p class="crm-account-fees__metric-label mb-0">Additional Picks</p>
                 <p class="crm-account-fees__metric-sub small text-secondary mb-0">
@@ -290,7 +319,7 @@ async function removeStorageRow(row, idx) {
 
         <div class="row g-3 mt-1">
           <div class="col-12 col-md-6">
-            <div class="crm-account-fees__metric crm-account-fees__metric--tall staff-surface h-100">
+            <div class="crm-account-fees__metric crm-account-fees__metric--tall h-100">
               <div class="crm-account-fees__metric-body">
                 <p class="crm-account-fees__metric-label mb-0">Returns</p>
                 <p class="crm-account-fees__metric-sub small text-secondary mb-0">
@@ -313,7 +342,7 @@ async function removeStorageRow(row, idx) {
             </div>
           </div>
           <div class="col-12 col-md-6">
-            <div class="crm-account-fees__metric crm-account-fees__metric--tall staff-surface h-100">
+            <div class="crm-account-fees__metric crm-account-fees__metric--tall h-100">
               <div class="crm-account-fees__metric-body">
                 <p class="crm-account-fees__metric-label mb-0">Additional Items</p>
                 <p class="crm-account-fees__metric-sub small text-secondary mb-0">
@@ -369,11 +398,11 @@ async function removeStorageRow(row, idx) {
         </div>
 
         <ul
-          v-if="!editing && data.storageRows.length"
+          v-if="!editing && storageRowsForDisplay.length"
           class="list-unstyled mb-0 mt-3 row g-3"
         >
-          <li v-for="(row, idx) in data.storageRows" :key="'st-' + (row.id ?? idx)" class="col-12">
-            <div class="crm-account-fees__metric staff-surface">
+          <li v-for="(row, idx) in storageRowsForDisplay" :key="'st-' + (row.id ?? idx)" class="col-12">
+            <div class="crm-account-fees__metric">
               <div class="crm-account-fees__metric-body">
                 <p class="crm-account-fees__metric-label mb-0">{{ row.label }}</p>
               </div>
@@ -389,7 +418,7 @@ async function removeStorageRow(row, idx) {
           class="list-unstyled mb-0 mt-3 row g-3"
         >
           <li v-for="(row, idx) in draft.storage" :key="row.id ?? 'new-' + idx" class="col-12">
-            <div class="crm-account-fees__metric staff-surface align-items-start flex-column flex-md-row">
+            <div class="crm-account-fees__metric align-items-start flex-column flex-md-row">
               <div class="crm-account-fees__metric-body flex-grow-1 w-100 min-w-0">
                 <label class="form-label small text-secondary mb-1">Label</label>
                 <input v-model="row.label" type="text" class="form-control form-control-sm mb-2" />
@@ -414,7 +443,7 @@ async function removeStorageRow(row, idx) {
         </ul>
 
         <div v-else-if="!editing" class="mt-3">
-          <div class="crm-account-fees__metric staff-surface">
+          <div class="crm-account-fees__metric">
             <div class="crm-account-fees__metric-body">
               <p class="crm-account-fees__metric-label mb-0 text-secondary small">
                 No storage fees on file

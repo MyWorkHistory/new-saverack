@@ -211,11 +211,13 @@ final class InvoiceChargeImportParser
         $chargeName = $this->cell($row, $map['charge_name'] ?? -1);
         $chargeTypeRaw = $this->cell($row, $map['charge_type_new'] ?? ($map['charge_type'] ?? -1));
         $categoryRaw = $this->cell($row, $map['billing_category'] ?? -1);
+        $feeRaw = $this->cell($row, $map['fee'] ?? -1);
+        $descriptionRaw = $this->cell($row, $map['ad_hoc_name'] ?? -1);
         $qty = $this->parseQty($this->cell($row, $map['charge_qty'] ?? -1));
         $rateCents = $this->parseMoneyToCents($this->cell($row, $map['avg_rate'] ?? -1));
         $subtotalCents = $this->parseMoneyToCents($this->cell($row, $map['charge_subtotal'] ?? -1));
         if (
-            $chargeName === '' && $chargeTypeRaw === '' && $categoryRaw === ''
+            $chargeName === '' && $chargeTypeRaw === '' && $categoryRaw === '' && $feeRaw === '' && $descriptionRaw === ''
             && $qty <= 0 && $rateCents <= 0 && $subtotalCents <= 0
         ) {
             return null;
@@ -235,6 +237,20 @@ final class InvoiceChargeImportParser
         $lineTotalCents = $subtotalCents > 0 ? $subtotalCents : (int) round($qty * $rateCents);
         $sku = $this->cell($row, $map['charge_sku'] ?? -1);
         $orderNumber = $this->shipmentOrderNumber($row, $map);
+        if ($this->isStorageChargeContext($categoryRaw, $feeRaw, $chargeName, $chargeTypeRaw, $descriptionRaw)) {
+            return $this->attachOrderMetadata(
+                $this->buildStorageChargeItem(
+                    $descriptionRaw,
+                    $chargeName,
+                    $chargeTypeRaw,
+                    $qty,
+                    $rateCents,
+                    $lineTotalCents,
+                    $this->trimmedSkuOrNull($sku)
+                ),
+                $orderNumber
+            );
+        }
         if ($this->isReturnLabelCharge($chargeName, $chargeTypeRaw)) {
             return $this->attachOrderMetadata(
                 $this->buildItem(
@@ -253,18 +269,18 @@ final class InvoiceChargeImportParser
             );
         }
 
-        $item = $this->mapChargeSummaryPrimary($chargeName, $chargeTypeRaw, $categoryRaw, $sku, $qty, $rateCents, $lineTotalCents);
+        $item = $this->mapChargeSummaryPrimary($chargeName, $chargeTypeRaw, $categoryRaw, $descriptionRaw, $sku, $qty, $rateCents, $lineTotalCents);
         if ($item !== null) {
             return $this->attachOrderMetadata($item, $orderNumber);
         }
 
-        $item = $this->mapChargeSummaryRowByHeuristics($chargeName, $chargeTypeRaw, $sku, $qty, $rateCents, $lineTotalCents);
+        $item = $this->mapChargeSummaryRowByHeuristics($chargeName, $chargeTypeRaw, $descriptionRaw, $sku, $qty, $rateCents, $lineTotalCents);
         if ($item !== null) {
             return $this->attachOrderMetadata($item, $orderNumber);
         }
 
         return $this->attachOrderMetadata(
-            $this->buildChargeSummaryFallbackItem($chargeName, $chargeTypeRaw, $categoryRaw, $sku, $qty, $rateCents, $lineTotalCents),
+            $this->buildChargeSummaryFallbackItem($chargeName, $chargeTypeRaw, $categoryRaw, $descriptionRaw, $sku, $qty, $rateCents, $lineTotalCents),
             $orderNumber
         );
     }
@@ -349,10 +365,13 @@ final class InvoiceChargeImportParser
     /**
      * @return array<string, mixed>|null
      */
-    private function mapChargeSummaryPrimary(string $chargeName, string $chargeTypeRaw, string $billingCategoryRaw, string $skuFromColumn, float $qty, int $rateCents, int $lineTotalCents): ?array
+    private function mapChargeSummaryPrimary(string $chargeName, string $chargeTypeRaw, string $billingCategoryRaw, string $descriptionRaw, string $skuFromColumn, float $qty, int $rateCents, int $lineTotalCents): ?array
     {
         $t = strtolower(trim($chargeTypeRaw));
 
+        if ($this->isStorageChargeContext($billingCategoryRaw, '', $chargeName, $chargeTypeRaw, $descriptionRaw)) {
+            return $this->buildStorageChargeItem($descriptionRaw, $chargeName, $chargeTypeRaw, $qty, $rateCents, $lineTotalCents, $this->trimmedSkuOrNull($skuFromColumn));
+        }
         if ($this->billingCategoryRawImpliesOnDemand($billingCategoryRaw)) {
             return $this->buildOnDemandItem($chargeName, $chargeTypeRaw, $skuFromColumn, $qty, $rateCents, $lineTotalCents);
         }
@@ -449,11 +468,15 @@ final class InvoiceChargeImportParser
     /**
      * @return array<string, mixed>|null
      */
-    private function mapChargeSummaryRowByHeuristics(string $chargeName, string $chargeTypeRaw, string $skuFromColumn, float $qty, int $rateCents, int $lineTotalCents): ?array
+    private function mapChargeSummaryRowByHeuristics(string $chargeName, string $chargeTypeRaw, string $descriptionRaw, string $skuFromColumn, float $qty, int $rateCents, int $lineTotalCents): ?array
     {
-        $hay = strtolower(trim($chargeName.' '.$chargeTypeRaw));
+        $hay = strtolower(trim($chargeName.' '.$chargeTypeRaw.' '.$descriptionRaw));
         if ($hay === '') {
             return null;
+        }
+
+        if ($this->isStorageChargeContext('', '', $chargeName, $chargeTypeRaw, $descriptionRaw)) {
+            return $this->buildStorageChargeItem($descriptionRaw, $chargeName, $chargeTypeRaw, $qty, $rateCents, $lineTotalCents, $this->trimmedSkuOrNull($skuFromColumn));
         }
 
         if (preg_match('/\b(shipping_label|shipping label|postage|mail class|priority mail|parcel select|ground advantage|media mail|first[- ]class parcel|endicia|stamps?\.com|shipstation|shippo|easy_post|easy post|usps|ups|fedex|dhl|ontrac|lasership|pitney|flat rate|intl|international|zone|delivery confirmation)\b/i', $hay)) {
@@ -544,10 +567,14 @@ final class InvoiceChargeImportParser
     /**
      * @return array<string, mixed>|null
      */
-    private function buildChargeSummaryFallbackItem(string $chargeName, string $chargeTypeRaw, string $billingCategoryRaw, string $skuFromColumn, float $qty, int $rateCents, int $lineTotalCents): ?array
+    private function buildChargeSummaryFallbackItem(string $chargeName, string $chargeTypeRaw, string $billingCategoryRaw, string $descriptionRaw, string $skuFromColumn, float $qty, int $rateCents, int $lineTotalCents): ?array
     {
         if ($lineTotalCents === 0 && $rateCents === 0 && abs($qty) < 0.0001) {
             return null;
+        }
+
+        if ($this->isStorageChargeContext($billingCategoryRaw, '', $chargeName, $chargeTypeRaw, $descriptionRaw)) {
+            return $this->buildStorageChargeItem($descriptionRaw, $chargeName, $chargeTypeRaw, $qty, $rateCents, $lineTotalCents, $this->trimmedSkuOrNull($skuFromColumn));
         }
 
         $display = trim($chargeName) !== '' ? trim($chargeName) : $this->humanizeChargeTypeSlug($chargeTypeRaw);
@@ -592,6 +619,7 @@ final class InvoiceChargeImportParser
             if (strpos($val, 'receiving') !== false) return 'Receiving';
             if (in_array($val, ['skincare', 'skin care', 'product (on-demand)', 'product (on demand)', 'on-demand', 'on demand'], true)) return 'Product (On-Demand)';
             if ($val === 'returns') return 'Returns';
+            if ($val === 'storage' || strpos($val, 'storage') !== false) return 'Storage';
             if ($val === 'order_value_charge' || strpos($val, 'order_value_charge') !== false) return 'Inserts';
             if (strpos($val, 'bubble wrap') !== false || strpos($val, 'kraft paper') !== false) return 'Packaging';
             if ($val === 'ad hoc' || $val === 'ad_hoc' || strpos($val, 'ad_hoc') !== false || strpos($val, 'ad hoc') !== false) return 'Ad Hoc';
@@ -965,6 +993,30 @@ final class InvoiceChargeImportParser
 
         $categoryKey = $this->mapLegacyCategoryLabelToKey($categoryLabel);
         $sku = $this->legacyRowProductSku($row, $index);
+        $description = $this->firstNonEmpty([
+            $this->cell($row, $index['ad_hoc_name'] ?? -1),
+            $this->cell($row, $index['label_charge'] ?? -1),
+            $this->cell($row, $index['fee_charge'] ?? -1),
+            $this->cell($row, $index['fee'] ?? -1),
+            $name,
+        ]) ?? $name;
+        if ($categoryKey === InvoiceLineCategory::STORAGE) {
+            $storageType = $this->extractStorageTypeLabel($description)
+                ?? $this->extractStorageTypeLabel($name)
+                ?? 'Storage';
+            return $this->buildItem(
+                InvoiceLineCategory::STORAGE,
+                $storageType,
+                $description,
+                $qty,
+                $unitRate,
+                $total,
+                null,
+                'storage:'.$this->slug($storageType),
+                $this->cell($row, $index['charge_type'] ?? -1),
+                $sku
+            );
+        }
 
         return $this->buildItem($categoryKey, $name, $name, $qty, $unitRate, $total, null, $this->defaultGroupKeyFor($categoryKey, $name), $this->cell($row, $index['charge_type'] ?? -1), $sku);
     }
@@ -1121,6 +1173,7 @@ final class InvoiceChargeImportParser
             'product on demand' => 'Product (On-Demand)',
             'ad hoc' => 'Ad Hoc',
             'ad_hoc' => 'Ad Hoc',
+            'storage' => 'Storage',
             'bank fee' => 'Bank Fee',
             'bank_fee' => 'Bank Fee',
             'duties & taxes' => 'Duties & Taxes',
@@ -1133,6 +1186,7 @@ final class InvoiceChargeImportParser
         if (strpos($t, 'photo') !== false) return 'Ad Hoc';
         if (strpos($t, 'postage') !== false || preg_match('/\b(ship|shipping|carrier|parcel|mail)\b/', $t)) return 'Postage';
         if (strpos($t, 'packag') !== false || preg_match('/\b(box|mailer|bubble|kraft)\b/', $t)) return 'Packaging';
+        if (strpos($t, 'storage') !== false) return 'Storage';
         if (strpos($t, 'receiv') !== false) return 'Receiving';
         if (strpos($t, 'skincare') !== false || preg_match('/\b(on[- ]?demand|product)\b/', $t)) return 'Product (On-Demand)';
         if (strpos($t, 'return') !== false) return 'Returns';
@@ -1185,6 +1239,68 @@ final class InvoiceChargeImportParser
     {
         $slug = Str::slug($value);
         return $slug !== '' ? $slug : 'item';
+    }
+
+    private function isStorageChargeContext(string $billingCategoryRaw, string $feeRaw, string $chargeName, string $chargeTypeRaw, string $descriptionRaw): bool
+    {
+        $hay = strtolower(trim(implode(' ', [
+            $billingCategoryRaw,
+            $feeRaw,
+            $chargeName,
+            $chargeTypeRaw,
+            $descriptionRaw,
+        ])));
+        if ($hay === '') {
+            return false;
+        }
+
+        return str_contains($hay, 'storage')
+            || $this->extractStorageTypeLabel($hay) !== null
+            || preg_match('/\boccupied\s+for\s+\d+\s+week/', $hay) === 1;
+    }
+
+    private function extractStorageTypeLabel(string $text): ?string
+    {
+        $source = trim($text);
+        if ($source === '') {
+            return null;
+        }
+        if (preg_match('/\b(bin|pallet|shelf)\s*\(\s*(small|medium|large|x-?large)\s*\)/i', $source, $m) === 1) {
+            $base = ucfirst(strtolower((string) $m[1]));
+            $size = strtolower((string) $m[2]);
+            $normalizedSize = $size === 'xlarge' || $size === 'x-large' ? 'X-Large' : ucfirst($size);
+
+            return $base.' ('.$normalizedSize.')';
+        }
+        if (preg_match('/\bcustom\b/i', $source) === 1) {
+            return 'Custom';
+        }
+        if (preg_match('/\bsleeve\b/i', $source) === 1) {
+            return 'Sleeve';
+        }
+
+        return null;
+    }
+
+    private function buildStorageChargeItem(string $descriptionRaw, string $chargeName, string $chargeTypeRaw, float $qty, int $rateCents, int $lineTotalCents, ?string $sku = null): array
+    {
+        $description = $this->firstNonEmpty([$descriptionRaw, $chargeName, $chargeTypeRaw]) ?? 'Storage';
+        $display = $this->extractStorageTypeLabel($description)
+            ?? $this->extractStorageTypeLabel($chargeName)
+            ?? 'Storage';
+
+        return $this->buildItem(
+            InvoiceLineCategory::STORAGE,
+            $display,
+            $description,
+            $qty,
+            $rateCents,
+            $lineTotalCents,
+            null,
+            'storage:'.$this->slug($display),
+            $chargeTypeRaw !== '' ? $chargeTypeRaw : 'storage',
+            $sku
+        );
     }
 
     /**

@@ -29,6 +29,7 @@ const readySummary = ref({
   priority_orders_total: 0,
 });
 const READY_SUMMARY_CACHE_KEY = "orders.manage.readySummary.v1";
+const readySummaryVisibleCount = ref(5);
 
 const manageOpenId = ref(null);
 const manageMenuRect = ref({ top: 0, left: 0 });
@@ -59,6 +60,12 @@ const displayedRows = computed(() => {
 
 const manageMenuRow = computed(
   () => rows.value.find((row) => row.id === manageOpenId.value) ?? null,
+);
+const readySummaryVisibleAccounts = computed(() =>
+  (readySummary.value.ready_to_ship_by_account || []).slice(0, readySummaryVisibleCount.value),
+);
+const canLoadMoreReadySummary = computed(() =>
+  readySummaryVisibleCount.value < (readySummary.value.ready_to_ship_by_account || []).length,
 );
 
 const accountOptions = computed(() =>
@@ -214,6 +221,7 @@ async function fetchReadySummary() {
       late_orders_total: Number(data?.late_orders_total || 0),
       priority_orders_total: Number(data?.priority_orders_total || 0),
     };
+    readySummaryVisibleCount.value = 5;
     try {
       sessionStorage.setItem(READY_SUMMARY_CACHE_KEY, JSON.stringify(readySummary.value));
     } catch (_) {
@@ -263,6 +271,7 @@ async function toggleManageMenu(id, e) {
 watch(
   () => [selectedAccountId.value, tabKey.value],
   () => {
+    readySummaryVisibleCount.value = 5;
     fetchOrders(true);
     if (tabKey.value === "manage") fetchReadySummary();
   },
@@ -277,6 +286,7 @@ watch(
       || query.readyToShip !== ""
       || query.datePreset !== "custom"
     ) {
+      readySummaryVisibleCount.value = 5;
       fetchOrders(true);
       if (tabKey.value === "manage") fetchReadySummary();
     }
@@ -459,12 +469,20 @@ onUnmounted(() => {
         </p>
         <div v-if="!readySummaryLoading && readySummary.ready_to_ship_by_account.length" class="small text-secondary">
           <span
-            v-for="(row, idx) in readySummary.ready_to_ship_by_account"
+            v-for="(row, idx) in readySummaryVisibleAccounts"
             :key="`${row.account_id}-${idx}`"
             class="me-3 d-inline-block"
           >
             {{ row.account_name }}: {{ row.orders_count }} orders
           </span>
+          <button
+            v-if="canLoadMoreReadySummary"
+            type="button"
+            class="btn btn-link btn-sm p-0 ms-1 align-baseline text-decoration-none"
+            @click="readySummaryVisibleCount += 5"
+          >
+            Load More
+          </button>
         </div>
       </div>
 

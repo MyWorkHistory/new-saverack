@@ -15,6 +15,11 @@ const iframeLoaded = ref(false);
 
 const accountSlug = computed(() => String(route.params.accountSlug || "").trim().toLowerCase());
 const routeOrderNumber = computed(() => normalizeOrderNumber(String(route.params.orderNumber || "")));
+const accountIdFromQuery = computed(() => {
+  const raw = String(route.query.client_account_id || "").trim();
+  const n = Number(raw);
+  return Number.isInteger(n) && n > 0 ? n : null;
+});
 
 function normalizeOrderNumber(v) {
   return String(v || "")
@@ -35,6 +40,9 @@ function slugAccountName(v) {
 }
 
 async function resolveAccountIdFromSlug() {
+  if (accountIdFromQuery.value) {
+    return accountIdFromQuery.value;
+  }
   const { data } = await api.get("/inventory/client-account-options");
   const rows = Array.isArray(data?.accounts) ? data.accounts : [];
   const match = rows.find((a) => a?.has_shiphero_customer && slugAccountName(a.company_name) === accountSlug.value);

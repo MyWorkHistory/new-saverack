@@ -85,6 +85,7 @@ function orderDetailHref(row) {
   return router.resolve({
     name: "order-detail-iframe",
     params: { accountSlug, orderNumber },
+    query: { client_account_id: String(selectedAccountId.value) },
   }).href;
 }
 

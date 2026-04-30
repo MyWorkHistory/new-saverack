@@ -29,7 +29,9 @@ const readySummary = ref({
   priority_orders_total: 0,
 });
 const READY_SUMMARY_CACHE_KEY = "orders.manage.readySummary.v1";
-const readySummaryVisibleCount = ref(5);
+const readySummaryPageSize = 5;
+const readySummaryOffset = ref(0);
+const readySummaryHasMore = ref(false);
 
 const manageOpenId = ref(null);
 const manageMenuRect = ref({ top: 0, left: 0 });
@@ -61,12 +63,8 @@ const displayedRows = computed(() => {
 const manageMenuRow = computed(
   () => rows.value.find((row) => row.id === manageOpenId.value) ?? null,
 );
-const readySummaryVisibleAccounts = computed(() =>
-  (readySummary.value.ready_to_ship_by_account || []).slice(0, readySummaryVisibleCount.value),
-);
-const canLoadMoreReadySummary = computed(() =>
-  readySummaryVisibleCount.value < (readySummary.value.ready_to_ship_by_account || []).length,
-);
+const readySummaryVisibleAccounts = computed(() => readySummary.value.ready_to_ship_by_account || []);
+const canLoadMoreReadySummary = computed(() => readySummaryHasMore.value && !readySummaryLoading.value);
 
 const accountOptions = computed(() =>
   (accounts.value || [])
@@ -204,7 +202,7 @@ async function fetchOrders(reset = true) {
   }
 }
 
-async function fetchReadySummary() {
+async function fetchReadySummary(reset = true) {
   if (!showManageFilters.value || tabKey.value !== "manage") return;
   readySummaryLoading.value = true;
   try {
@@ -213,15 +211,22 @@ async function fetchReadySummary() {
       params: {
         order_date_from: range.from || undefined,
         order_date_to: range.to || undefined,
+        accounts_limit: readySummaryPageSize,
+        accounts_offset: reset ? 0 : readySummaryOffset.value,
       },
     });
+    const incomingAccounts = Array.isArray(data?.ready_to_ship_by_account) ? data.ready_to_ship_by_account : [];
+    const mergedAccounts = reset
+      ? incomingAccounts
+      : [...(readySummary.value.ready_to_ship_by_account || []), ...incomingAccounts];
     readySummary.value = {
       ready_to_ship_total: Number(data?.ready_to_ship_total || 0),
-      ready_to_ship_by_account: Array.isArray(data?.ready_to_ship_by_account) ? data.ready_to_ship_by_account : [],
+      ready_to_ship_by_account: mergedAccounts,
       late_orders_total: Number(data?.late_orders_total || 0),
       priority_orders_total: Number(data?.priority_orders_total || 0),
     };
-    readySummaryVisibleCount.value = 5;
+    readySummaryOffset.value = mergedAccounts.length;
+    readySummaryHasMore.value = Boolean(data?.has_more_accounts);
     try {
       sessionStorage.setItem(READY_SUMMARY_CACHE_KEY, JSON.stringify(readySummary.value));
     } catch (_) {
@@ -271,9 +276,10 @@ async function toggleManageMenu(id, e) {
 watch(
   () => [selectedAccountId.value, tabKey.value],
   () => {
-    readySummaryVisibleCount.value = 5;
+    readySummaryOffset.value = 0;
+    readySummaryHasMore.value = false;
     fetchOrders(true);
-    if (tabKey.value === "manage") fetchReadySummary();
+    if (tabKey.value === "manage") fetchReadySummary(true);
   },
 );
 
@@ -286,9 +292,10 @@ watch(
       || query.readyToShip !== ""
       || query.datePreset !== "custom"
     ) {
-      readySummaryVisibleCount.value = 5;
+      readySummaryOffset.value = 0;
+      readySummaryHasMore.value = false;
       fetchOrders(true);
-      if (tabKey.value === "manage") fetchReadySummary();
+      if (tabKey.value === "manage") fetchReadySummary(true);
     }
   },
 );
@@ -309,12 +316,13 @@ onMounted(async () => {
         late_orders_total: Number(parsed?.late_orders_total || 0),
         priority_orders_total: Number(parsed?.priority_orders_total || 0),
       };
+      readySummaryOffset.value = (readySummary.value.ready_to_ship_by_account || []).length;
     }
   } catch (_) {
     // no-op
   }
   await loadAccounts();
-  if (tabKey.value === "manage") fetchReadySummary();
+  if (tabKey.value === "manage") fetchReadySummary(true);
 });
 
 onUnmounted(() => {
@@ -479,7 +487,7 @@ onUnmounted(() => {
             v-if="canLoadMoreReadySummary"
             type="button"
             class="btn btn-link btn-sm p-0 ms-1 align-baseline text-decoration-none"
-            @click="readySummaryVisibleCount += 5"
+            @click="fetchReadySummary(false)"
           >
             Load More
           </button>

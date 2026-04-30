@@ -72,16 +72,23 @@ class OrderController extends Controller
         $validated = $request->validate([
             'order_date_from' => ['nullable', 'date'],
             'order_date_to' => ['nullable', 'date'],
+            'accounts_limit' => ['nullable', 'integer', 'min:1', 'max:50'],
+            'accounts_offset' => ['nullable', 'integer', 'min:0'],
         ]);
         Gate::forUser($request->user())->authorize('viewAny', ClientAccount::class);
 
         try {
             $from = $this->dateStartIso($validated['order_date_from'] ?? null);
             $to = $this->dateEndIso($validated['order_date_to'] ?? null);
+            $limit = (int) ($validated['accounts_limit'] ?? 0);
+            $offset = (int) ($validated['accounts_offset'] ?? 0);
+            $isPagedAccounts = $limit > 0;
             $cacheKey = sprintf(
-                'orders:summary:%s:%s',
+                'orders:summary:%s:%s:%s:%s',
                 $from ?? 'none',
-                $to ?? 'none'
+                $to ?? 'none',
+                $isPagedAccounts ? $limit : 'all',
+                $isPagedAccounts ? $offset : 'all'
             );
             $staleKey = $cacheKey.':stale';
             $lockKey = $cacheKey.':refresh_lock';
@@ -99,7 +106,7 @@ class OrderController extends Controller
                 // Serve stale immediately; trigger a guarded refresh.
                 if (Cache::add($lockKey, '1', now()->addSeconds(30))) {
                     try {
-                        $payload = $this->computeOrdersSummaryPayload($from, $to);
+                        $payload = $this->computeOrdersSummaryPayload($from, $to, $limit, $offset);
                         Cache::put($cacheKey, $payload, now()->addSeconds(60));
                         Cache::put($staleKey, $payload, now()->addMinutes(10));
                     } finally {
@@ -113,7 +120,7 @@ class OrderController extends Controller
                 return response()->json($stale);
             }
 
-            $payload = $this->computeOrdersSummaryPayload($from, $to);
+            $payload = $this->computeOrdersSummaryPayload($from, $to, $limit, $offset);
             Cache::put($cacheKey, $payload, now()->addSeconds(60));
             Cache::put($staleKey, $payload, now()->addMinutes(10));
 
@@ -140,12 +147,20 @@ class OrderController extends Controller
     /**
      * @return array<string,mixed>
      */
-    private function computeOrdersSummaryPayload(?string $from, ?string $to): array
+    private function computeOrdersSummaryPayload(?string $from, ?string $to, int $accountsLimit = 0, int $accountsOffset = 0): array
     {
-        $accounts = ClientAccount::query()
+        $baseQuery = ClientAccount::query()
             ->whereNotNull('shiphero_customer_account_id')
             ->where('shiphero_customer_account_id', '!=', '')
-            ->orderBy('company_name')
+            ->orderBy('company_name');
+
+        $totalAccounts = (int) (clone $baseQuery)->count();
+
+        if ($accountsLimit > 0) {
+            $baseQuery->skip(max(0, $accountsOffset))->take($accountsLimit);
+        }
+
+        $accounts = $baseQuery
             ->get(['id', 'company_name', 'shiphero_customer_account_id'])
             ->map(static function (ClientAccount $account) {
                 return [
@@ -157,7 +172,15 @@ class OrderController extends Controller
             ->values()
             ->all();
 
-        return $this->orders->readyToShipSummaryForAccounts($accounts, $from, $to);
+        $payload = $this->orders->readyToShipSummaryForAccounts($accounts, $from, $to);
+        $payload['accounts_total'] = $totalAccounts;
+        $payload['accounts_offset'] = max(0, $accountsOffset);
+        $payload['accounts_limit'] = max(0, $accountsLimit);
+        $payload['has_more_accounts'] = $accountsLimit > 0
+            ? (max(0, $accountsOffset) + count($accounts)) < $totalAccounts
+            : false;
+
+        return $payload;
     }
 
     public function show(Request $request, string $orderId): JsonResponse

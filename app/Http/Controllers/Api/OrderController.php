@@ -30,6 +30,8 @@ class OrderController extends Controller
             'tab' => ['nullable', 'string', 'in:manage,awaiting,on_hold,shipped'],
             'order_date_from' => ['nullable', 'date'],
             'order_date_to' => ['nullable', 'date'],
+            'fulfillment_status' => ['nullable', 'string', 'max:64'],
+            'ready_to_ship' => ['nullable', 'boolean'],
             'after' => ['nullable', 'string', 'max:255'],
             'first' => ['nullable', 'integer', 'min:1', 'max:100'],
         ]);
@@ -41,6 +43,8 @@ class OrderController extends Controller
                 'tab' => (string) ($validated['tab'] ?? 'manage'),
                 'order_date_from' => $this->dateStartIso($validated['order_date_from'] ?? null),
                 'order_date_to' => $this->dateEndIso($validated['order_date_to'] ?? null),
+                'fulfillment_status' => $validated['fulfillment_status'] ?? null,
+                'ready_to_ship' => array_key_exists('ready_to_ship', $validated) ? (bool) $validated['ready_to_ship'] : null,
                 'after' => $validated['after'] ?? null,
                 'first' => (int) ($validated['first'] ?? 20),
             ]);

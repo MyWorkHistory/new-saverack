@@ -52,6 +52,15 @@ class ShipHeroOrderService
         } elseif ($tab === 'shipped') {
             $vars['fulfillment_status'] = 'shipped';
         }
+        if (isset($filters['fulfillment_status']) && is_string($filters['fulfillment_status'])) {
+            $status = trim($filters['fulfillment_status']);
+            if ($status !== '') {
+                $vars['fulfillment_status'] = $status;
+            }
+        }
+        if (array_key_exists('ready_to_ship', $filters) && is_bool($filters['ready_to_ship'])) {
+            $vars['ready_to_ship'] = $filters['ready_to_ship'];
+        }
 
         $graphql = <<<'GQL'
 query ShipHeroOrders(

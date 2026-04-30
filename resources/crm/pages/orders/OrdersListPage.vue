@@ -37,8 +37,8 @@ const query = reactive({
   datePreset: "today",
   from: "",
   to: "",
-  sortBy: "order_date",
-  sortDir: "desc",
+  fulfillmentStatus: "",
+  readyToShip: "",
 });
 
 const tabKey = computed(() => String(route.meta?.orderTab || "manage"));
@@ -53,21 +53,7 @@ const showManageFilters = computed(() => true);
 const isCustomDate = computed(() => query.datePreset === "custom");
 
 const displayedRows = computed(() => {
-  const list = [...rows.value];
-  if (query.sortBy === "account") {
-    list.sort((a, b) =>
-      query.sortDir === "asc"
-        ? String(a.account || "").localeCompare(String(b.account || ""))
-        : String(b.account || "").localeCompare(String(a.account || "")),
-    );
-  } else {
-    list.sort((a, b) => {
-      const av = Date.parse(a.order_date || "") || 0;
-      const bv = Date.parse(b.order_date || "") || 0;
-      return query.sortDir === "asc" ? av - bv : bv - av;
-    });
-  }
-  return list;
+  return rows.value;
 });
 
 const manageMenuRow = computed(
@@ -160,6 +146,8 @@ function buildParams(withCursor = false) {
   const range = dateRangeFromPreset();
   if (range.from) params.order_date_from = range.from;
   if (range.to) params.order_date_to = range.to;
+  if (query.fulfillmentStatus) params.fulfillment_status = query.fulfillmentStatus;
+  if (query.readyToShip !== "") params.ready_to_ship = query.readyToShip === "yes";
   if (withCursor && nextCursor.value) params.after = nextCursor.value;
   return params;
 }
@@ -275,10 +263,14 @@ watch(
 );
 
 watch(
-  () => [query.datePreset, query.from, query.to],
+  () => [query.datePreset, query.from, query.to, query.fulfillmentStatus, query.readyToShip],
   () => {
     if (!showManageFilters.value) return;
-    if (query.datePreset !== "custom") {
+    if (
+      query.fulfillmentStatus !== ""
+      || query.readyToShip !== ""
+      || query.datePreset !== "custom"
+    ) {
       fetchOrders(true);
       fetchReadySummary();
     }
@@ -370,8 +362,8 @@ onUnmounted(() => {
                       query.datePreset = 'today';
                       query.from = '';
                       query.to = '';
-                      query.sortBy = 'order_date';
-                      query.sortDir = 'desc';
+                      query.fulfillmentStatus = '';
+                      query.readyToShip = '';
                       filterMenuOpen = false;
                     "
                   >
@@ -409,25 +401,28 @@ onUnmounted(() => {
                       :disabled="loading"
                     />
                   </template>
-                  <label class="form-label" for="orders-filter-sort-by">Sort By</label>
+                  <label class="form-label" for="orders-filter-fulfillment-status">Fulfillment Status</label>
                   <select
-                    id="orders-filter-sort-by"
-                    v-model="query.sortBy"
+                    id="orders-filter-fulfillment-status"
+                    v-model="query.fulfillmentStatus"
                     class="form-select staff-datatable-filters__select mb-3"
                     :disabled="loading"
                   >
-                    <option value="order_date">Order Date</option>
-                    <option value="account">Account</option>
+                    <option value="">All</option>
+                    <option value="unfulfilled">Unfulfilled</option>
+                    <option value="fulfilled">Fulfilled</option>
+                    <option value="shipped">Shipped</option>
                   </select>
-                  <label class="form-label" for="orders-filter-sort-dir">Sort Direction</label>
+                  <label class="form-label" for="orders-filter-ready-to-ship">Ready to Ship</label>
                   <select
-                    id="orders-filter-sort-dir"
-                    v-model="query.sortDir"
+                    id="orders-filter-ready-to-ship"
+                    v-model="query.readyToShip"
                     class="form-select staff-datatable-filters__select"
                     :disabled="loading"
                   >
-                    <option value="desc">Desc</option>
-                    <option value="asc">Asc</option>
+                    <option value="">All</option>
+                    <option value="yes">Yes</option>
+                    <option value="no">No</option>
                   </select>
                 </div>
               </div>

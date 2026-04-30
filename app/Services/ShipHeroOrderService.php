@@ -430,7 +430,7 @@ GQL;
             ]);
         }
 
-        $items = $this->attachLineItemImages($items);
+        $items = $this->attachLineItemImages($items, $customerAccountId);
 
         return $items;
     }
@@ -876,9 +876,10 @@ GQL;
      * @param list<array<string,mixed>> $items
      * @return list<array<string,mixed>>
      */
-    private function attachLineItemImages(array $items): array
+    private function attachLineItemImages(array $items, string $customerAccountId): array
     {
         $productIds = [];
+        $skus = [];
         foreach ($items as $item) {
             if (! is_array($item)) {
                 continue;
@@ -887,8 +888,12 @@ GQL;
             if ($pid !== '' && ! in_array($pid, $productIds, true)) {
                 $productIds[] = $pid;
             }
+            $sku = trim((string) ($item['sku'] ?? ''));
+            if ($sku !== '' && ! in_array($sku, $skus, true)) {
+                $skus[] = $sku;
+            }
         }
-        if ($productIds === []) {
+        if ($productIds === [] && $skus === []) {
             return $items;
         }
 
@@ -896,13 +901,20 @@ GQL;
         foreach ($productIds as $pid) {
             $imageMap[$pid] = $this->fetchProductPrimaryImage($pid);
         }
+        $imageBySku = [];
+        foreach ($skus as $sku) {
+            $imageBySku[$sku] = $this->fetchProductPrimaryImageBySku($sku, $customerAccountId);
+        }
 
         foreach ($items as $idx => $item) {
             if (! is_array($item)) {
                 continue;
             }
             $pid = trim((string) ($item['product_id'] ?? ''));
-            $items[$idx]['image_url'] = ($pid !== '' && isset($imageMap[$pid])) ? $imageMap[$pid] : null;
+            $sku = trim((string) ($item['sku'] ?? ''));
+            $byId = ($pid !== '' && isset($imageMap[$pid])) ? $imageMap[$pid] : null;
+            $bySku = ($sku !== '' && isset($imageBySku[$sku])) ? $imageBySku[$sku] : null;
+            $items[$idx]['image_url'] = $byId ?: $bySku;
         }
 
         return $items;
@@ -929,6 +941,56 @@ GQL;
         } catch (\Throwable $e) {
             return null;
         }
+        $images = data_get($json, 'data.product.data.images');
+        if (! is_array($images) || $images === []) {
+            return null;
+        }
+
+        $chosen = null;
+        $bestPos = PHP_INT_MAX;
+        foreach ($images as $img) {
+            if (! is_array($img)) {
+                continue;
+            }
+            $src = trim((string) ($img['src'] ?? ''));
+            if ($src === '') {
+                continue;
+            }
+            $pos = isset($img['position']) && is_numeric($img['position']) ? (int) $img['position'] : 999999;
+            if ($chosen === null || $pos < $bestPos) {
+                $chosen = $src;
+                $bestPos = $pos;
+            }
+        }
+
+        return $chosen;
+    }
+
+    private function fetchProductPrimaryImageBySku(string $sku, string $customerAccountId): ?string
+    {
+        $graphql = <<<'GQL'
+query ShipHeroProductImageBySku($sku: String!, $customer_account_id: String) {
+  product(sku: $sku, customer_account_id: $customer_account_id) {
+    data {
+      id
+      images {
+        src
+        position
+      }
+    }
+  }
+}
+GQL;
+
+        try {
+            $json = $this->client->query($graphql, [
+                'sku' => $sku,
+                'customer_account_id' => trim($customerAccountId) !== '' ? trim($customerAccountId) : null,
+            ]);
+        } catch (\Throwable $e) {
+            return null;
+        }
+
         $images = data_get($json, 'data.product.data.images');
         if (! is_array($images) || $images === []) {
             return null;

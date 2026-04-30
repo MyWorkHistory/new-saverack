@@ -3153,7 +3153,7 @@ function onDocKeydown(e) {
                       </button>
                       <div class="small text-secondary mt-1" style="max-width: 22rem; margin-left: auto">
                         Add funds to the pool, select invoice(s), then Pay Invoice. Only the pool amount is applied;
-                        the invoice stays past due until the balance is fully paid.
+                        the invoice stays open until the balance is fully paid.
                       </div>
                     </div>
                   </div>

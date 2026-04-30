@@ -1635,10 +1635,10 @@ class InvoiceService
         if ($raw === Invoice::STATUS_PAYMENT_FAILED) return Invoice::STATUS_PAYMENT_FAILED;
         if ($raw === 'collection') return 'collection';
         if ($raw === 'pending' || $raw === 'draft') return 'draft';
-        if ($raw === 'past_due') return 'past_due';
-        if ($raw === 'open') return $this->isOverdue($invoice) ? 'past_due' : 'open';
+        if ($raw === 'past_due') return 'open';
+        if ($raw === 'open') return 'open';
         if ($raw === 'sent' || $raw === 'partial') {
-            return $this->isOverdue($invoice) ? 'past_due' : 'open';
+            return 'open';
         }
         return $raw !== '' ? $raw : 'draft';
     }
@@ -1646,7 +1646,6 @@ class InvoiceService
     public function legacyStatusLabel(Invoice $invoice): string
     {
         $key = $this->legacyStatusKey($invoice);
-        if ($key === 'past_due') return 'Past Due';
         if ($key === 'collection') return 'Collection';
         if ($key === 'paid') return 'Paid';
         if ($key === Invoice::STATUS_PROCESSING) return 'Processing';
@@ -1685,7 +1684,7 @@ class InvoiceService
     public function updateLegacyStatus(Invoice $invoice, string $requestedStatus, ?User $actor): Invoice
     {
         $requested = strtolower(trim($requestedStatus));
-        $allowed = ['pending', 'open', 'past_due', 'collection', 'paid', 'void', 'draft', Invoice::STATUS_PROCESSING, Invoice::STATUS_PAYMENT_FAILED];
+        $allowed = ['pending', 'open', 'collection', 'paid', 'void', 'draft', Invoice::STATUS_PROCESSING, Invoice::STATUS_PAYMENT_FAILED];
         if (! in_array($requested, $allowed, true)) {
             throw new \InvalidArgumentException('Valid status is required.');
         }
@@ -1705,8 +1704,6 @@ class InvoiceService
             $invoice->paid_at = null;
         } elseif ($requested === 'collection') {
             $invoice->status = 'collection';
-        } elseif ($requested === 'past_due') {
-            $invoice->status = 'past_due';
         } elseif ($requested === Invoice::STATUS_PROCESSING) {
             $invoice->status = Invoice::STATUS_PROCESSING;
             $invoice->paid_at = null;
@@ -1731,17 +1728,11 @@ class InvoiceService
         if (! empty($filters['status']) && $filters['status'] !== 'all') {
             $statusFilter = strtolower((string) $filters['status']);
             if ($statusFilter === 'open') {
-                $q->whereIn('status', [Invoice::STATUS_SENT, Invoice::STATUS_PARTIAL, Invoice::STATUS_PROCESSING, Invoice::STATUS_PAYMENT_FAILED])
-                    ->whereNotNull('due_at')
-                    ->where('due_at', '>=', now()->startOfDay())
+                $q->whereIn('status', [Invoice::STATUS_SENT, Invoice::STATUS_PARTIAL, Invoice::STATUS_PROCESSING, Invoice::STATUS_PAYMENT_FAILED, 'past_due', 'open'])
                     ->where('balance_due_cents', '>', 0);
             } elseif ($statusFilter === 'past_due' || $statusFilter === 'overdue') {
-                $q->where('status', '!=', Invoice::STATUS_VOID)
-                    ->where('status', '!=', Invoice::STATUS_PAID)
-                    ->where('status', '!=', Invoice::STATUS_DRAFT)
-                    ->where('balance_due_cents', '>', 0)
-                    ->whereNotNull('due_at')
-                    ->where('due_at', '<', now()->startOfDay());
+                $q->whereIn('status', [Invoice::STATUS_SENT, Invoice::STATUS_PARTIAL, Invoice::STATUS_PROCESSING, Invoice::STATUS_PAYMENT_FAILED, 'past_due', 'open'])
+                    ->where('balance_due_cents', '>', 0);
             } elseif ($statusFilter === 'draft') {
                 $q->whereIn('status', [Invoice::STATUS_DRAFT, 'pending']);
             } elseif ($statusFilter === 'collection') {
@@ -1770,12 +1761,19 @@ class InvoiceService
         }
 
         if (! empty($filters['search'])) {
-            $term = '%'.str_replace(['%', '_'], ['\\%', '\\_'], $filters['search']).'%';
-            $q->where(function ($w) use ($term) {
+            $rawSearch = (string) $filters['search'];
+            $term = '%'.str_replace(['%', '_'], ['\\%', '\\_'], $rawSearch).'%';
+            $amountSearchCents = $this->parseSearchAmountCents($rawSearch);
+            $q->where(function ($w) use ($term, $amountSearchCents) {
                 $w->where('invoice_number', 'like', $term)
                     ->orWhereHas('clientAccount', function ($c) use ($term) {
                         $c->where('company_name', 'like', $term);
                     });
+                if ($amountSearchCents !== null) {
+                    $w->orWhere('total_cents', $amountSearchCents)
+                        ->orWhere('balance_due_cents', $amountSearchCents)
+                        ->orWhere('amount_paid_cents', $amountSearchCents);
+                }
             });
         }
 
@@ -1800,7 +1798,7 @@ class InvoiceService
      */
     public function summary(): array
     {
-        $openStatuses = [Invoice::STATUS_SENT, Invoice::STATUS_PARTIAL, Invoice::STATUS_PROCESSING, Invoice::STATUS_PAYMENT_FAILED];
+        $openStatuses = [Invoice::STATUS_SENT, Invoice::STATUS_PARTIAL, Invoice::STATUS_PROCESSING, Invoice::STATUS_PAYMENT_FAILED, 'past_due', 'open'];
         $openBalance = (int) Invoice::query()
             ->whereIn('status', $openStatuses)
             ->sum('balance_due_cents');
@@ -2207,5 +2205,20 @@ class InvoiceService
 
         return 'Hi! Here is your invoice for '.$label.': '.$invoiceUrl."\n"
             .'Let me know if you have any questions-thanks!';
+    }
+
+    private function parseSearchAmountCents(string $raw): ?int
+    {
+        $value = trim($raw);
+        if ($value === '') {
+            return null;
+        }
+
+        $normalized = preg_replace('/[^0-9.\-]/', '', $value);
+        if (! is_string($normalized) || $normalized === '' || ! is_numeric($normalized)) {
+            return null;
+        }
+
+        return (int) round(((float) $normalized) * 100);
     }
 }

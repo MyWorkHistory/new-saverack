@@ -110,8 +110,8 @@ const meta = {
     description: "ShipHero orders management.",
   },
   ordersAwaiting: {
-    title: "Save Rack | Orders | Awaiting Shipment",
-    description: "ShipHero orders awaiting shipment.",
+    title: "Save Rack | Orders | Ready to Ship",
+    description: "ShipHero ready to ship orders.",
   },
   ordersOnHold: {
     title: "Save Rack | Orders | On-Hold",

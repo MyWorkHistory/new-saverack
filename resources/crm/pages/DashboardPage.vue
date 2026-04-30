@@ -73,6 +73,11 @@ const summary = ref({
   recent_activity: [],
   engagement_score: 0,
 });
+const orderMetrics = ref({
+  ready_to_ship_total: 0,
+  late_orders_total: 0,
+  priority_orders_total: 0,
+});
 
 const nf = new Intl.NumberFormat(undefined, { maximumFractionDigits: 0 });
 const df = new Intl.DateTimeFormat(undefined, {
@@ -374,6 +379,19 @@ async function refreshDashboardSummary() {
   try {
     const { data } = await api.get("/dashboard/summary");
     summary.value = { ...summary.value, ...data };
+    const now = new Date();
+    const to = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
+    const fromDate = new Date(now);
+    fromDate.setDate(fromDate.getDate() - 29);
+    const from = `${fromDate.getFullYear()}-${String(fromDate.getMonth() + 1).padStart(2, "0")}-${String(fromDate.getDate()).padStart(2, "0")}`;
+    const summaryRes = await api.get("/orders/summary", {
+      params: { order_date_from: from, order_date_to: to },
+    });
+    orderMetrics.value = {
+      ready_to_ship_total: Number(summaryRes?.data?.ready_to_ship_total || 0),
+      late_orders_total: Number(summaryRes?.data?.late_orders_total || 0),
+      priority_orders_total: Number(summaryRes?.data?.priority_orders_total || 0),
+    };
   } catch {
     /* ignore */
   }
@@ -457,6 +475,19 @@ onMounted(async () => {
     await fetchMe();
     const { data } = await api.get("/dashboard/summary");
     summary.value = { ...summary.value, ...data };
+    const now = new Date();
+    const to = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
+    const fromDate = new Date(now);
+    fromDate.setDate(fromDate.getDate() - 29);
+    const from = `${fromDate.getFullYear()}-${String(fromDate.getMonth() + 1).padStart(2, "0")}-${String(fromDate.getDate()).padStart(2, "0")}`;
+    const summaryRes = await api.get("/orders/summary", {
+      params: { order_date_from: from, order_date_to: to },
+    });
+    orderMetrics.value = {
+      ready_to_ship_total: Number(summaryRes?.data?.ready_to_ship_total || 0),
+      late_orders_total: Number(summaryRes?.data?.late_orders_total || 0),
+      priority_orders_total: Number(summaryRes?.data?.priority_orders_total || 0),
+    };
   } finally {
     loading.value = false;
   }
@@ -485,26 +516,29 @@ onUnmounted(() => {
       <div class="row g-4 mb-4">
         <div class="col-12 col-sm-6 col-xl-4">
           <CrmMetricCard
-            label="Total Users"
-            :value="nf.format(summary.metrics.total_users.value)"
-            :change-pct="summary.metrics.total_users.change_pct"
-            period-label="From Last Month"
+            label="Ready to Ship"
+            :value="nf.format(orderMetrics.ready_to_ship_total)"
+            :change-pct="null"
+            period-label="Total Orders"
+            :show-change="false"
           />
         </div>
         <div class="col-12 col-sm-6 col-xl-4">
           <CrmMetricCard
-            label="Active Users"
-            :value="nf.format(summary.metrics.active_users.value)"
-            :change-pct="summary.metrics.active_users.change_pct"
-            period-label="New Active Accounts (MoM)"
+            label="Late Orders"
+            :value="nf.format(orderMetrics.late_orders_total)"
+            :change-pct="null"
+            period-label="Total Orders"
+            :show-change="false"
           />
         </div>
         <div class="col-12 col-sm-6 col-xl-4">
           <CrmMetricCard
-            label="Activities Today"
-            :value="nf.format(summary.metrics.activities_today.value)"
-            :change-pct="summary.metrics.activities_today.change_pct"
-            period-label="Compared To Yesterday"
+            label="Priority Orders"
+            :value="nf.format(orderMetrics.priority_orders_total)"
+            :change-pct="null"
+            period-label="Total Orders"
+            :show-change="false"
           />
         </div>
       </div>

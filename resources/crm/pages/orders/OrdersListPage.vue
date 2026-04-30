@@ -21,6 +21,13 @@ const selectedAccountId = ref("");
 const hasSearched = ref(false);
 const nextCursor = ref(null);
 const hasNextPage = ref(false);
+const readySummaryLoading = ref(false);
+const readySummary = ref({
+  ready_to_ship_total: 0,
+  ready_to_ship_by_account: [],
+  late_orders_total: 0,
+  priority_orders_total: 0,
+});
 
 const manageOpenId = ref(null);
 const manageMenuRect = ref({ top: 0, left: 0 });
@@ -36,7 +43,7 @@ const query = reactive({
 
 const tabKey = computed(() => String(route.meta?.orderTab || "manage"));
 const tabTitle = computed(() => {
-  if (tabKey.value === "awaiting") return "Awaiting Shipment";
+  if (tabKey.value === "awaiting") return "Ready to Ship";
   if (tabKey.value === "on_hold") return "On-Hold";
   if (tabKey.value === "shipped") return "Shipped";
   return "Manage";
@@ -78,34 +85,12 @@ const accountOptions = computed(() =>
 );
 
 function orderDetailHref(row) {
-  if (!row?.order_number || !row?.account) return "#";
-  const orderNumber = normalizeOrderNumberForRoute(row.order_number);
-  const accountSlug = slugAccountName(row.account);
-  if (!orderNumber || !accountSlug) return "#";
+  if (!row?.id || !selectedAccountId.value) return "#";
   return router.resolve({
-    name: "order-detail-iframe",
-    params: { accountSlug, orderNumber },
-    query: {
-      client_account_id: String(selectedAccountId.value),
-      legacy_id: row?.legacy_id != null ? String(row.legacy_id) : undefined,
-      shiphero_order_id: row?.id ? String(row.id) : undefined,
-    },
+    name: "order-detail",
+    params: { shipheroOrderId: String(row.id) },
+    query: { client_account_id: String(selectedAccountId.value) },
   }).href;
-}
-
-function normalizeOrderNumberForRoute(v) {
-  return String(v || "").trim().replace(/^#\s*/, "");
-}
-
-function slugAccountName(v) {
-  let s = String(v || "").trim().toLowerCase();
-  if (!s) return "";
-  s = s.replace(/^https?:\/\//, "");
-  s = s.replace(/^www\./, "");
-  s = s.replace(/\.myshopify\.com$/, "");
-  s = s.replace(/[^a-z0-9]+/g, "-");
-  s = s.replace(/^-+|-+$/g, "");
-  return s;
 }
 
 function openOrderViewNewTab(row) {
@@ -223,6 +208,30 @@ async function fetchOrders(reset = true) {
   }
 }
 
+async function fetchReadySummary() {
+  if (!showManageFilters.value) return;
+  readySummaryLoading.value = true;
+  try {
+    const range = dateRangeFromPreset();
+    const { data } = await api.get("/orders/summary", {
+      params: {
+        order_date_from: range.from || undefined,
+        order_date_to: range.to || undefined,
+      },
+    });
+    readySummary.value = {
+      ready_to_ship_total: Number(data?.ready_to_ship_total || 0),
+      ready_to_ship_by_account: Array.isArray(data?.ready_to_ship_by_account) ? data.ready_to_ship_by_account : [],
+      late_orders_total: Number(data?.late_orders_total || 0),
+      priority_orders_total: Number(data?.priority_orders_total || 0),
+    };
+  } catch (e) {
+    toast.errorFrom(e, "Could not load Ready to Ship summary.");
+  } finally {
+    readySummaryLoading.value = false;
+  }
+}
+
 function openOrder(row) {
   openOrderViewNewTab(row);
 }
@@ -261,6 +270,7 @@ watch(
   () => [selectedAccountId.value, tabKey.value],
   () => {
     fetchOrders(true);
+    fetchReadySummary();
   },
 );
 
@@ -268,7 +278,10 @@ watch(
   () => [query.datePreset, query.from, query.to],
   () => {
     if (!showManageFilters.value) return;
-    if (query.datePreset !== "custom") fetchOrders(true);
+    if (query.datePreset !== "custom") {
+      fetchOrders(true);
+      fetchReadySummary();
+    }
   },
 );
 
@@ -279,6 +292,7 @@ onMounted(async () => {
     description: "ShipHero customer orders.",
   });
   await loadAccounts();
+  fetchReadySummary();
 });
 
 onUnmounted(() => {
@@ -421,6 +435,22 @@ onUnmounted(() => {
           </template>
         </div>
         <p class="small text-secondary mb-0 mt-2 px-1">Only accounts with a ShipHero customer ID appear here.</p>
+      </div>
+
+      <div v-if="showManageFilters" class="px-3 px-md-4 pb-2">
+        <p class="mb-1 fw-semibold">
+          <template v-if="readySummaryLoading">Loading summary...</template>
+          <template v-else>{{ readySummary.ready_to_ship_total }} Ready to Ship Orders</template>
+        </p>
+        <div v-if="!readySummaryLoading && readySummary.ready_to_ship_by_account.length" class="small text-secondary">
+          <span
+            v-for="(row, idx) in readySummary.ready_to_ship_by_account"
+            :key="`${row.account_id}-${idx}`"
+            class="me-3 d-inline-block"
+          >
+            {{ row.account_name }}: {{ row.orders_count }} orders
+          </span>
+        </div>
       </div>
 
       <div class="table-responsive staff-table-wrap">

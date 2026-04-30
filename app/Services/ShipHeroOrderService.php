@@ -48,6 +48,7 @@ class ShipHeroOrderService
             $vars['has_hold'] = true;
         } elseif ($tab === 'awaiting') {
             $vars['ready_to_ship'] = true;
+            $vars['fulfillment_status'] = 'unfulfilled';
         } elseif ($tab === 'shipped') {
             $vars['fulfillment_status'] = 'shipped';
         }
@@ -488,6 +489,7 @@ GQL;
             'raw_profile' => (string) ($node['profile'] ?? ''),
             'order_number' => (string) ($node['order_number'] ?? ''),
             'order_date' => $this->nullableIso($node['order_date'] ?? null),
+            'required_ship_date' => $this->nullableIso($node['required_ship_date'] ?? null),
             'account' => (string) ($node['shop_name'] ?? ''),
             'country' => (string) ($shippingAddress['country'] ?? ''),
             'shipping_carrier' => (string) ($shippingLine['carrier'] ?? ''),
@@ -823,8 +825,7 @@ GQL;
                 || str_starts_with($normalized, 'shipped');
         }
         if ($tab === 'awaiting') {
-            return $normalized !== ''
-                && ! str_contains($normalized, 'hold')
+            return ! str_contains($normalized, 'hold')
                 && ! ($normalized === 'shipped'
                     || $normalized === 'fulfilled'
                     || $normalized === 'complete'
@@ -872,6 +873,88 @@ GQL;
         }
 
         return $startOfDay ? $date->startOfDay() : $date->endOfDay();
+    }
+
+    /**
+     * @param list<array{id:int,name:string,customer_account_id:string}> $accounts
+     * @return array<string,mixed>
+     */
+    public function readyToShipSummaryForAccounts(array $accounts, ?string $orderDateFrom, ?string $orderDateTo): array
+    {
+        $readyToShipTotal = 0;
+        $lateOrdersTotal = 0;
+        $priorityOrdersTotal = 0;
+        $byAccount = [];
+        $now = Carbon::now();
+
+        foreach ($accounts as $account) {
+            $customerId = trim((string) ($account['customer_account_id'] ?? ''));
+            if ($customerId === '') {
+                continue;
+            }
+            $accountCount = 0;
+            $after = null;
+            $pages = 0;
+            do {
+                $payload = $this->listOrders([
+                    'customer_account_id' => $customerId,
+                    'tab' => 'awaiting',
+                    'order_date_from' => $orderDateFrom,
+                    'order_date_to' => $orderDateTo,
+                    'after' => $after,
+                    'first' => 100,
+                ]);
+                $rows = is_array($payload['rows'] ?? null) ? $payload['rows'] : [];
+                foreach ($rows as $row) {
+                    if (! is_array($row)) {
+                        continue;
+                    }
+                    $accountCount++;
+                    $readyToShipTotal++;
+
+                    $lateAt = $row['required_ship_date'] ?? ($row['order_date'] ?? null);
+                    if (is_string($lateAt) && trim($lateAt) !== '') {
+                        try {
+                            $lateDate = Carbon::parse($lateAt);
+                            if ($lateDate->lt($now->copy()->subHours(24))) {
+                                $lateOrdersTotal++;
+                            }
+                        } catch (\Throwable $e) {
+                            // noop
+                        }
+                    }
+
+                    $priorityRaw = strtolower(trim((string) (($row['priority'] ?? '') ?: ($row['profile'] ?? ''))));
+                    if ($priorityRaw !== '' && (str_contains($priorityRaw, 'priority') || str_contains($priorityRaw, 'rush') || str_contains($priorityRaw, 'urgent'))) {
+                        $priorityOrdersTotal++;
+                    }
+                }
+
+                $hasNext = (bool) data_get($payload, 'pagination.has_next_page', false);
+                $endCursor = data_get($payload, 'pagination.end_cursor');
+                $after = is_string($endCursor) && trim($endCursor) !== '' ? $endCursor : null;
+                $pages++;
+            } while ($after !== null && $pages < 10 && $hasNext);
+
+            if ($accountCount > 0) {
+                $byAccount[] = [
+                    'account_id' => (int) ($account['id'] ?? 0),
+                    'account_name' => (string) ($account['name'] ?? 'Account'),
+                    'orders_count' => $accountCount,
+                ];
+            }
+        }
+
+        usort($byAccount, static function (array $a, array $b) {
+            return ($b['orders_count'] ?? 0) <=> ($a['orders_count'] ?? 0);
+        });
+
+        return [
+            'ready_to_ship_total' => $readyToShipTotal,
+            'ready_to_ship_by_account' => $byAccount,
+            'late_orders_total' => $lateOrdersTotal,
+            'priority_orders_total' => $priorityOrdersTotal,
+        ];
     }
 
     /**

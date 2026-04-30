@@ -61,6 +61,49 @@ class OrderController extends Controller
         }
     }
 
+    public function summary(Request $request): JsonResponse
+    {
+        $validated = $request->validate([
+            'order_date_from' => ['nullable', 'date'],
+            'order_date_to' => ['nullable', 'date'],
+        ]);
+        Gate::forUser($request->user())->authorize('viewAny', ClientAccount::class);
+
+        try {
+            $from = $this->dateStartIso($validated['order_date_from'] ?? null);
+            $to = $this->dateEndIso($validated['order_date_to'] ?? null);
+            $accounts = ClientAccount::query()
+                ->whereNotNull('shiphero_customer_account_id')
+                ->where('shiphero_customer_account_id', '!=', '')
+                ->orderBy('company_name')
+                ->get(['id', 'company_name', 'shiphero_customer_account_id'])
+                ->map(static function (ClientAccount $account) {
+                    return [
+                        'id' => (int) $account->id,
+                        'name' => (string) $account->company_name,
+                        'customer_account_id' => (string) $account->shiphero_customer_account_id,
+                    ];
+                })
+                ->values()
+                ->all();
+
+            $payload = $this->orders->readyToShipSummaryForAccounts($accounts, $from, $to);
+
+            return response()->json($payload);
+        } catch (ValidationException $e) {
+            throw $e;
+        } catch (RuntimeException $e) {
+            return response()->json(['message' => $e->getMessage()], 502);
+        } catch (Throwable $e) {
+            report($e);
+            return response()->json([
+                'message' => config('app.debug')
+                    ? $e->getMessage()
+                    : 'Could not compute ShipHero order summary.',
+            ], 502);
+        }
+    }
+
     public function show(Request $request, string $orderId): JsonResponse
     {
         $validated = $request->validate([
@@ -172,7 +215,7 @@ class OrderController extends Controller
             return null;
         }
 
-        return \Carbon\Carbon::parse($value)->toDateString();
+        return \Carbon\Carbon::parse($value)->startOfDay()->toIso8601String();
     }
 
     private function dateEndIso($value): ?string
@@ -181,7 +224,7 @@ class OrderController extends Controller
             return null;
         }
 
-        return \Carbon\Carbon::parse($value)->toDateString();
+        return \Carbon\Carbon::parse($value)->endOfDay()->toIso8601String();
     }
 
     private function isTransientUpstreamErrorMessage(string $message): bool

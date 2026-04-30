@@ -433,7 +433,7 @@ function collapseNav() {
                     :class="{ 'vx-nav-link--active': navActive('orders-awaiting') }"
                     @click="closeMobile"
                   >
-                    Awaiting Shipment
+                    Ready to Ship
                   </RouterLink>
                 </li>
                 <li>

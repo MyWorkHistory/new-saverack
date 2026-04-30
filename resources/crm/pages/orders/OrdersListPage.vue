@@ -42,7 +42,7 @@ const tabTitle = computed(() => {
   return "Manage";
 });
 
-const showManageFilters = computed(() => tabKey.value === "manage");
+const showManageFilters = computed(() => true);
 const isCustomDate = computed(() => query.datePreset === "custom");
 
 const displayedRows = computed(() => {
@@ -78,12 +78,29 @@ const accountOptions = computed(() =>
 );
 
 function orderDetailHref(row) {
-  if (!row?.id || !selectedAccountId.value) return "#";
+  if (!row?.order_number || !row?.account) return "#";
+  const orderNumber = normalizeOrderNumberForRoute(row.order_number);
+  const accountSlug = slugAccountName(row.account);
+  if (!orderNumber || !accountSlug) return "#";
   return router.resolve({
-    name: "order-detail",
-    params: { shipheroOrderId: String(row.id) },
-    query: { client_account_id: String(selectedAccountId.value) },
+    name: "order-detail-iframe",
+    params: { accountSlug, orderNumber },
   }).href;
+}
+
+function normalizeOrderNumberForRoute(v) {
+  return String(v || "").trim().replace(/^#\s*/, "");
+}
+
+function slugAccountName(v) {
+  let s = String(v || "").trim().toLowerCase();
+  if (!s) return "";
+  s = s.replace(/^https?:\/\//, "");
+  s = s.replace(/^www\./, "");
+  s = s.replace(/\.myshopify\.com$/, "");
+  s = s.replace(/[^a-z0-9]+/g, "-");
+  s = s.replace(/^-+|-+$/g, "");
+  return s;
 }
 
 function openOrderViewNewTab(row) {
@@ -148,13 +165,11 @@ function buildParams(withCursor = false) {
   const params = {
     client_account_id: Number(selectedAccountId.value),
     tab: tabKey.value,
-    first: 20,
+    first: 100,
   };
-  if (showManageFilters.value) {
-    const range = dateRangeFromPreset();
-    if (range.from) params.order_date_from = range.from;
-    if (range.to) params.order_date_to = range.to;
-  }
+  const range = dateRangeFromPreset();
+  if (range.from) params.order_date_from = range.from;
+  if (range.to) params.order_date_to = range.to;
   if (withCursor && nextCursor.value) params.after = nextCursor.value;
   return params;
 }

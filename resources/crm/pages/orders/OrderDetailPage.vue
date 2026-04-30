@@ -373,12 +373,7 @@ onMounted(async () => {
                   <tr>
                     <th class="staff-table-head__th">
                       <button class="order-detail-page__sort-btn" type="button" @click="toggleItemSort('name')">
-                        Item <span class="order-detail-page__sort-icon">{{ sortIndicator("name") }}</span>
-                      </button>
-                    </th>
-                    <th class="staff-table-head__th">
-                      <button class="order-detail-page__sort-btn" type="button" @click="toggleItemSort('sku')">
-                        SKU <span class="order-detail-page__sort-icon">{{ sortIndicator("sku") }}</span>
+                        Items <span class="order-detail-page__sort-icon">{{ sortIndicator("name") }}</span>
                       </button>
                     </th>
                     <th class="staff-table-head__th text-end">
@@ -387,13 +382,13 @@ onMounted(async () => {
                       </button>
                     </th>
                     <th class="staff-table-head__th text-end">
-                      <button class="order-detail-page__sort-btn order-detail-page__sort-btn--right" type="button" @click="toggleItemSort('quantity_allocated')">
-                        Allocated <span class="order-detail-page__sort-icon">{{ sortIndicator("quantity_allocated") }}</span>
+                      <button class="order-detail-page__sort-btn order-detail-page__sort-btn--right" type="button" @click="toggleItemSort('quantity_pending_fulfillment')">
+                        Quantity to ship <span class="order-detail-page__sort-icon">{{ sortIndicator("quantity_pending_fulfillment") }}</span>
                       </button>
                     </th>
                     <th class="staff-table-head__th text-end">
-                      <button class="order-detail-page__sort-btn order-detail-page__sort-btn--right" type="button" @click="toggleItemSort('quantity_pending_fulfillment')">
-                        To Ship <span class="order-detail-page__sort-icon">{{ sortIndicator("quantity_pending_fulfillment") }}</span>
+                      <button class="order-detail-page__sort-btn order-detail-page__sort-btn--right" type="button" @click="toggleItemSort('price')">
+                        Price <span class="order-detail-page__sort-icon">{{ sortIndicator("price") }}</span>
                       </button>
                     </th>
                   </tr>
@@ -410,16 +405,26 @@ onMounted(async () => {
                           loading="lazy"
                         />
                         <div v-else class="order-detail-page__item-thumb order-detail-page__item-thumb--empty" aria-hidden="true"></div>
-                        <span>{{ item.name || "—" }}</span>
+                        <div class="order-detail-page__item-copy">
+                          <div class="order-detail-page__item-name">{{ item.name || "—" }}</div>
+                          <div class="order-detail-page__item-sku">SKU {{ item.sku || "—" }}</div>
+                        </div>
                       </div>
                     </td>
-                    <td>{{ item.sku || "—" }}</td>
                     <td class="text-end">{{ item.quantity ?? 0 }}</td>
-                    <td class="text-end">{{ item.quantity_allocated ?? 0 }}</td>
                     <td class="text-end">{{ item.quantity_pending_fulfillment ?? 0 }}</td>
+                    <td class="text-end">
+                      <div>{{ fmtMoney(item.price) }}</div>
+                      <div
+                        v-if="Number(item.backorder_quantity || 0) > 0"
+                        class="order-detail-page__backorder"
+                      >
+                        {{ Number(item.backorder_quantity) }} on backorder
+                      </div>
+                    </td>
                   </tr>
                   <tr v-if="!sortedItems.length">
-                    <td colspan="5" class="text-center text-secondary py-4">No items</td>
+                    <td colspan="4" class="text-center text-secondary py-4">No items</td>
                   </tr>
                 </tbody>
               </table>
@@ -528,6 +533,22 @@ onMounted(async () => {
   gap: 0.5rem;
 }
 
+.order-detail-page__item-copy {
+  min-width: 0;
+}
+
+.order-detail-page__item-name {
+  color: #2563eb;
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.order-detail-page__item-sku {
+  color: #6c757d;
+}
+
 .order-detail-page__item-thumb {
   width: 32px;
   height: 32px;
@@ -540,6 +561,12 @@ onMounted(async () => {
 
 .order-detail-page__item-thumb--empty {
   background: rgba(0, 0, 0, 0.04);
+}
+
+.order-detail-page__backorder {
+  color: #dc3545;
+  font-size: 0.85rem;
+  font-weight: 600;
 }
 
 .order-detail-page__history-html :deep(p) {

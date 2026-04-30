@@ -372,6 +372,7 @@ query ShipHeroOrderLineItems($id: String!, $first: Int!, $after: String) {
             id
             sku
             product_id
+            price
             quantity
             quantity_allocated
             quantity_pending_fulfillment
@@ -406,6 +407,7 @@ GQL;
                     'sku' => (string) ($line['sku'] ?? ''),
                     'product_id' => (string) ($line['product_id'] ?? ''),
                     'name' => (string) ($line['product_name'] ?? ''),
+                    'price' => is_numeric($line['price'] ?? null) ? (float) $line['price'] : null,
                     'quantity' => (float) ($line['quantity'] ?? 0),
                     'quantity_allocated' => (float) ($line['quantity_allocated'] ?? 0),
                     'quantity_pending_fulfillment' => (float) ($line['quantity_pending_fulfillment'] ?? 0),

@@ -30,6 +30,7 @@ import InventoryPage from "../pages/inventory/InventoryPage.vue";
 import InventoryOnDemandPage from "../pages/inventory/InventoryOnDemandPage.vue";
 import OrdersListPage from "../pages/orders/OrdersListPage.vue";
 import OrderDetailPage from "../pages/orders/OrderDetailPage.vue";
+import OrderDetailIframePage from "../pages/orders/OrderDetailIframePage.vue";
 
 const meta = {
   login: {
@@ -300,6 +301,13 @@ const routes = [
     path: "/orders/:shipheroOrderId",
     name: "order-detail",
     component: OrderDetailPage,
+    props: true,
+    meta: meta.orderDetail,
+  },
+  {
+    path: "/orders/:accountSlug/:orderNumber",
+    name: "order-detail-iframe",
+    component: OrderDetailIframePage,
     props: true,
     meta: meta.orderDetail,
   },

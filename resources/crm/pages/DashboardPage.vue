@@ -78,6 +78,7 @@ const orderMetrics = ref({
   late_orders_total: 0,
   priority_orders_total: 0,
 });
+const DASHBOARD_ORDER_METRICS_CACHE_KEY = "dashboard.orderMetrics.v1";
 
 const nf = new Intl.NumberFormat(undefined, { maximumFractionDigits: 0 });
 const df = new Intl.DateTimeFormat(undefined, {
@@ -377,21 +378,31 @@ function openUserEditModal(user) {
 
 async function refreshDashboardSummary() {
   try {
-    const { data } = await api.get("/dashboard/summary");
-    summary.value = { ...summary.value, ...data };
     const now = new Date();
     const to = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
     const fromDate = new Date(now);
     fromDate.setDate(fromDate.getDate() - 29);
     const from = `${fromDate.getFullYear()}-${String(fromDate.getMonth() + 1).padStart(2, "0")}-${String(fromDate.getDate()).padStart(2, "0")}`;
-    const summaryRes = await api.get("/orders/summary", {
-      params: { order_date_from: from, order_date_to: to },
-    });
+    const [dashboardRes, summaryRes] = await Promise.all([
+      api.get("/dashboard/summary"),
+      api.get("/orders/summary", {
+        params: { order_date_from: from, order_date_to: to },
+      }),
+    ]);
+    summary.value = { ...summary.value, ...dashboardRes.data };
     orderMetrics.value = {
       ready_to_ship_total: Number(summaryRes?.data?.ready_to_ship_total || 0),
       late_orders_total: Number(summaryRes?.data?.late_orders_total || 0),
       priority_orders_total: Number(summaryRes?.data?.priority_orders_total || 0),
     };
+    try {
+      sessionStorage.setItem(
+        DASHBOARD_ORDER_METRICS_CACHE_KEY,
+        JSON.stringify(orderMetrics.value),
+      );
+    } catch (_) {
+      // no-op
+    }
   } catch {
     /* ignore */
   }
@@ -472,22 +483,45 @@ const confirmDelete = async () => {
 onMounted(async () => {
   loading.value = true;
   try {
+    try {
+      const cached = sessionStorage.getItem(DASHBOARD_ORDER_METRICS_CACHE_KEY);
+      if (cached) {
+        const parsed = JSON.parse(cached);
+        orderMetrics.value = {
+          ready_to_ship_total: Number(parsed?.ready_to_ship_total || 0),
+          late_orders_total: Number(parsed?.late_orders_total || 0),
+          priority_orders_total: Number(parsed?.priority_orders_total || 0),
+        };
+      }
+    } catch (_) {
+      // no-op
+    }
     await fetchMe();
-    const { data } = await api.get("/dashboard/summary");
-    summary.value = { ...summary.value, ...data };
     const now = new Date();
     const to = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
     const fromDate = new Date(now);
     fromDate.setDate(fromDate.getDate() - 29);
     const from = `${fromDate.getFullYear()}-${String(fromDate.getMonth() + 1).padStart(2, "0")}-${String(fromDate.getDate()).padStart(2, "0")}`;
-    const summaryRes = await api.get("/orders/summary", {
-      params: { order_date_from: from, order_date_to: to },
-    });
+    const [dashboardRes, summaryRes] = await Promise.all([
+      api.get("/dashboard/summary"),
+      api.get("/orders/summary", {
+        params: { order_date_from: from, order_date_to: to },
+      }),
+    ]);
+    summary.value = { ...summary.value, ...dashboardRes.data };
     orderMetrics.value = {
       ready_to_ship_total: Number(summaryRes?.data?.ready_to_ship_total || 0),
       late_orders_total: Number(summaryRes?.data?.late_orders_total || 0),
       priority_orders_total: Number(summaryRes?.data?.priority_orders_total || 0),
     };
+    try {
+      sessionStorage.setItem(
+        DASHBOARD_ORDER_METRICS_CACHE_KEY,
+        JSON.stringify(orderMetrics.value),
+      );
+    } catch (_) {
+      // no-op
+    }
   } finally {
     loading.value = false;
   }

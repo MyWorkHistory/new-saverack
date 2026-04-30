@@ -7,6 +7,7 @@ use App\Models\ClientAccount;
 use App\Services\ShipHeroOrderService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Validation\ValidationException;
@@ -76,22 +77,29 @@ class OrderController extends Controller
         try {
             $from = $this->dateStartIso($validated['order_date_from'] ?? null);
             $to = $this->dateEndIso($validated['order_date_to'] ?? null);
-            $accounts = ClientAccount::query()
-                ->whereNotNull('shiphero_customer_account_id')
-                ->where('shiphero_customer_account_id', '!=', '')
-                ->orderBy('company_name')
-                ->get(['id', 'company_name', 'shiphero_customer_account_id'])
-                ->map(static function (ClientAccount $account) {
-                    return [
-                        'id' => (int) $account->id,
-                        'name' => (string) $account->company_name,
-                        'customer_account_id' => (string) $account->shiphero_customer_account_id,
-                    ];
-                })
-                ->values()
-                ->all();
+            $cacheKey = sprintf(
+                'orders:summary:%s:%s',
+                $from ?? 'none',
+                $to ?? 'none'
+            );
+            $payload = Cache::remember($cacheKey, now()->addMinutes(2), function () use ($from, $to) {
+                $accounts = ClientAccount::query()
+                    ->whereNotNull('shiphero_customer_account_id')
+                    ->where('shiphero_customer_account_id', '!=', '')
+                    ->orderBy('company_name')
+                    ->get(['id', 'company_name', 'shiphero_customer_account_id'])
+                    ->map(static function (ClientAccount $account) {
+                        return [
+                            'id' => (int) $account->id,
+                            'name' => (string) $account->company_name,
+                            'customer_account_id' => (string) $account->shiphero_customer_account_id,
+                        ];
+                    })
+                    ->values()
+                    ->all();
 
-            $payload = $this->orders->readyToShipSummaryForAccounts($accounts, $from, $to);
+                return $this->orders->readyToShipSummaryForAccounts($accounts, $from, $to);
+            });
 
             return response()->json($payload);
         } catch (ValidationException $e) {

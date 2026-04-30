@@ -28,6 +28,7 @@ const readySummary = ref({
   late_orders_total: 0,
   priority_orders_total: 0,
 });
+const READY_SUMMARY_CACHE_KEY = "orders.manage.readySummary.v1";
 
 const manageOpenId = ref(null);
 const manageMenuRect = ref({ top: 0, left: 0 });
@@ -197,7 +198,7 @@ async function fetchOrders(reset = true) {
 }
 
 async function fetchReadySummary() {
-  if (!showManageFilters.value) return;
+  if (!showManageFilters.value || tabKey.value !== "manage") return;
   readySummaryLoading.value = true;
   try {
     const range = dateRangeFromPreset();
@@ -213,6 +214,11 @@ async function fetchReadySummary() {
       late_orders_total: Number(data?.late_orders_total || 0),
       priority_orders_total: Number(data?.priority_orders_total || 0),
     };
+    try {
+      sessionStorage.setItem(READY_SUMMARY_CACHE_KEY, JSON.stringify(readySummary.value));
+    } catch (_) {
+      // no-op
+    }
   } catch (e) {
     toast.errorFrom(e, "Could not load Ready to Ship summary.");
   } finally {
@@ -258,7 +264,7 @@ watch(
   () => [selectedAccountId.value, tabKey.value],
   () => {
     fetchOrders(true);
-    fetchReadySummary();
+    if (tabKey.value === "manage") fetchReadySummary();
   },
 );
 
@@ -272,7 +278,7 @@ watch(
       || query.datePreset !== "custom"
     ) {
       fetchOrders(true);
-      fetchReadySummary();
+      if (tabKey.value === "manage") fetchReadySummary();
     }
   },
 );
@@ -283,8 +289,22 @@ onMounted(async () => {
     title: `Save Rack | Orders | ${tabTitle.value}`,
     description: "ShipHero customer orders.",
   });
+  try {
+    const cached = sessionStorage.getItem(READY_SUMMARY_CACHE_KEY);
+    if (cached) {
+      const parsed = JSON.parse(cached);
+      readySummary.value = {
+        ready_to_ship_total: Number(parsed?.ready_to_ship_total || 0),
+        ready_to_ship_by_account: Array.isArray(parsed?.ready_to_ship_by_account) ? parsed.ready_to_ship_by_account : [],
+        late_orders_total: Number(parsed?.late_orders_total || 0),
+        priority_orders_total: Number(parsed?.priority_orders_total || 0),
+      };
+    }
+  } catch (_) {
+    // no-op
+  }
   await loadAccounts();
-  fetchReadySummary();
+  if (tabKey.value === "manage") fetchReadySummary();
 });
 
 onUnmounted(() => {

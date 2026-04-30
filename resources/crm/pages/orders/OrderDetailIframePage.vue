@@ -20,6 +20,11 @@ const accountIdFromQuery = computed(() => {
   const n = Number(raw);
   return Number.isInteger(n) && n > 0 ? n : null;
 });
+const legacyIdFromQuery = computed(() => {
+  const raw = String(route.query.legacy_id || "").trim();
+  const n = Number(raw);
+  return Number.isInteger(n) && n > 0 ? n : null;
+});
 
 function normalizeOrderNumber(v) {
   return String(v || "")
@@ -64,7 +69,12 @@ async function findLegacyIdForOrder(accountId) {
         },
       });
       const rows = Array.isArray(data?.rows) ? data.rows : [];
-      const found = rows.find((row) => normalizeOrderNumber(row?.order_number) === routeOrderNumber.value);
+      const found = rows.find((row) => {
+        const orderNoMatch = normalizeOrderNumber(row?.order_number) === routeOrderNumber.value;
+        const legacyMatch = String(row?.legacy_id || "").trim() === routeOrderNumber.value;
+        const relayMatch = String(row?.id || "").trim() === routeOrderNumber.value;
+        return orderNoMatch || legacyMatch || relayMatch;
+      });
       if (found && Number(found.legacy_id) > 0) {
         return Number(found.legacy_id);
       }
@@ -100,8 +110,11 @@ onMounted(async () => {
       redirectTo("https://app.shiphero.com/dashboard/orders");
       return;
     }
-    resolving.value = "Finding ShipHero order id...";
-    const legacyId = await findLegacyIdForOrder(accountId);
+    let legacyId = legacyIdFromQuery.value;
+    if (!legacyId) {
+      resolving.value = "Finding ShipHero order id...";
+      legacyId = await findLegacyIdForOrder(accountId);
+    }
     if (!legacyId) {
       error.value = "Order was not found in ShipHero list responses.";
       redirectTo("https://app.shiphero.com/dashboard/orders");

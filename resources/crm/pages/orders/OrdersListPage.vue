@@ -85,7 +85,11 @@ function orderDetailHref(row) {
   return router.resolve({
     name: "order-detail-iframe",
     params: { accountSlug, orderNumber },
-    query: { client_account_id: String(selectedAccountId.value) },
+    query: {
+      client_account_id: String(selectedAccountId.value),
+      legacy_id: row?.legacy_id != null ? String(row.legacy_id) : undefined,
+      shiphero_order_id: row?.id ? String(row.id) : undefined,
+    },
   }).href;
 }
 

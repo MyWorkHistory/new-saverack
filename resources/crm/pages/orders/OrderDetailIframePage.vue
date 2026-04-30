@@ -10,7 +10,6 @@ const loading = ref(true);
 const resolving = ref("Resolving ShipHero order...");
 const shipheroUrl = ref("");
 const error = ref("");
-const redirected = ref(false);
 const iframeLoaded = ref(false);
 
 const accountSlug = computed(() => String(route.params.accountSlug || "").trim().toLowerCase());
@@ -88,12 +87,6 @@ async function findLegacyIdForOrder(accountId) {
   return null;
 }
 
-function redirectTo(url) {
-  if (redirected.value) return;
-  redirected.value = true;
-  window.location.assign(url);
-}
-
 function onIframeLoad() {
   iframeLoaded.value = true;
 }
@@ -107,7 +100,6 @@ onMounted(async () => {
     const accountId = await resolveAccountIdFromSlug();
     if (!accountId) {
       error.value = "Could not match account from URL.";
-      redirectTo("https://app.shiphero.com/dashboard/orders");
       return;
     }
     let legacyId = legacyIdFromQuery.value;
@@ -117,20 +109,12 @@ onMounted(async () => {
     }
     if (!legacyId) {
       error.value = "Order was not found in ShipHero list responses.";
-      redirectTo("https://app.shiphero.com/dashboard/orders");
       return;
     }
     shipheroUrl.value = `https://app.shiphero.com/dashboard/orders/details/${legacyId}`;
     loading.value = false;
-
-    window.setTimeout(() => {
-      if (!iframeLoaded.value) {
-        redirectTo(shipheroUrl.value);
-      }
-    }, 9000);
   } catch (e) {
     error.value = e?.message || "Could not open ShipHero order page.";
-    redirectTo("https://app.shiphero.com/dashboard/orders");
   } finally {
     loading.value = false;
   }
@@ -160,7 +144,7 @@ onMounted(async () => {
     </div>
 
     <div v-else class="alert alert-warning small">
-      {{ error || "Redirecting to ShipHero..." }}
+      {{ error || "Could not open ShipHero order in iframe." }}
     </div>
   </div>
 </template>

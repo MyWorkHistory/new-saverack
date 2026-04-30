@@ -68,6 +68,7 @@ class OrderController extends Controller
 
     public function summary(Request $request): JsonResponse
     {
+        $startedAt = microtime(true);
         $validated = $request->validate([
             'order_date_from' => ['nullable', 'date'],
             'order_date_to' => ['nullable', 'date'],
@@ -82,24 +83,44 @@ class OrderController extends Controller
                 $from ?? 'none',
                 $to ?? 'none'
             );
-            $payload = Cache::remember($cacheKey, now()->addMinutes(2), function () use ($from, $to) {
-                $accounts = ClientAccount::query()
-                    ->whereNotNull('shiphero_customer_account_id')
-                    ->where('shiphero_customer_account_id', '!=', '')
-                    ->orderBy('company_name')
-                    ->get(['id', 'company_name', 'shiphero_customer_account_id'])
-                    ->map(static function (ClientAccount $account) {
-                        return [
-                            'id' => (int) $account->id,
-                            'name' => (string) $account->company_name,
-                            'customer_account_id' => (string) $account->shiphero_customer_account_id,
-                        ];
-                    })
-                    ->values()
-                    ->all();
+            $staleKey = $cacheKey.':stale';
+            $lockKey = $cacheKey.':refresh_lock';
+            $fresh = Cache::get($cacheKey);
+            if (is_array($fresh)) {
+                Log::info('shiphero.orders_summary.controller.cache_hit', [
+                    'cache_key' => $cacheKey,
+                    'duration_ms' => (int) round((microtime(true) - $startedAt) * 1000),
+                ]);
+                return response()->json($fresh);
+            }
 
-                return $this->orders->readyToShipSummaryForAccounts($accounts, $from, $to);
-            });
+            $stale = Cache::get($staleKey);
+            if (is_array($stale)) {
+                // Serve stale immediately; trigger a guarded refresh.
+                if (Cache::add($lockKey, '1', now()->addSeconds(30))) {
+                    try {
+                        $payload = $this->computeOrdersSummaryPayload($from, $to);
+                        Cache::put($cacheKey, $payload, now()->addSeconds(60));
+                        Cache::put($staleKey, $payload, now()->addMinutes(10));
+                    } finally {
+                        Cache::forget($lockKey);
+                    }
+                }
+                Log::info('shiphero.orders_summary.controller.stale_hit', [
+                    'cache_key' => $cacheKey,
+                    'duration_ms' => (int) round((microtime(true) - $startedAt) * 1000),
+                ]);
+                return response()->json($stale);
+            }
+
+            $payload = $this->computeOrdersSummaryPayload($from, $to);
+            Cache::put($cacheKey, $payload, now()->addSeconds(60));
+            Cache::put($staleKey, $payload, now()->addMinutes(10));
+
+            Log::info('shiphero.orders_summary.controller.cold_compute', [
+                'cache_key' => $cacheKey,
+                'duration_ms' => (int) round((microtime(true) - $startedAt) * 1000),
+            ]);
 
             return response()->json($payload);
         } catch (ValidationException $e) {
@@ -114,6 +135,29 @@ class OrderController extends Controller
                     : 'Could not compute ShipHero order summary.',
             ], 502);
         }
+    }
+
+    /**
+     * @return array<string,mixed>
+     */
+    private function computeOrdersSummaryPayload(?string $from, ?string $to): array
+    {
+        $accounts = ClientAccount::query()
+            ->whereNotNull('shiphero_customer_account_id')
+            ->where('shiphero_customer_account_id', '!=', '')
+            ->orderBy('company_name')
+            ->get(['id', 'company_name', 'shiphero_customer_account_id'])
+            ->map(static function (ClientAccount $account) {
+                return [
+                    'id' => (int) $account->id,
+                    'name' => (string) $account->company_name,
+                    'customer_account_id' => (string) $account->shiphero_customer_account_id,
+                ];
+            })
+            ->values()
+            ->all();
+
+        return $this->orders->readyToShipSummaryForAccounts($accounts, $from, $to);
     }
 
     public function show(Request $request, string $orderId): JsonResponse

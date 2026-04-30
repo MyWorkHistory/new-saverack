@@ -890,11 +890,15 @@ GQL;
      */
     public function readyToShipSummaryForAccounts(array $accounts, ?string $orderDateFrom, ?string $orderDateTo): array
     {
+        $startedAt = microtime(true);
         $readyToShipTotal = 0;
         $lateOrdersTotal = 0;
         $priorityOrdersTotal = 0;
         $byAccount = [];
         $now = Carbon::now();
+        $shipheroCalls = 0;
+        $shipheroBytes = 0;
+        $shipheroComplexity = 0;
 
         foreach ($accounts as $account) {
             $customerId = trim((string) ($account['customer_account_id'] ?? ''));
@@ -905,15 +909,17 @@ GQL;
             $after = null;
             $pages = 0;
             do {
-                $payload = $this->listOrders([
-                    'customer_account_id' => $customerId,
-                    'tab' => 'awaiting',
-                    'order_date_from' => $orderDateFrom,
-                    'order_date_to' => $orderDateTo,
-                    'after' => $after,
-                    'first' => 100,
-                ]);
-                $rows = is_array($payload['rows'] ?? null) ? $payload['rows'] : [];
+                $payload = $this->fetchReadyToShipSummaryPage(
+                    $customerId,
+                    $orderDateFrom,
+                    $orderDateTo,
+                    $after,
+                    100
+                );
+                $rows = $payload['rows'];
+                $shipheroCalls += (int) ($payload['shiphero_calls'] ?? 0);
+                $shipheroBytes += (int) ($payload['shiphero_body_bytes'] ?? 0);
+                $shipheroComplexity += (int) ($payload['shiphero_complexity'] ?? 0);
                 foreach ($rows as $row) {
                     if (! is_array($row)) {
                         continue;
@@ -939,9 +945,9 @@ GQL;
                     }
                 }
 
-                $hasNext = (bool) data_get($payload, 'pagination.has_next_page', false);
-                $endCursor = data_get($payload, 'pagination.end_cursor');
-                $after = is_string($endCursor) && trim($endCursor) !== '' ? $endCursor : null;
+                $hasNext = (bool) ($payload['has_next_page'] ?? false);
+                $after = is_string($payload['end_cursor'] ?? null) ? trim((string) $payload['end_cursor']) : null;
+                $after = $after !== '' ? $after : null;
                 $pages++;
             } while ($after !== null && $pages < 10 && $hasNext);
 
@@ -958,11 +964,125 @@ GQL;
             return ($b['orders_count'] ?? 0) <=> ($a['orders_count'] ?? 0);
         });
 
+        Log::info('shiphero.orders_summary.service.completed', [
+            'accounts_total' => count($accounts),
+            'accounts_with_orders' => count($byAccount),
+            'ready_to_ship_total' => $readyToShipTotal,
+            'late_orders_total' => $lateOrdersTotal,
+            'priority_orders_total' => $priorityOrdersTotal,
+            'shiphero_calls' => $shipheroCalls,
+            'shiphero_body_bytes' => $shipheroBytes,
+            'shiphero_complexity_total' => $shipheroComplexity,
+            'duration_ms' => (int) round((microtime(true) - $startedAt) * 1000),
+        ]);
+
         return [
             'ready_to_ship_total' => $readyToShipTotal,
             'ready_to_ship_by_account' => $byAccount,
             'late_orders_total' => $lateOrdersTotal,
             'priority_orders_total' => $priorityOrdersTotal,
+        ];
+    }
+
+    /**
+     * @return array{
+     *   rows:list<array<string,mixed>>,
+     *   has_next_page:bool,
+     *   end_cursor:?string,
+     *   shiphero_calls:int,
+     *   shiphero_body_bytes:int,
+     *   shiphero_complexity:int
+     * }
+     */
+    private function fetchReadyToShipSummaryPage(
+        string $customerAccountId,
+        ?string $orderDateFrom,
+        ?string $orderDateTo,
+        ?string $after = null,
+        int $first = 100
+    ): array {
+        $startedAt = microtime(true);
+        $graphql = <<<'GQL'
+query ShipHeroReadyToShipSummaryPage(
+  $customer_account_id: String!,
+  $order_date_from: ISODateTime,
+  $order_date_to: ISODateTime,
+  $first: Int!,
+  $after: String
+) {
+  orders(
+    customer_account_id: $customer_account_id,
+    order_date_from: $order_date_from,
+    order_date_to: $order_date_to,
+    ready_to_ship: true,
+    fulfillment_status: "unfulfilled"
+  ) {
+    request_id
+    complexity
+    data(first: $first, after: $after) {
+      edges {
+        node {
+          order_date
+          required_ship_date
+          profile
+        }
+      }
+      pageInfo {
+        hasNextPage
+        endCursor
+      }
+    }
+  }
+}
+GQL;
+
+        $vars = [
+            'customer_account_id' => $customerAccountId,
+            'order_date_from' => $this->nullableIso($orderDateFrom),
+            'order_date_to' => $this->nullableIso($orderDateTo),
+            'first' => max(1, min(100, $first)),
+            'after' => $after !== null && trim($after) !== '' ? trim($after) : null,
+        ];
+        $json = $this->client->query($graphql, $vars);
+        $data = data_get($json, 'data.orders.data');
+        if (! is_array($data)) {
+            throw new RuntimeException('ShipHero did not return summary orders data.');
+        }
+
+        $edges = is_array($data['edges'] ?? null) ? $data['edges'] : [];
+        $rows = [];
+        foreach ($edges as $edge) {
+            if (! is_array($edge) || ! is_array($edge['node'] ?? null)) {
+                continue;
+            }
+            $node = $edge['node'];
+            $rows[] = [
+                'order_date' => $this->nullableIso($node['order_date'] ?? null),
+                'required_ship_date' => $this->nullableIso($node['required_ship_date'] ?? null),
+                'profile' => (string) ($node['profile'] ?? ''),
+            ];
+        }
+        $pageInfo = is_array($data['pageInfo'] ?? null) ? $data['pageInfo'] : [];
+        $durationMs = (int) round((microtime(true) - $startedAt) * 1000);
+        $complexity = (int) data_get($json, 'data.orders.complexity', 0);
+        $requestId = (string) data_get($json, 'data.orders.request_id', '');
+
+        Log::debug('shiphero.orders_summary.page', [
+            'customer_account_id' => $customerAccountId,
+            'orders_returned' => count($rows),
+            'has_next_page' => (bool) ($pageInfo['hasNextPage'] ?? false),
+            'complexity' => $complexity,
+            'request_id' => $requestId !== '' ? $requestId : null,
+            'duration_ms' => $durationMs,
+        ]);
+
+        return [
+            'rows' => $rows,
+            'has_next_page' => (bool) ($pageInfo['hasNextPage'] ?? false),
+            'end_cursor' => isset($pageInfo['endCursor']) && is_string($pageInfo['endCursor']) ? $pageInfo['endCursor'] : null,
+            'shiphero_calls' => 1,
+            'shiphero_body_bytes' => strlen((string) json_encode($json)),
+            'shiphero_complexity' => $complexity,
         ];
     }
 

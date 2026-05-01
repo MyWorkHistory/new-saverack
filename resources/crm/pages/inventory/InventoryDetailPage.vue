@@ -376,6 +376,7 @@ async function togglePickable(loc) {
               <div v-for="card in metricCards" :key="card.key" class="col-6 col-md">
                 <div class="staff-table-card p-3 inventory-metric-card">
                   <div class="inventory-metric-card__head">
+                    <div class="small text-secondary">{{ card.label }}</div>
                     <svg
                       class="inventory-metric-card__icon"
                       viewBox="0 0 24 24"
@@ -388,7 +389,6 @@ async function togglePickable(loc) {
                     >
                       <path :d="card.iconPath" />
                     </svg>
-                    <div class="small text-secondary">{{ card.label }}</div>
                   </div>
                   <div class="h5 mb-0">{{ card.value }}</div>
                 </div>
@@ -665,8 +665,8 @@ async function togglePickable(loc) {
   margin-bottom: 0.35rem;
 }
 .inventory-metric-card__icon {
-  width: 24px;
-  height: 24px;
+  width: 30px;
+  height: 30px;
   color: #334155;
   flex-shrink: 0;
 }

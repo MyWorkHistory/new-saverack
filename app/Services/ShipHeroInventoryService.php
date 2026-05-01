@@ -87,14 +87,52 @@ GQL;
         $barcodeTerm = $this->normalizeBarcodeTerm($term);
 
         if ($this->looksLikeBarcode($term)) {
-            $data = $this->fetchProductByBarcode($barcodeTerm, $customerAccountId);
+            $data = null;
+            try {
+                $data = $this->fetchProductByBarcode($barcodeTerm, $customerAccountId);
+            } catch (\Throwable $e) {
+                Log::warning('shiphero.inventory.search.by_barcode_failed', [
+                    'term' => $term,
+                    'customer_account_id' => $customerAccountId,
+                    'message' => $e->getMessage(),
+                ]);
+                $data = $this->fetchProductByBarcodeBasic($barcodeTerm, $customerAccountId);
+            }
             if ($data === null) {
-                $data = $this->fetchProductBySku($term, $customerAccountId);
+                try {
+                    $data = $this->fetchProductBySku($term, $customerAccountId);
+                } catch (\Throwable $e) {
+                    Log::warning('shiphero.inventory.search.by_sku_after_barcode_failed', [
+                        'term' => $term,
+                        'customer_account_id' => $customerAccountId,
+                        'message' => $e->getMessage(),
+                    ]);
+                    $data = $this->fetchProductBySkuBasic($term, $customerAccountId);
+                }
             }
         } else {
-            $data = $this->fetchProductBySku($term, $customerAccountId);
+            $data = null;
+            try {
+                $data = $this->fetchProductBySku($term, $customerAccountId);
+            } catch (\Throwable $e) {
+                Log::warning('shiphero.inventory.search.by_sku_failed', [
+                    'term' => $term,
+                    'customer_account_id' => $customerAccountId,
+                    'message' => $e->getMessage(),
+                ]);
+                $data = $this->fetchProductBySkuBasic($term, $customerAccountId);
+            }
             if ($data === null) {
-                $data = $this->fetchProductByBarcode($term, $customerAccountId);
+                try {
+                    $data = $this->fetchProductByBarcode($term, $customerAccountId);
+                } catch (\Throwable $e) {
+                    Log::warning('shiphero.inventory.search.by_barcode_after_sku_failed', [
+                        'term' => $term,
+                        'customer_account_id' => $customerAccountId,
+                        'message' => $e->getMessage(),
+                    ]);
+                    $data = $this->fetchProductByBarcodeBasic($term, $customerAccountId);
+                }
             }
         }
 
@@ -115,6 +153,110 @@ GQL;
         }
 
         return $this->normalizeProduct($data, $warehouseId);
+    }
+
+    /**
+     * @return array<string, mixed>|null
+     */
+    private function fetchProductBySkuBasic(string $sku, ?string $customerAccountId): ?array
+    {
+        $graphql = <<<'GQL'
+query ShipHeroProductBySkuBasic($sku: String!, $customer_account_id: String) {
+  product(sku: $sku, customer_account_id: $customer_account_id) {
+    data {
+      id
+      sku
+      name
+      barcode
+      customs_value
+      customs_description
+      dimensions {
+        weight
+        height
+        width
+        length
+      }
+      warehouse_products {
+        warehouse_id
+        warehouse_identifier
+        on_hand
+        allocated
+        reserve_inventory
+        inventory_bin
+        inventory_overstock_bin
+        locations(first: 100) {
+          edges {
+            node {
+              id
+              location_id
+              quantity
+              location {
+                name
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}
+GQL;
+        $vars = array_merge(['sku' => $sku], $this->customerAccountVariables($customerAccountId));
+        $json = $this->client->query($graphql, $vars);
+        $data = data_get($json, 'data.product.data');
+        return is_array($data) ? $data : null;
+    }
+
+    /**
+     * @return array<string, mixed>|null
+     */
+    private function fetchProductByBarcodeBasic(string $barcode, ?string $customerAccountId): ?array
+    {
+        $graphql = <<<'GQL'
+query ShipHeroProductByBarcodeBasic($barcode: String!, $customer_account_id: String) {
+  product(barcode: $barcode, customer_account_id: $customer_account_id) {
+    data {
+      id
+      sku
+      name
+      barcode
+      customs_value
+      customs_description
+      dimensions {
+        weight
+        height
+        width
+        length
+      }
+      warehouse_products {
+        warehouse_id
+        warehouse_identifier
+        on_hand
+        allocated
+        reserve_inventory
+        inventory_bin
+        inventory_overstock_bin
+        locations(first: 100) {
+          edges {
+            node {
+              id
+              location_id
+              quantity
+              location {
+                name
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}
+GQL;
+        $vars = array_merge(['barcode' => $barcode], $this->customerAccountVariables($customerAccountId));
+        $json = $this->client->query($graphql, $vars);
+        $data = data_get($json, 'data.product.data');
+        return is_array($data) ? $data : null;
     }
 
     /**
@@ -231,10 +373,34 @@ query ShipHeroLocationsByWarehouse($warehouse_id: String!, $customer_account_id:
   }
 }
 GQL;
-        $json = $this->client->query($graphql, array_merge(
-            ['warehouse_id' => $warehouseId],
-            $this->customerAccountVariables($customerAccountId)
-        ));
+        try {
+            $json = $this->client->query($graphql, array_merge(
+                ['warehouse_id' => $warehouseId],
+                $this->customerAccountVariables($customerAccountId)
+            ));
+        } catch (\Throwable $e) {
+            // Some ShipHero schemas/accounts reject customer_account_id on locations().
+            $fallbackGraphql = <<<'GQL'
+query ShipHeroLocationsByWarehouseNoCustomer($warehouse_id: String!) {
+  locations(warehouse_id: $warehouse_id) {
+    data {
+      edges {
+        node {
+          id
+          name
+          type {
+            name
+          }
+          pickable
+          sellable
+        }
+      }
+    }
+  }
+}
+GQL;
+            $json = $this->client->query($fallbackGraphql, ['warehouse_id' => $warehouseId]);
+        }
         $edges = data_get($json, 'data.locations.data.edges');
         if (! is_array($edges)) {
             return [];

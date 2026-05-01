@@ -688,6 +688,7 @@ async function togglePickable(loc) {
   align-items: center;
   justify-content: space-between;
   gap: 0.75rem;
+  min-height: 40px;
   margin-bottom: 0.35rem;
 }
 .inventory-metric-card__icon {
@@ -696,6 +697,9 @@ async function togglePickable(loc) {
   padding: 7px;
   border-radius: 999px;
   flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
 }
 .inventory-metric-card__icon--blue {
   color: #1d4ed8;

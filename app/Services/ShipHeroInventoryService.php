@@ -559,11 +559,27 @@ GQL,
             if ($typeName === '') {
                 $typeName = trim((string) ($node['type'] ?? ''));
             }
+            $pickableRaw = array_key_exists('pickable', $node)
+                ? $node['pickable']
+                : (array_key_exists('is_pickable', $node) ? $node['is_pickable'] : null);
+            $pickable = null;
+            if (is_bool($pickableRaw)) {
+                $pickable = $pickableRaw;
+            } elseif (is_int($pickableRaw) || is_float($pickableRaw)) {
+                $pickable = ((int) $pickableRaw) === 1;
+            } elseif (is_string($pickableRaw)) {
+                $normalizedPickable = strtolower(trim($pickableRaw));
+                if (in_array($normalizedPickable, ['1', 'true', 'yes'], true)) {
+                    $pickable = true;
+                } elseif (in_array($normalizedPickable, ['0', 'false', 'no'], true)) {
+                    $pickable = false;
+                }
+            }
             $out[] = [
                 'id' => $id,
                 'name' => $name,
                 'type' => $typeName !== '' ? $typeName : null,
-                'pickable' => array_key_exists('pickable', $node) ? (bool) $node['pickable'] : null,
+                'pickable' => $pickable,
                 'sellable' => array_key_exists('sellable', $node) ? (bool) $node['sellable'] : null,
             ];
         }

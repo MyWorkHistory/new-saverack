@@ -232,10 +232,11 @@ class InventoryController extends Controller
             : null;
 
         try {
-            $shipheroCustomerId = $this->resolveShipHeroCustomerAccountId(
-                $clientAccountId > 0 ? $clientAccountId : null,
-                $request,
-            );
+            // Product detail should be global unless client_account_id is explicitly provided.
+            $shipheroCustomerId = null;
+            if ($clientAccountId > 0) {
+                $shipheroCustomerId = $this->resolveShipHeroCustomerAccountId($clientAccountId, $request);
+            }
             $product = $this->inventory->getProductDetailBySku($sku, $warehouseId, $shipheroCustomerId);
             if (! is_array($product)) {
                 return response()->json(['message' => 'Product not found.'], 404);

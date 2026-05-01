@@ -1327,7 +1327,7 @@ GQL;
         }
 
         $out = [];
-        foreach ($edges as $edge) {
+        foreach ($edges as $index => $edge) {
             if (! is_array($edge)) {
                 continue;
             }
@@ -1337,20 +1337,45 @@ GQL;
             }
             $itemLocId = isset($node['id']) && is_string($node['id']) ? $node['id'] : '';
             $locId = isset($node['location_id']) && is_string($node['location_id']) ? $node['location_id'] : '';
-            if ($itemLocId === '' || $locId === '') {
+            if ($locId === '') {
                 continue;
+            }
+            if ($itemLocId === '') {
+                $itemLocId = 'item:'.$locId.':'.$index;
             }
             $qty = $node['quantity'] ?? 0;
             $qty = is_int($qty) ? $qty : (int) $qty;
             $loc = is_array($node['location'] ?? null) ? $node['location'] : [];
             $locName = isset($loc['name']) && is_string($loc['name']) ? $loc['name'] : null;
             $pickable = null;
-            if (array_key_exists('pickable', $loc)) {
-                $pickable = (bool) $loc['pickable'];
+            $pickableRaw = array_key_exists('pickable', $loc)
+                ? $loc['pickable']
+                : (array_key_exists('pickable', $node) ? $node['pickable'] : null);
+            if (is_bool($pickableRaw)) {
+                $pickable = $pickableRaw;
+            } elseif (is_int($pickableRaw) || is_float($pickableRaw)) {
+                $pickable = ((int) $pickableRaw) === 1;
+            } elseif (is_string($pickableRaw)) {
+                $normalizedPickable = strtolower(trim($pickableRaw));
+                if (in_array($normalizedPickable, ['1', 'true', 'yes'], true)) {
+                    $pickable = true;
+                } elseif (in_array($normalizedPickable, ['0', 'false', 'no'], true)) {
+                    $pickable = false;
+                }
             }
-            $type = isset($loc['type']) && is_string($loc['type']) && trim($loc['type']) !== ''
-                ? trim($loc['type'])
-                : $this->extractLocationTypeLabel($locName);
+            $type = trim((string) data_get($loc, 'type.name', ''));
+            if ($type === '') {
+                $type = trim((string) ($loc['type'] ?? ''));
+            }
+            if ($type === '') {
+                $type = trim((string) data_get($node, 'type.name', ''));
+            }
+            if ($type === '') {
+                $type = trim((string) ($node['type'] ?? ''));
+            }
+            if ($type === '') {
+                $type = $this->extractLocationTypeLabel($locName);
+            }
 
             $out[] = [
                 'item_location_id' => $itemLocId,

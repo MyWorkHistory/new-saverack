@@ -387,20 +387,24 @@ async function togglePickable(loc) {
               <div v-for="card in metricCards" :key="card.key" class="col-6 col-md">
                 <div class="staff-table-card p-3 inventory-metric-card">
                   <div class="inventory-metric-card__head">
-                    <div class="small text-secondary">{{ card.label }}</div>
-                    <svg
-                      class="inventory-metric-card__icon"
-                      :class="`inventory-metric-card__icon--${card.tone}`"
-                      viewBox="0 0 24 24"
-                      fill="none"
-                      stroke="currentColor"
-                      stroke-width="2"
-                      stroke-linecap="round"
-                      stroke-linejoin="round"
-                      aria-hidden="true"
-                    >
-                      <path :d="card.iconPath" />
-                    </svg>
+                    <div class="inventory-metric-card__left">
+                      <div class="small text-secondary">{{ card.label }}</div>
+                    </div>
+                    <div class="inventory-metric-card__right">
+                      <svg
+                        class="inventory-metric-card__icon"
+                        :class="`inventory-metric-card__icon--${card.tone}`"
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="currentColor"
+                        stroke-width="2"
+                        stroke-linecap="round"
+                        stroke-linejoin="round"
+                        aria-hidden="true"
+                      >
+                        <path :d="card.iconPath" />
+                      </svg>
+                    </div>
                   </div>
                   <div class="h5 mb-0">{{ card.value }}</div>
                 </div>
@@ -690,6 +694,16 @@ async function togglePickable(loc) {
   gap: 0.75rem;
   min-height: 46px;
   margin-bottom: 0.35rem;
+}
+.inventory-metric-card__left {
+  min-width: 0;
+}
+.inventory-metric-card__right {
+  width: 44px;
+  height: 44px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
 }
 .inventory-metric-card__icon {
   width: 44px;

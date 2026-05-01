@@ -53,11 +53,11 @@ const summaryMetrics = computed(() => product.value?.metrics || {
 });
 
 const metricCards = computed(() => ([
-  { key: "on_hand", label: "On Hand", iconPath: "M3 7.5 12 3l9 4.5v9L12 21l-9-4.5z M12 12l9-4.5 M12 12 3 7.5 M12 12v9" },
-  { key: "allocated", label: "Allocated", iconPath: "M4 8h16M4 12h16M4 16h16M7 5h10" },
-  { key: "available", label: "Available", iconPath: "M4 12l5 5 11-11" },
-  { key: "backorder", label: "Backorder", iconPath: "M12 7v6 M12 17h.01 M3 12a9 9 0 1 0 18 0 9 9 0 1 0-18 0" },
-  { key: "asn", label: "ASN", iconPath: "M2 13h11l2-3h7v7h-2 M6 17a2 2 0 1 0 0 .01 M18 17a2 2 0 1 0 0 .01" },
+  { key: "on_hand", label: "On Hand", iconPath: "M3 7.5 12 3l9 4.5v9L12 21l-9-4.5z M12 12l9-4.5 M12 12 3 7.5 M12 12v9", tone: "blue" },
+  { key: "allocated", label: "Allocated", iconPath: "M4 8h16M4 12h16M4 16h16M7 5h10", tone: "amber" },
+  { key: "available", label: "Available", iconPath: "M4 12l5 5 11-11", tone: "green" },
+  { key: "backorder", label: "Backorder", iconPath: "M12 7v6 M12 17h.01 M3 12a9 9 0 1 0 18 0 9 9 0 1 0-18 0", tone: "red" },
+  { key: "asn", label: "ASN", iconPath: "M2 13h11l2-3h7v7h-2 M6 17a2 2 0 1 0 0 .01 M18 17a2 2 0 1 0 0 .01", tone: "purple" },
 ]).map((item) => ({
   ...item,
   value: Number(summaryMetrics.value?.[item.key] || 0),
@@ -390,6 +390,7 @@ async function togglePickable(loc) {
                     <div class="small text-secondary">{{ card.label }}</div>
                     <svg
                       class="inventory-metric-card__icon"
+                      :class="`inventory-metric-card__icon--${card.tone}`"
                       viewBox="0 0 24 24"
                       fill="none"
                       stroke="currentColor"
@@ -416,7 +417,7 @@ async function togglePickable(loc) {
                     placeholder="Search locations"
                   />
                   <button type="button" class="btn btn-outline-secondary staff-toolbar-btn" disabled>Filters</button>
-                  <button type="button" class="btn btn-primary staff-toolbar-btn inventory-detail__add-location-btn" @click="openAddLocationModal">
+                  <button type="button" class="btn btn-primary staff-toolbar-btn" @click="openAddLocationModal">
                     Add Location
                   </button>
                 </div>
@@ -672,16 +673,35 @@ async function togglePickable(loc) {
 .inventory-metric-card__head {
   display: flex;
   align-items: center;
-  justify-content: space-between;
+  justify-content: flex-start;
+  gap: 0.75rem;
   margin-bottom: 0.35rem;
 }
 .inventory-metric-card__icon {
-  width: 30px;
-  height: 30px;
-  color: #334155;
+  width: 36px;
+  height: 36px;
+  padding: 7px;
+  border-radius: 999px;
   flex-shrink: 0;
 }
-.inventory-detail__add-location-btn {
-  color: #111827 !important;
+.inventory-metric-card__icon--blue {
+  color: #1d4ed8;
+  background: #dbeafe;
+}
+.inventory-metric-card__icon--amber {
+  color: #b45309;
+  background: #fef3c7;
+}
+.inventory-metric-card__icon--green {
+  color: #15803d;
+  background: #dcfce7;
+}
+.inventory-metric-card__icon--red {
+  color: #b91c1c;
+  background: #fee2e2;
+}
+.inventory-metric-card__icon--purple {
+  color: #6d28d9;
+  background: #ede9fe;
 }
 </style>

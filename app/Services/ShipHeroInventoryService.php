@@ -1735,10 +1735,18 @@ GQL;
             if ($wid === '') {
                 continue;
             }
-            $catalog = [];
+            $catalogById = [];
+            $catalogByName = [];
             try {
                 foreach ($this->listLocations($wid, $customerAccountId) as $locationMeta) {
-                    $catalog[strtolower((string) $locationMeta['id'])] = $locationMeta;
+                    $idKey = strtolower(trim((string) ($locationMeta['id'] ?? '')));
+                    if ($idKey !== '') {
+                        $catalogById[$idKey] = $locationMeta;
+                    }
+                    $nameKey = strtolower(trim((string) ($locationMeta['name'] ?? '')));
+                    if ($nameKey !== '') {
+                        $catalogByName[$nameKey] = $locationMeta;
+                    }
                 }
             } catch (\Throwable $e) {
                 Log::warning('shiphero.inventory.locations_meta_lookup_failed', [
@@ -1747,7 +1755,7 @@ GQL;
                     'message' => $e->getMessage(),
                 ]);
             }
-            if ($catalog === []) {
+            if ($catalogById === [] && $catalogByName === []) {
                 continue;
             }
             $locations = $warehouse['locations'] ?? null;
@@ -1759,10 +1767,16 @@ GQL;
                     continue;
                 }
                 $locationId = strtolower(trim((string) ($location['location_id'] ?? '')));
-                if ($locationId === '' || ! isset($catalog[$locationId])) {
+                $locationName = strtolower(trim((string) ($location['location_name'] ?? '')));
+                $meta = null;
+                if ($locationId !== '' && isset($catalogById[$locationId])) {
+                    $meta = $catalogById[$locationId];
+                } elseif ($locationName !== '' && isset($catalogByName[$locationName])) {
+                    $meta = $catalogByName[$locationName];
+                }
+                if (! is_array($meta)) {
                     continue;
                 }
-                $meta = $catalog[$locationId];
                 $warehouse['locations'][$lIndex]['pickable'] = $meta['pickable'];
                 if (is_string($meta['type']) && trim($meta['type']) !== '') {
                     $warehouse['locations'][$lIndex]['type'] = trim($meta['type']);

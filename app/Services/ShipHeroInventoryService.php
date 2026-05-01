@@ -3,6 +3,7 @@
 namespace App\Services;
 
 use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\Log;
 use RuntimeException;
 
 class ShipHeroInventoryService
@@ -236,10 +237,17 @@ query ShipHeroProductBySku($sku: String!, $customer_account_id: String) {
         warehouse_id
         warehouse_identifier
         on_hand
+        allocated
         inventory_bin
         inventory_overstock_bin
         reserve_inventory
+        non_sellable_total
+        in_tote
+        reorder_level
+        reorder_amount
         replenishment_level
+        replenishment_max_level
+        replenishment_increment
         warehouse {
           identifier
           company_name
@@ -303,10 +311,17 @@ query ShipHeroProductByBarcode($barcode: String!, $customer_account_id: String) 
         warehouse_id
         warehouse_identifier
         on_hand
+        allocated
         inventory_bin
         inventory_overstock_bin
         reserve_inventory
+        non_sellable_total
+        in_tote
+        reorder_level
+        reorder_amount
         replenishment_level
+        replenishment_max_level
+        replenishment_increment
         warehouse {
           identifier
           company_name
@@ -374,10 +389,17 @@ query ShipHeroProductById($id: String!, $customer_account_id: String) {
         warehouse_id
         warehouse_identifier
         on_hand
+        allocated
         inventory_bin
         inventory_overstock_bin
         reserve_inventory
+        non_sellable_total
+        in_tote
+        reorder_level
+        reorder_amount
         replenishment_level
+        replenishment_max_level
+        replenishment_increment
         warehouse {
           identifier
           company_name
@@ -452,7 +474,9 @@ GQL;
             }
             $wh = is_array($wp['warehouse'] ?? null) ? $wp['warehouse'] : [];
             $warehouseOnHand = $this->toIntNumber($wp['on_hand'] ?? 0);
-            $warehouseAllocated = $this->toIntNumber($wp['reserve_inventory'] ?? 0);
+            $warehouseAllocated = $this->toIntNumber(
+                $wp['allocated'] ?? ($wp['reserve_inventory'] ?? 0)
+            );
             $explicitBackorder = $this->toIntNumber(
                 $wp['backorder']
                 ?? ($wp['reorder_amount']
@@ -805,7 +829,16 @@ GQL;
             $full['warehouse_products'] ?? null
         );
 
-        return $this->normalizeProduct($merged, $warehouseId);
+        $normalized = $this->normalizeProduct($merged, $warehouseId);
+        Log::info('shiphero.inventory.detail.normalized', [
+            'sku' => $normalized['sku'] ?? null,
+            'customer_account_id' => $customerAccountId,
+            'customs_value' => $normalized['customs_value'] ?? null,
+            'customs_description' => $normalized['customs_description'] ?? null,
+            'metrics' => $normalized['metrics'] ?? null,
+        ]);
+
+        return $normalized;
     }
 
     /**
@@ -835,7 +868,7 @@ GQL;
             if (! is_array($row)) {
                 continue;
             }
-            foreach (['on_hand', 'reserve_inventory', 'backorder', 'reorder_amount', 'reorder_level', 'replenishment_level'] as $key) {
+            foreach (['on_hand', 'allocated', 'reserve_inventory', 'backorder', 'reorder_amount', 'reorder_level', 'replenishment_level'] as $key) {
                 if (array_key_exists($key, $row) && $row[$key] !== null && $row[$key] !== '') {
                     $score++;
                 }

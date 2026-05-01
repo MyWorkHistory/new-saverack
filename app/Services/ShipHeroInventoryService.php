@@ -849,6 +849,20 @@ GQL;
             $full = $this->fetchProductById($id, $customerAccountId);
             if (is_array($full)) {
                 $merged = array_merge($base, $full);
+                // ShipHero can return 0 for customs_value on product(id) while SKU/barcode
+                // responses still contain the real customs value. Preserve the non-zero value.
+                $merged['customs_value'] = $this->pickPreferredPositiveNumeric(
+                    $full['customs_value'] ?? null,
+                    $base['customs_value'] ?? null
+                );
+                $merged['customsValue'] = $this->pickPreferredPositiveNumeric(
+                    $full['customsValue'] ?? null,
+                    $base['customsValue'] ?? null
+                );
+                $merged['custom_value'] = $this->pickPreferredPositiveNumeric(
+                    $full['custom_value'] ?? null,
+                    $base['custom_value'] ?? null
+                );
                 $merged['warehouse_products'] = $this->pickWarehouseProductsPayload(
                     $base['warehouse_products'] ?? null,
                     $full['warehouse_products'] ?? null
@@ -861,6 +875,14 @@ GQL;
                     'customs_description' => $normalized['customs_description'] ?? null,
                     'metrics' => $normalized['metrics'] ?? null,
                     'source' => 'product_by_id',
+                    'raw_customs' => [
+                        'base_customs_value' => $base['customs_value'] ?? null,
+                        'full_customs_value' => $full['customs_value'] ?? null,
+                        'base_customsValue' => $base['customsValue'] ?? null,
+                        'full_customsValue' => $full['customsValue'] ?? null,
+                        'base_custom_value' => $base['custom_value'] ?? null,
+                        'full_custom_value' => $full['custom_value'] ?? null,
+                    ],
                 ]);
                 return $normalized;
             }
@@ -920,6 +942,26 @@ GQL;
         }
 
         return $score;
+    }
+
+    /**
+     * @param mixed $primary
+     * @param mixed $fallback
+     * @return mixed
+     */
+    private function pickPreferredPositiveNumeric($primary, $fallback)
+    {
+        $primaryNormalized = $this->normalizeNumericDisplay($primary);
+        $primaryNumeric = is_numeric($primaryNormalized) ? (float) $primaryNormalized : null;
+        if ($primaryNumeric !== null && $primaryNumeric > 0) {
+            return $primary;
+        }
+        $fallbackNormalized = $this->normalizeNumericDisplay($fallback);
+        $fallbackNumeric = is_numeric($fallbackNormalized) ? (float) $fallbackNormalized : null;
+        if ($fallbackNumeric !== null && $fallbackNumeric > 0) {
+            return $fallback;
+        }
+        return $primary !== null ? $primary : $fallback;
     }
 
     /**

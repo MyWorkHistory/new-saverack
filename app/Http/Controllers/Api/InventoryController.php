@@ -192,10 +192,11 @@ class InventoryController extends Controller
             : null;
 
         try {
-            $shipheroCustomerId = $this->resolveShipHeroCustomerAccountId(
-                $clientAccountId > 0 ? $clientAccountId : null,
-                $request,
-            );
+            // Search should be global (no customer scope) unless client_account_id is explicitly provided.
+            $shipheroCustomerId = null;
+            if ($clientAccountId > 0) {
+                $shipheroCustomerId = $this->resolveShipHeroCustomerAccountId($clientAccountId, $request);
+            }
 
             $product = $this->inventory->searchProduct($validated['q'], $warehouseId, $shipheroCustomerId);
 

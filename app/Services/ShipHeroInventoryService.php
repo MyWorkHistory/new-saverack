@@ -169,6 +169,52 @@ GQL;
      */
     private function fetchProductBySkuBasic(string $sku, ?string $customerAccountId): ?array
     {
+        if (! is_string($customerAccountId) || trim($customerAccountId) === '') {
+            $graphqlNoCustomer = <<<'GQL'
+query ShipHeroProductBySkuBasic($sku: String!) {
+  product(sku: $sku) {
+    data {
+      id
+      sku
+      name
+      barcode
+      customs_value
+      customs_description
+      dimensions {
+        weight
+        height
+        width
+        length
+      }
+      warehouse_products {
+        warehouse_id
+        warehouse_identifier
+        on_hand
+        allocated
+        reserve_inventory
+        inventory_bin
+        inventory_overstock_bin
+        locations(first: 100) {
+          edges {
+            node {
+              id
+              location_id
+              quantity
+              location {
+                name
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}
+GQL;
+            $json = $this->client->query($graphqlNoCustomer, ['sku' => $sku]);
+            $data = data_get($json, 'data.product.data');
+            return is_array($data) ? $data : null;
+        }
         $graphql = <<<'GQL'
 query ShipHeroProductBySkuBasic($sku: String!, $customer_account_id: String) {
   product(sku: $sku, customer_account_id: $customer_account_id) {
@@ -221,6 +267,52 @@ GQL;
      */
     private function fetchProductByBarcodeBasic(string $barcode, ?string $customerAccountId): ?array
     {
+        if (! is_string($customerAccountId) || trim($customerAccountId) === '') {
+            $graphqlNoCustomer = <<<'GQL'
+query ShipHeroProductByBarcodeBasic($barcode: String!) {
+  product(barcode: $barcode) {
+    data {
+      id
+      sku
+      name
+      barcode
+      customs_value
+      customs_description
+      dimensions {
+        weight
+        height
+        width
+        length
+      }
+      warehouse_products {
+        warehouse_id
+        warehouse_identifier
+        on_hand
+        allocated
+        reserve_inventory
+        inventory_bin
+        inventory_overstock_bin
+        locations(first: 100) {
+          edges {
+            node {
+              id
+              location_id
+              quantity
+              location {
+                name
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}
+GQL;
+            $json = $this->client->query($graphqlNoCustomer, ['barcode' => $barcode]);
+            $data = data_get($json, 'data.product.data');
+            return is_array($data) ? $data : null;
+        }
         $graphql = <<<'GQL'
 query ShipHeroProductByBarcodeBasic($barcode: String!, $customer_account_id: String) {
   product(barcode: $barcode, customer_account_id: $customer_account_id) {
@@ -531,6 +623,73 @@ GQL;
      */
     private function fetchProductBySku(string $sku, ?string $customerAccountId): ?array
     {
+        if (! is_string($customerAccountId) || trim($customerAccountId) === '') {
+            $graphqlNoCustomer = <<<'GQL'
+query ShipHeroProductBySku($sku: String!) {
+  product(sku: $sku) {
+    data {
+      id
+      legacy_id
+      account_id
+      sku
+      name
+      barcode
+      customs_value
+      customs_description
+      images {
+        src
+        position
+      }
+      dimensions {
+        weight
+        height
+        width
+        length
+      }
+      kit_components {
+        quantity
+        sku
+      }
+      warehouse_products {
+        warehouse_id
+        warehouse_identifier
+        on_hand
+        allocated
+        inventory_bin
+        inventory_overstock_bin
+        reserve_inventory
+        non_sellable_quantity
+        in_tote
+        reorder_level
+        reorder_amount
+        replenishment_level
+        replenishment_max_level
+        replenishment_increment
+        warehouse {
+          identifier
+          company_name
+        }
+        locations(first: 100) {
+          edges {
+            node {
+              id
+              location_id
+              quantity
+              location {
+                name
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}
+GQL;
+            $json = $this->client->query($graphqlNoCustomer, ['sku' => $sku]);
+            $data = data_get($json, 'data.product.data');
+            return is_array($data) ? $data : null;
+        }
         $graphql = <<<'GQL'
 query ShipHeroProductBySku($sku: String!, $customer_account_id: String) {
   product(sku: $sku, customer_account_id: $customer_account_id) {
@@ -605,6 +764,73 @@ GQL;
      */
     private function fetchProductByBarcode(string $barcode, ?string $customerAccountId): ?array
     {
+        if (! is_string($customerAccountId) || trim($customerAccountId) === '') {
+            $graphqlNoCustomer = <<<'GQL'
+query ShipHeroProductByBarcode($barcode: String!) {
+  product(barcode: $barcode) {
+    data {
+      id
+      legacy_id
+      account_id
+      sku
+      name
+      barcode
+      customs_value
+      customs_description
+      images {
+        src
+        position
+      }
+      dimensions {
+        weight
+        height
+        width
+        length
+      }
+      kit_components {
+        quantity
+        sku
+      }
+      warehouse_products {
+        warehouse_id
+        warehouse_identifier
+        on_hand
+        allocated
+        inventory_bin
+        inventory_overstock_bin
+        reserve_inventory
+        non_sellable_quantity
+        in_tote
+        reorder_level
+        reorder_amount
+        replenishment_level
+        replenishment_max_level
+        replenishment_increment
+        warehouse {
+          identifier
+          company_name
+        }
+        locations(first: 100) {
+          edges {
+            node {
+              id
+              location_id
+              quantity
+              location {
+                name
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}
+GQL;
+            $json = $this->client->query($graphqlNoCustomer, ['barcode' => $barcode]);
+            $data = data_get($json, 'data.product.data');
+            return is_array($data) ? $data : null;
+        }
         $graphql = <<<'GQL'
 query ShipHeroProductByBarcode($barcode: String!, $customer_account_id: String) {
   product(barcode: $barcode, customer_account_id: $customer_account_id) {

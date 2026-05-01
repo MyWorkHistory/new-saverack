@@ -86,6 +86,14 @@ function displayVal(v) {
   return v;
 }
 
+function displayNumber(v) {
+  if (v === null || v === undefined) return 0;
+  if (typeof v === "string" && v.trim() === "") return 0;
+  const n = Number(v);
+  if (Number.isNaN(n)) return 0;
+  return n;
+}
+
 onMounted(() => {
   setCrmPageMeta({
     title: "Save Rack | Inventory Detail",
@@ -276,11 +284,11 @@ async function togglePickable(loc) {
               <div class="small">
                 <div class="d-flex justify-content-between py-1"><span>SKU:</span><span>{{ product.sku || "—" }}</span></div>
                 <div class="d-flex justify-content-between py-1"><span>Barcode:</span><span>{{ product.barcode || "—" }}</span></div>
-                <div class="d-flex justify-content-between py-1"><span>Weight:</span><span>{{ displayVal(product.dimensions?.weight) }}</span></div>
-                <div class="d-flex justify-content-between py-1"><span>Height:</span><span>{{ displayVal(product.dimensions?.height) }}</span></div>
-                <div class="d-flex justify-content-between py-1"><span>Width:</span><span>{{ displayVal(product.dimensions?.width) }}</span></div>
-                <div class="d-flex justify-content-between py-1"><span>Length:</span><span>{{ displayVal(product.dimensions?.length) }}</span></div>
-                <div class="d-flex justify-content-between py-1"><span>Custom Value:</span><span>{{ displayVal(product.customs_value) }}</span></div>
+                <div class="d-flex justify-content-between py-1"><span>Weight:</span><span>{{ displayNumber(product.dimensions?.weight) }}</span></div>
+                <div class="d-flex justify-content-between py-1"><span>Height:</span><span>{{ displayNumber(product.dimensions?.height) }}</span></div>
+                <div class="d-flex justify-content-between py-1"><span>Width:</span><span>{{ displayNumber(product.dimensions?.width) }}</span></div>
+                <div class="d-flex justify-content-between py-1"><span>Length:</span><span>{{ displayNumber(product.dimensions?.length) }}</span></div>
+                <div class="d-flex justify-content-between py-1"><span>Custom Value:</span><span>{{ displayNumber(product.customs_value) }}</span></div>
                 <div class="py-1">
                   <div class="text-secondary">Custom Description:</div>
                   <div>{{ displayVal(product.customs_description) }}</div>

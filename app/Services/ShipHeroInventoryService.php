@@ -516,6 +516,8 @@ GQL;
         $customsCandidates = [
             $data['customs_value'] ?? null,
             data_get($data, 'customs.value'),
+            data_get($data, 'customs.customs_value'),
+            data_get($data, 'customs.amount'),
             $data['customsValue'] ?? null,
             $data['custom_value'] ?? null,
             $data['value'] ?? null,
@@ -531,6 +533,9 @@ GQL;
             if ($customsValue === null) {
                 $customsValue = $normalizedCandidate;
             }
+        }
+        if ($customsValue === null) {
+            $customsValue = 0.0;
         }
         $customsDescription = isset($data['customs_description']) && is_string($data['customs_description'])
             ? trim($data['customs_description'])

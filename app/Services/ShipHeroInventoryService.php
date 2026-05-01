@@ -455,7 +455,9 @@ GQL;
         if ($warehouseId === '') {
             return [];
         }
-        $graphql = <<<'GQL'
+        $queries = [
+            [
+                'graphql' => <<<'GQL'
 query ShipHeroLocationsByWarehouse($warehouse_id: String!, $customer_account_id: String) {
   locations(warehouse_id: $warehouse_id, customer_account_id: $customer_account_id) {
     data {
@@ -463,6 +465,7 @@ query ShipHeroLocationsByWarehouse($warehouse_id: String!, $customer_account_id:
         node {
           id
           name
+          zone
           type {
             name
           }
@@ -473,15 +476,11 @@ query ShipHeroLocationsByWarehouse($warehouse_id: String!, $customer_account_id:
     }
   }
 }
-GQL;
-        try {
-            $json = $this->client->query($graphql, array_merge(
-                ['warehouse_id' => $warehouseId],
-                $this->customerAccountVariables($customerAccountId)
-            ));
-        } catch (\Throwable $e) {
-            // Some ShipHero schemas/accounts reject customer_account_id on locations().
-            $fallbackGraphql = <<<'GQL'
+GQL,
+                'vars' => array_merge(['warehouse_id' => $warehouseId], $this->customerAccountVariables($customerAccountId)),
+            ],
+            [
+                'graphql' => <<<'GQL'
 query ShipHeroLocationsByWarehouseNoCustomer($warehouse_id: String!) {
   locations(warehouse_id: $warehouse_id) {
     data {
@@ -489,6 +488,7 @@ query ShipHeroLocationsByWarehouseNoCustomer($warehouse_id: String!) {
         node {
           id
           name
+          zone
           type {
             name
           }
@@ -499,8 +499,43 @@ query ShipHeroLocationsByWarehouseNoCustomer($warehouse_id: String!) {
     }
   }
 }
-GQL;
-            $json = $this->client->query($fallbackGraphql, ['warehouse_id' => $warehouseId]);
+GQL,
+                'vars' => ['warehouse_id' => $warehouseId],
+            ],
+            [
+                'graphql' => <<<'GQL'
+query ShipHeroLocationsByWarehouseScalarType($warehouse_id: String!) {
+  locations(warehouse_id: $warehouse_id) {
+    data {
+      edges {
+        node {
+          id
+          name
+          zone
+          type
+          pickable
+          sellable
+        }
+      }
+    }
+  }
+}
+GQL,
+                'vars' => ['warehouse_id' => $warehouseId],
+            ],
+        ];
+        $json = null;
+        $lastError = null;
+        foreach ($queries as $candidate) {
+            try {
+                $json = $this->client->query($candidate['graphql'], $candidate['vars']);
+                break;
+            } catch (\Throwable $e) {
+                $lastError = $e;
+            }
+        }
+        if (! is_array($json)) {
+            throw new RuntimeException($lastError instanceof \Throwable ? $lastError->getMessage() : 'Could not load locations.');
         }
         $edges = data_get($json, 'data.locations.data.edges');
         if (! is_array($edges)) {
@@ -521,6 +556,9 @@ GQL;
             }
             $name = trim((string) ($node['name'] ?? ''));
             $typeName = trim((string) data_get($node, 'type.name', ''));
+            if ($typeName === '') {
+                $typeName = trim((string) ($node['type'] ?? ''));
+            }
             $out[] = [
                 'id' => $id,
                 'name' => $name,
@@ -583,22 +621,37 @@ GQL;
         if (is_string($customerAccountId) && trim($customerAccountId) !== '') {
             $input['customer_account_id'] = trim($customerAccountId);
         }
-        $graphql = <<<'GQL'
+        $attemptInputs = [$input];
+        if (array_key_exists('customer_account_id', $input)) {
+            $withoutCustomer = $input;
+            unset($withoutCustomer['customer_account_id']);
+            $attemptInputs[] = $withoutCustomer;
+        }
+        $mutation = <<<'GQL'
 mutation ShipHeroLocationUpdate($data: LocationUpdateInput!) {
   location_update(data: $data) {
     location {
       id
       name
-      type {
-        name
-      }
       pickable
       sellable
     }
   }
 }
 GQL;
-        $json = $this->client->query($graphql, ['data' => $input]);
+        $json = null;
+        $lastError = null;
+        foreach ($attemptInputs as $candidateInput) {
+            try {
+                $json = $this->client->query($mutation, ['data' => $candidateInput]);
+                break;
+            } catch (\Throwable $e) {
+                $lastError = $e;
+            }
+        }
+        if (! is_array($json)) {
+            throw new RuntimeException($lastError instanceof \Throwable ? $lastError->getMessage() : 'Could not update location.');
+        }
         $node = data_get($json, 'data.location_update.location');
         if (! is_array($node)) {
             throw new RuntimeException('ShipHero did not return updated location.');
@@ -608,11 +661,49 @@ GQL;
             throw new RuntimeException('ShipHero location_update response is missing id.');
         }
         $name = trim((string) ($node['name'] ?? ''));
-        $typeName = trim((string) data_get($node, 'type.name', ''));
+        $typeName = null;
+        try {
+            $typeLookup = <<<'GQL'
+query ShipHeroLocationById($id: String!) {
+  location(id: $id) {
+    data {
+      type {
+        name
+      }
+    }
+  }
+}
+GQL;
+            $typeJson = $this->client->query($typeLookup, ['id' => $id]);
+            $typeRaw = trim((string) data_get($typeJson, 'data.location.data.type.name', ''));
+            if ($typeRaw !== '') {
+                $typeName = $typeRaw;
+            }
+        } catch (\Throwable $e) {
+            // Some accounts expose location.type as scalar.
+            try {
+                $typeLookupScalar = <<<'GQL'
+query ShipHeroLocationByIdScalar($id: String!) {
+  location(id: $id) {
+    data {
+      type
+    }
+  }
+}
+GQL;
+                $typeJson = $this->client->query($typeLookupScalar, ['id' => $id]);
+                $typeRaw = trim((string) data_get($typeJson, 'data.location.data.type', ''));
+                if ($typeRaw !== '') {
+                    $typeName = $typeRaw;
+                }
+            } catch (\Throwable $ignored) {
+                $typeName = null;
+            }
+        }
         return [
             'id' => $id,
             'name' => $name,
-            'type' => $typeName !== '' ? $typeName : null,
+            'type' => $typeName !== null && trim($typeName) !== '' ? trim($typeName) : null,
             'pickable' => array_key_exists('pickable', $node) ? (bool) $node['pickable'] : null,
             'sellable' => array_key_exists('sellable', $node) ? (bool) $node['sellable'] : null,
         ];

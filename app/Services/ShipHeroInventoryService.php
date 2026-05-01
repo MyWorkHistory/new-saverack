@@ -87,52 +87,42 @@ GQL;
         $barcodeTerm = $this->normalizeBarcodeTerm($term);
 
         if ($this->looksLikeBarcode($term)) {
-            $data = null;
-            try {
-                $data = $this->fetchProductByBarcode($barcodeTerm, $customerAccountId);
-            } catch (\Throwable $e) {
-                Log::warning('shiphero.inventory.search.by_barcode_failed', [
-                    'term' => $term,
-                    'customer_account_id' => $customerAccountId,
-                    'message' => $e->getMessage(),
-                ]);
-                $data = $this->fetchProductByBarcodeBasic($barcodeTerm, $customerAccountId);
+            $data = $this->safeProductFetch('shiphero.inventory.search.by_barcode_failed', $term, $customerAccountId, function () use ($barcodeTerm, $customerAccountId) {
+                return $this->fetchProductByBarcode($barcodeTerm, $customerAccountId);
+            });
+            if ($data === null) {
+                $data = $this->safeProductFetch('shiphero.inventory.search.by_barcode_basic_failed', $term, $customerAccountId, function () use ($barcodeTerm, $customerAccountId) {
+                    return $this->fetchProductByBarcodeBasic($barcodeTerm, $customerAccountId);
+                });
             }
             if ($data === null) {
-                try {
-                    $data = $this->fetchProductBySku($term, $customerAccountId);
-                } catch (\Throwable $e) {
-                    Log::warning('shiphero.inventory.search.by_sku_after_barcode_failed', [
-                        'term' => $term,
-                        'customer_account_id' => $customerAccountId,
-                        'message' => $e->getMessage(),
-                    ]);
-                    $data = $this->fetchProductBySkuBasic($term, $customerAccountId);
-                }
+                $data = $this->safeProductFetch('shiphero.inventory.search.by_sku_after_barcode_failed', $term, $customerAccountId, function () use ($term, $customerAccountId) {
+                    return $this->fetchProductBySku($term, $customerAccountId);
+                });
+            }
+            if ($data === null) {
+                $data = $this->safeProductFetch('shiphero.inventory.search.by_sku_basic_after_barcode_failed', $term, $customerAccountId, function () use ($term, $customerAccountId) {
+                    return $this->fetchProductBySkuBasic($term, $customerAccountId);
+                });
             }
         } else {
-            $data = null;
-            try {
-                $data = $this->fetchProductBySku($term, $customerAccountId);
-            } catch (\Throwable $e) {
-                Log::warning('shiphero.inventory.search.by_sku_failed', [
-                    'term' => $term,
-                    'customer_account_id' => $customerAccountId,
-                    'message' => $e->getMessage(),
-                ]);
-                $data = $this->fetchProductBySkuBasic($term, $customerAccountId);
+            $data = $this->safeProductFetch('shiphero.inventory.search.by_sku_failed', $term, $customerAccountId, function () use ($term, $customerAccountId) {
+                return $this->fetchProductBySku($term, $customerAccountId);
+            });
+            if ($data === null) {
+                $data = $this->safeProductFetch('shiphero.inventory.search.by_sku_basic_failed', $term, $customerAccountId, function () use ($term, $customerAccountId) {
+                    return $this->fetchProductBySkuBasic($term, $customerAccountId);
+                });
             }
             if ($data === null) {
-                try {
-                    $data = $this->fetchProductByBarcode($term, $customerAccountId);
-                } catch (\Throwable $e) {
-                    Log::warning('shiphero.inventory.search.by_barcode_after_sku_failed', [
-                        'term' => $term,
-                        'customer_account_id' => $customerAccountId,
-                        'message' => $e->getMessage(),
-                    ]);
-                    $data = $this->fetchProductByBarcodeBasic($term, $customerAccountId);
-                }
+                $data = $this->safeProductFetch('shiphero.inventory.search.by_barcode_after_sku_failed', $term, $customerAccountId, function () use ($term, $customerAccountId) {
+                    return $this->fetchProductByBarcode($term, $customerAccountId);
+                });
+            }
+            if ($data === null) {
+                $data = $this->safeProductFetch('shiphero.inventory.search.by_barcode_basic_after_sku_failed', $term, $customerAccountId, function () use ($term, $customerAccountId) {
+                    return $this->fetchProductByBarcodeBasic($term, $customerAccountId);
+                });
             }
         }
 
@@ -153,6 +143,25 @@ GQL;
         }
 
         return $this->normalizeProduct($data, $warehouseId);
+    }
+
+    /**
+     * @param callable(): (array<string,mixed>|null) $fetcher
+     * @return array<string,mixed>|null
+     */
+    private function safeProductFetch(string $logEvent, string $term, ?string $customerAccountId, callable $fetcher): ?array
+    {
+        try {
+            $data = $fetcher();
+            return is_array($data) ? $data : null;
+        } catch (\Throwable $e) {
+            Log::warning($logEvent, [
+                'term' => $term,
+                'customer_account_id' => $customerAccountId,
+                'message' => $e->getMessage(),
+            ]);
+            return null;
+        }
     }
 
     /**

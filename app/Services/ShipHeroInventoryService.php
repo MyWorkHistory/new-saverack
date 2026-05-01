@@ -241,7 +241,7 @@ query ShipHeroProductBySku($sku: String!, $customer_account_id: String) {
         inventory_bin
         inventory_overstock_bin
         reserve_inventory
-        non_sellable_total
+        non_sellable_quantity
         in_tote
         reorder_level
         reorder_amount
@@ -315,7 +315,7 @@ query ShipHeroProductByBarcode($barcode: String!, $customer_account_id: String) 
         inventory_bin
         inventory_overstock_bin
         reserve_inventory
-        non_sellable_total
+        non_sellable_quantity
         in_tote
         reorder_level
         reorder_amount
@@ -393,7 +393,7 @@ query ShipHeroProductById($id: String!, $customer_account_id: String) {
         inventory_bin
         inventory_overstock_bin
         reserve_inventory
-        non_sellable_total
+        non_sellable_quantity
         in_tote
         reorder_level
         reorder_amount

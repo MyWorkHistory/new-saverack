@@ -104,7 +104,7 @@ GQL;
         $id = isset($data['id']) && is_string($data['id']) ? trim($data['id']) : '';
         if ($id !== '') {
             try {
-                $byId = $this->fetchProductById($id);
+                $byId = $this->fetchProductById($id, $customerAccountId);
                 if (is_array($byId)) {
                     $data = array_merge($data, $byId);
                 }
@@ -338,11 +338,11 @@ GQL;
     /**
      * @return array<string, mixed>|null  product.data
      */
-    private function fetchProductById(string $id): ?array
+    private function fetchProductById(string $id, ?string $customerAccountId = null): ?array
     {
         $graphql = <<<'GQL'
-query ShipHeroProductById($id: String!) {
-  product(id: $id) {
+query ShipHeroProductById($id: String!, $customer_account_id: String) {
+  product(id: $id, customer_account_id: $customer_account_id) {
     data {
       id
       legacy_id
@@ -417,7 +417,10 @@ query ShipHeroProductById($id: String!) {
   }
 }
 GQL;
-        $json = $this->client->query($graphql, ['id' => $id]);
+        $json = $this->client->query($graphql, array_merge(
+            ['id' => $id],
+            $this->customerAccountVariables($customerAccountId)
+        ));
         $data = data_get($json, 'data.product.data');
         return is_array($data) ? $data : null;
     }
@@ -775,7 +778,22 @@ GQL;
      */
     public function getProductDetailBySku(string $sku, ?string $warehouseId = null, ?string $customerAccountId = null): ?array
     {
-        return $this->searchProduct($sku, $warehouseId, $customerAccountId);
+        $base = $this->fetchProductBySku(trim($sku), $customerAccountId);
+        if ($base === null) {
+            $base = $this->fetchProductByBarcode(trim($sku), $customerAccountId);
+        }
+        if ($base === null) {
+            return null;
+        }
+        $id = isset($base['id']) && is_string($base['id']) ? trim($base['id']) : '';
+        if ($id === '') {
+            return $this->normalizeProduct($base, $warehouseId);
+        }
+        $full = $this->fetchProductById($id, $customerAccountId);
+        if (! is_array($full)) {
+            throw new RuntimeException('ShipHero product detail could not be loaded by product id.');
+        }
+        return $this->normalizeProduct(array_merge($base, $full), $warehouseId);
     }
 
     /**

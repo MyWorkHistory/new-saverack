@@ -686,22 +686,24 @@ async function togglePickable(loc) {
 }
 .inventory-metric-card {
   text-align: left;
+  position: relative;
+  min-height: 96px;
 }
 .inventory-metric-card__head {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  align-items: center;
-  gap: 0.75rem;
-  min-height: 46px;
-  margin-bottom: 0.35rem;
+  display: block;
+  margin-bottom: 0.5rem;
 }
 .inventory-metric-card__left {
-  min-width: 0;
+  padding-right: 56px;
 }
 .inventory-metric-card__right {
   width: 44px;
   height: 44px;
-  display: inline-flex;
+  position: absolute;
+  right: 0.75rem;
+  top: 50%;
+  transform: translateY(-50%);
+  display: flex;
   align-items: center;
   justify-content: center;
 }
@@ -711,8 +713,8 @@ async function togglePickable(loc) {
   padding: 9px;
   border-radius: 999px;
   flex-shrink: 0;
-  margin-left: auto;
-  display: inline-flex;
+  margin: 0;
+  display: flex;
   align-items: center;
   justify-content: center;
   line-height: 0;

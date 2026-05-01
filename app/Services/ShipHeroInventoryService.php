@@ -1799,9 +1799,6 @@ GQL;
                     'message' => $e->getMessage(),
                 ]);
             }
-            if ($catalogById === [] && $catalogByName === []) {
-                continue;
-            }
             $locations = $warehouse['locations'] ?? null;
             if (! is_array($locations)) {
                 continue;
@@ -1817,6 +1814,15 @@ GQL;
                     $meta = $catalogById[$locationId];
                 } elseif ($locationName !== '' && isset($catalogByName[$locationName])) {
                     $meta = $catalogByName[$locationName];
+                }
+                if (! is_array($meta) && $locationId !== '') {
+                    $directLookupId = trim((string) ($location['location_id'] ?? ''));
+                    if ($directLookupId !== '') {
+                        if (! array_key_exists($directLookupId, $locationMetaCache)) {
+                            $locationMetaCache[$directLookupId] = $this->fetchLocationMetaById($directLookupId);
+                        }
+                        $meta = $locationMetaCache[$directLookupId];
+                    }
                 }
                 if (! is_array($meta)) {
                     continue;

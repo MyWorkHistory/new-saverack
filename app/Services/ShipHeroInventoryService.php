@@ -808,9 +808,26 @@ GQL;
      */
     public function getProductDetailBySku(string $sku, ?string $warehouseId = null, ?string $customerAccountId = null): ?array
     {
-        $base = $this->fetchProductBySku(trim($sku), $customerAccountId);
+        $base = null;
+        try {
+            $base = $this->fetchProductBySku(trim($sku), $customerAccountId);
+        } catch (\Throwable $e) {
+            Log::warning('shiphero.inventory.detail.by_sku_failed', [
+                'sku' => $sku,
+                'customer_account_id' => $customerAccountId,
+                'message' => $e->getMessage(),
+            ]);
+        }
         if ($base === null) {
-            $base = $this->fetchProductByBarcode(trim($sku), $customerAccountId);
+            try {
+                $base = $this->fetchProductByBarcode(trim($sku), $customerAccountId);
+            } catch (\Throwable $e) {
+                Log::warning('shiphero.inventory.detail.by_barcode_failed', [
+                    'sku_or_barcode' => $sku,
+                    'customer_account_id' => $customerAccountId,
+                    'message' => $e->getMessage(),
+                ]);
+            }
         }
         if ($base === null) {
             return null;
@@ -819,25 +836,43 @@ GQL;
         if ($id === '') {
             return $this->normalizeProduct($base, $warehouseId);
         }
-        $full = $this->fetchProductById($id, $customerAccountId);
-        if (! is_array($full)) {
-            throw new RuntimeException('ShipHero product detail could not be loaded by product id.');
+        try {
+            $full = $this->fetchProductById($id, $customerAccountId);
+            if (is_array($full)) {
+                $merged = array_merge($base, $full);
+                $merged['warehouse_products'] = $this->pickWarehouseProductsPayload(
+                    $base['warehouse_products'] ?? null,
+                    $full['warehouse_products'] ?? null
+                );
+                $normalized = $this->normalizeProduct($merged, $warehouseId);
+                Log::info('shiphero.inventory.detail.normalized', [
+                    'sku' => $normalized['sku'] ?? null,
+                    'customer_account_id' => $customerAccountId,
+                    'customs_value' => $normalized['customs_value'] ?? null,
+                    'customs_description' => $normalized['customs_description'] ?? null,
+                    'metrics' => $normalized['metrics'] ?? null,
+                    'source' => 'product_by_id',
+                ]);
+                return $normalized;
+            }
+        } catch (\Throwable $e) {
+            Log::warning('shiphero.inventory.detail.by_id_failed_fallback', [
+                'sku' => $sku,
+                'product_id' => $id,
+                'customer_account_id' => $customerAccountId,
+                'message' => $e->getMessage(),
+            ]);
         }
-        $merged = array_merge($base, $full);
-        $merged['warehouse_products'] = $this->pickWarehouseProductsPayload(
-            $base['warehouse_products'] ?? null,
-            $full['warehouse_products'] ?? null
-        );
 
-        $normalized = $this->normalizeProduct($merged, $warehouseId);
+        $normalized = $this->normalizeProduct($base, $warehouseId);
         Log::info('shiphero.inventory.detail.normalized', [
             'sku' => $normalized['sku'] ?? null,
             'customer_account_id' => $customerAccountId,
             'customs_value' => $normalized['customs_value'] ?? null,
             'customs_description' => $normalized['customs_description'] ?? null,
             'metrics' => $normalized['metrics'] ?? null,
+            'source' => 'product_by_sku_or_barcode',
         ]);
-
         return $normalized;
     }
 

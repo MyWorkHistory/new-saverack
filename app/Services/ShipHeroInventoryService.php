@@ -621,29 +621,25 @@ GQL,
         if (is_string($customerAccountId) && trim($customerAccountId) !== '') {
             $input['customer_account_id'] = trim($customerAccountId);
         }
-        $attemptInputs = [$input];
-        if (array_key_exists('customer_account_id', $input)) {
-            $withoutCustomer = $input;
-            unset($withoutCustomer['customer_account_id']);
-            $attemptInputs[] = $withoutCustomer;
+        $attemptInputs = [];
+        // Try a few payload shapes because accounts can differ on accepted fields.
+        $attemptInputs[] = ['location_id' => $locationId, 'pickable' => $pickable];
+        if ($sellable !== null) {
+            $attemptInputs[] = ['location_id' => $locationId, 'pickable' => $pickable, 'sellable' => $sellable];
         }
-        $mutation = <<<'GQL'
-mutation ShipHeroLocationUpdate($data: LocationUpdateInput!) {
-  location_update(data: $data) {
-    location {
-      id
-      name
-      pickable
-      sellable
-    }
-  }
-}
-GQL;
+        if (is_string($customerAccountId) && trim($customerAccountId) !== '') {
+            $withCustomer = ['location_id' => $locationId, 'pickable' => $pickable, 'customer_account_id' => trim($customerAccountId)];
+            $attemptInputs[] = $withCustomer;
+            if ($sellable !== null) {
+                $withCustomer['sellable'] = $sellable;
+                $attemptInputs[] = $withCustomer;
+            }
+        }
         $json = null;
         $lastError = null;
         foreach ($attemptInputs as $candidateInput) {
             try {
-                $json = $this->client->query($mutation, ['data' => $candidateInput]);
+                $json = $this->client->query($this->buildLocationUpdateMutationLiteral($candidateInput));
                 break;
             } catch (\Throwable $e) {
                 $lastError = $e;
@@ -707,6 +703,46 @@ GQL;
             'pickable' => array_key_exists('pickable', $node) ? (bool) $node['pickable'] : null,
             'sellable' => array_key_exists('sellable', $node) ? (bool) $node['sellable'] : null,
         ];
+    }
+
+    /**
+     * @param array<string,mixed> $input
+     */
+    private function buildLocationUpdateMutationLiteral(array $input): string
+    {
+        $parts = [];
+        foreach ($input as $key => $value) {
+            if (! is_string($key) || trim($key) === '') {
+                continue;
+            }
+            $safeKey = preg_replace('/[^a-zA-Z0-9_]/', '', $key);
+            if (! is_string($safeKey) || $safeKey === '') {
+                continue;
+            }
+            if (is_bool($value)) {
+                $parts[] = $safeKey.': '.($value ? 'true' : 'false');
+                continue;
+            }
+            if (is_int($value) || is_float($value)) {
+                $parts[] = $safeKey.': '.$value;
+                continue;
+            }
+            $stringValue = str_replace(['\\', '"'], ['\\\\', '\\"'], (string) $value);
+            $parts[] = $safeKey.': "'.$stringValue.'"';
+        }
+        $dataLiteral = implode("\n    ", $parts);
+        return 'mutation ShipHeroLocationUpdate {'."\n"
+            .'  location_update(data: {'."\n"
+            .'    '.$dataLiteral."\n"
+            .'  }) {'."\n"
+            .'    location {'."\n"
+            .'      id'."\n"
+            .'      name'."\n"
+            .'      pickable'."\n"
+            .'      sellable'."\n"
+            .'    }'."\n"
+            .'  }'."\n"
+            .'}';
     }
 
     /**

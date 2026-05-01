@@ -1777,7 +1777,9 @@ GQL;
                 if (! is_array($meta)) {
                     continue;
                 }
-                $warehouse['locations'][$lIndex]['pickable'] = $meta['pickable'];
+                if (is_bool($meta['pickable'])) {
+                    $warehouse['locations'][$lIndex]['pickable'] = $meta['pickable'];
+                }
                 if (is_string($meta['type']) && trim($meta['type']) !== '') {
                     $warehouse['locations'][$lIndex]['type'] = trim($meta['type']);
                 }

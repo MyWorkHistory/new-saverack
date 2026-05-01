@@ -444,14 +444,20 @@ async function togglePickable(loc) {
                         <button
                           type="button"
                           class="inventory-detail__toggle"
-                          :class="{ 'inventory-detail__toggle--on': !!loc.pickable, 'inventory-detail__toggle--off': !loc.pickable }"
+                          :class="{
+                            'inventory-detail__toggle--on': loc.pickable === true,
+                            'inventory-detail__toggle--off': loc.pickable === false,
+                            'inventory-detail__toggle--unknown': loc.pickable !== true && loc.pickable !== false
+                          }"
                           @click="togglePickable(loc)"
-                          :aria-pressed="!!loc.pickable"
+                          :aria-pressed="loc.pickable === true"
                         >
                           <span class="inventory-detail__toggle-track">
                             <span class="inventory-detail__toggle-thumb" />
                           </span>
-                          <span class="inventory-detail__toggle-label">{{ loc.pickable ? "Yes" : "No" }}</span>
+                          <span class="inventory-detail__toggle-label">
+                            {{ loc.pickable === true ? "Yes" : (loc.pickable === false ? "No" : "—") }}
+                          </span>
                         </button>
                       </td>
                       <td>{{ loc.quantity }}</td>
@@ -667,13 +673,20 @@ async function togglePickable(loc) {
 .inventory-detail__toggle--off .inventory-detail__toggle-track {
   background: #ef4444;
 }
+.inventory-detail__toggle--unknown {
+  border-color: rgba(100, 116, 139, 0.35);
+  color: #475569;
+}
+.inventory-detail__toggle--unknown .inventory-detail__toggle-track {
+  background: #94a3b8;
+}
 .inventory-metric-card {
   text-align: left;
 }
 .inventory-metric-card__head {
   display: flex;
   align-items: center;
-  justify-content: flex-start;
+  justify-content: space-between;
   gap: 0.75rem;
   margin-bottom: 0.35rem;
 }

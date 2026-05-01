@@ -206,7 +206,10 @@ query ShipHeroProductBySku($sku: String!, $customer_account_id: String) {
       barcode
       customs_value
       customs_description
-      image
+      images {
+        src
+        position
+      }
       dimensions {
         weight
         height
@@ -234,8 +237,6 @@ query ShipHeroProductBySku($sku: String!, $customer_account_id: String) {
               quantity
               location {
                 name
-                pickable
-                type
               }
             }
           }
@@ -269,7 +270,10 @@ query ShipHeroProductByBarcode($barcode: String!, $customer_account_id: String) 
       barcode
       customs_value
       customs_description
-      image
+      images {
+        src
+        position
+      }
       dimensions {
         weight
         height
@@ -297,8 +301,6 @@ query ShipHeroProductByBarcode($barcode: String!, $customer_account_id: String) 
               quantity
               location {
                 name
-                pickable
-                type
               }
             }
           }
@@ -358,13 +360,30 @@ GQL;
         }
 
         $dimensions = is_array($data['dimensions'] ?? null) ? $data['dimensions'] : [];
+        $imageUrl = null;
+        $images = is_array($data['images'] ?? null) ? $data['images'] : [];
+        $bestPos = PHP_INT_MAX;
+        foreach ($images as $img) {
+            if (! is_array($img)) {
+                continue;
+            }
+            $src = trim((string) ($img['src'] ?? ''));
+            if ($src === '') {
+                continue;
+            }
+            $pos = isset($img['position']) && is_numeric($img['position']) ? (int) $img['position'] : 999999;
+            if ($imageUrl === null || $pos < $bestPos) {
+                $imageUrl = $src;
+                $bestPos = $pos;
+            }
+        }
 
         return [
             'id' => isset($data['id']) && is_string($data['id']) ? $data['id'] : null,
             'sku' => isset($data['sku']) && is_string($data['sku']) ? $data['sku'] : '',
             'name' => isset($data['name']) && is_string($data['name']) ? $data['name'] : null,
             'barcode' => isset($data['barcode']) && is_string($data['barcode']) ? $data['barcode'] : null,
-            'image_url' => isset($data['image']) && is_string($data['image']) ? $data['image'] : null,
+            'image_url' => $imageUrl,
             'customs_value' => is_numeric($data['customs_value'] ?? null) ? (float) $data['customs_value'] : null,
             'customs_description' => isset($data['customs_description']) && is_string($data['customs_description']) ? $data['customs_description'] : null,
             'dimensions' => [

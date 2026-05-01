@@ -477,12 +477,7 @@ GQL;
             $warehouseAllocated = $this->toIntNumber(
                 $wp['allocated'] ?? ($wp['reserve_inventory'] ?? 0)
             );
-            $explicitBackorder = $this->toIntNumber(
-                $wp['backorder']
-                ?? ($wp['reorder_amount']
-                ?? ($wp['reorder_level']
-                ?? ($wp['replenishment_level'] ?? 0)))
-            );
+            $explicitBackorder = $this->toIntNumber($wp['backorder'] ?? 0);
             $warehouseBackorder = $explicitBackorder > 0
                 ? $explicitBackorder
                 : max(0, $warehouseAllocated - $warehouseOnHand);
@@ -521,10 +516,24 @@ GQL;
                 $bestPos = $pos;
             }
         }
-        $customsValue = $this->normalizeNumericDisplay($data['customs_value'] ?? null);
-        $customsNumeric = is_numeric($customsValue) ? (float) $customsValue : null;
-        if ($customsValue === null || ($customsNumeric !== null && $customsNumeric <= 0)) {
-            $customsValue = $this->normalizeNumericDisplay($data['value'] ?? null);
+        $customsCandidates = [
+            $data['customs_value'] ?? null,
+            data_get($data, 'customs.value'),
+            $data['customsValue'] ?? null,
+            $data['custom_value'] ?? null,
+            $data['value'] ?? null,
+        ];
+        $customsValue = null;
+        foreach ($customsCandidates as $candidate) {
+            $normalizedCandidate = $this->normalizeNumericDisplay($candidate);
+            $candidateNumeric = is_numeric($normalizedCandidate) ? (float) $normalizedCandidate : null;
+            if ($candidateNumeric !== null && $candidateNumeric > 0) {
+                $customsValue = $normalizedCandidate;
+                break;
+            }
+            if ($customsValue === null) {
+                $customsValue = $normalizedCandidate;
+            }
         }
         $customsDescription = isset($data['customs_description']) && is_string($data['customs_description'])
             ? trim($data['customs_description'])

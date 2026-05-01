@@ -53,11 +53,11 @@ const summaryMetrics = computed(() => product.value?.metrics || {
 });
 
 const metricCards = computed(() => ([
-  { key: "on_hand", label: "On Hand", icon: "bi-box-seam" },
-  { key: "allocated", label: "Allocated", icon: "bi-stack" },
-  { key: "available", label: "Available", icon: "bi-check2-circle" },
-  { key: "backorder", label: "Backorder", icon: "bi-exclamation-circle" },
-  { key: "asn", label: "ASN", icon: "bi-truck" },
+  { key: "on_hand", label: "On Hand", iconPath: "M3 7.5 12 3l9 4.5v9L12 21l-9-4.5z M12 12l9-4.5 M12 12 3 7.5 M12 12v9" },
+  { key: "allocated", label: "Allocated", iconPath: "M4 8h16M4 12h16M4 16h16M7 5h10" },
+  { key: "available", label: "Available", iconPath: "M4 12l5 5 11-11" },
+  { key: "backorder", label: "Backorder", iconPath: "M12 7v6 M12 17h.01 M3 12a9 9 0 1 0 18 0 9 9 0 1 0-18 0" },
+  { key: "asn", label: "ASN", iconPath: "M2 13h11l2-3h7v7h-2 M6 17a2 2 0 1 0 0 .01 M18 17a2 2 0 1 0 0 .01" },
 ]).map((item) => ({
   ...item,
   value: Number(summaryMetrics.value?.[item.key] || 0),
@@ -376,7 +376,18 @@ async function togglePickable(loc) {
               <div v-for="card in metricCards" :key="card.key" class="col-6 col-md">
                 <div class="staff-table-card p-3 inventory-metric-card">
                   <div class="inventory-metric-card__head">
-                    <i class="bi inventory-metric-card__icon" :class="card.icon" aria-hidden="true" />
+                    <svg
+                      class="inventory-metric-card__icon"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      stroke-width="2"
+                      stroke-linecap="round"
+                      stroke-linejoin="round"
+                      aria-hidden="true"
+                    >
+                      <path :d="card.iconPath" />
+                    </svg>
                     <div class="small text-secondary">{{ card.label }}</div>
                   </div>
                   <div class="h5 mb-0">{{ card.value }}</div>
@@ -423,8 +434,12 @@ async function togglePickable(loc) {
                           class="inventory-detail__toggle"
                           :class="{ 'inventory-detail__toggle--on': !!loc.pickable, 'inventory-detail__toggle--off': !loc.pickable }"
                           @click="togglePickable(loc)"
+                          :aria-pressed="!!loc.pickable"
                         >
-                          {{ loc.pickable ? "Yes" : "No" }}
+                          <span class="inventory-detail__toggle-track">
+                            <span class="inventory-detail__toggle-thumb" />
+                          </span>
+                          <span class="inventory-detail__toggle-label">{{ loc.pickable ? "Yes" : "No" }}</span>
                         </button>
                       </td>
                       <td>{{ loc.quantity }}</td>
@@ -589,19 +604,56 @@ async function togglePickable(loc) {
   display: inline-block;
 }
 .inventory-detail__toggle {
-  border: 0;
+  border: 1px solid rgba(15, 23, 42, 0.12);
   border-radius: 999px;
-  padding: 0.2rem 0.8rem;
-  font-size: 0.75rem;
+  padding: 0.25rem 0.55rem;
+  font-size: 0.78rem;
   font-weight: 600;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  background: #fff;
+  color: #334155;
+}
+.inventory-detail__toggle-track {
+  width: 34px;
+  height: 20px;
+  border-radius: 999px;
+  background: #d1d5db;
+  position: relative;
+  transition: background-color 0.15s ease;
+}
+.inventory-detail__toggle-thumb {
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: #fff;
+  position: absolute;
+  left: 3px;
+  top: 3px;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.25);
+  transition: transform 0.15s ease;
+}
+.inventory-detail__toggle-label {
+  min-width: 22px;
+  text-align: left;
 }
 .inventory-detail__toggle--on {
+  border-color: rgba(34, 197, 94, 0.45);
+  color: #166534;
+}
+.inventory-detail__toggle--on .inventory-detail__toggle-track {
   background: #22c55e;
-  color: #fff;
+}
+.inventory-detail__toggle--on .inventory-detail__toggle-thumb {
+  transform: translateX(14px);
 }
 .inventory-detail__toggle--off {
+  border-color: rgba(239, 68, 68, 0.4);
+  color: #991b1b;
+}
+.inventory-detail__toggle--off .inventory-detail__toggle-track {
   background: #ef4444;
-  color: #fff;
 }
 .inventory-metric-card {
   text-align: left;
@@ -613,7 +665,8 @@ async function togglePickable(loc) {
   margin-bottom: 0.35rem;
 }
 .inventory-metric-card__icon {
-  font-size: 0.95rem;
+  width: 18px;
+  height: 18px;
   color: #334155;
 }
 </style>

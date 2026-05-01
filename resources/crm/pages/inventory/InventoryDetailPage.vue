@@ -405,7 +405,7 @@ async function togglePickable(loc) {
                     placeholder="Search locations"
                   />
                   <button type="button" class="btn btn-outline-secondary staff-toolbar-btn" disabled>Filters</button>
-                  <button type="button" class="btn btn-primary staff-toolbar-btn" @click="openAddLocationModal">
+                  <button type="button" class="btn btn-primary staff-toolbar-btn inventory-detail__add-location-btn" @click="openAddLocationModal">
                     Add Location
                   </button>
                 </div>
@@ -661,12 +661,16 @@ async function togglePickable(loc) {
 .inventory-metric-card__head {
   display: flex;
   align-items: center;
-  gap: 0.45rem;
+  justify-content: space-between;
   margin-bottom: 0.35rem;
 }
 .inventory-metric-card__icon {
-  width: 18px;
-  height: 18px;
+  width: 24px;
+  height: 24px;
   color: #334155;
+  flex-shrink: 0;
+}
+.inventory-detail__add-location-btn {
+  color: #111827 !important;
 }
 </style>

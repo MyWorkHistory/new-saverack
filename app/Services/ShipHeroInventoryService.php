@@ -489,6 +489,19 @@ GQL;
                 $bestPos = $pos;
             }
         }
+        $customsValue = $this->normalizeNumericDisplay($data['customs_value'] ?? null);
+        if ($customsValue === null) {
+            $customsValue = $this->normalizeNumericDisplay($data['value'] ?? null);
+        }
+        $customsDescription = isset($data['customs_description']) && is_string($data['customs_description'])
+            ? trim($data['customs_description'])
+            : '';
+        if ($customsDescription === '') {
+            $fallbackDescription = isset($data['product_note']) && is_string($data['product_note'])
+                ? trim($data['product_note'])
+                : '';
+            $customsDescription = $fallbackDescription;
+        }
 
         return [
             'id' => isset($data['id']) && is_string($data['id']) ? $data['id'] : null,
@@ -496,8 +509,8 @@ GQL;
             'name' => isset($data['name']) && is_string($data['name']) ? $data['name'] : null,
             'barcode' => isset($data['barcode']) && is_string($data['barcode']) ? $data['barcode'] : null,
             'image_url' => $imageUrl,
-            'customs_value' => $this->normalizeNumericDisplay($data['customs_value'] ?? null),
-            'customs_description' => isset($data['customs_description']) && is_string($data['customs_description']) ? $data['customs_description'] : null,
+            'customs_value' => $customsValue,
+            'customs_description' => $customsDescription !== '' ? $customsDescription : null,
             'dimensions' => [
                 'weight' => $this->normalizeNumericDisplay($dimensions['weight'] ?? null),
                 'height' => $this->normalizeNumericDisplay($dimensions['height'] ?? null),

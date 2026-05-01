@@ -1739,6 +1739,7 @@ GQL;
      */
     private function enrichProductLocationsMeta(array $normalized, ?string $customerAccountId): array
     {
+        $locationMetaCache = [];
         $warehouses = $normalized['warehouses'] ?? null;
         if (! is_array($warehouses) || $warehouses === []) {
             return $normalized;
@@ -1754,7 +1755,9 @@ GQL;
             $catalogById = [];
             $catalogByName = [];
             try {
-                foreach ($this->listLocations($wid, $customerAccountId) as $locationMeta) {
+                // Keep product detail location enrichment global to warehouse.
+                // Passing customer_account_id here is not reliable across ShipHero accounts.
+                foreach ($this->listLocations($wid, null) as $locationMeta) {
                     $idKey = strtolower(trim((string) ($locationMeta['id'] ?? '')));
                     if ($idKey !== '') {
                         $catalogById[$idKey] = $locationMeta;
@@ -1767,7 +1770,7 @@ GQL;
             } catch (\Throwable $e) {
                 Log::warning('shiphero.inventory.locations_meta_lookup_failed', [
                     'warehouse_id' => $wid,
-                    'customer_account_id' => $customerAccountId,
+                    'customer_account_id' => null,
                     'message' => $e->getMessage(),
                 ]);
             }
@@ -1793,6 +1796,23 @@ GQL;
                 if (! is_array($meta)) {
                     continue;
                 }
+                $lookupId = trim((string) ($meta['id'] ?? ''));
+                if (($meta['pickable'] ?? null) === null || ! is_string($meta['type'] ?? null) || trim((string) ($meta['type'] ?? '')) === '') {
+                    if ($lookupId !== '') {
+                        if (! array_key_exists($lookupId, $locationMetaCache)) {
+                            $locationMetaCache[$lookupId] = $this->fetchLocationMetaById($lookupId);
+                        }
+                        $extraMeta = $locationMetaCache[$lookupId];
+                        if (is_array($extraMeta)) {
+                            if (($meta['pickable'] ?? null) === null && array_key_exists('pickable', $extraMeta)) {
+                                $meta['pickable'] = $extraMeta['pickable'];
+                            }
+                            if ((! is_string($meta['type'] ?? null) || trim((string) ($meta['type'] ?? '')) === '') && is_string($extraMeta['type'] ?? null)) {
+                                $meta['type'] = $extraMeta['type'];
+                            }
+                        }
+                    }
+                }
                 if (is_bool($meta['pickable'])) {
                     $warehouse['locations'][$lIndex]['pickable'] = $meta['pickable'];
                 }
@@ -1803,6 +1823,84 @@ GQL;
             $normalized['warehouses'][$wIndex] = $warehouse;
         }
         return $normalized;
+    }
+
+    /**
+     * @return array{pickable:bool|null,type:string|null}|null
+     */
+    private function fetchLocationMetaById(string $locationId): ?array
+    {
+        $locationId = trim($locationId);
+        if ($locationId === '') {
+            return null;
+        }
+        $queries = [
+            <<<'GQL'
+query ShipHeroLocationMetaById($id: String!) {
+  location(id: $id) {
+    data {
+      pickable
+      type {
+        name
+      }
+    }
+  }
+}
+GQL,
+            <<<'GQL'
+query ShipHeroLocationMetaByIdScalar($id: String!) {
+  location(id: $id) {
+    data {
+      pickable
+      type
+    }
+  }
+}
+GQL,
+            <<<'GQL'
+query ShipHeroLocationMetaByIdIsPickable($id: String!) {
+  location(id: $id) {
+    data {
+      is_pickable
+      type
+    }
+  }
+}
+GQL,
+        ];
+        foreach ($queries as $graphql) {
+            try {
+                $json = $this->client->query($graphql, ['id' => $locationId]);
+                $rawPickable = data_get($json, 'data.location.data.pickable');
+                if ($rawPickable === null) {
+                    $rawPickable = data_get($json, 'data.location.data.is_pickable');
+                }
+                $pickable = null;
+                if (is_bool($rawPickable)) {
+                    $pickable = $rawPickable;
+                } elseif (is_int($rawPickable) || is_float($rawPickable)) {
+                    $pickable = ((int) $rawPickable) === 1;
+                } elseif (is_string($rawPickable)) {
+                    $p = strtolower(trim($rawPickable));
+                    if (in_array($p, ['1', 'true', 'yes'], true)) {
+                        $pickable = true;
+                    } elseif (in_array($p, ['0', 'false', 'no'], true)) {
+                        $pickable = false;
+                    }
+                }
+                $typeName = trim((string) data_get($json, 'data.location.data.type.name', ''));
+                if ($typeName === '') {
+                    $typeName = trim((string) data_get($json, 'data.location.data.type', ''));
+                }
+                return [
+                    'pickable' => $pickable,
+                    'type' => $typeName !== '' ? $typeName : null,
+                ];
+            } catch (\Throwable $e) {
+                // Try next query variant.
+            }
+        }
+        return null;
     }
 
     /**

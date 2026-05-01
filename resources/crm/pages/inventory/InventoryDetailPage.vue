@@ -684,22 +684,30 @@ async function togglePickable(loc) {
   text-align: left;
 }
 .inventory-metric-card__head {
-  display: flex;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
   align-items: center;
-  justify-content: space-between;
   gap: 0.75rem;
-  min-height: 40px;
+  min-height: 46px;
   margin-bottom: 0.35rem;
 }
 .inventory-metric-card__icon {
-  width: 36px;
-  height: 36px;
-  padding: 7px;
+  width: 44px;
+  height: 44px;
+  padding: 9px;
   border-radius: 999px;
   flex-shrink: 0;
+  margin-left: auto;
   display: inline-flex;
   align-items: center;
   justify-content: center;
+  line-height: 0;
+}
+.inventory-metric-card__icon path {
+  display: block;
+}
+.staff-table-toolbar .btn.btn-primary.staff-toolbar-btn {
+  color: #fff;
 }
 .inventory-metric-card__icon--blue {
   color: #1d4ed8;

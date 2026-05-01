@@ -307,18 +307,29 @@ async function submitTransferQty() {
 
 async function togglePickable(loc) {
   if (!loc?.location_id) return;
+  const nextPickable = !Boolean(loc.pickable);
   saving.value = true;
   try {
     const body = {
       location_id: String(loc.location_id),
-      pickable: !Boolean(loc.pickable),
+      pickable: nextPickable,
     };
     if (route.query.client_account_id) {
       body.client_account_id = Number(route.query.client_account_id);
     }
     await api.post("/inventory/locations/pickable", body);
-    loc.pickable = !Boolean(loc.pickable);
+    // Update source data so computed location rows reflect new value immediately.
+    const warehouses = Array.isArray(product.value?.warehouses) ? product.value.warehouses : [];
+    warehouses.forEach((wh) => {
+      const locations = Array.isArray(wh?.locations) ? wh.locations : [];
+      locations.forEach((row) => {
+        if (String(row?.location_id) === String(loc.location_id)) {
+          row.pickable = nextPickable;
+        }
+      });
+    });
     toast.success("Pickable updated.");
+    await loadDetail();
   } catch (e) {
     toast.errorFrom(e, "Could not update pickable.");
   } finally {

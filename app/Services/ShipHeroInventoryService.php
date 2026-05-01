@@ -453,7 +453,12 @@ GQL;
             $wh = is_array($wp['warehouse'] ?? null) ? $wp['warehouse'] : [];
             $warehouseOnHand = $this->toIntNumber($wp['on_hand'] ?? 0);
             $warehouseAllocated = $this->toIntNumber($wp['reserve_inventory'] ?? 0);
-            $explicitBackorder = $this->toIntNumber($wp['backorder'] ?? 0);
+            $explicitBackorder = $this->toIntNumber(
+                $wp['backorder']
+                ?? ($wp['reorder_amount']
+                ?? ($wp['reorder_level']
+                ?? ($wp['replenishment_level'] ?? 0)))
+            );
             $warehouseBackorder = $explicitBackorder > 0
                 ? $explicitBackorder
                 : max(0, $warehouseAllocated - $warehouseOnHand);
@@ -493,7 +498,8 @@ GQL;
             }
         }
         $customsValue = $this->normalizeNumericDisplay($data['customs_value'] ?? null);
-        if ($customsValue === null) {
+        $customsNumeric = is_numeric($customsValue) ? (float) $customsValue : null;
+        if ($customsValue === null || ($customsNumeric !== null && $customsNumeric <= 0)) {
             $customsValue = $this->normalizeNumericDisplay($data['value'] ?? null);
         }
         $customsDescription = isset($data['customs_description']) && is_string($data['customs_description'])
@@ -793,7 +799,50 @@ GQL;
         if (! is_array($full)) {
             throw new RuntimeException('ShipHero product detail could not be loaded by product id.');
         }
-        return $this->normalizeProduct(array_merge($base, $full), $warehouseId);
+        $merged = array_merge($base, $full);
+        $merged['warehouse_products'] = $this->pickWarehouseProductsPayload(
+            $base['warehouse_products'] ?? null,
+            $full['warehouse_products'] ?? null
+        );
+
+        return $this->normalizeProduct($merged, $warehouseId);
+    }
+
+    /**
+     * @param mixed $base
+     * @param mixed $full
+     * @return array<int, array<string, mixed>>
+     */
+    private function pickWarehouseProductsPayload($base, $full): array
+    {
+        $baseRows = is_array($base) ? $base : [];
+        $fullRows = is_array($full) ? $full : [];
+        if ($baseRows === []) return $fullRows;
+        if ($fullRows === []) return $baseRows;
+
+        return $this->warehouseProductsCompletenessScore($baseRows) >= $this->warehouseProductsCompletenessScore($fullRows)
+            ? $baseRows
+            : $fullRows;
+    }
+
+    /**
+     * @param array<int, array<string, mixed>> $rows
+     */
+    private function warehouseProductsCompletenessScore(array $rows): int
+    {
+        $score = 0;
+        foreach ($rows as $row) {
+            if (! is_array($row)) {
+                continue;
+            }
+            foreach (['on_hand', 'reserve_inventory', 'backorder', 'reorder_amount', 'reorder_level', 'replenishment_level'] as $key) {
+                if (array_key_exists($key, $row) && $row[$key] !== null && $row[$key] !== '') {
+                    $score++;
+                }
+            }
+        }
+
+        return $score;
     }
 
     /**

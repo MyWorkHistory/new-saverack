@@ -477,10 +477,7 @@ GQL;
             $warehouseAllocated = $this->toIntNumber(
                 $wp['allocated'] ?? ($wp['reserve_inventory'] ?? 0)
             );
-            $explicitBackorder = $this->toIntNumber($wp['backorder'] ?? 0);
-            $warehouseBackorder = $explicitBackorder > 0
-                ? $explicitBackorder
-                : max(0, $warehouseAllocated - $warehouseOnHand);
+            $warehouseBackorder = $this->toIntNumber($wp['backorder'] ?? 0);
             $onHand += max(0, $warehouseOnHand);
             $allocated += max(0, $warehouseAllocated);
             $backorder += max(0, $warehouseBackorder);

@@ -2,21 +2,11 @@
 import { computed, onMounted, ref } from "vue";
 import { useRouter } from "vue-router";
 import api from "../../services/api";
-import CrmLoadingSpinner from "../../components/common/CrmLoadingSpinner.vue";
 import { setCrmPageMeta } from "../../composables/useCrmPageMeta.js";
 import { useToast } from "../../composables/useToast.js";
 
 const router = useRouter();
 const toast = useToast();
-
-const warehousesLoading = ref(true);
-const warehouses = ref([]);
-const selectedWarehouseId = ref("");
-const warehouseWarning = ref("");
-
-const clientAccountsLoading = ref(false);
-const clientAccountOptions = ref([]);
-const selectedClientAccountId = ref("");
 
 const queryInput = ref("");
 const searchBusy = ref(false);
@@ -51,37 +41,7 @@ onMounted(() => {
     title: "Save Rack | Inventory",
     description: "ShipHero live inventory search.",
   });
-  loadWarehouses();
-  loadClientAccountOptions();
 });
-
-async function loadWarehouses() {
-  warehousesLoading.value = true;
-  warehouseWarning.value = "";
-  try {
-    const { data } = await api.get("/inventory/warehouses");
-    warehouses.value = Array.isArray(data?.warehouses) ? data.warehouses : [];
-  } catch (e) {
-    warehouses.value = [];
-    warehouseWarning.value =
-      e.response?.data?.message ||
-      "Warehouses unavailable from ShipHero. Search will use all warehouses.";
-  } finally {
-    warehousesLoading.value = false;
-  }
-}
-
-async function loadClientAccountOptions() {
-  clientAccountsLoading.value = true;
-  try {
-    const { data } = await api.get("/inventory/client-account-options");
-    clientAccountOptions.value = Array.isArray(data?.accounts) ? data.accounts : [];
-  } catch (e) {
-    toast.errorFrom(e, "Could not load client account list.");
-  } finally {
-    clientAccountsLoading.value = false;
-  }
-}
 
 async function runSearch() {
   const q = queryInput.value.trim();
@@ -94,8 +54,6 @@ async function runSearch() {
   searchResults.value = [];
   try {
     const params = { q };
-    if (selectedWarehouseId.value) params.warehouse_id = selectedWarehouseId.value;
-    if (selectedClientAccountId.value) params.client_account_id = Number(selectedClientAccountId.value);
     const { data } = await api.get("/inventory/search", { params });
     const product = data?.product ?? null;
     searchResults.value = product ? [product] : [];
@@ -110,13 +68,9 @@ async function runSearch() {
 
 function openDetail(product) {
   if (!product?.sku) return;
-  const query = {};
-  if (selectedClientAccountId.value) query.client_account_id = String(selectedClientAccountId.value);
-  if (selectedWarehouseId.value) query.warehouse_id = String(selectedWarehouseId.value);
   const href = router.resolve({
     name: "inventory-detail",
     params: { sku: String(product.sku) },
-    query,
   }).href;
   window.open(href, "_blank", "noopener,noreferrer");
 }
@@ -131,37 +85,10 @@ function openDetail(product) {
       </p>
     </div>
 
-    <div v-if="warehousesLoading" class="py-5 text-center">
-      <CrmLoadingSpinner message="Loading warehouses…" :center="true" />
-    </div>
-
-    <template v-else>
-      <p v-if="pageError" class="alert alert-warning small">{{ pageError }}</p>
+    <p v-if="pageError" class="alert alert-warning small">{{ pageError }}</p>
 
       <div class="row g-3 align-items-end mb-4">
-        <div class="col-12 col-md-6">
-          <label class="form-label small text-secondary mb-1">CRM client (3PL)</label>
-          <select
-            v-model="selectedClientAccountId"
-            class="form-select"
-            :disabled="clientAccountsLoading"
-          >
-            <option value="">Default (see .env SHIPHERO_CUSTOMER_ACCOUNT_ID if set)</option>
-            <option
-              v-for="a in clientAccountOptions"
-              :key="a.id"
-              :value="String(a.id)"
-              :disabled="!a.has_shiphero_customer"
-            >
-              {{ a.company_name }}
-              {{ a.has_shiphero_customer ? "" : " (no ShipHero ID)" }}
-            </option>
-          </select>
-        </div>
-      </div>
-
-      <div class="row g-3 align-items-end mb-4">
-        <div class="col-12 col-md-4">
+        <div class="col-12 col-md-8">
           <label class="form-label small text-secondary mb-1">SKU or barcode</label>
           <input
             v-model="queryInput"
@@ -171,18 +98,6 @@ function openDetail(product) {
             placeholder="Scan or type SKU / barcode"
             @keyup.enter="runSearch"
           />
-        </div>
-        <div class="col-12 col-md-4">
-          <label class="form-label small text-secondary mb-1">Warehouse</label>
-          <select v-model="selectedWarehouseId" class="form-select">
-            <option value="">All warehouses</option>
-            <option v-for="w in warehouses" :key="w.id" :value="w.id">
-              {{ w.label || w.identifier || w.id }}
-            </option>
-          </select>
-          <p v-if="warehouseWarning" class="small text-warning mb-0 mt-1">
-            {{ warehouseWarning }}
-          </p>
         </div>
         <div class="col-12 col-md-4 d-grid d-md-block">
           <button
@@ -232,7 +147,6 @@ function openDetail(product) {
           </button>
         </div>
       </div>
-    </template>
   </div>
 </template>
 

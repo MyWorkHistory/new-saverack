@@ -312,7 +312,8 @@ class InventoryController extends Controller
             'sku' => ['required', 'string', 'max:255'],
             'warehouse_id' => ['required', 'string', 'max:255'],
             'from_location_id' => ['required', 'string', 'max:255'],
-            'to_location_id' => ['required', 'string', 'max:255'],
+            'to_location_id' => ['nullable', 'string', 'max:255'],
+            'to_location' => ['nullable', 'string', 'max:255'],
             'quantity' => ['required', 'integer', 'min:1'],
             'reason' => ['nullable', 'string', 'max:500'],
             'client_account_id' => ['nullable', 'integer', 'exists:client_accounts,id'],
@@ -329,12 +330,31 @@ class InventoryController extends Controller
                 $clientAccountId > 0 ? $clientAccountId : null,
                 $request,
             );
+            $toLocationId = isset($validated['to_location_id']) && is_string($validated['to_location_id'])
+                ? trim($validated['to_location_id'])
+                : '';
+            if ($toLocationId === '') {
+                $toLocationInput = isset($validated['to_location']) && is_string($validated['to_location'])
+                    ? trim($validated['to_location'])
+                    : '';
+                $resolved = $this->inventory->resolveWarehouseLocation(
+                    $validated['warehouse_id'],
+                    $toLocationInput,
+                    $shipheroCustomerId
+                );
+                if (! is_array($resolved)) {
+                    throw ValidationException::withMessages([
+                        'to_location' => ['Location not found in this warehouse.'],
+                    ]);
+                }
+                $toLocationId = (string) ($resolved['id'] ?? '');
+            }
 
             $updated = $this->inventory->transferLocationQuantity(
                 $validated['sku'],
                 $validated['warehouse_id'],
                 $validated['from_location_id'],
-                $validated['to_location_id'],
+                $toLocationId,
                 (int) $validated['quantity'],
                 $reason,
                 $shipheroCustomerId
@@ -350,6 +370,96 @@ class InventoryController extends Controller
         } catch (Throwable $e) {
             report($e);
 
+            return response()->json([
+                'message' => config('app.debug')
+                    ? $e->getMessage()
+                    : 'Could not reach ShipHero. Check SHIPHERO_* in .env and server logs.',
+            ], 502);
+        }
+    }
+
+    public function updateLocationPickable(Request $request): JsonResponse
+    {
+        $validated = $request->validate([
+            'location_id' => ['required', 'string', 'max:255'],
+            'pickable' => ['required', 'boolean'],
+            'sellable' => ['nullable', 'boolean'],
+            'client_account_id' => ['nullable', 'integer', 'exists:client_accounts,id'],
+        ]);
+        $clientAccountId = isset($validated['client_account_id']) ? (int) $validated['client_account_id'] : null;
+        try {
+            $shipheroCustomerId = $this->resolveShipHeroCustomerAccountId(
+                $clientAccountId > 0 ? $clientAccountId : null,
+                $request,
+            );
+            $location = $this->inventory->updateLocationPickable(
+                $validated['location_id'],
+                (bool) $validated['pickable'],
+                array_key_exists('sellable', $validated) ? (bool) $validated['sellable'] : null,
+                $shipheroCustomerId
+            );
+            return response()->json(['location' => $location]);
+        } catch (ValidationException $e) {
+            throw $e;
+        } catch (RuntimeException $e) {
+            return response()->json(['message' => $e->getMessage()], 502);
+        } catch (Throwable $e) {
+            report($e);
+            return response()->json([
+                'message' => config('app.debug')
+                    ? $e->getMessage()
+                    : 'Could not reach ShipHero. Check SHIPHERO_* in .env and server logs.',
+            ], 502);
+        }
+    }
+
+    public function addLocationQuantity(Request $request): JsonResponse
+    {
+        $validated = $request->validate([
+            'sku' => ['required', 'string', 'max:255'],
+            'warehouse_id' => ['required', 'string', 'max:255'],
+            'location' => ['required', 'string', 'max:255'],
+            'quantity' => ['required', 'integer', 'min:0'],
+            'reason' => ['nullable', 'string', 'max:500'],
+            'client_account_id' => ['nullable', 'integer', 'exists:client_accounts,id'],
+        ]);
+        $reason = isset($validated['reason']) && is_string($validated['reason'])
+            ? $validated['reason']
+            : 'CRM inventory replace';
+        $clientAccountId = isset($validated['client_account_id']) ? (int) $validated['client_account_id'] : null;
+        try {
+            $shipheroCustomerId = $this->resolveShipHeroCustomerAccountId(
+                $clientAccountId > 0 ? $clientAccountId : null,
+                $request,
+            );
+            $resolved = $this->inventory->resolveWarehouseLocation(
+                $validated['warehouse_id'],
+                $validated['location'],
+                $shipheroCustomerId
+            );
+            if (! is_array($resolved)) {
+                throw ValidationException::withMessages([
+                    'location' => ['Location not found in this warehouse.'],
+                ]);
+            }
+            $updated = $this->inventory->replaceLocationQuantity(
+                $validated['sku'],
+                $validated['warehouse_id'],
+                (string) ($resolved['id'] ?? ''),
+                (int) $validated['quantity'],
+                $reason,
+                $shipheroCustomerId
+            );
+            return response()->json([
+                'warehouse' => $updated,
+                'location' => $resolved,
+            ]);
+        } catch (ValidationException $e) {
+            throw $e;
+        } catch (RuntimeException $e) {
+            return response()->json(['message' => $e->getMessage()], 502);
+        } catch (Throwable $e) {
+            report($e);
             return response()->json([
                 'message' => config('app.debug')
                     ? $e->getMessage()

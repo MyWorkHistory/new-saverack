@@ -198,7 +198,156 @@ GQL;
         return [
             'warehouse_id' => $wid,
             'warehouse_name' => $whName,
-            'locations' => $this->normalizeLocations($wp['locations'] ?? null),
+            'locations' => $this->normalizeLocations($wp['locations'] ?? null, $wid),
+        ];
+    }
+
+    /**
+     * @param string|null $customerAccountId
+     * @return list<array{id:string,name:string,type:?string,pickable:?bool,sellable:?bool}>
+     */
+    public function listLocations(string $warehouseId, ?string $customerAccountId = null): array
+    {
+        $warehouseId = trim($warehouseId);
+        if ($warehouseId === '') {
+            return [];
+        }
+        $graphql = <<<'GQL'
+query ShipHeroLocationsByWarehouse($warehouse_id: String!, $customer_account_id: String) {
+  locations(warehouse_id: $warehouse_id, customer_account_id: $customer_account_id) {
+    data {
+      edges {
+        node {
+          id
+          name
+          type {
+            name
+          }
+          pickable
+          sellable
+        }
+      }
+    }
+  }
+}
+GQL;
+        $json = $this->client->query($graphql, array_merge(
+            ['warehouse_id' => $warehouseId],
+            $this->customerAccountVariables($customerAccountId)
+        ));
+        $edges = data_get($json, 'data.locations.data.edges');
+        if (! is_array($edges)) {
+            return [];
+        }
+        $out = [];
+        foreach ($edges as $edge) {
+            if (! is_array($edge)) {
+                continue;
+            }
+            $node = $edge['node'] ?? null;
+            if (! is_array($node)) {
+                continue;
+            }
+            $id = trim((string) ($node['id'] ?? ''));
+            if ($id === '') {
+                continue;
+            }
+            $name = trim((string) ($node['name'] ?? ''));
+            $typeName = trim((string) data_get($node, 'type.name', ''));
+            $out[] = [
+                'id' => $id,
+                'name' => $name,
+                'type' => $typeName !== '' ? $typeName : null,
+                'pickable' => array_key_exists('pickable', $node) ? (bool) $node['pickable'] : null,
+                'sellable' => array_key_exists('sellable', $node) ? (bool) $node['sellable'] : null,
+            ];
+        }
+        return $out;
+    }
+
+    /**
+     * @param string|null $customerAccountId
+     * @return array{id:string,name:string,type:?string,pickable:?bool,sellable:?bool}|null
+     */
+    public function resolveWarehouseLocation(string $warehouseId, string $locationInput, ?string $customerAccountId = null): ?array
+    {
+        $needle = trim($locationInput);
+        if ($needle === '') {
+            return null;
+        }
+        $locations = $this->listLocations($warehouseId, $customerAccountId);
+        if ($locations === []) {
+            return null;
+        }
+        foreach ($locations as $loc) {
+            if (strcasecmp($loc['id'], $needle) === 0) {
+                return $loc;
+            }
+        }
+        foreach ($locations as $loc) {
+            if (strcasecmp($loc['name'], $needle) === 0) {
+                return $loc;
+            }
+        }
+        return null;
+    }
+
+    /**
+     * @param string|null $customerAccountId
+     * @return array{id:string,name:string,type:?string,pickable:?bool,sellable:?bool}
+     */
+    public function updateLocationPickable(
+        string $locationId,
+        bool $pickable,
+        ?bool $sellable = null,
+        ?string $customerAccountId = null
+    ): array {
+        $locationId = trim($locationId);
+        if ($locationId === '') {
+            throw new RuntimeException('location_id is required.');
+        }
+        $input = [
+            'location_id' => $locationId,
+            'pickable' => $pickable,
+        ];
+        if ($sellable !== null) {
+            $input['sellable'] = $sellable;
+        }
+        if (is_string($customerAccountId) && trim($customerAccountId) !== '') {
+            $input['customer_account_id'] = trim($customerAccountId);
+        }
+        $graphql = <<<'GQL'
+mutation ShipHeroLocationUpdate($data: LocationUpdateInput!) {
+  location_update(data: $data) {
+    location {
+      id
+      name
+      type {
+        name
+      }
+      pickable
+      sellable
+    }
+  }
+}
+GQL;
+        $json = $this->client->query($graphql, ['data' => $input]);
+        $node = data_get($json, 'data.location_update.location');
+        if (! is_array($node)) {
+            throw new RuntimeException('ShipHero did not return updated location.');
+        }
+        $id = trim((string) ($node['id'] ?? ''));
+        if ($id === '') {
+            throw new RuntimeException('ShipHero location_update response is missing id.');
+        }
+        $name = trim((string) ($node['name'] ?? ''));
+        $typeName = trim((string) data_get($node, 'type.name', ''));
+        return [
+            'id' => $id,
+            'name' => $name,
+            'type' => $typeName !== '' ? $typeName : null,
+            'pickable' => array_key_exists('pickable', $node) ? (bool) $node['pickable'] : null,
+            'sellable' => array_key_exists('sellable', $node) ? (bool) $node['sellable'] : null,
         ];
     }
 
@@ -886,7 +1035,7 @@ GQL;
                         'full_custom_value' => $full['custom_value'] ?? null,
                     ],
                 ]);
-                return $normalized;
+                return $this->enrichProductLocationsMeta($normalized, $customerAccountId);
             }
         } catch (\Throwable $e) {
             Log::warning('shiphero.inventory.detail.by_id_failed_fallback', [
@@ -906,7 +1055,7 @@ GQL;
             'metrics' => $normalized['metrics'] ?? null,
             'source' => 'product_by_sku_or_barcode',
         ]);
-        return $normalized;
+        return $this->enrichProductLocationsMeta($normalized, $customerAccountId);
     }
 
     /**
@@ -1037,6 +1186,63 @@ GQL;
             $reason,
             $customerAccountId
         );
+    }
+
+    /**
+     * @param array<string,mixed> $normalized
+     * @param string|null $customerAccountId
+     * @return array<string,mixed>
+     */
+    private function enrichProductLocationsMeta(array $normalized, ?string $customerAccountId): array
+    {
+        $warehouses = $normalized['warehouses'] ?? null;
+        if (! is_array($warehouses) || $warehouses === []) {
+            return $normalized;
+        }
+        foreach ($warehouses as $wIndex => $warehouse) {
+            if (! is_array($warehouse)) {
+                continue;
+            }
+            $wid = trim((string) ($warehouse['warehouse_id'] ?? ''));
+            if ($wid === '') {
+                continue;
+            }
+            $catalog = [];
+            try {
+                foreach ($this->listLocations($wid, $customerAccountId) as $locationMeta) {
+                    $catalog[strtolower((string) $locationMeta['id'])] = $locationMeta;
+                }
+            } catch (\Throwable $e) {
+                Log::warning('shiphero.inventory.locations_meta_lookup_failed', [
+                    'warehouse_id' => $wid,
+                    'customer_account_id' => $customerAccountId,
+                    'message' => $e->getMessage(),
+                ]);
+            }
+            if ($catalog === []) {
+                continue;
+            }
+            $locations = $warehouse['locations'] ?? null;
+            if (! is_array($locations)) {
+                continue;
+            }
+            foreach ($locations as $lIndex => $location) {
+                if (! is_array($location)) {
+                    continue;
+                }
+                $locationId = strtolower(trim((string) ($location['location_id'] ?? '')));
+                if ($locationId === '' || ! isset($catalog[$locationId])) {
+                    continue;
+                }
+                $meta = $catalog[$locationId];
+                $warehouse['locations'][$lIndex]['pickable'] = $meta['pickable'];
+                if (is_string($meta['type']) && trim($meta['type']) !== '') {
+                    $warehouse['locations'][$lIndex]['type'] = trim($meta['type']);
+                }
+            }
+            $normalized['warehouses'][$wIndex] = $warehouse;
+        }
+        return $normalized;
     }
 
     /**

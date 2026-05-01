@@ -20,9 +20,11 @@ const actionMenuRect = ref({ top: 0, left: 0 });
 
 const updateModalOpen = ref(false);
 const transferModalOpen = ref(false);
+const addLocationModalOpen = ref(false);
 const activeLocation = ref(null);
 const updateForm = reactive({ quantity: "", reason: "Client-Requested Adjustments" });
-const transferForm = reactive({ to_location_id: "", quantity: "", reason: "Inventory Reclassification" });
+const transferForm = reactive({ to_location: "", quantity: "", reason: "Inventory Reclassification" });
+const addLocationForm = reactive({ location: "", quantity: "", reason: "Inventory Reclassification" });
 
 const inventoryReasons = [
   "Account Setup",
@@ -50,6 +52,17 @@ const summaryMetrics = computed(() => product.value?.metrics || {
   asn: 0,
 });
 
+const metricCards = computed(() => ([
+  { key: "on_hand", label: "On Hand", icon: "bi-box-seam" },
+  { key: "allocated", label: "Allocated", icon: "bi-stack" },
+  { key: "available", label: "Available", icon: "bi-check2-circle" },
+  { key: "backorder", label: "Backorder", icon: "bi-exclamation-circle" },
+  { key: "asn", label: "ASN", icon: "bi-truck" },
+]).map((item) => ({
+  ...item,
+  value: Number(summaryMetrics.value?.[item.key] || 0),
+})));
+
 const allLocations = computed(() => {
   const out = [];
   const p = product.value;
@@ -74,11 +87,6 @@ const filteredLocations = computed(() => {
     String(loc.location_name || loc.location_id || "").toLowerCase().includes(q),
   );
 });
-
-const locationOptions = computed(() => filteredLocations.value.map((loc) => ({
-  id: String(loc.location_id),
-  label: String(loc.location_name || loc.location_id || "Location"),
-})));
 
 function displayVal(v) {
   if (v === null || v === undefined) return "—";
@@ -173,10 +181,24 @@ function openTransferQtyModal() {
   const loc = currentMenuLocation();
   if (!loc) return;
   activeLocation.value = loc;
-  transferForm.to_location_id = "";
+  transferForm.to_location = "";
   transferForm.quantity = "";
   transferModalOpen.value = true;
   actionMenuLocationId.value = null;
+}
+
+function openAddLocationModal() {
+  addLocationForm.location = "";
+  addLocationForm.quantity = "";
+  addLocationForm.reason = "Inventory Reclassification";
+  addLocationModalOpen.value = true;
+}
+
+function activeWarehouseId() {
+  const routeWarehouse = String(route.query.warehouse_id || "").trim();
+  if (routeWarehouse) return routeWarehouse;
+  const firstWarehouse = product.value?.warehouses?.[0]?.warehouse_id;
+  return String(firstWarehouse || "").trim();
 }
 
 async function submitUpdateQty() {
@@ -209,6 +231,45 @@ async function submitUpdateQty() {
   }
 }
 
+async function submitAddLocationQty() {
+  if (!product.value) return;
+  const qty = parseInt(String(addLocationForm.quantity || ""), 10);
+  if (!addLocationForm.location.trim()) {
+    toast.error("Enter location.");
+    return;
+  }
+  if (Number.isNaN(qty) || qty < 0) {
+    toast.error("Enter a valid quantity.");
+    return;
+  }
+  const warehouseId = activeWarehouseId();
+  if (!warehouseId) {
+    toast.error("Warehouse is required for add location.");
+    return;
+  }
+  saving.value = true;
+  try {
+    const body = {
+      sku: product.value.sku,
+      warehouse_id: warehouseId,
+      location: addLocationForm.location.trim(),
+      quantity: qty,
+      reason: addLocationForm.reason,
+    };
+    if (route.query.client_account_id) {
+      body.client_account_id = Number(route.query.client_account_id);
+    }
+    await api.post("/inventory/locations/add-qty", body);
+    toast.success("Location quantity updated.");
+    addLocationModalOpen.value = false;
+    await loadDetail();
+  } catch (e) {
+    toast.errorFrom(e, "Location not found or quantity update failed.");
+  } finally {
+    saving.value = false;
+  }
+}
+
 async function submitTransferQty() {
   if (!activeLocation.value || !product.value) return;
   const qty = parseInt(String(transferForm.quantity || ""), 10);
@@ -216,8 +277,8 @@ async function submitTransferQty() {
     toast.error("Enter a valid transfer quantity.");
     return;
   }
-  if (!transferForm.to_location_id) {
-    toast.error("Select destination location.");
+  if (!transferForm.to_location.trim()) {
+    toast.error("Enter destination location.");
     return;
   }
   saving.value = true;
@@ -226,7 +287,7 @@ async function submitTransferQty() {
       sku: product.value.sku,
       warehouse_id: activeLocation.value.warehouse_id,
       from_location_id: activeLocation.value.location_id,
-      to_location_id: transferForm.to_location_id,
+      to_location: transferForm.to_location.trim(),
       quantity: qty,
       reason: transferForm.reason,
     };
@@ -245,11 +306,24 @@ async function submitTransferQty() {
 }
 
 async function togglePickable(loc) {
-  if (loc.pickable === null || loc.pickable === undefined) {
-    toast.error("Pickable update API is not available yet for this location.");
-    return;
+  if (!loc?.location_id) return;
+  saving.value = true;
+  try {
+    const body = {
+      location_id: String(loc.location_id),
+      pickable: !Boolean(loc.pickable),
+    };
+    if (route.query.client_account_id) {
+      body.client_account_id = Number(route.query.client_account_id);
+    }
+    await api.post("/inventory/locations/pickable", body);
+    loc.pickable = !Boolean(loc.pickable);
+    toast.success("Pickable updated.");
+  } catch (e) {
+    toast.errorFrom(e, "Could not update pickable.");
+  } finally {
+    saving.value = false;
   }
-  toast.error("Pickable update API is not available yet for this account.");
 }
 </script>
 
@@ -299,20 +373,14 @@ async function togglePickable(loc) {
 
           <div class="col-12 col-xl-9">
             <div class="row g-2 mb-3">
-              <div class="col-6 col-md">
-                <div class="staff-table-card p-3 text-center"><div class="small text-secondary">On Hand</div><div class="h5 mb-0">{{ summaryMetrics.on_hand }}</div></div>
-              </div>
-              <div class="col-6 col-md">
-                <div class="staff-table-card p-3 text-center"><div class="small text-secondary">Allocated</div><div class="h5 mb-0">{{ summaryMetrics.allocated }}</div></div>
-              </div>
-              <div class="col-6 col-md">
-                <div class="staff-table-card p-3 text-center"><div class="small text-secondary">Available</div><div class="h5 mb-0">{{ summaryMetrics.available }}</div></div>
-              </div>
-              <div class="col-6 col-md">
-                <div class="staff-table-card p-3 text-center"><div class="small text-secondary">Backorder</div><div class="h5 mb-0">{{ summaryMetrics.backorder }}</div></div>
-              </div>
-              <div class="col-6 col-md">
-                <div class="staff-table-card p-3 text-center"><div class="small text-secondary">ASN</div><div class="h5 mb-0">{{ summaryMetrics.asn }}</div></div>
+              <div v-for="card in metricCards" :key="card.key" class="col-6 col-md">
+                <div class="staff-table-card p-3 inventory-metric-card">
+                  <div class="inventory-metric-card__head">
+                    <i class="bi inventory-metric-card__icon" :class="card.icon" aria-hidden="true" />
+                    <div class="small text-secondary">{{ card.label }}</div>
+                  </div>
+                  <div class="h5 mb-0">{{ card.value }}</div>
+                </div>
               </div>
             </div>
 
@@ -326,7 +394,7 @@ async function togglePickable(loc) {
                     placeholder="Search locations"
                   />
                   <button type="button" class="btn btn-outline-secondary staff-toolbar-btn" disabled>Filters</button>
-                  <button type="button" class="btn btn-primary staff-toolbar-btn" disabled title="Add Location API not available yet">
+                  <button type="button" class="btn btn-primary staff-toolbar-btn" @click="openAddLocationModal">
                     Add Location
                   </button>
                 </div>
@@ -457,16 +525,7 @@ async function togglePickable(loc) {
             </header>
             <div class="crm-vx-modal__body">
               <label class="form-label small">Transfer To</label>
-              <select v-model="transferForm.to_location_id" class="form-select mb-3">
-                <option value="">Select location</option>
-                <option
-                  v-for="loc in locationOptions"
-                  :key="loc.id"
-                  :value="loc.id"
-                >
-                  {{ loc.label }}
-                </option>
-              </select>
+              <input v-model="transferForm.to_location" type="text" class="form-control mb-3" placeholder="Type location name" />
               <label class="form-label small">QTY</label>
               <input v-model="transferForm.quantity" type="number" min="1" class="form-control mb-3" />
               <label class="form-label small">Reason</label>
@@ -480,6 +539,34 @@ async function togglePickable(loc) {
               </button>
               <button type="button" class="crm-vx-modal-btn crm-vx-modal-btn--primary" :disabled="saving" @click="submitTransferQty">
                 {{ saving ? "Please wait..." : "Transfer" }}
+              </button>
+            </footer>
+          </div>
+        </div>
+      </Teleport>
+
+      <Teleport to="body">
+        <div v-if="addLocationModalOpen" class="crm-vx-modal-overlay" @click.self="addLocationModalOpen = false">
+          <div class="crm-vx-modal crm-vx-modal--sm">
+            <header class="crm-vx-modal__head">
+              <h2 class="crm-vx-modal__title">Add Location</h2>
+            </header>
+            <div class="crm-vx-modal__body">
+              <label class="form-label small">Location</label>
+              <input v-model="addLocationForm.location" type="text" class="form-control mb-3" placeholder="Type location name" />
+              <label class="form-label small">QTY</label>
+              <input v-model="addLocationForm.quantity" type="number" min="0" class="form-control mb-3" />
+              <label class="form-label small">Reason</label>
+              <select v-model="addLocationForm.reason" class="form-select">
+                <option v-for="reason in inventoryReasons" :key="reason" :value="reason">{{ reason }}</option>
+              </select>
+            </div>
+            <footer class="crm-vx-modal__footer">
+              <button type="button" class="crm-vx-modal-btn crm-vx-modal-btn--secondary" :disabled="saving" @click="addLocationModalOpen = false">
+                Cancel
+              </button>
+              <button type="button" class="crm-vx-modal-btn crm-vx-modal-btn--primary" :disabled="saving" @click="submitAddLocationQty">
+                {{ saving ? "Please wait..." : "Update" }}
               </button>
             </footer>
           </div>
@@ -515,5 +602,18 @@ async function togglePickable(loc) {
 .inventory-detail__toggle--off {
   background: #ef4444;
   color: #fff;
+}
+.inventory-metric-card {
+  text-align: left;
+}
+.inventory-metric-card__head {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  margin-bottom: 0.35rem;
+}
+.inventory-metric-card__icon {
+  font-size: 0.95rem;
+  color: #334155;
 }
 </style>

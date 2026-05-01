@@ -1,70 +1,55 @@
 <script setup>
-import { computed, inject, onMounted, ref, watch } from "vue";
+import { computed, onMounted, ref } from "vue";
+import { useRouter } from "vue-router";
 import api from "../../services/api";
 import CrmLoadingSpinner from "../../components/common/CrmLoadingSpinner.vue";
 import { setCrmPageMeta } from "../../composables/useCrmPageMeta.js";
 import { useToast } from "../../composables/useToast.js";
-import { crmIsAdmin } from "../../utils/crmUser.js";
 
-const crmUser = inject("crmUser", ref(null));
+const router = useRouter();
 const toast = useToast();
 
 const warehousesLoading = ref(true);
 const warehouses = ref([]);
-/** Empty string = all warehouses */
 const selectedWarehouseId = ref("");
 const warehouseWarning = ref("");
 
 const clientAccountsLoading = ref(false);
 const clientAccountOptions = ref([]);
-/** Empty string = no CRM row selected (uses optional SHIPHERO_CUSTOMER_ACCOUNT_ID in .env if set) */
 const selectedClientAccountId = ref("");
 
 const queryInput = ref("");
 const searchBusy = ref(false);
-const product = ref(null);
+const searchResults = ref([]);
 const pageError = ref("");
-const diagnosticBusy = ref(false);
-const diagnosticResult = ref("");
 
-/** key: `${warehouse_id}::${location_id}` -> quantity string */
-const editQty = ref({});
-
-const savingRowKey = ref(null);
-
-const canUpdateInventory = computed(() => {
-  const u = crmUser?.value;
-  if (!u) return false;
-  if (crmIsAdmin(u) || u.is_crm_owner) return true;
-  const k = u.permission_keys;
-  return Array.isArray(k) && k.includes("inventory.update");
-});
-
-function rowKey(warehouseId, locationId) {
-  return `${warehouseId}::${locationId}`;
-}
-
-function syncEditQtyFromProduct() {
-  const next = {};
-  const p = product.value;
-  if (!p?.warehouses) {
-    editQty.value = next;
-    return;
-  }
-  for (const wh of p.warehouses) {
-    for (const loc of wh.locations || []) {
-      next[rowKey(wh.warehouse_id, loc.location_id)] = String(loc.quantity ?? 0);
-    }
-  }
-  editQty.value = next;
-}
-
-watch(product, syncEditQtyFromProduct);
+const resultCards = computed(() =>
+  (searchResults.value || []).map((product) => {
+    const warehousesList = Array.isArray(product?.warehouses) ? product.warehouses : [];
+    let onHand = 0;
+    let allocated = 0;
+    let backorder = 0;
+    warehousesList.forEach((wh) => {
+      onHand += Number(wh?.on_hand || 0);
+      allocated += Number(wh?.allocated || 0);
+      backorder += Number(wh?.backorder || 0);
+    });
+    return {
+      ...product,
+      metrics: {
+        on_hand: onHand,
+        allocated,
+        available: Math.max(0, onHand - allocated),
+        backorder,
+      },
+    };
+  }),
+);
 
 onMounted(() => {
   setCrmPageMeta({
     title: "Save Rack | Inventory",
-    description: "ShipHero live inventory search and location quantities.",
+    description: "ShipHero live inventory search.",
   });
   loadWarehouses();
   loadClientAccountOptions();
@@ -106,20 +91,15 @@ async function runSearch() {
   }
   searchBusy.value = true;
   pageError.value = "";
-  product.value = null;
+  searchResults.value = [];
   try {
     const params = { q };
-    if (selectedWarehouseId.value) {
-      params.warehouse_id = selectedWarehouseId.value;
-    }
-    if (selectedClientAccountId.value) {
-      params.client_account_id = Number(selectedClientAccountId.value);
-    }
+    if (selectedWarehouseId.value) params.warehouse_id = selectedWarehouseId.value;
+    if (selectedClientAccountId.value) params.client_account_id = Number(selectedClientAccountId.value);
     const { data } = await api.get("/inventory/search", { params });
-    product.value = data?.product ?? null;
-    if (!product.value) {
-      toast.error("No product found for that SKU or barcode.");
-    }
+    const product = data?.product ?? null;
+    searchResults.value = product ? [product] : [];
+    if (!product) toast.error("No product found for that SKU or barcode.");
   } catch (e) {
     pageError.value = e.response?.data?.message || "Search failed.";
     toast.errorFrom(e, "Search failed.");
@@ -128,71 +108,12 @@ async function runSearch() {
   }
 }
 
-async function saveRow(warehouseBlock, loc) {
-  const p = product.value;
-  if (!p?.sku || !warehouseBlock?.warehouse_id || !loc?.location_id) return;
-
-  const key = rowKey(warehouseBlock.warehouse_id, loc.location_id);
-  const raw = editQty.value[key];
-  const qty = parseInt(String(raw ?? "0"), 10);
-  if (Number.isNaN(qty) || qty < 0) {
-    toast.error("Enter a valid quantity (0 or greater).");
-    return;
-  }
-
-  savingRowKey.value = key;
-  try {
-    const body = {
-      sku: p.sku,
-      warehouse_id: warehouseBlock.warehouse_id,
-      location_id: loc.location_id,
-      quantity: qty,
-      reason: "CRM inventory adjustment",
-    };
-    if (selectedClientAccountId.value) {
-      body.client_account_id = Number(selectedClientAccountId.value);
-    }
-    const { data } = await api.post("/inventory/replace", body);
-    const updated = data?.warehouse;
-    if (updated?.warehouse_id && Array.isArray(p.warehouses)) {
-      const idx = p.warehouses.findIndex((w) => w.warehouse_id === updated.warehouse_id);
-      if (idx !== -1) {
-        p.warehouses[idx] = {
-          ...p.warehouses[idx],
-          ...updated,
-          locations: updated.locations || [],
-        };
-      }
-      for (const nl of updated.locations || []) {
-        editQty.value[rowKey(updated.warehouse_id, nl.location_id)] = String(
-          nl.quantity ?? 0,
-        );
-      }
-    }
-    toast.success("Quantity updated.");
-  } catch (e) {
-    toast.errorFrom(e, "Could not update quantity.");
-  } finally {
-    savingRowKey.value = null;
-  }
-}
-
-async function runDiagnostic() {
-  diagnosticBusy.value = true;
-  diagnosticResult.value = "";
-  try {
-    const { data } = await api.get("/inventory/diagnostic");
-    diagnosticResult.value = JSON.stringify(data ?? {}, null, 2);
-  } catch (e) {
-    const fallback = {
-      ok: false,
-      message: e.response?.data?.message || "Could not run diagnostic.",
-    };
-    diagnosticResult.value = JSON.stringify(fallback, null, 2);
-    toast.errorFrom(e, "Could not run diagnostic.");
-  } finally {
-    diagnosticBusy.value = false;
-  }
+function openDetail(product) {
+  if (!product?.sku) return;
+  const query = {};
+  if (selectedClientAccountId.value) query.client_account_id = String(selectedClientAccountId.value);
+  if (selectedWarehouseId.value) query.warehouse_id = String(selectedWarehouseId.value);
+  router.push({ name: "inventory-detail", params: { sku: String(product.sku) }, query });
 }
 </script>
 
@@ -201,8 +122,7 @@ async function runDiagnostic() {
     <div class="mb-4">
       <h1 class="h4 mb-1 fw-semibold text-body">Inventory</h1>
       <p class="text-secondary small mb-0">
-        Live data from ShipHero — search by SKU or barcode, then adjust quantity per
-        location.
+        Search by SKU or barcode, then open product view page.
       </p>
     </div>
 
@@ -232,10 +152,6 @@ async function runDiagnostic() {
               {{ a.has_shiphero_customer ? "" : " (no ShipHero ID)" }}
             </option>
           </select>
-          <p class="small text-secondary mb-0 mt-1">
-            For 3PL, set each client’s ShipHero customer account ID on the account profile, then select
-            the client here. Optional env fallback when none is selected.
-          </p>
         </div>
       </div>
 
@@ -276,99 +192,51 @@ async function runDiagnostic() {
         </div>
       </div>
 
-      <div class="mb-4">
-        <button
-          type="button"
-          class="btn btn-sm btn-outline-secondary"
-          :disabled="diagnosticBusy"
-          @click="runDiagnostic"
-        >
-          <span v-if="diagnosticBusy" class="spinner-border spinner-border-sm me-1" />
-          Run diagnostic
-        </button>
-        <pre
-          v-if="diagnosticResult"
-          class="mt-2 mb-0 p-3 bg-light border rounded small"
-        ><code>{{ diagnosticResult }}</code></pre>
+      <div v-if="!searchResults.length" class="text-secondary small py-4 text-center">
+        Search for a product to view summary cards.
       </div>
 
-      <div v-if="!product" class="text-secondary small py-4 text-center">
-        Search for a product to see quantities by location.
-      </div>
-
-      <div v-else class="inventory-result">
-        <div class="mb-3">
-          <h2 class="h5 mb-1 fw-semibold">{{ product.sku || "—" }}</h2>
-          <p v-if="product.name" class="mb-1 text-body">{{ product.name }}</p>
-          <p v-if="product.barcode" class="small text-secondary mb-0">
-            Barcode: {{ product.barcode }}
-          </p>
-        </div>
-
+      <div v-else class="row g-3">
         <div
-          v-for="wh in product.warehouses || []"
-          :key="wh.warehouse_id"
-          class="card mb-3"
+          v-for="product in resultCards"
+          :key="product.sku"
+          class="col-12"
         >
-          <div class="card-header py-2 small fw-semibold">
-            {{ wh.warehouse_name || wh.warehouse_id }}
-          </div>
-          <div class="card-body p-0">
-            <div v-if="!(wh.locations || []).length" class="p-3 text-secondary small">
-              No locations for this warehouse.
+          <button
+            type="button"
+            class="card w-100 text-start border-0 shadow-sm inventory-summary-card"
+            @click="openDetail(product)"
+          >
+            <div class="card-body">
+              <div class="d-flex align-items-start justify-content-between gap-3 flex-wrap">
+                <div class="min-w-0">
+                  <h2 class="h6 mb-1 fw-semibold text-body">{{ product.name || "Product" }}</h2>
+                  <p class="mb-0 small text-secondary">SKU: {{ product.sku || "—" }}</p>
+                  <p v-if="product.barcode" class="mb-0 small text-secondary">
+                    Barcode: {{ product.barcode }}
+                  </p>
+                </div>
+                <div class="d-flex gap-3 flex-wrap small">
+                  <span>On Hand: <strong>{{ product.metrics.on_hand }}</strong></span>
+                  <span>Allocated: <strong>{{ product.metrics.allocated }}</strong></span>
+                  <span>Available: <strong>{{ product.metrics.available }}</strong></span>
+                  <span>Backorder: <strong>{{ product.metrics.backorder }}</strong></span>
+                </div>
+              </div>
             </div>
-            <div v-else class="table-responsive">
-              <table class="table table-sm align-middle mb-0">
-                <thead>
-                  <tr>
-                    <th class="ps-3">Location</th>
-                    <th style="width: 8rem">QTY</th>
-                    <th v-if="canUpdateInventory" class="pe-3" style="width: 7rem" />
-                  </tr>
-                </thead>
-                <tbody>
-                  <tr v-for="loc in wh.locations" :key="loc.location_id">
-                    <td class="ps-3">
-                      <span class="text-body">{{
-                        loc.location_name || loc.location_id
-                      }}</span>
-                    </td>
-                    <td>
-                      <span v-if="!canUpdateInventory" class="fw-medium">{{
-                        loc.quantity
-                      }}</span>
-                      <input
-                        v-else
-                        v-model="editQty[rowKey(wh.warehouse_id, loc.location_id)]"
-                        type="number"
-                        min="0"
-                        class="form-control form-control-sm"
-                      />
-                    </td>
-                    <td v-if="canUpdateInventory" class="pe-3 text-end">
-                      <button
-                        type="button"
-                        class="btn btn-sm btn-outline-primary"
-                        :disabled="
-                          savingRowKey === rowKey(wh.warehouse_id, loc.location_id)
-                        "
-                        @click="saveRow(wh, loc)"
-                      >
-                        <span
-                          v-if="savingRowKey === rowKey(wh.warehouse_id, loc.location_id)"
-                          class="spinner-border spinner-border-sm"
-                          aria-hidden="true"
-                        />
-                        <span v-else>Save</span>
-                      </button>
-                    </td>
-                  </tr>
-                </tbody>
-              </table>
-            </div>
-          </div>
+          </button>
         </div>
       </div>
     </template>
   </div>
 </template>
+
+<style scoped>
+.inventory-summary-card {
+  transition: transform 0.15s ease, box-shadow 0.15s ease;
+}
+.inventory-summary-card:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 8px 18px rgba(15, 23, 42, 0.1) !important;
+}
+</style>

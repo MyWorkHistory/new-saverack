@@ -199,11 +199,29 @@ query ShipHeroProductBySku($sku: String!, $customer_account_id: String) {
   product(sku: $sku, customer_account_id: $customer_account_id) {
     data {
       id
+      legacy_id
+      account_id
       sku
       name
       barcode
+      customs_value
+      customs_description
+      image
+      dimensions {
+        weight
+        height
+        width
+        length
+      }
+      kit_components {
+        quantity
+        sku
+      }
       warehouse_products {
         warehouse_id
+        on_hand
+        reserve_inventory
+        replenishment_level
         warehouse {
           identifier
           company_name
@@ -216,6 +234,8 @@ query ShipHeroProductBySku($sku: String!, $customer_account_id: String) {
               quantity
               location {
                 name
+                pickable
+                type
               }
             }
           }
@@ -242,11 +262,29 @@ query ShipHeroProductByBarcode($barcode: String!, $customer_account_id: String) 
   product(barcode: $barcode, customer_account_id: $customer_account_id) {
     data {
       id
+      legacy_id
+      account_id
       sku
       name
       barcode
+      customs_value
+      customs_description
+      image
+      dimensions {
+        weight
+        height
+        width
+        length
+      }
+      kit_components {
+        quantity
+        sku
+      }
       warehouse_products {
         warehouse_id
+        on_hand
+        reserve_inventory
+        replenishment_level
         warehouse {
           identifier
           company_name
@@ -259,6 +297,8 @@ query ShipHeroProductByBarcode($barcode: String!, $customer_account_id: String) 
               quantity
               location {
                 name
+                pickable
+                type
               }
             }
           }
@@ -281,6 +321,9 @@ GQL;
     private function normalizeProduct(array $data, ?string $warehouseFilter): array
     {
         $warehousesOut = [];
+        $onHand = 0;
+        $allocated = 0;
+        $backorder = 0;
         $wps = $data['warehouse_products'] ?? null;
         if (! is_array($wps)) {
             $wps = [];
@@ -298,18 +341,46 @@ GQL;
                 continue;
             }
             $wh = is_array($wp['warehouse'] ?? null) ? $wp['warehouse'] : [];
+            $warehouseOnHand = (int) ($wp['on_hand'] ?? 0);
+            $warehouseAllocated = (int) ($wp['reserve_inventory'] ?? 0);
+            $warehouseBackorder = (int) ($wp['replenishment_level'] ?? 0);
+            $onHand += max(0, $warehouseOnHand);
+            $allocated += max(0, $warehouseAllocated);
+            $backorder += max(0, $warehouseBackorder);
             $warehousesOut[] = [
                 'warehouse_id' => $wid,
                 'warehouse_name' => $this->warehouseDisplayName($wh),
-                'locations' => $this->normalizeLocations($wp['locations'] ?? null),
+                'on_hand' => max(0, $warehouseOnHand),
+                'allocated' => max(0, $warehouseAllocated),
+                'backorder' => max(0, $warehouseBackorder),
+                'locations' => $this->normalizeLocations($wp['locations'] ?? null, $wid),
             ];
         }
+
+        $dimensions = is_array($data['dimensions'] ?? null) ? $data['dimensions'] : [];
 
         return [
             'id' => isset($data['id']) && is_string($data['id']) ? $data['id'] : null,
             'sku' => isset($data['sku']) && is_string($data['sku']) ? $data['sku'] : '',
             'name' => isset($data['name']) && is_string($data['name']) ? $data['name'] : null,
             'barcode' => isset($data['barcode']) && is_string($data['barcode']) ? $data['barcode'] : null,
+            'image_url' => isset($data['image']) && is_string($data['image']) ? $data['image'] : null,
+            'customs_value' => is_numeric($data['customs_value'] ?? null) ? (float) $data['customs_value'] : null,
+            'customs_description' => isset($data['customs_description']) && is_string($data['customs_description']) ? $data['customs_description'] : null,
+            'dimensions' => [
+                'weight' => is_numeric($dimensions['weight'] ?? null) ? (float) $dimensions['weight'] : null,
+                'height' => is_numeric($dimensions['height'] ?? null) ? (float) $dimensions['height'] : null,
+                'width' => is_numeric($dimensions['width'] ?? null) ? (float) $dimensions['width'] : null,
+                'length' => is_numeric($dimensions['length'] ?? null) ? (float) $dimensions['length'] : null,
+            ],
+            'metrics' => [
+                'on_hand' => $onHand,
+                'allocated' => $allocated,
+                'available' => max(0, $onHand - $allocated),
+                'backorder' => $backorder,
+                'asn' => 0,
+            ],
+            'kit_components' => $this->normalizeKitComponents($data['kit_components'] ?? null),
             'warehouses' => $warehousesOut,
         ];
     }
@@ -332,9 +403,17 @@ GQL;
     /**
      * @param  mixed  $locations
      *
-     * @return array<int, array{item_location_id: string, location_id: string, location_name: string|null, quantity: int}>
+     * @return array<int, array{
+     *  item_location_id:string,
+     *  location_id:string,
+     *  location_name:string|null,
+     *  quantity:int,
+     *  pickable:bool|null,
+     *  type:string|null,
+     *  warehouse_id:string|null
+     * }>
      */
-    private function normalizeLocations($locations): array
+    private function normalizeLocations($locations, ?string $warehouseId = null): array
     {
         $edges = null;
         if (is_array($locations)) {
@@ -366,16 +445,151 @@ GQL;
             $qty = is_int($qty) ? $qty : (int) $qty;
             $loc = is_array($node['location'] ?? null) ? $node['location'] : [];
             $locName = isset($loc['name']) && is_string($loc['name']) ? $loc['name'] : null;
+            $pickable = null;
+            if (array_key_exists('pickable', $loc)) {
+                $pickable = (bool) $loc['pickable'];
+            }
+            $type = isset($loc['type']) && is_string($loc['type']) && trim($loc['type']) !== ''
+                ? trim($loc['type'])
+                : $this->extractLocationTypeLabel($locName);
 
             $out[] = [
                 'item_location_id' => $itemLocId,
                 'location_id' => $locId,
                 'location_name' => $locName,
                 'quantity' => max(0, $qty),
+                'pickable' => $pickable,
+                'type' => $type,
+                'warehouse_id' => $warehouseId,
             ];
         }
 
         return $out;
+    }
+
+    /**
+     * @param mixed $components
+     * @return list<array{sku:string,quantity:float}>
+     */
+    private function normalizeKitComponents($components): array
+    {
+        if (! is_array($components)) {
+            return [];
+        }
+        $out = [];
+        foreach ($components as $component) {
+            if (! is_array($component)) {
+                continue;
+            }
+            $sku = trim((string) ($component['sku'] ?? ''));
+            if ($sku === '') {
+                continue;
+            }
+            $out[] = [
+                'sku' => $sku,
+                'quantity' => (float) ($component['quantity'] ?? 0),
+            ];
+        }
+        return $out;
+    }
+
+    private function extractLocationTypeLabel(?string $locationName): ?string
+    {
+        $source = trim((string) $locationName);
+        if ($source === '') {
+            return null;
+        }
+        if (preg_match('/\\b(bin|pallet|shelf)\\s*\\(\\s*(small|medium|large|x-?large)\\s*\\)/i', $source, $m) === 1) {
+            $base = ucfirst(strtolower((string) $m[1]));
+            $size = strtolower((string) $m[2]);
+            $normalizedSize = $size === 'xlarge' || $size === 'x-large' ? 'X-Large' : ucfirst($size);
+            return $base.' ('.$normalizedSize.')';
+        }
+        if (preg_match('/\\bcustom\\b/i', $source) === 1) return 'Custom';
+        if (preg_match('/\\bsleeve\\b/i', $source) === 1) return 'Sleeve';
+        return null;
+    }
+
+    /**
+     * @param string|null $customerAccountId
+     * @return array<string,mixed>|null
+     */
+    public function getProductDetailBySku(string $sku, ?string $warehouseId = null, ?string $customerAccountId = null): ?array
+    {
+        return $this->searchProduct($sku, $warehouseId, $customerAccountId);
+    }
+
+    /**
+     * Transfer quantity between two locations by issuing two replace mutations.
+     *
+     * @return array<string,mixed>
+     */
+    public function transferLocationQuantity(
+        string $sku,
+        string $warehouseId,
+        string $fromLocationId,
+        string $toLocationId,
+        int $quantity,
+        string $reason,
+        ?string $customerAccountId = null
+    ): array {
+        if ($quantity <= 0) {
+            throw new RuntimeException('Transfer quantity must be greater than zero.');
+        }
+        if ($fromLocationId === $toLocationId) {
+            throw new RuntimeException('Source and destination locations must be different.');
+        }
+        $product = $this->searchProduct($sku, $warehouseId, $customerAccountId);
+        if (! is_array($product)) {
+            throw new RuntimeException('Product not found for transfer.');
+        }
+        $warehouse = null;
+        foreach (($product['warehouses'] ?? []) as $wh) {
+            if (is_array($wh) && (string) ($wh['warehouse_id'] ?? '') === $warehouseId) {
+                $warehouse = $wh;
+                break;
+            }
+        }
+        if (! is_array($warehouse)) {
+            throw new RuntimeException('Warehouse not found for transfer.');
+        }
+        $fromQty = null;
+        $toQty = 0;
+        foreach (($warehouse['locations'] ?? []) as $loc) {
+            if (! is_array($loc)) {
+                continue;
+            }
+            if ((string) ($loc['location_id'] ?? '') === $fromLocationId) {
+                $fromQty = (int) ($loc['quantity'] ?? 0);
+            }
+            if ((string) ($loc['location_id'] ?? '') === $toLocationId) {
+                $toQty = (int) ($loc['quantity'] ?? 0);
+            }
+        }
+        if ($fromQty === null) {
+            throw new RuntimeException('Source location not found.');
+        }
+        if ($fromQty < $quantity) {
+            throw new RuntimeException('Transfer quantity exceeds source location quantity.');
+        }
+
+        $this->replaceLocationQuantity(
+            $sku,
+            $warehouseId,
+            $fromLocationId,
+            max(0, $fromQty - $quantity),
+            $reason,
+            $customerAccountId
+        );
+
+        return $this->replaceLocationQuantity(
+            $sku,
+            $warehouseId,
+            $toLocationId,
+            max(0, $toQty + $quantity),
+            $reason,
+            $customerAccountId
+        );
     }
 
     /**

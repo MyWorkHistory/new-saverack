@@ -50,7 +50,11 @@ Route::middleware('auth:sanctum')->group(function () {
             ->middleware('can:inventory.view');
         Route::get('/search', [InventoryController::class, 'search'])
             ->middleware('can:inventory.view');
+        Route::get('/products/{sku}', [InventoryController::class, 'productDetail'])
+            ->middleware('can:inventory.view');
         Route::post('/replace', [InventoryController::class, 'replaceQuantity'])
+            ->middleware('can:inventory.update');
+        Route::post('/transfer', [InventoryController::class, 'transferQuantity'])
             ->middleware('can:inventory.update');
         Route::get('/on-demand-products', [InventoryController::class, 'onDemandProducts'])
             ->middleware('can:inventory.view');

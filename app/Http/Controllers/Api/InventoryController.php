@@ -217,6 +217,43 @@ class InventoryController extends Controller
         }
     }
 
+    public function productDetail(Request $request, string $sku): JsonResponse
+    {
+        $validated = $request->validate([
+            'warehouse_id' => ['nullable', 'string', 'max:255'],
+            'client_account_id' => ['nullable', 'integer', 'exists:client_accounts,id'],
+        ]);
+        $warehouseId = isset($validated['warehouse_id']) && is_string($validated['warehouse_id']) && $validated['warehouse_id'] !== ''
+            ? $validated['warehouse_id']
+            : null;
+        $clientAccountId = isset($validated['client_account_id'])
+            ? (int) $validated['client_account_id']
+            : null;
+
+        try {
+            $shipheroCustomerId = $this->resolveShipHeroCustomerAccountId(
+                $clientAccountId > 0 ? $clientAccountId : null,
+                $request,
+            );
+            $product = $this->inventory->getProductDetailBySku($sku, $warehouseId, $shipheroCustomerId);
+            if (! is_array($product)) {
+                return response()->json(['message' => 'Product not found.'], 404);
+            }
+            return response()->json(['product' => $product]);
+        } catch (ValidationException $e) {
+            throw $e;
+        } catch (RuntimeException $e) {
+            return response()->json(['message' => $e->getMessage()], 502);
+        } catch (Throwable $e) {
+            report($e);
+            return response()->json([
+                'message' => config('app.debug')
+                    ? $e->getMessage()
+                    : 'Could not reach ShipHero. Check SHIPHERO_* in .env and server logs.',
+            ], 502);
+        }
+    }
+
     public function replaceQuantity(Request $request): JsonResponse
     {
         $validated = $request->validate([
@@ -249,6 +286,58 @@ class InventoryController extends Controller
                 (int) $validated['quantity'],
                 $reason,
                 $shipheroCustomerId,
+            );
+
+            return response()->json([
+                'warehouse' => $updated,
+            ]);
+        } catch (ValidationException $e) {
+            throw $e;
+        } catch (RuntimeException $e) {
+            return response()->json(['message' => $e->getMessage()], 502);
+        } catch (Throwable $e) {
+            report($e);
+
+            return response()->json([
+                'message' => config('app.debug')
+                    ? $e->getMessage()
+                    : 'Could not reach ShipHero. Check SHIPHERO_* in .env and server logs.',
+            ], 502);
+        }
+    }
+
+    public function transferQuantity(Request $request): JsonResponse
+    {
+        $validated = $request->validate([
+            'sku' => ['required', 'string', 'max:255'],
+            'warehouse_id' => ['required', 'string', 'max:255'],
+            'from_location_id' => ['required', 'string', 'max:255'],
+            'to_location_id' => ['required', 'string', 'max:255'],
+            'quantity' => ['required', 'integer', 'min:1'],
+            'reason' => ['nullable', 'string', 'max:500'],
+            'client_account_id' => ['nullable', 'integer', 'exists:client_accounts,id'],
+        ]);
+        $reason = isset($validated['reason']) && is_string($validated['reason'])
+            ? $validated['reason']
+            : 'CRM inventory transfer';
+        $clientAccountId = isset($validated['client_account_id'])
+            ? (int) $validated['client_account_id']
+            : null;
+
+        try {
+            $shipheroCustomerId = $this->resolveShipHeroCustomerAccountId(
+                $clientAccountId > 0 ? $clientAccountId : null,
+                $request,
+            );
+
+            $updated = $this->inventory->transferLocationQuantity(
+                $validated['sku'],
+                $validated['warehouse_id'],
+                $validated['from_location_id'],
+                $validated['to_location_id'],
+                (int) $validated['quantity'],
+                $reason,
+                $shipheroCustomerId
             );
 
             return response()->json([

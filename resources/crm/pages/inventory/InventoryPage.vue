@@ -113,7 +113,12 @@ function openDetail(product) {
   const query = {};
   if (selectedClientAccountId.value) query.client_account_id = String(selectedClientAccountId.value);
   if (selectedWarehouseId.value) query.warehouse_id = String(selectedWarehouseId.value);
-  router.push({ name: "inventory-detail", params: { sku: String(product.sku) }, query });
+  const href = router.resolve({
+    name: "inventory-detail",
+    params: { sku: String(product.sku) },
+    query,
+  }).href;
+  window.open(href, "_blank", "noopener,noreferrer");
 }
 </script>
 

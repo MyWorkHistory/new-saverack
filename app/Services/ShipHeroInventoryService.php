@@ -222,7 +222,10 @@ query ShipHeroProductBySku($sku: String!, $customer_account_id: String) {
       }
       warehouse_products {
         warehouse_id
+        warehouse_identifier
         on_hand
+        inventory_bin
+        inventory_overstock_bin
         reserve_inventory
         replenishment_level
         warehouse {
@@ -286,7 +289,10 @@ query ShipHeroProductByBarcode($barcode: String!, $customer_account_id: String) 
       }
       warehouse_products {
         warehouse_id
+        warehouse_identifier
         on_hand
+        inventory_bin
+        inventory_overstock_bin
         reserve_inventory
         replenishment_level
         warehouse {
@@ -349,13 +355,17 @@ GQL;
             $onHand += max(0, $warehouseOnHand);
             $allocated += max(0, $warehouseAllocated);
             $backorder += max(0, $warehouseBackorder);
+            $normalizedLocations = $this->normalizeLocations($wp['locations'] ?? null, $wid);
+            if ($normalizedLocations === []) {
+                $normalizedLocations = $this->fallbackLocationsFromWarehouseProduct($wp, $wid);
+            }
             $warehousesOut[] = [
                 'warehouse_id' => $wid,
-                'warehouse_name' => $this->warehouseDisplayName($wh),
+                'warehouse_name' => $this->warehouseDisplayNameWithFallback($wh, $wp),
                 'on_hand' => max(0, $warehouseOnHand),
                 'allocated' => max(0, $warehouseAllocated),
                 'backorder' => max(0, $warehouseBackorder),
-                'locations' => $this->normalizeLocations($wp['locations'] ?? null, $wid),
+                'locations' => $normalizedLocations,
             ];
         }
 
@@ -420,6 +430,24 @@ GQL;
     }
 
     /**
+     * @param array<string,mixed> $warehouse
+     * @param array<string,mixed> $warehouseProduct
+     */
+    private function warehouseDisplayNameWithFallback(array $warehouse, array $warehouseProduct): string
+    {
+        $fromWarehouse = $this->warehouseDisplayName($warehouse);
+        if ($fromWarehouse !== 'Warehouse') {
+            return $fromWarehouse;
+        }
+        $identifier = trim((string) ($warehouseProduct['warehouse_identifier'] ?? ''));
+        if ($identifier !== '') {
+            return $identifier;
+        }
+
+        return 'Warehouse';
+    }
+
+    /**
      * @param  mixed  $locations
      *
      * @return array<int, array{
@@ -479,6 +507,54 @@ GQL;
                 'quantity' => max(0, $qty),
                 'pickable' => $pickable,
                 'type' => $type,
+                'warehouse_id' => $warehouseId,
+            ];
+        }
+
+        return $out;
+    }
+
+    /**
+     * Build fallback location rows from `inventory_bin` / `inventory_overstock_bin`
+     * when ShipHero does not return `locations.edges`.
+     *
+     * @param array<string,mixed> $warehouseProduct
+     * @return list<array{
+     *  item_location_id:string,
+     *  location_id:string,
+     *  location_name:string|null,
+     *  quantity:int,
+     *  pickable:bool|null,
+     *  type:string|null,
+     *  warehouse_id:string|null
+     * }>
+     */
+    private function fallbackLocationsFromWarehouseProduct(array $warehouseProduct, ?string $warehouseId = null): array
+    {
+        $out = [];
+        $bin = trim((string) ($warehouseProduct['inventory_bin'] ?? ''));
+        $overstock = trim((string) ($warehouseProduct['inventory_overstock_bin'] ?? ''));
+        $onHand = max(0, (int) ($warehouseProduct['on_hand'] ?? 0));
+
+        if ($bin !== '') {
+            $out[] = [
+                'item_location_id' => 'fallback:bin:'.$bin,
+                'location_id' => $bin,
+                'location_name' => $bin,
+                'quantity' => $onHand,
+                'pickable' => true,
+                'type' => $this->extractLocationTypeLabel($bin),
+                'warehouse_id' => $warehouseId,
+            ];
+        }
+        if ($overstock !== '' && $overstock !== $bin) {
+            $out[] = [
+                'item_location_id' => 'fallback:overstock:'.$overstock,
+                'location_id' => $overstock,
+                'location_name' => $overstock,
+                'quantity' => 0,
+                'pickable' => false,
+                'type' => $this->extractLocationTypeLabel($overstock),
                 'warehouse_id' => $warehouseId,
             ];
         }

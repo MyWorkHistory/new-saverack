@@ -101,6 +101,18 @@ GQL;
             return null;
         }
 
+        $id = isset($data['id']) && is_string($data['id']) ? trim($data['id']) : '';
+        if ($id !== '') {
+            try {
+                $byId = $this->fetchProductById($id);
+                if (is_array($byId)) {
+                    $data = array_merge($data, $byId);
+                }
+            } catch (\Throwable $e) {
+                // Keep SKU/barcode flow resilient if by-id detail query fails.
+            }
+        }
+
         return $this->normalizeProduct($data, $warehouseId);
     }
 
@@ -324,6 +336,93 @@ GQL;
     }
 
     /**
+     * @return array<string, mixed>|null  product.data
+     */
+    private function fetchProductById(string $id): ?array
+    {
+        $graphql = <<<'GQL'
+query ShipHeroProductById($id: String!) {
+  product(id: $id) {
+    data {
+      id
+      legacy_id
+      account_id
+      name
+      sku
+      price
+      value
+      barcode
+      country_of_manufacture
+      dimensions {
+        weight
+        height
+        width
+        length
+      }
+      tariff_code
+      value_currency
+      kit
+      kit_build
+      no_air
+      final_sale
+      customs_value
+      customs_description
+      not_owned
+      dropship
+      created_at
+      warehouse_products {
+        warehouse_id
+        warehouse_identifier
+        on_hand
+        inventory_bin
+        inventory_overstock_bin
+        reserve_inventory
+        replenishment_level
+        warehouse {
+          identifier
+          company_name
+        }
+        locations(first: 100) {
+          edges {
+            node {
+              id
+              location_id
+              quantity
+              location {
+                name
+              }
+            }
+          }
+        }
+      }
+      images {
+        src
+        position
+      }
+      tags
+      vendors {
+        vendor_id
+        vendor_sku
+      }
+      product_note
+      virtual
+      ignore_on_invoice
+      ignore_on_customs
+      active
+      kit_components {
+        quantity
+        sku
+      }
+    }
+  }
+}
+GQL;
+        $json = $this->client->query($graphql, ['id' => $id]);
+        $data = data_get($json, 'data.product.data');
+        return is_array($data) ? $data : null;
+    }
+
+    /**
      * @return array<string, mixed>
      */
     private function normalizeProduct(array $data, ?string $warehouseFilter): array
@@ -349,9 +448,12 @@ GQL;
                 continue;
             }
             $wh = is_array($wp['warehouse'] ?? null) ? $wp['warehouse'] : [];
-            $warehouseOnHand = (int) ($wp['on_hand'] ?? 0);
-            $warehouseAllocated = (int) ($wp['reserve_inventory'] ?? 0);
-            $warehouseBackorder = (int) ($wp['replenishment_level'] ?? 0);
+            $warehouseOnHand = $this->toIntNumber($wp['on_hand'] ?? 0);
+            $warehouseAllocated = $this->toIntNumber($wp['reserve_inventory'] ?? 0);
+            $explicitBackorder = $this->toIntNumber($wp['backorder'] ?? 0);
+            $warehouseBackorder = $explicitBackorder > 0
+                ? $explicitBackorder
+                : max(0, $warehouseAllocated - $warehouseOnHand);
             $onHand += max(0, $warehouseOnHand);
             $allocated += max(0, $warehouseAllocated);
             $backorder += max(0, $warehouseBackorder);
@@ -394,13 +496,13 @@ GQL;
             'name' => isset($data['name']) && is_string($data['name']) ? $data['name'] : null,
             'barcode' => isset($data['barcode']) && is_string($data['barcode']) ? $data['barcode'] : null,
             'image_url' => $imageUrl,
-            'customs_value' => is_numeric($data['customs_value'] ?? null) ? (float) $data['customs_value'] : null,
+            'customs_value' => $this->normalizeNumericDisplay($data['customs_value'] ?? null),
             'customs_description' => isset($data['customs_description']) && is_string($data['customs_description']) ? $data['customs_description'] : null,
             'dimensions' => [
-                'weight' => is_numeric($dimensions['weight'] ?? null) ? (float) $dimensions['weight'] : null,
-                'height' => is_numeric($dimensions['height'] ?? null) ? (float) $dimensions['height'] : null,
-                'width' => is_numeric($dimensions['width'] ?? null) ? (float) $dimensions['width'] : null,
-                'length' => is_numeric($dimensions['length'] ?? null) ? (float) $dimensions['length'] : null,
+                'weight' => $this->normalizeNumericDisplay($dimensions['weight'] ?? null),
+                'height' => $this->normalizeNumericDisplay($dimensions['height'] ?? null),
+                'width' => $this->normalizeNumericDisplay($dimensions['width'] ?? null),
+                'length' => $this->normalizeNumericDisplay($dimensions['length'] ?? null),
             ],
             'metrics' => [
                 'on_hand' => $onHand,
@@ -586,6 +688,55 @@ GQL;
             ];
         }
         return $out;
+    }
+
+    /**
+     * @param mixed $value
+     */
+    private function toIntNumber($value): int
+    {
+        if (is_int($value)) {
+            return $value;
+        }
+        if (is_float($value)) {
+            return (int) round($value);
+        }
+        if (is_string($value)) {
+            $clean = preg_replace('/[^0-9.\-]/', '', $value);
+            if (is_string($clean) && $clean !== '' && is_numeric($clean)) {
+                return (int) round((float) $clean);
+            }
+        }
+        if (is_numeric($value)) {
+            return (int) round((float) $value);
+        }
+        return 0;
+    }
+
+    /**
+     * @param mixed $value
+     * @return float|string|null
+     */
+    private function normalizeNumericDisplay($value)
+    {
+        if ($value === null) {
+            return null;
+        }
+        if (is_int($value) || is_float($value)) {
+            return (float) $value;
+        }
+        if (is_string($value)) {
+            $raw = trim($value);
+            if ($raw === '') {
+                return null;
+            }
+            $clean = preg_replace('/[^0-9.\-]/', '', $raw);
+            if (is_string($clean) && $clean !== '' && is_numeric($clean)) {
+                return (float) $clean;
+            }
+            return $raw;
+        }
+        return null;
     }
 
     private function extractLocationTypeLabel(?string $locationName): ?string

@@ -1221,6 +1221,8 @@ final class InvoiceChargeImportParser
     private function normalizeBillingCategoryFromCsv(string $raw): string
     {
         $t = strtolower(trim(preg_replace('/\s+/', ' ', (string) $raw) ?? ''));
+        $t = str_replace('_', ' ', $t);
+        $t = trim((string) preg_replace('/\s+/', ' ', $t));
         if ($t === '') return 'Ad Hoc';
         $exact = [
             'fulfillment' => 'Fulfillment',
@@ -1247,6 +1249,8 @@ final class InvoiceChargeImportParser
             'ad hoc' => 'Ad Hoc',
             'ad_hoc' => 'Ad Hoc',
             'storage' => 'Storage',
+            'box charge' => 'Packaging',
+            'shipping label charge' => 'Postage',
             'bank fee' => 'Bank Fee',
             'bank_fee' => 'Bank Fee',
             'duties & taxes' => 'Duties & Taxes',
@@ -1257,6 +1261,8 @@ final class InvoiceChargeImportParser
         if (strpos($t, 'fulfill') !== false) return 'Fulfillment';
         if (strpos($t, 'amazon prep') !== false || strpos($t, 'amazon_prep') !== false) return 'Fulfillment';
         if (strpos($t, 'photo') !== false) return 'Ad Hoc';
+        if (strpos($t, 'shipping label') !== false || strpos($t, 'shipping label charge') !== false) return 'Postage';
+        if (strpos($t, 'box charge') !== false) return 'Packaging';
         if (strpos($t, 'postage') !== false || preg_match('/\b(ship|shipping|carrier|parcel|mail)\b/', $t)) return 'Postage';
         if (strpos($t, 'packag') !== false || preg_match('/\b(box|mailer|bubble|kraft)\b/', $t)) return 'Packaging';
         if (strpos($t, 'storage') !== false) return 'Storage';

@@ -453,6 +453,69 @@ function displayRowOrderNumber(row) {
 
 const invoiceTableRows = computed(() => invoice.value?.presentation?.rows || []);
 
+const QTY_COMPARE_EPS = 1e-6;
+
+function qtyNumbersClose(a, b) {
+  return Math.abs(Number(a) - Number(b)) <= QTY_COMPARE_EPS;
+}
+
+function isIncludedPackagingName(raw) {
+  const n = String(raw || "").trim().toUpperCase();
+  if (!n) return false;
+  if (n === "SHIP AS IS" || n.startsWith("SHIP AS IS ")) return true;
+  if (n.startsWith("BOX") || n.startsWith("BOX (")) return true;
+  if (n.startsWith("POLY")) return true;
+  if (n.startsWith("BUBBLE MAILER")) return true;
+  return false;
+}
+
+const hasFulfillmentFirstPickRow = computed(() =>
+  invoiceTableRows.value.some(
+    (row) =>
+      String(row.type || "").toLowerCase() === "fulfillment" &&
+      /first\s*pick/i.test(String(row.name || "")),
+  ),
+);
+
+const fulfillmentBaselineQty = computed(() => {
+  let sum = 0;
+  for (const row of invoiceTableRows.value) {
+    if (String(row.type || "").toLowerCase() !== "fulfillment") continue;
+    if (!/first\s*pick/i.test(String(row.name || ""))) continue;
+    const q = Number(row.qty);
+    if (Number.isFinite(q)) sum += q;
+  }
+  return sum;
+});
+
+const postageCategoryQtySum = computed(() => {
+  let sum = 0;
+  for (const row of invoiceTableRows.value) {
+    if (String(row.type || "").toLowerCase() !== "postage") continue;
+    const q = Number(row.qty);
+    if (Number.isFinite(q)) sum += q;
+  }
+  return sum;
+});
+
+const packagingFilteredCategoryQtySum = computed(() => {
+  let sum = 0;
+  for (const row of invoiceTableRows.value) {
+    if (String(row.type || "").toLowerCase() !== "packaging") continue;
+    if (!isIncludedPackagingName(row.name)) continue;
+    const q = Number(row.qty);
+    if (Number.isFinite(q)) sum += q;
+  }
+  return sum;
+});
+
+const postageMatchesFulfillmentBaseline = computed(() =>
+  qtyNumbersClose(postageCategoryQtySum.value, fulfillmentBaselineQty.value),
+);
+const packagingMatchesFulfillmentBaseline = computed(() =>
+  qtyNumbersClose(packagingFilteredCategoryQtySum.value, fulfillmentBaselineQty.value),
+);
+
 const selectedTableRow = computed(() => {
   if (!selectedTableRowId.value) return null;
   return invoiceTableRows.value.find((r) => r.id === selectedTableRowId.value) || null;
@@ -1171,10 +1234,14 @@ function removeGroupEditLine(idx) {
   groupEditLines.value = groupEditLines.value.filter((_, i) => i !== idx);
 }
 
-/** Replace all lines in the group editor with one row (qty × unit price = line total). */
+/** Set every row in the group editor to the same quantity and unit price (keeps per-line service, category, order #, etc.). */
 function applyGroupBulkConsolidate() {
   const qtyRaw = String(groupBulkQty.value || "").trim();
   const priceRaw = String(groupBulkPrice.value || "").trim();
+  if (!groupEditLines.value.length) {
+    toast.error("No lines to update.");
+    return;
+  }
   if (!qtyRaw) {
     toast.error("Enter a quantity.");
     return;
@@ -1188,27 +1255,16 @@ function applyGroupBulkConsolidate() {
     toast.error("Enter a valid unit price.");
     return;
   }
-  const first = groupEditLines.value.length ? groupEditLines.value[0] : null;
-  const target = groupEditTarget.value;
-  const label = target?.name || first?.display_name || first?.description || "Item";
   const priceStr = parsedPrice.toFixed(2);
   const qtyNum = Number.parseFloat(String(qtyRaw).replace(/,/g, ""));
   const qtyStr = Number.isFinite(qtyNum) ? formatQtyOneDecimal(qtyNum) : qtyRaw;
-  const md = first?.metadata && typeof first.metadata === "object" ? { ...first.metadata } : {};
-  groupEditLines.value = [
-    {
-      description: label,
-      display_name: label,
-      category: first?.category || "",
-      subtype: first?.subtype || "",
-      sku: first?.sku || "",
-      service_code: first?.service_code || "",
-      quantity: qtyStr,
-      unit: first?.unit || "",
-      unit_price: priceStr,
-      metadata: md,
-    },
-  ];
+  groupEditLines.value = groupEditLines.value.map((line) => ({
+    ...line,
+    quantity: qtyStr,
+    unit_price: priceStr,
+    metadata:
+      line.metadata && typeof line.metadata === "object" ? { ...line.metadata } : line.metadata || {},
+  }));
 }
 
 function openGroupDeleteFromGroupEditModal() {
@@ -1911,6 +1967,82 @@ function onDocKeydown(e) {
             Credit Charge
           </button>
         </div>
+        <div
+          class="billing-inv-toolbar-actions ms-lg-auto w-100 w-lg-auto justify-content-end"
+          data-right-actions
+        >
+          <button
+            type="button"
+            class="staff-action-btn staff-action-btn--more"
+            :aria-expanded="rightActionsMenuOpen"
+            aria-label="Invoice options"
+            @click="toggleRightActionsMenu"
+          >
+            <CrmIconRowActions variant="horizontal" />
+          </button>
+          <div v-if="rightActionsMenuOpen" class="staff-row-menu billing-inv-right-menu">
+            <button
+              v-if="canVoidInvoice"
+              type="button"
+              class="staff-row-menu__item staff-row-menu__item--danger"
+              role="menuitem"
+              @click="openRightMenuVoid"
+            >
+              Void Invoice
+            </button>
+            <button
+              v-if="canRestoreDraft"
+              type="button"
+              class="staff-row-menu__item"
+              role="menuitem"
+              @click="openRightMenuRestoreDraft"
+            >
+              Make Draft
+            </button>
+            <button
+              v-if="canDelete && (currentStatusKey === 'draft' || canHardDeleteInvoices)"
+              type="button"
+              class="staff-row-menu__item staff-row-menu__item--danger"
+              role="menuitem"
+              @click="openRightMenuDelete"
+            >
+              {{
+                canHardDeleteInvoices && currentStatusKey !== "draft"
+                  ? "Delete Invoice"
+                  : "Delete Draft"
+              }}
+            </button>
+            <button
+              v-if="canShareInvoice"
+              type="button"
+              class="staff-row-menu__item"
+              role="menuitem"
+              :disabled="pdfDownloading"
+              @click="openRightMenuDownloadPdf"
+            >
+              {{ pdfDownloading ? "Downloading..." : "Download PDF" }}
+            </button>
+            <button
+              v-if="canUpdateInvoiceStatus && currentStatusKey !== 'open'"
+              type="button"
+              class="staff-row-menu__item"
+              role="menuitem"
+              :disabled="openInvoiceTabBusy"
+              @click="openRightMenuOpenInvoice"
+            >
+              {{ openInvoiceTabBusy ? "Updating..." : "Open Invoice" }}
+            </button>
+            <button
+              v-if="canAddCcFee"
+              type="button"
+              class="staff-row-menu__item"
+              role="menuitem"
+              @click="openRightMenuCcFee"
+            >
+              Add CC Fee
+            </button>
+          </div>
+        </div>
       </div>
 
       <div class="row g-4">
@@ -2419,80 +2551,6 @@ function onDocKeydown(e) {
         </div>
         <div class="col-lg-4">
           <div class="staff-surface p-4 mb-4">
-            <div class="billing-inv-right-top mb-3" data-right-actions>
-              <button
-                type="button"
-                class="staff-action-btn staff-action-btn--more"
-                :aria-expanded="rightActionsMenuOpen"
-                aria-label="Invoice options"
-                @click="toggleRightActionsMenu"
-              >
-                <CrmIconRowActions variant="horizontal" />
-              </button>
-              <div v-if="rightActionsMenuOpen" class="staff-row-menu billing-inv-right-menu">
-                <button
-                  v-if="canVoidInvoice"
-                  type="button"
-                  class="staff-row-menu__item staff-row-menu__item--danger"
-                  role="menuitem"
-                  @click="openRightMenuVoid"
-                >
-                  Void Invoice
-                </button>
-                <button
-                  v-if="canRestoreDraft"
-                  type="button"
-                  class="staff-row-menu__item"
-                  role="menuitem"
-                  @click="openRightMenuRestoreDraft"
-                >
-                  Make Draft
-                </button>
-                <button
-                  v-if="canDelete && (currentStatusKey === 'draft' || canHardDeleteInvoices)"
-                  type="button"
-                  class="staff-row-menu__item staff-row-menu__item--danger"
-                  role="menuitem"
-                  @click="openRightMenuDelete"
-                >
-                  {{
-                    canHardDeleteInvoices && currentStatusKey !== "draft"
-                      ? "Delete Invoice"
-                      : "Delete Draft"
-                  }}
-                </button>
-                <button
-                  v-if="canShareInvoice"
-                  type="button"
-                  class="staff-row-menu__item"
-                  role="menuitem"
-                  :disabled="pdfDownloading"
-                  @click="openRightMenuDownloadPdf"
-                >
-                  {{ pdfDownloading ? "Downloading..." : "Download PDF" }}
-                </button>
-                <button
-                  v-if="canUpdateInvoiceStatus && currentStatusKey !== 'open'"
-                  type="button"
-                  class="staff-row-menu__item"
-                  role="menuitem"
-                  :disabled="openInvoiceTabBusy"
-                  @click="openRightMenuOpenInvoice"
-                >
-                  {{ openInvoiceTabBusy ? "Updating..." : "Open Invoice" }}
-                </button>
-                <button
-                  v-if="canAddCcFee"
-                  type="button"
-                  class="staff-row-menu__item"
-                  role="menuitem"
-                  @click="openRightMenuCcFee"
-                >
-                  Add CC Fee
-                </button>
-              </div>
-            </div>
-
             <div class="billing-inv-summary-grid mb-3">
               <button
                 type="button"
@@ -2540,7 +2598,104 @@ function onDocKeydown(e) {
                 </div>
               </button>
             </div>
+          </div>
 
+          <div class="staff-surface p-4 mb-4 billing-inv-totals-check-card">
+            <h2 class="h6 fw-semibold mb-2">Category Totals</h2>
+            <p v-if="!hasFulfillmentFirstPickRow" class="small text-secondary mb-3 mb-lg-2">
+              No Fulfillment (First Pick) row
+            </p>
+            <ul class="list-unstyled mb-0 billing-inv-totals-check-rows">
+              <li class="billing-inv-totals-check-row">
+                <span class="billing-inv-totals-check-label">Fulfillment</span>
+                <span class="billing-inv-totals-check-qty text-nowrap">{{
+                  formatQtyDisplay(fulfillmentBaselineQty)
+                }}</span>
+                <span
+                  class="billing-inv-totals-check-ind billing-inv-totals-check-ind--ok"
+                  aria-label="Baseline reference"
+                >
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                    <path
+                      d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41L9 16.17z"
+                      fill="currentColor"
+                    />
+                  </svg>
+                </span>
+              </li>
+              <li class="billing-inv-totals-check-row">
+                <span class="billing-inv-totals-check-label">Postage</span>
+                <span class="billing-inv-totals-check-qty text-nowrap">{{
+                  formatQtyDisplay(postageCategoryQtySum)
+                }}</span>
+                <span
+                  class="billing-inv-totals-check-ind"
+                  :class="
+                    postageMatchesFulfillmentBaseline
+                      ? 'billing-inv-totals-check-ind--ok'
+                      : 'billing-inv-totals-check-ind--bad'
+                  "
+                  :aria-label="postageMatchesFulfillmentBaseline ? 'Matches fulfillment' : 'Does not match fulfillment'"
+                >
+                  <svg
+                    v-if="postageMatchesFulfillmentBaseline"
+                    width="18"
+                    height="18"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    aria-hidden="true"
+                  >
+                    <path
+                      d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41L9 16.17z"
+                      fill="currentColor"
+                    />
+                  </svg>
+                  <svg v-else width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                    <path
+                      d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"
+                      fill="currentColor"
+                    />
+                  </svg>
+                </span>
+              </li>
+              <li class="billing-inv-totals-check-row">
+                <span class="billing-inv-totals-check-label">Packaging</span>
+                <span class="billing-inv-totals-check-qty text-nowrap">{{
+                  formatQtyDisplay(packagingFilteredCategoryQtySum)
+                }}</span>
+                <span
+                  class="billing-inv-totals-check-ind"
+                  :class="
+                    packagingMatchesFulfillmentBaseline
+                      ? 'billing-inv-totals-check-ind--ok'
+                      : 'billing-inv-totals-check-ind--bad'
+                  "
+                  :aria-label="
+                    packagingMatchesFulfillmentBaseline ? 'Matches fulfillment' : 'Does not match fulfillment'
+                  "
+                >
+                  <svg
+                    v-if="packagingMatchesFulfillmentBaseline"
+                    width="18"
+                    height="18"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    aria-hidden="true"
+                  >
+                    <path
+                      d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41L9 16.17z"
+                      fill="currentColor"
+                    />
+                  </svg>
+                  <svg v-else width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                    <path
+                      d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"
+                      fill="currentColor"
+                    />
+                  </svg>
+                </span>
+              </li>
+            </ul>
           </div>
 
           <div ref="activityCardRef" class="staff-surface p-4">
@@ -2613,7 +2768,7 @@ function onDocKeydown(e) {
                   </div>
                 </div>
                 <p class="small text-secondary mb-0 mt-2">
-                  Update replaces all rows with one line at this quantity and unit price (per-line details such as {{ groupEditOrderColumnLabel }} are dropped unless you edit the row below).
+                  Update sets this quantity and unit price on every row below (service names, categories, and {{ groupEditOrderColumnLabel }} stay as they are per row).
                 </p>
               </div>
               <div class="table-responsive">
@@ -3436,10 +3591,12 @@ function onDocKeydown(e) {
 .billing-inv-totals {
   max-width: 15rem;
 }
-.billing-inv-right-top {
+.billing-inv-toolbar-actions {
   display: flex;
   justify-content: flex-end;
   position: relative;
+  align-items: center;
+  flex-shrink: 0;
 }
 .billing-inv-right-menu {
   position: absolute;
@@ -3447,6 +3604,39 @@ function onDocKeydown(e) {
   right: 0;
   z-index: 20;
   min-width: 12rem;
+}
+.billing-inv-totals-check-card .billing-inv-totals-check-rows {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+.billing-inv-totals-check-row {
+  display: grid;
+  grid-template-columns: 1fr auto auto;
+  align-items: center;
+  gap: 0.5rem 0.75rem;
+  font-size: 0.875rem;
+}
+.billing-inv-totals-check-label {
+  font-weight: 500;
+  color: rgba(47, 43, 61, 0.85);
+}
+.billing-inv-totals-check-qty {
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+.billing-inv-totals-check-ind {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.5rem;
+  flex-shrink: 0;
+}
+.billing-inv-totals-check-ind--ok {
+  color: #16a34a;
+}
+.billing-inv-totals-check-ind--bad {
+  color: #dc2626;
 }
 .billing-inv-summary-grid {
   display: grid;

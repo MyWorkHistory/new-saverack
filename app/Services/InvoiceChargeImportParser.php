@@ -389,7 +389,11 @@ final class InvoiceChargeImportParser
             $this->cell($row, $map['label_charge'] ?? -1),
             $this->cell($row, $map['fee_charge'] ?? -1),
         ]));
-        if ($this->isPackagingMaterialText($materialText) && ! $isExplicitPickFulfillmentCharge) {
+        if (
+            $feeType === null
+            && $this->isPackagingMaterialText($materialText)
+            && ! $isExplicitPickFulfillmentCharge
+        ) {
             $feeType = 'Packaging';
         }
         if ($feeType === null) {

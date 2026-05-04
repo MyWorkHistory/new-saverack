@@ -459,6 +459,12 @@ const selectedTableRow = computed(() => {
 });
 
 const selectedTableRowDetails = computed(() => selectedTableRow.value?.details || []);
+const selectedBreakdownOrderColumnLabel = computed(() =>
+  String(selectedTableRow.value?.type || "").toLowerCase() === "storage" ? "Location ID" : "Order #",
+);
+const groupEditOrderColumnLabel = computed(() =>
+  String(groupEditTarget.value?.type || "").toLowerCase() === "storage" ? "Location ID" : "Order #",
+);
 const lineMenuStyle = computed(() => ({
   position: "fixed",
   top: `${lineMenuPos.value.top}px`,
@@ -2208,7 +2214,6 @@ function onDocKeydown(e) {
                     <tr>
                       <th>Service</th>
                       <th>Category</th>
-                      <th class="text-end">Order #</th>
                       <th class="text-end">Qty</th>
                       <th class="text-end">Price</th>
                       <th class="text-end">Total</th>
@@ -2227,7 +2232,6 @@ function onDocKeydown(e) {
                       >
                         <td class="fw-semibold">{{ row.name }}</td>
                         <td>{{ row.type }}</td>
-                        <td class="text-end">{{ displayRowOrderNumber(row) }}</td>
                         <td class="text-end text-nowrap">
                           {{ formatQtyDisplay(row.qty) }}
                         </td>
@@ -2270,7 +2274,7 @@ function onDocKeydown(e) {
                       </tr>
                     </template>
                     <tr v-if="!invoiceTableRows.length">
-                      <td :colspan="canUpdate && currentStatusKey !== 'void' ? 7 : 6" class="text-center text-secondary py-3">
+                      <td :colspan="canUpdate && currentStatusKey !== 'void' ? 6 : 5" class="text-center text-secondary py-3">
                         No line items.
                       </td>
                     </tr>
@@ -2297,7 +2301,7 @@ function onDocKeydown(e) {
                       <tr>
                         <th>Service</th>
                         <th>Category</th>
-                        <th class="text-end">Order #</th>
+                        <th class="text-end">{{ selectedBreakdownOrderColumnLabel }}</th>
                         <th class="text-end">Qty</th>
                         <th class="text-end">Price</th>
                         <th class="text-end">Total</th>
@@ -2609,7 +2613,7 @@ function onDocKeydown(e) {
                   </div>
                 </div>
                 <p class="small text-secondary mb-0 mt-2">
-                  Update replaces all rows with one line at this quantity and unit price (per-line details such as order # are dropped unless you edit the row below).
+                  Update replaces all rows with one line at this quantity and unit price (per-line details such as {{ groupEditOrderColumnLabel }} are dropped unless you edit the row below).
                 </p>
               </div>
               <div class="table-responsive">
@@ -2618,7 +2622,7 @@ function onDocKeydown(e) {
                     <tr>
                       <th>Service</th>
                       <th>Category</th>
-                      <th>Order #</th>
+                      <th>{{ groupEditOrderColumnLabel }}</th>
                       <th class="text-end">Qty</th>
                       <th class="text-end">Price</th>
                       <th class="text-end">Total</th>

@@ -1399,7 +1399,14 @@ class InvoiceService
     private function detailLeafRow(InvoiceItem $item, string $type, string $name, int $unitRate, int $total): array
     {
         $orderNumber = $this->extractOrderNumber($item->metadata);
-        if (($orderNumber === null || $orderNumber === '') && is_string($item->service_code) && trim($item->service_code) !== '') {
+        $isStorage = strtolower(trim((string) $item->category)) === InvoiceLineCategory::STORAGE;
+        if (($orderNumber === null || $orderNumber === '') && $isStorage) {
+            $orderNumber = $this->extractStorageLocationId($item->description)
+                ?? $this->extractStorageLocationId($item->display_name);
+        }
+        if (($orderNumber === null || $orderNumber === '') && $isStorage) {
+            $orderNumber = 'Daily Storage';
+        } elseif (($orderNumber === null || $orderNumber === '') && is_string($item->service_code) && trim($item->service_code) !== '') {
             $orderNumber = trim($item->service_code);
         }
 
@@ -1450,6 +1457,20 @@ class InvoiceService
         $value = trim($value);
 
         return $value !== '' ? $value : null;
+    }
+
+    private function extractStorageLocationId(?string $text): ?string
+    {
+        $value = trim((string) $text);
+        if ($value === '') {
+            return null;
+        }
+        if (preg_match('/\blocation\s+([A-Z0-9\-]+)\b/i', $value, $m) !== 1) {
+            return null;
+        }
+        $locationId = trim((string) ($m[1] ?? ''));
+
+        return $locationId !== '' ? $locationId : null;
     }
 
     /**

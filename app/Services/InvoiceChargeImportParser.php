@@ -368,12 +368,45 @@ final class InvoiceChargeImportParser
     private function mapChargeSummaryPrimary(string $chargeName, string $chargeTypeRaw, string $billingCategoryRaw, string $descriptionRaw, string $skuFromColumn, float $qty, int $rateCents, int $lineTotalCents): ?array
     {
         $t = strtolower(trim($chargeTypeRaw));
+        $categoryHint = $this->normalizeBillingCategoryFromCsv($billingCategoryRaw);
 
         if ($this->isStorageChargeContext($billingCategoryRaw, '', $chargeName, $chargeTypeRaw, $descriptionRaw)) {
             return $this->buildStorageChargeItem($descriptionRaw, $chargeName, $chargeTypeRaw, $qty, $rateCents, $lineTotalCents, $this->trimmedSkuOrNull($skuFromColumn));
         }
         if ($this->billingCategoryRawImpliesOnDemand($billingCategoryRaw)) {
             return $this->buildOnDemandItem($chargeName, $chargeTypeRaw, $skuFromColumn, $qty, $rateCents, $lineTotalCents);
+        }
+        // Respect explicit CSV category first. Some exports use "shipping_label" style
+        // charge types for non-postage rows, which should not override Packaging category.
+        if ($categoryHint === 'Packaging') {
+            $pkg = $this->packagingDisplayName($chargeName !== '' ? $chargeName : ($descriptionRaw !== '' ? $descriptionRaw : 'Other'));
+            return $this->buildItem(
+                InvoiceLineCategory::PACKAGING,
+                $pkg,
+                $chargeName !== '' ? $chargeName : $descriptionRaw,
+                $qty,
+                $rateCents,
+                $lineTotalCents,
+                null,
+                'packaging:'.$this->slug($pkg),
+                $chargeTypeRaw,
+                $this->trimmedSkuOrNull($skuFromColumn)
+            );
+        }
+        if ($categoryHint === 'Postage') {
+            $carrier = $this->postageServiceName($chargeName !== '' ? $chargeName : 'Other', $chargeTypeRaw);
+            return $this->buildItem(
+                InvoiceLineCategory::POSTAGE,
+                'Postage ('.$carrier.')',
+                $chargeName,
+                $qty,
+                $rateCents,
+                $lineTotalCents,
+                null,
+                'postage',
+                $chargeTypeRaw,
+                $this->trimmedSkuOrNull($skuFromColumn)
+            );
         }
         if (strpos($t, 'shipping_label') !== false) {
             if ($this->containsManuallyFulfilled($chargeName.' '.$chargeTypeRaw)) {

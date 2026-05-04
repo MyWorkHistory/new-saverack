@@ -181,8 +181,8 @@
         <div class="invoice-head">
             <div>
                 <h1 class="invoice-title">Invoice #{{ $invoice_number }}</h1>
-                <div class="meta-line">{!! $iconCalendar !!}<span class="meta-line-label">Invoice Date</span><span class="meta-line-value">{{ $invoice_date_label ?? '—' }}</span></div>
-                <div class="meta-line">{!! $iconClock !!}<span class="meta-line-label">Invoice Due</span><span class="meta-line-value">{{ $due_long ?? '—' }}</span></div>
+                <div class="meta-line">{!! $iconCalendar !!} &nbsp;<span class="meta-line-label">Invoice Date &nbsp;</span><span class="meta-line-value">{{ $invoice_date_label ?? '—' }}</span></div>
+                <div class="meta-line">{!! $iconClock !!} &nbsp;<span class="meta-line-label">Invoice Due &nbsp;</span><span class="meta-line-value">{{ $due_long ?? '—' }}</span></div>
 
                 <div class="bill-to">
                     <h2 class="bill-to-title">BILL TO <span class="bill-to-company">{{ $client_company_name ?: '—' }}</span></h2>

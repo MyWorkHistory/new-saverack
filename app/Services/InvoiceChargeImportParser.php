@@ -91,7 +91,16 @@ final class InvoiceChargeImportParser
                 continue;
             }
             $keySansSuffix = $this->stripTrailingHeaderScope($key);
-            $candidates = array_values(array_unique(array_filter([$key, $keySansSuffix])));
+            $hasScope = strpos($key, '(') !== false && strpos($key, ')') !== false;
+            $isChargeScope = strpos($key, '(charge)') !== false;
+            // Important: do NOT let non-charge scoped headers (e.g. fee (shipment))
+            // collapse into generic aliases like "fee", otherwise charge parsing can
+            // map to shipment columns and mix Packaging/Postage.
+            $candidates = [$key];
+            if (! $hasScope || $isChargeScope) {
+                $candidates[] = $keySansSuffix;
+            }
+            $candidates = array_values(array_unique(array_filter($candidates)));
 
             foreach ($this->headerAliases() as $field => $aliases) {
                 if (isset($index[$field])) {

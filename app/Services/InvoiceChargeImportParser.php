@@ -269,6 +269,46 @@ final class InvoiceChargeImportParser
             );
         }
 
+        // CSV "Fee (charge)" is the most reliable source for Postage vs Packaging.
+        // Resolve this before charge_type heuristics to avoid accidental merging.
+        $feeHint = $this->normalizeBillingCategoryFromCsv($feeRaw);
+        if ($feeHint === 'Packaging') {
+            $pkg = $this->packagingDisplayName($chargeName !== '' ? $chargeName : ($descriptionRaw !== '' ? $descriptionRaw : 'Other'));
+            return $this->attachOrderMetadata(
+                $this->buildItem(
+                    InvoiceLineCategory::PACKAGING,
+                    $pkg,
+                    $chargeName !== '' ? $chargeName : $descriptionRaw,
+                    $qty,
+                    $rateCents,
+                    $lineTotalCents,
+                    null,
+                    'packaging:'.$this->slug($pkg),
+                    $chargeTypeRaw,
+                    $this->trimmedSkuOrNull($sku)
+                ),
+                $orderNumber
+            );
+        }
+        if ($feeHint === 'Postage') {
+            $carrier = $this->postageServiceName($chargeName !== '' ? $chargeName : 'Other', $chargeTypeRaw);
+            return $this->attachOrderMetadata(
+                $this->buildItem(
+                    InvoiceLineCategory::POSTAGE,
+                    'Postage ('.$carrier.')',
+                    $chargeName,
+                    $qty,
+                    $rateCents,
+                    $lineTotalCents,
+                    null,
+                    'postage',
+                    $chargeTypeRaw,
+                    $this->trimmedSkuOrNull($sku)
+                ),
+                $orderNumber
+            );
+        }
+
         $item = $this->mapChargeSummaryPrimary($chargeName, $chargeTypeRaw, $categoryRaw, $descriptionRaw, $sku, $qty, $rateCents, $lineTotalCents);
         if ($item !== null) {
             return $this->attachOrderMetadata($item, $orderNumber);

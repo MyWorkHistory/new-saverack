@@ -123,6 +123,7 @@ final class InvoiceChargeImportParser
     {
         return [
             'order_date' => ['date (order)', 'order date', 'date'],
+            'billing_category_charge' => ['category (charge)', 'category(charge)'],
             'billing_category' => [
                 'category (charge)', 'category', 'fee type',
                 'category (fee type)', 'category (fee_type)',
@@ -167,7 +168,7 @@ final class InvoiceChargeImportParser
             'box' => ['box (shipment)', 'box'],
             'ad_hoc_name' => ['name', 'description', 'item', 'item name', 'description (charge)'],
             'label_charge' => ['label (charge)', 'label'],
-            'fee_charge' => ['fee (charge)'],
+            'fee_charge' => ['fee (charge)', 'fee(charge)'],
             'charge_sku' => ['sku', 'sku (product)', 'product sku'],
             'shipment_order_number' => ['order # (shipment)', 'order# (shipment)', 'order number (shipment)', 'order #', 'order number'],
             'name_product' => ['name (product)', 'product name'],
@@ -210,8 +211,14 @@ final class InvoiceChargeImportParser
     {
         $chargeName = $this->cell($row, $map['charge_name'] ?? -1);
         $chargeTypeRaw = $this->cell($row, $map['charge_type_new'] ?? ($map['charge_type'] ?? -1));
-        $categoryRaw = $this->cell($row, $map['billing_category'] ?? -1);
-        $feeRaw = $this->cell($row, $map['fee'] ?? -1);
+        $categoryRaw = $this->firstNonEmpty([
+            $this->cell($row, $map['billing_category_charge'] ?? -1),
+            $this->cell($row, $map['billing_category'] ?? -1),
+        ]) ?? '';
+        $feeRaw = $this->firstNonEmpty([
+            $this->cell($row, $map['fee_charge'] ?? -1),
+            $this->cell($row, $map['fee'] ?? -1),
+        ]) ?? '';
         $descriptionRaw = $this->cell($row, $map['ad_hoc_name'] ?? -1);
         $qty = $this->parseQty($this->cell($row, $map['charge_qty'] ?? -1));
         $rateCents = $this->parseMoneyToCents($this->cell($row, $map['avg_rate'] ?? -1));

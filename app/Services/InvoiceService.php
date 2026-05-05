@@ -1641,7 +1641,7 @@ class InvoiceService
             'ad hoc' => 40,
             'bank fee' => 41,
             'duties & taxes' => 42,
-            'credit card fee' => 43,
+            'credit card fee' => 999,
             'returns' => 50,
             'product (on-demand)' => 60,
             'storage' => 70,

@@ -281,6 +281,9 @@ class InvoiceImportService
 
         if ($catalog === [] && $catalogCompact === []) {
             foreach ($lines as $line) {
+                if ($this->isReturnLine((array) $line)) {
+                    continue;
+                }
                 $lineSkuRaw = $this->extractLineSkuForCatalog((array) $line);
                 $skuKey = $this->normalizeSkuKey($lineSkuRaw);
                 $compactKey = $this->normalizeSkuCompactKey($lineSkuRaw);
@@ -300,6 +303,9 @@ class InvoiceImportService
         $aggregates = [];
 
         foreach ($lines as $line) {
+            if ($this->isReturnLine((array) $line)) {
+                continue;
+            }
             $lineSkuRaw = $this->extractLineSkuForCatalog((array) $line);
             $skuKey = $this->normalizeSkuKey($lineSkuRaw);
             $compactKey = $this->normalizeSkuCompactKey($lineSkuRaw);
@@ -440,6 +446,24 @@ class InvoiceImportService
         }
 
         return '';
+    }
+
+    /**
+     * @param array<string, mixed> $line
+     */
+    private function isReturnLine(array $line): bool
+    {
+        $category = trim((string) ($line['category'] ?? ''));
+        if ($category !== '' && strcasecmp($category, InvoiceLineCategory::RETURNS) === 0) {
+            return true;
+        }
+
+        $type = trim((string) ($line['type'] ?? ''));
+        if ($type !== '' && strcasecmp($type, InvoiceLineCategory::RETURNS) === 0) {
+            return true;
+        }
+
+        return false;
     }
 
     private function extractCatalogSkuCandidate(string $rawSku): string

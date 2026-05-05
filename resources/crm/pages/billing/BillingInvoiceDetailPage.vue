@@ -466,6 +466,7 @@ function isIncludedPackagingName(raw) {
   if (n.startsWith("BOX") || n.startsWith("BOX (")) return true;
   if (n.startsWith("POLY")) return true;
   if (n.startsWith("BUBBLE MAILER")) return true;
+  if (n.startsWith("ENVELOP")) return true;
   return false;
 }
 

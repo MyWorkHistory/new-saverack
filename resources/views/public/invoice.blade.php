@@ -56,7 +56,7 @@
         details.public-inv-sec--expandable > summary.public-inv-summary::-webkit-details-marker { display: none; }
         .public-inv-row {
             display: grid;
-            grid-template-columns: 34px 56% 12% 14% 18%;
+            grid-template-columns: 31px 54% 12% 14% 18%;
             align-items: center;
             gap: 0;
             padding: 10px 12px;

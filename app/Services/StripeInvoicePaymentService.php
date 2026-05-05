@@ -7,6 +7,7 @@ use App\Models\User;
 use Illuminate\Support\Str;
 use Stripe\Exception\ApiErrorException;
 use Stripe\Exception\SignatureVerificationException;
+use Stripe\Checkout\Session as CheckoutSession;
 use Stripe\PaymentIntent;
 use Stripe\StripeClient;
 use Stripe\Webhook;
@@ -247,12 +248,35 @@ class StripeInvoicePaymentService
         }
 
         $type = (string) $event->type;
-        if ($type !== 'payment_intent.succeeded' && $type !== 'payment_intent.payment_failed') {
+        $supported = [
+            'payment_intent.succeeded',
+            'payment_intent.payment_failed',
+            'checkout.session.completed',
+            'checkout.session.async_payment_succeeded',
+            'checkout.session.async_payment_failed',
+        ];
+        if (!in_array($type, $supported, true)) {
             return ['handled' => true, 'event_type' => $type, 'applied' => false];
         }
 
-        /** @var PaymentIntent $intent */
-        $intent = $event->data->object;
+        $stripe = $this->client();
+        $checkoutSessionId = null;
+        if (str_starts_with($type, 'checkout.session.')) {
+            /** @var CheckoutSession $session */
+            $session = $event->data->object;
+            $checkoutSessionId = trim((string) ($session->id ?? ''));
+            $intentRef = $session->payment_intent ?? null;
+            if ($intentRef === null || $intentRef === '') {
+                return ['handled' => true, 'event_type' => $type, 'applied' => false];
+            }
+            $intent = $intentRef instanceof PaymentIntent
+                ? $intentRef
+                : $stripe->paymentIntents->retrieve((string) $intentRef, []);
+        } else {
+            /** @var PaymentIntent $intent */
+            $intent = $event->data->object;
+        }
+
         $meta = $intent->metadata;
         $invoiceId = (int) ($meta['invoice_id'] ?? 0);
         if ($invoiceId <= 0) {
@@ -275,7 +299,7 @@ class StripeInvoicePaymentService
             }
         }
 
-        if ($type === 'payment_intent.payment_failed') {
+        if ($type === 'payment_intent.payment_failed' || $type === 'checkout.session.async_payment_failed') {
             $fromStatus = (string) $invoice->status;
             if ($invoice->status !== Invoice::STATUS_PAYMENT_FAILED) {
                 $invoice->status = Invoice::STATUS_PAYMENT_FAILED;
@@ -287,6 +311,7 @@ class StripeInvoicePaymentService
                 'history_message' => 'Stripe payment failed.',
                 'stripe_payment_intent' => $intentId !== '' ? $intentId : null,
                 'stripe_status' => 'payment_failed',
+                'stripe_checkout_session' => $checkoutSessionId,
             ]);
 
             return [
@@ -296,7 +321,9 @@ class StripeInvoicePaymentService
             ];
         }
 
-        $result = $this->applyIntentToInvoice($invoice, $intent, null, [], $invoiceService);
+        $result = $this->applyIntentToInvoice($invoice, $intent, null, [
+            'stripe_checkout_session' => $checkoutSessionId,
+        ], $invoiceService);
 
         return [
             'handled' => true,

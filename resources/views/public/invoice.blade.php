@@ -54,7 +54,13 @@
         .public-inv-sec:last-child { border-bottom: none; }
         details.public-inv-sec--expandable > summary.public-inv-summary { list-style: none; cursor: pointer; }
         details.public-inv-sec--expandable > summary.public-inv-summary::-webkit-details-marker { display: none; }
-        .public-inv-row { display: grid; grid-template-columns: 34px minmax(0, 1.6fr) minmax(72px, 0.3fr) minmax(88px, 0.4fr) minmax(88px, 0.4fr); align-items: center; gap: 10px; padding: 10px 12px; }
+        .public-inv-row {
+            display: grid;
+            grid-template-columns: 34px 56% 12% 14% 18%;
+            align-items: center;
+            gap: 0;
+            padding: 10px 12px;
+        }
         tbody > tr:nth-child(odd) .public-inv-row { background: #eceff2; }
         tbody > tr:nth-child(even) .public-inv-row { background: #fff; }
         .public-inv-row-num {

@@ -2275,16 +2275,16 @@ class InvoiceService
         }
         if ($type === 'send_storage_invoice') {
             return 'Hi! Here is your storage invoice: '.$invoiceUrl."\n"
-                .'Let me know if you have any questions-thanks!';
+                .'If you’re enrolled in autopay, this invoice is just for your records—your card on file will be charged within 24 hours. If you make payments manually, we kindly ask that you submit it by Wednesday to help avoid any interruptions with your shipments.';
         }
 
         if ($from !== null && $to !== null) {
             return 'Hi! Here is your invoice for '.$from.' to '.$to.': '.$invoiceUrl."\n"
-                .'Let me know if you have any questions-thanks!';
+                .'If you’re enrolled in autopay, this invoice is just for your records—your card on file will be charged within 24 hours. If you make payments manually, we kindly ask that you submit it by Wednesday to help avoid any interruptions with your shipments.';
         }
 
         return 'Hi! Here is your invoice for '.$label.': '.$invoiceUrl."\n"
-            .'Let me know if you have any questions-thanks!';
+            .'If you’re enrolled in autopay, this invoice is just for your records—your card on file will be charged within 24 hours. If you make payments manually, we kindly ask that you submit it by Wednesday to help avoid any interruptions with your shipments.';
     }
 
     private function parseSearchAmountCents(string $raw): ?int

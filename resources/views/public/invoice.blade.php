@@ -58,6 +58,16 @@
         tbody > tr:nth-child(odd) .public-inv-row { background: #eceff2; }
         tbody > tr:nth-child(even) .public-inv-row { background: #fff; }
         .public-inv-row-num { text-align: center; }
+        .public-inv-sec > .public-inv-summary .public-inv-row > :nth-child(3),
+        .public-inv-sec > .public-inv-summary .public-inv-row > :nth-child(4),
+        .public-inv-sec > .public-inv-summary .public-inv-row > :nth-child(5),
+        .public-inv-sec--flat > .public-inv-row > :nth-child(3),
+        .public-inv-sec--flat > .public-inv-row > :nth-child(4),
+        .public-inv-sec--flat > .public-inv-row > :nth-child(5) {
+            text-align: center;
+            justify-self: center;
+            width: 100%;
+        }
         .public-inv-chev { display: inline-block; color: #4a5568; font-size: 11px; transition: transform 0.15s ease; }
         details.public-inv-sec--expandable[open] .public-inv-chev { transform: rotate(90deg); }
         .public-inv-breakdown { background: #f7f8fa; border-top: 1px solid #d8dee6; }

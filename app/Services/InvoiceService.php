@@ -1765,17 +1765,6 @@ class InvoiceService
             $invoice->paid_at = null;
         } else {
             $invoice->status = Invoice::STATUS_SENT;
-            if ($requested === 'open') {
-                $invoice->loadMissing('clientAccount');
-                $account = $invoice->clientAccount;
-                if (
-                    $account !== null
-                    && strcasecmp(trim((string) $account->default_payment_type), 'Credit Card') !== 0
-                ) {
-                    $account->default_payment_type = 'Credit Card';
-                    $account->save();
-                }
-            }
         }
         $invoice->save();
         $this->logHistory($invoice, $actor, 'updated', $from, $invoice->status, [

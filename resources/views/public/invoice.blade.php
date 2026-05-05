@@ -225,6 +225,13 @@
             </thead>
             <tbody>
             @forelse (($line_sections ?? []) as $sec)
+                @php
+                    $isStorageSection = strcasecmp((string) ($sec['label'] ?? ''), 'Storage') === 0;
+                    $secQtyDisplay = (string) ($sec['qty_display'] ?? '0');
+                    if ($isStorageSection) {
+                        $secQtyDisplay .= ' Locations';
+                    }
+                @endphp
                 <tr>
                     <td colspan="5" style="padding:0;">
                         @if (!empty($sec['is_expandable']))
@@ -233,7 +240,7 @@
                                     <div class="public-inv-row">
                                         <div class="public-inv-row-num"><span class="public-inv-chev" aria-hidden="true">&#9654;</span></div>
                                         <div><strong>{{ $sec['label'] }}</strong></div>
-                                        <div class="public-inv-row-num">{{ $sec['qty_display'] }}</div>
+                                        <div class="public-inv-row-num">{{ $secQtyDisplay }}</div>
                                         <div class="public-inv-row-num">{{ $sec['unit'] }}</div>
                                         <div class="public-inv-row-num"><strong>{{ $sec['line_total'] }}</strong></div>
                                     </div>
@@ -253,7 +260,7 @@
                                                                     <div class="public-inv-row">
                                                                         <div class="public-inv-row-num"><span class="public-inv-chev" aria-hidden="true">&#9654;</span></div>
                                                                         <div><strong>{{ $service['label'] }}</strong></div>
-                                                                        <div class="public-inv-row-num">{{ $service['qty_display'] }}</div>
+                                                                        <div class="public-inv-row-num">{{ $isStorageSection ? ($service['qty_display'].' Locations') : $service['qty_display'] }}</div>
                                                                         <div class="public-inv-row-num">{{ $service['unit'] }}</div>
                                                                         <div class="public-inv-row-num"><strong>{{ $service['line_total'] }}</strong></div>
                                                                     </div>
@@ -278,7 +285,7 @@
                                                             <div class="public-inv-row">
                                                                 <div class="public-inv-row-num"></div>
                                                                 <div><strong>{{ $service['label'] }}</strong></div>
-                                                                <div class="public-inv-row-num">{{ $service['qty_display'] }}</div>
+                                                                <div class="public-inv-row-num">{{ $isStorageSection ? ($service['qty_display'].' Locations') : $service['qty_display'] }}</div>
                                                                 <div class="public-inv-row-num">{{ $service['unit'] }}</div>
                                                                 <div class="public-inv-row-num"><strong>{{ $service['line_total'] }}</strong></div>
                                                             </div>
@@ -296,7 +303,7 @@
                                 <div class="public-inv-row">
                                     <div class="public-inv-row-num"></div>
                                     <div><strong>{{ $sec['label'] }}</strong></div>
-                                    <div class="public-inv-row-num">{{ $sec['qty_display'] }}</div>
+                                    <div class="public-inv-row-num">{{ $secQtyDisplay }}</div>
                                     <div class="public-inv-row-num">{{ $sec['unit'] }}</div>
                                     <div class="public-inv-row-num"><strong>{{ $sec['line_total'] }}</strong></div>
                                 </div>
@@ -322,7 +329,7 @@
                     <div class="mobile-inv-card-icon mobile-inv-card-icon--{{ $mobileIcon['class'] }}">{!! $mobileIcon['icon'] !!}</div>
                     <div>
                         <div class="mobile-inv-card-title">{{ $sec['label'] }}</div>
-                        <div class="mobile-inv-card-meta">Qty: {{ $sec['qty_display'] }}</div>
+                        <div class="mobile-inv-card-meta">{{ strcasecmp((string) ($sec['label'] ?? ''), 'Storage') === 0 ? 'Locations' : 'Qty' }}: {{ $sec['qty_display'] }}</div>
                         <div class="mobile-inv-card-meta">Price: {{ $sec['unit'] }}</div>
                     </div>
                     <div class="mobile-inv-card-total">{{ $sec['line_total'] }}</div>

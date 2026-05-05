@@ -2096,15 +2096,30 @@ class InvoiceService
                 return strcasecmp($aLabel, $bLabel);
             });
             $serviceRows = [];
+            $isStorageCategory = strtolower((string) ($cat['label'] ?? '')) === 'storage';
+            $storageCategoryLocationCount = 0;
             foreach ($services as $service) {
                 $orders = $service['orders'] ?? [];
                 $serviceQty = (float) ($service['qty'] ?? 0);
                 $serviceTotal = (int) ($service['total_cents'] ?? 0);
+                $serviceLocationCount = 0;
+                if ($isStorageCategory) {
+                    foreach ($orders as $order) {
+                        $orderLabel = trim((string) ($order['label'] ?? ''));
+                        if ($orderLabel !== '' && $orderLabel !== '—') {
+                            $serviceLocationCount++;
+                        }
+                    }
+                    if ($serviceLocationCount === 0) {
+                        $serviceLocationCount = count($orders);
+                    }
+                    $storageCategoryLocationCount += $serviceLocationCount;
+                }
                 $serviceRows[] = [
                     'id' => (string) ($service['id'] ?? Str::uuid()),
                     'label' => (string) ($service['label'] ?? '—'),
-                    'qty' => number_format($serviceQty, 3, '.', ''),
-                    'qty_display' => $this->formatLegacyQty($serviceQty),
+                    'qty' => number_format($isStorageCategory ? (float) $serviceLocationCount : $serviceQty, 3, '.', ''),
+                    'qty_display' => $this->formatLegacyQty($isStorageCategory ? (float) $serviceLocationCount : $serviceQty),
                     'unit' => $money($serviceQty != 0.0 ? (int) round($serviceTotal / $serviceQty) : 0),
                     'line_total' => $money($serviceTotal),
                     'is_expandable' => $orders !== [],
@@ -2114,11 +2129,12 @@ class InvoiceService
 
             $catQty = (float) ($cat['qty'] ?? 0);
             $catTotal = (int) ($cat['total_cents'] ?? 0);
+            $displayQty = $isStorageCategory ? (float) $storageCategoryLocationCount : $catQty;
             $sections[] = [
                 'id' => 'cat-'.$cat['key'],
                 'label' => (string) $cat['label'],
-                'qty' => number_format($catQty, 3, '.', ''),
-                'qty_display' => $this->formatLegacyQty($catQty),
+                'qty' => number_format($displayQty, 3, '.', ''),
+                'qty_display' => $this->formatLegacyQty($displayQty),
                 'unit' => $money($catQty != 0.0 ? (int) round($catTotal / $catQty) : 0),
                 'line_total' => $money($catTotal),
                 'is_expandable' => $serviceRows !== [],

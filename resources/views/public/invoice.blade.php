@@ -57,15 +57,9 @@
         .public-inv-row { display: grid; grid-template-columns: 34px minmax(0, 1.6fr) minmax(72px, 0.3fr) minmax(88px, 0.4fr) minmax(88px, 0.4fr); align-items: center; gap: 10px; padding: 10px 12px; }
         tbody > tr:nth-child(odd) .public-inv-row { background: #eceff2; }
         tbody > tr:nth-child(even) .public-inv-row { background: #fff; }
-        .public-inv-row-num { text-align: center; }
-        .public-inv-sec > .public-inv-summary .public-inv-row > :nth-child(3),
-        .public-inv-sec > .public-inv-summary .public-inv-row > :nth-child(4),
-        .public-inv-sec > .public-inv-summary .public-inv-row > :nth-child(5),
-        .public-inv-sec--flat > .public-inv-row > :nth-child(3),
-        .public-inv-sec--flat > .public-inv-row > :nth-child(4),
-        .public-inv-sec--flat > .public-inv-row > :nth-child(5) {
+        .public-inv-row-num {
             text-align: center;
-            justify-self: center;
+            justify-self: stretch;
             width: 100%;
         }
         .public-inv-chev { display: inline-block; color: #4a5568; font-size: 11px; transition: transform 0.15s ease; }

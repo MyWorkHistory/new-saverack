@@ -1968,10 +1968,7 @@ function onDocKeydown(e) {
             Credit Charge
           </button>
         </div>
-        <div
-          class="billing-inv-toolbar-actions ms-lg-auto w-100 w-lg-auto justify-content-end"
-          data-right-actions
-        >
+        <div class="billing-inv-toolbar-actions ms-lg-auto" data-right-actions>
           <button
             type="button"
             class="staff-action-btn staff-action-btn--more"

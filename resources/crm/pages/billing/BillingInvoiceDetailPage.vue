@@ -1028,7 +1028,7 @@ function buildWhatsappDefaultMessage(type) {
   if (type === "send_storage_invoice") {
     return `Hi! Here is your storage invoice: ${link}\nLet me know if you have any questions-thanks!`.trim();
   }
-  return `Hi! Here is your invoice for ${range}: ${link}\nLet me know if you have any questions-thanks!`.trim();
+  return `Hi! Here is your invoice for ${range}: ${link}\nIf you’re enrolled in autopay, this invoice is just for your records—your card on file will be charged within 24 hours. If you make payments manually, we kindly ask that you submit it by Wednesday to help avoid any interruptions with your shipments.`.trim();
 }
 
 async function ensureShareLinkForMessaging() {

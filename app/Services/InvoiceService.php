@@ -1782,7 +1782,37 @@ class InvoiceService
             'event_type' => InvoiceHistoryEventType::STATUS,
             'history_message' => 'Status changed to '.$this->legacyStatusLabel($invoice).'.',
         ]);
+        if ($requested === 'open') {
+            $invoice = $this->ensureAutoCcFeeForOpenStatus($invoice, $actor);
+        }
         return $invoice->fresh(['items', 'clientAccount']);
+    }
+
+    private function ensureAutoCcFeeForOpenStatus(Invoice $invoice, ?User $actor): Invoice
+    {
+        $invoice->loadMissing('items', 'clientAccount');
+        $account = $invoice->clientAccount;
+        if ($account === null) {
+            return $invoice;
+        }
+        if (strcasecmp(trim((string) $account->default_payment_type), 'Credit Card') !== 0) {
+            return $invoice;
+        }
+        if ($invoice->items->contains(fn (InvoiceItem $item): bool => $this->isCreditCardFeeItem($item))) {
+            return $invoice;
+        }
+        $percent = (float) ($account->cc_fee_percent ?? 0);
+        if ($percent <= 0.0) {
+            return $invoice;
+        }
+        $baseCents = (int) $invoice->items
+            ->reject(fn (InvoiceItem $item): bool => $this->isCreditCardFeeItem($item))
+            ->sum('line_total_cents');
+        if ($baseCents <= 0) {
+            return $invoice;
+        }
+
+        return $this->addCcFee($invoice, 'Credit Card Fee', $actor);
     }
 
     public function paginate(array $filters): \Illuminate\Contracts\Pagination\LengthAwarePaginator

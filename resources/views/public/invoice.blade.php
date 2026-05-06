@@ -124,6 +124,8 @@
             .mobile-invoice-details { display: block; margin-top: 8px; }
             .mobile-invoice-details h2 { font-size: 16px; color: #202938; margin: 0 0 10px; }
             .mobile-inv-card { display: grid; grid-template-columns: 42px minmax(0, 1fr) auto; align-items: center; gap: 12px; border: 1px solid #edf0f4; border-radius: 7px; background: #fff; box-shadow: 0 1px 3px rgba(16, 24, 40, .06); padding: 12px; margin-bottom: 10px; }
+            .mobile-inv-card--sub { margin: 8px 10px 0; border-radius: 7px; align-items: start; }
+            .mobile-inv-card-spacer { width: 42px; min-height: 1px; }
             .mobile-inv-card-icon { display: flex; align-items: center; justify-content: center; width: 38px; height: 38px; border-radius: 50%; color: #2573ba; background: #eef6ff; font-size: 20px; }
             .mobile-inv-card-icon--postage { color: #22a06b; background: #eafaf2; }
             .mobile-inv-card-icon--packaging { color: #7c4dff; background: #f2edff; }
@@ -138,15 +140,15 @@
             details.mobile-inv-detail > summary.mobile-inv-detail__summary::-webkit-details-marker { display: none; }
             details.mobile-inv-detail[open] > summary .mobile-inv-chev { transform: rotate(90deg); }
             .mobile-inv-detail__body { border-top: 1px solid #edf0f4; background: #fafbfc; padding: 0 0 8px; }
-            details.mobile-inv-subdetail { margin: 8px 10px 0; border: 1px solid #e8ecf1; border-radius: 6px; background: #fff; overflow: hidden; }
-            details.mobile-inv-subdetail > summary.mobile-inv-subdetail__summary { list-style: none; cursor: pointer; padding: 10px 12px; font-size: 13px; font-weight: 700; color: #202938; display: grid; grid-template-columns: 22px 1fr auto; gap: 8px; align-items: center; }
+            details.mobile-inv-subdetail { border: none; border-radius: 0; background: transparent; overflow: visible; margin: 0; }
+            details.mobile-inv-subdetail > summary.mobile-inv-subdetail__summary { list-style: none; cursor: pointer; padding: 0; }
             details.mobile-inv-subdetail > summary.mobile-inv-subdetail__summary::-webkit-details-marker { display: none; }
             details.mobile-inv-subdetail[open] > summary .mobile-inv-chev { transform: rotate(90deg); }
-            .mobile-inv-subdetail__meta { font-size: 11px; font-weight: 600; color: #596579; text-align: right; line-height: 1.3; }
-            .mobile-inv-subdetail__table { width: 100%; border-collapse: collapse; font-size: 12px; }
+            .mobile-inv-subdetail__table { width: calc(100% - 20px); margin: 0 10px 8px; border-collapse: collapse; font-size: 12px; border: 1px solid #e8ecf1; border-radius: 6px; overflow: hidden; }
             .mobile-inv-subdetail__table td { padding: 8px 10px; border-top: 1px solid #eef1f5; color: #394456; }
+            .mobile-inv-subdetail__table tr:first-child td { border-top: none; }
             .mobile-inv-subdetail__table td.num { text-align: center; white-space: nowrap; }
-            .mobile-inv-flat-service { display: grid; grid-template-columns: 1fr auto; gap: 8px; padding: 10px 12px; font-size: 13px; border-top: 1px solid #edf0f4; align-items: start; }
+            .mobile-inv-flat-service { margin: 8px 10px 0; }
             .mobile-inv-flat-service strong { color: #202938; }
             .mobile-inv-detail .mobile-inv-card { margin-bottom: 0; border: none; border-radius: 0; box-shadow: none; }
             .detail-note { display: none; }
@@ -376,14 +378,25 @@
                         <div class="mobile-inv-detail__body">
                             @foreach (($sec['services'] ?? []) as $service)
                                 @if (!empty($service['is_expandable']))
+                                    @php
+                                        $svcQtyLine = $isStorageSection
+                                            ? (($service['qty_display'] ?? '').' Locations')
+                                            : ($service['qty_display'] ?? '');
+                                    @endphp
                                     <details class="mobile-inv-subdetail public-inv-sec--expandable">
                                         <summary class="mobile-inv-subdetail__summary">
-                                            <span class="public-inv-chev" aria-hidden="true">&#9654;</span>
-                                            <span>{{ $service['label'] }}</span>
-                                            <span class="mobile-inv-subdetail__meta">
-                                                {{ $isStorageSection ? (($service['qty_display'] ?? '').' Locations') : ($service['qty_display'] ?? '') }}<br>
-                                                {{ $service['unit'] ?? '' }} · {{ $service['line_total'] ?? '' }}
-                                            </span>
+                                            <div class="mobile-inv-card mobile-inv-card--sub">
+                                                <div class="mobile-inv-card-spacer" aria-hidden="true"></div>
+                                                <div>
+                                                    <div class="mobile-inv-card-title">
+                                                        <span class="public-inv-chev" aria-hidden="true">&#9654;</span>
+                                                        {{ $service['label'] }}
+                                                    </div>
+                                                    <div class="mobile-inv-card-meta">{{ $isStorageSection ? 'Locations' : 'Qty' }}: {{ $svcQtyLine }}</div>
+                                                    <div class="mobile-inv-card-meta">Price: {{ $service['unit'] ?? '—' }}</div>
+                                                </div>
+                                                <div class="mobile-inv-card-total">{{ $service['line_total'] ?? '—' }}</div>
+                                            </div>
                                         </summary>
                                         <table class="mobile-inv-subdetail__table">
                                             <tbody>
@@ -399,11 +412,20 @@
                                         </table>
                                     </details>
                                 @else
+                                    @php
+                                        $svcQtyLineFlat = $isStorageSection
+                                            ? (($service['qty_display'] ?? '').' Locations')
+                                            : ($service['qty_display'] ?? '');
+                                    @endphp
                                     <div class="mobile-inv-flat-service">
-                                        <div><strong>{{ $service['label'] }}</strong></div>
-                                        <div class="mobile-inv-subdetail__meta">
-                                            {{ $isStorageSection ? (($service['qty_display'] ?? '').' Locations') : ($service['qty_display'] ?? '') }}<br>
-                                            {{ $service['unit'] ?? '' }} · {{ $service['line_total'] ?? '' }}
+                                        <div class="mobile-inv-card mobile-inv-card--sub">
+                                            <div class="mobile-inv-card-spacer" aria-hidden="true"></div>
+                                            <div>
+                                                <div class="mobile-inv-card-title">{{ $service['label'] }}</div>
+                                                <div class="mobile-inv-card-meta">{{ $isStorageSection ? 'Locations' : 'Qty' }}: {{ $svcQtyLineFlat }}</div>
+                                                <div class="mobile-inv-card-meta">Price: {{ $service['unit'] ?? '—' }}</div>
+                                            </div>
+                                            <div class="mobile-inv-card-total">{{ $service['line_total'] ?? '—' }}</div>
                                         </div>
                                     </div>
                                 @endif

@@ -13,6 +13,13 @@ export function errorMessage(e, fallback = "Something Went Wrong.") {
     if (typeof first === "string") {
       return first;
     }
+    const flat = vals
+      .flatMap((v) => (Array.isArray(v) ? v : v != null ? [v] : []))
+      .map((x) => (typeof x === "string" ? x : String(x)))
+      .filter(Boolean);
+    if (flat.length) {
+      return flat[0];
+    }
   }
   if (typeof d.message === "string" && d.message) {
     return d.message;

@@ -1706,6 +1706,60 @@ class BillingInvoiceApiTest extends TestCase
         });
     }
 
+    public function test_invoice_whatsapp_endpoint_accepts_payment_failed_type(): void
+    {
+        Http::fake([
+            'https://wa.example.test/*' => Http::response(['ok' => true], 200),
+        ]);
+        config()->set('billing.whatsapp.endpoint', 'https://wa.example.test/send');
+        config()->set('billing.whatsapp.api_token', 'token-123');
+        config()->set('services.whatsapp.phone', '17272554885');
+
+        $user = User::factory()->create();
+        $user->permissions()->sync([
+            $this->billingViewPermission()->id,
+            $this->billingUpdatePermission()->id,
+        ]);
+        Sanctum::actingAs($user);
+
+        $client = ClientAccount::query()->create([
+            'status' => ClientAccount::STATUS_ACTIVE,
+            'company_name' => 'WhatsApp Payment Fail Co',
+            'email' => 'wafail@acme.test',
+            'whatsapp_api_id' => 'wa-chat-15555550999',
+        ]);
+
+        $invoice = Invoice::query()->create([
+            'invoice_number' => 'INV-WA-PF-001',
+            'client_account_id' => $client->id,
+            'status' => Invoice::STATUS_SENT,
+            'currency' => 'USD',
+            'subtotal_cents' => 5000,
+            'tax_cents' => 0,
+            'total_cents' => 5000,
+            'amount_paid_cents' => 0,
+            'balance_due_cents' => 12345,
+            'billing_period_start' => '2026-04-01',
+            'billing_period_end' => '2026-04-30',
+        ]);
+
+        $this->postJson("/api/invoices/{$invoice->id}/whatsapp", ['type' => 'payment_failed'])
+            ->assertOk()
+            ->assertJsonPath('whatsapp.to', 'wa-chat-15555550999')
+            ->assertJsonPath('whatsapp.type', 'payment_failed');
+
+        Http::assertSent(function ($request) use ($invoice) {
+            $data = $request->data();
+
+            return $request->url() === 'https://wa.example.test/send'
+                && ($data['chat_id'] ?? null) === 'wa-chat-15555550999'
+                && ($data['invoice_id'] ?? null) === $invoice->id
+                && ($data['type'] ?? null) === 'payment_failed'
+                && str_contains((string) ($data['message'] ?? ''), 'INV-WA-PF-001')
+                && str_contains((string) ($data['message'] ?? ''), '123.45');
+        });
+    }
+
     public function test_replace_line_group_updates_draft_group_items(): void
     {
         $user = User::factory()->create();

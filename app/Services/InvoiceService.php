@@ -2289,6 +2289,12 @@ class InvoiceService
         $to = $date['invoice_date_to'] !== null ? $this->dateToMdY($date['invoice_date_to']) : null;
         $label = $date['invoice_date_label'];
         $balance = number_format(((int) $invoice->balance_due_cents) / 100, 2);
+        if ($type === 'payment_failed') {
+            return 'We attempted to process the card on file for invoice #'.$invoice->invoice_number
+                .' in the amount of $'.$balance.', but unfortunately the payment did not go through.'
+                ."\n\n"
+                .'Could you please let us know when we can attempt the charge again, or if you would prefer to use a different payment method?';
+        }
         if ($type === 'invoice_reminder') {
             return 'Invoice reminder: '.$invoice->invoice_number.' ('.$label.'). Balance due $'.$balance.'. '.$invoiceUrl;
         }

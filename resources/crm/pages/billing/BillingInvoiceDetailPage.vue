@@ -1025,6 +1025,12 @@ function buildWhatsappDefaultMessage(type) {
   if (type === "invoice_reminder") {
     return `Invoice reminder: ${inv.invoice_number} (${range}). Balance due ${balance}. ${link}`.trim();
   }
+  if (type === "payment_failed") {
+    return (
+      `We attempted to process the card on file for invoice #${inv.invoice_number} in the amount of ${balance}, but unfortunately the payment did not go through.\n\n` +
+      `Could you please let us know when we can attempt the charge again, or if you would prefer to use a different payment method?`
+    ).trim();
+  }
   if (type === "send_storage_invoice") {
     return `Hi! Here is your storage invoice: ${link}\nLet me know if you have any questions-thanks!`.trim();
   }
@@ -1669,14 +1675,38 @@ async function confirmStripeCharge() {
       payment_type: "Credit Card",
       payment_date: new Date().toISOString().slice(0, 10),
     });
-    if (data?.result === "pending") {
+    const result = data?.result;
+    if (result === "pending") {
       toast.success("Stripe payment submitted and pending settlement.");
-    } else if (data?.result === "succeeded") {
-      toast.success("Stripe payment completed.");
-    } else {
-      toast.error("Stripe payment failed.");
+      closeStripeModal(true);
+      await load();
+      return;
     }
-    closeStripeModal(true);
+    if (result === "succeeded") {
+      toast.success("Stripe payment completed.");
+      closeStripeModal(true);
+      await load();
+      return;
+    }
+    if (result === "failed") {
+      const statusPart = data?.status ? ` (${String(data.status)})` : "";
+      const hint =
+        typeof data?.payment_intent_id === "string" && data.payment_intent_id
+          ? ` Ref: ${data.payment_intent_id}.`
+          : "";
+      toast.error(
+        (typeof data?.message === "string" && data.message.trim())
+          ? data.message.trim()
+          : `Stripe payment did not complete${statusPart}.${hint}`,
+      );
+      await load();
+      return;
+    }
+    toast.error(
+      (typeof data?.message === "string" && data.message.trim())
+        ? data.message.trim()
+        : "Unexpected response from Stripe. Please try again.",
+    );
     await load();
   } catch (e) {
     toast.errorFrom(e, "Could not process Stripe payment.");
@@ -3040,6 +3070,7 @@ function onDocKeydown(e) {
                 <option value="send_invoice">Send Invoice</option>
                 <option value="invoice_reminder">Invoice Reminder</option>
                 <option value="send_storage_invoice">Send Storage Invoice</option>
+                <option value="payment_failed">Payment Failed</option>
               </select>
               <label class="form-label">Optional custom message</label>
               <textarea

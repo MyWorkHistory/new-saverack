@@ -1641,7 +1641,7 @@ onUnmounted(() => {
                   v-model="importForm.invoice_number"
                   type="text"
                   class="form-control"
-                  placeholder="012001"
+                  placeholder="12001"
                 />
               </div>
             </div>

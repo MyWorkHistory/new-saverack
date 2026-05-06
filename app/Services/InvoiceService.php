@@ -24,18 +24,30 @@ class InvoiceService
      */
     public function allocateInvoiceNumber(): string
     {
-        $prefix = 'INV-';
-        $max = Invoice::query()
-            ->where('invoice_number', 'like', $prefix.'%')
+        $sequenceFloor = 12000;
+
+        // New format: numeric-only invoice numbers (zero-padded to 6 digits).
+        $currentNumeric = Invoice::query()
+            ->whereRaw("invoice_number REGEXP '^[0-9]+$'")
             ->lockForUpdate()
-            ->orderByDesc('invoice_number')
+            ->orderByRaw('CAST(invoice_number AS UNSIGNED) DESC')
             ->value('invoice_number');
-        $next = 1;
-        if (is_string($max) && preg_match('/^'.preg_quote($prefix, '/').'(\d+)$/', $max, $m)) {
-            $next = (int) $m[1] + 1;
+        $currentNumericValue = is_string($currentNumeric) ? (int) $currentNumeric : 0;
+
+        // Backward-compatible: consider legacy INV-xxxxx rows so sequence keeps increasing.
+        $currentLegacy = Invoice::query()
+            ->whereRaw("invoice_number REGEXP '^INV-[0-9]+$'")
+            ->lockForUpdate()
+            ->orderByRaw('CAST(SUBSTRING(invoice_number, 5) AS UNSIGNED) DESC')
+            ->value('invoice_number');
+        $currentLegacyValue = 0;
+        if (is_string($currentLegacy) && preg_match('/^INV-(\d+)$/', $currentLegacy, $m) === 1) {
+            $currentLegacyValue = (int) $m[1];
         }
 
-        return $prefix.str_pad((string) $next, 5, '0', STR_PAD_LEFT);
+        $next = max($sequenceFloor, $currentNumericValue, $currentLegacyValue) + 1;
+
+        return str_pad((string) $next, 6, '0', STR_PAD_LEFT);
     }
 
     /**

@@ -166,7 +166,7 @@ async function submit() {
                   :disabled="saving"
                 />
                 <p class="small text-secondary mb-3">
-                  Leave blank to use the next number (e.g. INV-2026-00001). Add line items on the
+                  Leave blank to use the next number (e.g. 12001). Add line items on the
                   invoice page.
                 </p>
 

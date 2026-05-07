@@ -371,7 +371,7 @@ onMounted(async () => {
               <table class="table table-hover align-middle mb-0 staff-data-table">
                 <thead class="table-light staff-table-head">
                   <tr>
-                    <th class="staff-table-head__th">
+                    <th class="staff-table-head__th order-detail-page__items-col">
                       <button class="order-detail-page__sort-btn" type="button" @click="toggleItemSort('name')">
                         Items <span class="order-detail-page__sort-icon">{{ sortIndicator("name") }}</span>
                       </button>
@@ -395,7 +395,7 @@ onMounted(async () => {
                 </thead>
                 <tbody>
                   <tr v-for="item in sortedItems" :key="item.id || item.sku">
-                    <td>
+                    <td class="order-detail-page__items-col">
                       <div class="order-detail-page__item-cell">
                         <img
                           v-if="item.image_url"
@@ -406,8 +406,18 @@ onMounted(async () => {
                         />
                         <div v-else class="order-detail-page__item-thumb order-detail-page__item-thumb--empty" aria-hidden="true"></div>
                         <div class="order-detail-page__item-copy">
-                          <div class="order-detail-page__item-name">{{ item.name || "—" }}</div>
-                          <div class="order-detail-page__item-sku">SKU {{ item.sku || "—" }}</div>
+                          <div
+                            class="order-detail-page__item-name"
+                            :title="item.name ? String(item.name) : undefined"
+                          >
+                            {{ item.name || "—" }}
+                          </div>
+                          <div
+                            class="order-detail-page__item-sku"
+                            :title="item.sku ? `SKU ${item.sku}` : undefined"
+                          >
+                            SKU {{ item.sku || "—" }}
+                          </div>
                         </div>
                       </div>
                     </td>
@@ -531,15 +541,21 @@ onMounted(async () => {
   display: flex;
   align-items: center;
   gap: 0.5rem;
+  min-width: 0;
+  width: 100%;
 }
 
 .order-detail-page__item-copy {
   min-width: 0;
+  flex: 1 1 auto;
+  max-width: 100%;
 }
 
 .order-detail-page__item-name {
   color: #2563eb;
   font-weight: 600;
+  display: block;
+  max-width: 100%;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -547,6 +563,20 @@ onMounted(async () => {
 
 .order-detail-page__item-sku {
   color: #6c757d;
+  display: block;
+  max-width: 100%;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.order-detail-page :deep(.staff-data-table) {
+  table-layout: fixed;
+  width: 100%;
+}
+
+.order-detail-page__items-col {
+  width: 52%;
 }
 
 .order-detail-page__item-thumb {

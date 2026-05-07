@@ -43,6 +43,7 @@ const canViewBilling = computed(() => {
 });
 
 const canViewInventory = computed(() => {
+  if (isPortal.value) return true;
   if (crmIsAdmin(props.user) || props.user?.is_crm_owner) return true;
   const k = props.user?.permission_keys;
   if (!Array.isArray(k)) return false;

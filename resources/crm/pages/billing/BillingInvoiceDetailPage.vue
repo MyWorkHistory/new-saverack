@@ -87,6 +87,9 @@ const invoiceStatuses = [
 
 const deleteModalOpen = ref(false);
 const deleteBusy = ref(false);
+const editNumberModalOpen = ref(false);
+const editNumberBusy = ref(false);
+const editNumberValue = ref("");
 
 const pdfDownloading = ref(false);
 const copyLinkBusy = ref(false);
@@ -1614,6 +1617,42 @@ function openRightMenuDelete() {
   openDeleteModal();
 }
 
+function openRightMenuEditNumber() {
+  closeRightActionsMenu();
+  openEditNumberModal();
+}
+
+function openEditNumberModal() {
+  if (!invoice.value || !canUpdate.value) return;
+  editNumberValue.value = String(invoice.value.invoice_number || "");
+  editNumberModalOpen.value = true;
+}
+
+function closeEditNumberModal(force = false) {
+  if (editNumberBusy.value && !force) return;
+  editNumberModalOpen.value = false;
+}
+
+async function confirmEditNumber() {
+  if (!invoice.value || !canUpdate.value) return;
+  const invoiceNumber = String(editNumberValue.value || "").trim();
+  if (!invoiceNumber) {
+    toast.error("Invoice number is required.");
+    return;
+  }
+  editNumberBusy.value = true;
+  try {
+    await api.patch(`/invoices/${invoice.value.id}/number`, { invoice_number: invoiceNumber });
+    toast.success("Invoice number updated.");
+    closeEditNumberModal(true);
+    await load();
+  } catch (e) {
+    toast.errorFrom(e, "Could not update invoice number.");
+  } finally {
+    editNumberBusy.value = false;
+  }
+}
+
 async function openStripeModal() {
   if (!invoice.value || !canStripeCharge.value) return;
   if (!hasStripeCustomerId.value) {
@@ -2026,6 +2065,15 @@ function onDocKeydown(e) {
               @click="openRightMenuRestoreDraft"
             >
               Make Draft
+            </button>
+            <button
+              v-if="canUpdate"
+              type="button"
+              class="staff-row-menu__item"
+              role="menuitem"
+              @click="openRightMenuEditNumber"
+            >
+              Edit Invoice Number
             </button>
             <button
               v-if="canDelete && (currentStatusKey === 'draft' || canHardDeleteInvoices)"
@@ -3556,6 +3604,51 @@ function onDocKeydown(e) {
       @close="closeDeleteModal"
       @confirm="confirmDelete"
     />
+    <Teleport to="body">
+      <Transition name="crm-vx-confirm">
+        <div
+          v-if="editNumberModalOpen"
+          class="crm-vx-modal-overlay"
+          role="dialog"
+          aria-modal="true"
+          @click.self="closeEditNumberModal"
+        >
+          <div class="crm-vx-modal crm-vx-modal--sm" @click.stop>
+            <header class="crm-vx-modal__head border-bottom">
+              <h2 class="crm-vx-modal__title mb-0">Edit Invoice Number</h2>
+            </header>
+            <div class="crm-vx-modal__body">
+              <label class="form-label" for="billing-detail-edit-number-input">Invoice Number</label>
+              <input
+                id="billing-detail-edit-number-input"
+                v-model="editNumberValue"
+                type="text"
+                class="form-control"
+                :disabled="editNumberBusy"
+              />
+            </div>
+            <footer class="crm-vx-modal__footer d-flex gap-2 justify-content-end">
+              <button
+                type="button"
+                class="crm-vx-modal-btn crm-vx-modal-btn--secondary"
+                :disabled="editNumberBusy"
+                @click="closeEditNumberModal"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                class="crm-vx-modal-btn crm-vx-modal-btn--primary"
+                :disabled="editNumberBusy"
+                @click="confirmEditNumber"
+              >
+                {{ editNumberBusy ? "Saving…" : "Save" }}
+              </button>
+            </footer>
+          </div>
+        </div>
+      </Transition>
+    </Teleport>
     <CrmStatusUpdateModal
       v-model:open="statusModalOpen"
       v-model:status="statusForm"

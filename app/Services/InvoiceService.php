@@ -128,6 +128,31 @@ class InvoiceService
         });
     }
 
+    public function updateInvoiceNumber(Invoice $invoice, string $invoiceNumber, ?User $actor): Invoice
+    {
+        if ($invoice->isVoid()) {
+            throw new \RuntimeException('Void invoices cannot be updated.');
+        }
+        $invoiceNumber = trim($invoiceNumber);
+        if ($invoiceNumber === '') {
+            throw new \InvalidArgumentException('Invoice number is required.');
+        }
+
+        return DB::transaction(function () use ($invoice, $invoiceNumber, $actor) {
+            $fromStatus = $invoice->status;
+            $invoice->invoice_number = $invoiceNumber;
+            $invoice->save();
+
+            $this->logHistory($invoice, $actor, 'updated', $fromStatus, $invoice->status, [
+                'event_type' => InvoiceHistoryEventType::HEADER_EDIT,
+                'history_message' => 'Updated invoice number.',
+                'invoice_number' => $invoiceNumber,
+            ]);
+
+            return $invoice->fresh(['items', 'clientAccount']);
+        });
+    }
+
     /**
      * @param  list<array<string, mixed>>  $items
      */

@@ -163,6 +163,10 @@ const voidBusy = ref(false);
 const deleteModalOpen = ref(false);
 const deleteTarget = ref(null);
 const deleteBusy = ref(false);
+const editNumberModalOpen = ref(false);
+const editNumberTarget = ref(null);
+const editNumberValue = ref("");
+const editNumberBusy = ref(false);
 
 function placeManageMenu(anchorEl) {
   if (!(anchorEl instanceof HTMLElement)) return;
@@ -637,6 +641,40 @@ function openDeleteModal(row) {
   manageOpenId.value = null;
   deleteTarget.value = row;
   deleteModalOpen.value = true;
+}
+
+function openEditNumberModal(row) {
+  manageOpenId.value = null;
+  editNumberTarget.value = row;
+  editNumberValue.value = String(row?.invoice_number || "");
+  editNumberModalOpen.value = true;
+}
+
+function closeEditNumberModal(force = false) {
+  if (editNumberBusy.value && !force) return;
+  editNumberModalOpen.value = false;
+  editNumberTarget.value = null;
+}
+
+async function confirmEditNumber() {
+  const row = editNumberTarget.value;
+  if (!row) return;
+  const invoiceNumber = String(editNumberValue.value || "").trim();
+  if (!invoiceNumber) {
+    toast.error("Invoice number is required.");
+    return;
+  }
+  editNumberBusy.value = true;
+  try {
+    await api.patch(`/invoices/${row.id}/number`, { invoice_number: invoiceNumber });
+    toast.success("Invoice number updated.");
+    closeEditNumberModal(true);
+    await fetchRows();
+  } catch (e) {
+    toast.errorFrom(e, "Could not update invoice number.");
+  } finally {
+    editNumberBusy.value = false;
+  }
 }
 
 function closeDeleteModal(force = false) {
@@ -1517,6 +1555,15 @@ onUnmounted(() => {
             View
           </a>
           <button
+            v-if="canUpdate"
+            type="button"
+            class="staff-row-menu__item"
+            role="menuitem"
+            @click="openEditNumberModal(manageMenuRow)"
+          >
+            Edit Invoice Number
+          </button>
+          <button
             v-if="canUpdate && legacyStatusKey(manageMenuRow) === 'draft'"
             type="button"
             class="staff-row-menu__item"
@@ -1661,6 +1708,52 @@ onUnmounted(() => {
                 @click="submitImportCsv"
               >
                 {{ importBusy ? "Importing…" : "Import CSV" }}
+              </button>
+            </footer>
+          </div>
+        </div>
+      </Transition>
+    </Teleport>
+
+    <Teleport to="body">
+      <Transition name="crm-vx-confirm">
+        <div
+          v-if="editNumberModalOpen"
+          class="crm-vx-modal-overlay"
+          role="dialog"
+          aria-modal="true"
+          @click.self="closeEditNumberModal"
+        >
+          <div class="crm-vx-modal crm-vx-modal--sm" @click.stop>
+            <header class="crm-vx-modal__head border-bottom">
+              <h2 class="crm-vx-modal__title mb-0">Edit Invoice Number</h2>
+            </header>
+            <div class="crm-vx-modal__body">
+              <label class="form-label" for="billing-edit-number-input">Invoice Number</label>
+              <input
+                id="billing-edit-number-input"
+                v-model="editNumberValue"
+                type="text"
+                class="form-control"
+                :disabled="editNumberBusy"
+              />
+            </div>
+            <footer class="crm-vx-modal__footer d-flex gap-2 justify-content-end">
+              <button
+                type="button"
+                class="crm-vx-modal-btn crm-vx-modal-btn--secondary"
+                :disabled="editNumberBusy"
+                @click="closeEditNumberModal"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                class="crm-vx-modal-btn crm-vx-modal-btn--primary"
+                :disabled="editNumberBusy"
+                @click="confirmEditNumber"
+              >
+                {{ editNumberBusy ? "Saving…" : "Save" }}
               </button>
             </footer>
           </div>

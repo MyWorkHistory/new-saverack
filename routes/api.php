@@ -115,6 +115,8 @@ Route::middleware('auth:sanctum')->group(function () {
         ->name('invoices.status');
     Route::patch('invoices/{invoice}/dates', [InvoiceController::class, 'updateDates'])
         ->name('invoices.dates');
+    Route::patch('invoices/{invoice}/number', [InvoiceController::class, 'updateNumber'])
+        ->name('invoices.number');
     Route::put('invoices/{invoice}/items/{item}', [InvoiceController::class, 'updateItem'])
         ->name('invoices.items.update');
     Route::delete('invoices/{invoice}/items/{item}', [InvoiceController::class, 'destroyItem'])

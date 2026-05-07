@@ -13,6 +13,7 @@ use App\Http\Requests\InvoiceSendWhatsappRequest;
 use App\Http\Requests\InvoiceStoreRequest;
 use App\Http\Requests\InvoiceStripeChargeRequest;
 use App\Http\Requests\InvoiceUpdateDatesRequest;
+use App\Http\Requests\InvoiceUpdateNumberRequest;
 use App\Http\Requests\InvoiceUpdateItemRequest;
 use App\Http\Requests\InvoiceUpdateRequest;
 use App\Models\ClientAccount;
@@ -132,6 +133,19 @@ class InvoiceController extends Controller
         $invoice = $this->invoices->updateInvoiceDates(
             $invoice,
             $request->datePayload(),
+            $request->user(),
+        );
+
+        return response()->json($this->invoices->toDetailArray($invoice));
+    }
+
+    public function updateNumber(InvoiceUpdateNumberRequest $request, Invoice $invoice): JsonResponse
+    {
+        $this->authorize('update', $invoice);
+
+        $invoice = $this->invoices->updateInvoiceNumber(
+            $invoice,
+            $request->invoiceNumber(),
             $request->user(),
         );
 

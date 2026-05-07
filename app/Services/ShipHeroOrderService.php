@@ -49,6 +49,8 @@ class ShipHeroOrderService
         } elseif ($tab === 'awaiting') {
             $vars['ready_to_ship'] = true;
             $vars['fulfillment_status'] = 'unfulfilled';
+        } elseif ($tab === 'out_of_stock') {
+            $vars['fulfillment_status'] = 'out_of_stock';
         } elseif ($tab === 'shipped') {
             $vars['fulfillment_status'] = 'shipped';
         }
@@ -839,6 +841,10 @@ GQL;
                     || $normalized === 'fulfilled'
                     || $normalized === 'complete'
                     || str_starts_with($normalized, 'shipped'));
+        }
+        if ($tab === 'out_of_stock') {
+            return str_contains($normalized, 'out')
+                && str_contains($normalized, 'stock');
         }
 
         return true;

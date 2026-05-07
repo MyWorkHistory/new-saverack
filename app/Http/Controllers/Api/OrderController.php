@@ -28,7 +28,7 @@ class OrderController extends Controller
     {
         $validated = $request->validate([
             'client_account_id' => ['required', 'integer', 'exists:client_accounts,id'],
-            'tab' => ['nullable', 'string', 'in:manage,awaiting,on_hold,shipped'],
+            'tab' => ['nullable', 'string', 'in:manage,awaiting,on_hold,out_of_stock,shipped'],
             'order_date_from' => ['nullable', 'date'],
             'order_date_to' => ['nullable', 'date'],
             'fulfillment_status' => ['nullable', 'string', 'max:64'],

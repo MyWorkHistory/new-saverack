@@ -3,13 +3,14 @@ import { computed, ref, watch } from "vue";
 import { RouterLink, useRoute } from "vue-router";
 import { BRAND_MARK_SRC } from "../../utils/brandAssets.js";
 import { useCrmSidebar } from "../../composables/useCrmSidebar";
-import { crmIsAdmin } from "../../utils/crmUser";
+import { crmIsAdmin, crmIsPortalUser } from "../../utils/crmUser";
 
 const props = defineProps({
   user: { type: Object, required: true },
 });
 
 const route = useRoute();
+const isPortal = computed(() => crmIsPortalUser(props.user));
 
 const canViewUsers = computed(
   () =>
@@ -86,9 +87,11 @@ function navActive(mode) {
   if (mode === "clients-accounts") return p.startsWith("/clients/accounts");
   if (mode === "clients-users") return p.startsWith("/clients/users");
   if (mode === "orders") return p.startsWith("/orders");
+  if (mode === "orders-index") return p === "/orders";
   if (mode === "orders-manage") return p.startsWith("/orders/manage");
   if (mode === "orders-awaiting") return p.startsWith("/orders/awaiting");
   if (mode === "orders-on-hold") return p.startsWith("/orders/on-hold");
+  if (mode === "orders-out-of-stock") return p.startsWith("/orders/out-of-stock");
   if (mode === "orders-shipped") return p.startsWith("/orders/shipped");
   if (mode === "inventory") return p.startsWith("/inventory");
   if (mode === "inventory-search") return p === "/inventory";
@@ -167,7 +170,7 @@ function collapseNav() {
     <nav class="vx-sidebar__scroll">
       <h2 v-if="isExpanded" class="vx-section-label">Menu</h2>
       <ul class="list-unstyled mb-0 pb-2">
-        <li>
+        <li v-if="!isPortal">
           <RouterLink
             to="/dashboard"
             class="vx-nav-link"
@@ -189,7 +192,7 @@ function collapseNav() {
             <span v-if="isExpanded">Dashboard</span>
           </RouterLink>
         </li>
-        <li v-if="canViewUsers">
+        <li v-if="!isPortal && canViewUsers">
           <RouterLink
             to="/staff"
             class="vx-nav-link"
@@ -211,7 +214,7 @@ function collapseNav() {
             <span v-if="isExpanded">Staff</span>
           </RouterLink>
         </li>
-        <li v-if="canViewClients">
+        <li v-if="!isPortal && canViewClients">
           <template v-if="isExpanded">
             <div>
               <button
@@ -295,7 +298,7 @@ function collapseNav() {
             </svg>
           </RouterLink>
         </li>
-        <li v-if="canViewBilling">
+        <li v-if="!isPortal && canViewBilling">
           <template v-if="isExpanded">
             <div>
               <button
@@ -418,6 +421,16 @@ function collapseNav() {
               <ul v-show="ordersGroupOpen" class="list-unstyled mb-0 mt-1">
                 <li>
                   <RouterLink
+                    v-if="isPortal"
+                    to="/orders"
+                    class="vx-nav-link vx-nav-sublink"
+                    :class="{ 'vx-nav-link--active': navActive('orders-index') }"
+                    @click="closeMobile"
+                  >
+                    All
+                  </RouterLink>
+                  <RouterLink
+                    v-else
                     to="/orders/manage"
                     class="vx-nav-link vx-nav-sublink"
                     :class="{ 'vx-nav-link--active': navActive('orders-manage') }"
@@ -433,7 +446,7 @@ function collapseNav() {
                     :class="{ 'vx-nav-link--active': navActive('orders-awaiting') }"
                     @click="closeMobile"
                   >
-                    Ready to Ship
+                    Ready To Ship
                   </RouterLink>
                 </li>
                 <li>
@@ -444,6 +457,16 @@ function collapseNav() {
                     @click="closeMobile"
                   >
                     On-Hold
+                  </RouterLink>
+                </li>
+                <li>
+                  <RouterLink
+                    to="/orders/out-of-stock"
+                    class="vx-nav-link vx-nav-sublink"
+                    :class="{ 'vx-nav-link--active': navActive('orders-out-of-stock') }"
+                    @click="closeMobile"
+                  >
+                    Out Of Stock
                   </RouterLink>
                 </li>
                 <li>
@@ -461,7 +484,7 @@ function collapseNav() {
           </template>
           <RouterLink
             v-else
-            to="/orders/manage"
+            :to="isPortal ? '/orders' : '/orders/manage'"
             class="vx-nav-link"
             title="Orders"
             @click="closeMobile"
@@ -531,7 +554,7 @@ function collapseNav() {
                     Search
                   </RouterLink>
                 </li>
-                <li>
+                <li v-if="!isPortal">
                   <RouterLink
                     to="/inventory/on-demand"
                     class="vx-nav-link vx-nav-sublink"
@@ -565,7 +588,7 @@ function collapseNav() {
             </svg>
           </RouterLink>
         </li>
-        <li v-if="canViewWebmaster">
+        <li v-if="!isPortal && canViewWebmaster">
           <RouterLink
             to="/webmaster"
             class="vx-nav-link"

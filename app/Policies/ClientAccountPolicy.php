@@ -20,6 +20,9 @@ class ClientAccountPolicy
 
     public function view(User $user, ClientAccount $clientAccount): bool
     {
+        if ((int) ($user->client_account_id ?? 0) > 0) {
+            return (int) $user->client_account_id === (int) $clientAccount->id;
+        }
         return $this->canManageClients($user) || $user->hasPermission('clients.view');
     }
 

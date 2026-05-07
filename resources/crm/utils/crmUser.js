@@ -20,3 +20,13 @@ export function crmIsAdmin(user) {
   }
   return false;
 }
+
+/** Portal/non-staff account: linked directly to a client account. */
+export function crmIsPortalUser(user) {
+  if (!user || typeof user !== "object") return false;
+  const raw = user.client_account_id;
+  if (raw === null || raw === undefined) return false;
+  if (typeof raw === "number") return Number.isFinite(raw) && raw > 0;
+  const v = String(raw).trim();
+  return v !== "" && v !== "0";
+}

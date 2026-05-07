@@ -1,6 +1,6 @@
 import { createRouter, createWebHistory } from "vue-router";
 import api from "../services/api";
-import { crmIsAdmin } from "../utils/crmUser";
+import { crmIsAdmin, crmIsPortalUser } from "../utils/crmUser";
 import { applyRouteMeta } from "../composables/useCrmPageMeta.js";
 import {
   getPublicSignupUrl,
@@ -133,6 +133,12 @@ const meta = {
 };
 
 const routes = [
+  {
+    path: "/portal-login",
+    name: "portal-login",
+    component: LoginPage,
+    meta: { public: true, ...meta.login },
+  },
   {
     path: "/login",
     name: "login",
@@ -286,6 +292,12 @@ const routes = [
     meta: meta.inventoryOnDemand,
   },
   {
+    path: "/orders",
+    name: "orders-index",
+    component: OrdersListPage,
+    meta: { ...meta.ordersAwaiting, orderTab: "awaiting" },
+  },
+  {
     path: "/orders/manage",
     name: "orders-manage",
     component: OrdersListPage,
@@ -302,6 +314,16 @@ const routes = [
     name: "orders-on-hold",
     component: OrdersListPage,
     meta: { ...meta.ordersOnHold, orderTab: "on_hold" },
+  },
+  {
+    path: "/orders/out-of-stock",
+    name: "orders-out-of-stock",
+    component: OrdersListPage,
+    meta: {
+      title: "Save Rack | Orders | Out Of Stock",
+      description: "ShipHero out of stock orders.",
+      orderTab: "out_of_stock",
+    },
   },
   {
     path: "/orders/shipped",
@@ -362,6 +384,7 @@ let inventoryNavCache = null;
 
 /** True when the signed-in CRM user is an administrator (`crmIsAdmin`); used for permissions routes only. */
 let usersMeIsAdmin = false;
+let authUserCache = null;
 
 export function clearCrmOwnerCache() {
   webmasterNavCache = null;
@@ -370,6 +393,7 @@ export function clearCrmOwnerCache() {
   billingNavCache = null;
   inventoryNavCache = null;
   usersMeIsAdmin = false;
+  authUserCache = null;
 }
 
 export function setWebmasterNavFromUser(user) {
@@ -464,11 +488,27 @@ export function setInventoryNavFromUser(user) {
     inventoryNavCache = { view: true, update: true };
     return;
   }
+  if (crmIsPortalUser(user)) {
+    inventoryNavCache = { view: true, update: false };
+    return;
+  }
   const k = Array.isArray(user.permission_keys) ? user.permission_keys : [];
   inventoryNavCache = {
     view: k.includes("inventory.view"),
     update: k.includes("inventory.update"),
   };
+}
+
+async function ensureAuthUser() {
+  if (authUserCache) return authUserCache;
+  const { data } = await api.get("/auth/me");
+  authUserCache = data;
+  setUsersNavFromUser(data);
+  setClientsNavFromUser(data);
+  setWebmasterNavFromUser(data);
+  setBillingNavFromUser(data);
+  setInventoryNavFromUser(data);
+  return data;
 }
 
 async function ensureClientsRouteAccess(path) {
@@ -645,15 +685,48 @@ router.beforeEach(async (to) => {
   const token = localStorage.getItem("auth_token");
 
   if (to.meta.public) {
-    // Keep /create reachable while signed in (e.g. staff verifying the form); only skip /login when already authenticated.
-    if (token && to.name === "login") {
-      return { path: "/dashboard" };
+    // Keep /create reachable while signed in; login paths route by account type.
+    if (token && (to.name === "login" || to.name === "portal-login")) {
+      try {
+        const me = await ensureAuthUser();
+        return { path: crmIsPortalUser(me) ? "/orders" : "/dashboard" };
+      } catch {
+        localStorage.removeItem("auth_token");
+        clearCrmOwnerCache();
+        return true;
+      }
     }
     return true;
   }
 
   if (!token) {
-    return { name: "login", query: { redirect: to.fullPath } };
+    const isPortalPath = to.path.startsWith("/orders") || to.path.startsWith("/inventory");
+    return { name: isPortalPath ? "portal-login" : "login", query: { redirect: to.fullPath } };
+  }
+
+  let me = null;
+  try {
+    me = await ensureAuthUser();
+  } catch {
+    localStorage.removeItem("auth_token");
+    clearCrmOwnerCache();
+    const isPortalPath = to.path.startsWith("/orders") || to.path.startsWith("/inventory");
+    return { name: isPortalPath ? "portal-login" : "login", query: { redirect: to.fullPath } };
+  }
+
+  if (crmIsPortalUser(me)) {
+    if (
+      to.path.startsWith("/dashboard")
+      || to.path.startsWith("/staff")
+      || to.path.startsWith("/users")
+      || to.path.startsWith("/clients")
+      || to.path.startsWith("/billing")
+      || to.path.startsWith("/webmaster")
+    ) {
+      return { path: "/orders" };
+    }
+  } else if (to.path.startsWith("/portal-login")) {
+    return { path: "/dashboard" };
   }
 
   if (to.path === "/webmaster" || to.path.startsWith("/webmaster/")) {

@@ -27,6 +27,7 @@ const showShell = computed(() => {
   const p = route.path;
   return (
     !p.startsWith("/login") &&
+    !p.startsWith("/portal-login") &&
     !p.startsWith("/create") &&
     !p.startsWith("/forgot-password") &&
     !p.startsWith("/reset-password")
@@ -53,7 +54,10 @@ const loadMe = async () => {
     if (e.response?.status === 401) {
       localStorage.removeItem("auth_token");
       clearCrmOwnerCache();
-      router.replace({ name: "login", query: { redirect: route.fullPath } });
+      const loginName = route.path.startsWith("/orders") || route.path.startsWith("/inventory")
+        ? "portal-login"
+        : "login";
+      router.replace({ name: loginName, query: { redirect: route.fullPath } });
     }
   } finally {
     navLoading.value = false;

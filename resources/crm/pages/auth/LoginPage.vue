@@ -5,11 +5,13 @@ import api from "../../services/api";
 import {
   setBillingNavFromUser,
   setClientsNavFromUser,
+  setInventoryNavFromUser,
   setUsersNavFromUser,
   setWebmasterNavFromUser,
 } from "../../router";
 import AuthVuexyShell from "../../components/auth/AuthVuexyShell.vue";
 import { getPublicSignupUrl } from "../../utils/publicSignupUrl.js";
+import { crmIsPortalUser } from "../../utils/crmUser";
 
 const publicSignupUrl = computed(() => getPublicSignupUrl());
 
@@ -19,6 +21,7 @@ const loading = ref(false);
 const error = ref("");
 const showPassword = ref(false);
 const remember = ref(false);
+const portalMode = computed(() => route.name === "portal-login");
 
 const form = reactive({
   email: "",
@@ -40,9 +43,19 @@ const submit = async () => {
     setUsersNavFromUser(data.user);
     setClientsNavFromUser(data.user);
     setBillingNavFromUser(data.user);
+    setInventoryNavFromUser(data.user);
+    const isPortal = crmIsPortalUser(data.user);
+    if (portalMode.value && !isPortal) {
+      localStorage.removeItem("auth_token");
+      throw new Error("This login is for portal users only.");
+    }
+    if (!portalMode.value && isPortal) {
+      localStorage.removeItem("auth_token");
+      throw new Error("Please use the portal login.");
+    }
     const r = route.query.redirect;
     const dest =
-      typeof r === "string" && r.startsWith("/") ? r : "/dashboard";
+      typeof r === "string" && r.startsWith("/") ? r : isPortal ? "/orders" : "/dashboard";
     router.push(dest);
   } catch (e) {
     const d = e?.response?.data;

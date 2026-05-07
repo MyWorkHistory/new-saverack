@@ -11,7 +11,7 @@ import { useToast } from "../../composables/useToast.js";
 const toast = useToast();
 const route = useRoute();
 const router = useRouter();
-inject("crmUser", ref(null));
+const crmUser = inject("crmUser", ref(null));
 
 const rows = ref([]);
 const loading = ref(false);
@@ -50,6 +50,7 @@ const tabKey = computed(() => String(route.meta?.orderTab || "manage"));
 const tabTitle = computed(() => {
   if (tabKey.value === "awaiting") return "Ready to Ship";
   if (tabKey.value === "on_hold") return "On-Hold";
+  if (tabKey.value === "out_of_stock") return "Out Of Stock";
   if (tabKey.value === "shipped") return "Shipped";
   return "Manage";
 });
@@ -67,15 +68,21 @@ const manageMenuRow = computed(
 const readySummaryVisibleAccounts = computed(() => readySummary.value.ready_to_ship_by_account || []);
 const canLoadMoreReadySummary = computed(() => readySummaryHasMore.value && !readySummaryLoading.value);
 
-const accountOptions = computed(() =>
-  (accounts.value || [])
+const isPortalUser = computed(() => Number(crmUser.value?.client_account_id || 0) > 0);
+const portalClientAccountId = computed(() => Number(crmUser.value?.client_account_id || 0));
+
+const accountOptions = computed(() => {
+  const source = isPortalUser.value
+    ? (accounts.value || []).filter((a) => Number(a?.id || 0) === portalClientAccountId.value)
+    : (accounts.value || []);
+  return source
     .filter((a) => a?.has_shiphero_customer)
     .map((a) => ({
       id: a.id,
       name: a.company_name || `Account #${a.id}`,
       email: a.email ? String(a.email) : "",
-    })),
-);
+    }));
+});
 
 function orderDetailHref(row) {
   if (!row?.id || !selectedAccountId.value) return "#";
@@ -331,6 +338,9 @@ onMounted(async () => {
     // no-op
   }
   await loadAccounts();
+  if (isPortalUser.value && portalClientAccountId.value > 0) {
+    selectedAccountId.value = String(portalClientAccountId.value);
+  }
   if (tabKey.value === "manage") fetchReadySummary(true);
 });
 

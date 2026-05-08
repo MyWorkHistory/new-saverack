@@ -347,6 +347,7 @@ const routes = [
   { path: "/users/orders/shipped", name: "user-orders-shipped", component: () => import("../pages/user-orders/UserOrdersListPage.vue"), meta: { ...meta.ordersShipped, orderTab: "shipped", userPortal: true } },
   { path: "/users/orders/:shipheroOrderId", name: "user-order-detail", component: () => import("../pages/user-orders/UserOrderDetailPage.vue"), props: true, meta: { ...meta.orderDetail, userPortal: true } },
   { path: "/users/inventory", name: "user-inventory", component: () => import("../pages/user-inventory/UserInventoryPage.vue"), meta: { ...meta.inventory, userPortal: true } },
+  { path: "/users/inventory/:sku", name: "user-inventory-detail", component: () => import("../pages/user-inventory/UserInventoryDetailPage.vue"), props: true, meta: { ...meta.inventoryDetail, userPortal: true } },
   { path: "/tickets/board", redirect: "/admin/dashboard" },
   { path: "/tickets/:id", redirect: "/admin/dashboard" },
   { path: "/tickets", redirect: "/admin/dashboard" },

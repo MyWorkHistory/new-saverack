@@ -88,7 +88,31 @@ function collapseNav() {
               :aria-expanded="ordersGroupOpen"
               @click="ordersGroupOpen = !ordersGroupOpen"
             >
+              <svg
+                fill="none"
+                viewBox="0 0 24 24"
+                stroke="currentColor"
+                stroke-width="1.5"
+              >
+                <path
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                  d="M3 6.75A2.25 2.25 0 0 1 5.25 4.5h13.5A2.25 2.25 0 0 1 21 6.75v10.5A2.25 2.25 0 0 1 18.75 19.5H5.25A2.25 2.25 0 0 1 3 17.25V6.75Zm3 1.5h12M7.5 12h3m-3 3h6"
+                />
+              </svg>
               <span class="text-truncate">Orders</span>
+              <svg
+                class="ms-auto flex-shrink-0 transition"
+                :class="ordersGroupOpen ? 'rotate-180' : ''"
+                style="width: 1rem; height: 1rem"
+                fill="none"
+                viewBox="0 0 24 24"
+                stroke="currentColor"
+                stroke-width="1.5"
+                aria-hidden="true"
+              >
+                <path stroke-linecap="round" stroke-linejoin="round" d="M19 9l-7 7-7-7" />
+              </svg>
             </button>
             <ul v-show="ordersGroupOpen" class="list-unstyled mb-0 mt-1">
               <li><RouterLink to="/users/orders" class="vx-nav-link vx-nav-sublink" :class="{ 'vx-nav-link--active': navActive('orders-index') }" @click="closeMobile">All</RouterLink></li>
@@ -105,7 +129,18 @@ function collapseNav() {
             title="Orders"
             @click="closeMobile"
           >
-            <span>O</span>
+            <svg
+              fill="none"
+              viewBox="0 0 24 24"
+              stroke="currentColor"
+              stroke-width="1.5"
+            >
+              <path
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                d="M3 6.75A2.25 2.25 0 0 1 5.25 4.5h13.5A2.25 2.25 0 0 1 21 6.75v10.5A2.25 2.25 0 0 1 18.75 19.5H5.25A2.25 2.25 0 0 1 3 17.25V6.75Zm3 1.5h12M7.5 12h3m-3 3h6"
+              />
+            </svg>
           </RouterLink>
         </li>
         <li>
@@ -116,11 +151,28 @@ function collapseNav() {
             :title="!isExpanded ? 'Inventory' : undefined"
             @click="closeMobile"
           >
+            <svg
+              fill="none"
+              viewBox="0 0 24 24"
+              stroke="currentColor"
+              stroke-width="1.5"
+            >
+              <path
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                d="m20.25 7.5-.625 10.632a2.25 2.25 0 0 1-2.247 2.118H6.622a2.25 2.25 0 0 1-2.247-2.118L3.75 7.5M10 11.25h4M3.375 7.5h17.25c.621 0 1.125-.504 1.125-1.125v-1.5c0-.621-.504-1.125-1.125-1.125H3.375c-.621 0-1.125.504-1.125 1.125v1.5c0 .621.504 1.125 1.125 1.125Z"
+              />
+            </svg>
             <span v-if="isExpanded">Inventory</span>
-            <span v-else>I</span>
           </RouterLink>
         </li>
       </ul>
     </nav>
   </aside>
 </template>
+
+<style scoped>
+.rotate-180 {
+  transform: rotate(180deg);
+}
+</style>

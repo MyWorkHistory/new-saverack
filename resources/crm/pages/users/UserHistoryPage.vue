@@ -78,21 +78,21 @@ load();
   <div class="w-full">
     <nav class="mb-4 flex flex-wrap items-center gap-1.5 text-sm">
       <RouterLink
-        to="/dashboard"
+        to="/admin/dashboard"
         class="font-medium text-gray-500 transition hover:text-[#2563eb] dark:text-gray-400 dark:hover:text-blue-400"
       >
         Home
       </RouterLink>
       <span class="text-gray-400 dark:text-gray-600" aria-hidden="true">/</span>
       <RouterLink
-        to="/staff"
+        to="/admin/staff"
         class="font-medium text-gray-500 transition hover:text-[#2563eb] dark:text-gray-400 dark:hover:text-blue-400"
       >
         Staff
       </RouterLink>
       <span class="text-gray-400 dark:text-gray-600" aria-hidden="true">/</span>
       <RouterLink
-        :to="`/staff/${id}`"
+        :to="`/admin/staff/${id}`"
         class="font-medium text-gray-500 transition hover:text-[#2563eb] dark:text-gray-400 dark:hover:text-blue-400"
       >
         Profile
@@ -123,7 +123,7 @@ load();
         {{ errorMsg }}
       </p>
       <RouterLink
-        to="/staff"
+        to="/admin/staff"
         class="mt-2 inline-block text-sm font-medium text-[#2563eb] hover:underline dark:text-blue-400"
       >
         Back To Directory
@@ -194,7 +194,7 @@ load();
         <button
           type="button"
           class="inline-flex h-10 items-center justify-center rounded-lg border border-gray-200 bg-white px-5 text-sm font-medium text-gray-700 transition hover:bg-gray-50 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-200 dark:hover:bg-gray-700/70"
-          @click="router.push(`/staff/${id}`)"
+          @click="router.push(`/admin/staff/${id}`)"
         >
           Back To Profile
         </button>

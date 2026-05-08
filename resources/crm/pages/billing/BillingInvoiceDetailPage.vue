@@ -427,7 +427,7 @@ const canAddCcFee = computed(
 const clientAccountDetailHref = computed(() => {
   const id = invoice.value?.client_account_id;
   if (id == null || id === "") return "";
-  return `/clients/accounts/${encodeURIComponent(String(id))}`;
+  return `/admin/clients/accounts/${encodeURIComponent(String(id))}`;
 });
 
 function formatQtyDisplay(v) {
@@ -1761,7 +1761,7 @@ function goToInvoiceBucket(bucket) {
   if (bucket === "past_due") status = "open";
   if (bucket === "draft") status = "draft";
   router.push({
-    path: "/billing/invoices",
+    path: "/admin/billing/invoices",
     query: {
       status,
       client_account_id: String(invoice.value.client_account_id),
@@ -1903,7 +1903,7 @@ async function confirmDelete() {
     await api.delete(`/invoices/${invoice.value.id}`);
     toast.success("Invoice deleted.");
     closeDeleteModal(true);
-    router.replace("/billing/invoices");
+    router.replace("/admin/billing/invoices");
   } catch (e) {
     toast.errorFrom(e, "Could not delete invoice.");
   } finally {

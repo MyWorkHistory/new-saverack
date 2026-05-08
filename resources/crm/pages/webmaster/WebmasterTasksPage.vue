@@ -297,7 +297,7 @@ function openEdit(row) {
 
 function goTaskDetail(task) {
   manageOpenId.value = null;
-  router.push(`/webmaster/tasks/${task.id}`);
+  router.push(`/admin/webmaster/tasks/${task.id}`);
 }
 
 function onKanbanCardClick(task, e) {
@@ -317,7 +317,7 @@ async function openTaskEditFromQuery() {
         : null;
   if (!id) return;
   if (!canMutateWebmasterTasks.value) {
-    router.replace({ path: "/webmaster", query: {} });
+    router.replace({ path: "/admin/webmaster", query: {} });
     return;
   }
   try {
@@ -326,7 +326,7 @@ async function openTaskEditFromQuery() {
   } catch {
     /* drawer stays closed */
   } finally {
-    router.replace({ path: "/webmaster", query: {} });
+    router.replace({ path: "/admin/webmaster", query: {} });
   }
 }
 

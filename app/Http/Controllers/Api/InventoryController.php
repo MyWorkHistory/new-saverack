@@ -256,6 +256,32 @@ class InventoryController extends Controller
         }
     }
 
+    public function list(Request $request): JsonResponse
+    {
+        $validated = $request->validate([
+            'client_account_id' => ['required', 'integer', 'exists:client_accounts,id'],
+            'first' => ['nullable', 'integer', 'min:1', 'max:200'],
+        ]);
+        $clientAccountId = (int) $validated['client_account_id'];
+        $first = isset($validated['first']) ? (int) $validated['first'] : 100;
+        try {
+            $shipheroCustomerId = $this->resolveShipHeroCustomerAccountId($clientAccountId, $request);
+            $rows = $this->inventory->listInventoryRows($shipheroCustomerId, $first);
+            return response()->json(['rows' => $rows]);
+        } catch (ValidationException $e) {
+            throw $e;
+        } catch (RuntimeException $e) {
+            return response()->json(['message' => $e->getMessage()], 502);
+        } catch (Throwable $e) {
+            report($e);
+            return response()->json([
+                'message' => config('app.debug')
+                    ? $e->getMessage()
+                    : 'Could not reach ShipHero. Check SHIPHERO_* in .env and server logs.',
+            ], 502);
+        }
+    }
+
     public function replaceQuantity(Request $request): JsonResponse
     {
         $validated = $request->validate([

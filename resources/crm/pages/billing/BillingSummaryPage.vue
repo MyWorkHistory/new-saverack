@@ -23,7 +23,7 @@ function goToInvoicesBucket(bucket) {
   if (bucket === "open") status = "open";
   else if (bucket === "draft") status = "draft";
   else if (bucket === "paid") status = "paid";
-  router.push({ path: "/billing/invoices", query: { status } });
+  router.push({ path: "/admin/billing/invoices", query: { status } });
 }
 
 async function load() {
@@ -71,7 +71,7 @@ onMounted(() => {
         </p>
       </div>
       <RouterLink
-        to="/billing/invoices"
+        to="/admin/billing/invoices"
         class="btn btn-primary staff-page-primary ms-md-auto flex-shrink-0"
       >
         View Invoices

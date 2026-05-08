@@ -49,8 +49,8 @@ class ShipHeroOrderService
         } elseif ($tab === 'awaiting') {
             $vars['ready_to_ship'] = true;
             $vars['fulfillment_status'] = 'unfulfilled';
-        } elseif ($tab === 'out_of_stock') {
-            $vars['fulfillment_status'] = 'out_of_stock';
+        } elseif ($tab === 'backorder') {
+            $vars['fulfillment_status'] = 'backorder';
         } elseif ($tab === 'shipped') {
             $vars['fulfillment_status'] = 'shipped';
         }
@@ -498,6 +498,7 @@ GQL;
             'raw_fulfillment_status' => (string) ($node['fulfillment_status'] ?? ''),
             'raw_status' => (string) ($node['status'] ?? ''),
             'raw_profile' => (string) ($node['profile'] ?? ''),
+            'hold_reason' => $this->extractHoldReason($node),
             'order_number' => (string) ($node['order_number'] ?? ''),
             'order_date' => $this->nullableIso($node['order_date'] ?? null),
             'required_ship_date' => $this->nullableIso($node['required_ship_date'] ?? null),
@@ -811,8 +812,15 @@ GQL;
                 continue;
             }
             $status = strtolower(trim((string) ($row['status'] ?? '')));
+            $holdReason = strtolower(trim((string) ($filters['hold_reason'] ?? '')));
             if (! $this->statusMatchesTab($status, $tab)) {
                 continue;
+            }
+            if ($tab === 'on_hold' && $holdReason !== '') {
+                $rawHold = strtolower(trim((string) ($row['hold_reason'] ?? '')));
+                if ($rawHold === '' || ! str_contains($rawHold, $holdReason)) {
+                    continue;
+                }
             }
             if (! $this->rowInDateRange($row, $from, $to)) {
                 continue;
@@ -842,12 +850,28 @@ GQL;
                     || $normalized === 'complete'
                     || str_starts_with($normalized, 'shipped'));
         }
-        if ($tab === 'out_of_stock') {
-            return str_contains($normalized, 'out')
-                && str_contains($normalized, 'stock');
+        if ($tab === 'backorder') {
+            return str_contains($normalized, 'back')
+                || str_contains($normalized, 'out of stock');
         }
 
         return true;
+    }
+
+    private function extractHoldReason(array $node): ?string
+    {
+        $hay = strtolower(trim(
+            (string) ($node['fulfillment_status'] ?? '').' '.(string) ($node['status'] ?? '').' '.(string) ($node['profile'] ?? '')
+        ));
+        if ($hay === '' || ! str_contains($hay, 'hold')) {
+            return null;
+        }
+        if (str_contains($hay, 'fraud')) return 'Fraud Hold';
+        if (str_contains($hay, 'address')) return 'Address Hold';
+        if (str_contains($hay, 'operator')) return 'Operator Hold';
+        if (str_contains($hay, 'payment')) return 'Payment Hold';
+        if (str_contains($hay, 'user')) return 'User Hold';
+        return 'Hold';
     }
 
     private function rowInDateRange(array $row, ?Carbon $from, ?Carbon $to): bool

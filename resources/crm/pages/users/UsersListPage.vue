@@ -549,7 +549,7 @@ function openUserEditModal(user) {
 
 function goViewStaff(user) {
   closeManageMenu();
-  router.push(`/staff/${user.id}`);
+  router.push(`/admin/staff/${user.id}`);
 }
 
 function onWindowScrollOrResize() {
@@ -1167,13 +1167,13 @@ onUnmounted(() => {
                   </span>
                   <div class="min-w-0">
                     <RouterLink
-                      :to="`/staff/${user.id}`"
+                      :to="`/admin/staff/${user.id}`"
                       class="d-block text-truncate fw-semibold text-body text-decoration-none"
                     >
                       {{ user.name }}
                     </RouterLink>
                     <RouterLink
-                      :to="`/staff/${user.id}`"
+                      :to="`/admin/staff/${user.id}`"
                       class="d-block text-truncate text-body text-decoration-none staff-user-cell__meta"
                     >
                       {{ user.email }}

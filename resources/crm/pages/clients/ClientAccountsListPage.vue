@@ -608,7 +608,7 @@ function openEditModal(row) {
 
 function goViewAccount(row) {
   closeManageMenu();
-  router.push(`/clients/accounts/${row.id}`);
+  router.push(`/admin/clients/accounts/${row.id}`);
 }
 
 function toggleSelectAll(ev) {
@@ -1244,7 +1244,7 @@ onUnmounted(() => {
               </td>
               <td>
                 <RouterLink
-                  :to="`/clients/accounts/${row.id}`"
+                  :to="`/admin/clients/accounts/${row.id}`"
                   class="d-flex align-items-center gap-3 min-w-0 text-decoration-none rounded px-1 py-1"
                 >
                   <span

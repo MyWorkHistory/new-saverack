@@ -7,7 +7,7 @@ import CrmSearchableSelect from "../../components/common/CrmSearchableSelect.vue
 import { setCrmPageMeta } from "../../composables/useCrmPageMeta.js";
 import { useToast } from "../../composables/useToast.js";
 
-inject("crmUser", ref(null));
+const crmUser = inject("crmUser", ref(null));
 const route = useRoute();
 const router = useRouter();
 const toast = useToast();
@@ -25,8 +25,12 @@ const itemSortDir = ref("asc");
 
 const orderId = computed(() => String(route.params.shipheroOrderId || ""));
 
+const isPortalUser = computed(() => Number(crmUser.value?.client_account_id || 0) > 0);
+const portalClientAccountId = computed(() => Number(crmUser.value?.client_account_id || 0));
+
 const accountOptions = computed(() =>
   (accounts.value || [])
+    .filter((a) => !isPortalUser.value || Number(a?.id || 0) === portalClientAccountId.value)
     .filter((a) => a?.has_shiphero_customer)
     .map((a) => ({
       id: a.id,
@@ -292,6 +296,9 @@ onMounted(async () => {
     description: "ShipHero order detail.",
   });
   await loadAccounts();
+  if (isPortalUser.value && portalClientAccountId.value > 0 && !selectedAccountId.value) {
+    selectedAccountId.value = String(portalClientAccountId.value);
+  }
 });
 </script>
 

@@ -991,9 +991,9 @@ onUnmounted(() => {
       class="staff-user-view__breadcrumb d-flex flex-wrap align-items-center gap-1"
       aria-label="Breadcrumb"
     >
-      <RouterLink to="/dashboard">Home</RouterLink>
+      <RouterLink to="/admin/dashboard">Home</RouterLink>
       <span class="text-secondary" aria-hidden="true">/</span>
-      <RouterLink to="/clients/accounts">Accounts</RouterLink>
+      <RouterLink to="/admin/clients/accounts">Accounts</RouterLink>
       <span class="text-secondary" aria-hidden="true">/</span>
       <span class="text-body-secondary">{{
         account?.company_name || "Account"
@@ -1086,7 +1086,7 @@ onUnmounted(() => {
       <p class="text-danger small mb-2">
         {{ errorMsg }}
       </p>
-      <RouterLink to="/clients/accounts" class="small"
+      <RouterLink to="/admin/clients/accounts" class="small"
         >Back to accounts</RouterLink
       >
     </template>

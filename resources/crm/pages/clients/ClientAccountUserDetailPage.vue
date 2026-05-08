@@ -193,7 +193,7 @@ watch(
       class="staff-user-view__breadcrumb d-flex flex-wrap align-items-center gap-1"
       aria-label="Breadcrumb"
     >
-      <RouterLink to="/dashboard">Home</RouterLink>
+      <RouterLink to="/admin/dashboard">Home</RouterLink>
       <span class="text-secondary" aria-hidden="true">/</span>
       <RouterLink :to="{ name: 'client-users' }">Client users</RouterLink>
       <span class="text-secondary" aria-hidden="true">/</span>

@@ -259,9 +259,9 @@ onUnmounted(() => {
       class="staff-user-view__breadcrumb d-flex flex-wrap align-items-center gap-1"
       aria-label="Breadcrumb"
     >
-      <RouterLink to="/dashboard">Home</RouterLink>
+      <RouterLink to="/admin/dashboard">Home</RouterLink>
       <span class="text-secondary" aria-hidden="true">/</span>
-      <RouterLink to="/webmaster">Webmaster</RouterLink>
+      <RouterLink to="/admin/webmaster">Webmaster</RouterLink>
       <span class="text-secondary" aria-hidden="true">/</span>
       <span class="text-body-secondary">Task</span>
     </nav>
@@ -275,7 +275,7 @@ onUnmounted(() => {
       </div>
       <div class="d-flex flex-wrap align-items-center gap-2 flex-shrink-0">
         <RouterLink
-          to="/webmaster"
+          to="/admin/webmaster"
           class="btn btn-outline-secondary btn-sm"
         >
           Back to board
@@ -299,7 +299,7 @@ onUnmounted(() => {
       <p class="text-danger small mb-2">
         {{ errorMsg }}
       </p>
-      <RouterLink to="/webmaster" class="small">Back to board</RouterLink>
+      <RouterLink to="/admin/webmaster" class="small">Back to board</RouterLink>
     </template>
 
     <div v-else-if="task" class="row g-4">

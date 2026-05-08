@@ -561,7 +561,7 @@ async function submitImportCsv() {
     closeImportModal(true);
     await loadSummary();
     await fetchRows();
-    router.push(`/billing/invoices/${newInvoiceId}`);
+    router.push(`/admin/billing/invoices/${newInvoiceId}`);
   } catch (e) {
     toast.errorFrom(e, "Could not import CSV.");
   } finally {

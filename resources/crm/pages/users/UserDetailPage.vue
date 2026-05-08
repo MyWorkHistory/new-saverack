@@ -265,9 +265,9 @@ function onPermissionsSaved() {
       class="staff-user-view__breadcrumb d-flex flex-wrap align-items-center gap-1"
       aria-label="Breadcrumb"
     >
-      <RouterLink to="/dashboard">Home</RouterLink>
+      <RouterLink to="/admin/dashboard">Home</RouterLink>
       <span class="text-secondary" aria-hidden="true">/</span>
-      <RouterLink to="/staff">Staff</RouterLink>
+      <RouterLink to="/admin/staff">Staff</RouterLink>
       <span class="text-secondary" aria-hidden="true">/</span>
       <span class="text-body-secondary">Profile</span>
     </nav>
@@ -286,7 +286,7 @@ function onPermissionsSaved() {
       <p class="text-danger small mb-2">
         {{ errorMsg }}
       </p>
-      <RouterLink to="/staff" class="small">Back To Directory</RouterLink>
+      <RouterLink to="/admin/staff" class="small">Back To Directory</RouterLink>
     </template>
 
     <template v-else-if="user">

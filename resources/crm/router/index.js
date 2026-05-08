@@ -134,12 +134,6 @@ const meta = {
 
 const routes = [
   {
-    path: "/portal-login",
-    name: "portal-login",
-    component: LoginPage,
-    meta: { public: true, ...meta.login },
-  },
-  {
     path: "/login",
     name: "login",
     component: LoginPage,
@@ -163,28 +157,29 @@ const routes = [
     component: ResetPasswordPage,
     meta: { public: true, ...meta.reset },
   },
-  { path: "/", redirect: "/dashboard" },
+  { path: "/", redirect: "/login" },
   {
-    path: "/dashboard",
+    path: "/admin/dashboard",
     name: "dashboard",
     component: DashboardPage,
     meta: meta.dashboard,
   },
-  { path: "/staff", name: "staff", component: UsersListPage, meta: meta.staff },
+  { path: "/admin/staff", name: "staff", component: UsersListPage, meta: meta.staff },
+  { path: "/admin", redirect: "/admin/dashboard" },
   {
-    path: "/staff/create",
+    path: "/admin/staff/create",
     name: "staff-create",
     component: UserFormPage,
     meta: meta.staffCreate,
   },
-  { path: "/staff/new", redirect: "/staff/create" },
+  { path: "/admin/staff/new", redirect: "/admin/staff/create" },
   {
-    path: "/staff/:id/edit",
+    path: "/admin/staff/:id/edit",
     name: "staff-edit",
-    redirect: (to) => `/staff/${to.params.id}`,
+    redirect: (to) => `/admin/staff/${to.params.id}`,
   },
   {
-    path: "/staff/:id/permissions",
+    path: "/admin/staff/:id/permissions",
     name: "staff-permissions",
     component: UserPermissionsPage,
     props: true,
@@ -194,7 +189,7 @@ const routes = [
     },
   },
   {
-    path: "/staff/:id/history",
+    path: "/admin/staff/:id/history",
     name: "staff-history",
     component: UserHistoryPage,
     props: true,
@@ -204,7 +199,7 @@ const routes = [
     },
   },
   {
-    path: "/staff/:id",
+    path: "/admin/staff/:id",
     name: "staff-detail",
     component: UserDetailPage,
     props: true,
@@ -213,154 +208,148 @@ const routes = [
       description: "Staff Profile.",
     },
   },
-  { path: "/users/create", redirect: "/staff/create" },
-  { path: "/users/new", redirect: "/staff/create" },
   {
-    path: "/users/:id/edit",
-    redirect: (to) => `/staff/${to.params.id}`,
-  },
-  { path: "/users", redirect: "/staff" },
-  {
-    path: "/users/:id/permissions",
-    redirect: (to) => `/staff/${to.params.id}/permissions`,
-  },
-  { path: "/users/:id", redirect: (to) => `/staff/${to.params.id}` },
-  {
-    path: "/clients/accounts",
+    path: "/admin/clients/accounts",
     name: "client-accounts",
     component: ClientAccountsListPage,
     meta: meta.clientAccounts,
   },
   {
-    path: "/clients/accounts/:id",
+    path: "/admin/clients/accounts/:id",
     name: "client-account-detail",
     component: ClientAccountDetailPage,
     props: true,
     meta: meta.clientAccountDetail,
   },
   {
-    path: "/clients/users",
+    path: "/admin/clients/users",
     name: "client-users",
     component: ClientAccountUsersListPage,
     meta: meta.clientUsers,
   },
   {
-    path: "/clients/users/:accountId/:userId",
+    path: "/admin/clients/users/:accountId/:userId",
     name: "client-account-user-detail",
     component: ClientAccountUserDetailPage,
     props: true,
     meta: meta.clientAccountUserDetail,
   },
-  { path: "/clients", redirect: "/clients/accounts" },
+  { path: "/admin/clients", redirect: "/admin/clients/accounts" },
   {
-    path: "/billing/summary",
+    path: "/admin/billing/summary",
     name: "billing-summary",
     component: BillingSummaryPage,
     meta: meta.billingSummary,
   },
   {
-    path: "/billing/invoices",
+    path: "/admin/billing/invoices",
     name: "billing-invoices",
     component: BillingInvoicesListPage,
     meta: meta.billingInvoices,
   },
   {
-    path: "/billing/invoices/:id",
+    path: "/admin/billing/invoices/:id",
     name: "billing-invoice-detail",
     component: BillingInvoiceDetailPage,
     props: true,
     meta: meta.billingInvoiceDetail,
   },
-  { path: "/billing", redirect: "/billing/summary" },
+  { path: "/admin/billing", redirect: "/admin/billing/summary" },
   {
-    path: "/inventory",
+    path: "/admin/inventory",
     name: "inventory",
     component: InventoryPage,
     meta: meta.inventory,
   },
   {
-    path: "/inventory/:sku",
+    path: "/admin/inventory/:sku",
     name: "inventory-detail",
     component: InventoryDetailPage,
     props: true,
     meta: meta.inventoryDetail,
   },
   {
-    path: "/inventory/on-demand",
+    path: "/admin/inventory/on-demand",
     name: "inventory-on-demand",
     component: InventoryOnDemandPage,
     meta: meta.inventoryOnDemand,
   },
   {
-    path: "/orders",
-    name: "orders-index",
-    component: OrdersListPage,
-    meta: { ...meta.ordersAwaiting, orderTab: "awaiting" },
+    path: "/admin/orders",
+    redirect: "/admin/orders/manage",
   },
   {
-    path: "/orders/manage",
+    path: "/admin/orders/manage",
     name: "orders-manage",
     component: OrdersListPage,
     meta: { ...meta.ordersManage, orderTab: "manage" },
   },
   {
-    path: "/orders/awaiting",
+    path: "/admin/orders/awaiting",
     name: "orders-awaiting",
     component: OrdersListPage,
     meta: { ...meta.ordersAwaiting, orderTab: "awaiting" },
   },
   {
-    path: "/orders/on-hold",
+    path: "/admin/orders/on-hold",
     name: "orders-on-hold",
     component: OrdersListPage,
     meta: { ...meta.ordersOnHold, orderTab: "on_hold" },
   },
   {
-    path: "/orders/out-of-stock",
+    path: "/admin/orders/backorder",
     name: "orders-out-of-stock",
     component: OrdersListPage,
     meta: {
-      title: "Save Rack | Orders | Out Of Stock",
-      description: "ShipHero out of stock orders.",
-      orderTab: "out_of_stock",
+      title: "Save Rack | Orders | Backorder",
+      description: "ShipHero backorder orders.",
+      orderTab: "backorder",
     },
   },
   {
-    path: "/orders/shipped",
+    path: "/admin/orders/shipped",
     name: "orders-shipped",
     component: OrdersListPage,
     meta: { ...meta.ordersShipped, orderTab: "shipped" },
   },
   {
-    path: "/orders/:shipheroOrderId",
+    path: "/admin/orders/:shipheroOrderId",
     name: "order-detail",
     component: OrderDetailPage,
     props: true,
     meta: meta.orderDetail,
   },
   {
-    path: "/orders/:accountSlug/:orderNumber",
+    path: "/admin/orders/:accountSlug/:orderNumber",
     name: "order-detail-iframe",
     component: OrderDetailIframePage,
     props: true,
     meta: meta.orderDetail,
   },
   {
-    path: "/webmaster",
+    path: "/admin/webmaster",
     name: "webmaster",
     component: WebmasterTasksPage,
     meta: meta.webmaster,
   },
   {
-    path: "/webmaster/tasks/:id",
+    path: "/admin/webmaster/tasks/:id",
     name: "webmaster-task-detail",
     component: WebmasterTaskDetailPage,
     props: true,
     meta: meta.webmasterTask,
   },
-  { path: "/tickets/board", redirect: "/dashboard" },
-  { path: "/tickets/:id", redirect: "/dashboard" },
-  { path: "/tickets", redirect: "/dashboard" },
+  { path: "/users/orders", name: "user-orders", component: () => import("../pages/user-orders/UserOrdersListPage.vue"), meta: { ...meta.ordersAwaiting, orderTab: "awaiting", userPortal: true } },
+  { path: "/users", redirect: "/users/orders" },
+  { path: "/users/orders/ready-to-ship", name: "user-orders-awaiting", component: () => import("../pages/user-orders/UserOrdersListPage.vue"), meta: { ...meta.ordersAwaiting, orderTab: "awaiting", userPortal: true } },
+  { path: "/users/orders/on-hold", name: "user-orders-on-hold", component: () => import("../pages/user-orders/UserOrdersListPage.vue"), meta: { ...meta.ordersOnHold, orderTab: "on_hold", userPortal: true } },
+  { path: "/users/orders/backorder", name: "user-orders-backorder", component: () => import("../pages/user-orders/UserOrdersListPage.vue"), meta: { title: "Save Rack | Orders | Backorder", description: "ShipHero backorder orders.", orderTab: "backorder", userPortal: true } },
+  { path: "/users/orders/shipped", name: "user-orders-shipped", component: () => import("../pages/user-orders/UserOrdersListPage.vue"), meta: { ...meta.ordersShipped, orderTab: "shipped", userPortal: true } },
+  { path: "/users/orders/:shipheroOrderId", name: "user-order-detail", component: () => import("../pages/user-orders/UserOrderDetailPage.vue"), props: true, meta: { ...meta.orderDetail, userPortal: true } },
+  { path: "/users/inventory", name: "user-inventory", component: () => import("../pages/user-inventory/UserInventoryPage.vue"), meta: { ...meta.inventory, userPortal: true } },
+  { path: "/tickets/board", redirect: "/admin/dashboard" },
+  { path: "/tickets/:id", redirect: "/admin/dashboard" },
+  { path: "/tickets", redirect: "/admin/dashboard" },
 ];
 
 const router = createRouter({
@@ -530,7 +519,7 @@ async function ensureClientsRouteAccess(path) {
       return false;
     }
   }
-  if (path === "/clients" || path.startsWith("/clients/")) {
+  if (path === "/admin/clients" || path.startsWith("/admin/clients/")) {
     return clientsNavCache.view === true;
   }
   return true;
@@ -556,33 +545,27 @@ async function ensureUsersRouteAccess(path) {
     }
   }
   const staffCreate =
-    path === "/staff/create" ||
-    path === "/staff/new" ||
-    path === "/users/create" ||
-    path === "/users/new";
+    path === "/admin/staff/create" ||
+    path === "/admin/staff/new";
   if (staffCreate) {
     return usersNavCache.create === true;
   }
-  if (/^\/staff\/[^/]+\/edit$/.test(path) || /^\/users\/[^/]+\/edit$/.test(path)) {
+  if (/^\/admin\/staff\/[^/]+\/edit$/.test(path)) {
     return usersNavCache.update === true;
   }
   if (
-    /^\/staff\/[^/]+\/permissions$/.test(path) ||
-    /^\/users\/[^/]+\/permissions$/.test(path)
+    /^\/admin\/staff\/[^/]+\/permissions$/.test(path)
   ) {
     return usersMeIsAdmin === true;
   }
   if (
-    /^\/staff\/[^/]+\/history$/.test(path) ||
-    /^\/users\/[^/]+\/history$/.test(path)
+    /^\/admin\/staff\/[^/]+\/history$/.test(path)
   ) {
     return usersNavCache.view === true;
   }
   if (
-    path === "/staff" ||
-    path.startsWith("/staff/") ||
-    path === "/users" ||
-    path.startsWith("/users/")
+    path === "/admin/staff" ||
+    path.startsWith("/admin/staff/")
   ) {
     return usersNavCache.view === true;
   }
@@ -639,7 +622,7 @@ async function ensureBillingRouteAccess(path) {
       return false;
     }
   }
-  if (path === "/billing" || path.startsWith("/billing/")) {
+  if (path === "/admin/billing" || path.startsWith("/admin/billing/")) {
     return billingNavCache.view === true;
   }
   return true;
@@ -664,10 +647,14 @@ async function ensureInventoryRouteAccess(path) {
     }
   }
   if (
-    path === "/inventory" ||
-    path.startsWith("/inventory/") ||
-    path === "/orders" ||
-    path.startsWith("/orders/")
+    path === "/admin/inventory" ||
+    path.startsWith("/admin/inventory/") ||
+    path === "/admin/orders" ||
+    path.startsWith("/admin/orders/") ||
+    path === "/users/inventory" ||
+    path.startsWith("/users/inventory/") ||
+    path === "/users/orders" ||
+    path.startsWith("/users/orders/")
   ) {
     return inventoryNavCache.view === true;
   }
@@ -685,11 +672,10 @@ router.beforeEach(async (to) => {
   const token = localStorage.getItem("auth_token");
 
   if (to.meta.public) {
-    // Keep /create reachable while signed in; login paths route by account type.
-    if (token && (to.name === "login" || to.name === "portal-login")) {
+    if (token && to.name === "login") {
       try {
         const me = await ensureAuthUser();
-        return { path: crmIsPortalUser(me) ? "/orders" : "/dashboard" };
+        return { path: crmIsPortalUser(me) ? "/users/orders" : "/admin/dashboard" };
       } catch {
         localStorage.removeItem("auth_token");
         clearCrmOwnerCache();
@@ -700,8 +686,7 @@ router.beforeEach(async (to) => {
   }
 
   if (!token) {
-    const isPortalPath = to.path.startsWith("/orders") || to.path.startsWith("/inventory");
-    return { name: isPortalPath ? "portal-login" : "login", query: { redirect: to.fullPath } };
+    return { name: "login", query: { redirect: to.fullPath } };
   }
 
   let me = null;
@@ -710,82 +695,74 @@ router.beforeEach(async (to) => {
   } catch {
     localStorage.removeItem("auth_token");
     clearCrmOwnerCache();
-    const isPortalPath = to.path.startsWith("/orders") || to.path.startsWith("/inventory");
-    return { name: isPortalPath ? "portal-login" : "login", query: { redirect: to.fullPath } };
+    return { name: "login", query: { redirect: to.fullPath } };
   }
 
   if (crmIsPortalUser(me)) {
-    if (
-      to.path.startsWith("/dashboard")
-      || to.path.startsWith("/staff")
-      || to.path.startsWith("/users")
-      || to.path.startsWith("/clients")
-      || to.path.startsWith("/billing")
-      || to.path.startsWith("/webmaster")
-    ) {
-      return { path: "/orders" };
+    if (!to.path.startsWith("/users/")) {
+      return { path: "/users/orders" };
     }
-  } else if (to.path.startsWith("/portal-login")) {
-    return { path: "/dashboard" };
+  } else if (to.path.startsWith("/users/")) {
+    return { path: "/admin/dashboard" };
   }
 
-  if (to.path === "/webmaster" || to.path.startsWith("/webmaster/")) {
+  if (to.path === "/admin/webmaster" || to.path.startsWith("/admin/webmaster/")) {
     const ok = await ensureWebmasterRouteAccess();
     if (!ok) {
       if (!localStorage.getItem("auth_token")) {
         return { name: "login", query: { redirect: to.fullPath } };
       }
-      return { path: "/dashboard" };
+      return { path: "/admin/dashboard" };
     }
   }
 
-  if (to.path.startsWith("/users") || to.path.startsWith("/staff")) {
+  if (to.path.startsWith("/admin/staff")) {
     const ok = await ensureUsersRouteAccess(to.path);
     if (!ok) {
       if (!localStorage.getItem("auth_token")) {
         return { name: "login", query: { redirect: to.fullPath } };
       }
-      return { path: "/dashboard" };
+      return { path: "/admin/dashboard" };
     }
   }
 
-  if (to.path.startsWith("/clients")) {
+  if (to.path.startsWith("/admin/clients")) {
     const ok = await ensureClientsRouteAccess(to.path);
     if (!ok) {
       if (!localStorage.getItem("auth_token")) {
         return { name: "login", query: { redirect: to.fullPath } };
       }
-      return { path: "/dashboard" };
+      return { path: "/admin/dashboard" };
     }
   }
 
-  if (to.path.startsWith("/billing")) {
+  if (to.path.startsWith("/admin/billing")) {
     const ok = await ensureBillingRouteAccess(to.path);
     if (!ok) {
       if (!localStorage.getItem("auth_token")) {
         return { name: "login", query: { redirect: to.fullPath } };
       }
-      return { path: "/dashboard" };
+      return { path: "/admin/dashboard" };
     }
   }
 
-  if (to.path.startsWith("/inventory")) {
+  if (to.path.startsWith("/admin/inventory") || to.path.startsWith("/users/inventory")) {
     const ok = await ensureInventoryRouteAccess(to.path);
     if (!ok) {
       if (!localStorage.getItem("auth_token")) {
         return { name: "login", query: { redirect: to.fullPath } };
       }
-      return { path: "/dashboard" };
+      return { path: crmIsPortalUser(me) ? "/users/orders" : "/admin/dashboard" };
     }
   }
 
-  if (to.path.startsWith("/orders")) {
+  if (to.path.startsWith("/admin/orders") || to.path.startsWith("/users/orders")) {
     const ok = await ensureInventoryRouteAccess(to.path);
     if (!ok) {
       if (!localStorage.getItem("auth_token")) {
         return { name: "login", query: { redirect: to.fullPath } };
       }
-      return { path: "/dashboard" };
+      return { path: crmIsPortalUser(me) ? "/users/orders" : "/admin/dashboard" };
     }
   }
 

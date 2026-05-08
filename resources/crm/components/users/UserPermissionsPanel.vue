@@ -215,7 +215,7 @@ function cancel() {
   if (props.embedded) {
     load();
   } else {
-    router.push(`/staff/${props.userId}`);
+    router.push(`/admin/staff/${props.userId}`);
   }
 }
 

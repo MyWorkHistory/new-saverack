@@ -43,21 +43,21 @@ watch(
   <div class="w-full">
     <nav class="mb-4 flex flex-wrap items-center gap-1.5 text-sm">
       <RouterLink
-        to="/dashboard"
+        to="/admin/dashboard"
         class="font-medium text-gray-500 transition hover:text-[#2563eb] dark:text-gray-400 dark:hover:text-blue-400"
       >
         Home
       </RouterLink>
       <span class="text-gray-400 dark:text-gray-600" aria-hidden="true">/</span>
       <RouterLink
-        to="/staff"
+        to="/admin/staff"
         class="font-medium text-gray-500 transition hover:text-[#2563eb] dark:text-gray-400 dark:hover:text-blue-400"
       >
         Staff
       </RouterLink>
       <span class="text-gray-400 dark:text-gray-600" aria-hidden="true">/</span>
       <RouterLink
-        :to="`/staff/${id}`"
+        :to="`/admin/staff/${id}`"
         class="font-medium text-gray-500 transition hover:text-[#2563eb] dark:text-gray-400 dark:hover:text-blue-400"
       >
         Profile

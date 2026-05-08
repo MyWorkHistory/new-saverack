@@ -128,7 +128,7 @@ function openClientAccountDetailInNewTab(accountId) {
   });
   let href = resolved.href;
   if (typeof href !== "string" || href === "") {
-    href = router.resolve(`/clients/accounts/${accountId}`).href;
+    href = router.resolve(`/admin/clients/accounts/${accountId}`).href;
   }
   const absolute = /^https?:\/\//i.test(href)
     ? href
@@ -450,7 +450,7 @@ onUnmounted(() => {
           </div>
 
           <RouterLink
-            to="/dashboard"
+            to="/admin/dashboard"
             class="d-none d-sm-flex d-lg-none align-items-center gap-2 text-decoration-none text-body flex-shrink-0"
           >
             <img
@@ -722,7 +722,7 @@ onUnmounted(() => {
                 </li>
                 <li v-else>
                   <RouterLink
-                    :to="`/staff/${user.id}`"
+                    :to="`/admin/staff/${user.id}`"
                     class="d-block py-2 px-3 text-body text-decoration-none"
                     @click="closeMenu"
                   >
@@ -731,7 +731,7 @@ onUnmounted(() => {
                 </li>
                 <li>
                   <RouterLink
-                    to="/dashboard"
+                    to="/admin/dashboard"
                     class="d-block py-2 px-3 text-body text-decoration-none"
                     @click="closeMenu"
                   >

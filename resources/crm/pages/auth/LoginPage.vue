@@ -21,7 +21,6 @@ const loading = ref(false);
 const error = ref("");
 const showPassword = ref(false);
 const remember = ref(false);
-const portalMode = computed(() => route.name === "portal-login");
 
 const form = reactive({
   email: "",
@@ -45,17 +44,9 @@ const submit = async () => {
     setBillingNavFromUser(data.user);
     setInventoryNavFromUser(data.user);
     const isPortal = crmIsPortalUser(data.user);
-    if (portalMode.value && !isPortal) {
-      localStorage.removeItem("auth_token");
-      throw new Error("This login is for portal users only.");
-    }
-    if (!portalMode.value && isPortal) {
-      localStorage.removeItem("auth_token");
-      throw new Error("Please use the portal login.");
-    }
     const r = route.query.redirect;
     const dest =
-      typeof r === "string" && r.startsWith("/") ? r : isPortal ? "/orders" : "/dashboard";
+      typeof r === "string" && r.startsWith("/") ? r : isPortal ? "/users/orders" : "/admin/dashboard";
     router.push(dest);
   } catch (e) {
     const d = e?.response?.data;

@@ -146,6 +146,73 @@ GQL;
     }
 
     /**
+     * @return list<array<string,mixed>>
+     */
+    public function listInventoryRows(?string $customerAccountId = null, int $first = 100): array
+    {
+        $first = max(1, min(200, $first));
+        $graphql = <<<'GQL'
+query ShipHeroInventoryRows($customer_account_id: String, $first: Int!) {
+  products(customer_account_id: $customer_account_id) {
+    data(first: $first) {
+      edges {
+        node {
+          sku
+          name
+          warehouse_products {
+            warehouse_id
+            on_hand
+            allocated
+            backorder
+          }
+        }
+      }
+    }
+  }
+}
+GQL;
+        $json = $this->client->query($graphql, array_merge(
+            ['first' => $first],
+            $this->customerAccountVariables($customerAccountId)
+        ));
+        $edges = data_get($json, 'data.products.data.edges');
+        if (! is_array($edges)) {
+            return [];
+        }
+        $rows = [];
+        foreach ($edges as $edge) {
+            $node = is_array($edge['node'] ?? null) ? $edge['node'] : null;
+            if (! $node) {
+                continue;
+            }
+            $wps = is_array($node['warehouse_products'] ?? null) ? $node['warehouse_products'] : [];
+            if ($wps === []) {
+                $rows[] = [
+                    'sku' => (string) ($node['sku'] ?? ''),
+                    'name' => (string) ($node['name'] ?? ''),
+                    'warehouse_id' => null,
+                    'on_hand' => 0,
+                    'allocated' => 0,
+                    'backorder' => 0,
+                ];
+                continue;
+            }
+            foreach ($wps as $wp) {
+                if (! is_array($wp)) continue;
+                $rows[] = [
+                    'sku' => (string) ($node['sku'] ?? ''),
+                    'name' => (string) ($node['name'] ?? ''),
+                    'warehouse_id' => (string) ($wp['warehouse_id'] ?? ''),
+                    'on_hand' => (float) ($wp['on_hand'] ?? 0),
+                    'allocated' => (float) ($wp['allocated'] ?? 0),
+                    'backorder' => (float) ($wp['backorder'] ?? 0),
+                ];
+            }
+        }
+        return $rows;
+    }
+
+    /**
      * @param callable(): (array<string,mixed>|null) $fetcher
      * @return array<string,mixed>|null
      */

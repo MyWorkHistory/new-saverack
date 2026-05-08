@@ -1053,13 +1053,13 @@ onUnmounted(() => {
                         </span>
                         <div class="min-w-0">
                           <RouterLink
-                            :to="`/staff/${row.id}`"
+                            :to="`/admin/staff/${row.id}`"
                             class="d-block text-truncate fw-semibold text-body text-decoration-none"
                           >
                             {{ row.name }}
                           </RouterLink>
                           <RouterLink
-                            :to="`/staff/${row.id}`"
+                            :to="`/admin/staff/${row.id}`"
                             class="d-block text-truncate small text-secondary text-decoration-none"
                           >
                             {{ row.email }}

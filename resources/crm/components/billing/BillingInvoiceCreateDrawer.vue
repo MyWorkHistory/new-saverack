@@ -77,7 +77,7 @@ async function submit() {
     emit("update:open", false);
     reset();
     if (data?.id) {
-      router.push(`/billing/invoices/${data.id}`);
+      router.push(`/admin/billing/invoices/${data.id}`);
     }
   } catch (e) {
     const d = e?.response?.data;

@@ -10,6 +10,7 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Carbon;
 use Illuminate\Validation\ValidationException;
 use RuntimeException;
 use Throwable;
@@ -28,24 +29,40 @@ class OrderController extends Controller
     {
         $validated = $request->validate([
             'client_account_id' => ['required', 'integer', 'exists:client_accounts,id'],
-            'tab' => ['nullable', 'string', 'in:manage,awaiting,on_hold,out_of_stock,shipped'],
+            'tab' => ['nullable', 'string', 'in:manage,awaiting,on_hold,backorder,shipped'],
             'order_date_from' => ['nullable', 'date'],
             'order_date_to' => ['nullable', 'date'],
             'fulfillment_status' => ['nullable', 'string', 'max:64'],
             'ready_to_ship' => ['nullable', 'boolean'],
+            'hold_reason' => ['nullable', 'string', 'max:64'],
             'after' => ['nullable', 'string', 'max:255'],
             'first' => ['nullable', 'integer', 'min:1', 'max:100'],
         ]);
 
         try {
+            $tab = (string) ($validated['tab'] ?? 'manage');
+            if (
+                $tab === 'shipped'
+                && ! empty($validated['order_date_from'])
+                && ! empty($validated['order_date_to'])
+            ) {
+                $from = Carbon::parse((string) $validated['order_date_from']);
+                $to = Carbon::parse((string) $validated['order_date_to']);
+                if ($from->diffInDays($to) > 30) {
+                    throw ValidationException::withMessages([
+                        'order_date_to' => ['Date range for shipped orders cannot exceed 30 days.'],
+                    ]);
+                }
+            }
             $customerId = $this->resolveShipHeroCustomerAccountId((int) $validated['client_account_id'], $request);
             $payload = $this->orders->listOrders([
                 'customer_account_id' => $customerId,
-                'tab' => (string) ($validated['tab'] ?? 'manage'),
+                'tab' => $tab,
                 'order_date_from' => $this->dateStartIso($validated['order_date_from'] ?? null),
                 'order_date_to' => $this->dateEndIso($validated['order_date_to'] ?? null),
                 'fulfillment_status' => $validated['fulfillment_status'] ?? null,
                 'ready_to_ship' => array_key_exists('ready_to_ship', $validated) ? (bool) $validated['ready_to_ship'] : null,
+                'hold_reason' => $validated['hold_reason'] ?? null,
                 'after' => $validated['after'] ?? null,
                 'first' => (int) ($validated['first'] ?? 20),
             ]);

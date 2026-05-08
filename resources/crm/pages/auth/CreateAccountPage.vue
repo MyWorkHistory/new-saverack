@@ -44,7 +44,7 @@ const submit = async () => {
     setBillingNavFromUser(data.user);
     const r = route.query.redirect;
     const dest =
-      typeof r === "string" && r.startsWith("/") ? r : "/dashboard";
+      typeof r === "string" && r.startsWith("/") ? r : "/admin/dashboard";
     router.push(dest);
   } catch (e) {
     const d = e?.response?.data;

@@ -50,7 +50,7 @@ const tabKey = computed(() => String(route.meta?.orderTab || "manage"));
 const tabTitle = computed(() => {
   if (tabKey.value === "awaiting") return "Ready to Ship";
   if (tabKey.value === "on_hold") return "On-Hold";
-  if (tabKey.value === "out_of_stock") return "Out Of Stock";
+  if (tabKey.value === "backorder") return "Backorder";
   if (tabKey.value === "shipped") return "Shipped";
   return "Manage";
 });

@@ -4,6 +4,7 @@ import { initCrmTheme } from "./composables/useCrmTheme.js";
 import { RouterLink, useRoute, useRouter } from "vue-router";
 import api from "./services/api";
 import CrmAdminShell from "./components/layout/CrmAdminShell.vue";
+import CrmUserShell from "./components/layout/CrmUserShell.vue";
 import CrmLoadingSpinner from "./components/common/CrmLoadingSpinner.vue";
 import ToastStack from "./components/common/ToastStack.vue";
 import {
@@ -14,6 +15,7 @@ import {
   setUsersNavFromUser,
   setWebmasterNavFromUser,
 } from "./router";
+import { crmIsPortalUser } from "./utils/crmUser";
 
 const route = useRoute();
 const router = useRouter();
@@ -27,7 +29,6 @@ const showShell = computed(() => {
   const p = route.path;
   return (
     !p.startsWith("/login") &&
-    !p.startsWith("/portal-login") &&
     !p.startsWith("/create") &&
     !p.startsWith("/forgot-password") &&
     !p.startsWith("/reset-password")
@@ -54,10 +55,7 @@ const loadMe = async () => {
     if (e.response?.status === 401) {
       localStorage.removeItem("auth_token");
       clearCrmOwnerCache();
-      const loginName = route.path.startsWith("/orders") || route.path.startsWith("/inventory")
-        ? "portal-login"
-        : "login";
-      router.replace({ name: loginName, query: { redirect: route.fullPath } });
+      router.replace({ name: "login", query: { redirect: route.fullPath } });
     }
   } finally {
     navLoading.value = false;
@@ -122,7 +120,7 @@ const logout = async () => {
     </div>
 
     <CrmAdminShell
-      v-else-if="me"
+      v-else-if="me && !crmIsPortalUser(me)"
       :user="me"
       @logout="logout"
       @refresh-user="loadMe"
@@ -132,6 +130,17 @@ const logout = async () => {
         @refresh-user="loadMe"
       />
     </CrmAdminShell>
+    <CrmUserShell
+      v-else-if="me"
+      :user="me"
+      @logout="logout"
+      @refresh-user="loadMe"
+    >
+      <router-view
+        :key="route.fullPath"
+        @refresh-user="loadMe"
+      />
+    </CrmUserShell>
 
     <div
       v-else

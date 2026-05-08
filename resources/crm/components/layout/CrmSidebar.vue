@@ -52,23 +52,23 @@ const canViewInventory = computed(() => {
 
 const canViewOrders = computed(() => canViewInventory.value);
 
-const clientsGroupOpen = ref(route.path.startsWith("/clients"));
-const billingGroupOpen = ref(route.path.startsWith("/billing"));
-const ordersGroupOpen = ref(route.path.startsWith("/orders"));
-const inventoryGroupOpen = ref(route.path.startsWith("/inventory"));
+const clientsGroupOpen = ref(route.path.startsWith("/admin/clients"));
+const billingGroupOpen = ref(route.path.startsWith("/admin/billing"));
+const ordersGroupOpen = ref(route.path.startsWith("/admin/orders"));
+const inventoryGroupOpen = ref(route.path.startsWith("/admin/inventory"));
 watch(
   () => route.path,
   (p) => {
-    if (p.startsWith("/clients")) {
+    if (p.startsWith("/admin/clients")) {
       clientsGroupOpen.value = true;
     }
-    if (p.startsWith("/billing")) {
+    if (p.startsWith("/admin/billing")) {
       billingGroupOpen.value = true;
     }
-    if (p.startsWith("/orders")) {
+    if (p.startsWith("/admin/orders")) {
       ordersGroupOpen.value = true;
     }
-    if (p.startsWith("/inventory")) {
+    if (p.startsWith("/admin/inventory")) {
       inventoryGroupOpen.value = true;
     }
   },
@@ -81,22 +81,21 @@ const markSrc = computed(() => BRAND_MARK_SRC());
 
 function navActive(mode) {
   const p = route.path;
-  if (mode === "dashboard") return p.startsWith("/dashboard");
-  if (mode === "users") return p.startsWith("/staff") || p.startsWith("/users");
-  if (mode === "webmaster") return p.startsWith("/webmaster");
-  if (mode === "clients") return p.startsWith("/clients");
-  if (mode === "clients-accounts") return p.startsWith("/clients/accounts");
-  if (mode === "clients-users") return p.startsWith("/clients/users");
-  if (mode === "orders") return p.startsWith("/orders");
-  if (mode === "orders-index") return p === "/orders";
-  if (mode === "orders-manage") return p.startsWith("/orders/manage");
-  if (mode === "orders-awaiting") return p.startsWith("/orders/awaiting");
-  if (mode === "orders-on-hold") return p.startsWith("/orders/on-hold");
-  if (mode === "orders-out-of-stock") return p.startsWith("/orders/out-of-stock");
-  if (mode === "orders-shipped") return p.startsWith("/orders/shipped");
-  if (mode === "inventory") return p.startsWith("/inventory");
-  if (mode === "inventory-search") return p === "/inventory";
-  if (mode === "inventory-on-demand") return p.startsWith("/inventory/on-demand");
+  if (mode === "dashboard") return p.startsWith("/admin/dashboard");
+  if (mode === "users") return p.startsWith("/admin/staff");
+  if (mode === "webmaster") return p.startsWith("/admin/webmaster");
+  if (mode === "clients") return p.startsWith("/admin/clients");
+  if (mode === "clients-accounts") return p.startsWith("/admin/clients/accounts");
+  if (mode === "clients-users") return p.startsWith("/admin/clients/users");
+  if (mode === "orders") return p.startsWith("/admin/orders");
+  if (mode === "orders-manage") return p.startsWith("/admin/orders/manage");
+  if (mode === "orders-awaiting") return p.startsWith("/admin/orders/awaiting");
+  if (mode === "orders-on-hold") return p.startsWith("/admin/orders/on-hold");
+  if (mode === "orders-out-of-stock") return p.startsWith("/admin/orders/backorder");
+  if (mode === "orders-shipped") return p.startsWith("/admin/orders/shipped");
+  if (mode === "inventory") return p.startsWith("/admin/inventory");
+  if (mode === "inventory-search") return p === "/admin/inventory";
+  if (mode === "inventory-on-demand") return p.startsWith("/admin/inventory/on-demand");
   return false;
 }
 
@@ -112,7 +111,7 @@ function collapseNav() {
     <div class="vx-sidebar__header">
       <RouterLink
         v-if="isExpanded"
-        to="/dashboard"
+        to="/admin/dashboard"
         class="vx-sidebar__brand-link"
         @click="closeMobile"
       >
@@ -127,7 +126,7 @@ function collapseNav() {
       </RouterLink>
       <RouterLink
         v-else
-        to="/dashboard"
+        to="/admin/dashboard"
         class="vx-sidebar__brand-link justify-content-center w-100"
         @click="closeMobile"
       >
@@ -173,7 +172,7 @@ function collapseNav() {
       <ul class="list-unstyled mb-0 pb-2">
         <li v-if="!isPortal">
           <RouterLink
-            to="/dashboard"
+            to="/admin/dashboard"
             class="vx-nav-link"
             :title="!isExpanded ? 'Dashboard' : undefined"
             @click="closeMobile"
@@ -195,7 +194,7 @@ function collapseNav() {
         </li>
         <li v-if="!isPortal && canViewUsers">
           <RouterLink
-            to="/staff"
+            to="/admin/staff"
             class="vx-nav-link"
             :title="!isExpanded ? 'Staff' : undefined"
             @click="closeMobile"
@@ -257,7 +256,7 @@ function collapseNav() {
               <ul v-show="clientsGroupOpen" class="list-unstyled mb-0 mt-1">
                 <li>
                   <RouterLink
-                    to="/clients/accounts"
+                    to="/admin/clients/accounts"
                     class="vx-nav-link vx-nav-sublink"
                     :class="{ 'vx-nav-link--active': navActive('clients-accounts') }"
                     @click="closeMobile"
@@ -267,7 +266,7 @@ function collapseNav() {
                 </li>
                 <li>
                   <RouterLink
-                    to="/clients/users"
+                    to="/admin/clients/users"
                     class="vx-nav-link vx-nav-sublink"
                     :class="{ 'vx-nav-link--active': navActive('clients-users') }"
                     @click="closeMobile"
@@ -280,7 +279,7 @@ function collapseNav() {
           </template>
           <RouterLink
             v-else
-            to="/clients/accounts"
+            to="/admin/clients/accounts"
             class="vx-nav-link"
             title="Accounts"
             @click="closeMobile"
@@ -341,7 +340,7 @@ function collapseNav() {
               <ul v-show="billingGroupOpen" class="list-unstyled mb-0 mt-1">
                 <li>
                   <RouterLink
-                    to="/billing/summary"
+                    to="/admin/billing/summary"
                     class="vx-nav-link vx-nav-sublink"
                     :class="{ 'vx-nav-link--active': navActive('billing-summary') }"
                     @click="closeMobile"
@@ -351,7 +350,7 @@ function collapseNav() {
                 </li>
                 <li>
                   <RouterLink
-                    to="/billing/invoices"
+                    to="/admin/billing/invoices"
                     class="vx-nav-link vx-nav-sublink"
                     :class="{ 'vx-nav-link--active': navActive('billing-invoices') }"
                     @click="closeMobile"
@@ -364,7 +363,7 @@ function collapseNav() {
           </template>
           <RouterLink
             v-else
-            to="/billing/summary"
+            to="/admin/billing/summary"
             class="vx-nav-link"
             title="Billing"
             @click="closeMobile"
@@ -423,7 +422,7 @@ function collapseNav() {
                 <li>
                   <RouterLink
                     v-if="isPortal"
-                    to="/orders"
+                    to="/admin/orders/manage"
                     class="vx-nav-link vx-nav-sublink"
                     :class="{ 'vx-nav-link--active': navActive('orders-index') }"
                     @click="closeMobile"
@@ -432,7 +431,7 @@ function collapseNav() {
                   </RouterLink>
                   <RouterLink
                     v-else
-                    to="/orders/manage"
+                    to="/admin/orders/manage"
                     class="vx-nav-link vx-nav-sublink"
                     :class="{ 'vx-nav-link--active': navActive('orders-manage') }"
                     @click="closeMobile"
@@ -442,7 +441,7 @@ function collapseNav() {
                 </li>
                 <li>
                   <RouterLink
-                    to="/orders/awaiting"
+                    to="/admin/orders/awaiting"
                     class="vx-nav-link vx-nav-sublink"
                     :class="{ 'vx-nav-link--active': navActive('orders-awaiting') }"
                     @click="closeMobile"
@@ -452,7 +451,7 @@ function collapseNav() {
                 </li>
                 <li>
                   <RouterLink
-                    to="/orders/on-hold"
+                    to="/admin/orders/on-hold"
                     class="vx-nav-link vx-nav-sublink"
                     :class="{ 'vx-nav-link--active': navActive('orders-on-hold') }"
                     @click="closeMobile"
@@ -462,17 +461,17 @@ function collapseNav() {
                 </li>
                 <li>
                   <RouterLink
-                    to="/orders/out-of-stock"
+                    to="/admin/orders/backorder"
                     class="vx-nav-link vx-nav-sublink"
                     :class="{ 'vx-nav-link--active': navActive('orders-out-of-stock') }"
                     @click="closeMobile"
                   >
-                    Out Of Stock
+                    Backorder
                   </RouterLink>
                 </li>
                 <li>
                   <RouterLink
-                    to="/orders/shipped"
+                    to="/admin/orders/shipped"
                     class="vx-nav-link vx-nav-sublink"
                     :class="{ 'vx-nav-link--active': navActive('orders-shipped') }"
                     @click="closeMobile"
@@ -485,7 +484,7 @@ function collapseNav() {
           </template>
           <RouterLink
             v-else
-            :to="isPortal ? '/orders' : '/orders/manage'"
+            to="/admin/orders/manage"
             class="vx-nav-link"
             title="Orders"
             @click="closeMobile"
@@ -547,7 +546,7 @@ function collapseNav() {
               <ul v-show="inventoryGroupOpen" class="list-unstyled mb-0 mt-1">
                 <li>
                   <RouterLink
-                    to="/inventory"
+                    to="/admin/inventory"
                     class="vx-nav-link vx-nav-sublink"
                     :class="{ 'vx-nav-link--active': navActive('inventory-search') }"
                     @click="closeMobile"
@@ -557,7 +556,7 @@ function collapseNav() {
                 </li>
                 <li v-if="!isPortal">
                   <RouterLink
-                    to="/inventory/on-demand"
+                    to="/admin/inventory/on-demand"
                     class="vx-nav-link vx-nav-sublink"
                     :class="{ 'vx-nav-link--active': navActive('inventory-on-demand') }"
                     @click="closeMobile"
@@ -570,7 +569,7 @@ function collapseNav() {
           </template>
           <RouterLink
             v-else
-            to="/inventory"
+            to="/admin/inventory"
             class="vx-nav-link"
             title="Inventory"
             @click="closeMobile"
@@ -591,7 +590,7 @@ function collapseNav() {
         </li>
         <li v-if="!isPortal && canViewWebmaster">
           <RouterLink
-            to="/webmaster"
+            to="/admin/webmaster"
             class="vx-nav-link"
             :title="!isExpanded ? 'Webmaster' : undefined"
             @click="closeMobile"

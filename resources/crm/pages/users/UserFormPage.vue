@@ -39,7 +39,7 @@ onMounted(async () => {
 async function onSubmit() {
   const ok = await submit({ isEdit: false, userId: null });
   if (ok) {
-    await router.push("/staff");
+    await router.push("/admin/staff");
   }
 }
 </script>
@@ -52,8 +52,8 @@ async function onSubmit() {
         subtitle="Name, login email, password, status, and roles. More details can be added when you edit the user."
       />
       <div class="flex shrink-0 flex-wrap gap-x-4 gap-y-2">
-        <CrmBackLink to="/staff" label="Back To Staff" />
-        <CrmBackLink to="/dashboard" label="Back To Dashboard" />
+        <CrmBackLink to="/admin/staff" label="Back To Staff" />
+        <CrmBackLink to="/admin/dashboard" label="Back To Dashboard" />
       </div>
     </div>
 

@@ -159,6 +159,10 @@ query ShipHeroInventoryRows($customer_account_id: String, $first: Int!) {
         node {
           sku
           name
+          images {
+            src
+            position
+          }
           warehouse_products {
             warehouse_id
             on_hand
@@ -185,11 +189,29 @@ GQL;
             if (! $node) {
                 continue;
             }
+            $imageUrl = null;
+            $images = is_array($node['images'] ?? null) ? $node['images'] : [];
+            $bestPos = PHP_INT_MAX;
+            foreach ($images as $img) {
+                if (! is_array($img)) {
+                    continue;
+                }
+                $src = trim((string) ($img['src'] ?? ''));
+                if ($src === '') {
+                    continue;
+                }
+                $pos = isset($img['position']) && is_numeric($img['position']) ? (int) $img['position'] : 999999;
+                if ($imageUrl === null || $pos < $bestPos) {
+                    $imageUrl = $src;
+                    $bestPos = $pos;
+                }
+            }
             $wps = is_array($node['warehouse_products'] ?? null) ? $node['warehouse_products'] : [];
             if ($wps === []) {
                 $rows[] = [
                     'sku' => (string) ($node['sku'] ?? ''),
                     'name' => (string) ($node['name'] ?? ''),
+                    'image_url' => $imageUrl,
                     'warehouse_id' => null,
                     'on_hand' => 0,
                     'allocated' => 0,
@@ -202,6 +224,7 @@ GQL;
                 $rows[] = [
                     'sku' => (string) ($node['sku'] ?? ''),
                     'name' => (string) ($node['name'] ?? ''),
+                    'image_url' => $imageUrl,
                     'warehouse_id' => (string) ($wp['warehouse_id'] ?? ''),
                     'on_hand' => (float) ($wp['on_hand'] ?? 0),
                     'allocated' => (float) ($wp['allocated'] ?? 0),
@@ -865,6 +888,7 @@ query ShipHeroProductBySku($sku: String!) {
         warehouse_identifier
         on_hand
         allocated
+        backorder
         inventory_bin
         inventory_overstock_bin
         reserve_inventory

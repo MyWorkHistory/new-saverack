@@ -88,6 +88,7 @@ function openDetail(row) {
         <table class="table table-hover align-middle mb-0 staff-data-table">
           <thead class="table-light staff-table-head">
             <tr>
+              <th class="staff-table-head__th text-center">Image</th>
               <th class="staff-table-head__th">SKU</th>
               <th class="staff-table-head__th">Name</th>
               <th class="staff-table-head__th text-end">On Hand</th>
@@ -97,12 +98,22 @@ function openDetail(row) {
           </thead>
           <tbody>
             <tr v-if="loading">
-              <td colspan="5" class="text-center text-secondary py-5">Loading inventory...</td>
+              <td colspan="6" class="text-center text-secondary py-5">Loading inventory...</td>
             </tr>
             <tr v-else-if="!filteredRows.length">
-              <td colspan="5" class="text-center text-secondary py-5">No inventory rows found.</td>
+              <td colspan="6" class="text-center text-secondary py-5">No inventory rows found.</td>
             </tr>
             <tr v-for="row in filteredRows" :key="`${row.sku}-${row.warehouse_id || ''}`">
+              <td class="text-center">
+                <img
+                  v-if="row.image_url"
+                  :src="row.image_url"
+                  alt=""
+                  class="user-inventory-thumb"
+                  loading="lazy"
+                />
+                <div v-else class="user-inventory-thumb user-inventory-thumb--empty" />
+              </td>
               <td>
                 <button type="button" class="btn btn-link p-0 text-decoration-none fw-semibold" @click="openDetail(row)">
                   {{ row.sku || "—" }}
@@ -123,3 +134,19 @@ function openDetail(row) {
     </div>
   </div>
 </template>
+
+<style scoped>
+.user-inventory-thumb {
+  width: 34px;
+  height: 34px;
+  border-radius: 0.35rem;
+  object-fit: cover;
+  border: 1px solid rgba(0, 0, 0, 0.08);
+  background: #fff;
+}
+
+.user-inventory-thumb--empty {
+  display: inline-block;
+  background: rgba(0, 0, 0, 0.05);
+}
+</style>

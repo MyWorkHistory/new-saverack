@@ -356,12 +356,20 @@ class InvoiceController extends Controller
         ]);
     }
 
-    public function destroyLineGroup(Invoice $invoice, string $groupKey): JsonResponse
+    public function destroyLineGroup(Request $request, Invoice $invoice, string $groupKey): JsonResponse
     {
         $this->authorize('update', $invoice);
         $groupKey = rawurldecode($groupKey);
+        $itemIds = null;
+        if ($request->has('item_ids')) {
+            $validated = $request->validate([
+                'item_ids' => ['required', 'array', 'min:1'],
+                'item_ids.*' => ['integer', 'min:1'],
+            ]);
+            $itemIds = array_values(array_unique(array_map('intval', $validated['item_ids'])));
+        }
         try {
-            $invoice = $this->invoices->deleteLineGroup($invoice, $groupKey, request()->user());
+            $invoice = $this->invoices->deleteLineGroup($invoice, $groupKey, $request->user(), $itemIds);
         } catch (\InvalidArgumentException $e) {
             return response()->json(['message' => $e->getMessage()], 422);
         }
@@ -378,6 +386,7 @@ class InvoiceController extends Controller
             $groupKey,
             $request->itemsPayload(),
             $request->user(),
+            $request->replaceItemIds(),
         );
 
         return response()->json($this->invoices->toDetailArray($invoice));

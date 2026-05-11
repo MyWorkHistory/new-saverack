@@ -927,6 +927,78 @@ class BillingInvoiceApiTest extends TestCase
         $this->assertNotNull($show->json('customer_pdf_url'));
     }
 
+    public function test_line_group_delete_scoped_by_item_ids_when_group_key_is_shared_across_postage_buckets(): void
+    {
+        $user = User::factory()->create();
+        $user->permissions()->sync([
+            $this->billingViewPermission()->id,
+            $this->billingCreatePermission()->id,
+            $this->billingUpdatePermission()->id,
+        ]);
+        Sanctum::actingAs($user);
+
+        $client = ClientAccount::query()->create([
+            'status' => ClientAccount::STATUS_ACTIVE,
+            'company_name' => 'Scoped Postage Co',
+            'email' => 'scoped-postage@acme.test',
+        ]);
+
+        $invoice = Invoice::query()->create([
+            'invoice_number' => 'INV-SCOPED-POST-001',
+            'client_account_id' => $client->id,
+            'status' => Invoice::STATUS_DRAFT,
+            'currency' => 'USD',
+            'subtotal_cents' => 3000,
+            'tax_cents' => 0,
+            'total_cents' => 3000,
+            'amount_paid_cents' => 0,
+            'balance_due_cents' => 3000,
+        ]);
+
+        $genericOne = InvoiceItem::query()->create([
+            'invoice_id' => $invoice->id,
+            'sort_order' => 1,
+            'category' => 'postage',
+            'group_key' => 'postage',
+            'description' => 'Gen',
+            'display_name' => 'Generic Postage',
+            'quantity' => 1,
+            'unit_price_cents' => 1000,
+            'line_total_cents' => 1000,
+        ]);
+        $genericTwo = InvoiceItem::query()->create([
+            'invoice_id' => $invoice->id,
+            'sort_order' => 2,
+            'category' => 'postage',
+            'group_key' => 'postage',
+            'description' => 'Gen 2',
+            'display_name' => 'Generic Postage',
+            'quantity' => 1,
+            'unit_price_cents' => 500,
+            'line_total_cents' => 500,
+        ]);
+        InvoiceItem::query()->create([
+            'invoice_id' => $invoice->id,
+            'sort_order' => 3,
+            'category' => 'postage',
+            'group_key' => 'postage',
+            'description' => 'USPS line',
+            'display_name' => 'Postage (USPS)',
+            'quantity' => 1,
+            'unit_price_cents' => 1500,
+            'line_total_cents' => 1500,
+        ]);
+
+        $this->deleteJson("/api/invoices/{$invoice->id}/line-groups/postage", [
+            'item_ids' => [(int) $genericOne->id, (int) $genericTwo->id],
+        ])->assertOk();
+
+        $invoice->refresh();
+        $this->assertSame(0, (int) $invoice->items()->where('display_name', 'Generic Postage')->count());
+        $this->assertSame(1, (int) $invoice->items()->where('display_name', 'Postage (USPS)')->count());
+        $this->assertSame(1, (int) $invoice->items()->count());
+    }
+
     public function test_import_charge_csv_creates_draft_invoice(): void
     {
         $user = User::factory()->create();

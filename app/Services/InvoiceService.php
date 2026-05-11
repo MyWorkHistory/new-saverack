@@ -191,22 +191,39 @@ class InvoiceService
         ]);
     }
 
-    public function deleteLineGroup(Invoice $invoice, string $groupKey, ?User $actor): Invoice
+    /**
+     * @param  list<int>|null  $itemIds
+     */
+    public function deleteLineGroup(Invoice $invoice, string $groupKey, ?User $actor, ?array $itemIds = null): Invoice
     {
         if ($invoice->isVoid()) {
             throw new \RuntimeException('Void invoices cannot be edited.');
         }
 
-        return DB::transaction(function () use ($invoice, $groupKey, $actor) {
-            $deleted = $invoice->items()->where('group_key', $groupKey)->delete();
-            if ($deleted === 0) {
-                throw new \InvalidArgumentException('No lines found for that group key.');
+        return DB::transaction(function () use ($invoice, $groupKey, $actor, $itemIds) {
+            if ($itemIds !== null && $itemIds !== []) {
+                $itemIds = array_values(array_unique(array_map('intval', $itemIds)));
+                $ownedCount = $invoice->items()->whereIn('id', $itemIds)->count();
+                if ($ownedCount !== count($itemIds)) {
+                    throw new \InvalidArgumentException('One or more line items do not belong to this invoice.');
+                }
+                $deleted = $invoice->items()->whereIn('id', $itemIds)->delete();
+                if ($deleted === 0) {
+                    throw new \InvalidArgumentException('No matching line items to delete.');
+                }
+                $msg = 'Deleted '.$deleted.' invoice line item(s) (scoped; group key '.$groupKey.').';
+            } else {
+                $deleted = $invoice->items()->where('group_key', $groupKey)->delete();
+                if ($deleted === 0) {
+                    throw new \InvalidArgumentException('No lines found for that group key.');
+                }
+                $msg = 'Deleted line group: '.$groupKey;
             }
             $this->recalculateTotals($invoice->refresh());
             $invoice->save();
             $this->logHistory($invoice, $actor, 'updated', $invoice->status, $invoice->status, [
                 'event_type' => InvoiceHistoryEventType::LINE_DELETE,
-                'history_message' => 'Deleted line group: '.$groupKey,
+                'history_message' => $msg,
             ]);
 
             return $invoice->fresh(['items', 'clientAccount']);
@@ -215,15 +232,25 @@ class InvoiceService
 
     /**
      * @param  list<array<string, mixed>>  $items
+     * @param  list<int>|null  $replaceItemIds
      */
-    public function replaceLineGroup(Invoice $invoice, string $groupKey, array $items, ?User $actor): Invoice
+    public function replaceLineGroup(Invoice $invoice, string $groupKey, array $items, ?User $actor, ?array $replaceItemIds = null): Invoice
     {
         if ($invoice->isVoid()) {
             throw new \RuntimeException('Void invoices cannot be edited.');
         }
 
-        return DB::transaction(function () use ($invoice, $groupKey, $items, $actor) {
-            $invoice->items()->where('group_key', $groupKey)->delete();
+        return DB::transaction(function () use ($invoice, $groupKey, $items, $actor, $replaceItemIds) {
+            if ($replaceItemIds !== null && $replaceItemIds !== []) {
+                $replaceItemIds = array_values(array_unique(array_map('intval', $replaceItemIds)));
+                $ownedCount = $invoice->items()->whereIn('id', $replaceItemIds)->count();
+                if ($ownedCount !== count($replaceItemIds)) {
+                    throw new \InvalidArgumentException('One or more line items do not belong to this invoice.');
+                }
+                $invoice->items()->whereIn('id', $replaceItemIds)->delete();
+            } else {
+                $invoice->items()->where('group_key', $groupKey)->delete();
+            }
             $order = (int) $invoice->items()->max('sort_order');
             foreach ($items as $row) {
                 $order++;

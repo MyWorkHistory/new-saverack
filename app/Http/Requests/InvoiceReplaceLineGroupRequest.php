@@ -16,6 +16,8 @@ class InvoiceReplaceLineGroupRequest extends FormRequest
     public function rules(): array
     {
         return [
+            'replace_item_ids' => ['sometimes', 'array', 'min:1', 'max:500'],
+            'replace_item_ids.*' => ['integer', 'min:1'],
             'items' => ['required', 'array', 'min:1', 'max:500'],
             'items.*.description' => ['required', 'string', 'max:65535'],
             'items.*.category' => ['nullable', 'string', Rule::in(InvoiceLineCategory::all())],
@@ -37,5 +39,18 @@ class InvoiceReplaceLineGroupRequest extends FormRequest
     public function itemsPayload(): array
     {
         return array_values($this->validated()['items']);
+    }
+
+    /**
+     * @return list<int>|null
+     */
+    public function replaceItemIds(): ?array
+    {
+        $data = $this->validated();
+        if (! isset($data['replace_item_ids']) || ! is_array($data['replace_item_ids'])) {
+            return null;
+        }
+
+        return array_values(array_unique(array_map('intval', $data['replace_item_ids'])));
     }
 }

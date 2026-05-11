@@ -317,7 +317,7 @@ final class InvoiceChargeImportParser
                     $rateCents,
                     $lineTotalCents,
                     null,
-                    'postage',
+                    $this->postageGroupKey($carrier),
                     $chargeTypeRaw,
                     $this->trimmedSkuOrNull($sku)
                 ),
@@ -463,7 +463,7 @@ final class InvoiceChargeImportParser
                 $rateCents,
                 $lineTotalCents,
                 null,
-                'postage',
+                $this->postageGroupKey($carrier),
                 $chargeTypeRaw,
                 $this->trimmedSkuOrNull($skuFromColumn)
             );
@@ -487,7 +487,7 @@ final class InvoiceChargeImportParser
                 return $this->buildItem(InvoiceLineCategory::POSTAGE, 'Return Label', $chargeName, $qty, $rateCents, $lineTotalCents, null, 'postage:return-label', $chargeTypeRaw, $this->trimmedSkuOrNull($skuFromColumn));
             }
             $carrier = $this->postageServiceName($chargeName !== '' ? $chargeName : 'Other', $chargeTypeRaw);
-            return $this->buildItem(InvoiceLineCategory::POSTAGE, 'Postage ('.$carrier.')', $chargeName, $qty, $rateCents, $lineTotalCents, null, 'postage', $chargeTypeRaw, $this->trimmedSkuOrNull($skuFromColumn));
+            return $this->buildItem(InvoiceLineCategory::POSTAGE, 'Postage ('.$carrier.')', $chargeName, $qty, $rateCents, $lineTotalCents, null, $this->postageGroupKey($carrier), $chargeTypeRaw, $this->trimmedSkuOrNull($skuFromColumn));
         }
         if (strpos($t, 'box_charge') !== false) {
             if ($this->isBasicBox6x9x1($chargeName)) {
@@ -591,7 +591,7 @@ final class InvoiceChargeImportParser
                 return $this->buildItem(InvoiceLineCategory::POSTAGE, 'Return Label', $chargeName, $qty, $rateCents, $lineTotalCents, null, 'postage:return-label', $chargeTypeRaw, $this->trimmedSkuOrNull($skuFromColumn));
             }
             $carrier = $this->postageServiceName($chargeName !== '' ? $chargeName : 'Other', $chargeTypeRaw);
-            return $this->buildItem(InvoiceLineCategory::POSTAGE, $carrier, $chargeName, $qty, $rateCents, $lineTotalCents, null, 'postage', $chargeTypeRaw, $this->trimmedSkuOrNull($skuFromColumn));
+            return $this->buildItem(InvoiceLineCategory::POSTAGE, $carrier, $chargeName, $qty, $rateCents, $lineTotalCents, null, $this->postageGroupKey($carrier), $chargeTypeRaw, $this->trimmedSkuOrNull($skuFromColumn));
         }
         if ($this->isPackagingMaterialText($hay)) {
             $pkg = $this->packagingDisplayName($chargeName !== '' ? $chargeName : 'Other');
@@ -963,7 +963,7 @@ final class InvoiceChargeImportParser
 
         $sku = $this->legacyRowProductSku($row, $index);
 
-        return $this->buildItem(InvoiceLineCategory::POSTAGE, 'Postage ('.trim($carrier).')', trim($carrier), 1.0, 0, $total, null, 'postage', '', $sku);
+        return $this->buildItem(InvoiceLineCategory::POSTAGE, 'Postage ('.trim($carrier).')', trim($carrier), 1.0, 0, $total, null, $this->postageGroupKey(trim($carrier)), '', $sku);
     }
 
     /**
@@ -1338,6 +1338,16 @@ final class InvoiceChargeImportParser
     {
         $slug = Str::slug($value);
         return $slug !== '' ? $slug : 'item';
+    }
+
+    /**
+     * One stable group_key per carrier/display so deleting one postage bucket does not remove others.
+     */
+    private function postageGroupKey(string $carrierOrLabel): string
+    {
+        $trimmed = trim($carrierOrLabel);
+
+        return 'postage:'.$this->slug($trimmed !== '' ? $trimmed : 'other');
     }
 
     private function isStorageChargeContext(string $billingCategoryRaw, string $feeRaw, string $chargeName, string $chargeTypeRaw, string $descriptionRaw): bool

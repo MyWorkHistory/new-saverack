@@ -1307,9 +1307,14 @@ async function confirmGroupEdit() {
         metadata: line.metadata || null,
       };
     });
+    const scopedIds = presentationGroupedLineItemIds(groupEditTarget.value);
+    const putBody = { items: payloadItems };
+    if (scopedIds) {
+      putBody.replace_item_ids = scopedIds;
+    }
     await api.put(
       `/invoices/${invoice.value.id}/line-groups/${encodeURIComponent(groupEditTarget.value.line_group_key)}`,
-      { items: payloadItems },
+      putBody,
     );
     toast.success("Grouped line items updated.");
     groupEditModalOpen.value = false;
@@ -1322,6 +1327,16 @@ async function confirmGroupEdit() {
   } finally {
     groupEditBusy.value = false;
   }
+}
+
+/** Underlying invoice_item ids for a presentation grouped row (avoids deleting every line that shares a loose group_key such as `postage`). */
+function presentationGroupedLineItemIds(row) {
+  const details = row?.details;
+  if (!Array.isArray(details) || !details.length) return null;
+  const ids = details
+    .map((d) => d.id)
+    .filter((id) => typeof id === "number" && Number.isFinite(id) && id > 0);
+  return ids.length ? ids : null;
 }
 
 function openGroupDeleteModal(row) {
@@ -1339,9 +1354,10 @@ async function confirmGroupDelete() {
   if (!invoice.value || !groupEditTarget.value?.line_group_key) return;
   groupDeleteBusy.value = true;
   try {
-    await api.delete(
-      `/invoices/${invoice.value.id}/line-groups/${encodeURIComponent(groupEditTarget.value.line_group_key)}`,
-    );
+    const row = groupEditTarget.value;
+    const scopedIds = presentationGroupedLineItemIds(row);
+    const url = `/invoices/${invoice.value.id}/line-groups/${encodeURIComponent(row.line_group_key)}`;
+    await api.delete(url, scopedIds ? { data: { item_ids: scopedIds } } : {});
     toast.success("Grouped line items deleted.");
     groupDeleteModalOpen.value = false;
     groupEditTarget.value = null;

@@ -66,6 +66,10 @@ class OrderController extends Controller
                 'after' => $validated['after'] ?? null,
                 'first' => (int) ($validated['first'] ?? 20),
             ]);
+            $payload['meta'] = [
+                'client_account_id' => (int) $validated['client_account_id'],
+                'shiphero_customer_account_id' => $customerId,
+            ];
 
             return response()->json($payload);
         } catch (ValidationException $e) {

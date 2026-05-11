@@ -142,7 +142,15 @@ GQL;
             }
             $rows[] = $this->normalizeOrderRow($node, $edge['cursor'] ?? null);
         }
+        $upstreamCount = count($rows);
         $rows = $this->applyListFilters($rows, $filters);
+        if ($upstreamCount > 0 && count($rows) === 0) {
+            Log::warning('shiphero.orders.list.post_filter_dropped_all', [
+                'customer_account_id' => $customerAccountId,
+                'tab' => $tab,
+                'upstream_rows' => $upstreamCount,
+            ]);
+        }
 
         $pageInfo = is_array($data['pageInfo'] ?? null) ? $data['pageInfo'] : [];
 
@@ -666,7 +674,7 @@ GQL;
         }
 
         // Reject obvious non-status profile/shop labels like "Antonia".
-        if (! preg_match('/(ship|hold|pend|await|fulfill|ready|back|cancel|open|close|partial|deliver|test)/', $v)) {
+        if (! preg_match('/(ship|hold|pend|await|fulfill|ready|back|cancel|open|close|partial|deliver|test|fraud|payment|address|operator|user|inventory|oos|stock)/', $v)) {
             return false;
         }
 
@@ -805,6 +813,7 @@ GQL;
         $tab = strtolower(trim((string) ($filters['tab'] ?? 'manage')));
         $from = $this->normalizeDateBoundary($filters['order_date_from'] ?? null, true);
         $to = $this->normalizeDateBoundary($filters['order_date_to'] ?? null, false);
+        $skipStatusTabFilter = $this->tabUsesShipHeroNativeListScope($tab);
 
         $out = [];
         foreach ($rows as $row) {
@@ -813,7 +822,7 @@ GQL;
             }
             $status = strtolower(trim((string) ($row['status'] ?? '')));
             $holdReason = strtolower(trim((string) ($filters['hold_reason'] ?? '')));
-            if (! $this->statusMatchesTab($status, $tab)) {
+            if (! $skipStatusTabFilter && ! $this->statusMatchesTab($status, $tab)) {
                 continue;
             }
             if ($tab === 'on_hold' && $holdReason !== '') {
@@ -829,6 +838,20 @@ GQL;
         }
 
         return $out;
+    }
+
+    /**
+     * Tabs where the ShipHero `orders` query already applies the queue filter (has_hold,
+     * ready_to_ship + fulfillment_status, etc.). Post-filtering on normalized status is unsafe
+     * because ShipHero often omits the substring "hold" from fulfillment_status while still
+     * returning rows for has_hold: true — which previously dropped every row.
+     */
+    private function tabUsesShipHeroNativeListScope(string $tab): bool
+    {
+        return $tab === 'on_hold'
+            || $tab === 'awaiting'
+            || $tab === 'backorder'
+            || $tab === 'shipped';
     }
 
     private function statusMatchesTab(string $status, string $tab): bool

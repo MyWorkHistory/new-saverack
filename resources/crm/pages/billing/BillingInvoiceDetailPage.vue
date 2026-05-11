@@ -1965,7 +1965,7 @@ function onDocKeydown(e) {
           <button
             type="button"
             class="btn btn-outline-secondary btn-sm"
-            @click="router.push('/billing/invoices')"
+            @click="router.push('admin/billing/invoices')"
           >
             ← Invoices
           </button>

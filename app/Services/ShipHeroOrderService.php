@@ -898,17 +898,23 @@ GQL;
             return false;
         }
 
-        return match ($needleLc) {
-            'fraud' => (bool) preg_match('/\bfraud\b/', $blob),
-            'address' => str_contains($blob, 'hold')
-                && ((bool) preg_match('/\baddress\b/', $blob)),
-            'operator' => (bool) preg_match('/\boperator\b/', $blob),
-            'payment' => (bool) preg_match('/\bpayment\b/', $blob),
-            'user' => str_contains($blob, 'user hold')
-                || str_contains($blob, 'user_hold')
-                || (bool) preg_match('/\buser\s+hold\b/', $blob),
-            default => str_contains($blob, $needleLc),
-        };
+        switch ($needleLc) {
+            case 'fraud':
+                return (bool) preg_match('/\bfraud\b/', $blob);
+            case 'address':
+                return str_contains($blob, 'hold')
+                    && (bool) preg_match('/\baddress\b/', $blob);
+            case 'operator':
+                return (bool) preg_match('/\boperator\b/', $blob);
+            case 'payment':
+                return (bool) preg_match('/\bpayment\b/', $blob);
+            case 'user':
+                return str_contains($blob, 'user hold')
+                    || str_contains($blob, 'user_hold')
+                    || (bool) preg_match('/\buser\s+hold\b/', $blob);
+            default:
+                return str_contains($blob, $needleLc);
+        }
     }
 
     /**

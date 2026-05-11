@@ -583,9 +583,21 @@ onMounted(async () => {
   line-height: 1.3;
 }
 
-.order-detail-page :deep(.staff-data-table) {
-  table-layout: fixed;
+/*
+ * Global staff styles use `width: max-content` on tables inside `.staff-table-wrap` so other
+ * datatables can scroll horizontally on mobile. That defeats fixed layout here and stretches
+ * the table to the full product string — horizontal scrollbar. Keep this table viewport-width.
+ */
+.order-detail-page :deep(.table-responsive.staff-table-wrap) {
+  overflow-x: clip;
+  max-width: 100%;
+}
+
+.order-detail-page :deep(.staff-table-wrap .table.staff-data-table) {
   width: 100%;
+  min-width: 0;
+  max-width: 100%;
+  table-layout: fixed;
 }
 
 .order-detail-page__items-col {

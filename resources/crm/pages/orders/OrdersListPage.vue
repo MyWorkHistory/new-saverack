@@ -210,6 +210,9 @@ function dateRangeFromPreset() {
 
 /** ShipHero filters by order placement date for these params. "Any order date" sends nothing. */
 function orderDateParamsForRequest() {
+  if (committedOrderNumber.value) {
+    return {};
+  }
   if (query.datePreset === "all") {
     return {};
   }
@@ -494,28 +497,15 @@ onUnmounted(() => {
               >
                 <div class="staff-toolbar-filter-dropdown__head">
                   <span>Filters</span>
-                  <button
-                    type="button"
-                    class="btn btn-link btn-sm text-secondary text-decoration-none p-0"
-                    @click="
-                      query.datePreset = tabKey === 'manage' ? 'today' : 'all';
-                      query.from = '';
-                      query.to = '';
-                      query.fulfillmentStatus = '';
-                      query.readyToShip = '';
-                      query.holdReason = '';
-                      query.orderNumber = '';
-                      committedOrderNumber = '';
-                      filterMenuOpen = false;
-                    "
-                  >
+                  <button type="button" class="btn btn-link btn-sm text-secondary text-decoration-none p-0" @click="resetToolbarFiltersFromMenu">
                     Reset
                   </button>
                 </div>
                 <div class="staff-toolbar-filter-dropdown__body">
                   <p class="small text-secondary mb-2">
                     <template v-if="tabKey === 'manage'">
-                      Same <strong>order date</strong> window as the Ready to Ship summary above.
+                      Same <strong>order date</strong> window as the Ready to Ship summary above. Searching by
+                      <strong>order #</strong> ignores the date range so a specific order can be found.
                     </template>
                     <template v-else-if="tabKey === 'shipped'">
                       <strong>Shipped</strong> uses ShipHero &ldquo;fulfilled&rdquo; plus last activity when you pick

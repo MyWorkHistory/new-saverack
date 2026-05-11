@@ -87,6 +87,12 @@ class ShipHeroOrderService
         $orderNumber = ltrim($orderNumber, '#');
         if ($orderNumber !== '') {
             $vars['order_number'] = $orderNumber;
+            // ShipHero ANDs order_number with order_date / updated windows; clear them so a lookup finds the order
+            // regardless of when it was placed or last updated (e.g. Manage defaults to "today" only).
+            $vars['order_date_from'] = null;
+            $vars['order_date_to'] = null;
+            $vars['updated_from'] = null;
+            $vars['updated_to'] = null;
         }
 
         $holdNeedle = strtolower(trim((string) ($filters['hold_reason'] ?? '')));

@@ -35,6 +35,7 @@ class OrderController extends Controller
             'fulfillment_status' => ['nullable', 'string', 'max:64'],
             'ready_to_ship' => ['nullable', 'boolean'],
             'hold_reason' => ['nullable', 'string', 'max:64'],
+            'order_number' => ['nullable', 'string', 'max:128'],
             'after' => ['nullable', 'string', 'max:255'],
             'first' => ['nullable', 'integer', 'min:1', 'max:100'],
         ]);
@@ -63,6 +64,7 @@ class OrderController extends Controller
                 'fulfillment_status' => $validated['fulfillment_status'] ?? null,
                 'ready_to_ship' => array_key_exists('ready_to_ship', $validated) ? (bool) $validated['ready_to_ship'] : null,
                 'hold_reason' => $validated['hold_reason'] ?? null,
+                'order_number' => isset($validated['order_number']) ? trim((string) $validated['order_number']) : null,
                 'after' => $validated['after'] ?? null,
                 'first' => (int) ($validated['first'] ?? 20),
             ]);

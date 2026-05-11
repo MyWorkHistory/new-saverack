@@ -44,6 +44,11 @@ class ShipHeroOrderService
             'has_backorder' => null,
             'ready_to_ship' => null,
             'fulfillment_status' => null,
+            'order_number' => null,
+            'fraud_hold' => null,
+            'operator_hold' => null,
+            'address_hold' => null,
+            'payment_hold' => null,
         ];
 
         $tab = strtolower(trim((string) ($filters['tab'] ?? 'manage')));
@@ -78,6 +83,30 @@ class ShipHeroOrderService
             $vars['ready_to_ship'] = $filters['ready_to_ship'];
         }
 
+        $orderNumber = trim((string) ($filters['order_number'] ?? ''));
+        $orderNumber = ltrim($orderNumber, '#');
+        if ($orderNumber !== '' && $tab === 'manage') {
+            $vars['order_number'] = $orderNumber;
+        }
+
+        $holdNeedle = strtolower(trim((string) ($filters['hold_reason'] ?? '')));
+        if ($tab === 'on_hold' && $holdNeedle !== '') {
+            switch ($holdNeedle) {
+                case 'fraud':
+                    $vars['fraud_hold'] = true;
+                    break;
+                case 'address':
+                    $vars['address_hold'] = true;
+                    break;
+                case 'operator':
+                    $vars['operator_hold'] = true;
+                    break;
+                case 'payment':
+                    $vars['payment_hold'] = true;
+                    break;
+            }
+        }
+
         $graphql = <<<'GQL'
 query ShipHeroOrders(
   $customer_account_id: String!,
@@ -89,6 +118,11 @@ query ShipHeroOrders(
   $has_backorder: Boolean,
   $ready_to_ship: Boolean,
   $fulfillment_status: String,
+  $order_number: String,
+  $fraud_hold: Boolean,
+  $operator_hold: Boolean,
+  $address_hold: Boolean,
+  $payment_hold: Boolean,
   $first: Int!,
   $after: String
 ) {
@@ -101,7 +135,12 @@ query ShipHeroOrders(
     has_hold: $has_hold,
     has_backorder: $has_backorder,
     ready_to_ship: $ready_to_ship,
-    fulfillment_status: $fulfillment_status
+    fulfillment_status: $fulfillment_status,
+    order_number: $order_number,
+    fraud_hold: $fraud_hold,
+    operator_hold: $operator_hold,
+    address_hold: $address_hold,
+    payment_hold: $payment_hold
   ) {
     request_id
     complexity
@@ -895,7 +934,7 @@ GQL;
     }
 
     /**
-     * Match UI hold-reason filter tokens against normalized label and raw ShipHero text (word-safe where needed).
+     * Match UI hold-reason filter: any of several simultaneous holds on one order must match the selected filter.
      *
      * @param  array<string, mixed>  $row
      */
@@ -904,33 +943,63 @@ GQL;
         if ($needleLc === '') {
             return true;
         }
-        $label = strtolower(trim((string) ($row['hold_reason'] ?? '')));
-        $hay = strtolower(trim(
+        $labelLc = strtolower(trim((string) ($row['hold_reason'] ?? '')));
+        $hayLc = strtolower(trim(
             (string) ($row['raw_fulfillment_status'] ?? '')
             .' '.(string) ($row['raw_status'] ?? '')
             .' '.(string) ($row['raw_profile'] ?? '')
         ));
-        $blob = trim($label !== '' ? $label.' '.$hay : $hay);
-        if ($blob === '') {
+        $combinedLc = trim($labelLc !== '' ? $labelLc.' '.$hayLc : $hayLc);
+        if ($combinedLc === '') {
             return false;
         }
 
+        $segments = [];
+        if ($labelLc !== '') {
+            foreach (explode(',', $labelLc) as $chunk) {
+                $chunk = trim($chunk);
+                if ($chunk !== '') {
+                    $segments[] = $chunk;
+                }
+            }
+        }
+        $segments[] = $combinedLc;
+
+        foreach (array_unique($segments) as $segmentLc) {
+            if ($this->holdSegmentMatchesNeedle($segmentLc, $needleLc)) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /**
+     * @param  string  $segmentLc  already lowercased
+     */
+    private function holdSegmentMatchesNeedle(string $segmentLc, string $needleLc): bool
+    {
+        if ($segmentLc === '') {
+            return false;
+        }
         switch ($needleLc) {
             case 'fraud':
-                return (bool) preg_match('/\bfraud\b/', $blob);
+                return (bool) preg_match('/\bfraud\b/', $segmentLc);
             case 'address':
-                return str_contains($blob, 'hold')
-                    && (bool) preg_match('/\baddress\b/', $blob);
+                return (bool) preg_match('/\baddress\b/', $segmentLc);
             case 'operator':
-                return (bool) preg_match('/\boperator\b/', $blob);
+                return (bool) preg_match('/\boperator\b/', $segmentLc);
             case 'payment':
-                return (bool) preg_match('/\bpayment\b/', $blob);
+                return (bool) preg_match('/\bpayment\b/', $segmentLc);
             case 'user':
-                return str_contains($blob, 'user hold')
-                    || str_contains($blob, 'user_hold')
-                    || (bool) preg_match('/\buser\s+hold\b/', $blob);
+                return str_contains($segmentLc, 'user hold')
+                    || str_contains($segmentLc, 'user_hold')
+                    || (bool) preg_match('/\buser\s+hold\b/', $segmentLc);
+            case 'shipping':
+                return str_contains($segmentLc, 'shipping method')
+                    || str_contains($segmentLc, 'shipping_method');
             default:
-                return str_contains($blob, $needleLc);
+                return str_contains($segmentLc, $needleLc);
         }
     }
 

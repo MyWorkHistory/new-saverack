@@ -37,6 +37,7 @@ const readySummaryLoadingMore = ref(false);
 const manageOpenId = ref(null);
 const manageMenuRect = ref({ top: 0, left: 0 });
 const filterMenuOpen = ref(false);
+let orderNumberSearchDebounce = null;
 
 const query = reactive({
   datePreset: "today",
@@ -45,6 +46,8 @@ const query = reactive({
   fulfillmentStatus: "",
   readyToShip: "",
   holdReason: "",
+  /** Manage tab only: passed to ShipHero `order_number` filter. */
+  orderNumber: "",
 });
 
 const tabKey = computed(() => String(route.meta?.orderTab || "manage"));
@@ -187,6 +190,12 @@ function buildParams(withCursor = false) {
   if (query.fulfillmentStatus) params.fulfillment_status = query.fulfillmentStatus;
   if (query.readyToShip !== "") params.ready_to_ship = query.readyToShip === "yes";
   if (tabKey.value === "on_hold" && query.holdReason) params.hold_reason = query.holdReason;
+  if (tabKey.value === "manage") {
+    const on = String(query.orderNumber || "")
+      .trim()
+      .replace(/^#+/, "");
+    if (on) params.order_number = on;
+  }
   if (withCursor && nextCursor.value) params.after = nextCursor.value;
   return params;
 }
@@ -325,6 +334,7 @@ watch(
     query.from = "";
     query.to = "";
     query.holdReason = "";
+    query.orderNumber = "";
   },
   { immediate: true },
 );
@@ -347,6 +357,19 @@ watch(
     readySummaryHasMore.value = false;
     fetchOrders(true);
     if (tabKey.value === "manage") fetchReadySummary(true);
+  },
+);
+
+watch(
+  () => query.orderNumber,
+  () => {
+    if (tabKey.value !== "manage" || !showManageFilters.value) return;
+    clearTimeout(orderNumberSearchDebounce);
+    orderNumberSearchDebounce = setTimeout(() => {
+      readySummaryOffset.value = 0;
+      readySummaryHasMore.value = false;
+      fetchOrders(true);
+    }, 350);
   },
 );
 
@@ -380,6 +403,7 @@ onMounted(async () => {
 
 onUnmounted(() => {
   document.removeEventListener("click", onDocClick);
+  clearTimeout(orderNumberSearchDebounce);
 });
 </script>
 
@@ -409,6 +433,20 @@ onUnmounted(() => {
               :allow-empty="true"
               empty-label="Select account to load orders"
               button-id="orders-list-account-trigger"
+            />
+          </div>
+
+          <div v-if="tabKey === 'manage'" class="flex-shrink-0" style="min-width: 200px; max-width: 280px">
+            <label class="form-label small text-secondary mb-1" for="orders-order-number-search">Order Number</label>
+            <input
+              id="orders-order-number-search"
+              v-model.trim="query.orderNumber"
+              type="search"
+              class="form-control"
+              placeholder="Search by order #"
+              :disabled="loading || !selectedAccountId"
+              autocomplete="off"
+              enterkeyhint="search"
             />
           </div>
 
@@ -456,6 +494,7 @@ onUnmounted(() => {
                       query.fulfillmentStatus = '';
                       query.readyToShip = '';
                       query.holdReason = '';
+                      query.orderNumber = '';
                       filterMenuOpen = false;
                     "
                   >

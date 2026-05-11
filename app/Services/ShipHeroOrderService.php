@@ -85,7 +85,7 @@ class ShipHeroOrderService
 
         $orderNumber = trim((string) ($filters['order_number'] ?? ''));
         $orderNumber = ltrim($orderNumber, '#');
-        if ($orderNumber !== '' && $tab === 'manage') {
+        if ($orderNumber !== '') {
             $vars['order_number'] = $orderNumber;
         }
 
@@ -235,7 +235,7 @@ GQL;
     /**
      * @return array<string, mixed>
      */
-    public function getOrder(string $orderId, string $customerAccountId, bool $includeHistory = false): array
+    public function getOrder(string $orderId, string $customerAccountId): array
     {
         $id = trim($orderId);
         $customer = trim($customerAccountId);
@@ -279,15 +279,9 @@ GQL;
             $lineItems = [];
         }
 
+        // Order history is intentionally skipped for speed; the order detail page
+        // should still show items + order/shipping/billing details.
         $history = [];
-        if ($includeHistory) {
-            Log::info('shiphero.order_detail.history.start', [
-                'order_id' => $id,
-                'relay_id' => $relayId,
-                'customer_account_id' => $customer,
-            ]);
-            $history = $this->fetchOrderHistory($customer, $relayId);
-        }
 
         Log::info('shiphero.order_detail.normalize.done', [
             'order_id' => $id,
@@ -295,9 +289,7 @@ GQL;
             'line_items_count' => count($lineItems),
             'history_count' => count($history),
         ]);
-        $order = $this->normalizeOrderDetail($node, $lineItems, $history);
-        $order['history_included'] = $includeHistory;
-        return $order;
+        return $this->normalizeOrderDetail($node, $lineItems, $history);
     }
 
     /**

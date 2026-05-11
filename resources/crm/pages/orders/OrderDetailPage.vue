@@ -193,7 +193,6 @@ function fallbackOrderSnapshot() {
       billing_address: {},
       items: [],
       history: [],
-      history_included: false,
     };
   } catch (_) {
     return null;
@@ -228,7 +227,7 @@ async function loadOrder() {
   order.value = null;
   try {
     const { data } = await api.get(`/orders/${encodeURIComponent(orderId.value)}`, {
-      params: { client_account_id: Number(selectedAccountId.value), include_history: false },
+      params: { client_account_id: Number(selectedAccountId.value) },
     });
     order.value = data?.order ?? null;
     if (data?.fallback?.source) {
@@ -461,21 +460,7 @@ onMounted(async () => {
             </div>
           </div>
 
-          <div
-            v-if="order?.history_included"
-            class="staff-table-card staff-datatable-card staff-datatable-card--white p-0"
-          >
-            <div class="px-4 py-3 border-bottom">
-              <h2 class="h6 mb-0 fw-semibold">History</h2>
-            </div>
-            <div class="px-4 py-3">
-              <div v-for="(h, i) in order.history || []" :key="`${h.created_at}-${i}`" class="border-bottom py-3">
-                <div class="small text-secondary mb-1">{{ fmtDate(h.created_at) }}</div>
-                <div class="small order-detail-page__history-html" v-html="sanitizeHistoryHtml(h.information || '')"></div>
-              </div>
-              <p v-if="!(order.history || []).length" class="small text-secondary mb-0">No history available.</p>
-            </div>
-          </div>
+          <!-- History intentionally not shown for speed. -->
         </div>
 
         <div class="col-lg-4">

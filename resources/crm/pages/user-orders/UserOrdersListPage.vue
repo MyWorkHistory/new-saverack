@@ -22,6 +22,7 @@ const query = reactive({
   from: "",
   to: "",
   holdReason: "",
+  orderNumber: "",
 });
 
 const tabKey = computed(() => String(route.meta?.orderTab || "awaiting"));
@@ -72,6 +73,10 @@ function buildParams(withCursor = false) {
     ...buildDateParams(),
   };
   if (showHoldFilter.value && query.holdReason) params.hold_reason = query.holdReason;
+  if (query.orderNumber) {
+    const n = String(query.orderNumber).trim().replace(/^#+/, "");
+    if (n) params.order_number = n;
+  }
   if (withCursor && nextCursor.value) params.after = nextCursor.value;
   return params;
 }
@@ -157,7 +162,7 @@ async function fetchOrders(reset = true) {
 }
 
 watch(
-  () => [tabKey.value, query.shippedDatePreset, query.from, query.to, query.holdReason, clientAccountId.value],
+  () => [tabKey.value, query.shippedDatePreset, query.from, query.to, query.holdReason, query.orderNumber, clientAccountId.value],
   () => {
     fetchOrders(true);
   },
@@ -181,8 +186,21 @@ onMounted(() => {
     </div>
 
     <div class="staff-table-card staff-datatable-card staff-datatable-card--white w-100">
-      <div class="staff-table-toolbar" v-if="showShippedFilters || showHoldFilter">
+      <div class="staff-table-toolbar">
         <div class="staff-table-toolbar--row flex-wrap align-items-end gap-2 gap-md-3">
+          <div style="min-width: 220px; max-width: 320px">
+            <label class="form-label small text-secondary mb-1" for="user-orders-order-number-search">Order Number</label>
+            <input
+              id="user-orders-order-number-search"
+              v-model.trim="query.orderNumber"
+              type="search"
+              class="form-control"
+              placeholder="Search by Order #"
+              :disabled="loading"
+              autocomplete="off"
+            />
+          </div>
+
           <div v-if="showShippedFilters" class="d-flex gap-2 flex-wrap">
             <select v-model="query.shippedDatePreset" class="form-select" style="max-width: 180px">
               <option value="today">Today</option>
@@ -195,6 +213,7 @@ onMounted(() => {
               <input v-model="query.to" type="date" class="form-control" style="max-width: 180px" />
             </template>
           </div>
+
           <div v-if="showHoldFilter">
             <select v-model="query.holdReason" class="form-select" style="max-width: 220px">
               <option value="">All Hold Reasons</option>

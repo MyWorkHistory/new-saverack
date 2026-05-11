@@ -512,7 +512,6 @@ onMounted(async () => {
         </div>
       </div>
     </template>
-    </template>
   </div>
 </template>
 
@@ -558,23 +557,29 @@ onMounted(async () => {
   max-width: 100%;
 }
 
+/* One line + ellipsis; full text on hover via native `title` on the element (see template). */
 .order-detail-page__item-name {
   color: #2563eb;
   font-weight: 600;
   display: block;
+  min-width: 0;
   max-width: 100%;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+  line-height: 1.35;
 }
 
 .order-detail-page__item-sku {
   color: #6c757d;
   display: block;
+  min-width: 0;
   max-width: 100%;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+  font-size: 0.875rem;
+  line-height: 1.3;
 }
 
 .order-detail-page :deep(.staff-data-table) {
@@ -584,6 +589,8 @@ onMounted(async () => {
 
 .order-detail-page__items-col {
   width: 52%;
+  min-width: 0;
+  vertical-align: middle;
 }
 
 .order-detail-page__item-thumb {
@@ -632,7 +639,9 @@ onMounted(async () => {
 }
 
 .order-detail-page__items-summary {
-  min-width: 300px;
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
 }
 
 .order-detail-page__summary-row {

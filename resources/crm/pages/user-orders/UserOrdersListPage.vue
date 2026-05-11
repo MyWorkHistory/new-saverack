@@ -31,6 +31,20 @@ const showShippedFilters = computed(() => tabKey.value === "shipped");
 const showHoldFilter = computed(() => tabKey.value === "on_hold");
 const isCustomDate = computed(() => query.shippedDatePreset === "custom");
 
+const committedOrderNumber = ref("");
+
+function normalizeOrderNumberInput(v) {
+  return String(v || "")
+    .trim()
+    .replace(/^#+/, "");
+}
+
+function commitOrderNumberSearch() {
+  const next = normalizeOrderNumberInput(query.orderNumber);
+  committedOrderNumber.value = next;
+  fetchOrders(true);
+}
+
 const tabTitle = computed(() => {
   if (tabKey.value === "awaiting") return "Ready To Ship";
   if (tabKey.value === "on_hold") return "On-Hold";
@@ -73,9 +87,8 @@ function buildParams(withCursor = false) {
     ...buildDateParams(),
   };
   if (showHoldFilter.value && query.holdReason) params.hold_reason = query.holdReason;
-  if (query.orderNumber) {
-    const n = String(query.orderNumber).trim().replace(/^#+/, "");
-    if (n) params.order_number = n;
+  if (committedOrderNumber.value) {
+    params.order_number = committedOrderNumber.value;
   }
   if (withCursor && nextCursor.value) params.after = nextCursor.value;
   return params;
@@ -162,7 +175,7 @@ async function fetchOrders(reset = true) {
 }
 
 watch(
-  () => [tabKey.value, query.shippedDatePreset, query.from, query.to, query.holdReason, query.orderNumber, clientAccountId.value],
+  () => [tabKey.value, query.shippedDatePreset, query.from, query.to, query.holdReason, clientAccountId.value],
   () => {
     fetchOrders(true);
   },
@@ -198,6 +211,7 @@ onMounted(() => {
               placeholder="Search by Order #"
               :disabled="loading"
               autocomplete="off"
+              @keydown.enter.prevent="commitOrderNumberSearch"
             />
           </div>
 

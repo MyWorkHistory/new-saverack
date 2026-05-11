@@ -37,7 +37,7 @@ const readySummaryLoadingMore = ref(false);
 const manageOpenId = ref(null);
 const manageMenuRect = ref({ top: 0, left: 0 });
 const filterMenuOpen = ref(false);
-let orderNumberSearchDebounce = null;
+const committedOrderNumber = ref("");
 
 const query = reactive({
   datePreset: "today",
@@ -134,6 +134,21 @@ function normalizedHoldReasonLabel(value) {
   return "";
 }
 
+function normalizeOrderNumberInput(v) {
+  return String(v || "")
+    .trim()
+    .replace(/^#+/, "");
+}
+
+function commitOrderNumberSearch() {
+  // Only the Manage tab has an order-number input.
+  if (tabKey.value !== "manage") return;
+  const next = normalizeOrderNumberInput(query.orderNumber);
+  committedOrderNumber.value = next;
+
+  fetchOrders(true);
+}
+
 function firstHoldReasonLabel(row) {
   const raw = String(row?.hold_reason || "").trim();
   if (!raw) return "";
@@ -216,10 +231,7 @@ function buildParams(withCursor = false) {
   if (query.readyToShip !== "") params.ready_to_ship = query.readyToShip === "yes";
   if (tabKey.value === "on_hold" && query.holdReason) params.hold_reason = query.holdReason;
   if (tabKey.value === "manage") {
-    const on = String(query.orderNumber || "")
-      .trim()
-      .replace(/^#+/, "");
-    if (on) params.order_number = on;
+    if (committedOrderNumber.value) params.order_number = committedOrderNumber.value;
   }
   if (withCursor && nextCursor.value) params.after = nextCursor.value;
   return params;
@@ -360,6 +372,7 @@ watch(
     query.to = "";
     query.holdReason = "";
     query.orderNumber = "";
+    committedOrderNumber.value = "";
   },
   { immediate: true },
 );
@@ -382,19 +395,6 @@ watch(
     readySummaryHasMore.value = false;
     fetchOrders(true);
     if (tabKey.value === "manage") fetchReadySummary(true);
-  },
-);
-
-watch(
-  () => query.orderNumber,
-  () => {
-    if (tabKey.value !== "manage" || !showManageFilters.value) return;
-    clearTimeout(orderNumberSearchDebounce);
-    orderNumberSearchDebounce = setTimeout(() => {
-      readySummaryOffset.value = 0;
-      readySummaryHasMore.value = false;
-      fetchOrders(true);
-    }, 350);
   },
 );
 
@@ -428,7 +428,6 @@ onMounted(async () => {
 
 onUnmounted(() => {
   document.removeEventListener("click", onDocClick);
-  clearTimeout(orderNumberSearchDebounce);
 });
 </script>
 
@@ -506,6 +505,7 @@ onUnmounted(() => {
                       query.readyToShip = '';
                       query.holdReason = '';
                       query.orderNumber = '';
+                      committedOrderNumber = '';
                       filterMenuOpen = false;
                     "
                   >
@@ -614,6 +614,7 @@ onUnmounted(() => {
               :disabled="loading || !selectedAccountId"
               autocomplete="off"
               enterkeyhint="search"
+              @keydown.enter.prevent="commitOrderNumberSearch"
             />
           </div>
         </div>

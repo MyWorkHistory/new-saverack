@@ -133,6 +133,14 @@ query ShipHeroOrders(
               }
             }
           }
+          holds {
+            fraud_hold
+            address_hold
+            shipping_method_hold
+            operator_hold
+            payment_hold
+            client_hold
+          }
         }
       }
       pageInfo {
@@ -374,6 +382,14 @@ query ShipHeroOrderHeader($id: String!) {
         method
         price
       }
+      holds {
+        fraud_hold
+        address_hold
+        shipping_method_hold
+        operator_hold
+        payment_hold
+        client_hold
+      }
     }
   }
 }
@@ -552,6 +568,7 @@ GQL;
             'order_number' => (string) ($node['order_number'] ?? ''),
             'partner_order_id' => (string) ($node['partner_order_id'] ?? ''),
             'status' => $this->normalizeFulfillmentStatus($node),
+            'hold_reason' => $this->extractHoldReason($node),
             'order_date' => $this->nullableIso($node['order_date'] ?? null),
             'required_ship_date' => $this->nullableIso($node['required_ship_date'] ?? null),
             'account' => (string) ($node['shop_name'] ?? ''),
@@ -967,20 +984,89 @@ GQL;
         return true;
     }
 
-    private function extractHoldReason(array $node): ?string
+    /**
+     * Canonical hold labels from ShipHero `Order.holds` (preferred over parsing free-text status).
+     *
+     * @param  mixed  $holds
+     */
+    private function extractHoldReasonFromHolds($holds): ?string
     {
-        $hay = strtolower(trim(
-            (string) ($node['fulfillment_status'] ?? '').' '.(string) ($node['status'] ?? '').' '.(string) ($node['profile'] ?? '')
-        ));
-        if ($hay === '' || ! str_contains($hay, 'hold')) {
+        if (! is_array($holds)) {
             return null;
         }
-        if (str_contains($hay, 'fraud')) return 'Fraud Hold';
-        if (str_contains($hay, 'address')) return 'Address Hold';
-        if (str_contains($hay, 'operator')) return 'Operator Hold';
-        if (str_contains($hay, 'payment')) return 'Payment Hold';
-        if (str_contains($hay, 'user')) return 'User Hold';
-        return 'Hold';
+        $labels = [];
+        if (! empty($holds['fraud_hold'])) {
+            $labels[] = 'Fraud Hold';
+        }
+        if (! empty($holds['payment_hold'])) {
+            $labels[] = 'Payment Hold';
+        }
+        if (! empty($holds['address_hold'])) {
+            $labels[] = 'Address Hold';
+        }
+        if (! empty($holds['operator_hold'])) {
+            $labels[] = 'Operator Hold';
+        }
+        if (! empty($holds['client_hold'])) {
+            $labels[] = 'User Hold';
+        }
+        if (! empty($holds['shipping_method_hold'])) {
+            $labels[] = 'Shipping Method Hold';
+        }
+
+        return $labels === [] ? null : implode(', ', $labels);
+    }
+
+    /**
+     * Fallback when `holds` is missing or all false: infer from fulfillment_status / status / profile.
+     *
+     * @param  array<string, mixed>  $node
+     */
+    private function extractHoldReasonFromTextFields(array $node): ?string
+    {
+        $hay = strtolower(trim(
+            (string) ($node['fulfillment_status'] ?? '')
+            .' '.(string) ($node['status'] ?? '')
+            .' '.(string) ($node['profile'] ?? '')
+        ));
+        if ($hay === '') {
+            return null;
+        }
+        if (str_contains($hay, 'fraud')) {
+            return 'Fraud Hold';
+        }
+        if ((bool) preg_match('/\bpayment\b/', $hay)) {
+            return 'Payment Hold';
+        }
+        if ((bool) preg_match('/\baddress\b/', $hay)) {
+            return 'Address Hold';
+        }
+        if ((bool) preg_match('/\boperator\b/', $hay)) {
+            return 'Operator Hold';
+        }
+        if (str_contains($hay, 'user hold')
+            || str_contains($hay, 'user_hold')
+            || (bool) preg_match('/\buser\s+hold\b/', $hay)) {
+            return 'User Hold';
+        }
+        if (str_contains($hay, 'hold')) {
+            return 'Hold';
+        }
+
+        return null;
+    }
+
+    /**
+     * @param  array<string, mixed>  $node
+     */
+    private function extractHoldReason(array $node): ?string
+    {
+        $fromHolds = $this->extractHoldReasonFromHolds($node['holds'] ?? null);
+        if (is_string($fromHolds) && $fromHolds !== '') {
+            return $fromHolds;
+        }
+
+        return $this->extractHoldReasonFromTextFields($node);
     }
 
     private function rowInDateRange(array $row, ?Carbon $from, ?Carbon $to): bool

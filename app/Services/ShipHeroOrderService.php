@@ -38,6 +38,8 @@ class ShipHeroOrderService
             'after' => $after,
             'order_date_from' => $this->nullableIso($filters['order_date_from'] ?? null),
             'order_date_to' => $this->nullableIso($filters['order_date_to'] ?? null),
+            'updated_from' => null,
+            'updated_to' => null,
             'has_hold' => null,
             'has_backorder' => null,
             'ready_to_ship' => null,
@@ -54,7 +56,17 @@ class ShipHeroOrderService
             // ShipHero uses `has_backorder`, not fulfillment_status = "backorder" (see public API schema).
             $vars['has_backorder'] = true;
         } elseif ($tab === 'shipped') {
-            $vars['fulfillment_status'] = 'shipped';
+            // ShipHero typically uses "fulfilled" for shipped/completed orders; "shipped" often returns nothing.
+            $vars['fulfillment_status'] = 'fulfilled';
+            $orderFrom = $filters['order_date_from'] ?? null;
+            $orderTo = $filters['order_date_to'] ?? null;
+            $hasOrderWindow = is_string($orderFrom) && trim($orderFrom) !== ''
+                && is_string($orderTo) && trim($orderTo) !== '';
+            if (! $hasOrderWindow) {
+                // With no order-date window, narrow by last activity so the query is bounded (ShipHero defaults otherwise).
+                $vars['updated_from'] = Carbon::now()->subDays(180)->startOfDay()->toIso8601String();
+                $vars['updated_to'] = Carbon::now()->endOfDay()->toIso8601String();
+            }
         }
         if (isset($filters['fulfillment_status']) && is_string($filters['fulfillment_status'])) {
             $status = trim($filters['fulfillment_status']);
@@ -71,6 +83,8 @@ query ShipHeroOrders(
   $customer_account_id: String!,
   $order_date_from: ISODateTime,
   $order_date_to: ISODateTime,
+  $updated_from: ISODateTime,
+  $updated_to: ISODateTime,
   $has_hold: Boolean,
   $has_backorder: Boolean,
   $ready_to_ship: Boolean,
@@ -82,6 +96,8 @@ query ShipHeroOrders(
     customer_account_id: $customer_account_id,
     order_date_from: $order_date_from,
     order_date_to: $order_date_to,
+    updated_from: $updated_from,
+    updated_to: $updated_to,
     has_hold: $has_hold,
     has_backorder: $has_backorder,
     ready_to_ship: $ready_to_ship,

@@ -46,11 +46,6 @@ const query = reactive({
   readyToShip: "",
 });
 
-/** Manage & Shipped send order_date_* to the API; other tabs use ShipHero queue filters only. */
-const tabUsesOrderDateOnApi = computed(
-  () => tabKey.value === "manage" || tabKey.value === "shipped",
-);
-
 const tabKey = computed(() => String(route.meta?.orderTab || "manage"));
 const tabTitle = computed(() => {
   if (tabKey.value === "awaiting") return "Ready to Ship";
@@ -157,16 +152,9 @@ function dateRangeFromPreset() {
   };
 }
 
-/**
- * ShipHero `order_date_from` / `order_date_to` filter by order date (placement), not ship date.
- * Open-queue tabs omit dates. Shipped defaults to "all" so older orders that shipped recently still appear.
- */
+/** ShipHero filters by order placement date for these params. "Any order date" sends nothing. */
 function orderDateParamsForRequest() {
-  const tab = tabKey.value;
-  if (tab === "awaiting" || tab === "on_hold" || tab === "backorder") {
-    return {};
-  }
-  if (tab === "shipped" && query.datePreset === "all") {
+  if (query.datePreset === "all") {
     return {};
   }
   const range = dateRangeFromPreset();
@@ -315,12 +303,10 @@ async function toggleManageMenu(id, e) {
 watch(
   tabKey,
   (t) => {
-    if (t === "shipped") {
-      query.datePreset = "all";
-    } else if (t === "manage") {
+    if (t === "manage") {
       query.datePreset = "today";
     } else {
-      query.datePreset = "today";
+      query.datePreset = "all";
     }
     query.from = "";
     query.to = "";
@@ -342,16 +328,10 @@ watch(
   () => [query.datePreset, query.from, query.to, query.fulfillmentStatus, query.readyToShip],
   () => {
     if (!showManageFilters.value) return;
-    if (
-      query.fulfillmentStatus !== ""
-      || query.readyToShip !== ""
-      || query.datePreset !== "custom"
-    ) {
-      readySummaryOffset.value = 0;
-      readySummaryHasMore.value = false;
-      fetchOrders(true);
-      if (tabKey.value === "manage") fetchReadySummary(true);
-    }
+    readySummaryOffset.value = 0;
+    readySummaryHasMore.value = false;
+    fetchOrders(true);
+    if (tabKey.value === "manage") fetchReadySummary(true);
   },
 );
 
@@ -455,7 +435,7 @@ onUnmounted(() => {
                     type="button"
                     class="btn btn-link btn-sm text-secondary text-decoration-none p-0"
                     @click="
-                      query.datePreset = tabKey === 'shipped' ? 'all' : 'today';
+                      query.datePreset = tabKey === 'manage' ? 'today' : 'all';
                       query.from = '';
                       query.to = '';
                       query.fulfillmentStatus = '';
@@ -467,50 +447,50 @@ onUnmounted(() => {
                   </button>
                 </div>
                 <div class="staff-toolbar-filter-dropdown__body">
-                  <p v-if="!tabUsesOrderDateOnApi" class="small text-secondary mb-2">
-                    This tab does not use order date filters; ShipHero applies the queue (ready to ship, hold, or
-                    backorder).
-                  </p>
-                  <template v-if="tabUsesOrderDateOnApi">
-                    <p v-if="tabKey === 'manage'" class="small text-secondary mb-2">
-                      Limits orders to those whose <strong>order date</strong> falls in the range (same window as the
-                      Ready to Ship summary).
-                    </p>
-                    <p v-if="tabKey === 'shipped'" class="small text-secondary mb-2">
-                      ShipHero filters by <strong>order date</strong>, not ship date. Use &ldquo;Any order date&rdquo;
-                      unless you need a window (max 30 days for custom).
-                    </p>
-                    <label class="form-label" for="orders-filter-date-preset">Date Range</label>
-                    <select
-                      id="orders-filter-date-preset"
-                      v-model="query.datePreset"
-                      class="form-select staff-datatable-filters__select mb-3"
-                      :disabled="loading"
-                    >
-                      <option v-if="tabKey === 'shipped'" value="all">Any order date</option>
-                      <option value="today">Today</option>
-                      <option value="last_7">Last 7 days</option>
-                      <option value="last_30">Last 30 days</option>
-                      <option value="custom">Custom range</option>
-                    </select>
-                    <template v-if="isCustomDate">
-                      <label class="form-label" for="orders-filter-from">From</label>
-                      <input
-                        id="orders-filter-from"
-                        v-model="query.from"
-                        type="date"
-                        class="form-control staff-datatable-filters__select mb-3"
-                        :disabled="loading"
-                      />
-                      <label class="form-label" for="orders-filter-to">To</label>
-                      <input
-                        id="orders-filter-to"
-                        v-model="query.to"
-                        type="date"
-                        class="form-control staff-datatable-filters__select mb-3"
-                        :disabled="loading"
-                      />
+                  <p class="small text-secondary mb-2">
+                    <template v-if="tabKey === 'manage'">
+                      Same <strong>order date</strong> window as the Ready to Ship summary above.
                     </template>
+                    <template v-else-if="tabKey === 'shipped'">
+                      <strong>Shipped</strong> uses ShipHero &ldquo;fulfilled&rdquo; plus last activity when you pick
+                      &ldquo;Any order date&rdquo;. Narrow with dates to limit by <strong>order date</strong> (custom max
+                      30 days).
+                    </template>
+                    <template v-else>
+                      Optional <strong>order date</strong> window on top of this tab&rsquo;s queue filter. Start with
+                      &ldquo;Any order date&rdquo; if the list looks empty.
+                    </template>
+                  </p>
+                  <label class="form-label" for="orders-filter-date-preset">Date Range</label>
+                  <select
+                    id="orders-filter-date-preset"
+                    v-model="query.datePreset"
+                    class="form-select staff-datatable-filters__select mb-3"
+                    :disabled="loading"
+                  >
+                    <option value="all">Any Order Date</option>
+                    <option value="today">Today</option>
+                    <option value="last_7">Last 7 Days</option>
+                    <option value="last_30">Last 30 Days</option>
+                    <option value="custom">Custom Range</option>
+                  </select>
+                  <template v-if="isCustomDate">
+                    <label class="form-label" for="orders-filter-from">From</label>
+                    <input
+                      id="orders-filter-from"
+                      v-model="query.from"
+                      type="date"
+                      class="form-control staff-datatable-filters__select mb-3"
+                      :disabled="loading"
+                    />
+                    <label class="form-label" for="orders-filter-to">To</label>
+                    <input
+                      id="orders-filter-to"
+                      v-model="query.to"
+                      type="date"
+                      class="form-control staff-datatable-filters__select mb-3"
+                      :disabled="loading"
+                    />
                   </template>
                   <label class="form-label" for="orders-filter-fulfillment-status">Fulfillment Status</label>
                   <select

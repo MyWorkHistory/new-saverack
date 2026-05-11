@@ -151,15 +151,26 @@ function dateRangeFromPreset() {
   };
 }
 
+/** ShipHero + applyListFilters use order_date; default "today" was hiding almost all open-queue orders (hold / backorder / ready). */
+function orderDateParamsForRequest() {
+  const tab = tabKey.value;
+  if (tab === "awaiting" || tab === "on_hold" || tab === "backorder") {
+    return {};
+  }
+  const range = dateRangeFromPreset();
+  const out = {};
+  if (range.from) out.order_date_from = range.from;
+  if (range.to) out.order_date_to = range.to;
+  return out;
+}
+
 function buildParams(withCursor = false) {
   const params = {
     client_account_id: Number(selectedAccountId.value),
     tab: tabKey.value,
     first: 100,
+    ...orderDateParamsForRequest(),
   };
-  const range = dateRangeFromPreset();
-  if (range.from) params.order_date_from = range.from;
-  if (range.to) params.order_date_to = range.to;
   if (query.fulfillmentStatus) params.fulfillment_status = query.fulfillmentStatus;
   if (query.readyToShip !== "") params.ready_to_ship = query.readyToShip === "yes";
   if (withCursor && nextCursor.value) params.after = nextCursor.value;
@@ -318,6 +329,9 @@ watch(
 
 onMounted(async () => {
   document.addEventListener("click", onDocClick);
+  if (String(route.meta?.orderTab || "") === "shipped") {
+    query.datePreset = "last_7";
+  }
   setCrmPageMeta({
     title: `Save Rack | Orders | ${tabTitle.value}`,
     description: "ShipHero customer orders.",
@@ -428,6 +442,12 @@ onUnmounted(() => {
                   </button>
                 </div>
                 <div class="staff-toolbar-filter-dropdown__body">
+                  <p
+                    v-if="tabKey === 'awaiting' || tabKey === 'on_hold' || tabKey === 'backorder'"
+                    class="small text-secondary mb-2"
+                  >
+                    Date range applies to Manage and Shipped. This tab lists open-queue orders without an order-date cutoff.
+                  </p>
                   <label class="form-label" for="orders-filter-date-preset">Date Range</label>
                   <select
                     id="orders-filter-date-preset"

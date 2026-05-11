@@ -851,6 +851,10 @@ GQL;
                     continue;
                 }
             }
+            // ShipHero can keep `has_hold` on historical rows after the order is shipped/fulfilled.
+            if ($tab === 'on_hold' && $this->orderRowIsFulfilledOrShipped($row)) {
+                continue;
+            }
             if (! $this->rowInDateRange($row, $from, $to)) {
                 continue;
             }
@@ -872,6 +876,29 @@ GQL;
             || $tab === 'awaiting'
             || $tab === 'backorder'
             || $tab === 'shipped';
+    }
+
+    /**
+     * True when fulfillment (or raw fields) indicates the order is done shipping, not an open hold queue item.
+     *
+     * @param  array<string, mixed>  $row
+     */
+    private function orderRowIsFulfilledOrShipped(array $row): bool
+    {
+        foreach (['status', 'raw_fulfillment_status', 'raw_status'] as $key) {
+            $normalized = strtolower(trim((string) ($row[$key] ?? '')));
+            if ($normalized === '') {
+                continue;
+            }
+            if ($normalized === 'shipped'
+                || $normalized === 'fulfilled'
+                || $normalized === 'complete'
+                || str_starts_with($normalized, 'shipped')) {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     private function statusMatchesTab(string $status, string $tab): bool

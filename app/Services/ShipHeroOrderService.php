@@ -39,6 +39,7 @@ class ShipHeroOrderService
             'order_date_from' => $this->nullableIso($filters['order_date_from'] ?? null),
             'order_date_to' => $this->nullableIso($filters['order_date_to'] ?? null),
             'has_hold' => null,
+            'has_backorder' => null,
             'ready_to_ship' => null,
             'fulfillment_status' => null,
         ];
@@ -50,7 +51,8 @@ class ShipHeroOrderService
             $vars['ready_to_ship'] = true;
             $vars['fulfillment_status'] = 'unfulfilled';
         } elseif ($tab === 'backorder') {
-            $vars['fulfillment_status'] = 'backorder';
+            // ShipHero uses `has_backorder`, not fulfillment_status = "backorder" (see public API schema).
+            $vars['has_backorder'] = true;
         } elseif ($tab === 'shipped') {
             $vars['fulfillment_status'] = 'shipped';
         }
@@ -70,6 +72,7 @@ query ShipHeroOrders(
   $order_date_from: ISODateTime,
   $order_date_to: ISODateTime,
   $has_hold: Boolean,
+  $has_backorder: Boolean,
   $ready_to_ship: Boolean,
   $fulfillment_status: String,
   $first: Int!,
@@ -80,6 +83,7 @@ query ShipHeroOrders(
     order_date_from: $order_date_from,
     order_date_to: $order_date_to,
     has_hold: $has_hold,
+    has_backorder: $has_backorder,
     ready_to_ship: $ready_to_ship,
     fulfillment_status: $fulfillment_status
   ) {

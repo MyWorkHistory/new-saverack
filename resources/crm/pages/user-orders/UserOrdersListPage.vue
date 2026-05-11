@@ -87,6 +87,7 @@ function statusClass(status) {
 
 function formatStatus(row) {
   if (tabKey.value === "awaiting") return "Ready To Ship";
+  if (tabKey.value === "on_hold") return row.hold_reason || row.status || "—";
   return row.status || "—";
 }
 
@@ -158,8 +159,8 @@ onMounted(() => {
           <div v-if="showShippedFilters" class="d-flex gap-2 flex-wrap">
             <select v-model="query.shippedDatePreset" class="form-select" style="max-width: 180px">
               <option value="today">Today</option>
-              <option value="last_7">Last 7 days</option>
-              <option value="last_30">Last 30 days</option>
+              <option value="last_7">Last 7 Days</option>
+              <option value="last_30">Last 30 Days</option>
               <option value="custom">Custom range</option>
             </select>
             <template v-if="isCustomDate">
@@ -184,7 +185,7 @@ onMounted(() => {
         <table class="table table-hover align-middle mb-0 staff-data-table">
           <thead class="table-light staff-table-head">
             <tr>
-              <th class="staff-table-head__th">Status</th>
+              <th class="staff-table-head__th">{{ tabKey === "on_hold" ? "Hold Reason" : "Status" }}</th>
               <th class="staff-table-head__th">Order #</th>
               <th class="staff-table-head__th">Order Date</th>
               <th class="staff-table-head__th">Country</th>
@@ -205,7 +206,7 @@ onMounted(() => {
             </tr>
             <tr v-for="row in rows" :key="row.id">
               <td>
-                <span class="badge rounded-pill fw-medium" :class="statusClass(row.status)">
+                <span class="badge rounded-pill fw-medium" :class="statusClass(formatStatus(row))">
                   {{ formatStatus(row) }}
                 </span>
               </td>

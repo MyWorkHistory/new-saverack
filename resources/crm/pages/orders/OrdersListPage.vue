@@ -44,6 +44,7 @@ const query = reactive({
   to: "",
   fulfillmentStatus: "",
   readyToShip: "",
+  holdReason: "",
 });
 
 const tabKey = computed(() => String(route.meta?.orderTab || "manage"));
@@ -117,6 +118,18 @@ function statusClass(status) {
   return "bg-secondary-subtle text-secondary-emphasis";
 }
 
+/** On-hold tab shows hold reason in the status column; use that text for badge styling. */
+function displayOrderStatus(row) {
+  if (tabKey.value === "on_hold") {
+    return row.hold_reason || row.status || "—";
+  }
+  return row.status || "—";
+}
+
+function statusClassForRow(row) {
+  return statusClass(displayOrderStatus(row));
+}
+
 function formatDate(iso) {
   if (!iso) return "—";
   const d = new Date(iso);
@@ -173,6 +186,7 @@ function buildParams(withCursor = false) {
   };
   if (query.fulfillmentStatus) params.fulfillment_status = query.fulfillmentStatus;
   if (query.readyToShip !== "") params.ready_to_ship = query.readyToShip === "yes";
+  if (tabKey.value === "on_hold" && query.holdReason) params.hold_reason = query.holdReason;
   if (withCursor && nextCursor.value) params.after = nextCursor.value;
   return params;
 }
@@ -310,6 +324,7 @@ watch(
     }
     query.from = "";
     query.to = "";
+    query.holdReason = "";
   },
   { immediate: true },
 );
@@ -325,7 +340,7 @@ watch(
 );
 
 watch(
-  () => [query.datePreset, query.from, query.to, query.fulfillmentStatus, query.readyToShip],
+  () => [query.datePreset, query.from, query.to, query.fulfillmentStatus, query.readyToShip, query.holdReason],
   () => {
     if (!showManageFilters.value) return;
     readySummaryOffset.value = 0;
@@ -440,6 +455,7 @@ onUnmounted(() => {
                       query.to = '';
                       query.fulfillmentStatus = '';
                       query.readyToShip = '';
+                      query.holdReason = '';
                       filterMenuOpen = false;
                     "
                   >
@@ -515,6 +531,22 @@ onUnmounted(() => {
                     <option value="yes">Yes</option>
                     <option value="no">No</option>
                   </select>
+                  <template v-if="tabKey === 'on_hold'">
+                    <label class="form-label mt-3" for="orders-filter-hold-reason">Hold Reason</label>
+                    <select
+                      id="orders-filter-hold-reason"
+                      v-model="query.holdReason"
+                      class="form-select staff-datatable-filters__select"
+                      :disabled="loading"
+                    >
+                      <option value="">All Hold Reasons</option>
+                      <option value="fraud">Fraud Hold</option>
+                      <option value="address">Address Hold</option>
+                      <option value="operator">Operator Hold</option>
+                      <option value="payment">Payment Hold</option>
+                      <option value="user">User Hold</option>
+                    </select>
+                  </template>
                 </div>
               </div>
             </div>
@@ -552,7 +584,7 @@ onUnmounted(() => {
         <table class="table table-hover align-middle mb-0 staff-data-table">
           <thead class="table-light staff-table-head">
             <tr>
-              <th class="staff-table-head__th">Status</th>
+              <th class="staff-table-head__th">{{ tabKey === "on_hold" ? "Hold Reason" : "Status" }}</th>
               <th class="staff-table-head__th">Order #</th>
               <th class="staff-table-head__th">Order Date</th>
               <th class="staff-table-head__th">Account</th>
@@ -582,8 +614,8 @@ onUnmounted(() => {
             </tr>
             <tr v-for="row in displayedRows" :key="row.id" class="align-middle">
               <td>
-                <span class="badge rounded-pill fw-medium" :class="statusClass(row.status)">
-                  {{ row.status || "—" }}
+                <span class="badge rounded-pill fw-medium" :class="statusClassForRow(row)">
+                  {{ displayOrderStatus(row) }}
                 </span>
               </td>
               <td class="fw-semibold">

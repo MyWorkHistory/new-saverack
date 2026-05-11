@@ -846,8 +846,7 @@ GQL;
                 continue;
             }
             if ($tab === 'on_hold' && $holdReason !== '') {
-                $rawHold = strtolower(trim((string) ($row['hold_reason'] ?? '')));
-                if ($rawHold === '' || ! str_contains($rawHold, $holdReason)) {
+                if (! $this->rowMatchesHoldReasonFilter($row, $holdReason)) {
                     continue;
                 }
             }
@@ -876,6 +875,40 @@ GQL;
             || $tab === 'awaiting'
             || $tab === 'backorder'
             || $tab === 'shipped';
+    }
+
+    /**
+     * Match UI hold-reason filter tokens against normalized label and raw ShipHero text (word-safe where needed).
+     *
+     * @param  array<string, mixed>  $row
+     */
+    private function rowMatchesHoldReasonFilter(array $row, string $needleLc): bool
+    {
+        if ($needleLc === '') {
+            return true;
+        }
+        $label = strtolower(trim((string) ($row['hold_reason'] ?? '')));
+        $hay = strtolower(trim(
+            (string) ($row['raw_fulfillment_status'] ?? '')
+            .' '.(string) ($row['raw_status'] ?? '')
+            .' '.(string) ($row['raw_profile'] ?? '')
+        ));
+        $blob = trim($label !== '' ? $label.' '.$hay : $hay);
+        if ($blob === '') {
+            return false;
+        }
+
+        return match ($needleLc) {
+            'fraud' => (bool) preg_match('/\bfraud\b/', $blob),
+            'address' => str_contains($blob, 'hold')
+                && ((bool) preg_match('/\baddress\b/', $blob)),
+            'operator' => (bool) preg_match('/\boperator\b/', $blob),
+            'payment' => (bool) preg_match('/\bpayment\b/', $blob),
+            'user' => str_contains($blob, 'user hold')
+                || str_contains($blob, 'user_hold')
+                || (bool) preg_match('/\buser\s+hold\b/', $blob),
+            default => str_contains($blob, $needleLc),
+        };
     }
 
     /**

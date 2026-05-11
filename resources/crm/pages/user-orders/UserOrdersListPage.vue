@@ -85,9 +85,36 @@ function statusClass(status) {
   return "bg-secondary-subtle text-secondary-emphasis";
 }
 
+function normalizedHoldReasonLabel(value) {
+  const v = String(value || "")
+    .trim()
+    .toLowerCase();
+  if (v === "fraud" || v === "fraud hold") return "Fraud Hold";
+  if (v === "address" || v === "address hold") return "Address Hold";
+  if (v === "operator" || v === "operator hold") return "Operator Hold";
+  if (v === "payment" || v === "payment hold") return "Payment Hold";
+  if (v === "user" || v === "user hold" || v === "client hold") return "User Hold";
+  if (v === "shipping" || v === "shipping hold" || v === "shipping method hold") return "Shipping Method Hold";
+  return "";
+}
+
+function firstHoldReasonLabel(row) {
+  const raw = String(row?.hold_reason || "").trim();
+  if (!raw) return "";
+  return String(raw.split(",")[0] || "").trim();
+}
+
 function formatStatus(row) {
   if (tabKey.value === "awaiting") return "Ready To Ship";
-  if (tabKey.value === "on_hold") return row.hold_reason || row.status || "—";
+  if (tabKey.value === "on_hold") {
+    const selected = normalizedHoldReasonLabel(query.holdReason);
+    if (selected) return selected;
+    return firstHoldReasonLabel(row) || row.status || "—";
+  }
+  if (tabKey.value === "backorder") {
+    const raw = String(row?.status || "").trim();
+    return raw !== "" ? raw : "backorder";
+  }
   return row.status || "—";
 }
 

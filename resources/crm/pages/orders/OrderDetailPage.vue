@@ -193,6 +193,7 @@ function fallbackOrderSnapshot() {
       billing_address: {},
       items: [],
       history: [],
+      history_included: false,
     };
   } catch (_) {
     return null;
@@ -227,7 +228,7 @@ async function loadOrder() {
   order.value = null;
   try {
     const { data } = await api.get(`/orders/${encodeURIComponent(orderId.value)}`, {
-      params: { client_account_id: Number(selectedAccountId.value) },
+      params: { client_account_id: Number(selectedAccountId.value), include_history: false },
     });
     order.value = data?.order ?? null;
     if (data?.fallback?.source) {
@@ -460,7 +461,10 @@ onMounted(async () => {
             </div>
           </div>
 
-          <div class="staff-table-card staff-datatable-card staff-datatable-card--white p-0">
+          <div
+            v-if="order?.history_included"
+            class="staff-table-card staff-datatable-card staff-datatable-card--white p-0"
+          >
             <div class="px-4 py-3 border-bottom">
               <h2 class="h6 mb-0 fw-semibold">History</h2>
             </div>

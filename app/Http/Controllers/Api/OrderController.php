@@ -212,8 +212,10 @@ class OrderController extends Controller
             'client_account_id' => ['required', 'integer', 'exists:client_accounts,id'],
             'debug_shiphero_raw' => ['nullable', 'boolean'],
             'debug_variant' => ['nullable', 'string', 'in:minimal,core,pricing,addresses'],
+            'include_history' => ['nullable', 'boolean'],
         ]);
         $customerId = $this->resolveShipHeroCustomerAccountId((int) $validated['client_account_id'], $request);
+        $includeHistory = (bool) ($validated['include_history'] ?? false);
 
         try {
             if ((bool) ($validated['debug_shiphero_raw'] ?? false)) {
@@ -232,7 +234,7 @@ class OrderController extends Controller
                 'shiphero_customer_account_id' => $customerId,
                 'user_id' => optional($request->user())->id,
             ]);
-            $order = $this->orders->getOrder($orderId, $customerId);
+            $order = $this->orders->getOrder($orderId, $customerId, $includeHistory);
 
             Log::info('shiphero.order_detail.request.success', [
                 'order_id' => $orderId,
@@ -380,6 +382,7 @@ class OrderController extends Controller
             'billing_address' => null,
             'items' => [],
             'history' => [],
+            'history_included' => false,
         ];
     }
 }

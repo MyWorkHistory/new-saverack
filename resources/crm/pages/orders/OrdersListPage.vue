@@ -121,10 +121,35 @@ function statusClass(status) {
   return "bg-secondary-subtle text-secondary-emphasis";
 }
 
-/** On-hold tab shows hold reason in the status column; use that text for badge styling. */
+function normalizedHoldReasonLabel(value) {
+  const v = String(value || "")
+    .trim()
+    .toLowerCase();
+  if (v === "fraud" || v === "fraud hold") return "Fraud Hold";
+  if (v === "address" || v === "address hold") return "Address Hold";
+  if (v === "operator" || v === "operator hold") return "Operator Hold";
+  if (v === "payment" || v === "payment hold") return "Payment Hold";
+  if (v === "user" || v === "user hold" || v === "client hold") return "User Hold";
+  if (v === "shipping" || v === "shipping hold" || v === "shipping method hold") return "Shipping Method Hold";
+  return "";
+}
+
+function firstHoldReasonLabel(row) {
+  const raw = String(row?.hold_reason || "").trim();
+  if (!raw) return "";
+  return String(raw.split(",")[0] || "").trim();
+}
+
+/** On-hold tab displays a single hold reason only. */
 function displayOrderStatus(row) {
   if (tabKey.value === "on_hold") {
-    return row.hold_reason || row.status || "—";
+    const selected = normalizedHoldReasonLabel(query.holdReason);
+    if (selected) return selected;
+    return firstHoldReasonLabel(row) || row.status || "—";
+  }
+  if (tabKey.value === "backorder") {
+    const raw = String(row?.status || "").trim();
+    return raw !== "" ? raw : "backorder";
   }
   return row.status || "—";
 }
@@ -436,20 +461,6 @@ onUnmounted(() => {
             />
           </div>
 
-          <div v-if="tabKey === 'manage'" class="flex-shrink-0" style="min-width: 200px; max-width: 280px">
-            <label class="form-label small text-secondary mb-1" for="orders-order-number-search">Order Number</label>
-            <input
-              id="orders-order-number-search"
-              v-model.trim="query.orderNumber"
-              type="search"
-              class="form-control"
-              placeholder="Search by order #"
-              :disabled="loading || !selectedAccountId"
-              autocomplete="off"
-              enterkeyhint="search"
-            />
-          </div>
-
           <template v-if="showManageFilters">
             <div class="position-relative flex-shrink-0" data-toolbar-filter>
               <button
@@ -590,6 +601,21 @@ onUnmounted(() => {
               </div>
             </div>
           </template>
+        </div>
+        <div v-if="tabKey === 'manage'" class="staff-table-toolbar--row mt-2">
+          <div style="width: min(360px, 100%)">
+            <label class="form-label small text-secondary mb-1" for="orders-order-number-search">Order Number</label>
+            <input
+              id="orders-order-number-search"
+              v-model.trim="query.orderNumber"
+              type="search"
+              class="form-control"
+              placeholder="Search by Order #"
+              :disabled="loading || !selectedAccountId"
+              autocomplete="off"
+              enterkeyhint="search"
+            />
+          </div>
         </div>
         <p class="small text-secondary mb-0 mt-2 px-1">Only accounts with a ShipHero customer ID appear here.</p>
       </div>

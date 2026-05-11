@@ -45,6 +45,7 @@ class ShipHeroOrderService
             'ready_to_ship' => null,
             'fulfillment_status' => null,
             'order_number' => null,
+            'partner_order_id' => null,
             'fraud_hold' => null,
             'operator_hold' => null,
             'address_hold' => null,
@@ -83,18 +84,6 @@ class ShipHeroOrderService
             $vars['ready_to_ship'] = $filters['ready_to_ship'];
         }
 
-        $orderNumber = trim((string) ($filters['order_number'] ?? ''));
-        $orderNumber = ltrim($orderNumber, '#');
-        if ($orderNumber !== '') {
-            $vars['order_number'] = $orderNumber;
-            // ShipHero ANDs order_number with order_date / updated windows; clear them so a lookup finds the order
-            // regardless of when it was placed or last updated (e.g. Manage defaults to "today" only).
-            $vars['order_date_from'] = null;
-            $vars['order_date_to'] = null;
-            $vars['updated_from'] = null;
-            $vars['updated_to'] = null;
-        }
-
         $holdNeedle = strtolower(trim((string) ($filters['hold_reason'] ?? '')));
         if ($tab === 'on_hold' && $holdNeedle !== '') {
             switch ($holdNeedle) {
@@ -113,6 +102,12 @@ class ShipHeroOrderService
             }
         }
 
+        $orderNumber = trim((string) ($filters['order_number'] ?? ''));
+        $orderNumber = ltrim($orderNumber, '#');
+        if ($orderNumber !== '') {
+            $this->applyOrderNumberLookupGraphScope($vars, $orderNumber);
+        }
+
         $graphql = <<<'GQL'
 query ShipHeroOrders(
   $customer_account_id: String!,
@@ -125,6 +120,7 @@ query ShipHeroOrders(
   $ready_to_ship: Boolean,
   $fulfillment_status: String,
   $order_number: String,
+  $partner_order_id: String,
   $fraud_hold: Boolean,
   $operator_hold: Boolean,
   $address_hold: Boolean,
@@ -143,6 +139,7 @@ query ShipHeroOrders(
     ready_to_ship: $ready_to_ship,
     fulfillment_status: $fulfillment_status,
     order_number: $order_number,
+    partner_order_id: $partner_order_id,
     fraud_hold: $fraud_hold,
     operator_hold: $operator_hold,
     address_hold: $address_hold,
@@ -198,6 +195,84 @@ query ShipHeroOrders(
 GQL;
 
         $json = $this->client->query($graphql, $vars);
+        $parsed = $this->parseShipHeroOrdersConnection($json);
+        $rows = $parsed['rows'];
+        $pageInfo = $parsed['pageInfo'];
+
+        if ($orderNumber !== '' && $rows === []) {
+            $varsPartner = $vars;
+            $varsPartner['order_number'] = null;
+            $varsPartner['partner_order_id'] = $orderNumber;
+            $jsonPartner = $this->client->query($graphql, $varsPartner);
+            $parsedPartner = $this->parseShipHeroOrdersConnection($jsonPartner);
+            if ($parsedPartner['rows'] !== []) {
+                $rows = $parsedPartner['rows'];
+                $pageInfo = $parsedPartner['pageInfo'];
+            }
+        }
+
+        if ($orderNumber !== '' && $rows === [] && strpos($orderNumber, '#') !== 0) {
+            $varsHash = $vars;
+            $varsHash['order_number'] = '#'.$orderNumber;
+            $varsHash['partner_order_id'] = null;
+            $jsonHash = $this->client->query($graphql, $varsHash);
+            $parsedHash = $this->parseShipHeroOrdersConnection($jsonHash);
+            if ($parsedHash['rows'] !== []) {
+                $rows = $parsedHash['rows'];
+                $pageInfo = $parsedHash['pageInfo'];
+            }
+        }
+
+        $upstreamCount = count($rows);
+        $rows = $this->applyListFilters($rows, $filters);
+        if ($upstreamCount > 0 && count($rows) === 0) {
+            Log::warning('shiphero.orders.list.post_filter_dropped_all', [
+                'customer_account_id' => $customerAccountId,
+                'tab' => $tab,
+                'upstream_rows' => $upstreamCount,
+            ]);
+        }
+
+        return [
+            'rows' => $rows,
+            'pagination' => [
+                'has_next_page' => (bool) ($pageInfo['hasNextPage'] ?? false),
+                'end_cursor' => isset($pageInfo['endCursor']) && is_string($pageInfo['endCursor'])
+                    ? $pageInfo['endCursor']
+                    : null,
+            ],
+        ];
+    }
+
+    /**
+     * When searching by order #, ShipHero ANDs filters; drop queue/tab constraints and date/update windows
+     * so one order can be found. Storefront ids often live on partner_order_id instead of order_number.
+     *
+     * @param  array<string, mixed>  $vars
+     */
+    private function applyOrderNumberLookupGraphScope(array &$vars, string $orderNumber): void
+    {
+        $vars['order_number'] = $orderNumber;
+        $vars['partner_order_id'] = null;
+        $vars['order_date_from'] = null;
+        $vars['order_date_to'] = null;
+        $vars['updated_from'] = null;
+        $vars['updated_to'] = null;
+        $vars['has_hold'] = null;
+        $vars['has_backorder'] = null;
+        $vars['ready_to_ship'] = null;
+        $vars['fulfillment_status'] = null;
+        $vars['fraud_hold'] = null;
+        $vars['operator_hold'] = null;
+        $vars['address_hold'] = null;
+        $vars['payment_hold'] = null;
+    }
+
+    /**
+     * @return array{rows: list<array<string, mixed>>, pageInfo: array<string, mixed>}
+     */
+    private function parseShipHeroOrdersConnection(array $json): array
+    {
         $data = data_get($json, 'data.orders.data');
         if (! is_array($data)) {
             throw new RuntimeException('ShipHero did not return orders data.');
@@ -215,26 +290,12 @@ GQL;
             }
             $rows[] = $this->normalizeOrderRow($node, $edge['cursor'] ?? null);
         }
-        $upstreamCount = count($rows);
-        $rows = $this->applyListFilters($rows, $filters);
-        if ($upstreamCount > 0 && count($rows) === 0) {
-            Log::warning('shiphero.orders.list.post_filter_dropped_all', [
-                'customer_account_id' => $customerAccountId,
-                'tab' => $tab,
-                'upstream_rows' => $upstreamCount,
-            ]);
-        }
 
         $pageInfo = is_array($data['pageInfo'] ?? null) ? $data['pageInfo'] : [];
 
         return [
             'rows' => $rows,
-            'pagination' => [
-                'has_next_page' => (bool) ($pageInfo['hasNextPage'] ?? false),
-                'end_cursor' => isset($pageInfo['endCursor']) && is_string($pageInfo['endCursor'])
-                    ? $pageInfo['endCursor']
-                    : null,
-            ],
+            'pageInfo' => $pageInfo,
         ];
     }
 
@@ -893,6 +954,9 @@ GQL;
         $from = $this->normalizeDateBoundary($filters['order_date_from'] ?? null, true);
         $to = $this->normalizeDateBoundary($filters['order_date_to'] ?? null, false);
         $skipStatusTabFilter = $this->tabUsesShipHeroNativeListScope($tab);
+        $lookupNeedle = trim((string) ($filters['order_number'] ?? ''));
+        $lookupNeedle = ltrim($lookupNeedle, '#');
+        $skipTabScopeForOrderLookup = ($lookupNeedle !== '');
 
         $out = [];
         foreach ($rows as $row) {
@@ -901,7 +965,7 @@ GQL;
             }
             $status = strtolower(trim((string) ($row['status'] ?? '')));
             $holdReason = strtolower(trim((string) ($filters['hold_reason'] ?? '')));
-            if (! $skipStatusTabFilter && ! $this->statusMatchesTab($status, $tab)) {
+            if (! $skipStatusTabFilter && ! $skipTabScopeForOrderLookup && ! $this->statusMatchesTab($status, $tab)) {
                 continue;
             }
             if ($tab === 'on_hold' && $holdReason !== '') {
@@ -910,10 +974,10 @@ GQL;
                 }
             }
             // ShipHero can keep `has_hold` on historical rows after the order is shipped/fulfilled.
-            if ($tab === 'on_hold' && $this->orderRowIsFulfilledOrShipped($row)) {
+            if ($tab === 'on_hold' && ! $skipTabScopeForOrderLookup && $this->orderRowIsFulfilledOrShipped($row)) {
                 continue;
             }
-            if (! $this->rowInDateRange($row, $from, $to)) {
+            if (! $skipTabScopeForOrderLookup && ! $this->rowInDateRange($row, $from, $to)) {
                 continue;
             }
             $out[] = $row;

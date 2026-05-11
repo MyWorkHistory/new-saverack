@@ -593,19 +593,29 @@ onUnmounted(() => {
           </template>
         </div>
         <div v-if="tabKey === 'manage'" class="staff-table-toolbar--row mt-2">
-          <div style="width: min(360px, 100%)">
-            <label class="form-label small text-secondary mb-1" for="orders-order-number-search">Order Number</label>
-            <input
-              id="orders-order-number-search"
-              v-model.trim="query.orderNumber"
-              type="search"
-              class="form-control"
-              placeholder="Search by Order #"
+          <div class="d-flex flex-wrap align-items-end gap-2" style="width: min(420px, 100%)">
+            <div class="flex-grow-1" style="min-width: 180px">
+              <label class="form-label small text-secondary mb-1" for="orders-order-number-search">Order Number</label>
+              <input
+                id="orders-order-number-search"
+                v-model.trim="query.orderNumber"
+                type="search"
+                class="form-control"
+                placeholder="Search by Order #"
+                :disabled="loading || !selectedAccountId"
+                autocomplete="off"
+                enterkeyhint="search"
+                @keydown.enter.prevent="commitOrderNumberSearch"
+              />
+            </div>
+            <button
+              type="button"
+              class="btn btn-primary staff-toolbar-btn"
               :disabled="loading || !selectedAccountId"
-              autocomplete="off"
-              enterkeyhint="search"
-              @keydown.enter.prevent="commitOrderNumberSearch"
-            />
+              @click="commitOrderNumberSearch"
+            >
+              Search
+            </button>
           </div>
         </div>
         <p class="small text-secondary mb-0 mt-2 px-1">Only accounts with a ShipHero customer ID appear here.</p>

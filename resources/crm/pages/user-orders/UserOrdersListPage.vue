@@ -62,6 +62,7 @@ function toDateInput(d) {
 
 function buildDateParams() {
   if (!showShippedFilters.value) return {};
+  if (committedOrderNumber.value) return {};
   const now = new Date();
   const today = toDateInput(now);
   if (query.shippedDatePreset === "today") return { order_date_from: today, order_date_to: today };
@@ -201,18 +202,22 @@ onMounted(() => {
     <div class="staff-table-card staff-datatable-card staff-datatable-card--white w-100">
       <div class="staff-table-toolbar">
         <div class="staff-table-toolbar--row flex-wrap align-items-end gap-2 gap-md-3">
-          <div style="min-width: 220px; max-width: 320px">
-            <label class="form-label small text-secondary mb-1" for="user-orders-order-number-search">Order Number</label>
-            <input
-              id="user-orders-order-number-search"
-              v-model.trim="query.orderNumber"
-              type="search"
-              class="form-control"
-              placeholder="Search by Order #"
-              :disabled="loading"
-              autocomplete="off"
-              @keydown.enter.prevent="commitOrderNumberSearch"
-            />
+          <div class="d-flex flex-wrap align-items-end gap-2" style="min-width: 220px; max-width: 400px">
+            <div class="flex-grow-1" style="min-width: 160px">
+              <label class="form-label small text-secondary mb-1" for="user-orders-order-number-search">Order Number</label>
+              <input
+                id="user-orders-order-number-search"
+                v-model.trim="query.orderNumber"
+                type="search"
+                class="form-control"
+                placeholder="Search by Order #"
+                :disabled="loading"
+                autocomplete="off"
+                enterkeyhint="search"
+                @keydown.enter.prevent="commitOrderNumberSearch"
+              />
+            </div>
+            <button type="button" class="btn btn-primary" :disabled="loading" @click="commitOrderNumberSearch">Search</button>
           </div>
 
           <div v-if="showShippedFilters" class="d-flex gap-2 flex-wrap">

@@ -81,6 +81,10 @@ Route::middleware('auth:sanctum')->group(function () {
             ->middleware('can:inventory.update');
         Route::post('/{orderId}/cancel', [OrderController::class, 'cancelOrder'])
             ->middleware('can:inventory.update');
+        Route::post('/{orderId}/remove-holds', [OrderController::class, 'removeHolds'])
+            ->middleware('can:inventory.update');
+        Route::post('/{orderId}/signature-gift-note', [OrderController::class, 'updateSignatureGiftNote'])
+            ->middleware('can:inventory.update');
         Route::post('/{orderId}/shipping-address', [OrderController::class, 'updateShippingAddress'])
             ->middleware('can:inventory.update');
         Route::post('/{orderId}/shipping-lines', [OrderController::class, 'updateShippingLines'])

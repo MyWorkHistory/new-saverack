@@ -3,7 +3,6 @@ import { computed, inject, onMounted, onUnmounted, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import api from "../../services/api";
 import CrmLoadingSpinner from "../../components/common/CrmLoadingSpinner.vue";
-import CrmSearchableSelect from "../../components/common/CrmSearchableSelect.vue";
 import ConfirmModal from "../../components/common/ConfirmModal.vue";
 import { setCrmPageMeta } from "../../composables/useCrmPageMeta.js";
 import { useToast } from "../../composables/useToast.js";
@@ -16,8 +15,6 @@ const toast = useToast();
 
 const loading = ref(false);
 const order = ref(null);
-const accounts = ref([]);
-const accountsLoading = ref(false);
 const selectedAccountId = ref(String(route.query.client_account_id || ""));
 const loadError = ref("");
 const loadNotice = ref("");
@@ -62,21 +59,19 @@ const addItemsBusy = ref(false);
 const attachmentFileInput = ref(null);
 const attachmentUploadBusy = ref(false);
 
+const confirmRemoveHoldsOpen = ref(false);
+const removeHoldsBusy = ref(false);
+const requireSignatureLocal = ref(false);
+const giftNoteLocal = ref("");
+const optionsSaveBusy = ref(false);
+
+const CARRIER_PRESETS = ["Cheapest", "ups", "fedex", "usps", "dhl", "asendia_one", "ontrac", "lasership"];
+const METHOD_PRESETS = ["Select", "Ground", "Priority", "Express", "Standard", "A124"];
+
 const orderId = computed(() => String(route.params.shipheroOrderId || ""));
 
 const isPortalUser = computed(() => Number(crmUser.value?.client_account_id || 0) > 0);
 const portalClientAccountId = computed(() => Number(crmUser.value?.client_account_id || 0));
-
-const accountOptions = computed(() =>
-  (accounts.value || [])
-    .filter((a) => !isPortalUser.value || Number(a?.id || 0) === portalClientAccountId.value)
-    .filter((a) => a?.has_shiphero_customer)
-    .map((a) => ({
-      id: a.id,
-      name: a.company_name || `Account #${a.id}`,
-      email: a.email ? String(a.email) : "",
-    })),
-);
 
 const headingOrderNumber = computed(() => String(order.value?.order_number || "—").replace(/^#\s*/, ""));
 const statusClass = computed(() => {
@@ -119,15 +114,6 @@ const orderHeaderBadgeClass = computed(() => {
   return `badge rounded-pill fw-medium ${statusClass.value}`;
 });
 
-const notReadyBannerBody = computed(() => {
-  const o = order.value;
-  if (!o) return "";
-  const sub = String(o.not_ready_subtitle || "").trim();
-  if (sub) return sub;
-  const hr = String(o.hold_reason || "").trim();
-  if (hr) return `Order has ${hr.toLowerCase()}.`;
-  return "Order has a hold.";
-});
 const sortedItems = computed(() => {
   const rows = Array.isArray(order.value?.items) ? [...order.value.items] : [];
   const dir = itemSortDir.value === "desc" ? -1 : 1;
@@ -160,11 +146,65 @@ const formattedShippingAddress = computed(() => {
   return parts.length ? parts.join("\n") : "—";
 });
 
+const customerDisplayName = computed(() => {
+  const a = order.value?.shipping_address;
+  if (!a || typeof a !== "object") return "";
+  const name = [a.first_name, a.last_name].filter(Boolean).join(" ").trim();
+  return name || "—";
+});
+
+const shippingAddressDisplayCaps = computed(() => {
+  const t = formattedShippingAddress.value;
+  if (!t || t === "—") return "—";
+  return t.toUpperCase();
+});
+
+const carrierSelectOptions = computed(() => {
+  const cur = String(carrierField.value || "").trim();
+  const set = new Set(["", ...CARRIER_PRESETS, cur]);
+  return Array.from(set);
+});
+
+const methodSelectOptions = computed(() => {
+  const cur = String(methodField.value || "").trim();
+  const set = new Set(["", ...METHOD_PRESETS, cur]);
+  return Array.from(set);
+});
+
+const notReadyBannerBullets = computed(() => {
+  const o = order.value;
+  if (!o) return [];
+  const sub = String(o.not_ready_subtitle || "").trim();
+  let text = sub;
+  if (!text) {
+    const hr = String(o.hold_reason || "").trim();
+    if (hr) text = `Order has ${hr.toLowerCase()}.`;
+    else text = "Order has a hold.";
+  }
+  const parts = text.split(/(?<=\.)\s+/).map((s) => s.trim()).filter(Boolean);
+  return parts.length ? parts : [text];
+});
+
 function fmtDate(iso) {
   if (!iso) return "—";
   const d = new Date(iso);
   if (Number.isNaN(d.getTime())) return "—";
   return d.toLocaleString();
+}
+
+function fmtCreationDate(iso) {
+  if (!iso) return "—";
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return "—";
+  return d.toLocaleString("en-US", {
+    month: "2-digit",
+    day: "2-digit",
+    year: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+    second: "2-digit",
+    hour12: true,
+  });
 }
 
 function escapeHtml(value) {
@@ -288,6 +328,7 @@ function fallbackOrderSnapshot() {
       allow_partial: false,
       require_signature: false,
       packing_note: null,
+      gift_note: "",
       tags: [],
       attachments: [],
       shipping_line: {
@@ -317,18 +358,6 @@ function fallbackOrderSnapshot() {
     };
   } catch (_) {
     return null;
-  }
-}
-
-async function loadAccounts() {
-  accountsLoading.value = true;
-  try {
-    const { data } = await api.get("/inventory/client-account-options");
-    accounts.value = Array.isArray(data?.accounts) ? data.accounts : [];
-  } catch (e) {
-    toast.errorFrom(e, "Could not load account list.");
-  } finally {
-    accountsLoading.value = false;
   }
 }
 
@@ -386,18 +415,6 @@ watch(
   },
 );
 
-watch(selectedAccountId, (id) => {
-  const current = route.query.client_account_id != null ? String(route.query.client_account_id) : "";
-  if (id === current) return;
-  const nextQuery = { ...route.query };
-  if (id) {
-    nextQuery.client_account_id = id;
-  } else {
-    delete nextQuery.client_account_id;
-  }
-  router.replace({ query: nextQuery });
-});
-
 watch(
   () => [orderId.value, selectedAccountId.value],
   () => {
@@ -414,6 +431,7 @@ watch(
 function closeActionConfirms() {
   confirmFulfilledOpen.value = false;
   confirmCancelOpen.value = false;
+  confirmRemoveHoldsOpen.value = false;
 }
 
 async function runMarkFulfilled() {
@@ -450,11 +468,48 @@ async function runCancelOrder() {
   }
 }
 
+async function runRemoveHolds() {
+  if (!order.value || !selectedAccountId.value || !orderId.value) return;
+  removeHoldsBusy.value = true;
+  try {
+    await api.post(`/orders/${encodeURIComponent(orderId.value)}/remove-holds`, {
+      client_account_id: Number(selectedAccountId.value),
+    });
+    toast.success("Holds removed.");
+    confirmRemoveHoldsOpen.value = false;
+    await loadOrder();
+  } catch (e) {
+    toast.errorFrom(e, "Could not remove holds.");
+  } finally {
+    removeHoldsBusy.value = false;
+  }
+}
+
+async function saveSignatureGiftNote() {
+  if (!selectedAccountId.value || !orderId.value) return;
+  optionsSaveBusy.value = true;
+  try {
+    await api.post(`/orders/${encodeURIComponent(orderId.value)}/signature-gift-note`, {
+      client_account_id: Number(selectedAccountId.value),
+      require_signature: requireSignatureLocal.value,
+      gift_note: giftNoteLocal.value,
+    });
+    toast.success("Options updated.");
+    await loadOrder();
+  } catch (e) {
+    toast.errorFrom(e, "Could not save options.");
+  } finally {
+    optionsSaveBusy.value = false;
+  }
+}
+
 watch(
   () => order.value,
   (o) => {
     if (!o || typeof o !== "object") return;
     allowPartialLocal.value = !!o.allow_partial;
+    requireSignatureLocal.value = !!o.require_signature;
+    giftNoteLocal.value = String(o.gift_note ?? "");
     tagsLocal.value = Array.isArray(o.tags) ? [...o.tags] : [];
     carrierField.value = String(o.shipping_carrier || "");
     methodField.value = String(o.method || "");
@@ -674,7 +729,6 @@ onMounted(async () => {
     title: "Save Rack | Order Detail",
     description: "ShipHero order detail.",
   });
-  await loadAccounts();
   if (isPortalUser.value && portalClientAccountId.value > 0 && !selectedAccountId.value) {
     selectedAccountId.value = String(portalClientAccountId.value);
   }
@@ -687,100 +741,87 @@ onMounted(async () => {
       <CrmLoadingSpinner message="Loading order detail..." :center="true" />
     </div>
     <template v-else>
-    <div class="staff-table-card staff-datatable-card staff-datatable-card--white w-100 mb-4">
-      <div class="staff-table-toolbar">
-        <div class="staff-table-toolbar--row flex-wrap align-items-end gap-2 gap-md-3">
-          <div class="flex-grow-1" style="min-width: 280px">
-            <label class="form-label small text-secondary mb-1" for="order-detail-account-trigger">Account</label>
-            <CrmSearchableSelect
-              v-model="selectedAccountId"
-              class="staff-toolbar-search staff-toolbar-search--inline"
-              appearance="staff"
-              aria-label="Client account"
-              :options="accountOptions"
-              :disabled="accountsLoading || loading"
-              placeholder="Select account"
-              search-placeholder="Search accounts…"
-              :allow-empty="true"
-              empty-label="Select account"
-              button-id="order-detail-account-trigger"
-            />
-          </div>
-          <button
-            type="button"
-            class="btn btn-outline-secondary staff-toolbar-btn align-self-end"
-            :disabled="!selectedAccountId || !orderId || loading"
-            @click="loadOrder"
-          >
-            Refresh
-          </button>
-        </div>
-        <p class="small text-secondary mb-0 mt-2">
-          Only accounts with a ShipHero customer ID can load orders.
-        </p>
-      </div>
+    <div v-if="!selectedAccountId" class="alert alert-light border mb-4" role="status">
+      <span class="small"
+        >This page needs a client account. Open the order from the Orders list, or add
+        <code>?client_account_id=…</code> to the URL.</span>
     </div>
-
-    <div v-if="!selectedAccountId" class="alert alert-light border mb-0">
-      Select an account above to view this order.
-    </div>
-    <div v-else-if="loadError" class="alert alert-warning small mb-0" role="alert">
+    <div v-else-if="loadError" class="alert alert-warning small mb-4" role="alert">
       {{ loadError }}
     </div>
-    <div v-else-if="!order" class="alert alert-warning mb-0">
-      No order data loaded. Choose another account or use Refresh.
+    <div v-else-if="!order" class="alert alert-warning mb-4">
+      No order data loaded. Check the order link and account, then try again.
     </div>
     <template v-else>
-      <div class="order-detail-page__hero mb-3">
-        <div class="d-flex align-items-start justify-content-between gap-3 flex-wrap">
-          <div>
-            <button type="button" class="btn btn-link px-0 text-decoration-none" @click="router.back()">
-              ← Orders
-            </button>
-            <h1 class="h4 mb-1 fw-semibold text-body">Order {{ headingOrderNumber }}</h1>
-            <p class="staff-page__intro mb-0">
-              <span :class="orderHeaderBadgeClass">{{ orderHeaderBadgeLabel }}</span>
-            </p>
-          </div>
-          <div v-if="canRunShipHeroActions" class="dropdown align-self-start">
-            <button
-              id="order-detail-action-menu"
-              type="button"
-              class="btn btn-outline-secondary dropdown-toggle"
-              data-bs-toggle="dropdown"
-              aria-expanded="false"
-            >
-              Action
-            </button>
-            <ul class="dropdown-menu dropdown-menu-end" aria-labelledby="order-detail-action-menu">
-              <li>
-                <button type="button" class="dropdown-item" @click="confirmFulfilledOpen = true">
-                  Mark As Fulfilled
+      <div class="staff-table-card staff-datatable-card staff-datatable-card--white order-detail-page__header-shell mb-4">
+        <div class="p-4 pb-3">
+          <div class="d-flex flex-wrap justify-content-between align-items-start gap-3">
+            <div class="min-w-0">
+              <div class="d-flex align-items-center flex-wrap gap-2">
+                <h1 class="h4 mb-0 fw-bold text-body">Order {{ headingOrderNumber }}</h1>
+                <span :class="orderHeaderBadgeClass">{{ orderHeaderBadgeLabel }}</span>
+              </div>
+              <button
+                type="button"
+                class="btn btn-link btn-sm text-secondary px-0 py-0 mt-1 text-decoration-none"
+                @click="router.back()"
+              >
+                &lt; Orders
+              </button>
+            </div>
+            <div v-if="canRunShipHeroActions" class="d-flex flex-wrap gap-2 align-items-center flex-shrink-0">
+              <div class="dropdown">
+                <button
+                  id="order-detail-more-actions"
+                  type="button"
+                  class="btn btn-outline-secondary dropdown-toggle"
+                  data-bs-toggle="dropdown"
+                  aria-expanded="false"
+                >
+                  More Actions
                 </button>
-              </li>
-              <li>
-                <button type="button" class="dropdown-item text-danger" @click="confirmCancelOpen = true">
-                  Cancel Order
-                </button>
-              </li>
-            </ul>
+                <ul class="dropdown-menu dropdown-menu-end" aria-labelledby="order-detail-more-actions">
+                  <li>
+                    <button type="button" class="dropdown-item" @click="loadOrder">Refresh</button>
+                  </li>
+                  <li>
+                    <button type="button" class="dropdown-item" @click="confirmFulfilledOpen = true">
+                      Mark As Fulfilled
+                    </button>
+                  </li>
+                  <li>
+                    <button type="button" class="dropdown-item text-danger" @click="confirmCancelOpen = true">
+                      Cancel Order
+                    </button>
+                  </li>
+                </ul>
+              </div>
+              <button
+                v-if="showNotReadyToShipBanner"
+                type="button"
+                class="btn btn-danger"
+                @click="confirmRemoveHoldsOpen = true"
+              >
+                Remove Hold
+              </button>
+            </div>
           </div>
         </div>
-        <div
-          v-if="showNotReadyToShipBanner"
-          class="alert alert-warning border-warning mt-3 mb-0 d-flex gap-2 align-items-start"
-          role="status"
-        >
-          <span class="text-warning-emphasis" aria-hidden="true">
-            <svg width="20" height="20" fill="currentColor" viewBox="0 0 24 24">
-              <path
-                d="M12 22c1.1 0 2-.9 2-2h-4c0 1.1.89 2 2 2zm6-6v-5c0-3.07-1.64-5.64-4.5-6.32V4c0-.83-.67-1.5-1.5-1.5s-1.5.67-1.5 1.5v.68C7.63 5.36 6 7.92 6 11v5l-2 2v1h16v-1l-2-2z"
-              />
-            </svg>
-          </span>
-          <div>
-            <div class="fw-semibold">This order is not ready to ship</div>
-            <div class="small mb-0">{{ notReadyBannerBody }}</div>
+        <div v-if="showNotReadyToShipBanner" class="order-detail-page__nrts-banner px-4 py-3 border-top">
+          <div class="d-flex gap-3 align-items-start">
+            <span class="order-detail-page__nrts-bell text-warning flex-shrink-0" aria-hidden="true">
+              <svg width="22" height="22" fill="currentColor" viewBox="0 0 24 24">
+                <path
+                  d="M12 22c1.1 0 2-.9 2-2h-4c0 1.1.89 2 2 2zm6-6v-5c0-3.07-1.64-5.64-4.5-6.32V4c0-.83-.67-1.5-1.5-1.5s-1.5.67-1.5 1.5v.68C7.63 5.36 6 7.92 6 11v5l-2 2v1h16v-1l-2-2z"
+                />
+              </svg>
+            </span>
+            <div class="min-w-0 flex-grow-1">
+              <div class="fw-semibold text-body">This order is not ready to ship</div>
+              <ul class="small mb-0 ps-3 mt-2 text-secondary order-detail-page__nrts-list">
+                <li v-for="(line, idx) in notReadyBannerBullets" :key="'nrts-' + idx">{{ line }}</li>
+              </ul>
+            </div>
           </div>
         </div>
       </div>
@@ -876,70 +917,78 @@ onMounted(async () => {
               Scroll sideways or swipe to see all columns.
             </p>
           </div>
-
-          <!-- History intentionally not shown for speed. -->
         </div>
 
-        <div class="col-lg-4 d-flex flex-column gap-4">
+        <div class="col-lg-4 d-flex flex-column gap-4 order-detail-page__side-column">
           <div class="staff-table-card staff-datatable-card staff-datatable-card--white p-4 order-detail-page__side-panel">
             <h3 class="h6 fw-semibold mb-3">Order details</h3>
             <dl class="small mb-0">
-              <dt class="text-secondary">Order date</dt>
-              <dd>{{ fmtDate(order.order_date) }}</dd>
+              <dt class="text-secondary">Customer</dt>
+              <dd class="fw-semibold text-body">{{ customerDisplayName }}</dd>
               <dt class="text-secondary">Email</dt>
               <dd>{{ order.email || "—" }}</dd>
+              <dt class="text-secondary">Phone</dt>
+              <dd>{{ order.shipping_address?.phone || "—" }}</dd>
+              <dt class="text-secondary mt-2">Shipping address</dt>
+              <dd class="mb-0">
+                <button
+                  v-if="canRunShipHeroActions"
+                  type="button"
+                  class="btn btn-link text-start p-0 text-decoration-none order-detail-page__address-link order-detail-page__address-link--caps"
+                  @click="openShippingModal"
+                >
+                  {{ shippingAddressDisplayCaps }}
+                </button>
+                <div v-else class="order-detail-page__address-link--caps text-body small">{{ shippingAddressDisplayCaps }}</div>
+              </dd>
+              <dt class="text-secondary mt-2">Creation date</dt>
+              <dd>{{ fmtCreationDate(order.order_date) }}</dd>
+              <dt class="text-secondary">Store</dt>
+              <dd class="text-break">{{ order.account || "—" }}</dd>
             </dl>
           </div>
 
           <div class="staff-table-card staff-datatable-card staff-datatable-card--white p-4 order-detail-page__side-panel">
-            <h3 class="h6 fw-semibold mb-3">Shipping Details</h3>
+            <h3 class="h6 fw-semibold mb-3">Shipping</h3>
             <div class="mb-3">
-              <div class="text-secondary small mb-1">Shipping address</div>
-              <button
-                v-if="canRunShipHeroActions"
-                type="button"
-                class="btn btn-link text-start p-0 text-decoration-none order-detail-page__address-link"
-                @click="openShippingModal"
-              >
-                <span class="order-detail-page__address-text">{{ formattedShippingAddress }}</span>
-              </button>
-              <div v-else class="small order-detail-page__address-text text-body">{{ formattedShippingAddress }}</div>
-            </div>
-
-            <div class="mb-2">
               <label class="form-label small text-secondary mb-1" for="order-detail-carrier">Shipping Carrier</label>
-              <input
+              <select
                 id="order-detail-carrier"
                 v-model="carrierField"
-                class="form-control form-control-sm"
-                list="order-detail-carrier-datalist"
-                autocomplete="off"
+                class="form-select form-select-sm"
                 :disabled="!canRunShipHeroActions"
-              />
-            </div>
-            <div class="mb-2">
-              <label class="form-label small text-secondary mb-1" for="order-detail-method">Method</label>
-              <input
-                id="order-detail-method"
-                v-model="methodField"
-                class="form-control form-control-sm"
-                list="order-detail-method-datalist"
-                autocomplete="off"
-                :disabled="!canRunShipHeroActions"
-              />
+              >
+                <option v-for="c in carrierSelectOptions" :key="'c-' + (c || 'empty')" :value="c">
+                  {{ c === "" ? "—" : c }}
+                </option>
+              </select>
             </div>
             <div class="mb-3">
-              <button
-                type="button"
-                class="btn btn-primary btn-sm"
-                :disabled="!canRunShipHeroActions || shippingLinesSaveBusy"
-                @click="saveShippingLines"
+              <label class="form-label small text-secondary mb-1" for="order-detail-method">Method</label>
+              <select
+                id="order-detail-method"
+                v-model="methodField"
+                class="form-select form-select-sm"
+                :disabled="!canRunShipHeroActions"
               >
-                {{ shippingLinesSaveBusy ? "Saving…" : "Save Shipping" }}
-              </button>
+                <option v-for="m in methodSelectOptions" :key="'m-' + (m || 'empty')" :value="m">
+                  {{ m === "" ? "—" : m }}
+                </option>
+              </select>
             </div>
+            <button
+              type="button"
+              class="btn btn-primary btn-sm"
+              :disabled="!canRunShipHeroActions || shippingLinesSaveBusy"
+              @click="saveShippingLines"
+            >
+              {{ shippingLinesSaveBusy ? "Saving…" : "Save Shipping" }}
+            </button>
+          </div>
 
-            <div class="form-check mb-3">
+          <div class="staff-table-card staff-datatable-card staff-datatable-card--white p-4 order-detail-page__side-panel">
+            <h3 class="h6 fw-semibold mb-3">Options</h3>
+            <div class="form-check mb-2">
               <input
                 id="order-detail-allow-partial"
                 v-model="allowPartialLocal"
@@ -950,19 +999,47 @@ onMounted(async () => {
               />
               <label class="form-check-label small" for="order-detail-allow-partial">Allow Partial</label>
             </div>
-
-            <div class="mb-1">
-              <div class="text-secondary small mb-1">Order tags</div>
+            <div class="form-check mb-3">
               <input
-                v-model="tagInputValue"
-                type="text"
-                class="form-control form-control-sm mb-2"
-                placeholder="Press enter or comma to add a tag."
-                autocomplete="off"
-                :disabled="!canRunShipHeroActions"
-                @keydown="onTagInputKeydown"
+                id="order-detail-req-sig"
+                v-model="requireSignatureLocal"
+                class="form-check-input"
+                type="checkbox"
+                :disabled="!canRunShipHeroActions || optionsSaveBusy"
               />
+              <label class="form-check-label small" for="order-detail-req-sig">Require Signature</label>
             </div>
+            <label class="form-label small text-secondary mb-1" for="order-gift-note">Gift note</label>
+            <textarea
+              id="order-gift-note"
+              v-model="giftNoteLocal"
+              class="form-control form-control-sm mb-3"
+              rows="3"
+              :disabled="!canRunShipHeroActions || optionsSaveBusy"
+            ></textarea>
+            <button
+              type="button"
+              class="btn btn-primary btn-sm"
+              :disabled="!canRunShipHeroActions || optionsSaveBusy"
+              @click="saveSignatureGiftNote"
+            >
+              {{ optionsSaveBusy ? "Saving…" : "Save Options" }}
+            </button>
+          </div>
+
+          <div class="staff-table-card staff-datatable-card staff-datatable-card--white p-4 order-detail-page__side-panel">
+            <h3 class="h6 fw-semibold mb-3">Order tags</h3>
+            <label class="form-label small text-secondary mb-1" for="order-tags-input">Tags</label>
+            <input
+              id="order-tags-input"
+              v-model="tagInputValue"
+              type="text"
+              class="form-control form-control-sm mb-2"
+              placeholder="Press enter or comma to add a tag."
+              autocomplete="off"
+              :disabled="!canRunShipHeroActions"
+              @keydown="onTagInputKeydown"
+            />
             <div v-if="tagsLocal.length" class="d-flex flex-wrap gap-1 mb-2">
               <span
                 v-for="(t, idx) in tagsLocal"
@@ -992,11 +1069,25 @@ onMounted(async () => {
           </div>
 
           <div class="staff-table-card staff-datatable-card staff-datatable-card--white p-4 order-detail-page__side-panel">
+            <h3 class="h6 fw-semibold mb-3">Fraud analysis</h3>
+            <dl class="small mb-0">
+              <dt class="text-secondary">Fraud score</dt>
+              <dd class="fw-semibold">None</dd>
+              <dt class="text-secondary">Fraud address</dt>
+              <dd class="fw-semibold">None</dd>
+              <dt class="text-secondary">Fraud zip</dt>
+              <dd class="fw-semibold">None</dd>
+              <dt class="text-secondary">Details</dt>
+              <dd class="fw-semibold">None</dd>
+            </dl>
+          </div>
+
+          <div class="staff-table-card staff-datatable-card staff-datatable-card--white p-4 order-detail-page__side-panel">
             <div class="d-flex justify-content-between align-items-center mb-3">
               <h3 class="h6 fw-semibold mb-0">Attachments</h3>
               <button
                 type="button"
-                class="btn btn-sm btn-outline-primary"
+                class="btn btn-sm btn-outline-secondary text-primary"
                 :disabled="!canRunShipHeroActions || attachmentUploadBusy"
                 @click="triggerAttachFile"
               >
@@ -1038,22 +1129,6 @@ onMounted(async () => {
       </div>
     </template>
     </template>
-
-    <datalist id="order-detail-carrier-datalist">
-      <option value="ups" />
-      <option value="fedex" />
-      <option value="usps" />
-      <option value="dhl" />
-      <option value="asendia_one" />
-      <option value="ontrac" />
-      <option value="lasership" />
-    </datalist>
-    <datalist id="order-detail-method-datalist">
-      <option value="Ground" />
-      <option value="Priority" />
-      <option value="Express" />
-      <option value="Select" />
-    </datalist>
 
     <Teleport to="body">
       <Transition name="modal-backdrop">
@@ -1243,6 +1318,17 @@ onMounted(async () => {
       @close="confirmCancelOpen = false"
       @confirm="runCancelOrder"
     />
+    <ConfirmModal
+      :open="confirmRemoveHoldsOpen"
+      title="Remove Hold"
+      message="This clears client, payment, operator, fraud, and address holds in ShipHero (where supported). Shipping method hold may need to be cleared in ShipHero if it still applies. Continue?"
+      confirm-label="Remove Hold"
+      cancel-label="Cancel"
+      danger
+      :busy="removeHoldsBusy"
+      @close="confirmRemoveHoldsOpen = false"
+      @confirm="runRemoveHolds"
+    />
   </div>
 </template>
 
@@ -1370,14 +1456,50 @@ onMounted(async () => {
   margin-bottom: 0.2rem;
 }
 
-.order-detail-page__side-panel {
+.order-detail-page__side-column {
   position: sticky;
   top: 1rem;
+  align-self: flex-start;
+  max-height: calc(100vh - 2rem);
+  overflow-y: auto;
+}
+
+.order-detail-page__header-shell {
+  border: 1px solid rgba(0, 0, 0, 0.08);
+  border-radius: 0.5rem;
+  overflow: hidden;
+  background: var(--bs-body-bg, #fff);
+}
+
+.order-detail-page__nrts-banner {
+  background: #fffbeb;
+}
+
+[data-bs-theme="dark"] .order-detail-page__nrts-banner {
+  background: rgba(250, 204, 21, 0.14);
+}
+
+.order-detail-page__nrts-list li {
+  margin-bottom: 0.15rem;
+}
+
+.order-detail-page__side-panel {
+  position: relative;
 }
 
 .order-detail-page__address-link {
   color: #2563eb;
   font-weight: 500;
+}
+
+.order-detail-page__address-link--caps {
+  white-space: pre-line;
+  line-height: 1.4;
+  text-transform: uppercase;
+}
+
+button.order-detail-page__address-link--caps {
+  font-weight: 700;
 }
 
 .order-detail-page__address-text {

@@ -349,6 +349,57 @@ class OrderController extends Controller
         }
     }
 
+    public function removeHolds(Request $request, string $orderId): JsonResponse
+    {
+        Gate::authorize('inventory.update');
+        $validated = $request->validate([
+            'client_account_id' => ['required', 'integer', 'exists:client_accounts,id'],
+        ]);
+        $customerId = $this->resolveShipHeroCustomerAccountId((int) $validated['client_account_id'], $request);
+        try {
+            $this->orders->clearOrderHolds($orderId, $customerId);
+
+            return response()->json(['message' => 'Holds cleared.']);
+        } catch (RuntimeException $e) {
+            return response()->json(['message' => $e->getMessage()], 502);
+        } catch (Throwable $e) {
+            report($e);
+
+            return response()->json([
+                'message' => config('app.debug') ? $e->getMessage() : 'Could not clear holds in ShipHero.',
+            ], 502);
+        }
+    }
+
+    public function updateSignatureGiftNote(Request $request, string $orderId): JsonResponse
+    {
+        Gate::authorize('inventory.update');
+        $validated = $request->validate([
+            'client_account_id' => ['required', 'integer', 'exists:client_accounts,id'],
+            'require_signature' => ['required', 'boolean'],
+            'gift_note' => ['nullable', 'string', 'max:2000'],
+        ]);
+        $customerId = $this->resolveShipHeroCustomerAccountId((int) $validated['client_account_id'], $request);
+        try {
+            $this->orders->updateRequireSignatureAndGiftNote(
+                $orderId,
+                $customerId,
+                (bool) $validated['require_signature'],
+                isset($validated['gift_note']) ? (string) $validated['gift_note'] : null
+            );
+
+            return response()->json(['message' => 'Options updated.']);
+        } catch (RuntimeException $e) {
+            return response()->json(['message' => $e->getMessage()], 502);
+        } catch (Throwable $e) {
+            report($e);
+
+            return response()->json([
+                'message' => config('app.debug') ? $e->getMessage() : 'Could not update order in ShipHero.',
+            ], 502);
+        }
+    }
+
     public function updateShippingAddress(Request $request, string $orderId): JsonResponse
     {
         Gate::authorize('inventory.update');
@@ -656,6 +707,7 @@ class OrderController extends Controller
             'allow_partial' => false,
             'require_signature' => false,
             'packing_note' => null,
+            'gift_note' => '',
             'tags' => [],
             'attachments' => [],
             'shipping_line' => [

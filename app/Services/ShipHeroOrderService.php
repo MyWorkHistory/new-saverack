@@ -644,6 +644,62 @@ GQL;
     }
 
     /**
+     * Clear ShipHero holds that can be toggled via UpdateOrderHoldsInput (excludes shipping_method_hold).
+     */
+    public function clearOrderHolds(string $orderId, string $customerAccountId): void
+    {
+        $relayId = $this->resolveOrderRelayIdForMutations($orderId, $customerAccountId);
+        $customer = trim($customerAccountId);
+        $data = [
+            'order_id' => $relayId,
+            'payment_hold' => false,
+            'operator_hold' => false,
+            'fraud_hold' => false,
+            'address_hold' => false,
+            'client_hold' => false,
+        ];
+        if ($customer !== '') {
+            $data['customer_account_id'] = $customer;
+        }
+        $graphql = <<<'GQL'
+mutation ShipHeroOrderUpdateHolds($data: UpdateOrderHoldsInput!) {
+  order_update_holds(data: $data) {
+    request_id
+    complexity
+  }
+}
+GQL;
+        $this->client->query($graphql, ['data' => $data]);
+    }
+
+    public function updateRequireSignatureAndGiftNote(
+        string $orderId,
+        string $customerAccountId,
+        bool $requireSignature,
+        ?string $giftNote
+    ): void {
+        $relayId = $this->resolveOrderRelayIdForMutations($orderId, $customerAccountId);
+        $customer = trim($customerAccountId);
+        $data = [
+            'order_id' => $relayId,
+            'require_signature' => $requireSignature,
+            'gift_note' => $giftNote !== null ? (string) $giftNote : '',
+        ];
+        if ($customer !== '') {
+            $data['customer_account_id'] = $customer;
+        }
+        $graphql = <<<'GQL'
+mutation ShipHeroOrderUpdateSigGift($data: UpdateOrderInput!) {
+  order_update(data: $data) {
+    request_id
+    complexity
+  }
+}
+GQL;
+        $this->client->query($graphql, ['data' => $data]);
+    }
+
+    /**
      * @param  list<array{sku: string, quantity: int, product_name?: string|null}>  $lineItems
      */
     public function addOrderLineItems(string $orderId, string $customerAccountId, array $lineItems): void
@@ -842,6 +898,7 @@ query ShipHeroOrderHeader($id: String!) {
       allow_partial
       require_signature
       packing_note
+      gift_note
       tags
       attachments(first: 30) {
         edges {
@@ -1108,6 +1165,7 @@ GQL;
             'allow_partial' => (bool) ($node['allow_partial'] ?? false),
             'require_signature' => (bool) ($node['require_signature'] ?? false),
             'packing_note' => is_string($node['packing_note'] ?? null) ? $node['packing_note'] : null,
+            'gift_note' => is_string($node['gift_note'] ?? null) ? $node['gift_note'] : null,
             'tags' => $this->normalizeOrderTags($node['tags'] ?? null),
             'attachments' => $this->normalizeOrderAttachments($node['attachments'] ?? null),
             'shipping_address' => $this->normalizeOrderAddressForApi($node['shipping_address'] ?? null),

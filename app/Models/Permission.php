@@ -70,6 +70,8 @@ class Permission extends Model
             'billing.create' => ['label' => 'Create invoices', 'module' => 'billing'],
             'billing.update' => ['label' => 'Update invoices', 'module' => 'billing'],
             'billing.delete' => ['label' => 'Delete draft invoices', 'module' => 'billing'],
+            'inventory.view' => ['label' => 'View inventory', 'module' => 'inventory'],
+            'inventory.update' => ['label' => 'Update inventory quantities', 'module' => 'inventory'],
         ];
 
         foreach (array_unique($keys) as $key) {

@@ -46,6 +46,8 @@ return new class extends Migration
             'billing.create',
             'billing.update',
             'billing.delete',
+            'inventory.view',
+            'inventory.update',
         ];
     }
 
@@ -74,11 +76,14 @@ return new class extends Migration
 
         $admin->permissions()->sync(Permission::query()->pluck('id'));
 
+        // Default staff: clients + stores + ShipHero orders/inventory (view + update).
         $staffKeys = [
             'dashboard.view',
             'clients.view',
             'client_users.view',
             'stores.view',
+            'inventory.view',
+            'inventory.update',
         ];
         $staff->permissions()->sync(Permission::idsForKeys($staffKeys));
 

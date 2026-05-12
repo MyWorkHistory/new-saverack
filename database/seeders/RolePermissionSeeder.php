@@ -109,6 +109,8 @@ class RolePermissionSeeder extends Seeder
                 'clients.view',
                 'client_users.view',
                 'stores.view',
+                'inventory.view',
+                'inventory.update',
             ])->pluck('id')
         );
 

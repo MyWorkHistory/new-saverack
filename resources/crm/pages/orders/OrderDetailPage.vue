@@ -828,6 +828,14 @@ onMounted(async () => {
       No order data loaded. Check the order link and account, then try again.
     </div>
     <template v-else>
+      <div
+        v-if="canUseStaffOrderHeaderActions && !canRunShipHeroActions"
+        class="alert alert-info border small mb-4"
+        role="status"
+      >
+        You can view this order. ShipHero changes (shipping, tags, holds, line items, and related actions) require
+        the <strong>Update inventory quantities</strong> permission on your account.
+      </div>
       <div class="staff-table-card staff-datatable-card staff-datatable-card--white order-detail-page__header-shell mb-4">
         <div class="p-4 pb-3">
           <div class="d-flex flex-wrap justify-content-between align-items-start gap-3">
@@ -1077,18 +1085,6 @@ onMounted(async () => {
               <dd>{{ order.email || "—" }}</dd>
               <dt class="text-secondary">Phone</dt>
               <dd>{{ order.shipping_address?.phone || "—" }}</dd>
-              <dt class="text-secondary mt-2">Shipping address</dt>
-              <dd class="mb-0">
-                <button
-                  v-if="canRunShipHeroActions"
-                  type="button"
-                  class="btn btn-link text-start p-0 text-decoration-none order-detail-page__address-link order-detail-page__address-link--caps"
-                  @click="openShippingModal"
-                >
-                  {{ shippingAddressDisplayCaps }}
-                </button>
-                <div v-else class="order-detail-page__address-link--caps text-body small">{{ shippingAddressDisplayCaps }}</div>
-              </dd>
               <dt class="text-secondary mt-2">Creation date</dt>
               <dd>{{ fmtCreationDate(order.order_date) }}</dd>
               <dt class="text-secondary">Store</dt>
@@ -1097,7 +1093,21 @@ onMounted(async () => {
           </div>
 
           <div class="staff-table-card staff-datatable-card staff-datatable-card--white p-4 order-detail-page__side-panel">
-            <h3 class="h6 fw-semibold mb-3">Shipping</h3>
+            <h3 class="h6 fw-semibold mb-3">Shipping Detail</h3>
+            <dl class="small mb-3 pb-3 border-bottom">
+              <dt class="text-secondary">Shipping address</dt>
+              <dd class="mb-0">
+                <button
+                  v-if="canUseStaffOrderHeaderActions"
+                  type="button"
+                  class="btn btn-link text-start p-0 text-decoration-none order-detail-page__address-link order-detail-page__address-link--caps"
+                  @click="openShippingModal"
+                >
+                  {{ shippingAddressDisplayCaps }}
+                </button>
+                <span v-else class="order-detail-page__address-link--caps text-body">{{ shippingAddressDisplayCaps }}</span>
+              </dd>
+            </dl>
             <div class="mb-3">
               <label class="form-label small text-secondary mb-1" for="order-detail-carrier">Shipping Carrier</label>
               <select
@@ -1130,7 +1140,7 @@ onMounted(async () => {
               :disabled="!canRunShipHeroActions || shippingLinesSaveBusy"
               @click="saveShippingLines"
             >
-              {{ shippingLinesSaveBusy ? "Saving…" : "Save Shipping" }}
+              {{ shippingLinesSaveBusy ? "Saving…" : "Save Carrier & Method" }}
             </button>
           </div>
 
@@ -1307,67 +1317,138 @@ onMounted(async () => {
               <div class="crm-vx-modal__body pt-0">
                 <div class="row g-2">
                   <div class="col-md-6">
-                    <label class="form-label small" for="ship-fn">First Name</label>
-                    <input id="ship-fn" v-model="shippingForm.first_name" type="text" class="form-control form-control-sm" />
+                    <label class="form-label small text-secondary" for="ship-fn">First Name</label>
+                    <input
+                      id="ship-fn"
+                      v-model="shippingForm.first_name"
+                      type="text"
+                      class="form-control form-control-sm"
+                      :readonly="!canRunShipHeroActions"
+                    />
                   </div>
                   <div class="col-md-6">
-                    <label class="form-label small" for="ship-ln">Last Name</label>
-                    <input id="ship-ln" v-model="shippingForm.last_name" type="text" class="form-control form-control-sm" />
+                    <label class="form-label small text-secondary" for="ship-ln">Last Name</label>
+                    <input
+                      id="ship-ln"
+                      v-model="shippingForm.last_name"
+                      type="text"
+                      class="form-control form-control-sm"
+                      :readonly="!canRunShipHeroActions"
+                    />
                   </div>
                   <div class="col-12">
-                    <label class="form-label small" for="ship-co">Company</label>
-                    <input id="ship-co" v-model="shippingForm.company" type="text" class="form-control form-control-sm" />
+                    <label class="form-label small text-secondary" for="ship-co">Company</label>
+                    <input
+                      id="ship-co"
+                      v-model="shippingForm.company"
+                      type="text"
+                      class="form-control form-control-sm"
+                      :readonly="!canRunShipHeroActions"
+                    />
                   </div>
                   <div class="col-12">
-                    <label class="form-label small" for="ship-a1">Address</label>
-                    <input id="ship-a1" v-model="shippingForm.address1" type="text" class="form-control form-control-sm" />
+                    <label class="form-label small text-secondary" for="ship-a1">Address</label>
+                    <input
+                      id="ship-a1"
+                      v-model="shippingForm.address1"
+                      type="text"
+                      class="form-control form-control-sm"
+                      :readonly="!canRunShipHeroActions"
+                    />
                   </div>
                   <div class="col-12">
-                    <label class="form-label small" for="ship-a2">Address 2</label>
-                    <input id="ship-a2" v-model="shippingForm.address2" type="text" class="form-control form-control-sm" />
+                    <label class="form-label small text-secondary" for="ship-a2">Address 2</label>
+                    <input
+                      id="ship-a2"
+                      v-model="shippingForm.address2"
+                      type="text"
+                      class="form-control form-control-sm"
+                      :readonly="!canRunShipHeroActions"
+                    />
                   </div>
                   <div class="col-12">
-                    <label class="form-label small" for="ship-ph">Phone</label>
-                    <input id="ship-ph" v-model="shippingForm.phone" type="text" class="form-control form-control-sm" />
+                    <label class="form-label small text-secondary" for="ship-ph">Phone</label>
+                    <input
+                      id="ship-ph"
+                      v-model="shippingForm.phone"
+                      type="text"
+                      class="form-control form-control-sm"
+                      :readonly="!canRunShipHeroActions"
+                    />
                   </div>
                   <div class="col-md-6">
-                    <label class="form-label small" for="ship-city">City</label>
-                    <input id="ship-city" v-model="shippingForm.city" type="text" class="form-control form-control-sm" />
+                    <label class="form-label small text-secondary" for="ship-city">City</label>
+                    <input
+                      id="ship-city"
+                      v-model="shippingForm.city"
+                      type="text"
+                      class="form-control form-control-sm"
+                      :readonly="!canRunShipHeroActions"
+                    />
                   </div>
                   <div class="col-md-6">
-                    <label class="form-label small" for="ship-st">State</label>
-                    <input id="ship-st" v-model="shippingForm.state" type="text" class="form-control form-control-sm" />
+                    <label class="form-label small text-secondary" for="ship-st">State</label>
+                    <input
+                      id="ship-st"
+                      v-model="shippingForm.state"
+                      type="text"
+                      class="form-control form-control-sm"
+                      :readonly="!canRunShipHeroActions"
+                    />
                   </div>
                   <div class="col-md-6">
-                    <label class="form-label small" for="ship-ct">Country</label>
-                    <input id="ship-ct" v-model="shippingForm.country" type="text" class="form-control form-control-sm" />
+                    <label class="form-label small text-secondary" for="ship-ct">Country</label>
+                    <input
+                      id="ship-ct"
+                      v-model="shippingForm.country"
+                      type="text"
+                      class="form-control form-control-sm"
+                      :readonly="!canRunShipHeroActions"
+                    />
                   </div>
                   <div class="col-md-6">
-                    <label class="form-label small" for="ship-zip">ZIP Code</label>
-                    <input id="ship-zip" v-model="shippingForm.zip" type="text" class="form-control form-control-sm" />
+                    <label class="form-label small text-secondary" for="ship-zip">ZIP Code</label>
+                    <input
+                      id="ship-zip"
+                      v-model="shippingForm.zip"
+                      type="text"
+                      class="form-control form-control-sm"
+                      :readonly="!canRunShipHeroActions"
+                    />
                   </div>
                   <div class="col-12">
-                    <label class="form-label small" for="ship-em">Email</label>
-                    <input id="ship-em" v-model="shippingForm.email" type="email" class="form-control form-control-sm" />
+                    <label class="form-label small text-secondary" for="ship-em">Email</label>
+                    <input
+                      id="ship-em"
+                      v-model="shippingForm.email"
+                      type="email"
+                      class="form-control form-control-sm"
+                      :readonly="!canRunShipHeroActions"
+                    />
                   </div>
                 </div>
+                <p v-if="!canRunShipHeroActions" class="small text-secondary mb-0 mt-2">
+                  This address is read-only. Ask an administrator to grant <strong>Update inventory quantities</strong> to
+                  edit.
+                </p>
               </div>
-              <footer class="crm-vx-modal__footer">
+              <footer class="crm-vx-modal__footer d-flex flex-column gap-2">
                 <button
                   type="button"
-                  class="crm-vx-modal-btn crm-vx-modal-btn--secondary"
+                  class="crm-vx-modal-btn crm-vx-modal-btn--primary w-100"
+                  :disabled="shippingSaveBusy || !canRunShipHeroActions"
+                  :title="!canRunShipHeroActions ? 'Requires Update inventory quantities permission' : undefined"
+                  @click="saveShippingAddress"
+                >
+                  {{ shippingSaveBusy ? "Updating…" : "Update" }}
+                </button>
+                <button
+                  type="button"
+                  class="crm-vx-modal-btn crm-vx-modal-btn--secondary w-100"
                   :disabled="shippingSaveBusy"
                   @click="closeShippingModal"
                 >
                   Cancel
-                </button>
-                <button
-                  type="button"
-                  class="crm-vx-modal-btn crm-vx-modal-btn--primary"
-                  :disabled="shippingSaveBusy"
-                  @click="saveShippingAddress"
-                >
-                  {{ shippingSaveBusy ? "Updating…" : "Update" }}
                 </button>
               </footer>
             </div>

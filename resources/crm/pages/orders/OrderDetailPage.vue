@@ -406,39 +406,6 @@ onMounted(async () => {
       <CrmLoadingSpinner message="Loading order detail..." :center="true" />
     </div>
     <template v-else>
-    <div class="staff-table-card staff-datatable-card staff-datatable-card--white w-100 mb-4">
-      <div class="staff-table-toolbar">
-        <div class="staff-table-toolbar--row flex-wrap align-items-end gap-2 gap-md-3">
-          <div class="flex-grow-1" style="min-width: 280px">
-            <label class="form-label small text-secondary mb-1" for="order-detail-account-trigger">Account</label>
-            <CrmSearchableSelect
-              v-model="selectedAccountId"
-              class="staff-toolbar-search staff-toolbar-search--inline"
-              appearance="staff"
-              aria-label="Client account"
-              :options="accountOptions"
-              :disabled="accountsLoading || loading"
-              placeholder="Select account"
-              search-placeholder="Search accounts…"
-              :allow-empty="true"
-              empty-label="Select account"
-              button-id="order-detail-account-trigger"
-            />
-          </div>
-          <button
-            type="button"
-            class="btn btn-outline-secondary staff-toolbar-btn align-self-end"
-            :disabled="!selectedAccountId || !orderId || loading"
-            @click="loadOrder"
-          >
-            Refresh
-          </button>
-        </div>
-        <p class="small text-secondary mb-0 mt-2">
-          Only accounts with a ShipHero customer ID can load orders.
-        </p>
-      </div>
-    </div>
 
     <div v-if="!selectedAccountId" class="alert alert-light border mb-0">
       Select an account above to view this order.

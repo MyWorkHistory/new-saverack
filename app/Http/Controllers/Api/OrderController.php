@@ -10,6 +10,8 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Facades\URL;
 use Illuminate\Support\Carbon;
 use Illuminate\Validation\ValidationException;
 use RuntimeException;
@@ -347,6 +349,217 @@ class OrderController extends Controller
         }
     }
 
+    public function updateShippingAddress(Request $request, string $orderId): JsonResponse
+    {
+        Gate::authorize('inventory.update');
+        $validated = $request->validate([
+            'client_account_id' => ['required', 'integer', 'exists:client_accounts,id'],
+            'first_name' => ['nullable', 'string', 'max:160'],
+            'last_name' => ['nullable', 'string', 'max:160'],
+            'company' => ['nullable', 'string', 'max:200'],
+            'address1' => ['nullable', 'string', 'max:500'],
+            'address2' => ['nullable', 'string', 'max:500'],
+            'city' => ['nullable', 'string', 'max:200'],
+            'state' => ['nullable', 'string', 'max:120'],
+            'zip' => ['nullable', 'string', 'max:40'],
+            'country' => ['nullable', 'string', 'max:8'],
+            'email' => ['nullable', 'string', 'max:320'],
+            'phone' => ['nullable', 'string', 'max:80'],
+            'skip_address_validation' => ['nullable', 'boolean'],
+        ]);
+        $customerId = $this->resolveShipHeroCustomerAccountId((int) $validated['client_account_id'], $request);
+        try {
+            $this->orders->updateOrderShippingAddress(
+                $orderId,
+                $customerId,
+                [
+                    'first_name' => (string) ($validated['first_name'] ?? ''),
+                    'last_name' => (string) ($validated['last_name'] ?? ''),
+                    'company' => (string) ($validated['company'] ?? ''),
+                    'address1' => (string) ($validated['address1'] ?? ''),
+                    'address2' => (string) ($validated['address2'] ?? ''),
+                    'city' => (string) ($validated['city'] ?? ''),
+                    'state' => (string) ($validated['state'] ?? ''),
+                    'zip' => (string) ($validated['zip'] ?? ''),
+                    'country' => (string) ($validated['country'] ?? ''),
+                    'email' => (string) ($validated['email'] ?? ''),
+                    'phone' => (string) ($validated['phone'] ?? ''),
+                ],
+                (bool) ($validated['skip_address_validation'] ?? false)
+            );
+
+            return response()->json(['message' => 'Shipping address updated.']);
+        } catch (RuntimeException $e) {
+            return response()->json(['message' => $e->getMessage()], 502);
+        } catch (Throwable $e) {
+            report($e);
+
+            return response()->json([
+                'message' => config('app.debug') ? $e->getMessage() : 'Could not update shipping address in ShipHero.',
+            ], 502);
+        }
+    }
+
+    public function updateShippingLines(Request $request, string $orderId): JsonResponse
+    {
+        Gate::authorize('inventory.update');
+        $validated = $request->validate([
+            'client_account_id' => ['required', 'integer', 'exists:client_accounts,id'],
+            'carrier' => ['nullable', 'string', 'max:200'],
+            'method' => ['nullable', 'string', 'max:200'],
+        ]);
+        $customerId = $this->resolveShipHeroCustomerAccountId((int) $validated['client_account_id'], $request);
+        try {
+            $this->orders->updateOrderShippingLines(
+                $orderId,
+                $customerId,
+                (string) ($validated['carrier'] ?? ''),
+                (string) ($validated['method'] ?? '')
+            );
+
+            return response()->json(['message' => 'Shipping carrier and method updated.']);
+        } catch (RuntimeException $e) {
+            return response()->json(['message' => $e->getMessage()], 502);
+        } catch (Throwable $e) {
+            report($e);
+
+            return response()->json([
+                'message' => config('app.debug') ? $e->getMessage() : 'Could not update shipping lines in ShipHero.',
+            ], 502);
+        }
+    }
+
+    public function updateAllowPartial(Request $request, string $orderId): JsonResponse
+    {
+        Gate::authorize('inventory.update');
+        $validated = $request->validate([
+            'client_account_id' => ['required', 'integer', 'exists:client_accounts,id'],
+            'allow_partial' => ['required', 'boolean'],
+        ]);
+        $customerId = $this->resolveShipHeroCustomerAccountId((int) $validated['client_account_id'], $request);
+        try {
+            $this->orders->updateOrderAllowPartial(
+                $orderId,
+                $customerId,
+                (bool) $validated['allow_partial']
+            );
+
+            return response()->json(['message' => 'Allow partial updated.']);
+        } catch (RuntimeException $e) {
+            return response()->json(['message' => $e->getMessage()], 502);
+        } catch (Throwable $e) {
+            report($e);
+
+            return response()->json([
+                'message' => config('app.debug') ? $e->getMessage() : 'Could not update order in ShipHero.',
+            ], 502);
+        }
+    }
+
+    public function updateTags(Request $request, string $orderId): JsonResponse
+    {
+        Gate::authorize('inventory.update');
+        $validated = $request->validate([
+            'client_account_id' => ['required', 'integer', 'exists:client_accounts,id'],
+            'tags' => ['required', 'array', 'max:200'],
+            'tags.*' => ['string', 'max:120'],
+        ]);
+        $customerId = $this->resolveShipHeroCustomerAccountId((int) $validated['client_account_id'], $request);
+        try {
+            $this->orders->updateOrderTags(
+                $orderId,
+                $customerId,
+                array_values($validated['tags'])
+            );
+
+            return response()->json(['message' => 'Order tags updated.']);
+        } catch (RuntimeException $e) {
+            return response()->json(['message' => $e->getMessage()], 502);
+        } catch (Throwable $e) {
+            report($e);
+
+            return response()->json([
+                'message' => config('app.debug') ? $e->getMessage() : 'Could not update order tags in ShipHero.',
+            ], 502);
+        }
+    }
+
+    public function addLineItems(Request $request, string $orderId): JsonResponse
+    {
+        Gate::authorize('inventory.update');
+        $validated = $request->validate([
+            'client_account_id' => ['required', 'integer', 'exists:client_accounts,id'],
+            'line_items' => ['required', 'array', 'min:1', 'max:25'],
+            'line_items.*.sku' => ['required', 'string', 'max:200'],
+            'line_items.*.quantity' => ['required', 'integer', 'min:1', 'max:99999'],
+            'line_items.*.product_name' => ['nullable', 'string', 'max:500'],
+        ]);
+        $customerId = $this->resolveShipHeroCustomerAccountId((int) $validated['client_account_id'], $request);
+        try {
+            $rows = [];
+            foreach ($validated['line_items'] as $row) {
+                $rows[] = [
+                    'sku' => (string) $row['sku'],
+                    'quantity' => (int) $row['quantity'],
+                    'product_name' => isset($row['product_name']) ? (string) $row['product_name'] : null,
+                ];
+            }
+            $this->orders->addOrderLineItems($orderId, $customerId, $rows);
+
+            return response()->json(['message' => 'Line items added.']);
+        } catch (RuntimeException $e) {
+            return response()->json(['message' => $e->getMessage()], 502);
+        } catch (Throwable $e) {
+            report($e);
+
+            return response()->json([
+                'message' => config('app.debug') ? $e->getMessage() : 'Could not add line items in ShipHero.',
+            ], 502);
+        }
+    }
+
+    public function uploadAttachment(Request $request, string $orderId): JsonResponse
+    {
+        Gate::authorize('inventory.update');
+        $validated = $request->validate([
+            'client_account_id' => ['required', 'integer', 'exists:client_accounts,id'],
+            'file' => ['required', 'file', 'max:10240', 'mimes:jpg,jpeg,png,gif,webp,pdf,txt,csv,doc,docx,xlsx'],
+        ]);
+        $customerId = $this->resolveShipHeroCustomerAccountId((int) $validated['client_account_id'], $request);
+        $file = $request->file('file');
+        if ($file === null) {
+            return response()->json(['message' => 'No file uploaded.'], 422);
+        }
+        try {
+            $path = $file->store('order-attachments', 'public');
+            $relative = Storage::disk('public')->url($path);
+            $publicUrl = URL::to($relative);
+            $original = $file->getClientOriginalName();
+            $mime = $file->getClientMimeType();
+            $this->orders->addOrderAttachment(
+                $orderId,
+                $customerId,
+                $publicUrl,
+                $original,
+                is_string($mime) ? $mime : null,
+                null
+            );
+
+            return response()->json([
+                'message' => 'Attachment added.',
+                'url' => $publicUrl,
+            ]);
+        } catch (RuntimeException $e) {
+            return response()->json(['message' => $e->getMessage()], 502);
+        } catch (Throwable $e) {
+            report($e);
+
+            return response()->json([
+                'message' => config('app.debug') ? $e->getMessage() : 'Could not attach file in ShipHero.',
+            ], 502);
+        }
+    }
+
     private function resolveShipHeroCustomerAccountId(int $clientAccountId, Request $request): string
     {
         $account = ClientAccount::query()->find($clientAccountId);
@@ -443,8 +656,28 @@ class OrderController extends Controller
             'allow_partial' => false,
             'require_signature' => false,
             'packing_note' => null,
+            'tags' => [],
+            'attachments' => [],
+            'shipping_line' => [
+                'title' => 'Shipping',
+                'carrier' => (string) ($summary['shipping_carrier'] ?? ''),
+                'method' => (string) ($summary['method'] ?? ''),
+                'price' => '0',
+            ],
             'shipping_address' => [
+                'first_name' => '',
+                'last_name' => '',
+                'company' => '',
+                'address1' => '',
+                'address2' => '',
+                'city' => '',
+                'state' => '',
+                'state_code' => '',
+                'zip' => '',
                 'country' => (string) ($summary['country'] ?? ''),
+                'country_code' => '',
+                'email' => '',
+                'phone' => '',
             ],
             'billing_address' => null,
             'items' => [],

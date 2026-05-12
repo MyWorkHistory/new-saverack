@@ -81,6 +81,18 @@ Route::middleware('auth:sanctum')->group(function () {
             ->middleware('can:inventory.update');
         Route::post('/{orderId}/cancel', [OrderController::class, 'cancelOrder'])
             ->middleware('can:inventory.update');
+        Route::post('/{orderId}/shipping-address', [OrderController::class, 'updateShippingAddress'])
+            ->middleware('can:inventory.update');
+        Route::post('/{orderId}/shipping-lines', [OrderController::class, 'updateShippingLines'])
+            ->middleware('can:inventory.update');
+        Route::post('/{orderId}/allow-partial', [OrderController::class, 'updateAllowPartial'])
+            ->middleware('can:inventory.update');
+        Route::post('/{orderId}/tags', [OrderController::class, 'updateTags'])
+            ->middleware('can:inventory.update');
+        Route::post('/{orderId}/line-items', [OrderController::class, 'addLineItems'])
+            ->middleware('can:inventory.update');
+        Route::post('/{orderId}/attachments', [OrderController::class, 'uploadAttachment'])
+            ->middleware('can:inventory.update');
         Route::get('/{orderId}', [OrderController::class, 'show'])
             ->middleware('can:inventory.view');
     });

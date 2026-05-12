@@ -4,6 +4,7 @@ namespace App\Services;
 
 use Carbon\Carbon;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Str;
 use RuntimeException;
 
 class ShipHeroOrderService
@@ -498,6 +499,244 @@ GQL;
         $this->client->query($graphql, ['data' => $data]);
     }
 
+    public function updateOrderShippingAddress(
+        string $orderId,
+        string $customerAccountId,
+        array $address,
+        bool $skipAddressValidation = false
+    ): void {
+        $relayId = $this->resolveOrderRelayIdForMutations($orderId, $customerAccountId);
+        $customer = trim($customerAccountId);
+        $shippingAddress = [
+            'first_name' => (string) ($address['first_name'] ?? ''),
+            'last_name' => (string) ($address['last_name'] ?? ''),
+            'company' => (string) ($address['company'] ?? ''),
+            'address1' => (string) ($address['address1'] ?? ''),
+            'address2' => (string) ($address['address2'] ?? ''),
+            'city' => (string) ($address['city'] ?? ''),
+            'state' => (string) ($address['state'] ?? ''),
+            'zip' => (string) ($address['zip'] ?? ''),
+            'country' => (string) ($address['country'] ?? ''),
+            'email' => (string) ($address['email'] ?? ''),
+            'phone' => (string) ($address['phone'] ?? ''),
+        ];
+        $data = [
+            'order_id' => $relayId,
+            'shipping_address' => $shippingAddress,
+        ];
+        if ($customer !== '') {
+            $data['customer_account_id'] = $customer;
+        }
+        if ($skipAddressValidation) {
+            $data['skip_address_validation'] = true;
+        }
+        $graphql = <<<'GQL'
+mutation ShipHeroOrderUpdate($data: UpdateOrderInput!) {
+  order_update(data: $data) {
+    request_id
+    complexity
+  }
+}
+GQL;
+        $this->client->query($graphql, ['data' => $data]);
+    }
+
+    public function updateOrderShippingLines(
+        string $orderId,
+        string $customerAccountId,
+        string $carrier,
+        string $method
+    ): void {
+        $relayId = $this->resolveOrderRelayIdForMutations($orderId, $customerAccountId);
+        $customer = trim($customerAccountId);
+        $node = $this->fetchOrderHeaderNode($customer, $relayId);
+        if (! is_array($node)) {
+            throw new RuntimeException('Order not found in ShipHero.');
+        }
+        $shippingLine = $this->resolveShippingLine($node['shipping_lines'] ?? null);
+        $title = trim((string) ($shippingLine['title'] ?? ''));
+        if ($title === '') {
+            $title = 'Shipping';
+        }
+        $price = isset($shippingLine['price']) ? (string) $shippingLine['price'] : '0';
+        if ($price === '') {
+            $price = '0';
+        }
+        $data = [
+            'order_id' => $relayId,
+            'shipping_lines' => [
+                'title' => $title,
+                'price' => $price,
+                'carrier' => $carrier,
+                'method' => $method,
+            ],
+        ];
+        if ($customer !== '') {
+            $data['customer_account_id'] = $customer;
+        }
+        $graphql = <<<'GQL'
+mutation ShipHeroOrderUpdateShippingLines($data: UpdateOrderInput!) {
+  order_update(data: $data) {
+    request_id
+    complexity
+  }
+}
+GQL;
+        $this->client->query($graphql, ['data' => $data]);
+    }
+
+    public function updateOrderAllowPartial(string $orderId, string $customerAccountId, bool $allowPartial): void
+    {
+        $relayId = $this->resolveOrderRelayIdForMutations($orderId, $customerAccountId);
+        $customer = trim($customerAccountId);
+        $data = [
+            'order_id' => $relayId,
+            'allow_partial' => $allowPartial,
+        ];
+        if ($customer !== '') {
+            $data['customer_account_id'] = $customer;
+        }
+        $graphql = <<<'GQL'
+mutation ShipHeroOrderUpdateAllowPartial($data: UpdateOrderInput!) {
+  order_update(data: $data) {
+    request_id
+    complexity
+  }
+}
+GQL;
+        $this->client->query($graphql, ['data' => $data]);
+    }
+
+    /**
+     * @param  list<string>  $tags
+     */
+    public function updateOrderTags(string $orderId, string $customerAccountId, array $tags): void
+    {
+        $relayId = $this->resolveOrderRelayIdForMutations($orderId, $customerAccountId);
+        $customer = trim($customerAccountId);
+        $normalized = [];
+        foreach ($tags as $t) {
+            if (! is_string($t)) {
+                continue;
+            }
+            $s = trim($t);
+            if ($s !== '') {
+                $normalized[] = $s;
+            }
+        }
+        $normalized = array_values(array_unique($normalized));
+        $data = [
+            'order_id' => $relayId,
+            'tags' => $normalized,
+        ];
+        if ($customer !== '') {
+            $data['customer_account_id'] = $customer;
+        }
+        $graphql = <<<'GQL'
+mutation ShipHeroOrderUpdateTags($data: UpdateOrderInput!) {
+  order_update(data: $data) {
+    request_id
+    complexity
+  }
+}
+GQL;
+        $this->client->query($graphql, ['data' => $data]);
+    }
+
+    /**
+     * @param  list<array{sku: string, quantity: int, product_name?: string|null}>  $lineItems
+     */
+    public function addOrderLineItems(string $orderId, string $customerAccountId, array $lineItems): void
+    {
+        $relayId = $this->resolveOrderRelayIdForMutations($orderId, $customerAccountId);
+        $customer = trim($customerAccountId);
+        $rows = [];
+        foreach ($lineItems as $row) {
+            if (! is_array($row)) {
+                continue;
+            }
+            $sku = trim((string) ($row['sku'] ?? ''));
+            if ($sku === '') {
+                continue;
+            }
+            $qty = (int) ($row['quantity'] ?? 0);
+            if ($qty < 1) {
+                $qty = 1;
+            }
+            $name = isset($row['product_name']) ? trim((string) $row['product_name']) : '';
+            $entry = [
+                'sku' => $sku,
+                'partner_line_item_id' => 'crm-'.Str::uuid()->toString(),
+                'quantity' => $qty,
+                'price' => '0.00',
+            ];
+            if ($name !== '') {
+                $entry['product_name'] = $name;
+            }
+            $rows[] = $entry;
+        }
+        if ($rows === []) {
+            throw new RuntimeException('No valid line items to add.');
+        }
+        $data = [
+            'order_id' => $relayId,
+            'line_items' => $rows,
+        ];
+        if ($customer !== '') {
+            $data['customer_account_id'] = $customer;
+        }
+        $graphql = <<<'GQL'
+mutation ShipHeroOrderAddLineItems($data: AddLineItemsInput!) {
+  order_add_line_items(data: $data) {
+    request_id
+    complexity
+  }
+}
+GQL;
+        $this->client->query($graphql, ['data' => $data]);
+    }
+
+    public function addOrderAttachment(
+        string $orderId,
+        string $customerAccountId,
+        string $url,
+        ?string $filename = null,
+        ?string $fileType = null,
+        ?string $description = null
+    ): void {
+        $relayId = $this->resolveOrderRelayIdForMutations($orderId, $customerAccountId);
+        $customer = trim($customerAccountId);
+        $u = trim($url);
+        if ($u === '') {
+            throw new RuntimeException('Attachment URL is required.');
+        }
+        $data = [
+            'order_id' => $relayId,
+            'url' => $u,
+        ];
+        if ($customer !== '') {
+            $data['customer_account_id'] = $customer;
+        }
+        if ($filename !== null && trim($filename) !== '') {
+            $data['filename'] = trim($filename);
+        }
+        if ($fileType !== null && trim($fileType) !== '') {
+            $data['file_type'] = trim($fileType);
+        }
+        if ($description !== null && trim($description) !== '') {
+            $data['description'] = trim($description);
+        }
+        $graphql = <<<'GQL'
+mutation ShipHeroOrderAddAttachment($data: OrderAddAttachmentInput!) {
+  order_add_attachment(data: $data) {
+    request_id
+    complexity
+  }
+}
+GQL;
+        $this->client->query($graphql, ['data' => $data]);
+    }
+
     /**
      * Raw diagnostic for order-detail header query variants.
      *
@@ -603,13 +842,33 @@ query ShipHeroOrderHeader($id: String!) {
       allow_partial
       require_signature
       packing_note
+      tags
+      attachments(first: 30) {
+        edges {
+          node {
+            id
+            url
+            filename
+            description
+            file_type
+            created_at
+          }
+        }
+      }
       shipping_address {
+        first_name
+        last_name
+        company
         address1
         address2
         city
         state
+        state_code
         zip
         country
+        country_code
+        email
+        phone
       }
       billing_address {
         address1
@@ -620,6 +879,7 @@ query ShipHeroOrderHeader($id: String!) {
         country
       }
       shipping_lines {
+        title
         carrier
         method
         price
@@ -806,6 +1066,15 @@ GQL;
 
         $holdsApi = $this->normalizeOrderHoldsForApi($node['holds'] ?? null);
 
+        $lineTitle = trim((string) ($shippingLine['title'] ?? ''));
+        if ($lineTitle === '') {
+            $lineTitle = 'Shipping';
+        }
+        $linePrice = isset($shippingLine['price']) ? (string) $shippingLine['price'] : '0';
+        if ($linePrice === '') {
+            $linePrice = '0';
+        }
+
         return [
             'id' => (string) ($node['id'] ?? ''),
             'legacy_id' => is_numeric($node['legacy_id'] ?? null) ? (int) $node['legacy_id'] : null,
@@ -822,6 +1091,12 @@ GQL;
             'email' => (string) ($node['email'] ?? ''),
             'shipping_carrier' => (string) ($shippingLine['carrier'] ?? ''),
             'method' => (string) ($shippingLine['method'] ?? ''),
+            'shipping_line' => [
+                'title' => $lineTitle,
+                'carrier' => (string) ($shippingLine['carrier'] ?? ''),
+                'method' => (string) ($shippingLine['method'] ?? ''),
+                'price' => $linePrice,
+            ],
             'shipping_cost' => $this->nullableNumber(
                 $shippingLine['shipping_cost'] ?? ($shippingLine['price'] ?? null)
             ),
@@ -833,7 +1108,9 @@ GQL;
             'allow_partial' => (bool) ($node['allow_partial'] ?? false),
             'require_signature' => (bool) ($node['require_signature'] ?? false),
             'packing_note' => is_string($node['packing_note'] ?? null) ? $node['packing_note'] : null,
-            'shipping_address' => is_array($node['shipping_address'] ?? null) ? $node['shipping_address'] : null,
+            'tags' => $this->normalizeOrderTags($node['tags'] ?? null),
+            'attachments' => $this->normalizeOrderAttachments($node['attachments'] ?? null),
+            'shipping_address' => $this->normalizeOrderAddressForApi($node['shipping_address'] ?? null),
             'billing_address' => is_array($node['billing_address'] ?? null) ? $node['billing_address'] : null,
             'items' => $items,
             'history' => array_values(array_filter(array_map(function ($row) {
@@ -959,6 +1236,86 @@ GQL;
         }
 
         return null;
+    }
+
+    /**
+     * @param mixed $tags
+     * @return list<string>
+     */
+    private function normalizeOrderTags($tags): array
+    {
+        if (! is_array($tags)) {
+            return [];
+        }
+        $out = [];
+        foreach ($tags as $t) {
+            if (! is_string($t)) {
+                continue;
+            }
+            $s = trim($t);
+            if ($s !== '') {
+                $out[] = $s;
+            }
+        }
+
+        return array_values(array_unique($out));
+    }
+
+    /**
+     * @param mixed $attachments
+     * @return list<array<string, mixed>>
+     */
+    private function normalizeOrderAttachments($attachments): array
+    {
+        if (! is_array($attachments)) {
+            return [];
+        }
+        $edges = $attachments['edges'] ?? null;
+        if (! is_array($edges)) {
+            return [];
+        }
+        $out = [];
+        foreach ($edges as $edge) {
+            if (! is_array($edge) || ! is_array($edge['node'] ?? null)) {
+                continue;
+            }
+            $n = $edge['node'];
+            $out[] = [
+                'id' => (string) ($n['id'] ?? ''),
+                'url' => (string) ($n['url'] ?? ''),
+                'filename' => (string) ($n['filename'] ?? ''),
+                'description' => (string) ($n['description'] ?? ''),
+                'file_type' => (string) ($n['file_type'] ?? ''),
+                'created_at' => $this->nullableIso($n['created_at'] ?? null),
+            ];
+        }
+
+        return $out;
+    }
+
+    /**
+     * @param mixed $address
+     * @return array<string, string>
+     */
+    private function normalizeOrderAddressForApi($address): array
+    {
+        $a = is_array($address) ? $address : [];
+
+        return [
+            'first_name' => (string) ($a['first_name'] ?? ''),
+            'last_name' => (string) ($a['last_name'] ?? ''),
+            'company' => (string) ($a['company'] ?? ''),
+            'address1' => (string) ($a['address1'] ?? ''),
+            'address2' => (string) ($a['address2'] ?? ''),
+            'city' => (string) ($a['city'] ?? ''),
+            'state' => (string) ($a['state'] ?? ''),
+            'state_code' => (string) ($a['state_code'] ?? ''),
+            'zip' => (string) ($a['zip'] ?? ''),
+            'country' => (string) ($a['country'] ?? ''),
+            'country_code' => (string) ($a['country_code'] ?? ''),
+            'email' => (string) ($a['email'] ?? ''),
+            'phone' => (string) ($a['phone'] ?? ''),
+        ];
     }
 
     /**

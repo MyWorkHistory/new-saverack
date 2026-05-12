@@ -1138,6 +1138,7 @@ GQL;
             'order_number' => (string) ($node['order_number'] ?? ''),
             'partner_order_id' => (string) ($node['partner_order_id'] ?? ''),
             'status' => $this->normalizeFulfillmentStatus($node),
+            'raw_fulfillment_status' => trim((string) ($node['fulfillment_status'] ?? '')),
             'hold_reason' => $this->extractHoldReason($node),
             'holds' => $holdsApi,
             'has_active_hold' => $this->orderHoldsArrayHasActive($holdsApi),

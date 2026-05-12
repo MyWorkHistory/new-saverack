@@ -61,6 +61,8 @@ const attachmentUploadBusy = ref(false);
 
 const confirmRemoveHoldsOpen = ref(false);
 const removeHoldsBusy = ref(false);
+const moreActionsOpen = ref(false);
+const moreActionsRoot = ref(null);
 const requireSignatureLocal = ref(false);
 const giftNoteLocal = ref("");
 const optionsSaveBusy = ref(false);
@@ -75,7 +77,9 @@ const portalClientAccountId = computed(() => Number(crmUser.value?.client_accoun
 
 const headingOrderNumber = computed(() => String(order.value?.order_number || "—").replace(/^#\s*/, ""));
 const statusClass = computed(() => {
-  const raw = String(order.value?.status || "").toLowerCase();
+  const raw = String(
+    order.value?.status || order.value?.raw_fulfillment_status || ""
+  ).toLowerCase();
   if (raw.includes("hold") || raw.includes("backorder")) return "text-danger bg-danger-subtle";
   if (raw.includes("ship")) return "text-success bg-success-subtle";
   return "text-secondary bg-secondary-subtle";
@@ -89,6 +93,8 @@ function userCanInventoryUpdate() {
 }
 
 const canRunShipHeroActions = computed(() => !isPortalUser.value && userCanInventoryUpdate());
+
+const canUseStaffOrderHeaderActions = computed(() => !isPortalUser.value && Boolean(order.value));
 
 function orderHasActiveHold(o) {
   if (!o || typeof o !== "object") return false;
@@ -104,7 +110,11 @@ const showNotReadyToShipBanner = computed(() => order.value && orderHasActiveHol
 
 const orderHeaderBadgeLabel = computed(() => {
   if (showNotReadyToShipBanner.value) return "Not Ready To Ship";
-  return order.value?.status || "—";
+  const normalized = String(order.value?.status || "").trim();
+  if (normalized) return normalized;
+  const rawFulfillment = String(order.value?.raw_fulfillment_status || "").trim();
+  if (rawFulfillment) return rawFulfillment;
+  return "—";
 });
 
 const orderHeaderBadgeClass = computed(() => {
@@ -114,12 +124,38 @@ const orderHeaderBadgeClass = computed(() => {
   return `badge rounded-pill fw-medium ${statusClass.value}`;
 });
 
+const orderLineItemQtySum = computed(() => {
+  const rows = order.value?.items;
+  if (!Array.isArray(rows)) return 0;
+  return rows.reduce((sum, row) => sum + Number(row?.quantity ?? 0), 0);
+});
+
+const taxPercentLabel = computed(() => {
+  const subtotal = Number(order.value?.subtotal ?? 0);
+  const tax = Number(order.value?.total_tax ?? 0);
+  if (!Number.isFinite(subtotal) || subtotal <= 0 || !Number.isFinite(tax)) return "0.00%";
+  return `${((tax / subtotal) * 100).toFixed(2)}%`;
+});
+
 const sortedItems = computed(() => {
   const rows = Array.isArray(order.value?.items) ? [...order.value.items] : [];
   const dir = itemSortDir.value === "desc" ? -1 : 1;
+  const key = itemSortKey.value;
+  const numericKeys = new Set([
+    "quantity",
+    "quantity_allocated",
+    "quantity_pending_fulfillment",
+    "backorder_quantity",
+    "price",
+  ]);
   rows.sort((a, b) => {
-    const av = a?.[itemSortKey.value];
-    const bv = b?.[itemSortKey.value];
+    if (numericKeys.has(key)) {
+      const na = Number(a?.[key] ?? 0);
+      const nb = Number(b?.[key] ?? 0);
+      return (na - nb) * dir;
+    }
+    const av = a?.[key];
+    const bv = b?.[key];
     if (typeof av === "number" || typeof bv === "number") {
       const na = Number(av ?? 0);
       const nb = Number(bv ?? 0);
@@ -205,6 +241,12 @@ function fmtCreationDate(iso) {
     second: "2-digit",
     hour12: true,
   });
+}
+
+function fmtMoney(v) {
+  const n = Number(v);
+  if (!Number.isFinite(n)) return "—";
+  return new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" }).format(n);
 }
 
 function escapeHtml(value) {
@@ -639,8 +681,29 @@ async function saveTags() {
 }
 
 function openAddItemsModal() {
+  if (!canRunShipHeroActions.value) {
+    toast.error("You do not have permission to add items.");
+    return;
+  }
   addItemForm.value = { sku: "", quantity: 1, product_name: "" };
   addItemsModalOpen.value = true;
+}
+
+function closeMoreActionsMenu() {
+  moreActionsOpen.value = false;
+}
+
+function toggleMoreActionsMenu(ev) {
+  ev?.stopPropagation?.();
+  moreActionsOpen.value = !moreActionsOpen.value;
+}
+
+function onMoreActionsDocumentClick(ev) {
+  if (!moreActionsOpen.value) return;
+  const root = moreActionsRoot.value;
+  if (root && !root.contains(ev.target)) {
+    moreActionsOpen.value = false;
+  }
 }
 
 function closeAddItemsModal() {
@@ -710,6 +773,7 @@ function modalEscHandler(e) {
   if (shippingSaveBusy.value || addItemsBusy.value) return;
   if (shippingModalOpen.value) shippingModalOpen.value = false;
   if (addItemsModalOpen.value) addItemsModalOpen.value = false;
+  if (moreActionsOpen.value) moreActionsOpen.value = false;
 }
 
 watch([shippingModalOpen, addItemsModalOpen], ([s, a]) => {
@@ -720,8 +784,19 @@ watch([shippingModalOpen, addItemsModalOpen], ([s, a]) => {
   }
 });
 
+watch(moreActionsOpen, (open) => {
+  if (open) {
+    setTimeout(() => {
+      document.addEventListener("click", onMoreActionsDocumentClick);
+    }, 0);
+  } else {
+    document.removeEventListener("click", onMoreActionsDocumentClick);
+  }
+});
+
 onUnmounted(() => {
   document.removeEventListener("keydown", modalEscHandler);
+  document.removeEventListener("click", onMoreActionsDocumentClick);
 });
 
 onMounted(async () => {
@@ -759,7 +834,9 @@ onMounted(async () => {
             <div class="min-w-0">
               <div class="d-flex align-items-center flex-wrap gap-2">
                 <h1 class="h4 mb-0 fw-bold text-body">Order {{ headingOrderNumber }}</h1>
-                <span :class="orderHeaderBadgeClass">{{ orderHeaderBadgeLabel }}</span>
+                <span class="order-detail-page__status-pill" :class="orderHeaderBadgeClass">{{
+                  orderHeaderBadgeLabel
+                }}</span>
               </div>
               <button
                 type="button"
@@ -769,35 +846,70 @@ onMounted(async () => {
                 &lt; Orders
               </button>
             </div>
-            <div v-if="canRunShipHeroActions" class="d-flex flex-wrap gap-2 align-items-center flex-shrink-0">
-              <div class="dropdown">
+            <div
+              v-if="canUseStaffOrderHeaderActions"
+              ref="moreActionsRoot"
+              class="d-flex flex-wrap gap-2 align-items-center flex-shrink-0"
+            >
+              <div class="dropdown order-detail-page__more-actions position-relative">
                 <button
                   id="order-detail-more-actions"
                   type="button"
                   class="btn btn-outline-secondary dropdown-toggle"
-                  data-bs-toggle="dropdown"
-                  aria-expanded="false"
+                  aria-haspopup="true"
+                  :aria-expanded="moreActionsOpen ? 'true' : 'false'"
+                  @click.stop="toggleMoreActionsMenu"
                 >
                   More Actions
                 </button>
-                <ul class="dropdown-menu dropdown-menu-end" aria-labelledby="order-detail-more-actions">
+                <ul
+                  v-show="moreActionsOpen"
+                  class="dropdown-menu dropdown-menu-end show position-absolute end-0 mt-1 shadow-sm"
+                  style="top: 100%"
+                  aria-labelledby="order-detail-more-actions"
+                >
                   <li>
-                    <button type="button" class="dropdown-item" @click="loadOrder">Refresh</button>
+                    <button
+                      type="button"
+                      class="dropdown-item"
+                      @click="
+                        closeMoreActionsMenu();
+                        loadOrder();
+                      "
+                    >
+                      Refresh
+                    </button>
                   </li>
                   <li>
-                    <button type="button" class="dropdown-item" @click="confirmFulfilledOpen = true">
+                    <button
+                      type="button"
+                      class="dropdown-item"
+                      :disabled="!canRunShipHeroActions"
+                      @click="
+                        closeMoreActionsMenu();
+                        if (canRunShipHeroActions) confirmFulfilledOpen = true;
+                      "
+                    >
                       Mark As Fulfilled
                     </button>
                   </li>
                   <li>
-                    <button type="button" class="dropdown-item text-danger" @click="confirmCancelOpen = true">
+                    <button
+                      type="button"
+                      class="dropdown-item text-danger"
+                      :disabled="!canRunShipHeroActions"
+                      @click="
+                        closeMoreActionsMenu();
+                        if (canRunShipHeroActions) confirmCancelOpen = true;
+                      "
+                    >
                       Cancel Order
                     </button>
                   </li>
                 </ul>
               </div>
               <button
-                v-if="showNotReadyToShipBanner"
+                v-if="showNotReadyToShipBanner && canRunShipHeroActions"
                 type="button"
                 class="btn btn-danger"
                 @click="confirmRemoveHoldsOpen = true"
@@ -807,7 +919,10 @@ onMounted(async () => {
             </div>
           </div>
         </div>
-        <div v-if="showNotReadyToShipBanner" class="order-detail-page__nrts-banner px-4 py-3 border-top">
+        <div
+          v-if="showNotReadyToShipBanner"
+          class="order-detail-page__nrts-banner px-4 py-3 border-top border-warning border-2"
+        >
           <div class="d-flex gap-3 align-items-start">
             <span class="order-detail-page__nrts-bell text-warning flex-shrink-0" aria-hidden="true">
               <svg width="22" height="22" fill="currentColor" viewBox="0 0 24 24">
@@ -834,18 +949,15 @@ onMounted(async () => {
           <div class="staff-table-card staff-datatable-card staff-datatable-card--white p-0 mb-4">
             <div class="px-4 py-3 border-bottom d-flex justify-content-between align-items-center flex-wrap gap-2">
               <h2 class="h6 mb-0 fw-semibold">Items</h2>
-              <div class="d-flex align-items-center gap-3">
-                <button
-                  v-if="canRunShipHeroActions"
-                  type="button"
-                  class="btn btn-link btn-sm text-decoration-none px-0 fw-semibold"
-                  :disabled="!order || loading"
-                  @click="openAddItemsModal"
-                >
-                  Add Items
-                </button>
-                <span class="small text-secondary">{{ order.items?.length || 0 }} items</span>
-              </div>
+              <button
+                type="button"
+                class="btn btn-outline-secondary btn-sm"
+                :disabled="loading || !canRunShipHeroActions"
+                :title="!canRunShipHeroActions ? 'Requires inventory update permission' : undefined"
+                @click="openAddItemsModal"
+              >
+                Add Items
+              </button>
             </div>
             <div class="table-responsive staff-table-wrap">
               <table class="table table-hover align-middle mb-0 staff-data-table">
@@ -864,6 +976,11 @@ onMounted(async () => {
                     <th class="staff-table-head__th text-end">
                       <button class="order-detail-page__sort-btn order-detail-page__sort-btn--right" type="button" @click="toggleItemSort('quantity_pending_fulfillment')">
                         Quantity to ship <span class="order-detail-page__sort-icon">{{ sortIndicator("quantity_pending_fulfillment") }}</span>
+                      </button>
+                    </th>
+                    <th class="staff-table-head__th text-end">
+                      <button class="order-detail-page__sort-btn order-detail-page__sort-btn--right" type="button" @click="toggleItemSort('price')">
+                        Price <span class="order-detail-page__sort-icon">{{ sortIndicator("price") }}</span>
                       </button>
                     </th>
                   </tr>
@@ -897,8 +1014,9 @@ onMounted(async () => {
                       </div>
                     </td>
                     <td class="text-end">{{ item.quantity ?? 0 }}</td>
+                    <td class="text-end">{{ item.quantity_pending_fulfillment ?? 0 }}</td>
                     <td class="text-end">
-                      <div>{{ item.quantity_pending_fulfillment ?? 0 }}</div>
+                      <div>{{ fmtMoney(item.price) }}</div>
                       <div
                         v-if="Number(item.backorder_quantity || 0) > 0"
                         class="order-detail-page__backorder"
@@ -908,10 +1026,40 @@ onMounted(async () => {
                     </td>
                   </tr>
                   <tr v-if="!sortedItems.length">
-                    <td colspan="3" class="text-center text-secondary py-4">No items</td>
+                    <td colspan="5" class="text-center text-secondary py-4">No items</td>
                   </tr>
                 </tbody>
               </table>
+            </div>
+            <div class="order-detail-page__order-summary border-top px-4 py-3">
+              <div class="order-detail-page__order-summary-inner ms-auto">
+                <div class="d-flex justify-content-between gap-4 mb-2">
+                  <span class="text-secondary">Subtotal</span>
+                  <span class="text-end text-nowrap">
+                    <span class="text-secondary me-2">{{ orderLineItemQtySum }} items</span>
+                    <span class="fw-semibold text-body">{{ fmtMoney(order.subtotal) }}</span>
+                  </span>
+                </div>
+                <div class="d-flex justify-content-between gap-4 mb-2">
+                  <span class="text-secondary">Shipping</span>
+                  <span class="fw-semibold text-body text-nowrap">{{ fmtMoney(order.shipping_cost) }}</span>
+                </div>
+                <div class="d-flex justify-content-between gap-4 mb-2">
+                  <span class="text-secondary">Discount</span>
+                  <span class="fw-semibold text-body text-nowrap">{{ fmtMoney(order.total_discounts) }}</span>
+                </div>
+                <div class="d-flex justify-content-between gap-4 mb-2">
+                  <span class="text-secondary">Tax</span>
+                  <span class="text-end text-nowrap">
+                    <span class="text-secondary me-2">{{ taxPercentLabel }}</span>
+                    <span class="fw-semibold text-body">{{ fmtMoney(order.total_tax) }}</span>
+                  </span>
+                </div>
+                <div class="d-flex justify-content-between gap-4 pt-2 border-top">
+                  <span class="fw-semibold text-body">Total</span>
+                  <span class="h5 mb-0 fw-bold text-body text-nowrap">{{ fmtMoney(order.total_price) }}</span>
+                </div>
+              </div>
             </div>
             <p class="staff-table-mobile-scroll-cue d-md-none" aria-hidden="true">
               Scroll sideways or swipe to see all columns.
@@ -1417,7 +1565,7 @@ onMounted(async () => {
 }
 
 .order-detail-page__items-col {
-  width: 52%;
+  width: 38%;
   min-width: 0;
   vertical-align: middle;
 }
@@ -1467,8 +1615,23 @@ onMounted(async () => {
 .order-detail-page__header-shell {
   border: 1px solid rgba(0, 0, 0, 0.08);
   border-radius: 0.5rem;
-  overflow: hidden;
+  overflow: visible;
   background: var(--bs-body-bg, #fff);
+}
+
+.order-detail-page__status-pill {
+  font-size: 0.8125rem;
+  padding: 0.35rem 0.75rem;
+  line-height: 1.25;
+}
+
+.order-detail-page__more-actions .dropdown-menu {
+  z-index: 1085;
+  min-width: 11rem;
+}
+
+.order-detail-page__order-summary-inner {
+  max-width: 22rem;
 }
 
 .order-detail-page__nrts-banner {

@@ -852,6 +852,15 @@ onMounted(async () => {
     selectedAccountId.value = String(portalClientAccountId.value);
   }
 });
+
+function goToOrdersList() {
+  const q = selectedAccountId.value ? { client_account_id: selectedAccountId.value } : {};
+  if (isPortalUser.value) {
+    router.push({ name: "user-orders", query: q });
+    return;
+  }
+  router.push({ name: "orders-manage", query: q });
+}
 </script>
 
 <template>
@@ -885,7 +894,7 @@ onMounted(async () => {
               <button
                 type="button"
                 class="btn btn-link btn-sm text-secondary px-0 py-0 mt-1 text-decoration-none"
-                @click="router.back()"
+                @click="goToOrdersList"
               >
                 &lt; Orders
               </button>
@@ -1425,23 +1434,23 @@ onMounted(async () => {
                   edit.
                 </p>
               </div>
-              <footer class="crm-vx-modal__footer d-flex flex-column gap-2">
+              <footer class="crm-vx-modal__footer d-flex flex-wrap gap-2 justify-content-end align-items-center">
                 <button
                   type="button"
-                  class="crm-vx-modal-btn crm-vx-modal-btn--primary w-100"
-                  :disabled="shippingSaveBusy || !canRunShipHeroActions"
-                  :title="!canRunShipHeroActions ? 'Requires Update inventory quantities permission' : undefined"
-                  @click="saveShippingAddress"
-                >
-                  {{ shippingSaveBusy ? "Updating…" : "Update" }}
-                </button>
-                <button
-                  type="button"
-                  class="crm-vx-modal-btn crm-vx-modal-btn--secondary w-100"
+                  class="crm-vx-modal-btn crm-vx-modal-btn--secondary"
                   :disabled="shippingSaveBusy"
                   @click="closeShippingModal"
                 >
                   Cancel
+                </button>
+                <button
+                  type="button"
+                  class="crm-vx-modal-btn crm-vx-modal-btn--primary"
+                  :disabled="shippingSaveBusy || !canRunShipHeroActions"
+                  :title="!canRunShipHeroActions ? 'You do not have permission to update shipping.' : undefined"
+                  @click="saveShippingAddress"
+                >
+                  {{ shippingSaveBusy ? "Updating…" : "Update" }}
                 </button>
               </footer>
             </div>
@@ -1735,8 +1744,9 @@ onMounted(async () => {
   position: sticky;
   top: 1rem;
   align-self: flex-start;
-  max-height: calc(100vh - 2rem);
-  overflow-y: auto;
+  /* Single page scroll: avoid a nested scrollbar on the sidebar. */
+  max-height: none;
+  overflow: visible;
 }
 
 .order-detail-page__header-shell {

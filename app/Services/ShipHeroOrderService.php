@@ -469,6 +469,107 @@ GQL;
         $this->client->query($graphql, ['data' => $data]);
     }
 
+    /**
+     * Update pending fulfillment quantity for a single line item (quantity to ship).
+     */
+    public function updateOrderLineItemPendingFulfillment(
+        string $orderId,
+        string $customerAccountId,
+        string $lineItemRelayId,
+        float $quantityPendingFulfillment
+    ): void {
+        $relayId = $this->resolveOrderRelayIdForMutations($orderId, $customerAccountId);
+        $customer = trim($customerAccountId);
+        $lineId = trim($lineItemRelayId);
+        if ($lineId === '') {
+            throw new RuntimeException('Line item id is required.');
+        }
+        $data = [
+            'order_id' => $relayId,
+            'line_items' => [
+                [
+                    'id' => $lineId,
+                    'quantity_pending_fulfillment' => $quantityPendingFulfillment,
+                ],
+            ],
+        ];
+        if ($customer !== '') {
+            $data['customer_account_id'] = $customer;
+        }
+        $graphql = <<<'GQL'
+mutation ShipHeroOrderUpdateLineItemsPending($data: UpdateLineItemsInput!) {
+  order_update_line_items(data: $data) {
+    request_id
+    complexity
+  }
+}
+GQL;
+        $this->client->query($graphql, ['data' => $data]);
+    }
+
+    /**
+     * Remove a line item from the order.
+     *
+     * ShipHero supports line changes via the order_update_line_items mutation; this sends
+     * quantity zero for the line id (common pattern per ShipHero community guidance—rejections
+     * should surface as RuntimeException from the GraphQL client).
+     */
+    public function removeOrderLineItem(string $orderId, string $customerAccountId, string $lineItemRelayId): void
+    {
+        $relayId = $this->resolveOrderRelayIdForMutations($orderId, $customerAccountId);
+        $customer = trim($customerAccountId);
+        $lineId = trim($lineItemRelayId);
+        if ($lineId === '') {
+            throw new RuntimeException('Line item id is required.');
+        }
+        $data = [
+            'order_id' => $relayId,
+            'line_items' => [
+                [
+                    'id' => $lineId,
+                    'quantity' => 0,
+                ],
+            ],
+        ];
+        if ($customer !== '') {
+            $data['customer_account_id'] = $customer;
+        }
+        $graphql = <<<'GQL'
+mutation ShipHeroOrderUpdateLineItemsRemove($data: UpdateLineItemsInput!) {
+  order_update_line_items(data: $data) {
+    request_id
+    complexity
+  }
+}
+GQL;
+        $this->client->query($graphql, ['data' => $data]);
+    }
+
+    public function updateOrderPackingNote(
+        string $orderId,
+        string $customerAccountId,
+        ?string $packingNote
+    ): void {
+        $relayId = $this->resolveOrderRelayIdForMutations($orderId, $customerAccountId);
+        $customer = trim($customerAccountId);
+        $data = [
+            'order_id' => $relayId,
+            'packing_note' => $packingNote !== null ? (string) $packingNote : '',
+        ];
+        if ($customer !== '') {
+            $data['customer_account_id'] = $customer;
+        }
+        $graphql = <<<'GQL'
+mutation ShipHeroOrderUpdatePackingNote($data: UpdateOrderInput!) {
+  order_update(data: $data) {
+    request_id
+    complexity
+  }
+}
+GQL;
+        $this->client->query($graphql, ['data' => $data]);
+    }
+
     public function cancelOrderInShipHero(
         string $orderId,
         string $customerAccountId,
@@ -992,6 +1093,7 @@ query ShipHeroOrderLineItems($id: String!, $first: Int!, $after: String) {
             quantity_allocated
             quantity_pending_fulfillment
             backorder_quantity
+            fulfillment_status
             product_name
             custom_options
           }
@@ -1027,6 +1129,9 @@ GQL;
                     'quantity_allocated' => (float) ($line['quantity_allocated'] ?? 0),
                     'quantity_pending_fulfillment' => (float) ($line['quantity_pending_fulfillment'] ?? 0),
                     'backorder_quantity' => (float) ($line['backorder_quantity'] ?? 0),
+                    'fulfillment_status' => is_string($line['fulfillment_status'] ?? null)
+                        ? trim($line['fulfillment_status'])
+                        : '',
                     'custom_options' => is_string($line['custom_options'] ?? null) ? $line['custom_options'] : null,
                     'image_url' => null,
                 ];

@@ -95,6 +95,12 @@ Route::middleware('auth:sanctum')->group(function () {
             ->middleware('can:shiphero.orders.write');
         Route::post('/{orderId}/line-items', [OrderController::class, 'addLineItems'])
             ->middleware('can:shiphero.orders.write');
+        Route::post('/{orderId}/line-items/update', [OrderController::class, 'updateLineItemPending'])
+            ->middleware('can:shiphero.orders.write');
+        Route::post('/{orderId}/line-items/remove', [OrderController::class, 'removeLineItem'])
+            ->middleware('can:shiphero.orders.write');
+        Route::post('/{orderId}/packing-note', [OrderController::class, 'updatePackingNote'])
+            ->middleware('can:shiphero.orders.write');
         Route::post('/{orderId}/attachments', [OrderController::class, 'uploadAttachment'])
             ->middleware('can:shiphero.orders.write');
         Route::get('/{orderId}', [OrderController::class, 'show'])

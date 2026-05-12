@@ -70,6 +70,17 @@ const moreActionsLayoutBound = ref(false);
 const requireSignatureLocal = ref(false);
 const giftNoteLocal = ref("");
 const optionsSaveBusy = ref(false);
+const packingNoteLocal = ref("");
+const packingNoteSaveBusy = ref(false);
+
+const editLineModalOpen = ref(false);
+const editLineBusy = ref(false);
+const editLineRow = ref(null);
+const editQtyPending = ref(0);
+
+const confirmDeleteLineOpen = ref(false);
+const lineDeleteBusy = ref(false);
+const deleteLineRow = ref(null);
 
 const CARRIER_PRESETS = ["Cheapest", "ups", "fedex", "usps", "dhl", "asendia_one", "ontrac", "lasership"];
 const METHOD_PRESETS = ["Select", "Ground", "Priority", "Express", "Standard", "A124"];
@@ -107,6 +118,7 @@ const showNotReadyToShipBanner = computed(() => order.value && orderHasActiveHol
 
 const orderHeaderBadgeLabel = computed(() => {
   if (showNotReadyToShipBanner.value) return "Not Ready To Ship";
+  if (showBackorderHeaderBadge.value) return "Backorder";
   const normalized = String(order.value?.status || "").trim();
   if (normalized) return normalized;
   const rawFulfillment = String(order.value?.raw_fulfillment_status || "").trim();
@@ -118,21 +130,36 @@ const orderHeaderBadgeClass = computed(() => {
   if (showNotReadyToShipBanner.value) {
     return "badge rounded-pill fw-medium text-danger-emphasis bg-danger-subtle";
   }
+  if (showBackorderHeaderBadge.value) {
+    return "badge rounded-pill fw-medium text-danger-emphasis bg-danger-subtle";
+  }
   return `badge rounded-pill fw-medium ${statusClass.value}`;
 });
 
-const orderLineItemQtySum = computed(() => {
+const orderHasBackorderLines = computed(() => {
   const rows = order.value?.items;
-  if (!Array.isArray(rows)) return 0;
-  return rows.reduce((sum, row) => sum + Number(row?.quantity ?? 0), 0);
+  if (!Array.isArray(rows)) return false;
+  return rows.some((r) => Number(r?.backorder_quantity ?? 0) > 0);
 });
 
-const taxPercentLabel = computed(() => {
-  const subtotal = Number(order.value?.subtotal ?? 0);
-  const tax = Number(order.value?.total_tax ?? 0);
-  if (!Number.isFinite(subtotal) || subtotal <= 0 || !Number.isFinite(tax)) return "0.00%";
-  return `${((tax / subtotal) * 100).toFixed(2)}%`;
+const orderIsTerminalFulfillment = computed(() => {
+  const o = order.value;
+  if (!o) return false;
+  const s = String(o.status || o.raw_fulfillment_status || "")
+    .toLowerCase()
+    .trim();
+  if (!s) return false;
+  if (s === "shipped" || s === "fulfilled" || s === "complete" || s.startsWith("shipped")) return true;
+  if (s === "canceled" || s === "cancelled") return true;
+  return false;
 });
+
+const showBackorderHeaderBadge = computed(
+  () =>
+    orderHasBackorderLines.value &&
+    !orderIsTerminalFulfillment.value &&
+    !showNotReadyToShipBanner.value,
+);
 
 const sortedItems = computed(() => {
   const rows = Array.isArray(order.value?.items) ? [...order.value.items] : [];
@@ -143,7 +170,6 @@ const sortedItems = computed(() => {
     "quantity_allocated",
     "quantity_pending_fulfillment",
     "backorder_quantity",
-    "price",
   ]);
   rows.sort((a, b) => {
     if (numericKeys.has(key)) {
@@ -238,12 +264,6 @@ function fmtCreationDate(iso) {
     second: "2-digit",
     hour12: true,
   });
-}
-
-function fmtMoney(v) {
-  const n = Number(v);
-  if (!Number.isFinite(n)) return "—";
-  return new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" }).format(n);
 }
 
 function escapeHtml(value) {
@@ -471,6 +491,7 @@ function closeActionConfirms() {
   confirmFulfilledOpen.value = false;
   confirmCancelOpen.value = false;
   confirmRemoveHoldsOpen.value = false;
+  confirmDeleteLineOpen.value = false;
 }
 
 async function runMarkFulfilled() {
@@ -549,6 +570,7 @@ watch(
     allowPartialLocal.value = !!o.allow_partial;
     requireSignatureLocal.value = !!o.require_signature;
     giftNoteLocal.value = String(o.gift_note ?? "");
+    packingNoteLocal.value = o.packing_note != null ? String(o.packing_note) : "";
     tagsLocal.value = Array.isArray(o.tags) ? [...o.tags] : [];
     carrierField.value = String(o.shipping_carrier || "");
     methodField.value = String(o.method || "");
@@ -674,6 +696,117 @@ async function saveTags() {
     toast.errorFrom(e, "Could not update tags.");
   } finally {
     tagsSaveBusy.value = false;
+  }
+}
+
+const editQtyPendingMax = computed(() => {
+  const row = editLineRow.value;
+  if (!row || typeof row !== "object") return 0;
+  return Number(row.quantity ?? 0);
+});
+
+const deleteLineItemConfirmMessage = computed(() => {
+  const row = deleteLineRow.value;
+  if (!row) return "Remove this line item from the order in ShipHero?";
+  const label = String(row.name || row.sku || "this item").trim() || "this item";
+  return `Remove "${label}" from this order in ShipHero? This cannot be undone from here.`;
+});
+
+function lineItemStatusClass(status) {
+  const s = String(status || "").toLowerCase();
+  if (s.includes("cancel")) return "order-detail-page__item-status order-detail-page__item-status--bad";
+  return "order-detail-page__item-status";
+}
+
+function openEditLineItem(item) {
+  if (!canRunShipHeroActions.value) {
+    toast.error("You do not have permission to edit line items.");
+    return;
+  }
+  if (!item?.id) {
+    toast.error("This line item has no id; refresh and try again.");
+    return;
+  }
+  editLineRow.value = item;
+  editQtyPending.value = Number(item.quantity_pending_fulfillment ?? 0);
+  editLineModalOpen.value = true;
+}
+
+function closeEditLineModal() {
+  if (editLineBusy.value) return;
+  editLineModalOpen.value = false;
+  editLineRow.value = null;
+}
+
+async function submitEditLinePending() {
+  if (!selectedAccountId.value || !orderId.value || !editLineRow.value?.id) return;
+  const max = editQtyPendingMax.value;
+  let q = Number(editQtyPending.value);
+  if (!Number.isFinite(q) || q < 0) q = 0;
+  if (q > max) q = max;
+  editLineBusy.value = true;
+  try {
+    await api.post(`/orders/${encodeURIComponent(orderId.value)}/line-items/update`, {
+      client_account_id: Number(selectedAccountId.value),
+      line_item_id: String(editLineRow.value.id),
+      quantity_pending_fulfillment: q,
+    });
+    toast.success("Quantity to ship updated.");
+    closeEditLineModal();
+    await loadOrder();
+  } catch (e) {
+    toast.errorFrom(e, "Could not update quantity to ship.");
+  } finally {
+    editLineBusy.value = false;
+  }
+}
+
+function openDeleteLineConfirm(item) {
+  if (!canRunShipHeroActions.value) {
+    toast.error("You do not have permission to remove line items.");
+    return;
+  }
+  if (!item?.id) {
+    toast.error("This line item has no id; refresh and try again.");
+    return;
+  }
+  deleteLineRow.value = item;
+  confirmDeleteLineOpen.value = true;
+}
+
+async function runRemoveLineItem() {
+  if (!selectedAccountId.value || !orderId.value || !deleteLineRow.value?.id) return;
+  lineDeleteBusy.value = true;
+  try {
+    await api.post(`/orders/${encodeURIComponent(orderId.value)}/line-items/remove`, {
+      client_account_id: Number(selectedAccountId.value),
+      line_item_id: String(deleteLineRow.value.id),
+    });
+    toast.success("Line item removed.");
+    confirmDeleteLineOpen.value = false;
+    deleteLineRow.value = null;
+    await loadOrder();
+  } catch (e) {
+    toast.errorFrom(e, "Could not remove line item.");
+  } finally {
+    lineDeleteBusy.value = false;
+  }
+}
+
+async function savePackingNote() {
+  if (!selectedAccountId.value || !orderId.value) return;
+  packingNoteSaveBusy.value = true;
+  try {
+    await api.post(`/orders/${encodeURIComponent(orderId.value)}/packing-note`, {
+      client_account_id: Number(selectedAccountId.value),
+      packing_note: packingNoteLocal.value,
+    });
+    toast.success("Warehouse note updated.");
+    await loadOrder();
+  } catch (e) {
+    toast.errorFrom(e, "Could not save warehouse note.");
+  } finally {
+    packingNoteSaveBusy.value = false;
   }
 }
 
@@ -807,14 +940,15 @@ async function onAttachmentFileChange(ev) {
 
 function modalEscHandler(e) {
   if (e.key !== "Escape") return;
-  if (shippingSaveBusy.value || addItemsBusy.value) return;
+  if (shippingSaveBusy.value || addItemsBusy.value || editLineBusy.value) return;
   if (shippingModalOpen.value) shippingModalOpen.value = false;
   if (addItemsModalOpen.value) addItemsModalOpen.value = false;
+  if (editLineModalOpen.value) editLineModalOpen.value = false;
   if (moreActionsOpen.value) moreActionsOpen.value = false;
 }
 
-watch([shippingModalOpen, addItemsModalOpen], ([s, a]) => {
-  if (s || a) {
+watch([shippingModalOpen, addItemsModalOpen, editLineModalOpen], ([s, a, e]) => {
+  if (s || a || e) {
     document.addEventListener("keydown", modalEscHandler);
   } else {
     document.removeEventListener("keydown", modalEscHandler);
@@ -908,7 +1042,7 @@ function goToOrdersList() {
                   ref="moreActionsBtnRef"
                   id="order-detail-more-actions"
                   type="button"
-                  class="btn btn-outline-secondary dropdown-toggle"
+                  class="btn btn-outline-secondary dropdown-toggle order-detail-page__more-actions-toggle"
                   aria-haspopup="true"
                   :aria-expanded="moreActionsOpen ? 'true' : 'false'"
                   @click.stop="toggleMoreActionsMenu"
@@ -919,7 +1053,7 @@ function goToOrdersList() {
               <button
                 v-if="showNotReadyToShipBanner"
                 type="button"
-                class="btn btn-danger"
+                class="btn btn-danger text-white"
                 :disabled="!canRunShipHeroActions"
                 :title="!canRunShipHeroActions ? 'You do not have permission to change this order in ShipHero.' : undefined"
                 @click="confirmRemoveHoldsOpen = true"
@@ -988,11 +1122,7 @@ function goToOrdersList() {
                         Quantity to ship <span class="order-detail-page__sort-icon">{{ sortIndicator("quantity_pending_fulfillment") }}</span>
                       </button>
                     </th>
-                    <th class="staff-table-head__th text-end">
-                      <button class="order-detail-page__sort-btn order-detail-page__sort-btn--right" type="button" @click="toggleItemSort('price')">
-                        Price <span class="order-detail-page__sort-icon">{{ sortIndicator("price") }}</span>
-                      </button>
-                    </th>
+                    <th class="staff-table-head__th text-end">Actions</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -1015,6 +1145,13 @@ function goToOrdersList() {
                             {{ item.name || "—" }}
                           </div>
                           <div
+                            v-if="item.fulfillment_status"
+                            :class="lineItemStatusClass(item.fulfillment_status)"
+                            :title="String(item.fulfillment_status)"
+                          >
+                            {{ item.fulfillment_status }}
+                          </div>
+                          <div
                             class="order-detail-page__item-sku"
                             :title="item.sku ? `SKU ${item.sku}` : undefined"
                           >
@@ -1023,93 +1160,87 @@ function goToOrdersList() {
                         </div>
                       </div>
                     </td>
-                    <td class="text-end">{{ item.quantity ?? 0 }}</td>
-                    <td class="text-end">{{ item.quantity_pending_fulfillment ?? 0 }}</td>
                     <td class="text-end">
-                      <div>{{ fmtMoney(item.price) }}</div>
+                      <div>{{ item.quantity ?? 0 }}</div>
                       <div
                         v-if="Number(item.backorder_quantity || 0) > 0"
-                        class="order-detail-page__backorder"
+                        class="order-detail-page__backorder small mt-1"
                       >
                         {{ Number(item.backorder_quantity) }} on backorder
                       </div>
                     </td>
+                    <td class="text-end">{{ item.quantity_pending_fulfillment ?? 0 }}</td>
+                    <td class="text-end">
+                      <div v-if="canRunShipHeroActions" class="d-flex flex-column align-items-end gap-1">
+                        <button type="button" class="btn btn-link btn-sm p-0 lh-sm" @click="openEditLineItem(item)">
+                          Edit
+                        </button>
+                        <button
+                          type="button"
+                          class="btn btn-link btn-sm p-0 lh-sm text-danger"
+                          @click="openDeleteLineConfirm(item)"
+                        >
+                          Delete
+                        </button>
+                      </div>
+                      <span v-else class="small text-secondary">—</span>
+                    </td>
                   </tr>
                   <tr v-if="!sortedItems.length">
-                    <td colspan="5" class="text-center text-secondary py-4">No items</td>
+                    <td colspan="4" class="text-center text-secondary py-4">No items</td>
                   </tr>
                 </tbody>
               </table>
             </div>
-            <div class="order-detail-page__order-summary border-top px-4 py-3">
-              <div class="order-detail-page__order-summary-inner ms-auto">
-                <div class="d-flex justify-content-between gap-4 mb-2">
-                  <span class="text-secondary">Subtotal</span>
-                  <span class="text-end text-nowrap">
-                    <span class="text-secondary me-2">{{ orderLineItemQtySum }} items</span>
-                    <span class="fw-semibold text-body">{{ fmtMoney(order.subtotal) }}</span>
-                  </span>
-                </div>
-                <div class="d-flex justify-content-between gap-4 mb-2">
-                  <span class="text-secondary">Shipping</span>
-                  <span class="fw-semibold text-body text-nowrap">{{ fmtMoney(order.shipping_cost) }}</span>
-                </div>
-                <div class="d-flex justify-content-between gap-4 mb-2">
-                  <span class="text-secondary">Discount</span>
-                  <span class="fw-semibold text-body text-nowrap">{{ fmtMoney(order.total_discounts) }}</span>
-                </div>
-                <div class="d-flex justify-content-between gap-4 mb-2">
-                  <span class="text-secondary">Tax</span>
-                  <span class="text-end text-nowrap">
-                    <span class="text-secondary me-2">{{ taxPercentLabel }}</span>
-                    <span class="fw-semibold text-body">{{ fmtMoney(order.total_tax) }}</span>
-                  </span>
-                </div>
-                <div class="d-flex justify-content-between gap-4 pt-2 border-top">
-                  <span class="fw-semibold text-body">Total</span>
-                  <span class="h5 mb-0 fw-bold text-body text-nowrap">{{ fmtMoney(order.total_price) }}</span>
-                </div>
-              </div>
-            </div>
             <p class="staff-table-mobile-scroll-cue d-md-none" aria-hidden="true">
               Scroll sideways or swipe to see all columns.
+            </p>
+          </div>
+
+          <div class="staff-table-card staff-datatable-card staff-datatable-card--white p-4 mb-4">
+            <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-3">
+              <h2 class="h6 mb-0 fw-semibold">Note for warehouse packer</h2>
+              <button
+                type="button"
+                class="btn btn-primary btn-sm"
+                :disabled="!canRunShipHeroActions || packingNoteSaveBusy"
+                :title="!canRunShipHeroActions ? 'Requires inventory update permission' : undefined"
+                @click="savePackingNote"
+              >
+                {{ packingNoteSaveBusy ? "Updating…" : "Update" }}
+              </button>
+            </div>
+            <textarea
+              v-model="packingNoteLocal"
+              class="form-control"
+              rows="5"
+              :disabled="!canRunShipHeroActions || packingNoteSaveBusy"
+              autocomplete="off"
+            ></textarea>
+            <p v-if="!canRunShipHeroActions" class="small text-secondary mt-2 mb-0">
+              You do not have permission to edit this note.
             </p>
           </div>
         </div>
 
         <div class="col-lg-4 d-flex flex-column gap-4 order-detail-page__side-column">
           <div class="staff-table-card staff-datatable-card staff-datatable-card--white p-4 order-detail-page__side-panel">
-            <h3 class="h6 fw-semibold mb-3">Order details</h3>
-            <dl class="small mb-0">
-              <dt class="text-secondary">Customer</dt>
-              <dd class="fw-semibold text-body">{{ customerDisplayName }}</dd>
-              <dt class="text-secondary">Email</dt>
-              <dd>{{ order.email || "—" }}</dd>
-              <dt class="text-secondary">Phone</dt>
-              <dd>{{ order.shipping_address?.phone || "—" }}</dd>
-              <dt class="text-secondary mt-2">Creation date</dt>
-              <dd>{{ fmtCreationDate(order.order_date) }}</dd>
-              <dt class="text-secondary">Store</dt>
-              <dd class="text-break">{{ order.account || "—" }}</dd>
-            </dl>
-          </div>
-
-          <div class="staff-table-card staff-datatable-card staff-datatable-card--white p-4 order-detail-page__side-panel">
-            <h3 class="h6 fw-semibold mb-3">Shipping Detail</h3>
-            <dl class="small mb-3 pb-3 border-bottom">
-              <dt class="text-secondary">Shipping address</dt>
-              <dd class="mb-0">
-                <button
-                  v-if="canUseStaffOrderHeaderActions"
-                  type="button"
-                  class="btn btn-link text-start p-0 text-decoration-none order-detail-page__address-link order-detail-page__address-link--caps"
-                  @click="openShippingModal"
-                >
-                  {{ shippingAddressDisplayCaps }}
-                </button>
-                <span v-else class="order-detail-page__address-link--caps text-body">{{ shippingAddressDisplayCaps }}</span>
-              </dd>
-            </dl>
+            <div class="d-flex justify-content-between align-items-start gap-2 mb-3">
+              <h3 class="h6 fw-semibold mb-0">Shipping Address</h3>
+              <button
+                v-if="canUseStaffOrderHeaderActions"
+                type="button"
+                class="btn btn-outline-secondary btn-sm"
+                @click="openShippingModal"
+              >
+                Edit
+              </button>
+            </div>
+            <div class="small mb-3 pb-3 border-bottom">
+              <div class="order-detail-page__address-text order-detail-page__address-link--caps text-body">
+                {{ shippingAddressDisplayCaps }}
+              </div>
+            </div>
             <div class="mb-3">
               <label class="form-label small text-secondary mb-1" for="order-detail-carrier">Shipping Carrier</label>
               <select
@@ -1144,6 +1275,22 @@ function goToOrdersList() {
             >
               {{ shippingLinesSaveBusy ? "Saving…" : "Save Carrier & Method" }}
             </button>
+          </div>
+
+          <div class="staff-table-card staff-datatable-card staff-datatable-card--white p-4 order-detail-page__side-panel">
+            <h3 class="h6 fw-semibold mb-3">Order details</h3>
+            <dl class="small mb-0">
+              <dt class="text-secondary">Customer</dt>
+              <dd class="fw-semibold text-body">{{ customerDisplayName }}</dd>
+              <dt class="text-secondary">Email</dt>
+              <dd>{{ order.email || "—" }}</dd>
+              <dt class="text-secondary">Phone</dt>
+              <dd>{{ order.shipping_address?.phone || "—" }}</dd>
+              <dt class="text-secondary mt-2">Creation date</dt>
+              <dd>{{ fmtCreationDate(order.order_date) }}</dd>
+              <dt class="text-secondary">Store</dt>
+              <dd class="text-break">{{ order.account || "—" }}</dd>
+            </dl>
           </div>
 
           <div class="staff-table-card staff-datatable-card staff-datatable-card--white p-4 order-detail-page__side-panel">
@@ -1226,20 +1373,6 @@ function goToOrdersList() {
             >
               {{ tagsSaveBusy ? "Saving…" : "Save Tags" }}
             </button>
-          </div>
-
-          <div class="staff-table-card staff-datatable-card staff-datatable-card--white p-4 order-detail-page__side-panel">
-            <h3 class="h6 fw-semibold mb-3">Fraud analysis</h3>
-            <dl class="small mb-0">
-              <dt class="text-secondary">Fraud score</dt>
-              <dd class="fw-semibold">None</dd>
-              <dt class="text-secondary">Fraud address</dt>
-              <dd class="fw-semibold">None</dd>
-              <dt class="text-secondary">Fraud zip</dt>
-              <dd class="fw-semibold">None</dd>
-              <dt class="text-secondary">Details</dt>
-              <dd class="fw-semibold">None</dd>
-            </dl>
           </div>
 
           <div class="staff-table-card staff-datatable-card staff-datatable-card--white p-4 order-detail-page__side-panel">
@@ -1580,6 +1713,74 @@ function goToOrdersList() {
       </Transition>
     </Teleport>
 
+    <Teleport to="body">
+      <Transition name="modal-backdrop">
+        <div
+          v-if="editLineModalOpen"
+          class="crm-vx-modal-overlay"
+          aria-modal="true"
+          role="dialog"
+          aria-labelledby="order-edit-line-modal-title"
+        >
+          <div class="crm-vx-modal-backdrop" aria-hidden="true" @click="closeEditLineModal" />
+          <Transition name="modal-panel" appear>
+            <div class="crm-vx-modal crm-vx-modal--sm">
+              <button
+                type="button"
+                class="crm-vx-modal__close"
+                aria-label="Close"
+                :disabled="editLineBusy"
+                @click="closeEditLineModal"
+              >
+                <svg width="20" height="20" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.75">
+                  <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+              <header class="crm-vx-modal__head">
+                <h2 id="order-edit-line-modal-title" class="crm-vx-modal__title">Edit Quantity to Ship</h2>
+              </header>
+              <div class="crm-vx-modal__body pt-0">
+                <p v-if="editLineRow" class="small text-secondary mb-2">
+                  {{ editLineRow.name || "—" }}
+                  <span v-if="editLineRow.sku" class="d-block">SKU {{ editLineRow.sku }}</span>
+                </p>
+                <label class="form-label small" for="edit-line-qty-pending">Quantity to ship</label>
+                <input
+                  id="edit-line-qty-pending"
+                  v-model.number="editQtyPending"
+                  type="number"
+                  min="0"
+                  :max="editQtyPendingMax"
+                  step="1"
+                  class="form-control form-control-sm"
+                  :disabled="editLineBusy"
+                />
+                <p class="small text-secondary mb-0 mt-2">Ordered quantity: {{ editQtyPendingMax }} (maximum to ship).</p>
+              </div>
+              <footer class="crm-vx-modal__footer d-flex flex-wrap gap-2 justify-content-end align-items-center">
+                <button
+                  type="button"
+                  class="crm-vx-modal-btn crm-vx-modal-btn--secondary"
+                  :disabled="editLineBusy"
+                  @click="closeEditLineModal"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  class="crm-vx-modal-btn crm-vx-modal-btn--primary"
+                  :disabled="editLineBusy"
+                  @click="submitEditLinePending"
+                >
+                  {{ editLineBusy ? "Saving…" : "Save" }}
+                </button>
+              </footer>
+            </div>
+          </Transition>
+        </div>
+      </Transition>
+    </Teleport>
+
     <ConfirmModal
       :open="confirmFulfilledOpen"
       title="Mark As Fulfilled"
@@ -1601,6 +1802,17 @@ function goToOrdersList() {
       :busy="actionBusy"
       @close="confirmCancelOpen = false"
       @confirm="runCancelOrder"
+    />
+    <ConfirmModal
+      :open="confirmDeleteLineOpen"
+      title="Remove Line Item"
+      :message="deleteLineItemConfirmMessage"
+      confirm-label="Delete"
+      cancel-label="Cancel"
+      danger
+      :busy="lineDeleteBusy"
+      @close="confirmDeleteLineOpen = false"
+      @confirm="runRemoveLineItem"
     />
     <ConfirmModal
       :open="confirmRemoveHoldsOpen"
@@ -1671,6 +1883,23 @@ function goToOrdersList() {
   line-height: 1.35;
 }
 
+.order-detail-page__item-status {
+  font-size: 0.8125rem;
+  line-height: 1.3;
+  color: #6c757d;
+  display: block;
+  min-width: 0;
+  max-width: 100%;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.order-detail-page__item-status--bad {
+  color: #dc3545;
+  font-weight: 600;
+}
+
 .order-detail-page__item-sku {
   color: #6c757d;
   display: block;
@@ -1701,14 +1930,14 @@ function goToOrdersList() {
 }
 
 .order-detail-page__items-col {
-  width: 38%;
+  width: 44%;
   min-width: 0;
   vertical-align: middle;
 }
 
 .order-detail-page__item-thumb {
-  width: 32px;
-  height: 32px;
+  width: 52px;
+  height: 52px;
   border-radius: 0.35rem;
   object-fit: cover;
   border: 1px solid rgba(0, 0, 0, 0.08);
@@ -1767,8 +1996,18 @@ function goToOrdersList() {
   min-width: 11rem;
 }
 
-.order-detail-page__order-summary-inner {
-  max-width: 22rem;
+.order-detail-page__more-actions-toggle.btn-outline-secondary:hover,
+.order-detail-page__more-actions-toggle.btn-outline-secondary:focus-visible {
+  background-color: var(--bs-body-bg, #fff);
+  color: var(--bs-secondary);
+  border-color: var(--bs-border-color);
+}
+
+[data-bs-theme="dark"] .order-detail-page__more-actions-toggle.btn-outline-secondary:hover,
+[data-bs-theme="dark"] .order-detail-page__more-actions-toggle.btn-outline-secondary:focus-visible {
+  background-color: var(--bs-body-bg);
+  color: var(--bs-body-color);
+  border-color: var(--bs-border-color);
 }
 
 .order-detail-page__nrts-banner {
@@ -1787,19 +2026,10 @@ function goToOrdersList() {
   position: relative;
 }
 
-.order-detail-page__address-link {
-  color: #2563eb;
-  font-weight: 500;
-}
-
 .order-detail-page__address-link--caps {
   white-space: pre-line;
   line-height: 1.4;
   text-transform: uppercase;
-}
-
-button.order-detail-page__address-link--caps {
-  font-weight: 700;
 }
 
 .order-detail-page__address-text {

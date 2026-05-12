@@ -569,6 +569,89 @@ class OrderController extends Controller
         }
     }
 
+    public function updateLineItemPending(Request $request, string $orderId): JsonResponse
+    {
+        Gate::authorize('shiphero.orders.write');
+        $validated = $request->validate([
+            'client_account_id' => ['required', 'integer', 'exists:client_accounts,id'],
+            'line_item_id' => ['required', 'string', 'max:255'],
+            'quantity_pending_fulfillment' => ['required', 'numeric', 'min:0', 'max:999999'],
+        ]);
+        $customerId = $this->resolveShipHeroCustomerAccountId((int) $validated['client_account_id'], $request);
+        try {
+            $this->orders->updateOrderLineItemPendingFulfillment(
+                $orderId,
+                $customerId,
+                (string) $validated['line_item_id'],
+                (float) $validated['quantity_pending_fulfillment']
+            );
+
+            return response()->json(['message' => 'Quantity to ship updated.']);
+        } catch (RuntimeException $e) {
+            return response()->json(['message' => $e->getMessage()], 502);
+        } catch (Throwable $e) {
+            report($e);
+
+            return response()->json([
+                'message' => config('app.debug') ? $e->getMessage() : 'Could not update line item in ShipHero.',
+            ], 502);
+        }
+    }
+
+    public function removeLineItem(Request $request, string $orderId): JsonResponse
+    {
+        Gate::authorize('shiphero.orders.write');
+        $validated = $request->validate([
+            'client_account_id' => ['required', 'integer', 'exists:client_accounts,id'],
+            'line_item_id' => ['required', 'string', 'max:255'],
+        ]);
+        $customerId = $this->resolveShipHeroCustomerAccountId((int) $validated['client_account_id'], $request);
+        try {
+            $this->orders->removeOrderLineItem(
+                $orderId,
+                $customerId,
+                (string) $validated['line_item_id']
+            );
+
+            return response()->json(['message' => 'Line item removed.']);
+        } catch (RuntimeException $e) {
+            return response()->json(['message' => $e->getMessage()], 502);
+        } catch (Throwable $e) {
+            report($e);
+
+            return response()->json([
+                'message' => config('app.debug') ? $e->getMessage() : 'Could not remove line item in ShipHero.',
+            ], 502);
+        }
+    }
+
+    public function updatePackingNote(Request $request, string $orderId): JsonResponse
+    {
+        Gate::authorize('shiphero.orders.write');
+        $validated = $request->validate([
+            'client_account_id' => ['required', 'integer', 'exists:client_accounts,id'],
+            'packing_note' => ['nullable', 'string', 'max:5000'],
+        ]);
+        $customerId = $this->resolveShipHeroCustomerAccountId((int) $validated['client_account_id'], $request);
+        try {
+            $this->orders->updateOrderPackingNote(
+                $orderId,
+                $customerId,
+                (string) ($validated['packing_note'] ?? '')
+            );
+
+            return response()->json(['message' => 'Warehouse note updated.']);
+        } catch (RuntimeException $e) {
+            return response()->json(['message' => $e->getMessage()], 502);
+        } catch (Throwable $e) {
+            report($e);
+
+            return response()->json([
+                'message' => config('app.debug') ? $e->getMessage() : 'Could not update packing note in ShipHero.',
+            ], 502);
+        }
+    }
+
     public function uploadAttachment(Request $request, string $orderId): JsonResponse
     {
         Gate::authorize('shiphero.orders.write');

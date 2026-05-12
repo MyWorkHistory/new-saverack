@@ -293,7 +293,7 @@ class OrderController extends Controller
 
     public function markFulfilled(Request $request, string $orderId): JsonResponse
     {
-        Gate::authorize('inventory.update');
+        Gate::authorize('shiphero.orders.write');
         $validated = $request->validate([
             'client_account_id' => ['required', 'integer', 'exists:client_accounts,id'],
             'reason' => ['nullable', 'string', 'max:500'],
@@ -320,7 +320,7 @@ class OrderController extends Controller
 
     public function cancelOrder(Request $request, string $orderId): JsonResponse
     {
-        Gate::authorize('inventory.update');
+        Gate::authorize('shiphero.orders.write');
         $validated = $request->validate([
             'client_account_id' => ['required', 'integer', 'exists:client_accounts,id'],
             'reason' => ['nullable', 'string', 'max:500'],
@@ -351,7 +351,7 @@ class OrderController extends Controller
 
     public function removeHolds(Request $request, string $orderId): JsonResponse
     {
-        Gate::authorize('inventory.update');
+        Gate::authorize('shiphero.orders.write');
         $validated = $request->validate([
             'client_account_id' => ['required', 'integer', 'exists:client_accounts,id'],
         ]);
@@ -373,7 +373,7 @@ class OrderController extends Controller
 
     public function updateSignatureGiftNote(Request $request, string $orderId): JsonResponse
     {
-        Gate::authorize('inventory.update');
+        Gate::authorize('shiphero.orders.write');
         $validated = $request->validate([
             'client_account_id' => ['required', 'integer', 'exists:client_accounts,id'],
             'require_signature' => ['required', 'boolean'],
@@ -402,7 +402,7 @@ class OrderController extends Controller
 
     public function updateShippingAddress(Request $request, string $orderId): JsonResponse
     {
-        Gate::authorize('inventory.update');
+        Gate::authorize('shiphero.orders.write');
         $validated = $request->validate([
             'client_account_id' => ['required', 'integer', 'exists:client_accounts,id'],
             'first_name' => ['nullable', 'string', 'max:160'],
@@ -453,7 +453,7 @@ class OrderController extends Controller
 
     public function updateShippingLines(Request $request, string $orderId): JsonResponse
     {
-        Gate::authorize('inventory.update');
+        Gate::authorize('shiphero.orders.write');
         $validated = $request->validate([
             'client_account_id' => ['required', 'integer', 'exists:client_accounts,id'],
             'carrier' => ['nullable', 'string', 'max:200'],
@@ -482,7 +482,7 @@ class OrderController extends Controller
 
     public function updateAllowPartial(Request $request, string $orderId): JsonResponse
     {
-        Gate::authorize('inventory.update');
+        Gate::authorize('shiphero.orders.write');
         $validated = $request->validate([
             'client_account_id' => ['required', 'integer', 'exists:client_accounts,id'],
             'allow_partial' => ['required', 'boolean'],
@@ -509,7 +509,7 @@ class OrderController extends Controller
 
     public function updateTags(Request $request, string $orderId): JsonResponse
     {
-        Gate::authorize('inventory.update');
+        Gate::authorize('shiphero.orders.write');
         $validated = $request->validate([
             'client_account_id' => ['required', 'integer', 'exists:client_accounts,id'],
             'tags' => ['required', 'array', 'max:200'],
@@ -537,7 +537,7 @@ class OrderController extends Controller
 
     public function addLineItems(Request $request, string $orderId): JsonResponse
     {
-        Gate::authorize('inventory.update');
+        Gate::authorize('shiphero.orders.write');
         $validated = $request->validate([
             'client_account_id' => ['required', 'integer', 'exists:client_accounts,id'],
             'line_items' => ['required', 'array', 'min:1', 'max:25'],
@@ -571,7 +571,7 @@ class OrderController extends Controller
 
     public function uploadAttachment(Request $request, string $orderId): JsonResponse
     {
-        Gate::authorize('inventory.update');
+        Gate::authorize('shiphero.orders.write');
         $validated = $request->validate([
             'client_account_id' => ['required', 'integer', 'exists:client_accounts,id'],
             'file' => ['required', 'file', 'max:10240', 'mimes:jpg,jpeg,png,gif,webp,pdf,txt,csv,doc,docx,xlsx'],

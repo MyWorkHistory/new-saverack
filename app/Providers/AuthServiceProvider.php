@@ -69,5 +69,27 @@ class AuthServiceProvider extends ServiceProvider
 
             return in_array('inventory.update', $user->allPermissionKeys(), true);
         });
+
+        /**
+         * ShipHero order mutations (CRM staff): same access as viewing the orders list (inventory.view).
+         * Portal users (client_account_id) still need inventory.update so they stay read-only on staff APIs.
+         */
+        Gate::define('shiphero.orders.write', function ($user) {
+            if (! $user) {
+                return false;
+            }
+            if ($user->isAdministrator() || $user->isCrmOwner()) {
+                return true;
+            }
+            $keys = $user->allPermissionKeys();
+            if (in_array('inventory.update', $keys, true)) {
+                return true;
+            }
+            if ((int) ($user->client_account_id ?? 0) > 0) {
+                return false;
+            }
+
+            return in_array('inventory.view', $keys, true);
+        });
     }
 }

@@ -1,12 +1,13 @@
 <script setup>
-import { computed, inject, onMounted, onUnmounted, ref, watch } from "vue";
+import { computed, inject, nextTick, onMounted, onUnmounted, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import api from "../../services/api";
 import CrmLoadingSpinner from "../../components/common/CrmLoadingSpinner.vue";
 import ConfirmModal from "../../components/common/ConfirmModal.vue";
 import { setCrmPageMeta } from "../../composables/useCrmPageMeta.js";
 import { useToast } from "../../composables/useToast.js";
-import { crmIsAdmin } from "../../utils/crmUser";
+import { crmIsPortalUser } from "../../utils/crmUser";
+import { canWriteShipHeroOrders } from "../../utils/crmShipHeroOrders";
 
 const crmUser = inject("crmUser", ref(null));
 const route = useRoute();
@@ -62,7 +63,10 @@ const attachmentUploadBusy = ref(false);
 const confirmRemoveHoldsOpen = ref(false);
 const removeHoldsBusy = ref(false);
 const moreActionsOpen = ref(false);
-const moreActionsRoot = ref(null);
+const moreActionsBtnRef = ref(null);
+const moreActionsMenuRef = ref(null);
+const moreActionsMenuStyle = ref({ visibility: "hidden" });
+const moreActionsLayoutBound = ref(false);
 const requireSignatureLocal = ref(false);
 const giftNoteLocal = ref("");
 const optionsSaveBusy = ref(false);
@@ -72,7 +76,7 @@ const METHOD_PRESETS = ["Select", "Ground", "Priority", "Express", "Standard", "
 
 const orderId = computed(() => String(route.params.shipheroOrderId || ""));
 
-const isPortalUser = computed(() => Number(crmUser.value?.client_account_id || 0) > 0);
+const isPortalUser = computed(() => crmIsPortalUser(crmUser.value));
 const portalClientAccountId = computed(() => Number(crmUser.value?.client_account_id || 0));
 
 const headingOrderNumber = computed(() => String(order.value?.order_number || "—").replace(/^#\s*/, ""));
@@ -85,16 +89,9 @@ const statusClass = computed(() => {
   return "text-secondary bg-secondary-subtle";
 });
 
-function userCanInventoryUpdate() {
-  const u = crmUser.value;
-  if (!u) return false;
-  if (crmIsAdmin(u) || u.is_crm_owner) return true;
-  return Array.isArray(u.permission_keys) && u.permission_keys.includes("inventory.update");
-}
+const canRunShipHeroActions = computed(() => canWriteShipHeroOrders(crmUser.value));
 
-const canRunShipHeroActions = computed(() => !isPortalUser.value && userCanInventoryUpdate());
-
-const canUseStaffOrderHeaderActions = computed(() => !isPortalUser.value && Boolean(order.value));
+const canUseStaffOrderHeaderActions = computed(() => Boolean(order.value) && !crmIsPortalUser(crmUser.value));
 
 function orderHasActiveHold(o) {
   if (!o || typeof o !== "object") return false;
@@ -689,21 +686,61 @@ function openAddItemsModal() {
   addItemsModalOpen.value = true;
 }
 
+function layoutMoreActionsMenu() {
+  const btn = moreActionsBtnRef.value;
+  if (!btn || !moreActionsOpen.value) return;
+  const r = btn.getBoundingClientRect();
+  const menuWidth = 220;
+  const left = Math.min(window.innerWidth - menuWidth - 8, Math.max(8, r.right - menuWidth));
+  moreActionsMenuStyle.value = {
+    position: "fixed",
+    top: `${Math.floor(r.bottom + 6)}px`,
+    left: `${Math.floor(left)}px`,
+    minWidth: `${menuWidth}px`,
+    zIndex: 20050,
+    visibility: "visible",
+  };
+}
+
+function onMoreActionsWindowLayout() {
+  if (!moreActionsOpen.value) return;
+  layoutMoreActionsMenu();
+}
+
+function bindMoreActionsLayoutListeners() {
+  if (moreActionsLayoutBound.value) return;
+  window.addEventListener("resize", onMoreActionsWindowLayout);
+  window.addEventListener("scroll", onMoreActionsWindowLayout, true);
+  moreActionsLayoutBound.value = true;
+}
+
+function unbindMoreActionsLayoutListeners() {
+  if (!moreActionsLayoutBound.value) return;
+  window.removeEventListener("resize", onMoreActionsWindowLayout);
+  window.removeEventListener("scroll", onMoreActionsWindowLayout, true);
+  moreActionsLayoutBound.value = false;
+}
+
 function closeMoreActionsMenu() {
   moreActionsOpen.value = false;
 }
 
-function toggleMoreActionsMenu(ev) {
+async function toggleMoreActionsMenu(ev) {
   ev?.stopPropagation?.();
   moreActionsOpen.value = !moreActionsOpen.value;
+  if (moreActionsOpen.value) {
+    await nextTick();
+    layoutMoreActionsMenu();
+  }
 }
 
 function onMoreActionsDocumentClick(ev) {
   if (!moreActionsOpen.value) return;
-  const root = moreActionsRoot.value;
-  if (root && !root.contains(ev.target)) {
-    moreActionsOpen.value = false;
+  const t = ev.target;
+  if (moreActionsBtnRef.value?.contains(t) || moreActionsMenuRef.value?.contains(t)) {
+    return;
   }
+  moreActionsOpen.value = false;
 }
 
 function closeAddItemsModal() {
@@ -789,14 +826,21 @@ watch(moreActionsOpen, (open) => {
     setTimeout(() => {
       document.addEventListener("click", onMoreActionsDocumentClick);
     }, 0);
+    void nextTick().then(() => {
+      layoutMoreActionsMenu();
+      bindMoreActionsLayoutListeners();
+    });
   } else {
     document.removeEventListener("click", onMoreActionsDocumentClick);
+    unbindMoreActionsLayoutListeners();
+    moreActionsMenuStyle.value = { visibility: "hidden" };
   }
 });
 
 onUnmounted(() => {
   document.removeEventListener("keydown", modalEscHandler);
   document.removeEventListener("click", onMoreActionsDocumentClick);
+  unbindMoreActionsLayoutListeners();
 });
 
 onMounted(async () => {
@@ -828,14 +872,6 @@ onMounted(async () => {
       No order data loaded. Check the order link and account, then try again.
     </div>
     <template v-else>
-      <div
-        v-if="canUseStaffOrderHeaderActions && !canRunShipHeroActions"
-        class="alert alert-info border small mb-4"
-        role="status"
-      >
-        You can view this order. ShipHero changes (shipping, tags, holds, line items, and related actions) require
-        the <strong>Update inventory quantities</strong> permission on your account.
-      </div>
       <div class="staff-table-card staff-datatable-card staff-datatable-card--white order-detail-page__header-shell mb-4">
         <div class="p-4 pb-3">
           <div class="d-flex flex-wrap justify-content-between align-items-start gap-3">
@@ -856,11 +892,11 @@ onMounted(async () => {
             </div>
             <div
               v-if="canUseStaffOrderHeaderActions"
-              ref="moreActionsRoot"
               class="d-flex flex-wrap gap-2 align-items-center flex-shrink-0"
             >
               <div class="dropdown order-detail-page__more-actions position-relative">
                 <button
+                  ref="moreActionsBtnRef"
                   id="order-detail-more-actions"
                   type="button"
                   class="btn btn-outline-secondary dropdown-toggle"
@@ -870,56 +906,13 @@ onMounted(async () => {
                 >
                   More Actions
                 </button>
-                <ul
-                  v-show="moreActionsOpen"
-                  class="dropdown-menu dropdown-menu-end show position-absolute end-0 mt-1 shadow-sm"
-                  style="top: 100%"
-                  aria-labelledby="order-detail-more-actions"
-                >
-                  <li>
-                    <button
-                      type="button"
-                      class="dropdown-item"
-                      @click="
-                        closeMoreActionsMenu();
-                        loadOrder();
-                      "
-                    >
-                      Refresh
-                    </button>
-                  </li>
-                  <li>
-                    <button
-                      type="button"
-                      class="dropdown-item"
-                      :disabled="!canRunShipHeroActions"
-                      @click="
-                        closeMoreActionsMenu();
-                        if (canRunShipHeroActions) confirmFulfilledOpen = true;
-                      "
-                    >
-                      Mark As Fulfilled
-                    </button>
-                  </li>
-                  <li>
-                    <button
-                      type="button"
-                      class="dropdown-item text-danger"
-                      :disabled="!canRunShipHeroActions"
-                      @click="
-                        closeMoreActionsMenu();
-                        if (canRunShipHeroActions) confirmCancelOpen = true;
-                      "
-                    >
-                      Cancel Order
-                    </button>
-                  </li>
-                </ul>
               </div>
               <button
-                v-if="showNotReadyToShipBanner && canRunShipHeroActions"
+                v-if="showNotReadyToShipBanner"
                 type="button"
                 class="btn btn-danger"
+                :disabled="!canRunShipHeroActions"
+                :title="!canRunShipHeroActions ? 'You do not have permission to change this order in ShipHero.' : undefined"
                 @click="confirmRemoveHoldsOpen = true"
               >
                 Remove Hold
@@ -1455,6 +1448,59 @@ onMounted(async () => {
           </Transition>
         </div>
       </Transition>
+    </Teleport>
+
+    <Teleport to="body">
+      <ul
+        v-show="moreActionsOpen"
+        ref="moreActionsMenuRef"
+        class="dropdown-menu dropdown-menu-end show shadow-sm border bg-body order-detail-page__more-actions-menu"
+        :style="moreActionsMenuStyle"
+        role="menu"
+        aria-labelledby="order-detail-more-actions"
+      >
+        <li>
+          <button
+            type="button"
+            class="dropdown-item"
+            role="menuitem"
+            @click="
+              closeMoreActionsMenu();
+              loadOrder();
+            "
+          >
+            Refresh
+          </button>
+        </li>
+        <li>
+          <button
+            type="button"
+            class="dropdown-item"
+            role="menuitem"
+            :disabled="!canRunShipHeroActions"
+            @click="
+              closeMoreActionsMenu();
+              if (canRunShipHeroActions) confirmFulfilledOpen = true;
+            "
+          >
+            Mark As Fulfilled
+          </button>
+        </li>
+        <li>
+          <button
+            type="button"
+            class="dropdown-item text-danger"
+            role="menuitem"
+            :disabled="!canRunShipHeroActions"
+            @click="
+              closeMoreActionsMenu();
+              if (canRunShipHeroActions) confirmCancelOpen = true;
+            "
+          >
+            Cancel Order
+          </button>
+        </li>
+      </ul>
     </Teleport>
 
     <Teleport to="body">

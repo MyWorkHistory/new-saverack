@@ -78,25 +78,25 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::get('/', [OrderController::class, 'index'])
             ->middleware('can:inventory.view');
         Route::post('/{orderId}/mark-fulfilled', [OrderController::class, 'markFulfilled'])
-            ->middleware('can:inventory.update');
+            ->middleware('can:shiphero.orders.write');
         Route::post('/{orderId}/cancel', [OrderController::class, 'cancelOrder'])
-            ->middleware('can:inventory.update');
+            ->middleware('can:shiphero.orders.write');
         Route::post('/{orderId}/remove-holds', [OrderController::class, 'removeHolds'])
-            ->middleware('can:inventory.update');
+            ->middleware('can:shiphero.orders.write');
         Route::post('/{orderId}/signature-gift-note', [OrderController::class, 'updateSignatureGiftNote'])
-            ->middleware('can:inventory.update');
+            ->middleware('can:shiphero.orders.write');
         Route::post('/{orderId}/shipping-address', [OrderController::class, 'updateShippingAddress'])
-            ->middleware('can:inventory.update');
+            ->middleware('can:shiphero.orders.write');
         Route::post('/{orderId}/shipping-lines', [OrderController::class, 'updateShippingLines'])
-            ->middleware('can:inventory.update');
+            ->middleware('can:shiphero.orders.write');
         Route::post('/{orderId}/allow-partial', [OrderController::class, 'updateAllowPartial'])
-            ->middleware('can:inventory.update');
+            ->middleware('can:shiphero.orders.write');
         Route::post('/{orderId}/tags', [OrderController::class, 'updateTags'])
-            ->middleware('can:inventory.update');
+            ->middleware('can:shiphero.orders.write');
         Route::post('/{orderId}/line-items', [OrderController::class, 'addLineItems'])
-            ->middleware('can:inventory.update');
+            ->middleware('can:shiphero.orders.write');
         Route::post('/{orderId}/attachments', [OrderController::class, 'uploadAttachment'])
-            ->middleware('can:inventory.update');
+            ->middleware('can:shiphero.orders.write');
         Route::get('/{orderId}', [OrderController::class, 'show'])
             ->middleware('can:inventory.view');
     });

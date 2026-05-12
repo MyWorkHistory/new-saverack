@@ -360,6 +360,145 @@ GQL;
     }
 
     /**
+     * Resolve ShipHero order relay id for mutations, or throw if not found.
+     */
+    private function resolveOrderRelayIdForMutations(string $orderId, string $customerAccountId): string
+    {
+        $id = trim($orderId);
+        $customer = trim($customerAccountId);
+        if ($id === '' || $customer === '') {
+            throw new RuntimeException('Order id and customer account id are required.');
+        }
+        foreach ($this->buildOrderIdCandidates($id) as $candidateId) {
+            $node = $this->fetchOrderHeaderNode($customer, $candidateId);
+            if (! is_array($node)) {
+                continue;
+            }
+            $relay = trim((string) ($node['id'] ?? ''));
+            if ($relay !== '') {
+                return $relay;
+            }
+            $c = trim((string) $candidateId);
+            if ($c !== '') {
+                return $c;
+            }
+        }
+
+        throw new RuntimeException('Order not found in ShipHero.');
+    }
+
+    /**
+     * Mark order fulfilled at ShipHero. Prefer whole-order status; on failure, retry line-by-line.
+     *
+     * Does not run shipment_create / inventory_remove; administrative status change only (see ShipHero docs).
+     */
+    public function markOrderFulfilled(string $orderId, string $customerAccountId, ?string $reason = null): void
+    {
+        $relayId = $this->resolveOrderRelayIdForMutations($orderId, $customerAccountId);
+        $reasonText = ($reason !== null && trim($reason) !== '') ? trim($reason) : 'Marked fulfilled via Save Rack CRM.';
+        $customer = trim($customerAccountId);
+        $data = [
+            'order_id' => $relayId,
+            'fulfillment_status' => 'fulfilled',
+            'reason' => $reasonText,
+        ];
+        if ($customer !== '') {
+            $data['customer_account_id'] = $customer;
+        }
+        $graphql = <<<'GQL'
+mutation ShipHeroOrderUpdateFulfillmentStatus($data: UpdateOrderFulfillmentStatusInput!) {
+  order_update_fulfillment_status(data: $data) {
+    request_id
+    complexity
+  }
+}
+GQL;
+        try {
+            $this->client->query($graphql, ['data' => $data]);
+        } catch (RuntimeException $e) {
+            Log::warning('shiphero.order.mark_fulfilled.whole_order_failed', [
+                'order_id' => $orderId,
+                'relay_id' => $relayId,
+                'message' => $e->getMessage(),
+            ]);
+            $this->markOrderFulfilledViaLineItems($relayId, $customer);
+        }
+    }
+
+    /**
+     * Fallback when order_update_fulfillment_status is rejected (e.g. partial state).
+     */
+    private function markOrderFulfilledViaLineItems(string $relayId, string $customerAccountId): void
+    {
+        $lineItems = $this->fetchOrderLineItems($customerAccountId, $relayId);
+        $updates = [];
+        foreach ($lineItems as $item) {
+            if (! is_array($item)) {
+                continue;
+            }
+            $lid = trim((string) ($item['id'] ?? ''));
+            if ($lid === '') {
+                continue;
+            }
+            $updates[] = [
+                'id' => $lid,
+                'fulfillment_status' => 'fulfilled',
+                'quantity_pending_fulfillment' => 0,
+            ];
+        }
+        if ($updates === []) {
+            throw new RuntimeException('Could not mark order fulfilled: no line items to update.');
+        }
+        $customer = trim($customerAccountId);
+        $data = [
+            'order_id' => $relayId,
+            'line_items' => $updates,
+        ];
+        if ($customer !== '') {
+            $data['customer_account_id'] = $customer;
+        }
+        $graphql = <<<'GQL'
+mutation ShipHeroOrderUpdateLineItems($data: UpdateLineItemsInput!) {
+  order_update_line_items(data: $data) {
+    request_id
+    complexity
+  }
+}
+GQL;
+        $this->client->query($graphql, ['data' => $data]);
+    }
+
+    public function cancelOrderInShipHero(
+        string $orderId,
+        string $customerAccountId,
+        ?string $reason = null,
+        bool $voidOnPlatform = false,
+        bool $force = false
+    ): void {
+        $relayId = $this->resolveOrderRelayIdForMutations($orderId, $customerAccountId);
+        $customer = trim($customerAccountId);
+        $reasonText = ($reason !== null && trim($reason) !== '') ? trim($reason) : 'Canceled via Save Rack CRM.';
+        $data = [
+            'order_id' => $relayId,
+            'reason' => $reasonText,
+            'void_on_platform' => $voidOnPlatform,
+            'force' => $force,
+        ];
+        if ($customer !== '') {
+            $data['customer_account_id'] = $customer;
+        }
+        $graphql = <<<'GQL'
+mutation ShipHeroOrderCancel($data: CancelOrderInput!) {
+  order_cancel(data: $data) {
+    request_id
+    complexity
+  }
+}
+GQL;
+        $this->client->query($graphql, ['data' => $data]);
+    }
+
+    /**
      * Raw diagnostic for order-detail header query variants.
      *
      * @return array<string, mixed>
@@ -665,6 +804,8 @@ GQL;
     {
         $shippingLine = $this->resolveShippingLine($node['shipping_lines'] ?? null);
 
+        $holdsApi = $this->normalizeOrderHoldsForApi($node['holds'] ?? null);
+
         return [
             'id' => (string) ($node['id'] ?? ''),
             'legacy_id' => is_numeric($node['legacy_id'] ?? null) ? (int) $node['legacy_id'] : null,
@@ -672,6 +813,9 @@ GQL;
             'partner_order_id' => (string) ($node['partner_order_id'] ?? ''),
             'status' => $this->normalizeFulfillmentStatus($node),
             'hold_reason' => $this->extractHoldReason($node),
+            'holds' => $holdsApi,
+            'has_active_hold' => $this->orderHoldsArrayHasActive($holdsApi),
+            'not_ready_subtitle' => $this->buildNotReadyToShipHoldSubtitle($holdsApi),
             'order_date' => $this->nullableIso($node['order_date'] ?? null),
             'required_ship_date' => $this->nullableIso($node['required_ship_date'] ?? null),
             'account' => (string) ($node['shop_name'] ?? ''),
@@ -703,6 +847,73 @@ GQL;
                 ];
             }, $history))),
         ];
+    }
+
+    /**
+     * @return array<string, bool>
+     */
+    private function normalizeOrderHoldsForApi($holds): array
+    {
+        $defaults = [
+            'fraud_hold' => false,
+            'address_hold' => false,
+            'shipping_method_hold' => false,
+            'operator_hold' => false,
+            'payment_hold' => false,
+            'client_hold' => false,
+        ];
+        if (! is_array($holds)) {
+            return $defaults;
+        }
+        foreach (array_keys($defaults) as $key) {
+            if (array_key_exists($key, $holds)) {
+                $defaults[$key] = ! empty($holds[$key]);
+            }
+        }
+
+        return $defaults;
+    }
+
+    /**
+     * @param  array<string, bool>  $holds
+     */
+    private function orderHoldsArrayHasActive(array $holds): bool
+    {
+        foreach ($holds as $active) {
+            if ($active === true) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /**
+     * @param  array<string, bool>  $holds
+     */
+    private function buildNotReadyToShipHoldSubtitle(array $holds): string
+    {
+        $parts = [];
+        if (! empty($holds['client_hold'])) {
+            $parts[] = 'Order has client hold.';
+        }
+        if (! empty($holds['payment_hold'])) {
+            $parts[] = 'Order has payment hold.';
+        }
+        if (! empty($holds['operator_hold'])) {
+            $parts[] = 'Order has operator hold.';
+        }
+        if (! empty($holds['address_hold'])) {
+            $parts[] = 'Order has address hold.';
+        }
+        if (! empty($holds['fraud_hold'])) {
+            $parts[] = 'Order has fraud hold.';
+        }
+        if (! empty($holds['shipping_method_hold'])) {
+            $parts[] = 'Order has shipping method hold.';
+        }
+
+        return $parts === [] ? '' : implode(' ', $parts);
     }
 
     /**

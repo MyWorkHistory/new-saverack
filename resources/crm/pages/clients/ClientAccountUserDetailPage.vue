@@ -4,6 +4,7 @@ import { RouterLink } from "vue-router";
 import api from "../../services/api";
 import CrmStatusUpdateModal from "../../components/common/CrmStatusUpdateModal.vue";
 import CrmLoadingSpinner from "../../components/common/CrmLoadingSpinner.vue";
+import ClientAccountUserEditModal from "../../components/clients/ClientAccountUserEditModal.vue";
 import { formatDateTimeUs, formatDateUs } from "../../utils/formatUserDates";
 import { setCrmPageMeta } from "../../composables/useCrmPageMeta.js";
 import { resolvePublicUrl } from "../../utils/resolvePublicUrl.js";
@@ -25,6 +26,7 @@ const statusModalOpen = ref(false);
 const statusForm = ref("pending");
 const statusSaving = ref(false);
 const userStatuses = ["pending", "active", "inactive"];
+const editModalOpen = ref(false);
 
 function userHasPerm(key) {
   const u = crmUser.value;
@@ -103,6 +105,11 @@ async function saveStatusFromModal() {
   } finally {
     statusSaving.value = false;
   }
+}
+
+function onEditModalSaved() {
+  toast.success("User updated.");
+  load();
 }
 
 const accountDetailLink = computed(() => ({
@@ -204,6 +211,14 @@ watch(
       class="staff-user-view__title-row d-flex flex-wrap align-items-center justify-content-between gap-2"
     >
       <h1 class="staff-user-view__title">Portal user</h1>
+      <button
+        v-if="canUpdate && row"
+        type="button"
+        class="btn btn-primary staff-page-primary"
+        @click="editModalOpen = true"
+      >
+        Edit User
+      </button>
     </div>
 
     <div v-if="loading" class="d-flex justify-content-center py-5">
@@ -407,5 +422,12 @@ watch(
       />
     </template>
 
+    <ClientAccountUserEditModal
+      v-if="canUpdate"
+      v-model:open="editModalOpen"
+      :client-account-id="accountId"
+      :user-id="userId"
+      @saved="onEditModalSaved"
+    />
   </div>
 </template>

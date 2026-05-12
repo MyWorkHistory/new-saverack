@@ -4,8 +4,10 @@ import { useRoute, useRouter } from "vue-router";
 import api from "../../services/api";
 import CrmLoadingSpinner from "../../components/common/CrmLoadingSpinner.vue";
 import CrmSearchableSelect from "../../components/common/CrmSearchableSelect.vue";
+import ConfirmModal from "../../components/common/ConfirmModal.vue";
 import { setCrmPageMeta } from "../../composables/useCrmPageMeta.js";
 import { useToast } from "../../composables/useToast.js";
+import { crmIsAdmin } from "../../utils/crmUser";
 
 const crmUser = inject("crmUser", ref(null));
 const route = useRoute();
@@ -22,6 +24,9 @@ const loadNotice = ref("");
 const activeLoadKey = ref("");
 const itemSortKey = ref("name");
 const itemSortDir = ref("asc");
+const confirmFulfilledOpen = ref(false);
+const confirmCancelOpen = ref(false);
+const actionBusy = ref(false);
 
 const orderId = computed(() => String(route.params.shipheroOrderId || ""));
 
@@ -45,6 +50,49 @@ const statusClass = computed(() => {
   if (raw.includes("hold") || raw.includes("backorder")) return "text-danger bg-danger-subtle";
   if (raw.includes("ship")) return "text-success bg-success-subtle";
   return "text-secondary bg-secondary-subtle";
+});
+
+function userCanInventoryUpdate() {
+  const u = crmUser.value;
+  if (!u) return false;
+  if (crmIsAdmin(u) || u.is_crm_owner) return true;
+  return Array.isArray(u.permission_keys) && u.permission_keys.includes("inventory.update");
+}
+
+const canRunShipHeroActions = computed(() => !isPortalUser.value && userCanInventoryUpdate());
+
+function orderHasActiveHold(o) {
+  if (!o || typeof o !== "object") return false;
+  if (o.has_active_hold === true) return true;
+  const h = o.holds;
+  if (h && typeof h === "object") {
+    return Object.values(h).some((v) => v === true);
+  }
+  return false;
+}
+
+const showNotReadyToShipBanner = computed(() => order.value && orderHasActiveHold(order.value));
+
+const orderHeaderBadgeLabel = computed(() => {
+  if (showNotReadyToShipBanner.value) return "Not Ready To Ship";
+  return order.value?.status || "—";
+});
+
+const orderHeaderBadgeClass = computed(() => {
+  if (showNotReadyToShipBanner.value) {
+    return "badge rounded-pill fw-medium text-danger-emphasis bg-danger-subtle";
+  }
+  return `badge rounded-pill fw-medium ${statusClass.value}`;
+});
+
+const notReadyBannerBody = computed(() => {
+  const o = order.value;
+  if (!o) return "";
+  const sub = String(o.not_ready_subtitle || "").trim();
+  if (sub) return sub;
+  const hr = String(o.hold_reason || "").trim();
+  if (hr) return `Order has ${hr.toLowerCase()}.`;
+  return "Order has a hold.";
 });
 const sortedItems = computed(() => {
   const rows = Array.isArray(order.value?.items) ? [...order.value.items] : [];
@@ -178,6 +226,17 @@ function fallbackOrderSnapshot() {
       order_number: row.order_number || "",
       partner_order_id: "",
       status: row.status || "",
+      hold_reason: row.hold_reason || null,
+      holds: {
+        fraud_hold: false,
+        address_hold: false,
+        shipping_method_hold: false,
+        operator_hold: false,
+        payment_hold: false,
+        client_hold: false,
+      },
+      has_active_hold: !!(row.hold_reason && String(row.hold_reason).trim() !== ""),
+      not_ready_subtitle: "",
       order_date: row.order_date || null,
       required_ship_date: null,
       account: row.account || "",
@@ -290,6 +349,45 @@ watch(
   { immediate: true },
 );
 
+function closeActionConfirms() {
+  confirmFulfilledOpen.value = false;
+  confirmCancelOpen.value = false;
+}
+
+async function runMarkFulfilled() {
+  if (!order.value || !selectedAccountId.value || !orderId.value) return;
+  actionBusy.value = true;
+  try {
+    await api.post(`/orders/${encodeURIComponent(orderId.value)}/mark-fulfilled`, {
+      client_account_id: Number(selectedAccountId.value),
+    });
+    toast.success("Order marked fulfilled.");
+    closeActionConfirms();
+    await loadOrder();
+  } catch (e) {
+    toast.errorFrom(e, "Could not mark order fulfilled.");
+  } finally {
+    actionBusy.value = false;
+  }
+}
+
+async function runCancelOrder() {
+  if (!order.value || !selectedAccountId.value || !orderId.value) return;
+  actionBusy.value = true;
+  try {
+    await api.post(`/orders/${encodeURIComponent(orderId.value)}/cancel`, {
+      client_account_id: Number(selectedAccountId.value),
+    });
+    toast.success("Order canceled.");
+    closeActionConfirms();
+    await loadOrder();
+  } catch (e) {
+    toast.errorFrom(e, "Could not cancel order.");
+  } finally {
+    actionBusy.value = false;
+  }
+}
+
 onMounted(async () => {
   setCrmPageMeta({
     title: "Save Rack | Order Detail",
@@ -308,18 +406,6 @@ onMounted(async () => {
       <CrmLoadingSpinner message="Loading order detail..." :center="true" />
     </div>
     <template v-else>
-    <div class="d-flex align-items-start justify-content-between gap-3 flex-wrap mb-4">
-      <div>
-        <button type="button" class="btn btn-link px-0 text-decoration-none" @click="router.back()">
-          ← Orders
-        </button>
-        <h1 class="h4 mb-1 fw-semibold text-body">Order {{ headingOrderNumber }}</h1>
-        <p class="staff-page__intro mb-0">
-          <span class="badge rounded-pill fw-medium" :class="statusClass">{{ order?.status || "—" }}</span>
-        </p>
-      </div>
-    </div>
-
     <div class="staff-table-card staff-datatable-card staff-datatable-card--white w-100 mb-4">
       <div class="staff-table-toolbar">
         <div class="staff-table-toolbar--row flex-wrap align-items-end gap-2 gap-md-3">
@@ -364,6 +450,60 @@ onMounted(async () => {
       No order data loaded. Choose another account or use Refresh.
     </div>
     <template v-else>
+      <div class="order-detail-page__hero mb-3">
+        <div class="d-flex align-items-start justify-content-between gap-3 flex-wrap">
+          <div>
+            <button type="button" class="btn btn-link px-0 text-decoration-none" @click="router.back()">
+              ← Orders
+            </button>
+            <h1 class="h4 mb-1 fw-semibold text-body">Order {{ headingOrderNumber }}</h1>
+            <p class="staff-page__intro mb-0">
+              <span :class="orderHeaderBadgeClass">{{ orderHeaderBadgeLabel }}</span>
+            </p>
+          </div>
+          <div v-if="canRunShipHeroActions" class="dropdown align-self-start">
+            <button
+              id="order-detail-action-menu"
+              type="button"
+              class="btn btn-outline-secondary dropdown-toggle"
+              data-bs-toggle="dropdown"
+              aria-expanded="false"
+            >
+              Action
+            </button>
+            <ul class="dropdown-menu dropdown-menu-end" aria-labelledby="order-detail-action-menu">
+              <li>
+                <button type="button" class="dropdown-item" @click="confirmFulfilledOpen = true">
+                  Mark As Fulfilled
+                </button>
+              </li>
+              <li>
+                <button type="button" class="dropdown-item text-danger" @click="confirmCancelOpen = true">
+                  Cancel Order
+                </button>
+              </li>
+            </ul>
+          </div>
+        </div>
+        <div
+          v-if="showNotReadyToShipBanner"
+          class="alert alert-warning border-warning mt-3 mb-0 d-flex gap-2 align-items-start"
+          role="status"
+        >
+          <span class="text-warning-emphasis" aria-hidden="true">
+            <svg width="20" height="20" fill="currentColor" viewBox="0 0 24 24">
+              <path
+                d="M12 22c1.1 0 2-.9 2-2h-4c0 1.1.89 2 2 2zm6-6v-5c0-3.07-1.64-5.64-4.5-6.32V4c0-.83-.67-1.5-1.5-1.5s-1.5.67-1.5 1.5v.68C7.63 5.36 6 7.92 6 11v5l-2 2v1h16v-1l-2-2z"
+              />
+            </svg>
+          </span>
+          <div>
+            <div class="fw-semibold">This order is not ready to ship</div>
+            <div class="small mb-0">{{ notReadyBannerBody }}</div>
+          </div>
+        </div>
+      </div>
+
       <div v-if="loadNotice" class="alert alert-warning small mb-4" role="status">
         {{ loadNotice }}
       </div>
@@ -501,6 +641,29 @@ onMounted(async () => {
         </div>
       </div>
     </template>
+
+    <ConfirmModal
+      :open="confirmFulfilledOpen"
+      title="Mark As Fulfilled"
+      message="This updates fulfillment status in ShipHero only. It does not create a shipment or remove inventory via the full fulfillment flow. Continue?"
+      confirm-label="Mark As Fulfilled"
+      cancel-label="Cancel"
+      :danger="false"
+      :busy="actionBusy"
+      @close="confirmFulfilledOpen = false"
+      @confirm="runMarkFulfilled"
+    />
+    <ConfirmModal
+      :open="confirmCancelOpen"
+      title="Cancel Order"
+      message="This cancels the order in ShipHero. If ShipHero rejects the request, you may need to adjust options (for example void on store) from ShipHero directly."
+      confirm-label="Cancel Order"
+      cancel-label="Back"
+      danger
+      :busy="actionBusy"
+      @close="confirmCancelOpen = false"
+      @confirm="runCancelOrder"
+    />
     </template>
   </div>
 </template>

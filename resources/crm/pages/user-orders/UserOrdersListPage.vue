@@ -131,8 +131,7 @@ function formatStatus(row) {
     return firstHoldReasonLabel(row) || row.status || "—";
   }
   if (tabKey.value === "backorder") {
-    const raw = String(row?.status || "").trim();
-    return raw !== "" ? raw : "backorder";
+    return "Backorder";
   }
   return row.status || "—";
 }

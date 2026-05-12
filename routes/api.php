@@ -77,6 +77,10 @@ Route::middleware('auth:sanctum')->group(function () {
             ->middleware('can:inventory.view');
         Route::get('/', [OrderController::class, 'index'])
             ->middleware('can:inventory.view');
+        Route::post('/{orderId}/mark-fulfilled', [OrderController::class, 'markFulfilled'])
+            ->middleware('can:inventory.update');
+        Route::post('/{orderId}/cancel', [OrderController::class, 'cancelOrder'])
+            ->middleware('can:inventory.update');
         Route::get('/{orderId}', [OrderController::class, 'show'])
             ->middleware('can:inventory.view');
     });

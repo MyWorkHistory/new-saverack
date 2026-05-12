@@ -289,6 +289,64 @@ class OrderController extends Controller
         }
     }
 
+    public function markFulfilled(Request $request, string $orderId): JsonResponse
+    {
+        Gate::authorize('inventory.update');
+        $validated = $request->validate([
+            'client_account_id' => ['required', 'integer', 'exists:client_accounts,id'],
+            'reason' => ['nullable', 'string', 'max:500'],
+        ]);
+        $customerId = $this->resolveShipHeroCustomerAccountId((int) $validated['client_account_id'], $request);
+        try {
+            $this->orders->markOrderFulfilled(
+                $orderId,
+                $customerId,
+                isset($validated['reason']) ? (string) $validated['reason'] : null
+            );
+
+            return response()->json(['message' => 'Order marked fulfilled.']);
+        } catch (RuntimeException $e) {
+            return response()->json(['message' => $e->getMessage()], 502);
+        } catch (Throwable $e) {
+            report($e);
+
+            return response()->json([
+                'message' => config('app.debug') ? $e->getMessage() : 'Could not mark order fulfilled in ShipHero.',
+            ], 502);
+        }
+    }
+
+    public function cancelOrder(Request $request, string $orderId): JsonResponse
+    {
+        Gate::authorize('inventory.update');
+        $validated = $request->validate([
+            'client_account_id' => ['required', 'integer', 'exists:client_accounts,id'],
+            'reason' => ['nullable', 'string', 'max:500'],
+            'void_on_platform' => ['nullable', 'boolean'],
+            'force' => ['nullable', 'boolean'],
+        ]);
+        $customerId = $this->resolveShipHeroCustomerAccountId((int) $validated['client_account_id'], $request);
+        try {
+            $this->orders->cancelOrderInShipHero(
+                $orderId,
+                $customerId,
+                isset($validated['reason']) ? (string) $validated['reason'] : null,
+                (bool) ($validated['void_on_platform'] ?? false),
+                (bool) ($validated['force'] ?? false)
+            );
+
+            return response()->json(['message' => 'Order canceled.']);
+        } catch (RuntimeException $e) {
+            return response()->json(['message' => $e->getMessage()], 502);
+        } catch (Throwable $e) {
+            report($e);
+
+            return response()->json([
+                'message' => config('app.debug') ? $e->getMessage() : 'Could not cancel order in ShipHero.',
+            ], 502);
+        }
+    }
+
     private function resolveShipHeroCustomerAccountId(int $clientAccountId, Request $request): string
     {
         $account = ClientAccount::query()->find($clientAccountId);
@@ -359,6 +417,17 @@ class OrderController extends Controller
             'order_number' => (string) ($summary['order_number'] ?? ''),
             'partner_order_id' => '',
             'status' => (string) ($summary['status'] ?? ''),
+            'hold_reason' => is_string($summary['hold_reason'] ?? null) ? $summary['hold_reason'] : null,
+            'holds' => [
+                'fraud_hold' => false,
+                'address_hold' => false,
+                'shipping_method_hold' => false,
+                'operator_hold' => false,
+                'payment_hold' => false,
+                'client_hold' => false,
+            ],
+            'has_active_hold' => false,
+            'not_ready_subtitle' => '',
             'order_date' => is_string($summary['order_date'] ?? null) ? $summary['order_date'] : null,
             'required_ship_date' => null,
             'account' => (string) ($summary['account'] ?? ''),

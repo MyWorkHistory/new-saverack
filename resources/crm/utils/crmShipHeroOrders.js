@@ -1,8 +1,8 @@
 import { crmIsAdmin, crmIsPortalUser } from "./crmUser";
 
 /**
- * Matches Laravel `shiphero.orders.write` gate: staff with inventory.view may change ShipHero orders;
- * portal / client-linked logins still need inventory.update.
+ * Matches Laravel `shiphero.orders.write`: inventory.update OR inventory.view, including 3PL portal
+ * logins (client_account_id) where `inventory.view` is granted without listing keys in permission_keys.
  *
  * @param {object|null|undefined} user
  */
@@ -14,12 +14,12 @@ export function canWriteShipHeroOrders(user) {
     return true;
   }
   const keys = Array.isArray(user.permission_keys) ? user.permission_keys : [];
-  if (keys.includes("inventory.update")) {
+  if (keys.includes("inventory.update") || keys.includes("inventory.view")) {
     return true;
   }
   if (crmIsPortalUser(user)) {
-    return false;
+    return true;
   }
 
-  return keys.includes("inventory.view");
+  return false;
 }

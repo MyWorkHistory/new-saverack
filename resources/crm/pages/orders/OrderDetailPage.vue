@@ -91,7 +91,7 @@ const statusClass = computed(() => {
 
 const canRunShipHeroActions = computed(() => canWriteShipHeroOrders(crmUser.value));
 
-const canUseStaffOrderHeaderActions = computed(() => Boolean(order.value) && !crmIsPortalUser(crmUser.value));
+const canUseStaffOrderHeaderActions = computed(() => Boolean(order.value));
 
 function orderHasActiveHold(o) {
   if (!o || typeof o !== "object") return false;

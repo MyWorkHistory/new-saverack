@@ -3,6 +3,7 @@ import { computed, inject, nextTick, onMounted, onUnmounted, ref, watch } from "
 import { useRoute, useRouter } from "vue-router";
 import api from "../../services/api";
 import CrmLoadingSpinner from "../../components/common/CrmLoadingSpinner.vue";
+import CrmIconRowActions from "../../components/common/CrmIconRowActions.vue";
 import ConfirmModal from "../../components/common/ConfirmModal.vue";
 import { setCrmPageMeta } from "../../composables/useCrmPageMeta.js";
 import { useToast } from "../../composables/useToast.js";
@@ -81,6 +82,9 @@ const editQtyPending = ref(0);
 const confirmDeleteLineOpen = ref(false);
 const lineDeleteBusy = ref(false);
 const deleteLineRow = ref(null);
+
+const itemMenuOpenId = ref(null);
+const itemMenuRect = ref({ top: 0, left: 0 });
 
 const CARRIER_PRESETS = ["Cheapest", "ups", "fedex", "usps", "dhl", "asendia_one", "ontrac", "lasership"];
 const METHOD_PRESETS = ["Select", "Ground", "Priority", "Express", "Standard", "A124"];
@@ -190,6 +194,20 @@ const sortedItems = computed(() => {
   });
   return rows;
 });
+
+function itemRowMenuKey(row) {
+  if (!row || typeof row !== "object") return "";
+  if (row.id) return String(row.id).trim();
+  return `sku:${String(row.sku || "").trim()}`;
+}
+
+const itemMenuOpenRow = computed(() => {
+  const id = itemMenuOpenId.value;
+  if (!id) return null;
+  const rows = sortedItems.value;
+  return rows.find((r) => itemRowMenuKey(r) === id) ?? null;
+});
+
 const formattedShippingAddress = computed(() => {
   const a = order.value?.shipping_address;
   if (!a || typeof a !== "object") return "";
@@ -434,6 +452,7 @@ async function loadOrder() {
   activeLoadKey.value = requestKey;
   loading.value = true;
   order.value = null;
+  itemMenuOpenId.value = null;
   try {
     const { data } = await api.get(`/orders/${encodeURIComponent(orderId.value)}`, {
       params: { client_account_id: Number(selectedAccountId.value) },
@@ -712,10 +731,69 @@ const deleteLineItemConfirmMessage = computed(() => {
   return `Remove "${label}" from this order in ShipHero? This cannot be undone from here.`;
 });
 
-function lineItemStatusClass(status) {
-  const s = String(status || "").toLowerCase();
-  if (s.includes("cancel")) return "order-detail-page__item-status order-detail-page__item-status--bad";
-  return "order-detail-page__item-status";
+function lineItemStatusBadgeClass(status) {
+  const s = String(status || "").toLowerCase().trim();
+  if (!s) return "bg-secondary-subtle text-secondary-emphasis";
+  if (s.includes("cancel")) return "bg-danger-subtle text-danger-emphasis";
+  if (s.includes("pending") || s.includes("await")) return "bg-primary-subtle text-primary-emphasis";
+  if (s.includes("fulfill") || s.includes("ship") || s.includes("complete")) return "bg-success-subtle text-success-emphasis";
+  if (s.includes("partial")) return "bg-warning-subtle text-warning-emphasis";
+  if (s.includes("backorder") || s.includes("back order") || s.includes("oos") || s.includes("out of stock")) {
+    return "bg-danger-subtle text-danger-emphasis";
+  }
+  return "bg-secondary-subtle text-secondary-emphasis";
+}
+
+function closeItemMenu() {
+  itemMenuOpenId.value = null;
+}
+
+function placeItemMenu(anchorEl) {
+  if (!(anchorEl instanceof HTMLElement)) return;
+  const rect = anchorEl.getBoundingClientRect();
+  const width = 180;
+  const height = 92;
+  let top = rect.bottom + 4;
+  let left = rect.right - width;
+  left = Math.max(8, Math.min(left, window.innerWidth - width - 8));
+  if (top + height > window.innerHeight - 8) top = Math.max(8, rect.top - height - 4);
+  itemMenuRect.value = { top, left };
+}
+
+function toggleItemMenu(row, e) {
+  e.stopPropagation();
+  const key = itemRowMenuKey(row);
+  if (!key) return;
+  if (itemMenuOpenId.value === key) {
+    itemMenuOpenId.value = null;
+    return;
+  }
+  const btn = e.currentTarget;
+  itemMenuOpenId.value = key;
+  requestAnimationFrame(() => {
+    if (itemMenuOpenId.value === key && btn instanceof HTMLElement) {
+      placeItemMenu(btn);
+    }
+  });
+}
+
+function onItemRowMenuDocClick(ev) {
+  if (!itemMenuOpenId.value) return;
+  if (!ev.target?.closest?.("[data-row-actions]")) {
+    itemMenuOpenId.value = null;
+  }
+}
+
+function onItemMenuEdit() {
+  const row = itemMenuOpenRow.value;
+  closeItemMenu();
+  if (row) openEditLineItem(row);
+}
+
+function onItemMenuDelete() {
+  const row = itemMenuOpenRow.value;
+  closeItemMenu();
+  if (row) openDeleteLineConfirm(row);
 }
 
 function openEditLineItem(item) {
@@ -945,6 +1023,7 @@ function modalEscHandler(e) {
   if (addItemsModalOpen.value) addItemsModalOpen.value = false;
   if (editLineModalOpen.value) editLineModalOpen.value = false;
   if (moreActionsOpen.value) moreActionsOpen.value = false;
+  if (itemMenuOpenId.value) itemMenuOpenId.value = null;
 }
 
 watch([shippingModalOpen, addItemsModalOpen, editLineModalOpen], ([s, a, e]) => {
@@ -974,10 +1053,12 @@ watch(moreActionsOpen, (open) => {
 onUnmounted(() => {
   document.removeEventListener("keydown", modalEscHandler);
   document.removeEventListener("click", onMoreActionsDocumentClick);
+  document.removeEventListener("click", onItemRowMenuDocClick);
   unbindMoreActionsLayoutListeners();
 });
 
 onMounted(async () => {
+  document.addEventListener("click", onItemRowMenuDocClick);
   setCrmPageMeta({
     title: "Save Rack | Order Detail",
     description: "ShipHero order detail.",
@@ -1095,7 +1176,7 @@ function goToOrdersList() {
               <h2 class="h6 mb-0 fw-semibold">Items</h2>
               <button
                 type="button"
-                class="btn btn-outline-secondary btn-sm"
+                class="btn btn-outline-secondary btn-sm order-detail-page__add-items-btn"
                 :disabled="loading || !canRunShipHeroActions"
                 :title="!canRunShipHeroActions ? 'Requires inventory update permission' : undefined"
                 @click="openAddItemsModal"
@@ -1122,7 +1203,7 @@ function goToOrdersList() {
                         Quantity to ship <span class="order-detail-page__sort-icon">{{ sortIndicator("quantity_pending_fulfillment") }}</span>
                       </button>
                     </th>
-                    <th class="staff-table-head__th text-end">Actions</th>
+                    <th class="staff-table-head__th text-center order-detail-page__items-actions-col">Actions</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -1144,13 +1225,14 @@ function goToOrdersList() {
                           >
                             {{ item.name || "—" }}
                           </div>
-                          <div
+                          <span
                             v-if="item.fulfillment_status"
-                            :class="lineItemStatusClass(item.fulfillment_status)"
+                            class="badge rounded-pill fw-medium order-detail-page__item-line-status-badge"
+                            :class="lineItemStatusBadgeClass(item.fulfillment_status)"
                             :title="String(item.fulfillment_status)"
                           >
                             {{ item.fulfillment_status }}
-                          </div>
+                          </span>
                           <div
                             class="order-detail-page__item-sku"
                             :title="item.sku ? `SKU ${item.sku}` : undefined"
@@ -1170,17 +1252,23 @@ function goToOrdersList() {
                       </div>
                     </td>
                     <td class="text-end">{{ item.quantity_pending_fulfillment ?? 0 }}</td>
-                    <td class="text-end">
-                      <div v-if="canRunShipHeroActions" class="d-flex flex-column align-items-end gap-1">
-                        <button type="button" class="btn btn-link btn-sm p-0 lh-sm" @click="openEditLineItem(item)">
-                          Edit
-                        </button>
+                    <td class="text-center align-middle order-detail-page__items-actions-col">
+                      <div
+                        v-if="canRunShipHeroActions && itemRowMenuKey(item)"
+                        data-row-actions
+                        class="staff-actions-inner staff-actions-inner--single justify-content-center"
+                        @click.stop
+                      >
                         <button
                           type="button"
-                          class="btn btn-link btn-sm p-0 lh-sm text-danger"
-                          @click="openDeleteLineConfirm(item)"
+                          class="staff-action-btn staff-action-btn--more"
+                          :class="{ 'is-open': itemMenuOpenId === itemRowMenuKey(item) }"
+                          :aria-expanded="itemMenuOpenId === itemRowMenuKey(item) ? 'true' : 'false'"
+                          aria-haspopup="true"
+                          aria-label="Line item actions"
+                          @click="toggleItemMenu(item, $event)"
                         >
-                          Delete
+                          <CrmIconRowActions variant="horizontal" />
                         </button>
                       </div>
                       <span v-else class="small text-secondary">—</span>
@@ -1646,6 +1734,25 @@ function goToOrdersList() {
     </Teleport>
 
     <Teleport to="body">
+      <div
+        v-if="itemMenuOpenRow"
+        data-row-actions
+        class="staff-row-menu fixed z-[300] overflow-hidden"
+        role="menu"
+        :style="{
+          top: `${itemMenuRect.top}px`,
+          left: `${itemMenuRect.left}px`,
+        }"
+        @click.stop
+      >
+        <button type="button" class="staff-row-menu__item" role="menuitem" @click="onItemMenuEdit">Edit</button>
+        <button type="button" class="staff-row-menu__item staff-row-menu__item--danger" role="menuitem" @click="onItemMenuDelete">
+          Delete
+        </button>
+      </div>
+    </Teleport>
+
+    <Teleport to="body">
       <Transition name="modal-backdrop">
         <div
           v-if="addItemsModalOpen"
@@ -1868,6 +1975,10 @@ function goToOrdersList() {
   min-width: 0;
   flex: 1 1 auto;
   max-width: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.2rem;
 }
 
 /* One line + ellipsis; full text on hover via native `title` on the element (see template). */
@@ -1883,21 +1994,10 @@ function goToOrdersList() {
   line-height: 1.35;
 }
 
-.order-detail-page__item-status {
-  font-size: 0.8125rem;
-  line-height: 1.3;
-  color: #6c757d;
-  display: block;
-  min-width: 0;
-  max-width: 100%;
-  white-space: nowrap;
+.order-detail-page__item-line-status-badge {
+  max-width: min(14rem, 100%);
   overflow: hidden;
   text-overflow: ellipsis;
-}
-
-.order-detail-page__item-status--bad {
-  color: #dc3545;
-  font-weight: 600;
 }
 
 .order-detail-page__item-sku {
@@ -1989,6 +2089,29 @@ function goToOrdersList() {
   font-size: 0.8125rem;
   padding: 0.35rem 0.75rem;
   line-height: 1.25;
+}
+
+.order-detail-page :deep(.staff-table-wrap .table.staff-data-table) > thead > tr > th.order-detail-page__items-actions-col,
+.order-detail-page :deep(.staff-table-wrap .table.staff-data-table) > tbody > tr > td.order-detail-page__items-actions-col {
+  text-align: center !important;
+  vertical-align: middle !important;
+  width: 4.5rem;
+  min-width: 4.5rem;
+  max-width: 5rem;
+}
+
+.order-detail-page__add-items-btn.btn-outline-secondary:hover,
+.order-detail-page__add-items-btn.btn-outline-secondary:focus-visible {
+  background-color: var(--bs-body-bg, #fff);
+  color: var(--bs-secondary);
+  border-color: var(--bs-border-color);
+}
+
+[data-bs-theme="dark"] .order-detail-page__add-items-btn.btn-outline-secondary:hover,
+[data-bs-theme="dark"] .order-detail-page__add-items-btn.btn-outline-secondary:focus-visible {
+  background-color: var(--bs-body-bg);
+  color: var(--bs-body-color);
+  border-color: var(--bs-border-color);
 }
 
 .order-detail-page__more-actions .dropdown-menu {

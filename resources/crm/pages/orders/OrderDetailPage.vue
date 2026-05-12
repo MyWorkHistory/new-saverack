@@ -2095,9 +2095,9 @@ function goToOrdersList() {
 .order-detail-page :deep(.staff-table-wrap .table.staff-data-table) > tbody > tr > td.order-detail-page__items-actions-col {
   text-align: center !important;
   vertical-align: middle !important;
-  width: 4.5rem;
-  min-width: 4.5rem;
-  max-width: 5rem;
+  width: 7rem;
+  min-width: 7rem;
+  white-space: nowrap;
 }
 
 .order-detail-page__add-items-btn.btn-outline-secondary:hover,

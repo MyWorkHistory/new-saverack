@@ -362,9 +362,9 @@ class OrderController extends Controller
         try {
             $holds = $this->orders->getOrderHoldsNormalized($orderId, $customerId);
             if ($this->orders->orderHoldsOnlyOperatorHoldActive($holds)) {
-                throw ValidationException::withMessages([
-                    'order_id' => [ShipHeroOrderService::OPERATOR_HOLD_ONLY_MESSAGE],
-                ]);
+                return response()->json([
+                    'message' => ShipHeroOrderService::OPERATOR_HOLD_ONLY_MESSAGE,
+                ], 422);
             }
             $keysToClear = isset($validated['holds_to_clear']) && is_array($validated['holds_to_clear'])
                 ? array_values(array_unique($validated['holds_to_clear']))
@@ -686,6 +686,7 @@ class OrderController extends Controller
             return response()->json(['message' => 'No file uploaded.'], 422);
         }
         $path = null;
+        $publicUrl = null;
         try {
             $path = $file->store('order-attachments', 'public');
             $relative = Storage::disk('public')->url($path);
@@ -715,6 +716,7 @@ class OrderController extends Controller
                     // ignore cleanup failures
                 }
             }
+            Log::warning('shiphero.order.attachment_failed', $this->attachmentFailureLogContext($orderId, $publicUrl, $e));
 
             return response()->json(['message' => $e->getMessage()], 502);
         } catch (Throwable $e) {
@@ -725,12 +727,37 @@ class OrderController extends Controller
                     // ignore cleanup failures
                 }
             }
+            Log::warning('shiphero.order.attachment_failed', $this->attachmentFailureLogContext($orderId, $publicUrl, $e));
             report($e);
 
             return response()->json([
                 'message' => config('app.debug') ? $e->getMessage() : 'Could not attach file in ShipHero.',
             ], 502);
         }
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function attachmentFailureLogContext(string $orderId, ?string $publicUrl, Throwable $e): array
+    {
+        $host = null;
+        $scheme = null;
+        if (is_string($publicUrl) && $publicUrl !== '') {
+            $host = parse_url($publicUrl, PHP_URL_HOST);
+            $scheme = parse_url($publicUrl, PHP_URL_SCHEME);
+        }
+        $appUrl = (string) config('app.url');
+
+        return [
+            'order_id' => $orderId,
+            'public_url_scheme' => is_string($scheme) ? $scheme : null,
+            'public_url_host' => is_string($host) ? $host : null,
+            'app_url_host' => parse_url($appUrl, PHP_URL_HOST),
+            'app_url_https' => str_starts_with(strtolower($appUrl), 'https://'),
+            'exception' => get_class($e),
+            'message' => $e->getMessage(),
+        ];
     }
 
     private const BULK_ORDER_IDS_MAX = 25;

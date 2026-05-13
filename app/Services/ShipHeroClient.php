@@ -10,6 +10,9 @@ use Throwable;
 
 class ShipHeroClient
 {
+    /** Option key for {@see ShipHeroClient::query()}: tolerate top-level GraphQL `errors` when this mutation field has `request_id`. */
+    public const OPTION_GRAPHQL_SUCCESS_FIELD = 'graphql_success_field';
+
     /**
      * Exchange refresh token for a bearer access token (cached ~20 days).
      */
@@ -52,9 +55,10 @@ class ShipHeroClient
      * Execute a GraphQL operation against the ShipHero public API.
      *
      * @param  array<string, mixed>  $variables
+     * @param  array<string, mixed>  $options  e.g. {@see self::OPTION_GRAPHQL_SUCCESS_FIELD} => 'order_add_attachment'
      * @return array<string, mixed>  Parsed JSON body (includes "data" / "errors")
      */
-    public function query(string $graphql, array $variables = [], bool $allowTokenRetry = true): array
+    public function query(string $graphql, array $variables = [], bool $allowTokenRetry = true, array $options = []): array
     {
         $url = rtrim((string) config('services.shiphero.api_url', 'https://public-api.shiphero.com/graphql'), '/');
         $token = $this->accessToken();
@@ -108,7 +112,7 @@ class ShipHeroClient
             if ($status === 401 && $allowTokenRetry) {
                 Cache::forget('shiphero.access_token');
 
-                return $this->query($graphql, $variables, false);
+                return $this->query($graphql, $variables, false, $options);
             }
 
             if (($status < 200 || $status >= 300) && $this->isTransientHttpStatus($status) && $attempt < $maxAttempts) {
@@ -141,6 +145,19 @@ class ShipHeroClient
                 if ($this->isTransientApiErrorMessage($message) && $attempt < $maxAttempts) {
                     usleep($this->retrySleepMicros($attempt));
                     continue;
+                }
+
+                $successField = isset($options[self::OPTION_GRAPHQL_SUCCESS_FIELD])
+                    ? trim((string) $options[self::OPTION_GRAPHQL_SUCCESS_FIELD])
+                    : '';
+                if ($successField !== '' && $this->graphqlMutationHasRequestId($json, $successField)) {
+                    Log::warning('shiphero.graphql.errors_ignored_mutation_succeeded', [
+                        'operation' => $operation,
+                        'success_field' => $successField,
+                        'error_preview' => mb_substr($message, 0, 300),
+                    ]);
+
+                    return $json;
                 }
 
                 throw new RuntimeException('ShipHero: '.$message);
@@ -188,6 +205,27 @@ class ShipHeroClient
             'status' => (int) $response->getStatusCode(),
             'body' => (string) $response->getBody(),
         ];
+    }
+
+    /**
+     * ShipHero sometimes returns top-level `errors` alongside a successful mutation payload
+     * (e.g. order_add_attachment). Treat as success only when `data.$field.request_id` is present.
+     *
+     * @param  array<string, mixed>  $json
+     */
+    private function graphqlMutationHasRequestId(array $json, string $field): bool
+    {
+        $data = $json['data'] ?? null;
+        if (! is_array($data)) {
+            return false;
+        }
+        $node = $data[$field] ?? null;
+        if (! is_array($node)) {
+            return false;
+        }
+        $rid = $node['request_id'] ?? null;
+
+        return is_string($rid) && trim($rid) !== '';
     }
 
     private function extractOperationName(string $graphql): string

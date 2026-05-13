@@ -1048,7 +1048,9 @@ mutation ShipHeroOrderAddLineItems($data: AddLineItemsInput!) {
   }
 }
 GQL;
-        $this->client->query($graphql, ['data' => $data]);
+        $this->client->query($graphql, ['data' => $data], true, [
+            ShipHeroClient::OPTION_GRAPHQL_SUCCESS_FIELD => 'order_add_line_items',
+        ]);
     }
 
     public function addOrderAttachment(
@@ -1089,7 +1091,9 @@ mutation ShipHeroOrderAddAttachment($data: OrderAddAttachmentInput!) {
   }
 }
 GQL;
-        $this->client->query($graphql, ['data' => $data]);
+        $this->client->query($graphql, ['data' => $data], true, [
+            ShipHeroClient::OPTION_GRAPHQL_SUCCESS_FIELD => 'order_add_attachment',
+        ]);
     }
 
     /**

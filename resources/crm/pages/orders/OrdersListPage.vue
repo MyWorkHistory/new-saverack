@@ -69,7 +69,6 @@ const removeHoldsModalActiveHolds = ref({
   address_hold: false,
   payment_hold: false,
   client_hold: false,
-  shipping_method_hold: false,
 });
 const removeHoldsSingleOrderId = ref("");
 
@@ -137,7 +136,7 @@ const somePageSelected = computed(() => {
 /** Holds that “Remove Hold” can affect via ShipHero (operator is intentionally preserved). */
 function rowHasRemovableHolds(row) {
   const h = row?.holds && typeof row.holds === "object" ? row.holds : {};
-  return !!(h.fraud_hold || h.address_hold || h.payment_hold || h.client_hold || h.shipping_method_hold);
+  return !!(h.fraud_hold || h.address_hold || h.payment_hold || h.client_hold);
 }
 
 /** Only operator hold is active — cannot clear from CRM; use ShipHero. */
@@ -699,7 +698,6 @@ function normalizeRowHoldsForRemoveModal(row) {
     address_hold: !!h.address_hold,
     payment_hold: !!h.payment_hold,
     client_hold: !!h.client_hold,
-    shipping_method_hold: !!h.shipping_method_hold,
   };
 }
 

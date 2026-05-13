@@ -379,7 +379,7 @@ class OrderController extends Controller
             $paymentReason = in_array('payment_hold', $keysToClear, true)
                 ? ($reason !== '' ? $reason : 'User Clear Payment Hold')
                 : null;
-            $this->orders->clearOrderHoldsSelective($orderId, $customerId, $keysToClear, $paymentReason);
+            $this->orders->clearOrderHoldsSelective($orderId, $customerId, $keysToClear, $paymentReason, $holds);
 
             return response()->json(['message' => 'Holds cleared.']);
         } catch (RuntimeException $e) {
@@ -954,7 +954,7 @@ class OrderController extends Controller
                     continue;
                 }
                 try {
-                    $this->orders->clearOrderHoldsSelective($oid, $customerId, $keysToClear, $paymentReason);
+                    $this->orders->clearOrderHoldsSelective($oid, $customerId, $keysToClear, $paymentReason, $holds);
                     $results[] = ['order_id' => $oid, 'ok' => true];
                     $ok++;
                 } catch (RuntimeException $e) {

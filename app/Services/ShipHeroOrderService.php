@@ -9,13 +9,17 @@ use RuntimeException;
 
 class ShipHeroOrderService
 {
-    /** Hold keys CRM may clear via {@see clearOrderHoldsSelective} (never {@see operator_hold}). */
+    /**
+     * Hold keys CRM may clear via {@see clearOrderHoldsSelective}.
+     * ShipHero {@see UpdateOrderHoldsInput} does not include {@see shipping_method_hold}; clear that in ShipHero.
+     *
+     * @see https://developer.shiphero.com/schema/types/update-order-holds-input.html
+     */
     public const ORDER_CLEARABLE_HOLD_KEYS = [
         'fraud_hold',
         'address_hold',
         'payment_hold',
         'client_hold',
-        'shipping_method_hold',
     ];
 
     public const NO_MATCHING_HOLDS_MESSAGE = 'No matching holds to clear on this order.';
@@ -792,13 +796,15 @@ GQL;
     /**
      * Clear only the given hold keys that are currently active; other active clearable holds stay on.
      *
-     * @param  list<string>  $keysToClear
+     * @param  list<string>  $keysToClear  keys from {@see ORDER_CLEARABLE_HOLD_KEYS}
+     * @param  array<string, mixed>|null  $currentHoldsPreloaded  from {@see getOrderHoldsNormalized} to avoid a duplicate ShipHero fetch
      */
     public function clearOrderHoldsSelective(
         string $orderId,
         string $customerAccountId,
         array $keysToClear,
-        ?string $paymentHoldClearReason = null
+        ?string $paymentHoldClearReason = null,
+        ?array $currentHoldsPreloaded = null
     ): void {
         $allowed = self::ORDER_CLEARABLE_HOLD_KEYS;
         $normalizedKeys = [];
@@ -815,7 +821,9 @@ GQL;
 
         $relayId = $this->resolveOrderRelayIdForMutations($orderId, $customerAccountId);
         $customer = trim($customerAccountId);
-        $current = $this->getOrderHoldsNormalized($orderId, $customerAccountId);
+        $current = $currentHoldsPreloaded !== null
+            ? $this->normalizeOrderHoldsForApi($currentHoldsPreloaded)
+            : $this->getOrderHoldsNormalized($orderId, $customerAccountId);
 
         $anyTargetedOn = false;
         foreach ($keysList as $k) {

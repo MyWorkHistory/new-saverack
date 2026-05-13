@@ -6,7 +6,6 @@ const HOLD_ROWS = [
   { key: "address_hold", label: "Address Hold" },
   { key: "payment_hold", label: "Payment Hold" },
   { key: "client_hold", label: "Client Hold" },
-  { key: "shipping_method_hold", label: "Shipping Method Hold" },
 ];
 
 const props = defineProps({
@@ -25,7 +24,6 @@ const selected = reactive({
   address_hold: false,
   payment_hold: false,
   client_hold: false,
-  shipping_method_hold: false,
 });
 
 const paymentReasonLocal = ref("");
@@ -115,11 +113,11 @@ function onSubmit() {
             <div class="crm-vx-modal__body pt-0">
               <p v-if="variant === 'bulk'" class="small text-secondary mb-3">
                 Selected hold types are cleared on each order that has them. Orders with only an operator hold are
-                skipped.
+                skipped. Shipping method holds are not available via this API; clear those in ShipHero.
               </p>
               <p v-else class="small text-secondary mb-3">
                 Checked holds are removed in ShipHero. Uncheck a hold to leave it on the order. Operator holds cannot be
-                removed here.
+                removed here. Shipping method holds must be cleared in ShipHero.
               </p>
               <div v-if="!visibleRows.length" class="small text-secondary">No removable holds on this order.</div>
               <ul v-else class="list-unstyled mb-0 d-flex flex-column gap-2">

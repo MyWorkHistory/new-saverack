@@ -141,7 +141,7 @@ const detailHoldsNormalized = computed(() => {
 
 const detailHasRemovableHolds = computed(() => {
   const h = detailHoldsNormalized.value;
-  return !!(h.fraud_hold || h.address_hold || h.payment_hold || h.client_hold || h.shipping_method_hold);
+  return !!(h.fraud_hold || h.address_hold || h.payment_hold || h.client_hold);
 });
 
 const detailOnlyOperatorHold = computed(() => {

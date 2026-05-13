@@ -110,9 +110,8 @@ const isShippedTab = computed(() => tabKey.value === "shipped");
 
 const selectedCount = computed(() => selectedOrderIds.value.size);
 
-/** Bulk actions need a selection; keep toolbar visible but disabled until then. */
-const bulkBarDisabled = computed(() => !selectedCount.value || bulkBusy.value);
-const bulkMutationDisabled = computed(() => bulkBarDisabled.value || !canWriteOrders.value);
+/** Disable destructive / write bulk actions while a request runs or user cannot write. */
+const bulkMutationDisabled = computed(() => bulkBusy.value || !canWriteOrders.value);
 
 const allPageSelected = computed(() => {
   const ids = displayedRows.value.map((r) => String(r.id || "").trim()).filter(Boolean);
@@ -861,7 +860,15 @@ onUnmounted(() => {
   <div class="staff-page staff-page--wide">
     <div class="d-flex align-items-start justify-content-between gap-3 mb-4">
       <div>
-        <h1 class="h4 mb-1 fw-semibold text-body">Orders - {{ tabTitle }}</h1>
+        <h1 class="h4 mb-1 fw-semibold text-body">
+          <span>Orders - {{ tabTitle }}</span>
+          <span
+            v-if="selectedAccountId && hasSearched"
+            class="small text-secondary fw-normal ms-1"
+          >
+            ({{ displayedRows.length }} {{ displayedRows.length === 1 ? "order" : "orders" }})
+          </span>
+        </h1>
         <p v-if="!isPortalOrderList" class="staff-page__intro mb-0">
           <template v-if="tabKey === 'manage'">
             <strong>Manage</strong> shows every ShipHero order for this account that matches your filters — it is not limited
@@ -1209,15 +1216,15 @@ onUnmounted(() => {
       </div>
 
       <div
-        v-if="selectedAccountId"
+        v-if="selectedAccountId && selectedCount > 0"
         class="d-flex flex-wrap align-items-center gap-2 gap-md-3 px-3 px-md-4 py-3 border-bottom bg-body-tertiary"
       >
         <span class="small fw-semibold text-body me-md-1">{{ selectedCount }} selected</span>
         <template v-if="isShippedTab">
           <button
             type="button"
-            class="btn btn-primary btn-sm staff-page-primary orders-bulk-toolbar-btn"
-            :disabled="bulkBarDisabled"
+            class="btn btn-outline-secondary btn-sm orders-bulk-toolbar-btn orders-toolbar-outline-btn"
+            :disabled="bulkBusy"
             @click="exportSelectedCsv"
           >
             Export
@@ -1225,7 +1232,7 @@ onUnmounted(() => {
           <button
             type="button"
             class="btn btn-outline-secondary btn-sm orders-bulk-toolbar-btn orders-toolbar-outline-btn"
-            :disabled="bulkBarDisabled"
+            :disabled="bulkBusy"
             @click="clearRowSelection"
           >
             Clear Selection
@@ -1242,7 +1249,7 @@ onUnmounted(() => {
           </button>
           <button
             type="button"
-            class="btn btn-primary btn-sm staff-page-primary orders-bulk-toolbar-btn"
+            class="btn btn-outline-secondary btn-sm orders-bulk-toolbar-btn orders-toolbar-outline-btn"
             :disabled="bulkMutationDisabled"
             @click="confirmBulkMarkFulfilledOpen = true"
           >
@@ -1250,7 +1257,7 @@ onUnmounted(() => {
           </button>
           <button
             type="button"
-            class="btn btn-primary btn-sm staff-page-primary orders-bulk-toolbar-btn"
+            class="btn btn-outline-secondary btn-sm orders-bulk-toolbar-btn orders-toolbar-outline-btn"
             :disabled="bulkMutationDisabled"
             @click="confirmBulkAllowPartialOpen = true"
           >
@@ -1274,8 +1281,8 @@ onUnmounted(() => {
           </button>
           <button
             type="button"
-            class="btn btn-primary btn-sm staff-page-primary orders-bulk-toolbar-btn"
-            :disabled="bulkBarDisabled"
+            class="btn btn-outline-secondary btn-sm orders-bulk-toolbar-btn orders-toolbar-outline-btn"
+            :disabled="bulkBusy"
             @click="exportSelectedCsv"
           >
             Export
@@ -1283,17 +1290,12 @@ onUnmounted(() => {
           <button
             type="button"
             class="btn btn-outline-secondary btn-sm orders-bulk-toolbar-btn orders-toolbar-outline-btn"
-            :disabled="bulkBarDisabled"
+            :disabled="bulkBusy"
             @click="clearRowSelection"
           >
             Clear Selection
           </button>
         </template>
-      </div>
-
-      <div v-if="selectedAccountId && hasSearched" class="px-3 px-md-4 pt-3 pb-0 small text-secondary">
-        Showing <span class="fw-semibold text-body">{{ displayedRows.length }}</span> order{{ displayedRows.length === 1 ? "" : "s" }}.
-        <template v-if="hasNextPage"> — load more to see additional orders.</template>
       </div>
 
       <div class="table-responsive staff-table-wrap">
@@ -1593,9 +1595,8 @@ onUnmounted(() => {
   z-index: 1200;
 }
 
-/* Match billing detail primary actions: solid brand fill + white label */
-.orders-toolbar-search-btn,
-.orders-bulk-toolbar-btn.staff-page-primary {
+/* Match billing detail primary actions: solid brand fill + white label (search only). */
+.orders-toolbar-search-btn {
   --bs-btn-color: #fff;
   --bs-btn-hover-color: #fff;
   --bs-btn-active-color: #fff;

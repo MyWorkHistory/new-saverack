@@ -9,6 +9,20 @@ use RuntimeException;
 
 class ShipHeroOrderService
 {
+    /** Hold keys CRM may clear via {@see clearOrderHoldsSelective} (never {@see operator_hold}). */
+    public const ORDER_CLEARABLE_HOLD_KEYS = [
+        'fraud_hold',
+        'address_hold',
+        'payment_hold',
+        'client_hold',
+        'shipping_method_hold',
+    ];
+
+    public const NO_MATCHING_HOLDS_MESSAGE = 'No matching holds to clear on this order.';
+
+    /** User-facing copy when only an operator hold blocks CRM clears. */
+    public const OPERATOR_HOLD_ONLY_MESSAGE = 'Contact your account manager about the operator hold on this order.';
+
     /** @var ShipHeroClient */
     protected $client;
 
@@ -747,8 +761,8 @@ GQL;
     }
 
     /**
-     * Clear fraud, address, payment, and client holds. {@see operator_hold} is omitted so ShipHero
-     * leaves it unchanged (operator holds must be cleared in ShipHero).
+     * Clear fraud, address, payment, and client holds to false. Does not change {@see shipping_method_hold}
+     * or {@see operator_hold} (legacy ShipHero behavior for callers that predate selective clear).
      */
     public function clearOrderHolds(string $orderId, string $customerAccountId): void
     {
@@ -764,6 +778,95 @@ GQL;
         if ($customer !== '') {
             $data['customer_account_id'] = $customer;
         }
+        $graphql = <<<'GQL'
+mutation ShipHeroOrderUpdateHolds($data: UpdateOrderHoldsInput!) {
+  order_update_holds(data: $data) {
+    request_id
+    complexity
+  }
+}
+GQL;
+        $this->client->query($graphql, ['data' => $data]);
+    }
+
+    /**
+     * Clear only the given hold keys that are currently active; other active clearable holds stay on.
+     *
+     * @param  list<string>  $keysToClear
+     */
+    public function clearOrderHoldsSelective(
+        string $orderId,
+        string $customerAccountId,
+        array $keysToClear,
+        ?string $paymentHoldClearReason = null
+    ): void {
+        $allowed = self::ORDER_CLEARABLE_HOLD_KEYS;
+        $normalizedKeys = [];
+        foreach ($keysToClear as $k) {
+            $k = is_string($k) ? trim($k) : '';
+            if ($k !== '' && in_array($k, $allowed, true)) {
+                $normalizedKeys[$k] = true;
+            }
+        }
+        $keysList = array_keys($normalizedKeys);
+        if ($keysList === []) {
+            throw new RuntimeException('Select at least one hold type to clear.');
+        }
+
+        $relayId = $this->resolveOrderRelayIdForMutations($orderId, $customerAccountId);
+        $customer = trim($customerAccountId);
+        $current = $this->getOrderHoldsNormalized($orderId, $customerAccountId);
+
+        $anyTargetedOn = false;
+        foreach ($keysList as $k) {
+            if (! empty($current[$k])) {
+                $anyTargetedOn = true;
+                break;
+            }
+        }
+        if (! $anyTargetedOn) {
+            throw new RuntimeException(self::NO_MATCHING_HOLDS_MESSAGE);
+        }
+
+        $data = [
+            'order_id' => $relayId,
+        ];
+        if ($customer !== '') {
+            $data['customer_account_id'] = $customer;
+        }
+
+        foreach ($allowed as $key) {
+            if (empty($current[$key])) {
+                continue;
+            }
+            if (isset($normalizedKeys[$key])) {
+                $data[$key] = false;
+            } else {
+                $data[$key] = true;
+            }
+        }
+
+        $hasHoldField = false;
+        foreach ($allowed as $key) {
+            if (array_key_exists($key, $data)) {
+                $hasHoldField = true;
+                break;
+            }
+        }
+        if (! $hasHoldField) {
+            throw new RuntimeException(self::NO_MATCHING_HOLDS_MESSAGE);
+        }
+
+        $reason = $paymentHoldClearReason !== null && trim($paymentHoldClearReason) !== ''
+            ? trim($paymentHoldClearReason)
+            : null;
+        if ($reason !== null && isset($normalizedKeys['payment_hold']) && ! empty($current['payment_hold'])) {
+            Log::info('shiphero.order.clear_payment_hold', [
+                'order_id' => $orderId,
+                'reason' => $reason,
+            ]);
+        }
+
         $graphql = <<<'GQL'
 mutation ShipHeroOrderUpdateHolds($data: UpdateOrderHoldsInput!) {
   order_update_holds(data: $data) {

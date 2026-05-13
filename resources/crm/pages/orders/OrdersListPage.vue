@@ -6,6 +6,7 @@ import CrmLoadingSpinner from "../../components/common/CrmLoadingSpinner.vue";
 import CrmIconRowActions from "../../components/common/CrmIconRowActions.vue";
 import CrmSearchableSelect from "../../components/common/CrmSearchableSelect.vue";
 import ConfirmModal from "../../components/common/ConfirmModal.vue";
+import OrdersRemoveHoldsModal from "../../components/orders/OrdersRemoveHoldsModal.vue";
 import { setCrmPageMeta } from "../../composables/useCrmPageMeta.js";
 import { useToast } from "../../composables/useToast.js";
 import { canWriteShipHeroOrders } from "../../utils/crmShipHeroOrders";
@@ -61,7 +62,16 @@ const addHoldBusy = ref(false);
 const confirmBulkMarkFulfilledOpen = ref(false);
 const confirmBulkCancelOpen = ref(false);
 const confirmBulkAllowPartialOpen = ref(false);
-const confirmBulkRemoveHoldsOpen = ref(false);
+const removeHoldsModalOpen = ref(false);
+const removeHoldsModalVariant = ref("bulk");
+const removeHoldsModalActiveHolds = ref({
+  fraud_hold: false,
+  address_hold: false,
+  payment_hold: false,
+  client_hold: false,
+  shipping_method_hold: false,
+});
+const removeHoldsSingleOrderId = ref("");
 
 const query = reactive({
   datePreset: "today",
@@ -179,6 +189,11 @@ function openOrderViewNewTab(row) {
 function statusClass(status) {
   const s = String(status || "").toLowerCase();
   if (s.includes("hold")) return "bg-danger-subtle text-danger-emphasis";
+  if (s.includes("unfulfilled")) return "bg-secondary-subtle text-secondary-emphasis";
+  if (s.includes("incomplete")) return "bg-secondary-subtle text-secondary-emphasis";
+  if (s.includes("fulfilled") || s === "complete" || s.includes("complete")) {
+    return "bg-success-subtle text-success-emphasis";
+  }
   if (s.includes("ship")) return "bg-success-subtle text-success-emphasis";
   if (s.includes("ready")) return "bg-primary-subtle text-primary-emphasis";
   return "bg-secondary-subtle text-secondary-emphasis";
@@ -677,43 +692,89 @@ async function runBulkAllowPartial() {
   }
 }
 
-async function runBulkRemoveHolds() {
-  if (!selectedAccountId.value) return;
-  const ids = selectedRowsList()
-    .map((r) => String(r.id))
-    .filter(Boolean);
-  if (!ids.length) return;
-  bulkBusy.value = true;
-  try {
-    const { data } = await api.post("/orders/bulk/clear-holds", {
-      client_account_id: Number(selectedAccountId.value),
-      order_ids: ids,
-    });
-    toast.success(`Remove hold: ${data?.summary?.ok ?? 0} ok, ${data?.summary?.failed ?? 0} failed.`);
-    confirmBulkRemoveHoldsOpen.value = false;
-    clearRowSelection();
-    await fetchOrders(true);
-    if (tabKey.value === "manage") await fetchReadySummary(true);
-  } catch (e) {
-    toast.errorFrom(e, "Bulk remove holds failed.");
-  } finally {
-    bulkBusy.value = false;
-  }
+function normalizeRowHoldsForRemoveModal(row) {
+  const h = row?.holds && typeof row.holds === "object" ? row.holds : {};
+  return {
+    fraud_hold: !!h.fraud_hold,
+    address_hold: !!h.address_hold,
+    payment_hold: !!h.payment_hold,
+    client_hold: !!h.client_hold,
+    shipping_method_hold: !!h.shipping_method_hold,
+  };
 }
 
-async function runSingleRemoveHold(row) {
+function closeRemoveHoldsModal() {
+  if (bulkBusy.value) return;
+  removeHoldsModalOpen.value = false;
+  removeHoldsSingleOrderId.value = "";
+}
+
+function openBulkRemoveHoldsModal() {
+  removeHoldsModalVariant.value = "bulk";
+  removeHoldsModalOpen.value = true;
+}
+
+function openSingleRemoveHoldsModal(row) {
   if (!selectedAccountId.value || !row?.id) return;
   manageOpenId.value = null;
+  removeHoldsModalVariant.value = "single";
+  removeHoldsModalActiveHolds.value = normalizeRowHoldsForRemoveModal(row);
+  removeHoldsSingleOrderId.value = String(row.id).trim();
+  removeHoldsModalOpen.value = true;
+}
+
+async function onRemoveHoldsModalConfirm(payload) {
+  if (!selectedAccountId.value || !payload?.holds_to_clear?.length) return;
+  if (removeHoldsModalVariant.value === "bulk") {
+    const ids = selectedRowsList()
+      .map((r) => String(r.id))
+      .filter(Boolean);
+    if (!ids.length) return;
+  }
   bulkBusy.value = true;
   try {
-    await api.post(`/orders/${encodeURIComponent(String(row.id))}/remove-holds`, {
-      client_account_id: Number(selectedAccountId.value),
-    });
-    toast.success("Holds cleared.");
-    await fetchOrders(true);
-    if (tabKey.value === "manage") await fetchReadySummary(true);
+    const bodyCommon = {
+      holds_to_clear: payload.holds_to_clear,
+    };
+    if (payload.payment_hold_reason) {
+      bodyCommon.payment_hold_reason = payload.payment_hold_reason;
+    }
+    if (removeHoldsModalVariant.value === "bulk") {
+      const ids = selectedRowsList()
+        .map((r) => String(r.id))
+        .filter(Boolean);
+      const { data } = await api.post("/orders/bulk/clear-holds", {
+        client_account_id: Number(selectedAccountId.value),
+        order_ids: ids,
+        ...bodyCommon,
+      });
+      toast.success(`Remove hold: ${data?.summary?.ok ?? 0} ok, ${data?.summary?.failed ?? 0} failed.`);
+      removeHoldsModalOpen.value = false;
+      removeHoldsSingleOrderId.value = "";
+      clearRowSelection();
+      await fetchOrders(true);
+      if (tabKey.value === "manage") await fetchReadySummary(true);
+    } else {
+      const oid = removeHoldsSingleOrderId.value;
+      if (!oid) {
+        bulkBusy.value = false;
+        return;
+      }
+      await api.post(`/orders/${encodeURIComponent(oid)}/remove-holds`, {
+        client_account_id: Number(selectedAccountId.value),
+        ...bodyCommon,
+      });
+      toast.success("Holds cleared.");
+      removeHoldsModalOpen.value = false;
+      removeHoldsSingleOrderId.value = "";
+      await fetchOrders(true);
+      if (tabKey.value === "manage") await fetchReadySummary(true);
+    }
   } catch (e) {
-    toast.errorFrom(e, "Could not remove holds.");
+    toast.errorFrom(
+      e,
+      removeHoldsModalVariant.value === "bulk" ? "Bulk remove holds failed." : "Could not remove holds.",
+    );
   } finally {
     bulkBusy.value = false;
   }
@@ -1275,7 +1336,7 @@ onUnmounted(() => {
             type="button"
             class="btn btn-outline-secondary btn-sm orders-bulk-toolbar-btn orders-toolbar-outline-btn"
             :disabled="bulkMutationDisabled"
-            @click="confirmBulkRemoveHoldsOpen = true"
+            @click="openBulkRemoveHoldsModal"
           >
             Remove Hold
           </button>
@@ -1445,7 +1506,7 @@ onUnmounted(() => {
             v-if="canWriteOrders && rowHasRemovableHolds(manageMenuRow)"
             class="staff-row-menu__item"
             role="menuitem"
-            @click="runSingleRemoveHold(manageMenuRow)"
+            @click="openSingleRemoveHoldsModal(manageMenuRow)"
           >
             Remove Hold
           </button>
@@ -1455,7 +1516,7 @@ onUnmounted(() => {
             class="staff-row-menu__item text-start"
             role="menuitem"
             disabled
-            title="This order only has an operator hold, which cannot be cleared from here. Clear it in ShipHero."
+            title="Contact your account manager about the operator hold on this order."
           >
             Remove Hold
           </button>
@@ -1497,18 +1558,14 @@ onUnmounted(() => {
       @close="confirmBulkAllowPartialOpen = false"
       @confirm="runBulkAllowPartial"
     />
-    <ConfirmModal
-      :open="confirmBulkRemoveHoldsOpen"
-      title="Remove Holds?"
-      :message="`Clear fraud, address, payment, and client holds for ${selectedCount} order${selectedCount === 1 ? '' : 's'}? Operator holds are left unchanged.`"
-      confirm-label="Remove Hold"
-      cancel-label="Cancel"
+    <OrdersRemoveHoldsModal
+      :open="removeHoldsModalOpen"
       :busy="bulkBusy"
-      :danger="false"
-      @close="confirmBulkRemoveHoldsOpen = false"
-      @confirm="runBulkRemoveHolds"
+      :variant="removeHoldsModalVariant"
+      :active-holds="removeHoldsModalActiveHolds"
+      @close="closeRemoveHoldsModal"
+      @confirm="onRemoveHoldsModalConfirm"
     />
-
     <Teleport to="body">
       <Transition name="modal-backdrop">
         <div

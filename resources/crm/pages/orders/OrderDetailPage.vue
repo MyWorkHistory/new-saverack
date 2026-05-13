@@ -5,6 +5,7 @@ import api from "../../services/api";
 import CrmLoadingSpinner from "../../components/common/CrmLoadingSpinner.vue";
 import CrmIconRowActions from "../../components/common/CrmIconRowActions.vue";
 import ConfirmModal from "../../components/common/ConfirmModal.vue";
+import OrdersRemoveHoldsModal from "../../components/orders/OrdersRemoveHoldsModal.vue";
 import { setCrmPageMeta } from "../../composables/useCrmPageMeta.js";
 import { useToast } from "../../composables/useToast.js";
 import { crmIsPortalUser } from "../../utils/crmUser";
@@ -61,7 +62,7 @@ const addItemsBusy = ref(false);
 const attachmentFileInput = ref(null);
 const attachmentUploadBusy = ref(false);
 
-const confirmRemoveHoldsOpen = ref(false);
+const removeHoldsModalOpen = ref(false);
 const removeHoldsBusy = ref(false);
 const moreActionsOpen = ref(false);
 const moreActionsBtnRef = ref(null);
@@ -100,6 +101,11 @@ const statusClass = computed(() => {
     order.value?.status || order.value?.raw_fulfillment_status || ""
   ).toLowerCase();
   if (raw.includes("hold") || raw.includes("backorder")) return "text-danger bg-danger-subtle";
+  if (raw.includes("unfulfilled")) return "text-secondary bg-secondary-subtle";
+  if (raw.includes("incomplete")) return "text-secondary bg-secondary-subtle";
+  if (raw.includes("fulfilled") || raw === "complete" || raw.includes("complete")) {
+    return "text-success bg-success-subtle";
+  }
   if (raw.includes("ship")) return "text-success bg-success-subtle";
   return "text-secondary bg-secondary-subtle";
 });
@@ -119,6 +125,30 @@ function orderHasActiveHold(o) {
 }
 
 const showNotReadyToShipBanner = computed(() => order.value && orderHasActiveHold(order.value));
+
+const detailHoldsNormalized = computed(() => {
+  const h = order.value?.holds;
+  const o = h && typeof h === "object" ? h : {};
+  return {
+    fraud_hold: !!o.fraud_hold,
+    address_hold: !!o.address_hold,
+    shipping_method_hold: !!o.shipping_method_hold,
+    operator_hold: !!o.operator_hold,
+    payment_hold: !!o.payment_hold,
+    client_hold: !!o.client_hold,
+  };
+});
+
+const detailHasRemovableHolds = computed(() => {
+  const h = detailHoldsNormalized.value;
+  return !!(h.fraud_hold || h.address_hold || h.payment_hold || h.client_hold || h.shipping_method_hold);
+});
+
+const detailOnlyOperatorHold = computed(() => {
+  const h = detailHoldsNormalized.value;
+  if (!h.operator_hold) return false;
+  return !(h.fraud_hold || h.address_hold || h.payment_hold || h.client_hold || h.shipping_method_hold);
+});
 
 const orderHeaderBadgeLabel = computed(() => {
   if (showNotReadyToShipBanner.value) return "Not Ready To Ship";
@@ -509,7 +539,7 @@ watch(
 function closeActionConfirms() {
   confirmFulfilledOpen.value = false;
   confirmCancelOpen.value = false;
-  confirmRemoveHoldsOpen.value = false;
+  removeHoldsModalOpen.value = false;
   confirmDeleteLineOpen.value = false;
 }
 
@@ -547,15 +577,27 @@ async function runCancelOrder() {
   }
 }
 
-async function runRemoveHolds() {
+function closeRemoveHoldsModal() {
+  if (removeHoldsBusy.value) return;
+  removeHoldsModalOpen.value = false;
+}
+
+async function onRemoveHoldsConfirm(payload) {
   if (!order.value || !selectedAccountId.value || !orderId.value) return;
+  if (!payload?.holds_to_clear?.length) return;
   removeHoldsBusy.value = true;
   try {
-    await api.post(`/orders/${encodeURIComponent(orderId.value)}/remove-holds`, {
+    const body = {
       client_account_id: Number(selectedAccountId.value),
-    });
+      holds_to_clear: payload.holds_to_clear,
+    };
+    if (payload.payment_hold_reason) {
+      body.payment_hold_reason = payload.payment_hold_reason;
+    }
+    await api.post(`/orders/${encodeURIComponent(orderId.value)}/remove-holds`, body);
     toast.success("Holds removed.");
-    confirmRemoveHoldsOpen.value = false;
+    removeHoldsBusy.value = false;
+    removeHoldsModalOpen.value = false;
     await loadOrder();
   } catch (e) {
     toast.errorFrom(e, "Could not remove holds.");
@@ -736,7 +778,11 @@ function lineItemStatusBadgeClass(status) {
   if (!s) return "bg-secondary-subtle text-secondary-emphasis";
   if (s.includes("cancel")) return "bg-danger-subtle text-danger-emphasis";
   if (s.includes("pending") || s.includes("await")) return "bg-primary-subtle text-primary-emphasis";
-  if (s.includes("fulfill") || s.includes("ship") || s.includes("complete")) return "bg-success-subtle text-success-emphasis";
+  if (s.includes("unfulfilled")) return "bg-secondary-subtle text-secondary-emphasis";
+  if (s.includes("incomplete")) return "bg-secondary-subtle text-secondary-emphasis";
+  if (s.includes("fulfilled") || s.includes("ship") || s.includes("complete")) {
+    return "bg-success-subtle text-success-emphasis";
+  }
   if (s.includes("partial")) return "bg-warning-subtle text-warning-emphasis";
   if (s.includes("backorder") || s.includes("back order") || s.includes("oos") || s.includes("out of stock")) {
     return "bg-danger-subtle text-danger-emphasis";
@@ -830,6 +876,7 @@ async function submitEditLinePending() {
       quantity_pending_fulfillment: q,
     });
     toast.success("Quantity to ship updated.");
+    editLineBusy.value = false;
     closeEditLineModal();
     await loadOrder();
   } catch (e) {
@@ -1132,12 +1179,12 @@ function goToOrdersList() {
                 </button>
               </div>
               <button
-                v-if="showNotReadyToShipBanner"
+                v-if="showNotReadyToShipBanner && detailHasRemovableHolds && !detailOnlyOperatorHold"
                 type="button"
                 class="btn btn-danger text-white"
                 :disabled="!canRunShipHeroActions"
                 :title="!canRunShipHeroActions ? 'You do not have permission to change this order in ShipHero.' : undefined"
-                @click="confirmRemoveHoldsOpen = true"
+                @click="removeHoldsModalOpen = true"
               >
                 Remove Hold
               </button>
@@ -1161,6 +1208,9 @@ function goToOrdersList() {
               <ul class="small mb-0 ps-3 mt-2 text-secondary order-detail-page__nrts-list">
                 <li v-for="(line, idx) in notReadyBannerBullets" :key="'nrts-' + idx">{{ line }}</li>
               </ul>
+              <p v-if="detailOnlyOperatorHold" class="small text-warning-emphasis mb-0 mt-3 fw-medium">
+                Contact your account manager about the operator hold on this order.
+              </p>
             </div>
           </div>
         </div>
@@ -1888,6 +1938,14 @@ function goToOrdersList() {
       </Transition>
     </Teleport>
 
+    <OrdersRemoveHoldsModal
+      :open="removeHoldsModalOpen"
+      :busy="removeHoldsBusy"
+      variant="single"
+      :active-holds="detailHoldsNormalized"
+      @close="closeRemoveHoldsModal"
+      @confirm="onRemoveHoldsConfirm"
+    />
     <ConfirmModal
       :open="confirmFulfilledOpen"
       title="Mark As Fulfilled"
@@ -1920,17 +1978,6 @@ function goToOrdersList() {
       :busy="lineDeleteBusy"
       @close="confirmDeleteLineOpen = false"
       @confirm="runRemoveLineItem"
-    />
-    <ConfirmModal
-      :open="confirmRemoveHoldsOpen"
-      title="Remove Hold"
-      message="This clears fraud, address, payment, and client holds in ShipHero. Operator holds are left unchanged and must be cleared in ShipHero. Continue?"
-      confirm-label="Remove Hold"
-      cancel-label="Cancel"
-      danger
-      :busy="removeHoldsBusy"
-      @close="confirmRemoveHoldsOpen = false"
-      @confirm="runRemoveHolds"
     />
   </div>
 </template>

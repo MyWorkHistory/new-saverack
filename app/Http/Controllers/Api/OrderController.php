@@ -13,6 +13,7 @@ use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Facades\URL;
 use Illuminate\Support\Carbon;
+use Illuminate\Validation\Rule;
 use Illuminate\Validation\ValidationException;
 use RuntimeException;
 use Throwable;
@@ -354,18 +355,31 @@ class OrderController extends Controller
         Gate::authorize('shiphero.orders.write');
         $validated = $request->validate([
             'client_account_id' => ['required', 'integer', 'exists:client_accounts,id'],
+            'holds_to_clear' => ['nullable', 'array', 'min:1'],
+            'holds_to_clear.*' => ['string', Rule::in(ShipHeroOrderService::ORDER_CLEARABLE_HOLD_KEYS)],
+            'payment_hold_reason' => ['nullable', 'string', 'max:500'],
         ]);
         $customerId = $this->resolveShipHeroCustomerAccountId((int) $validated['client_account_id'], $request);
         try {
             $holds = $this->orders->getOrderHoldsNormalized($orderId, $customerId);
             if ($this->orders->orderHoldsOnlyOperatorHoldActive($holds)) {
                 throw ValidationException::withMessages([
-                    'order_id' => [
-                        'This order only has an operator hold, which cannot be cleared from here. Clear it in ShipHero.',
-                    ],
+                    'order_id' => [ShipHeroOrderService::OPERATOR_HOLD_ONLY_MESSAGE],
                 ]);
             }
-            $this->orders->clearOrderHolds($orderId, $customerId);
+            $keysToClear = isset($validated['holds_to_clear']) && is_array($validated['holds_to_clear'])
+                ? array_values(array_unique($validated['holds_to_clear']))
+                : [];
+            if ($keysToClear === []) {
+                $this->orders->clearOrderHolds($orderId, $customerId);
+
+                return response()->json(['message' => 'Holds cleared.']);
+            }
+            $reason = isset($validated['payment_hold_reason']) ? trim((string) $validated['payment_hold_reason']) : '';
+            $paymentReason = in_array('payment_hold', $keysToClear, true)
+                ? ($reason !== '' ? $reason : 'User Clear Payment Hold')
+                : null;
+            $this->orders->clearOrderHoldsSelective($orderId, $customerId, $keysToClear, $paymentReason);
 
             return response()->json(['message' => 'Holds cleared.']);
         } catch (RuntimeException $e) {
@@ -903,9 +917,19 @@ class OrderController extends Controller
             'client_account_id' => ['required', 'integer', 'exists:client_accounts,id'],
             'order_ids' => ['required', 'array', 'min:1', 'max:'.self::BULK_ORDER_IDS_MAX],
             'order_ids.*' => ['string', 'max:255'],
+            'holds_to_clear' => ['nullable', 'array', 'min:1'],
+            'holds_to_clear.*' => ['string', Rule::in(ShipHeroOrderService::ORDER_CLEARABLE_HOLD_KEYS)],
+            'payment_hold_reason' => ['nullable', 'string', 'max:500'],
         ]);
         $customerId = $this->resolveShipHeroCustomerAccountId((int) $validated['client_account_id'], $request);
         $orderIds = $this->normalizeBulkOrderIds($validated['order_ids']);
+        $keysToClear = isset($validated['holds_to_clear']) && is_array($validated['holds_to_clear'])
+            ? array_values(array_unique($validated['holds_to_clear']))
+            : [];
+        $reasonRaw = isset($validated['payment_hold_reason']) ? trim((string) $validated['payment_hold_reason']) : '';
+        $paymentReason = $keysToClear !== [] && in_array('payment_hold', $keysToClear, true)
+            ? ($reasonRaw !== '' ? $reasonRaw : 'User Clear Payment Hold')
+            : null;
         $results = [];
         $ok = 0;
         $failed = 0;
@@ -916,15 +940,35 @@ class OrderController extends Controller
                     $results[] = [
                         'order_id' => $oid,
                         'ok' => false,
-                        'message' => 'This order only has an operator hold, which cannot be cleared from here. Clear it in ShipHero.',
+                        'message' => ShipHeroOrderService::OPERATOR_HOLD_ONLY_MESSAGE,
                     ];
                     $failed++;
 
                     continue;
                 }
-                $this->orders->clearOrderHolds($oid, $customerId);
-                $results[] = ['order_id' => $oid, 'ok' => true];
-                $ok++;
+                if ($keysToClear === []) {
+                    $this->orders->clearOrderHolds($oid, $customerId);
+                    $results[] = ['order_id' => $oid, 'ok' => true];
+                    $ok++;
+
+                    continue;
+                }
+                try {
+                    $this->orders->clearOrderHoldsSelective($oid, $customerId, $keysToClear, $paymentReason);
+                    $results[] = ['order_id' => $oid, 'ok' => true];
+                    $ok++;
+                } catch (RuntimeException $e) {
+                    if ($e->getMessage() === ShipHeroOrderService::NO_MATCHING_HOLDS_MESSAGE) {
+                        $results[] = [
+                            'order_id' => $oid,
+                            'ok' => true,
+                            'message' => 'No matching holds on this order for the selected types.',
+                        ];
+                        $ok++;
+                    } else {
+                        throw $e;
+                    }
+                }
             } catch (RuntimeException $e) {
                 $results[] = ['order_id' => $oid, 'ok' => false, 'message' => $e->getMessage()];
                 $failed++;

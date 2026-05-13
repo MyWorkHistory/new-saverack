@@ -11,7 +11,8 @@ class ShipHeroOrderService
 {
     /**
      * Hold keys CRM may clear via {@see clearOrderHoldsSelective}.
-     * ShipHero {@see UpdateOrderHoldsInput} does not include {@see shipping_method_hold}; clear that in ShipHero.
+     * {@see client_hold} is excluded: ShipHero returns "3PL cannot set a client hold on an order" when a 3PL
+     * includes that field in {@see order_update_holds}, including clearing it to false. Clear client holds in ShipHero.
      *
      * @see https://developer.shiphero.com/schema/types/update-order-holds-input.html
      */
@@ -19,7 +20,6 @@ class ShipHeroOrderService
         'fraud_hold',
         'address_hold',
         'payment_hold',
-        'client_hold',
     ];
 
     public const NO_MATCHING_HOLDS_MESSAGE = 'No matching holds to clear on this order.';
@@ -528,11 +528,9 @@ GQL;
     }
 
     /**
-     * Remove a line item from the order.
+     * Remove a line item from the order (delete the row, not quantity zero).
      *
-     * ShipHero supports line changes via the order_update_line_items mutation; this sends
-     * quantity zero for the line id (common pattern per ShipHero community guidance—rejections
-     * should surface as RuntimeException from the GraphQL client).
+     * @see https://developer.shiphero.com/schema/mutations/order-remove-line-items.html
      */
     public function removeOrderLineItem(string $orderId, string $customerAccountId, string $lineItemRelayId): void
     {
@@ -544,25 +542,22 @@ GQL;
         }
         $data = [
             'order_id' => $relayId,
-            'line_items' => [
-                [
-                    'id' => $lineId,
-                    'quantity' => 0,
-                ],
-            ],
+            'line_item_ids' => [$lineId],
         ];
         if ($customer !== '') {
             $data['customer_account_id'] = $customer;
         }
         $graphql = <<<'GQL'
-mutation ShipHeroOrderUpdateLineItemsRemove($data: UpdateLineItemsInput!) {
-  order_update_line_items(data: $data) {
+mutation ShipHeroOrderRemoveLineItems($data: RemoveLineItemsInput!) {
+  order_remove_line_items(data: $data) {
     request_id
     complexity
   }
 }
 GQL;
-        $this->client->query($graphql, ['data' => $data]);
+        $this->client->query($graphql, ['data' => $data], true, [
+            ShipHeroClient::OPTION_GRAPHQL_SUCCESS_FIELD => 'order_remove_line_items',
+        ]);
     }
 
     public function updateOrderPackingNote(
@@ -765,22 +760,34 @@ GQL;
     }
 
     /**
-     * Clear fraud, address, payment, and client holds to false. Does not change {@see shipping_method_hold}
-     * or {@see operator_hold} (legacy ShipHero behavior for callers that predate selective clear).
+     * Clear fraud, address, and payment holds to false. Does not change {@see shipping_method_hold},
+     * {@see operator_hold}, or {@see client_hold} (3PL API cannot update client_hold; use ShipHero for that).
      */
     public function clearOrderHolds(string $orderId, string $customerAccountId): void
     {
         $relayId = $this->resolveOrderRelayIdForMutations($orderId, $customerAccountId);
         $customer = trim($customerAccountId);
+        $current = $this->getOrderHoldsNormalized($orderId, $customerAccountId);
         $data = [
             'order_id' => $relayId,
-            'payment_hold' => false,
-            'fraud_hold' => false,
-            'address_hold' => false,
-            'client_hold' => false,
         ];
         if ($customer !== '') {
             $data['customer_account_id'] = $customer;
+        }
+        foreach (self::ORDER_CLEARABLE_HOLD_KEYS as $key) {
+            if (! empty($current[$key])) {
+                $data[$key] = false;
+            }
+        }
+        $hasHoldField = false;
+        foreach (self::ORDER_CLEARABLE_HOLD_KEYS as $key) {
+            if (array_key_exists($key, $data)) {
+                $hasHoldField = true;
+                break;
+            }
+        }
+        if (! $hasHoldField) {
+            throw new RuntimeException(self::NO_MATCHING_HOLDS_MESSAGE);
         }
         $graphql = <<<'GQL'
 mutation ShipHeroOrderUpdateHolds($data: UpdateOrderHoldsInput!) {
@@ -845,8 +852,8 @@ GQL;
             $data['customer_account_id'] = $customer;
         }
 
-        // Only send holds we are clearing to false. Sending true for other active holds makes ShipHero
-        // treat it as the 3PL "setting" that hold (e.g. client_hold) and returns: "3PL cannot set a client hold on an order".
+        // Only send holds we are clearing to false. Omit other active holds and omit client_hold entirely
+        // (ShipHero rejects 3PL touching client_hold in order_update_holds).
         foreach ($allowed as $key) {
             if (empty($current[$key])) {
                 continue;

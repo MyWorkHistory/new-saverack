@@ -166,7 +166,7 @@ const detailHoldsNormalized = computed(() => {
 
 const detailHasRemovableHolds = computed(() => {
   const h = detailHoldsNormalized.value;
-  return !!(h.fraud_hold || h.address_hold || h.payment_hold || h.client_hold);
+  return !!(h.fraud_hold || h.address_hold || h.payment_hold);
 });
 
 const detailOnlyOperatorHold = computed(() => {
@@ -1097,10 +1097,10 @@ async function onAttachmentFileChange(ev) {
     toast.success("Attachment added.");
     input.value = "";
     await loadOrder();
-    if (data?.attachment?.id && order.value) {
-      const idStr = String(data.attachment.id);
+    if (data?.attachment && order.value && (data.attachment.id || data.attachment.url)) {
+      const key = String(data.attachment.id || data.attachment.url);
       const list = [...(order.value.attachments || [])];
-      if (!list.some((a) => a && String(a.id) === idStr)) {
+      if (!list.some((a) => a && String(a.id || a.url || "") === key)) {
         list.push(data.attachment);
         order.value = { ...order.value, attachments: list };
       }

@@ -136,7 +136,7 @@ const somePageSelected = computed(() => {
 /** Holds that “Remove Hold” can affect via ShipHero (operator is intentionally preserved). */
 function rowHasRemovableHolds(row) {
   const h = row?.holds && typeof row.holds === "object" ? row.holds : {};
-  return !!(h.fraud_hold || h.address_hold || h.payment_hold || h.client_hold);
+  return !!(h.fraud_hold || h.address_hold || h.payment_hold);
 }
 
 /** Only operator hold is active — cannot clear from CRM; use ShipHero. */

@@ -77,6 +77,11 @@ $vx-modal-primary: #2563eb;
   max-height: none;
 }
 
+.crm-vx-modal--shipping-form {
+  max-width: 44rem;
+  max-height: min(96dvh, 960px);
+}
+
 .crm-vx-modal__close {
   position: absolute;
   top: 1rem;

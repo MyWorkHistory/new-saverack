@@ -11,7 +11,6 @@ use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Storage;
-use Illuminate\Support\Facades\URL;
 use Illuminate\Support\Carbon;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\ValidationException;
@@ -686,10 +685,13 @@ class OrderController extends Controller
         if ($file === null) {
             return response()->json(['message' => 'No file uploaded.'], 422);
         }
+        $path = null;
         try {
             $path = $file->store('order-attachments', 'public');
             $relative = Storage::disk('public')->url($path);
-            $publicUrl = URL::to($relative);
+            $publicUrl = (is_string($relative) && (str_starts_with($relative, 'http://') || str_starts_with($relative, 'https://')))
+                ? $relative
+                : url($relative);
             $original = $file->getClientOriginalName();
             $mime = $file->getClientMimeType();
             $this->orders->addOrderAttachment(
@@ -706,8 +708,23 @@ class OrderController extends Controller
                 'url' => $publicUrl,
             ]);
         } catch (RuntimeException $e) {
+            if ($path !== null) {
+                try {
+                    Storage::disk('public')->delete($path);
+                } catch (Throwable) {
+                    // ignore cleanup failures
+                }
+            }
+
             return response()->json(['message' => $e->getMessage()], 502);
         } catch (Throwable $e) {
+            if ($path !== null) {
+                try {
+                    Storage::disk('public')->delete($path);
+                } catch (Throwable) {
+                    // ignore cleanup failures
+                }
+            }
             report($e);
 
             return response()->json([

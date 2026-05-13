@@ -90,6 +90,31 @@ const itemMenuRect = ref({ top: 0, left: 0 });
 const CARRIER_PRESETS = ["Cheapest", "ups", "fedex", "usps", "dhl", "asendia_one", "ontrac", "lasership"];
 const METHOD_PRESETS = ["Select", "Ground", "Priority", "Express", "Standard", "A124"];
 
+/** Curated labels aligned with ShipHero; API does not expose a public carrier→method list in this app. */
+const METHOD_OPTIONS_BY_CARRIER = {
+  cheapest: ["Select", "Ground", "Priority", "Express", "Standard", "A124"],
+  ups: ["Ground", "3 Day Select", "2nd Day Air", "Next Day Air Saver", "Next Day Air", "Standard", "Priority", "Express"],
+  fedex: [
+    "Ground",
+    "Home Delivery",
+    "Express Saver",
+    "2Day",
+    "Standard Overnight",
+    "Priority Overnight",
+    "International Priority",
+    "International Economy",
+  ],
+  usps: ["First Class", "Priority Mail", "Priority Mail Express", "Parcel Select Ground", "Media Mail", "Ground"],
+  dhl: ["Express Worldwide", "Express 12", "Express 9", "Express Easy"],
+  asendia_one: ["Select", "Ground", "Priority", "Express", "Standard"],
+  ontrac: ["Ground", "Express"],
+  lasership: ["Select", "Ground", "Next Day"],
+};
+
+function carrierPresetKey(carrier) {
+  return String(carrier || "").trim().toLowerCase();
+}
+
 const orderId = computed(() => String(route.params.shipheroOrderId || ""));
 
 const isPortalUser = computed(() => crmIsPortalUser(crmUser.value));
@@ -273,9 +298,25 @@ const carrierSelectOptions = computed(() => {
 });
 
 const methodSelectOptions = computed(() => {
+  const key = carrierPresetKey(carrierField.value);
+  const baseList = METHOD_OPTIONS_BY_CARRIER[key] || METHOD_PRESETS;
   const cur = String(methodField.value || "").trim();
-  const set = new Set(["", ...METHOD_PRESETS, cur]);
-  return Array.from(set);
+  const out = ["", ...baseList];
+  if (cur && !baseList.includes(cur) && !out.includes(cur)) {
+    out.push(cur);
+  }
+  return out;
+});
+
+watch(carrierField, (newCar, oldCar) => {
+  if (carrierPresetKey(newCar) === carrierPresetKey(oldCar)) return;
+  const key = carrierPresetKey(newCar);
+  const baseList = METHOD_OPTIONS_BY_CARRIER[key];
+  if (!baseList) return;
+  const m = String(methodField.value || "").trim();
+  if (m !== "" && !baseList.includes(m)) {
+    methodField.value = "";
+  }
 });
 
 const notReadyBannerBullets = computed(() => {
@@ -1572,7 +1613,7 @@ function goToOrdersList() {
         >
           <div class="crm-vx-modal-backdrop" aria-hidden="true" @click="closeShippingModal" />
           <Transition name="modal-panel" appear>
-            <div class="crm-vx-modal">
+            <div class="crm-vx-modal crm-vx-modal--shipping-form">
               <button
                 type="button"
                 class="crm-vx-modal__close"

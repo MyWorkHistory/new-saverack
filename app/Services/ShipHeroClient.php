@@ -80,8 +80,8 @@ class ShipHeroClient
                         'Accept' => 'application/json',
                     ],
                     'json' => $payload,
-                    'connect_timeout' => 4,
-                    'timeout' => 10,
+                    'connect_timeout' => 8,
+                    'timeout' => 25,
                 ]);
             } catch (Throwable $e) {
                 $lastTransportError = $e;
@@ -177,8 +177,8 @@ class ShipHeroClient
                     'Accept' => 'application/json',
                 ],
                 'json' => $payload,
-                'connect_timeout' => 4,
-                'timeout' => 10,
+                'connect_timeout' => 8,
+                'timeout' => 25,
             ]);
         } catch (Throwable $e) {
             throw new RuntimeException('ShipHero diagnostic request failed before response: '.$e->getMessage(), 0, $e);

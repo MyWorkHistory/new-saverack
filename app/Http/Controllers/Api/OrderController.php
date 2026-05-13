@@ -711,7 +711,7 @@ class OrderController extends Controller
             if ($path !== null) {
                 try {
                     Storage::disk('public')->delete($path);
-                } catch (Throwable) {
+                } catch (Throwable $cleanupIgnored) {
                     // ignore cleanup failures
                 }
             }
@@ -721,7 +721,7 @@ class OrderController extends Controller
             if ($path !== null) {
                 try {
                     Storage::disk('public')->delete($path);
-                } catch (Throwable) {
+                } catch (Throwable $cleanupIgnored) {
                     // ignore cleanup failures
                 }
             }

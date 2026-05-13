@@ -45,6 +45,8 @@ return [
         'auth_url' => env('SHIPHERO_AUTH_URL', 'https://public-api.shiphero.com/auth'),
         'refresh_token' => env('SHIPHERO_REFRESH_TOKEN'),
         'customer_account_id' => env('SHIPHERO_CUSTOMER_ACCOUNT_ID'),
+        /** Public https origin for /storage/... URLs passed to order_add_attachment (ShipHero fetches this). */
+        'attachment_public_base_url' => env('SHIPHERO_ATTACHMENT_PUBLIC_BASE_URL'),
     ],
 
     'whatsapp' => [

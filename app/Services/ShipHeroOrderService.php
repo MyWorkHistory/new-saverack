@@ -790,7 +790,9 @@ mutation ShipHeroOrderUpdateHolds($data: UpdateOrderHoldsInput!) {
   }
 }
 GQL;
-        $this->client->query($graphql, ['data' => $data]);
+        $this->client->query($graphql, ['data' => $data], true, [
+            ShipHeroClient::OPTION_GRAPHQL_SUCCESS_FIELD => 'order_update_holds',
+        ]);
     }
 
     /**
@@ -883,7 +885,9 @@ mutation ShipHeroOrderUpdateHolds($data: UpdateOrderHoldsInput!) {
   }
 }
 GQL;
-        $this->client->query($graphql, ['data' => $data]);
+        $this->client->query($graphql, ['data' => $data], true, [
+            ShipHeroClient::OPTION_GRAPHQL_SUCCESS_FIELD => 'order_update_holds',
+        ]);
     }
 
     /**
@@ -954,7 +958,9 @@ mutation ShipHeroOrderSetHolds($data: UpdateOrderHoldsInput!) {
   }
 }
 GQL;
-        $this->client->query($graphql, ['data' => $data]);
+        $this->client->query($graphql, ['data' => $data], true, [
+            ShipHeroClient::OPTION_GRAPHQL_SUCCESS_FIELD => 'order_update_holds',
+        ]);
     }
 
     /**

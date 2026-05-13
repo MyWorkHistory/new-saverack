@@ -689,10 +689,8 @@ class OrderController extends Controller
         $publicUrl = null;
         try {
             $path = $file->store('order-attachments', 'public');
-            $relative = Storage::disk('public')->url($path);
-            $publicUrl = (is_string($relative) && (str_starts_with($relative, 'http://') || str_starts_with($relative, 'https://')))
-                ? $relative
-                : url($relative);
+            $publicUrl = $this->buildPublicUrlForStoredOrderAttachment($path);
+            $this->assertAttachmentUrlAcceptableForShipHero($publicUrl);
             $original = $file->getClientOriginalName();
             $mime = $file->getClientMimeType();
             $this->orders->addOrderAttachment(
@@ -708,6 +706,16 @@ class OrderController extends Controller
                 'message' => 'Attachment added.',
                 'url' => $publicUrl,
             ]);
+        } catch (ValidationException $e) {
+            if ($path !== null) {
+                try {
+                    Storage::disk('public')->delete($path);
+                } catch (Throwable $cleanupIgnored) {
+                    // ignore cleanup failures
+                }
+            }
+
+            throw $e;
         } catch (RuntimeException $e) {
             if ($path !== null) {
                 try {
@@ -758,6 +766,77 @@ class OrderController extends Controller
             'exception' => get_class($e),
             'message' => $e->getMessage(),
         ];
+    }
+
+    private function buildPublicUrlForStoredOrderAttachment(string $path): string
+    {
+        $override = trim((string) config('services.shiphero.attachment_public_base_url', ''));
+        if ($override !== '') {
+            return rtrim($override, '/').'/storage/'.str_replace('\\', '/', $path);
+        }
+        $relative = Storage::disk('public')->url($path);
+
+        return (is_string($relative) && (str_starts_with($relative, 'http://') || str_starts_with($relative, 'https://')))
+            ? $relative
+            : url($relative);
+    }
+
+    /**
+     * ShipHero downloads this URL from their infrastructure; it must be HTTPS and publicly routable.
+     *
+     * @throws ValidationException
+     */
+    private function assertAttachmentUrlAcceptableForShipHero(string $publicUrl): void
+    {
+        $scheme = parse_url($publicUrl, PHP_URL_SCHEME);
+        $host = parse_url($publicUrl, PHP_URL_HOST);
+        if (! is_string($scheme) || $scheme === '') {
+            throw ValidationException::withMessages([
+                'file' => ['Could not build a valid attachment URL. Set APP_URL, filesystems.disks.public.url, or SHIPHERO_ATTACHMENT_PUBLIC_BASE_URL.'],
+            ]);
+        }
+        if (strtolower($scheme) !== 'https') {
+            throw ValidationException::withMessages([
+                'file' => ['ShipHero requires an HTTPS URL so it can download the file. Set APP_URL to an https origin or SHIPHERO_ATTACHMENT_PUBLIC_BASE_URL to your public CRM base.'],
+            ]);
+        }
+        if (! is_string($host) || $host === '') {
+            throw ValidationException::withMessages([
+                'file' => ['Attachment URL is missing a hostname.'],
+            ]);
+        }
+        if ($this->isNonPublicAttachmentHost(strtolower($host))) {
+            throw ValidationException::withMessages([
+                'file' => ['ShipHero cannot reach '.$host.' from the internet. Set SHIPHERO_ATTACHMENT_PUBLIC_BASE_URL to your public https CRM host (for example https://app.saverack.com) or use an ngrok https URL for local testing.'],
+            ]);
+        }
+    }
+
+    private function isNonPublicAttachmentHost(string $hostLower): bool
+    {
+        if ($hostLower === 'localhost' || str_ends_with($hostLower, '.localhost')) {
+            return true;
+        }
+        if ($hostLower === '127.0.0.1' || str_starts_with($hostLower, '127.')) {
+            return true;
+        }
+        if ($hostLower === '::1' || $hostLower === '0.0.0.0') {
+            return true;
+        }
+        if (str_ends_with($hostLower, '.local') || $hostLower === 'laravel.test') {
+            return true;
+        }
+        if (str_starts_with($hostLower, '10.')) {
+            return true;
+        }
+        if (preg_match('/^192\.168\./', $hostLower) === 1) {
+            return true;
+        }
+        if (preg_match('/^172\.(1[6-9]|2[0-9]|3[0-1])\./', $hostLower) === 1) {
+            return true;
+        }
+
+        return false;
     }
 
     private const BULK_ORDER_IDS_MAX = 25;

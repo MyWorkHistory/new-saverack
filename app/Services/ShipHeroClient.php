@@ -122,9 +122,11 @@ class ShipHeroClient
 
             if ($status < 200 || $status >= 300) {
                 $preview = mb_substr($bodyRaw, 0, 500);
-                throw new RuntimeException(
-                    'ShipHero GraphQL request failed (HTTP '.$status.'). Body preview: '.$preview
-                );
+                $msg = 'ShipHero GraphQL request failed (HTTP '.$status.'). Body preview: '.$preview;
+                if ($status === 403 && stripos($operation, 'Attachment') !== false) {
+                    $msg .= ' For order_add_attachment, ShipHero must accept the request and later fetch your file URL over the public internet: use HTTPS and a non-localhost host (set APP_URL or SHIPHERO_ATTACHMENT_PUBLIC_BASE_URL).';
+                }
+                throw new RuntimeException($msg);
             }
 
             $json = json_decode($bodyRaw, true);
@@ -158,6 +160,15 @@ class ShipHeroClient
                     ]);
 
                     return $json;
+                }
+
+                if ($successField !== '') {
+                    Log::warning('shiphero.graphql.errors_no_success_data', [
+                        'operation' => $operation,
+                        'success_field' => $successField,
+                        'error_preview' => mb_substr($message, 0, 400),
+                        'body_preview' => mb_substr((string) json_encode($json), 0, 600),
+                    ]);
                 }
 
                 throw new RuntimeException('ShipHero: '.$message);
@@ -224,6 +235,9 @@ class ShipHeroClient
             return false;
         }
         $rid = $node['request_id'] ?? null;
+        if (is_int($rid) || is_float($rid)) {
+            return true;
+        }
 
         return is_string($rid) && trim($rid) !== '';
     }

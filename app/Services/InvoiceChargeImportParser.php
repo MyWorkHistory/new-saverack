@@ -254,18 +254,21 @@ final class InvoiceChargeImportParser
         $sku = $this->cell($row, $map['charge_sku'] ?? -1);
         $orderNumber = $this->shipmentOrderNumber($row, $map);
         if ($this->isStorageChargeContext($categoryRaw, $feeRaw, $chargeName, $chargeTypeRaw, $descriptionRaw)) {
-            return $this->attachOrderMetadata(
-                $this->buildStorageChargeItem(
-                    $descriptionRaw,
-                    $chargeName,
-                    $chargeTypeRaw,
-                    $qty,
-                    $rateCents,
-                    $lineTotalCents,
-                    $this->trimmedSkuOrNull($sku)
-                ),
-                $orderNumber
+            $storageLine = $this->buildStorageChargeItem(
+                $descriptionRaw,
+                $chargeName,
+                $chargeTypeRaw,
+                $qty,
+                $rateCents,
+                $lineTotalCents,
+                $this->trimmedSkuOrNull($sku),
+                $feeRaw
             );
+            if ($storageLine === null) {
+                return null;
+            }
+
+            return $this->attachOrderMetadata($storageLine, $orderNumber);
         }
         if ($this->isReturnLabelCharge($chargeName, $chargeTypeRaw)) {
             return $this->attachOrderMetadata(
@@ -325,18 +328,18 @@ final class InvoiceChargeImportParser
             );
         }
 
-        $item = $this->mapChargeSummaryPrimary($chargeName, $chargeTypeRaw, $categoryRaw, $descriptionRaw, $sku, $qty, $rateCents, $lineTotalCents);
+        $item = $this->mapChargeSummaryPrimary($chargeName, $chargeTypeRaw, $categoryRaw, $descriptionRaw, $sku, $qty, $rateCents, $lineTotalCents, $feeRaw);
         if ($item !== null) {
             return $this->attachOrderMetadata($item, $orderNumber);
         }
 
-        $item = $this->mapChargeSummaryRowByHeuristics($chargeName, $chargeTypeRaw, $descriptionRaw, $sku, $qty, $rateCents, $lineTotalCents);
+        $item = $this->mapChargeSummaryRowByHeuristics($chargeName, $chargeTypeRaw, $descriptionRaw, $sku, $qty, $rateCents, $lineTotalCents, $feeRaw);
         if ($item !== null) {
             return $this->attachOrderMetadata($item, $orderNumber);
         }
 
         return $this->attachOrderMetadata(
-            $this->buildChargeSummaryFallbackItem($chargeName, $chargeTypeRaw, $categoryRaw, $descriptionRaw, $sku, $qty, $rateCents, $lineTotalCents),
+            $this->buildChargeSummaryFallbackItem($chargeName, $chargeTypeRaw, $categoryRaw, $descriptionRaw, $sku, $qty, $rateCents, $lineTotalCents, $feeRaw),
             $orderNumber
         );
     }
@@ -425,13 +428,13 @@ final class InvoiceChargeImportParser
     /**
      * @return array<string, mixed>|null
      */
-    private function mapChargeSummaryPrimary(string $chargeName, string $chargeTypeRaw, string $billingCategoryRaw, string $descriptionRaw, string $skuFromColumn, float $qty, int $rateCents, int $lineTotalCents): ?array
+    private function mapChargeSummaryPrimary(string $chargeName, string $chargeTypeRaw, string $billingCategoryRaw, string $descriptionRaw, string $skuFromColumn, float $qty, int $rateCents, int $lineTotalCents, string $feeRaw = ''): ?array
     {
         $t = strtolower(trim($chargeTypeRaw));
         $categoryHint = $this->normalizeBillingCategoryFromCsv($billingCategoryRaw);
 
         if ($this->isStorageChargeContext($billingCategoryRaw, '', $chargeName, $chargeTypeRaw, $descriptionRaw)) {
-            return $this->buildStorageChargeItem($descriptionRaw, $chargeName, $chargeTypeRaw, $qty, $rateCents, $lineTotalCents, $this->trimmedSkuOrNull($skuFromColumn));
+            return $this->buildStorageChargeItem($descriptionRaw, $chargeName, $chargeTypeRaw, $qty, $rateCents, $lineTotalCents, $this->trimmedSkuOrNull($skuFromColumn), $feeRaw);
         }
         if ($this->billingCategoryRawImpliesOnDemand($billingCategoryRaw)) {
             return $this->buildOnDemandItem($chargeName, $chargeTypeRaw, $skuFromColumn, $qty, $rateCents, $lineTotalCents);
@@ -561,7 +564,7 @@ final class InvoiceChargeImportParser
     /**
      * @return array<string, mixed>|null
      */
-    private function mapChargeSummaryRowByHeuristics(string $chargeName, string $chargeTypeRaw, string $descriptionRaw, string $skuFromColumn, float $qty, int $rateCents, int $lineTotalCents): ?array
+    private function mapChargeSummaryRowByHeuristics(string $chargeName, string $chargeTypeRaw, string $descriptionRaw, string $skuFromColumn, float $qty, int $rateCents, int $lineTotalCents, string $feeRaw = ''): ?array
     {
         $hay = strtolower(trim($chargeName.' '.$chargeTypeRaw.' '.$descriptionRaw));
         if ($hay === '') {
@@ -569,7 +572,7 @@ final class InvoiceChargeImportParser
         }
 
         if ($this->isStorageChargeContext('', '', $chargeName, $chargeTypeRaw, $descriptionRaw)) {
-            return $this->buildStorageChargeItem($descriptionRaw, $chargeName, $chargeTypeRaw, $qty, $rateCents, $lineTotalCents, $this->trimmedSkuOrNull($skuFromColumn));
+            return $this->buildStorageChargeItem($descriptionRaw, $chargeName, $chargeTypeRaw, $qty, $rateCents, $lineTotalCents, $this->trimmedSkuOrNull($skuFromColumn), $feeRaw);
         }
 
         if (preg_match('/\b(shipping_label|shipping label|postage|mail class|priority mail|parcel select|ground advantage|media mail|first[- ]class parcel|endicia|stamps?\.com|shipstation|shippo|easy_post|easy post|usps|ups|fedex|dhl|ontrac|lasership|pitney|flat rate|intl|international|zone|delivery confirmation)\b/i', $hay)) {
@@ -660,14 +663,14 @@ final class InvoiceChargeImportParser
     /**
      * @return array<string, mixed>|null
      */
-    private function buildChargeSummaryFallbackItem(string $chargeName, string $chargeTypeRaw, string $billingCategoryRaw, string $descriptionRaw, string $skuFromColumn, float $qty, int $rateCents, int $lineTotalCents): ?array
+    private function buildChargeSummaryFallbackItem(string $chargeName, string $chargeTypeRaw, string $billingCategoryRaw, string $descriptionRaw, string $skuFromColumn, float $qty, int $rateCents, int $lineTotalCents, string $feeRaw = ''): ?array
     {
         if ($lineTotalCents === 0 && $rateCents === 0 && abs($qty) < 0.0001) {
             return null;
         }
 
         if ($this->isStorageChargeContext($billingCategoryRaw, '', $chargeName, $chargeTypeRaw, $descriptionRaw)) {
-            return $this->buildStorageChargeItem($descriptionRaw, $chargeName, $chargeTypeRaw, $qty, $rateCents, $lineTotalCents, $this->trimmedSkuOrNull($skuFromColumn));
+            return $this->buildStorageChargeItem($descriptionRaw, $chargeName, $chargeTypeRaw, $qty, $rateCents, $lineTotalCents, $this->trimmedSkuOrNull($skuFromColumn), $feeRaw);
         }
 
         $display = trim($chargeName) !== '' ? trim($chargeName) : $this->humanizeChargeTypeSlug($chargeTypeRaw);
@@ -1364,6 +1367,7 @@ final class InvoiceChargeImportParser
         }
 
         return str_contains($hay, 'storage')
+            || str_contains($hay, 'storing_by_volume')
             || $this->extractStorageTypeLabel($hay) !== null
             || preg_match('/\boccupied\s+for\s+\d+\s+week/', $hay) === 1;
     }
@@ -1391,9 +1395,80 @@ final class InvoiceChargeImportParser
         return null;
     }
 
-    private function buildStorageChargeItem(string $descriptionRaw, string $chargeName, string $chargeTypeRaw, float $qty, int $rateCents, int $lineTotalCents, ?string $sku = null): array
+    private function isStorageByVolumeCharge(string $feeRaw, string $chargeTypeRaw, string $chargeName, string $descriptionRaw): bool
+    {
+        $typeLower = strtolower(trim($chargeTypeRaw));
+        if (str_contains($typeLower, 'storing_by_volume')) {
+            return true;
+        }
+        $feeAndLabel = strtolower(trim($feeRaw.' '.$chargeName));
+        if ($feeAndLabel !== '' && str_contains($feeAndLabel, 'storage per cu')) {
+            return true;
+        }
+
+        return false;
+    }
+
+    /**
+     * @return array{sku: string, volume_cu_ft: string}|null
+     */
+    private function parseStorageByVolumeSkuAndVolume(string $description): ?array
+    {
+        $source = trim($description);
+        if ($source === '') {
+            return null;
+        }
+        if (preg_match('/SKU\s+(.+?)\s+with\s+a\s+volume\s+of\s+([\d.]+)\s+cu\s+ft\b/isu', $source, $m) !== 1) {
+            return null;
+        }
+        $sku = trim((string) $m[1]);
+        $volume = trim((string) $m[2]);
+        if ($sku === '' || $volume === '') {
+            return null;
+        }
+
+        return ['sku' => $sku, 'volume_cu_ft' => $volume];
+    }
+
+    private function normalizeStorageByVolumeSku(string $sku): string
+    {
+        $s = trim(preg_replace('/\s+/u', ' ', $sku) ?? $sku);
+
+        return $s;
+    }
+
+    /**
+     * @return array<string, mixed>|null
+     */
+    private function buildStorageChargeItem(string $descriptionRaw, string $chargeName, string $chargeTypeRaw, float $qty, int $rateCents, int $lineTotalCents, ?string $sku = null, string $feeRaw = ''): ?array
     {
         $description = $this->firstNonEmpty([$descriptionRaw, $chargeName, $chargeTypeRaw]) ?? 'Storage';
+
+        if ($this->isStorageByVolumeCharge($feeRaw, $chargeTypeRaw, $chargeName, $descriptionRaw)) {
+            $parsed = $this->parseStorageByVolumeSkuAndVolume($descriptionRaw !== '' ? $descriptionRaw : $description);
+            if ($parsed !== null) {
+                if ($lineTotalCents === 0 && $rateCents === 0) {
+                    return null;
+                }
+                $normalizedSku = $this->normalizeStorageByVolumeSku($parsed['sku']);
+                $leafDescription = $normalizedSku.' ('.$parsed['volume_cu_ft'].' cu ft)';
+                $serviceCode = $chargeTypeRaw !== '' ? $chargeTypeRaw : 'storing_by_volume_charge';
+
+                return $this->buildItem(
+                    InvoiceLineCategory::STORAGE,
+                    'Storage by Volume',
+                    $leafDescription,
+                    $qty,
+                    $rateCents,
+                    $lineTotalCents,
+                    null,
+                    'storage:storage-by-volume',
+                    $serviceCode,
+                    $sku
+                );
+            }
+        }
+
         $display = $this->extractStorageTypeLabel($description)
             ?? $this->extractStorageTypeLabel($chargeName)
             ?? 'Storage';

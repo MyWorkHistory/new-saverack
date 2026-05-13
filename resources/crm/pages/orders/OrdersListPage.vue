@@ -110,6 +110,10 @@ const isShippedTab = computed(() => tabKey.value === "shipped");
 
 const selectedCount = computed(() => selectedOrderIds.value.size);
 
+/** Bulk actions need a selection; keep toolbar visible but disabled until then. */
+const bulkBarDisabled = computed(() => !selectedCount.value || bulkBusy.value);
+const bulkMutationDisabled = computed(() => bulkBarDisabled.value || !canWriteOrders.value);
+
 const allPageSelected = computed(() => {
   const ids = displayedRows.value.map((r) => String(r.id || "").trim()).filter(Boolean);
   if (!ids.length) return false;
@@ -440,7 +444,7 @@ watch([allPageSelected, somePageSelected, displayedRows], () => {
 });
 
 function resetToolbarFiltersFromMenu() {
-  query.datePreset = tabKey.value === "manage" ? "today" : "all";
+  query.datePreset = "today";
   query.from = "";
   query.to = "";
   query.fulfillmentStatus = "";
@@ -779,11 +783,8 @@ watch(
   tabKey,
   (t) => {
     clearRowSelection();
-    if (t === "manage") {
-      query.datePreset = "today";
-    } else {
-      query.datePreset = "all";
-    }
+    /** Default to today's order date on every tab so the list loads with a bounded window (ShipHero queue + no dates was often empty). */
+    query.datePreset = "today";
     query.from = "";
     query.to = "";
     query.holdReason = "";
@@ -860,7 +861,7 @@ onUnmounted(() => {
     <div class="staff-table-card staff-datatable-card staff-datatable-card--white w-100">
       <div class="staff-table-toolbar">
         <div class="staff-table-toolbar--row flex-wrap align-items-end gap-2 gap-md-3">
-          <div v-if="!isPortalOrderList" class="flex-grow-1" style="min-width: 280px">
+          <div v-if="!isPortalOrderList" class="flex-grow-1" style="min-width: 260px">
             <label class="form-label small text-secondary mb-1" for="orders-list-account-trigger">Account</label>
             <CrmSearchableSelect
               v-model="selectedAccountId"
@@ -877,11 +878,170 @@ onUnmounted(() => {
             />
           </div>
 
-          <template v-if="showManageFilters">
+          <div
+            v-if="tabKey === 'manage' || isPortalOrderList"
+            class="d-flex flex-wrap align-items-end gap-2"
+            style="min-width: min(100%, 28rem)"
+          >
+            <div class="flex-grow-1" style="min-width: 10rem">
+              <label class="form-label small text-secondary mb-1" for="orders-order-number-search">Order Number</label>
+              <input
+                id="orders-order-number-search"
+                v-model.trim="query.orderNumber"
+                type="search"
+                class="form-control"
+                placeholder="Search by Order #"
+                :disabled="loading || !selectedAccountId"
+                autocomplete="off"
+                enterkeyhint="search"
+                @keydown.enter.prevent="commitOrderNumberSearch"
+              />
+            </div>
+            <button
+              type="button"
+              class="btn btn-primary btn-sm staff-page-primary orders-toolbar-search-btn"
+              :disabled="loading || !selectedAccountId"
+              @click="commitOrderNumberSearch"
+            >
+              Search
+            </button>
+            <template v-if="showManageFilters">
+              <div class="position-relative flex-shrink-0" data-toolbar-filter>
+                <button
+                  type="button"
+                  class="btn btn-outline-secondary btn-sm staff-toolbar-btn d-inline-flex align-items-center gap-2"
+                  :aria-expanded="filterMenuOpen"
+                  @click.stop="filterMenuOpen = !filterMenuOpen"
+                >
+                  <svg
+                    width="18"
+                    height="18"
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-width="2"
+                    viewBox="0 0 24 24"
+                    aria-hidden="true"
+                  >
+                    <path
+                      stroke-linecap="round"
+                      stroke-linejoin="round"
+                      d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2.586a1 1 0 01-.293.707l-6.414 6.414a1 1 0 00-.293.707V17l-4 4v-6.586a1 1 0 00-.293-.707L3.293 7.293A1 1 0 013 6.586V4z"
+                    />
+                  </svg>
+                  <span class="staff-toolbar-filter-text">Filters</span>
+                </button>
+                <div
+                  v-if="filterMenuOpen"
+                  class="dropdown-menu dropdown-menu-end show shadow border p-0 staff-toolbar-filter-dropdown"
+                  role="dialog"
+                  aria-label="Order filters"
+                  @click.stop
+                >
+                  <div class="staff-toolbar-filter-dropdown__head">
+                    <span>Filters</span>
+                    <button type="button" class="btn btn-link btn-sm text-secondary text-decoration-none p-0" @click="resetToolbarFiltersFromMenu">
+                      Reset
+                    </button>
+                  </div>
+                  <div class="staff-toolbar-filter-dropdown__body">
+                    <p class="small text-secondary mb-2">
+                      <template v-if="tabKey === 'manage'">
+                        <template v-if="!isPortalOrderList">
+                          Same <strong>order date</strong> window as the Ready to Ship summary above. Searching by
+                          <strong>order #</strong> ignores the date range so a specific order can be found.
+                        </template>
+                        <template v-else>
+                          Searching by <strong>order #</strong> ignores the date range so a specific order can be found.
+                        </template>
+                      </template>
+                      <template v-else-if="tabKey === 'shipped'">
+                        <strong>Shipped</strong> defaults to <strong>today</strong> by order date. Widen the date range if you need older fulfilled orders.
+                      </template>
+                      <template v-else>
+                        Defaults to <strong>today</strong> by order date. Use <strong>Any Order Date</strong> or a custom range if the list looks empty.
+                      </template>
+                    </p>
+                    <label class="form-label" for="orders-filter-date-preset">Date Range</label>
+                    <select
+                      id="orders-filter-date-preset"
+                      v-model="query.datePreset"
+                      class="form-select staff-datatable-filters__select mb-3"
+                      :disabled="loading"
+                    >
+                      <option value="all">Any Order Date</option>
+                      <option value="today">Today</option>
+                      <option value="last_7">Last 7 Days</option>
+                      <option value="last_30">Last 30 Days</option>
+                      <option value="custom">Custom Range</option>
+                    </select>
+                    <template v-if="isCustomDate">
+                      <label class="form-label" for="orders-filter-from">From</label>
+                      <input
+                        id="orders-filter-from"
+                        v-model="query.from"
+                        type="date"
+                        class="form-control staff-datatable-filters__select mb-3"
+                        :disabled="loading"
+                      />
+                      <label class="form-label" for="orders-filter-to">To</label>
+                      <input
+                        id="orders-filter-to"
+                        v-model="query.to"
+                        type="date"
+                        class="form-control staff-datatable-filters__select mb-3"
+                        :disabled="loading"
+                      />
+                    </template>
+                    <label class="form-label" for="orders-filter-fulfillment-status">Fulfillment Status</label>
+                    <select
+                      id="orders-filter-fulfillment-status"
+                      v-model="query.fulfillmentStatus"
+                      class="form-select staff-datatable-filters__select mb-3"
+                      :disabled="loading"
+                    >
+                      <option value="">All</option>
+                      <option value="unfulfilled">Unfulfilled</option>
+                      <option value="fulfilled">Fulfilled</option>
+                      <option value="shipped">Shipped</option>
+                    </select>
+                    <label class="form-label" for="orders-filter-ready-to-ship">Ready to Ship</label>
+                    <select
+                      id="orders-filter-ready-to-ship"
+                      v-model="query.readyToShip"
+                      class="form-select staff-datatable-filters__select"
+                      :disabled="loading"
+                    >
+                      <option value="">All</option>
+                      <option value="yes">Yes</option>
+                      <option value="no">No</option>
+                    </select>
+                    <template v-if="tabKey === 'on_hold'">
+                      <label class="form-label mt-3" for="orders-filter-hold-reason">Hold Reason</label>
+                      <select
+                        id="orders-filter-hold-reason"
+                        v-model="query.holdReason"
+                        class="form-select staff-datatable-filters__select"
+                        :disabled="loading"
+                      >
+                        <option value="">All Hold Reasons</option>
+                        <option value="fraud">Fraud Hold</option>
+                        <option value="address">Address Hold</option>
+                        <option value="operator">Operator Hold</option>
+                        <option value="payment">Payment Hold</option>
+                        <option value="user">User Hold</option>
+                      </select>
+                    </template>
+                  </div>
+                </div>
+              </div>
+            </template>
+          </div>
+
+          <template v-else-if="showManageFilters">
             <div class="position-relative flex-shrink-0" data-toolbar-filter>
               <button
                 type="button"
-                class="btn btn-outline-secondary staff-toolbar-btn d-inline-flex align-items-center gap-2"
+                class="btn btn-outline-secondary btn-sm staff-toolbar-btn d-inline-flex align-items-center gap-2"
                 :aria-expanded="filterMenuOpen"
                 @click.stop="filterMenuOpen = !filterMenuOpen"
               >
@@ -917,28 +1077,16 @@ onUnmounted(() => {
                 </div>
                 <div class="staff-toolbar-filter-dropdown__body">
                   <p class="small text-secondary mb-2">
-                    <template v-if="tabKey === 'manage'">
-                      <template v-if="!isPortalOrderList">
-                        Same <strong>order date</strong> window as the Ready to Ship summary above. Searching by
-                        <strong>order #</strong> ignores the date range so a specific order can be found.
-                      </template>
-                      <template v-else>
-                        Searching by <strong>order #</strong> ignores the date range so a specific order can be found.
-                      </template>
-                    </template>
-                    <template v-else-if="tabKey === 'shipped'">
-                      <strong>Shipped</strong> uses ShipHero &ldquo;fulfilled&rdquo; plus last activity when you pick
-                      &ldquo;Any order date&rdquo;. Narrow with dates to limit by <strong>order date</strong> (custom max
-                      30 days).
+                    <template v-if="tabKey === 'shipped'">
+                      <strong>Shipped</strong> defaults to <strong>today</strong> by order date. Widen the date range if you need older fulfilled orders.
                     </template>
                     <template v-else>
-                      Optional <strong>order date</strong> window on top of this tab&rsquo;s queue filter. Start with
-                      &ldquo;Any order date&rdquo; if the list looks empty.
+                      Defaults to <strong>today</strong> by order date. Use <strong>Any Order Date</strong> or a custom range if the list looks empty.
                     </template>
                   </p>
-                  <label class="form-label" for="orders-filter-date-preset">Date Range</label>
+                  <label class="form-label" for="orders-filter-date-preset-alt">Date Range</label>
                   <select
-                    id="orders-filter-date-preset"
+                    id="orders-filter-date-preset-alt"
                     v-model="query.datePreset"
                     class="form-select staff-datatable-filters__select mb-3"
                     :disabled="loading"
@@ -950,26 +1098,26 @@ onUnmounted(() => {
                     <option value="custom">Custom Range</option>
                   </select>
                   <template v-if="isCustomDate">
-                    <label class="form-label" for="orders-filter-from">From</label>
+                    <label class="form-label" for="orders-filter-from-alt">From</label>
                     <input
-                      id="orders-filter-from"
+                      id="orders-filter-from-alt"
                       v-model="query.from"
                       type="date"
                       class="form-control staff-datatable-filters__select mb-3"
                       :disabled="loading"
                     />
-                    <label class="form-label" for="orders-filter-to">To</label>
+                    <label class="form-label" for="orders-filter-to-alt">To</label>
                     <input
-                      id="orders-filter-to"
+                      id="orders-filter-to-alt"
                       v-model="query.to"
                       type="date"
                       class="form-control staff-datatable-filters__select mb-3"
                       :disabled="loading"
                     />
                   </template>
-                  <label class="form-label" for="orders-filter-fulfillment-status">Fulfillment Status</label>
+                  <label class="form-label" for="orders-filter-fulfillment-status-alt">Fulfillment Status</label>
                   <select
-                    id="orders-filter-fulfillment-status"
+                    id="orders-filter-fulfillment-status-alt"
                     v-model="query.fulfillmentStatus"
                     class="form-select staff-datatable-filters__select mb-3"
                     :disabled="loading"
@@ -979,9 +1127,9 @@ onUnmounted(() => {
                     <option value="fulfilled">Fulfilled</option>
                     <option value="shipped">Shipped</option>
                   </select>
-                  <label class="form-label" for="orders-filter-ready-to-ship">Ready to Ship</label>
+                  <label class="form-label" for="orders-filter-ready-to-ship-alt">Ready to Ship</label>
                   <select
-                    id="orders-filter-ready-to-ship"
+                    id="orders-filter-ready-to-ship-alt"
                     v-model="query.readyToShip"
                     class="form-select staff-datatable-filters__select"
                     :disabled="loading"
@@ -991,9 +1139,9 @@ onUnmounted(() => {
                     <option value="no">No</option>
                   </select>
                   <template v-if="tabKey === 'on_hold'">
-                    <label class="form-label mt-3" for="orders-filter-hold-reason">Hold Reason</label>
+                    <label class="form-label mt-3" for="orders-filter-hold-reason-alt">Hold Reason</label>
                     <select
-                      id="orders-filter-hold-reason"
+                      id="orders-filter-hold-reason-alt"
                       v-model="query.holdReason"
                       class="form-select staff-datatable-filters__select"
                       :disabled="loading"
@@ -1010,32 +1158,6 @@ onUnmounted(() => {
               </div>
             </div>
           </template>
-        </div>
-        <div v-if="tabKey === 'manage' || isPortalOrderList" class="staff-table-toolbar--row mt-2">
-          <div class="d-flex flex-wrap align-items-end gap-2" style="width: min(420px, 100%)">
-            <div class="flex-grow-1" style="min-width: 180px">
-              <label class="form-label small text-secondary mb-1" for="orders-order-number-search">Order Number</label>
-              <input
-                id="orders-order-number-search"
-                v-model.trim="query.orderNumber"
-                type="search"
-                class="form-control"
-                placeholder="Search by Order #"
-                :disabled="loading || !selectedAccountId"
-                autocomplete="off"
-                enterkeyhint="search"
-                @keydown.enter.prevent="commitOrderNumberSearch"
-              />
-            </div>
-            <button
-              type="button"
-              class="btn btn-primary staff-toolbar-btn"
-              :disabled="loading || !selectedAccountId"
-              @click="commitOrderNumberSearch"
-            >
-              Search
-            </button>
-          </div>
         </div>
         <p v-if="!isPortalOrderList" class="small text-secondary mb-0 mt-2 px-1">Only accounts with a ShipHero customer ID appear here.</p>
       </div>
@@ -1066,68 +1188,83 @@ onUnmounted(() => {
       </div>
 
       <div
-        v-if="selectedCount > 0 && selectedAccountId"
+        v-if="selectedAccountId"
         class="d-flex flex-wrap align-items-center gap-2 gap-md-3 px-3 px-md-4 py-3 border-bottom bg-body-tertiary"
       >
         <span class="small fw-semibold text-body me-md-1">{{ selectedCount }} selected</span>
         <template v-if="isShippedTab">
-          <button type="button" class="btn btn-outline-secondary staff-toolbar-btn" :disabled="bulkBusy" @click="exportSelectedCsv">
+          <button
+            type="button"
+            class="btn btn-primary btn-sm staff-page-primary orders-bulk-toolbar-btn"
+            :disabled="bulkBarDisabled"
+            @click="exportSelectedCsv"
+          >
             Export
           </button>
-          <button type="button" class="btn btn-outline-secondary staff-toolbar-btn" :disabled="bulkBusy" @click="clearRowSelection">
+          <button
+            type="button"
+            class="btn btn-outline-secondary btn-sm orders-bulk-toolbar-btn"
+            :disabled="bulkBarDisabled"
+            @click="clearRowSelection"
+          >
             Clear Selection
           </button>
         </template>
         <template v-else>
           <button
-            v-if="canWriteOrders"
             type="button"
-            class="btn btn-outline-secondary staff-toolbar-btn"
-            :disabled="bulkBusy"
+            class="btn btn-outline-secondary btn-sm orders-bulk-toolbar-btn"
+            :disabled="bulkMutationDisabled"
             @click="openAddHoldModalForIds([...selectedOrderIds])"
           >
             Add Hold
           </button>
           <button
-            v-if="canWriteOrders"
             type="button"
-            class="btn btn-outline-secondary staff-toolbar-btn"
-            :disabled="bulkBusy"
+            class="btn btn-primary btn-sm staff-page-primary orders-bulk-toolbar-btn"
+            :disabled="bulkMutationDisabled"
             @click="confirmBulkMarkFulfilledOpen = true"
           >
             Mark As Fulfilled
           </button>
           <button
-            v-if="canWriteOrders"
             type="button"
-            class="btn btn-outline-secondary staff-toolbar-btn"
-            :disabled="bulkBusy"
+            class="btn btn-primary btn-sm staff-page-primary orders-bulk-toolbar-btn"
+            :disabled="bulkMutationDisabled"
             @click="confirmBulkAllowPartialOpen = true"
           >
             Allow Partial
           </button>
           <button
-            v-if="canWriteOrders"
             type="button"
-            class="btn btn-outline-danger staff-toolbar-btn"
-            :disabled="bulkBusy"
+            class="btn btn-outline-danger btn-sm orders-bulk-toolbar-btn"
+            :disabled="bulkMutationDisabled"
             @click="confirmBulkCancelOpen = true"
           >
             Cancel Orders
           </button>
           <button
-            v-if="canWriteOrders"
             type="button"
-            class="btn btn-outline-secondary staff-toolbar-btn"
-            :disabled="bulkBusy"
+            class="btn btn-outline-secondary btn-sm orders-bulk-toolbar-btn"
+            :disabled="bulkMutationDisabled"
             @click="confirmBulkRemoveHoldsOpen = true"
           >
             Remove Hold
           </button>
-          <button type="button" class="btn btn-outline-secondary staff-toolbar-btn" :disabled="bulkBusy" @click="exportSelectedCsv">
+          <button
+            type="button"
+            class="btn btn-primary btn-sm staff-page-primary orders-bulk-toolbar-btn"
+            :disabled="bulkBarDisabled"
+            @click="exportSelectedCsv"
+          >
             Export
           </button>
-          <button type="button" class="btn btn-outline-secondary staff-toolbar-btn" :disabled="bulkBusy" @click="clearRowSelection">
+          <button
+            type="button"
+            class="btn btn-outline-secondary btn-sm orders-bulk-toolbar-btn"
+            :disabled="bulkBarDisabled"
+            @click="clearRowSelection"
+          >
             Clear Selection
           </button>
         </template>
@@ -1433,6 +1570,15 @@ onUnmounted(() => {
   min-width: 16rem;
   margin-top: 0 !important;
   z-index: 1200;
+}
+
+/* Match billing detail primary actions: solid brand fill + white label */
+.orders-toolbar-search-btn,
+.orders-bulk-toolbar-btn.staff-page-primary {
+  --bs-btn-color: #fff;
+  --bs-btn-hover-color: #fff;
+  --bs-btn-active-color: #fff;
+  --bs-btn-disabled-color: rgba(255, 255, 255, 0.65);
 }
 </style>
 

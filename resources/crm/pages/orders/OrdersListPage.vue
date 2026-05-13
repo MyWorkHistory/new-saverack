@@ -459,8 +459,12 @@ watch([allPageSelected, somePageSelected, displayedRows], () => {
   });
 });
 
+function defaultDatePresetForCurrentTab() {
+  return tabKey.value === "awaiting" ? "last_7" : "today";
+}
+
 function resetToolbarFiltersFromMenu() {
-  query.datePreset = "today";
+  query.datePreset = defaultDatePresetForCurrentTab();
   query.from = "";
   query.to = "";
   query.fulfillmentStatus = "";
@@ -846,8 +850,8 @@ watch(
   tabKey,
   () => {
     clearRowSelection();
-    /** Default to today's order date on every tab so the list loads with a bounded window (ShipHero queue + no dates was often empty). */
-    query.datePreset = "today";
+    /** Ready to Ship defaults to last 7 days; other tabs default to today (bounded window; ShipHero was often empty with no dates). */
+    query.datePreset = defaultDatePresetForCurrentTab();
     query.from = "";
     query.to = "";
     query.fulfillmentStatus = "";
@@ -1044,6 +1048,10 @@ onUnmounted(() => {
                       <template v-else-if="tabKey === 'shipped'">
                         <strong>Shipped</strong> defaults to <strong>today</strong> by order date. Widen the date range if you need older fulfilled orders.
                       </template>
+                      <template v-else-if="tabKey === 'awaiting'">
+                        <strong>Ready to Ship</strong> defaults to <strong>last 7 days</strong> by order date. Choose
+                        <strong>Today</strong> or another range if you need a different window.
+                      </template>
                       <template v-else>
                         Defaults to <strong>today</strong> by order date. Use <strong>Any Order Date</strong> or a custom range if the list looks empty.
                       </template>
@@ -1166,6 +1174,10 @@ onUnmounted(() => {
                   <p class="small text-secondary mb-2">
                     <template v-if="tabKey === 'shipped'">
                       <strong>Shipped</strong> defaults to <strong>today</strong> by order date. Widen the date range if you need older fulfilled orders.
+                    </template>
+                    <template v-else-if="tabKey === 'awaiting'">
+                      <strong>Ready to Ship</strong> defaults to <strong>last 7 days</strong> by order date. Choose
+                      <strong>Today</strong> or another range if you need a different window.
                     </template>
                     <template v-else>
                       Defaults to <strong>today</strong> by order date. Use <strong>Any Order Date</strong> or a custom range if the list looks empty.

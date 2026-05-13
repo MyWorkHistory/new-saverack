@@ -357,6 +357,14 @@ class OrderController extends Controller
         ]);
         $customerId = $this->resolveShipHeroCustomerAccountId((int) $validated['client_account_id'], $request);
         try {
+            $holds = $this->orders->getOrderHoldsNormalized($orderId, $customerId);
+            if ($this->orders->orderHoldsOnlyShippingMethodHoldActive($holds)) {
+                throw ValidationException::withMessages([
+                    'order_id' => [
+                        'This order has a shipping method hold, which cannot be cleared via the API. Clear it in ShipHero.',
+                    ],
+                ]);
+            }
             $this->orders->clearOrderHolds($orderId, $customerId);
 
             return response()->json(['message' => 'Holds cleared.']);
@@ -692,6 +700,245 @@ class OrderController extends Controller
                 'message' => config('app.debug') ? $e->getMessage() : 'Could not attach file in ShipHero.',
             ], 502);
         }
+    }
+
+    private const BULK_ORDER_IDS_MAX = 25;
+
+    /**
+     * @param  array<int, mixed>  $orderIds
+     * @return list<string>
+     */
+    private function normalizeBulkOrderIds(array $orderIds): array
+    {
+        $out = [];
+        foreach ($orderIds as $id) {
+            $s = trim((string) $id);
+            if ($s !== '' && ! in_array($s, $out, true)) {
+                $out[] = $s;
+            }
+        }
+        if ($out === []) {
+            throw ValidationException::withMessages([
+                'order_ids' => ['Select at least one order.'],
+            ]);
+        }
+        if (count($out) > self::BULK_ORDER_IDS_MAX) {
+            throw ValidationException::withMessages([
+                'order_ids' => ['You may select at most '.self::BULK_ORDER_IDS_MAX.' orders per request.'],
+            ]);
+        }
+
+        return $out;
+    }
+
+    public function bulkMarkFulfilled(Request $request): JsonResponse
+    {
+        Gate::authorize('shiphero.orders.write');
+        $validated = $request->validate([
+            'client_account_id' => ['required', 'integer', 'exists:client_accounts,id'],
+            'order_ids' => ['required', 'array', 'min:1', 'max:'.self::BULK_ORDER_IDS_MAX],
+            'order_ids.*' => ['string', 'max:255'],
+            'reason' => ['nullable', 'string', 'max:500'],
+        ]);
+        $customerId = $this->resolveShipHeroCustomerAccountId((int) $validated['client_account_id'], $request);
+        $orderIds = $this->normalizeBulkOrderIds($validated['order_ids']);
+        $reason = isset($validated['reason']) ? (string) $validated['reason'] : null;
+        $results = [];
+        $ok = 0;
+        $failed = 0;
+        foreach ($orderIds as $oid) {
+            try {
+                $this->orders->markOrderFulfilled($oid, $customerId, $reason);
+                $results[] = ['order_id' => $oid, 'ok' => true];
+                $ok++;
+            } catch (RuntimeException $e) {
+                $results[] = ['order_id' => $oid, 'ok' => false, 'message' => $e->getMessage()];
+                $failed++;
+            } catch (Throwable $e) {
+                report($e);
+                $results[] = ['order_id' => $oid, 'ok' => false, 'message' => config('app.debug') ? $e->getMessage() : 'Request failed.'];
+                $failed++;
+            }
+        }
+
+        return response()->json([
+            'results' => $results,
+            'summary' => ['ok' => $ok, 'failed' => $failed],
+        ]);
+    }
+
+    public function bulkCancelOrders(Request $request): JsonResponse
+    {
+        Gate::authorize('shiphero.orders.write');
+        $validated = $request->validate([
+            'client_account_id' => ['required', 'integer', 'exists:client_accounts,id'],
+            'order_ids' => ['required', 'array', 'min:1', 'max:'.self::BULK_ORDER_IDS_MAX],
+            'order_ids.*' => ['string', 'max:255'],
+            'reason' => ['nullable', 'string', 'max:500'],
+            'void_on_platform' => ['nullable', 'boolean'],
+            'force' => ['nullable', 'boolean'],
+        ]);
+        $customerId = $this->resolveShipHeroCustomerAccountId((int) $validated['client_account_id'], $request);
+        $orderIds = $this->normalizeBulkOrderIds($validated['order_ids']);
+        $results = [];
+        $ok = 0;
+        $failed = 0;
+        foreach ($orderIds as $oid) {
+            try {
+                $this->orders->cancelOrderInShipHero(
+                    $oid,
+                    $customerId,
+                    isset($validated['reason']) ? (string) $validated['reason'] : null,
+                    (bool) ($validated['void_on_platform'] ?? false),
+                    (bool) ($validated['force'] ?? false)
+                );
+                $results[] = ['order_id' => $oid, 'ok' => true];
+                $ok++;
+            } catch (RuntimeException $e) {
+                $results[] = ['order_id' => $oid, 'ok' => false, 'message' => $e->getMessage()];
+                $failed++;
+            } catch (Throwable $e) {
+                report($e);
+                $results[] = ['order_id' => $oid, 'ok' => false, 'message' => config('app.debug') ? $e->getMessage() : 'Request failed.'];
+                $failed++;
+            }
+        }
+
+        return response()->json([
+            'results' => $results,
+            'summary' => ['ok' => $ok, 'failed' => $failed],
+        ]);
+    }
+
+    public function bulkAllowPartial(Request $request): JsonResponse
+    {
+        Gate::authorize('shiphero.orders.write');
+        $validated = $request->validate([
+            'client_account_id' => ['required', 'integer', 'exists:client_accounts,id'],
+            'order_ids' => ['required', 'array', 'min:1', 'max:'.self::BULK_ORDER_IDS_MAX],
+            'order_ids.*' => ['string', 'max:255'],
+            'allow_partial' => ['nullable', 'boolean'],
+        ]);
+        $customerId = $this->resolveShipHeroCustomerAccountId((int) $validated['client_account_id'], $request);
+        $orderIds = $this->normalizeBulkOrderIds($validated['order_ids']);
+        $allow = array_key_exists('allow_partial', $validated) ? (bool) $validated['allow_partial'] : true;
+        $results = [];
+        $ok = 0;
+        $failed = 0;
+        foreach ($orderIds as $oid) {
+            try {
+                $this->orders->updateOrderAllowPartial($oid, $customerId, $allow);
+                $results[] = ['order_id' => $oid, 'ok' => true];
+                $ok++;
+            } catch (RuntimeException $e) {
+                $results[] = ['order_id' => $oid, 'ok' => false, 'message' => $e->getMessage()];
+                $failed++;
+            } catch (Throwable $e) {
+                report($e);
+                $results[] = ['order_id' => $oid, 'ok' => false, 'message' => config('app.debug') ? $e->getMessage() : 'Request failed.'];
+                $failed++;
+            }
+        }
+
+        return response()->json([
+            'results' => $results,
+            'summary' => ['ok' => $ok, 'failed' => $failed],
+        ]);
+    }
+
+    public function bulkSetHolds(Request $request): JsonResponse
+    {
+        Gate::authorize('shiphero.orders.write');
+        $validated = $request->validate([
+            'client_account_id' => ['required', 'integer', 'exists:client_accounts,id'],
+            'order_ids' => ['required', 'array', 'min:1', 'max:'.self::BULK_ORDER_IDS_MAX],
+            'order_ids.*' => ['string', 'max:255'],
+            'fraud_hold' => ['nullable', 'boolean'],
+            'address_hold' => ['nullable', 'boolean'],
+            'payment_hold' => ['nullable', 'boolean'],
+            'client_hold' => ['nullable', 'boolean'],
+            'operator_hold' => ['nullable', 'boolean'],
+        ]);
+        $flags = [];
+        foreach (['fraud_hold', 'address_hold', 'payment_hold', 'client_hold', 'operator_hold'] as $k) {
+            if (! empty($validated[$k])) {
+                $flags[$k] = true;
+            }
+        }
+        if ($flags === []) {
+            throw ValidationException::withMessages([
+                'fraud_hold' => ['Select at least one hold type.'],
+            ]);
+        }
+        $customerId = $this->resolveShipHeroCustomerAccountId((int) $validated['client_account_id'], $request);
+        $orderIds = $this->normalizeBulkOrderIds($validated['order_ids']);
+        $results = [];
+        $ok = 0;
+        $failed = 0;
+        foreach ($orderIds as $oid) {
+            try {
+                $this->orders->setOrderHoldsTrue($oid, $customerId, $flags);
+                $results[] = ['order_id' => $oid, 'ok' => true];
+                $ok++;
+            } catch (RuntimeException $e) {
+                $results[] = ['order_id' => $oid, 'ok' => false, 'message' => $e->getMessage()];
+                $failed++;
+            } catch (Throwable $e) {
+                report($e);
+                $results[] = ['order_id' => $oid, 'ok' => false, 'message' => config('app.debug') ? $e->getMessage() : 'Request failed.'];
+                $failed++;
+            }
+        }
+
+        return response()->json([
+            'results' => $results,
+            'summary' => ['ok' => $ok, 'failed' => $failed],
+        ]);
+    }
+
+    public function bulkClearHolds(Request $request): JsonResponse
+    {
+        Gate::authorize('shiphero.orders.write');
+        $validated = $request->validate([
+            'client_account_id' => ['required', 'integer', 'exists:client_accounts,id'],
+            'order_ids' => ['required', 'array', 'min:1', 'max:'.self::BULK_ORDER_IDS_MAX],
+            'order_ids.*' => ['string', 'max:255'],
+        ]);
+        $customerId = $this->resolveShipHeroCustomerAccountId((int) $validated['client_account_id'], $request);
+        $orderIds = $this->normalizeBulkOrderIds($validated['order_ids']);
+        $results = [];
+        $ok = 0;
+        $failed = 0;
+        foreach ($orderIds as $oid) {
+            try {
+                $holds = $this->orders->getOrderHoldsNormalized($oid, $customerId);
+                if ($this->orders->orderHoldsOnlyShippingMethodHoldActive($holds)) {
+                    $results[] = [
+                        'order_id' => $oid,
+                        'ok' => false,
+                        'message' => 'This order has a shipping method hold, which cannot be cleared via the API. Clear it in ShipHero.',
+                    ];
+                    $failed++;
+
+                    continue;
+                }
+                $this->orders->clearOrderHolds($oid, $customerId);
+                $results[] = ['order_id' => $oid, 'ok' => true];
+                $ok++;
+            } catch (RuntimeException $e) {
+                $results[] = ['order_id' => $oid, 'ok' => false, 'message' => $e->getMessage()];
+                $failed++;
+            } catch (Throwable $e) {
+                report($e);
+                $results[] = ['order_id' => $oid, 'ok' => false, 'message' => config('app.debug') ? $e->getMessage() : 'Request failed.'];
+                $failed++;
+            }
+        }
+
+        return response()->json([
+            'results' => $results,
+            'summary' => ['ok' => $ok, 'failed' => $failed],
+        ]);
     }
 
     private function resolveShipHeroCustomerAccountId(int $clientAccountId, Request $request): string

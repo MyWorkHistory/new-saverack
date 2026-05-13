@@ -163,6 +163,8 @@ query ShipHeroOrders(
           source
           email
           shipping_address {
+            first_name
+            last_name
             country
           }
           shipping_lines {
@@ -773,6 +775,77 @@ GQL;
         $this->client->query($graphql, ['data' => $data]);
     }
 
+    /**
+     * True when the order has active holds but none of them can be cleared via
+     * {@see order_update_holds} (ShipHero excludes shipping_method_hold from UpdateOrderHoldsInput).
+     *
+     * @param  array<string, mixed>|null  $holds
+     */
+    public function orderHoldsOnlyShippingMethodHoldActive($holds): bool
+    {
+        $h = $this->normalizeOrderHoldsForApi($holds);
+        if (! $this->orderHoldsArrayHasActive($h)) {
+            return false;
+        }
+        foreach (['fraud_hold', 'address_hold', 'payment_hold', 'client_hold', 'operator_hold'] as $key) {
+            if (! empty($h[$key])) {
+                return false;
+            }
+        }
+
+        return ! empty($h['shipping_method_hold']);
+    }
+
+    /**
+     * Set holds to true for keys present in $flags (ShipHero UpdateOrderHoldsInput).
+     * Only known hold keys are sent; omitted keys are left unchanged upstream.
+     *
+     * @param  array<string, bool>  $flags
+     */
+    public function setOrderHoldsTrue(string $orderId, string $customerAccountId, array $flags): void
+    {
+        $relayId = $this->resolveOrderRelayIdForMutations($orderId, $customerAccountId);
+        $customer = trim($customerAccountId);
+        $allowed = ['fraud_hold', 'address_hold', 'payment_hold', 'client_hold', 'operator_hold'];
+        $data = [
+            'order_id' => $relayId,
+        ];
+        foreach ($allowed as $key) {
+            if (! empty($flags[$key])) {
+                $data[$key] = true;
+            }
+        }
+        if (count($data) <= 1) {
+            throw new RuntimeException('Select at least one hold type to apply.');
+        }
+        if ($customer !== '') {
+            $data['customer_account_id'] = $customer;
+        }
+        $graphql = <<<'GQL'
+mutation ShipHeroOrderSetHolds($data: UpdateOrderHoldsInput!) {
+  order_update_holds(data: $data) {
+    request_id
+    complexity
+  }
+}
+GQL;
+        $this->client->query($graphql, ['data' => $data]);
+    }
+
+    /**
+     * @return array<string, bool>
+     */
+    public function getOrderHoldsNormalized(string $orderId, string $customerAccountId): array
+    {
+        $relayId = $this->resolveOrderRelayIdForMutations($orderId, $customerAccountId);
+        $node = $this->fetchOrderHeaderNode($customerAccountId, $relayId);
+        if (! is_array($node)) {
+            throw new RuntimeException('Order not found in ShipHero.');
+        }
+
+        return $this->normalizeOrderHoldsForApi($node['holds'] ?? null);
+    }
+
     public function updateRequireSignatureAndGiftNote(
         string $orderId,
         string $customerAccountId,
@@ -1197,6 +1270,13 @@ GQL;
     {
         $shippingLine = $this->resolveShippingLine($node['shipping_lines'] ?? null);
         $shippingAddress = is_array($node['shipping_address'] ?? null) ? $node['shipping_address'] : [];
+        $holdsApi = $this->normalizeOrderHoldsForApi($node['holds'] ?? null);
+        $fn = trim((string) ($shippingAddress['first_name'] ?? ''));
+        $ln = trim((string) ($shippingAddress['last_name'] ?? ''));
+        $recipient = trim($fn.' '.$ln);
+        if ($recipient === '') {
+            $recipient = '—';
+        }
 
         return [
             'id' => (string) ($node['id'] ?? ''),
@@ -1207,6 +1287,9 @@ GQL;
             'raw_status' => (string) ($node['status'] ?? ''),
             'raw_profile' => (string) ($node['profile'] ?? ''),
             'hold_reason' => $this->extractHoldReason($node),
+            'holds' => $holdsApi,
+            'has_active_hold' => $this->orderHoldsArrayHasActive($holdsApi),
+            'recipient_name' => $recipient,
             'order_number' => (string) ($node['order_number'] ?? ''),
             'order_date' => $this->nullableIso($node['order_date'] ?? null),
             'required_ship_date' => $this->nullableIso($node['required_ship_date'] ?? null),

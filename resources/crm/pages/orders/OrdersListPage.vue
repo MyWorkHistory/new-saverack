@@ -1,12 +1,19 @@
 <script setup>
-import { computed, inject, onMounted, onUnmounted, reactive, ref, watch } from "vue";
+import { Transition, computed, inject, nextTick, onMounted, onUnmounted, reactive, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import api from "../../services/api";
 import CrmLoadingSpinner from "../../components/common/CrmLoadingSpinner.vue";
 import CrmIconRowActions from "../../components/common/CrmIconRowActions.vue";
 import CrmSearchableSelect from "../../components/common/CrmSearchableSelect.vue";
+import ConfirmModal from "../../components/common/ConfirmModal.vue";
 import { setCrmPageMeta } from "../../composables/useCrmPageMeta.js";
 import { useToast } from "../../composables/useToast.js";
+import { canWriteShipHeroOrders } from "../../utils/crmShipHeroOrders";
+
+const props = defineProps({
+  /** When true, hide account picker and link orders to portal detail route. */
+  portalOrderList: { type: Boolean, default: false },
+});
 
 const toast = useToast();
 const route = useRoute();
@@ -39,6 +46,23 @@ const manageMenuRect = ref({ top: 0, left: 0 });
 const filterMenuOpen = ref(false);
 const committedOrderNumber = ref("");
 
+const selectedOrderIds = ref(new Set());
+const bulkBusy = ref(false);
+const addHoldModalOpen = ref(false);
+const addHoldFlags = reactive({
+  fraud_hold: false,
+  address_hold: false,
+  payment_hold: false,
+  client_hold: false,
+});
+const addHoldTargetIds = ref([]);
+const addHoldBusy = ref(false);
+
+const confirmBulkMarkFulfilledOpen = ref(false);
+const confirmBulkCancelOpen = ref(false);
+const confirmBulkAllowPartialOpen = ref(false);
+const confirmBulkRemoveHoldsOpen = ref(false);
+
 const query = reactive({
   datePreset: "today",
   from: "",
@@ -51,6 +75,9 @@ const query = reactive({
 });
 
 const tabKey = computed(() => String(route.meta?.orderTab || "manage"));
+
+/** Portal user routes set `meta.userPortal`; staff may pass `portal-order-list` explicitly. */
+const isPortalOrderList = computed(() => props.portalOrderList === true || route.meta?.userPortal === true);
 const tabTitle = computed(() => {
   if (tabKey.value === "awaiting") return "Ready to Ship";
   if (tabKey.value === "on_hold") return "On-Hold";
@@ -61,6 +88,8 @@ const tabTitle = computed(() => {
 
 const showManageFilters = computed(() => true);
 const isCustomDate = computed(() => query.datePreset === "custom");
+
+const tableColspan = computed(() => 10);
 
 const displayedRows = computed(() => {
   return rows.value;
@@ -74,6 +103,34 @@ const canLoadMoreReadySummary = computed(() => readySummaryHasMore.value && !rea
 
 const isPortalUser = computed(() => Number(crmUser.value?.client_account_id || 0) > 0);
 const portalClientAccountId = computed(() => Number(crmUser.value?.client_account_id || 0));
+
+const canWriteOrders = computed(() => canWriteShipHeroOrders(crmUser.value));
+
+const isShippedTab = computed(() => tabKey.value === "shipped");
+
+const selectedCount = computed(() => selectedOrderIds.value.size);
+
+const allPageSelected = computed(() => {
+  const ids = displayedRows.value.map((r) => String(r.id || "").trim()).filter(Boolean);
+  if (!ids.length) return false;
+  return ids.every((id) => selectedOrderIds.value.has(id));
+});
+
+const somePageSelected = computed(() => {
+  const ids = displayedRows.value.map((r) => String(r.id || "").trim()).filter(Boolean);
+  return ids.some((id) => selectedOrderIds.value.has(id));
+});
+
+function rowHasClearableHold(row) {
+  const h = row?.holds && typeof row.holds === "object" ? row.holds : {};
+  return !!(h.fraud_hold || h.address_hold || h.payment_hold || h.client_hold || h.operator_hold);
+}
+
+function rowOnlyShippingMethodHold(row) {
+  const h = row?.holds && typeof row.holds === "object" ? row.holds : {};
+  if (rowHasClearableHold(row)) return false;
+  return !!h.shipping_method_hold;
+}
 
 const accountOptions = computed(() => {
   const source = isPortalUser.value
@@ -90,8 +147,9 @@ const accountOptions = computed(() => {
 
 function orderDetailHref(row) {
   if (!row?.id || !selectedAccountId.value) return "#";
+  const name = isPortalOrderList.value ? "user-order-detail" : "order-detail";
   return router.resolve({
-    name: "order-detail",
+    name,
     params: { shipheroOrderId: String(row.id) },
     query: { client_account_id: String(selectedAccountId.value) },
   }).href;
@@ -141,8 +199,7 @@ function normalizeOrderNumberInput(v) {
 }
 
 function commitOrderNumberSearch() {
-  // Only the Manage tab has an order-number input.
-  if (tabKey.value !== "manage") return;
+  if (tabKey.value !== "manage" && !isPortalOrderList.value) return;
   const next = normalizeOrderNumberInput(query.orderNumber);
   committedOrderNumber.value = next;
 
@@ -157,6 +214,9 @@ function firstHoldReasonLabel(row) {
 
 /** On-hold tab displays a single hold reason only. */
 function displayOrderStatus(row) {
+  if (tabKey.value === "awaiting") {
+    return "Ready To Ship";
+  }
   if (tabKey.value === "on_hold") {
     const selected = normalizedHoldReasonLabel(query.holdReason);
     if (selected) return selected;
@@ -232,7 +292,7 @@ function buildParams(withCursor = false) {
   if (query.fulfillmentStatus) params.fulfillment_status = query.fulfillmentStatus;
   if (query.readyToShip !== "") params.ready_to_ship = query.readyToShip === "yes";
   if (tabKey.value === "on_hold" && query.holdReason) params.hold_reason = query.holdReason;
-  if (tabKey.value === "manage") {
+  if (tabKey.value === "manage" || isPortalOrderList.value) {
     if (committedOrderNumber.value) params.order_number = committedOrderNumber.value;
   }
   if (withCursor && nextCursor.value) params.after = nextCursor.value;
@@ -258,6 +318,7 @@ async function fetchOrders(reset = true) {
       hasSearched.value = false;
       hasNextPage.value = false;
       nextCursor.value = null;
+      clearRowSelection();
     }
     return;
   }
@@ -266,6 +327,7 @@ async function fetchOrders(reset = true) {
     rows.value = [];
     nextCursor.value = null;
     hasNextPage.value = false;
+    clearRowSelection();
   }
   try {
     const { data } = await api.get("/orders", {
@@ -340,8 +402,8 @@ function onDocClick(e) {
 function placeManageMenu(anchorEl) {
   if (!(anchorEl instanceof HTMLElement)) return;
   const rect = anchorEl.getBoundingClientRect();
-  const width = 180;
-  const height = 54;
+  const width = 200;
+  const height = 360;
   let top = rect.bottom + 4;
   let left = rect.right - width;
   left = Math.max(8, Math.min(left, window.innerWidth - width - 8));
@@ -362,9 +424,361 @@ async function toggleManageMenu(id, e) {
   });
 }
 
+function clearRowSelection() {
+  selectedOrderIds.value = new Set();
+}
+
+const selectAllCheckboxRef = ref(null);
+
+watch([allPageSelected, somePageSelected, displayedRows], () => {
+  nextTick(() => {
+    const el = selectAllCheckboxRef.value;
+    if (el && typeof el.indeterminate !== "undefined") {
+      el.indeterminate = somePageSelected.value && !allPageSelected.value;
+    }
+  });
+});
+
+function resetToolbarFiltersFromMenu() {
+  query.datePreset = tabKey.value === "manage" ? "today" : "all";
+  query.from = "";
+  query.to = "";
+  query.fulfillmentStatus = "";
+  query.readyToShip = "";
+  query.holdReason = "";
+  filterMenuOpen.value = false;
+}
+
+function toggleSelectAllPage() {
+  const ids = displayedRows.value.map((r) => String(r.id || "").trim()).filter(Boolean);
+  if (!ids.length) return;
+  if (allPageSelected.value) {
+    const next = new Set(selectedOrderIds.value);
+    ids.forEach((id) => next.delete(id));
+    selectedOrderIds.value = next;
+    return;
+  }
+  const next = new Set(selectedOrderIds.value);
+  ids.forEach((id) => next.add(id));
+  selectedOrderIds.value = next;
+}
+
+function toggleRowSelected(row) {
+  const id = String(row?.id || "").trim();
+  if (!id) return;
+  const next = new Set(selectedOrderIds.value);
+  if (next.has(id)) next.delete(id);
+  else next.add(id);
+  selectedOrderIds.value = next;
+}
+
+function isRowSelected(row) {
+  return selectedOrderIds.value.has(String(row?.id || ""));
+}
+
+function selectedRowsList() {
+  const want = selectedOrderIds.value;
+  return displayedRows.value.filter((r) => want.has(String(r.id || "")));
+}
+
+function resetAddHoldFlags() {
+  addHoldFlags.fraud_hold = false;
+  addHoldFlags.address_hold = false;
+  addHoldFlags.payment_hold = false;
+  addHoldFlags.client_hold = false;
+}
+
+function openAddHoldModalForIds(ids) {
+  if (!canWriteOrders.value) {
+    toast.error("You do not have permission to update orders.");
+    return;
+  }
+  const clean = [...new Set(ids.map((x) => String(x || "").trim()).filter(Boolean))];
+  if (!clean.length) return;
+  resetAddHoldFlags();
+  addHoldTargetIds.value = clean;
+  addHoldModalOpen.value = true;
+}
+
+function closeAddHoldModal() {
+  if (addHoldBusy.value) return;
+  addHoldModalOpen.value = false;
+  addHoldTargetIds.value = [];
+}
+
+async function submitAddHoldModal() {
+  if (!selectedAccountId.value || !addHoldTargetIds.value.length) return;
+  if (!addHoldFlags.fraud_hold && !addHoldFlags.address_hold && !addHoldFlags.payment_hold && !addHoldFlags.client_hold) {
+    toast.error("Select at least one hold type.");
+    return;
+  }
+  addHoldBusy.value = true;
+  try {
+    const { data } = await api.post("/orders/bulk/set-holds", {
+      client_account_id: Number(selectedAccountId.value),
+      order_ids: addHoldTargetIds.value,
+      fraud_hold: !!addHoldFlags.fraud_hold,
+      address_hold: !!addHoldFlags.address_hold,
+      payment_hold: !!addHoldFlags.payment_hold,
+      client_hold: !!addHoldFlags.client_hold,
+    });
+    const ok = Number(data?.summary?.ok ?? 0);
+    const failed = Number(data?.summary?.failed ?? 0);
+    toast.success(`Holds applied: ${ok} succeeded${failed ? `, ${failed} failed` : ""}.`);
+    closeAddHoldModal();
+    manageOpenId.value = null;
+    clearRowSelection();
+    await fetchOrders(true);
+    if (tabKey.value === "manage") await fetchReadySummary(true);
+  } catch (e) {
+    toast.errorFrom(e, "Could not add holds.");
+  } finally {
+    addHoldBusy.value = false;
+  }
+}
+
+function csvEscapeCell(v) {
+  const s = String(v ?? "");
+  if (/[",\n\r]/.test(s)) return `"${s.replace(/"/g, '""')}"`;
+  return s;
+}
+
+function exportRowsToCsv(rowList) {
+  const headers = [
+    "Name",
+    "Status",
+    "Order #",
+    "Order Date",
+    "Account",
+    "Country",
+    "Shipping Carrier",
+    "Method",
+    "Email",
+  ];
+  const lines = [headers.join(",")];
+  for (const row of rowList) {
+    const status = displayOrderStatus(row);
+    lines.push(
+      [
+        csvEscapeCell(row.recipient_name || "—"),
+        csvEscapeCell(status),
+        csvEscapeCell(row.order_number || ""),
+        csvEscapeCell(formatDate(row.order_date)),
+        csvEscapeCell(row.account || ""),
+        csvEscapeCell(row.country || ""),
+        csvEscapeCell(row.shipping_carrier || ""),
+        csvEscapeCell(row.method || ""),
+        csvEscapeCell(row.email || ""),
+      ].join(","),
+    );
+  }
+  const blob = new Blob(["\ufeff" + lines.join("\r\n")], { type: "text/csv;charset=utf-8" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = `orders-export-${tabKey.value}-${Date.now()}.csv`;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
+function exportSelectedCsv() {
+  const list = selectedRowsList();
+  if (!list.length) {
+    toast.error("Select at least one order.");
+    return;
+  }
+  exportRowsToCsv(list);
+  toast.success("Export started.");
+}
+
+function exportOneRow(row) {
+  exportRowsToCsv([row]);
+  manageOpenId.value = null;
+  toast.success("Export started.");
+}
+
+async function runBulkMarkFulfilled() {
+  if (!selectedAccountId.value) return;
+  const ids = selectedRowsList()
+    .map((r) => String(r.id))
+    .filter(Boolean);
+  if (!ids.length) return;
+  bulkBusy.value = true;
+  try {
+    const { data } = await api.post("/orders/bulk/mark-fulfilled", {
+      client_account_id: Number(selectedAccountId.value),
+      order_ids: ids,
+    });
+    toast.success(`Marked fulfilled: ${data?.summary?.ok ?? 0} ok, ${data?.summary?.failed ?? 0} failed.`);
+    confirmBulkMarkFulfilledOpen.value = false;
+    clearRowSelection();
+    await fetchOrders(true);
+    if (tabKey.value === "manage") await fetchReadySummary(true);
+  } catch (e) {
+    toast.errorFrom(e, "Bulk mark fulfilled failed.");
+  } finally {
+    bulkBusy.value = false;
+  }
+}
+
+async function runBulkCancel() {
+  if (!selectedAccountId.value) return;
+  const ids = selectedRowsList()
+    .map((r) => String(r.id))
+    .filter(Boolean);
+  if (!ids.length) return;
+  bulkBusy.value = true;
+  try {
+    const { data } = await api.post("/orders/bulk/cancel", {
+      client_account_id: Number(selectedAccountId.value),
+      order_ids: ids,
+    });
+    toast.success(`Canceled: ${data?.summary?.ok ?? 0} ok, ${data?.summary?.failed ?? 0} failed.`);
+    confirmBulkCancelOpen.value = false;
+    clearRowSelection();
+    await fetchOrders(true);
+    if (tabKey.value === "manage") await fetchReadySummary(true);
+  } catch (e) {
+    toast.errorFrom(e, "Bulk cancel failed.");
+  } finally {
+    bulkBusy.value = false;
+  }
+}
+
+async function runBulkAllowPartial() {
+  if (!selectedAccountId.value) return;
+  const ids = selectedRowsList()
+    .map((r) => String(r.id))
+    .filter(Boolean);
+  if (!ids.length) return;
+  bulkBusy.value = true;
+  try {
+    const { data } = await api.post("/orders/bulk/allow-partial", {
+      client_account_id: Number(selectedAccountId.value),
+      order_ids: ids,
+      allow_partial: true,
+    });
+    toast.success(`Allow partial: ${data?.summary?.ok ?? 0} ok, ${data?.summary?.failed ?? 0} failed.`);
+    confirmBulkAllowPartialOpen.value = false;
+    clearRowSelection();
+    await fetchOrders(true);
+  } catch (e) {
+    toast.errorFrom(e, "Bulk allow partial failed.");
+  } finally {
+    bulkBusy.value = false;
+  }
+}
+
+async function runBulkRemoveHolds() {
+  if (!selectedAccountId.value) return;
+  const ids = selectedRowsList()
+    .map((r) => String(r.id))
+    .filter(Boolean);
+  if (!ids.length) return;
+  bulkBusy.value = true;
+  try {
+    const { data } = await api.post("/orders/bulk/clear-holds", {
+      client_account_id: Number(selectedAccountId.value),
+      order_ids: ids,
+    });
+    toast.success(`Remove hold: ${data?.summary?.ok ?? 0} ok, ${data?.summary?.failed ?? 0} failed.`);
+    confirmBulkRemoveHoldsOpen.value = false;
+    clearRowSelection();
+    await fetchOrders(true);
+    if (tabKey.value === "manage") await fetchReadySummary(true);
+  } catch (e) {
+    toast.errorFrom(e, "Bulk remove holds failed.");
+  } finally {
+    bulkBusy.value = false;
+  }
+}
+
+async function runSingleRemoveHold(row) {
+  if (!selectedAccountId.value || !row?.id) return;
+  manageOpenId.value = null;
+  bulkBusy.value = true;
+  try {
+    await api.post(`/orders/${encodeURIComponent(String(row.id))}/remove-holds`, {
+      client_account_id: Number(selectedAccountId.value),
+    });
+    toast.success("Holds cleared.");
+    await fetchOrders(true);
+    if (tabKey.value === "manage") await fetchReadySummary(true);
+  } catch (e) {
+    toast.errorFrom(e, "Could not remove holds.");
+  } finally {
+    bulkBusy.value = false;
+  }
+}
+
+async function runSingleMarkFulfilled(row) {
+  if (!selectedAccountId.value || !row?.id) return;
+  manageOpenId.value = null;
+  bulkBusy.value = true;
+  try {
+    await api.post(`/orders/${encodeURIComponent(String(row.id))}/mark-fulfilled`, {
+      client_account_id: Number(selectedAccountId.value),
+    });
+    toast.success("Order marked fulfilled.");
+    await fetchOrders(true);
+    if (tabKey.value === "manage") await fetchReadySummary(true);
+  } catch (e) {
+    toast.errorFrom(e, "Could not mark fulfilled.");
+  } finally {
+    bulkBusy.value = false;
+  }
+}
+
+async function runSingleAllowPartial(row) {
+  if (!selectedAccountId.value || !row?.id) return;
+  manageOpenId.value = null;
+  bulkBusy.value = true;
+  try {
+    await api.post(`/orders/${encodeURIComponent(String(row.id))}/allow-partial`, {
+      client_account_id: Number(selectedAccountId.value),
+      allow_partial: true,
+    });
+    toast.success("Allow partial updated.");
+    await fetchOrders(true);
+  } catch (e) {
+    toast.errorFrom(e, "Could not update allow partial.");
+  } finally {
+    bulkBusy.value = false;
+  }
+}
+
+async function runSingleCancel(row) {
+  if (!selectedAccountId.value || !row?.id) return;
+  manageOpenId.value = null;
+  bulkBusy.value = true;
+  try {
+    await api.post(`/orders/${encodeURIComponent(String(row.id))}/cancel`, {
+      client_account_id: Number(selectedAccountId.value),
+    });
+    toast.success("Order canceled.");
+    await fetchOrders(true);
+    if (tabKey.value === "manage") await fetchReadySummary(true);
+  } catch (e) {
+    toast.errorFrom(e, "Could not cancel order.");
+  } finally {
+    bulkBusy.value = false;
+  }
+}
+
+watch(
+  () => [isPortalOrderList.value, portalClientAccountId.value],
+  ([portal, id]) => {
+    if (portal && Number(id) > 0) {
+      selectedAccountId.value = String(id);
+    }
+  },
+  { immediate: true },
+);
+
 watch(
   tabKey,
   (t) => {
+    clearRowSelection();
     if (t === "manage") {
       query.datePreset = "today";
     } else {
@@ -382,6 +796,7 @@ watch(
 watch(
   () => [selectedAccountId.value, tabKey.value],
   () => {
+    clearRowSelection();
     readySummaryOffset.value = 0;
     readySummaryHasMore.value = false;
     fetchOrders(true);
@@ -404,7 +819,7 @@ onMounted(async () => {
   document.addEventListener("click", onDocClick);
   setCrmPageMeta({
     title: `Save Rack | Orders | ${tabTitle.value}`,
-    description: "ShipHero customer orders.",
+    description: route.meta?.userPortal ? "Your account orders." : "ShipHero customer orders.",
   });
   try {
     const cached = sessionStorage.getItem(READY_SUMMARY_CACHE_KEY);
@@ -438,14 +853,14 @@ onUnmounted(() => {
     <div class="d-flex align-items-start justify-content-between gap-3 mb-4">
       <div>
         <h1 class="h4 mb-1 fw-semibold text-body">Orders - {{ tabTitle }}</h1>
-        <p class="staff-page__intro mb-0">ShipHero orders for selected client account.</p>
+        <p v-if="!isPortalOrderList" class="staff-page__intro mb-0">ShipHero orders for selected client account.</p>
       </div>
     </div>
 
     <div class="staff-table-card staff-datatable-card staff-datatable-card--white w-100">
       <div class="staff-table-toolbar">
         <div class="staff-table-toolbar--row flex-wrap align-items-end gap-2 gap-md-3">
-          <div class="flex-grow-1" style="min-width: 280px">
+          <div v-if="!isPortalOrderList" class="flex-grow-1" style="min-width: 280px">
             <label class="form-label small text-secondary mb-1" for="orders-list-account-trigger">Account</label>
             <CrmSearchableSelect
               v-model="selectedAccountId"
@@ -503,8 +918,13 @@ onUnmounted(() => {
                 <div class="staff-toolbar-filter-dropdown__body">
                   <p class="small text-secondary mb-2">
                     <template v-if="tabKey === 'manage'">
-                      Same <strong>order date</strong> window as the Ready to Ship summary above. Searching by
-                      <strong>order #</strong> ignores the date range so a specific order can be found.
+                      <template v-if="!isPortalOrderList">
+                        Same <strong>order date</strong> window as the Ready to Ship summary above. Searching by
+                        <strong>order #</strong> ignores the date range so a specific order can be found.
+                      </template>
+                      <template v-else>
+                        Searching by <strong>order #</strong> ignores the date range so a specific order can be found.
+                      </template>
                     </template>
                     <template v-else-if="tabKey === 'shipped'">
                       <strong>Shipped</strong> uses ShipHero &ldquo;fulfilled&rdquo; plus last activity when you pick
@@ -591,7 +1011,7 @@ onUnmounted(() => {
             </div>
           </template>
         </div>
-        <div v-if="tabKey === 'manage'" class="staff-table-toolbar--row mt-2">
+        <div v-if="tabKey === 'manage' || isPortalOrderList" class="staff-table-toolbar--row mt-2">
           <div class="d-flex flex-wrap align-items-end gap-2" style="width: min(420px, 100%)">
             <div class="flex-grow-1" style="min-width: 180px">
               <label class="form-label small text-secondary mb-1" for="orders-order-number-search">Order Number</label>
@@ -617,10 +1037,10 @@ onUnmounted(() => {
             </button>
           </div>
         </div>
-        <p class="small text-secondary mb-0 mt-2 px-1">Only accounts with a ShipHero customer ID appear here.</p>
+        <p v-if="!isPortalOrderList" class="small text-secondary mb-0 mt-2 px-1">Only accounts with a ShipHero customer ID appear here.</p>
       </div>
 
-      <div v-if="showManageFilters" class="px-3 px-md-4 pb-2">
+      <div v-if="showManageFilters && tabKey === 'manage' && !isPortalOrderList" class="px-3 px-md-4 pb-2">
         <p class="mb-1 fw-semibold">
           <template v-if="readySummaryLoading && !readySummaryVisibleAccounts.length">Loading summary...</template>
           <template v-else>{{ readySummary.ready_to_ship_total }} Ready to Ship Orders</template>
@@ -645,11 +1065,96 @@ onUnmounted(() => {
         </div>
       </div>
 
+      <div
+        v-if="selectedCount > 0 && selectedAccountId"
+        class="d-flex flex-wrap align-items-center gap-2 gap-md-3 px-3 px-md-4 py-3 border-bottom bg-body-tertiary"
+      >
+        <span class="small fw-semibold text-body me-md-1">{{ selectedCount }} selected</span>
+        <template v-if="isShippedTab">
+          <button type="button" class="btn btn-outline-secondary staff-toolbar-btn" :disabled="bulkBusy" @click="exportSelectedCsv">
+            Export
+          </button>
+          <button type="button" class="btn btn-outline-secondary staff-toolbar-btn" :disabled="bulkBusy" @click="clearRowSelection">
+            Clear Selection
+          </button>
+        </template>
+        <template v-else>
+          <button
+            v-if="canWriteOrders"
+            type="button"
+            class="btn btn-outline-secondary staff-toolbar-btn"
+            :disabled="bulkBusy"
+            @click="openAddHoldModalForIds([...selectedOrderIds])"
+          >
+            Add Hold
+          </button>
+          <button
+            v-if="canWriteOrders"
+            type="button"
+            class="btn btn-outline-secondary staff-toolbar-btn"
+            :disabled="bulkBusy"
+            @click="confirmBulkMarkFulfilledOpen = true"
+          >
+            Mark As Fulfilled
+          </button>
+          <button
+            v-if="canWriteOrders"
+            type="button"
+            class="btn btn-outline-secondary staff-toolbar-btn"
+            :disabled="bulkBusy"
+            @click="confirmBulkAllowPartialOpen = true"
+          >
+            Allow Partial
+          </button>
+          <button
+            v-if="canWriteOrders"
+            type="button"
+            class="btn btn-outline-danger staff-toolbar-btn"
+            :disabled="bulkBusy"
+            @click="confirmBulkCancelOpen = true"
+          >
+            Cancel Orders
+          </button>
+          <button
+            v-if="canWriteOrders"
+            type="button"
+            class="btn btn-outline-secondary staff-toolbar-btn"
+            :disabled="bulkBusy"
+            @click="confirmBulkRemoveHoldsOpen = true"
+          >
+            Remove Hold
+          </button>
+          <button type="button" class="btn btn-outline-secondary staff-toolbar-btn" :disabled="bulkBusy" @click="exportSelectedCsv">
+            Export
+          </button>
+          <button type="button" class="btn btn-outline-secondary staff-toolbar-btn" :disabled="bulkBusy" @click="clearRowSelection">
+            Clear Selection
+          </button>
+        </template>
+      </div>
+
+      <div v-if="selectedAccountId && hasSearched" class="px-3 px-md-4 pt-3 pb-0 small text-secondary">
+        Showing <span class="fw-semibold text-body">{{ displayedRows.length }}</span> order{{ displayedRows.length === 1 ? "" : "s" }}.
+        <template v-if="hasNextPage"> — load more to see additional orders.</template>
+      </div>
+
       <div class="table-responsive staff-table-wrap">
         <table class="table table-hover align-middle mb-0 staff-data-table">
           <thead class="table-light staff-table-head">
             <tr>
+              <th class="staff-table-head__th text-center" style="width: 2.75rem">
+                <input
+                  ref="selectAllCheckboxRef"
+                  type="checkbox"
+                  class="form-check-input m-0"
+                  :checked="allPageSelected"
+                  :disabled="loading || !displayedRows.length || !selectedAccountId"
+                  :aria-label="allPageSelected ? 'Deselect all on this page' : 'Select all on this page'"
+                  @change="toggleSelectAllPage"
+                />
+              </th>
               <th class="staff-table-head__th">{{ tabKey === "on_hold" ? "Hold Reason" : "Status" }}</th>
+              <th class="staff-table-head__th">Name</th>
               <th class="staff-table-head__th">Order #</th>
               <th class="staff-table-head__th">Order Date</th>
               <th class="staff-table-head__th">Account</th>
@@ -661,28 +1166,35 @@ onUnmounted(() => {
           </thead>
           <tbody>
             <tr v-if="loading">
-              <td colspan="8" class="py-5">
+              <td :colspan="tableColspan" class="py-5">
                 <div class="d-flex justify-content-center py-3">
                   <CrmLoadingSpinner message="Loading orders..." />
                 </div>
               </td>
             </tr>
             <tr v-else-if="!selectedAccountId">
-              <td colspan="8" class="text-center text-secondary py-5">
-                Select an account to load orders.
-              </td>
+              <td :colspan="tableColspan" class="text-center text-secondary py-5">Select an account to load orders.</td>
             </tr>
             <tr v-else-if="hasSearched && displayedRows.length === 0">
-              <td colspan="8" class="text-center text-secondary py-5">
-                No orders found.
-              </td>
+              <td :colspan="tableColspan" class="text-center text-secondary py-5">No orders found.</td>
             </tr>
             <tr v-for="row in displayedRows" :key="row.id" class="align-middle">
+              <td class="text-center">
+                <input
+                  type="checkbox"
+                  class="form-check-input m-0"
+                  :checked="isRowSelected(row)"
+                  :disabled="!row.id"
+                  :aria-label="`Select order ${row.order_number || row.id}`"
+                  @change="toggleRowSelected(row)"
+                />
+              </td>
               <td>
                 <span class="badge rounded-pill fw-medium" :class="statusClassForRow(row)">
                   {{ displayOrderStatus(row) }}
                 </span>
               </td>
+              <td>{{ row.recipient_name || "—" }}</td>
               <td class="fw-semibold">
                 <a
                   v-if="selectedAccountId"
@@ -723,12 +1235,7 @@ onUnmounted(() => {
         Scroll sideways or swipe to see all columns.
       </p>
 
-      <div
-        class="staff-table-footer card-footer d-flex flex-column flex-lg-row align-items-stretch align-items-lg-center justify-content-between gap-3"
-      >
-        <div class="small text-secondary order-2 order-lg-1">
-          Loaded <span class="fw-semibold text-body">{{ rows.length }}</span> order{{ rows.length === 1 ? "" : "s" }}.
-        </div>
+      <div class="staff-table-footer card-footer d-flex flex-column flex-lg-row align-items-stretch align-items-lg-center justify-content-end gap-3">
         <button
           type="button"
           class="btn btn-outline-secondary order-1 order-lg-2 ms-lg-auto"
@@ -752,10 +1259,165 @@ onUnmounted(() => {
         }"
         @click.stop
       >
-        <button class="staff-row-menu__item" role="menuitem" @click="openOrder(manageMenuRow)">
-          View
-        </button>
+        <button class="staff-row-menu__item" role="menuitem" @click="openOrder(manageMenuRow)">View</button>
+        <template v-if="isShippedTab">
+          <button class="staff-row-menu__item" role="menuitem" @click="exportOneRow(manageMenuRow)">Export</button>
+        </template>
+        <template v-else>
+          <button
+            v-if="canWriteOrders"
+            class="staff-row-menu__item"
+            role="menuitem"
+            @click="openAddHoldModalForIds([String(manageMenuRow.id)])"
+          >
+            Add Hold
+          </button>
+          <button v-if="canWriteOrders" class="staff-row-menu__item" role="menuitem" @click="runSingleMarkFulfilled(manageMenuRow)">
+            Mark As Fulfilled
+          </button>
+          <button v-if="canWriteOrders" class="staff-row-menu__item" role="menuitem" @click="runSingleAllowPartial(manageMenuRow)">
+            Allow Partial
+          </button>
+          <button v-if="canWriteOrders" class="staff-row-menu__item staff-row-menu__item--danger" role="menuitem" @click="runSingleCancel(manageMenuRow)">
+            Cancel Order
+          </button>
+          <button
+            v-if="canWriteOrders && rowHasClearableHold(manageMenuRow)"
+            class="staff-row-menu__item"
+            role="menuitem"
+            @click="runSingleRemoveHold(manageMenuRow)"
+          >
+            Remove Hold
+          </button>
+          <button
+            v-if="canWriteOrders && rowOnlyShippingMethodHold(manageMenuRow)"
+            type="button"
+            class="staff-row-menu__item text-start"
+            role="menuitem"
+            disabled
+            title="This order has a shipping method hold, which cannot be cleared via the API. Clear it in ShipHero."
+          >
+            Remove Hold
+          </button>
+          <button class="staff-row-menu__item" role="menuitem" @click="exportOneRow(manageMenuRow)">Export</button>
+        </template>
       </div>
+    </Teleport>
+
+    <ConfirmModal
+      :open="confirmBulkMarkFulfilledOpen"
+      title="Mark Orders Fulfilled?"
+      :message="`Mark ${selectedCount} order${selectedCount === 1 ? '' : 's'} as fulfilled in ShipHero?`"
+      confirm-label="Mark As Fulfilled"
+      cancel-label="Cancel"
+      :busy="bulkBusy"
+      :danger="false"
+      @close="confirmBulkMarkFulfilledOpen = false"
+      @confirm="runBulkMarkFulfilled"
+    />
+    <ConfirmModal
+      :open="confirmBulkCancelOpen"
+      title="Cancel Orders?"
+      :message="`Cancel ${selectedCount} order${selectedCount === 1 ? '' : 's'} in ShipHero? This cannot be undone.`"
+      confirm-label="Cancel Orders"
+      cancel-label="Close"
+      :busy="bulkBusy"
+      danger
+      @close="confirmBulkCancelOpen = false"
+      @confirm="runBulkCancel"
+    />
+    <ConfirmModal
+      :open="confirmBulkAllowPartialOpen"
+      title="Allow Partial?"
+      :message="`Allow partial fulfillment for ${selectedCount} order${selectedCount === 1 ? '' : 's'}?`"
+      confirm-label="Allow Partial"
+      cancel-label="Cancel"
+      :busy="bulkBusy"
+      :danger="false"
+      @close="confirmBulkAllowPartialOpen = false"
+      @confirm="runBulkAllowPartial"
+    />
+    <ConfirmModal
+      :open="confirmBulkRemoveHoldsOpen"
+      title="Remove Holds?"
+      :message="`Clear API-supported holds for ${selectedCount} order${selectedCount === 1 ? '' : 's'}? Shipping method holds must be cleared in ShipHero.`"
+      confirm-label="Remove Hold"
+      cancel-label="Cancel"
+      :busy="bulkBusy"
+      :danger="false"
+      @close="confirmBulkRemoveHoldsOpen = false"
+      @confirm="runBulkRemoveHolds"
+    />
+
+    <Teleport to="body">
+      <Transition name="modal-backdrop">
+        <div
+          v-if="addHoldModalOpen"
+          class="crm-vx-modal-overlay"
+          aria-modal="true"
+          role="dialog"
+          aria-labelledby="orders-add-hold-modal-title"
+        >
+          <div class="crm-vx-modal-backdrop" aria-hidden="true" @click="closeAddHoldModal" />
+          <Transition name="modal-panel" appear>
+            <div class="crm-vx-modal crm-vx-modal--sm">
+              <button
+                type="button"
+                class="crm-vx-modal__close"
+                aria-label="Close"
+                :disabled="addHoldBusy"
+                @click="closeAddHoldModal"
+              >
+                <svg width="20" height="20" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.75">
+                  <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+              <header class="crm-vx-modal__head">
+                <h2 id="orders-add-hold-modal-title" class="crm-vx-modal__title">Add Hold</h2>
+              </header>
+              <div class="crm-vx-modal__body pt-0">
+                <p class="small text-secondary mb-3">
+                  Apply to <strong>{{ addHoldTargetIds.length }}</strong> order{{ addHoldTargetIds.length === 1 ? "" : "s" }}. Only checked hold types are set in ShipHero.
+                </p>
+                <div class="form-check mb-2">
+                  <input id="orders-add-hold-fraud" v-model="addHoldFlags.fraud_hold" class="form-check-input" type="checkbox" />
+                  <label class="form-check-label" for="orders-add-hold-fraud">Fraud</label>
+                </div>
+                <div class="form-check mb-2">
+                  <input id="orders-add-hold-address" v-model="addHoldFlags.address_hold" class="form-check-input" type="checkbox" />
+                  <label class="form-check-label" for="orders-add-hold-address">Address</label>
+                </div>
+                <div class="form-check mb-2">
+                  <input id="orders-add-hold-payment" v-model="addHoldFlags.payment_hold" class="form-check-input" type="checkbox" />
+                  <label class="form-check-label" for="orders-add-hold-payment">Payment</label>
+                </div>
+                <div class="form-check mb-0">
+                  <input id="orders-add-hold-client" v-model="addHoldFlags.client_hold" class="form-check-input" type="checkbox" />
+                  <label class="form-check-label" for="orders-add-hold-client">Client</label>
+                </div>
+              </div>
+              <footer class="crm-vx-modal__footer">
+                <button
+                  type="button"
+                  class="crm-vx-modal-btn crm-vx-modal-btn--secondary"
+                  :disabled="addHoldBusy"
+                  @click="closeAddHoldModal"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  class="crm-vx-modal-btn crm-vx-modal-btn--primary"
+                  :disabled="addHoldBusy"
+                  @click="submitAddHoldModal"
+                >
+                  {{ addHoldBusy ? "Saving…" : "Save" }}
+                </button>
+              </footer>
+            </div>
+          </Transition>
+        </div>
+      </Transition>
     </Teleport>
   </div>
 </template>

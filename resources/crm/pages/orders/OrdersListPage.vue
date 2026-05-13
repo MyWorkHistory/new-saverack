@@ -341,11 +341,12 @@ async function fetchOrders(reset = true) {
     rows.value = reset ? incoming : [...rows.value, ...incoming];
     hasNextPage.value = Boolean(data?.pagination?.has_next_page);
     nextCursor.value = data?.pagination?.end_cursor || null;
-    hasSearched.value = true;
   } catch (e) {
     toast.errorFrom(e, "Could not load orders.");
   } finally {
     loading.value = false;
+    /** Always set after an attempt so the table never sits in a blank state (no row matched v-if / v-for). */
+    hasSearched.value = true;
   }
 }
 
@@ -781,12 +782,14 @@ watch(
 
 watch(
   tabKey,
-  (t) => {
+  () => {
     clearRowSelection();
     /** Default to today's order date on every tab so the list loads with a bounded window (ShipHero queue + no dates was often empty). */
     query.datePreset = "today";
     query.from = "";
     query.to = "";
+    query.fulfillmentStatus = "";
+    query.readyToShip = "";
     query.holdReason = "";
     query.orderNumber = "";
     committedOrderNumber.value = "";
@@ -803,6 +806,7 @@ watch(
     fetchOrders(true);
     if (tabKey.value === "manage") fetchReadySummary(true);
   },
+  { immediate: true },
 );
 
 watch(
@@ -858,7 +862,7 @@ onUnmounted(() => {
       </div>
     </div>
 
-    <div class="staff-table-card staff-datatable-card staff-datatable-card--white w-100">
+    <div class="staff-table-card staff-datatable-card staff-datatable-card--white w-100 orders-page-toolbar">
       <div class="staff-table-toolbar">
         <div class="staff-table-toolbar--row flex-wrap align-items-end gap-2 gap-md-3">
           <div v-if="!isPortalOrderList" class="flex-grow-1" style="min-width: 260px">
@@ -883,33 +887,35 @@ onUnmounted(() => {
             class="d-flex flex-wrap align-items-end gap-2"
             style="min-width: min(100%, 28rem)"
           >
-            <div class="flex-grow-1" style="min-width: 10rem">
+            <div class="flex-grow-1" style="min-width: 12rem">
               <label class="form-label small text-secondary mb-1" for="orders-order-number-search">Order Number</label>
-              <input
-                id="orders-order-number-search"
-                v-model.trim="query.orderNumber"
-                type="search"
-                class="form-control"
-                placeholder="Search by Order #"
-                :disabled="loading || !selectedAccountId"
-                autocomplete="off"
-                enterkeyhint="search"
-                @keydown.enter.prevent="commitOrderNumberSearch"
-              />
+              <div class="input-group input-group-sm orders-toolbar-search-group">
+                <input
+                  id="orders-order-number-search"
+                  v-model.trim="query.orderNumber"
+                  type="search"
+                  class="form-control"
+                  placeholder="Search by Order #"
+                  :disabled="loading || !selectedAccountId"
+                  autocomplete="off"
+                  enterkeyhint="search"
+                  @keydown.enter.prevent="commitOrderNumberSearch"
+                />
+                <button
+                  type="button"
+                  class="btn btn-primary staff-page-primary orders-toolbar-search-btn"
+                  :disabled="loading || !selectedAccountId"
+                  @click="commitOrderNumberSearch"
+                >
+                  Search
+                </button>
+              </div>
             </div>
-            <button
-              type="button"
-              class="btn btn-primary btn-sm staff-page-primary orders-toolbar-search-btn"
-              :disabled="loading || !selectedAccountId"
-              @click="commitOrderNumberSearch"
-            >
-              Search
-            </button>
             <template v-if="showManageFilters">
               <div class="position-relative flex-shrink-0" data-toolbar-filter>
                 <button
                   type="button"
-                  class="btn btn-outline-secondary btn-sm staff-toolbar-btn d-inline-flex align-items-center gap-2"
+                  class="btn btn-outline-secondary btn-sm staff-toolbar-btn orders-toolbar-outline-btn d-inline-flex align-items-center gap-2"
                   :aria-expanded="filterMenuOpen"
                   @click.stop="filterMenuOpen = !filterMenuOpen"
                 >
@@ -1041,7 +1047,7 @@ onUnmounted(() => {
             <div class="position-relative flex-shrink-0" data-toolbar-filter>
               <button
                 type="button"
-                class="btn btn-outline-secondary btn-sm staff-toolbar-btn d-inline-flex align-items-center gap-2"
+                class="btn btn-outline-secondary btn-sm staff-toolbar-btn orders-toolbar-outline-btn d-inline-flex align-items-center gap-2"
                 :aria-expanded="filterMenuOpen"
                 @click.stop="filterMenuOpen = !filterMenuOpen"
               >
@@ -1203,7 +1209,7 @@ onUnmounted(() => {
           </button>
           <button
             type="button"
-            class="btn btn-outline-secondary btn-sm orders-bulk-toolbar-btn"
+            class="btn btn-outline-secondary btn-sm orders-bulk-toolbar-btn orders-toolbar-outline-btn"
             :disabled="bulkBarDisabled"
             @click="clearRowSelection"
           >
@@ -1213,7 +1219,7 @@ onUnmounted(() => {
         <template v-else>
           <button
             type="button"
-            class="btn btn-outline-secondary btn-sm orders-bulk-toolbar-btn"
+            class="btn btn-outline-secondary btn-sm orders-bulk-toolbar-btn orders-toolbar-outline-btn"
             :disabled="bulkMutationDisabled"
             @click="openAddHoldModalForIds([...selectedOrderIds])"
           >
@@ -1237,7 +1243,7 @@ onUnmounted(() => {
           </button>
           <button
             type="button"
-            class="btn btn-outline-danger btn-sm orders-bulk-toolbar-btn"
+            class="btn btn-outline-danger btn-sm orders-bulk-toolbar-btn orders-toolbar-outline-btn orders-toolbar-outline-btn--danger"
             :disabled="bulkMutationDisabled"
             @click="confirmBulkCancelOpen = true"
           >
@@ -1245,7 +1251,7 @@ onUnmounted(() => {
           </button>
           <button
             type="button"
-            class="btn btn-outline-secondary btn-sm orders-bulk-toolbar-btn"
+            class="btn btn-outline-secondary btn-sm orders-bulk-toolbar-btn orders-toolbar-outline-btn"
             :disabled="bulkMutationDisabled"
             @click="confirmBulkRemoveHoldsOpen = true"
           >
@@ -1261,7 +1267,7 @@ onUnmounted(() => {
           </button>
           <button
             type="button"
-            class="btn btn-outline-secondary btn-sm orders-bulk-toolbar-btn"
+            class="btn btn-outline-secondary btn-sm orders-bulk-toolbar-btn orders-toolbar-outline-btn"
             :disabled="bulkBarDisabled"
             @click="clearRowSelection"
           >
@@ -1579,6 +1585,35 @@ onUnmounted(() => {
   --bs-btn-hover-color: #fff;
   --bs-btn-active-color: #fff;
   --bs-btn-disabled-color: rgba(255, 255, 255, 0.65);
+}
+
+/* Search control: single input-group height, no “floating” short button */
+.orders-toolbar-search-group .orders-toolbar-search-btn {
+  font-weight: 600;
+}
+
+.orders-toolbar-outline-btn:hover:not(:disabled) {
+  background-color: rgba(37, 99, 235, 0.08);
+  border-color: #2563eb;
+  color: #2563eb;
+}
+
+.orders-toolbar-outline-btn.orders-toolbar-outline-btn--danger:hover:not(:disabled) {
+  background-color: rgba(220, 53, 69, 0.08);
+  border-color: #dc3545;
+  color: #b02a37;
+}
+
+[data-bs-theme="dark"] .orders-toolbar-outline-btn:hover:not(:disabled) {
+  background-color: rgba(96, 165, 250, 0.12);
+  border-color: #60a5fa;
+  color: #93c5fd;
+}
+
+[data-bs-theme="dark"] .orders-toolbar-outline-btn.orders-toolbar-outline-btn--danger:hover:not(:disabled) {
+  background-color: rgba(248, 113, 113, 0.12);
+  border-color: #f87171;
+  color: #fecaca;
 }
 </style>
 

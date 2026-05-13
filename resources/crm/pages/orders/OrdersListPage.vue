@@ -901,7 +901,7 @@ onUnmounted(() => {
           >
             <div class="flex-grow-1" style="min-width: 12rem">
               <label class="form-label small text-secondary mb-1" for="orders-order-number-search">Order Number</label>
-              <div class="input-group input-group-lg orders-toolbar-search-group">
+              <div class="input-group orders-toolbar-search-group">
                 <input
                   id="orders-order-number-search"
                   v-model.trim="query.orderNumber"
@@ -915,7 +915,7 @@ onUnmounted(() => {
                 />
                 <button
                   type="button"
-                  class="btn btn-primary btn-lg staff-page-primary orders-toolbar-search-btn"
+                  class="btn btn-primary staff-page-primary orders-toolbar-search-btn"
                   :disabled="loading || !selectedAccountId"
                   @click="commitOrderNumberSearch"
                 >
@@ -927,7 +927,7 @@ onUnmounted(() => {
               <div class="position-relative flex-shrink-0" data-toolbar-filter>
                 <button
                   type="button"
-                  class="btn btn-outline-secondary btn-lg staff-toolbar-btn orders-toolbar-outline-btn d-inline-flex align-items-center gap-2"
+                  class="btn btn-outline-secondary staff-toolbar-btn orders-toolbar-outline-btn d-inline-flex align-items-center gap-2"
                   :aria-expanded="filterMenuOpen"
                   @click.stop="filterMenuOpen = !filterMenuOpen"
                 >
@@ -1062,7 +1062,7 @@ onUnmounted(() => {
             <div class="position-relative flex-shrink-0" data-toolbar-filter>
               <button
                 type="button"
-                class="btn btn-outline-secondary btn-lg staff-toolbar-btn orders-toolbar-outline-btn d-inline-flex align-items-center gap-2"
+                class="btn btn-outline-secondary staff-toolbar-btn orders-toolbar-outline-btn d-inline-flex align-items-center gap-2"
                 :aria-expanded="filterMenuOpen"
                 @click.stop="filterMenuOpen = !filterMenuOpen"
               >
@@ -1602,7 +1602,7 @@ onUnmounted(() => {
   --bs-btn-disabled-color: rgba(255, 255, 255, 0.65);
 }
 
-/* Search + primary button share input-group-lg height; align with Filters (btn-lg) */
+/* Search field + Search button share default input-group height (matches Filters outline button). */
 .orders-toolbar-search-group .orders-toolbar-search-btn {
   font-weight: 600;
 }

@@ -1924,7 +1924,7 @@ function goToOrdersList() {
     <ConfirmModal
       :open="confirmRemoveHoldsOpen"
       title="Remove Hold"
-      message="This clears client, payment, operator, fraud, and address holds in ShipHero (where supported). Shipping method hold may need to be cleared in ShipHero if it still applies. Continue?"
+      message="This clears fraud, address, payment, and client holds in ShipHero. Operator holds are left unchanged and must be cleared in ShipHero. Continue?"
       confirm-label="Remove Hold"
       cancel-label="Cancel"
       danger

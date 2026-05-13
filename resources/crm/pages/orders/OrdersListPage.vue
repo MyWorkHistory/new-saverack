@@ -125,15 +125,17 @@ const somePageSelected = computed(() => {
   return ids.some((id) => selectedOrderIds.value.has(id));
 });
 
-function rowHasClearableHold(row) {
+/** Holds that “Remove Hold” can affect via ShipHero (operator is intentionally preserved). */
+function rowHasRemovableHolds(row) {
   const h = row?.holds && typeof row.holds === "object" ? row.holds : {};
-  return !!(h.fraud_hold || h.address_hold || h.payment_hold || h.client_hold || h.operator_hold);
+  return !!(h.fraud_hold || h.address_hold || h.payment_hold || h.client_hold || h.shipping_method_hold);
 }
 
-function rowOnlyShippingMethodHold(row) {
+/** Only operator hold is active — cannot clear from CRM; use ShipHero. */
+function rowOnlyOperatorHold(row) {
   const h = row?.holds && typeof row.holds === "object" ? row.holds : {};
-  if (rowHasClearableHold(row)) return false;
-  return !!h.shipping_method_hold;
+  if (!h.operator_hold) return false;
+  return !(h.fraud_hold || h.address_hold || h.payment_hold || h.client_hold || h.shipping_method_hold);
 }
 
 const accountOptions = computed(() => {
@@ -530,7 +532,9 @@ async function submitAddHoldModal() {
     const ok = Number(data?.summary?.ok ?? 0);
     const failed = Number(data?.summary?.failed ?? 0);
     toast.success(`Holds applied: ${ok} succeeded${failed ? `, ${failed} failed` : ""}.`);
-    closeAddHoldModal();
+    addHoldModalOpen.value = false;
+    addHoldTargetIds.value = [];
+    resetAddHoldFlags();
     manageOpenId.value = null;
     clearRowSelection();
     await fetchOrders(true);
@@ -550,9 +554,9 @@ function csvEscapeCell(v) {
 
 function exportRowsToCsv(rowList) {
   const headers = [
-    "Name",
     "Status",
     "Order #",
+    "Name",
     "Order Date",
     "Account",
     "Country",
@@ -565,9 +569,9 @@ function exportRowsToCsv(rowList) {
     const status = displayOrderStatus(row);
     lines.push(
       [
-        csvEscapeCell(row.recipient_name || "—"),
         csvEscapeCell(status),
         csvEscapeCell(row.order_number || ""),
+        csvEscapeCell(row.recipient_name || "—"),
         csvEscapeCell(formatDate(row.order_date)),
         csvEscapeCell(row.account || ""),
         csvEscapeCell(row.country || ""),
@@ -858,7 +862,15 @@ onUnmounted(() => {
     <div class="d-flex align-items-start justify-content-between gap-3 mb-4">
       <div>
         <h1 class="h4 mb-1 fw-semibold text-body">Orders - {{ tabTitle }}</h1>
-        <p v-if="!isPortalOrderList" class="staff-page__intro mb-0">ShipHero orders for selected client account.</p>
+        <p v-if="!isPortalOrderList" class="staff-page__intro mb-0">
+          <template v-if="tabKey === 'manage'">
+            <strong>Manage</strong> shows every ShipHero order for this account that matches your filters — it is not limited
+            to one queue like <strong>Ready To Ship</strong>, <strong>On-Hold</strong>, <strong>Backorder</strong>, or
+            <strong>Shipped</strong> (each of those tabs applies a single queue in ShipHero). <strong>Order date</strong>
+            defaults to <strong>today</strong>; open <strong>Filters</strong> to change the range or fulfillment status.
+          </template>
+          <template v-else>ShipHero orders for the selected client account.</template>
+        </p>
       </div>
     </div>
 
@@ -889,7 +901,7 @@ onUnmounted(() => {
           >
             <div class="flex-grow-1" style="min-width: 12rem">
               <label class="form-label small text-secondary mb-1" for="orders-order-number-search">Order Number</label>
-              <div class="input-group input-group-sm orders-toolbar-search-group">
+              <div class="input-group input-group-lg orders-toolbar-search-group">
                 <input
                   id="orders-order-number-search"
                   v-model.trim="query.orderNumber"
@@ -903,7 +915,7 @@ onUnmounted(() => {
                 />
                 <button
                   type="button"
-                  class="btn btn-primary staff-page-primary orders-toolbar-search-btn"
+                  class="btn btn-primary btn-lg staff-page-primary orders-toolbar-search-btn"
                   :disabled="loading || !selectedAccountId"
                   @click="commitOrderNumberSearch"
                 >
@@ -915,7 +927,7 @@ onUnmounted(() => {
               <div class="position-relative flex-shrink-0" data-toolbar-filter>
                 <button
                   type="button"
-                  class="btn btn-outline-secondary btn-sm staff-toolbar-btn orders-toolbar-outline-btn d-inline-flex align-items-center gap-2"
+                  class="btn btn-outline-secondary btn-lg staff-toolbar-btn orders-toolbar-outline-btn d-inline-flex align-items-center gap-2"
                   :aria-expanded="filterMenuOpen"
                   @click.stop="filterMenuOpen = !filterMenuOpen"
                 >
@@ -953,11 +965,14 @@ onUnmounted(() => {
                     <p class="small text-secondary mb-2">
                       <template v-if="tabKey === 'manage'">
                         <template v-if="!isPortalOrderList">
-                          Same <strong>order date</strong> window as the Ready to Ship summary above. Searching by
-                          <strong>order #</strong> ignores the date range so a specific order can be found.
+                          This tab is the broad list (all queues at once, filtered only by what you set below). The
+                          <strong>order date</strong> range matches the Ready to Ship summary above and defaults to
+                          <strong>today</strong>. Searching by <strong>order #</strong> ignores the date range so you can
+                          open a specific order.
                         </template>
                         <template v-else>
-                          Searching by <strong>order #</strong> ignores the date range so a specific order can be found.
+                          <strong>Order date</strong> defaults to <strong>today</strong>. Searching by
+                          <strong>order #</strong> ignores the date range so you can open a specific order.
                         </template>
                       </template>
                       <template v-else-if="tabKey === 'shipped'">
@@ -1047,7 +1062,7 @@ onUnmounted(() => {
             <div class="position-relative flex-shrink-0" data-toolbar-filter>
               <button
                 type="button"
-                class="btn btn-outline-secondary btn-sm staff-toolbar-btn orders-toolbar-outline-btn d-inline-flex align-items-center gap-2"
+                class="btn btn-outline-secondary btn-lg staff-toolbar-btn orders-toolbar-outline-btn d-inline-flex align-items-center gap-2"
                 :aria-expanded="filterMenuOpen"
                 @click.stop="filterMenuOpen = !filterMenuOpen"
               >
@@ -1297,8 +1312,8 @@ onUnmounted(() => {
                 />
               </th>
               <th class="staff-table-head__th">{{ tabKey === "on_hold" ? "Hold Reason" : "Status" }}</th>
-              <th class="staff-table-head__th">Name</th>
               <th class="staff-table-head__th">Order #</th>
+              <th class="staff-table-head__th">Name</th>
               <th class="staff-table-head__th">Order Date</th>
               <th class="staff-table-head__th">Account</th>
               <th class="staff-table-head__th">Country</th>
@@ -1337,7 +1352,6 @@ onUnmounted(() => {
                   {{ displayOrderStatus(row) }}
                 </span>
               </td>
-              <td>{{ row.recipient_name || "—" }}</td>
               <td class="fw-semibold">
                 <a
                   v-if="selectedAccountId"
@@ -1350,6 +1364,7 @@ onUnmounted(() => {
                 </a>
                 <span v-else :title="'Select an account'">{{ row.order_number || "—" }}</span>
               </td>
+              <td>{{ row.recipient_name || "—" }}</td>
               <td>{{ formatDate(row.order_date) }}</td>
               <td>{{ row.account || "—" }}</td>
               <td>{{ row.country || "—" }}</td>
@@ -1425,7 +1440,7 @@ onUnmounted(() => {
             Cancel Order
           </button>
           <button
-            v-if="canWriteOrders && rowHasClearableHold(manageMenuRow)"
+            v-if="canWriteOrders && rowHasRemovableHolds(manageMenuRow)"
             class="staff-row-menu__item"
             role="menuitem"
             @click="runSingleRemoveHold(manageMenuRow)"
@@ -1433,12 +1448,12 @@ onUnmounted(() => {
             Remove Hold
           </button>
           <button
-            v-if="canWriteOrders && rowOnlyShippingMethodHold(manageMenuRow)"
+            v-if="canWriteOrders && rowOnlyOperatorHold(manageMenuRow)"
             type="button"
             class="staff-row-menu__item text-start"
             role="menuitem"
             disabled
-            title="This order has a shipping method hold, which cannot be cleared via the API. Clear it in ShipHero."
+            title="This order only has an operator hold, which cannot be cleared from here. Clear it in ShipHero."
           >
             Remove Hold
           </button>
@@ -1483,7 +1498,7 @@ onUnmounted(() => {
     <ConfirmModal
       :open="confirmBulkRemoveHoldsOpen"
       title="Remove Holds?"
-      :message="`Clear API-supported holds for ${selectedCount} order${selectedCount === 1 ? '' : 's'}? Shipping method holds must be cleared in ShipHero.`"
+      :message="`Clear fraud, address, payment, and client holds for ${selectedCount} order${selectedCount === 1 ? '' : 's'}? Operator holds are left unchanged.`"
       confirm-label="Remove Hold"
       cancel-label="Cancel"
       :busy="bulkBusy"
@@ -1587,7 +1602,7 @@ onUnmounted(() => {
   --bs-btn-disabled-color: rgba(255, 255, 255, 0.65);
 }
 
-/* Search control: single input-group height, no “floating” short button */
+/* Search + primary button share input-group-lg height; align with Filters (btn-lg) */
 .orders-toolbar-search-group .orders-toolbar-search-btn {
   font-weight: 600;
 }

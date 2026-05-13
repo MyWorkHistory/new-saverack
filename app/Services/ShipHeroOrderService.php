@@ -747,7 +747,8 @@ GQL;
     }
 
     /**
-     * Clear ShipHero holds that can be toggled via UpdateOrderHoldsInput (excludes shipping_method_hold).
+     * Clear fraud, address, payment, and client holds. {@see operator_hold} is omitted so ShipHero
+     * leaves it unchanged (operator holds must be cleared in ShipHero).
      */
     public function clearOrderHolds(string $orderId, string $customerAccountId): void
     {
@@ -756,7 +757,6 @@ GQL;
         $data = [
             'order_id' => $relayId,
             'payment_hold' => false,
-            'operator_hold' => false,
             'fraud_hold' => false,
             'address_hold' => false,
             'client_hold' => false,
@@ -776,29 +776,31 @@ GQL;
     }
 
     /**
-     * True when the order has active holds but none of them can be cleared via
-     * {@see order_update_holds} (ShipHero excludes shipping_method_hold from UpdateOrderHoldsInput).
+     * True when the only active hold is {@see operator_hold} (nothing else for CRM “Remove hold” to clear).
      *
      * @param  array<string, mixed>|null  $holds
      */
-    public function orderHoldsOnlyShippingMethodHoldActive($holds): bool
+    public function orderHoldsOnlyOperatorHoldActive($holds): bool
     {
         $h = $this->normalizeOrderHoldsForApi($holds);
         if (! $this->orderHoldsArrayHasActive($h)) {
             return false;
         }
-        foreach (['fraud_hold', 'address_hold', 'payment_hold', 'client_hold', 'operator_hold'] as $key) {
+        if (empty($h['operator_hold'])) {
+            return false;
+        }
+        foreach (['fraud_hold', 'address_hold', 'payment_hold', 'client_hold', 'shipping_method_hold'] as $key) {
             if (! empty($h[$key])) {
                 return false;
             }
         }
 
-        return ! empty($h['shipping_method_hold']);
+        return true;
     }
 
     /**
-     * Set holds to true for keys present in $flags (ShipHero UpdateOrderHoldsInput).
-     * Only known hold keys are sent; omitted keys are left unchanged upstream.
+     * Set holds to true for keys the user selected, merged with holds already on the order so other
+     * active holds are not dropped when ShipHero applies the mutation.
      *
      * @param  array<string, bool>  $flags
      */
@@ -807,11 +809,23 @@ GQL;
         $relayId = $this->resolveOrderRelayIdForMutations($orderId, $customerAccountId);
         $customer = trim($customerAccountId);
         $allowed = ['fraud_hold', 'address_hold', 'payment_hold', 'client_hold', 'operator_hold'];
+        $current = $this->getOrderHoldsNormalized($orderId, $customerAccountId);
+        $userWantsAny = false;
+        foreach ($allowed as $key) {
+            if (! empty($flags[$key])) {
+                $userWantsAny = true;
+                break;
+            }
+        }
+        if (! $userWantsAny) {
+            throw new RuntimeException('Select at least one hold type to apply.');
+        }
         $data = [
             'order_id' => $relayId,
         ];
         foreach ($allowed as $key) {
-            if (! empty($flags[$key])) {
+            $on = ! empty($current[$key]) || ! empty($flags[$key]);
+            if ($on) {
                 $data[$key] = true;
             }
         }

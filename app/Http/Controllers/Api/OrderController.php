@@ -358,10 +358,10 @@ class OrderController extends Controller
         $customerId = $this->resolveShipHeroCustomerAccountId((int) $validated['client_account_id'], $request);
         try {
             $holds = $this->orders->getOrderHoldsNormalized($orderId, $customerId);
-            if ($this->orders->orderHoldsOnlyShippingMethodHoldActive($holds)) {
+            if ($this->orders->orderHoldsOnlyOperatorHoldActive($holds)) {
                 throw ValidationException::withMessages([
                     'order_id' => [
-                        'This order has a shipping method hold, which cannot be cleared via the API. Clear it in ShipHero.',
+                        'This order only has an operator hold, which cannot be cleared from here. Clear it in ShipHero.',
                     ],
                 ]);
             }
@@ -912,11 +912,11 @@ class OrderController extends Controller
         foreach ($orderIds as $oid) {
             try {
                 $holds = $this->orders->getOrderHoldsNormalized($oid, $customerId);
-                if ($this->orders->orderHoldsOnlyShippingMethodHoldActive($holds)) {
+                if ($this->orders->orderHoldsOnlyOperatorHoldActive($holds)) {
                     $results[] = [
                         'order_id' => $oid,
                         'ok' => false,
-                        'message' => 'This order has a shipping method hold, which cannot be cleared via the API. Clear it in ShipHero.',
+                        'message' => 'This order only has an operator hold, which cannot be cleared from here. Clear it in ShipHero.',
                     ];
                     $failed++;
 

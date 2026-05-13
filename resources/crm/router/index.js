@@ -112,7 +112,8 @@ const meta = {
   },
   ordersManage: {
     title: "Save Rack | Orders | Manage",
-    description: "ShipHero orders management.",
+    description:
+      "ShipHero orders for the account with your filters; all queues at once (not only ready to ship, on-hold, backorder, or shipped). Order date defaults to today.",
   },
   ordersAwaiting: {
     title: "Save Rack | Orders | Ready to Ship",

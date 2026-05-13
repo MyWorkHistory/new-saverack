@@ -845,14 +845,14 @@ GQL;
             $data['customer_account_id'] = $customer;
         }
 
+        // Only send holds we are clearing to false. Sending true for other active holds makes ShipHero
+        // treat it as the 3PL "setting" that hold (e.g. client_hold) and returns: "3PL cannot set a client hold on an order".
         foreach ($allowed as $key) {
             if (empty($current[$key])) {
                 continue;
             }
             if (isset($normalizedKeys[$key])) {
                 $data[$key] = false;
-            } else {
-                $data[$key] = true;
             }
         }
 
@@ -1059,6 +1059,9 @@ GQL;
         ]);
     }
 
+    /**
+     * @return array<string, mixed>|null  Attachment row from mutation output, for CRM UI when order query omits it.
+     */
     public function addOrderAttachment(
         string $orderId,
         string $customerAccountId,
@@ -1066,7 +1069,7 @@ GQL;
         ?string $filename = null,
         ?string $fileType = null,
         ?string $description = null
-    ): void {
+    ): ?array {
         $relayId = $this->resolveOrderRelayIdForMutations($orderId, $customerAccountId);
         $customer = trim($customerAccountId);
         $u = trim($url);
@@ -1094,12 +1097,24 @@ mutation ShipHeroOrderAddAttachment($data: OrderAddAttachmentInput!) {
   order_add_attachment(data: $data) {
     request_id
     complexity
+    attachment {
+      id
+      legacy_id
+      url
+      filename
+      description
+      file_type
+      created_at
+    }
   }
 }
 GQL;
-        $this->client->query($graphql, ['data' => $data], true, [
+        $json = $this->client->query($graphql, ['data' => $data], true, [
             ShipHeroClient::OPTION_GRAPHQL_SUCCESS_FIELD => 'order_add_attachment',
         ]);
+        $raw = data_get($json, 'data.order_add_attachment.attachment');
+
+        return is_array($raw) ? $this->normalizeOrderAttachmentNode($raw) : null;
     }
 
     /**
@@ -1644,6 +1659,22 @@ GQL;
     }
 
     /**
+     * @param  array<string, mixed>  $n
+     * @return array<string, mixed>
+     */
+    private function normalizeOrderAttachmentNode(array $n): array
+    {
+        return [
+            'id' => (string) ($n['id'] ?? ''),
+            'url' => (string) ($n['url'] ?? ''),
+            'filename' => (string) ($n['filename'] ?? ''),
+            'description' => (string) ($n['description'] ?? ''),
+            'file_type' => (string) ($n['file_type'] ?? ''),
+            'created_at' => $this->nullableIso($n['created_at'] ?? null),
+        ];
+    }
+
+    /**
      * @param mixed $attachments
      * @return list<array<string, mixed>>
      */
@@ -1651,6 +1682,16 @@ GQL;
     {
         if (! is_array($attachments)) {
             return [];
+        }
+        if (isset($attachments['nodes']) && is_array($attachments['nodes'])) {
+            $out = [];
+            foreach ($attachments['nodes'] as $n) {
+                if (is_array($n)) {
+                    $out[] = $this->normalizeOrderAttachmentNode($n);
+                }
+            }
+
+            return $out;
         }
         $edges = $attachments['edges'] ?? null;
         if (! is_array($edges)) {
@@ -1661,15 +1702,7 @@ GQL;
             if (! is_array($edge) || ! is_array($edge['node'] ?? null)) {
                 continue;
             }
-            $n = $edge['node'];
-            $out[] = [
-                'id' => (string) ($n['id'] ?? ''),
-                'url' => (string) ($n['url'] ?? ''),
-                'filename' => (string) ($n['filename'] ?? ''),
-                'description' => (string) ($n['description'] ?? ''),
-                'file_type' => (string) ($n['file_type'] ?? ''),
-                'created_at' => $this->nullableIso($n['created_at'] ?? null),
-            ];
+            $out[] = $this->normalizeOrderAttachmentNode($edge['node']);
         }
 
         return $out;

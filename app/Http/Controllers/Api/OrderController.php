@@ -693,7 +693,7 @@ class OrderController extends Controller
             $this->assertAttachmentUrlAcceptableForShipHero($publicUrl);
             $original = $file->getClientOriginalName();
             $mime = $file->getClientMimeType();
-            $this->orders->addOrderAttachment(
+            $attachmentRow = $this->orders->addOrderAttachment(
                 $orderId,
                 $customerId,
                 $publicUrl,
@@ -705,6 +705,7 @@ class OrderController extends Controller
             return response()->json([
                 'message' => 'Attachment added.',
                 'url' => $publicUrl,
+                'attachment' => $attachmentRow,
             ]);
         } catch (ValidationException $e) {
             if ($path !== null) {

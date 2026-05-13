@@ -1093,10 +1093,18 @@ async function onAttachmentFileChange(ev) {
   fd.append("file", file);
   attachmentUploadBusy.value = true;
   try {
-    await api.post(`/orders/${encodeURIComponent(orderId.value)}/attachments`, fd);
+    const { data } = await api.post(`/orders/${encodeURIComponent(orderId.value)}/attachments`, fd);
     toast.success("Attachment added.");
     input.value = "";
     await loadOrder();
+    if (data?.attachment?.id && order.value) {
+      const idStr = String(data.attachment.id);
+      const list = [...(order.value.attachments || [])];
+      if (!list.some((a) => a && String(a.id) === idStr)) {
+        list.push(data.attachment);
+        order.value = { ...order.value, attachments: list };
+      }
+    }
   } catch (e) {
     toast.errorFrom(e, "Could not upload attachment.");
   } finally {

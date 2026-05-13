@@ -34,7 +34,8 @@ CSV;
     }
 
     /**
-     * ShipHero-style charge export: human-readable line is under Label (charge), not Charge Name.
+     * Wide ShipHero export (Label (charge) but no Charge Name column) uses the legacy parser;
+     * storage-by-volume must still map correctly.
      */
     public function test_storage_by_volume_shiphero_headers_without_charge_name_column(): void
     {

@@ -42,9 +42,8 @@ final class InvoiceChargeImportParser
             }
 
             $map = $this->mapHeaders($headerRow);
-            $isChargeSummary = isset($map['charge_subtotal'])
-                && (isset($map['charge_type_new']) || isset($map['charge_type']))
-                && (isset($map['charge_name']) || isset($map['label_charge']));
+            $isChargeSummary = isset($map['charge_name'], $map['charge_subtotal'])
+                && (isset($map['charge_type_new']) || isset($map['charge_type']));
 
             if (
                 ! $isChargeSummary
@@ -139,11 +138,7 @@ final class InvoiceChargeImportParser
                 'category (fee type)', 'category (fee_type)',
             ],
             'fee' => ['fee (charge)', 'fee(charge)', 'fee', 'type', 'fee type'],
-            'charge_name' => [
-                'charge name',
-                // ShipHero / 3PL exports use Label (charge) for the human-readable charge line (e.g. Storage Per Cu FT).
-                'label (charge)',
-            ],
+            'charge_name' => ['charge name'],
             'charge_type_new' => [
                 'charge type',
                 'charge type (charge)', 'charge type(charge)',
@@ -1108,6 +1103,31 @@ final class InvoiceChargeImportParser
             $name,
         ]) ?? $name;
         if ($categoryKey === InvoiceLineCategory::STORAGE) {
+            $feeRaw = $this->firstNonEmpty([
+                $this->cell($row, $index['fee_charge'] ?? -1),
+                $this->cell($row, $index['fee'] ?? -1),
+            ]) ?? '';
+            $chargeName = $this->firstNonEmpty([
+                $this->cell($row, $index['charge_name'] ?? -1),
+                $this->cell($row, $index['label_charge'] ?? -1),
+            ]) ?? '';
+            $chargeTypeRaw = $this->firstNonEmpty([
+                $this->cell($row, $index['charge_type_new'] ?? -1),
+                $this->cell($row, $index['charge_type'] ?? -1),
+            ]) ?? '';
+            $volumeAware = $this->buildStorageChargeItem(
+                $description,
+                $chargeName,
+                $chargeTypeRaw,
+                $qty,
+                $unitRate,
+                $total,
+                $sku,
+                $feeRaw
+            );
+            if ($volumeAware !== null) {
+                return $volumeAware;
+            }
             $storageType = $this->extractStorageTypeLabel($description)
                 ?? $this->extractStorageTypeLabel($name)
                 ?? 'Storage';

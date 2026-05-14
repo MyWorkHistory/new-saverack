@@ -114,6 +114,35 @@ CSV;
     }
 
     /** Volume CSV copy mentions "of type Pallet (Medium)" — must not create a separate Pallet storage line. */
+    /** ShipHero sometimes uses "cu. ft" / "cubic feet" — must not fall through to pallet/bin storage. */
+    public function test_storage_by_volume_cu_ft_dot_and_cubic_feet_copy(): void
+    {
+        $f = tempnam(sys_get_temp_dir(), 'invcsv');
+        $this->assertNotFalse($f);
+        $csv = <<<'CSV'
+Charge Name,Charge Type (charge),Category (charge),Fee (charge),Description (charge),Charge Qty,Avg Rate,Charge Subtotal
+Storage Per Cu FT,storing_by_volume_charge,storage,Storage Per Cu FT,"SKU ABC-US with a volume of 2.00 cu. ft stored in location X of type Pallet (Medium) for 1 day(s).",1,1.00,1.00
+Storage Per Cu FT,storing_by_volume_charge,storage,Storage Per Cu FT,"SKU DEF-US having a volume of 3 cubic feet stored in location Y of type Bin (Large) for 1 day(s).",1,1.00,1.00
+CSV;
+        file_put_contents($f, $csv);
+
+        try {
+            $parser = new InvoiceChargeImportParser;
+            $lines = $parser->parseFile($f);
+        } finally {
+            unlink($f);
+        }
+
+        $this->assertCount(2, $lines);
+        $this->assertSame('Storage by Volume', $lines[0]['display_name']);
+        $this->assertSame('ABC-US (2.00 cu ft)', $lines[0]['description']);
+        $this->assertStringStartsWith('storage:vol:', $lines[0]['group_key']);
+        $this->assertSame('Storage by Volume', $lines[1]['display_name']);
+        $this->assertSame('DEF-US (3 cu ft)', $lines[1]['description']);
+        $this->assertStringNotContainsString('Pallet', $lines[0]['display_name']);
+        $this->assertStringNotContainsString('Bin', $lines[1]['display_name']);
+    }
+
     public function test_volume_description_never_classifies_as_pallet_from_of_type_clause(): void
     {
         $f = tempnam(sys_get_temp_dir(), 'invcsv');

@@ -1175,9 +1175,10 @@ class InvoiceService
                 $packaging[$key]['total'] += $total;
             } elseif ($category === InvoiceLineCategory::STORAGE) {
                 $rawName = $this->oldBetaDisplayName($item, 'Storage');
-                $key = strtolower($rawName);
+                $bucketName = $this->invoiceItemIsStorageByVolume($item) ? 'Storage by Volume' : $rawName;
+                $key = strtolower($bucketName);
                 if (! isset($storage[$key])) {
-                    $storage[$key] = ['name' => $rawName, 'items' => [], 'qty' => 0.0, 'total' => 0];
+                    $storage[$key] = ['name' => $bucketName, 'items' => [], 'qty' => 0.0, 'total' => 0];
                 }
                 $qty = (float) $item->quantity;
                 $total = (int) $item->line_total_cents;
@@ -1185,7 +1186,7 @@ class InvoiceService
                 if ($unitRate === 0 && $qty != 0.0 && $total !== 0) {
                     $unitRate = (int) round($total / $qty);
                 }
-                $storage[$key]['items'][] = $this->detailLeafRow($item, 'Storage', $rawName, $unitRate, $total);
+                $storage[$key]['items'][] = $this->detailLeafRow($item, 'Storage', $bucketName, $unitRate, $total);
                 $storage[$key]['qty'] += $qty;
                 $storage[$key]['total'] += $total;
             } elseif ($category === InvoiceLineCategory::RECEIVING) {
@@ -1475,9 +1476,13 @@ class InvoiceService
         }
 
         // Staff breakdown "Service" column uses `name` (see BillingInvoiceDetailPage). For Storage by Volume,
-        // display_name matches the parent group row, so show the per-line SKU / cu ft description there instead.
+        // display_name often matches the parent group row, so show the per-line SKU / cu ft description there instead.
         $leafName = $name;
-        if ($isStorage && strcasecmp(trim((string) $item->display_name), 'Storage by Volume') === 0) {
+        $isStorageVolBreakdown = $isStorage && (
+            strcasecmp(trim((string) $item->display_name), 'Storage by Volume') === 0
+            || $this->invoiceItemIsStorageByVolume($item)
+        );
+        if ($isStorageVolBreakdown) {
             $desc = trim((string) $item->description);
             if ($desc !== '') {
                 $leafName = $desc;
@@ -1577,6 +1582,23 @@ class InvoiceService
         $name = strtolower(trim((string) ($item->display_name ?: $item->description)));
 
         return $name === 'credit card fee' || $name === 'cc fee';
+    }
+
+    /**
+     * True for ShipHero "Storage by Volume" lines even if display_name was wrong on older imports.
+     */
+    private function invoiceItemIsStorageByVolume(InvoiceItem $item): bool
+    {
+        $gk = strtolower(trim((string) ($item->group_key ?? '')));
+        if (str_starts_with($gk, 'storage:vol')) {
+            return true;
+        }
+        $sc = strtolower(trim((string) ($item->service_code ?? '')));
+        if (str_contains($sc, 'storing_by_volume')) {
+            return true;
+        }
+
+        return strcasecmp(trim((string) ($item->display_name ?? '')), 'Storage by Volume') === 0;
     }
 
     private function oldBetaDisplayName(InvoiceItem $item, string $fallback = '—'): string

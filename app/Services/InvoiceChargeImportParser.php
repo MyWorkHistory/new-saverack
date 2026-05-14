@@ -1406,6 +1406,21 @@ final class InvoiceChargeImportParser
     }
 
     /**
+     * Normalize cu-ft wording so "cu. ft", "cubic feet", etc. match the same volume branch as "cu ft".
+     */
+    private function normalizeStorageVolumeCopyForMatch(string $description): string
+    {
+        $s = trim((string) preg_replace('/\p{Z}+/u', ' ', trim($description)) ?? '');
+        if ($s === '') {
+            return '';
+        }
+        $s = preg_replace('/\bcu\.?\s*ft\.?\b/iu', 'cu ft', $s) ?? $s;
+        $s = preg_replace('/\bcubic\s*feet?\b/iu', 'cu ft', $s) ?? $s;
+
+        return trim((string) preg_replace('/\s+/u', ' ', $s) ?? '');
+    }
+
+    /**
      * ShipHero "Storage Per Cu FT" copy: SKU … with … volume … cu ft (often also says "of type Pallet (…)" in the same sentence).
      * That clause is not a separate bin/pallet storage bucket.
      */
@@ -1418,11 +1433,15 @@ final class InvoiceChargeImportParser
         if (preg_match('/^\s*Location\s+.+\bof\s+type\b/isu', $t) === 1) {
             return false;
         }
-        $tl = strtolower($t);
+        $norm = strtolower($this->normalizeStorageVolumeCopyForMatch($t));
 
-        return preg_match('/\bSKU\b\p{Z}+/iu', $t) === 1
-            && str_contains($tl, 'cu ft')
-            && (str_contains($tl, 'with a volume of') || str_contains($tl, 'with volume of'));
+        return preg_match('/\bsku\b/u', $norm) === 1
+            && str_contains($norm, 'cu ft')
+            && (
+                str_contains($norm, 'with a volume of')
+                || str_contains($norm, 'with volume of')
+                || str_contains($norm, 'having a volume of')
+            );
     }
 
     private function extractStorageTypeLabel(string $text): ?string
@@ -1491,16 +1510,22 @@ final class InvoiceChargeImportParser
         if ($source === '') {
             return null;
         }
-        if (preg_match('/\bSKU\b\p{Z}+(.+?)\p{Z}+with\p{Z}+(?:a\p{Z}+)?volume\p{Z}+of\p{Z}+([\d.]+)\p{Z}+cu\p{Z}+ft\b/isu', $source, $m) !== 1) {
-            return null;
-        }
-        $sku = trim((string) $m[1]);
-        $volume = trim((string) $m[2]);
-        if ($sku === '' || $volume === '') {
-            return null;
+        $compact = $this->normalizeStorageVolumeCopyForMatch($source);
+        $pattern = '/\bSKU\b\p{Z}+(.+?)\p{Z}+(?:with|having)\p{Z}+(?:a\p{Z}+)?volume\p{Z}+of\p{Z}+([\d.]+)\p{Z}+cu\p{Z}+ft\b/isu';
+        foreach ([$source, $compact] as $candidate) {
+            if ($candidate === '') {
+                continue;
+            }
+            if (preg_match($pattern, $candidate, $m) === 1) {
+                $sku = trim((string) $m[1]);
+                $volume = trim((string) $m[2]);
+                if ($sku !== '' && $volume !== '') {
+                    return ['sku' => $sku, 'volume_cu_ft' => $volume];
+                }
+            }
         }
 
-        return ['sku' => $sku, 'volume_cu_ft' => $volume];
+        return null;
     }
 
     private function normalizeStorageByVolumeSku(string $sku): string

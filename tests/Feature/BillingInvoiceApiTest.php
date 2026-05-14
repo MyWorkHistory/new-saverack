@@ -1744,32 +1744,36 @@ class BillingInvoiceApiTest extends TestCase
             'balance_due_cents' => 200,
         ]);
 
-        $descA = 'SKU P24C2D2 - US with a volume of 1.50 cu ft stored in location T-29-0 of type Pallet (Small) for 1 day(s).';
-        $descB = 'SKU X99 - US with a volume of 2.00 cu ft stored in location A-1-0 of type Bin for 2 day(s).';
+        $shortA = 'P24C2D2 - US (1.50 cu ft)';
+        $shortB = 'X99 - US (2.00 cu ft)';
+        $proseA = 'SKU P24C2D2 - US with a volume of 1.50 cu ft stored in location T-29-0 of type Pallet (Small) for 1 day(s).';
+        $proseB = 'SKU X99 - US with a volume of 2.00 cu ft stored in location A-1-0 of type Bin for 2 day(s).';
 
         InvoiceItem::query()->create([
             'invoice_id' => $invoice->id,
             'sort_order' => 1,
             'category' => 'storage',
             'group_key' => 'storage:vol:line-a',
-            'description' => $descA,
+            'description' => $shortA,
             'display_name' => 'Storage by Volume',
             'service_code' => 'storing_by_volume_daily',
             'quantity' => 1,
             'unit_price_cents' => 100,
             'line_total_cents' => 100,
+            'metadata' => ['storage_volume_prose' => $proseA],
         ]);
         InvoiceItem::query()->create([
             'invoice_id' => $invoice->id,
             'sort_order' => 2,
             'category' => 'storage',
             'group_key' => 'storage:vol:line-b',
-            'description' => $descB,
+            'description' => $shortB,
             'display_name' => 'Storage by Volume',
             'service_code' => 'storing_by_volume_daily',
             'quantity' => 1,
             'unit_price_cents' => 100,
             'line_total_cents' => 100,
+            'metadata' => ['storage_volume_prose' => $proseB],
         ]);
 
         $invoice->refresh()->load('items');
@@ -1787,8 +1791,10 @@ class BillingInvoiceApiTest extends TestCase
         $this->assertSame('SKUs', (string) ($volSvc['storage_qty_metric'] ?? ''));
 
         $orderLabels = collect($volSvc['orders'] ?? [])->pluck('label')->all();
-        $this->assertContains($descA, $orderLabels);
-        $this->assertContains($descB, $orderLabels);
+        $this->assertContains($shortA, $orderLabels);
+        $this->assertContains($shortB, $orderLabels);
+        $this->assertNotContains($proseA, $orderLabels);
+        $this->assertNotContains($proseB, $orderLabels);
     }
 
     public function test_invoice_presentation_merges_storage_volume_lines_with_same_short_description(): void

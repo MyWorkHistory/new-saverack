@@ -1503,31 +1503,6 @@ class InvoiceService
     }
 
     /**
-     * @param  list<InvoiceItem>  $items
-     */
-    private function mergeStorageVolumeProseFromItems(array $items): ?string
-    {
-        $parts = [];
-        foreach ($items as $it) {
-            $meta = $it->metadata;
-            if (! is_array($meta) || ! isset($meta['storage_volume_prose'])) {
-                continue;
-            }
-            $p = trim((string) $meta['storage_volume_prose']);
-            if ($p === '' || in_array($p, $parts, true)) {
-                continue;
-            }
-            $parts[] = $p;
-        }
-
-        if ($parts === []) {
-            return null;
-        }
-
-        return implode(' · ', $parts);
-    }
-
-    /**
      * @param  non-empty-list<InvoiceItem>  $items
      * @return array<string, mixed>
      */
@@ -1566,10 +1541,6 @@ class InvoiceService
         if ($ids !== []) {
             $leaf['invoice_item_ids'] = $ids;
         }
-        $mergedProse = $this->mergeStorageVolumeProseFromItems($items);
-        if ($mergedProse !== null && $mergedProse !== '') {
-            $leaf['order_number'] = $mergedProse;
-        }
 
         return $leaf;
     }
@@ -1585,19 +1556,7 @@ class InvoiceService
             || $this->invoiceItemIsStorageByVolume($item)
         );
 
-        $orderNumber = null;
-        if ($isStorageVolBreakdown) {
-            $meta = $item->metadata;
-            if (is_array($meta) && isset($meta['storage_volume_prose'])) {
-                $t = trim((string) $meta['storage_volume_prose']);
-                if ($t !== '') {
-                    $orderNumber = $t;
-                }
-            }
-        }
-        if ($orderNumber === null || $orderNumber === '') {
-            $orderNumber = $this->extractOrderNumber($item->metadata);
-        }
+        $orderNumber = $this->extractOrderNumber($item->metadata);
         if (($orderNumber === null || $orderNumber === '') && $isStorage) {
             $orderNumber = $this->extractStorageLocationId($item->description)
                 ?? $this->extractStorageLocationId($item->display_name);
@@ -2322,15 +2281,9 @@ class InvoiceService
                 }
                 $isVolDetail = $categoryKey === 'storage' && $this->detailRowIsStorageByVolume($detail);
                 if ($isVolDetail) {
-                    $detailOrderRaw = trim((string) ($detail['order_number'] ?? ''));
                     $detailName = trim((string) ($detail['name'] ?? ''));
                     $detailDesc = trim((string) ($detail['description'] ?? ''));
-                    $hasVolumeProse = $detailOrderRaw !== ''
-                        && $detailOrderRaw !== '—'
-                        && strcasecmp($detailOrderRaw, 'Daily Storage') !== 0;
-                    $orderLabel = $hasVolumeProse
-                        ? $detailOrderRaw
-                        : ($detailName !== '' ? $detailName : ($detailDesc !== '' ? $detailDesc : $orderNumber));
+                    $orderLabel = $detailName !== '' ? $detailName : ($detailDesc !== '' ? $detailDesc : $orderNumber);
                 } else {
                     $orderLabel = $orderNumber;
                 }

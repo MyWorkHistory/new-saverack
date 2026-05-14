@@ -1409,7 +1409,7 @@ final class InvoiceChargeImportParser
      */
     private function descriptionLooksLikeStoringByVolumeProse(string $text): bool
     {
-        $t = trim($text);
+        $t = trim((string) preg_replace('/\p{Z}+/u', ' ', trim($text)) ?? '');
         if ($t === '') {
             return false;
         }
@@ -1418,7 +1418,7 @@ final class InvoiceChargeImportParser
         }
         $tl = strtolower($t);
 
-        return preg_match('/\bSKU\s+/i', $t) === 1
+        return preg_match('/\bSKU\b\p{Z}+/iu', $t) === 1
             && str_contains($tl, 'cu ft')
             && (str_contains($tl, 'with a volume of') || str_contains($tl, 'with volume of'));
     }
@@ -1489,7 +1489,7 @@ final class InvoiceChargeImportParser
         if ($source === '') {
             return null;
         }
-        if (preg_match('/SKU\s+(.+?)\s+with\s+(?:a\s+)?volume\s+of\s+([\d.]+)\s+cu\s+ft\b/isu', $source, $m) !== 1) {
+        if (preg_match('/\bSKU\b\p{Z}+(.+?)\p{Z}+with\p{Z}+(?:a\p{Z}+)?volume\p{Z}+of\p{Z}+([\d.]+)\p{Z}+cu\p{Z}+ft\b/isu', $source, $m) !== 1) {
             return null;
         }
         $sku = trim((string) $m[1]);
@@ -1518,16 +1518,18 @@ final class InvoiceChargeImportParser
         $description = $this->firstNonEmpty([$descriptionRaw, $chargeName, $chargeTypeRaw]) ?? 'Storage';
         $descForParse = $descriptionRaw !== '' ? $descriptionRaw : $description;
         $typeLower = strtolower(trim($chargeTypeRaw));
-        $isLocationChargeType = str_contains($typeLower, 'storing_by_location')
+        // Raw machine type from CSV (can be wrong vs description in some ShipHero exports).
+        $rawLocationChargeType = str_contains($typeLower, 'storing_by_location')
             || str_contains($typeLower, 'storing_by_week')
             || str_contains($typeLower, 'by_location');
-
-        $looksVolume = ! $isLocationChargeType
-            && ($this->descriptionLooksLikeStoringByVolumeProse($descForParse)
-                || $this->descriptionLooksLikeStoringByVolumeProse($description));
+        $volumeProseDesc = $this->descriptionLooksLikeStoringByVolumeProse($descForParse)
+            || $this->descriptionLooksLikeStoringByVolumeProse($description);
+        // Cu-ft prose wins over a mis-labeled storing_by_location_* type — never bin/pallet from the same row.
+        $isLocationChargeType = $rawLocationChargeType && ! $volumeProseDesc;
         $isVolCharge = $this->isStorageByVolumeCharge($feeRaw, $chargeTypeRaw, $chargeName, $descriptionRaw);
+        $enterVolumeBranch = $volumeProseDesc || (! $rawLocationChargeType && $isVolCharge);
 
-        if (! $isLocationChargeType && ($isVolCharge || $looksVolume)) {
+        if ($enterVolumeBranch) {
             $parsed = $this->parseStorageByVolumeSkuAndVolume($descForParse);
             if ($parsed !== null) {
                 if ($lineTotalCents === 0 && $rateCents === 0) {

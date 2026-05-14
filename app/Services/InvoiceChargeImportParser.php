@@ -1233,7 +1233,7 @@ final class InvoiceChargeImportParser
     /**
      * @return array<string, mixed>
      */
-    private function buildItem(string $category, string $display, string $description, float $qty, int $rateCents, int $lineTotalCents, ?string $subtype, ?string $groupKey, string $serviceCode, ?string $sku = null): array
+    private function buildItem(string $category, string $display, string $description, float $qty, int $rateCents, int $lineTotalCents, ?string $subtype, ?string $groupKey, string $serviceCode, ?string $sku = null, ?array $metadata = null): array
     {
         // Credits/adjustments can arrive with a negative quantity. Store quantity as
         // a physical count and keep the credit sign on the money columns.
@@ -1252,6 +1252,7 @@ final class InvoiceChargeImportParser
             'quantity' => $qty,
             'unit_price_cents' => $rateCents,
             'line_total_cents' => $lineTotalCents,
+            'metadata' => $metadata,
         ];
     }
 
@@ -1516,11 +1517,14 @@ final class InvoiceChargeImportParser
         return null;
     }
 
-    private function normalizeStorageByVolumeSku(string $sku): string
+    /**
+     * Preserve intentional spaces in ShipHero SKUs (e.g. "PGSS - 8 - US") for invoice display.
+     * Collapse unicode/whitespace runs to a single ASCII space only.
+     */
+    private function displayStorageByVolumeSkuForPresentation(string $sku): string
     {
-        $s = trim(preg_replace('/\s+/u', ' ', $sku) ?? $sku);
-        // e.g. "POSTreat- F - US" → "POSTreat-F-US" for invoice breakdown copy.
-        $s = preg_replace('/\s*-\s*/u', '-', $s) ?? $s;
+        $s = trim((string) (preg_replace('/\p{Z}+/u', ' ', trim($sku)) ?? ''));
+        $s = trim((string) (preg_replace('/\s+/u', ' ', $s) ?? ''));
 
         return $s;
     }
@@ -1554,11 +1558,13 @@ final class InvoiceChargeImportParser
                 if ($lineTotalCents === 0 && $rateCents === 0) {
                     return null;
                 }
-                $normalizedSku = $this->normalizeStorageByVolumeSku($parsed['sku']);
-                $leafDescription = $normalizedSku.' ('.$parsed['volume_cu_ft'].' cu ft)';
+                $displaySku = $this->displayStorageByVolumeSkuForPresentation($parsed['sku']);
+                $leafDescription = $displaySku.' ('.$parsed['volume_cu_ft'].' cu ft)';
                 $serviceCode = $chargeTypeRaw !== '' ? $chargeTypeRaw : 'storing_by_volume_charge';
-                $volSlug = $this->slug($normalizedSku.'-'.$parsed['volume_cu_ft'].'-cu-ft');
+                $volSlug = $this->slug($displaySku.'-'.$parsed['volume_cu_ft'].'-cu-ft');
                 $groupKey = 'storage:vol:'.$volSlug;
+                $prose = trim($descForParse);
+                $volumeMeta = $prose !== '' ? ['storage_volume_prose' => $prose] : null;
 
                 return $this->buildItem(
                     InvoiceLineCategory::STORAGE,
@@ -1570,7 +1576,8 @@ final class InvoiceChargeImportParser
                     null,
                     $groupKey,
                     $serviceCode,
-                    $sku
+                    $sku,
+                    $volumeMeta
                 );
             }
             if ($lineTotalCents === 0 && $rateCents === 0) {

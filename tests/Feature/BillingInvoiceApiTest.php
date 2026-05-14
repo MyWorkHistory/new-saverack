@@ -1791,6 +1791,72 @@ class BillingInvoiceApiTest extends TestCase
         $this->assertContains($descB, $orderLabels);
     }
 
+    public function test_invoice_presentation_merges_storage_volume_lines_with_same_short_description(): void
+    {
+        $user = User::factory()->create();
+        $user->permissions()->sync([$this->billingViewPermission()->id]);
+        Sanctum::actingAs($user);
+
+        $client = ClientAccount::query()->create([
+            'status' => ClientAccount::STATUS_ACTIVE,
+            'company_name' => 'Vol Merge Co',
+            'email' => 'vol-merge@acme.test',
+        ]);
+
+        $invoice = Invoice::query()->create([
+            'invoice_number' => 'INV-VOL-MERGE-001',
+            'client_account_id' => $client->id,
+            'status' => Invoice::STATUS_DRAFT,
+            'currency' => 'USD',
+            'subtotal_cents' => 123,
+            'tax_cents' => 0,
+            'total_cents' => 123,
+            'amount_paid_cents' => 0,
+            'balance_due_cents' => 123,
+        ]);
+
+        $short = 'P24C2F2SSD2-US (1.44 cu ft)';
+        InvoiceItem::query()->create([
+            'invoice_id' => $invoice->id,
+            'sort_order' => 1,
+            'category' => 'storage',
+            'group_key' => 'storage:vol:a',
+            'description' => $short,
+            'display_name' => 'Storage by Volume',
+            'service_code' => 'storing_by_volume_charge',
+            'quantity' => 1,
+            'unit_price_cents' => 76,
+            'line_total_cents' => 76,
+        ]);
+        InvoiceItem::query()->create([
+            'invoice_id' => $invoice->id,
+            'sort_order' => 2,
+            'category' => 'storage',
+            'group_key' => 'storage:vol:b',
+            'description' => $short,
+            'display_name' => 'Storage by Volume',
+            'service_code' => 'storing_by_volume_charge',
+            'quantity' => 1,
+            'unit_price_cents' => 47,
+            'line_total_cents' => 47,
+        ]);
+
+        $res = $this->getJson("/api/invoices/{$invoice->id}");
+        $res->assertOk();
+        $rows = $res->json('presentation.rows');
+        $storageRow = collect($rows)->first(fn (array $r) => ($r['name'] ?? '') === 'Storage by Volume');
+        $this->assertNotNull($storageRow);
+        $details = $storageRow['details'] ?? [];
+        $this->assertCount(1, $details);
+        $this->assertSame(2.0, (float) ($details[0]['qty'] ?? 0));
+        $this->assertSame(123, (int) ($details[0]['total_cents'] ?? 0));
+        $this->assertSame(62, (int) ($details[0]['price_cents'] ?? 0));
+        $this->assertEqualsCanonicalizing(
+            InvoiceItem::query()->where('invoice_id', $invoice->id)->pluck('id')->all(),
+            $details[0]['invoice_item_ids'] ?? []
+        );
+    }
+
     public function test_invoice_whatsapp_endpoint_sends_provider_payload(): void
     {
         Http::fake([

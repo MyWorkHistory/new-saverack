@@ -28,9 +28,11 @@ CSV;
         $this->assertCount(1, $lines);
         $line = $lines[0];
         $this->assertSame('Storage by Volume', $line['display_name']);
-        $this->assertSame('POSTreat-F-US (0.06 cu ft)', $line['description']);
+        $this->assertSame('POSTreat- F - US (0.06 cu ft)', $line['description']);
         $this->assertSame(56, $line['line_total_cents']);
         $this->assertStringStartsWith('storage:vol:', $line['group_key']);
+        $this->assertIsArray($line['metadata'] ?? null);
+        $this->assertStringContainsString('POSTreat- F - US with a volume', (string) ($line['metadata']['storage_volume_prose'] ?? ''));
     }
 
     /**
@@ -56,7 +58,7 @@ CSV;
 
         $this->assertCount(1, $lines);
         $this->assertSame('Storage by Volume', $lines[0]['display_name']);
-        $this->assertSame('POSTreat-F-US (0.06 cu ft)', $lines[0]['description']);
+        $this->assertSame('POSTreat- F - US (0.06 cu ft)', $lines[0]['description']);
     }
 
     /**

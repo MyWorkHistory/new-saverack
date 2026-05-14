@@ -1373,6 +1373,13 @@ async function confirmGroupDelete() {
 
 function openLineEditModal(line) {
   lineMenuOpenId.value = null;
+  const merged = Array.isArray(line?.invoice_item_ids) ? line.invoice_item_ids : [];
+  if (merged.length > 1) {
+    toast.error(
+      "This row combines multiple volume charges for the same SKU. Delete the row to remove all underlying lines.",
+    );
+    return;
+  }
   lineEditTarget.value = line;
   const metadata =
     line.metadata && typeof line.metadata === "object" ? { ...line.metadata } : {};
@@ -1461,8 +1468,17 @@ async function confirmLineDelete() {
   if (!invoice.value || !lineEditTarget.value) return;
   lineDeleteBusy.value = true;
   try {
-    await api.delete(`/invoices/${invoice.value.id}/items/${lineEditTarget.value.id}`);
-    toast.success("Line item deleted.");
+    const merged = Array.isArray(lineEditTarget.value.invoice_item_ids)
+      ? lineEditTarget.value.invoice_item_ids
+      : [];
+    const ids =
+      merged.length > 0
+        ? merged
+        : [lineEditTarget.value.id].filter((id) => typeof id === "number" && id > 0);
+    for (const id of ids) {
+      await api.delete(`/invoices/${invoice.value.id}/items/${id}`);
+    }
+    toast.success(ids.length > 1 ? "Combined line items deleted." : "Line item deleted.");
     lineDeleteModalOpen.value = false;
     lineEditTarget.value = null;
     await load();
@@ -2541,7 +2557,11 @@ function onDocKeydown(e) {
                     <tbody>
                       <tr
                         v-for="row in selectedTableRowDetails"
-                        :key="row.id"
+                        :key="
+                          Array.isArray(row.invoice_item_ids) && row.invoice_item_ids.length
+                            ? row.invoice_item_ids.join('-')
+                            : row.id
+                        "
                         class="billing-inv-line-detail"
                         :class="{ 'billing-inv-line-detail--danger': row?.metadata?.box_not_selected }"
                       >
@@ -3577,7 +3597,13 @@ function onDocKeydown(e) {
     <ConfirmModal
       :open="lineDeleteModalOpen"
       title="Delete Line Item?"
-      :message="lineEditTarget ? `Delete ${lineEditTarget.name}? This cannot be undone.` : ''"
+      :message="
+        lineEditTarget
+          ? Array.isArray(lineEditTarget.invoice_item_ids) && lineEditTarget.invoice_item_ids.length > 1
+            ? `Delete combined volume row (${lineEditTarget.invoice_item_ids.length} charges)? This cannot be undone.`
+            : `Delete ${lineEditTarget.name}? This cannot be undone.`
+          : ''
+      "
       confirm-label="Delete"
       cancel-label="Cancel"
       :busy="lineDeleteBusy"

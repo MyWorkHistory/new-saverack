@@ -1102,6 +1102,8 @@ class InvoiceService
         $returns = [];
         $onDemand = [];
         $otherItems = [];
+        /** @var list<InvoiceItem> */
+        $storageVolumeItems = [];
 
         foreach ($invoice->items as $item) {
             $category = strtolower(trim((string) $item->category));
@@ -1177,8 +1179,13 @@ class InvoiceService
                 if ((int) $item->unit_price_cents === 0 && (int) $item->line_total_cents === 0) {
                     continue;
                 }
+                if ($this->invoiceItemIsStorageByVolume($item)) {
+                    $storageVolumeItems[] = $item;
+
+                    continue;
+                }
                 $rawName = $this->oldBetaDisplayName($item, 'Storage');
-                $bucketName = $this->invoiceItemIsStorageByVolume($item) ? 'Storage by Volume' : $rawName;
+                $bucketName = $rawName;
                 $key = strtolower($bucketName);
                 if (! isset($storage[$key])) {
                     $storage[$key] = ['name' => $bucketName, 'items' => [], 'qty' => 0.0, 'total' => 0];
@@ -1274,6 +1281,30 @@ class InvoiceService
                     'details' => [],
                 ];
             }
+        }
+
+        if ($storageVolumeItems !== []) {
+            $volumeKey = 'storage by volume';
+            $groups = [];
+            foreach ($storageVolumeItems as $volItem) {
+                $mk = $this->invoiceItemStorageVolumeDetailMergeKey($volItem);
+                $groups[$mk][] = $volItem;
+            }
+            $bucket = [
+                'name' => 'Storage by Volume',
+                'items' => [],
+                'qty' => 0.0,
+                'total' => 0,
+            ];
+            foreach ($groups as $groupItems) {
+                $leaf = count($groupItems) === 1
+                    ? $this->buildStorageVolumeDetailLeafForItems($groupItems)
+                    : $this->buildMergedStorageVolumeDetailLeaf($groupItems);
+                $bucket['items'][] = $leaf;
+                $bucket['qty'] += (float) $leaf['qty'];
+                $bucket['total'] += (int) $leaf['total_cents'];
+            }
+            $storage[$volumeKey] = $bucket;
         }
 
         $rows = [];
@@ -1462,12 +1493,111 @@ class InvoiceService
     }
 
     /**
+     * Group storage-by-volume presentation rows when the short description matches (same SKU + cu ft).
+     */
+    private function invoiceItemStorageVolumeDetailMergeKey(InvoiceItem $item): string
+    {
+        $d = trim((string) (preg_replace('/\s+/u', ' ', trim((string) $item->description)) ?? ''));
+
+        return $d !== '' ? 'd:'.$d : 'gk:'.strtolower(trim((string) $item->group_key));
+    }
+
+    /**
+     * @param  list<InvoiceItem>  $items
+     */
+    private function mergeStorageVolumeProseFromItems(array $items): ?string
+    {
+        $parts = [];
+        foreach ($items as $it) {
+            $meta = $it->metadata;
+            if (! is_array($meta) || ! isset($meta['storage_volume_prose'])) {
+                continue;
+            }
+            $p = trim((string) $meta['storage_volume_prose']);
+            if ($p === '' || in_array($p, $parts, true)) {
+                continue;
+            }
+            $parts[] = $p;
+        }
+
+        if ($parts === []) {
+            return null;
+        }
+
+        return implode(' · ', $parts);
+    }
+
+    /**
+     * @param  non-empty-list<InvoiceItem>  $items
+     * @return array<string, mixed>
+     */
+    private function buildStorageVolumeDetailLeafForItems(array $items): array
+    {
+        $item = $items[0];
+        $qty = (float) $item->quantity;
+        $total = (int) $item->line_total_cents;
+        $unitRate = (int) $item->unit_price_cents;
+        if ($unitRate === 0 && $qty != 0.0 && $total !== 0) {
+            $unitRate = (int) round($total / $qty);
+        }
+
+        return $this->detailLeafRow($item, 'Storage', 'Storage by Volume', $unitRate, $total);
+    }
+
+    /**
+     * @param  non-empty-list<InvoiceItem>  $items
+     * @return array<string, mixed>
+     */
+    private function buildMergedStorageVolumeDetailLeaf(array $items): array
+    {
+        $first = $items[0];
+        $qtySum = 0.0;
+        $totalSum = 0;
+        foreach ($items as $it) {
+            $qtySum += (float) $it->quantity;
+            $totalSum += (int) $it->line_total_cents;
+        }
+        $unitRate = $qtySum != 0.0 ? (int) round($totalSum / $qtySum) : 0;
+        $leaf = $this->detailLeafRow($first, 'Storage', 'Storage by Volume', $unitRate, $totalSum);
+        $leaf['qty'] = $qtySum;
+        $leaf['price_cents'] = $unitRate;
+        $leaf['total_cents'] = $totalSum;
+        $ids = array_values(array_filter(array_map(static fn (InvoiceItem $i) => $i->id, $items), static fn ($id) => is_int($id) && $id > 0));
+        if ($ids !== []) {
+            $leaf['invoice_item_ids'] = $ids;
+        }
+        $mergedProse = $this->mergeStorageVolumeProseFromItems($items);
+        if ($mergedProse !== null && $mergedProse !== '') {
+            $leaf['order_number'] = $mergedProse;
+        }
+
+        return $leaf;
+    }
+
+    /**
      * @return array<string, mixed>
      */
     private function detailLeafRow(InvoiceItem $item, string $type, string $name, int $unitRate, int $total): array
     {
-        $orderNumber = $this->extractOrderNumber($item->metadata);
         $isStorage = strtolower(trim((string) $item->category)) === InvoiceLineCategory::STORAGE;
+        $isStorageVolBreakdown = $isStorage && (
+            strcasecmp(trim((string) $item->display_name), 'Storage by Volume') === 0
+            || $this->invoiceItemIsStorageByVolume($item)
+        );
+
+        $orderNumber = null;
+        if ($isStorageVolBreakdown) {
+            $meta = $item->metadata;
+            if (is_array($meta) && isset($meta['storage_volume_prose'])) {
+                $t = trim((string) $meta['storage_volume_prose']);
+                if ($t !== '') {
+                    $orderNumber = $t;
+                }
+            }
+        }
+        if ($orderNumber === null || $orderNumber === '') {
+            $orderNumber = $this->extractOrderNumber($item->metadata);
+        }
         if (($orderNumber === null || $orderNumber === '') && $isStorage) {
             $orderNumber = $this->extractStorageLocationId($item->description)
                 ?? $this->extractStorageLocationId($item->display_name);
@@ -1481,10 +1611,6 @@ class InvoiceService
         // Staff breakdown "Service" column uses `name` (see BillingInvoiceDetailPage). For Storage by Volume,
         // display_name often matches the parent group row, so show the per-line SKU / cu ft description there instead.
         $leafName = $name;
-        $isStorageVolBreakdown = $isStorage && (
-            strcasecmp(trim((string) $item->display_name), 'Storage by Volume') === 0
-            || $this->invoiceItemIsStorageByVolume($item)
-        );
         if ($isStorageVolBreakdown) {
             $desc = trim((string) $item->description);
             if ($desc !== '') {
@@ -2196,9 +2322,15 @@ class InvoiceService
                 }
                 $isVolDetail = $categoryKey === 'storage' && $this->detailRowIsStorageByVolume($detail);
                 if ($isVolDetail) {
+                    $detailOrderRaw = trim((string) ($detail['order_number'] ?? ''));
                     $detailName = trim((string) ($detail['name'] ?? ''));
                     $detailDesc = trim((string) ($detail['description'] ?? ''));
-                    $orderLabel = $detailName !== '' ? $detailName : ($detailDesc !== '' ? $detailDesc : $orderNumber);
+                    $hasVolumeProse = $detailOrderRaw !== ''
+                        && $detailOrderRaw !== '—'
+                        && strcasecmp($detailOrderRaw, 'Daily Storage') !== 0;
+                    $orderLabel = $hasVolumeProse
+                        ? $detailOrderRaw
+                        : ($detailName !== '' ? $detailName : ($detailDesc !== '' ? $detailDesc : $orderNumber));
                 } else {
                     $orderLabel = $orderNumber;
                 }

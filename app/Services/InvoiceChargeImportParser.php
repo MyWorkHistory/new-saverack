@@ -1504,6 +1504,9 @@ final class InvoiceChargeImportParser
                 $leafDescription = $normalizedSku.' ('.$parsed['volume_cu_ft'].' cu ft)';
                 $serviceCode = $chargeTypeRaw !== '' ? $chargeTypeRaw : 'storing_by_volume_charge';
 
+                $volSlug = $this->slug($normalizedSku.'-'.$parsed['volume_cu_ft'].'-cu-ft');
+                $groupKey = 'storage:vol:'.$volSlug;
+
                 return $this->buildItem(
                     InvoiceLineCategory::STORAGE,
                     'Storage by Volume',
@@ -1512,7 +1515,7 @@ final class InvoiceChargeImportParser
                     $rateCents,
                     $lineTotalCents,
                     null,
-                    'storage:storage-by-volume',
+                    $groupKey,
                     $serviceCode,
                     $sku
                 );

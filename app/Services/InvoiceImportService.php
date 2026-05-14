@@ -440,6 +440,9 @@ class InvoiceImportService
      */
     private function extractLineSkuForCatalog(array $line): string
     {
+        if (strcasecmp(trim((string) ($line['category'] ?? '')), InvoiceLineCategory::STORAGE) === 0) {
+            return '';
+        }
         $sku = trim((string) ($line['sku'] ?? ''));
         if ($sku !== '') {
             return $this->extractCatalogSkuCandidate($sku);

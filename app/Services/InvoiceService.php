@@ -1474,9 +1474,19 @@ class InvoiceService
             $orderNumber = trim($item->service_code);
         }
 
+        // Staff breakdown "Service" column uses `name` (see BillingInvoiceDetailPage). For Storage by Volume,
+        // display_name matches the parent group row, so show the per-line SKU / cu ft description there instead.
+        $leafName = $name;
+        if ($isStorage && strcasecmp(trim((string) $item->display_name), 'Storage by Volume') === 0) {
+            $desc = trim((string) $item->description);
+            if ($desc !== '') {
+                $leafName = $desc;
+            }
+        }
+
         return [
             'id' => $item->id,
-            'name' => $name,
+            'name' => $leafName,
             'type' => $type,
             'qty' => (float) $item->quantity,
             'price_cents' => $unitRate,

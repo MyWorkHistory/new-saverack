@@ -30,7 +30,7 @@ CSV;
         $this->assertSame('Storage by Volume', $line['display_name']);
         $this->assertSame('POSTreat-F-US (0.06 cu ft)', $line['description']);
         $this->assertSame(56, $line['line_total_cents']);
-        $this->assertSame('storage:storage-by-volume', $line['group_key']);
+        $this->assertStringStartsWith('storage:vol:', $line['group_key']);
     }
 
     /**

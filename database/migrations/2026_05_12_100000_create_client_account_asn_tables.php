@@ -8,6 +8,12 @@ return new class extends Migration
 {
     public function up(): void
     {
+        // Recover from a partial failed run (e.g. MySQL index name length) before first successful migrate.
+        Schema::dropIfExists('client_account_asn_vendor_lines');
+        Schema::dropIfExists('client_account_asn_trackings');
+        Schema::dropIfExists('client_account_asn_lines');
+        Schema::dropIfExists('client_account_asns');
+
         Schema::create('client_account_asns', function (Blueprint $table) {
             $table->id();
             $table->foreignId('client_account_id')->constrained('client_accounts')->cascadeOnDelete();
@@ -49,7 +55,7 @@ return new class extends Migration
             $table->unsignedInteger('sort_order')->default(0);
             $table->timestamps();
 
-            $table->index(['client_account_asn_id', 'sort_order']);
+            $table->index(['client_account_asn_id', 'sort_order'], 'ca_asn_trk_asn_sort_idx');
         });
 
         Schema::create('client_account_asn_vendor_lines', function (Blueprint $table) {

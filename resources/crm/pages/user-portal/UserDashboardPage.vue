@@ -20,30 +20,50 @@ const counts = ref({
 
 const clientAccountId = computed(() => Number(crmUser.value?.client_account_id || 0));
 
+/** Paths: Material Icons 24px (fill), same stroke style as billing invoice sidebar cards */
 const cards = computed(() => [
   {
     key: "ready_to_ship",
     label: "Ready To Ship",
+    sub: "Open orders ready to fulfill",
     value: counts.value.ready_to_ship,
     to: "/users/orders/ready-to-ship",
+    iconClass: "text-white",
+    iconStyle: { background: "#2563eb" },
+    iconPath:
+      "M20 8h-3V4H3v13h3c0 1.66 1.34 3 3 3s3-1.34 3-3h6c0 1.66 1.34 3 3s3-1.34 3-3h2v-5l-3-4zM6 18.5c-.83 0-1.5-.67-1.5-1.5S5.17 15.5 6 15.5s1.5.67 1.5 1.5S6.83 18.5 6 18.5zm13.5-9l1.96 2.5H17V9.5h2.5zm-1.5 9c-.83 0-1.5-.67-1.5-1.5s.67-1.5 1.5-1.5 1.5.67 1.5 1.5-.67 1.5-1.5 1.5z",
   },
   {
     key: "on_hold",
     label: "On-Hold",
+    sub: "Paused in ShipHero",
     value: counts.value.on_hold,
     to: "/users/orders/on-hold",
+    iconClass: "text-white",
+    iconStyle: { background: "#d97706" },
+    iconPath:
+      "M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-1 14H9V8h2v8zm4 0h-2V8h2v8z",
   },
   {
     key: "backorder",
     label: "Backorder",
+    sub: "Awaiting inventory or allocation",
     value: counts.value.backorder,
     to: "/users/orders/backorder",
+    iconClass: "text-white",
+    iconStyle: { background: "#dc2626" },
+    iconPath:
+      "M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-2h2v2zm0-4h-2V7h2v6z",
   },
   {
     key: "shipped",
     label: "Shipped",
+    sub: "Last 30 days",
     value: counts.value.shipped,
     to: "/users/orders/shipped",
+    iconClass: "bg-success-subtle text-success",
+    iconStyle: {},
+    iconPath: "M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z",
   },
 ]);
 
@@ -81,11 +101,11 @@ onMounted(() => {
 </script>
 
 <template>
-  <div class="user-dashboard px-2 px-md-3 py-4">
+  <div class="staff-page staff-page--wide">
     <div class="d-flex flex-wrap align-items-end justify-content-between gap-2 mb-4">
       <div>
-        <h1 class="h4 mb-1 text-body">Dashboard</h1>
-        <p class="text-body-secondary small mb-0">
+        <h1 class="h4 mb-1 fw-semibold text-body">Dashboard</h1>
+        <p class="staff-page__intro mb-0">
           ShipHero order queues for your account. Select a card to open that list.
         </p>
       </div>
@@ -108,27 +128,36 @@ onMounted(() => {
         One or more totals may be capped at the maximum page scan; use the order list for the full queue.
       </p>
 
-      <div class="user-dashboard__stat-grid">
-        <RouterLink
-          v-for="c in cards"
-          :key="c.key"
-          :to="c.to"
-          class="user-dashboard__stat-card vx-card text-decoration-none text-body"
-        >
-          <div class="user-dashboard__stat-label text-body-secondary small">{{ c.label }}</div>
-          <div class="user-dashboard__stat-value">{{ c.value.toLocaleString() }}</div>
-        </RouterLink>
+      <div class="row g-3 mb-4">
+        <div v-for="c in cards" :key="c.key" class="col-12 col-sm-6 col-xl-3">
+          <RouterLink
+            :to="c.to"
+            class="staff-stat-card user-dashboard-summary-link h-100 text-start text-decoration-none text-body d-block"
+          >
+            <p class="staff-stat-card__label">{{ c.label }}</p>
+            <p class="staff-stat-card__value">{{ c.value.toLocaleString() }}</p>
+            <p class="staff-stat-card__sub">{{ c.sub }}</p>
+            <div
+              class="staff-stat-card__icon"
+              :class="c.iconClass"
+              :style="c.iconStyle"
+              aria-hidden="true"
+            >
+              <svg width="22" height="22" fill="currentColor" viewBox="0 0 24 24">
+                <path :d="c.iconPath" />
+              </svg>
+            </div>
+          </RouterLink>
+        </div>
       </div>
 
-      <section class="vx-card mt-4 p-4 user-dashboard__analytics">
-        <div class="vx-card-header-row mb-0">
-          <div>
-            <h2 class="vx-card-title mb-0">Analytics</h2>
-            <p class="vx-card-sub mb-0">Order trends and charts will appear here in a future update.</p>
-          </div>
-        </div>
+      <section class="staff-surface p-4 user-dashboard__analytics">
+        <h2 class="h6 fw-semibold mb-1">Analytics</h2>
+        <p class="small text-secondary mb-0">
+          Order trends and charts will appear here in a future update.
+        </p>
         <div
-          class="user-dashboard__chart-placeholder d-flex align-items-center justify-content-center text-body-secondary small rounded mt-3"
+          class="user-dashboard__chart-placeholder d-flex align-items-center justify-content-center text-secondary small rounded mt-3"
         >
           Chart coming soon
         </div>
@@ -138,55 +167,43 @@ onMounted(() => {
 </template>
 
 <style scoped>
-.user-dashboard {
-  max-width: 1200px;
-  margin-inline: auto;
+.user-dashboard-summary-link {
+  width: 100%;
+  cursor: pointer;
+  text-align: left;
+  font: inherit;
+  color: inherit;
+  border: 1px solid rgba(47, 43, 61, 0.14) !important;
+  transition:
+    border-color 0.15s ease,
+    box-shadow 0.15s ease,
+    transform 0.15s ease;
 }
 
-.user-dashboard__stat-grid {
-  display: grid;
-  gap: 1rem;
-  grid-template-columns: repeat(1, minmax(0, 1fr));
-}
-
-@media (min-width: 576px) {
-  .user-dashboard__stat-grid {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-}
-
-@media (min-width: 992px) {
-  .user-dashboard__stat-grid {
-    grid-template-columns: repeat(4, minmax(0, 1fr));
-  }
-}
-
-.user-dashboard__stat-card {
-  display: block;
-  padding: 1.25rem 1.25rem 1.35rem;
-  transition: box-shadow 0.15s ease, transform 0.12s ease;
-}
-
-.user-dashboard__stat-card:hover {
-  box-shadow: 0 4px 18px rgba(47, 43, 61, 0.1);
+.user-dashboard-summary-link:hover {
+  border-color: rgba(115, 103, 240, 0.35) !important;
+  box-shadow: 0 0.45rem 1rem rgba(47, 43, 61, 0.12);
   transform: translateY(-1px);
 }
 
-.user-dashboard__stat-label {
-  font-weight: 500;
-  letter-spacing: 0.02em;
+.user-dashboard-summary-link .staff-stat-card__icon {
+  width: 6.2rem;
+  height: 6.2rem;
+  border-radius: 0.6rem;
 }
 
-.user-dashboard__stat-value {
-  font-size: 1.75rem;
-  font-weight: 700;
-  line-height: 1.2;
-  margin-top: 0.35rem;
+.user-dashboard-summary-link .staff-stat-card__icon svg {
+  width: 1.85rem;
+  height: 1.85rem;
 }
 
 .user-dashboard__chart-placeholder {
   min-height: 220px;
-  border: 1px dashed var(--vx-nav-border, #e6e4ea);
+  border: 1px dashed rgba(47, 43, 61, 0.18);
   background: var(--bs-body-bg, #fff);
+}
+
+[data-bs-theme="dark"] .user-dashboard__chart-placeholder {
+  border-color: rgba(255, 255, 255, 0.12);
 }
 </style>

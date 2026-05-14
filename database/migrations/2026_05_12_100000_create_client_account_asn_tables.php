@@ -22,8 +22,8 @@ return new class extends Migration
             $table->text('warehouse_notes')->nullable();
             $table->timestamps();
 
-            $table->unique(['client_account_id', 'asn_number']);
-            $table->index(['client_account_id', 'status']);
+            $table->unique(['client_account_id', 'asn_number'], 'ca_asns_acct_asnnum_uq');
+            $table->index(['client_account_id', 'status'], 'ca_asns_acct_status_idx');
         });
 
         Schema::create('client_account_asn_lines', function (Blueprint $table) {
@@ -38,7 +38,7 @@ return new class extends Migration
             $table->unsignedInteger('sort_order')->default(0);
             $table->timestamps();
 
-            $table->index(['client_account_asn_id', 'sort_order']);
+            $table->index(['client_account_asn_id', 'sort_order'], 'ca_asn_lines_asn_sort_idx');
         });
 
         Schema::create('client_account_asn_trackings', function (Blueprint $table) {
@@ -59,7 +59,7 @@ return new class extends Migration
             $table->unsignedInteger('sort_order')->default(0);
             $table->timestamps();
 
-            $table->index(['client_account_asn_id', 'sort_order']);
+            $table->index(['client_account_asn_id', 'sort_order'], 'ca_asn_vnd_asn_sort_idx');
         });
     }
 

@@ -103,10 +103,17 @@ function displayNumber(v) {
 }
 
 onMounted(() => {
-  setCrmPageMeta({
-    title: "Save Rack | Inventory Detail",
-    description: "Product inventory detail.",
-  });
+  if (route.meta.userPortal) {
+    setCrmPageMeta({
+      title: "Save Rack | Products | Inventory Detail",
+      description: "Product inventory detail.",
+    });
+  } else {
+    setCrmPageMeta({
+      title: "Save Rack | Inventory Detail",
+      description: "Product inventory detail.",
+    });
+  }
   loadDetail();
   document.addEventListener("click", onDocClick);
 });
@@ -350,7 +357,11 @@ async function togglePickable(loc) {
         Product not found.
       </div>
       <template v-else>
-        <h1 class="h4 mb-3 fw-semibold text-body">Inventory Detail</h1>
+        <div v-if="route.meta.userPortal" class="mb-3">
+          <div class="h4 mb-1 fw-semibold text-body">Products</div>
+          <p class="text-secondary small mb-0">Inventory — detail</p>
+        </div>
+        <h1 v-else class="h4 mb-3 fw-semibold text-body">Inventory Detail</h1>
         <div class="row g-3 mb-3">
           <div class="col-12 col-xl-3">
             <div class="staff-table-card p-3 h-100">

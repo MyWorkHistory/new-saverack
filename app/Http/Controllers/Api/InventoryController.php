@@ -261,19 +261,77 @@ class InventoryController extends Controller
         $validated = $request->validate([
             'client_account_id' => ['required', 'integer', 'exists:client_accounts,id'],
             'first' => ['nullable', 'integer', 'min:1', 'max:200'],
+            'after' => ['nullable', 'string', 'max:500'],
+            'kits' => ['nullable', 'string', Rule::in(['all', 'yes', 'no'])],
+            'active_status' => ['nullable', 'string', Rule::in(['active', 'inactive', 'all'])],
         ]);
         $clientAccountId = (int) $validated['client_account_id'];
         $first = isset($validated['first']) ? (int) $validated['first'] : 100;
+        $after = isset($validated['after']) && is_string($validated['after']) ? $validated['after'] : null;
+        $kits = isset($validated['kits']) && is_string($validated['kits']) ? $validated['kits'] : 'all';
+        $activeStatus = isset($validated['active_status']) && is_string($validated['active_status'])
+            ? $validated['active_status']
+            : 'active';
         try {
             $shipheroCustomerId = $this->resolveShipHeroCustomerAccountId($clientAccountId, $request);
-            $rows = $this->inventory->listInventoryRows($shipheroCustomerId, $first);
-            return response()->json(['rows' => $rows]);
+            $payload = $this->inventory->listInventoryRows(
+                $shipheroCustomerId,
+                $first,
+                $after,
+                $kits,
+                $activeStatus,
+            );
+
+            return response()->json([
+                'rows' => $payload['rows'],
+                'page_info' => $payload['page_info'],
+            ]);
         } catch (ValidationException $e) {
             throw $e;
         } catch (RuntimeException $e) {
             return response()->json(['message' => $e->getMessage()], 502);
         } catch (Throwable $e) {
             report($e);
+            return response()->json([
+                'message' => config('app.debug')
+                    ? $e->getMessage()
+                    : 'Could not reach ShipHero. Check SHIPHERO_* in .env and server logs.',
+            ], 502);
+        }
+    }
+
+    /**
+     * Portal / staff: bulk set ShipHero warehouse_product.active (requires inventory.update).
+     */
+    public function bulkWarehouseProductActive(Request $request): JsonResponse
+    {
+        $validated = $request->validate([
+            'client_account_id' => ['required', 'integer', 'exists:client_accounts,id'],
+            'active' => ['required', 'boolean'],
+            'items' => ['required', 'array', 'min:1', 'max:200'],
+            'items.*.sku' => ['required', 'string', 'max:255'],
+            'items.*.warehouse_id' => ['required', 'string', 'max:255'],
+        ]);
+        $clientAccountId = (int) $validated['client_account_id'];
+        try {
+            $shipheroCustomerId = $this->resolveShipHeroCustomerAccountId($clientAccountId, $request);
+            $result = $this->inventory->bulkSetWarehouseProductActive(
+                (string) $shipheroCustomerId,
+                (bool) $validated['active'],
+                $validated['items'],
+            );
+
+            return response()->json([
+                'updated' => $result['updated'],
+                'errors' => $result['errors'],
+            ]);
+        } catch (ValidationException $e) {
+            throw $e;
+        } catch (RuntimeException $e) {
+            return response()->json(['message' => $e->getMessage()], 502);
+        } catch (Throwable $e) {
+            report($e);
+
             return response()->json([
                 'message' => config('app.debug')
                     ? $e->getMessage()

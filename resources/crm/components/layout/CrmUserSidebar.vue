@@ -35,7 +35,11 @@ function navActive(mode) {
   if (mode === "orders-backorder") return p.startsWith("/users/orders/backorder");
   if (mode === "orders-shipped") return p.startsWith("/users/orders/shipped");
   if (mode === "products") return p.startsWith("/users/inventory") || p.startsWith("/users/asn");
-  if (mode === "products-inventory") return p.startsWith("/users/inventory");
+  if (mode === "products-inventory") {
+    if (p === "/users/inventory/out-of-stock") return false;
+    return p === "/users/inventory" || (p.startsWith("/users/inventory/") && !p.startsWith("/users/inventory/out-of-stock"));
+  }
+  if (mode === "products-out-of-stock") return p === "/users/inventory/out-of-stock";
   if (mode === "products-asn") return p.startsWith("/users/asn");
   return false;
 }
@@ -208,6 +212,16 @@ function collapseNav() {
               </svg>
             </button>
             <ul v-show="productsGroupOpen" class="list-unstyled mb-0 mt-1">
+              <li>
+                <RouterLink
+                  to="/users/inventory/out-of-stock"
+                  class="vx-nav-link vx-nav-sublink"
+                  :class="{ 'vx-nav-link--active': navActive('products-out-of-stock') }"
+                  @click="closeMobile"
+                >
+                  Out of Stock
+                </RouterLink>
+              </li>
               <li>
                 <RouterLink
                   to="/users/inventory"

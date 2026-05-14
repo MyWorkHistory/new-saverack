@@ -146,19 +146,40 @@ GQL;
     }
 
     /**
-     * @return list<array<string,mixed>>
+     * Portal inventory list: one row per warehouse_product, with product kit/active flags.
+     *
+     * @param  'all'|'yes'|'no'  $kitsFilter
+     * @param  'active'|'inactive'|'all'  $activeStatus
+     * @return array{rows: list<array<string,mixed>>, page_info: array{has_next_page: bool, end_cursor: string|null}}
      */
-    public function listInventoryRows(?string $customerAccountId = null, int $first = 100): array
-    {
+    public function listInventoryRows(
+        ?string $customerAccountId = null,
+        int $first = 100,
+        ?string $after = null,
+        string $kitsFilter = 'all',
+        string $activeStatus = 'active'
+    ): array {
         $first = max(1, min(200, $first));
+        $after = is_string($after) && trim($after) !== '' ? trim($after) : null;
+        $kitsFilter = in_array($kitsFilter, ['all', 'yes', 'no'], true) ? $kitsFilter : 'all';
+        $activeStatus = in_array($activeStatus, ['active', 'inactive', 'all'], true) ? $activeStatus : 'active';
+
         $graphql = <<<'GQL'
-query ShipHeroInventoryRows($customer_account_id: String, $first: Int!) {
+query ShipHeroInventoryRows($customer_account_id: String, $first: Int!, $after: String) {
   products(customer_account_id: $customer_account_id) {
-    data(first: $first) {
+    data(first: $first, after: $after) {
+      pageInfo {
+        hasNextPage
+        endCursor
+      }
       edges {
         node {
+          id
           sku
           name
+          active
+          kit
+          kit_build
           images {
             src
             position
@@ -168,6 +189,7 @@ query ShipHeroInventoryRows($customer_account_id: String, $first: Int!) {
             on_hand
             allocated
             backorder
+            active
           }
         }
       }
@@ -175,13 +197,28 @@ query ShipHeroInventoryRows($customer_account_id: String, $first: Int!) {
   }
 }
 GQL;
-        $json = $this->client->query($graphql, array_merge(
-            ['first' => $first],
+        $vars = array_merge(
+            ['first' => $first, 'after' => $after],
             $this->customerAccountVariables($customerAccountId)
-        ));
+        );
+        $json = $this->client->query($graphql, $vars);
         $edges = data_get($json, 'data.products.data.edges');
+        $pageInfo = data_get($json, 'data.products.data.pageInfo');
+        $hasNext = is_array($pageInfo) && (($pageInfo['hasNextPage'] ?? false) === true);
+        $endCursor = is_array($pageInfo) && isset($pageInfo['endCursor']) && is_string($pageInfo['endCursor'])
+            ? $pageInfo['endCursor']
+            : null;
+        if ($endCursor === '') {
+            $endCursor = null;
+        }
         if (! is_array($edges)) {
-            return [];
+            return [
+                'rows' => [],
+                'page_info' => [
+                    'has_next_page' => $hasNext,
+                    'end_cursor' => $endCursor,
+                ],
+            ];
         }
         $rows = [];
         foreach ($edges as $edge) {
@@ -189,6 +226,26 @@ GQL;
             if (! $node) {
                 continue;
             }
+            $productActive = $node['active'] ?? null;
+            $isInactiveProduct = $productActive === false;
+            $isActiveProduct = ! $isInactiveProduct;
+
+            if ($activeStatus === 'active' && ! $isActiveProduct) {
+                continue;
+            }
+            if ($activeStatus === 'inactive' && ! $isInactiveProduct) {
+                continue;
+            }
+
+            $isKit = ($node['kit'] ?? false) === true || ($node['kit_build'] ?? false) === true;
+            if ($kitsFilter === 'yes' && ! $isKit) {
+                continue;
+            }
+            if ($kitsFilter === 'no' && $isKit) {
+                continue;
+            }
+
+            $productId = isset($node['id']) && is_string($node['id']) ? trim($node['id']) : '';
             $imageUrl = null;
             $images = is_array($node['images'] ?? null) ? $node['images'] : [];
             $bestPos = PHP_INT_MAX;
@@ -207,32 +264,125 @@ GQL;
                 }
             }
             $wps = is_array($node['warehouse_products'] ?? null) ? $node['warehouse_products'] : [];
+            $baseRow = [
+                'product_id' => $productId,
+                'sku' => (string) ($node['sku'] ?? ''),
+                'name' => (string) ($node['name'] ?? ''),
+                'image_url' => $imageUrl,
+                'product_active' => $isActiveProduct,
+                'kit' => $isKit,
+                'kit_build' => ($node['kit_build'] ?? false) === true,
+            ];
             if ($wps === []) {
-                $rows[] = [
-                    'sku' => (string) ($node['sku'] ?? ''),
-                    'name' => (string) ($node['name'] ?? ''),
-                    'image_url' => $imageUrl,
+                $rows[] = array_merge($baseRow, [
                     'warehouse_id' => null,
+                    'warehouse_active' => true,
                     'on_hand' => 0,
                     'allocated' => 0,
                     'backorder' => 0,
-                ];
+                ]);
+
                 continue;
             }
             foreach ($wps as $wp) {
-                if (! is_array($wp)) continue;
-                $rows[] = [
-                    'sku' => (string) ($node['sku'] ?? ''),
-                    'name' => (string) ($node['name'] ?? ''),
-                    'image_url' => $imageUrl,
+                if (! is_array($wp)) {
+                    continue;
+                }
+                $wpActive = $wp['active'] ?? null;
+                $rows[] = array_merge($baseRow, [
                     'warehouse_id' => (string) ($wp['warehouse_id'] ?? ''),
+                    'warehouse_active' => $wpActive !== false,
                     'on_hand' => (float) ($wp['on_hand'] ?? 0),
                     'allocated' => (float) ($wp['allocated'] ?? 0),
                     'backorder' => (float) ($wp['backorder'] ?? 0),
-                ];
+                ]);
             }
         }
-        return $rows;
+
+        return [
+            'rows' => $rows,
+            'page_info' => [
+                'has_next_page' => $hasNext,
+                'end_cursor' => $endCursor,
+            ],
+        ];
+    }
+
+    /**
+     * Set warehouse-level active flag (ShipHero warehouse_product_update).
+     *
+     * @throws RuntimeException on GraphQL / validation failure
+     */
+    public function setWarehouseProductActive(
+        string $customerAccountId,
+        string $sku,
+        string $warehouseId,
+        bool $active
+    ): void {
+        $sku = trim($sku);
+        $warehouseId = trim($warehouseId);
+        if ($sku === '' || $warehouseId === '') {
+            throw new RuntimeException('SKU and warehouse_id are required to update warehouse product status.');
+        }
+        $graphql = <<<'GQL'
+mutation ShipHeroWarehouseProductUpdate($data: UpdateWarehouseProductInput!) {
+  warehouse_product_update(data: $data) {
+    request_id
+    complexity
+    warehouse_product {
+      sku
+      warehouse_id
+      active
+    }
+  }
+}
+GQL;
+        $data = [
+            'customer_account_id' => $customerAccountId,
+            'sku' => $sku,
+            'warehouse_id' => $warehouseId,
+            'active' => $active,
+        ];
+        $json = $this->client->query($graphql, ['data' => $data], true, [
+            ShipHeroClient::OPTION_GRAPHQL_SUCCESS_FIELD => 'warehouse_product_update',
+        ]);
+        $wp = data_get($json, 'data.warehouse_product_update.warehouse_product');
+        if (! is_array($wp)) {
+            $errs = $json['errors'] ?? [];
+            $msg = is_array($errs) && isset($errs[0]['message']) ? (string) $errs[0]['message'] : 'ShipHero did not return warehouse_product after update.';
+
+            throw new RuntimeException($msg);
+        }
+    }
+
+    /**
+     * @param  list<array{sku: string, warehouse_id: string}>  $items
+     * @return array{updated: int, errors: list<array{sku: string, warehouse_id: string, message: string}>}
+     */
+    public function bulkSetWarehouseProductActive(string $customerAccountId, bool $active, array $items): array
+    {
+        $updated = 0;
+        $errors = [];
+        foreach ($items as $item) {
+            if (! is_array($item)) {
+                continue;
+            }
+            $sku = isset($item['sku']) ? trim((string) $item['sku']) : '';
+            $wid = isset($item['warehouse_id']) ? trim((string) $item['warehouse_id']) : '';
+            if ($sku === '' || $wid === '') {
+                $errors[] = ['sku' => $sku, 'warehouse_id' => $wid, 'message' => 'Missing sku or warehouse_id.'];
+
+                continue;
+            }
+            try {
+                $this->setWarehouseProductActive($customerAccountId, $sku, $wid, $active);
+                $updated++;
+            } catch (\Throwable $e) {
+                $errors[] = ['sku' => $sku, 'warehouse_id' => $wid, 'message' => $e->getMessage()];
+            }
+        }
+
+        return ['updated' => $updated, 'errors' => $errors];
     }
 
     /**

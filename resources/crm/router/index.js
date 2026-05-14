@@ -136,6 +136,18 @@ const meta = {
     title: "Save Rack | Dashboard",
     description: "Your account ShipHero order queue summary.",
   },
+  userPortalInventory: {
+    title: "Save Rack | Products | Inventory",
+    description: "ShipHero live inventory for your account.",
+  },
+  userPortalInventoryOutOfStock: {
+    title: "Save Rack | Products | Out of Stock",
+    description: "Products with oversold quantity for your account.",
+  },
+  userPortalInventoryDetail: {
+    title: "Save Rack | Products | Inventory Detail",
+    description: "ShipHero product inventory detail.",
+  },
   userAsnList: {
     title: "Save Rack | ASN",
     description: "Advance shipping notices for your account.",
@@ -366,8 +378,9 @@ const routes = [
   { path: "/users/orders/backorder", name: "user-orders-backorder", component: OrdersListPage, meta: { title: "Save Rack | Orders | Backorder", description: "ShipHero backorder orders.", orderTab: "backorder", userPortal: true } },
   { path: "/users/orders/shipped", name: "user-orders-shipped", component: OrdersListPage, meta: { ...meta.ordersShipped, orderTab: "shipped", userPortal: true } },
   { path: "/users/orders/:shipheroOrderId", name: "user-order-detail", component: () => import("../pages/user-orders/UserOrderDetailPage.vue"), props: true, meta: { ...meta.orderDetail, userPortal: true } },
-  { path: "/users/inventory", name: "user-inventory", component: () => import("../pages/user-inventory/UserInventoryPage.vue"), meta: { ...meta.inventory, userPortal: true } },
-  { path: "/users/inventory/:sku", name: "user-inventory-detail", component: () => import("../pages/user-inventory/UserInventoryDetailPage.vue"), props: true, meta: { ...meta.inventoryDetail, userPortal: true } },
+  { path: "/users/inventory/out-of-stock", name: "user-inventory-out-of-stock", component: () => import("../pages/user-inventory/UserInventoryOutOfStockPage.vue"), meta: { ...meta.userPortalInventoryOutOfStock, userPortal: true } },
+  { path: "/users/inventory", name: "user-inventory", component: () => import("../pages/user-inventory/UserInventoryPage.vue"), meta: { ...meta.userPortalInventory, userPortal: true } },
+  { path: "/users/inventory/:sku", name: "user-inventory-detail", component: () => import("../pages/user-inventory/UserInventoryDetailPage.vue"), props: true, meta: { ...meta.userPortalInventoryDetail, userPortal: true } },
   { path: "/users/asn", name: "user-asn-list", component: () => import("../pages/user-asn/UserAsnListPage.vue"), meta: { ...meta.userAsnList, userPortal: true } },
   { path: "/users/asn/:id", name: "user-asn-detail", component: () => import("../pages/user-asn/UserAsnDetailPage.vue"), props: true, meta: { ...meta.userAsnDetail, userPortal: true } },
   { path: "/users/asn/:id/print-shipping-label", name: "user-asn-print-shipping-label", component: () => import("../pages/user-asn/UserAsnPrintShippingLabelPage.vue"), props: true, meta: { title: "Save Rack | Print Shipping Label", description: "4x6 shipping label.", userPortal: true, bareLayout: true } },

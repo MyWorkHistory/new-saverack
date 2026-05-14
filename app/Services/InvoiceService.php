@@ -1174,6 +1174,9 @@ class InvoiceService
                 $packaging[$key]['qty'] += $qty;
                 $packaging[$key]['total'] += $total;
             } elseif ($category === InvoiceLineCategory::STORAGE) {
+                if ((int) $item->unit_price_cents === 0 && (int) $item->line_total_cents === 0) {
+                    continue;
+                }
                 $rawName = $this->oldBetaDisplayName($item, 'Storage');
                 $bucketName = $this->invoiceItemIsStorageByVolume($item) ? 'Storage by Volume' : $rawName;
                 $key = strtolower($bucketName);

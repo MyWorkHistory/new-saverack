@@ -189,6 +189,29 @@ CSV;
         $this->assertStringNotContainsString('Pallet', $lines[0]['display_name']);
     }
 
+    /**
+     * Legacy wide ShipHero rows (no Charge Name): $0 volume storage must not fall through to a fake "Storage" line.
+     */
+    public function test_legacy_wide_csv_zero_dollar_volume_storage_emits_no_line(): void
+    {
+        $f = tempnam(sys_get_temp_dir(), 'invcsv');
+        $this->assertNotFalse($f);
+        $csv = <<<'CSV'
+Date,Category (charge),Fee (charge),Type (charge),Label (charge),Description (charge),Unit rate (charge),Quantity (charge),Total (charge)
+2026-05-11,storage,Storage Per Cu FT,storing_by_volume_charge,Storage Per Cu FT,"SKU P24C2D2 - US with a volume of 1.50 cu ft stored in location W-27-0 of type Pallet (Medium) for 1 day(s).",0,1,0
+CSV;
+        file_put_contents($f, $csv);
+
+        try {
+            $parser = new InvoiceChargeImportParser;
+            $lines = $parser->parseFile($f);
+        } finally {
+            unlink($f);
+        }
+
+        $this->assertCount(0, $lines);
+    }
+
     public function test_storing_by_location_zero_dollar_row_skipped(): void
     {
         $f = tempnam(sys_get_temp_dir(), 'invcsv');

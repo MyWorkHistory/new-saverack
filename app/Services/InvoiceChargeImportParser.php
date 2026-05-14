@@ -1130,21 +1130,9 @@ final class InvoiceChargeImportParser
             if ($volumeAware !== null) {
                 return $volumeAware;
             }
-            $storageType = $this->extractStorageTypeLabel($description)
-                ?? $this->extractStorageTypeLabel($name)
-                ?? 'Storage';
-            return $this->buildItem(
-                InvoiceLineCategory::STORAGE,
-                $storageType,
-                $description,
-                $qty,
-                $unitRate,
-                $total,
-                null,
-                'storage:'.$this->slug($storageType),
-                $this->cell($row, $index['charge_type'] ?? -1),
-                $sku
-            );
+            // buildStorageChargeItem omits $0 storage (and other no-op rows). Do not resurrect a generic
+            // "Storage" / pallet line from the same CSV row — that duplicated ShipHero volume rows in billing.
+            return null;
         }
 
         return $this->buildItem($categoryKey, $name, $name, $qty, $unitRate, $total, null, $this->defaultGroupKeyFor($categoryKey, $name), $this->cell($row, $index['charge_type'] ?? -1), $sku);

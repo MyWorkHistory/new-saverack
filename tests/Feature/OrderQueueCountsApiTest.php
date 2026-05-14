@@ -76,6 +76,10 @@ class OrderQueueCountsApiTest extends TestCase
                 'shipped_order_date_to',
                 'cached_at',
             ]);
+
+        $payload = $response->json();
+        $this->assertSame($payload['open_queue_order_date_from'], $payload['shipped_order_date_from']);
+        $this->assertSame($payload['open_queue_order_date_to'], $payload['shipped_order_date_to']);
     }
 
     public function test_queue_counts_forbidden_when_portal_user_targets_another_account(): void

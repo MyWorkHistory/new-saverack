@@ -25,7 +25,7 @@ const cards = computed(() => [
   {
     key: "ready_to_ship",
     label: "Ready To Ship",
-    sub: "Open orders ready to fulfill",
+    sub: "Last 7 days by order date",
     value: counts.value.ready_to_ship,
     to: "/users/orders/ready-to-ship",
     iconClass: "text-white",
@@ -36,7 +36,7 @@ const cards = computed(() => [
   {
     key: "on_hold",
     label: "On-Hold",
-    sub: "Paused in ShipHero",
+    sub: "Unfulfilled with any hold · Today by order date",
     value: counts.value.on_hold,
     to: "/users/orders/on-hold",
     iconClass: "text-white",
@@ -47,7 +47,7 @@ const cards = computed(() => [
   {
     key: "backorder",
     label: "Backorder",
-    sub: "Awaiting inventory or allocation",
+    sub: "Today by order date",
     value: counts.value.backorder,
     to: "/users/orders/backorder",
     iconClass: "text-white",
@@ -57,8 +57,8 @@ const cards = computed(() => [
   },
   {
     key: "shipped",
-    label: "Shipped",
-    sub: "Last 30 days",
+    label: "Today",
+    sub: "Fulfilled today by order date",
     value: counts.value.shipped,
     to: "/users/orders/shipped",
     iconClass: "bg-success-subtle text-success",
@@ -94,7 +94,7 @@ async function loadCounts() {
 onMounted(() => {
   setCrmPageMeta({
     title: "Save Rack | Dashboard",
-    description: "Order queue summary for your account.",
+    description: "",
   });
   loadCounts();
 });
@@ -102,13 +102,7 @@ onMounted(() => {
 
 <template>
   <div class="staff-page staff-page--wide">
-    <div class="d-flex flex-wrap align-items-end justify-content-between gap-2 mb-4">
-      <div>
-        <h1 class="h4 mb-1 fw-semibold text-body">Dashboard</h1>
-        <p class="staff-page__intro mb-0">
-          ShipHero order queues for your account. Select a card to open that list.
-        </p>
-      </div>
+    <div class="d-flex flex-wrap align-items-center justify-content-end gap-2 mb-4">
       <button
         type="button"
         class="btn btn-sm btn-outline-secondary"

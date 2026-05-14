@@ -74,6 +74,7 @@ class ShipHeroOrderService
         $tab = strtolower(trim((string) ($filters['tab'] ?? 'manage')));
         if ($tab === 'on_hold') {
             $vars['has_hold'] = true;
+            $vars['fulfillment_status'] = 'unfulfilled';
         } elseif ($tab === 'awaiting') {
             $vars['ready_to_ship'] = true;
             $vars['fulfillment_status'] = 'unfulfilled';

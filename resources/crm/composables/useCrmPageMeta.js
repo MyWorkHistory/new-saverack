@@ -22,7 +22,8 @@ function ensureMeta(attr, key) {
  */
 export function setCrmPageMeta(opts = {}) {
   const title = opts.title || DEFAULT_TITLE;
-  const description = opts.description || DEFAULT_DESC;
+  const description =
+    opts.description !== undefined && opts.description !== null ? opts.description : DEFAULT_DESC;
   document.title = title;
   ensureMeta("name", "description").setAttribute("content", description);
   ensureMeta("property", "og:title").setAttribute("content", title);

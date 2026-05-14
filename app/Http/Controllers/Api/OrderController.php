@@ -119,8 +119,8 @@ class OrderController extends Controller
                 $shippedFrom = $this->dateStartIso((string) $shippedFromInput);
                 $shippedTo = $this->dateEndIso((string) $shippedToInput);
             } else {
-                $shippedFrom = $this->dateStartIso($now->copy()->subDays(29)->toDateString());
-                $shippedTo = $this->dateEndIso($now->copy()->toDateString());
+                $shippedFrom = $openFrom;
+                $shippedTo = $openTo;
             }
 
             $cacheKey = sprintf(

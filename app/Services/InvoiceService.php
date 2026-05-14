@@ -2287,12 +2287,17 @@ class InvoiceService
                 } else {
                     $orderLabel = $orderNumber;
                 }
+                $publicVolQty = 1.0;
                 $categories[$categoryKey]['services'][$serviceKey]['orders'][] = [
                     'id' => (string) Str::uuid(),
                     'label' => $orderLabel,
-                    'qty' => number_format($qty, 3, '.', ''),
-                    'qty_display' => $this->formatLegacyQty($qty),
-                    'unit' => $money($priceCents),
+                    'qty' => $isVolDetail
+                        ? number_format($publicVolQty, 3, '.', '')
+                        : number_format($qty, 3, '.', ''),
+                    'qty_display' => $isVolDetail
+                        ? $this->formatLegacyQty($publicVolQty)
+                        : $this->formatLegacyQty($qty),
+                    'unit' => $isVolDetail ? $money($totalCents) : $money($priceCents),
                     'line_total' => $money($totalCents),
                 ];
                 $categories[$categoryKey]['services'][$serviceKey]['qty'] += $qty;

@@ -1795,6 +1795,11 @@ class BillingInvoiceApiTest extends TestCase
         $this->assertContains($shortB, $orderLabels);
         $this->assertNotContains($proseA, $orderLabels);
         $this->assertNotContains($proseB, $orderLabels);
+
+        foreach ($volSvc['orders'] ?? [] as $ord) {
+            $this->assertSame('1', (string) ($ord['qty_display'] ?? ''));
+            $this->assertSame((string) ($ord['unit'] ?? ''), (string) ($ord['line_total'] ?? ''));
+        }
     }
 
     public function test_invoice_presentation_merges_storage_volume_lines_with_same_short_description(): void
@@ -1861,6 +1866,15 @@ class BillingInvoiceApiTest extends TestCase
             InvoiceItem::query()->where('invoice_id', $invoice->id)->pluck('id')->all(),
             $details[0]['invoice_item_ids'] ?? []
         );
+
+        $invoice->refresh()->load('items');
+        $pub = app(InvoiceService::class)->publicInvoiceHtmlData($invoice);
+        $pubStorage = collect($pub['line_sections'] ?? [])->first(fn (array $s) => strcasecmp((string) ($s['label'] ?? ''), 'Storage') === 0);
+        $pubVol = collect($pubStorage['services'] ?? [])->first(fn (array $s) => strcasecmp((string) ($s['label'] ?? ''), 'Storage by Volume') === 0);
+        $this->assertNotNull($pubVol);
+        $this->assertCount(1, $pubVol['orders'] ?? []);
+        $this->assertSame('1', (string) (($pubVol['orders'] ?? [])[0]['qty_display'] ?? ''));
+        $this->assertSame((string) (($pubVol['orders'] ?? [])[0]['unit'] ?? ''), (string) (($pubVol['orders'] ?? [])[0]['line_total'] ?? ''));
     }
 
     public function test_invoice_whatsapp_endpoint_sends_provider_payload(): void

@@ -214,22 +214,22 @@ function collapseNav() {
             <ul v-show="productsGroupOpen" class="list-unstyled mb-0 mt-1">
               <li>
                 <RouterLink
-                  to="/users/inventory/out-of-stock"
-                  class="vx-nav-link vx-nav-sublink"
-                  :class="{ 'vx-nav-link--active': navActive('products-out-of-stock') }"
-                  @click="closeMobile"
-                >
-                  Out of Stock
-                </RouterLink>
-              </li>
-              <li>
-                <RouterLink
                   to="/users/inventory"
                   class="vx-nav-link vx-nav-sublink"
                   :class="{ 'vx-nav-link--active': navActive('products-inventory') }"
                   @click="closeMobile"
                 >
                   Inventory
+                </RouterLink>
+              </li>
+              <li>
+                <RouterLink
+                  to="/users/inventory/out-of-stock"
+                  class="vx-nav-link vx-nav-sublink"
+                  :class="{ 'vx-nav-link--active': navActive('products-out-of-stock') }"
+                  @click="closeMobile"
+                >
+                  Out of Stock
                 </RouterLink>
               </li>
               <li>

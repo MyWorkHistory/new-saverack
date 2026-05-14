@@ -107,13 +107,13 @@ onMounted(() => {
 
     <div class="staff-table-card staff-datatable-card staff-datatable-card--white w-100">
       <div class="table-responsive staff-table-wrap">
-        <table class="table table-hover align-middle mb-0 staff-data-table">
+        <table class="table table-hover align-middle mb-0 staff-data-table user-inv-oos-table">
           <thead class="table-light staff-table-head">
             <tr>
-              <th class="staff-table-head__th">Product</th>
-              <th class="staff-table-head__th">SKU</th>
-              <th class="staff-table-head__th text-end">Oversold</th>
-              <th class="staff-table-head__th text-end">On Hand</th>
+              <th class="staff-table-head__th text-center">Product</th>
+              <th class="staff-table-head__th text-center">SKU</th>
+              <th class="staff-table-head__th text-center">Oversold</th>
+              <th class="staff-table-head__th text-center">On Hand</th>
             </tr>
           </thead>
           <tbody>
@@ -124,8 +124,8 @@ onMounted(() => {
               <td colspan="4" class="text-center text-secondary py-5">No out-of-stock rows in the loaded inventory.</td>
             </tr>
             <tr v-for="row in oversoldRows" :key="`${row.sku}-${row.warehouse_id || ''}`">
-              <td>
-                <div class="d-flex align-items-center gap-2">
+              <td class="text-center">
+                <div class="d-flex align-items-center justify-content-center gap-2 flex-wrap">
                   <img
                     v-if="row.image_url"
                     :src="row.image_url"
@@ -143,13 +143,13 @@ onMounted(() => {
                   </button>
                 </div>
               </td>
-              <td>
+              <td class="text-center">
                 <button type="button" class="btn btn-link p-0 text-decoration-none fw-semibold" @click="openDetail(row)">
                   {{ row.sku || "—" }}
                 </button>
               </td>
-              <td class="text-end">{{ Number(row.backorder || 0) }}</td>
-              <td class="text-end">{{ Number(row.on_hand || 0) }}</td>
+              <td class="text-center">{{ Number(row.backorder || 0) }}</td>
+              <td class="text-center">{{ Number(row.on_hand || 0) }}</td>
             </tr>
           </tbody>
         </table>
@@ -164,6 +164,12 @@ onMounted(() => {
 </template>
 
 <style scoped>
+.user-inv-oos-table th,
+.user-inv-oos-table td {
+  text-align: center;
+  vertical-align: middle;
+}
+
 .user-inventory-thumb {
   width: 34px;
   height: 34px;

@@ -305,6 +305,10 @@ function openDetail(row) {
   window.open(href, "_blank", "noopener,noreferrer");
 }
 
+function clearSelection() {
+  selected.value = new Set();
+}
+
 function onDocClick(e) {
   if (!e.target?.closest?.("[data-toolbar-filter]")) {
     filterMenuOpen.value = false;
@@ -342,7 +346,7 @@ onUnmounted(() => {
     <div class="staff-table-card staff-datatable-card staff-datatable-card--white w-100">
       <div class="staff-table-toolbar">
         <div class="staff-table-toolbar--row flex-wrap align-items-end gap-2 gap-md-3">
-          <div class="flex-grow-1" style="min-width: min(100%, 28rem)">
+          <div class="user-inv-search-wrap flex-shrink-0">
             <label class="form-label small text-secondary mb-1" for="user-inv-search">Search</label>
             <div class="input-group orders-toolbar-search-group">
               <input
@@ -433,96 +437,142 @@ onUnmounted(() => {
       </div>
 
       <div
-        v-if="canInventoryUpdate && selectedRows.length"
-        class="d-flex flex-wrap align-items-center gap-2 px-3 py-2 border-bottom bg-light"
+        v-if="selectedRows.length > 0"
+        class="d-flex flex-wrap align-items-center gap-2 gap-md-3 px-3 px-md-4 py-3 border-bottom bg-body-tertiary"
       >
-        <span class="small text-secondary me-2">{{ selectedRows.length }} selected</span>
-        <button type="button" class="btn btn-sm btn-outline-secondary" :disabled="bulkBusy" @click="exportCsv(true)">
+        <span class="small fw-semibold text-body me-md-1">{{ selectedRows.length }} selected</span>
+        <button
+          type="button"
+          class="btn btn-outline-secondary btn-sm orders-bulk-toolbar-btn orders-toolbar-outline-btn"
+          :disabled="bulkBusy"
+          @click="exportCsv(true)"
+        >
           Export Selected
         </button>
-        <button type="button" class="btn btn-sm btn-outline-secondary" :disabled="bulkBusy" @click="exportCsv(false)">
+        <button
+          type="button"
+          class="btn btn-outline-secondary btn-sm orders-bulk-toolbar-btn orders-toolbar-outline-btn"
+          :disabled="bulkBusy"
+          @click="exportCsv(false)"
+        >
           Export Visible
         </button>
-        <button type="button" class="btn btn-sm btn-outline-success" :disabled="bulkBusy" @click="bulkSetActive(true)">
-          Set Active
+        <button
+          type="button"
+          class="btn btn-outline-secondary btn-sm orders-bulk-toolbar-btn orders-toolbar-outline-btn"
+          :disabled="bulkBusy"
+          @click="clearSelection"
+        >
+          Clear Selection
         </button>
-        <button type="button" class="btn btn-sm btn-outline-danger" :disabled="bulkBusy" @click="bulkSetActive(false)">
-          Set Inactive
-        </button>
+        <template v-if="canInventoryUpdate">
+          <button
+            type="button"
+            class="btn btn-outline-secondary btn-sm orders-bulk-toolbar-btn orders-toolbar-outline-btn"
+            :disabled="bulkBusy"
+            @click="bulkSetActive(true)"
+          >
+            Set Active
+          </button>
+          <button
+            type="button"
+            class="btn btn-outline-danger btn-sm orders-bulk-toolbar-btn orders-toolbar-outline-btn orders-toolbar-outline-btn--danger"
+            :disabled="bulkBusy"
+            @click="bulkSetActive(false)"
+          >
+            Set Inactive
+          </button>
+        </template>
       </div>
 
       <div class="table-responsive staff-table-wrap">
-        <table class="table table-hover align-middle mb-0 staff-data-table">
+        <table class="table table-hover align-middle mb-0 staff-data-table user-inv-table">
           <thead class="table-light staff-table-head">
             <tr>
-              <th v-if="canInventoryUpdate" class="staff-table-head__th text-center" style="width: 2.5rem">
+              <th class="staff-table-head__th user-inv-table__select text-center" style="width: 3rem">
                 <input
-                  class="form-check-input"
+                  class="form-check-input user-inv-check"
                   type="checkbox"
                   :checked="allVisibleSelected"
                   :indeterminate="someVisibleSelected && !allVisibleSelected"
-                  :aria-label="'Select all visible rows'"
-                  @change="toggleSelectAllVisible"
+                  aria-label="Select all visible rows"
+                  @click.prevent="toggleSelectAllVisible"
                 />
               </th>
               <th class="staff-table-head__th text-center">Image</th>
               <th
-                class="staff-table-head__th staff-table-head__th--sortable"
+                class="staff-table-head__th text-center staff-table-head__th--sortable"
                 :aria-sort="thAriaSort('sku')"
                 role="columnheader"
               >
-                <button type="button" class="btn btn-link staff-table-sort-btn p-0 text-decoration-none" @click="toggleSort('sku')">
+                <button
+                  type="button"
+                  class="btn btn-link staff-table-sort-btn user-inv-sort-btn p-0 text-decoration-none"
+                  @click="toggleSort('sku')"
+                >
                   SKU
                 </button>
               </th>
               <th
-                class="staff-table-head__th staff-table-head__th--sortable"
+                class="staff-table-head__th text-center staff-table-head__th--sortable"
                 :aria-sort="thAriaSort('name')"
                 role="columnheader"
               >
-                <button type="button" class="btn btn-link staff-table-sort-btn p-0 text-decoration-none" @click="toggleSort('name')">
+                <button
+                  type="button"
+                  class="btn btn-link staff-table-sort-btn user-inv-sort-btn p-0 text-decoration-none"
+                  @click="toggleSort('name')"
+                >
                   Name
                 </button>
               </th>
               <th
-                class="staff-table-head__th text-end staff-table-head__th--sortable"
+                class="staff-table-head__th text-center staff-table-head__th--sortable"
                 :aria-sort="thAriaSort('kit')"
                 role="columnheader"
               >
-                <button type="button" class="btn btn-link staff-table-sort-btn p-0 text-decoration-none" @click="toggleSort('kit')">
+                <button
+                  type="button"
+                  class="btn btn-link staff-table-sort-btn user-inv-sort-btn p-0 text-decoration-none"
+                  @click="toggleSort('kit')"
+                >
                   Kit
                 </button>
               </th>
               <th
-                class="staff-table-head__th text-end staff-table-head__th--sortable"
+                class="staff-table-head__th text-center staff-table-head__th--sortable"
                 :aria-sort="thAriaSort('on_hand')"
                 role="columnheader"
               >
-                <button type="button" class="btn btn-link staff-table-sort-btn p-0 text-decoration-none" @click="toggleSort('on_hand')">
+                <button
+                  type="button"
+                  class="btn btn-link staff-table-sort-btn user-inv-sort-btn p-0 text-decoration-none"
+                  @click="toggleSort('on_hand')"
+                >
                   On Hand
                 </button>
               </th>
               <th
-                class="staff-table-head__th text-end staff-table-head__th--sortable"
+                class="staff-table-head__th text-center staff-table-head__th--sortable"
                 :aria-sort="thAriaSort('allocated')"
                 role="columnheader"
               >
                 <button
                   type="button"
-                  class="btn btn-link staff-table-sort-btn p-0 text-decoration-none"
+                  class="btn btn-link staff-table-sort-btn user-inv-sort-btn p-0 text-decoration-none"
                   @click="toggleSort('allocated')"
                 >
                   Allocated
                 </button>
               </th>
               <th
-                class="staff-table-head__th text-end staff-table-head__th--sortable"
+                class="staff-table-head__th text-center staff-table-head__th--sortable"
                 :aria-sort="thAriaSort('backorder')"
                 role="columnheader"
               >
                 <button
                   type="button"
-                  class="btn btn-link staff-table-sort-btn p-0 text-decoration-none"
+                  class="btn btn-link staff-table-sort-btn user-inv-sort-btn p-0 text-decoration-none"
                   @click="toggleSort('backorder')"
                 >
                   Backorder
@@ -532,19 +582,19 @@ onUnmounted(() => {
           </thead>
           <tbody>
             <tr v-if="loading">
-              <td :colspan="canInventoryUpdate ? 8 : 7" class="text-center text-secondary py-5">Loading inventory...</td>
+              <td colspan="8" class="text-center text-secondary py-5">Loading inventory...</td>
             </tr>
             <tr v-else-if="!displayRows.length">
-              <td :colspan="canInventoryUpdate ? 8 : 7" class="text-center text-secondary py-5">No inventory rows found.</td>
+              <td colspan="8" class="text-center text-secondary py-5">No inventory rows found.</td>
             </tr>
             <tr v-for="row in displayRows" :key="rowKey(row)">
-              <td v-if="canInventoryUpdate" class="text-center">
+              <td class="user-inv-table__select text-center">
                 <input
-                  class="form-check-input"
+                  class="form-check-input user-inv-check"
                   type="checkbox"
                   :checked="isRowSelected(row)"
                   :aria-label="`Select ${row.sku}`"
-                  @change="toggleRow(row)"
+                  @click.prevent="toggleRow(row)"
                 />
               </td>
               <td class="text-center">
@@ -557,20 +607,20 @@ onUnmounted(() => {
                 />
                 <div v-else class="user-inventory-thumb user-inventory-thumb--empty" />
               </td>
-              <td>
+              <td class="text-center">
                 <button type="button" class="btn btn-link p-0 text-decoration-none fw-semibold" @click="openDetail(row)">
                   {{ row.sku || "—" }}
                 </button>
               </td>
-              <td>
-                <button type="button" class="btn btn-link p-0 text-decoration-none text-start" @click="openDetail(row)">
+              <td class="text-center">
+                <button type="button" class="btn btn-link p-0 text-decoration-none" @click="openDetail(row)">
                   {{ row.name || "—" }}
                 </button>
               </td>
-              <td class="text-end">{{ (row.kit || row.kit_build) ? "Yes" : "No" }}</td>
-              <td class="text-end">{{ Number(row.on_hand || 0) }}</td>
-              <td class="text-end">{{ Number(row.allocated || 0) }}</td>
-              <td class="text-end">{{ Number(row.backorder || 0) }}</td>
+              <td class="text-center">{{ (row.kit || row.kit_build) ? "Yes" : "No" }}</td>
+              <td class="text-center">{{ Number(row.on_hand || 0) }}</td>
+              <td class="text-center">{{ Number(row.allocated || 0) }}</td>
+              <td class="text-center">{{ Number(row.backorder || 0) }}</td>
             </tr>
           </tbody>
         </table>
@@ -585,6 +635,37 @@ onUnmounted(() => {
 </template>
 
 <style scoped>
+.user-inv-search-wrap {
+  width: 100%;
+  max-width: min(100%, 22rem);
+}
+
+.user-inv-table th,
+.user-inv-table td {
+  text-align: center;
+  vertical-align: middle;
+}
+
+.user-inv-table__select {
+  width: 3rem;
+}
+
+.user-inv-check {
+  width: 1.125rem;
+  height: 1.125rem;
+  cursor: pointer;
+  border-width: 2px;
+  margin: 0;
+}
+
+.user-inv-sort-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  text-align: center;
+}
+
 .user-inventory-thumb {
   width: 34px;
   height: 34px;

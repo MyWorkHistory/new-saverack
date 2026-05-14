@@ -6,6 +6,7 @@ import CrmLoadingSpinner from "../../components/common/CrmLoadingSpinner.vue";
 import ConfirmModal from "../../components/common/ConfirmModal.vue";
 import { setCrmPageMeta } from "../../composables/useCrmPageMeta.js";
 import { useToast } from "../../composables/useToast.js";
+import { formatDateUs } from "../../utils/formatUserDates.js";
 
 const toast = useToast();
 const router = useRouter();
@@ -157,16 +158,6 @@ function openRow(r) {
   router.push({ name: "user-asn-detail", params: { id: String(r.id) } });
 }
 
-function formatCreated(iso) {
-  try {
-    const d = new Date(iso);
-    if (Number.isNaN(d.getTime())) return "—";
-    return d.toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" });
-  } catch {
-    return "—";
-  }
-}
-
 onMounted(() => {
   setCrmPageMeta({
     title: "Save Rack | ASN",
@@ -296,7 +287,7 @@ onMounted(() => {
                   </span>
                 </td>
                 <td class="text-center fw-semibold">{{ r.asn_number }}</td>
-                <td class="text-center small text-secondary">{{ formatCreated(r.created_at) }}</td>
+                <td class="text-center small text-secondary">{{ formatDateUs(r.created_at) }}</td>
                 <td class="text-center">{{ Number(r.expected_qty ?? 0).toLocaleString() }}</td>
                 <td class="text-center">{{ Number(r.accepted_qty ?? 0).toLocaleString() }}</td>
                 <td class="text-center">{{ Number(r.rejected_qty ?? 0).toLocaleString() }}</td>

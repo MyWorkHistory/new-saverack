@@ -7,6 +7,7 @@ import ConfirmModal from "../../components/common/ConfirmModal.vue";
 import { setCrmPageMeta } from "../../composables/useCrmPageMeta.js";
 import { useToast } from "../../composables/useToast.js";
 import { CARRIER_PRESETS } from "../../utils/carrierPresets.js";
+import { formatDateUs } from "../../utils/formatUserDates.js";
 
 const SHIP_TO_ADDRESS_LINES = ["3135 Drane Field Rd #20", "Lakeland, FL 33811"];
 
@@ -68,16 +69,6 @@ function statusBadgeClass(status) {
   if (s === "in_progress") return "bg-primary-subtle text-primary-emphasis";
   if (s === "completed") return "bg-success-subtle text-success-emphasis";
   return "bg-body-secondary text-body-secondary";
-}
-
-function formatAsnDate(iso) {
-  try {
-    const d = new Date(iso);
-    if (Number.isNaN(d.getTime())) return "—";
-    return d.toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" });
-  } catch {
-    return "—";
-  }
 }
 
 function syncDraftsFromAsn() {
@@ -498,7 +489,7 @@ onMounted(() => {
           <h3 class="h6 fw-semibold mb-3">ASN Details</h3>
           <div class="mb-2">
             <label class="form-label small mb-0">Date Created</label>
-            <div class="small text-secondary">{{ formatAsnDate(asn.created_at) }}</div>
+            <div class="small text-secondary">{{ formatDateUs(asn.created_at) }}</div>
           </div>
           <div class="mb-2">
             <label class="form-label small mb-0">Date Received</label>

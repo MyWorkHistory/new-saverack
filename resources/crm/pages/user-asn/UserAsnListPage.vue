@@ -1,7 +1,8 @@
 <script setup>
-import { computed, inject, onMounted, ref, watch } from "vue";
+import { computed, inject, nextTick, onMounted, onUnmounted, ref, watch } from "vue";
 import { useRouter } from "vue-router";
 import api from "../../services/api";
+import CrmIconRowActions from "../../components/common/CrmIconRowActions.vue";
 import CrmLoadingSpinner from "../../components/common/CrmLoadingSpinner.vue";
 import ConfirmModal from "../../components/common/ConfirmModal.vue";
 import { setCrmPageMeta } from "../../composables/useCrmPageMeta.js";
@@ -26,9 +27,18 @@ const selected = ref(new Set());
 const bulkDeleteOpen = ref(false);
 const bulkDeleteBusy = ref(false);
 
+const manageOpenId = ref(null);
+const manageMenuRect = ref({ top: 0, left: 0 });
+const MENU_W = 220;
+const MENU_H = 120;
+
+const rowDeleteOpen = ref(false);
+const rowDeleteTarget = ref(null);
+const rowDeleteBusy = ref(false);
+
 const clientAccountId = computed(() => Number(crmUser.value?.client_account_id || 0));
 
-const tableColspan = 9;
+const tableColspan = 10;
 
 const allSelected = computed(() => {
   if (rows.value.length === 0) return false;
@@ -158,12 +168,100 @@ function openRow(r) {
   router.push({ name: "user-asn-detail", params: { id: String(r.id) } });
 }
 
+function placeManageMenu(anchorEl) {
+  if (!(anchorEl instanceof HTMLElement)) return;
+  const r = anchorEl.getBoundingClientRect();
+  let top = r.bottom + 4;
+  let left = r.right - MENU_W;
+  left = Math.max(8, Math.min(left, window.innerWidth - MENU_W - 8));
+  if (top + MENU_H > window.innerHeight - 8) {
+    top = Math.max(8, r.top - MENU_H - 4);
+  }
+  manageMenuRect.value = { top, left };
+}
+
+function closeManageMenu() {
+  manageOpenId.value = null;
+}
+
+async function toggleManageMenu(rowId, e) {
+  e.stopPropagation();
+  if (manageOpenId.value === rowId) {
+    closeManageMenu();
+    return;
+  }
+  const btn = e.currentTarget;
+  manageOpenId.value = rowId;
+  await nextTick();
+  requestAnimationFrame(() => {
+    if (btn instanceof HTMLElement) placeManageMenu(btn);
+  });
+}
+
+const manageMenuRow = computed(() => rows.value.find((r) => r.id === manageOpenId.value) ?? null);
+
+function onDocClickManage(e) {
+  if (!e.target?.closest?.("[data-row-actions]")) {
+    manageOpenId.value = null;
+  }
+}
+
+function onWindowCloseManageMenu() {
+  manageOpenId.value = null;
+}
+
+function goEditAsnFromMenu() {
+  const row = manageMenuRow.value;
+  if (!row) return;
+  closeManageMenu();
+  router.push({ name: "user-asn-detail", params: { id: String(row.id) } });
+}
+
+function openRowDeleteModalFromMenu() {
+  const row = manageMenuRow.value;
+  if (!row) return;
+  if (row.status !== "pending") {
+    closeManageMenu();
+    toast.error("Only pending ASNs can be removed.");
+    return;
+  }
+  closeManageMenu();
+  rowDeleteTarget.value = row;
+  rowDeleteOpen.value = true;
+}
+
+async function confirmRowDelete() {
+  const row = rowDeleteTarget.value;
+  if (!row?.id) return;
+  rowDeleteBusy.value = true;
+  try {
+    await api.delete(`/asns/${row.id}`);
+    toast.success("ASN removed.");
+    rowDeleteOpen.value = false;
+    rowDeleteTarget.value = null;
+    await load();
+  } catch (e) {
+    toast.errorFrom(e, "Could not remove ASN.");
+  } finally {
+    rowDeleteBusy.value = false;
+  }
+}
+
 onMounted(() => {
   setCrmPageMeta({
     title: "Save Rack | ASN",
     description: "Advance shipping notices for your account.",
   });
+  document.addEventListener("click", onDocClickManage);
+  window.addEventListener("scroll", onWindowCloseManageMenu, true);
+  window.addEventListener("resize", onWindowCloseManageMenu);
   load();
+});
+
+onUnmounted(() => {
+  document.removeEventListener("click", onDocClickManage);
+  window.removeEventListener("scroll", onWindowCloseManageMenu, true);
+  window.removeEventListener("resize", onWindowCloseManageMenu);
 });
 </script>
 
@@ -260,6 +358,9 @@ onMounted(() => {
                 </button>
               </th>
               <th class="staff-table-head__th text-center" scope="col">Tracking</th>
+              <th class="staff-table-head__th staff-actions-col text-center user-asn-list-actions-col" scope="col">
+                Actions
+              </th>
             </tr>
           </thead>
           <tbody>
@@ -294,6 +395,24 @@ onMounted(() => {
                 <td class="text-center">{{ Number(r.total_boxes ?? 0).toLocaleString() }}</td>
                 <td class="text-center small text-secondary text-truncate" style="max-width: 14rem">
                   {{ r.tracking_display || "—" }}
+                </td>
+                <td class="staff-actions-cell text-center user-asn-list-actions-cell" @click.stop>
+                  <div
+                    data-row-actions
+                    class="staff-actions-inner staff-actions-inner--single user-asn-list-actions-inner"
+                  >
+                    <button
+                      type="button"
+                      class="staff-action-btn staff-action-btn--more"
+                      :class="{ 'is-open': manageOpenId === r.id }"
+                      :aria-expanded="manageOpenId === r.id ? 'true' : 'false'"
+                      aria-haspopup="true"
+                      aria-label="Row actions"
+                      @click="toggleManageMenu(r.id, $event)"
+                    >
+                      <CrmIconRowActions variant="horizontal" />
+                    </button>
+                  </div>
                 </td>
               </tr>
               <tr v-if="rows.length === 0">
@@ -351,6 +470,57 @@ onMounted(() => {
       @close="bulkDeleteOpen = false"
       @confirm="confirmBulkDelete"
     />
+
+    <Teleport to="body">
+      <Transition
+        enter-active-class="transition ease-out duration-100"
+        enter-from-class="opacity-0"
+        enter-to-class="opacity-100"
+        leave-active-class="transition ease-in duration-75"
+        leave-from-class="opacity-100"
+        leave-to-class="opacity-0"
+      >
+        <div
+          v-if="manageMenuRow"
+          data-row-actions
+          class="staff-row-menu fixed z-[300] overflow-hidden"
+          role="menu"
+          :style="{
+            top: `${manageMenuRect.top}px`,
+            left: `${manageMenuRect.left}px`,
+          }"
+          @click.stop
+        >
+          <button type="button" class="staff-row-menu__item" role="menuitem" @click="goEditAsnFromMenu">Edit</button>
+          <button
+            type="button"
+            class="staff-row-menu__item staff-row-menu__item--danger"
+            role="menuitem"
+            @click="openRowDeleteModalFromMenu"
+          >
+            Remove
+          </button>
+        </div>
+      </Transition>
+    </Teleport>
+
+    <ConfirmModal
+      :open="rowDeleteOpen"
+      title="Remove ASN"
+      :message="
+        rowDeleteTarget
+          ? `Remove ${rowDeleteTarget.asn_number}? Only pending ASNs can be deleted. This cannot be undone.`
+          : ''
+      "
+      confirm-label="Remove"
+      :busy="rowDeleteBusy"
+      danger
+      @close="
+        rowDeleteOpen = false;
+        rowDeleteTarget = null;
+      "
+      @confirm="confirmRowDelete"
+    />
   </div>
 </template>
 
@@ -377,5 +547,13 @@ onMounted(() => {
   background-color: rgba(115, 103, 240, 0.12);
   border-color: rgba(186, 175, 255, 0.35);
   color: var(--bs-body-color);
+}
+.user-asn-list :deep(.table.staff-data-table > thead > tr > th.user-asn-list-actions-col),
+.user-asn-list :deep(.table.staff-data-table > tbody > tr > td.user-asn-list-actions-cell) {
+  text-align: center !important;
+}
+
+.user-asn-list :deep(.user-asn-list-actions-inner) {
+  justify-content: center !important;
 }
 </style>

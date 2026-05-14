@@ -1,7 +1,8 @@
 <script setup>
-import { computed, inject, onMounted, ref, watch } from "vue";
+import { computed, inject, nextTick, onMounted, onUnmounted, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import api from "../../services/api";
+import CrmIconRowActions from "../../components/common/CrmIconRowActions.vue";
 import CrmLoadingSpinner from "../../components/common/CrmLoadingSpinner.vue";
 import ConfirmModal from "../../components/common/ConfirmModal.vue";
 import { setCrmPageMeta } from "../../composables/useCrmPageMeta.js";
@@ -43,6 +44,13 @@ const editRejected = ref(0);
 const deleteLineOpen = ref(false);
 const lineToDelete = ref(null);
 
+const lineMenuOpenId = ref(null);
+const lineMenuRect = ref({ top: 0, left: 0 });
+const LINE_MENU_W = 200;
+const LINE_MENU_H = 160;
+
+const statusPatchBusy = ref(false);
+
 const clientAccountId = computed(() => Number(crmUser.value?.client_account_id || 0));
 const asnId = computed(() => String(route.params.id || ""));
 
@@ -83,6 +91,18 @@ function syncDraftsFromAsn() {
   vendorDraft.value = v;
 }
 
+function normalizeAsnStatusPayload(data) {
+  if (!data || typeof data !== "object") return;
+  const s = String(data.status || "")
+    .trim()
+    .toLowerCase();
+  if (s === "in_progress" || s === "completed" || s === "pending") {
+    data.status = s;
+  } else {
+    data.status = "pending";
+  }
+}
+
 async function loadAsn() {
   if (!asnId.value || !clientAccountId.value) {
     loading.value = false;
@@ -91,6 +111,7 @@ async function loadAsn() {
   loading.value = true;
   try {
     const { data } = await api.get(`/asns/${asnId.value}`);
+    normalizeAsnStatusPayload(data);
     asn.value = data;
     syncDraftsFromAsn();
   } catch (e) {
@@ -99,6 +120,92 @@ async function loadAsn() {
   } finally {
     loading.value = false;
   }
+}
+
+async function saveStatusFromSelect() {
+  if (!asn.value || statusPatchBusy.value) return;
+  const next = String(asn.value.status || "").trim().toLowerCase();
+  if (!["pending", "in_progress", "completed"].includes(next)) {
+    toast.error("Invalid status.");
+    await loadAsn();
+    return;
+  }
+  statusPatchBusy.value = true;
+  try {
+    const { data } = await api.patch(`/asns/${asn.value.id}`, { status: next });
+    normalizeAsnStatusPayload(data);
+    asn.value = data;
+    syncDraftsFromAsn();
+    toast.success("Status updated.");
+  } catch (e) {
+    toast.errorFrom(e, "Could not update status.");
+    await loadAsn();
+  } finally {
+    statusPatchBusy.value = false;
+  }
+}
+
+function placeLineMenu(anchorEl) {
+  if (!(anchorEl instanceof HTMLElement)) return;
+  const r = anchorEl.getBoundingClientRect();
+  let top = r.bottom + 4;
+  let left = r.right - LINE_MENU_W;
+  left = Math.max(8, Math.min(left, window.innerWidth - LINE_MENU_W - 8));
+  if (top + LINE_MENU_H > window.innerHeight - 8) {
+    top = Math.max(8, r.top - LINE_MENU_H - 4);
+  }
+  lineMenuRect.value = { top, left };
+}
+
+async function toggleLineMenu(line, e) {
+  e.stopPropagation();
+  const id = line.id;
+  if (lineMenuOpenId.value === id) {
+    lineMenuOpenId.value = null;
+    return;
+  }
+  lineMenuOpenId.value = id;
+  await nextTick();
+  requestAnimationFrame(() => {
+    if (e.currentTarget instanceof HTMLElement) placeLineMenu(e.currentTarget);
+  });
+}
+
+function closeLineMenu() {
+  lineMenuOpenId.value = null;
+}
+
+const lineMenuLine = computed(() => asn.value?.lines?.find((l) => l.id === lineMenuOpenId.value) ?? null);
+
+function lineMenuEdit() {
+  const line = lineMenuLine.value;
+  if (!line) return;
+  openEditLine(line);
+  closeLineMenu();
+}
+
+function lineMenuDelete() {
+  const line = lineMenuLine.value;
+  if (!line) return;
+  askDeleteLine(line);
+  closeLineMenu();
+}
+
+function lineMenuPrintBarcode() {
+  const line = lineMenuLine.value;
+  if (!line) return;
+  openPrintBarcode(line);
+  closeLineMenu();
+}
+
+function onDocClickLineMenu(e) {
+  if (!e.target?.closest?.("[data-row-actions]")) {
+    lineMenuOpenId.value = null;
+  }
+}
+
+function onWindowCloseLineMenu() {
+  lineMenuOpenId.value = null;
 }
 
 async function loadCatalog() {
@@ -133,6 +240,7 @@ async function saveHeader() {
       total_boxes: asn.value.total_boxes,
       total_pallets: asn.value.total_pallets,
     });
+    normalizeAsnStatusPayload(data);
     asn.value = data;
     syncDraftsFromAsn();
     toast.success("ASN details saved.");
@@ -150,6 +258,7 @@ async function saveNotes() {
     const { data } = await api.patch(`/asns/${asn.value.id}/warehouse-notes`, {
       warehouse_notes: asn.value.warehouse_notes,
     });
+    normalizeAsnStatusPayload(data);
     asn.value = data;
     syncDraftsFromAsn();
     toast.success("Warehouse notes saved.");
@@ -167,6 +276,7 @@ async function saveTrackings() {
     const { data } = await api.put(`/asns/${asn.value.id}/trackings`, {
       trackings: trackingDraft.value,
     });
+    normalizeAsnStatusPayload(data);
     asn.value = data;
     syncDraftsFromAsn();
     toast.success("Tracking saved.");
@@ -184,6 +294,7 @@ async function saveVendors() {
     const { data } = await api.put(`/asns/${asn.value.id}/vendor-lines`, {
       vendor_lines: vendorDraft.value.filter((v) => String(v.label || "").trim() !== ""),
     });
+    normalizeAsnStatusPayload(data);
     asn.value = data;
     syncDraftsFromAsn();
     toast.success("Vendor details saved.");
@@ -291,6 +402,8 @@ async function confirmDeleteLine() {
   try {
     await api.delete(`/asns/${asn.value.id}/lines/${lineToDelete.value.id}`);
     deleteLineOpen.value = false;
+    lineToDelete.value = null;
+    lineMenuOpenId.value = null;
     toast.success("Line removed.");
     await loadAsn();
   } catch (e) {
@@ -330,6 +443,15 @@ function openPrintBarcode(line) {
 onMounted(() => {
   setCrmPageMeta({ title: "Save Rack | ASN", description: "ASN detail." });
   loadAsn();
+  document.addEventListener("click", onDocClickLineMenu);
+  window.addEventListener("scroll", onWindowCloseLineMenu, true);
+  window.addEventListener("resize", onWindowCloseLineMenu);
+});
+
+onUnmounted(() => {
+  document.removeEventListener("click", onDocClickLineMenu);
+  window.removeEventListener("scroll", onWindowCloseLineMenu, true);
+  window.removeEventListener("resize", onWindowCloseLineMenu);
 });
 </script>
 
@@ -351,7 +473,14 @@ onMounted(() => {
             </div>
             <div class="d-flex flex-wrap gap-2 align-items-center mt-2">
               <label class="small text-secondary mb-0" for="asn-detail-status">Status</label>
-              <select id="asn-detail-status" v-model="asn.status" class="form-select form-select-sm" style="width: 11rem">
+              <select
+                id="asn-detail-status"
+                v-model="asn.status"
+                class="form-select form-select-sm"
+                style="width: 11rem"
+                :disabled="statusPatchBusy"
+                @change="saveStatusFromSelect"
+              >
                 <option value="pending">Pending</option>
                 <option value="in_progress">In Progress</option>
                 <option value="completed">Completed</option>
@@ -455,7 +584,7 @@ onMounted(() => {
                   <th class="staff-table-head__th text-end">Expected</th>
                   <th class="staff-table-head__th text-end">Accepted</th>
                   <th class="staff-table-head__th text-end">Rejected</th>
-                  <th class="staff-table-head__th text-end">Actions</th>
+                  <th class="staff-table-head__th text-center user-asn-detail-lines-actions-col">Actions</th>
                 </tr>
               </thead>
               <tbody>
@@ -465,14 +594,23 @@ onMounted(() => {
                   <td class="text-end">{{ line.expected_qty }}</td>
                   <td class="text-end">{{ line.accepted_qty }}</td>
                   <td class="text-end">{{ line.rejected_qty }}</td>
-                  <td class="text-end text-nowrap">
-                    <button type="button" class="btn btn-link btn-sm p-0 me-2" @click="openEditLine(line)">Edit</button>
-                    <button type="button" class="btn btn-link btn-sm p-0 me-2 text-danger" @click="askDeleteLine(line)">
-                      Delete
-                    </button>
-                    <button type="button" class="btn btn-link btn-sm p-0" @click="openPrintBarcode(line)">
-                      Print Barcode
-                    </button>
+                  <td class="text-center user-asn-detail-lines-actions-cell" @click.stop>
+                    <div
+                      data-row-actions
+                      class="staff-actions-inner staff-actions-inner--single user-asn-detail-lines-actions-inner"
+                    >
+                      <button
+                        type="button"
+                        class="staff-action-btn staff-action-btn--more"
+                        :class="{ 'is-open': lineMenuOpenId === line.id }"
+                        :aria-expanded="lineMenuOpenId === line.id ? 'true' : 'false'"
+                        aria-haspopup="true"
+                        aria-label="Line actions"
+                        @click="toggleLineMenu(line, $event)"
+                      >
+                        <CrmIconRowActions variant="horizontal" />
+                      </button>
+                    </div>
                   </td>
                 </tr>
                 <tr v-if="!asn.lines?.length">
@@ -581,6 +719,39 @@ onMounted(() => {
       </div>
     </div>
 
+    <Teleport to="body">
+      <Transition
+        enter-active-class="transition ease-out duration-100"
+        enter-from-class="opacity-0"
+        enter-to-class="opacity-100"
+        leave-active-class="transition ease-in duration-75"
+        leave-from-class="opacity-100"
+        leave-to-class="opacity-0"
+      >
+        <div
+          v-if="lineMenuOpenId && lineMenuLine"
+          data-row-actions
+          class="staff-row-menu fixed z-[300] overflow-hidden"
+          role="menu"
+          :style="{ top: `${lineMenuRect.top}px`, left: `${lineMenuRect.left}px` }"
+          @click.stop
+        >
+          <button type="button" class="staff-row-menu__item" role="menuitem" @click="lineMenuEdit">Edit</button>
+          <button
+            type="button"
+            class="staff-row-menu__item staff-row-menu__item--danger"
+            role="menuitem"
+            @click="lineMenuDelete"
+          >
+            Remove
+          </button>
+          <button type="button" class="staff-row-menu__item" role="menuitem" @click="lineMenuPrintBarcode">
+            Print Barcode
+          </button>
+        </div>
+      </Transition>
+    </Teleport>
+
     <div
       v-if="editLineOpen"
       class="modal d-block"
@@ -653,5 +824,17 @@ onMounted(() => {
   background-color: rgba(115, 103, 240, 0.12);
   border-color: rgba(186, 175, 255, 0.35);
   color: var(--bs-body-color);
+}
+
+.user-asn-detail-page :deep(.table.staff-data-table > thead > tr > th.user-asn-detail-lines-actions-col),
+.user-asn-detail-page :deep(.table.staff-data-table > tbody > tr > td.user-asn-detail-lines-actions-cell) {
+  text-align: center !important;
+  width: 7rem;
+  min-width: 7rem;
+  max-width: 7rem;
+}
+
+.user-asn-detail-page :deep(.user-asn-detail-lines-actions-inner) {
+  justify-content: center !important;
 }
 </style>

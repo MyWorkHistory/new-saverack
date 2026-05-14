@@ -1403,10 +1403,33 @@ final class InvoiceChargeImportParser
             || preg_match('/\boccupied\s+for\s+\d+\s+week/', $hay) === 1;
     }
 
+    /**
+     * ShipHero "Storage Per Cu FT" copy: SKU … with … volume … cu ft (often also says "of type Pallet (…)" in the same sentence).
+     * That clause is not a separate bin/pallet storage bucket.
+     */
+    private function descriptionLooksLikeStoringByVolumeProse(string $text): bool
+    {
+        $t = trim($text);
+        if ($t === '') {
+            return false;
+        }
+        if (preg_match('/^\s*Location\s+.+\bof\s+type\b/isu', $t) === 1) {
+            return false;
+        }
+        $tl = strtolower($t);
+
+        return preg_match('/\bSKU\s+/i', $t) === 1
+            && str_contains($tl, 'cu ft')
+            && (str_contains($tl, 'with a volume of') || str_contains($tl, 'with volume of'));
+    }
+
     private function extractStorageTypeLabel(string $text): ?string
     {
         $source = trim($text);
         if ($source === '') {
+            return null;
+        }
+        if ($this->descriptionLooksLikeStoringByVolumeProse($source)) {
             return null;
         }
         if (preg_match('/\b(bin|pallet|shelf)\s*\(\s*(small|medium|large|x-?large)\s*\)/i', $source, $m) === 1) {
@@ -1466,7 +1489,7 @@ final class InvoiceChargeImportParser
         if ($source === '') {
             return null;
         }
-        if (preg_match('/SKU\s+(.+?)\s+with\s+a\s+volume\s+of\s+([\d.]+)\s+cu\s+ft\b/isu', $source, $m) !== 1) {
+        if (preg_match('/SKU\s+(.+?)\s+with\s+(?:a\s+)?volume\s+of\s+([\d.]+)\s+cu\s+ft\b/isu', $source, $m) !== 1) {
             return null;
         }
         $sku = trim((string) $m[1]);
@@ -1493,9 +1516,19 @@ final class InvoiceChargeImportParser
     private function buildStorageChargeItem(string $descriptionRaw, string $chargeName, string $chargeTypeRaw, float $qty, int $rateCents, int $lineTotalCents, ?string $sku = null, string $feeRaw = ''): ?array
     {
         $description = $this->firstNonEmpty([$descriptionRaw, $chargeName, $chargeTypeRaw]) ?? 'Storage';
+        $descForParse = $descriptionRaw !== '' ? $descriptionRaw : $description;
+        $typeLower = strtolower(trim($chargeTypeRaw));
+        $isLocationChargeType = str_contains($typeLower, 'storing_by_location')
+            || str_contains($typeLower, 'storing_by_week')
+            || str_contains($typeLower, 'by_location');
 
-        if ($this->isStorageByVolumeCharge($feeRaw, $chargeTypeRaw, $chargeName, $descriptionRaw)) {
-            $parsed = $this->parseStorageByVolumeSkuAndVolume($descriptionRaw !== '' ? $descriptionRaw : $description);
+        $looksVolume = ! $isLocationChargeType
+            && ($this->descriptionLooksLikeStoringByVolumeProse($descForParse)
+                || $this->descriptionLooksLikeStoringByVolumeProse($description));
+        $isVolCharge = $this->isStorageByVolumeCharge($feeRaw, $chargeTypeRaw, $chargeName, $descriptionRaw);
+
+        if (! $isLocationChargeType && ($isVolCharge || $looksVolume)) {
+            $parsed = $this->parseStorageByVolumeSkuAndVolume($descForParse);
             if ($parsed !== null) {
                 if ($lineTotalCents === 0 && $rateCents === 0) {
                     return null;
@@ -1503,7 +1536,6 @@ final class InvoiceChargeImportParser
                 $normalizedSku = $this->normalizeStorageByVolumeSku($parsed['sku']);
                 $leafDescription = $normalizedSku.' ('.$parsed['volume_cu_ft'].' cu ft)';
                 $serviceCode = $chargeTypeRaw !== '' ? $chargeTypeRaw : 'storing_by_volume_charge';
-
                 $volSlug = $this->slug($normalizedSku.'-'.$parsed['volume_cu_ft'].'-cu-ft');
                 $groupKey = 'storage:vol:'.$volSlug;
 
@@ -1520,11 +1552,31 @@ final class InvoiceChargeImportParser
                     $sku
                 );
             }
+            if ($lineTotalCents === 0 && $rateCents === 0) {
+                return null;
+            }
+
+            return $this->buildItem(
+                InvoiceLineCategory::STORAGE,
+                'Storage by Volume',
+                $description,
+                $qty,
+                $rateCents,
+                $lineTotalCents,
+                null,
+                'storage:vol:'.$this->slug('unparsed-'.substr(sha1($description), 0, 16)),
+                $chargeTypeRaw !== '' ? $chargeTypeRaw : 'storing_by_volume_charge',
+                $sku
+            );
         }
 
         $display = $this->extractStorageTypeLabel($description)
             ?? $this->extractStorageTypeLabel($chargeName)
             ?? 'Storage';
+
+        if ($lineTotalCents === 0 && $rateCents === 0) {
+            return null;
+        }
 
         return $this->buildItem(
             InvoiceLineCategory::STORAGE,

@@ -25,6 +25,7 @@ const markSrc = computed(() => BRAND_MARK_SRC());
 
 function navActive(mode) {
   const p = route.path;
+  if (mode === "dashboard") return p === "/users/dashboard";
   if (mode === "orders") return p.startsWith("/users/orders");
   if (mode === "orders-index") return p === "/users/orders";
   if (mode === "orders-awaiting") return p.startsWith("/users/orders/ready-to-ship");
@@ -47,7 +48,7 @@ function collapseNav() {
     <div class="vx-sidebar__header">
       <RouterLink
         v-if="isExpanded"
-        to="/users/orders"
+        to="/users/dashboard"
         class="vx-sidebar__brand-link"
         @click="closeMobile"
       >
@@ -56,7 +57,7 @@ function collapseNav() {
       </RouterLink>
       <RouterLink
         v-else
-        to="/users/orders"
+        to="/users/dashboard"
         class="vx-sidebar__brand-link justify-content-center w-100"
         @click="closeMobile"
       >
@@ -79,6 +80,30 @@ function collapseNav() {
     <nav class="vx-sidebar__scroll">
       <h2 v-if="isExpanded" class="vx-section-label">Menu</h2>
       <ul class="list-unstyled mb-0 pb-2">
+        <li>
+          <RouterLink
+            to="/users/dashboard"
+            class="vx-nav-link"
+            :class="{ 'vx-nav-link--active': navActive('dashboard') }"
+            :title="!isExpanded ? 'Dashboard' : undefined"
+            @click="closeMobile"
+          >
+            <svg
+              fill="none"
+              viewBox="0 0 24 24"
+              stroke="currentColor"
+              stroke-width="1.5"
+              aria-hidden="true"
+            >
+              <path
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                d="M3.75 6A2.25 2.25 0 0 1 6 3.75h2.25A2.25 2.25 0 0 1 10.5 6v2.25a2.25 2.25 0 0 1-2.25 2.25H6a2.25 2.25 0 0 1-2.25-2.25V6Zm9.75-2.25A2.25 2.25 0 0 1 15.75 6v2.25a2.25 2.25 0 0 1-2.25 2.25H12a2.25 2.25 0 0 1-2.25-2.25V6A2.25 2.25 0 0 1 12 3.75h2.25ZM6 13.5a2.25 2.25 0 0 1 2.25-2.25H10.5A2.25 2.25 0 0 1 12.75 15v2.25A2.25 2.25 0 0 1 10.5 19.5H8.25A2.25 2.25 0 0 1 6 17.25V13.5Zm9.75-2.25A2.25 2.25 0 0 1 18 13.5V15a2.25 2.25 0 0 1-2.25 2.25H15a2.25 2.25 0 0 1-2.25-2.25v-1.5a2.25 2.25 0 0 1 2.25-2.25H15Z"
+              />
+            </svg>
+            <span v-if="isExpanded">Dashboard</span>
+          </RouterLink>
+        </li>
         <li>
           <div v-if="isExpanded">
             <button

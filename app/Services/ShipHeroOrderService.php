@@ -266,6 +266,53 @@ GQL;
     }
 
     /**
+     * Total orders for a queue tab using the same {@see listOrders} filters and post-processing (paginated).
+     *
+     * @param  array<string, mixed>  $filters  Same shape as {@see listOrders}; `tab` must be awaiting|on_hold|backorder|shipped.
+     * @return array{count: int, truncated: bool}
+     */
+    public function countOrders(array $filters): array
+    {
+        $tab = strtolower(trim((string) ($filters['tab'] ?? '')));
+        if (! in_array($tab, ['awaiting', 'on_hold', 'backorder', 'shipped'], true)) {
+            throw new RuntimeException('countOrders tab must be one of: awaiting, on_hold, backorder, shipped.');
+        }
+
+        $base = array_merge($filters);
+        $base['first'] = 100;
+        unset($base['order_number']);
+
+        $total = 0;
+        $truncated = false;
+        $maxPages = 50;
+        $after = null;
+
+        for ($page = 0; $page < $maxPages; $page++) {
+            $base['after'] = $after;
+            $payload = $this->listOrders($base);
+            $total += count($payload['rows'] ?? []);
+
+            if (! ($payload['pagination']['has_next_page'] ?? false)) {
+                break;
+            }
+
+            $next = $payload['pagination']['end_cursor'] ?? null;
+            if (! is_string($next) || $next === '') {
+                break;
+            }
+
+            if ($page === $maxPages - 1) {
+                $truncated = (bool) ($payload['pagination']['has_next_page'] ?? false);
+                break;
+            }
+
+            $after = $next;
+        }
+
+        return ['count' => $total, 'truncated' => $truncated];
+    }
+
+    /**
      * When searching by order #, ShipHero ANDs filters; drop queue/tab constraints and date/update windows
      * so one order can be found. Storefront ids often live on partner_order_id instead of order_number.
      *

@@ -75,6 +75,8 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::prefix('orders')->group(function () {
         Route::get('/summary', [OrderController::class, 'summary'])
             ->middleware('can:inventory.view');
+        Route::get('/queue-counts', [OrderController::class, 'queueCounts'])
+            ->middleware('can:inventory.view');
         Route::get('/', [OrderController::class, 'index'])
             ->middleware('can:inventory.view');
         Route::post('/bulk/mark-fulfilled', [OrderController::class, 'bulkMarkFulfilled'])

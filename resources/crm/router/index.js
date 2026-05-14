@@ -32,6 +32,7 @@ import InventoryOnDemandPage from "../pages/inventory/InventoryOnDemandPage.vue"
 import OrdersListPage from "../pages/orders/OrdersListPage.vue";
 import OrderDetailPage from "../pages/orders/OrderDetailPage.vue";
 import OrderDetailIframePage from "../pages/orders/OrderDetailIframePage.vue";
+import UserDashboardPage from "../pages/user-portal/UserDashboardPage.vue";
 
 const meta = {
   login: {
@@ -130,6 +131,10 @@ const meta = {
   orderDetail: {
     title: "Save Rack | Order",
     description: "ShipHero order detail.",
+  },
+  userPortalDashboard: {
+    title: "Save Rack | Dashboard",
+    description: "Your account ShipHero order queue summary.",
   },
 };
 
@@ -340,8 +345,14 @@ const routes = [
     props: true,
     meta: meta.webmasterTask,
   },
+  {
+    path: "/users/dashboard",
+    name: "user-dashboard",
+    component: UserDashboardPage,
+    meta: { ...meta.userPortalDashboard, userPortal: true },
+  },
   { path: "/users/orders", name: "user-orders", component: OrdersListPage, meta: { ...meta.ordersAwaiting, orderTab: "awaiting", userPortal: true } },
-  { path: "/users", redirect: "/users/orders" },
+  { path: "/users", redirect: "/users/dashboard" },
   { path: "/users/orders/ready-to-ship", name: "user-orders-awaiting", component: OrdersListPage, meta: { ...meta.ordersAwaiting, orderTab: "awaiting", userPortal: true } },
   { path: "/users/orders/on-hold", name: "user-orders-on-hold", component: OrdersListPage, meta: { ...meta.ordersOnHold, orderTab: "on_hold", userPortal: true } },
   { path: "/users/orders/backorder", name: "user-orders-backorder", component: OrdersListPage, meta: { title: "Save Rack | Orders | Backorder", description: "ShipHero backorder orders.", orderTab: "backorder", userPortal: true } },
@@ -655,6 +666,8 @@ async function ensureInventoryRouteAccess(path) {
     path.startsWith("/admin/orders/") ||
     path === "/users/inventory" ||
     path.startsWith("/users/inventory/") ||
+    path === "/users/dashboard" ||
+    path.startsWith("/users/dashboard/") ||
     path === "/users/orders" ||
     path.startsWith("/users/orders/")
   ) {
@@ -677,7 +690,7 @@ router.beforeEach(async (to) => {
     if (token && to.name === "login") {
       try {
         const me = await ensureAuthUser();
-        return { path: crmIsPortalUser(me) ? "/users/orders" : "/admin/dashboard" };
+        return { path: crmIsPortalUser(me) ? "/users/dashboard" : "/admin/dashboard" };
       } catch {
         localStorage.removeItem("auth_token");
         clearCrmOwnerCache();
@@ -702,7 +715,7 @@ router.beforeEach(async (to) => {
 
   if (crmIsPortalUser(me)) {
     if (!to.path.startsWith("/users/")) {
-      return { path: "/users/orders" };
+      return { path: "/users/dashboard" };
     }
   } else if (to.path.startsWith("/users/")) {
     return { path: "/admin/dashboard" };
@@ -754,17 +767,21 @@ router.beforeEach(async (to) => {
       if (!localStorage.getItem("auth_token")) {
         return { name: "login", query: { redirect: to.fullPath } };
       }
-      return { path: crmIsPortalUser(me) ? "/users/orders" : "/admin/dashboard" };
+      return { path: crmIsPortalUser(me) ? "/users/dashboard" : "/admin/dashboard" };
     }
   }
 
-  if (to.path.startsWith("/admin/orders") || to.path.startsWith("/users/orders")) {
+  if (
+    to.path.startsWith("/admin/orders") ||
+    to.path.startsWith("/users/orders") ||
+    to.path === "/users/dashboard"
+  ) {
     const ok = await ensureInventoryRouteAccess(to.path);
     if (!ok) {
       if (!localStorage.getItem("auth_token")) {
         return { name: "login", query: { redirect: to.fullPath } };
       }
-      return { path: crmIsPortalUser(me) ? "/users/orders" : "/admin/dashboard" };
+      return { path: crmIsPortalUser(me) ? "/users/dashboard" : "/admin/dashboard" };
     }
   }
 

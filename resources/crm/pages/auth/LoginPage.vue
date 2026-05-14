@@ -46,7 +46,7 @@ const submit = async () => {
     const isPortal = crmIsPortalUser(data.user);
     const r = route.query.redirect;
     const dest =
-      typeof r === "string" && r.startsWith("/") ? r : isPortal ? "/users/orders" : "/admin/dashboard";
+      typeof r === "string" && r.startsWith("/") ? r : isPortal ? "/users/dashboard" : "/admin/dashboard";
     router.push(dest);
   } catch (e) {
     const d = e?.response?.data;

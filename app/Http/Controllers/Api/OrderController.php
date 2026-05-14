@@ -92,6 +92,117 @@ class OrderController extends Controller
         }
     }
 
+    /**
+     * Portal dashboard: ShipHero order counts per queue (same filters as list orders), short-lived cache.
+     */
+    public function queueCounts(Request $request): JsonResponse
+    {
+        $validated = $request->validate([
+            'client_account_id' => ['required', 'integer', 'exists:client_accounts,id'],
+            'order_date_from' => ['nullable', 'required_with:order_date_to', 'date'],
+            'order_date_to' => ['nullable', 'required_with:order_date_from', 'date'],
+        ]);
+
+        try {
+            $clientAccountId = (int) $validated['client_account_id'];
+            $customerId = $this->resolveShipHeroCustomerAccountId($clientAccountId, $request);
+
+            $now = Carbon::now();
+            $awaitingFrom = $this->dateStartIso($now->copy()->subDays(6)->toDateString());
+            $awaitingTo = $this->dateEndIso($now->copy()->toDateString());
+            $openFrom = $this->dateStartIso($now->copy()->toDateString());
+            $openTo = $this->dateEndIso($now->copy()->toDateString());
+
+            $shippedFromInput = $validated['order_date_from'] ?? null;
+            $shippedToInput = $validated['order_date_to'] ?? null;
+            if ($shippedFromInput !== null && $shippedToInput !== null) {
+                $shippedFrom = $this->dateStartIso((string) $shippedFromInput);
+                $shippedTo = $this->dateEndIso((string) $shippedToInput);
+            } else {
+                $shippedFrom = $this->dateStartIso($now->copy()->subDays(29)->toDateString());
+                $shippedTo = $this->dateEndIso($now->copy()->toDateString());
+            }
+
+            $cacheKey = sprintf(
+                'orders:queue_counts:v1:%d:%s',
+                $clientAccountId,
+                md5(implode('|', array_filter([
+                    $customerId,
+                    $awaitingFrom,
+                    $awaitingTo,
+                    $openFrom,
+                    $openTo,
+                    $shippedFrom,
+                    $shippedTo,
+                ])))
+            );
+
+            $payload = Cache::remember($cacheKey, now()->addSeconds(55), function () use (
+                $customerId,
+                $awaitingFrom,
+                $awaitingTo,
+                $openFrom,
+                $openTo,
+                $shippedFrom,
+                $shippedTo
+            ) {
+                $ready = $this->orders->countOrders([
+                    'customer_account_id' => $customerId,
+                    'tab' => 'awaiting',
+                    'order_date_from' => $awaitingFrom,
+                    'order_date_to' => $awaitingTo,
+                ]);
+                $hold = $this->orders->countOrders([
+                    'customer_account_id' => $customerId,
+                    'tab' => 'on_hold',
+                    'order_date_from' => $openFrom,
+                    'order_date_to' => $openTo,
+                ]);
+                $back = $this->orders->countOrders([
+                    'customer_account_id' => $customerId,
+                    'tab' => 'backorder',
+                    'order_date_from' => $openFrom,
+                    'order_date_to' => $openTo,
+                ]);
+                $ship = $this->orders->countOrders([
+                    'customer_account_id' => $customerId,
+                    'tab' => 'shipped',
+                    'order_date_from' => $shippedFrom,
+                    'order_date_to' => $shippedTo,
+                ]);
+
+                return [
+                    'ready_to_ship' => $ready['count'],
+                    'on_hold' => $hold['count'],
+                    'backorder' => $back['count'],
+                    'shipped' => $ship['count'],
+                    'truncated' => $ready['truncated'] || $hold['truncated'] || $back['truncated'] || $ship['truncated'],
+                    'awaiting_order_date_from' => $awaitingFrom,
+                    'awaiting_order_date_to' => $awaitingTo,
+                    'open_queue_order_date_from' => $openFrom,
+                    'open_queue_order_date_to' => $openTo,
+                    'shipped_order_date_from' => $shippedFrom,
+                    'shipped_order_date_to' => $shippedTo,
+                    'cached_at' => now()->toIso8601String(),
+                ];
+            });
+
+            return response()->json($payload);
+        } catch (ValidationException $e) {
+            throw $e;
+        } catch (RuntimeException $e) {
+            return response()->json(['message' => $e->getMessage()], 502);
+        } catch (Throwable $e) {
+            report($e);
+
+            return response()->json([
+                'message' => config('app.debug')
+                    ? $e->getMessage()
+                    : 'Could not reach ShipHero orders API.',
+            ], 502);
+        }
+    }
+
     public function summary(Request $request): JsonResponse
     {
         $startedAt = microtime(true);

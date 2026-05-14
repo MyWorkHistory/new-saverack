@@ -15,7 +15,7 @@ const route = useRoute();
 const { isMobileOpen, toggleMobileSidebar, mainWrapClass } = useCrmSidebar();
 
 const useWideCrmContent = computed(
-  () => route.path.startsWith("/users/orders") || route.path.startsWith("/users/inventory"),
+  () => route.path.startsWith("/users/orders") || route.path === "/users/dashboard" || route.path.startsWith("/users/inventory"),
 );
 
 const crmContentClass = computed(() =>

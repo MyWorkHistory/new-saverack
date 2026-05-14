@@ -70,6 +70,16 @@ function statusBadgeClass(status) {
   return "bg-body-secondary text-body-secondary";
 }
 
+function formatAsnDate(iso) {
+  try {
+    const d = new Date(iso);
+    if (Number.isNaN(d.getTime())) return "—";
+    return d.toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" });
+  } catch {
+    return "—";
+  }
+}
+
 function syncDraftsFromAsn() {
   if (!asn.value) return;
   const t = (asn.value.trackings || []).length
@@ -337,106 +347,124 @@ onMounted(() => {
     <CrmLoadingSpinner message="Loading ASN…" />
   </div>
   <div v-else-if="!asn" class="staff-page staff-page--wide py-5 text-secondary">ASN not found.</div>
-  <div v-else class="staff-page staff-page--wide order-detail-page">
-    <div class="d-flex flex-wrap align-items-start justify-content-between gap-3 mb-4">
-      <div>
-        <div class="d-flex flex-wrap align-items-center gap-2 mb-1">
-          <h1 class="h4 mb-0 fw-semibold text-body">{{ asn.asn_number }}</h1>
-          <span class="badge rounded-pill fw-medium" :class="statusBadgeClass(asn.status)">{{
-            statusLabel(asn.status)
-          }}</span>
+  <div v-else class="staff-page staff-page--wide user-asn-detail-page order-detail-page">
+    <div class="staff-table-card staff-datatable-card staff-datatable-card--white user-asn-detail-page__header-shell mb-4">
+      <div class="p-4 pb-3">
+        <div class="d-flex flex-wrap justify-content-between align-items-start gap-3">
+          <div class="min-w-0">
+            <div class="d-flex flex-wrap align-items-center gap-2 mb-1">
+              <h1 class="h4 mb-0 fw-semibold text-body">{{ asn.asn_number }}</h1>
+              <span class="badge rounded-pill fw-medium" :class="statusBadgeClass(asn.status)">{{
+                statusLabel(asn.status)
+              }}</span>
+            </div>
+            <div class="d-flex flex-wrap gap-2 align-items-center mt-2">
+              <label class="small text-secondary mb-0" for="asn-detail-status">Status</label>
+              <select id="asn-detail-status" v-model="asn.status" class="form-select form-select-sm" style="width: 11rem">
+                <option value="pending">Pending</option>
+                <option value="in_progress">In Progress</option>
+                <option value="completed">Completed</option>
+              </select>
+            </div>
+          </div>
+          <div class="d-flex flex-wrap gap-2 flex-shrink-0">
+            <button type="button" class="btn btn-outline-secondary btn-sm fw-semibold" @click="openPrintSlip">
+              Print Packing Slip
+            </button>
+            <RouterLink to="/users/asn" class="btn btn-sm btn-outline-secondary fw-semibold">Back To List</RouterLink>
+          </div>
         </div>
-        <div class="d-flex flex-wrap gap-2 align-items-center">
-          <label class="small text-secondary mb-0">Status</label>
-          <select v-model="asn.status" class="form-select form-select-sm" style="width: 11rem">
-            <option value="pending">Pending</option>
-            <option value="in_progress">In Progress</option>
-            <option value="completed">Completed</option>
-          </select>
-        </div>
-      </div>
-      <div class="d-flex flex-wrap gap-2">
-        <button type="button" class="btn btn-outline-secondary btn-sm fw-semibold" @click="openPrintSlip">
-          Print Packing Slip
-        </button>
-        <RouterLink to="/users/asn" class="btn btn-sm btn-outline-secondary">Back To List</RouterLink>
       </div>
     </div>
 
     <div class="row g-4">
       <div class="col-lg-8">
-        <div class="staff-surface p-4 mb-4">
-          <div class="d-flex justify-content-between align-items-center mb-3">
-            <h2 class="h6 fw-semibold mb-0">Items</h2>
+        <div class="staff-table-card staff-datatable-card staff-datatable-card--white p-0 mb-4">
+          <div class="px-4 py-3 border-bottom d-flex justify-content-between align-items-center flex-wrap gap-2">
+            <h2 class="h6 mb-0 fw-semibold">Items</h2>
             <button
               type="button"
-              class="btn btn-sm btn-primary"
+              class="btn btn-sm btn-primary staff-page-primary"
               @click="addPanelOpen = !addPanelOpen"
             >
               {{ addPanelOpen ? "Hide Add Panel" : "Add Items" }}
             </button>
           </div>
 
-          <div v-show="addPanelOpen" class="border rounded p-3 mb-4 bg-body-tertiary">
-            <p class="small fw-semibold mb-2">From catalog (one load, search below)</p>
-            <div v-if="catalogLoading" class="py-2">
-              <CrmLoadingSpinner message="Loading catalog…" />
+          <div v-show="addPanelOpen">
+            <div v-if="!catalogLoading" class="staff-table-toolbar border-bottom">
+              <div class="staff-table-toolbar--row flex-wrap align-items-end gap-2 gap-md-3">
+                <input
+                  id="asn-catalog-filter"
+                  v-model="catalogFilter"
+                  type="search"
+                  class="form-control staff-toolbar-search staff-toolbar-search--inline"
+                  placeholder="Filter catalog by SKU or name"
+                  autocomplete="off"
+                  aria-label="Filter catalog"
+                />
+              </div>
             </div>
-            <template v-else>
-              <input
-                v-model="catalogFilter"
-                type="search"
-                class="form-control form-control-sm mb-2"
-                placeholder="Filter by SKU or name"
-              />
-              <div class="catalog-pick-list border rounded bg-white" style="max-height: 220px; overflow: auto">
-                <button
-                  v-for="p in filteredCatalog"
-                  :key="p.id + p.sku"
-                  type="button"
-                  class="dropdown-item text-start py-2 border-bottom w-100"
-                  :disabled="lineBusy"
-                  @click="addFromCatalog(p)"
-                >
-                  <span class="fw-semibold">{{ p.sku }}</span>
-                  <span class="text-secondary small d-block text-truncate">{{ p.name }}</span>
-                </button>
-                <div v-if="filteredCatalog.length === 0" class="p-3 small text-secondary">No matches.</div>
+            <div class="p-4 bg-body-tertiary border-bottom">
+              <div v-if="catalogLoading" class="d-flex justify-content-center py-4">
+                <CrmLoadingSpinner message="Loading catalog…" />
               </div>
-            </template>
-            <hr class="my-3" />
-            <p class="small fw-semibold mb-2">Create line manually</p>
-            <div class="row g-2 align-items-end">
-              <div class="col-md-3">
-                <label class="form-label small mb-0">SKU</label>
-                <input v-model="manualSku" class="form-control form-control-sm" />
-              </div>
-              <div class="col-md-5">
-                <label class="form-label small mb-0">Name</label>
-                <input v-model="manualName" class="form-control form-control-sm" />
-              </div>
-              <div class="col-md-2">
-                <label class="form-label small mb-0">Qty</label>
-                <input v-model.number="manualQty" type="number" min="0" class="form-control form-control-sm" />
-              </div>
-              <div class="col-md-2">
-                <button type="button" class="btn btn-sm btn-outline-primary w-100" :disabled="lineBusy" @click="addManualLine">
-                  Add
-                </button>
-              </div>
+              <template v-else>
+                <p class="small fw-semibold mb-2">From catalog</p>
+                <div class="catalog-pick-list border rounded bg-white" style="max-height: 220px; overflow: auto">
+                  <button
+                    v-for="p in filteredCatalog"
+                    :key="p.id + p.sku"
+                    type="button"
+                    class="dropdown-item text-start py-2 border-bottom w-100"
+                    :disabled="lineBusy"
+                    @click="addFromCatalog(p)"
+                  >
+                    <span class="fw-semibold">{{ p.sku }}</span>
+                    <span class="text-secondary small d-block text-truncate">{{ p.name }}</span>
+                  </button>
+                  <div v-if="filteredCatalog.length === 0" class="p-3 small text-secondary">No matches.</div>
+                </div>
+                <hr class="my-3" />
+                <p class="small fw-semibold mb-2">Create line manually</p>
+                <div class="row g-2 align-items-end">
+                  <div class="col-md-3">
+                    <label class="form-label small mb-0">SKU</label>
+                    <input v-model="manualSku" class="form-control form-control-sm" />
+                  </div>
+                  <div class="col-md-5">
+                    <label class="form-label small mb-0">Name</label>
+                    <input v-model="manualName" class="form-control form-control-sm" />
+                  </div>
+                  <div class="col-md-2">
+                    <label class="form-label small mb-0">Qty</label>
+                    <input v-model.number="manualQty" type="number" min="0" class="form-control form-control-sm" />
+                  </div>
+                  <div class="col-md-2">
+                    <button
+                      type="button"
+                      class="btn btn-sm btn-outline-primary w-100 fw-semibold"
+                      :disabled="lineBusy"
+                      @click="addManualLine"
+                    >
+                      Add
+                    </button>
+                  </div>
+                </div>
+              </template>
             </div>
           </div>
 
-          <div class="table-responsive">
-            <table class="table table-sm align-middle mb-0">
-              <thead>
+          <div class="table-responsive staff-table-wrap">
+            <table class="table table-hover align-middle mb-0 staff-data-table">
+              <thead class="table-light staff-table-head">
                 <tr>
-                  <th>SKU</th>
-                  <th>Name</th>
-                  <th class="text-end">Expected</th>
-                  <th class="text-end">Accepted</th>
-                  <th class="text-end">Rejected</th>
-                  <th class="text-end">Actions</th>
+                  <th class="staff-table-head__th">SKU</th>
+                  <th class="staff-table-head__th">Name</th>
+                  <th class="staff-table-head__th text-end">Expected</th>
+                  <th class="staff-table-head__th text-end">Accepted</th>
+                  <th class="staff-table-head__th text-end">Rejected</th>
+                  <th class="staff-table-head__th text-end">Actions</th>
                 </tr>
               </thead>
               <tbody>
@@ -451,7 +479,9 @@ onMounted(() => {
                     <button type="button" class="btn btn-link btn-sm p-0 me-2 text-danger" @click="askDeleteLine(line)">
                       Delete
                     </button>
-                    <button type="button" class="btn btn-link btn-sm p-0" @click="openPrintBarcode(line)">Print Barcode</button>
+                    <button type="button" class="btn btn-link btn-sm p-0" @click="openPrintBarcode(line)">
+                      Print Barcode
+                    </button>
                   </td>
                 </tr>
                 <tr v-if="!asn.lines?.length">
@@ -464,11 +494,11 @@ onMounted(() => {
       </div>
 
       <div class="col-lg-4 d-flex flex-column gap-4 order-detail-page__side-column">
-        <div class="staff-surface p-4">
+        <div class="staff-table-card staff-datatable-card staff-datatable-card--white p-4">
           <h3 class="h6 fw-semibold mb-3">ASN Details</h3>
           <div class="mb-2">
             <label class="form-label small mb-0">Date Created</label>
-            <div class="small text-secondary">{{ new Date(asn.created_at).toLocaleString() }}</div>
+            <div class="small text-secondary">{{ formatAsnDate(asn.created_at) }}</div>
           </div>
           <div class="mb-2">
             <label class="form-label small mb-0">Date Received</label>
@@ -482,12 +512,17 @@ onMounted(() => {
             <label class="form-label small mb-0">Total Pallets</label>
             <input v-model.number="asn.total_pallets" type="number" min="0" class="form-control form-control-sm" />
           </div>
-          <button type="button" class="btn btn-primary btn-sm w-100" :disabled="headerBusy" @click="saveHeader">
+          <button
+            type="button"
+            class="btn btn-primary btn-sm staff-page-primary w-100"
+            :disabled="headerBusy"
+            @click="saveHeader"
+          >
             Save ASN Details
           </button>
         </div>
 
-        <div class="staff-surface p-4">
+        <div class="staff-table-card staff-datatable-card staff-datatable-card--white p-4">
           <h3 class="h6 fw-semibold mb-3">Tracking Details</h3>
           <div v-for="(row, idx) in trackingDraft" :key="'t' + idx" class="mb-2">
             <div class="row g-1">
@@ -503,12 +538,17 @@ onMounted(() => {
             </div>
           </div>
           <button type="button" class="btn btn-link btn-sm px-0 mb-2" @click="addTrackingRow">Add Tracking Row</button>
-          <button type="button" class="btn btn-primary btn-sm w-100" :disabled="trackingBusy" @click="saveTrackings">
+          <button
+            type="button"
+            class="btn btn-primary btn-sm staff-page-primary w-100"
+            :disabled="trackingBusy"
+            @click="saveTrackings"
+          >
             Save Tracking
           </button>
         </div>
 
-        <div class="staff-surface p-4">
+        <div class="staff-table-card staff-datatable-card staff-datatable-card--white p-4">
           <h3 class="h6 fw-semibold mb-3">Ship To</h3>
           <p class="mb-1 fw-semibold">Save Rack</p>
           <p class="mb-1 small">ASN# {{ asn.asn_number }}</p>
@@ -518,22 +558,32 @@ onMounted(() => {
           </button>
         </div>
 
-        <div class="staff-surface p-4">
+        <div class="staff-table-card staff-datatable-card staff-datatable-card--white p-4">
           <h3 class="h6 fw-semibold mb-3">Vendor Details</h3>
           <div v-for="(row, idx) in vendorDraft" :key="'v' + idx" class="d-flex gap-1 mb-2">
             <input v-model="row.label" class="form-control form-control-sm" placeholder="Vendor line" />
             <button type="button" class="btn btn-outline-danger btn-sm" @click="removeVendorRow(idx)">Remove</button>
           </div>
           <button type="button" class="btn btn-link btn-sm px-0 mb-2" @click="addVendorRow">Add Vendor Line</button>
-          <button type="button" class="btn btn-primary btn-sm w-100" :disabled="vendorBusy" @click="saveVendors">
+          <button
+            type="button"
+            class="btn btn-primary btn-sm staff-page-primary w-100"
+            :disabled="vendorBusy"
+            @click="saveVendors"
+          >
             Save Vendor Details
           </button>
         </div>
 
-        <div class="staff-surface p-4">
+        <div class="staff-table-card staff-datatable-card staff-datatable-card--white p-4">
           <h3 class="h6 fw-semibold mb-3">Warehouse Notes</h3>
           <textarea v-model="asn.warehouse_notes" class="form-control form-control-sm" rows="4" placeholder="Notes for warehouse staff" />
-          <button type="button" class="btn btn-primary btn-sm w-100 mt-2" :disabled="notesBusy" @click="saveNotes">
+          <button
+            type="button"
+            class="btn btn-primary btn-sm staff-page-primary w-100 mt-2"
+            :disabled="notesBusy"
+            @click="saveNotes"
+          >
             Save Notes
           </button>
         </div>
@@ -569,7 +619,14 @@ onMounted(() => {
           </div>
           <div class="modal-footer">
             <button type="button" class="btn btn-sm btn-outline-secondary" @click="editLineOpen = false">Cancel</button>
-            <button type="button" class="btn btn-sm btn-primary" :disabled="lineBusy" @click="saveEditLine">Save</button>
+            <button
+              type="button"
+              class="btn btn-sm btn-primary staff-page-primary"
+              :disabled="lineBusy"
+              @click="saveEditLine"
+            >
+              Save
+            </button>
           </div>
         </div>
       </div>
@@ -591,5 +648,19 @@ onMounted(() => {
 <style scoped>
 .catalog-pick-list .dropdown-item:hover {
   background: rgba(115, 103, 240, 0.08);
+}
+
+.user-asn-detail-page .btn-outline-secondary:hover:not(:disabled),
+.user-asn-detail-page .btn-outline-secondary:focus-visible {
+  background-color: rgba(115, 103, 240, 0.06);
+  border-color: rgba(115, 103, 240, 0.35);
+  color: var(--bs-body-color);
+}
+
+[data-bs-theme="dark"] .user-asn-detail-page .btn-outline-secondary:hover:not(:disabled),
+[data-bs-theme="dark"] .user-asn-detail-page .btn-outline-secondary:focus-visible {
+  background-color: rgba(115, 103, 240, 0.12);
+  border-color: rgba(186, 175, 255, 0.35);
+  color: var(--bs-body-color);
 }
 </style>

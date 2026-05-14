@@ -159,7 +159,9 @@ function openRow(r) {
 
 function formatCreated(iso) {
   try {
-    return new Date(iso).toLocaleString();
+    const d = new Date(iso);
+    if (Number.isNaN(d.getTime())) return "—";
+    return d.toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" });
   } catch {
     return "—";
   }
@@ -181,9 +183,10 @@ onMounted(() => {
         <h1 class="h4 mb-1 fw-semibold text-body">ASN</h1>
         <p class="staff-page__intro mb-0">Advance shipping notices. Search by ASN # or tracking #.</p>
       </div>
+      <button type="button" class="btn btn-primary staff-page-primary" @click="createAsn">Create ASN</button>
     </div>
 
-    <div class="staff-table-card staff-datatable-card staff-datatable-card--white w-100">
+    <div class="user-asn-list staff-table-card staff-datatable-card staff-datatable-card--white w-100">
       <div class="staff-table-toolbar">
         <div class="staff-table-toolbar--row flex-wrap align-items-end gap-2 gap-md-3">
           <input
@@ -196,9 +199,7 @@ onMounted(() => {
             aria-label="Search ASN"
             @keydown.enter.prevent="load"
           />
-          <div
-            class="staff-toolbar-row-actions d-flex flex-wrap align-items-center gap-2 ms-md-auto flex-shrink-0"
-          >
+          <div class="staff-toolbar-row-actions d-flex flex-wrap align-items-center gap-2 ms-md-auto flex-shrink-0">
             <button
               type="button"
               class="btn btn-outline-danger staff-toolbar-btn"
@@ -206,9 +207,6 @@ onMounted(() => {
               @click="bulkDeleteOpen = true"
             >
               Delete Selected
-            </button>
-            <button type="button" class="btn btn-primary staff-page-primary staff-toolbar-btn" @click="createAsn">
-              Create ASN
             </button>
           </div>
         </div>
@@ -374,5 +372,19 @@ onMounted(() => {
   justify-content: center;
   width: 100%;
   text-align: center;
+}
+
+.user-asn-list :deep(.staff-table-footer .btn-outline-secondary:hover:not(:disabled)),
+.user-asn-list :deep(.staff-table-footer .btn-outline-secondary:focus-visible) {
+  background-color: rgba(115, 103, 240, 0.06);
+  border-color: rgba(115, 103, 240, 0.35);
+  color: var(--bs-body-color);
+}
+
+[data-bs-theme="dark"] .user-asn-list :deep(.staff-table-footer .btn-outline-secondary:hover:not(:disabled)),
+[data-bs-theme="dark"] .user-asn-list :deep(.staff-table-footer .btn-outline-secondary:focus-visible) {
+  background-color: rgba(115, 103, 240, 0.12);
+  border-color: rgba(186, 175, 255, 0.35);
+  color: var(--bs-body-color);
 }
 </style>

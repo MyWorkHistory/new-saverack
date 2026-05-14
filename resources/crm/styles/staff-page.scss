@@ -150,7 +150,7 @@ button.staff-stat-card {
   --bs-table-bg: #fff;
   --bs-table-striped-bg: #fff;
   --bs-table-active-bg: #fff;
-  --bs-table-hover-bg: #f8f8fa;
+  --bs-table-hover-bg: rgba(115, 103, 240, 0.07);
   background-color: #fff;
   color: var(--bs-body-color);
 }
@@ -177,7 +177,7 @@ button.staff-stat-card {
   --bs-table-bg: var(--bs-body-bg);
   --bs-table-striped-bg: var(--bs-body-bg);
   --bs-table-active-bg: var(--bs-body-bg);
-  --bs-table-hover-bg: rgba(255, 255, 255, 0.04);
+  --bs-table-hover-bg: rgba(115, 103, 240, 0.14);
   background-color: var(--bs-body-bg);
 }
 
@@ -617,7 +617,8 @@ button.staff-stat-card {
   font-weight: 600;
 }
 
-.staff-toolbar-btn:not(.staff-toolbar-btn-add) {
+/* Neutral chrome only — do not override colored Bootstrap variants (e.g. primary in toolbar). */
+.staff-toolbar-btn:not(.staff-toolbar-btn-add):not(.btn-primary):not(.btn-outline-primary):not(.staff-page-primary):not(.btn-success):not(.btn-outline-success):not(.btn-danger):not(.btn-outline-danger):not(.btn-warning):not(.btn-outline-warning):not(.btn-info):not(.btn-outline-info) {
   border-color: #d8d6de;
   color: #5d596c;
 }

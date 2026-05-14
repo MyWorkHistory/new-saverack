@@ -1429,15 +1429,32 @@ final class InvoiceChargeImportParser
     private function isStorageByVolumeCharge(string $feeRaw, string $chargeTypeRaw, string $chargeName, string $descriptionRaw): bool
     {
         $typeLower = strtolower(trim($chargeTypeRaw));
+        // Location / week occupancy (Bin, Pallet by location) must never use the cu-ft volume branch,
+        // even if Fee/Label text repeats "Storage" or similar.
+        if (
+            str_contains($typeLower, 'storing_by_location')
+            || str_contains($typeLower, 'storing_by_week')
+            || str_contains($typeLower, 'by_location')
+        ) {
+            return false;
+        }
         if (str_contains($typeLower, 'storing_by_volume')) {
             return true;
         }
         $feeAndLabel = strtolower(trim($feeRaw.' '.$chargeName));
-        if ($feeAndLabel !== '' && str_contains($feeAndLabel, 'storage per cu')) {
-            return true;
+        if ($feeAndLabel === '' || ! str_contains($feeAndLabel, 'storage per cu')) {
+            return false;
+        }
+        $desc = trim($descriptionRaw);
+        if ($desc === '') {
+            return false;
+        }
+        // "Location … of type Bin (Large) occupied for …" is storing-by-location, not by volume.
+        if (preg_match('/^\s*Location\s+.+\bof\s+type\b/isu', $desc) === 1) {
+            return false;
         }
 
-        return false;
+        return $this->parseStorageByVolumeSkuAndVolume($desc) !== null;
     }
 
     /**
@@ -1464,6 +1481,8 @@ final class InvoiceChargeImportParser
     private function normalizeStorageByVolumeSku(string $sku): string
     {
         $s = trim(preg_replace('/\s+/u', ' ', $sku) ?? $sku);
+        // e.g. "POSTreat- F - US" → "POSTreat-F-US" for invoice breakdown copy.
+        $s = preg_replace('/\s*-\s*/u', '-', $s) ?? $s;
 
         return $s;
     }

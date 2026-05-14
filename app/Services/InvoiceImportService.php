@@ -306,6 +306,11 @@ class InvoiceImportService
             if ($this->isReturnLine((array) $line)) {
                 continue;
             }
+            // Storage lines (including Storage by Volume) carry SKUs for inventory context; they are not
+            // pick/catalog bill lines. Counting them here duplicates rows as synthetic on_demand charges.
+            if (strtolower(trim((string) ($line['category'] ?? ''))) === InvoiceLineCategory::STORAGE) {
+                continue;
+            }
             $lineSkuRaw = $this->extractLineSkuForCatalog((array) $line);
             $skuKey = $this->normalizeSkuKey($lineSkuRaw);
             $compactKey = $this->normalizeSkuCompactKey($lineSkuRaw);

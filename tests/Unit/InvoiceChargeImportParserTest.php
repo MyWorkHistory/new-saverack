@@ -28,7 +28,7 @@ CSV;
         $this->assertCount(1, $lines);
         $line = $lines[0];
         $this->assertSame('Storage by Volume', $line['display_name']);
-        $this->assertSame('POSTreat- F - US (0.06 cu ft)', $line['description']);
+        $this->assertSame('POSTreat-F-US (0.06 cu ft)', $line['description']);
         $this->assertSame(56, $line['line_total_cents']);
         $this->assertSame('storage:storage-by-volume', $line['group_key']);
     }
@@ -56,6 +56,29 @@ CSV;
 
         $this->assertCount(1, $lines);
         $this->assertSame('Storage by Volume', $lines[0]['display_name']);
-        $this->assertSame('POSTreat- F - US (0.06 cu ft)', $lines[0]['description']);
+        $this->assertSame('POSTreat-F-US (0.06 cu ft)', $lines[0]['description']);
+    }
+
+    public function test_storing_by_location_charge_maps_to_bin_not_storage_by_volume(): void
+    {
+        $f = tempnam(sys_get_temp_dir(), 'invcsv');
+        $this->assertNotFalse($f);
+        $csv = <<<'CSV'
+Charge Name,Charge Type (charge),Category (charge),Fee (charge),Description (charge),Charge Qty,Avg Rate,Charge Subtotal
+Storage,storing_by_location_charge,storage,Storage,"Location A-16-031 of type Bin (Large) occupied for 7 day(s).",7,0.12,0.84
+CSV;
+        file_put_contents($f, $csv);
+
+        try {
+            $parser = new InvoiceChargeImportParser;
+            $lines = $parser->parseFile($f);
+        } finally {
+            unlink($f);
+        }
+
+        $this->assertCount(1, $lines);
+        $this->assertSame('Bin (Large)', $lines[0]['display_name']);
+        $this->assertStringContainsString('Location A-16-031', $lines[0]['description']);
+        $this->assertNotSame('Storage by Volume', $lines[0]['display_name']);
     }
 }

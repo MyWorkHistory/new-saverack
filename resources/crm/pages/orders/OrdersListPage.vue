@@ -1678,29 +1678,5 @@ onUnmounted(() => {
 .orders-toolbar-search-group .orders-toolbar-search-btn {
   font-weight: 600;
 }
-
-.orders-toolbar-outline-btn:hover:not(:disabled) {
-  background-color: rgba(37, 99, 235, 0.08);
-  border-color: #2563eb;
-  color: #2563eb;
-}
-
-.orders-toolbar-outline-btn.orders-toolbar-outline-btn--danger:hover:not(:disabled) {
-  background-color: rgba(220, 53, 69, 0.08);
-  border-color: #dc3545;
-  color: #b02a37;
-}
-
-[data-bs-theme="dark"] .orders-toolbar-outline-btn:hover:not(:disabled) {
-  background-color: rgba(96, 165, 250, 0.12);
-  border-color: #60a5fa;
-  color: #93c5fd;
-}
-
-[data-bs-theme="dark"] .orders-toolbar-outline-btn.orders-toolbar-outline-btn--danger:hover:not(:disabled) {
-  background-color: rgba(248, 113, 113, 0.12);
-  border-color: #f87171;
-  color: #fecaca;
-}
 </style>
 

@@ -18,6 +18,7 @@ const pageInfo = ref({ has_next_page: false, end_cursor: null });
 const searchDraft = ref("");
 const searchCommitted = ref("");
 const filterMenuOpen = ref(false);
+const bulkEditMenuOpen = ref(false);
 
 const filters = reactive({
   kits: "all",
@@ -165,23 +166,29 @@ function thAriaSort(col) {
   return sortDir.value === "asc" ? "ascending" : "descending";
 }
 
-function toggleSelectAllVisible() {
+function onSelectAllCheckboxChange(ev) {
+  const el = ev?.target;
+  if (!(el instanceof HTMLInputElement)) return;
+  const wantChecked = el.checked;
   const visibleKeys = displayRows.value.map(rowKey);
-  const allOn = visibleKeys.length > 0 && visibleKeys.every((k) => isKeySelected(k));
-  if (allOn) {
+  if (wantChecked) {
+    selectedKeys.value = Array.from(new Set([...selectedKeys.value, ...visibleKeys]));
+  } else {
     const drop = new Set(visibleKeys);
     selectedKeys.value = selectedKeys.value.filter((k) => !drop.has(k));
-  } else {
-    selectedKeys.value = Array.from(new Set([...selectedKeys.value, ...visibleKeys]));
   }
+  nextTick(syncSelectAllCheckbox);
 }
 
-function toggleRow(row) {
+function onRowCheckboxChange(ev, row) {
+  const checked = Boolean(ev?.target?.checked);
   const k = rowKey(row);
-  if (isKeySelected(k)) {
-    selectedKeys.value = selectedKeys.value.filter((x) => x !== k);
+  if (checked) {
+    if (!selectedKeys.value.includes(k)) {
+      selectedKeys.value = [...selectedKeys.value, k];
+    }
   } else {
-    selectedKeys.value = [...selectedKeys.value, k];
+    selectedKeys.value = selectedKeys.value.filter((x) => x !== k);
   }
 }
 
@@ -313,6 +320,7 @@ function openDetail(row) {
 
 function clearSelection() {
   selectedKeys.value = [];
+  bulkEditMenuOpen.value = false;
 }
 
 function editFirstSelected() {
@@ -321,21 +329,42 @@ function editFirstSelected() {
   else toast.error("Select a row to edit.");
 }
 
-watch(
-  [allVisibleSelected, someVisibleSelected, () => displayRows.value.length],
-  () => {
-    nextTick(() => {
-      const el = selectAllCheckboxRef.value;
-      if (el && el instanceof HTMLInputElement) {
-        el.indeterminate = someVisibleSelected.value && !allVisibleSelected.value;
-      }
-    });
-  },
-);
+function closeBulkEditMenu() {
+  bulkEditMenuOpen.value = false;
+}
+
+function runBulkExport(useSelected) {
+  closeBulkEditMenu();
+  exportCsv(useSelected);
+}
+
+function runBulkEdit() {
+  closeBulkEditMenu();
+  editFirstSelected();
+}
+
+async function runBulkSetActive(active) {
+  closeBulkEditMenu();
+  await bulkSetActive(active);
+}
+
+function syncSelectAllCheckbox() {
+  const el = selectAllCheckboxRef.value;
+  if (!el || !(el instanceof HTMLInputElement)) return;
+  el.indeterminate = someVisibleSelected.value && !allVisibleSelected.value;
+  el.checked = allVisibleSelected.value;
+}
+
+watch([selectedKeys, () => displayRows.value.length, allVisibleSelected, someVisibleSelected], () => {
+  nextTick(syncSelectAllCheckbox);
+});
 
 function onDocClick(e) {
   if (!e.target?.closest?.("[data-toolbar-filter]")) {
     filterMenuOpen.value = false;
+  }
+  if (!e.target?.closest?.("[data-bulk-edit-menu]")) {
+    bulkEditMenuOpen.value = false;
   }
 }
 
@@ -430,7 +459,7 @@ onUnmounted(() => {
                 <span>Filters</span>
                 <button
                   type="button"
-                  class="btn btn-link btn-sm text-secondary text-decoration-none p-0"
+                  class="btn btn-link btn-sm staff-bulk-clear-link text-decoration-none p-0"
                   @click="resetFilters"
                 >
                   Reset
@@ -462,59 +491,83 @@ onUnmounted(() => {
 
       <div
         v-if="selectedRows.length > 0"
-        class="d-flex flex-wrap align-items-center gap-2 gap-md-3 px-3 px-md-4 py-3 border-bottom bg-body-tertiary"
+        class="staff-bulk-selection-bar d-flex flex-wrap align-items-center gap-2 gap-md-3 px-3 px-md-4 py-3"
       >
-        <span class="small fw-semibold text-body me-md-1">{{ selectedRows.length }} selected</span>
-        <button
-          type="button"
-          class="btn btn-outline-secondary btn-sm orders-bulk-toolbar-btn orders-toolbar-outline-btn"
-          :disabled="bulkBusy"
-          @click="exportCsv(true)"
+        <span class="small staff-bulk-selection-bar__count me-md-1">{{ selectedRows.length }} selected</span>
+        <div
+          class="position-relative d-inline-flex flex-wrap align-items-center gap-2"
+          data-bulk-edit-menu
+          @click.stop
         >
-          Export Selected
-        </button>
+          <button
+            type="button"
+            class="btn btn-sm staff-page-primary orders-bulk-toolbar-btn dropdown-toggle"
+            :aria-expanded="bulkEditMenuOpen"
+            :disabled="bulkBusy"
+            @click.stop="bulkEditMenuOpen = !bulkEditMenuOpen"
+          >
+            Bulk Edit
+          </button>
+          <div
+            v-if="bulkEditMenuOpen"
+            class="dropdown-menu show shadow border px-0 py-1 staff-toolbar-bulk-dropdown"
+            style="position: absolute; top: calc(100% + 0.25rem); left: 0; z-index: 1090"
+            role="menu"
+            aria-label="Bulk edit"
+            @click.stop
+          >
+            <button
+              type="button"
+              class="dropdown-item small"
+              role="menuitem"
+              :disabled="bulkBusy"
+              @click="runBulkExport(true)"
+            >
+              Export Selected
+            </button>
+            <button
+              type="button"
+              class="dropdown-item small"
+              role="menuitem"
+              :disabled="bulkBusy"
+              @click="runBulkExport(false)"
+            >
+              Export Visible
+            </button>
+            <button type="button" class="dropdown-item small" role="menuitem" :disabled="bulkBusy" @click="runBulkEdit">
+              Edit
+            </button>
+            <template v-if="canInventoryUpdate">
+              <div class="dropdown-divider" />
+              <button
+                type="button"
+                class="dropdown-item small"
+                role="menuitem"
+                :disabled="bulkBusy"
+                @click="runBulkSetActive(true)"
+              >
+                Set Active
+              </button>
+              <button
+                type="button"
+                class="dropdown-item small text-danger"
+                role="menuitem"
+                :disabled="bulkBusy"
+                @click="runBulkSetActive(false)"
+              >
+                Set Inactive
+              </button>
+            </template>
+          </div>
+        </div>
         <button
           type="button"
-          class="btn btn-outline-secondary btn-sm orders-bulk-toolbar-btn orders-toolbar-outline-btn"
-          :disabled="bulkBusy"
-          @click="exportCsv(false)"
-        >
-          Export Visible
-        </button>
-        <button
-          type="button"
-          class="btn btn-outline-secondary btn-sm orders-bulk-toolbar-btn orders-toolbar-outline-btn"
-          :disabled="bulkBusy"
-          @click="editFirstSelected"
-        >
-          Edit
-        </button>
-        <button
-          type="button"
-          class="btn btn-outline-secondary btn-sm orders-bulk-toolbar-btn orders-toolbar-outline-btn"
+          class="btn btn-link btn-sm staff-bulk-clear-link text-decoration-none px-1"
           :disabled="bulkBusy"
           @click="clearSelection"
         >
           Clear Selection
         </button>
-        <template v-if="canInventoryUpdate">
-          <button
-            type="button"
-            class="btn btn-outline-secondary btn-sm orders-bulk-toolbar-btn orders-toolbar-outline-btn"
-            :disabled="bulkBusy"
-            @click="bulkSetActive(true)"
-          >
-            Set Active
-          </button>
-          <button
-            type="button"
-            class="btn btn-outline-danger btn-sm orders-bulk-toolbar-btn orders-toolbar-outline-btn orders-toolbar-outline-btn--danger"
-            :disabled="bulkBusy"
-            @click="bulkSetActive(false)"
-          >
-            Set Inactive
-          </button>
-        </template>
       </div>
 
       <div class="table-responsive staff-table-wrap">
@@ -529,7 +582,7 @@ onUnmounted(() => {
                     type="checkbox"
                     :checked="allVisibleSelected"
                     aria-label="Select all visible rows"
-                    @click.prevent="toggleSelectAllVisible"
+                    @change="onSelectAllCheckboxChange"
                   />
                 </div>
               </th>
@@ -629,7 +682,7 @@ onUnmounted(() => {
                     type="checkbox"
                     :checked="isRowSelected(row)"
                     :aria-label="`Select ${row.sku}`"
-                    @click.prevent="toggleRow(row)"
+                    @change="onRowCheckboxChange($event, row)"
                   />
                 </div>
               </td>
@@ -662,7 +715,12 @@ onUnmounted(() => {
         </table>
       </div>
       <div v-if="pageInfo.has_next_page" class="p-3 border-top text-center">
-        <button type="button" class="btn btn-outline-secondary btn-sm" :disabled="loadingMore" @click="loadMore">
+        <button
+          type="button"
+          class="btn btn-outline-secondary btn-sm orders-toolbar-outline-btn"
+          :disabled="loadingMore"
+          @click="loadMore"
+        >
           {{ loadingMore ? "Loading…" : "Load More" }}
         </button>
       </div>
@@ -718,8 +776,26 @@ onUnmounted(() => {
   background: rgba(0, 0, 0, 0.05);
 }
 
-.staff-table-sort-btn {
-  color: inherit;
+.user-inv-table .user-inv-sort-btn {
+  color: #2563eb;
   font-weight: 600;
+}
+
+.user-inv-table .user-inv-sort-btn:hover {
+  color: #1d4ed8;
+}
+
+.user-inv-table .user-inv-sort-btn:focus-visible {
+  outline: 2px solid rgba(37, 99, 235, 0.35);
+  outline-offset: 2px;
+  box-shadow: none;
+}
+
+.user-inv-table .btn-link {
+  color: #2563eb;
+}
+
+.user-inv-table .btn-link:hover {
+  color: #1d4ed8;
 }
 </style>

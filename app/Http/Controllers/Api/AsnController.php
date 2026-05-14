@@ -139,16 +139,27 @@ class AsnController extends Controller
             'q' => ['nullable', 'string', 'max:255'],
             'page' => ['nullable', 'integer', 'min:1'],
             'per_page' => ['nullable', 'integer', 'min:1', 'max:100'],
+            'sort_by' => ['nullable', 'string', Rule::in([
+                'status',
+                'asn_number',
+                'created_at',
+                'expected_qty',
+                'accepted_qty',
+                'rejected_qty',
+                'total_boxes',
+            ])],
+            'sort_dir' => ['nullable', 'string', Rule::in(['asc', 'desc'])],
         ]);
         $clientAccountId = (int) $validated['client_account_id'];
         Gate::authorize('view', ClientAccount::query()->findOrFail($clientAccountId));
         $q = isset($validated['q']) ? trim((string) $validated['q']) : '';
         $perPage = (int) ($validated['per_page'] ?? 25);
+        $sortBy = (string) ($validated['sort_by'] ?? 'created_at');
+        $sortDir = strtolower((string) ($validated['sort_dir'] ?? 'desc')) === 'asc' ? 'asc' : 'desc';
 
         $query = ClientAccountAsn::query()
             ->where('client_account_id', $clientAccountId)
-            ->with('trackings')
-            ->orderByDesc('id');
+            ->with('trackings');
         if ($q !== '') {
             $like = '%'.$q.'%';
             $query->where(function ($w) use ($like) {
@@ -158,6 +169,7 @@ class AsnController extends Controller
                     });
             });
         }
+        $query->orderBy($sortBy, $sortDir)->orderBy('id', $sortDir);
         $paginator = $query->paginate($perPage);
 
         return response()->json([

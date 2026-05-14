@@ -101,16 +101,7 @@ onMounted(() => {
 </script>
 
 <template>
-  <div class="staff-page staff-page--wide position-relative">
-    <div
-      v-if="loading"
-      class="user-dashboard__loading-overlay d-flex align-items-center justify-content-center"
-      aria-busy="true"
-      aria-live="polite"
-    >
-      <CrmLoadingSpinner message="Loading counts…" :center="true" />
-    </div>
-
+  <div class="staff-page staff-page--wide">
     <div class="d-flex flex-wrap align-items-end justify-content-between gap-2 mb-4">
       <div>
         <h1 class="h4 mb-1 fw-semibold text-body">Dashboard</h1>
@@ -128,11 +119,17 @@ onMounted(() => {
       </button>
     </div>
 
-    <div v-if="loading" class="py-5">
-      <CrmLoadingSpinner message="Loading counts…" />
-    </div>
+    <div class="user-dashboard__content position-relative">
+      <div
+        v-if="loading"
+        class="user-dashboard__loading-overlay d-flex align-items-center justify-content-center"
+        aria-busy="true"
+        aria-live="polite"
+      >
+        <CrmLoadingSpinner message="Loading counts…" :center="true" />
+      </div>
 
-    <template v-else>
+      <template v-if="!loading">
       <p v-if="counts.truncated" class="small text-warning mb-3">
         One or more totals may be capped at the maximum page scan; use the order list for the full queue.
       </p>
@@ -171,7 +168,8 @@ onMounted(() => {
           Chart coming soon
         </div>
       </section>
-    </template>
+      </template>
+    </div>
   </div>
 </template>
 
@@ -216,15 +214,20 @@ onMounted(() => {
   border-color: rgba(255, 255, 255, 0.12);
 }
 
+.user-dashboard__content {
+  min-height: 22rem;
+}
+
 .user-dashboard__loading-overlay {
-  position: fixed;
+  position: absolute;
   inset: 0;
-  z-index: 2000;
-  background: rgba(248, 247, 250, 0.82);
+  z-index: 5;
+  background: rgba(248, 247, 250, 0.88);
   backdrop-filter: blur(2px);
+  border-radius: 0.5rem;
 }
 
 [data-bs-theme="dark"] .user-dashboard__loading-overlay {
-  background: rgba(22, 22, 26, 0.78);
+  background: rgba(22, 22, 26, 0.88);
 }
 </style>

@@ -18,11 +18,16 @@ const search = ref("");
 const searchDebounced = ref("");
 let searchTimer = null;
 
+const sortBy = ref("created_at");
+const sortDir = ref("desc");
+
 const selected = ref(new Set());
 const bulkDeleteOpen = ref(false);
 const bulkDeleteBusy = ref(false);
 
 const clientAccountId = computed(() => Number(crmUser.value?.client_account_id || 0));
+
+const tableColspan = 9;
 
 const allSelected = computed(() => {
   if (rows.value.length === 0) return false;
@@ -45,6 +50,36 @@ watch(search, (v) => {
   }, 300);
 });
 
+function sortIndicator(column) {
+  if (sortBy.value !== column) return "";
+  return sortDir.value === "asc" ? "↑" : "↓";
+}
+
+function toggleSort(column) {
+  if (sortBy.value !== column) {
+    sortBy.value = column;
+    sortDir.value = "asc";
+  } else {
+    sortDir.value = sortDir.value === "asc" ? "desc" : "asc";
+  }
+  meta.value.current_page = 1;
+  load();
+}
+
+function statusLabel(s) {
+  if (s === "in_progress") return "In Progress";
+  if (s === "completed") return "Completed";
+  return "Pending";
+}
+
+function statusBadgeClass(status) {
+  const s = String(status || "").toLowerCase();
+  if (s === "pending") return "bg-secondary-subtle text-secondary-emphasis";
+  if (s === "in_progress") return "bg-primary-subtle text-primary-emphasis";
+  if (s === "completed") return "bg-success-subtle text-success-emphasis";
+  return "bg-body-secondary text-body-secondary";
+}
+
 async function load() {
   if (!clientAccountId.value) {
     loading.value = false;
@@ -58,6 +93,8 @@ async function load() {
         q: searchDebounced.value || undefined,
         page: meta.value.current_page,
         per_page: meta.value.per_page,
+        sort_by: sortBy.value,
+        sort_dir: sortDir.value,
       },
     });
     rows.value = data.data || [];
@@ -85,12 +122,6 @@ function toggleOne(id) {
   if (next.has(id)) next.delete(id);
   else next.add(id);
   selected.value = next;
-}
-
-function statusLabel(s) {
-  if (s === "in_progress") return "In Progress";
-  if (s === "completed") return "Completed";
-  return "Pending";
 }
 
 async function createAsn() {
@@ -126,6 +157,14 @@ function openRow(r) {
   router.push({ name: "user-asn-detail", params: { id: String(r.id) } });
 }
 
+function formatCreated(iso) {
+  try {
+    return new Date(iso).toLocaleString();
+  } catch {
+    return "—";
+  }
+}
+
 onMounted(() => {
   setCrmPageMeta({
     title: "Save Rack | ASN",
@@ -142,94 +181,159 @@ onMounted(() => {
         <h1 class="h4 mb-1 fw-semibold text-body">ASN</h1>
         <p class="staff-page__intro mb-0">Advance shipping notices. Search by ASN # or tracking #.</p>
       </div>
-      <div class="d-flex flex-wrap gap-2">
-        <button type="button" class="btn btn-primary btn-sm fw-semibold" @click="createAsn">Create ASN</button>
-      </div>
     </div>
 
-    <div class="staff-table-card staff-datatable-card staff-datatable-card--white mb-3">
-      <div class="staff-table-toolbar p-3 border-bottom">
-        <div class="d-flex flex-wrap align-items-center gap-2">
+    <div class="staff-table-card staff-datatable-card staff-datatable-card--white w-100">
+      <div class="staff-table-toolbar">
+        <div class="staff-table-toolbar--row flex-wrap align-items-end gap-2 gap-md-3">
           <input
+            id="asn-list-search"
             v-model="search"
             type="search"
-            class="form-control form-control-sm"
-            style="max-width: 280px"
+            class="form-control staff-toolbar-search staff-toolbar-search--inline"
             placeholder="Search ASN # or tracking #"
+            autocomplete="off"
             aria-label="Search ASN"
+            @keydown.enter.prevent="load"
           />
-          <button
-            type="button"
-            class="btn btn-sm btn-outline-danger"
-            :disabled="!anyPendingSelected || loading"
-            @click="bulkDeleteOpen = true"
+          <div
+            class="staff-toolbar-row-actions d-flex flex-wrap align-items-center gap-2 ms-md-auto flex-shrink-0"
           >
-            Delete Selected
-          </button>
+            <button
+              type="button"
+              class="btn btn-outline-danger staff-toolbar-btn"
+              :disabled="!anyPendingSelected || loading"
+              @click="bulkDeleteOpen = true"
+            >
+              Delete Selected
+            </button>
+            <button type="button" class="btn btn-primary staff-page-primary staff-toolbar-btn" @click="createAsn">
+              Create ASN
+            </button>
+          </div>
         </div>
       </div>
 
-      <div v-if="loading" class="p-5">
-        <CrmLoadingSpinner message="Loading ASNs…" />
-      </div>
-      <div v-else class="table-responsive">
-        <table class="table table-hover align-middle mb-0">
-          <thead class="table-light">
+      <div class="table-responsive staff-table-wrap">
+        <table class="table table-hover align-middle mb-0 staff-data-table">
+          <thead class="table-light staff-table-head">
             <tr>
-              <th style="width: 2.5rem" class="border-0">
+              <th class="staff-table-head__th staff-table-head__th--select text-center" scope="col" style="width: 2.75rem">
                 <input
-                  class="form-check-input"
                   type="checkbox"
+                  class="form-check-input staff-table-head__check m-0"
                   :checked="allSelected"
-                  aria-label="Select all"
+                  :disabled="loading || !rows.length"
+                  aria-label="Select all on page"
                   @change="toggleAll"
                 />
               </th>
-              <th class="border-0">Status</th>
-              <th class="border-0">ASN #</th>
-              <th class="border-0">Date Created</th>
-              <th class="border-0 text-end">Expected QTY</th>
-              <th class="border-0 text-end">Accepted QTY</th>
-              <th class="border-0 text-end">Rejected QTY</th>
-              <th class="border-0 text-end">Total Boxes</th>
-              <th class="border-0">Tracking</th>
+              <th class="staff-table-head__th staff-table-head__th--sort text-center" scope="col">
+                <button type="button" class="staff-sort-btn" @click="toggleSort('status')">
+                  Status
+                  <span v-if="sortIndicator('status')" class="staff-sort-ind">{{ sortIndicator("status") }}</span>
+                </button>
+              </th>
+              <th class="staff-table-head__th staff-table-head__th--sort text-center" scope="col">
+                <button type="button" class="staff-sort-btn" @click="toggleSort('asn_number')">
+                  ASN #
+                  <span v-if="sortIndicator('asn_number')" class="staff-sort-ind">{{ sortIndicator("asn_number") }}</span>
+                </button>
+              </th>
+              <th class="staff-table-head__th staff-table-head__th--sort text-center" scope="col">
+                <button type="button" class="staff-sort-btn" @click="toggleSort('created_at')">
+                  Date Created
+                  <span v-if="sortIndicator('created_at')" class="staff-sort-ind">{{ sortIndicator("created_at") }}</span>
+                </button>
+              </th>
+              <th class="staff-table-head__th staff-table-head__th--sort text-center" scope="col">
+                <button type="button" class="staff-sort-btn" @click="toggleSort('expected_qty')">
+                  Expected QTY
+                  <span v-if="sortIndicator('expected_qty')" class="staff-sort-ind">{{ sortIndicator("expected_qty") }}</span>
+                </button>
+              </th>
+              <th class="staff-table-head__th staff-table-head__th--sort text-center" scope="col">
+                <button type="button" class="staff-sort-btn" @click="toggleSort('accepted_qty')">
+                  Accepted QTY
+                  <span v-if="sortIndicator('accepted_qty')" class="staff-sort-ind">{{ sortIndicator("accepted_qty") }}</span>
+                </button>
+              </th>
+              <th class="staff-table-head__th staff-table-head__th--sort text-center" scope="col">
+                <button type="button" class="staff-sort-btn" @click="toggleSort('rejected_qty')">
+                  Rejected QTY
+                  <span v-if="sortIndicator('rejected_qty')" class="staff-sort-ind">{{ sortIndicator("rejected_qty") }}</span>
+                </button>
+              </th>
+              <th class="staff-table-head__th staff-table-head__th--sort text-center" scope="col">
+                <button type="button" class="staff-sort-btn" @click="toggleSort('total_boxes')">
+                  Total Boxes
+                  <span v-if="sortIndicator('total_boxes')" class="staff-sort-ind">{{ sortIndicator("total_boxes") }}</span>
+                </button>
+              </th>
+              <th class="staff-table-head__th text-center" scope="col">Tracking</th>
             </tr>
           </thead>
           <tbody>
-            <tr v-for="r in rows" :key="r.id" class="cursor-pointer" @click="openRow(r)">
-              <td @click.stop>
-                <input
-                  class="form-check-input"
-                  type="checkbox"
-                  :checked="selected.has(r.id)"
-                  @change="toggleOne(r.id)"
-                />
+            <tr v-if="loading">
+              <td :colspan="tableColspan" class="py-5">
+                <div class="d-flex justify-content-center py-3">
+                  <CrmLoadingSpinner message="Loading ASNs…" />
+                </div>
               </td>
-              <td>
-                <span class="badge text-bg-secondary text-uppercase">{{ statusLabel(r.status) }}</span>
-              </td>
-              <td class="fw-semibold">{{ r.asn_number }}</td>
-              <td class="text-secondary small">{{ new Date(r.created_at).toLocaleString() }}</td>
-              <td class="text-end">{{ r.expected_qty?.toLocaleString?.() ?? r.expected_qty }}</td>
-              <td class="text-end">{{ r.accepted_qty?.toLocaleString?.() ?? r.accepted_qty }}</td>
-              <td class="text-end">{{ r.rejected_qty?.toLocaleString?.() ?? r.rejected_qty }}</td>
-              <td class="text-end">{{ r.total_boxes }}</td>
-              <td class="small text-secondary text-truncate" style="max-width: 220px">{{ r.tracking_display }}</td>
             </tr>
-            <tr v-if="rows.length === 0">
-              <td colspan="9" class="text-center text-secondary py-5">No ASNs yet. Create one to get started.</td>
-            </tr>
+            <template v-else>
+              <tr v-for="r in rows" :key="r.id" class="align-middle cursor-pointer" @click="openRow(r)">
+                <td class="text-center staff-table-cell--tight-check" @click.stop>
+                  <input
+                    type="checkbox"
+                    class="form-check-input staff-table-head__check m-0"
+                    :checked="selected.has(r.id)"
+                    :aria-label="`Select ASN ${r.asn_number}`"
+                    @change="toggleOne(r.id)"
+                  />
+                </td>
+                <td class="text-center">
+                  <span class="badge rounded-pill fw-medium" :class="statusBadgeClass(r.status)">
+                    {{ statusLabel(r.status) }}
+                  </span>
+                </td>
+                <td class="text-center fw-semibold">{{ r.asn_number }}</td>
+                <td class="text-center small text-secondary">{{ formatCreated(r.created_at) }}</td>
+                <td class="text-center">{{ Number(r.expected_qty ?? 0).toLocaleString() }}</td>
+                <td class="text-center">{{ Number(r.accepted_qty ?? 0).toLocaleString() }}</td>
+                <td class="text-center">{{ Number(r.rejected_qty ?? 0).toLocaleString() }}</td>
+                <td class="text-center">{{ Number(r.total_boxes ?? 0).toLocaleString() }}</td>
+                <td class="text-center small text-secondary text-truncate" style="max-width: 14rem">
+                  {{ r.tracking_display || "—" }}
+                </td>
+              </tr>
+              <tr v-if="rows.length === 0">
+                <td :colspan="tableColspan" class="text-center text-secondary py-5">
+                  No ASNs yet. Use Create ASN to get started.
+                </td>
+              </tr>
+            </template>
           </tbody>
         </table>
       </div>
-      <div v-if="!loading && meta.last_page > 1" class="d-flex justify-content-between align-items-center p-3 border-top">
+      <p class="staff-table-mobile-scroll-cue d-md-none" aria-hidden="true">
+        Scroll sideways or swipe to see all columns.
+      </p>
+
+      <div
+        v-if="!loading && meta.last_page > 1"
+        class="staff-table-footer card-footer d-flex flex-column flex-sm-row align-items-stretch align-items-sm-center justify-content-between gap-2"
+      >
         <span class="small text-secondary">Page {{ meta.current_page }} of {{ meta.last_page }}</span>
-        <div class="btn-group btn-group-sm">
+        <div class="btn-group btn-group-sm ms-sm-auto">
           <button
             type="button"
             class="btn btn-outline-secondary"
             :disabled="meta.current_page <= 1"
-            @click="meta.current_page--; load()"
+            @click="
+              meta.current_page--;
+              load();
+            "
           >
             Previous
           </button>
@@ -237,7 +341,10 @@ onMounted(() => {
             type="button"
             class="btn btn-outline-secondary"
             :disabled="meta.current_page >= meta.last_page"
-            @click="meta.current_page++; load()"
+            @click="
+              meta.current_page++;
+              load();
+            "
           >
             Next
           </button>
@@ -261,5 +368,11 @@ onMounted(() => {
 <style scoped>
 .cursor-pointer {
   cursor: pointer;
+}
+
+.user-asn-list :deep(.staff-table-head__th--sort .staff-sort-btn) {
+  justify-content: center;
+  width: 100%;
+  text-align: center;
 }
 </style>

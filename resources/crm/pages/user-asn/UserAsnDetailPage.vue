@@ -62,6 +62,14 @@ function statusLabel(s) {
   return "Pending";
 }
 
+function statusBadgeClass(status) {
+  const s = String(status || "").toLowerCase();
+  if (s === "pending") return "bg-secondary-subtle text-secondary-emphasis";
+  if (s === "in_progress") return "bg-primary-subtle text-primary-emphasis";
+  if (s === "completed") return "bg-success-subtle text-success-emphasis";
+  return "bg-body-secondary text-body-secondary";
+}
+
 function syncDraftsFromAsn() {
   if (!asn.value) return;
   const t = (asn.value.trackings || []).length
@@ -334,7 +342,9 @@ onMounted(() => {
       <div>
         <div class="d-flex flex-wrap align-items-center gap-2 mb-1">
           <h1 class="h4 mb-0 fw-semibold text-body">{{ asn.asn_number }}</h1>
-          <span class="badge text-bg-secondary">{{ statusLabel(asn.status) }}</span>
+          <span class="badge rounded-pill fw-medium" :class="statusBadgeClass(asn.status)">{{
+            statusLabel(asn.status)
+          }}</span>
         </div>
         <div class="d-flex flex-wrap gap-2 align-items-center">
           <label class="small text-secondary mb-0">Status</label>

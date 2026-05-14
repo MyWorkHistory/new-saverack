@@ -129,21 +129,11 @@ onMounted(() => {
 
 <template>
   <div class="staff-page staff-page--wide">
-    <div class="d-flex align-items-start justify-content-between gap-3 mb-4 flex-wrap">
-      <div>
-        <h1 class="h4 mb-1 fw-semibold text-body">Dashboard</h1>
-        <p v-if="accountDisplayName" class="mb-0 small text-secondary">
-          {{ accountDisplayName }}
-        </p>
-      </div>
-      <button
-        type="button"
-        class="btn btn-outline-secondary staff-toolbar-btn btn-sm flex-shrink-0"
-        :disabled="loading"
-        @click="loadCounts"
-      >
-        Refresh
-      </button>
+    <div class="mb-4">
+      <h1 class="h4 mb-1 fw-semibold text-body">Dashboard</h1>
+      <p v-if="accountDisplayName" class="mb-0 small text-secondary">
+        {{ accountDisplayName }}
+      </p>
     </div>
 
     <div class="user-dashboard__content position-relative">
@@ -259,14 +249,14 @@ onMounted(() => {
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 2.5rem;
-  height: 2.5rem;
+  width: 2.875rem;
+  height: 2.875rem;
   border-radius: 0.4375rem;
 }
 
 .user-dashboard-stat-svg {
-  width: 1.25rem;
-  height: 1.25rem;
+  width: 1.4375rem;
+  height: 1.4375rem;
   flex-shrink: 0;
   display: block;
   overflow: visible;

@@ -3,12 +3,14 @@
 namespace App\Providers;
 
 use App\Models\ClientAccount;
+use App\Models\ClientAccountAsn;
 use App\Models\ClientAccountOnDemandProduct;
 use App\Models\ClientStore;
 use App\Models\Invoice;
 use App\Models\Task;
 use App\Models\Ticket;
 use App\Models\User;
+use App\Policies\ClientAccountAsnPolicy;
 use App\Policies\ClientAccountOnDemandProductPolicy;
 use App\Policies\ClientAccountPolicy;
 use App\Policies\ClientStorePolicy;
@@ -29,6 +31,7 @@ class AuthServiceProvider extends ServiceProvider
     protected $policies = [
         User::class => UserPolicy::class,
         ClientAccount::class => ClientAccountPolicy::class,
+        ClientAccountAsn::class => ClientAccountAsnPolicy::class,
         ClientAccountOnDemandProduct::class => ClientAccountOnDemandProductPolicy::class,
         ClientStore::class => ClientStorePolicy::class,
         Invoice::class => InvoicePolicy::class,

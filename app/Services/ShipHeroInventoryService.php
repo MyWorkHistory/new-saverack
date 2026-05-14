@@ -236,6 +236,93 @@ GQL;
     }
 
     /**
+     * Active, non-kit ShipHero products for portal ASN line picker (cursor pagination, capped).
+     *
+     * @return array{products: list<array{id: string, sku: string, name: string, barcode: string}>, truncated: bool}
+     */
+    public function listAsnProductCatalog(?string $customerAccountId, int $first = 100, int $maxPages = 50): array
+    {
+        $first = max(1, min(100, $first));
+        $graphql = <<<'GQL'
+query ShipHeroAsnProductCatalog($customer_account_id: String, $first: Int!, $after: String) {
+  products(customer_account_id: $customer_account_id) {
+    data(first: $first, after: $after) {
+      pageInfo {
+        hasNextPage
+        endCursor
+      }
+      edges {
+        node {
+          id
+          sku
+          name
+          active
+          kit
+          kit_build
+          barcode
+        }
+      }
+    }
+  }
+}
+GQL;
+
+        $out = [];
+        $after = null;
+        $truncated = false;
+        for ($page = 0; $page < $maxPages; $page++) {
+            $vars = array_merge(
+                ['first' => $first, 'after' => $after],
+                $this->customerAccountVariables($customerAccountId)
+            );
+            $json = $this->client->query($graphql, $vars);
+            $edges = data_get($json, 'data.products.data.edges');
+            if (! is_array($edges)) {
+                break;
+            }
+            foreach ($edges as $edge) {
+                $node = is_array($edge['node'] ?? null) ? $edge['node'] : null;
+                if (! $node) {
+                    continue;
+                }
+                $active = $node['active'] ?? null;
+                if ($active === false) {
+                    continue;
+                }
+                if (($node['kit'] ?? false) === true || ($node['kit_build'] ?? false) === true) {
+                    continue;
+                }
+                $id = isset($node['id']) && is_string($node['id']) ? trim($node['id']) : '';
+                $sku = isset($node['sku']) && is_string($node['sku']) ? trim($node['sku']) : '';
+                if ($id === '' && $sku === '') {
+                    continue;
+                }
+                $out[] = [
+                    'id' => $id !== '' ? $id : $sku,
+                    'sku' => $sku,
+                    'name' => isset($node['name']) && is_string($node['name']) ? $node['name'] : '',
+                    'barcode' => isset($node['barcode']) && is_string($node['barcode']) ? trim($node['barcode']) : '',
+                ];
+            }
+            $pageInfo = data_get($json, 'data.products.data.pageInfo');
+            $hasNext = is_array($pageInfo) && (($pageInfo['hasNextPage'] ?? false) === true);
+            $endCursor = is_array($pageInfo) && isset($pageInfo['endCursor']) && is_string($pageInfo['endCursor'])
+                ? $pageInfo['endCursor']
+                : null;
+            if (! $hasNext || $endCursor === null || $endCursor === '') {
+                break;
+            }
+            if ($page + 1 >= $maxPages) {
+                $truncated = $hasNext;
+                break;
+            }
+            $after = $endCursor;
+        }
+
+        return ['products' => $out, 'truncated' => $truncated];
+    }
+
+    /**
      * @param callable(): (array<string,mixed>|null) $fetcher
      * @return array<string,mixed>|null
      */

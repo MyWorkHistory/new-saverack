@@ -1,0 +1,70 @@
+<?php
+
+namespace App\Models;
+
+use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasMany;
+
+class ClientAccountAsn extends Model
+{
+    public const STATUS_PENDING = 'pending';
+
+    public const STATUS_IN_PROGRESS = 'in_progress';
+
+    public const STATUS_COMPLETED = 'completed';
+
+    public const STATUSES = [
+        self::STATUS_PENDING,
+        self::STATUS_IN_PROGRESS,
+        self::STATUS_COMPLETED,
+    ];
+
+    protected $fillable = [
+        'client_account_id',
+        'asn_number',
+        'status',
+        'date_received',
+        'total_boxes',
+        'total_pallets',
+        'expected_qty',
+        'accepted_qty',
+        'rejected_qty',
+        'warehouse_notes',
+    ];
+
+    protected $casts = [
+        'date_received' => 'date',
+        'total_boxes' => 'integer',
+        'total_pallets' => 'integer',
+        'expected_qty' => 'integer',
+        'accepted_qty' => 'integer',
+        'rejected_qty' => 'integer',
+    ];
+
+    public function clientAccount(): BelongsTo
+    {
+        return $this->belongsTo(ClientAccount::class, 'client_account_id');
+    }
+
+    public function lines(): HasMany
+    {
+        return $this->hasMany(ClientAccountAsnLine::class, 'client_account_asn_id')
+            ->orderBy('sort_order')
+            ->orderBy('id');
+    }
+
+    public function trackings(): HasMany
+    {
+        return $this->hasMany(ClientAccountAsnTracking::class, 'client_account_asn_id')
+            ->orderBy('sort_order')
+            ->orderBy('id');
+    }
+
+    public function vendorLines(): HasMany
+    {
+        return $this->hasMany(ClientAccountAsnVendorLine::class, 'client_account_asn_id')
+            ->orderBy('sort_order')
+            ->orderBy('id');
+    }
+}

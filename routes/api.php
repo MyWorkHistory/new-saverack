@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Controllers\Api\AsnController;
 use App\Http\Controllers\Api\AuthController;
 use App\Http\Controllers\Api\BillingSummaryController;
 use App\Http\Controllers\Api\ClientAccountController;
@@ -52,6 +53,8 @@ Route::middleware('auth:sanctum')->group(function () {
             ->middleware('can:inventory.view');
         Route::get('/list', [InventoryController::class, 'list'])
             ->middleware('can:inventory.view');
+        Route::get('/asn-product-catalog', [InventoryController::class, 'asnProductCatalog'])
+            ->middleware('can:inventory.view');
         Route::get('/products/{sku}', [InventoryController::class, 'productDetail'])
             ->middleware('can:inventory.view');
         Route::post('/replace', [InventoryController::class, 'replaceQuantity'])
@@ -70,6 +73,21 @@ Route::middleware('auth:sanctum')->group(function () {
             ->middleware('can:inventory.update');
         Route::delete('/on-demand-products/{onDemandProduct}', [InventoryController::class, 'destroyOnDemandProduct'])
             ->middleware('can:inventory.update');
+    });
+
+    Route::prefix('asns')->group(function () {
+        Route::get('/', [AsnController::class, 'index'])->middleware('can:inventory.view');
+        Route::post('/', [AsnController::class, 'store'])->middleware('can:inventory.view');
+        Route::post('/bulk-delete', [AsnController::class, 'bulkDestroy'])->middleware('can:inventory.view');
+        Route::get('/{asn}', [AsnController::class, 'show'])->middleware('can:inventory.view');
+        Route::patch('/{asn}', [AsnController::class, 'update'])->middleware('can:inventory.view');
+        Route::delete('/{asn}', [AsnController::class, 'destroy'])->middleware('can:inventory.view');
+        Route::patch('/{asn}/warehouse-notes', [AsnController::class, 'updateWarehouseNotes'])->middleware('can:inventory.view');
+        Route::post('/{asn}/lines', [AsnController::class, 'storeLine'])->middleware('can:inventory.view');
+        Route::patch('/{asn}/lines/{line}', [AsnController::class, 'updateLine'])->middleware('can:inventory.view');
+        Route::delete('/{asn}/lines/{line}', [AsnController::class, 'destroyLine'])->middleware('can:inventory.view');
+        Route::put('/{asn}/trackings', [AsnController::class, 'syncTrackings'])->middleware('can:inventory.view');
+        Route::put('/{asn}/vendor-lines', [AsnController::class, 'syncVendorLines'])->middleware('can:inventory.view');
     });
 
     Route::prefix('orders')->group(function () {

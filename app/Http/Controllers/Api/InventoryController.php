@@ -282,6 +282,43 @@ class InventoryController extends Controller
         }
     }
 
+    public function asnProductCatalog(Request $request): JsonResponse
+    {
+        $validated = $request->validate([
+            'client_account_id' => ['required', 'integer', 'exists:client_accounts,id'],
+        ]);
+        $clientAccountId = (int) $validated['client_account_id'];
+        $cacheKey = 'inventory.asn_product_catalog.v1:'.$clientAccountId;
+        try {
+            $shipheroCustomerId = $this->resolveShipHeroCustomerAccountId($clientAccountId, $request);
+        } catch (ValidationException $e) {
+            throw $e;
+        }
+        try {
+            $payload = Cache::remember($cacheKey, now()->addMinutes(10), function () use ($shipheroCustomerId) {
+                $p = $this->inventory->listAsnProductCatalog($shipheroCustomerId);
+
+                return array_merge($p, ['cached_at' => now()->toIso8601String()]);
+            });
+
+            return response()->json([
+                'products' => $payload['products'],
+                'truncated' => $payload['truncated'],
+                'cached_at' => $payload['cached_at'] ?? null,
+            ]);
+        } catch (RuntimeException $e) {
+            return response()->json(['message' => $e->getMessage()], 502);
+        } catch (Throwable $e) {
+            report($e);
+
+            return response()->json([
+                'message' => config('app.debug')
+                    ? $e->getMessage()
+                    : 'Could not reach ShipHero. Check SHIPHERO_* in .env and server logs.',
+            ], 502);
+        }
+    }
+
     public function replaceQuantity(Request $request): JsonResponse
     {
         $validated = $request->validate([

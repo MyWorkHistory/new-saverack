@@ -146,6 +146,12 @@ class ClientAccount extends Model
         return $this->hasMany(ClientAccountOnDemandProduct::class, 'client_account_id');
     }
 
+    public function asns(): HasMany
+    {
+        return $this->hasMany(ClientAccountAsn::class, 'client_account_id')
+            ->orderByDesc('id');
+    }
+
     public function contactFullName(): string
     {
         $parts = array_filter([

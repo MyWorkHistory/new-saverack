@@ -136,6 +136,14 @@ const meta = {
     title: "Save Rack | Dashboard",
     description: "Your account ShipHero order queue summary.",
   },
+  userAsnList: {
+    title: "Save Rack | ASN",
+    description: "Advance shipping notices for your account.",
+  },
+  userAsnDetail: {
+    title: "Save Rack | ASN Detail",
+    description: "ASN line items, tracking, and warehouse details.",
+  },
 };
 
 const routes = [
@@ -360,6 +368,11 @@ const routes = [
   { path: "/users/orders/:shipheroOrderId", name: "user-order-detail", component: () => import("../pages/user-orders/UserOrderDetailPage.vue"), props: true, meta: { ...meta.orderDetail, userPortal: true } },
   { path: "/users/inventory", name: "user-inventory", component: () => import("../pages/user-inventory/UserInventoryPage.vue"), meta: { ...meta.inventory, userPortal: true } },
   { path: "/users/inventory/:sku", name: "user-inventory-detail", component: () => import("../pages/user-inventory/UserInventoryDetailPage.vue"), props: true, meta: { ...meta.inventoryDetail, userPortal: true } },
+  { path: "/users/asn", name: "user-asn-list", component: () => import("../pages/user-asn/UserAsnListPage.vue"), meta: { ...meta.userAsnList, userPortal: true } },
+  { path: "/users/asn/:id", name: "user-asn-detail", component: () => import("../pages/user-asn/UserAsnDetailPage.vue"), props: true, meta: { ...meta.userAsnDetail, userPortal: true } },
+  { path: "/users/asn/:id/print-shipping-label", name: "user-asn-print-shipping-label", component: () => import("../pages/user-asn/UserAsnPrintShippingLabelPage.vue"), props: true, meta: { title: "Save Rack | Print Shipping Label", description: "4x6 shipping label.", userPortal: true, bareLayout: true } },
+  { path: "/users/asn/:id/print-packing-slip", name: "user-asn-print-packing-slip", component: () => import("../pages/user-asn/UserAsnPrintPackingSlipPage.vue"), props: true, meta: { title: "Save Rack | Packing Slip", description: "ASN packing slip.", userPortal: true, bareLayout: true } },
+  { path: "/users/asn/:asnId/print-barcode/:lineId", name: "user-asn-print-barcode", component: () => import("../pages/user-asn/UserAsnPrintBarcodePage.vue"), props: true, meta: { title: "Save Rack | Barcode", description: "Product barcode.", userPortal: true, bareLayout: true } },
   { path: "/tickets/board", redirect: "/admin/dashboard" },
   { path: "/tickets/:id", redirect: "/admin/dashboard" },
   { path: "/tickets", redirect: "/admin/dashboard" },
@@ -666,6 +679,8 @@ async function ensureInventoryRouteAccess(path) {
     path.startsWith("/admin/orders/") ||
     path === "/users/inventory" ||
     path.startsWith("/users/inventory/") ||
+    path === "/users/asn" ||
+    path.startsWith("/users/asn/") ||
     path === "/users/dashboard" ||
     path.startsWith("/users/dashboard/") ||
     path === "/users/orders" ||
@@ -761,7 +776,7 @@ router.beforeEach(async (to) => {
     }
   }
 
-  if (to.path.startsWith("/admin/inventory") || to.path.startsWith("/users/inventory")) {
+  if (to.path.startsWith("/admin/inventory") || to.path.startsWith("/users/inventory") || to.path.startsWith("/users/asn")) {
     const ok = await ensureInventoryRouteAccess(to.path);
     if (!ok) {
       if (!localStorage.getItem("auth_token")) {
@@ -774,7 +789,8 @@ router.beforeEach(async (to) => {
   if (
     to.path.startsWith("/admin/orders") ||
     to.path.startsWith("/users/orders") ||
-    to.path === "/users/dashboard"
+    to.path === "/users/dashboard" ||
+    to.path.startsWith("/users/asn")
   ) {
     const ok = await ensureInventoryRouteAccess(to.path);
     if (!ok) {

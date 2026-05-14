@@ -101,7 +101,16 @@ onMounted(() => {
 </script>
 
 <template>
-  <div class="staff-page staff-page--wide">
+  <div class="staff-page staff-page--wide position-relative">
+    <div
+      v-if="loading"
+      class="user-dashboard__loading-overlay d-flex align-items-center justify-content-center"
+      aria-busy="true"
+      aria-live="polite"
+    >
+      <CrmLoadingSpinner message="Loading counts…" :center="true" />
+    </div>
+
     <div class="d-flex flex-wrap align-items-end justify-content-between gap-2 mb-4">
       <div>
         <h1 class="h4 mb-1 fw-semibold text-body">Dashboard</h1>
@@ -205,5 +214,17 @@ onMounted(() => {
 
 [data-bs-theme="dark"] .user-dashboard__chart-placeholder {
   border-color: rgba(255, 255, 255, 0.12);
+}
+
+.user-dashboard__loading-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 2000;
+  background: rgba(248, 247, 250, 0.82);
+  backdrop-filter: blur(2px);
+}
+
+[data-bs-theme="dark"] .user-dashboard__loading-overlay {
+  background: rgba(22, 22, 26, 0.78);
 }
 </style>

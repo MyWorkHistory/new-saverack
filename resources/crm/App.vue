@@ -35,6 +35,10 @@ const showShell = computed(() => {
   );
 });
 
+const portalBareLayout = computed(
+  () => Boolean(me.value && crmIsPortalUser(me.value) && route.meta.bareLayout),
+);
+
 const loadMe = async () => {
   if (!localStorage.getItem("auth_token")) {
     me.value = null;
@@ -131,7 +135,7 @@ const logout = async () => {
       />
     </CrmAdminShell>
     <CrmUserShell
-      v-else-if="me"
+      v-else-if="me && crmIsPortalUser(me) && !route.meta.bareLayout"
       :user="me"
       @logout="logout"
       @refresh-user="loadMe"
@@ -141,6 +145,11 @@ const logout = async () => {
         @refresh-user="loadMe"
       />
     </CrmUserShell>
+    <router-view
+      v-else-if="portalBareLayout"
+      :key="route.fullPath"
+      @refresh-user="loadMe"
+    />
 
     <div
       v-else

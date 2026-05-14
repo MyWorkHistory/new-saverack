@@ -850,7 +850,7 @@ watch(
   tabKey,
   () => {
     clearRowSelection();
-    /** Ready to Ship defaults to last 7 days; other tabs default to today (bounded window; ShipHero was often empty with no dates). */
+    /** Ready to Ship tab defaults to last 7 days of order date; other tabs default to today (bounded window; ShipHero was often empty with no dates). */
     query.datePreset = defaultDatePresetForCurrentTab();
     query.from = "";
     query.to = "";
@@ -1049,8 +1049,10 @@ onUnmounted(() => {
                         <strong>Shipped</strong> defaults to <strong>today</strong> by order date. Widen the date range if you need older fulfilled orders.
                       </template>
                       <template v-else-if="tabKey === 'awaiting'">
-                        <strong>Ready to Ship</strong> defaults to <strong>last 7 days</strong> by order date. Choose
-                        <strong>Today</strong> or another range if you need a different window.
+                        This tab lists <strong>orders awaiting shipment</strong>. The default <strong>order date</strong> window
+                        is the <strong>last 7 days</strong> so the list stays fast; choose <strong>Today</strong>,
+                        <strong>Any Order Date</strong>, or a custom range if you need a different window (including the same
+                        window used for dashboard totals).
                       </template>
                       <template v-else>
                         Defaults to <strong>today</strong> by order date. Use <strong>Any Order Date</strong> or a custom range if the list looks empty.
@@ -1176,8 +1178,10 @@ onUnmounted(() => {
                       <strong>Shipped</strong> defaults to <strong>today</strong> by order date. Widen the date range if you need older fulfilled orders.
                     </template>
                     <template v-else-if="tabKey === 'awaiting'">
-                      <strong>Ready to Ship</strong> defaults to <strong>last 7 days</strong> by order date. Choose
-                      <strong>Today</strong> or another range if you need a different window.
+                      This tab lists <strong>orders awaiting shipment</strong>. The default <strong>order date</strong> window
+                      is the <strong>last 7 days</strong> so the list stays fast; choose <strong>Today</strong>,
+                      <strong>Any Order Date</strong>, or a custom range if you need a different window (including the same
+                      window used for dashboard totals).
                     </template>
                     <template v-else>
                       Defaults to <strong>today</strong> by order date. Use <strong>Any Order Date</strong> or a custom range if the list looks empty.

@@ -332,8 +332,18 @@ class User extends Authenticatable
     {
         $this->loadMissing('roles.permissions', 'roles', 'permissions', 'profile');
 
+        if ($this->client_account_id !== null) {
+            $this->loadMissing('clientAccount:id,company_name');
+        }
+
         $arr = $this->toArray();
         unset($arr['permissions']);
+
+        $clientAccountCompanyName = null;
+        if ($this->client_account_id !== null && $this->clientAccount !== null) {
+            $name = trim((string) $this->clientAccount->company_name);
+            $clientAccountCompanyName = $name !== '' ? $name : null;
+        }
 
         return array_merge($arr, [
             'permission_keys' => $this->allPermissionKeys(),
@@ -341,6 +351,7 @@ class User extends Authenticatable
             'is_admin' => $this->isAdministrator(),
             'is_crm_owner' => $this->isCrmOwner(),
             'client_account_id' => $this->client_account_id,
+            'client_account_company_name' => $clientAccountCompanyName,
         ]);
     }
 }

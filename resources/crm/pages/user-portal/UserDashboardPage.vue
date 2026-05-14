@@ -20,6 +20,22 @@ const counts = ref({
 
 const clientAccountId = computed(() => Number(crmUser.value?.client_account_id || 0));
 
+/**
+ * Material Symbols paths (24×24 viewBox), sourced from Iconify’s Material Symbols set
+ * (same glyphs as Google Fonts Material Symbols).
+ */
+const DASHBOARD_ICON = {
+  /** Inventory-style box + check mark */
+  readyBox:
+    "M5 22q-.825 0-1.412-.587T3 20V8.725q-.45-.275-.725-.712T2 7V4q0-.825.588-1.412T4 2h16q.825 0 1.413.588T22 4v3q0 .575-.275 1.013T21 8.724V20q0 .825-.587 1.413T19 22zM4 7h16V4H4zm5 7h6v-2H9z",
+  readyCheck: "M10.6 16.6l7.05-7.05l-1.4-1.4l-5.65 5.65l-2.85-2.85l-1.4 1.4z",
+  hourglass:
+    "M8 20h8v-3q0-1.65-1.175-2.825T12 13t-2.825 1.175T8 17zm6.825-10.175Q16 8.65 16 7V4H8v3q0 1.65 1.175 2.825T12 11t2.825-1.175M4 22v-2h2v-3q0-1.525.713-2.863T8.7 12q-1.275-.8-1.987-2.137T6 7V4H4V2h16v2h-2v3q0 1.525-.712 2.863T15.3 12q1.275.8 1.988 2.138T18 17v3h2v2z",
+  shelves: "M3 23V1h2v2h14V1h2v22h-2v-2H5v2zm2-12h2V7h6v4h6V5H5zm0 8h6v-4h6v4h2v-6H5z",
+  truck:
+    "M3.875 19.125Q3 18.25 3 17H1V6q0-.825.588-1.412T3 4h14v4h3l3 4v5h-2q0 1.25-.875 2.125T18 20t-2.125-.875T15 17H9q0 1.25-.875 2.125T6 20t-2.125-.875m2.838-1.412Q7 17.425 7 17t-.288-.712T6 16t-.712.288T5 17t.288.713T6 18t.713-.288m12 0Q19 17.426 19 17t-.288-.712T18 16t-.712.288T17 17t.288.713T18 18t.713-.288M17 13h4.25L19 10h-2z",
+};
+
 const accountDisplayName = computed(() => {
   const u = crmUser.value;
   if (!u) {
@@ -165,12 +181,10 @@ onMounted(() => {
                   fill="currentColor"
                   viewBox="0 0 24 24"
                 >
+                  <path :d="DASHBOARD_ICON.readyBox" />
                   <path
-                    d="M20 2H4c-1.1 0-1.99.9-1.99 2L2 22l4-4h14c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2zm0 14H5.17L4 17.17V4h16v12z"
-                  />
-                  <path
-                    transform="translate(11.25 10.25) scale(0.42)"
-                    d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z"
+                    transform="translate(10.25 9.25) scale(0.48)"
+                    :d="DASHBOARD_ICON.readyCheck"
                   />
                 </svg>
                 <svg
@@ -179,9 +193,7 @@ onMounted(() => {
                   fill="currentColor"
                   viewBox="0 0 24 24"
                 >
-                  <path
-                    d="M6 2v6h.15c.54 1.38 1.69 2.45 3.15 2.83V20H4v2h16v-2h-5.3v-9.17c1.46-.38 2.61-1.45 3.15-2.83H18V2H6zm8 10.7V4H7v6.7c.58.26 1.23.42 1.92.47.12.01.24.02.37.02.13 0 .25-.01.37-.02.69-.05 1.34-.21 1.92-.47z"
-                  />
+                  <path :d="DASHBOARD_ICON.hourglass" />
                 </svg>
                 <svg
                   v-else-if="c.key === 'backorder'"
@@ -189,7 +201,7 @@ onMounted(() => {
                   fill="currentColor"
                   viewBox="0 0 24 24"
                 >
-                  <path d="M4 7h16v2H4V7zm0 6h16v2H4v-2zm0 6h10v2H4v-2z" />
+                  <path :d="DASHBOARD_ICON.shelves" />
                 </svg>
                 <svg
                   v-else-if="c.key === 'shipped'"
@@ -197,9 +209,7 @@ onMounted(() => {
                   fill="currentColor"
                   viewBox="0 0 24 24"
                 >
-                  <path
-                    d="M20 8h-3V4H3v13h3c0 1.66 1.34 3 3 3s3-1.34 3-3h6c0 1.66 1.34 3 3s3-1.34 3-3h2v-5l-3-4zM6 18.5c-.83 0-1.5-.67-1.5-1.5S5.17 15.5 6 15.5s1.5.67 1.5 1.5S6.83 18.5 6 18.5zm13.5-9l1.96 2.5H17V9.5h2.5zm-1.5 9c-.83 0-1.5-.67-1.5-1.5s.67-1.5 1.5-1.5 1.5.67 1.5 1.5-.67 1.5-1.5 1.5z"
-                  />
+                  <path :d="DASHBOARD_ICON.truck" />
                 </svg>
               </div>
             </RouterLink>
@@ -242,7 +252,13 @@ onMounted(() => {
   transform: translateY(-1px);
 }
 
-.user-dashboard-stat-icon {
+.user-dashboard-summary-link .user-dashboard-stat-icon {
+  top: 50%;
+  bottom: auto;
+  transform: translateY(-50%);
+  display: flex;
+  align-items: center;
+  justify-content: center;
   width: 2.5rem;
   height: 2.5rem;
   border-radius: 0.4375rem;
@@ -251,7 +267,9 @@ onMounted(() => {
 .user-dashboard-stat-svg {
   width: 1.25rem;
   height: 1.25rem;
+  flex-shrink: 0;
   display: block;
+  overflow: visible;
 }
 
 .user-dashboard__chart-placeholder {

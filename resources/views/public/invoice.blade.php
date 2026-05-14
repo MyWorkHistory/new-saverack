@@ -258,7 +258,8 @@
                     $isStorageSection = strcasecmp((string) ($sec['label'] ?? ''), 'Storage') === 0;
                     $secQtyDisplay = (string) ($sec['qty_display'] ?? '0');
                     if ($isStorageSection) {
-                        $secQtyDisplay .= ' Locations';
+                        $secQtySuffix = array_key_exists('qty_suffix', $sec) ? (string) $sec['qty_suffix'] : ' Locations';
+                        $secQtyDisplay .= $secQtySuffix;
                     }
                 @endphp
                 <tr>
@@ -289,7 +290,7 @@
                                                                     <div class="public-inv-row">
                                                                         <div class="public-inv-row-num"><span class="public-inv-chev" aria-hidden="true">&#9654;</span></div>
                                                                         <div><strong>{{ $service['label'] }}</strong></div>
-                                                                        <div class="public-inv-row-num">{{ $isStorageSection ? ($service['qty_display'].' Locations') : $service['qty_display'] }}</div>
+                                                                        <div class="public-inv-row-num">{{ $service['qty_display'] }}{{ $isStorageSection ? ((string) ($service['qty_suffix'] ?? ' Locations')) : '' }}</div>
                                                                         <div class="public-inv-row-num">{{ $service['unit'] }}</div>
                                                                         <div class="public-inv-row-num"><strong>{{ $service['line_total'] }}</strong></div>
                                                                     </div>
@@ -314,7 +315,7 @@
                                                             <div class="public-inv-row">
                                                                 <div class="public-inv-row-num"></div>
                                                                 <div><strong>{{ $service['label'] }}</strong></div>
-                                                                <div class="public-inv-row-num">{{ $isStorageSection ? ($service['qty_display'].' Locations') : $service['qty_display'] }}</div>
+                                                                <div class="public-inv-row-num">{{ $service['qty_display'] }}{{ $isStorageSection ? ((string) ($service['qty_suffix'] ?? ' Locations')) : '' }}</div>
                                                                 <div class="public-inv-row-num">{{ $service['unit'] }}</div>
                                                                 <div class="public-inv-row-num"><strong>{{ $service['line_total'] }}</strong></div>
                                                             </div>
@@ -356,7 +357,8 @@
                     $isStorageSection = strcasecmp((string) ($sec['label'] ?? ''), 'Storage') === 0;
                     $secQtyDisplay = (string) ($sec['qty_display'] ?? '0');
                     if ($isStorageSection) {
-                        $secQtyDisplay .= ' Locations';
+                        $secQtySuffix = array_key_exists('qty_suffix', $sec) ? (string) $sec['qty_suffix'] : ' Locations';
+                        $secQtyDisplay .= $secQtySuffix;
                     }
                 @endphp
                 @if (!empty($sec['is_expandable']))
@@ -369,7 +371,7 @@
                                         <span class="public-inv-chev" aria-hidden="true">&#9654;</span>
                                         {{ $sec['label'] }}
                                     </div>
-                                    <div class="mobile-inv-card-meta">{{ $isStorageSection ? 'Locations' : 'Qty' }}: {{ $secQtyDisplay }}</div>
+                                    <div class="mobile-inv-card-meta">{{ $isStorageSection ? ((string) ($sec['storage_qty_metric'] ?? 'Locations')) : 'Qty' }}: {{ $secQtyDisplay }}</div>
                                     <div class="mobile-inv-card-meta">Price: {{ $sec['unit'] }}</div>
                                 </div>
                                 <div class="mobile-inv-card-total">{{ $sec['line_total'] }}</div>
@@ -380,7 +382,7 @@
                                 @if (!empty($service['is_expandable']))
                                     @php
                                         $svcQtyLine = $isStorageSection
-                                            ? (($service['qty_display'] ?? '').' Locations')
+                                            ? (($service['qty_display'] ?? '').((string) ($service['qty_suffix'] ?? ' Locations')))
                                             : ($service['qty_display'] ?? '');
                                     @endphp
                                     <details class="mobile-inv-subdetail public-inv-sec--expandable">
@@ -392,7 +394,7 @@
                                                         <span class="public-inv-chev" aria-hidden="true">&#9654;</span>
                                                         {{ $service['label'] }}
                                                     </div>
-                                                    <div class="mobile-inv-card-meta">{{ $isStorageSection ? 'Locations' : 'Qty' }}: {{ $svcQtyLine }}</div>
+                                                    <div class="mobile-inv-card-meta">{{ $isStorageSection ? ((string) ($service['storage_qty_metric'] ?? 'Locations')) : 'Qty' }}: {{ $svcQtyLine }}</div>
                                                     <div class="mobile-inv-card-meta">Price: {{ $service['unit'] ?? '—' }}</div>
                                                 </div>
                                                 <div class="mobile-inv-card-total">{{ $service['line_total'] ?? '—' }}</div>
@@ -414,7 +416,7 @@
                                 @else
                                     @php
                                         $svcQtyLineFlat = $isStorageSection
-                                            ? (($service['qty_display'] ?? '').' Locations')
+                                            ? (($service['qty_display'] ?? '').((string) ($service['qty_suffix'] ?? ' Locations')))
                                             : ($service['qty_display'] ?? '');
                                     @endphp
                                     <div class="mobile-inv-flat-service">
@@ -422,7 +424,7 @@
                                             <div class="mobile-inv-card-spacer" aria-hidden="true"></div>
                                             <div>
                                                 <div class="mobile-inv-card-title">{{ $service['label'] }}</div>
-                                                <div class="mobile-inv-card-meta">{{ $isStorageSection ? 'Locations' : 'Qty' }}: {{ $svcQtyLineFlat }}</div>
+                                                <div class="mobile-inv-card-meta">{{ $isStorageSection ? ((string) ($service['storage_qty_metric'] ?? 'Locations')) : 'Qty' }}: {{ $svcQtyLineFlat }}</div>
                                                 <div class="mobile-inv-card-meta">Price: {{ $service['unit'] ?? '—' }}</div>
                                             </div>
                                             <div class="mobile-inv-card-total">{{ $service['line_total'] ?? '—' }}</div>
@@ -437,7 +439,7 @@
                         <div class="mobile-inv-card-icon mobile-inv-card-icon--{{ $mobileIcon['class'] }}">{!! $mobileIcon['icon'] !!}</div>
                         <div>
                             <div class="mobile-inv-card-title">{{ $sec['label'] }}</div>
-                            <div class="mobile-inv-card-meta">{{ $isStorageSection ? 'Locations' : 'Qty' }}: {{ $secQtyDisplay }}</div>
+                            <div class="mobile-inv-card-meta">{{ $isStorageSection ? ((string) ($sec['storage_qty_metric'] ?? 'Locations')) : 'Qty' }}: {{ $secQtyDisplay }}</div>
                             <div class="mobile-inv-card-meta">Price: {{ $sec['unit'] }}</div>
                         </div>
                         <div class="mobile-inv-card-total">{{ $sec['line_total'] }}</div>

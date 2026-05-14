@@ -1604,6 +1604,23 @@ class InvoiceService
         return strcasecmp(trim((string) ($item->display_name ?? '')), 'Storage by Volume') === 0;
     }
 
+    /**
+     * @param  array<string, mixed>  $detail
+     */
+    private function detailRowIsStorageByVolume(array $detail): bool
+    {
+        $gk = strtolower(trim((string) ($detail['group_key'] ?? '')));
+        if (str_starts_with($gk, 'storage:vol')) {
+            return true;
+        }
+        $sc = strtolower(trim((string) ($detail['service_code'] ?? '')));
+        if (str_contains($sc, 'storing_by_volume')) {
+            return true;
+        }
+
+        return strcasecmp(trim((string) ($detail['display_name'] ?? '')), 'Storage by Volume') === 0;
+    }
+
     private function oldBetaDisplayName(InvoiceItem $item, string $fallback = '—'): string
     {
         $name = trim((string) ($item->display_name ?: $item->description ?: ''));
@@ -2177,7 +2194,14 @@ class InvoiceService
                 if ($orderNumber === '') {
                     $orderNumber = '—';
                 }
-                $orderLabel = $orderNumber;
+                $isVolDetail = $categoryKey === 'storage' && $this->detailRowIsStorageByVolume($detail);
+                if ($isVolDetail) {
+                    $detailName = trim((string) ($detail['name'] ?? ''));
+                    $detailDesc = trim((string) ($detail['description'] ?? ''));
+                    $orderLabel = $detailName !== '' ? $detailName : ($detailDesc !== '' ? $detailDesc : $orderNumber);
+                } else {
+                    $orderLabel = $orderNumber;
+                }
                 $categories[$categoryKey]['services'][$serviceKey]['orders'][] = [
                     'id' => (string) Str::uuid(),
                     'label' => $orderLabel,
@@ -2227,20 +2251,30 @@ class InvoiceService
             $serviceRows = [];
             $isStorageCategory = strtolower((string) ($cat['label'] ?? '')) === 'storage';
             $storageCategoryLocationCount = 0;
+            $sectionHasVolumeStorage = false;
+            $sectionHasNonVolumeStorage = false;
             foreach ($services as $service) {
                 $orders = $service['orders'] ?? [];
                 $serviceQty = (float) ($service['qty'] ?? 0);
                 $serviceTotal = (int) ($service['total_cents'] ?? 0);
+                $serviceLabel = trim((string) ($service['label'] ?? ''));
+                $isVolumeService = $isStorageCategory && strcasecmp($serviceLabel, 'Storage by Volume') === 0;
                 $serviceLocationCount = 0;
                 if ($isStorageCategory) {
-                    foreach ($orders as $order) {
-                        $orderLabel = trim((string) ($order['label'] ?? ''));
-                        if ($orderLabel !== '' && $orderLabel !== '—') {
-                            $serviceLocationCount++;
-                        }
-                    }
-                    if ($serviceLocationCount === 0) {
+                    if ($isVolumeService) {
+                        $sectionHasVolumeStorage = true;
                         $serviceLocationCount = count($orders);
+                    } else {
+                        $sectionHasNonVolumeStorage = true;
+                        foreach ($orders as $order) {
+                            $orderLabel = trim((string) ($order['label'] ?? ''));
+                            if ($orderLabel !== '' && $orderLabel !== '—') {
+                                $serviceLocationCount++;
+                            }
+                        }
+                        if ($serviceLocationCount === 0) {
+                            $serviceLocationCount = count($orders);
+                        }
                     }
                     $storageCategoryLocationCount += $serviceLocationCount;
                 }
@@ -2253,12 +2287,25 @@ class InvoiceService
                     'line_total' => $money($serviceTotal),
                     'is_expandable' => $orders !== [],
                     'orders' => $orders,
+                    'qty_suffix' => $isStorageCategory ? ($isVolumeService ? ' SKUs' : ' Locations') : null,
+                    'storage_qty_metric' => $isStorageCategory ? ($isVolumeService ? 'SKUs' : 'Locations') : null,
                 ];
             }
 
             $catQty = (float) ($cat['qty'] ?? 0);
             $catTotal = (int) ($cat['total_cents'] ?? 0);
             $displayQty = $isStorageCategory ? (float) $storageCategoryLocationCount : $catQty;
+            $sectionQtySuffix = ' Locations';
+            $sectionQtyMetric = 'Locations';
+            if ($isStorageCategory) {
+                if ($sectionHasVolumeStorage && ! $sectionHasNonVolumeStorage) {
+                    $sectionQtySuffix = ' SKUs';
+                    $sectionQtyMetric = 'SKUs';
+                } elseif ($sectionHasVolumeStorage && $sectionHasNonVolumeStorage) {
+                    $sectionQtySuffix = '';
+                    $sectionQtyMetric = 'Qty';
+                }
+            }
             $sections[] = [
                 'id' => 'cat-'.$cat['key'],
                 'label' => (string) $cat['label'],
@@ -2268,6 +2315,8 @@ class InvoiceService
                 'line_total' => $money($catTotal),
                 'is_expandable' => $serviceRows !== [],
                 'services' => $serviceRows,
+                'qty_suffix' => $isStorageCategory ? $sectionQtySuffix : null,
+                'storage_qty_metric' => $isStorageCategory ? $sectionQtyMetric : null,
             ];
         }
 

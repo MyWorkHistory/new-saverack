@@ -1724,6 +1724,73 @@ class BillingInvoiceApiTest extends TestCase
         $this->assertTrue($postage['is_expandable']);
     }
 
+    public function test_public_invoice_storage_by_volume_uses_line_description_and_sku_qty_label(): void
+    {
+        $client = ClientAccount::query()->create([
+            'status' => ClientAccount::STATUS_ACTIVE,
+            'company_name' => 'Vol Public Co',
+            'email' => 'vol-public@acme.test',
+        ]);
+
+        $invoice = Invoice::query()->create([
+            'invoice_number' => 'INV-PUB-VOL-001',
+            'client_account_id' => $client->id,
+            'status' => Invoice::STATUS_SENT,
+            'currency' => 'USD',
+            'subtotal_cents' => 200,
+            'tax_cents' => 0,
+            'total_cents' => 200,
+            'amount_paid_cents' => 0,
+            'balance_due_cents' => 200,
+        ]);
+
+        $descA = 'SKU P24C2D2 - US with a volume of 1.50 cu ft stored in location T-29-0 of type Pallet (Small) for 1 day(s).';
+        $descB = 'SKU X99 - US with a volume of 2.00 cu ft stored in location A-1-0 of type Bin for 2 day(s).';
+
+        InvoiceItem::query()->create([
+            'invoice_id' => $invoice->id,
+            'sort_order' => 1,
+            'category' => 'storage',
+            'group_key' => 'storage:vol:line-a',
+            'description' => $descA,
+            'display_name' => 'Storage by Volume',
+            'service_code' => 'storing_by_volume_daily',
+            'quantity' => 1,
+            'unit_price_cents' => 100,
+            'line_total_cents' => 100,
+        ]);
+        InvoiceItem::query()->create([
+            'invoice_id' => $invoice->id,
+            'sort_order' => 2,
+            'category' => 'storage',
+            'group_key' => 'storage:vol:line-b',
+            'description' => $descB,
+            'display_name' => 'Storage by Volume',
+            'service_code' => 'storing_by_volume_daily',
+            'quantity' => 1,
+            'unit_price_cents' => 100,
+            'line_total_cents' => 100,
+        ]);
+
+        $invoice->refresh()->load('items');
+        $data = app(InvoiceService::class)->publicInvoiceHtmlData($invoice);
+        $sections = $data['line_sections'];
+        $storage = collect($sections)->first(fn (array $s) => strcasecmp((string) ($s['label'] ?? ''), 'Storage') === 0);
+        $this->assertNotNull($storage);
+        $this->assertSame(' SKUs', (string) ($storage['qty_suffix'] ?? ''));
+        $this->assertSame('SKUs', (string) ($storage['storage_qty_metric'] ?? ''));
+
+        $volSvc = collect($storage['services'] ?? [])->first(fn (array $s) => strcasecmp((string) ($s['label'] ?? ''), 'Storage by Volume') === 0);
+        $this->assertNotNull($volSvc);
+        $this->assertSame('2', (string) ($volSvc['qty_display'] ?? ''));
+        $this->assertSame(' SKUs', (string) ($volSvc['qty_suffix'] ?? ''));
+        $this->assertSame('SKUs', (string) ($volSvc['storage_qty_metric'] ?? ''));
+
+        $orderLabels = collect($volSvc['orders'] ?? [])->pluck('label')->all();
+        $this->assertContains($descA, $orderLabels);
+        $this->assertContains($descB, $orderLabels);
+    }
+
     public function test_invoice_whatsapp_endpoint_sends_provider_payload(): void
     {
         Http::fake([

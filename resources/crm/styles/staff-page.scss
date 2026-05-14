@@ -1027,11 +1027,19 @@ button.staff-stat-card {
 .staff-page-primary {
   --bs-btn-bg: #{$staff-primary};
   --bs-btn-border-color: #{$staff-primary};
+  --bs-btn-color: #fff;
   --bs-btn-hover-bg: #5e50eb;
   --bs-btn-hover-border-color: #5e50eb;
+  --bs-btn-hover-color: #fff;
   --bs-btn-active-bg: #5548e8;
   --bs-btn-active-border-color: #5548e8;
+  --bs-btn-active-color: #fff;
+  --bs-btn-disabled-color: rgba(255, 255, 255, 0.65);
   font-weight: 600;
+}
+
+.staff-page-primary.dropdown-toggle::after {
+  border-top-color: #fff;
 }
 
 /* CRM outline toolbar buttons (Orders, Products inventory) — brand tint, not flat gray. */

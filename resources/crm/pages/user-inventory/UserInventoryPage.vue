@@ -166,6 +166,11 @@ function thAriaSort(col) {
   return sortDir.value === "asc" ? "ascending" : "descending";
 }
 
+function sortIndicator(col) {
+  if (sortKey.value !== col) return "";
+  return sortDir.value === "asc" ? "↑" : "↓";
+}
+
 function onSelectAllCheckboxChange(ev) {
   const el = ev?.target;
   if (!(el instanceof HTMLInputElement)) return;
@@ -574,95 +579,75 @@ onUnmounted(() => {
         <table class="table table-hover align-middle mb-0 staff-data-table user-inv-table">
           <thead class="table-light staff-table-head">
             <tr>
-              <th class="staff-table-head__th user-inv-table__select text-center" style="width: 3rem">
-                <div class="form-check d-flex justify-content-center m-0">
-                  <input
-                    ref="selectAllCheckboxRef"
-                    class="form-check-input user-inv-check"
-                    type="checkbox"
-                    :checked="allVisibleSelected"
-                    aria-label="Select all visible rows"
-                    @change="onSelectAllCheckboxChange"
-                  />
-                </div>
+              <th class="staff-table-head__th staff-table-head__th--select text-center" scope="col">
+                <input
+                  ref="selectAllCheckboxRef"
+                  type="checkbox"
+                  class="form-check-input staff-table-head__check mt-0 user-inv-check"
+                  :checked="allVisibleSelected"
+                  aria-label="Select all visible rows"
+                  @change="onSelectAllCheckboxChange"
+                />
               </th>
-              <th class="staff-table-head__th text-center">Image</th>
+              <th class="staff-table-head__th text-center user-inv-table__image-col" scope="col">Image</th>
               <th
-                class="staff-table-head__th text-center staff-table-head__th--sortable"
+                class="staff-table-head__th staff-table-head__th--sort text-center"
+                scope="col"
                 :aria-sort="thAriaSort('sku')"
-                role="columnheader"
               >
-                <button
-                  type="button"
-                  class="btn btn-link staff-table-sort-btn user-inv-sort-btn p-0 text-decoration-none"
-                  @click="toggleSort('sku')"
-                >
+                <button type="button" class="staff-sort-btn" :disabled="loading" @click="toggleSort('sku')">
                   SKU
+                  <span v-if="sortIndicator('sku')" class="staff-sort-ind">{{ sortIndicator("sku") }}</span>
                 </button>
               </th>
               <th
-                class="staff-table-head__th text-center staff-table-head__th--sortable"
+                class="staff-table-head__th staff-table-head__th--sort text-center"
+                scope="col"
                 :aria-sort="thAriaSort('name')"
-                role="columnheader"
               >
-                <button
-                  type="button"
-                  class="btn btn-link staff-table-sort-btn user-inv-sort-btn p-0 text-decoration-none"
-                  @click="toggleSort('name')"
-                >
+                <button type="button" class="staff-sort-btn" :disabled="loading" @click="toggleSort('name')">
                   Name
+                  <span v-if="sortIndicator('name')" class="staff-sort-ind">{{ sortIndicator("name") }}</span>
                 </button>
               </th>
               <th
-                class="staff-table-head__th text-center staff-table-head__th--sortable"
+                class="staff-table-head__th staff-table-head__th--sort text-center"
+                scope="col"
                 :aria-sort="thAriaSort('kit')"
-                role="columnheader"
               >
-                <button
-                  type="button"
-                  class="btn btn-link staff-table-sort-btn user-inv-sort-btn p-0 text-decoration-none"
-                  @click="toggleSort('kit')"
-                >
+                <button type="button" class="staff-sort-btn" :disabled="loading" @click="toggleSort('kit')">
                   Kit
+                  <span v-if="sortIndicator('kit')" class="staff-sort-ind">{{ sortIndicator("kit") }}</span>
                 </button>
               </th>
               <th
-                class="staff-table-head__th text-center staff-table-head__th--sortable"
+                class="staff-table-head__th staff-table-head__th--sort text-center"
+                scope="col"
                 :aria-sort="thAriaSort('on_hand')"
-                role="columnheader"
               >
-                <button
-                  type="button"
-                  class="btn btn-link staff-table-sort-btn user-inv-sort-btn p-0 text-decoration-none"
-                  @click="toggleSort('on_hand')"
-                >
+                <button type="button" class="staff-sort-btn" :disabled="loading" @click="toggleSort('on_hand')">
                   On Hand
+                  <span v-if="sortIndicator('on_hand')" class="staff-sort-ind">{{ sortIndicator("on_hand") }}</span>
                 </button>
               </th>
               <th
-                class="staff-table-head__th text-center staff-table-head__th--sortable"
+                class="staff-table-head__th staff-table-head__th--sort text-center"
+                scope="col"
                 :aria-sort="thAriaSort('allocated')"
-                role="columnheader"
               >
-                <button
-                  type="button"
-                  class="btn btn-link staff-table-sort-btn user-inv-sort-btn p-0 text-decoration-none"
-                  @click="toggleSort('allocated')"
-                >
+                <button type="button" class="staff-sort-btn" :disabled="loading" @click="toggleSort('allocated')">
                   Allocated
+                  <span v-if="sortIndicator('allocated')" class="staff-sort-ind">{{ sortIndicator("allocated") }}</span>
                 </button>
               </th>
               <th
-                class="staff-table-head__th text-center staff-table-head__th--sortable"
+                class="staff-table-head__th staff-table-head__th--sort text-center"
+                scope="col"
                 :aria-sort="thAriaSort('backorder')"
-                role="columnheader"
               >
-                <button
-                  type="button"
-                  class="btn btn-link staff-table-sort-btn user-inv-sort-btn p-0 text-decoration-none"
-                  @click="toggleSort('backorder')"
-                >
+                <button type="button" class="staff-sort-btn" :disabled="loading" @click="toggleSort('backorder')">
                   Backorder
+                  <span v-if="sortIndicator('backorder')" class="staff-sort-ind">{{ sortIndicator("backorder") }}</span>
                 </button>
               </th>
             </tr>
@@ -675,18 +660,16 @@ onUnmounted(() => {
               <td colspan="8" class="text-center text-secondary py-5">No inventory rows found.</td>
             </tr>
             <tr v-for="row in displayRows" :key="rowKey(row)">
-              <td class="user-inv-table__select text-center">
-                <div class="form-check d-flex justify-content-center m-0">
-                  <input
-                    class="form-check-input user-inv-check"
-                    type="checkbox"
-                    :checked="isRowSelected(row)"
-                    :aria-label="`Select ${row.sku}`"
-                    @change="onRowCheckboxChange($event, row)"
-                  />
-                </div>
+              <td class="staff-table-cell--tight-check text-center">
+                <input
+                  type="checkbox"
+                  class="form-check-input staff-table-head__check mt-0 user-inv-check"
+                  :checked="isRowSelected(row)"
+                  :aria-label="`Select ${row.sku}`"
+                  @change="onRowCheckboxChange($event, row)"
+                />
               </td>
-              <td class="text-center">
+              <td class="text-center user-inv-table__image-col">
                 <img
                   v-if="row.image_url"
                   :src="row.image_url"
@@ -734,38 +717,33 @@ onUnmounted(() => {
   max-width: min(100%, 22rem);
 }
 
+.user-inv-table thead .staff-sort-btn {
+  justify-content: center;
+  width: 100%;
+}
+
+.user-inv-table__image-col {
+  width: 1%;
+  min-width: 4.5rem;
+}
+
 .user-inv-table th,
 .user-inv-table td {
   text-align: center;
   vertical-align: middle;
 }
 
-.user-inv-table__select {
-  width: 3rem;
-}
-
 .user-inv-check {
-  width: 1.125rem;
-  height: 1.125rem;
   cursor: pointer;
   border-width: 2px;
-  margin: 0;
-  accent-color: var(--bs-primary, #0d6efd);
+  accent-color: #2563eb;
   flex-shrink: 0;
 }
 
-.user-inv-sort-btn {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 100%;
-  text-align: center;
-}
-
 .user-inventory-thumb {
-  width: 34px;
-  height: 34px;
-  border-radius: 0.35rem;
+  width: 52px;
+  height: 52px;
+  border-radius: 0.4rem;
   object-fit: cover;
   border: 1px solid rgba(0, 0, 0, 0.08);
   background: #fff;
@@ -774,21 +752,6 @@ onUnmounted(() => {
 .user-inventory-thumb--empty {
   display: inline-block;
   background: rgba(0, 0, 0, 0.05);
-}
-
-.user-inv-table .user-inv-sort-btn {
-  color: #2563eb;
-  font-weight: 600;
-}
-
-.user-inv-table .user-inv-sort-btn:hover {
-  color: #1d4ed8;
-}
-
-.user-inv-table .user-inv-sort-btn:focus-visible {
-  outline: 2px solid rgba(37, 99, 235, 0.35);
-  outline-offset: 2px;
-  box-shadow: none;
 }
 
 .user-inv-table .btn-link {

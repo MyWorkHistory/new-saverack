@@ -1,5 +1,5 @@
 <script setup>
-import { computed, inject, onMounted, ref } from "vue";
+import { computed, inject, nextTick, onMounted, onUnmounted, reactive, ref, watch } from "vue";
 import { useRouter } from "vue-router";
 import api from "../../services/api";
 import { setCrmPageMeta } from "../../composables/useCrmPageMeta.js";
@@ -11,14 +11,36 @@ const crmUser = inject("crmUser", ref(null));
 
 const loading = ref(false);
 const loadingMore = ref(false);
+const bulkBusy = ref(false);
 const rows = ref([]);
 const pageInfo = ref({ has_next_page: false, end_cursor: null });
 
+const searchDraft = ref("");
+const searchCommitted = ref("");
+const filterMenuOpen = ref(false);
+
+const filters = reactive({
+  kits: "all",
+  activeStatus: "active",
+});
+
+const sortKey = ref("backorder");
+const sortDir = ref("desc");
+
+const selectedKeys = ref([]);
+const selectAllCheckboxRef = ref(null);
+
 const accountId = computed(() => Number(crmUser.value?.client_account_id || 0));
 
-const oversoldRows = computed(() =>
-  rows.value.filter((r) => Number(r?.backorder || 0) > 0),
-);
+const canInventoryUpdate = computed(() => {
+  const u = crmUser.value;
+  if (!u || !Array.isArray(u.permission_keys)) return false;
+  return u.permission_keys.includes("inventory.update");
+});
+
+function rowKey(row) {
+  return `${String(row?.sku || "")}\u0000${String(row?.warehouse_id ?? "")}`;
+}
 
 function normalizeRows(list) {
   return Array.isArray(list) ? list : [];
@@ -29,8 +51,8 @@ async function fetchPage(append) {
   const params = {
     client_account_id: accountId.value,
     first: 200,
-    kits: "all",
-    active_status: "active",
+    kits: filters.kits,
+    active_status: filters.activeStatus,
   };
   if (append && pageInfo.value?.end_cursor) {
     params.after = pageInfo.value.end_cursor;
@@ -42,9 +64,9 @@ async function fetchPage(append) {
     end_cursor: data?.page_info?.end_cursor ?? null,
   };
   if (append) {
-    const seen = new Set(rows.value.map((r) => `${String(r?.sku || "")}\u0000${String(r?.warehouse_id ?? "")}`));
+    const seen = new Set(rows.value.map(rowKey));
     for (const r of chunk) {
-      const k = `${String(r?.sku || "")}\u0000${String(r?.warehouse_id ?? "")}`;
+      const k = rowKey(r);
       if (!seen.has(k)) {
         seen.add(k);
         rows.value.push(r);
@@ -60,6 +82,7 @@ async function loadRows(reset) {
   if (reset) {
     loading.value = true;
     pageInfo.value = { has_next_page: false, end_cursor: null };
+    selectedKeys.value = [];
   } else {
     loadingMore.value = true;
   }
@@ -78,6 +101,205 @@ function loadMore() {
   loadRows(false);
 }
 
+const oversoldOnly = computed(() => rows.value.filter((r) => Number(r?.backorder || 0) > 0));
+
+const filteredRows = computed(() => {
+  const q = searchCommitted.value.trim().toLowerCase();
+  if (!q) return oversoldOnly.value;
+  return oversoldOnly.value.filter(
+    (row) =>
+      String(row?.sku || "")
+        .toLowerCase()
+        .includes(q) ||
+      String(row?.name || "")
+        .toLowerCase()
+        .includes(q),
+  );
+});
+
+const sortedRows = computed(() => {
+  const list = [...filteredRows.value];
+  const key = sortKey.value;
+  const dir = sortDir.value === "asc" ? 1 : -1;
+  const num = (v) => Number(v ?? 0);
+  const str = (v) => String(v ?? "").toLowerCase();
+  list.sort((a, b) => {
+    let cmp = 0;
+    if (key === "sku") cmp = str(a.sku).localeCompare(str(b.sku));
+    else if (key === "name") cmp = str(a.name).localeCompare(str(b.name));
+    else if (key === "on_hand") cmp = num(a.on_hand) - num(b.on_hand);
+    else if (key === "allocated") cmp = num(a.allocated) - num(b.allocated);
+    else if (key === "backorder") cmp = num(a.backorder) - num(b.backorder);
+    else cmp = num(a.backorder) - num(b.backorder);
+    return cmp * dir;
+  });
+  return list;
+});
+
+const displayRows = sortedRows;
+
+function isKeySelected(k) {
+  return selectedKeys.value.includes(k);
+}
+
+const allVisibleSelected = computed(() => {
+  if (!displayRows.value.length) return false;
+  return displayRows.value.every((r) => isKeySelected(rowKey(r)));
+});
+
+const someVisibleSelected = computed(() =>
+  displayRows.value.some((r) => isKeySelected(rowKey(r))),
+);
+
+function toggleSort(col) {
+  if (sortKey.value === col) {
+    sortDir.value = sortDir.value === "asc" ? "desc" : "asc";
+  } else {
+    sortKey.value = col;
+    sortDir.value = col === "name" || col === "sku" ? "asc" : "desc";
+  }
+}
+
+function thAriaSort(col) {
+  if (sortKey.value !== col) return "none";
+  return sortDir.value === "asc" ? "ascending" : "descending";
+}
+
+function toggleSelectAllVisible() {
+  const visibleKeys = displayRows.value.map(rowKey);
+  const allOn = visibleKeys.length > 0 && visibleKeys.every((k) => isKeySelected(k));
+  if (allOn) {
+    const drop = new Set(visibleKeys);
+    selectedKeys.value = selectedKeys.value.filter((k) => !drop.has(k));
+  } else {
+    selectedKeys.value = Array.from(new Set([...selectedKeys.value, ...visibleKeys]));
+  }
+}
+
+function toggleRow(row) {
+  const k = rowKey(row);
+  if (isKeySelected(k)) {
+    selectedKeys.value = selectedKeys.value.filter((x) => x !== k);
+  } else {
+    selectedKeys.value = [...selectedKeys.value, k];
+  }
+}
+
+function isRowSelected(row) {
+  return isKeySelected(rowKey(row));
+}
+
+const selectedRows = computed(() =>
+  displayRows.value.filter((r) => isKeySelected(rowKey(r))),
+);
+
+const bulkEligibleRows = computed(() =>
+  selectedRows.value.filter((r) => String(r?.warehouse_id || "").trim() !== ""),
+);
+
+function commitSearch() {
+  searchCommitted.value = searchDraft.value.trim();
+}
+
+function applyFilters() {
+  filterMenuOpen.value = false;
+  loadRows(true);
+}
+
+function resetFilters() {
+  filters.kits = "all";
+  filters.activeStatus = "active";
+  filterMenuOpen.value = false;
+  loadRows(true);
+}
+
+function exportCsv(useSelected) {
+  const source = useSelected ? selectedRows.value : displayRows.value;
+  if (!source.length) {
+    toast.error("Nothing to export.");
+    return;
+  }
+  const headers = [
+    "SKU",
+    "Name",
+    "Warehouse ID",
+    "Product Active",
+    "Kit",
+    "Warehouse Active",
+    "On Hand",
+    "Allocated",
+    "Oversold",
+  ];
+  const lines = [headers.join(",")];
+  for (const r of source) {
+    const cells = [
+      r.sku,
+      r.name,
+      r.warehouse_id ?? "",
+      r.product_active ? "yes" : "no",
+      r.kit ? "yes" : "no",
+      r.warehouse_active ? "yes" : "no",
+      r.on_hand,
+      r.allocated,
+      r.backorder,
+    ].map((c) => {
+      const s = String(c ?? "").replace(/"/g, '""');
+      return `"${s}"`;
+    });
+    lines.push(cells.join(","));
+  }
+  const blob = new Blob([lines.join("\r\n")], { type: "text/csv;charset=utf-8" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = `out-of-stock-${new Date().toISOString().slice(0, 10)}.csv`;
+  a.click();
+  URL.revokeObjectURL(url);
+  toast.success("Export started.");
+}
+
+async function bulkSetActive(active) {
+  const items = bulkEligibleRows.value.map((r) => ({
+    sku: String(r.sku || ""),
+    warehouse_id: String(r.warehouse_id || ""),
+  }));
+  if (!items.length) {
+    toast.error("Select rows with a warehouse to update status.");
+    return;
+  }
+  const skipped = selectedRows.value.length - items.length;
+  bulkBusy.value = true;
+  try {
+    const { data } = await api.post("/inventory/warehouse-products/bulk-active", {
+      client_account_id: accountId.value,
+      active,
+      items,
+    });
+    const updated = Number(data?.updated ?? 0);
+    const errs = Array.isArray(data?.errors) ? data.errors : [];
+    const parts = [];
+    if (errs.length) {
+      parts.push(`Updated ${updated}; ${errs.length} error(s). First: ${errs[0]?.message || "unknown"}`);
+    } else {
+      parts.push(`Updated ${updated} warehouse product(s).`);
+    }
+    if (skipped > 0) {
+      parts.push(`${skipped} skipped (no warehouse).`);
+    }
+    if (errs.length) {
+      toast.error(parts.join(" "));
+    } else {
+      toast.success(parts.join(" "));
+    }
+    selectedKeys.value = [];
+    await loadRows(true);
+  } catch (e) {
+    toast.errorFrom(e, "Bulk update failed.");
+  } finally {
+    bulkBusy.value = false;
+  }
+}
+
 function openDetail(row) {
   const sku = String(row?.sku || "").trim();
   if (!sku) return;
@@ -89,12 +311,52 @@ function openDetail(row) {
   window.open(href, "_blank", "noopener,noreferrer");
 }
 
+function editFirstSelected() {
+  const first = selectedRows.value[0];
+  if (first) openDetail(first);
+  else toast.error("Select a row to edit.");
+}
+
+function clearSelection() {
+  selectedKeys.value = [];
+}
+
+function onDocClick(e) {
+  if (!e.target?.closest?.("[data-toolbar-filter]")) {
+    filterMenuOpen.value = false;
+  }
+}
+
+watch(
+  [allVisibleSelected, someVisibleSelected, () => displayRows.value.length],
+  () => {
+    nextTick(() => {
+      const el = selectAllCheckboxRef.value;
+      if (el && el instanceof HTMLInputElement) {
+        el.indeterminate = someVisibleSelected.value && !allVisibleSelected.value;
+      }
+    });
+  },
+);
+
+watch(
+  () => accountId.value,
+  (id) => {
+    if (id) loadRows(true);
+  },
+);
+
 onMounted(() => {
   setCrmPageMeta({
     title: "Save Rack | Products | Out of Stock",
-    description: "Inventory with oversold quantity.",
+    description: "Inventory rows with oversold quantity.",
   });
+  document.addEventListener("click", onDocClick);
   loadRows(true);
+});
+
+onUnmounted(() => {
+  document.removeEventListener("click", onDocClick);
 });
 </script>
 
@@ -106,50 +368,283 @@ onMounted(() => {
     </div>
 
     <div class="staff-table-card staff-datatable-card staff-datatable-card--white w-100">
+      <div class="staff-table-toolbar">
+        <div class="staff-table-toolbar--row flex-wrap align-items-end gap-2 gap-md-3">
+          <div class="user-inv-search-wrap flex-shrink-0">
+            <label class="form-label small text-secondary mb-1" for="user-oos-search">Search</label>
+            <div class="input-group orders-toolbar-search-group">
+              <input
+                id="user-oos-search"
+                v-model.trim="searchDraft"
+                type="search"
+                class="form-control"
+                placeholder="Search by SKU or Product Name"
+                autocomplete="off"
+                enterkeyhint="search"
+                :disabled="loading"
+                @keydown.enter.prevent="commitSearch"
+              />
+              <button
+                type="button"
+                class="btn btn-primary staff-page-primary orders-toolbar-search-btn"
+                :disabled="loading"
+                @click="commitSearch"
+              >
+                Search
+              </button>
+            </div>
+          </div>
+          <div class="position-relative flex-shrink-0" data-toolbar-filter>
+            <button
+              type="button"
+              class="btn btn-outline-secondary staff-toolbar-btn orders-toolbar-outline-btn d-inline-flex align-items-center gap-2"
+              :aria-expanded="filterMenuOpen"
+              :disabled="loading"
+              @click.stop="filterMenuOpen = !filterMenuOpen"
+            >
+              <svg
+                width="18"
+                height="18"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+                viewBox="0 0 24 24"
+                aria-hidden="true"
+              >
+                <path
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                  d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2.586a1 1 0 01-.293.707l-6.414 6.414a1 1 0 00-.293.707V17l-4 4v-6.586a1 1 0 00-.293-.707L3.293 7.293A1 1 0 013 6.586V4z"
+                />
+              </svg>
+              <span class="staff-toolbar-filter-text">Filters</span>
+            </button>
+            <div
+              v-if="filterMenuOpen"
+              class="dropdown-menu show shadow border p-0 staff-toolbar-filter-dropdown"
+              role="dialog"
+              aria-label="Out of stock filters"
+              @click.stop
+            >
+              <div class="staff-toolbar-filter-dropdown__head">
+                <span>Filters</span>
+                <button
+                  type="button"
+                  class="btn btn-link btn-sm text-secondary text-decoration-none p-0"
+                  @click="resetFilters"
+                >
+                  Reset
+                </button>
+              </div>
+              <div class="staff-toolbar-filter-dropdown__body">
+                <label class="form-label" for="user-oos-filter-kits">Kits</label>
+                <select id="user-oos-filter-kits" v-model="filters.kits" class="form-select staff-datatable-filters__select mb-3">
+                  <option value="all">All</option>
+                  <option value="yes">Yes (kits only)</option>
+                  <option value="no">No (exclude kits)</option>
+                </select>
+                <label class="form-label" for="user-oos-filter-active">Product status</label>
+                <select
+                  id="user-oos-filter-active"
+                  v-model="filters.activeStatus"
+                  class="form-select staff-datatable-filters__select mb-3"
+                >
+                  <option value="active">Active</option>
+                  <option value="inactive">Inactive</option>
+                  <option value="all">All</option>
+                </select>
+                <button type="button" class="btn btn-primary btn-sm w-100" @click="applyFilters">Apply</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div
+        v-if="selectedRows.length > 0"
+        class="d-flex flex-wrap align-items-center gap-2 gap-md-3 px-3 px-md-4 py-3 border-bottom bg-body-tertiary"
+      >
+        <span class="small fw-semibold text-body me-md-1">{{ selectedRows.length }} selected</span>
+        <button
+          type="button"
+          class="btn btn-outline-secondary btn-sm orders-bulk-toolbar-btn orders-toolbar-outline-btn"
+          :disabled="bulkBusy"
+          @click="exportCsv(true)"
+        >
+          Export Selected
+        </button>
+        <button
+          type="button"
+          class="btn btn-outline-secondary btn-sm orders-bulk-toolbar-btn orders-toolbar-outline-btn"
+          :disabled="bulkBusy"
+          @click="exportCsv(false)"
+        >
+          Export Visible
+        </button>
+        <button
+          type="button"
+          class="btn btn-outline-secondary btn-sm orders-bulk-toolbar-btn orders-toolbar-outline-btn"
+          :disabled="bulkBusy"
+          @click="editFirstSelected"
+        >
+          Edit
+        </button>
+        <button
+          type="button"
+          class="btn btn-outline-secondary btn-sm orders-bulk-toolbar-btn orders-toolbar-outline-btn"
+          :disabled="bulkBusy"
+          @click="clearSelection"
+        >
+          Clear Selection
+        </button>
+        <template v-if="canInventoryUpdate">
+          <button
+            type="button"
+            class="btn btn-outline-secondary btn-sm orders-bulk-toolbar-btn orders-toolbar-outline-btn"
+            :disabled="bulkBusy"
+            @click="bulkSetActive(true)"
+          >
+            Set Active
+          </button>
+          <button
+            type="button"
+            class="btn btn-outline-danger btn-sm orders-bulk-toolbar-btn orders-toolbar-outline-btn orders-toolbar-outline-btn--danger"
+            :disabled="bulkBusy"
+            @click="bulkSetActive(false)"
+          >
+            Remove
+          </button>
+        </template>
+      </div>
+
       <div class="table-responsive staff-table-wrap">
-        <table class="table table-hover align-middle mb-0 staff-data-table user-inv-oos-table">
+        <table class="table table-hover align-middle mb-0 staff-data-table user-inv-table">
           <thead class="table-light staff-table-head">
             <tr>
-              <th class="staff-table-head__th text-center">Product</th>
-              <th class="staff-table-head__th text-center">SKU</th>
-              <th class="staff-table-head__th text-center">Oversold</th>
-              <th class="staff-table-head__th text-center">On Hand</th>
+              <th class="staff-table-head__th user-inv-table__select text-center" style="width: 3rem">
+                <div class="form-check d-flex justify-content-center m-0">
+                  <input
+                    ref="selectAllCheckboxRef"
+                    class="form-check-input user-inv-check"
+                    type="checkbox"
+                    :checked="allVisibleSelected"
+                    aria-label="Select all visible rows"
+                    @click.prevent="toggleSelectAllVisible"
+                  />
+                </div>
+              </th>
+              <th class="staff-table-head__th text-center">Image</th>
+              <th
+                class="staff-table-head__th text-center staff-table-head__th--sortable"
+                :aria-sort="thAriaSort('sku')"
+                role="columnheader"
+              >
+                <button
+                  type="button"
+                  class="btn btn-link staff-table-sort-btn user-inv-sort-btn p-0 text-decoration-none"
+                  @click="toggleSort('sku')"
+                >
+                  SKU
+                </button>
+              </th>
+              <th
+                class="staff-table-head__th text-center staff-table-head__th--sortable"
+                :aria-sort="thAriaSort('name')"
+                role="columnheader"
+              >
+                <button
+                  type="button"
+                  class="btn btn-link staff-table-sort-btn user-inv-sort-btn p-0 text-decoration-none"
+                  @click="toggleSort('name')"
+                >
+                  Name
+                </button>
+              </th>
+              <th
+                class="staff-table-head__th text-center staff-table-head__th--sortable"
+                :aria-sort="thAriaSort('backorder')"
+                role="columnheader"
+              >
+                <button
+                  type="button"
+                  class="btn btn-link staff-table-sort-btn user-inv-sort-btn p-0 text-decoration-none"
+                  @click="toggleSort('backorder')"
+                >
+                  Oversold
+                </button>
+              </th>
+              <th
+                class="staff-table-head__th text-center staff-table-head__th--sortable"
+                :aria-sort="thAriaSort('on_hand')"
+                role="columnheader"
+              >
+                <button
+                  type="button"
+                  class="btn btn-link staff-table-sort-btn user-inv-sort-btn p-0 text-decoration-none"
+                  @click="toggleSort('on_hand')"
+                >
+                  On Hand
+                </button>
+              </th>
+              <th
+                class="staff-table-head__th text-center staff-table-head__th--sortable"
+                :aria-sort="thAriaSort('allocated')"
+                role="columnheader"
+              >
+                <button
+                  type="button"
+                  class="btn btn-link staff-table-sort-btn user-inv-sort-btn p-0 text-decoration-none"
+                  @click="toggleSort('allocated')"
+                >
+                  Allocated
+                </button>
+              </th>
             </tr>
           </thead>
           <tbody>
             <tr v-if="loading">
-              <td colspan="4" class="text-center text-secondary py-5">Loading…</td>
+              <td colspan="7" class="text-center text-secondary py-5">Loading…</td>
             </tr>
-            <tr v-else-if="!oversoldRows.length">
-              <td colspan="4" class="text-center text-secondary py-5">No out-of-stock rows in the loaded inventory.</td>
+            <tr v-else-if="!displayRows.length">
+              <td colspan="7" class="text-center text-secondary py-5">
+                No oversold rows match your filters or search in the loaded inventory.
+              </td>
             </tr>
-            <tr v-for="row in oversoldRows" :key="`${row.sku}-${row.warehouse_id || ''}`">
-              <td class="text-center">
-                <div class="d-flex align-items-center justify-content-center gap-2 flex-wrap">
-                  <img
-                    v-if="row.image_url"
-                    :src="row.image_url"
-                    alt=""
-                    class="user-inventory-thumb"
-                    loading="lazy"
+            <tr v-for="row in displayRows" :key="rowKey(row)">
+              <td class="user-inv-table__select text-center">
+                <div class="form-check d-flex justify-content-center m-0">
+                  <input
+                    class="form-check-input user-inv-check"
+                    type="checkbox"
+                    :checked="isRowSelected(row)"
+                    :aria-label="`Select ${row.sku}`"
+                    @click.prevent="toggleRow(row)"
                   />
-                  <div v-else class="user-inventory-thumb user-inventory-thumb--empty flex-shrink-0" />
-                  <button
-                    type="button"
-                    class="btn btn-link p-0 text-decoration-none text-start"
-                    @click="openDetail(row)"
-                  >
-                    {{ row.name || "—" }}
-                  </button>
                 </div>
+              </td>
+              <td class="text-center">
+                <img
+                  v-if="row.image_url"
+                  :src="row.image_url"
+                  alt=""
+                  class="user-inventory-thumb"
+                  loading="lazy"
+                />
+                <div v-else class="user-inventory-thumb user-inventory-thumb--empty" />
               </td>
               <td class="text-center">
                 <button type="button" class="btn btn-link p-0 text-decoration-none fw-semibold" @click="openDetail(row)">
                   {{ row.sku || "—" }}
                 </button>
               </td>
+              <td class="text-center">
+                <button type="button" class="btn btn-link p-0 text-decoration-none" @click="openDetail(row)">
+                  {{ row.name || "—" }}
+                </button>
+              </td>
               <td class="text-center">{{ Number(row.backorder || 0) }}</td>
               <td class="text-center">{{ Number(row.on_hand || 0) }}</td>
+              <td class="text-center">{{ Number(row.allocated || 0) }}</td>
             </tr>
           </tbody>
         </table>
@@ -164,10 +659,37 @@ onMounted(() => {
 </template>
 
 <style scoped>
-.user-inv-oos-table th,
-.user-inv-oos-table td {
+.user-inv-search-wrap {
+  width: 100%;
+  max-width: min(100%, 22rem);
+}
+
+.user-inv-table th,
+.user-inv-table td {
   text-align: center;
   vertical-align: middle;
+}
+
+.user-inv-table__select {
+  width: 3rem;
+}
+
+.user-inv-check {
+  width: 1.125rem;
+  height: 1.125rem;
+  cursor: pointer;
+  border-width: 2px;
+  margin: 0;
+  accent-color: var(--bs-primary, #0d6efd);
+  flex-shrink: 0;
+}
+
+.user-inv-sort-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  text-align: center;
 }
 
 .user-inventory-thumb {
@@ -182,5 +704,10 @@ onMounted(() => {
 .user-inventory-thumb--empty {
   display: inline-block;
   background: rgba(0, 0, 0, 0.05);
+}
+
+.staff-table-sort-btn {
+  color: inherit;
+  font-weight: 600;
 }
 </style>

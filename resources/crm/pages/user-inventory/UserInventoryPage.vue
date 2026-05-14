@@ -1,5 +1,5 @@
 <script setup>
-import { computed, inject, onMounted, onUnmounted, reactive, ref, watch } from "vue";
+import { computed, inject, nextTick, onMounted, onUnmounted, reactive, ref, watch } from "vue";
 import { useRouter } from "vue-router";
 import api from "../../services/api";
 import { setCrmPageMeta } from "../../composables/useCrmPageMeta.js";
@@ -27,7 +27,9 @@ const filters = reactive({
 const sortKey = ref("on_hand");
 const sortDir = ref("desc");
 
-const selected = ref(new Set());
+/** Row keys (sku\\0warehouse_id); array so :checked updates reliably when selecting all. */
+const selectedKeys = ref([]);
+const selectAllCheckboxRef = ref(null);
 
 const accountId = computed(() => Number(crmUser.value?.client_account_id || 0));
 
@@ -81,7 +83,7 @@ async function loadRows(reset) {
   if (reset) {
     loading.value = true;
     pageInfo.value = { has_next_page: false, end_cursor: null };
-    selected.value = new Set();
+    selectedKeys.value = [];
   } else {
     loadingMore.value = true;
   }
@@ -136,13 +138,17 @@ const sortedRows = computed(() => {
 
 const displayRows = sortedRows;
 
+function isKeySelected(k) {
+  return selectedKeys.value.includes(k);
+}
+
 const allVisibleSelected = computed(() => {
   if (!displayRows.value.length) return false;
-  return displayRows.value.every((r) => selected.value.has(rowKey(r)));
+  return displayRows.value.every((r) => isKeySelected(rowKey(r)));
 });
 
 const someVisibleSelected = computed(() =>
-  displayRows.value.some((r) => selected.value.has(rowKey(r))),
+  displayRows.value.some((r) => isKeySelected(rowKey(r))),
 );
 
 function toggleSort(col) {
@@ -160,31 +166,31 @@ function thAriaSort(col) {
 }
 
 function toggleSelectAllVisible() {
-  if (allVisibleSelected.value) {
-    const next = new Set(selected.value);
-    for (const r of displayRows.value) next.delete(rowKey(r));
-    selected.value = next;
+  const visibleKeys = displayRows.value.map(rowKey);
+  const allOn = visibleKeys.length > 0 && visibleKeys.every((k) => isKeySelected(k));
+  if (allOn) {
+    const drop = new Set(visibleKeys);
+    selectedKeys.value = selectedKeys.value.filter((k) => !drop.has(k));
   } else {
-    const next = new Set(selected.value);
-    for (const r of displayRows.value) next.add(rowKey(r));
-    selected.value = next;
+    selectedKeys.value = Array.from(new Set([...selectedKeys.value, ...visibleKeys]));
   }
 }
 
 function toggleRow(row) {
   const k = rowKey(row);
-  const next = new Set(selected.value);
-  if (next.has(k)) next.delete(k);
-  else next.add(k);
-  selected.value = next;
+  if (isKeySelected(k)) {
+    selectedKeys.value = selectedKeys.value.filter((x) => x !== k);
+  } else {
+    selectedKeys.value = [...selectedKeys.value, k];
+  }
 }
 
 function isRowSelected(row) {
-  return selected.value.has(rowKey(row));
+  return isKeySelected(rowKey(row));
 }
 
 const selectedRows = computed(() =>
-  displayRows.value.filter((r) => selected.value.has(rowKey(r))),
+  displayRows.value.filter((r) => isKeySelected(rowKey(r))),
 );
 
 const bulkEligibleRows = computed(() =>
@@ -285,7 +291,7 @@ async function bulkSetActive(active) {
     } else {
       toast.success(parts.join(" "));
     }
-    selected.value = new Set();
+    selectedKeys.value = [];
     await loadRows(true);
   } catch (e) {
     toast.errorFrom(e, "Bulk update failed.");
@@ -306,8 +312,26 @@ function openDetail(row) {
 }
 
 function clearSelection() {
-  selected.value = new Set();
+  selectedKeys.value = [];
 }
+
+function editFirstSelected() {
+  const first = selectedRows.value[0];
+  if (first) openDetail(first);
+  else toast.error("Select a row to edit.");
+}
+
+watch(
+  [allVisibleSelected, someVisibleSelected, () => displayRows.value.length],
+  () => {
+    nextTick(() => {
+      const el = selectAllCheckboxRef.value;
+      if (el && el instanceof HTMLInputElement) {
+        el.indeterminate = someVisibleSelected.value && !allVisibleSelected.value;
+      }
+    });
+  },
+);
 
 function onDocClick(e) {
   if (!e.target?.closest?.("[data-toolbar-filter]")) {
@@ -461,6 +485,14 @@ onUnmounted(() => {
           type="button"
           class="btn btn-outline-secondary btn-sm orders-bulk-toolbar-btn orders-toolbar-outline-btn"
           :disabled="bulkBusy"
+          @click="editFirstSelected"
+        >
+          Edit
+        </button>
+        <button
+          type="button"
+          class="btn btn-outline-secondary btn-sm orders-bulk-toolbar-btn orders-toolbar-outline-btn"
+          :disabled="bulkBusy"
           @click="clearSelection"
         >
           Clear Selection
@@ -490,14 +522,16 @@ onUnmounted(() => {
           <thead class="table-light staff-table-head">
             <tr>
               <th class="staff-table-head__th user-inv-table__select text-center" style="width: 3rem">
-                <input
-                  class="form-check-input user-inv-check"
-                  type="checkbox"
-                  :checked="allVisibleSelected"
-                  :indeterminate="someVisibleSelected && !allVisibleSelected"
-                  aria-label="Select all visible rows"
-                  @click.prevent="toggleSelectAllVisible"
-                />
+                <div class="form-check d-flex justify-content-center m-0">
+                  <input
+                    ref="selectAllCheckboxRef"
+                    class="form-check-input user-inv-check"
+                    type="checkbox"
+                    :checked="allVisibleSelected"
+                    aria-label="Select all visible rows"
+                    @click.prevent="toggleSelectAllVisible"
+                  />
+                </div>
               </th>
               <th class="staff-table-head__th text-center">Image</th>
               <th
@@ -589,13 +623,15 @@ onUnmounted(() => {
             </tr>
             <tr v-for="row in displayRows" :key="rowKey(row)">
               <td class="user-inv-table__select text-center">
-                <input
-                  class="form-check-input user-inv-check"
-                  type="checkbox"
-                  :checked="isRowSelected(row)"
-                  :aria-label="`Select ${row.sku}`"
-                  @click.prevent="toggleRow(row)"
-                />
+                <div class="form-check d-flex justify-content-center m-0">
+                  <input
+                    class="form-check-input user-inv-check"
+                    type="checkbox"
+                    :checked="isRowSelected(row)"
+                    :aria-label="`Select ${row.sku}`"
+                    @click.prevent="toggleRow(row)"
+                  />
+                </div>
               </td>
               <td class="text-center">
                 <img
@@ -656,6 +692,8 @@ onUnmounted(() => {
   cursor: pointer;
   border-width: 2px;
   margin: 0;
+  accent-color: var(--bs-primary, #0d6efd);
+  flex-shrink: 0;
 }
 
 .user-inv-sort-btn {

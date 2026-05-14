@@ -137,7 +137,9 @@ final class InvoiceChargeImportParser
                 'category (charge)', 'category', 'fee type',
                 'category (fee type)', 'category (fee_type)',
             ],
-            'fee' => ['fee (charge)', 'fee(charge)', 'fee', 'type', 'fee type'],
+            // Do not alias bare "type" here: "Type (charge)" strips to "type" and would steal
+            // the ShipHero charge-type column before charge_type_new/charge_type are mapped.
+            'fee' => ['fee (charge)', 'fee(charge)', 'fee', 'fee type'],
             'charge_name' => ['charge name'],
             'charge_type_new' => [
                 'charge type',
@@ -1527,7 +1529,11 @@ final class InvoiceChargeImportParser
         // Cu-ft prose wins over a mis-labeled storing_by_location_* type — never bin/pallet from the same row.
         $isLocationChargeType = $rawLocationChargeType && ! $volumeProseDesc;
         $isVolCharge = $this->isStorageByVolumeCharge($feeRaw, $chargeTypeRaw, $chargeName, $descriptionRaw);
-        $enterVolumeBranch = $volumeProseDesc || (! $rawLocationChargeType && $isVolCharge);
+        // CSV machine type is authoritative: storing_by_volume_charge ≠ storing_by_location_charge.
+        $explicitVolumeChargeType = str_contains($typeLower, 'storing_by_volume');
+        $enterVolumeBranch = $explicitVolumeChargeType
+            || $volumeProseDesc
+            || (! $rawLocationChargeType && $isVolCharge);
 
         if ($enterVolumeBranch) {
             $parsed = $this->parseStorageByVolumeSkuAndVolume($descForParse);

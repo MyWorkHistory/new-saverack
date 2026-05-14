@@ -59,6 +59,37 @@ CSV;
         $this->assertSame('POSTreat-F-US (0.06 cu ft)', $lines[0]['description']);
     }
 
+    /**
+     * "Type (charge)" must map to charge type, not to the "fee" column: bare "type" used to match
+     * the fee alias when Type appeared before Fee, dropping storing_by_volume_charge from parsing.
+     */
+    public function test_shiphero_type_charge_column_before_fee_still_maps_volume_and_location_types(): void
+    {
+        $f = tempnam(sys_get_temp_dir(), 'invcsv');
+        $this->assertNotFalse($f);
+        $csv = <<<'CSV'
+Date,Category (charge),Type (charge),Fee (charge),Label (charge),Description (charge),Unit rate (charge),Quantity (charge),Total (charge)
+2026-05-13,storage,storing_by_volume_charge,Storage Per Cu FT,Storage Per Cu FT,"SKU P24C2F2SSD2-US with a volume of 1.44 cu ft stored in location Q-55-0 of type Pallet (Medium) for 1 day(s).",0.76,1,0.76
+2026-05-04,storage,storing_by_location_charge,Storage,Storage,"Location A-16-031 of type Bin (Large) occupied for 7 day(s).",0.12,7,0.84
+CSV;
+        file_put_contents($f, $csv);
+
+        try {
+            $parser = new InvoiceChargeImportParser;
+            $lines = $parser->parseFile($f);
+        } finally {
+            unlink($f);
+        }
+
+        $this->assertCount(2, $lines);
+        $this->assertSame('Storage by Volume', $lines[0]['display_name']);
+        $this->assertSame('P24C2F2SSD2-US (1.44 cu ft)', $lines[0]['description']);
+        $this->assertSame('storing_by_volume_charge', $lines[0]['service_code']);
+        $this->assertSame('Bin (Large)', $lines[1]['display_name']);
+        $this->assertSame('storing_by_location_charge', $lines[1]['service_code']);
+        $this->assertStringContainsString('Location A-16-031', $lines[1]['description']);
+    }
+
     public function test_storing_by_location_charge_maps_to_bin_not_storage_by_volume(): void
     {
         $f = tempnam(sys_get_temp_dir(), 'invcsv');

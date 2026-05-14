@@ -45,9 +45,15 @@ const deleteLineOpen = ref(false);
 const lineToDelete = ref(null);
 
 const lineMenuOpenId = ref(null);
-const lineMenuRect = ref({ top: 0, left: 0 });
+const lineMenuPos = ref({ top: 0, left: 0 });
 const LINE_MENU_W = 200;
 const LINE_MENU_H = 160;
+
+const lineMenuStyle = computed(() => ({
+  top: `${lineMenuPos.value.top}px`,
+  left: `${lineMenuPos.value.left}px`,
+  zIndex: 2200,
+}));
 
 const statusPatchBusy = ref(false);
 
@@ -114,6 +120,12 @@ async function loadAsn() {
     normalizeAsnStatusPayload(data);
     asn.value = data;
     syncDraftsFromAsn();
+    if (typeof window !== "undefined" && route.hash === "#user-asn-items") {
+      await nextTick();
+      requestAnimationFrame(() => {
+        document.getElementById("user-asn-items")?.scrollIntoView({ behavior: "smooth", block: "start" });
+      });
+    }
   } catch (e) {
     toast.errorFrom(e, "Could not load ASN.");
     asn.value = null;
@@ -145,29 +157,29 @@ async function saveStatusFromSelect() {
   }
 }
 
-function placeLineMenu(anchorEl) {
-  if (!(anchorEl instanceof HTMLElement)) return;
-  const r = anchorEl.getBoundingClientRect();
+function placeLineMenuFromButton(btn) {
+  if (!(btn instanceof HTMLElement)) return;
+  const r = btn.getBoundingClientRect();
   let top = r.bottom + 4;
   let left = r.right - LINE_MENU_W;
   left = Math.max(8, Math.min(left, window.innerWidth - LINE_MENU_W - 8));
   if (top + LINE_MENU_H > window.innerHeight - 8) {
     top = Math.max(8, r.top - LINE_MENU_H - 4);
   }
-  lineMenuRect.value = { top, left };
+  lineMenuPos.value = { top, left };
 }
 
-async function toggleLineMenu(line, e) {
-  e.stopPropagation();
-  const id = line.id;
-  if (lineMenuOpenId.value === id) {
+async function toggleLineMenu(lineId, e) {
+  e?.stopPropagation?.();
+  if (lineMenuOpenId.value == lineId) {
     lineMenuOpenId.value = null;
     return;
   }
-  lineMenuOpenId.value = id;
+  const btn = e?.currentTarget;
+  lineMenuOpenId.value = lineId;
   await nextTick();
   requestAnimationFrame(() => {
-    if (e.currentTarget instanceof HTMLElement) placeLineMenu(e.currentTarget);
+    if (btn instanceof HTMLElement) placeLineMenuFromButton(btn);
   });
 }
 
@@ -175,25 +187,17 @@ function closeLineMenu() {
   lineMenuOpenId.value = null;
 }
 
-const lineMenuLine = computed(() => asn.value?.lines?.find((l) => l.id === lineMenuOpenId.value) ?? null);
-
-function lineMenuEdit() {
-  const line = lineMenuLine.value;
-  if (!line) return;
+function openEditLineFromMenu(line) {
   openEditLine(line);
   closeLineMenu();
 }
 
-function lineMenuDelete() {
-  const line = lineMenuLine.value;
-  if (!line) return;
+function askDeleteLineFromMenu(line) {
   askDeleteLine(line);
   closeLineMenu();
 }
 
-function lineMenuPrintBarcode() {
-  const line = lineMenuLine.value;
-  if (!line) return;
+function printBarcodeFromMenu(line) {
   openPrintBarcode(line);
   closeLineMenu();
 }
@@ -499,7 +503,7 @@ onUnmounted(() => {
 
     <div class="row g-4">
       <div class="col-lg-8">
-        <div class="staff-table-card staff-datatable-card staff-datatable-card--white p-0 mb-4">
+        <div id="user-asn-items" class="staff-table-card staff-datatable-card staff-datatable-card--white p-0 mb-4">
           <div class="px-4 py-3 border-bottom d-flex justify-content-between align-items-center flex-wrap gap-2">
             <h2 class="h6 mb-0 fw-semibold">Items</h2>
             <button
@@ -595,21 +599,51 @@ onUnmounted(() => {
                   <td class="text-end">{{ line.accepted_qty }}</td>
                   <td class="text-end">{{ line.rejected_qty }}</td>
                   <td class="text-center user-asn-detail-lines-actions-cell" @click.stop>
-                    <div
-                      data-row-actions
-                      class="staff-actions-inner staff-actions-inner--single user-asn-detail-lines-actions-inner"
-                    >
+                    <div data-row-actions class="position-relative d-inline-block">
                       <button
                         type="button"
                         class="staff-action-btn staff-action-btn--more"
-                        :class="{ 'is-open': lineMenuOpenId === line.id }"
-                        :aria-expanded="lineMenuOpenId === line.id ? 'true' : 'false'"
+                        :class="{ 'is-open': lineMenuOpenId == line.id }"
+                        :aria-expanded="lineMenuOpenId == line.id ? 'true' : 'false'"
                         aria-haspopup="true"
                         aria-label="Line actions"
-                        @click="toggleLineMenu(line, $event)"
+                        @click.stop="toggleLineMenu(line.id, $event)"
                       >
                         <CrmIconRowActions variant="horizontal" />
                       </button>
+                      <div
+                        v-if="lineMenuOpenId != null && lineMenuOpenId == line.id"
+                        data-row-actions
+                        class="staff-row-menu overflow-hidden"
+                        role="menu"
+                        :style="lineMenuStyle"
+                        @click.stop
+                      >
+                        <button
+                          type="button"
+                          class="staff-row-menu__item"
+                          role="menuitem"
+                          @click="openEditLineFromMenu(line)"
+                        >
+                          Edit
+                        </button>
+                        <button
+                          type="button"
+                          class="staff-row-menu__item staff-row-menu__item--danger"
+                          role="menuitem"
+                          @click="askDeleteLineFromMenu(line)"
+                        >
+                          Remove
+                        </button>
+                        <button
+                          type="button"
+                          class="staff-row-menu__item"
+                          role="menuitem"
+                          @click="printBarcodeFromMenu(line)"
+                        >
+                          Print Barcode
+                        </button>
+                      </div>
                     </div>
                   </td>
                 </tr>
@@ -719,39 +753,6 @@ onUnmounted(() => {
       </div>
     </div>
 
-    <Teleport to="body">
-      <Transition
-        enter-active-class="transition ease-out duration-100"
-        enter-from-class="opacity-0"
-        enter-to-class="opacity-100"
-        leave-active-class="transition ease-in duration-75"
-        leave-from-class="opacity-100"
-        leave-to-class="opacity-0"
-      >
-        <div
-          v-if="lineMenuOpenId && lineMenuLine"
-          data-row-actions
-          class="staff-row-menu fixed z-[300] overflow-hidden"
-          role="menu"
-          :style="{ top: `${lineMenuRect.top}px`, left: `${lineMenuRect.left}px` }"
-          @click.stop
-        >
-          <button type="button" class="staff-row-menu__item" role="menuitem" @click="lineMenuEdit">Edit</button>
-          <button
-            type="button"
-            class="staff-row-menu__item staff-row-menu__item--danger"
-            role="menuitem"
-            @click="lineMenuDelete"
-          >
-            Remove
-          </button>
-          <button type="button" class="staff-row-menu__item" role="menuitem" @click="lineMenuPrintBarcode">
-            Print Barcode
-          </button>
-        </div>
-      </Transition>
-    </Teleport>
-
     <div
       v-if="editLineOpen"
       class="modal d-block"
@@ -832,9 +833,5 @@ onUnmounted(() => {
   width: 7rem;
   min-width: 7rem;
   max-width: 7rem;
-}
-
-.user-asn-detail-page :deep(.user-asn-detail-lines-actions-inner) {
-  justify-content: center !important;
 }
 </style>

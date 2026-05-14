@@ -198,7 +198,7 @@ async function toggleManageMenu(rowId, e) {
   });
 }
 
-const manageMenuRow = computed(() => rows.value.find((r) => r.id === manageOpenId.value) ?? null);
+const manageMenuRow = computed(() => rows.value.find((r) => r.id == manageOpenId.value) ?? null);
 
 function onDocClickManage(e) {
   if (!e.target?.closest?.("[data-row-actions]")) {
@@ -214,7 +214,11 @@ function goEditAsnFromMenu() {
   const row = manageMenuRow.value;
   if (!row) return;
   closeManageMenu();
-  router.push({ name: "user-asn-detail", params: { id: String(row.id) } });
+  router.push({
+    name: "user-asn-detail",
+    params: { id: String(row.id) },
+    hash: "#user-asn-items",
+  });
 }
 
 function openRowDeleteModalFromMenu() {
@@ -404,8 +408,8 @@ onUnmounted(() => {
                     <button
                       type="button"
                       class="staff-action-btn staff-action-btn--more"
-                      :class="{ 'is-open': manageOpenId === r.id }"
-                      :aria-expanded="manageOpenId === r.id ? 'true' : 'false'"
+                      :class="{ 'is-open': manageOpenId == r.id }"
+                      :aria-expanded="manageOpenId == r.id ? 'true' : 'false'"
                       aria-haspopup="true"
                       aria-label="Row actions"
                       @click="toggleManageMenu(r.id, $event)"
@@ -491,7 +495,7 @@ onUnmounted(() => {
           }"
           @click.stop
         >
-          <button type="button" class="staff-row-menu__item" role="menuitem" @click="goEditAsnFromMenu">Edit</button>
+          <button type="button" class="staff-row-menu__item" role="menuitem" @click="goEditAsnFromMenu">Edit ASN</button>
           <button
             type="button"
             class="staff-row-menu__item staff-row-menu__item--danger"

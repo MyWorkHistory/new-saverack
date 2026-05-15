@@ -8,7 +8,7 @@ import ConfirmModal from "../../components/common/ConfirmModal.vue";
 import { setCrmPageMeta } from "../../composables/useCrmPageMeta.js";
 import { useToast } from "../../composables/useToast.js";
 import { ASN_CARRIER_OPTIONS } from "../../utils/asnCarrierOptions.js";
-import { formatAsnDisplay } from "../../utils/formatAsnDisplay.js";
+import { formatAsnDisplay, formatAsnHeading } from "../../utils/formatAsnDisplay.js";
 import { formatDateUs } from "../../utils/formatUserDates.js";
 
 const SHIP_TO_ADDRESS_LINES = ["3135 Drane Field Rd #20", "Lakeland, FL 33811"];
@@ -155,6 +155,11 @@ async function loadAsn() {
     normalizeAsnStatusPayload(data);
     asn.value = data;
     syncDraftsFromAsn();
+    const heading = formatAsnHeading(data?.asn_number);
+    setCrmPageMeta({
+      title: heading ? `Save Rack | ${heading}` : "Save Rack | ASN",
+      description: "ASN detail.",
+    });
     if (typeof window !== "undefined" && route.hash === "#user-asn-items") {
       await nextTick();
       requestAnimationFrame(() => {
@@ -558,7 +563,7 @@ onUnmounted(() => {
         <div class="d-flex flex-wrap justify-content-between align-items-start gap-3">
           <div class="min-w-0">
             <div class="d-flex flex-wrap align-items-center gap-2 mb-1">
-              <h1 class="h4 mb-0 fw-semibold text-body">{{ asnDisplayNumber || "—" }}</h1>
+              <h1 class="h4 mb-0 fw-semibold text-body">{{ asnHeading || "—" }}</h1>
               <span class="badge rounded-pill fw-medium" :class="statusBadgeClass(asn.status)">{{
                 statusLabel(asn.status)
               }}</span>
@@ -838,6 +843,7 @@ onUnmounted(() => {
           <h3 class="h6 fw-semibold mb-3">Ship To</h3>
           <p class="small text-secondary mb-1">Account Name</p>
           <p class="mb-2 fw-semibold">{{ shipToAccountName }}</p>
+          <p class="small text-secondary mb-1">ASN#</p>
           <p class="mb-2 fw-semibold">{{ asnDisplayNumber || "—" }}</p>
           <p class="small text-secondary mb-1">Save Rack</p>
           <p v-for="(ln, i) in SHIP_TO_ADDRESS_LINES" :key="i" class="mb-0 small text-secondary">{{ ln }}</p>
@@ -958,7 +964,7 @@ onUnmounted(() => {
     <ConfirmModal
       :open="deleteAsnOpen"
       title="Delete ASN"
-      :message="asn ? `Delete ${asnDisplayNumber || asn.asn_number}? Only draft or pending ASNs can be removed.` : ''"
+      :message="asn ? `Delete ${asnHeading || asn.asn_number}? Only draft or pending ASNs can be removed.` : ''"
       confirm-label="Delete"
       :busy="deleteAsnBusy"
       danger

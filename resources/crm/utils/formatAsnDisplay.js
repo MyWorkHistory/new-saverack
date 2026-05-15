@@ -7,3 +7,9 @@ export function formatAsnDisplay(raw) {
   const stripped = s.replace(/^ASN[#\s-]*/i, "").trim();
   return stripped || s;
 }
+
+/** Page headings, list cells, and confirmations (e.g. `ASN# 0004`). */
+export function formatAsnHeading(raw) {
+  const n = formatAsnDisplay(raw);
+  return n ? `ASN# ${n}` : "";
+}

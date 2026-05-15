@@ -7,7 +7,7 @@ import CrmLoadingSpinner from "../../components/common/CrmLoadingSpinner.vue";
 import ConfirmModal from "../../components/common/ConfirmModal.vue";
 import { setCrmPageMeta } from "../../composables/useCrmPageMeta.js";
 import { useToast } from "../../composables/useToast.js";
-import { formatAsnDisplay } from "../../utils/formatAsnDisplay.js";
+import { formatAsnHeading } from "../../utils/formatAsnDisplay.js";
 import { formatDateUs } from "../../utils/formatUserDates.js";
 
 const toast = useToast();
@@ -455,7 +455,7 @@ onUnmounted(() => {
                     {{ statusLabel(r.status) }}
                   </span>
                 </td>
-                <td class="text-center fw-semibold user-asn-list-asn-col">{{ formatAsnDisplay(r.asn_number) }}</td>
+                <td class="text-center fw-semibold user-asn-list-asn-col">{{ formatAsnHeading(r.asn_number) }}</td>
                 <td class="text-center small text-secondary">{{ formatDateUs(r.created_at) }}</td>
                 <td class="text-center">{{ Number(r.expected_qty ?? 0).toLocaleString() }}</td>
                 <td class="text-center">{{ Number(r.accepted_qty ?? 0).toLocaleString() }}</td>
@@ -638,7 +638,7 @@ onUnmounted(() => {
 }
 
 .user-asn-list :deep(.user-asn-list-asn-col) {
-  min-width: 4.5rem;
+  min-width: 6.5rem;
 }
 
 .user-asn-list-tracking-text {

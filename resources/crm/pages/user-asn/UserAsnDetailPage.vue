@@ -8,6 +8,7 @@ import ConfirmModal from "../../components/common/ConfirmModal.vue";
 import { setCrmPageMeta } from "../../composables/useCrmPageMeta.js";
 import { useToast } from "../../composables/useToast.js";
 import { ASN_CARRIER_OPTIONS } from "../../utils/asnCarrierOptions.js";
+import { formatAsnDisplay } from "../../utils/formatAsnDisplay.js";
 import { formatDateUs } from "../../utils/formatUserDates.js";
 
 const SHIP_TO_ADDRESS_LINES = ["3135 Drane Field Rd #20", "Lakeland, FL 33811"];
@@ -37,9 +38,13 @@ const catalog = ref([]);
 const catalogLoading = ref(false);
 const catalogFilter = ref("");
 const addPanelOpen = ref(false);
-const manualSku = ref("");
-const manualName = ref("");
-const manualQty = ref(1);
+
+const trackingDraft = ref([{ carrier: "", tracking_number: "" }]);
+const vendorDraft = ref([{ label: "" }]);
+const notesDraft = ref("");
+const trackingSaveBusy = ref(false);
+const vendorSaveBusy = ref(false);
+const notesSaveBusy = ref(false);
 
 const catalogQtyByKey = ref({});
 
@@ -70,6 +75,8 @@ const shipToAccountName = computed(() => {
   if (fromAsn) return fromAsn;
   return String(crmUser.value?.client_account_company_name || "Save Rack").trim() || "Save Rack";
 });
+
+const asnDisplayNumber = computed(() => formatAsnDisplay(asn.value?.asn_number));
 
 const filteredCatalog = computed(() => {
   const q = catalogFilter.value.trim().toLowerCase();
@@ -147,6 +154,7 @@ async function loadAsn() {
     const { data } = await api.get(`/asns/${asnId.value}`);
     normalizeAsnStatusPayload(data);
     asn.value = data;
+    syncDraftsFromAsn();
     if (typeof window !== "undefined" && route.hash === "#user-asn-items") {
       await nextTick();
       requestAnimationFrame(() => {
@@ -332,6 +340,101 @@ watch(addPanelOpen, (open) => {
   if (open) loadCatalog();
 });
 
+watch(
+  () => asn.value?.status,
+  (status) => {
+    if (String(status || "").toLowerCase() === "draft") {
+      loadCatalog();
+    }
+  },
+);
+
+function syncDraftsFromAsn() {
+  if (!asn.value) return;
+  const t = (asn.value.trackings || []).length
+    ? asn.value.trackings.map((x) => ({
+        carrier: x.carrier || "",
+        tracking_number: x.tracking_number || "",
+      }))
+    : [{ carrier: "", tracking_number: "" }];
+  trackingDraft.value = t;
+  const v = (asn.value.vendor_lines || []).length
+    ? asn.value.vendor_lines.map((x) => ({ label: x.label || "" }))
+    : [{ label: "" }];
+  vendorDraft.value = v;
+  notesDraft.value = asn.value.warehouse_notes || "";
+}
+
+function addTrackingRow() {
+  trackingDraft.value = [...trackingDraft.value, { carrier: "", tracking_number: "" }];
+}
+
+function addVendorRow() {
+  vendorDraft.value = [...vendorDraft.value, { label: "" }];
+}
+
+function removeVendorRow(idx) {
+  if (vendorDraft.value.length <= 1) {
+    vendorDraft.value = [{ label: "" }];
+    return;
+  }
+  vendorDraft.value = vendorDraft.value.filter((_, i) => i !== idx);
+}
+
+async function saveTrackings() {
+  if (!asn.value?.id) return;
+  trackingSaveBusy.value = true;
+  try {
+    const { data } = await api.put(`/asns/${asn.value.id}/trackings`, {
+      trackings: trackingDraft.value,
+    });
+    normalizeAsnStatusPayload(data);
+    asn.value = data;
+    syncDraftsFromAsn();
+    toast.success("Tracking saved.");
+  } catch (e) {
+    toast.errorFrom(e, "Could not save tracking.");
+  } finally {
+    trackingSaveBusy.value = false;
+  }
+}
+
+async function saveVendors() {
+  if (!asn.value?.id) return;
+  vendorSaveBusy.value = true;
+  try {
+    const { data } = await api.put(`/asns/${asn.value.id}/vendor-lines`, {
+      vendor_lines: vendorDraft.value,
+    });
+    normalizeAsnStatusPayload(data);
+    asn.value = data;
+    syncDraftsFromAsn();
+    toast.success("Vendor details saved.");
+  } catch (e) {
+    toast.errorFrom(e, "Could not save vendor details.");
+  } finally {
+    vendorSaveBusy.value = false;
+  }
+}
+
+async function saveNotes() {
+  if (!asn.value?.id) return;
+  notesSaveBusy.value = true;
+  try {
+    const { data } = await api.patch(`/asns/${asn.value.id}/warehouse-notes`, {
+      warehouse_notes: notesDraft.value,
+    });
+    normalizeAsnStatusPayload(data);
+    asn.value = data;
+    syncDraftsFromAsn();
+    toast.success("Notes saved.");
+  } catch (e) {
+    toast.errorFrom(e, "Could not save notes.");
+  } finally {
+    notesSaveBusy.value = false;
+  }
+}
+
 async function addFromCatalog(p) {
   if (!asn.value || !isDraft.value) return;
   const qty = catalogQty(p);
@@ -352,33 +455,6 @@ async function addFromCatalog(p) {
     await loadAsn();
   } catch (e) {
     toast.errorFrom(e, "Could not add product.");
-  } finally {
-    lineBusy.value = false;
-  }
-}
-
-async function addManualLine() {
-  if (!asn.value || !isDraft.value) return;
-  const sku = manualSku.value.trim();
-  const name = manualName.value.trim();
-  if (!sku || !name) {
-    toast.error("Enter SKU and name.");
-    return;
-  }
-  lineBusy.value = true;
-  try {
-    await api.post(`/asns/${asn.value.id}/lines`, {
-      sku,
-      name,
-      expected_qty: Math.max(0, Number(manualQty.value) || 0),
-    });
-    manualSku.value = "";
-    manualName.value = "";
-    manualQty.value = 1;
-    toast.success("Line added.");
-    await loadAsn();
-  } catch (e) {
-    toast.errorFrom(e, "Could not add line.");
   } finally {
     lineBusy.value = false;
   }
@@ -482,7 +558,7 @@ onUnmounted(() => {
         <div class="d-flex flex-wrap justify-content-between align-items-start gap-3">
           <div class="min-w-0">
             <div class="d-flex flex-wrap align-items-center gap-2 mb-1">
-              <h1 class="h4 mb-0 fw-semibold text-body">{{ asn.asn_number }}</h1>
+              <h1 class="h4 mb-0 fw-semibold text-body">{{ asnDisplayNumber || "—" }}</h1>
               <span class="badge rounded-pill fw-medium" :class="statusBadgeClass(asn.status)">{{
                 statusLabel(asn.status)
               }}</span>
@@ -549,7 +625,7 @@ onUnmounted(() => {
             </div>
             <div class="p-4 bg-body-tertiary border-bottom">
               <div v-if="catalogLoading" class="d-flex justify-content-center py-4">
-                <CrmLoadingSpinner message="Loading catalog…" />
+                <CrmLoadingSpinner message="Loading products…" />
               </div>
               <template v-else>
                 <p class="small fw-semibold mb-2">From catalog</p>
@@ -593,33 +669,7 @@ onUnmounted(() => {
                   </div>
                   <div v-if="filteredCatalog.length === 0" class="p-3 small text-secondary">No matches.</div>
                 </div>
-                <hr class="my-3" />
-                <p class="small fw-semibold mb-2">Create line manually</p>
-                <div class="row g-2 align-items-end">
-                  <div class="col-md-3">
-                    <label class="form-label small mb-0">SKU</label>
-                    <input v-model="manualSku" class="form-control form-control-sm" />
-                  </div>
-                  <div class="col-md-5">
-                    <label class="form-label small mb-0">Name</label>
-                    <input v-model="manualName" class="form-control form-control-sm" />
-                  </div>
-                  <div class="col-md-2">
-                    <label class="form-label small mb-0">Qty</label>
-                    <input v-model.number="manualQty" type="number" min="0" class="form-control form-control-sm" />
-                  </div>
-                  <div class="col-md-2">
-                    <button
-                      type="button"
-                      class="btn btn-sm btn-outline-primary w-100 fw-semibold"
-                      :disabled="lineBusy"
-                      @click="addManualLine"
-                    >
-                      Add
-                    </button>
-                  </div>
-                </div>
-              </template>
+</template>
             </div>
           </div>
 
@@ -721,10 +771,75 @@ onUnmounted(() => {
 
       <div class="col-lg-4 d-flex flex-column gap-4 order-detail-page__side-column">
         <div class="staff-table-card staff-datatable-card staff-datatable-card--white p-4">
+          <h3 class="h6 fw-semibold mb-3">Tracking Details</h3>
+          <div v-for="(row, idx) in trackingDraft" :key="'trk' + idx" class="mb-2">
+            <div class="row g-1">
+              <div class="col-5">
+                <select v-model="row.carrier" class="form-select form-select-sm">
+                  <option value="">Carrier</option>
+                  <option v-for="c in ASN_CARRIER_OPTIONS" :key="c" :value="c">{{ c }}</option>
+                </select>
+              </div>
+              <div class="col-7">
+                <input v-model="row.tracking_number" class="form-control form-control-sm" placeholder="Tracking #" />
+              </div>
+            </div>
+          </div>
+          <button type="button" class="btn btn-link btn-sm px-0 mb-2" @click="addTrackingRow">Add Row</button>
+          <button
+            type="button"
+            class="btn btn-sm btn-primary staff-page-primary w-100"
+            :disabled="trackingSaveBusy"
+            @click="saveTrackings"
+          >
+            Save Tracking
+          </button>
+        </div>
+
+        <div class="staff-table-card staff-datatable-card staff-datatable-card--white p-4">
+          <h3 class="h6 fw-semibold mb-3">Vendor Details</h3>
+          <div v-for="(row, idx) in vendorDraft" :key="'vnd' + idx" class="d-flex gap-1 mb-2">
+            <input v-model="row.label" class="form-control form-control-sm" placeholder="Vendor line" />
+            <button
+              v-if="vendorDraft.length > 1"
+              type="button"
+              class="btn btn-sm btn-outline-secondary flex-shrink-0"
+              aria-label="Remove vendor line"
+              @click="removeVendorRow(idx)"
+            >
+              ×
+            </button>
+          </div>
+          <button type="button" class="btn btn-link btn-sm px-0 mb-2" @click="addVendorRow">Add Row</button>
+          <button
+            type="button"
+            class="btn btn-sm btn-primary staff-page-primary w-100"
+            :disabled="vendorSaveBusy"
+            @click="saveVendors"
+          >
+            Save Vendor Details
+          </button>
+        </div>
+
+        <div class="staff-table-card staff-datatable-card staff-datatable-card--white p-4">
+          <h3 class="h6 fw-semibold mb-3">Warehouse Notes</h3>
+          <textarea v-model="notesDraft" class="form-control form-control-sm mb-2" rows="4" placeholder="Notes for warehouse staff" />
+          <button
+            type="button"
+            class="btn btn-sm btn-primary staff-page-primary w-100"
+            :disabled="notesSaveBusy"
+            @click="saveNotes"
+          >
+            Save Notes
+          </button>
+        </div>
+
+        <div class="staff-table-card staff-datatable-card staff-datatable-card--white p-4">
           <h3 class="h6 fw-semibold mb-3">Ship To</h3>
-          <p class="mb-1 fw-semibold">{{ shipToAccountName }}</p>
-          <p class="mb-2 small text-secondary">{{ asn.asn_number }}</p>
-          <p class="mb-1 small fw-semibold">Save Rack</p>
+          <p class="small text-secondary mb-1">Account Name</p>
+          <p class="mb-2 fw-semibold">{{ shipToAccountName }}</p>
+          <p class="mb-2 fw-semibold">{{ asnDisplayNumber || "—" }}</p>
+          <p class="small text-secondary mb-1">Save Rack</p>
           <p v-for="(ln, i) in SHIP_TO_ADDRESS_LINES" :key="i" class="mb-0 small text-secondary">{{ ln }}</p>
           <button type="button" class="btn btn-outline-secondary btn-sm mt-3 w-100" @click="openPrintLabel">
             Print Identification Label
@@ -843,7 +958,7 @@ onUnmounted(() => {
     <ConfirmModal
       :open="deleteAsnOpen"
       title="Delete ASN"
-      :message="asn ? `Delete ${asn.asn_number}? Only draft or pending ASNs can be removed.` : ''"
+      :message="asn ? `Delete ${asnDisplayNumber || asn.asn_number}? Only draft or pending ASNs can be removed.` : ''"
       confirm-label="Delete"
       :busy="deleteAsnBusy"
       danger

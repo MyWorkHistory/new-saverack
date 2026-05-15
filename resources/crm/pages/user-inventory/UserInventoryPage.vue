@@ -11,6 +11,7 @@ const crmUser = inject("crmUser", ref(null));
 
 const loading = ref(false);
 const loadingMore = ref(false);
+const loadingPage = ref(0);
 const bulkBusy = ref(false);
 const rows = ref([]);
 const pageInfo = ref({ has_next_page: false, end_cursor: null });
@@ -48,7 +49,7 @@ function normalizeRows(list) {
   return Array.isArray(list) ? list : [];
 }
 
-async function fetchPage(append) {
+async function fetchPage(append, targetRows, seenKeys) {
   if (!accountId.value) return;
   const params = {
     client_account_id: accountId.value,
@@ -65,18 +66,15 @@ async function fetchPage(append) {
     has_next_page: Boolean(data?.page_info?.has_next_page),
     end_cursor: data?.page_info?.end_cursor ?? null,
   };
-  if (append) {
-    const seen = new Set(rows.value.map(rowKey));
-    for (const r of chunk) {
-      const k = rowKey(r);
-      if (!seen.has(k)) {
-        seen.add(k);
-        rows.value.push(r);
-      }
-    }
-  } else {
-    rows.value = chunk;
+  const dest = targetRows ?? rows.value;
+  const seen = seenKeys ?? new Set(dest.map(rowKey));
+  for (const r of chunk) {
+    const k = rowKey(r);
+    if (seen.has(k)) continue;
+    seen.add(k);
+    dest.push(r);
   }
+  return seen;
 }
 
 const INVENTORY_MAX_PAGES = 50;
@@ -93,11 +91,15 @@ async function loadRows(reset) {
   }
   try {
     if (reset) {
+      const accumulated = [];
+      const seen = new Set();
       let pages = 0;
       while (pageInfo.value.has_next_page && pages < INVENTORY_MAX_PAGES) {
-        await fetchPage(pages > 0);
+        loadingPage.value = pages + 1;
+        await fetchPage(pages > 0, accumulated, seen);
         pages += 1;
       }
+      rows.value = accumulated;
       if (pageInfo.value.has_next_page) {
         toast.error("Inventory list is very large; only the first portion was loaded. Use search or filters to narrow results.");
       }
@@ -109,6 +111,7 @@ async function loadRows(reset) {
   } finally {
     loading.value = false;
     loadingMore.value = false;
+    loadingPage.value = 0;
   }
 }
 
@@ -412,7 +415,10 @@ onUnmounted(() => {
   <div class="staff-page staff-page--wide">
     <div class="mb-4">
       <h1 class="h4 mb-1 fw-semibold text-body">Products</h1>
-      <p class="text-secondary small mb-0">Inventory</p>
+      <p class="text-secondary small mb-1">Inventory</p>
+      <p class="text-secondary small mb-0 user-inv-load-hint">
+        Inventory loads all products from ShipHero in batches; large catalogs may take a moment.
+      </p>
     </div>
 
     <div class="staff-table-card staff-datatable-card staff-datatable-card--white w-100">
@@ -635,7 +641,7 @@ onUnmounted(() => {
                 </button>
               </th>
               <th
-                class="staff-table-head__th staff-table-head__th--sort text-center"
+                class="staff-table-head__th staff-table-head__th--sort text-center user-inv-table__num-col"
                 scope="col"
                 :aria-sort="thAriaSort('on_hand')"
               >
@@ -645,7 +651,7 @@ onUnmounted(() => {
                 </button>
               </th>
               <th
-                class="staff-table-head__th staff-table-head__th--sort text-center"
+                class="staff-table-head__th staff-table-head__th--sort text-center user-inv-table__num-col"
                 scope="col"
                 :aria-sort="thAriaSort('allocated')"
               >
@@ -655,7 +661,7 @@ onUnmounted(() => {
                 </button>
               </th>
               <th
-                class="staff-table-head__th staff-table-head__th--sort text-center"
+                class="staff-table-head__th staff-table-head__th--sort text-center user-inv-table__num-col"
                 scope="col"
                 :aria-sort="thAriaSort('backorder')"
               >
@@ -668,7 +674,9 @@ onUnmounted(() => {
           </thead>
           <tbody>
             <tr v-if="loading">
-              <td colspan="8" class="text-center text-secondary py-5">Loading inventory...</td>
+              <td colspan="8" class="text-center text-secondary py-5">
+                Loading inventory{{ loadingPage > 0 ? ` (page ${loadingPage})` : "" }}…
+              </td>
             </tr>
             <tr v-else-if="!displayRows.length">
               <td colspan="8" class="text-center text-secondary py-5">No inventory rows found.</td>
@@ -693,15 +701,11 @@ onUnmounted(() => {
                 />
                 <div v-else class="user-inventory-thumb user-inventory-thumb--empty" />
               </td>
-              <td class="user-inv-table__text-col">
-                <button type="button" class="btn btn-link p-0 text-decoration-none fw-semibold text-start" @click="openDetail(row)">
-                  {{ row.sku || "—" }}
-                </button>
+              <td class="user-inv-table__sku-col">
+                <a href="#" class="user-inv-table__sku-link" @click.prevent="openDetail(row)">{{ row.sku || "—" }}</a>
               </td>
-              <td class="user-inv-table__text-col">
-                <button type="button" class="btn btn-link p-0 text-decoration-none text-start" @click="openDetail(row)">
-                  {{ row.name || "—" }}
-                </button>
+              <td class="user-inv-table__name-col">
+                <span class="user-inv-table__name-text">{{ row.name || "—" }}</span>
               </td>
               <td class="text-center user-inv-table__num-col">{{ (row.kit || row.kit_build) ? "Yes" : "No" }}</td>
               <td class="text-center user-inv-table__num-col">{{ Number(row.on_hand || 0) }}</td>
@@ -744,10 +748,53 @@ onUnmounted(() => {
   vertical-align: middle;
 }
 
-.user-inv-table__text-col {
+.user-inv-table {
+  table-layout: fixed;
+  width: 100%;
+  min-width: 52rem;
+}
+
+.user-inv-table__text-col,
+.user-inv-table__sku-col,
+.user-inv-table__name-col {
   text-align: start;
   vertical-align: middle;
+}
+
+.user-inv-table__sku-col {
+  width: 10rem;
   min-width: 8rem;
+}
+
+.user-inv-table__name-col {
+  width: auto;
+  max-width: min(16rem, 28vw);
+}
+
+.user-inv-table__sku-link {
+  color: #2563eb;
+  font-weight: 600;
+  text-decoration: none;
+  user-select: text;
+  cursor: pointer;
+}
+
+.user-inv-table__sku-link:hover {
+  color: #1d4ed8;
+  text-decoration: underline;
+}
+
+.user-inv-table__name-text {
+  display: block;
+  white-space: normal;
+  word-break: break-word;
+  line-height: 1.4;
+  user-select: text;
+}
+
+.user-inv-table__num-col {
+  min-width: 5.5rem;
+  width: 5.5rem;
 }
 
 .user-inv-table__sort-start {
@@ -782,11 +829,8 @@ onUnmounted(() => {
   background: rgba(0, 0, 0, 0.05);
 }
 
-.user-inv-table .btn-link {
-  color: #2563eb;
-}
-
-.user-inv-table .btn-link:hover {
-  color: #1d4ed8;
+.user-inv-load-hint {
+  max-width: 42rem;
+  line-height: 1.45;
 }
 </style>

@@ -7,6 +7,7 @@ import CrmLoadingSpinner from "../../components/common/CrmLoadingSpinner.vue";
 import ConfirmModal from "../../components/common/ConfirmModal.vue";
 import { setCrmPageMeta } from "../../composables/useCrmPageMeta.js";
 import { useToast } from "../../composables/useToast.js";
+import { formatAsnDisplay } from "../../utils/formatAsnDisplay.js";
 import { formatDateUs } from "../../utils/formatUserDates.js";
 
 const toast = useToast();
@@ -454,14 +455,14 @@ onUnmounted(() => {
                     {{ statusLabel(r.status) }}
                   </span>
                 </td>
-                <td class="text-center fw-semibold">{{ r.asn_number }}</td>
+                <td class="text-center fw-semibold user-asn-list-asn-col">{{ formatAsnDisplay(r.asn_number) }}</td>
                 <td class="text-center small text-secondary">{{ formatDateUs(r.created_at) }}</td>
                 <td class="text-center">{{ Number(r.expected_qty ?? 0).toLocaleString() }}</td>
                 <td class="text-center">{{ Number(r.accepted_qty ?? 0).toLocaleString() }}</td>
                 <td class="text-center">{{ Number(r.rejected_qty ?? 0).toLocaleString() }}</td>
                 <td class="text-center">{{ Number(r.total_boxes ?? 0).toLocaleString() }}</td>
-                <td class="text-center small text-secondary text-truncate" style="max-width: 14rem">
-                  {{ r.tracking_display || "—" }}
+                <td class="text-center small text-secondary user-asn-list-tracking-col">
+                  <span class="user-asn-list-tracking-text">{{ r.tracking_display || "—" }}</span>
                 </td>
                 <td class="staff-actions-cell text-center user-asn-list-actions-cell" @click.stop>
                   <div
@@ -626,5 +627,26 @@ onUnmounted(() => {
 
 .user-asn-list :deep(.user-asn-list-actions-inner) {
   justify-content: center !important;
+}
+
+.user-asn-list :deep(.user-asn-list-tracking-col) {
+  min-width: 9rem;
+}
+
+.user-asn-list :deep(.user-asn-list-actions-col) {
+  min-width: 5.5rem;
+}
+
+.user-asn-list :deep(.user-asn-list-asn-col) {
+  min-width: 4.5rem;
+}
+
+.user-asn-list-tracking-text {
+  display: inline-block;
+  max-width: 14rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  vertical-align: bottom;
 }
 </style>

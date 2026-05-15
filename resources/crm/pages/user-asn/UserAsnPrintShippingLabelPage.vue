@@ -3,6 +3,7 @@ import { computed, onMounted, ref } from "vue";
 import { useRoute } from "vue-router";
 import api from "../../services/api";
 import { setCrmPageMeta } from "../../composables/useCrmPageMeta.js";
+import { formatAsnDisplay } from "../../utils/formatAsnDisplay.js";
 
 const route = useRoute();
 const asn = ref(null);
@@ -32,7 +33,7 @@ onMounted(async () => {
     <p v-if="err" class="p-3 text-danger">{{ err }}</p>
     <div v-else-if="asn" class="label-inner">
       <div class="label-account">{{ accountName }}</div>
-      <div class="label-asn-number">{{ asn.asn_number }}</div>
+      <div class="label-asn-number">{{ formatAsnDisplay(asn.asn_number) }}</div>
       <div class="label-addr mt-3">
         <div>3135 Drane Field Rd #20</div>
         <div>Lakeland, FL 33811</div>

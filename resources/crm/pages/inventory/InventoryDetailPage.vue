@@ -431,7 +431,7 @@ async function togglePickable(loc) {
               </div>
             </div>
 
-            <div class="staff-table-card p-0 mb-3">
+            <div v-if="!isPortalView" class="staff-table-card p-0 mb-3">
               <div class="px-3 py-2 border-bottom">
                 <h3 class="h6 mb-0 fw-semibold">Locations</h3>
               </div>

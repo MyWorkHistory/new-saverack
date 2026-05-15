@@ -59,7 +59,7 @@ export function usePortalDashboardCounts(getClientAccountId, options = {}) {
   const refreshing = ref(false);
   const counts = ref(parsePortalQueueCounts(null));
 
-  async function fetchCounts({ background = false } = {}) {
+  async function fetchCounts({ background = false, bustCache = false } = {}) {
     const clientAccountId = Number(getClientAccountId() || 0);
     if (!clientAccountId) {
       loading.value = false;
@@ -74,9 +74,11 @@ export function usePortalDashboardCounts(getClientAccountId, options = {}) {
     }
 
     try {
-      const { data } = await api.get("/orders/queue-counts", {
-        params: { client_account_id: clientAccountId },
-      });
+      const params = { client_account_id: clientAccountId };
+      if (bustCache) {
+        params.refresh = 1;
+      }
+      const { data } = await api.get("/orders/queue-counts", { params });
       const next = parsePortalQueueCounts(data);
       counts.value = next;
       writeCache(clientAccountId, next);
@@ -106,5 +108,21 @@ export function usePortalDashboardCounts(getClientAccountId, options = {}) {
     await fetchCounts({ background: false });
   }
 
-  return { counts, loading, refreshing, loadCounts };
+  async function refreshCounts() {
+    const clientAccountId = Number(getClientAccountId() || 0);
+    if (!clientAccountId) {
+      loading.value = false;
+      return;
+    }
+    try {
+      sessionStorage.removeItem(storageKey(clientAccountId));
+    } catch {
+      // no-op
+    }
+    loading.value = true;
+    refreshing.value = false;
+    await fetchCounts({ background: false, bustCache: true });
+  }
+
+  return { counts, loading, refreshing, loadCounts, refreshCounts };
 }

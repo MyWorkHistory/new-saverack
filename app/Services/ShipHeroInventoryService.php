@@ -580,7 +580,7 @@ GQL;
         int $graphqlFirst,
         ?string $after,
         ?string $searchQuery,
-        int $searchSkip,
+        int $searchSkip
     ): array {
         $graphqlFirst = max(25, min(100, $graphqlFirst));
         $searchQuery = is_string($searchQuery) ? trim($searchQuery) : '';
@@ -690,7 +690,7 @@ GQL;
         int $desired,
         ?string $after,
         string $searchQuery,
-        int $searchSkip,
+        int $searchSkip
     ): array {
         $graphql = <<<'GQL'
 query ShipHeroAsnProductCatalogSearch($customer_account_id: String, $first: Int!, $after: String) {

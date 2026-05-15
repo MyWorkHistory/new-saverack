@@ -467,7 +467,7 @@ class AsnController extends Controller
     {
         $this->authorizeAsn($request, $asn);
         $validated = $request->validate([
-            'shiphero_product_id' => ['nullable', 'string', 'max:64'],
+            'shiphero_product_id' => ['nullable', 'string', 'max:191'],
             'sku' => ['required', 'string', 'max:255'],
             'name' => ['required', 'string', 'max:512'],
             'image_url' => ['nullable', 'string', 'max:2048'],

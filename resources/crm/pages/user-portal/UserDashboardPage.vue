@@ -11,7 +11,7 @@ const crmUser = inject("crmUser", ref(null));
 
 const clientAccountId = computed(() => Number(crmUser.value?.client_account_id || 0));
 
-const { counts, loading, refreshing, loadCounts } = usePortalDashboardCounts(
+const { counts, loading, refreshing, loadCounts, refreshCounts } = usePortalDashboardCounts(
   () => clientAccountId.value,
   {
     onError: (e) => toast.errorFrom(e, "Could not load order counts."),
@@ -111,7 +111,17 @@ onMounted(() => {
   <div class="staff-page staff-page--wide">
     <div class="mb-4 d-flex align-items-center justify-content-between gap-2 flex-wrap">
       <h1 class="h4 mb-0 fw-semibold text-body">{{ accountDisplayName || "Home" }}</h1>
-      <span v-if="refreshing" class="small text-secondary">Updating…</span>
+      <div class="d-flex align-items-center gap-2 flex-shrink-0">
+        <button
+          type="button"
+          class="btn btn-sm btn-outline-secondary fw-semibold staff-page-secondary"
+          :disabled="loading || refreshing"
+          @click="refreshCounts"
+        >
+          Refresh
+        </button>
+        <span v-if="refreshing" class="small text-secondary">Updating…</span>
+      </div>
     </div>
 
     <div class="user-dashboard__content position-relative">

@@ -137,7 +137,7 @@ class OrderController extends Controller
                 ])))
             );
 
-            $payload = Cache::remember($cacheKey, now()->addMinutes(3), function () use (
+            $buildQueueCountsPayload = function () use (
                 $customerId,
                 $awaitingFrom,
                 $awaitingTo,
@@ -185,7 +185,13 @@ class OrderController extends Controller
                     'shipped_order_date_to' => $shippedTo,
                     'cached_at' => now()->toIso8601String(),
                 ];
-            });
+            };
+
+            if ($request->boolean('refresh')) {
+                $payload = $buildQueueCountsPayload();
+            } else {
+                $payload = Cache::remember($cacheKey, now()->addMinutes(3), $buildQueueCountsPayload);
+            }
 
             return response()->json($payload);
         } catch (ValidationException $e) {

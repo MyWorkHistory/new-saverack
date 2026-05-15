@@ -77,6 +77,7 @@ const shipToAccountName = computed(() => {
 });
 
 const asnDisplayNumber = computed(() => formatAsnDisplay(asn.value?.asn_number));
+const asnHeading = computed(() => formatAsnHeading(asn.value?.asn_number));
 
 const filteredCatalog = computed(() => {
   const q = catalogFilter.value.trim().toLowerCase();

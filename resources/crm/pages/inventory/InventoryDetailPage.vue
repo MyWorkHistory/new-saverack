@@ -1,5 +1,5 @@
 <script setup>
-import { computed, onMounted, reactive, ref } from "vue";
+import { computed, inject, onMounted, reactive, ref } from "vue";
 import { useRoute } from "vue-router";
 import api from "../../services/api";
 import CrmIconRowActions from "../../components/common/CrmIconRowActions.vue";
@@ -9,6 +9,10 @@ import { useToast } from "../../composables/useToast.js";
 
 const route = useRoute();
 const toast = useToast();
+const crmUser = inject("crmUser", ref(null));
+
+const isPortalView = computed(() => Boolean(route.meta.userPortal));
+const canManageInventoryLocations = computed(() => !isPortalView.value);
 
 const loading = ref(true);
 const saving = ref(false);
@@ -69,7 +73,7 @@ const allLocations = computed(() => {
   if (!p?.warehouses) return out;
   p.warehouses.forEach((wh) => {
     (wh.locations || []).forEach((loc) => {
-      if (Number(loc?.quantity || 0) <= 0) return;
+      if (!isPortalView.value && Number(loc?.quantity || 0) <= 0) return;
       out.push({
         ...loc,
         warehouse_id: wh.warehouse_id,
@@ -126,7 +130,12 @@ function onDocClick(e) {
 
 function requestParams() {
   const params = {};
-  if (route.query.client_account_id) params.client_account_id = Number(route.query.client_account_id);
+  const portalAccountId = Number(crmUser.value?.client_account_id || 0);
+  const queryAccountId = Number(route.query.client_account_id || 0);
+  const clientAccountId = isPortalView.value
+    ? portalAccountId || queryAccountId
+    : queryAccountId || portalAccountId;
+  if (clientAccountId > 0) params.client_account_id = clientAccountId;
   if (route.query.warehouse_id) params.warehouse_id = String(route.query.warehouse_id);
   return params;
 }
@@ -423,6 +432,9 @@ async function togglePickable(loc) {
             </div>
 
             <div class="staff-table-card p-0 mb-3">
+              <div class="px-3 py-2 border-bottom">
+                <h3 class="h6 mb-0 fw-semibold">Locations</h3>
+              </div>
               <div class="staff-table-toolbar border-0">
                 <div class="staff-table-toolbar--row">
                   <input
@@ -431,10 +443,12 @@ async function togglePickable(loc) {
                     class="form-control staff-toolbar-search staff-toolbar-search--inline"
                     placeholder="Search locations"
                   />
-                  <button type="button" class="btn btn-outline-secondary staff-toolbar-btn" disabled>Filters</button>
-                  <button type="button" class="btn btn-primary staff-toolbar-btn" @click="openAddLocationModal">
-                    Add Location
-                  </button>
+                  <template v-if="canManageInventoryLocations">
+                    <button type="button" class="btn btn-outline-secondary staff-toolbar-btn" disabled>Filters</button>
+                    <button type="button" class="btn btn-primary staff-toolbar-btn" @click="openAddLocationModal">
+                      Add Location
+                    </button>
+                  </template>
                 </div>
               </div>
 
@@ -446,17 +460,20 @@ async function togglePickable(loc) {
                       <th class="staff-table-head__th">Pickable</th>
                       <th class="staff-table-head__th">QTY</th>
                       <th class="staff-table-head__th">Type</th>
-                      <th class="staff-table-head__th text-center">Action</th>
+                      <th v-if="canManageInventoryLocations" class="staff-table-head__th text-center">Action</th>
                     </tr>
                   </thead>
                   <tbody>
                     <tr v-if="!filteredLocations.length">
-                      <td colspan="5" class="text-center text-secondary py-4">No locations with quantity.</td>
+                      <td :colspan="canManageInventoryLocations ? 5 : 4" class="text-center text-secondary py-4">
+                        {{ isPortalView ? "No locations found for this product." : "No locations with quantity." }}
+                      </td>
                     </tr>
                     <tr v-for="loc in filteredLocations" :key="`${loc.warehouse_id}-${loc.location_id}`">
                       <td>{{ loc.location_name || loc.location_id }}</td>
                       <td>
                         <button
+                          v-if="canManageInventoryLocations"
                           type="button"
                           class="inventory-detail__toggle"
                           :class="{
@@ -474,10 +491,13 @@ async function togglePickable(loc) {
                             {{ loc.pickable === true ? "Yes" : (loc.pickable === false ? "No" : "—") }}
                           </span>
                         </button>
+                        <span v-else>
+                          {{ loc.pickable === true ? "Yes" : loc.pickable === false ? "No" : "—" }}
+                        </span>
                       </td>
                       <td>{{ loc.quantity }}</td>
                       <td>{{ loc.type || "—" }}</td>
-                      <td class="text-center">
+                      <td v-if="canManageInventoryLocations" class="text-center">
                         <div data-row-actions class="d-inline-flex">
                           <button
                             type="button"
@@ -520,7 +540,7 @@ async function togglePickable(loc) {
         </div>
       </template>
 
-      <Teleport to="body">
+      <Teleport v-if="canManageInventoryLocations" to="body">
         <div
           v-if="actionMenuLocationId"
           data-row-actions
@@ -538,7 +558,7 @@ async function togglePickable(loc) {
         </div>
       </Teleport>
 
-      <Teleport to="body">
+      <Teleport v-if="canManageInventoryLocations" to="body">
         <div v-if="updateModalOpen" class="crm-vx-modal-overlay" @click.self="updateModalOpen = false">
           <div class="crm-vx-modal crm-vx-modal--sm">
             <header class="crm-vx-modal__head">
@@ -565,7 +585,7 @@ async function togglePickable(loc) {
         </div>
       </Teleport>
 
-      <Teleport to="body">
+      <Teleport v-if="canManageInventoryLocations" to="body">
         <div v-if="transferModalOpen" class="crm-vx-modal-overlay" @click.self="transferModalOpen = false">
           <div class="crm-vx-modal crm-vx-modal--sm">
             <header class="crm-vx-modal__head">
@@ -593,7 +613,7 @@ async function togglePickable(loc) {
         </div>
       </Teleport>
 
-      <Teleport to="body">
+      <Teleport v-if="canManageInventoryLocations" to="body">
         <div v-if="addLocationModalOpen" class="crm-vx-modal-overlay" @click.self="addLocationModalOpen = false">
           <div class="crm-vx-modal crm-vx-modal--sm">
             <header class="crm-vx-modal__head">

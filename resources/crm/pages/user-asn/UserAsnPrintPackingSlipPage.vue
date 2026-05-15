@@ -27,7 +27,7 @@ onMounted(async () => {
     <p v-if="err" class="text-danger">{{ err }}</p>
     <template v-else-if="asn">
       <div class="company-name">Save Rack</div>
-      <div class="asn-line">ASN {{ asn.asn_number }}</div>
+      <div class="asn-number">{{ asn.asn_number }}</div>
       <hr class="my-4" />
       <table class="table table-sm">
         <thead>
@@ -55,7 +55,7 @@ onMounted(async () => {
   font-weight: 800;
   letter-spacing: 0.02em;
 }
-.asn-line {
+.asn-number {
   font-size: 1.65rem;
   font-weight: 700;
   margin-top: 0.35rem;

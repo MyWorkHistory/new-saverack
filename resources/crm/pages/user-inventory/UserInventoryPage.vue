@@ -79,17 +79,31 @@ async function fetchPage(append) {
   }
 }
 
+const INVENTORY_MAX_PAGES = 50;
+
 async function loadRows(reset) {
   if (!accountId.value) return;
   if (reset) {
     loading.value = true;
-    pageInfo.value = { has_next_page: false, end_cursor: null };
+    pageInfo.value = { has_next_page: true, end_cursor: null };
+    rows.value = [];
     selectedKeys.value = [];
   } else {
     loadingMore.value = true;
   }
   try {
-    await fetchPage(!reset);
+    if (reset) {
+      let pages = 0;
+      while (pageInfo.value.has_next_page && pages < INVENTORY_MAX_PAGES) {
+        await fetchPage(pages > 0);
+        pages += 1;
+      }
+      if (pageInfo.value.has_next_page) {
+        toast.error("Inventory list is very large; only the first portion was loaded. Use search or filters to narrow results.");
+      }
+    } else {
+      await fetchPage(true);
+    }
   } catch (e) {
     toast.errorFrom(e, "Could not load inventory.");
   } finally {
@@ -591,27 +605,27 @@ onUnmounted(() => {
               </th>
               <th class="staff-table-head__th text-center user-inv-table__image-col" scope="col">Image</th>
               <th
-                class="staff-table-head__th staff-table-head__th--sort text-center"
+                class="staff-table-head__th staff-table-head__th--sort user-inv-table__text-col"
                 scope="col"
                 :aria-sort="thAriaSort('sku')"
               >
-                <button type="button" class="staff-sort-btn" :disabled="loading" @click="toggleSort('sku')">
+                <button type="button" class="staff-sort-btn user-inv-table__sort-start" :disabled="loading" @click="toggleSort('sku')">
                   SKU
                   <span v-if="sortIndicator('sku')" class="staff-sort-ind">{{ sortIndicator("sku") }}</span>
                 </button>
               </th>
               <th
-                class="staff-table-head__th staff-table-head__th--sort text-center"
+                class="staff-table-head__th staff-table-head__th--sort user-inv-table__text-col"
                 scope="col"
                 :aria-sort="thAriaSort('name')"
               >
-                <button type="button" class="staff-sort-btn" :disabled="loading" @click="toggleSort('name')">
+                <button type="button" class="staff-sort-btn user-inv-table__sort-start" :disabled="loading" @click="toggleSort('name')">
                   Name
                   <span v-if="sortIndicator('name')" class="staff-sort-ind">{{ sortIndicator("name") }}</span>
                 </button>
               </th>
               <th
-                class="staff-table-head__th staff-table-head__th--sort text-center"
+                class="staff-table-head__th staff-table-head__th--sort text-center user-inv-table__num-col"
                 scope="col"
                 :aria-sort="thAriaSort('kit')"
               >
@@ -679,20 +693,20 @@ onUnmounted(() => {
                 />
                 <div v-else class="user-inventory-thumb user-inventory-thumb--empty" />
               </td>
-              <td class="text-center">
-                <button type="button" class="btn btn-link p-0 text-decoration-none fw-semibold" @click="openDetail(row)">
+              <td class="user-inv-table__text-col">
+                <button type="button" class="btn btn-link p-0 text-decoration-none fw-semibold text-start" @click="openDetail(row)">
                   {{ row.sku || "—" }}
                 </button>
               </td>
-              <td class="text-center">
-                <button type="button" class="btn btn-link p-0 text-decoration-none" @click="openDetail(row)">
+              <td class="user-inv-table__text-col">
+                <button type="button" class="btn btn-link p-0 text-decoration-none text-start" @click="openDetail(row)">
                   {{ row.name || "—" }}
                 </button>
               </td>
-              <td class="text-center">{{ (row.kit || row.kit_build) ? "Yes" : "No" }}</td>
-              <td class="text-center">{{ Number(row.on_hand || 0) }}</td>
-              <td class="text-center">{{ Number(row.allocated || 0) }}</td>
-              <td class="text-center">{{ Number(row.backorder || 0) }}</td>
+              <td class="text-center user-inv-table__num-col">{{ (row.kit || row.kit_build) ? "Yes" : "No" }}</td>
+              <td class="text-center user-inv-table__num-col">{{ Number(row.on_hand || 0) }}</td>
+              <td class="text-center user-inv-table__num-col">{{ Number(row.allocated || 0) }}</td>
+              <td class="text-center user-inv-table__num-col">{{ Number(row.backorder || 0) }}</td>
             </tr>
           </tbody>
         </table>
@@ -717,20 +731,34 @@ onUnmounted(() => {
   max-width: min(100%, 22rem);
 }
 
-.user-inv-table thead .staff-sort-btn {
-  justify-content: center;
-  width: 100%;
-}
-
 .user-inv-table__image-col {
   width: 1%;
   min-width: 4.5rem;
-}
-
-.user-inv-table th,
-.user-inv-table td {
   text-align: center;
   vertical-align: middle;
+}
+
+.user-inv-table th.text-center,
+.user-inv-table td.text-center {
+  text-align: center;
+  vertical-align: middle;
+}
+
+.user-inv-table__text-col {
+  text-align: start;
+  vertical-align: middle;
+  min-width: 8rem;
+}
+
+.user-inv-table__sort-start {
+  justify-content: flex-start;
+  width: 100%;
+  text-align: start;
+}
+
+.user-inv-table thead .staff-table-head__th--sort:not(.user-inv-table__text-col) .staff-sort-btn {
+  justify-content: center;
+  width: 100%;
 }
 
 .user-inv-check {

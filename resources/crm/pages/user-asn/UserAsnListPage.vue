@@ -45,12 +45,20 @@ const allSelected = computed(() => {
   return rows.value.every((r) => selected.value.has(r.id));
 });
 
-const anyPendingSelected = computed(() => {
-  for (const r of rows.value) {
-    if (selected.value.has(r.id) && r.status === "pending") return true;
-  }
-  return false;
-});
+const selectedCount = computed(() => selected.value.size);
+
+function canDeleteRow(row) {
+  const s = String(row?.status || "").toLowerCase();
+  return s === "draft" || s === "pending";
+}
+
+const selectedDeletableIds = computed(() =>
+  rows.value.filter((r) => selected.value.has(r.id) && canDeleteRow(r)).map((r) => r.id),
+);
+
+const bulkDeleteDisabled = computed(
+  () => selectedDeletableIds.value.length === 0 || selectedDeletableIds.value.length !== selectedCount.value,
+);
 
 watch(search, (v) => {
   clearTimeout(searchTimer);
@@ -78,17 +86,24 @@ function toggleSort(column) {
 }
 
 function statusLabel(s) {
+  if (s === "draft") return "Draft";
   if (s === "in_progress") return "In Progress";
   if (s === "completed") return "Completed";
+  if (s === "pending") return "Pending";
   return "Pending";
 }
 
 function statusBadgeClass(status) {
   const s = String(status || "").toLowerCase();
+  if (s === "draft") return "bg-warning-subtle text-warning-emphasis";
   if (s === "pending") return "bg-secondary-subtle text-secondary-emphasis";
   if (s === "in_progress") return "bg-primary-subtle text-primary-emphasis";
   if (s === "completed") return "bg-success-subtle text-success-emphasis";
   return "bg-body-secondary text-body-secondary";
+}
+
+function clearSelection() {
+  selected.value = new Set();
 }
 
 async function load() {
@@ -140,19 +155,41 @@ async function createAsn() {
   try {
     const { data } = await api.post("/asns", { client_account_id: clientAccountId.value });
     toast.success("ASN created.");
-    await router.push({ name: "user-asn-detail", params: { id: String(data.id) } });
+    const href = router.resolve({
+      name: "user-asn-detail",
+      params: { id: String(data.id) },
+    }).href;
+    window.open(href, "_blank", "noopener,noreferrer");
+    await load();
   } catch (e) {
     toast.errorFrom(e, "Could not create ASN.");
   }
 }
 
+function printPackingSlipForRow(row) {
+  const href = router.resolve({
+    name: "user-asn-print-packing-slip",
+    params: { id: String(row.id) },
+    query: { client_account_id: String(clientAccountId.value) },
+  }).href;
+  window.open(href, "_blank", "noopener,noreferrer");
+}
+
+function printSelectedPackingSlips() {
+  const picked = rows.value.filter((r) => selected.value.has(r.id));
+  if (!picked.length) return;
+  for (const row of picked) {
+    printPackingSlipForRow(row);
+  }
+}
+
 async function confirmBulkDelete() {
-  if (!clientAccountId.value || selected.value.size === 0) return;
+  if (!clientAccountId.value || selectedDeletableIds.value.length === 0) return;
   bulkDeleteBusy.value = true;
   try {
     await api.post("/asns/bulk-delete", {
       client_account_id: clientAccountId.value,
-      ids: Array.from(selected.value),
+      ids: selectedDeletableIds.value,
     });
     toast.success("Deleted selected ASNs.");
     bulkDeleteOpen.value = false;
@@ -221,12 +258,19 @@ function goEditAsnFromMenu() {
   });
 }
 
+function printPackingSlipFromMenu() {
+  const row = manageMenuRow.value;
+  if (!row) return;
+  closeManageMenu();
+  printPackingSlipForRow(row);
+}
+
 function openRowDeleteModalFromMenu() {
   const row = manageMenuRow.value;
   if (!row) return;
-  if (row.status !== "pending") {
+  if (!canDeleteRow(row)) {
     closeManageMenu();
-    toast.error("Only pending ASNs can be removed.");
+    toast.error("Only draft or pending ASNs can be removed.");
     return;
   }
   closeManageMenu();
@@ -292,17 +336,36 @@ onUnmounted(() => {
             aria-label="Search ASN"
             @keydown.enter.prevent="load"
           />
-          <div class="staff-toolbar-row-actions d-flex flex-wrap align-items-center gap-2 ms-md-auto flex-shrink-0">
-            <button
-              type="button"
-              class="btn btn-outline-danger staff-toolbar-btn"
-              :disabled="!anyPendingSelected || loading"
-              @click="bulkDeleteOpen = true"
-            >
-              Delete Selected
-            </button>
-          </div>
         </div>
+      </div>
+
+      <div
+        v-if="selectedCount > 0"
+        class="staff-bulk-selection-bar d-flex flex-wrap align-items-center gap-2 gap-md-3 px-3 px-md-4 py-3"
+      >
+        <span class="small staff-bulk-selection-bar__count me-md-1">{{ selectedCount }} selected</span>
+        <button
+          type="button"
+          class="btn btn-sm staff-page-primary orders-bulk-toolbar-btn"
+          @click="printSelectedPackingSlips"
+        >
+          Print Packing Slip
+        </button>
+        <button
+          type="button"
+          class="btn btn-outline-danger btn-sm orders-bulk-toolbar-btn orders-toolbar-outline-btn orders-toolbar-outline-btn--danger"
+          :disabled="bulkDeleteDisabled || loading"
+          @click="bulkDeleteOpen = true"
+        >
+          Delete Selected
+        </button>
+        <button
+          type="button"
+          class="btn btn-link btn-sm staff-bulk-clear-link text-decoration-none px-1"
+          @click="clearSelection"
+        >
+          Clear Selection
+        </button>
       </div>
 
       <div class="table-responsive staff-table-wrap">
@@ -467,7 +530,7 @@ onUnmounted(() => {
     <ConfirmModal
       :open="bulkDeleteOpen"
       title="Delete Selected ASNs"
-      message="Only pending ASNs will be removed. This cannot be undone."
+      message="Only draft or pending ASNs will be removed. This cannot be undone."
       confirm-label="Delete"
       :busy="bulkDeleteBusy"
       danger
@@ -496,7 +559,11 @@ onUnmounted(() => {
           @click.stop
         >
           <button type="button" class="staff-row-menu__item" role="menuitem" @click="goEditAsnFromMenu">Edit ASN</button>
+          <button type="button" class="staff-row-menu__item" role="menuitem" @click="printPackingSlipFromMenu">
+            Print Packing Slip
+          </button>
           <button
+            v-if="manageMenuRow && canDeleteRow(manageMenuRow)"
             type="button"
             class="staff-row-menu__item staff-row-menu__item--danger"
             role="menuitem"
@@ -513,7 +580,7 @@ onUnmounted(() => {
       title="Remove ASN"
       :message="
         rowDeleteTarget
-          ? `Remove ${rowDeleteTarget.asn_number}? Only pending ASNs can be deleted. This cannot be undone.`
+          ? `Remove ${rowDeleteTarget.asn_number}? Only draft or pending ASNs can be deleted. This cannot be undone.`
           : ''
       "
       confirm-label="Remove"

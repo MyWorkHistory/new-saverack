@@ -2,18 +2,21 @@
 import { computed, onMounted, ref } from "vue";
 import { useRoute } from "vue-router";
 import api from "../../services/api";
-import { BRAND_MARK_SRC } from "../../utils/brandAssets.js";
 import { setCrmPageMeta } from "../../composables/useCrmPageMeta.js";
 
 const route = useRoute();
 const asn = ref(null);
 const err = ref("");
-const markSrc = computed(() => BRAND_MARK_SRC());
 
 const id = computed(() => String(route.params.id || ""));
 
+const accountName = computed(() => {
+  const fromAsn = String(asn.value?.client_account_company_name || "").trim();
+  return fromAsn || "Save Rack";
+});
+
 onMounted(async () => {
-  setCrmPageMeta({ title: "Save Rack | Shipping Label", description: "4x6 label." });
+  setCrmPageMeta({ title: "Save Rack | Identification Label", description: "ASN identification label." });
   try {
     const { data } = await api.get(`/asns/${id.value}`);
     asn.value = data;
@@ -28,13 +31,13 @@ onMounted(async () => {
   <div class="label-sheet">
     <p v-if="err" class="p-3 text-danger">{{ err }}</p>
     <div v-else-if="asn" class="label-inner">
-      <img :src="markSrc" alt="Save Rack" class="label-logo mb-2" width="120" height="120" />
-      <div class="label-brand">Save Rack</div>
-      <div class="label-asn">ASN# {{ asn.asn_number }}</div>
+      <div class="label-account">{{ accountName }}</div>
+      <div class="label-asn-number">{{ asn.asn_number }}</div>
       <div class="label-addr mt-3">
         <div>3135 Drane Field Rd #20</div>
         <div>Lakeland, FL 33811</div>
       </div>
+      <p class="label-print-hint small text-secondary mt-4 mb-0">Print Identification Label</p>
     </div>
   </div>
 </template>
@@ -52,21 +55,23 @@ onMounted(async () => {
   text-align: center;
   padding: 0.5in;
 }
-.label-logo {
-  object-fit: contain;
-}
-.label-brand {
+.label-account {
   font-size: 1.35rem;
   font-weight: 700;
 }
-.label-asn {
-  font-size: 1.1rem;
-  font-weight: 600;
-  margin-top: 0.25rem;
+.label-asn-number {
+  font-size: 2.75rem;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  margin-top: 0.35rem;
+  line-height: 1.1;
 }
 .label-addr {
   font-size: 0.95rem;
   line-height: 1.45;
+}
+.label-print-hint {
+  font-weight: 600;
 }
 @media print {
   @page {
@@ -75,6 +80,9 @@ onMounted(async () => {
   }
   .label-sheet {
     min-height: auto;
+  }
+  .label-print-hint {
+    display: none;
   }
 }
 </style>

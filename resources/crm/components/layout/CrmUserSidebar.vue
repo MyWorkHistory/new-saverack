@@ -93,7 +93,7 @@ function collapseNav() {
             to="/users/dashboard"
             class="vx-nav-link"
             :class="{ 'vx-nav-link--active': navActive('dashboard') }"
-            :title="!isExpanded ? 'Dashboard' : undefined"
+            :title="!isExpanded ? 'Home' : undefined"
             @click="closeMobile"
           >
             <svg
@@ -109,7 +109,7 @@ function collapseNav() {
                 d="M3.75 6A2.25 2.25 0 0 1 6 3.75h2.25A2.25 2.25 0 0 1 10.5 6v2.25a2.25 2.25 0 0 1-2.25 2.25H6a2.25 2.25 0 0 1-2.25-2.25V6Zm9.75-2.25A2.25 2.25 0 0 1 15.75 6v2.25a2.25 2.25 0 0 1-2.25 2.25H12a2.25 2.25 0 0 1-2.25-2.25V6A2.25 2.25 0 0 1 12 3.75h2.25ZM6 13.5a2.25 2.25 0 0 1 2.25-2.25H10.5A2.25 2.25 0 0 1 12.75 15v2.25A2.25 2.25 0 0 1 10.5 19.5H8.25A2.25 2.25 0 0 1 6 17.25V13.5Zm9.75-2.25A2.25 2.25 0 0 1 18 13.5V15a2.25 2.25 0 0 1-2.25 2.25H15a2.25 2.25 0 0 1-2.25-2.25v-1.5a2.25 2.25 0 0 1 2.25-2.25H15Z"
               />
             </svg>
-            <span v-if="isExpanded">Dashboard</span>
+            <span v-if="isExpanded">Home</span>
           </RouterLink>
         </li>
         <li>

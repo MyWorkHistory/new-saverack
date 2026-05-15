@@ -8,6 +8,8 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class ClientAccountAsn extends Model
 {
+    public const STATUS_DRAFT = 'draft';
+
     public const STATUS_PENDING = 'pending';
 
     public const STATUS_IN_PROGRESS = 'in_progress';
@@ -15,9 +17,16 @@ class ClientAccountAsn extends Model
     public const STATUS_COMPLETED = 'completed';
 
     public const STATUSES = [
+        self::STATUS_DRAFT,
         self::STATUS_PENDING,
         self::STATUS_IN_PROGRESS,
         self::STATUS_COMPLETED,
+    ];
+
+    /** Portal users may delete ASNs in these statuses. */
+    public const DELETABLE_STATUSES = [
+        self::STATUS_DRAFT,
+        self::STATUS_PENDING,
     ];
 
     protected $fillable = [

@@ -410,6 +410,10 @@ query ShipHeroAsnProductCatalog($customer_account_id: String, $first: Int!, $aft
           kit
           kit_build
           barcode
+          images {
+            src
+            position
+          }
         }
       }
     }
@@ -447,11 +451,29 @@ GQL;
                 if ($id === '' && $sku === '') {
                     continue;
                 }
+                $imageUrl = null;
+                $images = is_array($node['images'] ?? null) ? $node['images'] : [];
+                $bestPos = PHP_INT_MAX;
+                foreach ($images as $img) {
+                    if (! is_array($img)) {
+                        continue;
+                    }
+                    $src = trim((string) ($img['src'] ?? ''));
+                    if ($src === '') {
+                        continue;
+                    }
+                    $pos = isset($img['position']) && is_numeric($img['position']) ? (int) $img['position'] : 999999;
+                    if ($imageUrl === null || $pos < $bestPos) {
+                        $imageUrl = $src;
+                        $bestPos = $pos;
+                    }
+                }
                 $out[] = [
                     'id' => $id !== '' ? $id : $sku,
                     'sku' => $sku,
                     'name' => isset($node['name']) && is_string($node['name']) ? $node['name'] : '',
                     'barcode' => isset($node['barcode']) && is_string($node['barcode']) ? trim($node['barcode']) : '',
+                    'image_url' => $imageUrl,
                 ];
             }
             $pageInfo = data_get($json, 'data.products.data.pageInfo');

@@ -1,5 +1,5 @@
 <script setup>
-import { computed, inject, onMounted, ref } from "vue";
+import { computed, inject, onMounted, ref, watch } from "vue";
 import { RouterLink } from "vue-router";
 import api from "../../services/api";
 import CrmLoadingSpinner from "../../components/common/CrmLoadingSpinner.vue";
@@ -118,11 +118,17 @@ async function loadCounts() {
   }
 }
 
-onMounted(() => {
+function syncPageMeta() {
+  const name = accountDisplayName.value;
   setCrmPageMeta({
-    title: "Save Rack | Dashboard",
+    title: name ? `Save Rack | ${name}` : "Save Rack",
     description: "",
   });
+}
+
+watch(accountDisplayName, syncPageMeta, { immediate: true });
+
+onMounted(() => {
   loadCounts();
 });
 </script>
@@ -130,10 +136,7 @@ onMounted(() => {
 <template>
   <div class="staff-page staff-page--wide">
     <div class="mb-4">
-      <h1 class="h4 mb-1 fw-semibold text-body">Dashboard</h1>
-      <p v-if="accountDisplayName" class="mb-0 small text-secondary">
-        {{ accountDisplayName }}
-      </p>
+      <h1 class="h4 mb-0 fw-semibold text-body">{{ accountDisplayName || "Home" }}</h1>
     </div>
 
     <div class="user-dashboard__content position-relative">

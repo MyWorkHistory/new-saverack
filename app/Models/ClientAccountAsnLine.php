@@ -12,6 +12,7 @@ class ClientAccountAsnLine extends Model
         'shiphero_product_id',
         'sku',
         'name',
+        'image_url',
         'expected_qty',
         'accepted_qty',
         'rejected_qty',

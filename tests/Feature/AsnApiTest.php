@@ -113,4 +113,109 @@ class AsnApiTest extends TestCase
 
         $this->getJson('/api/asns/'.$asnB->id)->assertForbidden();
     }
+
+    public function test_store_assigns_per_account_four_digit_numbers_and_draft_status(): void
+    {
+        $account = $this->account();
+        $user = User::factory()->create(['client_account_id' => $account->id]);
+        $user->permissions()->attach($this->inventoryViewPermission()->id);
+        Sanctum::actingAs($user);
+
+        $first = $this->postJson('/api/asns', ['client_account_id' => $account->id])
+            ->assertCreated()
+            ->json();
+
+        $this->assertSame('0001', $first['asn_number']);
+        $this->assertSame(ClientAccountAsn::STATUS_DRAFT, $first['status']);
+
+        $second = $this->postJson('/api/asns', ['client_account_id' => $account->id])
+            ->assertCreated()
+            ->json();
+
+        $this->assertSame('0002', $second['asn_number']);
+    }
+
+    public function test_mark_ready_moves_draft_to_pending_with_boxes(): void
+    {
+        $account = $this->account();
+        $user = User::factory()->create(['client_account_id' => $account->id]);
+        $user->permissions()->attach($this->inventoryViewPermission()->id);
+        Sanctum::actingAs($user);
+
+        $asn = ClientAccountAsn::create([
+            'client_account_id' => $account->id,
+            'asn_number' => '0003',
+            'status' => ClientAccountAsn::STATUS_DRAFT,
+            'total_boxes' => 0,
+            'total_pallets' => 0,
+            'expected_qty' => 0,
+            'accepted_qty' => 0,
+            'rejected_qty' => 0,
+        ]);
+
+        $this->postJson('/api/asns/'.$asn->id.'/mark-ready', [
+            'tracking_mode' => 'update_later',
+            'total_boxes' => 2,
+            'total_pallets' => 0,
+        ])
+            ->assertOk()
+            ->assertJsonPath('status', ClientAccountAsn::STATUS_PENDING)
+            ->assertJsonPath('total_boxes', 2);
+
+        $this->assertDatabaseHas('client_account_asns', [
+            'id' => $asn->id,
+            'status' => ClientAccountAsn::STATUS_PENDING,
+            'total_boxes' => 2,
+        ]);
+    }
+
+    public function test_portal_user_cannot_patch_status_or_date_received(): void
+    {
+        $account = $this->account();
+        $user = User::factory()->create(['client_account_id' => $account->id]);
+        $user->permissions()->attach($this->inventoryViewPermission()->id);
+        Sanctum::actingAs($user);
+
+        $asn = ClientAccountAsn::create([
+            'client_account_id' => $account->id,
+            'asn_number' => '0004',
+            'status' => ClientAccountAsn::STATUS_DRAFT,
+            'total_boxes' => 0,
+            'total_pallets' => 0,
+            'expected_qty' => 0,
+            'accepted_qty' => 0,
+            'rejected_qty' => 0,
+        ]);
+
+        $this->patchJson('/api/asns/'.$asn->id, [
+            'status' => ClientAccountAsn::STATUS_COMPLETED,
+            'date_received' => '2026-05-01',
+        ])->assertStatus(422);
+
+        $asn->refresh();
+        $this->assertSame(ClientAccountAsn::STATUS_DRAFT, $asn->status);
+        $this->assertNull($asn->date_received);
+    }
+
+    public function test_portal_user_can_delete_draft_asn(): void
+    {
+        $account = $this->account();
+        $user = User::factory()->create(['client_account_id' => $account->id]);
+        $user->permissions()->attach($this->inventoryViewPermission()->id);
+        Sanctum::actingAs($user);
+
+        $asn = ClientAccountAsn::create([
+            'client_account_id' => $account->id,
+            'asn_number' => '0005',
+            'status' => ClientAccountAsn::STATUS_DRAFT,
+            'total_boxes' => 0,
+            'total_pallets' => 0,
+            'expected_qty' => 0,
+            'accepted_qty' => 0,
+            'rejected_qty' => 0,
+        ]);
+
+        $this->deleteJson('/api/asns/'.$asn->id)->assertOk();
+        $this->assertDatabaseMissing('client_account_asns', ['id' => $asn->id]);
+    }
 }

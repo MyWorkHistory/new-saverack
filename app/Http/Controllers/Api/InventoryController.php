@@ -350,25 +350,33 @@ class InventoryController extends Controller
     {
         $validated = $request->validate([
             'client_account_id' => ['required', 'integer', 'exists:client_accounts,id'],
+            'first' => ['nullable', 'integer', 'min:25', 'max:100'],
+            'after' => ['nullable', 'string', 'max:500'],
+            'query' => ['nullable', 'string', 'max:255'],
+            'search_skip' => ['nullable', 'integer', 'min:0', 'max:500000'],
         ]);
         $clientAccountId = (int) $validated['client_account_id'];
-        $cacheKey = 'inventory.asn_product_catalog.v1:'.$clientAccountId;
+        $graphqlFirst = isset($validated['first']) ? (int) $validated['first'] : 75;
+        $after = isset($validated['after']) && is_string($validated['after']) ? $validated['after'] : null;
+        $query = isset($validated['query']) && is_string($validated['query']) ? trim($validated['query']) : '';
+        $searchSkip = isset($validated['search_skip']) ? (int) $validated['search_skip'] : 0;
         try {
             $shipheroCustomerId = $this->resolveShipHeroCustomerAccountId($clientAccountId, $request);
         } catch (ValidationException $e) {
             throw $e;
         }
         try {
-            $payload = Cache::remember($cacheKey, now()->addMinutes(10), function () use ($shipheroCustomerId) {
-                $p = $this->inventory->listAsnProductCatalog($shipheroCustomerId);
-
-                return array_merge($p, ['cached_at' => now()->toIso8601String()]);
-            });
+            $payload = $this->inventory->listAsnProductCatalogPage(
+                $shipheroCustomerId,
+                $graphqlFirst,
+                $after,
+                $query !== '' ? $query : null,
+                $searchSkip,
+            );
 
             return response()->json([
                 'products' => $payload['products'],
-                'truncated' => $payload['truncated'],
-                'cached_at' => $payload['cached_at'] ?? null,
+                'page_info' => $payload['page_info'],
             ]);
         } catch (RuntimeException $e) {
             return response()->json(['message' => $e->getMessage()], 502);

@@ -505,6 +505,294 @@ GQL;
     }
 
     /**
+     * @param  array<string, mixed>|null  $node
+     * @return array{id: string, sku: string, name: string, barcode: string, image_url: string|null}|null
+     */
+    private function asnCatalogProductFromNode(?array $node): ?array
+    {
+        if (! $node) {
+            return null;
+        }
+        $active = $node['active'] ?? null;
+        if ($active === false) {
+            return null;
+        }
+        if (($node['kit'] ?? false) === true || ($node['kit_build'] ?? false) === true) {
+            return null;
+        }
+        $id = isset($node['id']) && is_string($node['id']) ? trim($node['id']) : '';
+        $sku = isset($node['sku']) && is_string($node['sku']) ? trim($node['sku']) : '';
+        if ($id === '' && $sku === '') {
+            return null;
+        }
+        $imageUrl = null;
+        $images = is_array($node['images'] ?? null) ? $node['images'] : [];
+        $bestPos = PHP_INT_MAX;
+        foreach ($images as $img) {
+            if (! is_array($img)) {
+                continue;
+            }
+            $src = trim((string) ($img['src'] ?? ''));
+            if ($src === '') {
+                continue;
+            }
+            $pos = isset($img['position']) && is_numeric($img['position']) ? (int) $img['position'] : 999999;
+            if ($imageUrl === null || $pos < $bestPos) {
+                $imageUrl = $src;
+                $bestPos = $pos;
+            }
+        }
+
+        return [
+            'id' => $id !== '' ? $id : $sku,
+            'sku' => $sku,
+            'name' => isset($node['name']) && is_string($node['name']) ? $node['name'] : '',
+            'barcode' => isset($node['barcode']) && is_string($node['barcode']) ? trim($node['barcode']) : '',
+            'image_url' => $imageUrl,
+        ];
+    }
+
+    /**
+     * @param  list<array<string, mixed>>  $edges
+     * @return list<array{id: string, sku: string, name: string, barcode: string, image_url: string|null}>
+     */
+    private function asnCatalogProductsFromEdges(array $edges): array
+    {
+        $out = [];
+        foreach ($edges as $edge) {
+            $node = is_array($edge['node'] ?? null) ? $edge['node'] : null;
+            $p = $this->asnCatalogProductFromNode($node);
+            if ($p !== null) {
+                $out[] = $p;
+            }
+        }
+
+        return $out;
+    }
+
+    /**
+     * One GraphQL page of active, non-kit products for ASN line picker (skips empty filter pages server-side).
+     *
+     * @return array{products: list<array{id: string, sku: string, name: string, barcode: string, image_url: string|null}>, page_info: array{has_next_page: bool, end_cursor: string|null}}
+     */
+    public function listAsnProductCatalogPage(
+        ?string $customerAccountId,
+        int $graphqlFirst,
+        ?string $after,
+        ?string $searchQuery,
+        int $searchSkip,
+    ): array {
+        $graphqlFirst = max(25, min(100, $graphqlFirst));
+        $searchQuery = is_string($searchQuery) ? trim($searchQuery) : '';
+        if ($searchQuery !== '') {
+            return $this->listAsnProductCatalogSearchPage(
+                $customerAccountId,
+                $graphqlFirst,
+                $after,
+                $searchQuery,
+                max(0, $searchSkip),
+            );
+        }
+
+        return $this->listAsnProductCatalogBrowsePage($customerAccountId, $graphqlFirst, $after);
+    }
+
+    /**
+     * Cursor-based browse without client-side SKU/name filtering.
+     *
+     * @return array{products: list<array{id: string, sku: string, name: string, barcode: string, image_url: string|null}>, page_info: array{has_next_page: bool, end_cursor: string|null}}
+     */
+    private function listAsnProductCatalogBrowsePage(?string $customerAccountId, int $graphqlFirst, ?string $after): array
+    {
+        $graphql = <<<'GQL'
+query ShipHeroAsnProductCatalogBrowse($customer_account_id: String, $first: Int!, $after: String) {
+  products(customer_account_id: $customer_account_id) {
+    data(first: $first, after: $after) {
+      pageInfo {
+        hasNextPage
+        endCursor
+      }
+      edges {
+        node {
+          id
+          sku
+          name
+          active
+          kit
+          kit_build
+          barcode
+          images {
+            src
+            position
+          }
+        }
+      }
+    }
+  }
+}
+GQL;
+
+        $graphqlAfter = is_string($after) && trim($after) !== '' ? trim($after) : null;
+
+        for ($attempt = 0; $attempt < 12; $attempt++) {
+            $vars = array_merge(
+                ['first' => $graphqlFirst, 'after' => $graphqlAfter],
+                $this->customerAccountVariables($customerAccountId)
+            );
+            $json = $this->client->query($graphql, $vars);
+            $edges = data_get($json, 'data.products.data.edges');
+            $pageInfo = data_get($json, 'data.products.data.pageInfo');
+            $hasNext = is_array($pageInfo) && (($pageInfo['hasNextPage'] ?? false) === true);
+            $endCursor = is_array($pageInfo) && isset($pageInfo['endCursor']) && is_string($pageInfo['endCursor'])
+                ? $pageInfo['endCursor']
+                : null;
+            if ($endCursor === '') {
+                $endCursor = null;
+            }
+
+            $products = is_array($edges) ? $this->asnCatalogProductsFromEdges($edges) : [];
+            if (count($products) > 0) {
+                return [
+                    'products' => $products,
+                    'page_info' => [
+                        'has_next_page' => $hasNext && $endCursor !== null,
+                        'end_cursor' => $hasNext ? $endCursor : null,
+                    ],
+                ];
+            }
+            if (! $hasNext || $endCursor === null) {
+                return [
+                    'products' => [],
+                    'page_info' => [
+                        'has_next_page' => false,
+                        'end_cursor' => null,
+                    ],
+                ];
+            }
+
+            $graphqlAfter = $endCursor;
+        }
+
+        return [
+            'products' => [],
+            'page_info' => [
+                'has_next_page' => false,
+                'end_cursor' => null,
+            ],
+        ];
+    }
+
+    /**
+     * @return array{products: list<array{id: string, sku: string, name: string, barcode: string, image_url: string|null}>, page_info: array{has_next_page: bool, end_cursor: string|null, next_search_skip: int}}
+     */
+    private function listAsnProductCatalogSearchPage(
+        ?string $customerAccountId,
+        int $desired,
+        ?string $after,
+        string $searchQuery,
+        int $searchSkip,
+    ): array {
+        $graphql = <<<'GQL'
+query ShipHeroAsnProductCatalogSearch($customer_account_id: String, $first: Int!, $after: String) {
+  products(customer_account_id: $customer_account_id) {
+    data(first: $first, after: $after) {
+      pageInfo {
+        hasNextPage
+        endCursor
+      }
+      edges {
+        node {
+          id
+          sku
+          name
+          active
+          kit
+          kit_build
+          barcode
+          images {
+            src
+            position
+          }
+        }
+      }
+    }
+  }
+}
+GQL;
+
+        $qLower = mb_strtolower($searchQuery);
+        $matchSkip = $searchSkip;
+        $output = [];
+        $graphqlAfter = is_string($after) && trim($after) !== '' ? trim($after) : null;
+        $resumeCursor = null;
+        $stoppedMidPage = false;
+        $lastFetchHadNext = false;
+        $iterations = 0;
+        $innerFirst = min(100, max(40, $desired * 3));
+
+        while (count($output) < $desired && $iterations < 60) {
+            $iterations++;
+            $pageRequestAfter = $graphqlAfter;
+            $vars = array_merge(
+                ['first' => $innerFirst, 'after' => $graphqlAfter],
+                $this->customerAccountVariables($customerAccountId)
+            );
+            $json = $this->client->query($graphql, $vars);
+            $edges = data_get($json, 'data.products.data.edges');
+            $pageInfo = data_get($json, 'data.products.data.pageInfo');
+            $lastFetchHadNext = is_array($pageInfo) && (($pageInfo['hasNextPage'] ?? false) === true);
+            $endCursor = is_array($pageInfo) && isset($pageInfo['endCursor']) && is_string($pageInfo['endCursor'])
+                ? $pageInfo['endCursor']
+                : null;
+            if ($endCursor === '') {
+                $endCursor = null;
+            }
+            if (! is_array($edges)) {
+                break;
+            }
+            foreach ($this->asnCatalogProductsFromEdges($edges) as $p) {
+                $skuL = mb_strtolower((string) ($p['sku'] ?? ''));
+                $nameL = mb_strtolower((string) ($p['name'] ?? ''));
+                if (! str_contains($skuL, $qLower) && ! str_contains($nameL, $qLower)) {
+                    continue;
+                }
+                if ($matchSkip > 0) {
+                    $matchSkip--;
+
+                    continue;
+                }
+                $output[] = $p;
+                if (count($output) >= $desired) {
+                    $stoppedMidPage = true;
+                    $resumeCursor = $pageRequestAfter;
+
+                    break 2;
+                }
+            }
+            $graphqlAfter = $endCursor;
+            $resumeCursor = $endCursor;
+            if (! $lastFetchHadNext || $graphqlAfter === null) {
+                break;
+            }
+        }
+
+        $delivered = count($output);
+        $nextSearchSkip = $searchSkip + $delivered;
+        $hasMore = $delivered >= $desired
+            ? ($stoppedMidPage || $lastFetchHadNext)
+            : $lastFetchHadNext;
+
+        return [
+            'products' => $output,
+            'page_info' => [
+                'has_next_page' => $hasMore,
+                'end_cursor' => $resumeCursor,
+                'next_search_skip' => $nextSearchSkip,
+            ],
+        ];
+    }
+
+    /**
      * Active, non-kit ShipHero products for portal ASN line picker (cursor pagination, capped).
      *
      * @return array{products: list<array{id: string, sku: string, name: string, barcode: string}>, truncated: bool}
@@ -553,47 +841,8 @@ GQL;
             if (! is_array($edges)) {
                 break;
             }
-            foreach ($edges as $edge) {
-                $node = is_array($edge['node'] ?? null) ? $edge['node'] : null;
-                if (! $node) {
-                    continue;
-                }
-                $active = $node['active'] ?? null;
-                if ($active === false) {
-                    continue;
-                }
-                if (($node['kit'] ?? false) === true || ($node['kit_build'] ?? false) === true) {
-                    continue;
-                }
-                $id = isset($node['id']) && is_string($node['id']) ? trim($node['id']) : '';
-                $sku = isset($node['sku']) && is_string($node['sku']) ? trim($node['sku']) : '';
-                if ($id === '' && $sku === '') {
-                    continue;
-                }
-                $imageUrl = null;
-                $images = is_array($node['images'] ?? null) ? $node['images'] : [];
-                $bestPos = PHP_INT_MAX;
-                foreach ($images as $img) {
-                    if (! is_array($img)) {
-                        continue;
-                    }
-                    $src = trim((string) ($img['src'] ?? ''));
-                    if ($src === '') {
-                        continue;
-                    }
-                    $pos = isset($img['position']) && is_numeric($img['position']) ? (int) $img['position'] : 999999;
-                    if ($imageUrl === null || $pos < $bestPos) {
-                        $imageUrl = $src;
-                        $bestPos = $pos;
-                    }
-                }
-                $out[] = [
-                    'id' => $id !== '' ? $id : $sku,
-                    'sku' => $sku,
-                    'name' => isset($node['name']) && is_string($node['name']) ? $node['name'] : '',
-                    'barcode' => isset($node['barcode']) && is_string($node['barcode']) ? trim($node['barcode']) : '',
-                    'image_url' => $imageUrl,
-                ];
+            foreach ($this->asnCatalogProductsFromEdges($edges) as $p) {
+                $out[] = $p;
             }
             $pageInfo = data_get($json, 'data.products.data.pageInfo');
             $hasNext = is_array($pageInfo) && (($pageInfo['hasNextPage'] ?? false) === true);

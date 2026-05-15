@@ -36,8 +36,15 @@ const markReadyTrackings = ref([{ carrier: "", tracking_number: "" }]);
 
 const catalog = ref([]);
 const catalogLoading = ref(false);
-const catalogFilter = ref("");
+const catalogLoadingMore = ref(false);
+const catalogPageInfo = ref({ has_next_page: false, end_cursor: null });
+const catalogSearchDraft = ref("");
+const catalogSearchCommitted = ref("");
+const catalogSearchSkipNext = ref(0);
 const addPanelOpen = ref(false);
+
+/** GraphQL products page size (aligned with portal inventory paging; capped 25–100 on server). */
+const CATALOG_PAGE_SIZE = 75;
 
 const trackingDraft = ref([{ carrier: "", tracking_number: "" }]);
 const vendorDraft = ref([{ label: "" }]);
@@ -79,17 +86,6 @@ const shipToAccountName = computed(() => {
 const asnDisplayNumber = computed(() => formatAsnDisplay(asn.value?.asn_number));
 const asnHeading = computed(() => formatAsnHeading(asn.value?.asn_number));
 const asnLabel = computed(() => formatAsnLabel(asn.value?.asn_number));
-
-const filteredCatalog = computed(() => {
-  const q = catalogFilter.value.trim().toLowerCase();
-  if (!q) return catalog.value;
-  return catalog.value.filter(
-    (p) =>
-      String(p.sku || "")
-        .toLowerCase()
-        .includes(q) || String(p.name || "").toLowerCase().includes(q),
-  );
-});
 
 function catalogKey(p) {
   return String(p.id || p.sku || "");
@@ -325,36 +321,87 @@ function onWindowCloseLineMenu() {
   lineMenuOpenId.value = null;
 }
 
-async function loadCatalog() {
-  if (!clientAccountId.value || catalog.value.length) return;
-  catalogLoading.value = true;
+function commitCatalogSearch() {
+  catalogSearchCommitted.value = catalogSearchDraft.value.trim();
+  loadCatalogRows(true);
+}
+
+function loadMoreCatalog() {
+  if (
+    !catalogPageInfo.value.has_next_page ||
+    catalogLoadingMore.value ||
+    catalogLoading.value ||
+    !clientAccountId.value
+  ) {
+    return;
+  }
+  loadCatalogRows(false);
+}
+
+async function loadCatalogRows(reset) {
+  if (!clientAccountId.value) return;
+  if (reset) {
+    catalogLoading.value = true;
+    catalog.value = [];
+    catalogPageInfo.value = { has_next_page: false, end_cursor: null };
+    catalogSearchSkipNext.value = 0;
+  } else {
+    catalogLoadingMore.value = true;
+  }
   try {
-    const { data } = await api.get("/inventory/asn-product-catalog", {
-      params: { client_account_id: clientAccountId.value },
-    });
-    catalog.value = data.products || [];
-    if (data.truncated) {
-      toast.success("Product catalog hit the maximum page cap; some products may be missing from the list.");
+    const params = {
+      client_account_id: clientAccountId.value,
+      first: CATALOG_PAGE_SIZE,
+    };
+    const q = catalogSearchCommitted.value;
+    if (q) {
+      params.query = q;
+      params.search_skip = catalogSearchSkipNext.value;
     }
+    if (!reset && catalogPageInfo.value?.end_cursor) {
+      params.after = catalogPageInfo.value.end_cursor;
+    }
+    const { data } = await api.get("/inventory/asn-product-catalog", { params });
+    const chunk = Array.isArray(data?.products) ? data.products : [];
+    const pi = data?.page_info || {};
+    catalogPageInfo.value = {
+      has_next_page: Boolean(pi.has_next_page),
+      end_cursor: pi.end_cursor ?? null,
+    };
+    if (q && typeof pi.next_search_skip === "number") {
+      catalogSearchSkipNext.value = Number(pi.next_search_skip);
+    }
+
+    const dest = [];
+    const seen = new Set();
+    if (!reset) {
+      for (const p of catalog.value) {
+        const k = catalogKey(p);
+        seen.add(k);
+        dest.push(p);
+      }
+    }
+    for (const p of chunk) {
+      const k = catalogKey(p);
+      if (seen.has(k)) continue;
+      seen.add(k);
+      dest.push(p);
+    }
+    catalog.value = dest;
   } catch (e) {
     toast.errorFrom(e, "Could not load product catalog.");
   } finally {
     catalogLoading.value = false;
+    catalogLoadingMore.value = false;
   }
 }
 
 watch(addPanelOpen, (open) => {
-  if (open) loadCatalog();
+  if (open) {
+    catalogSearchDraft.value = catalogSearchCommitted.value;
+    loadCatalogRows(true);
+  }
 });
-
-watch(
-  () => asn.value?.status,
-  (status) => {
-    if (String(status || "").toLowerCase() === "draft") {
-      loadCatalog();
-    }
-  },
-);
 
 function syncDraftsFromAsn() {
   if (!asn.value) return;
@@ -617,17 +664,26 @@ onUnmounted(() => {
           </div>
 
           <div v-show="addPanelOpen">
-            <div v-if="!catalogLoading" class="staff-table-toolbar border-bottom">
+            <div class="staff-table-toolbar border-bottom">
               <div class="staff-table-toolbar--row flex-wrap align-items-end gap-2 gap-md-3">
                 <input
-                  id="asn-catalog-filter"
-                  v-model="catalogFilter"
+                  id="asn-catalog-search"
+                  v-model.trim="catalogSearchDraft"
                   type="search"
                   class="form-control staff-toolbar-search staff-toolbar-search--inline"
-                  placeholder="Filter catalog by SKU or name"
+                  placeholder="Search by SKU or name"
                   autocomplete="off"
-                  aria-label="Filter catalog"
+                  aria-label="Search product catalog"
+                  @keydown.enter.prevent="commitCatalogSearch"
                 />
+                <button
+                  type="button"
+                  class="btn btn-sm btn-outline-secondary fw-semibold staff-page-secondary"
+                  :disabled="catalogLoading"
+                  @click="commitCatalogSearch"
+                >
+                  Search
+                </button>
               </div>
             </div>
             <div class="p-4 bg-body-tertiary border-bottom">
@@ -638,8 +694,8 @@ onUnmounted(() => {
                 <p class="small fw-semibold mb-2">From catalog</p>
                 <div class="asn-catalog-grid border rounded bg-white">
                   <div
-                    v-for="p in filteredCatalog"
-                    :key="p.id + p.sku"
+                    v-for="p in catalog"
+                    :key="catalogKey(p)"
                     class="asn-catalog-grid__row d-flex align-items-center gap-2 border-bottom py-2 px-2"
                   >
                     <img
@@ -674,9 +730,21 @@ onUnmounted(() => {
                       </button>
                     </div>
                   </div>
-                  <div v-if="filteredCatalog.length === 0" class="p-3 small text-secondary">No matches.</div>
+                  <div v-if="catalog.length === 0" class="p-3 small text-secondary">
+                    {{ catalogSearchCommitted ? "No matches." : "No products on this page." }}
+                  </div>
                 </div>
-</template>
+                <div class="d-flex justify-content-center mt-3" v-if="catalogPageInfo.has_next_page">
+                  <button
+                    type="button"
+                    class="btn btn-sm btn-outline-secondary fw-semibold staff-page-secondary px-4"
+                    :disabled="catalogLoadingMore"
+                    @click="loadMoreCatalog"
+                  >
+                    {{ catalogLoadingMore ? "Loading…" : "Load More" }}
+                  </button>
+                </div>
+              </template>
             </div>
           </div>
 

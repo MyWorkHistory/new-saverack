@@ -203,6 +203,19 @@ query ShipHeroInventoryRows($customer_account_id: String, $first: Int!, $after: 
 GQL;
 
         if ($searchQuery !== '') {
+            $direct = $this->listInventoryRowsTryDirectProductSearch(
+                $customerAccountId,
+                $kitsFilter,
+                $activeStatus,
+                $first,
+                $after,
+                $searchQuery,
+                $searchSkip
+            );
+            if ($direct !== null) {
+                return $direct;
+            }
+
             return $this->listInventoryRowsSearch(
                 $graphql,
                 $customerAccountId,
@@ -245,6 +258,107 @@ GQL;
             'page_info' => [
                 'has_next_page' => $hasNext,
                 'end_cursor' => $endCursor,
+            ],
+        ];
+    }
+
+    /** Single-token searches: use ShipHero product(sku|barcode); multi-word/name search keeps paginated scan. */
+    private function inventoryListSearchEligibleForDirectProductLookup(string $searchQuery): bool
+    {
+        $q = trim($searchQuery);
+        $len = strlen($q);
+        if ($len < 2 || $len > 255) {
+            return false;
+        }
+        // Keep paginated substring search for phrases (likely title match).
+        if (preg_match('/\s/u', $q)) {
+            return false;
+        }
+
+        return (bool) preg_match('#^[A-Za-z0-9.\/_-]+$#u', $q);
+    }
+
+    /**
+     * Resolve search via ShipHero single-product lookups (one round-trip) when possible.
+     *
+     * @return array{rows: list<array<string,mixed>>, page_info: array{has_next_page: bool, end_cursor: string|null, next_search_skip: int}}|null Null falls back to {@see listInventoryRowsSearch}
+     */
+    private function listInventoryRowsTryDirectProductSearch(
+        ?string $customerAccountId,
+        string $kitsFilter,
+        string $activeStatus,
+        int $desired,
+        ?string $after,
+        string $searchQuery,
+        int $searchSkip
+    ): ?array {
+        if ($after !== null || ! $this->inventoryListSearchEligibleForDirectProductLookup($searchQuery)) {
+            return null;
+        }
+        $term = trim($searchQuery);
+
+        $data = null;
+        $relaxedSubstring = false;
+        try {
+            $data = $this->fetchProductBySku($term, $customerAccountId);
+        } catch (\Throwable $e) {
+            $data = null;
+        }
+        if ($data === null) {
+            try {
+                $data = $this->fetchProductByBarcode($term, $customerAccountId);
+                $relaxedSubstring = true;
+            } catch (\Throwable $e) {
+                $data = null;
+            }
+        }
+
+        // No ShipHero hit — try slow scan so partial SKU / fuzzy still works against products() pages.
+        if ($data === null || $data === []) {
+            return null;
+        }
+
+        $edges = [['node' => $data]];
+        $expanded = $this->expandInventoryProductEdgesToRows($edges, $kitsFilter, $activeStatus);
+
+        if ($expanded === []) {
+            return null;
+        }
+
+        $qLower = mb_strtolower($term);
+        $matchingAll = [];
+        foreach ($expanded as $r) {
+            if ($relaxedSubstring) {
+                $matchingAll[] = $r;
+
+                continue;
+            }
+            $skuL = mb_strtolower((string) ($r['sku'] ?? ''));
+            $nameL = mb_strtolower((string) ($r['name'] ?? ''));
+            if (! str_contains($skuL, $qLower) && ! str_contains($nameL, $qLower)) {
+                continue;
+            }
+            $matchingAll[] = $r;
+        }
+
+        $totalMatching = count($matchingAll);
+        if ($totalMatching === 0) {
+            return null;
+        }
+
+        $desired = max(1, min(200, $desired));
+        $searchSkip = max(0, $searchSkip);
+        $pageRows = array_slice($matchingAll, $searchSkip, $desired);
+        $delivered = count($pageRows);
+        $nextSearchSkip = $searchSkip + $delivered;
+        $hasMore = $nextSearchSkip < $totalMatching;
+
+        return [
+            'rows' => $pageRows,
+            'page_info' => [
+                'has_next_page' => $hasMore,
+                'end_cursor' => null,
+                'next_search_skip' => $nextSearchSkip,
             ],
         ];
     }
@@ -585,6 +699,17 @@ GQL;
         $graphqlFirst = max(25, min(100, $graphqlFirst));
         $searchQuery = is_string($searchQuery) ? trim($searchQuery) : '';
         if ($searchQuery !== '') {
+            $fast = $this->listAsnProductCatalogTryDirectProductSearch(
+                $customerAccountId,
+                $graphqlFirst,
+                $after,
+                $searchQuery,
+                max(0, $searchSkip),
+            );
+            if ($fast !== null) {
+                return $fast;
+            }
+
             return $this->listAsnProductCatalogSearchPage(
                 $customerAccountId,
                 $graphqlFirst,
@@ -595,6 +720,81 @@ GQL;
         }
 
         return $this->listAsnProductCatalogBrowsePage($customerAccountId, $graphqlFirst, $after);
+    }
+
+    /**
+     * Same fast path as inventory list: single product(sku|barcode) when the term is one token.
+     *
+     * @return array{products: list<array{id: string, sku: string, name: string, barcode: string, image_url: string|null}>, page_info: array{has_next_page: bool, end_cursor: string|null, next_search_skip: int}}|null
+     */
+    private function listAsnProductCatalogTryDirectProductSearch(
+        ?string $customerAccountId,
+        int $desired,
+        ?string $after,
+        string $searchQuery,
+        int $searchSkip
+    ): ?array {
+        if ($after !== null || ! $this->inventoryListSearchEligibleForDirectProductLookup($searchQuery)) {
+            return null;
+        }
+        $term = trim($searchQuery);
+
+        $data = null;
+        $relaxedSubstring = false;
+        try {
+            $data = $this->fetchProductBySku($term, $customerAccountId);
+        } catch (\Throwable $e) {
+            $data = null;
+        }
+        if ($data === null) {
+            try {
+                $data = $this->fetchProductByBarcode($term, $customerAccountId);
+                $relaxedSubstring = true;
+            } catch (\Throwable $e) {
+                $data = null;
+            }
+        }
+        if ($data === null || $data === []) {
+            return null;
+        }
+
+        $products = $this->asnCatalogProductsFromEdges([['node' => $data]]);
+        if ($products === []) {
+            return null;
+        }
+
+        if (! $relaxedSubstring) {
+            $qLower = mb_strtolower($term);
+            $filtered = [];
+            foreach ($products as $p) {
+                $skuL = mb_strtolower((string) ($p['sku'] ?? ''));
+                $nameL = mb_strtolower((string) ($p['name'] ?? ''));
+                if (! str_contains($skuL, $qLower) && ! str_contains($nameL, $qLower)) {
+                    continue;
+                }
+                $filtered[] = $p;
+            }
+            if ($filtered === []) {
+                return null;
+            }
+            $products = $filtered;
+        }
+
+        $desired = max(1, min(200, $desired));
+        $searchSkip = max(0, $searchSkip);
+        $total = count($products);
+        $slice = array_slice($products, $searchSkip, $desired);
+        $delivered = count($slice);
+        $nextSearchSkip = $searchSkip + $delivered;
+
+        return [
+            'products' => $slice,
+            'page_info' => [
+                'has_next_page' => $nextSearchSkip < $total,
+                'end_cursor' => null,
+                'next_search_skip' => $nextSearchSkip,
+            ],
+        ];
     }
 
     /**
@@ -1494,6 +1694,9 @@ query ShipHeroProductBySku($sku: String!) {
       sku
       name
       barcode
+      active
+      kit
+      kit_build
       customs_value
       customs_description
       images {
@@ -1516,6 +1719,7 @@ query ShipHeroProductBySku($sku: String!) {
         on_hand
         allocated
         backorder
+        active
         inventory_bin
         inventory_overstock_bin
         reserve_inventory
@@ -1561,6 +1765,9 @@ query ShipHeroProductBySku($sku: String!, $customer_account_id: String) {
       sku
       name
       barcode
+      active
+      kit
+      kit_build
       customs_value
       customs_description
       images {
@@ -1582,6 +1789,8 @@ query ShipHeroProductBySku($sku: String!, $customer_account_id: String) {
         warehouse_identifier
         on_hand
         allocated
+        backorder
+        active
         inventory_bin
         inventory_overstock_bin
         reserve_inventory
@@ -1636,6 +1845,9 @@ query ShipHeroProductByBarcode($barcode: String!) {
       sku
       name
       barcode
+      active
+      kit
+      kit_build
       customs_value
       customs_description
       images {
@@ -1657,6 +1869,8 @@ query ShipHeroProductByBarcode($barcode: String!) {
         warehouse_identifier
         on_hand
         allocated
+        backorder
+        active
         inventory_bin
         inventory_overstock_bin
         reserve_inventory
@@ -1702,6 +1916,9 @@ query ShipHeroProductByBarcode($barcode: String!, $customer_account_id: String) 
       sku
       name
       barcode
+      active
+      kit
+      kit_build
       customs_value
       customs_description
       images {
@@ -1723,6 +1940,8 @@ query ShipHeroProductByBarcode($barcode: String!, $customer_account_id: String) 
         warehouse_identifier
         on_hand
         allocated
+        backorder
+        active
         inventory_bin
         inventory_overstock_bin
         reserve_inventory

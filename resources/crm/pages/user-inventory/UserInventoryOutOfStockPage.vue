@@ -17,6 +17,10 @@ const pageInfo = ref({ has_next_page: false, end_cursor: null });
 
 const searchDraft = ref("");
 const searchCommitted = ref("");
+const searchSkipNext = ref(0);
+
+const LIST_PAGE_SIZE = 25;
+
 const filterMenuOpen = ref(false);
 const bulkEditMenuOpen = ref(false);
 
@@ -51,12 +55,17 @@ async function fetchPage(append) {
   if (!accountId.value) return;
   const params = {
     client_account_id: accountId.value,
-    first: 200,
+    first: LIST_PAGE_SIZE,
     kits: filters.kits,
     active_status: filters.activeStatus,
   };
   if (append && pageInfo.value?.end_cursor) {
     params.after = pageInfo.value.end_cursor;
+  }
+  const q = searchCommitted.value.trim();
+  if (q) {
+    params.query = q;
+    params.search_skip = searchSkipNext.value;
   }
   const { data } = await api.get("/inventory/list", { params });
   const chunk = normalizeRows(data?.rows);
@@ -64,45 +73,40 @@ async function fetchPage(append) {
     has_next_page: Boolean(data?.page_info?.has_next_page),
     end_cursor: data?.page_info?.end_cursor ?? null,
   };
-  if (append) {
-    const seen = new Set(rows.value.map(rowKey));
-    for (const r of chunk) {
-      const k = rowKey(r);
-      if (!seen.has(k)) {
-        seen.add(k);
-        rows.value.push(r);
-      }
-    }
-  } else {
-    rows.value = chunk;
+  if (q && typeof data?.page_info?.next_search_skip === "number") {
+    searchSkipNext.value = Number(data.page_info.next_search_skip);
   }
+  const dest = [];
+  const seen = new Set();
+  if (append) {
+    for (const r of rows.value) {
+      const k = rowKey(r);
+      seen.add(k);
+      dest.push(r);
+    }
+  }
+  for (const r of chunk) {
+    const k = rowKey(r);
+    if (seen.has(k)) continue;
+    seen.add(k);
+    dest.push(r);
+  }
+  rows.value = dest;
 }
-
-const INVENTORY_MAX_PAGES = 50;
 
 async function loadRows(reset) {
   if (!accountId.value) return;
   if (reset) {
     loading.value = true;
-    pageInfo.value = { has_next_page: true, end_cursor: null };
+    pageInfo.value = { has_next_page: false, end_cursor: null };
     rows.value = [];
     selectedKeys.value = [];
+    searchSkipNext.value = 0;
   } else {
     loadingMore.value = true;
   }
   try {
-    if (reset) {
-      let pages = 0;
-      while (pageInfo.value.has_next_page && pages < INVENTORY_MAX_PAGES) {
-        await fetchPage(pages > 0);
-        pages += 1;
-      }
-      if (pageInfo.value.has_next_page) {
-        toast.error("Inventory list is very large; only the first portion was loaded. Use search or filters to narrow results.");
-      }
-    } else {
-      await fetchPage(true);
-    }
+    await fetchPage(!reset);
   } catch (e) {
     toast.errorFrom(e, "Could not load inventory.");
   } finally {
@@ -118,22 +122,8 @@ function loadMore() {
 
 const oversoldOnly = computed(() => rows.value.filter((r) => Number(r?.backorder || 0) > 0));
 
-const filteredRows = computed(() => {
-  const q = searchCommitted.value.trim().toLowerCase();
-  if (!q) return oversoldOnly.value;
-  return oversoldOnly.value.filter(
-    (row) =>
-      String(row?.sku || "")
-        .toLowerCase()
-        .includes(q) ||
-      String(row?.name || "")
-        .toLowerCase()
-        .includes(q),
-  );
-});
-
 const sortedRows = computed(() => {
-  const list = [...filteredRows.value];
+  const list = [...oversoldOnly.value];
   const key = sortKey.value;
   const dir = sortDir.value === "asc" ? 1 : -1;
   const num = (v) => Number(v ?? 0);
@@ -225,6 +215,7 @@ const bulkEligibleRows = computed(() =>
 
 function commitSearch() {
   searchCommitted.value = searchDraft.value.trim();
+  loadRows(true);
 }
 
 function applyFilters() {
@@ -412,7 +403,10 @@ onUnmounted(() => {
   <div class="staff-page staff-page--wide">
     <div class="mb-4">
       <h1 class="h4 mb-1 fw-semibold text-body">Products</h1>
-      <p class="text-secondary small mb-0">Out of Stock</p>
+      <p class="text-secondary small mb-1">Out of Stock</p>
+      <p class="text-secondary small mb-0 user-inv-load-hint">
+        Showing oversold rows from inventory loaded in batches of {{ LIST_PAGE_SIZE }}. Search checks your full catalog.
+      </p>
     </div>
 
     <div class="staff-table-card staff-datatable-card staff-datatable-card--white w-100">
@@ -590,7 +584,7 @@ onUnmounted(() => {
       </div>
 
       <div class="table-responsive staff-table-wrap">
-        <table class="table table-hover align-middle mb-0 staff-data-table user-inv-table">
+        <table class="table table-hover align-middle mb-0 staff-data-table user-inv-table user-inv-table--oos">
           <thead class="table-light staff-table-head">
             <tr>
               <th class="staff-table-head__th staff-table-head__th--select text-center" scope="col">
@@ -685,15 +679,11 @@ onUnmounted(() => {
                 />
                 <div v-else class="user-inventory-thumb user-inventory-thumb--empty" />
               </td>
-              <td class="user-inv-table__text-col">
-                <button type="button" class="btn btn-link p-0 text-decoration-none fw-semibold text-start" @click="openDetail(row)">
-                  {{ row.sku || "—" }}
-                </button>
+              <td class="user-inv-table__sku-col">
+                <a href="#" class="user-inv-table__sku-link" @click.prevent="openDetail(row)">{{ row.sku || "—" }}</a>
               </td>
-              <td class="user-inv-table__text-col">
-                <button type="button" class="btn btn-link p-0 text-decoration-none text-start" @click="openDetail(row)">
-                  {{ row.name || "—" }}
-                </button>
+              <td class="user-inv-table__name-col">
+                <span class="user-inv-table__name-text">{{ row.name || "—" }}</span>
               </td>
               <td class="text-center user-inv-table__num-col">{{ Number(row.backorder || 0) }}</td>
               <td class="text-center user-inv-table__num-col">{{ Number(row.on_hand || 0) }}</td>
@@ -735,10 +725,59 @@ onUnmounted(() => {
   vertical-align: middle;
 }
 
-.user-inv-table__text-col {
+.user-inv-table {
+  table-layout: fixed;
+  width: 100%;
+  min-width: 52rem;
+}
+
+.user-inv-table__text-col,
+.user-inv-table__sku-col,
+.user-inv-table__name-col {
   text-align: start;
   vertical-align: middle;
+}
+
+.user-inv-table__sku-col {
+  width: 10rem;
   min-width: 8rem;
+}
+
+.user-inv-table__name-col {
+  width: auto;
+  max-width: min(16rem, 28vw);
+}
+
+.user-inv-table__sku-link {
+  color: #2563eb;
+  font-weight: 600;
+  text-decoration: none;
+  user-select: text;
+  cursor: pointer;
+}
+
+.user-inv-table__sku-link:hover {
+  color: #1d4ed8;
+  text-decoration: underline;
+}
+
+.user-inv-table__name-text {
+  display: block;
+  white-space: normal;
+  word-break: break-word;
+  line-height: 1.4;
+  user-select: text;
+  color: var(--bs-body-color);
+}
+
+.user-inv-table__num-col {
+  min-width: 5.5rem;
+  width: 5.5rem;
+}
+
+.user-inv-load-hint {
+  max-width: 42rem;
+  line-height: 1.45;
 }
 
 .user-inv-table__sort-start {
@@ -773,11 +812,4 @@ onUnmounted(() => {
   background: rgba(0, 0, 0, 0.05);
 }
 
-.user-inv-table .btn-link {
-  color: #2563eb;
-}
-
-.user-inv-table .btn-link:hover {
-  color: #1d4ed8;
-}
 </style>

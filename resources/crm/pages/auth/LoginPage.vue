@@ -11,6 +11,7 @@ import {
 } from "../../router";
 import AuthVuexyShell from "../../components/auth/AuthVuexyShell.vue";
 import { getPublicSignupUrl } from "../../utils/publicSignupUrl.js";
+import { prefetchPortalDashboardCounts } from "../../composables/usePortalDashboardCounts.js";
 import { crmIsPortalUser } from "../../utils/crmUser";
 
 const publicSignupUrl = computed(() => getPublicSignupUrl());
@@ -44,6 +45,9 @@ const submit = async () => {
     setBillingNavFromUser(data.user);
     setInventoryNavFromUser(data.user);
     const isPortal = crmIsPortalUser(data.user);
+    if (isPortal) {
+      prefetchPortalDashboardCounts(data.user?.client_account_id);
+    }
     const r = route.query.redirect;
     const dest =
       typeof r === "string" && r.startsWith("/") ? r : isPortal ? "/users/dashboard" : "/admin/dashboard";

@@ -137,7 +137,7 @@ class OrderController extends Controller
                 ])))
             );
 
-            $payload = Cache::remember($cacheKey, now()->addSeconds(55), function () use (
+            $payload = Cache::remember($cacheKey, now()->addMinutes(3), function () use (
                 $customerId,
                 $awaitingFrom,
                 $awaitingTo,

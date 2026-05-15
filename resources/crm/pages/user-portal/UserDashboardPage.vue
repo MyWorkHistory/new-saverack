@@ -1,24 +1,22 @@
 <script setup>
 import { computed, inject, onMounted, ref, watch } from "vue";
 import { RouterLink } from "vue-router";
-import api from "../../services/api";
 import CrmLoadingSpinner from "../../components/common/CrmLoadingSpinner.vue";
 import { setCrmPageMeta } from "../../composables/useCrmPageMeta.js";
+import { usePortalDashboardCounts } from "../../composables/usePortalDashboardCounts.js";
 import { useToast } from "../../composables/useToast.js";
 
 const toast = useToast();
 const crmUser = inject("crmUser", ref(null));
 
-const loading = ref(true);
-const counts = ref({
-  ready_to_ship: 0,
-  on_hold: 0,
-  backorder: 0,
-  shipped: 0,
-  truncated: false,
-});
-
 const clientAccountId = computed(() => Number(crmUser.value?.client_account_id || 0));
+
+const { counts, loading, refreshing, loadCounts } = usePortalDashboardCounts(
+  () => clientAccountId.value,
+  {
+    onError: (e) => toast.errorFrom(e, "Could not load order counts."),
+  },
+);
 
 /**
  * Material Symbols paths (24×24 viewBox), sourced from Iconify’s Material Symbols set
@@ -94,30 +92,6 @@ const cards = computed(() => [
   },
 ]);
 
-async function loadCounts() {
-  if (!clientAccountId.value) {
-    loading.value = false;
-    return;
-  }
-  loading.value = true;
-  try {
-    const { data } = await api.get("/orders/queue-counts", {
-      params: { client_account_id: clientAccountId.value },
-    });
-    counts.value = {
-      ready_to_ship: Number(data?.ready_to_ship ?? 0),
-      on_hold: Number(data?.on_hold ?? 0),
-      backorder: Number(data?.backorder ?? 0),
-      shipped: Number(data?.shipped ?? 0),
-      truncated: Boolean(data?.truncated),
-    };
-  } catch (e) {
-    toast.errorFrom(e, "Could not load order counts.");
-  } finally {
-    loading.value = false;
-  }
-}
-
 function syncPageMeta() {
   const name = accountDisplayName.value;
   setCrmPageMeta({
@@ -135,8 +109,9 @@ onMounted(() => {
 
 <template>
   <div class="staff-page staff-page--wide">
-    <div class="mb-4">
+    <div class="mb-4 d-flex align-items-center justify-content-between gap-2 flex-wrap">
       <h1 class="h4 mb-0 fw-semibold text-body">{{ accountDisplayName || "Home" }}</h1>
+      <span v-if="refreshing" class="small text-secondary">Updating…</span>
     </div>
 
     <div class="user-dashboard__content position-relative">

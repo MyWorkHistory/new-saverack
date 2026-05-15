@@ -56,7 +56,7 @@ class InventoryListApiTest extends TestCase
         $mock = Mockery::mock(ShipHeroInventoryService::class);
         $mock->shouldReceive('listInventoryRows')
             ->once()
-            ->with('sh-inv-list-1', 50, 'cursor123', 'no', 'inactive')
+            ->with('sh-inv-list-1', 50, 'cursor123', 'no', 'inactive', null, 0)
             ->andReturn([
                 'rows' => [
                     [
@@ -90,6 +90,35 @@ class InventoryListApiTest extends TestCase
             ->assertJsonPath('rows.0.sku', 'A')
             ->assertJsonPath('page_info.has_next_page', true)
             ->assertJsonPath('page_info.end_cursor', 'nextcur');
+    }
+
+    public function test_list_passes_search_query_and_skip_to_service(): void
+    {
+        $account = $this->makeAccountWithShipHero();
+        $user = User::factory()->create(['client_account_id' => $account->id]);
+        $user->permissions()->attach($this->inventoryViewPermission()->id);
+        Sanctum::actingAs($user);
+
+        $mock = Mockery::mock(ShipHeroInventoryService::class);
+        $mock->shouldReceive('listInventoryRows')
+            ->once()
+            ->with('sh-inv-list-1', 25, 'c1', 'all', 'active', 'blue', 25)
+            ->andReturn([
+                'rows' => [],
+                'page_info' => [
+                    'has_next_page' => false,
+                    'end_cursor' => null,
+                    'next_search_skip' => 25,
+                ],
+            ]);
+        $this->app->instance(ShipHeroInventoryService::class, $mock);
+
+        $response = $this->getJson(
+            '/api/inventory/list?client_account_id='.$account->id
+            .'&first=25&after=c1&query=blue&search_skip=25'
+        );
+
+        $response->assertOk();
     }
 
     public function test_bulk_warehouse_product_active_requires_update_permission(): void

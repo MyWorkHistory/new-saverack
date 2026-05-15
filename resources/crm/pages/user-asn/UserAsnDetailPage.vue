@@ -8,7 +8,7 @@ import ConfirmModal from "../../components/common/ConfirmModal.vue";
 import { setCrmPageMeta } from "../../composables/useCrmPageMeta.js";
 import { useToast } from "../../composables/useToast.js";
 import { ASN_CARRIER_OPTIONS } from "../../utils/asnCarrierOptions.js";
-import { formatAsnDisplay, formatAsnHeading } from "../../utils/formatAsnDisplay.js";
+import { formatAsnDisplay, formatAsnHeading, formatAsnLabel } from "../../utils/formatAsnDisplay.js";
 import { formatDateUs } from "../../utils/formatUserDates.js";
 
 const SHIP_TO_ADDRESS_LINES = ["3135 Drane Field Rd #20", "Lakeland, FL 33811"];
@@ -78,6 +78,7 @@ const shipToAccountName = computed(() => {
 
 const asnDisplayNumber = computed(() => formatAsnDisplay(asn.value?.asn_number));
 const asnHeading = computed(() => formatAsnHeading(asn.value?.asn_number));
+const asnLabel = computed(() => formatAsnLabel(asn.value?.asn_number));
 
 const filteredCatalog = computed(() => {
   const q = catalogFilter.value.trim().toLowerCase();
@@ -645,10 +646,10 @@ onUnmounted(() => {
                       v-if="p.image_url"
                       :src="p.image_url"
                       alt=""
-                      class="order-detail-page__item-thumb"
+                      class="asn-catalog-thumb"
                       loading="lazy"
                     />
-                    <div v-else class="order-detail-page__item-thumb order-detail-page__item-thumb--empty" aria-hidden="true" />
+                    <div v-else class="asn-catalog-thumb asn-catalog-thumb--empty" aria-hidden="true" />
                     <div class="min-w-0 flex-grow-1">
                       <div class="fw-semibold small text-truncate">{{ p.sku }}</div>
                       <div class="text-secondary small text-truncate">{{ p.name }}</div>
@@ -701,10 +702,10 @@ onUnmounted(() => {
                         v-if="line.image_url"
                         :src="line.image_url"
                         alt=""
-                        class="order-detail-page__item-thumb"
+                        class="asn-line-thumb"
                         loading="lazy"
                       />
-                      <div v-else class="order-detail-page__item-thumb order-detail-page__item-thumb--empty" aria-hidden="true"></div>
+                      <div v-else class="asn-line-thumb asn-line-thumb--empty" aria-hidden="true"></div>
                       <div class="order-detail-page__item-copy">
                         <div class="order-detail-page__item-name" :title="line.name">{{ line.name || "—" }}</div>
                         <div class="order-detail-page__item-sku" :title="line.sku ? `SKU ${line.sku}` : undefined">
@@ -842,12 +843,11 @@ onUnmounted(() => {
 
         <div class="staff-table-card staff-datatable-card staff-datatable-card--white p-4">
           <h3 class="h6 fw-semibold mb-3">Ship To</h3>
-          <p class="small text-secondary mb-1">Account Name</p>
-          <p class="mb-2 fw-semibold">{{ shipToAccountName }}</p>
-          <p class="small text-secondary mb-1">ASN#</p>
-          <p class="mb-2 fw-semibold">{{ asnDisplayNumber || "—" }}</p>
-          <p class="small text-secondary mb-1">Save Rack</p>
-          <p v-for="(ln, i) in SHIP_TO_ADDRESS_LINES" :key="i" class="mb-0 small text-secondary">{{ ln }}</p>
+          <div class="user-asn-ship-to-block small">
+            <p class="mb-1 fw-semibold text-body">{{ shipToAccountName }}</p>
+            <p class="mb-1 fw-semibold text-body">{{ asnLabel || "—" }}</p>
+            <p v-for="(ln, i) in SHIP_TO_ADDRESS_LINES" :key="i" class="mb-0 text-secondary">{{ ln }}</p>
+          </div>
           <button type="button" class="btn btn-outline-secondary btn-sm mt-3 w-100" @click="openPrintLabel">
             Print Identification Label
           </button>
@@ -987,6 +987,38 @@ onUnmounted(() => {
 </template>
 
 <style scoped>
+.asn-catalog-thumb,
+.asn-line-thumb {
+  width: 40px;
+  height: 40px;
+  border-radius: 0.35rem;
+  object-fit: cover;
+  border: 1px solid rgba(0, 0, 0, 0.08);
+  background: #fff;
+  flex-shrink: 0;
+}
+
+.asn-catalog-thumb--empty,
+.asn-line-thumb--empty {
+  display: block;
+  background: rgba(0, 0, 0, 0.05);
+}
+
+.user-asn-detail-page .order-detail-page__item-cell {
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+  min-width: 0;
+}
+
+.user-asn-detail-page .order-detail-page__item-copy {
+  min-width: 0;
+}
+
+.user-asn-ship-to-block {
+  line-height: 1.45;
+}
+
 .asn-catalog-grid {
   max-height: 280px;
   overflow: auto;

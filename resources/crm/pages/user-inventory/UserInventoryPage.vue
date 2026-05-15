@@ -11,13 +11,18 @@ const crmUser = inject("crmUser", ref(null));
 
 const loading = ref(false);
 const loadingMore = ref(false);
-const loadingPage = ref(0);
 const bulkBusy = ref(false);
 const rows = ref([]);
 const pageInfo = ref({ has_next_page: false, end_cursor: null });
 
 const searchDraft = ref("");
 const searchCommitted = ref("");
+/** When searching, cumulative match offset for paging (from API next_search_skip). */
+const searchSkipNext = ref(0);
+
+/** ShipHero inventory list page size */
+const LIST_PAGE_SIZE = 25;
+
 const filterMenuOpen = ref(false);
 const bulkEditMenuOpen = ref(false);
 
@@ -49,16 +54,21 @@ function normalizeRows(list) {
   return Array.isArray(list) ? list : [];
 }
 
-async function fetchPage(append, targetRows, seenKeys) {
+async function fetchPage(append) {
   if (!accountId.value) return;
   const params = {
     client_account_id: accountId.value,
-    first: 200,
+    first: LIST_PAGE_SIZE,
     kits: filters.kits,
     active_status: filters.activeStatus,
   };
   if (append && pageInfo.value?.end_cursor) {
     params.after = pageInfo.value.end_cursor;
+  }
+  const q = searchCommitted.value.trim();
+  if (q) {
+    params.query = q;
+    params.search_skip = searchSkipNext.value;
   }
   const { data } = await api.get("/inventory/list", { params });
   const chunk = normalizeRows(data?.rows);
@@ -66,52 +76,45 @@ async function fetchPage(append, targetRows, seenKeys) {
     has_next_page: Boolean(data?.page_info?.has_next_page),
     end_cursor: data?.page_info?.end_cursor ?? null,
   };
-  const dest = targetRows ?? rows.value;
-  const seen = seenKeys ?? new Set(dest.map(rowKey));
+  if (q && typeof data?.page_info?.next_search_skip === "number") {
+    searchSkipNext.value = Number(data.page_info.next_search_skip);
+  }
+  const dest = [];
+  const seen = new Set();
+  if (append) {
+    for (const r of rows.value) {
+      const k = rowKey(r);
+      seen.add(k);
+      dest.push(r);
+    }
+  }
   for (const r of chunk) {
     const k = rowKey(r);
     if (seen.has(k)) continue;
     seen.add(k);
     dest.push(r);
   }
-  return seen;
+  rows.value = dest;
 }
-
-const INVENTORY_MAX_PAGES = 50;
 
 async function loadRows(reset) {
   if (!accountId.value) return;
   if (reset) {
     loading.value = true;
-    pageInfo.value = { has_next_page: true, end_cursor: null };
+    pageInfo.value = { has_next_page: false, end_cursor: null };
     rows.value = [];
     selectedKeys.value = [];
+    searchSkipNext.value = 0;
   } else {
     loadingMore.value = true;
   }
   try {
-    if (reset) {
-      const accumulated = [];
-      const seen = new Set();
-      let pages = 0;
-      while (pageInfo.value.has_next_page && pages < INVENTORY_MAX_PAGES) {
-        loadingPage.value = pages + 1;
-        await fetchPage(pages > 0, accumulated, seen);
-        pages += 1;
-      }
-      rows.value = accumulated;
-      if (pageInfo.value.has_next_page) {
-        toast.error("Inventory list is very large; only the first portion was loaded. Use search or filters to narrow results.");
-      }
-    } else {
-      await fetchPage(true);
-    }
+    await fetchPage(!reset);
   } catch (e) {
     toast.errorFrom(e, "Could not load inventory.");
   } finally {
     loading.value = false;
     loadingMore.value = false;
-    loadingPage.value = 0;
   }
 }
 
@@ -120,22 +123,8 @@ function loadMore() {
   loadRows(false);
 }
 
-const filteredRows = computed(() => {
-  const q = searchCommitted.value.trim().toLowerCase();
-  if (!q) return rows.value;
-  return rows.value.filter(
-    (row) =>
-      String(row?.sku || "")
-        .toLowerCase()
-        .includes(q) ||
-      String(row?.name || "")
-        .toLowerCase()
-        .includes(q),
-  );
-});
-
 const sortedRows = computed(() => {
-  const list = [...filteredRows.value];
+  const list = [...rows.value];
   const key = sortKey.value;
   const dir = sortDir.value === "asc" ? 1 : -1;
   const num = (v) => Number(v ?? 0);
@@ -228,6 +217,7 @@ const bulkEligibleRows = computed(() =>
 
 function commitSearch() {
   searchCommitted.value = searchDraft.value.trim();
+  loadRows(true);
 }
 
 function applyFilters() {
@@ -417,7 +407,7 @@ onUnmounted(() => {
       <h1 class="h4 mb-1 fw-semibold text-body">Products</h1>
       <p class="text-secondary small mb-1">Inventory</p>
       <p class="text-secondary small mb-0 user-inv-load-hint">
-        Inventory loads all products from ShipHero in batches; large catalogs may take a moment.
+        Showing {{ LIST_PAGE_SIZE }} products per load. Search checks your full ShipHero catalog (not only this page).
       </p>
     </div>
 
@@ -675,7 +665,7 @@ onUnmounted(() => {
           <tbody>
             <tr v-if="loading">
               <td colspan="8" class="text-center text-secondary py-5">
-                Loading inventory{{ loadingPage > 0 ? ` (page ${loadingPage})` : "" }}…
+                Loading inventory…
               </td>
             </tr>
             <tr v-else-if="!displayRows.length">

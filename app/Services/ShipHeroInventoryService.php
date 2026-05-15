@@ -150,19 +150,23 @@ GQL;
      *
      * @param  'all'|'yes'|'no'  $kitsFilter
      * @param  'active'|'inactive'|'all'  $activeStatus
-     * @return array{rows: list<array<string,mixed>>, page_info: array{has_next_page: bool, end_cursor: string|null}}
+     * @return array{rows: list<array<string,mixed>>, page_info: array{has_next_page: bool, end_cursor: string|null, next_search_skip?: int}}
      */
     public function listInventoryRows(
         ?string $customerAccountId = null,
         int $first = 100,
         ?string $after = null,
         string $kitsFilter = 'all',
-        string $activeStatus = 'active'
+        string $activeStatus = 'active',
+        ?string $searchQuery = null,
+        int $searchSkip = 0
     ): array {
         $first = max(1, min(200, $first));
         $after = is_string($after) && trim($after) !== '' ? trim($after) : null;
         $kitsFilter = in_array($kitsFilter, ['all', 'yes', 'no'], true) ? $kitsFilter : 'all';
         $activeStatus = in_array($activeStatus, ['active', 'inactive', 'all'], true) ? $activeStatus : 'active';
+        $searchQuery = is_string($searchQuery) ? trim($searchQuery) : '';
+        $searchSkip = max(0, $searchSkip);
 
         $graphql = <<<'GQL'
 query ShipHeroInventoryRows($customer_account_id: String, $first: Int!, $after: String) {
@@ -197,6 +201,20 @@ query ShipHeroInventoryRows($customer_account_id: String, $first: Int!, $after: 
   }
 }
 GQL;
+
+        if ($searchQuery !== '') {
+            return $this->listInventoryRowsSearch(
+                $graphql,
+                $customerAccountId,
+                $kitsFilter,
+                $activeStatus,
+                $first,
+                $after,
+                $searchQuery,
+                $searchSkip
+            );
+        }
+
         $vars = array_merge(
             ['first' => $first, 'after' => $after],
             $this->customerAccountVariables($customerAccountId)
@@ -220,6 +238,112 @@ GQL;
                 ],
             ];
         }
+        $rows = $this->expandInventoryProductEdgesToRows($edges, $kitsFilter, $activeStatus);
+
+        return [
+            'rows' => $rows,
+            'page_info' => [
+                'has_next_page' => $hasNext,
+                'end_cursor' => $endCursor,
+            ],
+        ];
+    }
+
+    /**
+     * @return array{rows: list<array<string,mixed>>, page_info: array{has_next_page: bool, end_cursor: string|null, next_search_skip: int}}
+     */
+    private function listInventoryRowsSearch(
+        string $graphql,
+        ?string $customerAccountId,
+        string $kitsFilter,
+        string $activeStatus,
+        int $desired,
+        ?string $after,
+        string $searchQuery,
+        int $searchSkip
+    ): array {
+        $qLower = mb_strtolower($searchQuery);
+        $matchSkip = $searchSkip;
+        $output = [];
+        $graphqlAfter = $after;
+        $resumeCursor = null;
+        $stoppedMidPage = false;
+        $lastFetchHadNext = false;
+        $iterations = 0;
+        $innerFirst = min(100, max(40, $desired * 3));
+
+        while (count($output) < $desired && $iterations < 60) {
+            $iterations++;
+            $pageRequestAfter = $graphqlAfter;
+            $vars = array_merge(
+                ['first' => $innerFirst, 'after' => $graphqlAfter],
+                $this->customerAccountVariables($customerAccountId)
+            );
+            $json = $this->client->query($graphql, $vars);
+            $edges = data_get($json, 'data.products.data.edges');
+            $pageInfo = data_get($json, 'data.products.data.pageInfo');
+            $lastFetchHadNext = is_array($pageInfo) && (($pageInfo['hasNextPage'] ?? false) === true);
+            $endCursor = is_array($pageInfo) && isset($pageInfo['endCursor']) && is_string($pageInfo['endCursor'])
+                ? $pageInfo['endCursor']
+                : null;
+            if ($endCursor === '') {
+                $endCursor = null;
+            }
+            if (! is_array($edges)) {
+                break;
+            }
+            $pageRows = $this->expandInventoryProductEdgesToRows($edges, $kitsFilter, $activeStatus);
+
+            foreach ($pageRows as $r) {
+                $skuL = mb_strtolower((string) ($r['sku'] ?? ''));
+                $nameL = mb_strtolower((string) ($r['name'] ?? ''));
+                if (! str_contains($skuL, $qLower) && ! str_contains($nameL, $qLower)) {
+                    continue;
+                }
+                if ($matchSkip > 0) {
+                    $matchSkip--;
+
+                    continue;
+                }
+                $output[] = $r;
+                if (count($output) >= $desired) {
+                    $stoppedMidPage = true;
+                    $resumeCursor = $pageRequestAfter;
+
+                    break 2;
+                }
+            }
+            $graphqlAfter = $endCursor;
+            $resumeCursor = $endCursor;
+            if (! $lastFetchHadNext || $graphqlAfter === null) {
+                break;
+            }
+        }
+
+        $delivered = count($output);
+        $nextSearchSkip = $searchSkip + $delivered;
+        $hasMore = $delivered >= $desired
+            ? ($stoppedMidPage || $lastFetchHadNext)
+            : $lastFetchHadNext;
+
+        return [
+            'rows' => $output,
+            'page_info' => [
+                'has_next_page' => $hasMore,
+                'end_cursor' => $resumeCursor,
+                'next_search_skip' => $nextSearchSkip,
+            ],
+        ];
+    }
+
+    /**
+     * @param  list<array<string, mixed>>  $edges
+     * @param  'all'|'yes'|'no'  $kitsFilter
+     * @param  'active'|'inactive'|'all'  $activeStatus
+     * @return list<array<string, mixed>>
+     */
+    private function expandInventoryProductEdgesToRows(array $edges, string $kitsFilter, string $activeStatus): array
+    {
         $rows = [];
         foreach ($edges as $edge) {
             $node = is_array($edge['node'] ?? null) ? $edge['node'] : null;
@@ -299,14 +423,9 @@ GQL;
             }
         }
 
-        return [
-            'rows' => $rows,
-            'page_info' => [
-                'has_next_page' => $hasNext,
-                'end_cursor' => $endCursor,
-            ],
-        ];
+        return $rows;
     }
+
 
     /**
      * Set warehouse-level active flag (ShipHero warehouse_product_update).

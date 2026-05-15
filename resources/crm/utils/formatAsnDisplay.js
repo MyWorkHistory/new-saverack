@@ -13,3 +13,9 @@ export function formatAsnHeading(raw) {
   const n = formatAsnDisplay(raw);
   return n ? `ASN# ${n}` : "";
 }
+
+/** Ship To, print label, and identification slip (e.g. `ASN #0007`). */
+export function formatAsnLabel(raw) {
+  const n = formatAsnDisplay(raw);
+  return n ? `ASN #${n}` : "";
+}

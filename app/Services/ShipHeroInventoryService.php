@@ -625,18 +625,16 @@ GQL;
         bool $backorderOnly
     ): array {
         $qLower = mb_strtolower($searchQuery);
-        $matchSkip = $searchSkip;
+        $matchSkip = $after === null ? $searchSkip : 0;
         $output = [];
         $graphqlAfter = $after;
         $resumeCursor = null;
-        $stoppedMidPage = false;
         $lastFetchHadNext = false;
         $iterations = 0;
         $innerFirst = min(100, max(40, $desired * 3));
 
-        while (count($output) < $desired && $iterations < 60) {
+        while ($iterations < 1) {
             $iterations++;
-            $pageRequestAfter = $graphqlAfter;
             $vars = array_merge(
                 ['first' => $innerFirst, 'after' => $graphqlAfter],
                 $this->customerAccountVariables($customerAccountId)
@@ -674,12 +672,6 @@ GQL;
                     continue;
                 }
                 $output[] = $r;
-                if (count($output) >= $desired) {
-                    $stoppedMidPage = true;
-                    $resumeCursor = $pageRequestAfter;
-
-                    break 2;
-                }
             }
             $graphqlAfter = $endCursor;
             $resumeCursor = $endCursor;
@@ -690,9 +682,7 @@ GQL;
 
         $delivered = count($output);
         $nextSearchSkip = $searchSkip + $delivered;
-        $hasMore = $delivered >= $desired
-            ? ($stoppedMidPage || $lastFetchHadNext)
-            : $lastFetchHadNext;
+        $hasMore = $lastFetchHadNext && $resumeCursor !== null;
 
         return [
             'rows' => $output,
@@ -1284,18 +1274,16 @@ query ShipHeroAsnProductCatalogSearch($customer_account_id: String, $first: Int!
 GQL;
 
         $qLower = mb_strtolower($searchQuery);
-        $matchSkip = $searchSkip;
+        $matchSkip = $after === null ? $searchSkip : 0;
         $output = [];
         $graphqlAfter = is_string($after) && trim($after) !== '' ? trim($after) : null;
         $resumeCursor = null;
-        $stoppedMidPage = false;
         $lastFetchHadNext = false;
         $iterations = 0;
         $innerFirst = min(100, max(40, $desired * 3));
 
-        while (count($output) < $desired && $iterations < 60) {
+        while ($iterations < 1) {
             $iterations++;
-            $pageRequestAfter = $graphqlAfter;
             $vars = array_merge(
                 ['first' => $innerFirst, 'after' => $graphqlAfter],
                 $this->customerAccountVariables($customerAccountId)
@@ -1325,12 +1313,6 @@ GQL;
                     continue;
                 }
                 $output[] = $p;
-                if (count($output) >= $desired) {
-                    $stoppedMidPage = true;
-                    $resumeCursor = $pageRequestAfter;
-
-                    break 2;
-                }
             }
             $graphqlAfter = $endCursor;
             $resumeCursor = $endCursor;
@@ -1341,9 +1323,7 @@ GQL;
 
         $delivered = count($output);
         $nextSearchSkip = $searchSkip + $delivered;
-        $hasMore = $delivered >= $desired
-            ? ($stoppedMidPage || $lastFetchHadNext)
-            : $lastFetchHadNext;
+        $hasMore = $lastFetchHadNext && $resumeCursor !== null;
 
         return [
             'products' => $output,

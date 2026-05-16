@@ -11,6 +11,7 @@ const crmUser = inject("crmUser", ref(null));
 
 const loading = ref(false);
 const loadingMore = ref(false);
+const searchAutoLoading = ref(false);
 const bulkBusy = ref(false);
 const rows = ref([]);
 const pageInfo = ref({ has_next_page: false, end_cursor: null });
@@ -18,6 +19,7 @@ const pageInfo = ref({ has_next_page: false, end_cursor: null });
 const searchDraft = ref("");
 const searchCommitted = ref("");
 const searchSkipNext = ref(0);
+let searchRunSeq = 0;
 
 const LIST_PAGE_SIZE = 50;
 
@@ -93,12 +95,15 @@ async function fetchPage(append) {
     dest.push(r);
   }
   rows.value = dest;
+  return chunk.length;
 }
 
 async function loadRows(reset) {
   if (!accountId.value) return;
+  const runId = reset ? ++searchRunSeq : searchRunSeq;
   if (reset) {
     loading.value = true;
+    searchAutoLoading.value = false;
     pageInfo.value = { has_next_page: false, end_cursor: null };
     rows.value = [];
     selectedKeys.value = [];
@@ -114,11 +119,38 @@ async function loadRows(reset) {
     loading.value = false;
     loadingMore.value = false;
   }
+  if (reset && searchCommitted.value.trim() && pageInfo.value.has_next_page) {
+    continueSearchInBackground(runId);
+  }
 }
 
 function loadMore() {
-  if (!pageInfo.value.has_next_page || loadingMore.value || loading.value) return;
+  if (!pageInfo.value.has_next_page || loadingMore.value || loading.value || searchAutoLoading.value) return;
   loadRows(false);
+}
+
+async function continueSearchInBackground(runId) {
+  if (searchAutoLoading.value) return;
+  searchAutoLoading.value = true;
+  try {
+    let guard = 0;
+    while (
+      runId === searchRunSeq &&
+      searchCommitted.value.trim() &&
+      pageInfo.value.has_next_page &&
+      guard < 200
+    ) {
+      guard += 1;
+      await fetchPage(true);
+      await nextTick();
+    }
+  } catch (e) {
+    toast.errorFrom(e, "Could not finish searching out-of-stock inventory.");
+  } finally {
+    if (runId === searchRunSeq) {
+      searchAutoLoading.value = false;
+    }
+  }
 }
 
 const sortedRows = computed(() => {
@@ -708,7 +740,11 @@ onUnmounted(() => {
         </table>
       </div>
       <div v-if="pageInfo.has_next_page" class="p-3 border-top text-center">
+        <div v-if="searchAutoLoading" class="small text-secondary py-1" aria-live="polite">
+          Searching More Matches…
+        </div>
         <button
+          v-else
           type="button"
           class="btn btn-outline-secondary btn-sm orders-toolbar-outline-btn"
           :disabled="loadingMore"

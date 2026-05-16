@@ -37,11 +37,13 @@ const markReadyTrackings = ref([{ carrier: "", tracking_number: "" }]);
 const catalog = ref([]);
 const catalogLoading = ref(false);
 const catalogLoadingMore = ref(false);
+const catalogSearchAutoLoading = ref(false);
 const catalogPageInfo = ref({ has_next_page: false, end_cursor: null });
 const catalogSearchDraft = ref("");
 const catalogSearchCommitted = ref("");
 const catalogSearchSkipNext = ref(0);
 const addPanelOpen = ref(false);
+let catalogSearchRunSeq = 0;
 
 /** GraphQL products page size (aligned with portal inventory paging; capped 25–100 on server). */
 const CATALOG_PAGE_SIZE = 50;
@@ -332,6 +334,8 @@ function commitCatalogSearch() {
 }
 
 function resetCatalogSearchState() {
+  catalogSearchRunSeq += 1;
+  catalogSearchAutoLoading.value = false;
   catalogSearchDraft.value = "";
   catalogSearchCommitted.value = "";
   catalogSearchSkipNext.value = 0;
@@ -351,6 +355,7 @@ function loadMoreCatalog() {
     !catalogPageInfo.value.has_next_page ||
     catalogLoadingMore.value ||
     catalogLoading.value ||
+    catalogSearchAutoLoading.value ||
     !clientAccountId.value
   ) {
     return;
@@ -360,8 +365,10 @@ function loadMoreCatalog() {
 
 async function loadCatalogRows(reset) {
   if (!clientAccountId.value) return;
+  const runId = reset ? ++catalogSearchRunSeq : catalogSearchRunSeq;
   if (reset) {
     catalogLoading.value = true;
+    catalogSearchAutoLoading.value = false;
     catalog.value = [];
     catalogPageInfo.value = { has_next_page: false, end_cursor: null };
     catalogSearchSkipNext.value = 0;
@@ -413,6 +420,31 @@ async function loadCatalogRows(reset) {
   } finally {
     catalogLoading.value = false;
     catalogLoadingMore.value = false;
+  }
+  if (reset && catalogSearchCommitted.value.trim() && catalogPageInfo.value.has_next_page) {
+    continueCatalogSearchInBackground(runId);
+  }
+}
+
+async function continueCatalogSearchInBackground(runId) {
+  if (catalogSearchAutoLoading.value) return;
+  catalogSearchAutoLoading.value = true;
+  try {
+    let guard = 0;
+    while (
+      runId === catalogSearchRunSeq &&
+      catalogSearchCommitted.value.trim() &&
+      catalogPageInfo.value.has_next_page &&
+      guard < 200
+    ) {
+      guard += 1;
+      await loadCatalogRows(false);
+      await nextTick();
+    }
+  } finally {
+    if (runId === catalogSearchRunSeq) {
+      catalogSearchAutoLoading.value = false;
+    }
   }
 }
 
@@ -766,7 +798,11 @@ onUnmounted(() => {
                   </div>
                 </div>
                 <div class="d-flex justify-content-center mt-3" v-if="catalogPageInfo.has_next_page">
+                  <div v-if="catalogSearchAutoLoading" class="small text-secondary py-1" aria-live="polite">
+                    Searching More Matches…
+                  </div>
                   <button
+                    v-else
                     type="button"
                     class="btn btn-sm btn-outline-secondary fw-semibold staff-page-secondary px-4"
                     :disabled="catalogLoadingMore"

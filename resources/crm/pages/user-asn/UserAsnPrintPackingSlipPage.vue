@@ -10,6 +10,10 @@ const asn = ref(null);
 const err = ref("");
 
 const id = computed(() => String(route.params.id || ""));
+const accountName = computed(() => {
+  const fromAsn = String(asn.value?.client_account_company_name || "").trim();
+  return fromAsn || "Save Rack";
+});
 
 onMounted(async () => {
   setCrmPageMeta({ title: "Save Rack | Packing Slip", description: "ASN packing slip." });
@@ -27,7 +31,7 @@ onMounted(async () => {
   <div class="slip-page staff-page staff-page--wide p-4">
     <p v-if="err" class="text-danger">{{ err }}</p>
     <template v-else-if="asn">
-      <div class="company-name">Save Rack</div>
+      <div class="company-name">{{ accountName }}</div>
       <div class="asn-number">{{ formatAsnLabel(asn.asn_number) }}</div>
       <hr class="my-4" />
       <table class="table table-sm">

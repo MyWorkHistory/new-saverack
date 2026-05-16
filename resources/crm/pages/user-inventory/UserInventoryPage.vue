@@ -21,7 +21,7 @@ const searchCommitted = ref("");
 const searchSkipNext = ref(0);
 
 /** ShipHero inventory list page size */
-const LIST_PAGE_SIZE = 25;
+const LIST_PAGE_SIZE = 50;
 
 const filterMenuOpen = ref(false);
 const bulkEditMenuOpen = ref(false);
@@ -217,6 +217,13 @@ const bulkEligibleRows = computed(() =>
 
 function commitSearch() {
   searchCommitted.value = searchDraft.value.trim();
+  loadRows(true);
+}
+
+function clearSearch() {
+  if (!searchDraft.value && !searchCommitted.value) return;
+  searchDraft.value = "";
+  searchCommitted.value = "";
   loadRows(true);
 }
 
@@ -435,6 +442,15 @@ onUnmounted(() => {
                 @click="commitSearch"
               >
                 Search
+              </button>
+              <button
+                v-if="searchDraft || searchCommitted"
+                type="button"
+                class="btn btn-outline-secondary orders-toolbar-search-btn"
+                :disabled="loading"
+                @click="clearSearch"
+              >
+                Clear
               </button>
             </div>
           </div>
@@ -712,7 +728,7 @@ onUnmounted(() => {
           :disabled="loadingMore"
           @click="loadMore"
         >
-          {{ loadingMore ? "Loading…" : "Load More" }}
+          {{ loadingMore ? "Loading…" : "Load 50 More" }}
         </button>
       </div>
     </div>

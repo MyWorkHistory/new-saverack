@@ -266,6 +266,7 @@ class InventoryController extends Controller
             'active_status' => ['nullable', 'string', Rule::in(['active', 'inactive', 'all'])],
             'query' => ['nullable', 'string', 'max:255'],
             'search_skip' => ['nullable', 'integer', 'min:0', 'max:500000'],
+            'backorder_only' => ['nullable', 'boolean'],
         ]);
         $clientAccountId = (int) $validated['client_account_id'];
         $first = isset($validated['first']) ? (int) $validated['first'] : 100;
@@ -276,6 +277,7 @@ class InventoryController extends Controller
             : 'active';
         $searchQuery = isset($validated['query']) && is_string($validated['query']) ? trim($validated['query']) : '';
         $searchSkip = isset($validated['search_skip']) ? (int) $validated['search_skip'] : 0;
+        $backorderOnly = (bool) ($validated['backorder_only'] ?? false);
         try {
             $shipheroCustomerId = $this->resolveShipHeroCustomerAccountId($clientAccountId, $request);
             $payload = $this->inventory->listInventoryRows(
@@ -286,6 +288,8 @@ class InventoryController extends Controller
                 $activeStatus,
                 $searchQuery !== '' ? $searchQuery : null,
                 $searchSkip,
+                $clientAccountId,
+                $backorderOnly
             );
 
             return response()->json([
@@ -372,6 +376,7 @@ class InventoryController extends Controller
                 $after,
                 $query !== '' ? $query : null,
                 $searchSkip,
+                $clientAccountId
             );
 
             return response()->json([

@@ -57,19 +57,20 @@ onMounted(async () => {
   padding: 0.5in;
 }
 .label-account {
-  font-size: 1.35rem;
-  font-weight: 700;
+  font-size: 1.85rem;
+  font-weight: 800;
+  line-height: 1.15;
 }
 .label-asn-number {
-  font-size: 2.75rem;
+  font-size: 3.35rem;
   font-weight: 800;
   letter-spacing: 0.04em;
-  margin-top: 0.35rem;
+  margin-top: 0.45rem;
   line-height: 1.1;
 }
 .label-addr {
-  font-size: 0.95rem;
-  line-height: 1.45;
+  font-size: 1.25rem;
+  line-height: 1.4;
 }
 .label-print-hint {
   font-weight: 600;

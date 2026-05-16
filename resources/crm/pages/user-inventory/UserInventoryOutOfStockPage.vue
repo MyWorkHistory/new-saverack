@@ -19,7 +19,7 @@ const searchDraft = ref("");
 const searchCommitted = ref("");
 const searchSkipNext = ref(0);
 
-const LIST_PAGE_SIZE = 25;
+const LIST_PAGE_SIZE = 50;
 
 const filterMenuOpen = ref(false);
 const bulkEditMenuOpen = ref(false);
@@ -58,6 +58,7 @@ async function fetchPage(append) {
     first: LIST_PAGE_SIZE,
     kits: filters.kits,
     active_status: filters.activeStatus,
+    backorder_only: 1,
   };
   if (append && pageInfo.value?.end_cursor) {
     params.after = pageInfo.value.end_cursor;
@@ -120,10 +121,8 @@ function loadMore() {
   loadRows(false);
 }
 
-const oversoldOnly = computed(() => rows.value.filter((r) => Number(r?.backorder || 0) > 0));
-
 const sortedRows = computed(() => {
-  const list = [...oversoldOnly.value];
+  const list = [...rows.value];
   const key = sortKey.value;
   const dir = sortDir.value === "asc" ? 1 : -1;
   const num = (v) => Number(v ?? 0);
@@ -215,6 +214,13 @@ const bulkEligibleRows = computed(() =>
 
 function commitSearch() {
   searchCommitted.value = searchDraft.value.trim();
+  loadRows(true);
+}
+
+function clearSearch() {
+  if (!searchDraft.value && !searchCommitted.value) return;
+  searchDraft.value = "";
+  searchCommitted.value = "";
   loadRows(true);
 }
 
@@ -433,6 +439,15 @@ onUnmounted(() => {
                 @click="commitSearch"
               >
                 Search
+              </button>
+              <button
+                v-if="searchDraft || searchCommitted"
+                type="button"
+                class="btn btn-outline-secondary orders-toolbar-search-btn"
+                :disabled="loading"
+                @click="clearSearch"
+              >
+                Clear
               </button>
             </div>
           </div>
@@ -656,7 +671,7 @@ onUnmounted(() => {
             </tr>
             <tr v-else-if="!displayRows.length">
               <td colspan="7" class="text-center text-secondary py-5">
-                No oversold rows match your filters or search in the loaded inventory.
+                No oversold rows match your filters or search.
               </td>
             </tr>
             <tr v-for="row in displayRows" :key="rowKey(row)">
@@ -699,7 +714,7 @@ onUnmounted(() => {
           :disabled="loadingMore"
           @click="loadMore"
         >
-          {{ loadingMore ? "Loading…" : "Load More" }}
+          {{ loadingMore ? "Loading…" : "Load 50 More" }}
         </button>
       </div>
     </div>

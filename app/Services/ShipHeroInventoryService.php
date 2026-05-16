@@ -2,6 +2,7 @@
 
 namespace App\Services;
 
+use App\Models\ShipHeroInventoryProductIndex;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Log;
 use RuntimeException;
@@ -159,7 +160,9 @@ GQL;
         string $kitsFilter = 'all',
         string $activeStatus = 'active',
         ?string $searchQuery = null,
-        int $searchSkip = 0
+        int $searchSkip = 0,
+        ?int $clientAccountId = null,
+        bool $backorderOnly = false
     ): array {
         $first = max(1, min(200, $first));
         $after = is_string($after) && trim($after) !== '' ? trim($after) : null;
@@ -181,6 +184,7 @@ query ShipHeroInventoryRows($customer_account_id: String, $first: Int!, $after: 
           id
           sku
           name
+          barcode
           active
           kit
           kit_build
@@ -210,10 +214,27 @@ GQL;
                 $first,
                 $after,
                 $searchQuery,
-                $searchSkip
+                $searchSkip,
+                $clientAccountId,
+                $backorderOnly
             );
             if ($direct !== null) {
                 return $direct;
+            }
+
+            $indexed = $this->searchInventoryIndexRows(
+                $clientAccountId,
+                $customerAccountId,
+                $first,
+                null,
+                $searchQuery,
+                $searchSkip,
+                $kitsFilter,
+                $activeStatus,
+                $backorderOnly
+            );
+            if ($indexed !== null) {
+                return $indexed;
             }
 
             return $this->listInventoryRowsSearch(
@@ -224,7 +245,39 @@ GQL;
                 $first,
                 $after,
                 $searchQuery,
-                $searchSkip
+                $searchSkip,
+                $clientAccountId,
+                $backorderOnly
+            );
+        }
+
+        $indexed = $this->searchInventoryIndexRows(
+            $clientAccountId,
+            $customerAccountId,
+            $first,
+            $after,
+            null,
+            0,
+            $kitsFilter,
+            $activeStatus,
+            $backorderOnly
+        );
+        if ($indexed !== null) {
+            return $indexed;
+        }
+
+        if ($backorderOnly) {
+            return $this->listInventoryRowsSearch(
+                $graphql,
+                $customerAccountId,
+                $kitsFilter,
+                $activeStatus,
+                $first,
+                $after,
+                '',
+                0,
+                $clientAccountId,
+                true
             );
         }
 
@@ -252,12 +305,197 @@ GQL;
             ];
         }
         $rows = $this->expandInventoryProductEdgesToRows($edges, $kitsFilter, $activeStatus);
+        if ($backorderOnly) {
+            $rows = array_values(array_filter($rows, static function ($row) {
+                return (float) ($row['backorder'] ?? 0) > 0;
+            }));
+        }
+        $this->upsertInventoryIndexRows($clientAccountId, $customerAccountId, $rows);
 
         return [
             'rows' => $rows,
             'page_info' => [
                 'has_next_page' => $hasNext,
                 'end_cursor' => $endCursor,
+            ],
+        ];
+    }
+
+    private function normalizeInventoryIndexSearchValue($value): string
+    {
+        return mb_strtolower(trim((string) ($value ?? '')));
+    }
+
+    private function applyInventoryIndexAccountScope($query, ?int $clientAccountId, ?string $customerAccountId)
+    {
+        if ($clientAccountId !== null && $clientAccountId > 0) {
+            return $query->where('client_account_id', $clientAccountId);
+        }
+
+        $customer = is_string($customerAccountId) ? trim($customerAccountId) : '';
+        if ($customer !== '') {
+            return $query->where('shiphero_customer_account_id', $customer);
+        }
+
+        return null;
+    }
+
+    private function inventoryIndexRowToListRow(ShipHeroInventoryProductIndex $row): array
+    {
+        return [
+            'product_id' => $row->shiphero_product_id,
+            'sku' => $row->sku,
+            'name' => $row->name ?? '',
+            'barcode' => $row->barcode,
+            'image_url' => $row->image_url,
+            'product_active' => (bool) $row->product_active,
+            'kit' => (bool) $row->kit,
+            'kit_build' => (bool) $row->kit_build,
+            'warehouse_id' => $row->warehouse_id,
+            'warehouse_active' => (bool) $row->warehouse_active,
+            'on_hand' => (float) $row->on_hand,
+            'allocated' => (float) $row->allocated,
+            'backorder' => (float) $row->backorder,
+        ];
+    }
+
+    /**
+     * @param  list<array<string, mixed>>  $rows
+     */
+    private function upsertInventoryIndexRows(?int $clientAccountId, ?string $customerAccountId, array $rows): void
+    {
+        if (($clientAccountId === null || $clientAccountId <= 0) && trim((string) $customerAccountId) === '') {
+            return;
+        }
+
+        foreach ($rows as $row) {
+            if (! is_array($row)) {
+                continue;
+            }
+            $sku = trim((string) ($row['sku'] ?? ''));
+            if ($sku === '') {
+                continue;
+            }
+            $warehouseId = isset($row['warehouse_id']) && $row['warehouse_id'] !== null
+                ? trim((string) $row['warehouse_id'])
+                : null;
+            if ($warehouseId === '') {
+                $warehouseId = null;
+            }
+
+            ShipHeroInventoryProductIndex::query()->updateOrCreate(
+                [
+                    'client_account_id' => $clientAccountId,
+                    'shiphero_customer_account_id' => trim((string) $customerAccountId) ?: null,
+                    'sku' => $sku,
+                    'warehouse_id' => $warehouseId,
+                ],
+                [
+                    'shiphero_product_id' => trim((string) ($row['product_id'] ?? '')) ?: null,
+                    'sku_search' => $this->normalizeInventoryIndexSearchValue($sku),
+                    'name' => isset($row['name']) ? (string) $row['name'] : '',
+                    'name_search' => $this->normalizeInventoryIndexSearchValue($row['name'] ?? ''),
+                    'barcode' => trim((string) ($row['barcode'] ?? '')) ?: null,
+                    'barcode_search' => $this->normalizeInventoryIndexSearchValue($row['barcode'] ?? ''),
+                    'image_url' => trim((string) ($row['image_url'] ?? '')) ?: null,
+                    'product_active' => (bool) ($row['product_active'] ?? true),
+                    'kit' => (bool) ($row['kit'] ?? false),
+                    'kit_build' => (bool) ($row['kit_build'] ?? false),
+                    'warehouse_active' => (bool) ($row['warehouse_active'] ?? true),
+                    'on_hand' => (float) ($row['on_hand'] ?? 0),
+                    'allocated' => (float) ($row['allocated'] ?? 0),
+                    'backorder' => (float) ($row['backorder'] ?? 0),
+                    'synced_at' => now(),
+                ]
+            );
+        }
+    }
+
+    /**
+     * @return array{rows: list<array<string,mixed>>, page_info: array{has_next_page: bool, end_cursor: string|null, next_search_skip?: int}}|null
+     */
+    private function searchInventoryIndexRows(
+        ?int $clientAccountId,
+        ?string $customerAccountId,
+        int $first,
+        ?string $after,
+        ?string $searchQuery,
+        int $searchSkip,
+        string $kitsFilter,
+        string $activeStatus,
+        bool $backorderOnly
+    ): ?array {
+        $query = ShipHeroInventoryProductIndex::query();
+        $query = $this->applyInventoryIndexAccountScope($query, $clientAccountId, $customerAccountId);
+        if ($query === null) {
+            return null;
+        }
+
+        if ($activeStatus === 'active') {
+            $query->where('product_active', true);
+        } elseif ($activeStatus === 'inactive') {
+            $query->where('product_active', false);
+        }
+        if ($kitsFilter === 'yes') {
+            $query->where(function ($q) {
+                $q->where('kit', true)->orWhere('kit_build', true);
+            });
+        } elseif ($kitsFilter === 'no') {
+            $query->where('kit', false)->where('kit_build', false);
+        }
+        if ($backorderOnly) {
+            $query->where('backorder', '>', 0);
+        }
+
+        $term = $this->normalizeInventoryIndexSearchValue($searchQuery ?? '');
+        if ($term !== '') {
+            $like = '%'.$term.'%';
+            $query->where(function ($q) use ($like) {
+                $q->where('sku_search', 'like', $like)
+                    ->orWhere('name_search', 'like', $like)
+                    ->orWhere('barcode_search', 'like', $like);
+            });
+            $query->orderByRaw(
+                'CASE WHEN sku_search = ? THEN 0 WHEN barcode_search = ? THEN 1 WHEN sku_search LIKE ? THEN 2 WHEN name_search LIKE ? THEN 3 ELSE 4 END',
+                [$term, $term, $term.'%', $term.'%']
+            );
+            $offset = max(0, $searchSkip);
+        } else {
+            $offset = 0;
+            if ($after !== null && preg_match('/^idx:(\d+)$/', $after, $m)) {
+                $offset = max(0, (int) $m[1]);
+            } elseif ($after !== null) {
+                return null;
+            }
+            if ((clone $query)->count() === 0) {
+                return null;
+            }
+        }
+
+        $first = max(1, min(200, $first));
+        $total = (clone $query)->count();
+        if ($total === 0) {
+            return null;
+        }
+
+        $items = $query
+            ->orderByDesc('on_hand')
+            ->orderBy('sku')
+            ->orderBy('warehouse_id')
+            ->skip($offset)
+            ->take($first)
+            ->get();
+        $rows = $items->map(function (ShipHeroInventoryProductIndex $row) {
+            return $this->inventoryIndexRowToListRow($row);
+        })->values()->all();
+        $next = $offset + count($rows);
+
+        return [
+            'rows' => $rows,
+            'page_info' => [
+                'has_next_page' => $next < $total,
+                'end_cursor' => $term === '' ? ($next < $total ? 'idx:'.$next : null) : null,
+                'next_search_skip' => $term !== '' ? $next : null,
             ],
         ];
     }
@@ -290,7 +528,9 @@ GQL;
         int $desired,
         ?string $after,
         string $searchQuery,
-        int $searchSkip
+        int $searchSkip,
+        ?int $clientAccountId,
+        bool $backorderOnly
     ): ?array {
         if ($after !== null || ! $this->inventoryListSearchEligibleForDirectProductLookup($searchQuery)) {
             return null;
@@ -320,6 +560,12 @@ GQL;
 
         $edges = [['node' => $data]];
         $expanded = $this->expandInventoryProductEdgesToRows($edges, $kitsFilter, $activeStatus);
+        if ($backorderOnly) {
+            $expanded = array_values(array_filter($expanded, static function ($row) {
+                return (float) ($row['backorder'] ?? 0) > 0;
+            }));
+        }
+        $this->upsertInventoryIndexRows($clientAccountId, $customerAccountId, $expanded);
 
         if ($expanded === []) {
             return null;
@@ -335,7 +581,7 @@ GQL;
             }
             $skuL = mb_strtolower((string) ($r['sku'] ?? ''));
             $nameL = mb_strtolower((string) ($r['name'] ?? ''));
-            if (! str_contains($skuL, $qLower) && ! str_contains($nameL, $qLower)) {
+            if (mb_strpos($skuL, $qLower) === false && mb_strpos($nameL, $qLower) === false) {
                 continue;
             }
             $matchingAll[] = $r;
@@ -374,7 +620,9 @@ GQL;
         int $desired,
         ?string $after,
         string $searchQuery,
-        int $searchSkip
+        int $searchSkip,
+        ?int $clientAccountId,
+        bool $backorderOnly
     ): array {
         $qLower = mb_strtolower($searchQuery);
         $matchSkip = $searchSkip;
@@ -407,11 +655,17 @@ GQL;
                 break;
             }
             $pageRows = $this->expandInventoryProductEdgesToRows($edges, $kitsFilter, $activeStatus);
+            $this->upsertInventoryIndexRows($clientAccountId, $customerAccountId, $pageRows);
+            if ($backorderOnly) {
+                $pageRows = array_values(array_filter($pageRows, static function ($row) {
+                    return (float) ($row['backorder'] ?? 0) > 0;
+                }));
+            }
 
             foreach ($pageRows as $r) {
                 $skuL = mb_strtolower((string) ($r['sku'] ?? ''));
                 $nameL = mb_strtolower((string) ($r['name'] ?? ''));
-                if (! str_contains($skuL, $qLower) && ! str_contains($nameL, $qLower)) {
+                if ($qLower !== '' && mb_strpos($skuL, $qLower) === false && mb_strpos($nameL, $qLower) === false) {
                     continue;
                 }
                 if ($matchSkip > 0) {
@@ -506,6 +760,7 @@ GQL;
                 'product_id' => $productId,
                 'sku' => (string) ($node['sku'] ?? ''),
                 'name' => (string) ($node['name'] ?? ''),
+                'barcode' => isset($node['barcode']) && is_string($node['barcode']) ? trim($node['barcode']) : null,
                 'image_url' => $imageUrl,
                 'product_active' => $isActiveProduct,
                 'kit' => $isKit,
@@ -684,6 +939,94 @@ GQL;
         return $out;
     }
 
+    private function asnCatalogProductFromIndexRow(ShipHeroInventoryProductIndex $row): array
+    {
+        return [
+            'id' => $row->shiphero_product_id ?: $row->sku,
+            'sku' => $row->sku,
+            'name' => $row->name ?? '',
+            'barcode' => $row->barcode ?? '',
+            'image_url' => $row->image_url,
+        ];
+    }
+
+    /**
+     * @return array{products: list<array{id: string, sku: string, name: string, barcode: string, image_url: string|null}>, page_info: array{has_next_page: bool, end_cursor: string|null, next_search_skip?: int}}|null
+     */
+    private function searchAsnCatalogIndexProducts(
+        ?int $clientAccountId,
+        ?string $customerAccountId,
+        int $first,
+        ?string $after,
+        ?string $searchQuery,
+        int $searchSkip
+    ): ?array {
+        $query = ShipHeroInventoryProductIndex::query();
+        $query = $this->applyInventoryIndexAccountScope($query, $clientAccountId, $customerAccountId);
+        if ($query === null) {
+            return null;
+        }
+        $query->where('product_active', true)
+            ->where('kit', false)
+            ->where('kit_build', false);
+
+        $term = $this->normalizeInventoryIndexSearchValue($searchQuery ?? '');
+        if ($term !== '') {
+            $like = '%'.$term.'%';
+            $query->where(function ($q) use ($like) {
+                $q->where('sku_search', 'like', $like)
+                    ->orWhere('name_search', 'like', $like)
+                    ->orWhere('barcode_search', 'like', $like);
+            });
+            $query->orderByRaw(
+                'CASE WHEN sku_search = ? THEN 0 WHEN barcode_search = ? THEN 1 WHEN sku_search LIKE ? THEN 2 WHEN name_search LIKE ? THEN 3 ELSE 4 END',
+                [$term, $term, $term.'%', $term.'%']
+            );
+            $offset = max(0, $searchSkip);
+        } else {
+            $offset = 0;
+            if ($after !== null && preg_match('/^idx:(\d+)$/', $after, $m)) {
+                $offset = max(0, (int) $m[1]);
+            } elseif ($after !== null) {
+                return null;
+            }
+        }
+
+        $rows = $query
+            ->orderByDesc('on_hand')
+            ->orderBy('sku')
+            ->limit(1000)
+            ->get();
+        if ($rows->isEmpty()) {
+            return null;
+        }
+
+        $seen = [];
+        $products = [];
+        foreach ($rows as $row) {
+            $key = (string) ($row->shiphero_product_id ?: $row->sku);
+            if (isset($seen[$key])) {
+                continue;
+            }
+            $seen[$key] = true;
+            $products[] = $this->asnCatalogProductFromIndexRow($row);
+        }
+
+        $first = max(1, min(200, $first));
+        $slice = array_slice($products, $offset, $first);
+        $next = $offset + count($slice);
+        $hasMore = $next < count($products);
+
+        return [
+            'products' => $slice,
+            'page_info' => [
+                'has_next_page' => $hasMore,
+                'end_cursor' => $term === '' ? ($hasMore ? 'idx:'.$next : null) : null,
+                'next_search_skip' => $term !== '' ? $next : null,
+            ],
+        ];
+    }
+
     /**
      * One GraphQL page of active, non-kit products for ASN line picker (skips empty filter pages server-side).
      *
@@ -694,10 +1037,23 @@ GQL;
         int $graphqlFirst,
         ?string $after,
         ?string $searchQuery,
-        int $searchSkip
+        int $searchSkip,
+        ?int $clientAccountId = null
     ): array {
         $graphqlFirst = max(25, min(100, $graphqlFirst));
         $searchQuery = is_string($searchQuery) ? trim($searchQuery) : '';
+        $indexed = $this->searchAsnCatalogIndexProducts(
+            $clientAccountId,
+            $customerAccountId,
+            $graphqlFirst,
+            $after,
+            $searchQuery !== '' ? $searchQuery : null,
+            $searchSkip
+        );
+        if ($indexed !== null) {
+            return $indexed;
+        }
+
         if ($searchQuery !== '') {
             $fast = $this->listAsnProductCatalogTryDirectProductSearch(
                 $customerAccountId,
@@ -705,6 +1061,7 @@ GQL;
                 $after,
                 $searchQuery,
                 max(0, $searchSkip),
+                $clientAccountId
             );
             if ($fast !== null) {
                 return $fast;
@@ -732,7 +1089,8 @@ GQL;
         int $desired,
         ?string $after,
         string $searchQuery,
-        int $searchSkip
+        int $searchSkip,
+        ?int $clientAccountId
     ): ?array {
         if ($after !== null || ! $this->inventoryListSearchEligibleForDirectProductLookup($searchQuery)) {
             return null;
@@ -757,6 +1115,11 @@ GQL;
         if ($data === null || $data === []) {
             return null;
         }
+        $this->upsertInventoryIndexRows(
+            $clientAccountId,
+            $customerAccountId,
+            $this->expandInventoryProductEdgesToRows([['node' => $data]], 'no', 'active')
+        );
 
         $products = $this->asnCatalogProductsFromEdges([['node' => $data]]);
         if ($products === []) {
@@ -769,7 +1132,7 @@ GQL;
             foreach ($products as $p) {
                 $skuL = mb_strtolower((string) ($p['sku'] ?? ''));
                 $nameL = mb_strtolower((string) ($p['name'] ?? ''));
-                if (! str_contains($skuL, $qLower) && ! str_contains($nameL, $qLower)) {
+                if (mb_strpos($skuL, $qLower) === false && mb_strpos($nameL, $qLower) === false) {
                     continue;
                 }
                 $filtered[] = $p;
@@ -953,7 +1316,7 @@ GQL;
             foreach ($this->asnCatalogProductsFromEdges($edges) as $p) {
                 $skuL = mb_strtolower((string) ($p['sku'] ?? ''));
                 $nameL = mb_strtolower((string) ($p['name'] ?? ''));
-                if (! str_contains($skuL, $qLower) && ! str_contains($nameL, $qLower)) {
+                if (mb_strpos($skuL, $qLower) === false && mb_strpos($nameL, $qLower) === false) {
                     continue;
                 }
                 if ($matchSkip > 0) {

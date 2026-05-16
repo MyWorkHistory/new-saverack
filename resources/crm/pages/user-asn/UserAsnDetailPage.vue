@@ -44,7 +44,7 @@ const catalogSearchSkipNext = ref(0);
 const addPanelOpen = ref(false);
 
 /** GraphQL products page size (aligned with portal inventory paging; capped 25–100 on server). */
-const CATALOG_PAGE_SIZE = 75;
+const CATALOG_PAGE_SIZE = 50;
 
 const trackingDraft = ref([{ carrier: "", tracking_number: "" }]);
 const vendorDraft = ref([{ label: "" }]);
@@ -255,6 +255,11 @@ async function confirmMarkReady() {
     total_pallets: pallets,
   };
   if (markReadyTrackingMode.value === "entered") {
+    const hasTracking = markReadyTrackings.value.some((row) => String(row.tracking_number || "").trim() !== "");
+    if (!hasTracking) {
+      toast.error("Enter at least one tracking number.");
+      return;
+    }
     payload.trackings = markReadyTrackings.value;
   }
   markReadyBusy.value = true;
@@ -323,6 +328,21 @@ function onWindowCloseLineMenu() {
 
 function commitCatalogSearch() {
   catalogSearchCommitted.value = catalogSearchDraft.value.trim();
+  loadCatalogRows(true);
+}
+
+function resetCatalogSearchState() {
+  catalogSearchDraft.value = "";
+  catalogSearchCommitted.value = "";
+  catalogSearchSkipNext.value = 0;
+  catalogPageInfo.value = { has_next_page: false, end_cursor: null };
+  catalog.value = [];
+}
+
+function clearCatalogSearch() {
+  if (!catalogSearchDraft.value && !catalogSearchCommitted.value) return;
+  catalogSearchDraft.value = "";
+  catalogSearchCommitted.value = "";
   loadCatalogRows(true);
 }
 
@@ -507,6 +527,8 @@ async function addFromCatalog(p) {
     });
     toast.success("Product added.");
     await loadAsn();
+    resetCatalogSearchState();
+    addPanelOpen.value = false;
   } catch (e) {
     toast.errorFrom(e, "Could not add product.");
   } finally {
@@ -684,6 +706,15 @@ onUnmounted(() => {
                 >
                   Search
                 </button>
+                <button
+                  v-if="catalogSearchDraft || catalogSearchCommitted"
+                  type="button"
+                  class="btn btn-sm btn-outline-secondary fw-semibold staff-page-secondary"
+                  :disabled="catalogLoading"
+                  @click="clearCatalogSearch"
+                >
+                  Clear
+                </button>
               </div>
             </div>
             <div class="p-4 bg-body-tertiary border-bottom">
@@ -741,7 +772,7 @@ onUnmounted(() => {
                     :disabled="catalogLoadingMore"
                     @click="loadMoreCatalog"
                   >
-                    {{ catalogLoadingMore ? "Loading…" : "Load More" }}
+                    {{ catalogLoadingMore ? "Loading…" : "Load 50 More" }}
                   </button>
                 </div>
               </template>
@@ -993,6 +1024,9 @@ onUnmounted(() => {
                 <input id="asn-trk-later" v-model="markReadyTrackingMode" class="form-check-input" type="radio" value="update_later" />
                 <label class="form-check-label small" for="asn-trk-later">I will update tracking later</label>
               </div>
+              <p v-if="markReadyTrackingMode === 'update_later'" class="small text-warning-emphasis bg-warning-subtle rounded p-2 mt-2 mb-2">
+                Please upload tracking numbers before your shipment arrives at our warehouse. ASNs submitted without tracking information may slow down the receiving process and could be subject to a non-compliance administrative fee.
+              </p>
               <div class="form-check">
                 <input id="asn-trk-label" v-model="markReadyTrackingMode" class="form-check-input" type="radio" value="id_label" />
                 <label class="form-check-label small" for="asn-trk-label">I will attach an ASN identification label to each box</label>

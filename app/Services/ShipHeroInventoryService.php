@@ -224,7 +224,8 @@ GQL;
                 return $direct;
             }
 
-            $indexed = $refresh ? null : $this->searchInventoryIndexRows(
+            $indexed = $this->inventoryListUseIndex($refresh, $backorderOnly)
+                ? $this->searchInventoryIndexRows(
                 $clientAccountId,
                 $customerAccountId,
                 $first,
@@ -234,7 +235,8 @@ GQL;
                 $kitsFilter,
                 $activeStatus,
                 $backorderOnly
-            );
+            )
+                : null;
             if ($indexed !== null) {
                 return $indexed;
             }
@@ -253,7 +255,8 @@ GQL;
             );
         }
 
-        $indexed = $refresh ? null : $this->searchInventoryIndexRows(
+        $indexed = $this->inventoryListUseIndex($refresh, $backorderOnly)
+            ? $this->searchInventoryIndexRows(
             $clientAccountId,
             $customerAccountId,
             $first,
@@ -263,7 +266,8 @@ GQL;
             $kitsFilter,
             $activeStatus,
             $backorderOnly
-        );
+        )
+            : null;
         if ($indexed !== null) {
             return $indexed;
         }
@@ -319,6 +323,15 @@ GQL;
                 'end_cursor' => $endCursor,
             ],
         ];
+    }
+
+    /**
+     * Out-of-stock must always use live ShipHero data (available/backorder). The local index is
+     * built from general inventory browsing and is not reliable for OOS on first page load.
+     */
+    private function inventoryListUseIndex(bool $refresh, bool $backorderOnly): bool
+    {
+        return ! $refresh && ! $backorderOnly;
     }
 
     private function normalizeInventoryIndexSearchValue($value): string
@@ -494,6 +507,9 @@ GQL;
         $rows = $items->map(function (ShipHeroInventoryProductIndex $row) {
             return $this->inventoryIndexRowToListRow($row);
         })->values()->all();
+        if ($backorderOnly) {
+            $rows = $this->filterOutOfStockInventoryRows($rows);
+        }
         $next = $offset + count($rows);
 
         return [

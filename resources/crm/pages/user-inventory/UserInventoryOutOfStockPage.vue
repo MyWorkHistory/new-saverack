@@ -54,7 +54,7 @@ function normalizeRows(list) {
   return Array.isArray(list) ? list : [];
 }
 
-async function fetchPage(append, forceRefresh = false) {
+async function fetchPage(append) {
   if (!accountId.value) return;
   const params = {
     client_account_id: accountId.value,
@@ -62,6 +62,7 @@ async function fetchPage(append, forceRefresh = false) {
     kits: filters.kits,
     active_status: filters.activeStatus,
     backorder_only: 1,
+    refresh: 1,
   };
   if (append && pageInfo.value?.end_cursor) {
     params.after = pageInfo.value.end_cursor;
@@ -70,9 +71,6 @@ async function fetchPage(append, forceRefresh = false) {
   if (q) {
     params.query = q;
     params.search_skip = searchSkipNext.value;
-  }
-  if (forceRefresh) {
-    params.refresh = 1;
   }
   const { data } = await api.get("/inventory/list", { params });
   const chunk = normalizeRows(data?.rows);
@@ -102,25 +100,34 @@ async function fetchPage(append, forceRefresh = false) {
   return chunk.length;
 }
 
+async function fetchUntilRowsFound(append) {
+  let added = 0;
+  let guard = 0;
+  do {
+    added = await fetchPage(append || guard > 0);
+    guard += 1;
+  } while (added === 0 && pageInfo.value.has_next_page && guard < 200);
+
+  return added;
+}
+
 async function loadRows(reset, forceRefresh = false) {
   if (!accountId.value) return;
   const runId = reset ? ++searchRunSeq : searchRunSeq;
   const previousRows = forceRefresh ? rows.value : [];
   if (reset) {
-    loading.value = !forceRefresh;
+    loading.value = true;
     refreshing.value = forceRefresh;
     searchAutoLoading.value = false;
     pageInfo.value = { has_next_page: false, end_cursor: null };
-    if (!forceRefresh) {
-      rows.value = [];
-    }
+    rows.value = [];
     selectedKeys.value = [];
     searchSkipNext.value = 0;
   } else {
     loadingMore.value = true;
   }
   try {
-    await fetchPage(!reset, forceRefresh);
+    await fetchUntilRowsFound(!reset);
   } catch (e) {
     if (forceRefresh) {
       rows.value = previousRows;
@@ -131,7 +138,7 @@ async function loadRows(reset, forceRefresh = false) {
     loadingMore.value = false;
     refreshing.value = false;
   }
-  if (reset && pageInfo.value.has_next_page && (searchCommitted.value.trim() || displayRows.value.length === 0)) {
+  if (reset && searchCommitted.value.trim() && pageInfo.value.has_next_page) {
     continueSearchInBackground(runId);
   }
 }
@@ -153,7 +160,7 @@ async function continueSearchInBackground(runId) {
       guard < 200
     ) {
       guard += 1;
-      await fetchPage(true);
+      await fetchUntilRowsFound(true);
       await nextTick();
     }
   } catch (e) {

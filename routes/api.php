@@ -81,6 +81,9 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::get('/', [AsnController::class, 'index'])->middleware('can:inventory.view');
         Route::post('/', [AsnController::class, 'store'])->middleware('can:inventory.view');
         Route::post('/bulk-delete', [AsnController::class, 'bulkDestroy'])->middleware('can:inventory.view');
+        Route::get('/{asn}/packing-slip.pdf', [AsnController::class, 'packingSlipPdf'])->middleware('can:inventory.view');
+        Route::get('/{asn}/identification-label.pdf', [AsnController::class, 'identificationLabelPdf'])->middleware('can:inventory.view');
+        Route::get('/{asn}/lines/{line}/barcode.pdf', [AsnController::class, 'barcodePdf'])->middleware('can:inventory.view');
         Route::get('/{asn}', [AsnController::class, 'show'])->middleware('can:inventory.view');
         Route::patch('/{asn}', [AsnController::class, 'update'])->middleware('can:inventory.view');
         Route::post('/{asn}/mark-ready', [AsnController::class, 'markReady'])->middleware('can:inventory.view');

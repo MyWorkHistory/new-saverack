@@ -9,6 +9,8 @@ use App\Models\ClientAccountAsnLine;
 use App\Models\ClientAccountAsnTracking;
 use App\Models\ClientAccountAsnVendorLine;
 use App\Models\User;
+use App\Services\ShipHeroInventoryService;
+use Barryvdh\DomPDF\Facade\Pdf;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -18,6 +20,14 @@ use Illuminate\Validation\ValidationException;
 
 class AsnController extends Controller
 {
+    /** @var ShipHeroInventoryService */
+    private $inventory;
+
+    public function __construct(ShipHeroInventoryService $inventory)
+    {
+        $this->inventory = $inventory;
+    }
+
     private function isPortalUser(Request $request): bool
     {
         $user = $request->user();
@@ -59,6 +69,77 @@ class AsnController extends Controller
                 'status' => ['Only draft or pending ASNs can be deleted.'],
             ]);
         }
+    }
+
+    private function formatAsnLabel($raw): string
+    {
+        $s = trim((string) $raw);
+        if ($s === '') {
+            return '';
+        }
+        $stripped = preg_replace('/^ASN[#\s-]*/i', '', $s);
+        $stripped = trim((string) $stripped);
+
+        return $stripped !== '' ? 'ASN #'.$stripped : 'ASN #'.$s;
+    }
+
+    private function safePdfName($raw): string
+    {
+        $s = preg_replace('/[^A-Za-z0-9_-]+/', '-', trim((string) $raw));
+        $s = trim((string) $s, '-');
+
+        return $s !== '' ? $s : 'document';
+    }
+
+    private function code128SvgDataUri(string $value): string
+    {
+        $patterns = [
+            '212222', '222122', '222221', '121223', '121322', '131222', '122213', '122312', '132212', '221213',
+            '221312', '231212', '112232', '122132', '122231', '113222', '123122', '123221', '223211', '221132',
+            '221231', '213212', '223112', '312131', '311222', '321122', '321221', '312212', '322112', '322211',
+            '212123', '212321', '232121', '111323', '131123', '131321', '112313', '132113', '132311', '211313',
+            '231113', '231311', '112133', '112331', '132131', '113123', '113321', '133121', '313121', '211331',
+            '231131', '213113', '213311', '213131', '311123', '311321', '331121', '312113', '312311', '332111',
+            '314111', '221411', '431111', '111224', '111422', '121124', '121421', '141122', '141221', '112214',
+            '112412', '122114', '122411', '142112', '142211', '241211', '221114', '413111', '241112', '134111',
+            '111242', '121142', '121241', '114212', '124112', '124211', '411212', '421112', '421211', '212141',
+            '214121', '412121', '111143', '111341', '131141', '114113', '114311', '411113', '411311', '113141',
+            '114131', '311141', '411131', '211412', '211214', '211232', '2331112',
+        ];
+        $codes = [104];
+        $checksum = 104;
+        $position = 1;
+        foreach (str_split($value) as $ch) {
+            $ord = ord($ch);
+            $code = max(0, min(95, $ord - 32));
+            $codes[] = $code;
+            $checksum += $code * $position;
+            $position++;
+        }
+        $codes[] = $checksum % 103;
+        $codes[] = 106;
+
+        $module = 2;
+        $height = 70;
+        $quiet = 16;
+        $x = $quiet;
+        $rects = '';
+        foreach ($codes as $code) {
+            $pattern = $patterns[$code] ?? $patterns[0];
+            $bar = true;
+            foreach (str_split($pattern) as $width) {
+                $w = ((int) $width) * $module;
+                if ($bar) {
+                    $rects .= '<rect x="'.$x.'" y="0" width="'.$w.'" height="'.$height.'" fill="#000"/>';
+                }
+                $x += $w;
+                $bar = ! $bar;
+            }
+        }
+        $width = $x + $quiet;
+        $svg = '<svg xmlns="http://www.w3.org/2000/svg" width="'.$width.'" height="'.$height.'" viewBox="0 0 '.$width.' '.$height.'">'.$rects.'</svg>';
+
+        return 'data:image/svg+xml;base64,'.base64_encode($svg);
     }
 
     /**
@@ -461,6 +542,61 @@ class AsnController extends Controller
         $asn->save();
 
         return response()->json($this->serializeAsn($asn->fresh(['lines', 'trackings', 'vendorLines', 'clientAccount'])));
+    }
+
+    public function packingSlipPdf(Request $request, ClientAccountAsn $asn)
+    {
+        $this->authorizeAsn($request, $asn);
+        $asn->loadMissing(['lines', 'clientAccount']);
+        $pdf = Pdf::loadView('pdf.asn.packing-slip', [
+            'asn' => $asn,
+            'accountName' => $asn->clientAccount !== null ? trim((string) $asn->clientAccount->company_name) : 'Save Rack',
+            'asnLabel' => $this->formatAsnLabel($asn->asn_number),
+        ])->setPaper('letter');
+
+        return $pdf->stream('asn-'.$this->safePdfName($asn->asn_number).'-packing-slip.pdf');
+    }
+
+    public function identificationLabelPdf(Request $request, ClientAccountAsn $asn)
+    {
+        $this->authorizeAsn($request, $asn);
+        $asn->loadMissing('clientAccount');
+        $pdf = Pdf::loadView('pdf.asn.identification-label', [
+            'asn' => $asn,
+            'accountName' => $asn->clientAccount !== null ? trim((string) $asn->clientAccount->company_name) : 'Save Rack',
+            'asnLabel' => $this->formatAsnLabel($asn->asn_number),
+            'addressLines' => ['3135 Drane Field Rd #20', 'Lakeland, FL 33811'],
+        ])->setPaper([0, 0, 288, 432]);
+
+        return $pdf->stream('asn-'.$this->safePdfName($asn->asn_number).'-identification-label.pdf');
+    }
+
+    public function barcodePdf(Request $request, ClientAccountAsn $asn, ClientAccountAsnLine $line)
+    {
+        $this->authorizeAsn($request, $asn);
+        if ((int) $line->client_account_asn_id !== (int) $asn->id) {
+            abort(404);
+        }
+        $asn->loadMissing('clientAccount');
+        $customerId = $asn->clientAccount !== null ? trim((string) $asn->clientAccount->shiphero_customer_account_id) : '';
+        $product = $this->inventory->getProductDetailBySku(
+            (string) $line->sku,
+            null,
+            $customerId !== '' ? $customerId : null
+        );
+        $barcode = is_array($product) && isset($product['barcode']) ? trim((string) $product['barcode']) : '';
+        if ($barcode === '') {
+            return response()->json(['message' => 'No barcode on file for this SKU in ShipHero.'], 422);
+        }
+
+        $pdf = Pdf::loadView('pdf.asn.barcode', [
+            'asn' => $asn,
+            'line' => $line,
+            'barcode' => $barcode,
+            'barcodeSvg' => $this->code128SvgDataUri($barcode),
+        ])->setPaper([0, 0, 288, 144]);
+
+        return $pdf->stream('asn-'.$this->safePdfName($asn->asn_number).'-'.$this->safePdfName($line->sku).'-barcode.pdf');
     }
 
     public function storeLine(Request $request, ClientAccountAsn $asn): JsonResponse

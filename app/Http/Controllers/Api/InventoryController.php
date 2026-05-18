@@ -267,6 +267,7 @@ class InventoryController extends Controller
             'query' => ['nullable', 'string', 'max:255'],
             'search_skip' => ['nullable', 'integer', 'min:0', 'max:500000'],
             'backorder_only' => ['nullable', 'boolean'],
+            'refresh' => ['nullable', 'boolean'],
         ]);
         $clientAccountId = (int) $validated['client_account_id'];
         $first = isset($validated['first']) ? (int) $validated['first'] : 100;
@@ -278,6 +279,7 @@ class InventoryController extends Controller
         $searchQuery = isset($validated['query']) && is_string($validated['query']) ? trim($validated['query']) : '';
         $searchSkip = isset($validated['search_skip']) ? (int) $validated['search_skip'] : 0;
         $backorderOnly = (bool) ($validated['backorder_only'] ?? false);
+        $refresh = (bool) ($validated['refresh'] ?? false);
         try {
             $shipheroCustomerId = $this->resolveShipHeroCustomerAccountId($clientAccountId, $request);
             $payload = $this->inventory->listInventoryRows(
@@ -289,7 +291,8 @@ class InventoryController extends Controller
                 $searchQuery !== '' ? $searchQuery : null,
                 $searchSkip,
                 $clientAccountId,
-                $backorderOnly
+                $backorderOnly,
+                $refresh
             );
 
             return response()->json([
@@ -358,12 +361,14 @@ class InventoryController extends Controller
             'after' => ['nullable', 'string', 'max:500'],
             'query' => ['nullable', 'string', 'max:255'],
             'search_skip' => ['nullable', 'integer', 'min:0', 'max:500000'],
+            'refresh' => ['nullable', 'boolean'],
         ]);
         $clientAccountId = (int) $validated['client_account_id'];
         $graphqlFirst = isset($validated['first']) ? (int) $validated['first'] : 75;
         $after = isset($validated['after']) && is_string($validated['after']) ? $validated['after'] : null;
         $query = isset($validated['query']) && is_string($validated['query']) ? trim($validated['query']) : '';
         $searchSkip = isset($validated['search_skip']) ? (int) $validated['search_skip'] : 0;
+        $refresh = (bool) ($validated['refresh'] ?? false);
         try {
             $shipheroCustomerId = $this->resolveShipHeroCustomerAccountId($clientAccountId, $request);
         } catch (ValidationException $e) {
@@ -376,7 +381,8 @@ class InventoryController extends Controller
                 $after,
                 $query !== '' ? $query : null,
                 $searchSkip,
-                $clientAccountId
+                $clientAccountId,
+                $refresh
             );
 
             return response()->json([

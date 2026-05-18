@@ -162,7 +162,8 @@ GQL;
         ?string $searchQuery = null,
         int $searchSkip = 0,
         ?int $clientAccountId = null,
-        bool $backorderOnly = false
+        bool $backorderOnly = false,
+        bool $refresh = false
     ): array {
         $first = max(1, min(200, $first));
         $after = is_string($after) && trim($after) !== '' ? trim($after) : null;
@@ -222,11 +223,11 @@ GQL;
                 return $direct;
             }
 
-            $indexed = $this->searchInventoryIndexRows(
+            $indexed = $refresh ? null : $this->searchInventoryIndexRows(
                 $clientAccountId,
                 $customerAccountId,
                 $first,
-                null,
+                $after,
                 $searchQuery,
                 $searchSkip,
                 $kitsFilter,
@@ -251,7 +252,7 @@ GQL;
             );
         }
 
-        $indexed = $this->searchInventoryIndexRows(
+        $indexed = $refresh ? null : $this->searchInventoryIndexRows(
             $clientAccountId,
             $customerAccountId,
             $first,
@@ -449,6 +450,9 @@ GQL;
 
         $term = $this->normalizeInventoryIndexSearchValue($searchQuery ?? '');
         if ($term !== '') {
+            if ($after !== null) {
+                return null;
+            }
             $like = '%'.$term.'%';
             $query->where(function ($q) use ($like) {
                 $q->where('sku_search', 'like', $like)
@@ -962,6 +966,9 @@ GQL;
 
         $term = $this->normalizeInventoryIndexSearchValue($searchQuery ?? '');
         if ($term !== '') {
+            if ($after !== null) {
+                return null;
+            }
             $like = '%'.$term.'%';
             $query->where(function ($q) use ($like) {
                 $q->where('sku_search', 'like', $like)
@@ -1028,11 +1035,12 @@ GQL;
         ?string $after,
         ?string $searchQuery,
         int $searchSkip,
-        ?int $clientAccountId = null
+        ?int $clientAccountId = null,
+        bool $refresh = false
     ): array {
         $graphqlFirst = max(25, min(100, $graphqlFirst));
         $searchQuery = is_string($searchQuery) ? trim($searchQuery) : '';
-        $indexed = $this->searchAsnCatalogIndexProducts(
+        $indexed = $refresh ? null : $this->searchAsnCatalogIndexProducts(
             $clientAccountId,
             $customerAccountId,
             $graphqlFirst,
@@ -1066,7 +1074,7 @@ GQL;
             );
         }
 
-        return $this->listAsnProductCatalogBrowsePage($customerAccountId, $graphqlFirst, $after);
+        return $this->listAsnProductCatalogBrowsePage($customerAccountId, $graphqlFirst, $after, $clientAccountId);
     }
 
     /**
@@ -1155,7 +1163,12 @@ GQL;
      *
      * @return array{products: list<array{id: string, sku: string, name: string, barcode: string, image_url: string|null}>, page_info: array{has_next_page: bool, end_cursor: string|null}}
      */
-    private function listAsnProductCatalogBrowsePage(?string $customerAccountId, int $graphqlFirst, ?string $after): array
+    private function listAsnProductCatalogBrowsePage(
+        ?string $customerAccountId,
+        int $graphqlFirst,
+        ?string $after,
+        ?int $clientAccountId
+    ): array
     {
         $graphql = <<<'GQL'
 query ShipHeroAsnProductCatalogBrowse($customer_account_id: String, $first: Int!, $after: String) {
@@ -1205,6 +1218,12 @@ GQL;
 
             $products = is_array($edges) ? $this->asnCatalogProductsFromEdges($edges) : [];
             if (count($products) > 0) {
+                $this->upsertInventoryIndexRows(
+                    $clientAccountId,
+                    $customerAccountId,
+                    $this->expandInventoryProductEdgesToRows($edges, 'no', 'active')
+                );
+
                 return [
                     'products' => $products,
                     'page_info' => [

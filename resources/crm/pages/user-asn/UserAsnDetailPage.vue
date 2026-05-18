@@ -38,6 +38,7 @@ const catalog = ref([]);
 const catalogLoading = ref(false);
 const catalogLoadingMore = ref(false);
 const catalogSearchAutoLoading = ref(false);
+const catalogRefreshing = ref(false);
 const catalogPageInfo = ref({ has_next_page: false, end_cursor: null });
 const catalogSearchDraft = ref("");
 const catalogSearchCommitted = ref("");
@@ -363,11 +364,12 @@ function loadMoreCatalog() {
   loadCatalogRows(false);
 }
 
-async function loadCatalogRows(reset) {
+async function loadCatalogRows(reset, forceRefresh = false) {
   if (!clientAccountId.value) return;
   const runId = reset ? ++catalogSearchRunSeq : catalogSearchRunSeq;
   if (reset) {
-    catalogLoading.value = true;
+    catalogLoading.value = !forceRefresh;
+    catalogRefreshing.value = forceRefresh;
     catalogSearchAutoLoading.value = false;
     catalog.value = [];
     catalogPageInfo.value = { has_next_page: false, end_cursor: null };
@@ -384,6 +386,9 @@ async function loadCatalogRows(reset) {
     if (q) {
       params.query = q;
       params.search_skip = catalogSearchSkipNext.value;
+    }
+    if (forceRefresh) {
+      params.refresh = 1;
     }
     if (!reset && catalogPageInfo.value?.end_cursor) {
       params.after = catalogPageInfo.value.end_cursor;
@@ -420,10 +425,16 @@ async function loadCatalogRows(reset) {
   } finally {
     catalogLoading.value = false;
     catalogLoadingMore.value = false;
+    catalogRefreshing.value = false;
   }
   if (reset && catalogSearchCommitted.value.trim() && catalogPageInfo.value.has_next_page) {
     continueCatalogSearchInBackground(runId);
   }
+}
+
+function refreshCatalogProducts() {
+  if (catalogLoading.value || catalogLoadingMore.value || catalogRefreshing.value) return;
+  loadCatalogRows(true, true);
 }
 
 async function continueCatalogSearchInBackground(runId) {
@@ -585,6 +596,18 @@ async function saveLineExpectedQty(line, rawQty) {
   }
 }
 
+async function openPdf(path, fallbackMessage) {
+  try {
+    const { data } = await api.get(path, { responseType: "blob" });
+    const blob = new Blob([data], { type: "application/pdf" });
+    const url = window.URL.createObjectURL(blob);
+    window.open(url, "_blank", "noopener");
+    setTimeout(() => window.URL.revokeObjectURL(url), 30000);
+  } catch (e) {
+    toast.errorFrom(e, fallbackMessage);
+  }
+}
+
 function askDeleteLine(row) {
   lineToDelete.value = row;
   deleteLineOpen.value = true;
@@ -608,30 +631,15 @@ async function confirmDeleteLine() {
 }
 
 function openPrintSlip() {
-  const r = router.resolve({
-    name: "user-asn-print-packing-slip",
-    params: { id: asnId.value },
-    query: { client_account_id: String(clientAccountId.value) },
-  });
-  window.open(r.href, "_blank", "noopener");
+  openPdf(`/asns/${asnId.value}/packing-slip.pdf`, "Could not open packing slip PDF.");
 }
 
 function openPrintLabel() {
-  const r = router.resolve({
-    name: "user-asn-print-shipping-label",
-    params: { id: asnId.value },
-    query: { client_account_id: String(clientAccountId.value) },
-  });
-  window.open(r.href, "_blank", "noopener");
+  openPdf(`/asns/${asnId.value}/identification-label.pdf`, "Could not open identification label PDF.");
 }
 
 function openPrintBarcode(line) {
-  const r = router.resolve({
-    name: "user-asn-print-barcode",
-    params: { asnId: asnId.value, lineId: String(line.id) },
-    query: { client_account_id: String(clientAccountId.value) },
-  });
-  window.open(r.href, "_blank", "noopener");
+  openPdf(`/asns/${asnId.value}/lines/${line.id}/barcode.pdf`, "Could not open barcode PDF.");
 }
 
 onMounted(() => {
@@ -677,7 +685,7 @@ onUnmounted(() => {
             <button
               v-if="isDraft"
               type="button"
-              class="btn btn-primary btn-sm staff-page-primary fw-semibold"
+              class="btn btn-success btn-sm fw-semibold"
               @click="openMarkReadyModal"
             >
               Mark as Ready
@@ -694,7 +702,7 @@ onUnmounted(() => {
                 :aria-expanded="headerMenuOpen ? 'true' : 'false'"
                 @click="toggleHeaderMenu"
               >
-                Actions
+                Manage
               </button>
             </div>
           </div>
@@ -746,6 +754,14 @@ onUnmounted(() => {
                   @click="clearCatalogSearch"
                 >
                   Clear
+                </button>
+                <button
+                  type="button"
+                  class="btn btn-sm btn-outline-secondary fw-semibold staff-page-secondary"
+                  :disabled="catalogLoading || catalogLoadingMore || catalogRefreshing"
+                  @click="refreshCatalogProducts"
+                >
+                  {{ catalogRefreshing ? "Refreshing…" : "Refresh Products" }}
                 </button>
               </div>
             </div>
@@ -1009,6 +1025,9 @@ onUnmounted(() => {
         >
           <button type="button" class="staff-row-menu__item" role="menuitem" @click="openPrintSlip(); closeHeaderMenu()">
             Print Packing Slip
+          </button>
+          <button type="button" class="staff-row-menu__item" role="menuitem" @click="openPrintLabel(); closeHeaderMenu()">
+            Print Identification Label
           </button>
           <button
             v-if="canDeleteAsn"

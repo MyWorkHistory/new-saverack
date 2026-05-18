@@ -12,6 +12,7 @@ const crmUser = inject("crmUser", ref(null));
 const loading = ref(false);
 const loadingMore = ref(false);
 const searchAutoLoading = ref(false);
+const refreshing = ref(false);
 const bulkBusy = ref(false);
 const rows = ref([]);
 const pageInfo = ref({ has_next_page: false, end_cursor: null });
@@ -56,7 +57,7 @@ function normalizeRows(list) {
   return Array.isArray(list) ? list : [];
 }
 
-async function fetchPage(append) {
+async function fetchPage(append, forceRefresh = false) {
   if (!accountId.value) return;
   const params = {
     client_account_id: accountId.value,
@@ -71,6 +72,9 @@ async function fetchPage(append) {
   if (q) {
     params.query = q;
     params.search_skip = searchSkipNext.value;
+  }
+  if (forceRefresh) {
+    params.refresh = 1;
   }
   const { data } = await api.get("/inventory/list", { params });
   const chunk = normalizeRows(data?.rows);
@@ -100,11 +104,12 @@ async function fetchPage(append) {
   return chunk.length;
 }
 
-async function loadRows(reset) {
+async function loadRows(reset, forceRefresh = false) {
   if (!accountId.value) return;
   const runId = reset ? ++searchRunSeq : searchRunSeq;
   if (reset) {
-    loading.value = true;
+    loading.value = !forceRefresh;
+    refreshing.value = forceRefresh;
     searchAutoLoading.value = false;
     pageInfo.value = { has_next_page: false, end_cursor: null };
     rows.value = [];
@@ -114,12 +119,13 @@ async function loadRows(reset) {
     loadingMore.value = true;
   }
   try {
-    await fetchPage(!reset);
+    await fetchPage(!reset, forceRefresh);
   } catch (e) {
     toast.errorFrom(e, "Could not load inventory.");
   } finally {
     loading.value = false;
     loadingMore.value = false;
+    refreshing.value = false;
   }
   if (reset && searchCommitted.value.trim() && pageInfo.value.has_next_page) {
     continueSearchInBackground(runId);
@@ -257,6 +263,11 @@ function clearSearch() {
   searchDraft.value = "";
   searchCommitted.value = "";
   loadRows(true);
+}
+
+function refreshRows() {
+  if (loading.value || loadingMore.value || refreshing.value) return;
+  loadRows(true, true);
 }
 
 function applyFilters() {
@@ -486,6 +497,14 @@ onUnmounted(() => {
               </button>
             </div>
           </div>
+          <button
+            type="button"
+            class="btn btn-outline-secondary staff-toolbar-btn orders-toolbar-outline-btn flex-shrink-0"
+            :disabled="loading || loadingMore || refreshing"
+            @click="refreshRows"
+          >
+            {{ refreshing ? "Refreshing…" : "Refresh" }}
+          </button>
           <div class="position-relative flex-shrink-0" data-toolbar-filter>
             <button
               type="button"

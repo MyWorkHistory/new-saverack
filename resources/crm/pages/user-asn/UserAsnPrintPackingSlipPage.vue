@@ -34,18 +34,18 @@ onMounted(async () => {
       <div class="company-name">{{ accountName }}</div>
       <div class="asn-number">{{ formatAsnLabel(asn.asn_number) }}</div>
       <hr class="my-4" />
-      <table class="table table-sm">
+      <table class="table table-sm slip-items-table">
         <thead>
           <tr>
-            <th>Item</th>
-            <th>SKU</th>
+            <th class="slip-item-col">Item</th>
+            <th class="slip-sku-col">SKU</th>
             <th class="text-end">Qty</th>
           </tr>
         </thead>
         <tbody>
           <tr v-for="line in asn.lines" :key="line.id">
-            <td>{{ line.name }}</td>
-            <td>{{ line.sku }}</td>
+            <td class="slip-item-name">{{ line.name }}</td>
+            <td class="slip-sku">{{ line.sku }}</td>
             <td class="text-end">{{ line.expected_qty }}</td>
           </tr>
         </tbody>
@@ -64,6 +64,23 @@ onMounted(async () => {
   font-size: 1.65rem;
   font-weight: 700;
   margin-top: 0.35rem;
+}
+.slip-items-table {
+  table-layout: fixed;
+}
+.slip-item-col {
+  width: 48%;
+}
+.slip-sku-col {
+  width: 38%;
+}
+.slip-item-name {
+  font-size: 0.78rem;
+  line-height: 1.25;
+}
+.slip-sku {
+  font-weight: 700;
+  word-break: break-all;
 }
 @media print {
   .slip-page {

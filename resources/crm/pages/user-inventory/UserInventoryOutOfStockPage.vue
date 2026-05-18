@@ -105,12 +105,15 @@ async function fetchPage(append, forceRefresh = false) {
 async function loadRows(reset, forceRefresh = false) {
   if (!accountId.value) return;
   const runId = reset ? ++searchRunSeq : searchRunSeq;
+  const previousRows = forceRefresh ? rows.value : [];
   if (reset) {
     loading.value = !forceRefresh;
     refreshing.value = forceRefresh;
     searchAutoLoading.value = false;
     pageInfo.value = { has_next_page: false, end_cursor: null };
-    rows.value = [];
+    if (!forceRefresh) {
+      rows.value = [];
+    }
     selectedKeys.value = [];
     searchSkipNext.value = 0;
   } else {
@@ -119,13 +122,16 @@ async function loadRows(reset, forceRefresh = false) {
   try {
     await fetchPage(!reset, forceRefresh);
   } catch (e) {
+    if (forceRefresh) {
+      rows.value = previousRows;
+    }
     toast.errorFrom(e, "Could not load inventory.");
   } finally {
     loading.value = false;
     loadingMore.value = false;
     refreshing.value = false;
   }
-  if (reset && searchCommitted.value.trim() && pageInfo.value.has_next_page) {
+  if (reset && pageInfo.value.has_next_page && (searchCommitted.value.trim() || displayRows.value.length === 0)) {
     continueSearchInBackground(runId);
   }
 }
@@ -142,7 +148,7 @@ async function continueSearchInBackground(runId) {
     let guard = 0;
     while (
       runId === searchRunSeq &&
-      searchCommitted.value.trim() &&
+      (searchCommitted.value.trim() || displayRows.value.length === 0) &&
       pageInfo.value.has_next_page &&
       guard < 200
     ) {

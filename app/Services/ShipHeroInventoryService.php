@@ -172,19 +172,6 @@ GQL;
         $searchQuery = is_string($searchQuery) ? trim($searchQuery) : '';
         $searchSkip = max(0, $searchSkip);
 
-        if ($backorderOnly) {
-            return $this->listBackorderInventoryRows(
-                $customerAccountId,
-                $first,
-                $after,
-                $kitsFilter,
-                $activeStatus,
-                $searchQuery !== '' ? $searchQuery : null,
-                $searchSkip,
-                $clientAccountId
-            );
-        }
-
         $graphql = <<<'GQL'
 query ShipHeroInventoryRows($customer_account_id: String, $first: Int!, $after: String) {
   products(customer_account_id: $customer_account_id) {
@@ -210,6 +197,7 @@ query ShipHeroInventoryRows($customer_account_id: String, $first: Int!, $after: 
             warehouse_id
             on_hand
             allocated
+            available
             backorder
             active
           }
@@ -280,6 +268,21 @@ GQL;
             return $indexed;
         }
 
+        if ($backorderOnly) {
+            return $this->listInventoryRowsSearch(
+                $graphql,
+                $customerAccountId,
+                $kitsFilter,
+                $activeStatus,
+                $first,
+                $after,
+                '',
+                0,
+                $clientAccountId,
+                true
+            );
+        }
+
         $vars = array_merge(
             ['first' => $first, 'after' => $after],
             $this->customerAccountVariables($customerAccountId)
@@ -305,9 +308,7 @@ GQL;
         }
         $rows = $this->expandInventoryProductEdgesToRows($edges, $kitsFilter, $activeStatus);
         if ($backorderOnly) {
-            $rows = array_values(array_filter($rows, static function ($row) {
-                return (float) ($row['backorder'] ?? 0) > 0;
-            }));
+            $rows = $this->filterOutOfStockInventoryRows($rows);
         }
         $this->upsertInventoryIndexRows($clientAccountId, $customerAccountId, $rows);
 
@@ -443,7 +444,10 @@ GQL;
             $query->where('kit', false)->where('kit_build', false);
         }
         if ($backorderOnly) {
-            $query->where('backorder', '>', 0);
+            $query->where(function ($q) {
+                $q->where('backorder', '>', 0)
+                    ->orWhereColumn('on_hand', '<=', 'allocated');
+            });
         }
 
         $term = $this->normalizeInventoryIndexSearchValue($searchQuery ?? '');
@@ -503,197 +507,33 @@ GQL;
     }
 
     /**
-     * OOS should query ShipHero warehouse_products directly; product pages are slow and can miss warehouse rows.
+     * ShipHero "Out of Stock" / not "In Stock": no sellable available, or oversold (backorder).
      *
-     * @return array{rows: list<array<string,mixed>>, page_info: array{has_next_page: bool, end_cursor: string|null, next_search_skip?: int}}
+     * @param  array<string, mixed>  $row
      */
-    private function listBackorderInventoryRows(
-        ?string $customerAccountId,
-        int $first,
-        ?string $after,
-        string $kitsFilter,
-        string $activeStatus,
-        ?string $searchQuery,
-        int $searchSkip,
-        ?int $clientAccountId
-    ): array {
-        $graphql = <<<'GQL'
-query ShipHeroBackorderWarehouseProducts($customer_account_id: String, $first: Int!, $after: String, $active: Boolean) {
-  warehouse_products(customer_account_id: $customer_account_id, active: $active) {
-    data(first: $first, after: $after) {
-      pageInfo {
-        hasNextPage
-        endCursor
-      }
-      edges {
-        node {
-          id
-          sku
-          warehouse_id
-          warehouse_identifier
-          on_hand
-          allocated
-          backorder
-          active
-          product {
-            id
-            sku
-            name
-            barcode
-            active
-            kit
-            kit_build
-            images {
-              src
-              position
-            }
-          }
+    private function isOutOfStockInventoryRow(array $row): bool
+    {
+        if ((float) ($row['backorder'] ?? 0) > 0) {
+            return true;
         }
-      }
-    }
-  }
-}
-GQL;
-
-        $first = max(1, min(200, $first));
-        $after = is_string($after) && trim($after) !== '' ? trim($after) : null;
-        $qLower = mb_strtolower(trim((string) $searchQuery));
-        $matchSkip = $after === null ? max(0, $searchSkip) : 0;
-        $activeArg = $activeStatus === 'inactive' ? false : ($activeStatus === 'active' ? true : null);
-
-        $vars = array_merge(
-            ['first' => $first, 'after' => $after, 'active' => $activeArg],
-            $this->customerAccountVariables($customerAccountId)
-        );
-        $json = $this->client->query($graphql, $vars);
-        $edges = data_get($json, 'data.warehouse_products.data.edges');
-        $pageInfo = data_get($json, 'data.warehouse_products.data.pageInfo');
-        $hasNext = is_array($pageInfo) && (($pageInfo['hasNextPage'] ?? false) === true);
-        $endCursor = is_array($pageInfo) && isset($pageInfo['endCursor']) && is_string($pageInfo['endCursor'])
-            ? $pageInfo['endCursor']
-            : null;
-        if ($endCursor === '') {
-            $endCursor = null;
+        if (array_key_exists('available', $row)) {
+            return (float) $row['available'] <= 0;
         }
-        if (! is_array($edges)) {
-            return [
-                'rows' => [],
-                'page_info' => [
-                    'has_next_page' => $hasNext,
-                    'end_cursor' => $endCursor,
-                    'next_search_skip' => $searchSkip,
-                ],
-            ];
-        }
+        $onHand = (float) ($row['on_hand'] ?? 0);
+        $allocated = (float) ($row['allocated'] ?? 0);
 
-        $rows = [];
-        $indexRows = [];
-        foreach ($edges as $edge) {
-            $node = is_array($edge['node'] ?? null) ? $edge['node'] : null;
-            if (! $node) {
-                continue;
-            }
-            $row = $this->backorderWarehouseProductNodeToRow($node);
-            if ($row === null) {
-                continue;
-            }
-            $indexRows[] = $row;
-            if ((float) ($row['backorder'] ?? 0) <= 0) {
-                continue;
-            }
-            if ($kitsFilter === 'yes' && ! (($row['kit'] ?? false) || ($row['kit_build'] ?? false))) {
-                continue;
-            }
-            if ($kitsFilter === 'no' && (($row['kit'] ?? false) || ($row['kit_build'] ?? false))) {
-                continue;
-            }
-            if ($activeStatus === 'active' && ! (bool) ($row['product_active'] ?? true)) {
-                continue;
-            }
-            if ($activeStatus === 'inactive' && (bool) ($row['product_active'] ?? true)) {
-                continue;
-            }
-            if ($qLower !== '') {
-                $skuL = mb_strtolower((string) ($row['sku'] ?? ''));
-                $nameL = mb_strtolower((string) ($row['name'] ?? ''));
-                $barcodeL = mb_strtolower((string) ($row['barcode'] ?? ''));
-                if (
-                    mb_strpos($skuL, $qLower) === false
-                    && mb_strpos($nameL, $qLower) === false
-                    && mb_strpos($barcodeL, $qLower) === false
-                ) {
-                    continue;
-                }
-                if ($matchSkip > 0) {
-                    $matchSkip--;
-
-                    continue;
-                }
-            }
-            $rows[] = $row;
-        }
-        $this->upsertInventoryIndexRows($clientAccountId, $customerAccountId, $indexRows);
-
-        return [
-            'rows' => $rows,
-            'page_info' => [
-                'has_next_page' => $hasNext && $endCursor !== null,
-                'end_cursor' => $hasNext ? $endCursor : null,
-                'next_search_skip' => max(0, $searchSkip) + count($rows),
-            ],
-        ];
+        return $onHand <= 0 || $allocated > $onHand;
     }
 
     /**
-     * @param  array<string,mixed>  $node
-     * @return array<string,mixed>|null
+     * @param  list<array<string, mixed>>  $rows
+     * @return list<array<string, mixed>>
      */
-    private function backorderWarehouseProductNodeToRow(array $node): ?array
+    private function filterOutOfStockInventoryRows(array $rows): array
     {
-        $sku = trim((string) ($node['sku'] ?? ''));
-        $product = is_array($node['product'] ?? null) ? $node['product'] : [];
-        if ($sku === '') {
-            $sku = trim((string) ($product['sku'] ?? ''));
-        }
-        if ($sku === '') {
-            return null;
-        }
-
-        $imageUrl = null;
-        $images = is_array($product['images'] ?? null) ? $product['images'] : [];
-        $bestPos = PHP_INT_MAX;
-        foreach ($images as $img) {
-            if (! is_array($img)) {
-                continue;
-            }
-            $src = trim((string) ($img['src'] ?? ''));
-            if ($src === '') {
-                continue;
-            }
-            $pos = isset($img['position']) && is_numeric($img['position']) ? (int) $img['position'] : 999999;
-            if ($imageUrl === null || $pos < $bestPos) {
-                $imageUrl = $src;
-                $bestPos = $pos;
-            }
-        }
-
-        $isKit = ($product['kit'] ?? false) === true || ($product['kit_build'] ?? false) === true;
-
-        return [
-            'product_id' => isset($product['id']) && is_string($product['id']) ? trim($product['id']) : '',
-            'sku' => $sku,
-            'name' => isset($product['name']) && is_string($product['name']) ? $product['name'] : '',
-            'barcode' => isset($product['barcode']) && is_string($product['barcode']) ? trim($product['barcode']) : null,
-            'image_url' => $imageUrl,
-            'product_active' => ($product['active'] ?? true) !== false,
-            'kit' => $isKit,
-            'kit_build' => ($product['kit_build'] ?? false) === true,
-            'warehouse_id' => isset($node['warehouse_id']) && is_string($node['warehouse_id']) ? $node['warehouse_id'] : '',
-            'warehouse_active' => ($node['active'] ?? true) !== false,
-            'on_hand' => (float) ($node['on_hand'] ?? 0),
-            'allocated' => (float) ($node['allocated'] ?? 0),
-            'backorder' => (float) ($node['backorder'] ?? 0),
-        ];
+        return array_values(array_filter($rows, function ($row) {
+            return is_array($row) && $this->isOutOfStockInventoryRow($row);
+        }));
     }
 
     /** Single-token searches: use ShipHero product(sku|barcode); multi-word/name search keeps paginated scan. */
@@ -757,9 +597,7 @@ GQL;
         $edges = [['node' => $data]];
         $expanded = $this->expandInventoryProductEdgesToRows($edges, $kitsFilter, $activeStatus);
         if ($backorderOnly) {
-            $expanded = array_values(array_filter($expanded, static function ($row) {
-                return (float) ($row['backorder'] ?? 0) > 0;
-            }));
+            $expanded = $this->filterOutOfStockInventoryRows($expanded);
         }
         $this->upsertInventoryIndexRows($clientAccountId, $customerAccountId, $expanded);
 
@@ -828,8 +666,9 @@ GQL;
         $lastFetchHadNext = false;
         $iterations = 0;
         $innerFirst = min(100, max(40, $desired * 3));
+        $maxIterations = $backorderOnly ? 25 : 1;
 
-        while ($iterations < 1) {
+        while ($iterations < $maxIterations) {
             $iterations++;
             $vars = array_merge(
                 ['first' => $innerFirst, 'after' => $graphqlAfter],
@@ -851,9 +690,7 @@ GQL;
             $pageRows = $this->expandInventoryProductEdgesToRows($edges, $kitsFilter, $activeStatus);
             $this->upsertInventoryIndexRows($clientAccountId, $customerAccountId, $pageRows);
             if ($backorderOnly) {
-                $pageRows = array_values(array_filter($pageRows, static function ($row) {
-                    return (float) ($row['backorder'] ?? 0) > 0;
-                }));
+                $pageRows = $this->filterOutOfStockInventoryRows($pageRows);
             }
 
             foreach ($pageRows as $r) {
@@ -872,6 +709,9 @@ GQL;
             $graphqlAfter = $endCursor;
             $resumeCursor = $endCursor;
             if (! $lastFetchHadNext || $graphqlAfter === null) {
+                break;
+            }
+            if ($backorderOnly && count($output) >= $desired) {
                 break;
             }
         }
@@ -958,6 +798,7 @@ GQL;
                     'warehouse_active' => true,
                     'on_hand' => 0,
                     'allocated' => 0,
+                    'available' => 0,
                     'backorder' => 0,
                 ]);
 
@@ -968,11 +809,17 @@ GQL;
                     continue;
                 }
                 $wpActive = $wp['active'] ?? null;
+                $onHand = (float) ($wp['on_hand'] ?? 0);
+                $allocated = (float) ($wp['allocated'] ?? 0);
+                $available = array_key_exists('available', $wp)
+                    ? (float) $wp['available']
+                    : max(0, $onHand - $allocated);
                 $rows[] = array_merge($baseRow, [
                     'warehouse_id' => (string) ($wp['warehouse_id'] ?? ''),
                     'warehouse_active' => $wpActive !== false,
-                    'on_hand' => (float) ($wp['on_hand'] ?? 0),
-                    'allocated' => (float) ($wp['allocated'] ?? 0),
+                    'on_hand' => $onHand,
+                    'allocated' => $allocated,
+                    'available' => $available,
                     'backorder' => (float) ($wp['backorder'] ?? 0),
                 ]);
             }

@@ -54,7 +54,7 @@ function normalizeRows(list) {
   return Array.isArray(list) ? list : [];
 }
 
-async function fetchPage(append) {
+async function fetchPage(append, forceRefresh = false) {
   if (!accountId.value) return;
   const params = {
     client_account_id: accountId.value,
@@ -62,8 +62,10 @@ async function fetchPage(append) {
     kits: filters.kits,
     active_status: filters.activeStatus,
     backorder_only: 1,
-    refresh: 1,
   };
+  if (forceRefresh) {
+    params.refresh = 1;
+  }
   if (append && pageInfo.value?.end_cursor) {
     params.after = pageInfo.value.end_cursor;
   }
@@ -105,7 +107,7 @@ async function loadRows(reset, forceRefresh = false) {
   const runId = reset ? ++searchRunSeq : searchRunSeq;
   const previousRows = forceRefresh ? rows.value : [];
   if (reset) {
-    loading.value = true;
+    loading.value = !forceRefresh;
     refreshing.value = forceRefresh;
     searchAutoLoading.value = false;
     pageInfo.value = { has_next_page: false, end_cursor: null };
@@ -116,7 +118,7 @@ async function loadRows(reset, forceRefresh = false) {
     loadingMore.value = true;
   }
   try {
-    await fetchPage(!reset);
+    await fetchPage(!reset, forceRefresh);
   } catch (e) {
     if (forceRefresh) {
       rows.value = previousRows;
@@ -460,7 +462,7 @@ onUnmounted(() => {
       <h1 class="h4 mb-1 fw-semibold text-body">Products</h1>
       <p class="text-secondary small mb-1">Out of Stock</p>
       <p class="text-secondary small mb-0 user-inv-load-hint">
-        Showing oversold rows from inventory loaded in batches of {{ LIST_PAGE_SIZE }}. Search checks your full catalog.
+        Showing out-of-stock and oversold rows (no sellable available or backorder) in batches of {{ LIST_PAGE_SIZE }}.
       </p>
     </div>
 

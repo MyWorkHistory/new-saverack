@@ -100,17 +100,6 @@ async function fetchPage(append) {
   return chunk.length;
 }
 
-async function fetchUntilRowsFound(append) {
-  let added = 0;
-  let guard = 0;
-  do {
-    added = await fetchPage(append || guard > 0);
-    guard += 1;
-  } while (added === 0 && pageInfo.value.has_next_page && guard < 200);
-
-  return added;
-}
-
 async function loadRows(reset, forceRefresh = false) {
   if (!accountId.value) return;
   const runId = reset ? ++searchRunSeq : searchRunSeq;
@@ -127,7 +116,7 @@ async function loadRows(reset, forceRefresh = false) {
     loadingMore.value = true;
   }
   try {
-    await fetchUntilRowsFound(!reset);
+    await fetchPage(!reset);
   } catch (e) {
     if (forceRefresh) {
       rows.value = previousRows;
@@ -138,7 +127,11 @@ async function loadRows(reset, forceRefresh = false) {
     loadingMore.value = false;
     refreshing.value = false;
   }
-  if (reset && searchCommitted.value.trim() && pageInfo.value.has_next_page) {
+  if (
+    reset &&
+    pageInfo.value.has_next_page &&
+    (searchCommitted.value.trim() || displayRows.value.length === 0)
+  ) {
     continueSearchInBackground(runId);
   }
 }
@@ -160,7 +153,7 @@ async function continueSearchInBackground(runId) {
       guard < 200
     ) {
       guard += 1;
-      await fetchUntilRowsFound(true);
+      await fetchPage(true);
       await nextTick();
     }
   } catch (e) {

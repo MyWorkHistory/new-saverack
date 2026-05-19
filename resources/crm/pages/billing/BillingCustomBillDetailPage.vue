@@ -1,5 +1,5 @@
 <script setup>
-import { computed, inject, onMounted, onUnmounted, ref, watch } from "vue";
+import { computed, inject, nextTick, onMounted, onUnmounted, ref, watch } from "vue";
 import { useRouter } from "vue-router";
 import api from "../../services/api";
 import ConfirmModal from "../../components/common/ConfirmModal.vue";
@@ -292,24 +292,60 @@ async function markAsOpen() {
   }
 }
 
-function openLineMenu(item, ev) {
-  const btn = ev?.currentTarget;
-  if (!btn || !(btn instanceof HTMLElement)) return;
-  const rect = btn.getBoundingClientRect();
-  lineMenuPos.value = { top: rect.bottom + 4, left: Math.max(8, rect.right - 160) };
-  lineMenuOpenId.value = item.id;
+const MENU_W = 128;
+const MENU_H = 96;
+
+const lineMenuStyle = computed(() => ({
+  position: "fixed",
+  top: `${lineMenuPos.value.top}px`,
+  left: `${lineMenuPos.value.left}px`,
+}));
+
+function placeOverlayMenu(anchorEl, setPos) {
+  if (!(anchorEl instanceof HTMLElement)) return;
+  const rect = anchorEl.getBoundingClientRect();
+  let top = rect.bottom + 4;
+  let left = rect.right - MENU_W;
+  left = Math.max(8, Math.min(left, window.innerWidth - MENU_W - 8));
+  if (top + MENU_H > window.innerHeight - 8) {
+    top = Math.max(8, rect.top - MENU_H - 4);
+  }
+  setPos({ top, left });
 }
 
-function closeLineMenu() {
+async function toggleLineMenu(lineId, event) {
+  event?.stopPropagation?.();
+  if (lineMenuOpenId.value === lineId) {
+    lineMenuOpenId.value = null;
+    return;
+  }
+  const btn = event?.currentTarget;
+  lineMenuOpenId.value = lineId;
+  await nextTick();
+  requestAnimationFrame(() => {
+    placeOverlayMenu(btn, (v) => {
+      lineMenuPos.value = v;
+    });
+  });
+}
+
+function openLineEditFromMenu(item) {
   lineMenuOpenId.value = null;
+  openLineEdit(item);
+}
+
+function openLineDeleteFromMenu(item) {
+  lineMenuOpenId.value = null;
+  lineDeleteTarget.value = item;
+  lineDeleteModalOpen.value = true;
 }
 
 function onDocClick(e) {
   if (!e.target?.closest?.("[data-cb-manage]")) {
     manageMenuOpen.value = false;
   }
-  if (!e.target?.closest?.("[data-cb-line-menu]")) {
-    closeLineMenu();
+  if (!e.target?.closest?.("[data-row-actions]")) {
+    lineMenuOpenId.value = null;
   }
 }
 
@@ -340,7 +376,7 @@ onUnmounted(() => {
 </script>
 
 <template>
-  <div class="staff-page staff-page--wide">
+  <div class="staff-page staff-page--wide billing-custom-bill-detail">
     <nav
       class="staff-user-view__breadcrumb d-flex flex-wrap align-items-center gap-1 mb-3"
       aria-label="Breadcrumb"
@@ -447,7 +483,9 @@ onUnmounted(() => {
 
       <div class="row g-4">
         <div class="col-lg-8">
-          <div class="staff-table-card staff-datatable-card staff-datatable-card--white p-3 p-md-4">
+          <div
+            class="staff-table-card staff-datatable-card staff-datatable-card--white p-4 p-md-5 billing-inv-preview"
+          >
             <div
               class="d-flex flex-wrap align-items-center justify-content-between gap-2 mb-3"
             >
@@ -461,35 +499,74 @@ onUnmounted(() => {
                 Add To Bill
               </button>
             </div>
-            <div class="table-responsive">
-              <table class="table table-hover staff-table mb-0">
-                <thead class="staff-table-head">
+            <div class="table-responsive billing-inv-items-wrap">
+              <table class="table table-sm align-middle mb-0 billing-inv-items-table">
+                <thead>
                   <tr>
-                    <th scope="col">Type</th>
-                    <th scope="col">Service / Name</th>
-                    <th scope="col" class="text-end">QTY</th>
-                    <th scope="col" class="text-end">Price</th>
-                    <th scope="col" class="text-end">Total</th>
-                    <th v-if="isOpen && canUpdate" scope="col" class="text-end">Action</th>
+                    <th>Type</th>
+                    <th>Service / Name</th>
+                    <th class="text-end">Qty</th>
+                    <th class="text-end">Price</th>
+                    <th class="text-end">Total</th>
+                    <th
+                      v-if="isOpen && canUpdate"
+                      class="text-center"
+                      style="width: 3.5rem"
+                    >
+                      Actions
+                    </th>
                   </tr>
                 </thead>
                 <tbody>
                   <tr v-if="!bill.items?.length">
-                    <td :colspan="isOpen && canUpdate ? 6 : 5" class="text-center text-secondary py-4">
+                    <td :colspan="isOpen && canUpdate ? 6 : 5" class="text-center text-secondary py-3">
                       No line items yet.
                     </td>
                   </tr>
                   <tr v-for="item in bill.items" :key="item.id">
-                    <td>{{ item.line_type }}</td>
-                    <td>{{ item.name }}</td>
-                    <td class="text-end">{{ item.quantity }}</td>
+                    <td class="text-secondary">{{ item.line_type }}</td>
+                    <td class="fw-medium">{{ item.name }}</td>
+                    <td class="text-end text-nowrap">{{ item.quantity }}</td>
                     <td class="text-end">{{ formatCents(item.unit_price_cents) }}</td>
-                    <td class="text-end">{{ formatCents(item.line_total_cents) }}</td>
-                    <td v-if="isOpen && canUpdate" class="text-end" data-cb-line-menu>
-                      <CrmIconRowActions
-                        variant="horizontal"
-                        @click="openLineMenu(item, $event)"
-                      />
+                    <td class="text-end fw-semibold">{{ formatCents(item.line_total_cents) }}</td>
+                    <td v-if="isOpen && canUpdate" class="text-center align-middle">
+                      <div data-row-actions class="position-relative d-inline-block">
+                        <button
+                          type="button"
+                          class="staff-action-btn staff-action-btn--more"
+                          :class="{ 'is-open': lineMenuOpenId === item.id }"
+                          :aria-expanded="lineMenuOpenId === item.id"
+                          aria-haspopup="true"
+                          aria-label="Line item actions"
+                          @click.stop="toggleLineMenu(item.id, $event)"
+                        >
+                          <CrmIconRowActions variant="horizontal" />
+                        </button>
+                        <div
+                          v-if="lineMenuOpenId === item.id"
+                          data-row-actions
+                          class="billing-inline-menu billing-inline-menu--row"
+                          role="menu"
+                          :style="lineMenuStyle"
+                        >
+                          <button
+                            type="button"
+                            class="staff-row-menu__item"
+                            role="menuitem"
+                            @click="openLineEditFromMenu(item)"
+                          >
+                            Edit
+                          </button>
+                          <button
+                            type="button"
+                            class="staff-row-menu__item staff-row-menu__item--danger"
+                            role="menuitem"
+                            @click="openLineDeleteFromMenu(item)"
+                          >
+                            Delete
+                          </button>
+                        </div>
+                      </div>
                     </td>
                   </tr>
                 </tbody>
@@ -528,37 +605,6 @@ onUnmounted(() => {
     </template>
 
     <p v-else class="text-secondary">Bill not found.</p>
-
-    <Teleport to="body">
-      <div
-        v-if="lineMenuOpenId"
-        class="staff-row-menu dropdown-menu show shadow"
-        :style="{ position: 'fixed', top: `${lineMenuPos.top}px`, left: `${lineMenuPos.left}px` }"
-        data-cb-line-menu
-      >
-        <button
-          type="button"
-          class="dropdown-item"
-          @click="
-            closeLineMenu();
-            openLineEdit(bill.items.find((i) => i.id === lineMenuOpenId));
-          "
-        >
-          Edit
-        </button>
-        <button
-          type="button"
-          class="dropdown-item text-danger"
-          @click="
-            lineDeleteTarget = bill.items.find((i) => i.id === lineMenuOpenId);
-            closeLineMenu();
-            lineDeleteModalOpen = true;
-          "
-        >
-          Delete
-        </button>
-      </div>
-    </Teleport>
 
   <!-- Edit date -->
   <Teleport to="body">
@@ -773,3 +819,34 @@ onUnmounted(() => {
     />
   </div>
 </template>
+
+<style scoped>
+.billing-inv-items-table thead th {
+  font-size: 0.7rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--bs-secondary-color, #6c757d);
+  font-weight: 600;
+  border-bottom: 1px solid #e8e7ed;
+  padding-top: 0.65rem;
+  padding-bottom: 0.65rem;
+  white-space: nowrap;
+}
+.billing-inv-items-table tbody td {
+  border-bottom: 1px solid #f1f0f4;
+  vertical-align: middle;
+}
+.billing-inline-menu {
+  position: fixed;
+  min-width: 12rem;
+  background: #fff;
+  border: 1px solid #e8e7ed;
+  border-radius: 0.5rem;
+  box-shadow: 0 0.5rem 1rem rgba(47, 43, 61, 0.12);
+  z-index: 2200;
+  overflow: hidden;
+}
+.billing-inline-menu--row {
+  min-width: 8rem;
+}
+</style>

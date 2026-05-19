@@ -21,6 +21,9 @@ const searchDraft = ref("");
 const searchCommitted = ref("");
 const searchSkipNext = ref(0);
 let searchRunSeq = 0;
+let refreshRunSeq = 0;
+
+const REFRESH_MAX_PAGES = 500;
 
 const LIST_PAGE_SIZE = 50;
 
@@ -270,9 +273,45 @@ function clearSearch() {
   loadRows(true);
 }
 
-function refreshRows() {
-  if (loading.value || loadingMore.value || refreshing.value) return;
-  loadRows(true, true);
+async function continueRefreshSync(refreshId) {
+  let guard = 0;
+  while (refreshId === refreshRunSeq && pageInfo.value.has_next_page && guard < REFRESH_MAX_PAGES) {
+    guard += 1;
+    await fetchPage(true, true);
+    await nextTick();
+  }
+}
+
+async function refreshRows() {
+  if (!accountId.value || loading.value || loadingMore.value || refreshing.value) return;
+  const previousRows = rows.value;
+  const refreshId = ++refreshRunSeq;
+  ++searchRunSeq;
+  refreshing.value = true;
+  searchAutoLoading.value = false;
+  loading.value = false;
+  loadingMore.value = false;
+  try {
+    pageInfo.value = { has_next_page: false, end_cursor: null };
+    rows.value = [];
+    selectedKeys.value = [];
+    searchSkipNext.value = 0;
+    await fetchPage(false, true);
+    await continueRefreshSync(refreshId);
+    if (refreshId !== refreshRunSeq) return;
+    pageInfo.value = { has_next_page: false, end_cursor: null };
+    rows.value = [];
+    searchSkipNext.value = 0;
+    await fetchPage(false, false);
+    toast.success("Inventory refreshed from ShipHero.");
+  } catch (e) {
+    rows.value = previousRows;
+    toast.errorFrom(e, "Could not refresh inventory.");
+  } finally {
+    if (refreshId === refreshRunSeq) {
+      refreshing.value = false;
+    }
+  }
 }
 
 function applyFilters() {
@@ -502,20 +541,13 @@ onUnmounted(() => {
               </button>
             </div>
           </div>
-          <button
-            type="button"
-            class="btn btn-outline-secondary staff-toolbar-btn orders-toolbar-outline-btn flex-shrink-0"
-            :disabled="loading || loadingMore || refreshing"
-            @click="refreshRows"
-          >
-            {{ refreshing ? "Refreshing…" : "Refresh" }}
-          </button>
+          <div class="ms-md-auto d-flex flex-wrap align-items-end gap-2">
           <div class="position-relative flex-shrink-0" data-toolbar-filter>
             <button
               type="button"
               class="btn btn-outline-secondary staff-toolbar-btn orders-toolbar-outline-btn d-inline-flex align-items-center gap-2"
               :aria-expanded="filterMenuOpen"
-              :disabled="loading"
+              :disabled="loading || refreshing"
               @click.stop="filterMenuOpen = !filterMenuOpen"
             >
               <svg
@@ -572,6 +604,15 @@ onUnmounted(() => {
                 <button type="button" class="btn btn-primary btn-sm w-100" @click="applyFilters">Apply</button>
               </div>
             </div>
+          </div>
+          <button
+            type="button"
+            class="btn btn-outline-secondary staff-toolbar-btn orders-toolbar-outline-btn flex-shrink-0"
+            :disabled="loading || loadingMore || refreshing"
+            @click="refreshRows"
+          >
+            {{ refreshing ? "Refreshing…" : "Refresh" }}
+          </button>
           </div>
         </div>
       </div>
@@ -657,7 +698,16 @@ onUnmounted(() => {
         </button>
       </div>
 
-      <div class="table-responsive staff-table-wrap">
+      <div class="position-relative">
+        <div
+          v-if="refreshing"
+          class="user-inv-sync-banner small text-secondary px-3 py-2 border-bottom bg-body-tertiary"
+          role="status"
+          aria-live="polite"
+        >
+          Syncing inventory from ShipHero…
+        </div>
+        <div class="table-responsive staff-table-wrap" :class="{ 'user-inv-table--syncing': refreshing }">
         <table class="table table-hover align-middle mb-0 staff-data-table user-inv-table user-inv-table--oos">
           <thead class="table-light staff-table-head">
             <tr>
@@ -765,6 +815,7 @@ onUnmounted(() => {
             </tr>
           </tbody>
         </table>
+        </div>
       </div>
       <div v-if="pageInfo.has_next_page" class="p-3 border-top text-center">
         <div v-if="searchAutoLoading" class="small text-secondary py-1" aria-live="polite">
@@ -788,6 +839,11 @@ onUnmounted(() => {
 .user-inv-search-wrap {
   width: 100%;
   max-width: min(100%, 22rem);
+}
+
+.user-inv-table--syncing {
+  opacity: 0.55;
+  pointer-events: none;
 }
 
 .user-inv-table__image-col {

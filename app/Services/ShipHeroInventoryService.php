@@ -172,6 +172,10 @@ GQL;
         $searchQuery = is_string($searchQuery) ? trim($searchQuery) : '';
         $searchSkip = max(0, $searchSkip);
 
+        if ($refresh && $after === null) {
+            $this->clearInventoryIndexForAccount($clientAccountId, $customerAccountId);
+        }
+
         $graphql = <<<'GQL'
 query ShipHeroInventoryRows($customer_account_id: String, $first: Int!, $after: String) {
   products(customer_account_id: $customer_account_id) {
@@ -332,6 +336,16 @@ GQL;
     private function inventoryListUseIndex(bool $refresh, bool $backorderOnly): bool
     {
         return ! $refresh && ! $backorderOnly;
+    }
+
+    private function clearInventoryIndexForAccount(?int $clientAccountId, ?string $customerAccountId): void
+    {
+        $query = ShipHeroInventoryProductIndex::query();
+        $scoped = $this->applyInventoryIndexAccountScope($query, $clientAccountId, $customerAccountId);
+        if ($scoped === null) {
+            return;
+        }
+        $scoped->delete();
     }
 
     private function normalizeInventoryIndexSearchValue($value): string

@@ -1,5 +1,5 @@
 <script setup>
-import { computed, inject, onMounted, onUnmounted, reactive, ref, watch } from "vue";
+import { computed, inject, nextTick, onMounted, onUnmounted, reactive, ref, watch } from "vue";
 import { useRouter } from "vue-router";
 import api from "../../services/api";
 import ConfirmModal from "../../components/common/ConfirmModal.vue";
@@ -36,7 +36,22 @@ const clientAccounts = ref([]);
 const createDrawerOpen = ref(false);
 const filterMenuOpen = ref(false);
 const manageOpenId = ref(null);
-const manageMenuPos = ref({ top: 0, left: 0 });
+const manageMenuRect = ref({ top: 0, left: 0 });
+const MENU_W = 160;
+const MENU_H = 96;
+
+const manageMenuRow = computed(
+  () => rows.value.find((r) => r.id === manageOpenId.value) ?? null,
+);
+
+const showingFrom = computed(() => {
+  if (!pagination.value.total) return 0;
+  return (pagination.value.current_page - 1) * pagination.value.per_page + 1;
+});
+
+const showingTo = computed(() =>
+  Math.min(pagination.value.current_page * pagination.value.per_page, pagination.value.total),
+);
 const deleteTarget = ref(null);
 const deleteModalOpen = ref(false);
 const deleteBusy = ref(false);
@@ -113,20 +128,38 @@ function statusBadgeClass(status) {
   return status === "invoiced" ? "bg-success-subtle text-success" : "bg-warning-subtle text-warning";
 }
 
-function openManageMenu(row, ev) {
-  const btn = ev?.currentTarget;
-  if (!btn || !(btn instanceof HTMLElement)) return;
-  const rect = btn.getBoundingClientRect();
-  manageMenuPos.value = { top: rect.bottom + 4, left: Math.max(8, rect.right - 180) };
-  manageOpenId.value = row.id;
+function placeManageMenu(anchorEl) {
+  if (!(anchorEl instanceof HTMLElement)) return;
+  const r = anchorEl.getBoundingClientRect();
+  let top = r.bottom + 4;
+  let left = r.right - MENU_W;
+  left = Math.max(8, Math.min(left, window.innerWidth - MENU_W - 8));
+  if (top + MENU_H > window.innerHeight - 8) {
+    top = Math.max(8, r.top - MENU_H - 4);
+  }
+  manageMenuRect.value = { top, left };
 }
 
 function closeManageMenu() {
   manageOpenId.value = null;
 }
 
+async function toggleManageMenu(rowId, e) {
+  e.stopPropagation();
+  if (manageOpenId.value === rowId) {
+    closeManageMenu();
+    return;
+  }
+  const btn = e.currentTarget;
+  manageOpenId.value = rowId;
+  await nextTick();
+  requestAnimationFrame(() => {
+    if (btn instanceof HTMLElement) placeManageMenu(btn);
+  });
+}
+
 function onDocClick(e) {
-  if (!e.target?.closest?.("[data-custom-bill-manage]")) {
+  if (!e.target?.closest?.("[data-row-actions]")) {
     closeManageMenu();
   }
   if (!e.target?.closest?.("[data-toolbar-filter]")) {
@@ -277,47 +310,76 @@ onUnmounted(() => {
         </div>
       </div>
 
-      <div v-if="loading" class="d-flex justify-content-center py-5">
-        <CrmLoadingSpinner message="Loading custom bills…" />
-      </div>
-      <div v-else class="table-responsive">
-        <table class="table table-hover staff-table mb-0">
-          <thead class="staff-table-head">
+      <div class="table-responsive staff-table-wrap">
+        <table class="table table-hover align-middle mb-0 staff-data-table">
+          <thead class="table-light staff-table-head">
             <tr>
-              <th scope="col">Status</th>
-              <th scope="col">Bill #</th>
-              <th scope="col">Account</th>
-              <th scope="col">Date</th>
-              <th scope="col" class="text-end">Price</th>
-              <th scope="col" class="text-end">Action</th>
+              <th class="staff-table-head__th" scope="col">Status</th>
+              <th class="staff-table-head__th" scope="col">Bill #</th>
+              <th class="staff-table-head__th" scope="col">Account</th>
+              <th class="staff-table-head__th" scope="col">Date</th>
+              <th class="staff-table-head__th text-end" scope="col">Price</th>
+              <th
+                class="staff-table-head__th staff-actions-col text-center billing-custom-bills-actions-col"
+                scope="col"
+              >
+                Actions
+              </th>
             </tr>
           </thead>
           <tbody>
-            <tr v-if="!rows.length">
-              <td colspan="6" class="text-center text-secondary py-5">No custom bills found.</td>
+            <tr v-if="loading">
+              <td colspan="6" class="py-5">
+                <div class="d-flex justify-content-center py-3">
+                  <CrmLoadingSpinner message="Loading custom bills…" />
+                </div>
+              </td>
             </tr>
-            <tr v-for="row in rows" :key="row.id">
+            <tr v-for="row in rows" v-else :key="row.id" class="align-middle">
               <td>
                 <span class="badge rounded-pill fw-medium" :class="statusBadgeClass(row.status)">
                   {{ row.status_label }}
                 </span>
               </td>
-              <td>
+              <td class="fw-medium text-body">
                 <RouterLink
                   :to="`/admin/billing/custom-bills/${row.id}`"
-                  class="fw-semibold text-decoration-none"
+                  class="text-decoration-none text-body"
                 >
                   {{ row.bill_number }}
                 </RouterLink>
               </td>
-              <td>{{ row.client_account_name || "—" }}</td>
-              <td>{{ formatIsoDate(row.bill_date) }}</td>
-              <td class="text-end">{{ formatCents(row.total_cents) }}</td>
-              <td class="text-end" data-custom-bill-manage>
-                <CrmIconRowActions
-                  variant="horizontal"
-                  @click="openManageMenu(row, $event)"
-                />
+              <td class="text-secondary staff-table-cell__meta">
+                {{ row.client_account_name || "—" }}
+              </td>
+              <td class="text-body staff-table-cell__meta text-nowrap">
+                {{ formatIsoDate(row.bill_date) }}
+              </td>
+              <td class="text-body staff-table-cell__meta text-end">
+                {{ formatCents(row.total_cents) }}
+              </td>
+              <td class="staff-actions-cell text-center billing-custom-bills-actions-col">
+                <div
+                  data-row-actions
+                  class="staff-actions-inner staff-actions-inner--single"
+                >
+                  <button
+                    type="button"
+                    class="staff-action-btn staff-action-btn--more"
+                    :class="{ 'is-open': manageOpenId === row.id }"
+                    :aria-expanded="manageOpenId === row.id"
+                    aria-haspopup="true"
+                    aria-label="Row actions"
+                    @click="toggleManageMenu(row.id, $event)"
+                  >
+                    <CrmIconRowActions variant="horizontal" />
+                  </button>
+                </div>
+              </td>
+            </tr>
+            <tr v-if="!loading && !rows.length">
+              <td colspan="6" class="px-4 py-5 text-center text-secondary">
+                No custom bills found.
               </td>
             </tr>
           </tbody>
@@ -325,9 +387,16 @@ onUnmounted(() => {
       </div>
 
       <div
-        v-if="!loading && pagination.last_page > 1"
-        class="d-flex justify-content-center gap-2 py-3 border-top"
+        v-if="!loading && pagination.total > 0"
+        class="staff-table-footer card-footer d-flex flex-column flex-sm-row align-items-stretch align-items-sm-center justify-content-between gap-3"
       >
+        <span class="small text-secondary">
+          Showing {{ showingFrom }}–{{ showingTo }} of {{ pagination.total }}
+        </span>
+        <div
+          v-if="pagination.last_page > 1"
+          class="d-flex align-items-center justify-content-sm-end gap-2"
+        >
         <button
           type="button"
           class="btn btn-sm btn-outline-secondary"
@@ -336,39 +405,47 @@ onUnmounted(() => {
         >
           Previous
         </button>
-        <span class="small text-secondary align-self-center">
-          Page {{ pagination.current_page }} of {{ pagination.last_page }}
-        </span>
-        <button
-          type="button"
-          class="btn btn-sm btn-outline-secondary"
-          :disabled="pagination.current_page >= pagination.last_page"
-          @click="goToPage(pagination.current_page + 1)"
-        >
-          Next
-        </button>
+          <span class="small text-secondary">
+            Page {{ pagination.current_page }} of {{ pagination.last_page }}
+          </span>
+          <button
+            type="button"
+            class="btn btn-sm btn-outline-secondary"
+            :disabled="pagination.current_page >= pagination.last_page"
+            @click="goToPage(pagination.current_page + 1)"
+          >
+            Next
+          </button>
+        </div>
       </div>
     </div>
 
     <Teleport to="body">
       <div
-        v-if="manageOpenId"
-        class="staff-row-menu dropdown-menu show shadow"
-        :style="{ position: 'fixed', top: `${manageMenuPos.top}px`, left: `${manageMenuPos.left}px` }"
-        data-custom-bill-manage
+        v-if="manageMenuRow"
+        data-row-actions
+        class="staff-row-menu fixed z-[300] overflow-hidden"
+        role="menu"
+        :style="{
+          top: `${manageMenuRect.top}px`,
+          left: `${manageMenuRect.left}px`,
+        }"
+        @click.stop
       >
         <RouterLink
-          :to="`/admin/billing/custom-bills/${manageOpenId}`"
-          class="dropdown-item"
+          :to="`/admin/billing/custom-bills/${manageMenuRow.id}`"
+          class="staff-row-menu__item text-decoration-none text-body"
+          role="menuitem"
           @click="closeManageMenu"
         >
           View
         </RouterLink>
         <button
-          v-if="canDelete && rows.find((r) => r.id === manageOpenId)?.status === 'open'"
+          v-if="canDelete && manageMenuRow.status === 'open'"
           type="button"
-          class="dropdown-item text-danger"
-          @click="openDeleteModal(rows.find((r) => r.id === manageOpenId))"
+          class="staff-row-menu__item staff-row-menu__item--danger"
+          role="menuitem"
+          @click="openDeleteModal(manageMenuRow)"
         >
           Delete
         </button>

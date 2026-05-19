@@ -181,7 +181,9 @@ async function submitAddLine() {
   try {
     const { data } = await api.post(`/custom-bills/${props.id}/items`, payload);
     bill.value = data;
-    closeAddLineModal();
+    addLineModalOpen.value = false;
+    addLineError.value = "";
+    resetAddLineForm();
     toast.success("Line added.");
   } catch (e) {
     const d = e?.response?.data;
@@ -212,7 +214,9 @@ async function submitEditLine() {
       payload,
     );
     bill.value = data;
-    closeLineEditModal();
+    lineEditModalOpen.value = false;
+    lineEditTarget.value = null;
+    lineEditError.value = "";
     toast.success("Line updated.");
   } catch (e) {
     const d = e?.response?.data;
@@ -312,7 +316,8 @@ async function submitAddToInvoice() {
       invoice_id: Number(selectedInvoiceId.value),
     });
     bill.value = data;
-    closeAddToInvoiceModal();
+    addToInvoiceModalOpen.value = false;
+    selectedInvoiceId.value = "";
     toast.success("Bill lines added to invoice.");
   } catch (e) {
     toast.errorFrom(e, "Could not add bill to invoice.");

@@ -509,7 +509,7 @@ onUnmounted(() => {
       </div>
       <button
         type="button"
-        class="btn btn-outline-secondary btn-sm d-inline-flex align-items-center gap-2 ms-md-auto flex-shrink-0"
+        class="btn btn-outline-secondary btn-sm orders-toolbar-outline-btn d-inline-flex align-items-center gap-2 ms-md-auto flex-shrink-0"
         :disabled="loading || loadingMore || refreshing"
         title="Refresh"
         aria-label="Refresh out-of-stock inventory from ShipHero"

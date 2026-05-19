@@ -685,7 +685,7 @@ onUnmounted(() => {
             <button
               v-if="isDraft"
               type="button"
-              class="btn btn-success btn-sm fw-semibold"
+              class="btn btn-primary staff-page-primary btn-sm fw-semibold"
               @click="openMarkReadyModal"
             >
               Mark as Ready

@@ -296,9 +296,9 @@ const MENU_W = 128;
 const MENU_H = 96;
 
 const lineMenuStyle = computed(() => ({
-  position: "fixed",
   top: `${lineMenuPos.value.top}px`,
   left: `${lineMenuPos.value.left}px`,
+  zIndex: 2200,
 }));
 
 function placeOverlayMenu(anchorEl, setPos) {
@@ -483,13 +483,11 @@ onUnmounted(() => {
 
       <div class="row g-4">
         <div class="col-lg-8">
-          <div
-            class="staff-table-card staff-datatable-card staff-datatable-card--white p-4 p-md-5 billing-inv-preview"
-          >
+          <div class="staff-table-card staff-datatable-card staff-datatable-card--white p-0 mb-4">
             <div
-              class="d-flex flex-wrap align-items-center justify-content-between gap-2 mb-3"
+              class="px-4 py-3 border-bottom d-flex justify-content-between align-items-center flex-wrap gap-2"
             >
-              <h2 class="h6 fw-semibold mb-0">Line Items</h2>
+              <h2 class="h6 mb-0 fw-semibold">Line Items</h2>
               <button
                 v-if="isOpen && canUpdate"
                 type="button"
@@ -499,19 +497,18 @@ onUnmounted(() => {
                 Add To Bill
               </button>
             </div>
-            <div class="table-responsive billing-inv-items-wrap">
-              <table class="table table-sm align-middle mb-0 billing-inv-items-table">
-                <thead>
+            <div class="table-responsive staff-table-wrap">
+              <table class="table table-hover align-middle mb-0 staff-data-table">
+                <thead class="table-light staff-table-head">
                   <tr>
-                    <th>Type</th>
-                    <th>Service / Name</th>
-                    <th class="text-end">Qty</th>
-                    <th class="text-end">Price</th>
-                    <th class="text-end">Total</th>
+                    <th class="staff-table-head__th">Type</th>
+                    <th class="staff-table-head__th">Service / Name</th>
+                    <th class="staff-table-head__th text-end">Qty</th>
+                    <th class="staff-table-head__th text-end">Price</th>
+                    <th class="staff-table-head__th text-end">Total</th>
                     <th
                       v-if="isOpen && canUpdate"
-                      class="text-center"
-                      style="width: 3.5rem"
+                      class="staff-table-head__th text-center billing-custom-bill-lines-actions-col"
                     >
                       Actions
                     </th>
@@ -519,23 +516,27 @@ onUnmounted(() => {
                 </thead>
                 <tbody>
                   <tr v-if="!bill.items?.length">
-                    <td :colspan="isOpen && canUpdate ? 6 : 5" class="text-center text-secondary py-3">
+                    <td :colspan="isOpen && canUpdate ? 6 : 5" class="text-center text-secondary py-4">
                       No line items yet.
                     </td>
                   </tr>
                   <tr v-for="item in bill.items" :key="item.id">
-                    <td class="text-secondary">{{ item.line_type }}</td>
+                    <td>{{ item.line_type }}</td>
                     <td class="fw-medium">{{ item.name }}</td>
                     <td class="text-end text-nowrap">{{ item.quantity }}</td>
                     <td class="text-end">{{ formatCents(item.unit_price_cents) }}</td>
                     <td class="text-end fw-semibold">{{ formatCents(item.line_total_cents) }}</td>
-                    <td v-if="isOpen && canUpdate" class="text-center align-middle">
+                    <td
+                      v-if="isOpen && canUpdate"
+                      class="text-center align-middle billing-custom-bill-lines-actions-cell"
+                      @click.stop
+                    >
                       <div data-row-actions class="position-relative d-inline-block">
                         <button
                           type="button"
                           class="staff-action-btn staff-action-btn--more"
                           :class="{ 'is-open': lineMenuOpenId === item.id }"
-                          :aria-expanded="lineMenuOpenId === item.id"
+                          :aria-expanded="lineMenuOpenId === item.id ? 'true' : 'false'"
                           aria-haspopup="true"
                           aria-label="Line item actions"
                           @click.stop="toggleLineMenu(item.id, $event)"
@@ -545,9 +546,10 @@ onUnmounted(() => {
                         <div
                           v-if="lineMenuOpenId === item.id"
                           data-row-actions
-                          class="billing-inline-menu billing-inline-menu--row"
+                          class="staff-row-menu overflow-hidden"
                           role="menu"
                           :style="lineMenuStyle"
+                          @click.stop
                         >
                           <button
                             type="button"
@@ -821,32 +823,22 @@ onUnmounted(() => {
 </template>
 
 <style scoped>
-.billing-inv-items-table thead th {
-  font-size: 0.7rem;
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-  color: var(--bs-secondary-color, #6c757d);
-  font-weight: 600;
-  border-bottom: 1px solid #e8e7ed;
-  padding-top: 0.65rem;
-  padding-bottom: 0.65rem;
-  white-space: nowrap;
+.billing-custom-bill-detail :deep(.table-responsive.staff-table-wrap) {
+  overflow-x: clip;
+  max-width: 100%;
 }
-.billing-inv-items-table tbody td {
-  border-bottom: 1px solid #f1f0f4;
-  vertical-align: middle;
+
+.billing-custom-bill-detail :deep(.staff-table-wrap .table.staff-data-table) {
+  width: 100%;
+  min-width: 0;
+  table-layout: fixed;
 }
-.billing-inline-menu {
-  position: fixed;
-  min-width: 12rem;
-  background: #fff;
-  border: 1px solid #e8e7ed;
-  border-radius: 0.5rem;
-  box-shadow: 0 0.5rem 1rem rgba(47, 43, 61, 0.12);
-  z-index: 2200;
-  overflow: hidden;
-}
-.billing-inline-menu--row {
-  min-width: 8rem;
+
+.billing-custom-bill-detail :deep(.table.staff-data-table > thead > tr > th.billing-custom-bill-lines-actions-col),
+.billing-custom-bill-detail :deep(.table.staff-data-table > tbody > tr > td.billing-custom-bill-lines-actions-cell) {
+  text-align: center !important;
+  width: 7rem;
+  min-width: 7rem;
+  max-width: 7rem;
 }
 </style>

@@ -38,7 +38,7 @@ const filterMenuOpen = ref(false);
 const manageOpenId = ref(null);
 const manageMenuRect = ref({ top: 0, left: 0 });
 const MENU_W = 160;
-const MENU_H = 96;
+const MENU_H = 132;
 
 const manageMenuRow = computed(
   () => rows.value.find((r) => r.id === manageOpenId.value) ?? null,
@@ -55,6 +55,11 @@ const showingTo = computed(() =>
 const deleteTarget = ref(null);
 const deleteModalOpen = ref(false);
 const deleteBusy = ref(false);
+
+const editDateModalOpen = ref(false);
+const editDateTarget = ref(null);
+const editDateValue = ref("");
+const editDateBusy = ref(false);
 
 const query = reactive({
   search: "",
@@ -164,6 +169,42 @@ function onDocClick(e) {
   }
   if (!e.target?.closest?.("[data-toolbar-filter]")) {
     filterMenuOpen.value = false;
+  }
+}
+
+function goToBillDetail(row) {
+  closeManageMenu();
+  router.push(`/admin/billing/custom-bills/${row.id}`);
+}
+
+function openEditDateModal(row) {
+  closeManageMenu();
+  editDateTarget.value = row;
+  editDateValue.value = row.bill_date || "";
+  editDateModalOpen.value = true;
+}
+
+function closeEditDateModal() {
+  if (editDateBusy.value) return;
+  editDateModalOpen.value = false;
+  editDateTarget.value = null;
+}
+
+async function saveBillDate() {
+  if (!editDateTarget.value) return;
+  editDateBusy.value = true;
+  try {
+    await api.patch(`/custom-bills/${editDateTarget.value.id}`, {
+      bill_date: editDateValue.value,
+    });
+    toast.success("Bill date updated.");
+    editDateModalOpen.value = false;
+    editDateTarget.value = null;
+    await fetchRows();
+  } catch (e) {
+    toast.errorFrom(e, "Could not update bill date.");
+  } finally {
+    editDateBusy.value = false;
   }
 }
 
@@ -432,14 +473,23 @@ onUnmounted(() => {
         }"
         @click.stop
       >
-        <RouterLink
-          :to="`/admin/billing/custom-bills/${manageMenuRow.id}`"
-          class="staff-row-menu__item text-decoration-none text-body"
+        <button
+          type="button"
+          class="staff-row-menu__item"
           role="menuitem"
-          @click="closeManageMenu"
+          @click="goToBillDetail(manageMenuRow)"
         >
           View
-        </RouterLink>
+        </button>
+        <button
+          v-if="canUpdate && manageMenuRow.status === 'open'"
+          type="button"
+          class="staff-row-menu__item"
+          role="menuitem"
+          @click="openEditDateModal(manageMenuRow)"
+        >
+          Edit
+        </button>
         <button
           v-if="canDelete && manageMenuRow.status === 'open'"
           type="button"
@@ -449,6 +499,15 @@ onUnmounted(() => {
         >
           Delete
         </button>
+        <RouterLink
+          v-if="manageMenuRow.status === 'invoiced' && manageMenuRow.invoice_id"
+          :to="`/admin/billing/invoices/${manageMenuRow.invoice_id}`"
+          class="staff-row-menu__item text-decoration-none text-body"
+          role="menuitem"
+          @click="closeManageMenu"
+        >
+          View Invoice
+        </RouterLink>
       </div>
     </Teleport>
 
@@ -467,5 +526,77 @@ onUnmounted(() => {
       :busy="deleteBusy"
       @confirm="confirmDelete"
     />
+
+    <Teleport to="body">
+      <Transition name="crm-vx-confirm">
+        <div
+          v-if="editDateModalOpen"
+          class="crm-vx-modal-overlay"
+          role="dialog"
+          aria-modal="true"
+          @click.self="closeEditDateModal"
+        >
+          <div class="crm-vx-modal crm-vx-modal--sm" @click.stop>
+            <button
+              type="button"
+              class="crm-vx-modal__close"
+              aria-label="Close"
+              :disabled="editDateBusy"
+              @click="closeEditDateModal"
+            >
+              <svg
+                width="20"
+                height="20"
+                fill="none"
+                viewBox="0 0 24 24"
+                stroke="currentColor"
+                stroke-width="1.75"
+                aria-hidden="true"
+              >
+                <path
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                  d="M6 18L18 6M6 6l12 12"
+                />
+              </svg>
+            </button>
+            <header class="crm-vx-modal__head">
+              <h2 class="crm-vx-modal__title">Edit Bill Date</h2>
+            </header>
+            <div class="crm-vx-modal__body">
+              <form id="cb-list-edit-date-form" @submit.prevent="saveBillDate">
+                <label class="form-label" for="cb-list-edit-date">Bill Date</label>
+                <input
+                  id="cb-list-edit-date"
+                  v-model="editDateValue"
+                  type="date"
+                  class="form-control mb-0"
+                  :disabled="editDateBusy"
+                  required
+                />
+              </form>
+            </div>
+            <footer class="crm-vx-modal__footer d-flex gap-2 justify-content-end">
+              <button
+                type="button"
+                class="crm-vx-modal-btn crm-vx-modal-btn--secondary"
+                :disabled="editDateBusy"
+                @click="closeEditDateModal"
+              >
+                Cancel
+              </button>
+              <button
+                type="submit"
+                form="cb-list-edit-date-form"
+                class="crm-vx-modal-btn crm-vx-modal-btn--primary"
+                :disabled="editDateBusy"
+              >
+                {{ editDateBusy ? "Saving…" : "Save" }}
+              </button>
+            </footer>
+          </div>
+        </div>
+      </Transition>
+    </Teleport>
   </div>
 </template>

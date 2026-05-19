@@ -1,7 +1,8 @@
 <script setup>
-import { computed, inject, nextTick, onMounted, onUnmounted, ref, watch } from "vue";
+import { computed, inject, nextTick, onMounted, onUnmounted, reactive, ref, watch } from "vue";
 import { useRouter } from "vue-router";
 import api from "../../services/api";
+import BillingCustomBillLineModal from "../../components/billing/BillingCustomBillLineModal.vue";
 import ConfirmModal from "../../components/common/ConfirmModal.vue";
 import CrmIconRowActions from "../../components/common/CrmIconRowActions.vue";
 import CrmLoadingSpinner from "../../components/common/CrmLoadingSpinner.vue";
@@ -58,17 +59,25 @@ const deleteBillBusy = ref(false);
 
 const addLineModalOpen = ref(false);
 const addLineBusy = ref(false);
-const lineForm = ref({
-  line_type: LINE_TYPES[0],
-  name: "",
-  quantity: "1",
-  unit_price: "0.00",
-  sku: "",
-});
+const addLineError = ref("");
 
 const lineEditModalOpen = ref(false);
 const lineEditBusy = ref(false);
+const lineEditError = ref("");
 const lineEditTarget = ref(null);
+
+function emptyLineForm() {
+  return {
+    line_type: LINE_TYPES[0],
+    name: "",
+    quantity: "1",
+    unit_price: "0.00",
+    sku: "",
+  };
+}
+
+const addLineForm = reactive(emptyLineForm());
+const lineEditForm = reactive(emptyLineForm());
 
 const lineDeleteModalOpen = ref(false);
 const lineDeleteBusy = ref(false);
@@ -104,63 +113,81 @@ function statusBadgeClass(status) {
   return status === "invoiced" ? "bg-success-subtle text-success" : "bg-warning-subtle text-warning";
 }
 
-function resetLineForm() {
-  lineForm.value = {
-    line_type: LINE_TYPES[0],
-    name: "",
-    quantity: "1",
-    unit_price: "0.00",
-    sku: "",
-  };
-}
-
 function unitPriceFromCents(cents) {
   return ((Number(cents) || 0) / 100).toFixed(2);
 }
 
+function resetAddLineForm() {
+  Object.assign(addLineForm, emptyLineForm());
+}
+
+function closeAddLineModal() {
+  if (addLineBusy.value) return;
+  addLineModalOpen.value = false;
+  addLineError.value = "";
+  resetAddLineForm();
+}
+
 function openAddLineModal() {
-  resetLineForm();
+  resetAddLineForm();
+  addLineError.value = "";
   addLineModalOpen.value = true;
 }
 
 function openLineEdit(item) {
   lineEditTarget.value = item;
-  lineForm.value = {
+  Object.assign(lineEditForm, {
     line_type: item.line_type,
     name: item.name,
     quantity: String(item.quantity),
     unit_price: unitPriceFromCents(item.unit_price_cents),
     sku: item.sku || "",
-  };
+  });
+  lineEditError.value = "";
   lineEditModalOpen.value = true;
 }
 
-function linePayloadFromForm() {
+function closeLineEditModal() {
+  if (lineEditBusy.value) return;
+  lineEditModalOpen.value = false;
+  lineEditTarget.value = null;
+  lineEditError.value = "";
+}
+
+function linePayloadFromForm(form) {
   const payload = {
-    line_type: lineForm.value.line_type,
-    name: String(lineForm.value.name || "").trim(),
-    quantity: parseFloat(lineForm.value.quantity),
-    unit_price: parseFloat(lineForm.value.unit_price) || 0,
+    line_type: form.line_type,
+    name: String(form.name || "").trim(),
+    quantity: parseFloat(form.quantity),
+    unit_price: parseFloat(form.unit_price) || 0,
   };
-  const sku = String(lineForm.value.sku || "").trim();
+  const sku = String(form.sku || "").trim();
   if (sku) payload.sku = sku;
   return payload;
 }
 
 async function submitAddLine() {
-  const payload = linePayloadFromForm();
+  const payload = linePayloadFromForm(addLineForm);
   if (!payload.name) {
-    toast.error("Name is required.");
+    addLineError.value = "Service / name is required.";
     return;
   }
+  if (!Number.isFinite(payload.quantity) || payload.quantity <= 0) {
+    addLineError.value = "Quantity must be greater than zero.";
+    return;
+  }
+  addLineError.value = "";
   addLineBusy.value = true;
   try {
     const { data } = await api.post(`/custom-bills/${props.id}/items`, payload);
     bill.value = data;
-    addLineModalOpen.value = false;
+    closeAddLineModal();
     toast.success("Line added.");
   } catch (e) {
-    toast.errorFrom(e, "Could not add line.");
+    const d = e?.response?.data;
+    addLineError.value =
+      d?.message || d?.errors?.name?.[0] || d?.errors?.quantity?.[0] || "";
+    toast.errorFrom(e, addLineError.value || "Could not add line.");
   } finally {
     addLineBusy.value = false;
   }
@@ -168,11 +195,16 @@ async function submitAddLine() {
 
 async function submitEditLine() {
   if (!lineEditTarget.value) return;
-  const payload = linePayloadFromForm();
+  const payload = linePayloadFromForm(lineEditForm);
   if (!payload.name) {
-    toast.error("Name is required.");
+    lineEditError.value = "Service / name is required.";
     return;
   }
+  if (!Number.isFinite(payload.quantity) || payload.quantity <= 0) {
+    lineEditError.value = "Quantity must be greater than zero.";
+    return;
+  }
+  lineEditError.value = "";
   lineEditBusy.value = true;
   try {
     const { data } = await api.put(
@@ -180,11 +212,13 @@ async function submitEditLine() {
       payload,
     );
     bill.value = data;
-    lineEditModalOpen.value = false;
-    lineEditTarget.value = null;
+    closeLineEditModal();
     toast.success("Line updated.");
   } catch (e) {
-    toast.errorFrom(e, "Could not update line.");
+    const d = e?.response?.data;
+    lineEditError.value =
+      d?.message || d?.errors?.name?.[0] || d?.errors?.quantity?.[0] || "";
+    toast.errorFrom(e, lineEditError.value || "Could not update line.");
   } finally {
     lineEditBusy.value = false;
   }
@@ -208,9 +242,20 @@ async function confirmDeleteLine() {
   }
 }
 
+function closeEditDateModal() {
+  if (editDateBusy.value) return;
+  editDateModalOpen.value = false;
+}
+
 function openEditDateModal() {
+  manageMenuOpen.value = false;
   editDateValue.value = bill.value?.bill_date || "";
   editDateModalOpen.value = true;
+}
+
+function closeAddToInvoiceModal() {
+  if (addToInvoiceBusy.value) return;
+  addToInvoiceModalOpen.value = false;
 }
 
 async function saveBillDate() {
@@ -220,7 +265,7 @@ async function saveBillDate() {
       bill_date: editDateValue.value,
     });
     bill.value = data;
-    editDateModalOpen.value = false;
+    closeEditDateModal();
     toast.success("Bill date updated.");
   } catch (e) {
     toast.errorFrom(e, "Could not update bill date.");
@@ -267,7 +312,7 @@ async function submitAddToInvoice() {
       invoice_id: Number(selectedInvoiceId.value),
     });
     bill.value = data;
-    addToInvoiceModalOpen.value = false;
+    closeAddToInvoiceModal();
     toast.success("Bill lines added to invoice.");
   } catch (e) {
     toast.errorFrom(e, "Could not add bill to invoice.");
@@ -608,196 +653,192 @@ onUnmounted(() => {
 
     <p v-else class="text-secondary">Bill not found.</p>
 
+    <BillingCustomBillLineModal
+      v-model:open="addLineModalOpen"
+      v-model:line-type="addLineForm.line_type"
+      v-model:name="addLineForm.name"
+      v-model:quantity="addLineForm.quantity"
+      v-model:unit-price="addLineForm.unit_price"
+      v-model:sku="addLineForm.sku"
+      title="Add To Bill"
+      submit-label="Add Line"
+      :line-types="LINE_TYPES"
+      :busy="addLineBusy"
+      :error-msg="addLineError"
+      @submit="submitAddLine"
+    />
+
+    <BillingCustomBillLineModal
+      v-model:open="lineEditModalOpen"
+      v-model:line-type="lineEditForm.line_type"
+      v-model:name="lineEditForm.name"
+      v-model:quantity="lineEditForm.quantity"
+      v-model:unit-price="lineEditForm.unit_price"
+      v-model:sku="lineEditForm.sku"
+      title="Edit Line Item"
+      submit-label="Save"
+      :line-types="LINE_TYPES"
+      :busy="lineEditBusy"
+      :error-msg="lineEditError"
+      @submit="submitEditLine"
+    />
+
   <!-- Edit date -->
   <Teleport to="body">
-    <div
-      v-if="editDateModalOpen"
-      class="crm-vx-modal-overlay"
-      role="dialog"
-      aria-modal="true"
-    >
-      <div class="crm-vx-modal-backdrop" aria-hidden="true" @click="editDateModalOpen = false" />
-      <div class="crm-vx-modal crm-vx-modal--sm">
-        <header class="crm-vx-modal__head">
-          <h2 class="crm-vx-modal__title">Edit Bill Date</h2>
-        </header>
-        <div class="crm-vx-modal__body">
-          <label class="form-label" for="cb-edit-date">Bill Date</label>
-          <input
-            id="cb-edit-date"
-            v-model="editDateValue"
-            type="date"
-            class="form-control"
-            :disabled="editDateBusy"
-          />
-        </div>
-        <footer class="crm-vx-modal__foot d-flex justify-content-end gap-2">
-          <button
-            type="button"
-            class="btn btn-outline-secondary"
-            :disabled="editDateBusy"
-            @click="editDateModalOpen = false"
-          >
-            Cancel
-          </button>
-          <button
-            type="button"
-            class="btn btn-primary staff-page-primary"
-            :disabled="editDateBusy"
-            @click="saveBillDate"
-          >
-            {{ editDateBusy ? "Saving…" : "Save" }}
-          </button>
-        </footer>
-      </div>
-    </div>
-  </Teleport>
-
-  <!-- Line add/edit modal -->
-  <Teleport to="body">
-    <div
-      v-if="addLineModalOpen || lineEditModalOpen"
-      class="crm-vx-modal-overlay"
-      role="dialog"
-      aria-modal="true"
-    >
+    <Transition name="crm-vx-confirm">
       <div
-        class="crm-vx-modal-backdrop"
-        aria-hidden="true"
-        @click="
-          addLineModalOpen = false;
-          lineEditModalOpen = false;
-        "
-      />
-      <div class="crm-vx-modal crm-vx-modal--sm">
-        <header class="crm-vx-modal__head">
-          <h2 class="crm-vx-modal__title">
-            {{ lineEditModalOpen ? "Edit Line" : "Add To Bill" }}
-          </h2>
-        </header>
-        <div class="crm-vx-modal__body">
-          <label class="form-label">Type</label>
-          <select v-model="lineForm.line_type" class="form-select mb-3">
-            <option v-for="t in LINE_TYPES" :key="t" :value="t">{{ t }}</option>
-          </select>
-          <label class="form-label">Service / Name</label>
-          <input v-model="lineForm.name" type="text" class="form-control mb-3" />
-          <div class="row g-2 mb-3">
-            <div class="col-6">
-              <label class="form-label">QTY</label>
-              <input
-                v-model="lineForm.quantity"
-                type="number"
-                min="0.0001"
-                step="any"
-                class="form-control"
+        v-if="editDateModalOpen"
+        class="crm-vx-modal-overlay"
+        role="dialog"
+        aria-modal="true"
+        @click.self="closeEditDateModal"
+      >
+        <div class="crm-vx-modal crm-vx-modal--sm" @click.stop>
+          <button
+            type="button"
+            class="crm-vx-modal__close"
+            aria-label="Close"
+            :disabled="editDateBusy"
+            @click="closeEditDateModal"
+          >
+            <svg
+              width="20"
+              height="20"
+              fill="none"
+              viewBox="0 0 24 24"
+              stroke="currentColor"
+              stroke-width="1.75"
+              aria-hidden="true"
+            >
+              <path
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                d="M6 18L18 6M6 6l12 12"
               />
-            </div>
-            <div class="col-6">
-              <label class="form-label">Unit Price</label>
+            </svg>
+          </button>
+          <header class="crm-vx-modal__head">
+            <h2 class="crm-vx-modal__title">Edit Bill Date</h2>
+          </header>
+          <div class="crm-vx-modal__body">
+            <form id="cb-edit-date-form" @submit.prevent="saveBillDate">
+              <label class="form-label" for="cb-edit-date">Bill Date</label>
               <input
-                v-model="lineForm.unit_price"
-                type="number"
-                step="0.01"
-                class="form-control"
+                id="cb-edit-date"
+                v-model="editDateValue"
+                type="date"
+                class="form-control mb-0"
+                :disabled="editDateBusy"
+                required
               />
-            </div>
+            </form>
           </div>
-          <label class="form-label">SKU (optional)</label>
-          <input v-model="lineForm.sku" type="text" class="form-control" />
+          <footer class="crm-vx-modal__footer d-flex gap-2 justify-content-end">
+            <button
+              type="button"
+              class="crm-vx-modal-btn crm-vx-modal-btn--secondary"
+              :disabled="editDateBusy"
+              @click="closeEditDateModal"
+            >
+              Cancel
+            </button>
+            <button
+              type="submit"
+              form="cb-edit-date-form"
+              class="crm-vx-modal-btn crm-vx-modal-btn--primary"
+              :disabled="editDateBusy"
+            >
+              {{ editDateBusy ? "Saving…" : "Save" }}
+            </button>
+          </footer>
         </div>
-        <footer class="crm-vx-modal__foot d-flex justify-content-end gap-2">
-          <button
-            type="button"
-            class="btn btn-outline-secondary"
-            :disabled="addLineBusy || lineEditBusy"
-            @click="
-              addLineModalOpen = false;
-              lineEditModalOpen = false;
-            "
-          >
-            Cancel
-          </button>
-          <button
-            type="button"
-            class="btn btn-primary staff-page-primary"
-            :disabled="addLineBusy || lineEditBusy"
-            @click="lineEditModalOpen ? submitEditLine() : submitAddLine()"
-          >
-            {{
-              addLineBusy || lineEditBusy
-                ? "Saving…"
-                : lineEditModalOpen
-                  ? "Save"
-                  : "Add Line"
-            }}
-          </button>
-        </footer>
       </div>
-    </div>
+    </Transition>
   </Teleport>
 
   <!-- Add to invoice -->
   <Teleport to="body">
-    <div
-      v-if="addToInvoiceModalOpen"
-      class="crm-vx-modal-overlay"
-      role="dialog"
-      aria-modal="true"
-    >
+    <Transition name="crm-vx-confirm">
       <div
-        class="crm-vx-modal-backdrop"
-        aria-hidden="true"
-        @click="addToInvoiceModalOpen = false"
-      />
-      <div class="crm-vx-modal">
-        <header class="crm-vx-modal__head">
-          <h2 class="crm-vx-modal__title">Add To Invoice</h2>
-          <p class="crm-vx-modal__subtitle mb-0">
-            Select a draft invoice for {{ bill.client_account_name }}.
-          </p>
-        </header>
-        <div class="crm-vx-modal__body">
-          <p v-if="!draftInvoices.length" class="text-secondary small mb-0">
-            No draft invoices for this account. Create a draft invoice first.
-          </p>
-          <div v-else class="list-group list-group-flush border rounded">
-            <label
-              v-for="inv in draftInvoices"
-              :key="inv.id"
-              class="list-group-item list-group-item-action d-flex align-items-center gap-2 mb-0 cursor-pointer"
-            >
-              <input
-                v-model="selectedInvoiceId"
-                type="radio"
-                class="form-check-input mt-0"
-                :value="String(inv.id)"
-              />
-              <span class="fw-semibold">Invoice #{{ inv.invoice_number }}</span>
-              <span class="ms-auto text-secondary">{{ formatCents(inv.total_cents) }}</span>
-            </label>
-          </div>
-        </div>
-        <footer class="crm-vx-modal__foot d-flex justify-content-end gap-2">
+        v-if="addToInvoiceModalOpen && bill"
+        class="crm-vx-modal-overlay"
+        role="dialog"
+        aria-modal="true"
+        @click.self="closeAddToInvoiceModal"
+      >
+        <div class="crm-vx-modal crm-vx-modal--sm" @click.stop>
           <button
             type="button"
-            class="btn btn-outline-secondary"
+            class="crm-vx-modal__close"
+            aria-label="Close"
             :disabled="addToInvoiceBusy"
-            @click="addToInvoiceModalOpen = false"
+            @click="closeAddToInvoiceModal"
           >
-            Cancel
+            <svg
+              width="20"
+              height="20"
+              fill="none"
+              viewBox="0 0 24 24"
+              stroke="currentColor"
+              stroke-width="1.75"
+              aria-hidden="true"
+            >
+              <path
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                d="M6 18L18 6M6 6l12 12"
+              />
+            </svg>
           </button>
-          <button
-            type="button"
-            class="btn btn-primary staff-page-primary"
-            :disabled="addToInvoiceBusy || !draftInvoices.length"
-            @click="submitAddToInvoice"
-          >
-            {{ addToInvoiceBusy ? "Processing…" : "Process" }}
-          </button>
-        </footer>
+          <header class="crm-vx-modal__head">
+            <h2 class="crm-vx-modal__title">Add To Invoice</h2>
+            <p class="crm-vx-modal__subtitle mb-0">
+              Select a draft invoice for {{ bill.client_account_name }}.
+            </p>
+          </header>
+          <div class="crm-vx-modal__body">
+            <p v-if="!draftInvoices.length" class="text-secondary small mb-0">
+              No draft invoices for this account. Create a draft invoice first.
+            </p>
+            <div v-else class="list-group list-group-flush border rounded">
+              <label
+                v-for="inv in draftInvoices"
+                :key="inv.id"
+                class="list-group-item list-group-item-action d-flex align-items-center gap-2 mb-0 cursor-pointer"
+              >
+                <input
+                  v-model="selectedInvoiceId"
+                  type="radio"
+                  class="form-check-input mt-0"
+                  :value="String(inv.id)"
+                  :disabled="addToInvoiceBusy"
+                />
+                <span class="fw-semibold">Invoice #{{ inv.invoice_number }}</span>
+                <span class="ms-auto text-secondary">{{ formatCents(inv.total_cents) }}</span>
+              </label>
+            </div>
+          </div>
+          <footer class="crm-vx-modal__footer d-flex gap-2 justify-content-end">
+            <button
+              type="button"
+              class="crm-vx-modal-btn crm-vx-modal-btn--secondary"
+              :disabled="addToInvoiceBusy"
+              @click="closeAddToInvoiceModal"
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              class="crm-vx-modal-btn crm-vx-modal-btn--primary"
+              :disabled="addToInvoiceBusy || !draftInvoices.length"
+              @click="submitAddToInvoice"
+            >
+              {{ addToInvoiceBusy ? "Processing…" : "Process" }}
+            </button>
+          </footer>
+        </div>
       </div>
-    </div>
+    </Transition>
   </Teleport>
 
     <ConfirmModal
@@ -840,5 +881,14 @@ onUnmounted(() => {
   width: 7rem;
   min-width: 7rem;
   max-width: 7rem;
+}
+
+.crm-vx-confirm-enter-active,
+.crm-vx-confirm-leave-active {
+  transition: opacity 0.2s ease;
+}
+.crm-vx-confirm-enter-from,
+.crm-vx-confirm-leave-to {
+  opacity: 0;
 }
 </style>

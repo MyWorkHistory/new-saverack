@@ -15,6 +15,7 @@ use App\Policies\ClientAccountAsnPolicy;
 use App\Policies\ClientAccountOnDemandProductPolicy;
 use App\Policies\ClientAccountPolicy;
 use App\Policies\ClientStorePolicy;
+use App\Policies\CustomBillPolicy;
 use App\Policies\InvoicePolicy;
 use App\Policies\TaskPolicy;
 use App\Policies\TicketPolicy;

@@ -2177,6 +2177,49 @@ class BillingInvoiceApiTest extends TestCase
             ->assertJsonPath('items.0.line_total_cents', -1100);
     }
 
+    public function test_add_item_accepts_staff_ui_category_amazon_prep(): void
+    {
+        $user = User::factory()->create();
+        $user->permissions()->sync([
+            $this->billingViewPermission()->id,
+            $this->billingUpdatePermission()->id,
+        ]);
+        Sanctum::actingAs($user);
+
+        $client = ClientAccount::query()->create([
+            'status' => ClientAccount::STATUS_ACTIVE,
+            'company_name' => 'Amazon Prep Co',
+            'email' => 'amazon@acme.test',
+        ]);
+
+        $invoice = Invoice::query()->create([
+            'invoice_number' => 'INV-AMZ-001',
+            'client_account_id' => $client->id,
+            'status' => Invoice::STATUS_DRAFT,
+            'currency' => 'USD',
+            'subtotal_cents' => 0,
+            'tax_cents' => 0,
+            'total_cents' => 0,
+            'amount_paid_cents' => 0,
+            'balance_due_cents' => 0,
+        ]);
+
+        $this->postJson("/api/invoices/{$invoice->id}/add-item", [
+            'description' => 'Amazon prep labor',
+            'display_name' => 'Amazon prep labor',
+            'category' => 'amazon prep',
+            'quantity' => 1,
+            'unit_price_cents' => 2500,
+        ])
+            ->assertOk()
+            ->assertJsonPath('total_cents', 2500);
+
+        $this->assertDatabaseHas('invoice_items', [
+            'invoice_id' => $invoice->id,
+            'category' => 'amazon prep',
+        ]);
+    }
+
     public function test_draft_breakdown_line_can_be_updated_and_deleted(): void
     {
         $user = User::factory()->create();

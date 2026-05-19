@@ -20,7 +20,7 @@ class InvoiceReplaceLineGroupRequest extends FormRequest
             'replace_item_ids.*' => ['integer', 'min:1'],
             'items' => ['required', 'array', 'min:1', 'max:500'],
             'items.*.description' => ['required', 'string', 'max:65535'],
-            'items.*.category' => ['nullable', 'string', Rule::in(InvoiceLineCategory::all())],
+            'items.*.category' => ['nullable', 'string', Rule::in(InvoiceLineCategory::staffUiValues())],
             'items.*.subtype' => ['nullable', 'string', 'max:64'],
             'items.*.display_name' => ['nullable', 'string', 'max:512'],
             'items.*.sku' => ['nullable', 'string', 'max:128'],

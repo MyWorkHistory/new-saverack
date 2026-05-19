@@ -79,6 +79,18 @@ button.staff-stat-card {
   height: 1.5rem;
 }
 
+.staff-stat-card__icon--money {
+  background: rgba(37, 99, 235, 0.12);
+  color: #2563eb;
+  width: 2.5rem;
+  height: 2.5rem;
+
+  svg {
+    width: 1.15rem;
+    height: 1.15rem;
+  }
+}
+
 .staff-filter-card {
   @extend .staff-surface;
   padding: 1.25rem 1.25rem 1.5rem;

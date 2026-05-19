@@ -16,7 +16,7 @@ class CustomBillItemUpdateRequest extends FormRequest
     public function rules(): array
     {
         return [
-            'line_type' => ['required', 'string', Rule::in(CustomBillLineType::all())],
+            'line_type' => ['required', 'string', Rule::in(CustomBillLineType::acceptedLineTypes())],
             'name' => ['required', 'string', 'max:512'],
             'quantity' => ['required', 'numeric', 'min:0.0001'],
             'unit_price' => ['nullable', 'numeric'],

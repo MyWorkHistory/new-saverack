@@ -49,8 +49,30 @@ final class CustomBillLineType
         return in_array($value, self::all(), true);
     }
 
+    /**
+     * Values accepted for custom_bill_items.line_type (invoice UI categories + legacy labels).
+     *
+     * @return list<string>
+     */
+    public static function acceptedLineTypes(): array
+    {
+        return array_values(array_unique(array_merge(
+            InvoiceLineCategory::staffUiValues(),
+            self::all(),
+        )));
+    }
+
+    public static function isAcceptedLineType(string $value): bool
+    {
+        return in_array($value, self::acceptedLineTypes(), true);
+    }
+
     public static function toInvoiceCategory(string $lineType): string
     {
+        if (InvoiceLineCategory::isStaffUiValue($lineType) || InvoiceLineCategory::isValid($lineType)) {
+            return $lineType;
+        }
+
         switch ($lineType) {
             case self::FULFILLMENT_SERVICE:
                 return InvoiceLineCategory::FULFILLMENT;

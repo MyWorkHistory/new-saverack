@@ -4,6 +4,7 @@ import { computed, inject, nextTick, onMounted, onUnmounted, ref, watch } from "
 import { useRouter } from "vue-router";
 import api from "../../services/api";
 import { BRAND_MARK_SRC } from "../../utils/brandAssets.js";
+import BillingDollarStatIcon from "../../components/billing/BillingDollarStatIcon.vue";
 import ConfirmModal from "../../components/common/ConfirmModal.vue";
 import CrmIconRowActions from "../../components/common/CrmIconRowActions.vue";
 import CrmLoadingSpinner from "../../components/common/CrmLoadingSpinner.vue";
@@ -13,6 +14,9 @@ import { crmIsAdmin } from "../../utils/crmUser";
 import { setCrmPageMeta } from "../../composables/useCrmPageMeta.js";
 import { formatCents } from "../../utils/formatMoney.js";
 import { formatIsoDate, parseCalendarDay, toDateInputValue } from "../../utils/formatUserDates.js";
+import { INVOICE_CATEGORY_OPTIONS } from "../../constants/invoiceCategoryOptions.js";
+
+const invoiceCategoryOptions = INVOICE_CATEGORY_OPTIONS;
 
 const props = defineProps({
   id: { type: String, required: true },
@@ -126,21 +130,6 @@ const lineEditBusy = ref(false);
 const lineDeleteModalOpen = ref(false);
 const lineDeleteBusy = ref(false);
 const lineEditTarget = ref(null);
-const invoiceCategoryOptions = [
-  { value: "fulfillment", label: "Fulfillment" },
-  { value: "amazon prep", label: "Amazon Prep" },
-  { value: "postage", label: "Postage" },
-  { value: "packaging", label: "Packaging" },
-  { value: "returns", label: "Returns" },
-  { value: "ad_hoc", label: "Ad Hoc" },
-  { value: "bank fee", label: "Bank Fee" },
-  { value: "duties & taxes", label: "Duties & Taxes" },
-  { value: "storage", label: "Storage" },
-  { value: "on_demand", label: "On Demand" },
-  { value: "receiving", label: "Receiving" },
-  { value: "credits", label: "Credits" },
-  { value: "other", label: "Other" },
-];
 const lineEditForm = ref({
   description: "",
   display_name: "",
@@ -2675,16 +2664,8 @@ function onDocKeydown(e) {
                   {{ formatCents(payOpenBalanceCents, invoice.currency) }}
                 </p>
                 <p class="staff-stat-card__sub">Sent and partial — unpaid total</p>
-                <div
-                  class="staff-stat-card__icon text-white"
-                  style="background: #2563eb"
-                  aria-hidden="true"
-                >
-                  <svg width="22" height="22" fill="currentColor" viewBox="0 0 24 24">
-                    <path
-                      d="M11.8 10.9c-2.27-.59-3-1.2-3-2.15 0-1.09 1.01-1.85 2.7-1.85 1.78 0 2.44.85 2.5 2.1h2.21c-.07-1.72-1.12-3.3-3.21-3.81V3h-3v2.16c-1.94.42-3.5 1.68-3.5 3.61 0 2.31 1.91 3.46 4.7 4.13 2.5.6 3 1.48 3 2.41 0 .69-.49 1.79-2.7 1.79-2.06 0-2.87-.92-2.98-2.1h-2.2c.12 2.19 1.76 3.42 3.68 3.83V21h3v-2.15c1.95-.37 3.5-1.5 3.5-3.55 0-2.84-2.43-3.81-4.7-4.4z"
-                    />
-                  </svg>
+                <div class="staff-stat-card__icon staff-stat-card__icon--money" aria-hidden="true">
+                  <BillingDollarStatIcon />
                 </div>
               </button>
               <button
@@ -3215,7 +3196,7 @@ function onDocKeydown(e) {
                   {{ category.label }}
                 </option>
               </select>
-              <label class="form-label">Order #</label>
+              <label class="form-label">Order # (optional)</label>
               <input v-model="lineEditForm.order_number" type="text" class="form-control mb-2" />
               <div class="row g-2">
                 <div class="col-6">
@@ -3278,7 +3259,7 @@ function onDocKeydown(e) {
                   {{ category.label }}
                 </option>
               </select>
-              <label class="form-label">Order #</label>
+              <label class="form-label">Order # (optional)</label>
               <input v-model="addItemForm.order_number" type="text" class="form-control mb-2" />
               <div class="row g-2">
                 <div class="col-6">
@@ -3827,14 +3808,14 @@ function onDocKeydown(e) {
   opacity: 0.75;
   cursor: not-allowed;
 }
-.billing-inv-summary-card .staff-stat-card__icon {
-  width: 6.2rem;
-  height: 6.2rem;
-  border-radius: 0.6rem;
+.billing-inv-summary-card .staff-stat-card__icon:not(.staff-stat-card__icon--money) {
+  width: 2.5rem;
+  height: 2.5rem;
+  border-radius: 0.4375rem;
 }
-.billing-inv-summary-card .staff-stat-card__icon svg {
-  width: 1.85rem;
-  height: 1.85rem;
+.billing-inv-summary-card .staff-stat-card__icon:not(.staff-stat-card__icon--money) svg {
+  width: 1.15rem;
+  height: 1.15rem;
 }
 .billing-group-edit-bulk-panel {
   border: 1px solid rgba(47, 43, 61, 0.1);

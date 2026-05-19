@@ -50,4 +50,33 @@ final class InvoiceLineCategory
     {
         return in_array($value, self::all(), true);
     }
+
+    /**
+     * Category values shown in staff invoice / custom bill line UI.
+     *
+     * @return list<string>
+     */
+    public static function staffUiValues(): array
+    {
+        return [
+            self::FULFILLMENT,
+            'amazon prep',
+            self::POSTAGE,
+            self::PACKAGING,
+            self::RETURNS,
+            self::AD_HOC,
+            'bank fee',
+            'duties & taxes',
+            self::STORAGE,
+            self::ON_DEMAND,
+            self::RECEIVING,
+            self::CREDITS,
+            self::OTHER,
+        ];
+    }
+
+    public static function isStaffUiValue(string $value): bool
+    {
+        return in_array($value, self::staffUiValues(), true);
+    }
 }

@@ -3,6 +3,7 @@ import { computed, inject, nextTick, onMounted, onUnmounted, reactive, ref, watc
 import { useRouter } from "vue-router";
 import api from "../../services/api";
 import BillingCustomBillLineModal from "../../components/billing/BillingCustomBillLineModal.vue";
+import BillingDollarStatIcon from "../../components/billing/BillingDollarStatIcon.vue";
 import ConfirmModal from "../../components/common/ConfirmModal.vue";
 import CrmIconRowActions from "../../components/common/CrmIconRowActions.vue";
 import CrmLoadingSpinner from "../../components/common/CrmLoadingSpinner.vue";
@@ -11,19 +12,11 @@ import { setCrmPageMeta } from "../../composables/useCrmPageMeta.js";
 import { crmIsAdmin } from "../../utils/crmUser.js";
 import { formatCents } from "../../utils/formatMoney.js";
 import { formatIsoDate } from "../../utils/formatUserDates.js";
-
-const LINE_TYPES = [
-  "Fulfillment Service",
-  "Packaging",
-  "Storage",
-  "Postage",
-  "New Packaging",
-  "Packaging Material",
-  "Product",
-  "Admin",
-  "Other",
-  "Credit",
-];
+import {
+  DEFAULT_INVOICE_CATEGORY,
+  INVOICE_CATEGORY_OPTIONS,
+  invoiceCategoryLabel,
+} from "../../constants/invoiceCategoryOptions.js";
 
 const props = defineProps({
   id: { type: String, required: true },
@@ -68,7 +61,7 @@ const lineEditTarget = ref(null);
 
 function emptyLineForm() {
   return {
-    line_type: LINE_TYPES[0],
+    line_type: DEFAULT_INVOICE_CATEGORY,
     name: "",
     quantity: "1",
     unit_price: "0.00",
@@ -91,6 +84,14 @@ const selectedInvoiceId = ref("");
 const reopenBusy = ref(false);
 
 const isOpen = computed(() => bill.value?.status === "open");
+
+const billTotalSubtext = computed(() => {
+  if (!bill.value) return "";
+  if (bill.value.status === "invoiced" && bill.value.invoice_number) {
+    return `On invoice #${bill.value.invoice_number}`;
+  }
+  return "Sum of line items";
+});
 
 async function loadBill() {
   loading.value = true;
@@ -168,6 +169,10 @@ function linePayloadFromForm(form) {
 
 async function submitAddLine() {
   const payload = linePayloadFromForm(addLineForm);
+  if (!payload.line_type) {
+    addLineError.value = "Select a category.";
+    return;
+  }
   if (!payload.name) {
     addLineError.value = "Service / name is required.";
     return;
@@ -198,6 +203,10 @@ async function submitAddLine() {
 async function submitEditLine() {
   if (!lineEditTarget.value) return;
   const payload = linePayloadFromForm(lineEditForm);
+  if (!payload.line_type) {
+    lineEditError.value = "Select a category.";
+    return;
+  }
   if (!payload.name) {
     lineEditError.value = "Service / name is required.";
     return;
@@ -488,7 +497,7 @@ onUnmounted(() => {
           </button>
           <div
             v-if="manageMenuOpen"
-            class="staff-row-menu dropdown-menu show shadow position-absolute end-0 mt-1"
+            class="staff-row-menu staff-toolbar-bulk-dropdown dropdown-menu show shadow position-absolute end-0 mt-1 p-0 overflow-hidden"
             style="min-width: 12rem"
           >
             <template v-if="isOpen && canUpdate">
@@ -502,7 +511,7 @@ onUnmounted(() => {
             <RouterLink
               v-if="bill.invoice_id"
               :to="`/admin/billing/invoices/${bill.invoice_id}`"
-              class="dropdown-item"
+              class="dropdown-item text-decoration-none"
               @click="manageMenuOpen = false"
             >
               View Invoice
@@ -551,7 +560,7 @@ onUnmounted(() => {
               <table class="table table-hover align-middle mb-0 staff-data-table">
                 <thead class="table-light staff-table-head">
                   <tr>
-                    <th class="staff-table-head__th">Type</th>
+                    <th class="staff-table-head__th">Category</th>
                     <th class="staff-table-head__th">Service / Name</th>
                     <th class="staff-table-head__th text-end">Qty</th>
                     <th class="staff-table-head__th text-end">Price</th>
@@ -571,7 +580,7 @@ onUnmounted(() => {
                     </td>
                   </tr>
                   <tr v-for="item in bill.items" :key="item.id">
-                    <td>{{ item.line_type }}</td>
+                    <td>{{ invoiceCategoryLabel(item.line_type) }}</td>
                     <td class="fw-medium">{{ item.name }}</td>
                     <td class="text-end text-nowrap">{{ item.quantity }}</td>
                     <td class="text-end">{{ formatCents(item.unit_price_cents) }}</td>
@@ -628,11 +637,16 @@ onUnmounted(() => {
         </div>
 
         <div class="col-lg-4">
-          <div class="staff-surface p-3 p-md-4 mb-4">
-            <h2 class="h6 fw-semibold mb-3">Bill Amount</h2>
-            <div class="d-flex justify-content-between align-items-center">
-              <span class="text-secondary">Total</span>
-              <span class="fs-5 fw-semibold">{{ formatCents(bill.total_cents) }}</span>
+          <div class="staff-surface p-4 mb-4">
+            <div class="staff-stat-card h-100 text-start p-0 border-0 shadow-none">
+              <p class="staff-stat-card__label">Bill Total</p>
+              <p class="staff-stat-card__value">
+                {{ formatCents(bill.total_cents) }}
+              </p>
+              <p class="staff-stat-card__sub">{{ billTotalSubtext }}</p>
+              <div class="staff-stat-card__icon staff-stat-card__icon--money" aria-hidden="true">
+                <BillingDollarStatIcon />
+              </div>
             </div>
           </div>
 
@@ -660,14 +674,14 @@ onUnmounted(() => {
 
     <BillingCustomBillLineModal
       v-model:open="addLineModalOpen"
-      v-model:line-type="addLineForm.line_type"
+      v-model:category="addLineForm.line_type"
       v-model:name="addLineForm.name"
       v-model:quantity="addLineForm.quantity"
       v-model:unit-price="addLineForm.unit_price"
       v-model:sku="addLineForm.sku"
       title="Add To Bill"
       submit-label="Add Line"
-      :line-types="LINE_TYPES"
+      :category-options="INVOICE_CATEGORY_OPTIONS"
       :busy="addLineBusy"
       :error-msg="addLineError"
       @submit="submitAddLine"
@@ -675,14 +689,14 @@ onUnmounted(() => {
 
     <BillingCustomBillLineModal
       v-model:open="lineEditModalOpen"
-      v-model:line-type="lineEditForm.line_type"
+      v-model:category="lineEditForm.line_type"
       v-model:name="lineEditForm.name"
       v-model:quantity="lineEditForm.quantity"
       v-model:unit-price="lineEditForm.unit_price"
       v-model:sku="lineEditForm.sku"
       title="Edit Line Item"
       submit-label="Save"
-      :line-types="LINE_TYPES"
+      :category-options="INVOICE_CATEGORY_OPTIONS"
       :busy="lineEditBusy"
       :error-msg="lineEditError"
       @submit="submitEditLine"

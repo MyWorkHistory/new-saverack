@@ -19,7 +19,7 @@ class CustomBillStoreRequest extends FormRequest
             'client_account_id' => ['required', 'integer', 'exists:client_accounts,id'],
             'bill_date' => ['required', 'date'],
             'items' => ['nullable', 'array'],
-            'items.*.line_type' => ['required', 'string', Rule::in(CustomBillLineType::all())],
+            'items.*.line_type' => ['required', 'string', Rule::in(CustomBillLineType::acceptedLineTypes())],
             'items.*.name' => ['required', 'string', 'max:512'],
             'items.*.quantity' => ['required', 'numeric', 'min:0.0001'],
             'items.*.unit_price' => ['nullable', 'numeric'],

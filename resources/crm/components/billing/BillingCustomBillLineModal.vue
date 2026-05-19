@@ -7,8 +7,8 @@ const props = defineProps({
   submitLabel: { type: String, default: "Save" },
   busy: { type: Boolean, default: false },
   errorMsg: { type: String, default: "" },
-  lineTypes: { type: Array, default: () => [] },
-  lineType: { type: String, default: "" },
+  categoryOptions: { type: Array, default: () => [] },
+  category: { type: String, default: "" },
   name: { type: String, default: "" },
   quantity: { type: String, default: "1" },
   unitPrice: { type: String, default: "0.00" },
@@ -17,7 +17,7 @@ const props = defineProps({
 
 const emit = defineEmits([
   "update:open",
-  "update:lineType",
+  "update:category",
   "update:name",
   "update:quantity",
   "update:unitPrice",
@@ -81,15 +81,23 @@ function onBackdrop() {
               {{ errorMsg }}
             </p>
             <form :id="formId" class="text-start" @submit.prevent="emit('submit')">
-              <label class="form-label" :for="`${formId}-type`">Type</label>
+              <label class="form-label" :for="`${formId}-category`">Category</label>
               <select
-                :id="`${formId}-type`"
-                :value="lineType"
+                :id="`${formId}-category`"
+                :value="category"
                 class="form-select mb-2"
                 :disabled="busy"
-                @change="emit('update:lineType', $event.target.value)"
+                required
+                @change="emit('update:category', $event.target.value)"
               >
-                <option v-for="t in lineTypes" :key="t" :value="t">{{ t }}</option>
+                <option value="">Select category</option>
+                <option
+                  v-for="opt in categoryOptions"
+                  :key="opt.value"
+                  :value="opt.value"
+                >
+                  {{ opt.label }}
+                </option>
               </select>
 
               <label class="form-label" :for="`${formId}-name`">Service / Name</label>

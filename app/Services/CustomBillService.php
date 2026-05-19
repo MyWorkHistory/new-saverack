@@ -333,7 +333,9 @@ class CustomBillService
                     'created_at' => $h->created_at ? $h->created_at->toIso8601String() : null,
                 ];
             })->values()->all(),
-            'line_types' => CustomBillLineType::all(),
+            'category_options' => collect(InvoiceLineCategory::staffUiValues())->map(function (string $value) {
+                return ['value' => $value, 'label' => $this->staffCategoryLabel($value)];
+            })->values()->all(),
             'created_at' => $bill->created_at ? $bill->created_at->toIso8601String() : null,
             'updated_at' => $bill->updated_at ? $bill->updated_at->toIso8601String() : null,
         ];
@@ -405,8 +407,8 @@ class CustomBillService
     private function normalizeItemRow(array $row): array
     {
         $lineType = trim((string) ($row['line_type'] ?? ''));
-        if (! CustomBillLineType::isValid($lineType)) {
-            throw ValidationException::withMessages(['line_type' => 'Invalid line type.']);
+        if (! CustomBillLineType::isAcceptedLineType($lineType)) {
+            throw ValidationException::withMessages(['line_type' => 'Invalid category.']);
         }
         $name = trim((string) ($row['name'] ?? ''));
         if ($name === '') {
@@ -422,7 +424,7 @@ class CustomBillService
             $unitCents = (int) round((float) ($row['unit_price'] ?? 0) * 100);
         }
         $lineTotal = (int) round($qty * $unitCents);
-        if ($lineType === CustomBillLineType::CREDIT) {
+        if ($this->isCreditLineType($lineType)) {
             $unitCents = -abs($unitCents);
             $lineTotal = -abs($lineTotal);
         }
@@ -452,6 +454,32 @@ class CustomBillService
                 'status' => 'This bill is invoiced. Mark it Open before editing.',
             ]);
         }
+    }
+
+    private function isCreditLineType(string $lineType): bool
+    {
+        return $lineType === CustomBillLineType::CREDIT
+            || $lineType === InvoiceLineCategory::CREDITS;
+    }
+
+    private function staffCategoryLabel(string $value): string
+    {
+        return match ($value) {
+            InvoiceLineCategory::FULFILLMENT => 'Fulfillment',
+            'amazon prep' => 'Amazon Prep',
+            InvoiceLineCategory::POSTAGE => 'Postage',
+            InvoiceLineCategory::PACKAGING => 'Packaging',
+            InvoiceLineCategory::RETURNS => 'Returns',
+            InvoiceLineCategory::AD_HOC => 'Ad Hoc',
+            'bank fee' => 'Bank Fee',
+            'duties & taxes' => 'Duties & Taxes',
+            InvoiceLineCategory::STORAGE => 'Storage',
+            InvoiceLineCategory::ON_DEMAND => 'On Demand',
+            InvoiceLineCategory::RECEIVING => 'Receiving',
+            InvoiceLineCategory::CREDITS => 'Credits',
+            InvoiceLineCategory::OTHER => 'Other',
+            default => $value,
+        };
     }
 
     /**

@@ -9,6 +9,7 @@ use App\Models\InvoiceItem;
 use App\Models\Permission;
 use App\Models\User;
 use App\Support\Billing\CustomBillLineType;
+use App\Support\Billing\InvoiceLineCategory;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Laravel\Sanctum\Sanctum;
 use Tests\TestCase;
@@ -101,7 +102,7 @@ class CustomBillApiTest extends TestCase
             'bill_date' => now()->toDateString(),
             'items' => [
                 [
-                    'line_type' => CustomBillLineType::ADMIN,
+                    'line_type' => InvoiceLineCategory::AD_HOC,
                     'name' => 'Setup fee',
                     'quantity' => 1,
                     'unit_price' => 25.00,
@@ -129,7 +130,7 @@ class CustomBillApiTest extends TestCase
         $billId = (int) $create->json('id');
 
         $this->postJson("/api/custom-bills/{$billId}/items", [
-            'line_type' => CustomBillLineType::OTHER,
+            'line_type' => InvoiceLineCategory::OTHER,
             'name' => 'Line A',
             'quantity' => 2,
             'unit_price' => 10.00,
@@ -138,7 +139,7 @@ class CustomBillApiTest extends TestCase
         $itemId = (int) collect($this->getJson("/api/custom-bills/{$billId}")->json('items'))->first()['id'];
 
         $this->putJson("/api/custom-bills/{$billId}/items/{$itemId}", [
-            'line_type' => CustomBillLineType::OTHER,
+            'line_type' => InvoiceLineCategory::OTHER,
             'name' => 'Line A updated',
             'quantity' => 1,
             'unit_price' => 15.00,
@@ -182,7 +183,7 @@ class CustomBillApiTest extends TestCase
             'bill_date' => now()->toDateString(),
             'items' => [
                 [
-                    'line_type' => CustomBillLineType::POSTAGE,
+                    'line_type' => InvoiceLineCategory::POSTAGE,
                     'name' => 'Postage charge',
                     'quantity' => 1,
                     'unit_price' => 12.50,
@@ -226,7 +227,7 @@ class CustomBillApiTest extends TestCase
             'bill_date' => now()->toDateString(),
             'items' => [
                 [
-                    'line_type' => CustomBillLineType::ADMIN,
+                    'line_type' => InvoiceLineCategory::AD_HOC,
                     'name' => 'Fee',
                     'quantity' => 1,
                     'unit_price' => 5,
@@ -291,7 +292,7 @@ class CustomBillApiTest extends TestCase
             'bill_date' => now()->toDateString(),
             'items' => [
                 [
-                    'line_type' => CustomBillLineType::OTHER,
+                    'line_type' => InvoiceLineCategory::OTHER,
                     'name' => 'Misc',
                     'quantity' => 1,
                     'unit_price' => 8,

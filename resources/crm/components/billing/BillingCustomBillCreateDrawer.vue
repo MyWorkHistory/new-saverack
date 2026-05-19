@@ -3,19 +3,11 @@ import { reactive, ref, watch } from "vue";
 import { useRouter } from "vue-router";
 import api from "../../services/api";
 import CrmSearchableSelect from "../common/CrmSearchableSelect.vue";
-
-const LINE_TYPES = [
-  "Fulfillment Service",
-  "Packaging",
-  "Storage",
-  "Postage",
-  "New Packaging",
-  "Packaging Material",
-  "Product",
-  "Admin",
-  "Other",
-  "Credit",
-];
+import {
+  DEFAULT_INVOICE_CATEGORY,
+  INVOICE_CATEGORY_OPTIONS,
+  invoiceCategoryLabel,
+} from "../../constants/invoiceCategoryOptions.js";
 
 const props = defineProps({
   open: { type: Boolean, default: false },
@@ -34,7 +26,7 @@ const form = reactive({
 });
 
 const lineDraft = reactive({
-  line_type: LINE_TYPES[0],
+  line_type: DEFAULT_INVOICE_CATEGORY,
   name: "",
   quantity: "1",
   unit_price: "0.00",
@@ -52,7 +44,7 @@ function localDateYmd() {
 }
 
 function resetLineDraft() {
-  lineDraft.line_type = LINE_TYPES[0];
+  lineDraft.line_type = DEFAULT_INVOICE_CATEGORY;
   lineDraft.name = "";
   lineDraft.quantity = "1";
   lineDraft.unit_price = "0.00";
@@ -84,6 +76,10 @@ function onBackdropClick() {
 }
 
 function addLine() {
+  if (!lineDraft.line_type) {
+    errorMsg.value = "Select a category.";
+    return;
+  }
   const name = String(lineDraft.name || "").trim();
   if (!name) {
     errorMsg.value = "Enter a name for the line item.";
@@ -237,15 +233,21 @@ async function submit() {
 
                 <div class="border rounded p-3 mb-3 bg-light-subtle">
                   <h3 class="h6 fw-semibold mb-3">Add Line Item</h3>
-                  <label class="form-label" for="cb-line-type">Type</label>
+                  <label class="form-label" for="cb-line-category">Category</label>
                   <select
-                    id="cb-line-type"
+                    id="cb-line-category"
                     v-model="lineDraft.line_type"
                     class="form-select mb-2"
                     :disabled="saving"
+                    required
                   >
-                    <option v-for="t in LINE_TYPES" :key="t" :value="t">
-                      {{ t }}
+                    <option value="">Select category</option>
+                    <option
+                      v-for="opt in INVOICE_CATEGORY_OPTIONS"
+                      :key="opt.value"
+                      :value="opt.value"
+                    >
+                      {{ opt.label }}
                     </option>
                   </select>
 
@@ -313,7 +315,7 @@ async function submit() {
                       class="list-group-item d-flex justify-content-between align-items-start gap-2 small"
                     >
                       <div class="min-w-0">
-                        <div class="fw-medium">{{ line.line_type }}</div>
+                        <div class="fw-medium">{{ invoiceCategoryLabel(line.line_type) }}</div>
                         <div class="text-secondary text-truncate">{{ line.name }}</div>
                         <div class="text-secondary">
                           Qty {{ line.quantity }} × ${{ Number(line.unit_price).toFixed(2) }}

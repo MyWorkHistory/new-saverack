@@ -18,7 +18,7 @@ class InvoiceAddItemRequest extends FormRequest
         return [
             'description' => ['required', 'string', 'max:65535'],
             'display_name' => ['nullable', 'string', 'max:512'],
-            'category' => ['nullable', 'string', Rule::in(InvoiceLineCategory::all())],
+            'category' => ['nullable', 'string', Rule::in(InvoiceLineCategory::staffUiValues())],
             'subtype' => ['nullable', 'string', 'max:64'],
             'group_key' => ['nullable', 'string', 'max:255'],
             'sku' => ['nullable', 'string', 'max:128'],

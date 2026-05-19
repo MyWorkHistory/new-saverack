@@ -330,12 +330,12 @@ GQL;
     }
 
     /**
-     * Out-of-stock must always use live ShipHero data (available/backorder). The local index is
-     * built from general inventory browsing and is not reliable for OOS on first page load.
+     * Use the local index whenever we are not actively rebuilding it via refresh=1.
+     * OOS rows are filtered from the index (backorder / on_hand vs allocated); live scan is fallback when index is empty.
      */
     private function inventoryListUseIndex(bool $refresh, bool $backorderOnly): bool
     {
-        return ! $refresh && ! $backorderOnly;
+        return ! $refresh;
     }
 
     private function clearInventoryIndexForAccount(?int $clientAccountId, ?string $customerAccountId): void

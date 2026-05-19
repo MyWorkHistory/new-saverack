@@ -187,6 +187,7 @@ query ShipHeroOrders(
             country
           }
           shipping_lines {
+            title
             carrier
             method
           }
@@ -1502,6 +1503,7 @@ GQL;
             'country' => (string) ($shippingAddress['country'] ?? ''),
             'shipping_carrier' => (string) ($shippingLine['carrier'] ?? ''),
             'method' => (string) ($shippingLine['method'] ?? ''),
+            'shipping_method_title' => trim((string) ($shippingLine['title'] ?? '')),
             'email' => (string) ($node['email'] ?? ''),
         ];
     }

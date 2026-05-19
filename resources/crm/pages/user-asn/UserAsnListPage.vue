@@ -176,14 +176,6 @@ function printPackingSlipForRow(row) {
   window.open(href, "_blank", "noopener,noreferrer");
 }
 
-function printSelectedPackingSlips() {
-  const picked = rows.value.filter((r) => selected.value.has(r.id));
-  if (!picked.length) return;
-  for (const row of picked) {
-    printPackingSlipForRow(row);
-  }
-}
-
 async function confirmBulkDelete() {
   if (!clientAccountId.value || selectedDeletableIds.value.length === 0) return;
   bulkDeleteBusy.value = true;
@@ -345,13 +337,6 @@ onUnmounted(() => {
         class="staff-bulk-selection-bar d-flex flex-wrap align-items-center gap-2 gap-md-3 px-3 px-md-4 py-3"
       >
         <span class="small staff-bulk-selection-bar__count me-md-1">{{ selectedCount }} selected</span>
-        <button
-          type="button"
-          class="btn btn-sm staff-page-primary orders-bulk-toolbar-btn"
-          @click="printSelectedPackingSlips"
-        >
-          Print Packing Slip
-        </button>
         <button
           type="button"
           class="btn btn-outline-danger btn-sm orders-bulk-toolbar-btn orders-toolbar-outline-btn orders-toolbar-outline-btn--danger"

@@ -10,6 +10,11 @@ import { setCrmPageMeta } from "../../composables/useCrmPageMeta.js";
 import { useToast } from "../../composables/useToast.js";
 import { crmIsPortalUser } from "../../utils/crmUser";
 import { canWriteShipHeroOrders } from "../../utils/crmShipHeroOrders";
+import {
+  carrierForApi,
+  formatCarrierLabel,
+  formatCurrentShippingMethod,
+} from "../../utils/orderShippingDisplay.js";
 
 const crmUser = inject("crmUser", ref(null));
 const route = useRoute();
@@ -115,6 +120,16 @@ function carrierPresetKey(carrier) {
   return String(carrier || "").trim().toLowerCase();
 }
 
+function resolveCarrierPreset(carrier) {
+  const raw = String(carrier || "").trim();
+  if (!raw) return "";
+  const key = carrierPresetKey(raw);
+  for (const p of CARRIER_PRESETS) {
+    if (carrierPresetKey(p) === key) return p;
+  }
+  return formatCarrierLabel(raw) || raw;
+}
+
 const orderId = computed(() => String(route.params.shipheroOrderId || ""));
 
 const isPortalUser = computed(() => crmIsPortalUser(crmUser.value));
@@ -175,15 +190,53 @@ const detailOnlyOperatorHold = computed(() => {
   return !(h.fraud_hold || h.address_hold || h.payment_hold || h.client_hold || h.shipping_method_hold);
 });
 
-const orderHeaderBadgeLabel = computed(() => {
-  if (showNotReadyToShipBanner.value) return "Not Ready To Ship";
-  if (showBackorderHeaderBadge.value) return "Backorder";
-  const normalized = String(order.value?.status || "").trim();
-  if (normalized) return normalized;
-  const rawFulfillment = String(order.value?.raw_fulfillment_status || "").trim();
-  if (rawFulfillment) return rawFulfillment;
-  return "—";
+const orderIsShipped = computed(() => {
+  const o = order.value;
+  if (!o) return false;
+  const s = String(o.status || o.raw_fulfillment_status || "")
+    .toLowerCase()
+    .trim();
+  if (!s) return false;
+  if (s.includes("cancel")) return false;
+  return (
+    s === "shipped" ||
+    s === "fulfilled" ||
+    s === "complete" ||
+    s.startsWith("shipped") ||
+    s.includes("fulfilled")
+  );
 });
+
+const orderIsReadyToShip = computed(() => {
+  const o = order.value;
+  if (!o || showNotReadyToShipBanner.value || showBackorderHeaderBadge.value || orderIsShipped.value) {
+    return false;
+  }
+  const s = String(o.status || o.raw_fulfillment_status || "")
+    .toLowerCase()
+    .trim();
+  if (s.includes("cancel")) return false;
+  if (s.includes("hold")) return false;
+  return (
+    s === "" ||
+    s.includes("unfulfilled") ||
+    s.includes("await") ||
+    s.includes("pending") ||
+    s.includes("ready") ||
+    s.includes("open") ||
+    s.includes("incomplete")
+  );
+});
+
+const orderHeaderBadgeLabel = computed(() => {
+  if (showNotReadyToShipBanner.value) return "On Hold";
+  if (showBackorderHeaderBadge.value) return "Backorder";
+  if (orderIsShipped.value) return "Shipped";
+  if (orderIsReadyToShip.value) return "Ready to Ship";
+  return "";
+});
+
+const showOrderHeaderBadge = computed(() => orderHeaderBadgeLabel.value !== "");
 
 const orderHeaderBadgeClass = computed(() => {
   if (showNotReadyToShipBanner.value) {
@@ -192,7 +245,13 @@ const orderHeaderBadgeClass = computed(() => {
   if (showBackorderHeaderBadge.value) {
     return "badge rounded-pill fw-medium text-danger-emphasis bg-danger-subtle";
   }
-  return `badge rounded-pill fw-medium ${statusClass.value}`;
+  if (orderIsShipped.value) {
+    return "badge rounded-pill fw-medium text-success-emphasis bg-success-subtle";
+  }
+  if (orderIsReadyToShip.value) {
+    return "badge rounded-pill fw-medium text-primary-emphasis bg-primary-subtle";
+  }
+  return "badge rounded-pill fw-medium";
 });
 
 const orderHasBackorderLines = computed(() => {
@@ -291,10 +350,27 @@ const shippingAddressDisplayCaps = computed(() => {
   return t.toUpperCase();
 });
 
+const currentShippingMethodDisplay = computed(() => {
+  const o = order.value;
+  if (!o) return "—";
+  return formatCurrentShippingMethod(
+    o.shipping_carrier,
+    o.method,
+    o.shipping_line?.title,
+  );
+});
+
 const carrierSelectOptions = computed(() => {
+  const labels = new Map();
+  for (const p of CARRIER_PRESETS) {
+    labels.set(carrierPresetKey(p), p);
+  }
   const cur = String(carrierField.value || "").trim();
-  const set = new Set(["", ...CARRIER_PRESETS, cur]);
-  return Array.from(set);
+  const curKey = carrierPresetKey(cur);
+  if (curKey && !labels.has(curKey)) {
+    labels.set(curKey, resolveCarrierPreset(cur));
+  }
+  return ["", ...labels.values()];
 });
 
 const methodSelectOptions = computed(() => {
@@ -674,7 +750,7 @@ watch(
     giftNoteLocal.value = String(o.gift_note ?? "");
     packingNoteLocal.value = o.packing_note != null ? String(o.packing_note) : "";
     tagsLocal.value = Array.isArray(o.tags) ? [...o.tags] : [];
-    carrierField.value = String(o.shipping_carrier || "");
+    carrierField.value = resolveCarrierPreset(o.shipping_carrier);
     methodField.value = String(o.method || "");
   },
   { immediate: true, deep: true },
@@ -728,7 +804,7 @@ async function saveShippingLines() {
   try {
     await api.post(`/orders/${encodeURIComponent(orderId.value)}/shipping-lines`, {
       client_account_id: Number(selectedAccountId.value),
-      carrier: carrierField.value,
+      carrier: carrierForApi(carrierField.value),
       method: methodField.value,
     });
     toast.success("Shipping carrier and method updated.");
@@ -1198,9 +1274,13 @@ function goToOrdersList() {
             <div class="min-w-0">
               <div class="d-flex align-items-center flex-wrap gap-2">
                 <h1 class="h4 mb-0 fw-bold text-body">Order {{ headingOrderNumber }}</h1>
-                <span class="order-detail-page__status-pill" :class="orderHeaderBadgeClass">{{
-                  orderHeaderBadgeLabel
-                }}</span>
+                <span
+                  v-if="showOrderHeaderBadge"
+                  class="order-detail-page__status-pill"
+                  :class="orderHeaderBadgeClass"
+                >
+                  {{ orderHeaderBadgeLabel }}
+                </span>
               </div>
               <button
                 type="button"
@@ -1428,6 +1508,10 @@ function goToOrdersList() {
                 {{ shippingAddressDisplayCaps }}
               </div>
             </div>
+            <div class="mb-3 pb-3 border-bottom">
+              <div class="form-label small text-secondary mb-1">Current Shipping Method</div>
+              <div class="small fw-semibold text-body">{{ currentShippingMethodDisplay }}</div>
+            </div>
             <div class="mb-3">
               <label class="form-label small text-secondary mb-1" for="order-detail-carrier">Shipping Carrier</label>
               <select
@@ -1456,7 +1540,7 @@ function goToOrdersList() {
             </div>
             <button
               type="button"
-              class="btn btn-primary btn-sm"
+              class="btn btn-primary btn-sm staff-page-primary"
               :disabled="!canRunShipHeroActions || shippingLinesSaveBusy"
               @click="saveShippingLines"
             >

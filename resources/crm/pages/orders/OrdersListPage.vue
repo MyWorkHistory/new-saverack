@@ -10,6 +10,7 @@ import OrdersRemoveHoldsModal from "../../components/orders/OrdersRemoveHoldsMod
 import { setCrmPageMeta } from "../../composables/useCrmPageMeta.js";
 import { useToast } from "../../composables/useToast.js";
 import { canWriteShipHeroOrders } from "../../utils/crmShipHeroOrders";
+import { formatCurrentShippingMethod } from "../../utils/orderShippingDisplay.js";
 
 const props = defineProps({
   /** When true, hide account picker and link orders to portal detail route. */
@@ -98,7 +99,7 @@ const tabTitle = computed(() => {
 const showManageFilters = computed(() => true);
 const isCustomDate = computed(() => query.datePreset === "custom");
 
-const tableColspan = computed(() => 10);
+const tableColspan = computed(() => 9);
 
 const displayedRows = computed(() => {
   return rows.value;
@@ -577,8 +578,7 @@ function exportRowsToCsv(rowList) {
     "Order Date",
     "Account",
     "Country",
-    "Shipping Carrier",
-    "Method",
+    "Current Shipping Method",
     "Email",
   ];
   const lines = [headers.join(",")];
@@ -592,8 +592,9 @@ function exportRowsToCsv(rowList) {
         csvEscapeCell(formatDate(row.order_date)),
         csvEscapeCell(row.account || ""),
         csvEscapeCell(row.country || ""),
-        csvEscapeCell(row.shipping_carrier || ""),
-        csvEscapeCell(row.method || ""),
+        csvEscapeCell(
+          formatCurrentShippingMethod(row.shipping_carrier, row.method, row.shipping_method_title),
+        ),
         csvEscapeCell(row.email || ""),
       ].join(","),
     );
@@ -1394,8 +1395,7 @@ onUnmounted(() => {
               <th class="staff-table-head__th">Order Date</th>
               <th class="staff-table-head__th">Account</th>
               <th class="staff-table-head__th">Country</th>
-              <th class="staff-table-head__th">Shipping Carrier</th>
-              <th class="staff-table-head__th">Method</th>
+              <th class="staff-table-head__th">Current Shipping Method</th>
               <th class="staff-table-head__th text-center">Action</th>
             </tr>
           </thead>
@@ -1445,8 +1445,15 @@ onUnmounted(() => {
               <td>{{ formatDate(row.order_date) }}</td>
               <td>{{ row.account || "—" }}</td>
               <td>{{ row.country || "—" }}</td>
-              <td>{{ row.shipping_carrier || "—" }}</td>
-              <td>{{ row.method || "—" }}</td>
+              <td>
+                {{
+                  formatCurrentShippingMethod(
+                    row.shipping_carrier,
+                    row.method,
+                    row.shipping_method_title,
+                  )
+                }}
+              </td>
               <td class="text-center">
                 <div data-row-actions class="staff-actions-inner staff-actions-inner--single justify-content-center">
                   <button

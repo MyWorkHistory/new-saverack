@@ -111,4 +111,56 @@ class ShipHeroInventoryRefreshTest extends TestCase
             'on_hand' => 6,
         ]);
     }
+
+    public function test_backorder_only_list_reads_from_index_with_quantities(): void
+    {
+        $account = ClientAccount::query()->create([
+            'company_name' => 'OOS Index Co',
+            'status' => ClientAccount::STATUS_ACTIVE,
+            'shiphero_customer_account_id' => 'sh-oos-idx-1',
+        ]);
+
+        ShipHeroInventoryProductIndex::query()->create([
+            'client_account_id' => $account->id,
+            'shiphero_customer_account_id' => 'sh-oos-idx-1',
+            'shiphero_product_id' => 'prod-oos-1',
+            'sku' => 'OOS-SKU',
+            'sku_search' => 'oos-sku',
+            'name' => 'OOS product',
+            'name_search' => 'oos product',
+            'product_active' => true,
+            'kit' => false,
+            'kit_build' => false,
+            'warehouse_id' => 'WH1',
+            'warehouse_active' => true,
+            'on_hand' => 2,
+            'allocated' => 5,
+            'backorder' => 3,
+            'synced_at' => now(),
+        ]);
+
+        $client = Mockery::mock(ShipHeroClient::class);
+        $client->shouldNotReceive('query');
+
+        $service = new ShipHeroInventoryService($client);
+        $payload = $service->listInventoryRows(
+            'sh-oos-idx-1',
+            50,
+            null,
+            'all',
+            'active',
+            null,
+            0,
+            $account->id,
+            true,
+            false
+        );
+
+        $this->assertCount(1, $payload['rows']);
+        $row = $payload['rows'][0];
+        $this->assertSame('OOS-SKU', $row['sku'] ?? null);
+        $this->assertSame(2.0, (float) ($row['on_hand'] ?? 0));
+        $this->assertSame(5.0, (float) ($row['allocated'] ?? 0));
+        $this->assertSame(3.0, (float) ($row['backorder'] ?? 0));
+    }
 }

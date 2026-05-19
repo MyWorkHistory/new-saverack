@@ -299,10 +299,6 @@ async function refreshRows() {
     await fetchPage(false, true);
     await continueRefreshSync(refreshId);
     if (refreshId !== refreshRunSeq) return;
-    pageInfo.value = { has_next_page: false, end_cursor: null };
-    rows.value = [];
-    searchSkipNext.value = 0;
-    await fetchPage(false, false);
     toast.success("Inventory refreshed from ShipHero.");
   } catch (e) {
     rows.value = previousRows;

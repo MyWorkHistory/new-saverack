@@ -497,12 +497,41 @@ onUnmounted(() => {
 
 <template>
   <div class="staff-page staff-page--wide">
-    <div class="mb-4">
-      <h1 class="h4 mb-1 fw-semibold text-body">Products</h1>
-      <p class="text-secondary small mb-1">Out of Stock</p>
-      <p class="text-secondary small mb-0 user-inv-load-hint">
-        Showing out-of-stock and oversold rows (no sellable available or backorder) in batches of {{ LIST_PAGE_SIZE }}.
-      </p>
+    <div
+      class="d-flex flex-column flex-md-row align-items-start align-items-md-center gap-3 mb-4"
+    >
+      <div class="min-w-0 flex-grow-1">
+        <h1 class="h4 mb-1 fw-semibold text-body">Products</h1>
+        <p class="text-secondary small mb-1">Out of Stock</p>
+        <p class="text-secondary small mb-0 user-inv-load-hint">
+          Showing out-of-stock and oversold rows (no sellable available or backorder) in batches of {{ LIST_PAGE_SIZE }}.
+        </p>
+      </div>
+      <button
+        type="button"
+        class="btn btn-outline-secondary btn-sm d-inline-flex align-items-center gap-2 ms-md-auto flex-shrink-0"
+        :disabled="loading || loadingMore || refreshing"
+        title="Refresh"
+        aria-label="Refresh out-of-stock inventory from ShipHero"
+        @click="refreshRows"
+      >
+        <svg
+          width="18"
+          height="18"
+          fill="none"
+          stroke="currentColor"
+          viewBox="0 0 24 24"
+          aria-hidden="true"
+        >
+          <path
+            stroke-linecap="round"
+            stroke-linejoin="round"
+            stroke-width="2"
+            d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"
+          />
+        </svg>
+        {{ refreshing ? "Refreshing…" : "Refresh" }}
+      </button>
     </div>
 
     <div class="staff-table-card staff-datatable-card staff-datatable-card--white w-100">
@@ -541,13 +570,12 @@ onUnmounted(() => {
               </button>
             </div>
           </div>
-          <div class="ms-md-auto d-flex flex-wrap align-items-end gap-2">
           <div class="position-relative flex-shrink-0" data-toolbar-filter>
             <button
               type="button"
               class="btn btn-outline-secondary staff-toolbar-btn orders-toolbar-outline-btn d-inline-flex align-items-center gap-2"
               :aria-expanded="filterMenuOpen"
-              :disabled="loading || refreshing"
+              :disabled="loading"
               @click.stop="filterMenuOpen = !filterMenuOpen"
             >
               <svg
@@ -604,15 +632,6 @@ onUnmounted(() => {
                 <button type="button" class="btn btn-primary btn-sm w-100" @click="applyFilters">Apply</button>
               </div>
             </div>
-          </div>
-          <button
-            type="button"
-            class="btn btn-outline-secondary staff-toolbar-btn orders-toolbar-outline-btn flex-shrink-0"
-            :disabled="loading || loadingMore || refreshing"
-            @click="refreshRows"
-          >
-            {{ refreshing ? "Refreshing…" : "Refresh" }}
-          </button>
           </div>
         </div>
       </div>

@@ -6,6 +6,7 @@ use App\Models\ClientAccount;
 use App\Models\ClientAccountAsn;
 use App\Models\ClientAccountOnDemandProduct;
 use App\Models\ClientStore;
+use App\Models\CustomBill;
 use App\Models\Invoice;
 use App\Models\Task;
 use App\Models\Ticket;
@@ -35,6 +36,7 @@ class AuthServiceProvider extends ServiceProvider
         ClientAccountOnDemandProduct::class => ClientAccountOnDemandProductPolicy::class,
         ClientStore::class => ClientStorePolicy::class,
         Invoice::class => InvoicePolicy::class,
+        CustomBill::class => CustomBillPolicy::class,
         Ticket::class => TicketPolicy::class,
         Task::class => TaskPolicy::class,
     ];

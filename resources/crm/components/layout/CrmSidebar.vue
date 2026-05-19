@@ -96,6 +96,9 @@ function navActive(mode) {
   if (mode === "inventory") return p.startsWith("/admin/inventory");
   if (mode === "inventory-search") return p === "/admin/inventory";
   if (mode === "inventory-on-demand") return p.startsWith("/admin/inventory/on-demand");
+  if (mode === "billing-summary") return p === "/admin/billing/summary";
+  if (mode === "billing-invoices") return p.startsWith("/admin/billing/invoices");
+  if (mode === "billing-custom-bills") return p.startsWith("/admin/billing/custom-bills");
   return false;
 }
 
@@ -356,6 +359,16 @@ function collapseNav() {
                     @click="closeMobile"
                   >
                     Invoices
+                  </RouterLink>
+                </li>
+                <li>
+                  <RouterLink
+                    to="/admin/billing/custom-bills"
+                    class="vx-nav-link vx-nav-sublink"
+                    :class="{ 'vx-nav-link--active': navActive('billing-custom-bills') }"
+                    @click="closeMobile"
+                  >
+                    Custom Bills
                   </RouterLink>
                 </li>
               </ul>

@@ -3,6 +3,7 @@
 use App\Http\Controllers\Api\AsnController;
 use App\Http\Controllers\Api\AuthController;
 use App\Http\Controllers\Api\BillingSummaryController;
+use App\Http\Controllers\Api\CustomBillController;
 use App\Http\Controllers\Api\ClientAccountController;
 use App\Http\Controllers\Api\ClientAccountUserController;
 use App\Http\Controllers\Api\ClientStoreController;
@@ -41,6 +42,20 @@ Route::middleware('auth:sanctum')->group(function () {
 
     Route::get('/billing/summary', BillingSummaryController::class)
         ->name('billing.summary');
+
+    Route::prefix('custom-bills')->group(function () {
+        Route::get('/', [CustomBillController::class, 'index']);
+        Route::post('/', [CustomBillController::class, 'store']);
+        Route::get('/{customBill}', [CustomBillController::class, 'show']);
+        Route::patch('/{customBill}', [CustomBillController::class, 'update']);
+        Route::delete('/{customBill}', [CustomBillController::class, 'destroy']);
+        Route::patch('/{customBill}/status', [CustomBillController::class, 'updateStatus']);
+        Route::get('/{customBill}/draft-invoices', [CustomBillController::class, 'draftInvoices']);
+        Route::post('/{customBill}/add-to-invoice', [CustomBillController::class, 'addToInvoice']);
+        Route::post('/{customBill}/items', [CustomBillController::class, 'storeItem']);
+        Route::put('/{customBill}/items/{item}', [CustomBillController::class, 'updateItem']);
+        Route::delete('/{customBill}/items/{item}', [CustomBillController::class, 'destroyItem']);
+    });
 
     Route::prefix('inventory')->group(function () {
         Route::get('/client-account-options', [InventoryController::class, 'clientAccountOptions'])

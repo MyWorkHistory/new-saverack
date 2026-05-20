@@ -7,11 +7,7 @@ use App\Models\ClientAccount;
 use App\Models\ClientAccountOnDemandProduct;
 use App\Services\ShipHeroClient;
 use App\Services\ShipHeroInventoryService;
-use App\Services\ShipHeroOrderService;
-use App\Support\Code128Barcode;
-use Barryvdh\DomPDF\Facade\Pdf;
 use GuzzleHttp\Client;
-use Symfony\Component\HttpFoundation\Response;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Cache;
@@ -25,18 +21,12 @@ class InventoryController extends Controller
 {
     /** @var ShipHeroInventoryService */
     protected $inventory;
-    /** @var ShipHeroOrderService */
-    protected $orders;
     /** @var ShipHeroClient */
     protected $shipHeroClient;
 
-    public function __construct(
-        ShipHeroInventoryService $inventory,
-        ShipHeroOrderService $orders,
-        ShipHeroClient $shipHeroClient
-    ) {
+    public function __construct(ShipHeroInventoryService $inventory, ShipHeroClient $shipHeroClient)
+    {
         $this->inventory = $inventory;
-        $this->orders = $orders;
         $this->shipHeroClient = $shipHeroClient;
     }
 
@@ -262,97 +252,6 @@ class InventoryController extends Controller
                 'message' => config('app.debug')
                     ? $e->getMessage()
                     : 'Could not reach ShipHero. Check SHIPHERO_* in .env and server logs.',
-            ], 502);
-        }
-    }
-
-    public function productAllocatedOrders(Request $request, string $sku): JsonResponse
-    {
-        return $this->productOrdersBySku($request, $sku, 'allocated');
-    }
-
-    public function productBackorderOrders(Request $request, string $sku): JsonResponse
-    {
-        return $this->productOrdersBySku($request, $sku, 'backorder');
-    }
-
-    public function productBarcodeLabelPdf(Request $request, string $sku): Response
-    {
-        $validated = $request->validate([
-            'client_account_id' => ['required', 'integer', 'exists:client_accounts,id'],
-            'warehouse_id' => ['nullable', 'string', 'max:255'],
-        ]);
-        $clientAccountId = (int) $validated['client_account_id'];
-        $warehouseId = isset($validated['warehouse_id']) && is_string($validated['warehouse_id']) && $validated['warehouse_id'] !== ''
-            ? $validated['warehouse_id']
-            : null;
-
-        try {
-            $shipheroCustomerId = $this->resolveShipHeroCustomerAccountId($clientAccountId, $request);
-            $product = $this->inventory->getProductDetailBySku($sku, $warehouseId, $shipheroCustomerId);
-            if (! is_array($product)) {
-                return response()->json(['message' => 'Product not found.'], 404);
-            }
-            $barcode = trim((string) ($product['barcode'] ?? ''));
-            if ($barcode === '') {
-                return response()->json(['message' => 'No barcode on file for this SKU in ShipHero.'], 422);
-            }
-
-            $pdf = Pdf::loadView('pdf.inventory.barcode', [
-                'sku' => (string) ($product['sku'] ?? $sku),
-                'name' => (string) ($product['name'] ?? ''),
-                'barcode' => $barcode,
-                'barcodeSvg' => Code128Barcode::svgDataUri($barcode),
-            ])->setPaper([0, 0, 288, 144]);
-
-            $safeSku = preg_replace('/[^A-Za-z0-9_-]+/', '-', trim($sku));
-            $safeSku = trim((string) $safeSku, '-') ?: 'product';
-
-            return $pdf->stream($safeSku.'-barcode-label.pdf');
-        } catch (ValidationException $e) {
-            throw $e;
-        } catch (RuntimeException $e) {
-            return response()->json(['message' => $e->getMessage()], 502);
-        } catch (Throwable $e) {
-            report($e);
-
-            return response()->json([
-                'message' => config('app.debug')
-                    ? $e->getMessage()
-                    : 'Could not generate barcode label.',
-            ], 502);
-        }
-    }
-
-    /**
-     * @param  'allocated'|'backorder'  $mode
-     */
-    private function productOrdersBySku(Request $request, string $sku, string $mode): JsonResponse
-    {
-        $validated = $request->validate([
-            'client_account_id' => ['required', 'integer', 'exists:client_accounts,id'],
-        ]);
-        $clientAccountId = (int) $validated['client_account_id'];
-
-        try {
-            $shipheroCustomerId = $this->resolveShipHeroCustomerAccountId($clientAccountId, $request);
-            $payload = $this->orders->listOrdersForProductSku($shipheroCustomerId, $sku, $mode);
-
-            return response()->json([
-                'rows' => $payload['rows'],
-                'truncated' => (bool) ($payload['truncated'] ?? false),
-            ]);
-        } catch (ValidationException $e) {
-            throw $e;
-        } catch (RuntimeException $e) {
-            return response()->json(['message' => $e->getMessage()], 502);
-        } catch (Throwable $e) {
-            report($e);
-
-            return response()->json([
-                'message' => config('app.debug')
-                    ? $e->getMessage()
-                    : 'Could not load orders from ShipHero.',
             ], 502);
         }
     }

@@ -68,7 +68,6 @@ const payNotes = ref("");
 const payBusy = ref(false);
 const payContextBusy = ref(false);
 const payFundsCents = ref(0);
-const accountAvailableFundsCents = ref(0);
 const payOpenBalanceCents = ref(0);
 const payPendingBalanceCents = ref(0);
 const payRows = ref([]);
@@ -1574,12 +1573,9 @@ async function loadPayContext(options = {}) {
   if (!invoice.value?.id) return null;
   const includeRows = options.includeRows === true;
   const { data } = await api.get(`/invoices/${invoice.value.id}/pay-context`);
-  const availableFunds = Number(data?.available_funds_cents || 0);
-  accountAvailableFundsCents.value = availableFunds;
   payOpenBalanceCents.value = Number(data?.open_balance_cents || 0);
   payPendingBalanceCents.value = Number(data?.pending_balance_cents || 0);
   if (includeRows) {
-    payFundsCents.value = availableFunds;
     payRows.value = Array.isArray(data?.rows) ? data.rows : [];
   }
   return data;
@@ -1587,7 +1583,6 @@ async function loadPayContext(options = {}) {
 
 async function loadAccountBalanceSummary() {
   if (!invoice.value?.id || !canUpdate.value || invoice.value.status === "void") {
-    accountAvailableFundsCents.value = 0;
     payOpenBalanceCents.value = 0;
     payPendingBalanceCents.value = 0;
     return;
@@ -1596,7 +1591,6 @@ async function loadAccountBalanceSummary() {
   try {
     await loadPayContext();
   } catch {
-    accountAvailableFundsCents.value = 0;
     payOpenBalanceCents.value = 0;
     payPendingBalanceCents.value = 0;
   } finally {
@@ -1797,12 +1791,12 @@ function goToInvoiceBucket(bucket) {
 }
 
 async function openPayModal() {
-  if (!invoice.value || !canUpdate.value || currentStatusKey.value === "void") return;
-  if (!payInvoiceEnabled.value && accountAvailableFundsCents.value <= 0) return;
+  if (!invoice.value || !payInvoiceEnabled.value) return;
   payAmount.value = "";
   payType.value = String(invoice.value.client_account_default_payment_type || "");
   payDate.value = new Date().toISOString().slice(0, 10);
   payNotes.value = "";
+  payFundsCents.value = 0;
   payOpenBalanceCents.value = 0;
   payPendingBalanceCents.value = 0;
   payRows.value = [];
@@ -2689,31 +2683,9 @@ function onDocKeydown(e) {
                   class="staff-stat-card__icon bg-secondary-subtle text-secondary"
                   aria-hidden="true"
                 >
-                  <svg fill="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+                  <svg width="22" height="22" fill="currentColor" viewBox="0 0 24 24">
                     <path
                       d="M14 2H6c-1.1 0-1.99.9-1.99 2L4 20c0 1.1.89 2 1.99 2H18c1.1 0 2-.9 2-2V8l-6-6zm2 16H8v-2h8v2zm0-4H8v-2h8v2zm-3-5V3.5L18.5 9H13z"
-                    />
-                  </svg>
-                </div>
-              </button>
-              <button
-                type="button"
-                class="staff-stat-card billing-inv-summary-card h-100 text-start"
-                :disabled="accountBalanceLoading || !canUpdate || currentStatusKey === 'void'"
-                @click="openPayModal"
-              >
-                <p class="staff-stat-card__label">Available Balance</p>
-                <p class="staff-stat-card__value">
-                  {{ formatCents(accountAvailableFundsCents, invoice.currency) }}
-                </p>
-                <p class="staff-stat-card__sub">Unapplied payment credit</p>
-                <div
-                  class="staff-stat-card__icon bg-primary-subtle text-primary"
-                  aria-hidden="true"
-                >
-                  <svg fill="currentColor" viewBox="0 0 24 24" aria-hidden="true">
-                    <path
-                      d="M21 7.28V5c0-1.1-.9-2-2-2H5c-1.11 0-2 .9-2 2v14c0 1.1.89 2 2 2h14c1.1 0 2-.9 2-2v-2.28c.59-.35 1-.98 1-1.72 0-1.1-.9-2-2-2s-2 .9-2 2c0 .74.41 1.37 1 1.72V19H5V5h14v2.28c-.59.35-1 .98-1 1.72 0 1.1.9 2 2 2s2-.9 2-2c0-.74-.41-1.37-1-1.72zM16 13c-.55 0-1-.45-1-1s.45-1 1-1 1 .45 1 1-.45 1-1 1z"
                     />
                   </svg>
                 </div>
@@ -3503,7 +3475,7 @@ function onDocKeydown(e) {
                           <div class="billing-pay-stat__value">
                             {{ formatCents(payAvailableDisplayCents, invoice?.currency || 'USD') }}
                           </div>
-                          <div class="billing-pay-stat__label">Available Balance</div>
+                          <div class="billing-pay-stat__label">Available Funds</div>
                         </div>
                         <span class="billing-pay-stat__icon billing-pay-stat__icon--blue" aria-hidden="true">
                           <svg width="20" height="20" fill="currentColor" viewBox="0 0 24 24">
@@ -3836,28 +3808,14 @@ function onDocKeydown(e) {
   opacity: 0.75;
   cursor: not-allowed;
 }
-.billing-inv-summary-card .staff-stat-card__icon {
-  top: 50%;
-  right: 1.25rem;
-  transform: translateY(-50%);
-  width: 3.25rem;
-  height: 3.25rem;
-  border-radius: 0.5rem;
-  display: flex;
-  align-items: center;
-  justify-content: center;
+.billing-inv-summary-card .staff-stat-card__icon:not(.staff-stat-card__icon--money) {
+  width: 2.5rem;
+  height: 2.5rem;
+  border-radius: 0.4375rem;
 }
-.billing-inv-summary-card .staff-stat-card__icon svg {
-  width: 1.75rem;
-  height: 1.75rem;
-}
-.billing-inv-summary-card .staff-stat-card__icon--money {
-  width: 3.25rem;
-  height: 3.25rem;
-}
-.billing-inv-summary-card .staff-stat-card__icon--money svg {
-  width: 1.75rem;
-  height: 1.75rem;
+.billing-inv-summary-card .staff-stat-card__icon:not(.staff-stat-card__icon--money) svg {
+  width: 1.15rem;
+  height: 1.15rem;
 }
 .billing-group-edit-bulk-panel {
   border: 1px solid rgba(47, 43, 61, 0.1);
@@ -3992,15 +3950,10 @@ function onDocKeydown(e) {
     box-shadow 0.15s ease,
     opacity 0.15s ease;
 }
-.billing-pay-stat:hover:not(:disabled) {
+.billing-pay-stat:hover {
   transform: translateY(-1px);
   border-color: #b7bac8;
   box-shadow: 0 0.45rem 1rem rgba(47, 43, 61, 0.12);
-}
-.billing-pay-stat:disabled {
-  opacity: 0.75;
-  cursor: not-allowed;
-  transform: none;
 }
 .billing-pay-stat.is-active {
   border-color: #8f94a8;

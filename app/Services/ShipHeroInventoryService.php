@@ -2629,8 +2629,6 @@ GQL;
                 'backorder' => $backorder,
                 'asn' => 0,
             ],
-            'kit' => ($data['kit'] ?? false) === true,
-            'kit_build' => ($data['kit_build'] ?? false) === true,
             'kit_components' => $this->normalizeKitComponents($data['kit_components'] ?? null),
             'warehouses' => $warehousesOut,
         ];

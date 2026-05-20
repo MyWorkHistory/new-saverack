@@ -464,22 +464,36 @@ class CustomBillService
 
     private function staffCategoryLabel(string $value): string
     {
-        return match ($value) {
-            InvoiceLineCategory::FULFILLMENT => 'Fulfillment',
-            'amazon prep' => 'Amazon Prep',
-            InvoiceLineCategory::POSTAGE => 'Postage',
-            InvoiceLineCategory::PACKAGING => 'Packaging',
-            InvoiceLineCategory::RETURNS => 'Returns',
-            InvoiceLineCategory::AD_HOC => 'Ad Hoc',
-            'bank fee' => 'Bank Fee',
-            'duties & taxes' => 'Duties & Taxes',
-            InvoiceLineCategory::STORAGE => 'Storage',
-            InvoiceLineCategory::ON_DEMAND => 'On Demand',
-            InvoiceLineCategory::RECEIVING => 'Receiving',
-            InvoiceLineCategory::CREDITS => 'Credits',
-            InvoiceLineCategory::OTHER => 'Other',
-            default => $value,
-        };
+        switch ($value) {
+            case InvoiceLineCategory::FULFILLMENT:
+                return 'Fulfillment';
+            case 'amazon prep':
+                return 'Amazon Prep';
+            case InvoiceLineCategory::POSTAGE:
+                return 'Postage';
+            case InvoiceLineCategory::PACKAGING:
+                return 'Packaging';
+            case InvoiceLineCategory::RETURNS:
+                return 'Returns';
+            case InvoiceLineCategory::AD_HOC:
+                return 'Ad Hoc';
+            case 'bank fee':
+                return 'Bank Fee';
+            case 'duties & taxes':
+                return 'Duties & Taxes';
+            case InvoiceLineCategory::STORAGE:
+                return 'Storage';
+            case InvoiceLineCategory::ON_DEMAND:
+                return 'On Demand';
+            case InvoiceLineCategory::RECEIVING:
+                return 'Receiving';
+            case InvoiceLineCategory::CREDITS:
+                return 'Credits';
+            case InvoiceLineCategory::OTHER:
+                return 'Other';
+            default:
+                return $value;
+        }
     }
 
     /**

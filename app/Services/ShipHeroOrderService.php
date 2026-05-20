@@ -2630,5 +2630,150 @@ GQL;
 
         return $chosen;
     }
+
+    /**
+     * Orders with line items allocated to a SKU (lazy-loaded from product detail).
+     *
+     * @return array{rows: list<array<string, mixed>>, truncated: bool, message: ?string}
+     */
+    public function listOrdersAllocatedForSku(string $customerAccountId, string $sku): array
+    {
+        return $this->listOrdersForProductSku($customerAccountId, $sku, 'allocated');
+    }
+
+    /**
+     * Orders with backorder quantity for a SKU (lazy-loaded from product detail).
+     *
+     * @return array{rows: list<array<string, mixed>>, truncated: bool, message: ?string}
+     */
+    public function listOrdersBackorderForSku(string $customerAccountId, string $sku): array
+    {
+        return $this->listOrdersForProductSku($customerAccountId, $sku, 'backorder');
+    }
+
+    /**
+     * @param  'allocated'|'backorder'  $mode
+     * @return array{rows: list<array<string, mixed>>, truncated: bool, message: ?string}
+     */
+    private function listOrdersForProductSku(string $customerAccountId, string $sku, string $mode): array
+    {
+        $customer = trim($customerAccountId);
+        $skuNorm = mb_strtolower(trim($sku));
+        if ($customer === '' || $skuNorm === '') {
+            throw new RuntimeException('Customer account and SKU are required.');
+        }
+
+        $from = Carbon::now()->subDays(90)->startOfDay()->toIso8601String();
+        $to = Carbon::now()->endOfDay()->toIso8601String();
+
+        $baseFilters = [
+            'customer_account_id' => $customer,
+            'first' => 25,
+            'order_date_from' => $from,
+            'order_date_to' => $to,
+            'fulfillment_status' => 'unfulfilled',
+        ];
+
+        if ($mode === 'backorder') {
+            $baseFilters['tab'] = 'backorder';
+        } else {
+            $baseFilters['tab'] = 'manage';
+            $baseFilters['has_backorder'] = null;
+        }
+
+        $out = [];
+        $truncated = false;
+        $maxPages = 8;
+        $after = null;
+        $ordersScanned = 0;
+        $maxLineFetches = 40;
+
+        for ($page = 0; $page < $maxPages; $page++) {
+            $filters = $baseFilters;
+            $filters['after'] = $after;
+            $payload = $this->listOrders($filters);
+            $orderRows = is_array($payload['rows'] ?? null) ? $payload['rows'] : [];
+
+            foreach ($orderRows as $order) {
+                if (! is_array($order) || $ordersScanned >= $maxLineFetches) {
+                    $truncated = true;
+                    break 2;
+                }
+                $ordersScanned++;
+                $relayId = trim((string) ($order['id'] ?? ''));
+                if ($relayId === '') {
+                    continue;
+                }
+
+                try {
+                    $lines = $this->fetchOrderLineItems($customer, $relayId);
+                } catch (\Throwable $e) {
+                    Log::warning('shiphero.inventory.product_orders.line_items_failed', [
+                        'order_id' => $relayId,
+                        'sku' => $sku,
+                        'mode' => $mode,
+                        'message' => $e->getMessage(),
+                    ]);
+                    continue;
+                }
+
+                foreach ($lines as $line) {
+                    if (! is_array($line)) {
+                        continue;
+                    }
+                    $lineSku = mb_strtolower(trim((string) ($line['sku'] ?? '')));
+                    if ($lineSku !== $skuNorm) {
+                        continue;
+                    }
+
+                    $qty = 0.0;
+                    if ($mode === 'backorder') {
+                        $qty = (float) ($line['backorder_quantity'] ?? 0);
+                    } else {
+                        $qty = (float) ($line['quantity_allocated'] ?? 0);
+                    }
+                    if ($qty <= 0) {
+                        continue;
+                    }
+
+                    $out[] = [
+                        'order_id' => $relayId,
+                        'order_number' => (string) ($order['order_number'] ?? ''),
+                        'order_date' => (string) ($order['order_date'] ?? ''),
+                        'quantity' => $qty,
+                        'line_quantity' => (float) ($line['quantity'] ?? 0),
+                    ];
+                }
+            }
+
+            if ($ordersScanned >= $maxLineFetches) {
+                $truncated = true;
+                break;
+            }
+
+            if (! ($payload['pagination']['has_next_page'] ?? false)) {
+                break;
+            }
+            $next = $payload['pagination']['end_cursor'] ?? null;
+            if (! is_string($next) || $next === '') {
+                break;
+            }
+            if ($page === $maxPages - 1) {
+                $truncated = true;
+            }
+            $after = $next;
+        }
+
+        $message = null;
+        if ($truncated) {
+            $message = 'Showing matches from a limited set of recent orders. Load again later or open the order list for a full search.';
+        }
+
+        return [
+            'rows' => $out,
+            'truncated' => $truncated,
+            'message' => $message,
+        ];
+    }
 }
 

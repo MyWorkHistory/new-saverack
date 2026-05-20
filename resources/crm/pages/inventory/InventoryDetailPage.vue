@@ -1,11 +1,16 @@
 <script setup>
 import { computed, inject, onMounted, reactive, ref } from "vue";
-import { useRoute } from "vue-router";
+import { RouterLink, useRoute } from "vue-router";
 import api from "../../services/api";
 import CrmIconRowActions from "../../components/common/CrmIconRowActions.vue";
 import CrmLoadingSpinner from "../../components/common/CrmLoadingSpinner.vue";
 import { setCrmPageMeta } from "../../composables/useCrmPageMeta.js";
 import { useToast } from "../../composables/useToast.js";
+import { formatDateUs } from "../../utils/formatUserDates.js";
+import {
+  cubicFeetFromDimensions,
+  formatCubicFeetDisplay,
+} from "../../utils/cubicFeetFromDimensions.js";
 
 const route = useRoute();
 const toast = useToast();
@@ -54,6 +59,30 @@ const summaryMetrics = computed(() => product.value?.metrics || {
   available: 0,
   backorder: 0,
   asn: 0,
+});
+
+const allocatedOrders = ref([]);
+const backorderOrders = ref([]);
+const allocatedLoading = ref(false);
+const backorderLoading = ref(false);
+const allocatedLoaded = ref(false);
+const backorderLoaded = ref(false);
+const allocatedTruncatedMessage = ref("");
+const backorderTruncatedMessage = ref("");
+
+const portalCubicFeet = computed(() =>
+  cubicFeetFromDimensions(product.value?.dimensions),
+);
+
+const showKitSection = computed(() => {
+  const p = product.value;
+  if (!p) return false;
+  return Boolean(p.kit || p.kit_build);
+});
+
+const showKitComponents = computed(() => {
+  const list = product.value?.kit_components;
+  return Array.isArray(list) && list.length > 0;
 });
 
 const metricCards = computed(() => ([
@@ -140,9 +169,98 @@ function requestParams() {
   return params;
 }
 
+function formatOrderDate(val) {
+  if (!val) return "—";
+  return formatDateUs(val);
+}
+
+function portalOrderTo(orderId) {
+  return {
+    name: "user-order-detail",
+    params: { shipheroOrderId: String(orderId) },
+  };
+}
+
+async function openBarcodeLabelPdf() {
+  if (!product.value?.sku) return;
+  const params = requestParams();
+  const qs = new URLSearchParams();
+  if (params.client_account_id) {
+    qs.set("client_account_id", String(params.client_account_id));
+  }
+  const path = `/inventory/products/${encodeURIComponent(product.value.sku)}/barcode-label.pdf${
+    qs.toString() ? `?${qs.toString()}` : ""
+  }`;
+  try {
+    const { data } = await api.get(path, { responseType: "blob" });
+    const blob = new Blob([data], { type: "application/pdf" });
+    const url = window.URL.createObjectURL(blob);
+    window.open(url, "_blank", "noopener");
+    setTimeout(() => window.URL.revokeObjectURL(url), 30000);
+  } catch (e) {
+    toast.errorFrom(e, "Could not open barcode label PDF.");
+  }
+}
+
+async function loadAllocatedOrders() {
+  if (!product.value?.sku) return;
+  const params = requestParams();
+  if (!params.client_account_id) {
+    toast.error("Account is required to load allocated orders.");
+    return;
+  }
+  allocatedLoading.value = true;
+  allocatedTruncatedMessage.value = "";
+  try {
+    const sku = String(route.params.sku || product.value.sku).trim();
+    const { data } = await api.get(
+      `/inventory/products/${encodeURIComponent(sku)}/allocated-orders`,
+      { params },
+    );
+    allocatedOrders.value = Array.isArray(data?.rows) ? data.rows : [];
+    allocatedLoaded.value = true;
+    allocatedTruncatedMessage.value = data?.message ? String(data.message) : "";
+  } catch (e) {
+    toast.errorFrom(e, "Could not load allocated orders.");
+  } finally {
+    allocatedLoading.value = false;
+  }
+}
+
+async function loadBackorderOrders() {
+  if (!product.value?.sku) return;
+  const params = requestParams();
+  if (!params.client_account_id) {
+    toast.error("Account is required to load backorder orders.");
+    return;
+  }
+  backorderLoading.value = true;
+  backorderTruncatedMessage.value = "";
+  try {
+    const sku = String(route.params.sku || product.value.sku).trim();
+    const { data } = await api.get(
+      `/inventory/products/${encodeURIComponent(sku)}/backorder-orders`,
+      { params },
+    );
+    backorderOrders.value = Array.isArray(data?.rows) ? data.rows : [];
+    backorderLoaded.value = true;
+    backorderTruncatedMessage.value = data?.message ? String(data.message) : "";
+  } catch (e) {
+    toast.errorFrom(e, "Could not load backorder orders.");
+  } finally {
+    backorderLoading.value = false;
+  }
+}
+
 async function loadDetail() {
   loading.value = true;
   errorMessage.value = "";
+  allocatedOrders.value = [];
+  backorderOrders.value = [];
+  allocatedLoaded.value = false;
+  backorderLoaded.value = false;
+  allocatedTruncatedMessage.value = "";
+  backorderTruncatedMessage.value = "";
   try {
     const sku = String(route.params.sku || "").trim();
     const { data } = await api.get(`/inventory/products/${encodeURIComponent(sku)}`, {
@@ -365,12 +483,238 @@ async function togglePickable(loc) {
       <div v-else-if="!product" class="text-secondary small py-4 text-center">
         Product not found.
       </div>
-      <template v-else>
-        <div v-if="route.meta.userPortal" class="mb-3">
-          <div class="h4 mb-1 fw-semibold text-body">Products</div>
-          <p class="text-secondary small mb-0">Inventory — detail</p>
+      <div v-else-if="isPortalView" class="staff-user-view staff-page--wide inventory-portal-detail">
+        <nav
+          class="staff-user-view__breadcrumb d-flex flex-wrap align-items-center gap-1"
+          aria-label="Breadcrumb"
+        >
+          <RouterLink to="/users/inventory">Products</RouterLink>
+          <span class="text-secondary" aria-hidden="true">/</span>
+          <span class="text-body-secondary">Detail</span>
+        </nav>
+
+        <div class="staff-user-view__title-row d-flex flex-wrap align-items-start gap-2 mb-3">
+          <h1 class="staff-user-view__title mb-0">
+            {{ product.name || product.sku || "Product" }}
+          </h1>
         </div>
-        <h1 v-else class="h4 mb-3 fw-semibold text-body">Inventory Detail</h1>
+
+        <div class="row g-2 inventory-portal-detail__metrics">
+          <div v-for="card in metricCards" :key="card.key" class="col-6 col-md">
+            <div class="staff-stat-card inventory-portal-detail__metric-card h-100">
+              <p class="inventory-portal-detail__metric-label mb-0">{{ card.label }}</p>
+              <p class="inventory-portal-detail__metric-value mb-0">{{ card.value }}</p>
+            </div>
+          </div>
+        </div>
+
+        <div class="row g-3">
+          <div class="col-12 col-xl-4">
+            <aside class="staff-user-profile">
+              <div class="inventory-portal-detail__hero">
+                <img
+                  v-if="product.image_url"
+                  :src="product.image_url"
+                  alt=""
+                  class="inventory-portal-detail__hero-image"
+                />
+                <div
+                  v-else
+                  class="inventory-portal-detail__hero-image inventory-portal-detail__hero-image--empty"
+                />
+                <div class="inventory-portal-detail__hero-text">
+                  <h2 class="inventory-portal-detail__hero-name">
+                    {{ product.name || "Product" }}
+                  </h2>
+                  <p class="inventory-portal-detail__hero-sku mb-0">{{ product.sku }}</p>
+                </div>
+              </div>
+
+              <p class="inventory-portal-detail__cubic">
+                Cubic Feet: {{ formatCubicFeetDisplay(portalCubicFeet) }}
+              </p>
+
+              <button
+                type="button"
+                class="btn btn-outline-secondary btn-sm w-100 mb-3"
+                @click="openBarcodeLabelPdf"
+              >
+                Print Barcode Label
+              </button>
+
+              <h3 class="staff-user-profile__details-title mb-2">Details</h3>
+              <dl class="staff-user-profile__dl">
+                <div>
+                  <dt class="staff-user-profile__dt">SKU</dt>
+                  <dd class="staff-user-profile__dd">{{ displayVal(product.sku) }}</dd>
+                </div>
+                <div>
+                  <dt class="staff-user-profile__dt">Barcode</dt>
+                  <dd class="staff-user-profile__dd">{{ displayVal(product.barcode) }}</dd>
+                </div>
+                <div>
+                  <dt class="staff-user-profile__dt">Weight</dt>
+                  <dd class="staff-user-profile__dd">{{ displayNumber(product.dimensions?.weight) }}</dd>
+                </div>
+                <div>
+                  <dt class="staff-user-profile__dt">Height</dt>
+                  <dd class="staff-user-profile__dd">{{ displayNumber(product.dimensions?.height) }}</dd>
+                </div>
+                <div>
+                  <dt class="staff-user-profile__dt">Width</dt>
+                  <dd class="staff-user-profile__dd">{{ displayNumber(product.dimensions?.width) }}</dd>
+                </div>
+                <div>
+                  <dt class="staff-user-profile__dt">Length</dt>
+                  <dd class="staff-user-profile__dd">{{ displayNumber(product.dimensions?.length) }}</dd>
+                </div>
+                <div>
+                  <dt class="staff-user-profile__dt">Custom Value</dt>
+                  <dd class="staff-user-profile__dd">{{ displayNumber(product.customs_value) }}</dd>
+                </div>
+                <div>
+                  <dt class="staff-user-profile__dt">Custom Description</dt>
+                  <dd class="staff-user-profile__dd">{{ displayVal(product.customs_description) }}</dd>
+                </div>
+              </dl>
+            </aside>
+          </div>
+
+          <div class="col-12 col-xl-8">
+            <div v-if="showKitSection" class="staff-table-card inventory-portal-detail__section p-0">
+              <div class="inventory-portal-detail__section-head">
+                <h2 class="inventory-portal-detail__section-title">Kit</h2>
+              </div>
+              <div class="px-3 py-3">
+                <p class="mb-0">
+                  {{ product.kit_build ? "Kit build product" : "Kit product" }}
+                </p>
+              </div>
+            </div>
+
+            <div v-if="showKitComponents" class="staff-table-card inventory-portal-detail__section p-0">
+              <div class="inventory-portal-detail__section-head">
+                <h2 class="inventory-portal-detail__section-title">Kit Components</h2>
+              </div>
+              <div class="table-responsive inventory-portal-detail__table-wrap">
+                <table class="table table-hover align-middle mb-0 staff-data-table">
+                  <thead class="table-light staff-table-head">
+                    <tr>
+                      <th class="staff-table-head__th">SKU</th>
+                      <th class="staff-table-head__th text-end">Quantity</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr v-for="component in product.kit_components" :key="component.sku">
+                      <td>{{ component.sku }}</td>
+                      <td class="text-end">{{ component.quantity }}</td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
+            <div class="staff-table-card inventory-portal-detail__section p-0">
+              <div class="inventory-portal-detail__section-head">
+                <h2 class="inventory-portal-detail__section-title">Allocated Orders</h2>
+                <button
+                  type="button"
+                  class="btn btn-sm btn-outline-secondary"
+                  :disabled="allocatedLoading"
+                  @click="loadAllocatedOrders"
+                >
+                  {{ allocatedLoading ? "Loading…" : "Load Allocated Orders" }}
+                </button>
+              </div>
+              <p v-if="allocatedTruncatedMessage" class="inventory-portal-detail__truncated">
+                {{ allocatedTruncatedMessage }}
+              </p>
+              <div v-if="allocatedLoaded && allocatedOrders.length" class="table-responsive inventory-portal-detail__table-wrap">
+                <table class="table table-hover align-middle mb-0 staff-data-table">
+                  <thead class="table-light staff-table-head">
+                    <tr>
+                      <th class="staff-table-head__th">Order #</th>
+                      <th class="staff-table-head__th">Order Date</th>
+                      <th class="staff-table-head__th text-end">Allocated Qty</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr v-for="row in allocatedOrders" :key="`${row.order_id}-${row.quantity}`">
+                      <td>
+                        <RouterLink :to="portalOrderTo(row.order_id)">
+                          {{ row.order_number || row.order_id }}
+                        </RouterLink>
+                      </td>
+                      <td>{{ formatOrderDate(row.order_date) }}</td>
+                      <td class="text-end">{{ row.quantity }}</td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+              <p
+                v-else-if="allocatedLoaded && !allocatedOrders.length"
+                class="inventory-portal-detail__empty"
+              >
+                No allocated orders found for this SKU in the recent search window.
+              </p>
+              <p v-else class="inventory-portal-detail__empty">
+                Click Load Allocated Orders to fetch matching open orders.
+              </p>
+            </div>
+
+            <div class="staff-table-card inventory-portal-detail__section p-0">
+              <div class="inventory-portal-detail__section-head">
+                <h2 class="inventory-portal-detail__section-title">Backorder Orders</h2>
+                <button
+                  type="button"
+                  class="btn btn-sm btn-outline-secondary"
+                  :disabled="backorderLoading"
+                  @click="loadBackorderOrders"
+                >
+                  {{ backorderLoading ? "Loading…" : "Load Backorder Orders" }}
+                </button>
+              </div>
+              <p v-if="backorderTruncatedMessage" class="inventory-portal-detail__truncated">
+                {{ backorderTruncatedMessage }}
+              </p>
+              <div v-if="backorderLoaded && backorderOrders.length" class="table-responsive inventory-portal-detail__table-wrap">
+                <table class="table table-hover align-middle mb-0 staff-data-table">
+                  <thead class="table-light staff-table-head">
+                    <tr>
+                      <th class="staff-table-head__th">Order #</th>
+                      <th class="staff-table-head__th">Order Date</th>
+                      <th class="staff-table-head__th text-end">Backorder Qty</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr v-for="row in backorderOrders" :key="`${row.order_id}-${row.quantity}`">
+                      <td>
+                        <RouterLink :to="portalOrderTo(row.order_id)">
+                          {{ row.order_number || row.order_id }}
+                        </RouterLink>
+                      </td>
+                      <td>{{ formatOrderDate(row.order_date) }}</td>
+                      <td class="text-end">{{ row.quantity }}</td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+              <p
+                v-else-if="backorderLoaded && !backorderOrders.length"
+                class="inventory-portal-detail__empty"
+              >
+                No backorder orders found for this SKU in the recent search window.
+              </p>
+              <p v-else class="inventory-portal-detail__empty">
+                Click Load Backorder Orders to fetch matching open orders.
+              </p>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <template v-else>
+        <h1 class="h4 mb-3 fw-semibold text-body">Inventory Detail</h1>
         <div class="row g-3 mb-3">
           <div class="col-12 col-xl-3">
             <div class="staff-table-card p-3 h-100">
@@ -431,7 +775,7 @@ async function togglePickable(loc) {
               </div>
             </div>
 
-            <div v-if="!isPortalView" class="staff-table-card p-0 mb-3">
+            <div class="staff-table-card p-0 mb-3">
               <div class="px-3 py-2 border-bottom">
                 <h3 class="h6 mb-0 fw-semibold">Locations</h3>
               </div>
@@ -776,4 +1120,8 @@ async function togglePickable(loc) {
   color: #6d28d9;
   background: #ede9fe;
 }
+</style>
+
+<style lang="scss">
+@import "../../styles/inventory-portal-detail.scss";
 </style>

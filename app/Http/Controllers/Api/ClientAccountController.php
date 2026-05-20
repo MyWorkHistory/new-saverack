@@ -127,7 +127,10 @@ class ClientAccountController extends Controller
             throw ValidationException::withMessages(['email' => [$e->getMessage()]]);
         }
 
-        return response()->json($this->clientAccounts->toApiArray($account->fresh(['accountManager', 'feeItems'])), 201);
+        return response()->json(
+            $this->clientAccounts->toApiArray($account->fresh(['accountManager', 'feeItems', 'primaryAccountUser'])),
+            201
+        );
     }
 
     public function show(ClientAccount $client_account): JsonResponse

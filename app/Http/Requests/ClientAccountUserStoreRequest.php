@@ -37,9 +37,16 @@ class ClientAccountUserStoreRequest extends FormRequest
             if (! $account instanceof ClientAccount) {
                 return;
             }
-            $email = $this->input('email');
-            if (is_string($email) && strcasecmp($email, (string) $account->email) === 0) {
-                $v->errors()->add('email', 'Use a different email than the account primary login.');
+            $email = trim((string) $this->input('email', ''));
+            $accountEmail = trim((string) $account->email);
+            if ($email === '' || $accountEmail === '') {
+                return;
+            }
+            if (strcasecmp($email, $accountEmail) !== 0) {
+                return;
+            }
+            if ($account->primaryAccountUser()->exists()) {
+                $v->errors()->add('email', 'A user with this email already exists for this account.');
             }
         });
     }

@@ -67,7 +67,7 @@ class PortalClientProvisioningService
         string $fullName,
         string $plainPassword
     ): User {
-        if ($account->primaryAccountUser !== null) {
+        if ($account->primaryAccountUser()->exists()) {
             throw new RuntimeException('This client account already has a portal login.');
         }
 

@@ -130,7 +130,7 @@ class ClientAccountUserController extends Controller
 
     public function store(ClientAccountUserStoreRequest $request, ClientAccount $client_account): JsonResponse
     {
-        $user = $this->accountUsers->createSecondary(
+        $user = $this->accountUsers->createForAccount(
             $client_account,
             $request->validated(),
             $request->user(),

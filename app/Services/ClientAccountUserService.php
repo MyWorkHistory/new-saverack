@@ -15,9 +15,15 @@ class ClientAccountUserService
     /** @var ActivityLogService */
     protected $activityLog;
 
-    public function __construct(ActivityLogService $activityLog)
-    {
+    /** @var PortalClientProvisioningService */
+    protected $portalProvisioning;
+
+    public function __construct(
+        ActivityLogService $activityLog,
+        PortalClientProvisioningService $portalProvisioning
+    ) {
         $this->activityLog = $activityLog;
+        $this->portalProvisioning = $portalProvisioning;
     }
 
     public function filteredAccountUsersQuery(array $filters): Builder
@@ -132,14 +138,58 @@ class ClientAccountUserService
         return null;
     }
 
+    /**
+     * Create a portal user for an account: primary admin (account email) or secondary user.
+     *
+     * @param  array<string, mixed>  $data
+     */
+    public function createForAccount(ClientAccount $account, array $data, ?User $actor = null): User
+    {
+        $email = trim((string) ($data['email'] ?? ''));
+        $accountEmail = trim((string) $account->email);
+
+        if ($accountEmail !== '' && strcasecmp($email, $accountEmail) === 0) {
+            if ($account->primaryAccountUser()->exists()) {
+                throw ValidationException::withMessages([
+                    'email' => ['A user with this email already exists for this account.'],
+                ]);
+            }
+
+            $name = trim((string) ($data['name'] ?? ''));
+            if ($name === '') {
+                $name = $account->contactFullName();
+            }
+            if ($name === '') {
+                throw ValidationException::withMessages([
+                    'name' => ['Name is required to create the primary portal login.'],
+                ]);
+            }
+
+            $user = $this->portalProvisioning->attachPortalLoginToAccount(
+                $account,
+                $name,
+                (string) $data['password']
+            );
+            $status = (string) ($data['status'] ?? 'pending');
+            if (in_array($status, ['pending', 'active', 'inactive'], true) && $user->status !== $status) {
+                $user->update(['status' => $status]);
+                $user = $user->fresh(['clientAccount']);
+            }
+            if ($actor !== null) {
+                $this->activityLog->log($actor, 'portal_user.created', $user, null, [
+                    'email' => (string) $user->email,
+                ]);
+            }
+
+            return $user;
+        }
+
+        return $this->createSecondary($account, $data, $actor);
+    }
+
     public function createSecondary(ClientAccount $account, array $data, ?User $actor = null): User
     {
         $email = (string) $data['email'];
-        if (strcasecmp($email, (string) $account->email) === 0) {
-            throw ValidationException::withMessages([
-                'email' => ['Use a different email than the account primary login.'],
-            ]);
-        }
 
         return DB::transaction(function () use ($account, $data, $email, $actor) {
             $user = User::query()->create([

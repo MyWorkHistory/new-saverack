@@ -101,31 +101,33 @@ class ClientAccountService
     {
         $data['status'] = $data['status'] ?? ClientAccount::STATUS_PENDING;
 
-        $account = ClientAccount::query()->create($data);
+        return DB::transaction(function () use ($data, $portalPlainPassword, $actor) {
+            $account = ClientAccount::query()->create($data);
 
-        $this->ensureDefaultFeeItems($account);
+            $this->ensureDefaultFeeItems($account);
 
-        $fullName = $account->contactFullName();
-        if ($fullName === '' || trim($fullName) === '') {
-            throw new InvalidArgumentException('Full name is required to create a portal login.');
-        }
-        $this->portalProvisioning->attachPortalLoginToAccount($account, $fullName, $portalPlainPassword);
-
-        $account = $account->fresh(['accountManager', 'primaryAccountUser']);
-
-        if ($actor !== null) {
-            $this->activityLog->log($actor, 'client_account.created', $account, null, [
-                'company_name' => (string) $account->company_name,
-            ]);
-            $primary = $account->primaryAccountUser;
-            if ($primary !== null) {
-                $this->activityLog->log($actor, 'portal_user.created', $primary, null, [
-                    'email' => (string) $primary->email,
-                ]);
+            $fullName = $account->contactFullName();
+            if ($fullName === '' || trim($fullName) === '') {
+                throw new InvalidArgumentException('Full name is required to create a portal login.');
             }
-        }
+            $this->portalProvisioning->attachPortalLoginToAccount($account, $fullName, $portalPlainPassword);
 
-        return $account;
+            $account = $account->fresh(['accountManager', 'primaryAccountUser']);
+
+            if ($actor !== null) {
+                $this->activityLog->log($actor, 'client_account.created', $account, null, [
+                    'company_name' => (string) $account->company_name,
+                ]);
+                $primary = $account->primaryAccountUser;
+                if ($primary !== null) {
+                    $this->activityLog->log($actor, 'portal_user.created', $primary, null, [
+                        'email' => (string) $primary->email,
+                    ]);
+                }
+            }
+
+            return $account;
+        });
     }
 
     /**

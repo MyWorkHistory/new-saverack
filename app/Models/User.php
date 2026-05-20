@@ -333,16 +333,26 @@ class User extends Authenticatable
         $this->loadMissing('roles.permissions', 'roles', 'permissions', 'profile');
 
         if ($this->client_account_id !== null) {
-            $this->loadMissing('clientAccount:id,company_name');
+            $this->loadMissing('clientAccount:id,company_name,status,shiphero_customer_account_id');
         }
 
         $arr = $this->toArray();
         unset($arr['permissions']);
 
         $clientAccountCompanyName = null;
+        $clientAccountStatus = null;
+        $shipheroReady = false;
+        $portalSetupComplete = false;
         if ($this->client_account_id !== null && $this->clientAccount !== null) {
-            $name = trim((string) $this->clientAccount->company_name);
+            $account = $this->clientAccount;
+            $name = trim((string) $account->company_name);
             $clientAccountCompanyName = $name !== '' ? $name : null;
+            $clientAccountStatus = (string) $account->status;
+            $sid = trim((string) ($account->shiphero_customer_account_id ?? ''));
+            $shipheroReady = $sid !== '';
+            $portalSetupComplete = $clientAccountStatus === ClientAccount::STATUS_ACTIVE
+                && $shipheroReady
+                && $this->status === 'active';
         }
 
         return array_merge($arr, [
@@ -352,7 +362,18 @@ class User extends Authenticatable
             'is_crm_owner' => $this->isCrmOwner(),
             'client_account_id' => $this->client_account_id,
             'client_account_company_name' => $clientAccountCompanyName,
+            'client_account_status' => $clientAccountStatus,
+            'shiphero_ready' => $shipheroReady,
+            'portal_setup_complete' => $portalSetupComplete,
         ]);
+    }
+
+    /**
+     * @param  string  $token
+     */
+    public function sendPasswordResetNotification($token)
+    {
+        $this->notify(new \App\Notifications\CrmResetPasswordNotification($token));
     }
 }
 

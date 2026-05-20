@@ -3,11 +3,13 @@ import { computed, inject, nextTick, onMounted, onUnmounted, reactive, ref, watc
 import { useRouter } from "vue-router";
 import api from "../../services/api";
 import { setCrmPageMeta } from "../../composables/useCrmPageMeta.js";
+import { usePortalLastRefreshed } from "../../composables/usePortalLastRefreshed.js";
 import { useToast } from "../../composables/useToast.js";
 
 const toast = useToast();
 const router = useRouter();
 const crmUser = inject("crmUser", ref(null));
+const { markRefreshed, lastRefreshedLabel } = usePortalLastRefreshed();
 
 const loading = ref(false);
 const loadingMore = ref(false);
@@ -124,6 +126,9 @@ async function loadRows(reset, forceRefresh = false) {
   }
   try {
     await fetchPage(!reset, forceRefresh);
+    if (reset) {
+      markRefreshed();
+    }
   } catch (e) {
     if (forceRefresh) {
       rows.value = previousRows;
@@ -302,6 +307,7 @@ async function refreshRows() {
     rows.value = [];
     searchSkipNext.value = 0;
     await fetchPage(false, false);
+    markRefreshed();
     toast.success("Inventory refreshed from ShipHero.");
   } catch (e) {
     rows.value = previousRows;
@@ -506,9 +512,13 @@ onUnmounted(() => {
           Showing {{ LIST_PAGE_SIZE }} products per load. Search checks your full ShipHero catalog (not only this page).
         </p>
       </div>
-      <button
+      <div class="d-flex align-items-center gap-2 flex-shrink-0 ms-md-auto">
+        <p v-if="lastRefreshedLabel" class="small text-secondary mb-0">
+          Last refreshed: {{ lastRefreshedLabel }}
+        </p>
+        <button
         type="button"
-        class="btn btn-outline-secondary btn-sm orders-toolbar-outline-btn d-inline-flex align-items-center gap-2 ms-md-auto flex-shrink-0"
+        class="btn btn-outline-secondary btn-sm orders-toolbar-outline-btn d-inline-flex align-items-center gap-2"
         :disabled="loading || loadingMore || refreshing"
         title="Refresh"
         aria-label="Refresh inventory from ShipHero"
@@ -531,6 +541,7 @@ onUnmounted(() => {
         </svg>
         {{ refreshing ? "Refreshing…" : "Refresh" }}
       </button>
+      </div>
     </div>
 
     <div class="staff-table-card staff-datatable-card staff-datatable-card--white w-100">

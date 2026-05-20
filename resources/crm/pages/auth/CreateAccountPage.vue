@@ -5,9 +5,11 @@ import api from "../../services/api";
 import {
   setBillingNavFromUser,
   setClientsNavFromUser,
+  setInventoryNavFromUser,
   setUsersNavFromUser,
   setWebmasterNavFromUser,
 } from "../../router";
+import { crmPortalPostAuthPath } from "../../utils/crmUser.js";
 import AuthVuexyShell from "../../components/auth/AuthVuexyShell.vue";
 
 const route = useRoute();
@@ -42,9 +44,11 @@ const submit = async () => {
     setUsersNavFromUser(data.user);
     setClientsNavFromUser(data.user);
     setBillingNavFromUser(data.user);
+    setInventoryNavFromUser(data.user);
     const r = route.query.redirect;
+    const defaultDest = crmPortalPostAuthPath(data.user);
     const dest =
-      typeof r === "string" && r.startsWith("/") ? r : "/admin/dashboard";
+      typeof r === "string" && r.startsWith("/users/") ? r : defaultDest;
     router.push(dest);
   } catch (e) {
     const d = e?.response?.data;

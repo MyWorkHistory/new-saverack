@@ -5,8 +5,9 @@ import api from "../../services/api";
 import CrmIconRowActions from "../../components/common/CrmIconRowActions.vue";
 import CrmLoadingSpinner from "../../components/common/CrmLoadingSpinner.vue";
 import { setCrmPageMeta } from "../../composables/useCrmPageMeta.js";
+import { usePortalLastRefreshed } from "../../composables/usePortalLastRefreshed.js";
 import { useToast } from "../../composables/useToast.js";
-import { formatDateUs } from "../../utils/formatUserDates.js";
+import { formatDateTimeUs, formatDateUs } from "../../utils/formatUserDates.js";
 
 const route = useRoute();
 const toast = useToast();
@@ -15,7 +16,11 @@ const crmUser = inject("crmUser", ref(null));
 const isPortalView = computed(() => Boolean(route.meta.userPortal));
 const canManageInventoryLocations = computed(() => !isPortalView.value);
 
+const { markRefreshed, lastRefreshedLabel } = usePortalLastRefreshed();
+
 const loading = ref(true);
+const refreshing = ref(false);
+const barcodePdfLoading = ref(false);
 const saving = ref(false);
 const product = ref(null);
 const errorMessage = ref("");
@@ -65,6 +70,8 @@ const allocatedLoaded = ref(false);
 const backorderLoaded = ref(false);
 const allocatedTruncatedMessage = ref("");
 const backorderTruncatedMessage = ref("");
+const allocatedLoadedAt = ref(null);
+const backorderLoadedAt = ref(null);
 
 const showKitSection = computed(() => {
   const p = product.value;
@@ -181,7 +188,7 @@ function portalOrderTo(orderId) {
 }
 
 async function openBarcodeLabelPdf() {
-  if (!product.value?.sku) return;
+  if (!product.value?.sku || barcodePdfLoading.value) return;
   const params = requestParams();
   const qs = new URLSearchParams();
   if (params.client_account_id) {
@@ -190,6 +197,7 @@ async function openBarcodeLabelPdf() {
   const path = `/inventory/products/${encodeURIComponent(product.value.sku)}/barcode-label.pdf${
     qs.toString() ? `?${qs.toString()}` : ""
   }`;
+  barcodePdfLoading.value = true;
   try {
     const { data } = await api.get(path, { responseType: "blob" });
     const blob = new Blob([data], { type: "application/pdf" });
@@ -198,6 +206,8 @@ async function openBarcodeLabelPdf() {
     setTimeout(() => window.URL.revokeObjectURL(url), 30000);
   } catch (e) {
     toast.errorFrom(e, "Could not open barcode label PDF.");
+  } finally {
+    barcodePdfLoading.value = false;
   }
 }
 
@@ -218,6 +228,7 @@ async function loadAllocatedOrders() {
     );
     allocatedOrders.value = Array.isArray(data?.rows) ? data.rows : [];
     allocatedLoaded.value = true;
+    allocatedLoadedAt.value = new Date();
     allocatedTruncatedMessage.value = data?.message ? String(data.message) : "";
   } catch (e) {
     toast.errorFrom(e, "Could not load allocated orders.");
@@ -243,6 +254,7 @@ async function loadBackorderOrders() {
     );
     backorderOrders.value = Array.isArray(data?.rows) ? data.rows : [];
     backorderLoaded.value = true;
+    backorderLoadedAt.value = new Date();
     backorderTruncatedMessage.value = data?.message ? String(data.message) : "";
   } catch (e) {
     toast.errorFrom(e, "Could not load backorder orders.");
@@ -258,20 +270,34 @@ async function loadDetail() {
   backorderOrders.value = [];
   allocatedLoaded.value = false;
   backorderLoaded.value = false;
+  allocatedLoadedAt.value = null;
+  backorderLoadedAt.value = null;
   allocatedTruncatedMessage.value = "";
   backorderTruncatedMessage.value = "";
+  let loadedOk = false;
   try {
     const sku = String(route.params.sku || "").trim();
     const { data } = await api.get(`/inventory/products/${encodeURIComponent(sku)}`, {
       params: requestParams(),
     });
     product.value = data?.product ?? null;
+    loadedOk = true;
   } catch (e) {
     errorMessage.value = e.response?.data?.message || "Could not load inventory detail.";
     toast.errorFrom(e, "Could not load inventory detail.");
   } finally {
     loading.value = false;
+    refreshing.value = false;
+    if (loadedOk && isPortalView.value) {
+      markRefreshed();
+    }
   }
+}
+
+async function refreshDetail() {
+  if (loading.value || refreshing.value) return;
+  refreshing.value = true;
+  await loadDetail();
 }
 
 function placeActionMenu(anchorEl) {
@@ -492,10 +518,40 @@ async function togglePickable(loc) {
           <span class="text-body-secondary">Detail</span>
         </nav>
 
-        <div class="staff-user-view__title-row d-flex flex-wrap align-items-start gap-2 mb-3">
+        <div class="staff-user-view__title-row inventory-portal-detail__title-row d-flex flex-wrap align-items-start justify-content-between gap-2 mb-3">
           <h1 class="staff-user-view__title mb-0">
             {{ product.name || product.sku || "Product" }}
           </h1>
+          <div class="d-flex align-items-center gap-2 flex-shrink-0 ms-md-auto">
+            <p v-if="lastRefreshedLabel" class="small text-secondary mb-0">
+              Last refreshed: {{ lastRefreshedLabel }}
+            </p>
+            <button
+              type="button"
+              class="btn btn-outline-secondary btn-sm orders-toolbar-outline-btn d-inline-flex align-items-center gap-2"
+              :disabled="loading || refreshing"
+              title="Refresh"
+              aria-label="Refresh product from ShipHero"
+              @click="refreshDetail"
+            >
+              <svg
+                width="18"
+                height="18"
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+                aria-hidden="true"
+              >
+                <path
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                  stroke-width="2"
+                  d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"
+                />
+              </svg>
+              {{ refreshing ? "Refreshing…" : "Refresh" }}
+            </button>
+          </div>
         </div>
 
         <div class="row g-2 inventory-portal-detail__metrics">
@@ -551,9 +607,10 @@ async function togglePickable(loc) {
               <button
                 type="button"
                 class="btn btn-outline-secondary btn-sm orders-toolbar-outline-btn w-100 mb-3"
+                :disabled="barcodePdfLoading"
                 @click="openBarcodeLabelPdf"
               >
-                Print Barcode Label
+                {{ barcodePdfLoading ? "Generating Label… Please Wait" : "Print Barcode Label" }}
               </button>
 
               <h3 class="staff-user-profile__details-title mb-2">Details</h3>
@@ -634,7 +691,12 @@ async function togglePickable(loc) {
 
             <div class="staff-table-card inventory-portal-detail__section p-0">
               <div class="inventory-portal-detail__section-head">
-                <h2 class="inventory-portal-detail__section-title">Allocated Orders</h2>
+                <div>
+                  <h2 class="inventory-portal-detail__section-title">Allocated Orders</h2>
+                  <p v-if="allocatedLoadedAt" class="small text-secondary mb-0">
+                    Loaded: {{ formatDateTimeUs(allocatedLoadedAt) }}
+                  </p>
+                </div>
                 <button
                   type="button"
                   class="btn btn-sm btn-outline-secondary orders-toolbar-outline-btn"
@@ -682,7 +744,12 @@ async function togglePickable(loc) {
 
             <div class="staff-table-card inventory-portal-detail__section p-0">
               <div class="inventory-portal-detail__section-head">
-                <h2 class="inventory-portal-detail__section-title">Backorder Orders</h2>
+                <div>
+                  <h2 class="inventory-portal-detail__section-title">Backorder Orders</h2>
+                  <p v-if="backorderLoadedAt" class="small text-secondary mb-0">
+                    Loaded: {{ formatDateTimeUs(backorderLoadedAt) }}
+                  </p>
+                </div>
                 <button
                   type="button"
                   class="btn btn-sm btn-outline-secondary orders-toolbar-outline-btn"

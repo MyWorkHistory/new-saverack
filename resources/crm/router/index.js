@@ -1,6 +1,6 @@
 import { createRouter, createWebHistory } from "vue-router";
 import api from "../services/api";
-import { crmIsAdmin, crmIsPortalUser } from "../utils/crmUser";
+import { crmIsAdmin, crmIsPortalUser, crmPortalNeedsWelcome, crmPortalPostAuthPath } from "../utils/crmUser.js";
 import { applyRouteMeta } from "../composables/useCrmPageMeta.js";
 import {
   getPublicSignupUrl,
@@ -35,6 +35,7 @@ import OrdersListPage from "../pages/orders/OrdersListPage.vue";
 import OrderDetailPage from "../pages/orders/OrderDetailPage.vue";
 import OrderDetailIframePage from "../pages/orders/OrderDetailIframePage.vue";
 import UserDashboardPage from "../pages/user-portal/UserDashboardPage.vue";
+import PortalPendingWelcomePage from "../pages/user-portal/PortalPendingWelcomePage.vue";
 
 const meta = {
   login: {
@@ -389,6 +390,12 @@ const routes = [
     meta: meta.webmasterTask,
   },
   {
+    path: "/users/welcome",
+    name: "user-welcome",
+    component: PortalPendingWelcomePage,
+    meta: { title: "Save Rack | Account setup", description: "Account setup in progress.", userPortal: true },
+  },
+  {
     path: "/users/dashboard",
     name: "user-dashboard",
     component: UserDashboardPage,
@@ -741,7 +748,7 @@ router.beforeEach(async (to) => {
     if (token && to.name === "login") {
       try {
         const me = await ensureAuthUser();
-        return { path: crmIsPortalUser(me) ? "/users/dashboard" : "/admin/dashboard" };
+        return { path: crmIsPortalUser(me) ? crmPortalPostAuthPath(me) : "/admin/dashboard" };
       } catch {
         localStorage.removeItem("auth_token");
         clearCrmOwnerCache();
@@ -766,6 +773,19 @@ router.beforeEach(async (to) => {
 
   if (crmIsPortalUser(me)) {
     if (!to.path.startsWith("/users/")) {
+      return { path: crmPortalPostAuthPath(me) };
+    }
+    if (
+      crmPortalNeedsWelcome(me) &&
+      to.name !== "user-welcome" &&
+      to.path !== "/users/welcome"
+    ) {
+      return { path: "/users/welcome" };
+    }
+    if (
+      !crmPortalNeedsWelcome(me) &&
+      (to.name === "user-welcome" || to.path === "/users/welcome")
+    ) {
       return { path: "/users/dashboard" };
     }
   } else if (to.path.startsWith("/users/")) {

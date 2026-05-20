@@ -2,15 +2,26 @@
 
 namespace App\Services;
 
+use App\Mail\NewPortalRegistrationStaffMailable;
 use App\Models\ClientAccount;
 use App\Models\User;
 use App\Models\UserProfile;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Mail;
 use RuntimeException;
 
 class PortalClientProvisioningService
 {
+    /** @var ShipHeroCustomerAccountService */
+    protected $shipheroCustomers;
+
+    public function __construct(ShipHeroCustomerAccountService $shipheroCustomers)
+    {
+        $this->shipheroCustomers = $shipheroCustomers;
+    }
+
     /**
      * @return array{0: string, 1: string|null}
      */
@@ -55,7 +66,22 @@ class PortalClientProvisioningService
                 'notify_email' => false,
             ]);
 
-            return $this->createPortalUserForAccount($account, $fullName, $email, $phone, $plainPassword);
+            $shipheroId = $this->shipheroCustomers->tryCreateCustomerAccount(
+                $companyName,
+                $fullName,
+                $email,
+                $phone
+            );
+            if (is_string($shipheroId) && trim($shipheroId) !== '') {
+                $account->update(['shiphero_customer_account_id' => trim($shipheroId)]);
+                $account->refresh();
+            }
+
+            $user = $this->createPortalUserForAccount($account, $fullName, $email, $phone, $plainPassword);
+
+            $this->notifyStaffOfRegistration($account, $user);
+
+            return $user;
         });
     }
 
@@ -118,6 +144,23 @@ class PortalClientProvisioningService
 
         $user->roles()->sync([]);
 
-        return $user->fresh(['roles.permissions', 'profile', 'permissions']);
+        return $user->fresh(['roles.permissions', 'profile', 'permissions', 'clientAccount']);
+    }
+
+    private function notifyStaffOfRegistration(ClientAccount $account, User $user): void
+    {
+        $notify = config('crm.registration_notify_email');
+        if (! is_string($notify) || trim($notify) === '') {
+            return;
+        }
+
+        try {
+            Mail::to(trim($notify))->send(new NewPortalRegistrationStaffMailable($account, $user));
+        } catch (\Throwable $e) {
+            Log::warning('portal.registration.staff_email_failed', [
+                'client_account_id' => $account->id,
+                'message' => $e->getMessage(),
+            ]);
+        }
     }
 }

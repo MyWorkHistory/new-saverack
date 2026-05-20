@@ -1,3 +1,7 @@
+.inventory-portal-detail__title-row {
+  width: 100%;
+}
+
 .inventory-portal-detail__metrics {
   margin-bottom: 1rem;
 }
@@ -85,6 +89,10 @@
   font-weight: 600;
   margin: 0;
   color: var(--bs-body-color);
+}
+
+.inventory-portal-detail__section-head > div .inventory-portal-detail__section-title {
+  margin-bottom: 0.15rem;
 }
 
 .inventory-portal-detail__table-wrap {

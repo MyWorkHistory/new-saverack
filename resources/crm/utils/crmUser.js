@@ -30,3 +30,23 @@ export function crmIsPortalUser(user) {
   const v = String(raw).trim();
   return v !== "" && v !== "0";
 }
+
+/** Pending signup or missing ShipHero setup — show welcome instead of dashboard. */
+export function crmPortalNeedsWelcome(user) {
+  if (!crmIsPortalUser(user)) return false;
+  if (user.portal_setup_complete === true) return false;
+  if (user.status === "pending") return true;
+  if (user.client_account_status === "pending") return true;
+  if (!user.shiphero_ready) return true;
+
+  return false;
+}
+
+/** Default path after portal login/register. */
+export function crmPortalPostAuthPath(user) {
+  if (crmPortalNeedsWelcome(user)) {
+    return "/users/welcome";
+  }
+
+  return "/users/dashboard";
+}

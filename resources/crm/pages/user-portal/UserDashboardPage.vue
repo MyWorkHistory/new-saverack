@@ -10,10 +10,12 @@ const toast = useToast();
 const crmUser = inject("crmUser", ref(null));
 
 const clientAccountId = computed(() => Number(crmUser.value?.client_account_id || 0));
+const shipheroReady = computed(() => Boolean(crmUser.value?.shiphero_ready));
 
-const { counts, loading, refreshing, loadCounts, refreshCounts } = usePortalDashboardCounts(
+const { counts, loading, refreshing, loadCounts, refreshCounts, lastRefreshedLabel } = usePortalDashboardCounts(
   () => clientAccountId.value,
   {
+    getShipheroReady: () => shipheroReady.value,
     onError: (e) => toast.errorFrom(e, "Could not load order counts."),
   },
 );
@@ -112,6 +114,9 @@ onMounted(() => {
     <div class="mb-4 d-flex align-items-center justify-content-between gap-2 flex-wrap">
       <h1 class="h4 mb-0 fw-semibold text-body">{{ accountDisplayName || "Home" }}</h1>
       <div class="d-flex align-items-center gap-2 flex-shrink-0">
+        <p v-if="lastRefreshedLabel" class="small text-secondary mb-0">
+          Last refreshed: {{ lastRefreshedLabel }}
+        </p>
         <button
           type="button"
           class="btn btn-outline-secondary btn-sm orders-toolbar-outline-btn d-inline-flex align-items-center gap-2"
@@ -152,6 +157,14 @@ onMounted(() => {
       </div>
 
       <template v-if="!loading">
+        <div
+          v-if="!counts.shiphero_ready"
+          class="alert alert-info small mb-3"
+          role="status"
+        >
+          {{ counts.message || "Your warehouse connection is still being set up." }}
+          <RouterLink to="/users/welcome" class="ms-1">Learn more</RouterLink>
+        </div>
         <p v-if="counts.truncated" class="small text-secondary mb-3">
           One or more totals may be capped at the maximum page scan; open the order list for the full queue.
         </p>

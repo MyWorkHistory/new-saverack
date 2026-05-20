@@ -12,7 +12,7 @@ import {
 import AuthVuexyShell from "../../components/auth/AuthVuexyShell.vue";
 import { getPublicSignupUrl } from "../../utils/publicSignupUrl.js";
 import { prefetchPortalDashboardCounts } from "../../composables/usePortalDashboardCounts.js";
-import { crmIsPortalUser } from "../../utils/crmUser";
+import { crmIsPortalUser, crmPortalPostAuthPath } from "../../utils/crmUser.js";
 
 const publicSignupUrl = computed(() => getPublicSignupUrl());
 
@@ -45,12 +45,16 @@ const submit = async () => {
     setBillingNavFromUser(data.user);
     setInventoryNavFromUser(data.user);
     const isPortal = crmIsPortalUser(data.user);
-    if (isPortal) {
+    if (isPortal && data.user?.shiphero_ready && data.user?.portal_setup_complete) {
       prefetchPortalDashboardCounts(data.user?.client_account_id);
     }
     const r = route.query.redirect;
-    const dest =
-      typeof r === "string" && r.startsWith("/") ? r : isPortal ? "/users/dashboard" : "/admin/dashboard";
+    let dest = isPortal ? crmPortalPostAuthPath(data.user) : "/admin/dashboard";
+    if (typeof r === "string" && r.startsWith("/")) {
+      if (!isPortal || r.startsWith("/users/")) {
+        dest = r;
+      }
+    }
     router.push(dest);
   } catch (e) {
     const d = e?.response?.data;

@@ -1,5 +1,6 @@
 import { ref } from "vue";
 import api from "../services/api";
+import { usePortalLastRefreshed } from "./usePortalLastRefreshed.js";
 
 const CACHE_KEY_PREFIX = "portal:dashboard:queue-counts:v1:";
 
@@ -14,6 +15,8 @@ export function parsePortalQueueCounts(data) {
     backorder: Number(data?.backorder ?? 0),
     shipped: Number(data?.shipped ?? 0),
     truncated: Boolean(data?.truncated),
+    shiphero_ready: data?.shiphero_ready !== false,
+    message: typeof data?.message === "string" ? data.message : "",
   };
 }
 
@@ -38,9 +41,9 @@ function writeCache(clientAccountId, counts) {
 }
 
 /** Fire-and-forget warm-up after portal login (also primes server cache). */
-export function prefetchPortalDashboardCounts(clientAccountId) {
+export function prefetchPortalDashboardCounts(clientAccountId, shipheroReady = true) {
   const id = Number(clientAccountId || 0);
-  if (!id) {
+  if (!id || shipheroReady === false) {
     return;
   }
   api
@@ -52,16 +55,34 @@ export function prefetchPortalDashboardCounts(clientAccountId) {
 /**
  * Portal dashboard queue counts with sessionStorage stale-while-revalidate.
  * @param {() => number} getClientAccountId
- * @param {{ onError?: (err: unknown) => void }} [options]
+ * @param {{ onError?: (err: unknown) => void, getShipheroReady?: () => boolean }} [options]
  */
 export function usePortalDashboardCounts(getClientAccountId, options = {}) {
   const loading = ref(true);
   const refreshing = ref(false);
   const counts = ref(parsePortalQueueCounts(null));
+  const { markRefreshed, lastRefreshedLabel } = usePortalLastRefreshed();
 
-  async function fetchCounts({ background = false, bustCache = false } = {}) {
+  function shipheroReadyFlag() {
+    if (typeof options.getShipheroReady === "function") {
+      return options.getShipheroReady() !== false;
+    }
+
+    return true;
+  }
+
+  async function fetchCounts({ background = false, bustCache = false, shipheroReady = true } = {}) {
     const clientAccountId = Number(getClientAccountId() || 0);
     if (!clientAccountId) {
+      loading.value = false;
+      refreshing.value = false;
+      return;
+    }
+    if (shipheroReady === false) {
+      counts.value = parsePortalQueueCounts({
+        shiphero_ready: false,
+        message: "ShipHero is not configured for this account yet.",
+      });
       loading.value = false;
       refreshing.value = false;
       return;
@@ -73,6 +94,7 @@ export function usePortalDashboardCounts(getClientAccountId, options = {}) {
       loading.value = true;
     }
 
+    let fetchedOk = false;
     try {
       const params = { client_account_id: clientAccountId };
       if (bustCache) {
@@ -82,11 +104,17 @@ export function usePortalDashboardCounts(getClientAccountId, options = {}) {
       const next = parsePortalQueueCounts(data);
       counts.value = next;
       writeCache(clientAccountId, next);
+      fetchedOk = true;
     } catch (e) {
-      options.onError?.(e);
+      if (shipheroReadyFlag()) {
+        options.onError?.(e);
+      }
     } finally {
       loading.value = false;
       refreshing.value = false;
+      if (fetchedOk) {
+        markRefreshed();
+      }
     }
   }
 
@@ -101,11 +129,11 @@ export function usePortalDashboardCounts(getClientAccountId, options = {}) {
     if (cached) {
       counts.value = cached;
       loading.value = false;
-      await fetchCounts({ background: true });
+      await fetchCounts({ background: true, shipheroReady: shipheroReadyFlag() });
       return;
     }
 
-    await fetchCounts({ background: false });
+    await fetchCounts({ background: false, shipheroReady: shipheroReadyFlag() });
   }
 
   async function refreshCounts() {
@@ -121,8 +149,12 @@ export function usePortalDashboardCounts(getClientAccountId, options = {}) {
     }
     loading.value = true;
     refreshing.value = false;
-    await fetchCounts({ background: false, bustCache: true });
+    await fetchCounts({
+      background: false,
+      bustCache: true,
+      shipheroReady: shipheroReadyFlag(),
+    });
   }
 
-  return { counts, loading, refreshing, loadCounts, refreshCounts };
+  return { counts, loading, refreshing, loadCounts, refreshCounts, lastRefreshedLabel };
 }

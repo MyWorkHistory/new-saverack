@@ -105,7 +105,29 @@ class OrderController extends Controller
 
         try {
             $clientAccountId = (int) $validated['client_account_id'];
-            $customerId = $this->resolveShipHeroCustomerAccountId($clientAccountId, $request);
+            $account = ClientAccount::query()->find($clientAccountId);
+            if ($account === null) {
+                throw ValidationException::withMessages([
+                    'client_account_id' => ['Client account not found.'],
+                ]);
+            }
+            Gate::forUser($request->user())->authorize('view', $account);
+
+            $sid = $account->shiphero_customer_account_id;
+            if (! is_string($sid) || trim($sid) === '') {
+                return response()->json([
+                    'ready_to_ship' => 0,
+                    'on_hold' => 0,
+                    'backorder' => 0,
+                    'shipped' => 0,
+                    'truncated' => false,
+                    'shiphero_ready' => false,
+                    'message' => 'ShipHero is not configured for this account yet. Save Rack will finish setup shortly.',
+                    'cached_at' => now()->toIso8601String(),
+                ]);
+            }
+
+            $customerId = trim($sid);
 
             $now = Carbon::now();
             $awaitingFrom = $this->dateStartIso($now->copy()->subDays(6)->toDateString());
@@ -177,6 +199,7 @@ class OrderController extends Controller
                     'backorder' => $back['count'],
                     'shipped' => $ship['count'],
                     'truncated' => $ready['truncated'] || $hold['truncated'] || $back['truncated'] || $ship['truncated'],
+                    'shiphero_ready' => true,
                     'awaiting_order_date_from' => $awaitingFrom,
                     'awaiting_order_date_to' => $awaitingTo,
                     'open_queue_order_date_from' => $openFrom,

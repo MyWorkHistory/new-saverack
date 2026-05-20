@@ -1,9 +1,10 @@
 <script setup>
-import { reactive, ref } from "vue";
-import { RouterLink } from "vue-router";
+import { computed, onMounted, reactive, ref } from "vue";
+import { RouterLink, useRoute } from "vue-router";
 import api from "../../services/api";
 import AuthVuexyShell from "../../components/auth/AuthVuexyShell.vue";
 
+const route = useRoute();
 const message = ref("");
 const error = ref("");
 const loading = ref(false);
@@ -13,6 +14,22 @@ const form = reactive({
   token: "",
   password: "",
   password_confirmation: "",
+});
+
+const tokenFromEmail = computed(() => {
+  const t = route.query.token;
+  return typeof t === "string" && t.trim() !== "";
+});
+
+onMounted(() => {
+  const email = route.query.email;
+  const token = route.query.token;
+  if (typeof email === "string" && email.trim() !== "") {
+    form.email = email.trim();
+  }
+  if (typeof token === "string" && token.trim() !== "") {
+    form.token = token.trim();
+  }
 });
 
 const submit = async () => {
@@ -38,7 +55,11 @@ const submit = async () => {
   <AuthVuexyShell>
     <h1 class="auth-vuexy-heading">Reset password 🔑</h1>
     <p class="auth-vuexy-lead">
-      Enter the token from your email and choose a new password.
+      {{
+        tokenFromEmail
+          ? "Choose a new password for your account."
+          : "Enter the reset link from your email, or paste the token below."
+      }}
     </p>
 
     <div
@@ -70,7 +91,7 @@ const submit = async () => {
           class="form-control"
         />
       </div>
-      <div class="mb-3">
+      <div v-if="!tokenFromEmail" class="mb-3">
         <label class="form-label small fw-medium text-body-secondary" for="reset-token">
           Reset token<span class="text-danger" aria-hidden="true">*</span>
         </label>
@@ -83,6 +104,7 @@ const submit = async () => {
           class="form-control"
         />
       </div>
+      <input v-else type="hidden" :value="form.token" />
       <div class="mb-3">
         <label class="form-label small fw-medium text-body-secondary" for="reset-password">
           New password<span class="text-danger" aria-hidden="true">*</span>

@@ -123,4 +123,31 @@ class ClientAccountUpdateRequest extends FormRequest
             'whatsapp_api_id' => ['sometimes', 'nullable', 'string', 'max:191'],
         ];
     }
+
+    public function withValidator($validator): void
+    {
+        $validator->after(function ($v) {
+            $account = $this->route('client_account');
+            if (! $account instanceof ClientAccount) {
+                return;
+            }
+            if (! $this->has('status')) {
+                return;
+            }
+            $newStatus = (string) $this->input('status');
+            if ($newStatus !== ClientAccount::STATUS_ACTIVE) {
+                return;
+            }
+            $sid = $this->input('shiphero_customer_account_id');
+            if ($sid === null || $sid === '') {
+                $sid = $account->shiphero_customer_account_id;
+            }
+            if (! is_string($sid) || trim($sid) === '') {
+                $v->errors()->add(
+                    'shiphero_customer_account_id',
+                    'ShipHero customer account ID is required before activating this account.'
+                );
+            }
+        });
+    }
 }

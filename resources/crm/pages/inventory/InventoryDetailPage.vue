@@ -127,7 +127,7 @@ function displayNumber(v) {
   return n;
 }
 
-function displayStorageCubicFeet(v) {
+function displayCubicFeet(v) {
   if (v === null || v === undefined) return "—";
   const n = Number(v);
   if (!Number.isFinite(n)) return "—";
@@ -583,8 +583,8 @@ async function togglePickable(loc) {
                   <dd class="staff-user-profile__dd">{{ displayNumber(product.dimensions?.length) }}</dd>
                 </div>
                 <div>
-                  <dt class="staff-user-profile__dt">Storage Cubic Feet</dt>
-                  <dd class="staff-user-profile__dd">{{ displayStorageCubicFeet(product.storage_cubic_feet) }}</dd>
+                  <dt class="staff-user-profile__dt">Cubic Feet</dt>
+                  <dd class="staff-user-profile__dd">{{ displayCubicFeet(product.storage_cubic_feet) }}</dd>
                 </div>
                 <div>
                   <dt class="staff-user-profile__dt">Custom Value</dt>

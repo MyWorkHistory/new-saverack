@@ -68,6 +68,7 @@ const payNotes = ref("");
 const payBusy = ref(false);
 const payContextBusy = ref(false);
 const payFundsCents = ref(0);
+const accountAvailableFundsCents = ref(0);
 const payOpenBalanceCents = ref(0);
 const payPendingBalanceCents = ref(0);
 const payRows = ref([]);
@@ -1573,6 +1574,7 @@ async function loadPayContext(options = {}) {
   if (!invoice.value?.id) return null;
   const includeRows = options.includeRows === true;
   const { data } = await api.get(`/invoices/${invoice.value.id}/pay-context`);
+  accountAvailableFundsCents.value = Number(data?.available_funds_cents || 0);
   payOpenBalanceCents.value = Number(data?.open_balance_cents || 0);
   payPendingBalanceCents.value = Number(data?.pending_balance_cents || 0);
   if (includeRows) {
@@ -1583,6 +1585,7 @@ async function loadPayContext(options = {}) {
 
 async function loadAccountBalanceSummary() {
   if (!invoice.value?.id || !canUpdate.value || invoice.value.status === "void") {
+    accountAvailableFundsCents.value = 0;
     payOpenBalanceCents.value = 0;
     payPendingBalanceCents.value = 0;
     return;
@@ -1591,6 +1594,7 @@ async function loadAccountBalanceSummary() {
   try {
     await loadPayContext();
   } catch {
+    accountAvailableFundsCents.value = 0;
     payOpenBalanceCents.value = 0;
     payPendingBalanceCents.value = 0;
   } finally {
@@ -1797,6 +1801,7 @@ async function openPayModal() {
   payDate.value = new Date().toISOString().slice(0, 10);
   payNotes.value = "";
   payFundsCents.value = 0;
+  accountAvailableFundsCents.value = 0;
   payOpenBalanceCents.value = 0;
   payPendingBalanceCents.value = 0;
   payRows.value = [];
@@ -1805,7 +1810,8 @@ async function openPayModal() {
   payModalOpen.value = true;
   payContextBusy.value = true;
   try {
-    await loadPayContext({ includeRows: true });
+    const data = await loadPayContext({ includeRows: true });
+    payFundsCents.value = Number(data?.available_funds_cents || 0);
   } catch (e) {
     toast.errorFrom(e, "Could not load payment info.");
     payModalOpen.value = false;
@@ -1849,6 +1855,7 @@ async function confirmPay() {
       notes: payNotes.value || null,
     });
     const allocations = Array.isArray(data?.allocations) ? data.allocations.length : 0;
+    accountAvailableFundsCents.value = Number(data?.available_funds_cents || 0);
     toast.success(allocations > 0 ? "Payment allocated." : "No payment applied.");
     closePayModal(true);
     await load();
@@ -2690,6 +2697,26 @@ function onDocKeydown(e) {
                   </svg>
                 </div>
               </button>
+              <div
+                class="staff-stat-card billing-inv-summary-card billing-inv-summary-card--available h-100"
+                :class="{ 'opacity-75': accountBalanceLoading }"
+              >
+                <p class="staff-stat-card__label">Available Balance</p>
+                <p class="staff-stat-card__value">
+                  {{ formatCents(accountAvailableFundsCents, invoice.currency) }}
+                </p>
+                <p class="staff-stat-card__sub">Unapplied payment credit</p>
+                <div
+                  class="staff-stat-card__icon bg-success-subtle text-success"
+                  aria-hidden="true"
+                >
+                  <svg width="22" height="22" fill="currentColor" viewBox="0 0 24 24">
+                    <path
+                      d="M21 18v1c0 1.1-.9 2-2 2H5c-1.11 0-2-.9-2-2V5c0-1.1.89-2 2-2h14c1.1 0 2 .9 2 2v1h-9c-1.11 0-2 .9-2 2v8c0 1.1.89 2 2 2h9zm-9-2h10V8H12v8zm4-2.5c-.83 0-1.5-.67-1.5-1.5s.67-1.5 1.5-1.5 1.5.67 1.5 1.5-.67 1.5-1.5 1.5z"
+                    />
+                  </svg>
+                </div>
+              </div>
             </div>
           </div>
 
@@ -3785,7 +3812,11 @@ function onDocKeydown(e) {
 }
 .billing-inv-summary-grid {
   display: grid;
+  grid-template-columns: 1fr 1fr;
   gap: 0.75rem;
+}
+.billing-inv-summary-card--available {
+  grid-column: 2;
 }
 .billing-inv-summary-card {
   width: 100%;
@@ -3808,14 +3839,24 @@ function onDocKeydown(e) {
   opacity: 0.75;
   cursor: not-allowed;
 }
-.billing-inv-summary-card .staff-stat-card__icon:not(.staff-stat-card__icon--money) {
-  width: 2.5rem;
-  height: 2.5rem;
-  border-radius: 0.4375rem;
+.billing-inv-summary-card .staff-stat-card__icon {
+  width: 3.5rem;
+  height: 3.5rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
-.billing-inv-summary-card .staff-stat-card__icon:not(.staff-stat-card__icon--money) svg {
-  width: 1.15rem;
-  height: 1.15rem;
+.billing-inv-summary-card .staff-stat-card__icon svg {
+  width: 1.75rem;
+  height: 1.75rem;
+}
+.billing-inv-summary-card .staff-stat-card__icon--money {
+  width: 3.5rem;
+  height: 3.5rem;
+}
+.billing-inv-summary-card .staff-stat-card__icon--money svg {
+  width: 1.65rem;
+  height: 1.65rem;
 }
 .billing-group-edit-bulk-panel {
   border: 1px solid rgba(47, 43, 61, 0.1);

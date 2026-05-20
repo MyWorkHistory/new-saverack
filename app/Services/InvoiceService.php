@@ -3,6 +3,7 @@
 namespace App\Services;
 
 use App\Mail\InvoiceSentMailable;
+use App\Models\ClientAccount;
 use App\Models\Invoice;
 use App\Support\Billing\InvoiceHistoryEventType;
 use App\Support\Billing\InvoiceLineCategory;
@@ -788,7 +789,7 @@ class InvoiceService
                 'name' => (string) $invoice->clientAccount->company_name,
             ],
             'current_invoice_id' => (int) $invoice->id,
-            'available_funds_cents' => 0,
+            'available_funds_cents' => max(0, (int) $invoice->clientAccount->billing_available_funds_cents),
             'open_balance_cents' => $open,
             'past_due_balance_cents' => 0,
             'pending_balance_cents' => (int) $pending,
@@ -822,6 +823,14 @@ class InvoiceService
         $invoiceIds = array_values(array_unique(array_map('intval', $invoiceIds)));
 
         return DB::transaction(function () use ($rootInvoice, $invoiceIds, $amountCents, $actor, $paymentMeta) {
+            $account = ClientAccount::query()
+                ->whereKey($rootInvoice->client_account_id)
+                ->lockForUpdate()
+                ->first();
+            if ($account === null) {
+                throw new \RuntimeException('Invoice account is unavailable.');
+            }
+
             $selected = Invoice::query()
                 ->where('client_account_id', $rootInvoice->client_account_id)
                 ->whereIn('id', $invoiceIds)
@@ -832,6 +841,9 @@ class InvoiceService
             if (count($selected) !== count($invoiceIds)) {
                 throw new \RuntimeException('Selected invoice set is invalid.');
             }
+
+            $account->billing_available_funds_cents = 0;
+            $account->save();
 
             $remaining = $amountCents;
             $allocations = [];
@@ -866,10 +878,14 @@ class InvoiceService
                 ];
             }
 
+            $account->billing_available_funds_cents = max(0, $remaining);
+            $account->save();
+
             return [
                 'invoice' => $rootInvoice->fresh(['items', 'histories.user', 'clientAccount', 'createdBy']) ?? $rootInvoice,
                 'allocations' => $allocations,
                 'remaining_amount_cents' => $remaining,
+                'available_funds_cents' => max(0, (int) $account->billing_available_funds_cents),
             ];
         });
     }

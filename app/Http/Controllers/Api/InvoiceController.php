@@ -253,6 +253,7 @@ class InvoiceController extends Controller
             'invoice' => $this->invoices->toDetailArray($result['invoice']),
             'allocations' => $result['allocations'],
             'remaining_amount_cents' => $result['remaining_amount_cents'],
+            'available_funds_cents' => $result['available_funds_cents'] ?? 0,
         ]);
     }
 

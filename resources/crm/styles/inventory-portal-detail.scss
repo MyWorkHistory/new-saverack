@@ -3,8 +3,11 @@
 }
 
 .inventory-portal-detail__metric-card {
-  padding: 1.25rem 1.35rem;
-  min-height: 5.5rem;
+  min-height: 5.75rem;
+}
+
+.inventory-portal-detail__metric-card.inventory-metric-card {
+  text-align: left;
 }
 
 .inventory-portal-detail__metric-label {
@@ -61,13 +64,6 @@
   font-size: 0.9375rem;
   color: var(--bs-secondary-color);
   margin: 0;
-}
-
-.inventory-portal-detail__cubic {
-  font-size: 0.9375rem;
-  font-weight: 600;
-  color: var(--bs-body-color);
-  margin: 0 0 1rem;
 }
 
 .inventory-portal-detail__section {

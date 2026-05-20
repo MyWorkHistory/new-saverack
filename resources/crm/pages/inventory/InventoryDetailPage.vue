@@ -7,10 +7,6 @@ import CrmLoadingSpinner from "../../components/common/CrmLoadingSpinner.vue";
 import { setCrmPageMeta } from "../../composables/useCrmPageMeta.js";
 import { useToast } from "../../composables/useToast.js";
 import { formatDateUs } from "../../utils/formatUserDates.js";
-import {
-  cubicFeetFromDimensions,
-  formatCubicFeetDisplay,
-} from "../../utils/cubicFeetFromDimensions.js";
 
 const route = useRoute();
 const toast = useToast();
@@ -69,10 +65,6 @@ const allocatedLoaded = ref(false);
 const backorderLoaded = ref(false);
 const allocatedTruncatedMessage = ref("");
 const backorderTruncatedMessage = ref("");
-
-const portalCubicFeet = computed(() =>
-  cubicFeetFromDimensions(product.value?.dimensions),
-);
 
 const showKitSection = computed(() => {
   const p = product.value;
@@ -133,6 +125,13 @@ function displayNumber(v) {
   const n = Number(v);
   if (Number.isNaN(n)) return 0;
   return n;
+}
+
+function displayStorageCubicFeet(v) {
+  if (v === null || v === undefined) return "—";
+  const n = Number(v);
+  if (!Number.isFinite(n)) return "—";
+  return String(n);
 }
 
 onMounted(() => {
@@ -501,9 +500,28 @@ async function togglePickable(loc) {
 
         <div class="row g-2 inventory-portal-detail__metrics">
           <div v-for="card in metricCards" :key="card.key" class="col-6 col-md">
-            <div class="staff-stat-card inventory-portal-detail__metric-card h-100">
-              <p class="inventory-portal-detail__metric-label mb-0">{{ card.label }}</p>
-              <p class="inventory-portal-detail__metric-value mb-0">{{ card.value }}</p>
+            <div class="staff-table-card p-3 inventory-metric-card inventory-portal-detail__metric-card h-100">
+              <div class="inventory-metric-card__head">
+                <div class="inventory-metric-card__left">
+                  <div class="inventory-portal-detail__metric-label">{{ card.label }}</div>
+                </div>
+                <div class="inventory-metric-card__right">
+                  <svg
+                    class="inventory-metric-card__icon"
+                    :class="`inventory-metric-card__icon--${card.tone}`"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-width="2"
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                    aria-hidden="true"
+                  >
+                    <path :d="card.iconPath" />
+                  </svg>
+                </div>
+              </div>
+              <div class="inventory-portal-detail__metric-value">{{ card.value }}</div>
             </div>
           </div>
         </div>
@@ -530,13 +548,9 @@ async function togglePickable(loc) {
                 </div>
               </div>
 
-              <p class="inventory-portal-detail__cubic">
-                Cubic Feet: {{ formatCubicFeetDisplay(portalCubicFeet) }}
-              </p>
-
               <button
                 type="button"
-                class="btn btn-outline-secondary btn-sm w-100 mb-3"
+                class="btn btn-outline-secondary btn-sm orders-toolbar-outline-btn w-100 mb-3"
                 @click="openBarcodeLabelPdf"
               >
                 Print Barcode Label
@@ -567,6 +581,10 @@ async function togglePickable(loc) {
                 <div>
                   <dt class="staff-user-profile__dt">Length</dt>
                   <dd class="staff-user-profile__dd">{{ displayNumber(product.dimensions?.length) }}</dd>
+                </div>
+                <div>
+                  <dt class="staff-user-profile__dt">Storage Cubic Feet</dt>
+                  <dd class="staff-user-profile__dd">{{ displayStorageCubicFeet(product.storage_cubic_feet) }}</dd>
                 </div>
                 <div>
                   <dt class="staff-user-profile__dt">Custom Value</dt>
@@ -619,7 +637,7 @@ async function togglePickable(loc) {
                 <h2 class="inventory-portal-detail__section-title">Allocated Orders</h2>
                 <button
                   type="button"
-                  class="btn btn-sm btn-outline-secondary"
+                  class="btn btn-sm btn-outline-secondary orders-toolbar-outline-btn"
                   :disabled="allocatedLoading"
                   @click="loadAllocatedOrders"
                 >
@@ -667,7 +685,7 @@ async function togglePickable(loc) {
                 <h2 class="inventory-portal-detail__section-title">Backorder Orders</h2>
                 <button
                   type="button"
-                  class="btn btn-sm btn-outline-secondary"
+                  class="btn btn-sm btn-outline-secondary orders-toolbar-outline-btn"
                   :disabled="backorderLoading"
                   @click="loadBackorderOrders"
                 >

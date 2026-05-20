@@ -2622,6 +2622,7 @@ GQL;
                 'width' => $this->normalizeNumericDisplay($dimensions['width'] ?? null),
                 'length' => $this->normalizeNumericDisplay($dimensions['length'] ?? null),
             ],
+            'storage_cubic_feet' => $this->storageCubicFeetFromShipHeroDimensions($dimensions),
             'metrics' => [
                 'on_hand' => $onHand,
                 'allocated' => $allocated,
@@ -2856,6 +2857,34 @@ GQL;
             return (int) round((float) $value);
         }
         return 0;
+    }
+
+    /**
+     * @param mixed $value
+     * @return float|string|null
+     */
+    /**
+     * Storage cubic feet from ShipHero product dimensions (inches): H × W × L / 1728.
+     *
+     * @param  array<string, mixed>  $dimensions
+     */
+    private function storageCubicFeetFromShipHeroDimensions(array $dimensions): ?float
+    {
+        $height = $this->normalizeNumericDisplay($dimensions['height'] ?? null);
+        $width = $this->normalizeNumericDisplay($dimensions['width'] ?? null);
+        $length = $this->normalizeNumericDisplay($dimensions['length'] ?? null);
+        if (! is_numeric($height) || ! is_numeric($width) || ! is_numeric($length)) {
+            return null;
+        }
+        $h = (float) $height;
+        $w = (float) $width;
+        $l = (float) $length;
+        if ($h <= 0 || $w <= 0 || $l <= 0) {
+            return null;
+        }
+        $cubic = ($h * $w * $l) / 1728;
+
+        return round($cubic, 3);
     }
 
     /**

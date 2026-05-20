@@ -282,25 +282,30 @@ class InventoryController extends Controller
     {
         $validated = $request->validate([
             'client_account_id' => ['nullable', 'integer', 'exists:client_accounts,id'],
+            'barcode' => ['nullable', 'string', 'max:255'],
         ]);
         $clientAccountId = isset($validated['client_account_id'])
             ? (int) $validated['client_account_id']
             : null;
 
         try {
-            $shipheroCustomerId = null;
-            if ($clientAccountId > 0) {
-                $shipheroCustomerId = $this->resolveShipHeroCustomerAccountId($clientAccountId, $request);
+            $skuLabel = trim($sku);
+            $barcode = isset($validated['barcode']) ? trim((string) $validated['barcode']) : '';
+            if ($barcode === '') {
+                $shipheroCustomerId = null;
+                if ($clientAccountId > 0) {
+                    $shipheroCustomerId = $this->resolveShipHeroCustomerAccountId($clientAccountId, $request);
+                }
+                $product = $this->inventory->getProductDetailBySku($sku, null, $shipheroCustomerId);
+                if (! is_array($product)) {
+                    return response()->json(['message' => 'Product not found.'], 404);
+                }
+                $barcode = isset($product['barcode']) ? trim((string) $product['barcode']) : '';
+                $skuLabel = isset($product['sku']) ? trim((string) $product['sku']) : $skuLabel;
             }
-            $product = $this->inventory->getProductDetailBySku($sku, null, $shipheroCustomerId);
-            if (! is_array($product)) {
-                return response()->json(['message' => 'Product not found.'], 404);
-            }
-            $barcode = isset($product['barcode']) ? trim((string) $product['barcode']) : '';
             if ($barcode === '') {
                 return response()->json(['message' => 'No barcode on file for this SKU in ShipHero.'], 422);
             }
-            $skuLabel = isset($product['sku']) ? trim((string) $product['sku']) : trim($sku);
             $pdf = Pdf::loadView('pdf.inventory.barcode', [
                 'sku' => $skuLabel,
                 'barcode' => $barcode,

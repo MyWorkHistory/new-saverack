@@ -8,6 +8,7 @@ import { setCrmPageMeta } from "../../composables/useCrmPageMeta.js";
 import { usePortalLastRefreshed } from "../../composables/usePortalLastRefreshed.js";
 import { useToast } from "../../composables/useToast.js";
 import { formatDateTimeUs, formatDateUs } from "../../utils/formatUserDates.js";
+import { openApiPdfBlob } from "../../utils/openApiPdfBlob.js";
 
 const route = useRoute();
 const toast = useToast();
@@ -189,26 +190,26 @@ function portalOrderTo(orderId) {
 
 async function openBarcodeLabelPdf() {
   if (!product.value?.sku || barcodePdfLoading.value) return;
-  const params = requestParams();
-  const qs = new URLSearchParams();
-  if (params.client_account_id) {
-    qs.set("client_account_id", String(params.client_account_id));
+  const params = { ...requestParams() };
+  const barcode = String(product.value.barcode || "").trim();
+  if (barcode) {
+    params.barcode = barcode;
   }
-  const path = `/inventory/products/${encodeURIComponent(product.value.sku)}/barcode-label.pdf${
-    qs.toString() ? `?${qs.toString()}` : ""
-  }`;
+  const path = `/inventory/products/${encodeURIComponent(product.value.sku)}/barcode-label.pdf`;
   barcodePdfLoading.value = true;
   try {
-    const { data } = await api.get(path, { responseType: "blob" });
-    const blob = new Blob([data], { type: "application/pdf" });
-    const url = window.URL.createObjectURL(blob);
-    window.open(url, "_blank", "noopener");
-    setTimeout(() => window.URL.revokeObjectURL(url), 30000);
+    await openApiPdfBlob(api, path, { params });
   } catch (e) {
-    toast.errorFrom(e, "Could not open barcode label PDF.");
+    const msg = e instanceof Error ? e.message : "";
+    toast.error(msg || "Could not open barcode label PDF.");
   } finally {
     barcodePdfLoading.value = false;
   }
+}
+
+async function loadPortalOrderSections() {
+  if (!isPortalView.value || !product.value?.sku) return;
+  await Promise.all([loadAllocatedOrders(), loadBackorderOrders()]);
 }
 
 async function loadAllocatedOrders() {
@@ -290,6 +291,7 @@ async function loadDetail() {
     refreshing.value = false;
     if (loadedOk && isPortalView.value) {
       markRefreshed();
+      void loadPortalOrderSections();
     }
   }
 }
@@ -697,14 +699,6 @@ async function togglePickable(loc) {
                     Loaded: {{ formatDateTimeUs(allocatedLoadedAt) }}
                   </p>
                 </div>
-                <button
-                  type="button"
-                  class="btn btn-sm btn-outline-secondary orders-toolbar-outline-btn"
-                  :disabled="allocatedLoading"
-                  @click="loadAllocatedOrders"
-                >
-                  {{ allocatedLoading ? "Loading…" : "Load Allocated Orders" }}
-                </button>
               </div>
               <p v-if="allocatedTruncatedMessage" class="inventory-portal-detail__truncated">
                 {{ allocatedTruncatedMessage }}
@@ -732,13 +726,16 @@ async function togglePickable(loc) {
                 </table>
               </div>
               <p
+                v-else-if="allocatedLoading"
+                class="inventory-portal-detail__empty"
+              >
+                Loading allocated orders…
+              </p>
+              <p
                 v-else-if="allocatedLoaded && !allocatedOrders.length"
                 class="inventory-portal-detail__empty"
               >
                 No allocated orders found for this SKU in the recent search window.
-              </p>
-              <p v-else class="inventory-portal-detail__empty">
-                Click Load Allocated Orders to fetch matching open orders.
               </p>
             </div>
 
@@ -750,14 +747,6 @@ async function togglePickable(loc) {
                     Loaded: {{ formatDateTimeUs(backorderLoadedAt) }}
                   </p>
                 </div>
-                <button
-                  type="button"
-                  class="btn btn-sm btn-outline-secondary orders-toolbar-outline-btn"
-                  :disabled="backorderLoading"
-                  @click="loadBackorderOrders"
-                >
-                  {{ backorderLoading ? "Loading…" : "Load Backorder Orders" }}
-                </button>
               </div>
               <p v-if="backorderTruncatedMessage" class="inventory-portal-detail__truncated">
                 {{ backorderTruncatedMessage }}
@@ -785,13 +774,16 @@ async function togglePickable(loc) {
                 </table>
               </div>
               <p
+                v-else-if="backorderLoading"
+                class="inventory-portal-detail__empty"
+              >
+                Loading backorder orders…
+              </p>
+              <p
                 v-else-if="backorderLoaded && !backorderOrders.length"
                 class="inventory-portal-detail__empty"
               >
                 No backorder orders found for this SKU in the recent search window.
-              </p>
-              <p v-else class="inventory-portal-detail__empty">
-                Click Load Backorder Orders to fetch matching open orders.
               </p>
             </div>
           </div>

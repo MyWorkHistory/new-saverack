@@ -2652,13 +2652,17 @@ GQL;
     }
 
     /**
+     * Uses ShipHero {@see orders} `sku` filter with inline `line_items` (one request per page).
+     * Avoids per-order line-item fetches that caused Cloudflare 524 timeouts.
+     *
      * @param  'allocated'|'backorder'  $mode
      * @return array{rows: list<array<string, mixed>>, truncated: bool, message: ?string}
      */
     private function listOrdersForProductSku(string $customerAccountId, string $sku, string $mode): array
     {
         $customer = trim($customerAccountId);
-        $skuNorm = mb_strtolower(trim($sku));
+        $skuTrim = trim($sku);
+        $skuNorm = mb_strtolower($skuTrim);
         if ($customer === '' || $skuNorm === '') {
             throw new RuntimeException('Customer account and SKU are required.');
         }
@@ -2666,58 +2670,34 @@ GQL;
         $from = Carbon::now()->subDays(90)->startOfDay()->toIso8601String();
         $to = Carbon::now()->endOfDay()->toIso8601String();
 
-        $baseFilters = [
-            'customer_account_id' => $customer,
-            'first' => 25,
-            'order_date_from' => $from,
-            'order_date_to' => $to,
-            'fulfillment_status' => 'unfulfilled',
-        ];
-
-        if ($mode === 'backorder') {
-            $baseFilters['tab'] = 'backorder';
-        } else {
-            $baseFilters['tab'] = 'manage';
-            $baseFilters['has_backorder'] = null;
-        }
-
         $out = [];
         $truncated = false;
-        $maxPages = 8;
+        $maxPages = 4;
+        $perPage = 50;
         $after = null;
-        $ordersScanned = 0;
-        $maxLineFetches = 40;
+        $startedAt = microtime(true);
 
         for ($page = 0; $page < $maxPages; $page++) {
-            $filters = $baseFilters;
-            $filters['after'] = $after;
-            $payload = $this->listOrders($filters);
-            $orderRows = is_array($payload['rows'] ?? null) ? $payload['rows'] : [];
+            $pagePayload = $this->fetchOrdersForProductSkuPage(
+                $customer,
+                $skuTrim,
+                $mode,
+                $from,
+                $to,
+                $perPage,
+                $after
+            );
 
-            foreach ($orderRows as $order) {
-                if (! is_array($order) || $ordersScanned >= $maxLineFetches) {
-                    $truncated = true;
-                    break 2;
+            foreach ($pagePayload['orders'] as $order) {
+                if (! is_array($order)) {
+                    continue;
                 }
-                $ordersScanned++;
                 $relayId = trim((string) ($order['id'] ?? ''));
                 if ($relayId === '') {
                     continue;
                 }
 
-                try {
-                    $lines = $this->fetchOrderLineItems($customer, $relayId);
-                } catch (\Throwable $e) {
-                    Log::warning('shiphero.inventory.product_orders.line_items_failed', [
-                        'order_id' => $relayId,
-                        'sku' => $sku,
-                        'mode' => $mode,
-                        'message' => $e->getMessage(),
-                    ]);
-                    continue;
-                }
-
-                foreach ($lines as $line) {
+                foreach ($order['lines'] as $line) {
                     if (! is_array($line)) {
                         continue;
                     }
@@ -2746,33 +2726,157 @@ GQL;
                 }
             }
 
-            if ($ordersScanned >= $maxLineFetches) {
-                $truncated = true;
+            if (! ($pagePayload['has_next_page'] ?? false)) {
                 break;
             }
-
-            if (! ($payload['pagination']['has_next_page'] ?? false)) {
-                break;
-            }
-            $next = $payload['pagination']['end_cursor'] ?? null;
+            $next = $pagePayload['end_cursor'] ?? null;
             if (! is_string($next) || $next === '') {
                 break;
             }
             if ($page === $maxPages - 1) {
                 $truncated = true;
+                break;
             }
             $after = $next;
         }
 
+        $durationMs = (int) round((microtime(true) - $startedAt) * 1000);
+        Log::info('shiphero.inventory.product_orders.completed', [
+            'customer_account_id' => $customer,
+            'sku' => $skuTrim,
+            'mode' => $mode,
+            'rows' => count($out),
+            'truncated' => $truncated,
+            'duration_ms' => $durationMs,
+        ]);
+
         $message = null;
         if ($truncated) {
-            $message = 'Showing matches from a limited set of recent orders. Load again later or open the order list for a full search.';
+            $message = 'Showing matches from the most recent orders in the last 90 days. More orders may exist—open Orders for a full search.';
         }
 
         return [
             'rows' => $out,
             'truncated' => $truncated,
             'message' => $message,
+        ];
+    }
+
+    /**
+     * @param  'allocated'|'backorder'  $mode
+     * @return array{
+     *   orders: list<array{id: string, order_number: string, order_date: string, lines: list<array<string, mixed>>}>,
+     *   has_next_page: bool,
+     *   end_cursor: ?string
+     * }
+     */
+    private function fetchOrdersForProductSkuPage(
+        string $customerAccountId,
+        string $sku,
+        string $mode,
+        string $orderDateFrom,
+        string $orderDateTo,
+        int $first,
+        ?string $after
+    ): array {
+        $graphql = <<<'GQL'
+query ShipHeroOrdersForProductSku(
+  $customer_account_id: String!,
+  $sku: String!,
+  $order_date_from: ISODateTime,
+  $order_date_to: ISODateTime,
+  $fulfillment_status: String,
+  $has_backorder: Boolean,
+  $first: Int!,
+  $after: String
+) {
+  orders(
+    customer_account_id: $customer_account_id,
+    sku: $sku,
+    order_date_from: $order_date_from,
+    order_date_to: $order_date_to,
+    fulfillment_status: $fulfillment_status,
+    has_backorder: $has_backorder
+  ) {
+    request_id
+    complexity
+    data(first: $first, after: $after) {
+      edges {
+        node {
+          id
+          order_number
+          order_date
+          line_items(first: 30) {
+            edges {
+              node {
+                sku
+                quantity
+                quantity_allocated
+                backorder_quantity
+              }
+            }
+          }
+        }
+      }
+      pageInfo {
+        hasNextPage
+        endCursor
+      }
+    }
+  }
+}
+GQL;
+
+        $vars = [
+            'customer_account_id' => $customerAccountId,
+            'sku' => $sku,
+            'order_date_from' => $this->nullableIso($orderDateFrom),
+            'order_date_to' => $this->nullableIso($orderDateTo),
+            'fulfillment_status' => 'unfulfilled',
+            'has_backorder' => $mode === 'backorder' ? true : null,
+            'first' => max(1, min(50, $first)),
+            'after' => $after !== null && trim($after) !== '' ? trim($after) : null,
+        ];
+
+        $json = $this->client->query($graphql, $vars);
+        $data = data_get($json, 'data.orders.data');
+        if (! is_array($data)) {
+            throw new RuntimeException('ShipHero did not return orders data for SKU lookup.');
+        }
+
+        $edges = is_array($data['edges'] ?? null) ? $data['edges'] : [];
+        $orders = [];
+        foreach ($edges as $edge) {
+            if (! is_array($edge) || ! is_array($edge['node'] ?? null)) {
+                continue;
+            }
+            $node = $edge['node'];
+            $lines = [];
+            $lineEdges = data_get($node, 'line_items.edges');
+            if (is_array($lineEdges)) {
+                foreach ($lineEdges as $lineEdge) {
+                    if (! is_array($lineEdge) || ! is_array($lineEdge['node'] ?? null)) {
+                        continue;
+                    }
+                    $lines[] = $lineEdge['node'];
+                }
+            }
+            $orders[] = [
+                'id' => (string) ($node['id'] ?? ''),
+                'order_number' => (string) ($node['order_number'] ?? ''),
+                'order_date' => $this->nullableIso($node['order_date'] ?? null) ?? '',
+                'lines' => $lines,
+            ];
+        }
+
+        $pageInfo = is_array($data['pageInfo'] ?? null) ? $data['pageInfo'] : [];
+
+        return [
+            'orders' => $orders,
+            'has_next_page' => (bool) ($pageInfo['hasNextPage'] ?? false),
+            'end_cursor' => isset($pageInfo['endCursor']) && is_string($pageInfo['endCursor'])
+                ? $pageInfo['endCursor']
+                : null,
         ];
     }
 }

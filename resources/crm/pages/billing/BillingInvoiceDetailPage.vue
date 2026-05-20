@@ -2662,7 +2662,7 @@ function onDocKeydown(e) {
             <div class="billing-inv-summary-grid mb-3">
               <button
                 type="button"
-                class="staff-stat-card billing-inv-summary-card h-100 text-start"
+                class="staff-stat-card billing-inv-summary-card text-start"
                 :disabled="accountBalanceLoading"
                 @click="goToInvoiceBucket('open')"
               >
@@ -2677,7 +2677,7 @@ function onDocKeydown(e) {
               </button>
               <button
                 type="button"
-                class="staff-stat-card billing-inv-summary-card h-100 text-start"
+                class="staff-stat-card billing-inv-summary-card text-start"
                 :disabled="accountBalanceLoading"
                 @click="goToInvoiceBucket('draft')"
               >
@@ -2698,7 +2698,7 @@ function onDocKeydown(e) {
                 </div>
               </button>
               <div
-                class="staff-stat-card billing-inv-summary-card billing-inv-summary-card--available h-100"
+                class="staff-stat-card billing-inv-summary-card billing-inv-summary-card--static"
                 :class="{ 'opacity-75': accountBalanceLoading }"
               >
                 <p class="staff-stat-card__label">Available Balance</p>
@@ -3811,16 +3811,15 @@ function onDocKeydown(e) {
   color: #dc2626;
 }
 .billing-inv-summary-grid {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
+  display: flex;
+  flex-direction: column;
   gap: 0.75rem;
-}
-.billing-inv-summary-card--available {
-  grid-column: 2;
 }
 .billing-inv-summary-card {
   width: 100%;
-  cursor: pointer;
+  min-height: 0;
+  height: auto;
+  padding: 1.25rem 4.25rem 1.25rem 1.25rem;
   text-align: left;
   font: inherit;
   color: inherit;
@@ -3830,33 +3829,46 @@ function onDocKeydown(e) {
     box-shadow 0.15s ease,
     transform 0.15s ease;
 }
-.billing-inv-summary-card:hover:not(:disabled) {
+button.billing-inv-summary-card {
+  cursor: pointer;
+}
+.billing-inv-summary-card--static {
+  cursor: default;
+}
+button.billing-inv-summary-card:hover:not(:disabled) {
   border-color: rgba(115, 103, 240, 0.35) !important;
   box-shadow: 0 0.45rem 1rem rgba(47, 43, 61, 0.12);
   transform: translateY(-1px);
 }
-.billing-inv-summary-card:disabled {
+button.billing-inv-summary-card:disabled {
   opacity: 0.75;
   cursor: not-allowed;
 }
+.billing-inv-summary-card .staff-stat-card__value {
+  font-size: 1.5rem;
+  word-break: break-word;
+}
 .billing-inv-summary-card .staff-stat-card__icon {
-  width: 3.5rem;
-  height: 3.5rem;
-  display: flex;
-  align-items: center;
-  justify-content: center;
+  top: 50%;
+  right: 1.125rem;
+  transform: translateY(-50%);
+  width: 3rem;
+  height: 3rem;
 }
 .billing-inv-summary-card .staff-stat-card__icon svg {
-  width: 1.75rem;
-  height: 1.75rem;
+  width: 1.5rem;
+  height: 1.5rem;
 }
 .billing-inv-summary-card .staff-stat-card__icon--money {
-  width: 3.5rem;
-  height: 3.5rem;
+  width: 3rem;
+  height: 3rem;
 }
 .billing-inv-summary-card .staff-stat-card__icon--money svg {
-  width: 1.65rem;
-  height: 1.65rem;
+  width: 1.35rem;
+  height: 1.35rem;
+}
+button.billing-inv-summary-card:hover:not(:disabled) .staff-stat-card__icon {
+  transform: translateY(-50%);
 }
 .billing-group-edit-bulk-panel {
   border: 1px solid rgba(47, 43, 61, 0.1);

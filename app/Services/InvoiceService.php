@@ -3,6 +3,7 @@
 namespace App\Services;
 
 use App\Mail\InvoiceSentMailable;
+use App\Models\ClientAccount;
 use App\Models\Invoice;
 use App\Support\Billing\InvoiceHistoryEventType;
 use App\Support\Billing\InvoiceLineCategory;
@@ -755,6 +756,7 @@ class InvoiceService
             ->sum('balance_due_cents');
 
         $open = 0;
+        $pastDue = 0;
         $rows = [];
         foreach ($payable as $row) {
             $balance = (int) $row->balance_due_cents;
@@ -763,6 +765,9 @@ class InvoiceService
             if ($row->status !== Invoice::STATUS_DRAFT) {
                 $isPastDue = $this->isOverdue($row);
                 $open += $balance;
+                if ($isPastDue) {
+                    $pastDue += $balance;
+                }
             } else {
                 $isPastDue = false;
             }
@@ -788,9 +793,9 @@ class InvoiceService
                 'name' => (string) $invoice->clientAccount->company_name,
             ],
             'current_invoice_id' => (int) $invoice->id,
-            'available_funds_cents' => 0,
+            'available_funds_cents' => max(0, (int) ($invoice->clientAccount->billing_available_funds_cents ?? 0)),
             'open_balance_cents' => $open,
-            'past_due_balance_cents' => 0,
+            'past_due_balance_cents' => $pastDue,
             'pending_balance_cents' => (int) $pending,
             'rows' => $rows,
         ];
@@ -822,6 +827,14 @@ class InvoiceService
         $invoiceIds = array_values(array_unique(array_map('intval', $invoiceIds)));
 
         return DB::transaction(function () use ($rootInvoice, $invoiceIds, $amountCents, $actor, $paymentMeta) {
+            $account = ClientAccount::query()
+                ->whereKey($rootInvoice->client_account_id)
+                ->lockForUpdate()
+                ->first();
+            if ($account === null) {
+                throw new \RuntimeException('Invoice account is unavailable.');
+            }
+
             $selected = Invoice::query()
                 ->where('client_account_id', $rootInvoice->client_account_id)
                 ->whereIn('id', $invoiceIds)
@@ -866,10 +879,14 @@ class InvoiceService
                 ];
             }
 
+            $account->billing_available_funds_cents = max(0, $remaining);
+            $account->save();
+
             return [
                 'invoice' => $rootInvoice->fresh(['items', 'histories.user', 'clientAccount', 'createdBy']) ?? $rootInvoice,
                 'allocations' => $allocations,
                 'remaining_amount_cents' => $remaining,
+                'available_funds_cents' => max(0, (int) $account->billing_available_funds_cents),
             ];
         });
     }

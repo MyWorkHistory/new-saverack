@@ -64,12 +64,14 @@ class ClientAccount extends Model
         'whatsapp_api_id',
         'default_payment_type',
         'cc_fee_percent',
+        'billing_available_funds_cents',
     ];
 
     protected $casts = [
         'notify_email' => 'boolean',
         'contract_date' => 'date',
         'cc_fee_percent' => 'decimal:2',
+        'billing_available_funds_cents' => 'integer',
     ];
 
     protected static function booted(): void

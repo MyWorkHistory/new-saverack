@@ -454,6 +454,53 @@ class BillingInvoiceApiTest extends TestCase
         $this->assertSame(Invoice::STATUS_PAID, $invoiceB->status);
     }
 
+    public function test_pay_allocate_stores_unapplied_amount_as_available_funds(): void
+    {
+        $user = User::factory()->create();
+        $user->permissions()->sync([
+            $this->billingViewPermission()->id,
+            $this->billingUpdatePermission()->id,
+        ]);
+        Sanctum::actingAs($user);
+
+        $client = ClientAccount::query()->create([
+            'status' => ClientAccount::STATUS_ACTIVE,
+            'company_name' => 'Funds Co',
+            'email' => 'funds@acme.test',
+            'billing_available_funds_cents' => 0,
+        ]);
+
+        $invoice = Invoice::query()->create([
+            'invoice_number' => 'INV-FUNDS-001',
+            'client_account_id' => $client->id,
+            'status' => Invoice::STATUS_SENT,
+            'currency' => 'USD',
+            'due_at' => now()->addDay(),
+            'subtotal_cents' => 58683,
+            'tax_cents' => 0,
+            'total_cents' => 58683,
+            'amount_paid_cents' => 0,
+            'balance_due_cents' => 58683,
+        ]);
+
+        $this->postJson("/api/invoices/{$invoice->id}/pay-allocate", [
+            'amount_cents' => 300000,
+            'invoice_ids' => [$invoice->id],
+            'payment_type' => 'ACH',
+            'payment_date' => now()->toDateString(),
+        ])
+            ->assertOk()
+            ->assertJsonPath('remaining_amount_cents', 241317)
+            ->assertJsonPath('available_funds_cents', 241317);
+
+        $client->refresh();
+        $this->assertSame(241317, (int) $client->billing_available_funds_cents);
+
+        $this->getJson("/api/invoices/{$invoice->id}/pay-context")
+            ->assertOk()
+            ->assertJsonPath('available_funds_cents', 241317);
+    }
+
     public function test_user_without_billing_view_cannot_list_invoices(): void
     {
         $user = User::factory()->create();

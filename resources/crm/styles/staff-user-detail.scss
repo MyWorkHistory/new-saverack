@@ -214,6 +214,42 @@ $staff-detail-primary: #2563eb;
   color: #e04448;
 }
 
+/* Portal inventory product detail */
+.inventory-portal-metrics__stat {
+  padding: 1rem 0.75rem;
+}
+
+.inventory-portal-metrics__stat .staff-user-profile__stat-val {
+  font-size: 1.375rem;
+}
+
+.inventory-portal-product__hero {
+  display: flex;
+  align-items: flex-start;
+  gap: 1rem;
+  margin-bottom: 1.25rem;
+  padding-bottom: 1.25rem;
+  border-bottom: 1px solid var(--vx-nav-border);
+}
+
+.inventory-portal-product__image {
+  width: 10rem;
+  height: 10rem;
+  border-radius: 0.5rem;
+  object-fit: cover;
+  border: 1px solid var(--vx-nav-border);
+  background: var(--bs-body-bg);
+  display: block;
+}
+
+.inventory-portal-product__image--empty {
+  background: rgba(47, 43, 61, 0.06);
+}
+
+[data-bs-theme="dark"] .inventory-portal-product__image--empty {
+  background: rgba(255, 255, 255, 0.06);
+}
+
 /* Tabs */
 .staff-user-tabs {
   display: flex;

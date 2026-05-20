@@ -1573,6 +1573,7 @@ async function loadPayContext(options = {}) {
   if (!invoice.value?.id) return null;
   const includeRows = options.includeRows === true;
   const { data } = await api.get(`/invoices/${invoice.value.id}/pay-context`);
+  payFundsCents.value = Number(data?.available_funds_cents || 0);
   payOpenBalanceCents.value = Number(data?.open_balance_cents || 0);
   payPendingBalanceCents.value = Number(data?.pending_balance_cents || 0);
   if (includeRows) {
@@ -1796,7 +1797,6 @@ async function openPayModal() {
   payType.value = String(invoice.value.client_account_default_payment_type || "");
   payDate.value = new Date().toISOString().slice(0, 10);
   payNotes.value = "";
-  payFundsCents.value = 0;
   payOpenBalanceCents.value = 0;
   payPendingBalanceCents.value = 0;
   payRows.value = [];

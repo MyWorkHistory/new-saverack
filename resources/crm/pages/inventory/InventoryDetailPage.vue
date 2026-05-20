@@ -1,23 +1,43 @@
 <script setup>
-import { computed, inject, onMounted, reactive, ref } from "vue";
-import { useRoute } from "vue-router";
+import { computed, onMounted, onUnmounted, reactive, ref } from "vue";
+import { RouterLink } from "vue-router";
 import api from "../../services/api";
 import CrmIconRowActions from "../../components/common/CrmIconRowActions.vue";
 import CrmLoadingSpinner from "../../components/common/CrmLoadingSpinner.vue";
 import { setCrmPageMeta } from "../../composables/useCrmPageMeta.js";
+import { useInventoryProductDetail } from "../../composables/useInventoryProductDetail.js";
 import { useToast } from "../../composables/useToast.js";
 
-const route = useRoute();
 const toast = useToast();
-const crmUser = inject("crmUser", ref(null));
 
-const isPortalView = computed(() => Boolean(route.meta.userPortal));
-const canManageInventoryLocations = computed(() => !isPortalView.value);
-
-const loading = ref(true);
-const saving = ref(false);
-const product = ref(null);
-const errorMessage = ref("");
+const {
+  route,
+  isPortalView,
+  canManageInventoryLocations,
+  loading,
+  saving,
+  product,
+  errorMessage,
+  metricCards,
+  cubicFeetDisplay,
+  showKitSection,
+  kitComponents,
+  allocatedOrders,
+  allocatedOrdersLoading,
+  allocatedOrdersLoaded,
+  backorderOrders,
+  backorderOrdersLoading,
+  backorderOrdersLoaded,
+  displayVal,
+  displayNumber,
+  loadDetail,
+  openBarcodeLabelPdf,
+  loadAllocatedOrders,
+  loadBackorderOrders,
+  formatOrderDate,
+  portalOrderDetailHref,
+  requestParams,
+} = useInventoryProductDetail();
 const locationSearch = ref("");
 const actionMenuLocationId = ref(null);
 const actionMenuRect = ref({ top: 0, left: 0 });
@@ -48,25 +68,6 @@ const inventoryReasons = [
   "System Sync or Integration Corrections",
 ];
 
-const summaryMetrics = computed(() => product.value?.metrics || {
-  on_hand: 0,
-  allocated: 0,
-  available: 0,
-  backorder: 0,
-  asn: 0,
-});
-
-const metricCards = computed(() => ([
-  { key: "on_hand", label: "On Hand", iconPath: "M3 7.5 12 3l9 4.5v9L12 21l-9-4.5z M12 12l9-4.5 M12 12 3 7.5 M12 12v9", tone: "blue" },
-  { key: "allocated", label: "Allocated", iconPath: "M4 8h16M4 12h16M4 16h16M7 5h10", tone: "amber" },
-  { key: "available", label: "Available", iconPath: "M4 12l5 5 11-11", tone: "green" },
-  { key: "backorder", label: "Backorder", iconPath: "M12 7v6 M12 17h.01 M3 12a9 9 0 1 0 18 0 9 9 0 1 0-18 0", tone: "red" },
-  { key: "asn", label: "ASN", iconPath: "M2 13h11l2-3h7v7h-2 M6 17a2 2 0 1 0 0 .01 M18 17a2 2 0 1 0 0 .01", tone: "purple" },
-]).map((item) => ({
-  ...item,
-  value: Number(summaryMetrics.value?.[item.key] || 0),
-})));
-
 const allLocations = computed(() => {
   const out = [];
   const p = product.value;
@@ -92,20 +93,6 @@ const filteredLocations = computed(() => {
   );
 });
 
-function displayVal(v) {
-  if (v === null || v === undefined) return "—";
-  if (typeof v === "string" && v.trim() === "") return "—";
-  return v;
-}
-
-function displayNumber(v) {
-  if (v === null || v === undefined) return 0;
-  if (typeof v === "string" && v.trim() === "") return 0;
-  const n = Number(v);
-  if (Number.isNaN(n)) return 0;
-  return n;
-}
-
 onMounted(() => {
   if (route.meta.userPortal) {
     setCrmPageMeta({
@@ -119,41 +106,18 @@ onMounted(() => {
     });
   }
   loadDetail();
-  document.addEventListener("click", onDocClick);
+  if (!isPortalView.value) {
+    document.addEventListener("click", onDocClick);
+  }
+});
+
+onUnmounted(() => {
+  document.removeEventListener("click", onDocClick);
 });
 
 function onDocClick(e) {
   if (!e.target?.closest?.("[data-row-actions]")) {
     actionMenuLocationId.value = null;
-  }
-}
-
-function requestParams() {
-  const params = {};
-  const portalAccountId = Number(crmUser.value?.client_account_id || 0);
-  const queryAccountId = Number(route.query.client_account_id || 0);
-  const clientAccountId = isPortalView.value
-    ? portalAccountId || queryAccountId
-    : queryAccountId || portalAccountId;
-  if (clientAccountId > 0) params.client_account_id = clientAccountId;
-  if (route.query.warehouse_id) params.warehouse_id = String(route.query.warehouse_id);
-  return params;
-}
-
-async function loadDetail() {
-  loading.value = true;
-  errorMessage.value = "";
-  try {
-    const sku = String(route.params.sku || "").trim();
-    const { data } = await api.get(`/inventory/products/${encodeURIComponent(sku)}`, {
-      params: requestParams(),
-    });
-    product.value = data?.product ?? null;
-  } catch (e) {
-    errorMessage.value = e.response?.data?.message || "Could not load inventory detail.";
-    toast.errorFrom(e, "Could not load inventory detail.");
-  } finally {
-    loading.value = false;
   }
 }
 
@@ -365,12 +329,244 @@ async function togglePickable(loc) {
       <div v-else-if="!product" class="text-secondary small py-4 text-center">
         Product not found.
       </div>
-      <template v-else>
-        <div v-if="route.meta.userPortal" class="mb-3">
-          <div class="h4 mb-1 fw-semibold text-body">Products</div>
-          <p class="text-secondary small mb-0">Inventory — detail</p>
+      <template v-else-if="isPortalView">
+        <div class="staff-user-view staff-page--wide">
+          <nav
+            class="staff-user-view__breadcrumb d-flex flex-wrap align-items-center gap-1"
+            aria-label="Breadcrumb"
+          >
+            <RouterLink to="/users">Home</RouterLink>
+            <span class="text-secondary" aria-hidden="true">/</span>
+            <RouterLink to="/users/inventory">Products</RouterLink>
+            <span class="text-secondary" aria-hidden="true">/</span>
+            <span class="text-body-secondary">{{ product.sku || "Product" }}</span>
+          </nav>
+
+          <div class="staff-user-view__title-row d-flex flex-wrap align-items-start gap-2">
+            <div class="min-w-0">
+              <h1 class="staff-user-view__title">Products</h1>
+              <p class="text-secondary small mb-0">Inventory detail</p>
+            </div>
+          </div>
+
+          <div class="inventory-portal-metrics row g-2 g-md-3 mb-3">
+            <div v-for="card in metricCards" :key="card.key" class="col-6 col-md">
+              <div class="staff-user-profile__stat inventory-portal-metrics__stat h-100">
+                <div class="staff-user-profile__stat-val">{{ card.value }}</div>
+                <div class="staff-user-profile__stat-lbl">{{ card.label }}</div>
+              </div>
+            </div>
+          </div>
+
+          <div class="row g-3">
+            <div class="col-12 col-xl-4">
+              <aside class="staff-user-profile">
+                <div class="inventory-portal-product__hero">
+                  <div class="inventory-portal-product__image-wrap flex-shrink-0">
+                    <img
+                      v-if="product.image_url"
+                      :src="product.image_url"
+                      alt=""
+                      class="inventory-portal-product__image"
+                    />
+                    <div v-else class="inventory-portal-product__image inventory-portal-product__image--empty" />
+                  </div>
+                  <div class="min-w-0 flex-grow-1">
+                    <h2 class="staff-user-profile__name text-start mb-2">
+                      {{ product.name || "Product" }}
+                    </h2>
+                    <button
+                      type="button"
+                      class="btn btn-outline-secondary btn-sm orders-toolbar-outline-btn"
+                      @click="openBarcodeLabelPdf"
+                    >
+                      Print Barcode Label
+                    </button>
+                  </div>
+                </div>
+
+                <h3 class="staff-user-profile__details-title">Details</h3>
+                <dl class="staff-user-profile__dl">
+                  <div>
+                    <dt class="staff-user-profile__dt">SKU</dt>
+                    <dd class="staff-user-profile__dd">{{ product.sku || "—" }}</dd>
+                  </div>
+                  <div>
+                    <dt class="staff-user-profile__dt">Barcode</dt>
+                    <dd class="staff-user-profile__dd">{{ product.barcode || "—" }}</dd>
+                  </div>
+                  <div>
+                    <dt class="staff-user-profile__dt">Cubic Feet</dt>
+                    <dd class="staff-user-profile__dd">{{ cubicFeetDisplay }}</dd>
+                  </div>
+                  <div>
+                    <dt class="staff-user-profile__dt">Weight</dt>
+                    <dd class="staff-user-profile__dd">{{ displayNumber(product.dimensions?.weight) }}</dd>
+                  </div>
+                  <div>
+                    <dt class="staff-user-profile__dt">Height</dt>
+                    <dd class="staff-user-profile__dd">{{ displayNumber(product.dimensions?.height) }}</dd>
+                  </div>
+                  <div>
+                    <dt class="staff-user-profile__dt">Width</dt>
+                    <dd class="staff-user-profile__dd">{{ displayNumber(product.dimensions?.width) }}</dd>
+                  </div>
+                  <div>
+                    <dt class="staff-user-profile__dt">Length</dt>
+                    <dd class="staff-user-profile__dd">{{ displayNumber(product.dimensions?.length) }}</dd>
+                  </div>
+                  <div>
+                    <dt class="staff-user-profile__dt">Custom Value</dt>
+                    <dd class="staff-user-profile__dd">{{ displayNumber(product.customs_value) }}</dd>
+                  </div>
+                  <div>
+                    <dt class="staff-user-profile__dt">Custom Description</dt>
+                    <dd class="staff-user-profile__dd text-start">{{ displayVal(product.customs_description) }}</dd>
+                  </div>
+                </dl>
+              </aside>
+            </div>
+
+            <div class="col-12 col-xl-8 d-flex flex-column gap-3">
+              <div v-if="showKitSection" class="staff-surface p-3 p-md-4">
+                <h3 class="staff-user-section-title mb-2">Kit</h3>
+                <p class="small text-secondary mb-0">
+                  This product is a kit{{ product.kit_build ? " (kit build)" : "" }}.
+                </p>
+              </div>
+
+              <div v-if="kitComponents.length" class="staff-surface p-0 overflow-hidden">
+                <div class="px-3 py-3 border-bottom">
+                  <h3 class="staff-user-section-title mb-0">Kit Components</h3>
+                </div>
+                <div class="table-responsive staff-table-wrap">
+                  <table class="table table-hover align-middle mb-0 staff-data-table">
+                    <thead class="table-light staff-table-head">
+                      <tr>
+                        <th class="staff-table-head__th">SKU</th>
+                        <th class="staff-table-head__th text-end">Quantity</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      <tr v-for="component in kitComponents" :key="component.sku">
+                        <td class="fw-semibold">{{ component.sku }}</td>
+                        <td class="text-end">{{ component.quantity }}</td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+
+              <div class="staff-surface p-3 p-md-4">
+                <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3">
+                  <h3 class="staff-user-section-title mb-0">Allocated Orders</h3>
+                  <button
+                    v-if="!allocatedOrdersLoaded"
+                    type="button"
+                    class="btn btn-outline-secondary btn-sm orders-toolbar-outline-btn"
+                    :disabled="allocatedOrdersLoading"
+                    @click="loadAllocatedOrders"
+                  >
+                    {{ allocatedOrdersLoading ? "Loading…" : "Load Allocated Orders" }}
+                  </button>
+                </div>
+                <div v-if="allocatedOrdersLoading" class="py-3 text-center">
+                  <CrmLoadingSpinner message="Loading allocated orders…" :center="true" />
+                </div>
+                <p v-else-if="allocatedOrdersLoaded && !allocatedOrders.length" class="small text-secondary mb-0">
+                  No allocated orders for this SKU.
+                </p>
+                <div v-else-if="allocatedOrders.length" class="table-responsive staff-table-wrap">
+                  <table class="table table-hover align-middle mb-0 staff-data-table">
+                    <thead class="table-light staff-table-head">
+                      <tr>
+                        <th class="staff-table-head__th">Order #</th>
+                        <th class="staff-table-head__th">Date</th>
+                        <th class="staff-table-head__th">Status</th>
+                        <th class="staff-table-head__th text-end">Allocated</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      <tr v-for="row in allocatedOrders" :key="row.order_id">
+                        <td class="fw-semibold">
+                          <RouterLink
+                            v-if="portalOrderDetailHref(row)"
+                            :to="portalOrderDetailHref(row)"
+                            class="text-decoration-none"
+                            target="_blank"
+                            rel="noopener noreferrer"
+                          >
+                            {{ row.order_number || "—" }}
+                          </RouterLink>
+                          <span v-else>{{ row.order_number || "—" }}</span>
+                        </td>
+                        <td>{{ formatOrderDate(row.order_date) }}</td>
+                        <td>{{ row.status || "—" }}</td>
+                        <td class="text-end">{{ Number(row.quantity_allocated || 0) }}</td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+
+              <div class="staff-surface p-3 p-md-4">
+                <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3">
+                  <h3 class="staff-user-section-title mb-0">Backorder Orders</h3>
+                  <button
+                    v-if="!backorderOrdersLoaded"
+                    type="button"
+                    class="btn btn-outline-secondary btn-sm orders-toolbar-outline-btn"
+                    :disabled="backorderOrdersLoading"
+                    @click="loadBackorderOrders"
+                  >
+                    {{ backorderOrdersLoading ? "Loading…" : "Load Backorder Orders" }}
+                  </button>
+                </div>
+                <div v-if="backorderOrdersLoading" class="py-3 text-center">
+                  <CrmLoadingSpinner message="Loading backorder orders…" :center="true" />
+                </div>
+                <p v-else-if="backorderOrdersLoaded && !backorderOrders.length" class="small text-secondary mb-0">
+                  No backorder orders for this SKU.
+                </p>
+                <div v-else-if="backorderOrders.length" class="table-responsive staff-table-wrap">
+                  <table class="table table-hover align-middle mb-0 staff-data-table">
+                    <thead class="table-light staff-table-head">
+                      <tr>
+                        <th class="staff-table-head__th">Order #</th>
+                        <th class="staff-table-head__th">Date</th>
+                        <th class="staff-table-head__th">Status</th>
+                        <th class="staff-table-head__th text-end">Backorder</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      <tr v-for="row in backorderOrders" :key="row.order_id">
+                        <td class="fw-semibold">
+                          <RouterLink
+                            v-if="portalOrderDetailHref(row)"
+                            :to="portalOrderDetailHref(row)"
+                            class="text-decoration-none"
+                            target="_blank"
+                            rel="noopener noreferrer"
+                          >
+                            {{ row.order_number || "—" }}
+                          </RouterLink>
+                          <span v-else>{{ row.order_number || "—" }}</span>
+                        </td>
+                        <td>{{ formatOrderDate(row.order_date) }}</td>
+                        <td>{{ row.status || "—" }}</td>
+                        <td class="text-end">{{ Number(row.backorder_quantity || 0) }}</td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+          </div>
         </div>
-        <h1 v-else class="h4 mb-3 fw-semibold text-body">Inventory Detail</h1>
+      </template>
+
+      <template v-else>
+        <h1 class="h4 mb-3 fw-semibold text-body">Inventory Detail</h1>
         <div class="row g-3 mb-3">
           <div class="col-12 col-xl-3">
             <div class="staff-table-card p-3 h-100">
@@ -431,7 +627,7 @@ async function togglePickable(loc) {
               </div>
             </div>
 
-            <div v-if="!isPortalView" class="staff-table-card p-0 mb-3">
+            <div class="staff-table-card p-0 mb-3">
               <div class="px-3 py-2 border-bottom">
                 <h3 class="h6 mb-0 fw-semibold">Locations</h3>
               </div>

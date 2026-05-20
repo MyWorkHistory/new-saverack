@@ -315,6 +315,140 @@ GQL;
     }
 
     /**
+     * Orders containing a product SKU with allocated or backorder quantity on that line.
+     *
+     * @param  'allocated'|'backorder'  $mode
+     * @return array{rows: list<array<string, mixed>>, truncated: bool}
+     */
+    public function listOrdersForProductSku(string $customerAccountId, string $sku, string $mode): array
+    {
+        $customerAccountId = trim($customerAccountId);
+        $sku = trim($sku);
+        if ($customerAccountId === '' || $sku === '') {
+            throw new RuntimeException('customer_account_id and sku are required.');
+        }
+        if (! in_array($mode, ['allocated', 'backorder'], true)) {
+            throw new RuntimeException('mode must be allocated or backorder.');
+        }
+
+        $graphql = <<<'GQL'
+query ShipHeroOrdersByProductSku(
+  $customer_account_id: String!,
+  $sku: String!,
+  $has_backorder: Boolean,
+  $first: Int!,
+  $after: String
+) {
+  orders(
+    customer_account_id: $customer_account_id,
+    sku: $sku,
+    has_backorder: $has_backorder
+  ) {
+    data(first: $first, after: $after) {
+      edges {
+        node {
+          id
+          order_number
+          fulfillment_status
+          order_date
+          line_items(first: 50) {
+            edges {
+              node {
+                sku
+                quantity
+                quantity_allocated
+                backorder_quantity
+              }
+            }
+          }
+        }
+      }
+      pageInfo {
+        hasNextPage
+        endCursor
+      }
+    }
+  }
+}
+GQL;
+
+        $vars = [
+            'customer_account_id' => $customerAccountId,
+            'sku' => $sku,
+            'has_backorder' => $mode === 'backorder' ? true : null,
+            'first' => 50,
+            'after' => null,
+        ];
+
+        $rows = [];
+        $truncated = false;
+        $maxPages = 2;
+        $skuLower = strtolower($sku);
+
+        for ($page = 0; $page < $maxPages; $page++) {
+            $json = $this->client->query($graphql, $vars);
+            $edges = data_get($json, 'data.orders.data.edges');
+            $edges = is_array($edges) ? $edges : [];
+
+            foreach ($edges as $edge) {
+                if (! is_array($edge) || ! is_array($edge['node'] ?? null)) {
+                    continue;
+                }
+                $node = $edge['node'];
+                $lineEdges = data_get($node, 'line_items.edges');
+                $lineEdges = is_array($lineEdges) ? $lineEdges : [];
+
+                foreach ($lineEdges as $lineEdge) {
+                    if (! is_array($lineEdge) || ! is_array($lineEdge['node'] ?? null)) {
+                        continue;
+                    }
+                    $line = $lineEdge['node'];
+                    $lineSku = strtolower(trim((string) ($line['sku'] ?? '')));
+                    if ($lineSku !== $skuLower) {
+                        continue;
+                    }
+                    $qtyAllocated = (float) ($line['quantity_allocated'] ?? 0);
+                    $qtyBackorder = (float) ($line['backorder_quantity'] ?? 0);
+                    if ($mode === 'allocated' && $qtyAllocated <= 0) {
+                        continue;
+                    }
+                    if ($mode === 'backorder' && $qtyBackorder <= 0) {
+                        continue;
+                    }
+
+                    $rows[] = [
+                        'order_id' => (string) ($node['id'] ?? ''),
+                        'order_number' => (string) ($node['order_number'] ?? ''),
+                        'order_date' => $this->nullableIso($node['order_date'] ?? null),
+                        'status' => trim((string) ($node['fulfillment_status'] ?? '')),
+                        'quantity' => (float) ($line['quantity'] ?? 0),
+                        'quantity_allocated' => $qtyAllocated,
+                        'backorder_quantity' => $qtyBackorder,
+                    ];
+                    break;
+                }
+            }
+
+            $pageInfo = data_get($json, 'data.orders.data.pageInfo');
+            $hasNext = (bool) (is_array($pageInfo) ? ($pageInfo['hasNextPage'] ?? false) : false);
+            $endCursor = is_array($pageInfo) ? ($pageInfo['endCursor'] ?? null) : null;
+
+            if (! $hasNext || ! is_string($endCursor) || $endCursor === '') {
+                break;
+            }
+
+            if ($page === $maxPages - 1) {
+                $truncated = true;
+                break;
+            }
+
+            $vars['after'] = $endCursor;
+        }
+
+        return ['rows' => $rows, 'truncated' => $truncated];
+    }
+
+    /**
      * When searching by order #, ShipHero ANDs filters; drop queue/tab constraints and date/update windows
      * so one order can be found. Storefront ids often live on partner_order_id instead of order_number.
      *

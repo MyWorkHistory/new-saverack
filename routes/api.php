@@ -72,6 +72,12 @@ Route::middleware('auth:sanctum')->group(function () {
             ->middleware('can:inventory.update');
         Route::get('/asn-product-catalog', [InventoryController::class, 'asnProductCatalog'])
             ->middleware('can:inventory.view');
+        Route::get('/products/{sku}/allocated-orders', [InventoryController::class, 'productAllocatedOrders'])
+            ->middleware('can:inventory.view');
+        Route::get('/products/{sku}/backorder-orders', [InventoryController::class, 'productBackorderOrders'])
+            ->middleware('can:inventory.view');
+        Route::get('/products/{sku}/barcode-label.pdf', [InventoryController::class, 'productBarcodeLabelPdf'])
+            ->middleware('can:inventory.view');
         Route::get('/products/{sku}', [InventoryController::class, 'productDetail'])
             ->middleware('can:inventory.view');
         Route::post('/replace', [InventoryController::class, 'replaceQuantity'])

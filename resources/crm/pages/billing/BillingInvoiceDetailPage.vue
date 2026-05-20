@@ -2689,7 +2689,7 @@ function onDocKeydown(e) {
                   class="staff-stat-card__icon bg-secondary-subtle text-secondary"
                   aria-hidden="true"
                 >
-                  <svg width="22" height="22" fill="currentColor" viewBox="0 0 24 24">
+                  <svg fill="currentColor" viewBox="0 0 24 24" aria-hidden="true">
                     <path
                       d="M14 2H6c-1.1 0-1.99.9-1.99 2L4 20c0 1.1.89 2 1.99 2H18c1.1 0 2-.9 2-2V8l-6-6zm2 16H8v-2h8v2zm0-4H8v-2h8v2zm-3-5V3.5L18.5 9H13z"
                     />
@@ -2711,7 +2711,7 @@ function onDocKeydown(e) {
                   class="staff-stat-card__icon bg-primary-subtle text-primary"
                   aria-hidden="true"
                 >
-                  <svg width="22" height="22" fill="currentColor" viewBox="0 0 24 24">
+                  <svg fill="currentColor" viewBox="0 0 24 24" aria-hidden="true">
                     <path
                       d="M21 7.28V5c0-1.1-.9-2-2-2H5c-1.11 0-2 .9-2 2v14c0 1.1.89 2 2 2h14c1.1 0 2-.9 2-2v-2.28c.59-.35 1-.98 1-1.72 0-1.1-.9-2-2-2s-2 .9-2 2c0 .74.41 1.37 1 1.72V19H5V5h14v2.28c-.59.35-1 .98-1 1.72 0 1.1.9 2 2 2s2-.9 2-2c0-.74-.41-1.37-1-1.72zM16 13c-.55 0-1-.45-1-1s.45-1 1-1 1 .45 1 1-.45 1-1 1z"
                     />
@@ -3836,14 +3836,28 @@ function onDocKeydown(e) {
   opacity: 0.75;
   cursor: not-allowed;
 }
-.billing-inv-summary-card .staff-stat-card__icon:not(.staff-stat-card__icon--money) {
-  width: 2.5rem;
-  height: 2.5rem;
-  border-radius: 0.4375rem;
+.billing-inv-summary-card .staff-stat-card__icon {
+  top: 50%;
+  right: 1.25rem;
+  transform: translateY(-50%);
+  width: 3.25rem;
+  height: 3.25rem;
+  border-radius: 0.5rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
-.billing-inv-summary-card .staff-stat-card__icon:not(.staff-stat-card__icon--money) svg {
-  width: 1.15rem;
-  height: 1.15rem;
+.billing-inv-summary-card .staff-stat-card__icon svg {
+  width: 1.75rem;
+  height: 1.75rem;
+}
+.billing-inv-summary-card .staff-stat-card__icon--money {
+  width: 3.25rem;
+  height: 3.25rem;
+}
+.billing-inv-summary-card .staff-stat-card__icon--money svg {
+  width: 1.75rem;
+  height: 1.75rem;
 }
 .billing-group-edit-bulk-panel {
   border: 1px solid rgba(47, 43, 61, 0.1);

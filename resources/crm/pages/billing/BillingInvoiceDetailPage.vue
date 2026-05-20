@@ -68,6 +68,7 @@ const payNotes = ref("");
 const payBusy = ref(false);
 const payContextBusy = ref(false);
 const payFundsCents = ref(0);
+const accountAvailableFundsCents = ref(0);
 const payOpenBalanceCents = ref(0);
 const payPendingBalanceCents = ref(0);
 const payRows = ref([]);
@@ -1573,10 +1574,12 @@ async function loadPayContext(options = {}) {
   if (!invoice.value?.id) return null;
   const includeRows = options.includeRows === true;
   const { data } = await api.get(`/invoices/${invoice.value.id}/pay-context`);
-  payFundsCents.value = Number(data?.available_funds_cents || 0);
+  const availableFunds = Number(data?.available_funds_cents || 0);
+  accountAvailableFundsCents.value = availableFunds;
   payOpenBalanceCents.value = Number(data?.open_balance_cents || 0);
   payPendingBalanceCents.value = Number(data?.pending_balance_cents || 0);
   if (includeRows) {
+    payFundsCents.value = availableFunds;
     payRows.value = Array.isArray(data?.rows) ? data.rows : [];
   }
   return data;
@@ -1584,6 +1587,7 @@ async function loadPayContext(options = {}) {
 
 async function loadAccountBalanceSummary() {
   if (!invoice.value?.id || !canUpdate.value || invoice.value.status === "void") {
+    accountAvailableFundsCents.value = 0;
     payOpenBalanceCents.value = 0;
     payPendingBalanceCents.value = 0;
     return;
@@ -1592,6 +1596,7 @@ async function loadAccountBalanceSummary() {
   try {
     await loadPayContext();
   } catch {
+    accountAvailableFundsCents.value = 0;
     payOpenBalanceCents.value = 0;
     payPendingBalanceCents.value = 0;
   } finally {
@@ -1792,7 +1797,8 @@ function goToInvoiceBucket(bucket) {
 }
 
 async function openPayModal() {
-  if (!invoice.value || !payInvoiceEnabled.value) return;
+  if (!invoice.value || !canUpdate.value || currentStatusKey.value === "void") return;
+  if (!payInvoiceEnabled.value && accountAvailableFundsCents.value <= 0) return;
   payAmount.value = "";
   payType.value = String(invoice.value.client_account_default_payment_type || "");
   payDate.value = new Date().toISOString().slice(0, 10);
@@ -2691,6 +2697,28 @@ function onDocKeydown(e) {
                 </div>
               </button>
             </div>
+            <button
+              type="button"
+              class="billing-pay-stat billing-pay-stat--blue w-100 mt-3"
+              :disabled="accountBalanceLoading || !canUpdate || currentStatusKey === 'void'"
+              @click="openPayModal"
+            >
+              <div class="billing-pay-stat__body">
+                <div>
+                  <div class="billing-pay-stat__value">
+                    {{ formatCents(accountAvailableFundsCents, invoice.currency) }}
+                  </div>
+                  <div class="billing-pay-stat__label">Available Balance</div>
+                </div>
+                <span class="billing-pay-stat__icon billing-pay-stat__icon--blue" aria-hidden="true">
+                  <svg width="20" height="20" fill="currentColor" viewBox="0 0 24 24">
+                    <path
+                      d="M11.8 10.9c-2.27-.59-3-1.2-3-2.15 0-1.09 1.01-1.85 2.7-1.85 1.78 0 2.44.85 2.5 2.1h2.21c-.07-1.72-1.12-3.3-3.21-3.81V3h-3v2.16c-1.94.42-3.5 1.68-3.5 3.61 0 2.31 1.91 3.46 4.7 4.13 2.5.6 3 1.48 3 2.41 0 .69-.49 1.79-2.7 1.79-2.06 0-2.87-.92-2.98-2.1h-2.2c.12 2.19 1.76 3.42 3.68 3.83V21h3v-2.15c1.95-.37 3.5-1.5 3.5-3.55 0-2.84-2.43-3.81-4.7-4.4z"
+                    />
+                  </svg>
+                </span>
+              </div>
+            </button>
           </div>
 
           <div class="staff-surface p-4 mb-4 billing-inv-totals-check-card">
@@ -3475,7 +3503,7 @@ function onDocKeydown(e) {
                           <div class="billing-pay-stat__value">
                             {{ formatCents(payAvailableDisplayCents, invoice?.currency || 'USD') }}
                           </div>
-                          <div class="billing-pay-stat__label">Available Funds</div>
+                          <div class="billing-pay-stat__label">Available Balance</div>
                         </div>
                         <span class="billing-pay-stat__icon billing-pay-stat__icon--blue" aria-hidden="true">
                           <svg width="20" height="20" fill="currentColor" viewBox="0 0 24 24">
@@ -3950,10 +3978,15 @@ function onDocKeydown(e) {
     box-shadow 0.15s ease,
     opacity 0.15s ease;
 }
-.billing-pay-stat:hover {
+.billing-pay-stat:hover:not(:disabled) {
   transform: translateY(-1px);
   border-color: #b7bac8;
   box-shadow: 0 0.45rem 1rem rgba(47, 43, 61, 0.12);
+}
+.billing-pay-stat:disabled {
+  opacity: 0.75;
+  cursor: not-allowed;
+  transform: none;
 }
 .billing-pay-stat.is-active {
   border-color: #8f94a8;

@@ -91,7 +91,7 @@ const tf = new Intl.DateTimeFormat(undefined, {
 });
 
 function splitWhen(iso) {
-  if (!iso) return { date: "???", time: "???" };
+  if (!iso) return { date: "?", time: "?" };
   const d = new Date(iso);
   return { date: df.format(d), time: tf.format(d) };
 }
@@ -119,7 +119,7 @@ function avatarClassForUser(email) {
 
 const roleLabels = (user) => {
   const r = user.roles;
-  if (!r || !r.length) return "???";
+  if (!r || !r.length) return "?";
   return r.map((x) => x.label || x.name).join(", ");
 };
 
@@ -329,7 +329,7 @@ const radialOptions = computed(() => ({
 
 const avgActivityMonthly = computed(() => {
   const a = summary.value.chart?.activity ?? [];
-  if (!a.length) return { line1: "???", line2: "???" };
+  if (!a.length) return { line1: "?", line2: "?" };
   const sum = a.reduce((x, y) => x + y, 0);
   const avg = sum / a.length;
   const last = a[a.length - 1] ?? 0;
@@ -496,7 +496,7 @@ onUnmounted(() => {
       v-if="loading"
       class="vx-card p-5 d-flex justify-content-center"
     >
-      <CrmLoadingSpinner message="Loading Dashboard???" />
+      <CrmLoadingSpinner message="Loading Dashboard?" />
     </div>
 
     <template v-else>
@@ -614,7 +614,7 @@ onUnmounted(() => {
               <div>
                 <h2 class="vx-card-title">Engagement</h2>
                 <p class="vx-card-sub">
-                  Today???s Activity Vs Active Accounts
+                  Today's Activity Vs Active Accounts
                 </p>
               </div>
               <button
@@ -623,7 +623,7 @@ onUnmounted(() => {
                 aria-label="Menu"
               >
                 <span class="d-inline-block user-select-none fs-5 lh-1"
-                  >???</span
+                  >?</span
                 >
               </button>
             </div>
@@ -636,7 +636,7 @@ onUnmounted(() => {
               />
             </div>
             <p class="text-center small fw-medium text-body-secondary mb-0">
-              This Month???s Goals
+              This Month's Goals
             </p>
             <div class="mt-4 pt-4 border-top border-opacity-10">
               <div class="mb-3">
@@ -708,7 +708,7 @@ onUnmounted(() => {
                 aria-label="Menu"
               >
                 <span class="d-inline-block user-select-none fs-5 lh-1"
-                  >???</span
+                  >?</span
                 >
               </button>
             </div>
@@ -739,7 +739,7 @@ onUnmounted(() => {
                   <div class="min-w-0">
                     <p class="fw-medium text-body mb-0">{{ slice.key }}</p>
                     <p class="text-body-secondary small mb-0">
-                      {{ slice.pct }}% ??? {{ nf.format(slice.count) }} Accounts
+                      {{ slice.pct }}% ? {{ nf.format(slice.count) }} Accounts
                     </p>
                   </div>
                 </li>
@@ -758,7 +758,7 @@ onUnmounted(() => {
                 aria-label="Menu"
               >
                 <span class="d-inline-block user-select-none fs-5 lh-1"
-                  >???</span
+                  >?</span
                 >
               </button>
             </div>
@@ -934,7 +934,7 @@ onUnmounted(() => {
                   <input
                     v-model="search"
                     type="search"
-                    placeholder="Search???"
+                    placeholder="Search?"
                     class="form-control border-start-0"
                     autocomplete="off"
                   />
@@ -1027,7 +1027,7 @@ onUnmounted(() => {
                       style="max-width: 11rem"
                       :title="row.job_position || undefined"
                     >
-                      {{ row.job_position || "???" }}
+                      {{ row.job_position || "?" }}
                     </td>
                     <td class="px-4 py-3 text-body-secondary text-nowrap">
                       {{ formatBirthdayUs(row.birthday) }}

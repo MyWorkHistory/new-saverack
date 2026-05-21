@@ -10,6 +10,7 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Mail;
+use Illuminate\Validation\ValidationException;
 use RuntimeException;
 
 class PortalClientProvisioningService
@@ -53,6 +54,41 @@ class PortalClientProvisioningService
         string $phone,
         string $plainPassword
     ): User {
+        $email = strtolower(trim($email));
+        $companyName = trim($companyName);
+        $fullName = trim($fullName);
+        $phone = trim($phone);
+
+        if (User::query()->whereRaw('LOWER(email) = ?', [$email])->exists()) {
+            throw ValidationException::withMessages([
+                'email' => ['This email is already registered. Sign in instead.'],
+            ]);
+        }
+
+        $existingAccount = ClientAccount::query()
+            ->whereRaw('LOWER(email) = ?', [$email])
+            ->first();
+        if ($existingAccount !== null) {
+            if ($existingAccount->primaryAccountUser()->exists()) {
+                throw ValidationException::withMessages([
+                    'email' => ['This email is already registered. Sign in instead.'],
+                ]);
+            }
+
+            return DB::transaction(function () use ($existingAccount, $fullName, $phone, $plainPassword) {
+                $user = $this->attachPortalLoginToAccount($existingAccount, $fullName, $plainPassword);
+                if ($phone !== '') {
+                    UserProfile::query()->updateOrCreate(
+                        ['user_id' => $user->id],
+                        ['phone' => $phone]
+                    );
+                    $user->load('profile');
+                }
+
+                return $user->fresh(['roles.permissions', 'profile', 'permissions', 'clientAccount']);
+            });
+        }
+
         [$first, $last] = $this->splitFullName($fullName);
 
         return DB::transaction(function () use ($companyName, $fullName, $email, $phone, $plainPassword, $first, $last) {

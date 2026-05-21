@@ -13,6 +13,7 @@ import AuthVuexyShell from "../../components/auth/AuthVuexyShell.vue";
 import { getPublicSignupUrl } from "../../utils/publicSignupUrl.js";
 import { prefetchPortalDashboardCounts } from "../../composables/usePortalDashboardCounts.js";
 import { crmIsPortalUser, crmPortalPostAuthPath } from "../../utils/crmUser.js";
+import { errorMessage } from "../../utils/apiError.js";
 
 const publicSignupUrl = computed(() => getPublicSignupUrl());
 
@@ -57,9 +58,7 @@ const submit = async () => {
     }
     router.push(dest);
   } catch (e) {
-    const d = e?.response?.data;
-    const v = d?.errors?.email?.[0] || d?.errors?.password?.[0];
-    error.value = v || d?.message || e?.message || "Login Failed.";
+    error.value = errorMessage(e, "Could not sign in. Check your email and password.");
   } finally {
     loading.value = false;
   }

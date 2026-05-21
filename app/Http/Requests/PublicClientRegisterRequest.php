@@ -12,6 +12,15 @@ class PublicClientRegisterRequest extends FormRequest
         return true;
     }
 
+    protected function prepareForValidation(): void
+    {
+        if ($this->has('email')) {
+            $this->merge([
+                'email' => strtolower(trim((string) $this->input('email'))),
+            ]);
+        }
+    }
+
     /**
      * @return array<string, mixed>
      */
@@ -25,10 +34,27 @@ class PublicClientRegisterRequest extends FormRequest
                 'email',
                 'max:190',
                 Rule::unique('users', 'email'),
-                Rule::unique('client_accounts', 'email'),
             ],
             'phone' => ['required', 'string', 'max:64'],
             'password' => ['required', 'string', 'min:8', 'confirmed'],
+        ];
+    }
+
+    /**
+     * @return array<string, string>
+     */
+    public function messages(): array
+    {
+        return [
+            'company_name.required' => 'Enter your company name.',
+            'full_name.required' => 'Enter your full name.',
+            'email.required' => 'Enter your email address.',
+            'email.email' => 'Enter a valid email address.',
+            'email.unique' => 'This email is already registered. Sign in instead.',
+            'phone.required' => 'Enter your phone number.',
+            'password.required' => 'Enter a password.',
+            'password.min' => 'Password must be at least 8 characters.',
+            'password.confirmed' => 'Password confirmation does not match.',
         ];
     }
 }

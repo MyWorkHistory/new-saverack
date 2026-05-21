@@ -10,6 +10,7 @@ import {
   setWebmasterNavFromUser,
 } from "../../router";
 import { crmPortalPostAuthPath } from "../../utils/crmUser.js";
+import { errorMessage } from "../../utils/apiError.js";
 import AuthVuexyShell from "../../components/auth/AuthVuexyShell.vue";
 
 const route = useRoute();
@@ -51,19 +52,7 @@ const submit = async () => {
       typeof r === "string" && r.startsWith("/users/") ? r : defaultDest;
     router.push(dest);
   } catch (e) {
-    const d = e?.response?.data;
-    const errs = d?.errors;
-    const pick =
-      (errs &&
-        [
-          errs.company_name?.[0],
-          errs.full_name?.[0],
-          errs.email?.[0],
-          errs.phone?.[0],
-          errs.password?.[0],
-        ].find(Boolean)) ||
-      null;
-    error.value = pick || d?.message || e?.message || "Could not create account.";
+    error.value = errorMessage(e, "Could not create account.");
   } finally {
     loading.value = false;
   }

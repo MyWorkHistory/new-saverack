@@ -71,8 +71,12 @@ const allocatedLoaded = ref(false);
 const backorderLoaded = ref(false);
 const allocatedTruncatedMessage = ref("");
 const backorderTruncatedMessage = ref("");
+const allocatedError = ref("");
+const backorderError = ref("");
 const allocatedLoadedAt = ref(null);
 const backorderLoadedAt = ref(null);
+
+const ORDER_SECTION_TIMEOUT_MS = 90000;
 
 const showKitSection = computed(() => {
   const p = product.value;
@@ -210,35 +214,68 @@ async function openBarcodeLabelPdf() {
 
 async function loadPortalOrderSections({ refresh = false } = {}) {
   if (!isPortalView.value || !product.value?.sku) return;
-  await Promise.all([
+  await Promise.allSettled([
     loadAllocatedOrders({ refresh }),
     loadBackorderOrders({ refresh }),
   ]);
+}
+
+function finishOrderSectionLoad(section, { ok, data, errorMessage }) {
+  if (section === "allocated") {
+    allocatedLoading.value = false;
+    allocatedLoaded.value = true;
+    if (ok) {
+      allocatedOrders.value = Array.isArray(data?.rows) ? data.rows : [];
+      allocatedTruncatedMessage.value = data?.message ? String(data.message) : "";
+      allocatedError.value = "";
+      allocatedLoadedAt.value = new Date();
+    } else {
+      allocatedOrders.value = [];
+      allocatedTruncatedMessage.value = "";
+      allocatedError.value = errorMessage;
+      allocatedLoadedAt.value = null;
+    }
+    return;
+  }
+  backorderLoading.value = false;
+  backorderLoaded.value = true;
+  if (ok) {
+    backorderOrders.value = Array.isArray(data?.rows) ? data.rows : [];
+    backorderTruncatedMessage.value = data?.message ? String(data.message) : "";
+    backorderError.value = "";
+    backorderLoadedAt.value = new Date();
+  } else {
+    backorderOrders.value = [];
+    backorderTruncatedMessage.value = "";
+    backorderError.value = errorMessage;
+    backorderLoadedAt.value = null;
+  }
 }
 
 async function loadAllocatedOrders({ refresh = false } = {}) {
   if (!product.value?.sku) return;
   const params = requestParams({ refresh });
   if (!params.client_account_id) {
-    toast.error("Account is required to load allocated orders.");
+    const msg = "Account is required to load allocated orders.";
+    toast.error(msg);
+    finishOrderSectionLoad("allocated", { ok: false, data: null, errorMessage: msg });
     return;
   }
   allocatedLoading.value = true;
+  allocatedLoaded.value = false;
   allocatedTruncatedMessage.value = "";
+  allocatedError.value = "";
   try {
     const sku = String(route.params.sku || product.value.sku).trim();
     const { data } = await api.get(
       `/inventory/products/${encodeURIComponent(sku)}/allocated-orders`,
-      { params },
+      { params, timeout: ORDER_SECTION_TIMEOUT_MS },
     );
-    allocatedOrders.value = Array.isArray(data?.rows) ? data.rows : [];
-    allocatedLoaded.value = true;
-    allocatedLoadedAt.value = new Date();
-    allocatedTruncatedMessage.value = data?.message ? String(data.message) : "";
+    finishOrderSectionLoad("allocated", { ok: true, data, errorMessage: "" });
   } catch (e) {
+    const msg = e.response?.data?.message || "Could not load allocated orders.";
+    finishOrderSectionLoad("allocated", { ok: false, data: null, errorMessage: msg });
     toast.errorFrom(e, "Could not load allocated orders.");
-  } finally {
-    allocatedLoading.value = false;
   }
 }
 
@@ -246,25 +283,26 @@ async function loadBackorderOrders({ refresh = false } = {}) {
   if (!product.value?.sku) return;
   const params = requestParams({ refresh });
   if (!params.client_account_id) {
-    toast.error("Account is required to load backorder orders.");
+    const msg = "Account is required to load backorder orders.";
+    toast.error(msg);
+    finishOrderSectionLoad("backorder", { ok: false, data: null, errorMessage: msg });
     return;
   }
   backorderLoading.value = true;
+  backorderLoaded.value = false;
   backorderTruncatedMessage.value = "";
+  backorderError.value = "";
   try {
     const sku = String(route.params.sku || product.value.sku).trim();
     const { data } = await api.get(
       `/inventory/products/${encodeURIComponent(sku)}/backorder-orders`,
-      { params },
+      { params, timeout: ORDER_SECTION_TIMEOUT_MS },
     );
-    backorderOrders.value = Array.isArray(data?.rows) ? data.rows : [];
-    backorderLoaded.value = true;
-    backorderLoadedAt.value = new Date();
-    backorderTruncatedMessage.value = data?.message ? String(data.message) : "";
+    finishOrderSectionLoad("backorder", { ok: true, data, errorMessage: "" });
   } catch (e) {
+    const msg = e.response?.data?.message || "Could not load backorder orders.";
+    finishOrderSectionLoad("backorder", { ok: false, data: null, errorMessage: msg });
     toast.errorFrom(e, "Could not load backorder orders.");
-  } finally {
-    backorderLoading.value = false;
   }
 }
 
@@ -273,12 +311,16 @@ async function loadDetail({ refresh = false } = {}) {
   errorMessage.value = "";
   allocatedOrders.value = [];
   backorderOrders.value = [];
+  allocatedLoading.value = false;
+  backorderLoading.value = false;
   allocatedLoaded.value = false;
   backorderLoaded.value = false;
   allocatedLoadedAt.value = null;
   backorderLoadedAt.value = null;
   allocatedTruncatedMessage.value = "";
   backorderTruncatedMessage.value = "";
+  allocatedError.value = "";
+  backorderError.value = "";
   let loadedOk = false;
   try {
     const sku = String(route.params.sku || "").trim();
@@ -736,6 +778,12 @@ async function togglePickable(loc) {
                 Loading allocated orders…
               </p>
               <p
+                v-else-if="allocatedError"
+                class="inventory-portal-detail__empty text-danger"
+              >
+                {{ allocatedError }}
+              </p>
+              <p
                 v-else-if="allocatedLoaded && !allocatedOrders.length"
                 class="inventory-portal-detail__empty"
               >
@@ -782,6 +830,12 @@ async function togglePickable(loc) {
                 class="inventory-portal-detail__empty"
               >
                 Loading backorder orders…
+              </p>
+              <p
+                v-else-if="backorderError"
+                class="inventory-portal-detail__empty text-danger"
+              >
+                {{ backorderError }}
               </p>
               <p
                 v-else-if="backorderLoaded && !backorderOrders.length"

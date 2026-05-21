@@ -2672,12 +2672,17 @@ GQL;
 
         $out = [];
         $truncated = false;
-        $maxPages = 15;
+        $maxPages = 5;
         $perPage = 50;
         $after = null;
         $startedAt = microtime(true);
+        $deadline = microtime(true) + 45.0;
 
         for ($page = 0; $page < $maxPages; $page++) {
+            if (microtime(true) >= $deadline) {
+                $truncated = true;
+                break;
+            }
             $pagePayload = $this->fetchOrdersForProductSkuPage(
                 $customer,
                 $skuTrim,
@@ -2754,7 +2759,7 @@ GQL;
 
         $message = null;
         if ($truncated) {
-            $message = 'Showing '.count($out).' orders from the last 180 days. More orders may exist—use Refresh or open Orders for a full search.';
+            $message = 'Showing '.count($out).' orders from the last 180 days. More may exist; use Refresh or open Orders for a full search.';
         }
 
         return [
@@ -2860,11 +2865,16 @@ GQL;
             'sku' => $sku,
             'order_date_from' => $this->nullableIso($orderDateFrom),
             'order_date_to' => $this->nullableIso($orderDateTo),
-            'fulfillment_status' => null,
-            'has_backorder' => $mode === 'backorder' ? true : null,
             'first' => max(1, min(50, $first)),
-            'after' => $after !== null && trim($after) !== '' ? trim($after) : null,
         ];
+        if ($after !== null && trim($after) !== '') {
+            $vars['after'] = trim($after);
+        }
+        if ($mode === 'backorder') {
+            $vars['has_backorder'] = true;
+        } else {
+            $vars['fulfillment_status'] = 'unfulfilled';
+        }
 
         $json = $this->client->query($graphql, $vars);
         $data = data_get($json, 'data.orders.data');

@@ -8,9 +8,17 @@ return new class extends Migration
 {
     public function up(): void
     {
+        if (Schema::hasTable('shiphero_inventory_product_detail_cache')) {
+            return;
+        }
+
         Schema::create('shiphero_inventory_product_detail_cache', function (Blueprint $table) {
             $table->id();
-            $table->foreignId('client_account_id')->constrained('client_accounts')->cascadeOnDelete();
+            $table->unsignedBigInteger('client_account_id');
+            $table->foreign('client_account_id', 'sh_inv_detail_cache_acct_fk')
+                ->references('id')
+                ->on('client_accounts')
+                ->cascadeOnDelete();
             $table->string('sku', 255);
             $table->string('sku_search', 255);
             $table->json('product_json')->nullable();

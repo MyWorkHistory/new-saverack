@@ -9,6 +9,7 @@ import { usePortalLastRefreshed } from "../../composables/usePortalLastRefreshed
 import { useToast } from "../../composables/useToast.js";
 import { formatDateTimeUs, formatDateUs } from "../../utils/formatUserDates.js";
 import { openApiPdfBlob } from "../../utils/openApiPdfBlob.js";
+import { errorMessage as apiErrorMessage } from "../../utils/apiError.js";
 
 const route = useRoute();
 const toast = useToast();
@@ -24,7 +25,7 @@ const refreshing = ref(false);
 const barcodePdfLoading = ref(false);
 const saving = ref(false);
 const product = ref(null);
-const errorMessage = ref("");
+const productLoadError = ref("");
 const locationSearch = ref("");
 const actionMenuLocationId = ref(null);
 const actionMenuRect = ref({ top: 0, left: 0 });
@@ -220,7 +221,7 @@ async function loadPortalOrderSections({ refresh = false } = {}) {
   ]);
 }
 
-function finishOrderSectionLoad(section, { ok, data, errorMessage }) {
+function finishOrderSectionLoad(section, { ok, data, errText = "" }) {
   if (section === "allocated") {
     allocatedLoading.value = false;
     allocatedLoaded.value = true;
@@ -232,23 +233,25 @@ function finishOrderSectionLoad(section, { ok, data, errorMessage }) {
     } else {
       allocatedOrders.value = [];
       allocatedTruncatedMessage.value = "";
-      allocatedError.value = errorMessage;
+      allocatedError.value = errText;
       allocatedLoadedAt.value = null;
     }
     return;
   }
-  backorderLoading.value = false;
-  backorderLoaded.value = true;
-  if (ok) {
-    backorderOrders.value = Array.isArray(data?.rows) ? data.rows : [];
-    backorderTruncatedMessage.value = data?.message ? String(data.message) : "";
-    backorderError.value = "";
-    backorderLoadedAt.value = new Date();
-  } else {
-    backorderOrders.value = [];
-    backorderTruncatedMessage.value = "";
-    backorderError.value = errorMessage;
-    backorderLoadedAt.value = null;
+  if (section === "backorder") {
+    backorderLoading.value = false;
+    backorderLoaded.value = true;
+    if (ok) {
+      backorderOrders.value = Array.isArray(data?.rows) ? data.rows : [];
+      backorderTruncatedMessage.value = data?.message ? String(data.message) : "";
+      backorderError.value = "";
+      backorderLoadedAt.value = new Date();
+    } else {
+      backorderOrders.value = [];
+      backorderTruncatedMessage.value = "";
+      backorderError.value = errText;
+      backorderLoadedAt.value = null;
+    }
   }
 }
 
@@ -258,7 +261,7 @@ async function loadAllocatedOrders({ refresh = false } = {}) {
   if (!params.client_account_id) {
     const msg = "Account is required to load allocated orders.";
     toast.error(msg);
-    finishOrderSectionLoad("allocated", { ok: false, data: null, errorMessage: msg });
+    finishOrderSectionLoad("allocated", { ok: false, errText: msg });
     return;
   }
   allocatedLoading.value = true;
@@ -267,25 +270,14 @@ async function loadAllocatedOrders({ refresh = false } = {}) {
   allocatedError.value = "";
   try {
     const sku = String(route.params.sku || product.value.sku).trim();
-    let { data } = await api.get(
+    const { data } = await api.get(
       `/inventory/products/${encodeURIComponent(sku)}/allocated-orders`,
       { params, timeout: ORDER_SECTION_TIMEOUT_MS },
     );
-    const cachedEmpty =
-      !refresh &&
-      data?.cached === true &&
-      (!Array.isArray(data?.rows) || data.rows.length === 0);
-    if (cachedEmpty) {
-      const retry = await api.get(
-        `/inventory/products/${encodeURIComponent(sku)}/allocated-orders`,
-        { params: { ...params, refresh: 1 }, timeout: ORDER_SECTION_TIMEOUT_MS },
-      );
-      data = retry.data;
-    }
-    finishOrderSectionLoad("allocated", { ok: true, data, errorMessage: "" });
+    finishOrderSectionLoad("allocated", { ok: true, data });
   } catch (e) {
-    const msg = e.response?.data?.message || "Could not load allocated orders.";
-    finishOrderSectionLoad("allocated", { ok: false, data: null, errorMessage: msg });
+    const msg = apiErrorMessage(e, "Could not load allocated orders.");
+    finishOrderSectionLoad("allocated", { ok: false, errText: msg });
     toast.errorFrom(e, "Could not load allocated orders.");
   }
 }
@@ -296,7 +288,7 @@ async function loadBackorderOrders({ refresh = false } = {}) {
   if (!params.client_account_id) {
     const msg = "Account is required to load backorder orders.";
     toast.error(msg);
-    finishOrderSectionLoad("backorder", { ok: false, data: null, errorMessage: msg });
+    finishOrderSectionLoad("backorder", { ok: false, errText: msg });
     return;
   }
   backorderLoading.value = true;
@@ -305,32 +297,21 @@ async function loadBackorderOrders({ refresh = false } = {}) {
   backorderError.value = "";
   try {
     const sku = String(route.params.sku || product.value.sku).trim();
-    let { data } = await api.get(
+    const { data } = await api.get(
       `/inventory/products/${encodeURIComponent(sku)}/backorder-orders`,
       { params, timeout: ORDER_SECTION_TIMEOUT_MS },
     );
-    const cachedEmpty =
-      !refresh &&
-      data?.cached === true &&
-      (!Array.isArray(data?.rows) || data.rows.length === 0);
-    if (cachedEmpty) {
-      const retry = await api.get(
-        `/inventory/products/${encodeURIComponent(sku)}/backorder-orders`,
-        { params: { ...params, refresh: 1 }, timeout: ORDER_SECTION_TIMEOUT_MS },
-      );
-      data = retry.data;
-    }
-    finishOrderSectionLoad("backorder", { ok: true, data, errorMessage: "" });
+    finishOrderSectionLoad("backorder", { ok: true, data });
   } catch (e) {
-    const msg = e.response?.data?.message || "Could not load backorder orders.";
-    finishOrderSectionLoad("backorder", { ok: false, data: null, errorMessage: msg });
+    const msg = apiErrorMessage(e, "Could not load backorder orders.");
+    finishOrderSectionLoad("backorder", { ok: false, errText: msg });
     toast.errorFrom(e, "Could not load backorder orders.");
   }
 }
 
 async function loadDetail({ refresh = false } = {}) {
   loading.value = true;
-  errorMessage.value = "";
+  productLoadError.value = "";
   allocatedOrders.value = [];
   backorderOrders.value = [];
   allocatedLoading.value = false;
@@ -352,7 +333,7 @@ async function loadDetail({ refresh = false } = {}) {
     product.value = data?.product ?? null;
     loadedOk = true;
   } catch (e) {
-    errorMessage.value = e.response?.data?.message || "Could not load inventory detail.";
+    productLoadError.value = apiErrorMessage(e, "Could not load inventory detail.");
     toast.errorFrom(e, "Could not load inventory detail.");
   } finally {
     loading.value = false;
@@ -574,7 +555,7 @@ async function togglePickable(loc) {
     </div>
 
     <template v-else>
-      <p v-if="errorMessage" class="alert alert-warning small">{{ errorMessage }}</p>
+      <p v-if="productLoadError" class="alert alert-warning small">{{ productLoadError }}</p>
       <div v-else-if="!product" class="text-secondary small py-4 text-center">
         Product not found.
       </div>

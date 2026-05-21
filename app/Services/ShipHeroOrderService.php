@@ -2719,10 +2719,6 @@ GQL;
                         $qty = (float) ($line['backorder_quantity'] ?? 0);
                     } else {
                         $qty = (float) ($line['quantity_allocated'] ?? 0);
-                        if ($qty <= 0) {
-                            // orders(sku) list sometimes omits quantity_allocated; line is already on an open RTS order
-                            $qty = (float) ($line['quantity'] ?? 0);
-                        }
                     }
                     if ($qty <= 0) {
                         continue;
@@ -2819,61 +2815,15 @@ GQL;
         int $first,
         ?string $after
     ): array {
-        if ($mode === 'backorder') {
-            $graphql = <<<'GQL'
-query ShipHeroOrdersForProductSkuBackorder(
+        $graphql = <<<'GQL'
+query ShipHeroOrdersForProductSku(
   $customer_account_id: String!,
   $sku: String!,
   $order_date_from: ISODateTime,
   $order_date_to: ISODateTime,
-  $first: Int!,
-  $after: String
-) {
-  orders(
-    customer_account_id: $customer_account_id,
-    sku: $sku,
-    order_date_from: $order_date_from,
-    order_date_to: $order_date_to,
-    has_backorder: true
-  ) {
-    request_id
-    complexity
-    data(first: $first, after: $after) {
-      edges {
-        node {
-          id
-          order_number
-          order_date
-          line_items(first: 100) {
-            edges {
-              node {
-                sku
-                quantity
-                quantity_allocated
-                quantity_pending_fulfillment
-                backorder_quantity
-              }
-            }
-          }
-        }
-      }
-      pageInfo {
-        hasNextPage
-        endCursor
-      }
-    }
-  }
-}
-GQL;
-        } else {
-            $graphql = <<<'GQL'
-query ShipHeroOrdersForProductSkuAllocated(
-  $customer_account_id: String!,
-  $sku: String!,
-  $order_date_from: ISODateTime,
-  $order_date_to: ISODateTime,
-  $ready_to_ship: Boolean,
   $fulfillment_status: String,
+  $has_backorder: Boolean,
+  $ready_to_ship: Boolean,
   $first: Int!,
   $after: String
 ) {
@@ -2882,8 +2832,9 @@ query ShipHeroOrdersForProductSkuAllocated(
     sku: $sku,
     order_date_from: $order_date_from,
     order_date_to: $order_date_to,
-    ready_to_ship: $ready_to_ship,
-    fulfillment_status: $fulfillment_status
+    fulfillment_status: $fulfillment_status,
+    has_backorder: $has_backorder,
+    ready_to_ship: $ready_to_ship
   ) {
     request_id
     complexity
@@ -2893,13 +2844,12 @@ query ShipHeroOrdersForProductSkuAllocated(
           id
           order_number
           order_date
-          line_items(first: 100) {
+          line_items(first: 50) {
             edges {
               node {
                 sku
                 quantity
                 quantity_allocated
-                quantity_pending_fulfillment
                 backorder_quantity
               }
             }
@@ -2914,7 +2864,6 @@ query ShipHeroOrdersForProductSkuAllocated(
   }
 }
 GQL;
-        }
 
         $vars = [
             'customer_account_id' => $customerAccountId,
@@ -2926,7 +2875,10 @@ GQL;
         if ($after !== null && trim($after) !== '') {
             $vars['after'] = trim($after);
         }
-        if ($mode === 'allocated') {
+        if ($mode === 'backorder') {
+            $vars['has_backorder'] = true;
+            $vars['fulfillment_status'] = 'unfulfilled';
+        } else {
             $vars['ready_to_ship'] = true;
             $vars['fulfillment_status'] = 'unfulfilled';
         }

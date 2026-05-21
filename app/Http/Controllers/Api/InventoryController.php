@@ -389,10 +389,12 @@ class InventoryController extends Controller
         } catch (Throwable $e) {
             report($e);
 
+            $label = $mode === 'backorder' ? 'backorder orders' : 'allocated orders';
+
             return response()->json([
                 'message' => config('app.debug')
                     ? $e->getMessage()
-                    : 'Could not load orders from ShipHero.',
+                    : 'Could not load '.$label.' from ShipHero.',
             ], 502);
         }
     }

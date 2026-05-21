@@ -2667,16 +2667,19 @@ GQL;
             throw new RuntimeException('Customer account and SKU are required.');
         }
 
-        $from = Carbon::now()->subDays(180)->startOfDay()->toIso8601String();
+        // Allocated: open ready-to-ship lines only (not every historical order with this SKU).
+        // Backorder: orders flagged with backorder for this SKU.
+        $lookbackDays = $mode === 'backorder' ? 180 : 90;
+        $from = Carbon::now()->subDays($lookbackDays)->startOfDay()->toIso8601String();
         $to = Carbon::now()->endOfDay()->toIso8601String();
 
         $out = [];
         $truncated = false;
-        $maxPages = 5;
+        $maxPages = $mode === 'backorder' ? 8 : 6;
         $perPage = 50;
         $after = null;
         $startedAt = microtime(true);
-        $deadline = microtime(true) + 45.0;
+        $deadline = microtime(true) + 55.0;
 
         for ($page = 0; $page < $maxPages; $page++) {
             if (microtime(true) >= $deadline) {
@@ -2716,6 +2719,10 @@ GQL;
                         $qty = (float) ($line['backorder_quantity'] ?? 0);
                     } else {
                         $qty = (float) ($line['quantity_allocated'] ?? 0);
+                        if ($qty <= 0) {
+                            // orders(sku) list sometimes omits quantity_allocated; line is already on an open RTS order
+                            $qty = (float) ($line['quantity'] ?? 0);
+                        }
                     }
                     if ($qty <= 0) {
                         continue;
@@ -2759,7 +2766,7 @@ GQL;
 
         $message = null;
         if ($truncated) {
-            $message = 'Showing '.count($out).' orders from the last 180 days. More may exist; use Refresh or open Orders for a full search.';
+            $message = 'Showing '.count($out).' orders from the last '.$lookbackDays.' days. More may exist; use Refresh or open Orders for a full search.';
         }
 
         return [
@@ -2812,14 +2819,13 @@ GQL;
         int $first,
         ?string $after
     ): array {
-        $graphql = <<<'GQL'
-query ShipHeroOrdersForProductSku(
+        if ($mode === 'backorder') {
+            $graphql = <<<'GQL'
+query ShipHeroOrdersForProductSkuBackorder(
   $customer_account_id: String!,
   $sku: String!,
   $order_date_from: ISODateTime,
   $order_date_to: ISODateTime,
-  $fulfillment_status: String,
-  $has_backorder: Boolean,
   $first: Int!,
   $after: String
 ) {
@@ -2828,8 +2834,7 @@ query ShipHeroOrdersForProductSku(
     sku: $sku,
     order_date_from: $order_date_from,
     order_date_to: $order_date_to,
-    fulfillment_status: $fulfillment_status,
-    has_backorder: $has_backorder
+    has_backorder: true
   ) {
     request_id
     complexity
@@ -2839,12 +2844,13 @@ query ShipHeroOrdersForProductSku(
           id
           order_number
           order_date
-          line_items(first: 50) {
+          line_items(first: 100) {
             edges {
               node {
                 sku
                 quantity
                 quantity_allocated
+                quantity_pending_fulfillment
                 backorder_quantity
               }
             }
@@ -2859,6 +2865,56 @@ query ShipHeroOrdersForProductSku(
   }
 }
 GQL;
+        } else {
+            $graphql = <<<'GQL'
+query ShipHeroOrdersForProductSkuAllocated(
+  $customer_account_id: String!,
+  $sku: String!,
+  $order_date_from: ISODateTime,
+  $order_date_to: ISODateTime,
+  $ready_to_ship: Boolean,
+  $fulfillment_status: String,
+  $first: Int!,
+  $after: String
+) {
+  orders(
+    customer_account_id: $customer_account_id,
+    sku: $sku,
+    order_date_from: $order_date_from,
+    order_date_to: $order_date_to,
+    ready_to_ship: $ready_to_ship,
+    fulfillment_status: $fulfillment_status
+  ) {
+    request_id
+    complexity
+    data(first: $first, after: $after) {
+      edges {
+        node {
+          id
+          order_number
+          order_date
+          line_items(first: 100) {
+            edges {
+              node {
+                sku
+                quantity
+                quantity_allocated
+                quantity_pending_fulfillment
+                backorder_quantity
+              }
+            }
+          }
+        }
+      }
+      pageInfo {
+        hasNextPage
+        endCursor
+      }
+    }
+  }
+}
+GQL;
+        }
 
         $vars = [
             'customer_account_id' => $customerAccountId,
@@ -2870,9 +2926,8 @@ GQL;
         if ($after !== null && trim($after) !== '') {
             $vars['after'] = trim($after);
         }
-        if ($mode === 'backorder') {
-            $vars['has_backorder'] = true;
-        } else {
+        if ($mode === 'allocated') {
+            $vars['ready_to_ship'] = true;
             $vars['fulfillment_status'] = 'unfulfilled';
         }
 

@@ -267,10 +267,21 @@ async function loadAllocatedOrders({ refresh = false } = {}) {
   allocatedError.value = "";
   try {
     const sku = String(route.params.sku || product.value.sku).trim();
-    const { data } = await api.get(
+    let { data } = await api.get(
       `/inventory/products/${encodeURIComponent(sku)}/allocated-orders`,
       { params, timeout: ORDER_SECTION_TIMEOUT_MS },
     );
+    const cachedEmpty =
+      !refresh &&
+      data?.cached === true &&
+      (!Array.isArray(data?.rows) || data.rows.length === 0);
+    if (cachedEmpty) {
+      const retry = await api.get(
+        `/inventory/products/${encodeURIComponent(sku)}/allocated-orders`,
+        { params: { ...params, refresh: 1 }, timeout: ORDER_SECTION_TIMEOUT_MS },
+      );
+      data = retry.data;
+    }
     finishOrderSectionLoad("allocated", { ok: true, data, errorMessage: "" });
   } catch (e) {
     const msg = e.response?.data?.message || "Could not load allocated orders.";
@@ -294,10 +305,21 @@ async function loadBackorderOrders({ refresh = false } = {}) {
   backorderError.value = "";
   try {
     const sku = String(route.params.sku || product.value.sku).trim();
-    const { data } = await api.get(
+    let { data } = await api.get(
       `/inventory/products/${encodeURIComponent(sku)}/backorder-orders`,
       { params, timeout: ORDER_SECTION_TIMEOUT_MS },
     );
+    const cachedEmpty =
+      !refresh &&
+      data?.cached === true &&
+      (!Array.isArray(data?.rows) || data.rows.length === 0);
+    if (cachedEmpty) {
+      const retry = await api.get(
+        `/inventory/products/${encodeURIComponent(sku)}/backorder-orders`,
+        { params: { ...params, refresh: 1 }, timeout: ORDER_SECTION_TIMEOUT_MS },
+      );
+      data = retry.data;
+    }
     finishOrderSectionLoad("backorder", { ok: true, data, errorMessage: "" });
   } catch (e) {
     const msg = e.response?.data?.message || "Could not load backorder orders.";
@@ -741,10 +763,39 @@ async function togglePickable(loc) {
               <div class="inventory-portal-detail__section-head">
                 <div>
                   <h2 class="inventory-portal-detail__section-title">Allocated Orders</h2>
-                  <p v-if="allocatedLoadedAt" class="small text-secondary mb-0">
-                    Loaded: {{ formatDateTimeUs(allocatedLoadedAt) }}
+                  <p class="small text-body-secondary mb-0">
+                    Open ready-to-ship orders with inventory allocated to this SKU
+                  </p>
+                  <p v-if="allocatedLoaded" class="small text-secondary mb-0">
+                    <span v-if="allocatedLoadedAt">Loaded: {{ formatDateTimeUs(allocatedLoadedAt) }} · </span>
+                    {{ allocatedOrders.length }} order{{ allocatedOrders.length === 1 ? "" : "s" }}
                   </p>
                 </div>
+                <button
+                  type="button"
+                  class="btn btn-outline-secondary btn-sm orders-toolbar-outline-btn d-inline-flex align-items-center gap-2"
+                  :disabled="allocatedLoading"
+                  title="Refresh allocated orders from ShipHero"
+                  aria-label="Refresh allocated orders"
+                  @click="loadAllocatedOrders({ refresh: true })"
+                >
+                  <svg
+                    width="16"
+                    height="16"
+                    fill="none"
+                    stroke="currentColor"
+                    viewBox="0 0 24 24"
+                    aria-hidden="true"
+                  >
+                    <path
+                      stroke-linecap="round"
+                      stroke-linejoin="round"
+                      stroke-width="2"
+                      d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"
+                    />
+                  </svg>
+                  {{ allocatedLoading ? "Refreshing…" : "Refresh" }}
+                </button>
               </div>
               <p v-if="allocatedTruncatedMessage" class="inventory-portal-detail__truncated">
                 {{ allocatedTruncatedMessage }}
@@ -787,7 +838,7 @@ async function togglePickable(loc) {
                 v-else-if="allocatedLoaded && !allocatedOrders.length"
                 class="inventory-portal-detail__empty"
               >
-                No allocated orders found for this SKU in the recent search window.
+                No open ready-to-ship orders with allocated quantity for this SKU. Use Refresh to reload from ShipHero.
               </p>
             </div>
 
@@ -795,10 +846,36 @@ async function togglePickable(loc) {
               <div class="inventory-portal-detail__section-head">
                 <div>
                   <h2 class="inventory-portal-detail__section-title">Backorder Orders</h2>
-                  <p v-if="backorderLoadedAt" class="small text-secondary mb-0">
-                    Loaded: {{ formatDateTimeUs(backorderLoadedAt) }}
+                  <p v-if="backorderLoaded" class="small text-secondary mb-0">
+                    <span v-if="backorderLoadedAt">Loaded: {{ formatDateTimeUs(backorderLoadedAt) }} · </span>
+                    {{ backorderOrders.length }} order{{ backorderOrders.length === 1 ? "" : "s" }}
                   </p>
                 </div>
+                <button
+                  type="button"
+                  class="btn btn-outline-secondary btn-sm orders-toolbar-outline-btn d-inline-flex align-items-center gap-2"
+                  :disabled="backorderLoading"
+                  title="Refresh backorder orders from ShipHero"
+                  aria-label="Refresh backorder orders"
+                  @click="loadBackorderOrders({ refresh: true })"
+                >
+                  <svg
+                    width="16"
+                    height="16"
+                    fill="none"
+                    stroke="currentColor"
+                    viewBox="0 0 24 24"
+                    aria-hidden="true"
+                  >
+                    <path
+                      stroke-linecap="round"
+                      stroke-linejoin="round"
+                      stroke-width="2"
+                      d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"
+                    />
+                  </svg>
+                  {{ backorderLoading ? "Refreshing…" : "Refresh" }}
+                </button>
               </div>
               <p v-if="backorderTruncatedMessage" class="inventory-portal-detail__truncated">
                 {{ backorderTruncatedMessage }}
@@ -841,7 +918,7 @@ async function togglePickable(loc) {
                 v-else-if="backorderLoaded && !backorderOrders.length"
                 class="inventory-portal-detail__empty"
               >
-                No backorder orders found for this SKU in the recent search window.
+                No backorder orders found for this SKU in the last 180 days. Use Refresh to reload from ShipHero.
               </p>
             </div>
           </div>

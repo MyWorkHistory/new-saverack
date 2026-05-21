@@ -20,7 +20,7 @@ const badgeClass = computed(() => {
 
 const badgeText = computed(() => {
   if (props.changePct === null || Number.isNaN(props.changePct)) {
-    return "—";
+    return "-";
   }
   const n = props.changePct;
   return `${n >= 0 ? "+" : ""}${n}%`;

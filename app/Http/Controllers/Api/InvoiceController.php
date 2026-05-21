@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use App\Http\Requests\InvoiceAddAvailableFundsRequest;
 use App\Http\Requests\InvoiceAllocatePaymentRequest;
 use App\Http\Requests\InvoiceRecordPaymentRequest;
 use App\Http\Requests\InvoiceReplaceLineGroupRequest;
@@ -235,6 +236,20 @@ class InvoiceController extends Controller
         $this->authorize('recordPayment', $invoice);
 
         return response()->json($this->invoices->paymentAllocationContext($invoice));
+    }
+
+    public function addAvailableFunds(InvoiceAddAvailableFundsRequest $request, Invoice $invoice): JsonResponse
+    {
+        $this->authorize('recordPayment', $invoice);
+
+        $result = $this->invoices->addBillingAvailableFunds(
+            $invoice,
+            $request->amountCents(),
+            $request->user(),
+            $request->paymentMeta(),
+        );
+
+        return response()->json($result);
     }
 
     public function payAllocate(InvoiceAllocatePaymentRequest $request, Invoice $invoice): JsonResponse

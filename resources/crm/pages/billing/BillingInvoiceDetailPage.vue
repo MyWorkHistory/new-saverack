@@ -67,6 +67,7 @@ const payDate = ref("");
 const payNotes = ref("");
 const payBusy = ref(false);
 const payContextBusy = ref(false);
+const payAddFundsBusy = ref(false);
 const payFundsCents = ref(0);
 const accountAvailableFundsCents = ref(0);
 const payOpenBalanceCents = ref(0);
@@ -1566,8 +1567,11 @@ async function confirmCcFee() {
 }
 
 function closePayModal(force = false) {
-  if ((payBusy.value || payContextBusy.value) && !force) return;
+  if ((payBusy.value || payContextBusy.value || payAddFundsBusy.value) && !force) return;
   payModalOpen.value = false;
+  if (!force) {
+    void loadAccountBalanceSummary();
+  }
 }
 
 async function loadPayContext(options = {}) {
@@ -1820,13 +1824,35 @@ async function openPayModal() {
   }
 }
 
-function addFundsToPayPool() {
+async function addFundsToPayPool() {
+  if (!invoice.value) return;
   if (!payCanAddFunds.value) {
     toast.error("Enter payment date, type, and amount first.");
     return;
   }
-  payFundsCents.value += dollarsToCents(payAmount.value);
-  payAmount.value = "";
+  const amountCents = dollarsToCents(payAmount.value);
+  if (amountCents <= 0) {
+    toast.error("Enter a positive amount.");
+    return;
+  }
+  payAddFundsBusy.value = true;
+  try {
+    const { data } = await api.post(`/invoices/${invoice.value.id}/add-available-funds`, {
+      amount_cents: amountCents,
+      payment_type: payType.value || null,
+      payment_date: payDate.value || null,
+      notes: payNotes.value || null,
+    });
+    const available = Number(data?.available_funds_cents || 0);
+    payFundsCents.value = available;
+    accountAvailableFundsCents.value = available;
+    payAmount.value = "";
+    toast.success("Funds added to available balance.");
+  } catch (e) {
+    toast.errorFrom(e, "Could not add funds.");
+  } finally {
+    payAddFundsBusy.value = false;
+  }
 }
 
 function togglePayInvoiceSelection(invoiceId) {
@@ -3426,14 +3452,14 @@ function onDocKeydown(e) {
                       <button
                         type="button"
                         class="btn btn-success"
-                        :disabled="!payCanAddFunds"
+                        :disabled="!payCanAddFunds || payAddFundsBusy || payBusy"
                         @click="addFundsToPayPool"
                       >
-                        Add Funds
+                        {{ payAddFundsBusy ? "Adding Funds…" : "Add Funds" }}
                       </button>
                       <div class="small text-secondary mt-1" style="max-width: 22rem; margin-left: auto">
-                        Add funds to the pool, select invoice(s), then Pay Invoice. Only the pool amount is applied;
-                        the invoice stays open until the balance is fully paid.
+                        Add funds to the account credit pool (saved immediately). Select invoice(s), then Pay Invoice.
+                        Cancel keeps any funds you added.
                       </div>
                     </div>
                   </div>
@@ -3571,7 +3597,7 @@ function onDocKeydown(e) {
               <button
                 type="button"
                 class="crm-vx-modal-btn crm-vx-modal-btn--secondary"
-                :disabled="payBusy || payContextBusy"
+                :disabled="payBusy || payContextBusy || payAddFundsBusy"
                 @click="closePayModal"
               >
                 Cancel
@@ -3579,7 +3605,7 @@ function onDocKeydown(e) {
               <button
                 type="button"
                 class="crm-vx-modal-btn crm-vx-modal-btn--primary"
-                :disabled="payBusy || payContextBusy || !payCanSubmit"
+                :disabled="payBusy || payContextBusy || payAddFundsBusy || !payCanSubmit"
                 @click="confirmPay"
               >
                 {{ payBusy ? "Paying…" : "Pay Invoice" }}

@@ -391,6 +391,51 @@ class BillingInvoiceApiTest extends TestCase
         $this->assertSame(Invoice::STATUS_PAID, $draft->status);
     }
 
+    public function test_add_available_funds_increments_account_pool_and_survives_cancel_flow(): void
+    {
+        $user = User::factory()->create();
+        $user->permissions()->sync([
+            $this->billingViewPermission()->id,
+            $this->billingUpdatePermission()->id,
+        ]);
+        Sanctum::actingAs($user);
+
+        $client = ClientAccount::query()->create([
+            'status' => ClientAccount::STATUS_ACTIVE,
+            'company_name' => 'Funds Pool Co',
+            'email' => 'funds-pool@acme.test',
+            'billing_available_funds_cents' => 2500,
+        ]);
+
+        $invoice = Invoice::query()->create([
+            'invoice_number' => 'INV-FUNDS-001',
+            'client_account_id' => $client->id,
+            'status' => Invoice::STATUS_SENT,
+            'currency' => 'USD',
+            'due_at' => now()->addDay(),
+            'subtotal_cents' => 5000,
+            'tax_cents' => 0,
+            'total_cents' => 5000,
+            'amount_paid_cents' => 0,
+            'balance_due_cents' => 5000,
+        ]);
+
+        $this->postJson("/api/invoices/{$invoice->id}/add-available-funds", [
+            'amount_cents' => 1500,
+            'payment_type' => 'ACH',
+            'payment_date' => now()->toDateString(),
+        ])
+            ->assertOk()
+            ->assertJsonPath('available_funds_cents', 4000);
+
+        $client->refresh();
+        $this->assertSame(4000, (int) $client->billing_available_funds_cents);
+
+        $this->getJson("/api/invoices/{$invoice->id}/pay-context")
+            ->assertOk()
+            ->assertJsonPath('available_funds_cents', 4000);
+    }
+
     public function test_pay_allocate_distributes_payment_across_selected_invoices(): void
     {
         $user = User::factory()->create();

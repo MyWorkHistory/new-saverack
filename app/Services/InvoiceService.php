@@ -798,6 +798,50 @@ class InvoiceService
     }
 
     /**
+     * Add unapplied payment credit to the client account (available funds pool).
+     *
+     * @param  array<string, mixed>  $paymentMeta
+     * @return array{available_funds_cents: int}
+     */
+    public function addBillingAvailableFunds(
+        Invoice $invoice,
+        int $amountCents,
+        ?User $actor,
+        array $paymentMeta = []
+    ): array {
+        if ($invoice->isVoid()) {
+            throw new \RuntimeException('Cannot add funds for this invoice.');
+        }
+        if ($amountCents <= 0) {
+            throw new \InvalidArgumentException('Amount must be positive.');
+        }
+
+        $invoice->loadMissing('clientAccount');
+
+        return DB::transaction(function () use ($invoice, $amountCents, $actor, $paymentMeta) {
+            $account = ClientAccount::query()
+                ->whereKey($invoice->client_account_id)
+                ->lockForUpdate()
+                ->first();
+            if ($account === null) {
+                throw new \RuntimeException('Invoice account is unavailable.');
+            }
+
+            $account->billing_available_funds_cents = max(0, (int) $account->billing_available_funds_cents) + $amountCents;
+            $account->save();
+
+            $this->logHistory($invoice, $actor, 'funds_added', $invoice->status, $invoice->status, [
+                'amount_cents' => $amountCents,
+                'available_funds_cents' => (int) $account->billing_available_funds_cents,
+            ] + $paymentMeta);
+
+            return [
+                'available_funds_cents' => max(0, (int) $account->billing_available_funds_cents),
+            ];
+        });
+    }
+
+    /**
      * @param  list<int>  $invoiceIds
      * @param  array<string, mixed>  $paymentMeta
      * @return array{invoice: Invoice, allocations: list<array<string, mixed>>, remaining_amount_cents: int}
@@ -842,10 +886,12 @@ class InvoiceService
                 throw new \RuntimeException('Selected invoice set is invalid.');
             }
 
+            $storedFunds = max(0, (int) $account->billing_available_funds_cents);
+            $pool = max($amountCents, $storedFunds);
             $account->billing_available_funds_cents = 0;
             $account->save();
 
-            $remaining = $amountCents;
+            $remaining = $pool;
             $allocations = [];
             foreach ($invoiceIds as $invoiceId) {
                 /** @var Invoice $target */

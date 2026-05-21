@@ -164,7 +164,7 @@ function onDocClick(e) {
   }
 }
 
-function requestParams() {
+function requestParams({ refresh = false } = {}) {
   const params = {};
   const portalAccountId = Number(crmUser.value?.client_account_id || 0);
   const queryAccountId = Number(route.query.client_account_id || 0);
@@ -173,6 +173,7 @@ function requestParams() {
     : queryAccountId || portalAccountId;
   if (clientAccountId > 0) params.client_account_id = clientAccountId;
   if (route.query.warehouse_id) params.warehouse_id = String(route.query.warehouse_id);
+  if (refresh) params.refresh = 1;
   return params;
 }
 
@@ -207,14 +208,17 @@ async function openBarcodeLabelPdf() {
   }
 }
 
-async function loadPortalOrderSections() {
+async function loadPortalOrderSections({ refresh = false } = {}) {
   if (!isPortalView.value || !product.value?.sku) return;
-  await Promise.all([loadAllocatedOrders(), loadBackorderOrders()]);
+  await Promise.all([
+    loadAllocatedOrders({ refresh }),
+    loadBackorderOrders({ refresh }),
+  ]);
 }
 
-async function loadAllocatedOrders() {
+async function loadAllocatedOrders({ refresh = false } = {}) {
   if (!product.value?.sku) return;
-  const params = requestParams();
+  const params = requestParams({ refresh });
   if (!params.client_account_id) {
     toast.error("Account is required to load allocated orders.");
     return;
@@ -238,9 +242,9 @@ async function loadAllocatedOrders() {
   }
 }
 
-async function loadBackorderOrders() {
+async function loadBackorderOrders({ refresh = false } = {}) {
   if (!product.value?.sku) return;
-  const params = requestParams();
+  const params = requestParams({ refresh });
   if (!params.client_account_id) {
     toast.error("Account is required to load backorder orders.");
     return;
@@ -264,7 +268,7 @@ async function loadBackorderOrders() {
   }
 }
 
-async function loadDetail() {
+async function loadDetail({ refresh = false } = {}) {
   loading.value = true;
   errorMessage.value = "";
   allocatedOrders.value = [];
@@ -279,7 +283,7 @@ async function loadDetail() {
   try {
     const sku = String(route.params.sku || "").trim();
     const { data } = await api.get(`/inventory/products/${encodeURIComponent(sku)}`, {
-      params: requestParams(),
+      params: requestParams({ refresh }),
     });
     product.value = data?.product ?? null;
     loadedOk = true;
@@ -290,8 +294,8 @@ async function loadDetail() {
     loading.value = false;
     refreshing.value = false;
     if (loadedOk && isPortalView.value) {
-      markRefreshed();
-      void loadPortalOrderSections();
+      if (refresh) markRefreshed();
+      void loadPortalOrderSections({ refresh });
     }
   }
 }
@@ -299,7 +303,7 @@ async function loadDetail() {
 async function refreshDetail() {
   if (loading.value || refreshing.value) return;
   refreshing.value = true;
-  await loadDetail();
+  await loadDetail({ refresh: true });
 }
 
 function placeActionMenu(anchorEl) {

@@ -2667,12 +2667,12 @@ GQL;
             throw new RuntimeException('Customer account and SKU are required.');
         }
 
-        $from = Carbon::now()->subDays(90)->startOfDay()->toIso8601String();
+        $from = Carbon::now()->subDays(180)->startOfDay()->toIso8601String();
         $to = Carbon::now()->endOfDay()->toIso8601String();
 
         $out = [];
         $truncated = false;
-        $maxPages = 4;
+        $maxPages = 15;
         $perPage = 50;
         $after = null;
         $startedAt = microtime(true);
@@ -2740,6 +2740,8 @@ GQL;
             $after = $next;
         }
 
+        $out = $this->aggregateProductOrderRowsByOrderId($out);
+
         $durationMs = (int) round((microtime(true) - $startedAt) * 1000);
         Log::info('shiphero.inventory.product_orders.completed', [
             'customer_account_id' => $customer,
@@ -2752,7 +2754,7 @@ GQL;
 
         $message = null;
         if ($truncated) {
-            $message = 'Showing matches from the most recent orders in the last 90 days. More orders may exist—open Orders for a full search.';
+            $message = 'Showing '.count($out).' orders from the last 180 days. More orders may exist—use Refresh or open Orders for a full search.';
         }
 
         return [
@@ -2760,6 +2762,32 @@ GQL;
             'truncated' => $truncated,
             'message' => $message,
         ];
+    }
+
+    /**
+     * @param  list<array<string, mixed>>  $rows
+     * @return list<array<string, mixed>>
+     */
+    private function aggregateProductOrderRowsByOrderId(array $rows): array
+    {
+        $byOrder = [];
+        foreach ($rows as $row) {
+            if (! is_array($row)) {
+                continue;
+            }
+            $orderId = trim((string) ($row['order_id'] ?? ''));
+            if ($orderId === '') {
+                continue;
+            }
+            if (! isset($byOrder[$orderId])) {
+                $byOrder[$orderId] = $row;
+                continue;
+            }
+            $byOrder[$orderId]['quantity'] = (float) ($byOrder[$orderId]['quantity'] ?? 0) + (float) ($row['quantity'] ?? 0);
+            $byOrder[$orderId]['line_quantity'] = (float) ($byOrder[$orderId]['line_quantity'] ?? 0) + (float) ($row['line_quantity'] ?? 0);
+        }
+
+        return array_values($byOrder);
     }
 
     /**
@@ -2806,7 +2834,7 @@ query ShipHeroOrdersForProductSku(
           id
           order_number
           order_date
-          line_items(first: 30) {
+          line_items(first: 50) {
             edges {
               node {
                 sku
@@ -2832,7 +2860,7 @@ GQL;
             'sku' => $sku,
             'order_date_from' => $this->nullableIso($orderDateFrom),
             'order_date_to' => $this->nullableIso($orderDateTo),
-            'fulfillment_status' => 'unfulfilled',
+            'fulfillment_status' => null,
             'has_backorder' => $mode === 'backorder' ? true : null,
             'first' => max(1, min(50, $first)),
             'after' => $after !== null && trim($after) !== '' ? trim($after) : null,

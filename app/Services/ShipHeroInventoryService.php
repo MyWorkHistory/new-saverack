@@ -2,6 +2,7 @@
 
 namespace App\Services;
 
+use App\Models\ShipHeroInventoryProductDetailCache;
 use App\Models\ShipHeroInventoryProductIndex;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Log;
@@ -346,6 +347,12 @@ GQL;
             return;
         }
         $scoped->delete();
+
+        if ($clientAccountId !== null && $clientAccountId > 0) {
+            ShipHeroInventoryProductDetailCache::query()
+                ->where('client_account_id', $clientAccountId)
+                ->delete();
+        }
     }
 
     private function normalizeInventoryIndexSearchValue($value): string

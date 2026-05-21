@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Models\ClientAccount;
 use App\Models\ClientAccountOnDemandProduct;
 use App\Services\ShipHeroClient;
+use App\Services\InventoryProductDetailCacheService;
 use App\Services\ShipHeroInventoryService;
 use App\Services\ShipHeroOrderService;
 use App\Support\Barcode\Code128Svg;
@@ -28,15 +29,19 @@ class InventoryController extends Controller
     protected $shipHeroClient;
     /** @var ShipHeroOrderService */
     protected $orders;
+    /** @var InventoryProductDetailCacheService */
+    protected $detailCache;
 
     public function __construct(
         ShipHeroInventoryService $inventory,
         ShipHeroClient $shipHeroClient,
-        ShipHeroOrderService $orders
+        ShipHeroOrderService $orders,
+        InventoryProductDetailCacheService $detailCache
     ) {
         $this->inventory = $inventory;
         $this->shipHeroClient = $shipHeroClient;
         $this->orders = $orders;
+        $this->detailCache = $detailCache;
     }
 
     public function clientAccountOptions(): JsonResponse
@@ -232,6 +237,7 @@ class InventoryController extends Controller
         $validated = $request->validate([
             'warehouse_id' => ['nullable', 'string', 'max:255'],
             'client_account_id' => ['nullable', 'integer', 'exists:client_accounts,id'],
+            'refresh' => ['nullable', 'boolean'],
         ]);
         $warehouseId = isset($validated['warehouse_id']) && is_string($validated['warehouse_id']) && $validated['warehouse_id'] !== ''
             ? $validated['warehouse_id']
@@ -239,8 +245,19 @@ class InventoryController extends Controller
         $clientAccountId = isset($validated['client_account_id'])
             ? (int) $validated['client_account_id']
             : null;
+        $refresh = (bool) ($validated['refresh'] ?? false);
 
         try {
+            if ($clientAccountId > 0 && ! $refresh) {
+                $cached = $this->detailCache->getCachedProduct($clientAccountId, $sku);
+                if ($cached !== null) {
+                    return response()->json([
+                        'product' => $cached,
+                        'cached' => true,
+                    ]);
+                }
+            }
+
             // Product detail should be global unless client_account_id is explicitly provided.
             $shipheroCustomerId = null;
             if ($clientAccountId > 0) {
@@ -250,7 +267,11 @@ class InventoryController extends Controller
             if (! is_array($product)) {
                 return response()->json(['message' => 'Product not found.'], 404);
             }
-            return response()->json(['product' => $product]);
+            if ($clientAccountId > 0) {
+                $this->detailCache->putProduct($clientAccountId, $sku, $product);
+            }
+
+            return response()->json(['product' => $product, 'cached' => false]);
         } catch (ValidationException $e) {
             throw $e;
         } catch (RuntimeException $e) {
@@ -338,10 +359,19 @@ class InventoryController extends Controller
     {
         $validated = $request->validate([
             'client_account_id' => ['required', 'integer', 'exists:client_accounts,id'],
+            'refresh' => ['nullable', 'boolean'],
         ]);
         $clientAccountId = (int) $validated['client_account_id'];
+        $refresh = (bool) ($validated['refresh'] ?? false);
 
         try {
+            if (! $refresh) {
+                $cached = $this->detailCache->getCachedOrders($clientAccountId, $sku, $mode);
+                if ($cached !== null) {
+                    return response()->json(array_merge($cached, ['cached' => true]));
+                }
+            }
+
             $shipheroCustomerId = $this->resolveShipHeroCustomerAccountId($clientAccountId, $request);
             if ($mode === 'backorder') {
                 $payload = $this->orders->listOrdersBackorderForSku($shipheroCustomerId, $sku);
@@ -349,7 +379,9 @@ class InventoryController extends Controller
                 $payload = $this->orders->listOrdersAllocatedForSku($shipheroCustomerId, $sku);
             }
 
-            return response()->json($payload);
+            $this->detailCache->putOrders($clientAccountId, $sku, $mode, $payload);
+
+            return response()->json(array_merge($payload, ['cached' => false]));
         } catch (ValidationException $e) {
             throw $e;
         } catch (RuntimeException $e) {

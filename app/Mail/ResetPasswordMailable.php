@@ -42,8 +42,8 @@ class ResetPasswordMailable extends Mailable
 
     public function build()
     {
-        $fromAddress = config('crm.mail_from_address');
-        $fromName = config('crm.mail_from_name');
+        $fromAddress = config('crm.password_reset_from_address');
+        $fromName = config('crm.password_reset_from_name');
 
         return $this->from($fromAddress, $fromName)
             ->subject('Reset your Save Rack password')

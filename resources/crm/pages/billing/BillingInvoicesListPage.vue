@@ -24,6 +24,10 @@ import { setCrmPageMeta } from "../../composables/useCrmPageMeta.js";
 import { formatCents } from "../../utils/formatMoney.js";
 import { formatIsoDate } from "../../utils/formatUserDates.js";
 
+const props = defineProps({
+  portalMode: { type: Boolean, default: false },
+});
+
 const crmUser = inject("crmUser", ref(null));
 const toast = useToast();
 const router = useRouter();
@@ -36,18 +40,39 @@ function userHasPerm(key) {
   return Array.isArray(u.permission_keys) && u.permission_keys.includes(key);
 }
 
-const canCreate = computed(() => userHasPerm("billing.create"));
-const canUpdate = computed(() => userHasPerm("billing.update"));
-const canDelete = computed(() => userHasPerm("billing.delete"));
+const portalAccountId = computed(() => {
+  if (!props.portalMode) {
+    return 0;
+  }
+
+  return Number(crmUser.value?.client_account_id || 0);
+});
+
+const canCreate = computed(() => !props.portalMode && userHasPerm("billing.create"));
+const canUpdate = computed(() => !props.portalMode && userHasPerm("billing.update"));
+const canDelete = computed(() => !props.portalMode && userHasPerm("billing.delete"));
 /** Administrator / CRM owner: may delete invoices in any status (backend-enforced). */
 const canHardDeleteInvoices = computed(() => {
+  if (props.portalMode) {
+    return false;
+  }
   const u = crmUser.value;
   if (!u) return false;
   return crmIsAdmin(u) || u.is_crm_owner;
 });
 
-const showCheckboxColumn = computed(() => canUpdate.value || canDelete.value);
-const tableColspan = computed(() => (showCheckboxColumn.value ? 9 : 8));
+const showCheckboxColumn = computed(
+  () => !props.portalMode && (canUpdate.value || canDelete.value),
+);
+const tableColspan = computed(() => {
+  if (props.portalMode) {
+    return 7;
+  }
+
+  return showCheckboxColumn.value ? 9 : 8;
+});
+
+const publicViewBusyId = ref(null);
 
 const loading = ref(true);
 const summaryLoading = ref(true);
@@ -192,6 +217,27 @@ function invoiceDetailHref(row) {
   }).href;
 }
 
+async function openPublicInvoice(row) {
+  const id = row?.id;
+  if (!id || publicViewBusyId.value) {
+    return;
+  }
+  publicViewBusyId.value = id;
+  try {
+    const { data } = await api.post(`/invoices/${id}/share-link`);
+    const url = data?.customer_view_url;
+    if (!url) {
+      toast.error("Could not open invoice.");
+      return;
+    }
+    window.open(url, "_blank", "noopener,noreferrer");
+  } catch (e) {
+    toast.errorFrom(e, "Could not open invoice.");
+  } finally {
+    publicViewBusyId.value = null;
+  }
+}
+
 async function toggleManageMenu(rowId, e) {
   e.stopPropagation();
   if (manageOpenId.value === rowId) {
@@ -323,7 +369,11 @@ async function loadSummary() {
   summaryLoading.value = true;
   summaryError.value = "";
   try {
-    const { data } = await api.get("/billing/summary");
+    const params = {};
+    if (props.portalMode && portalAccountId.value > 0) {
+      params.client_account_id = portalAccountId.value;
+    }
+    const { data } = await api.get("/billing/summary", { params });
     summary.value = {
       open_balance_due_cents: data?.open_balance_due_cents ?? 0,
       draft_invoice_count: data?.draft_invoice_count ?? 0,
@@ -871,17 +921,22 @@ onMounted(async () => {
   document.addEventListener("click", onDocClick);
   window.addEventListener("scroll", onWindowScrollOrResize, true);
   window.addEventListener("resize", onWindowScrollOrResize);
-  setCrmPageMeta({
-    title: "Save Rack | Invoices",
-    description: "Client invoices and balances.",
-  });
+  if (!props.portalMode) {
+    setCrmPageMeta({
+      title: "Save Rack | Invoices",
+      description: "Client invoices and balances.",
+    });
+  }
+  if (props.portalMode && portalAccountId.value > 0) {
+    query.client_account_id = String(portalAccountId.value);
+  }
   const qStatus = route.query.status;
   if (typeof qStatus === "string" && qStatus.trim()) {
     const incoming = qStatus.trim().toLowerCase();
     query.status = incoming === "past_due" || incoming === "overdue" ? "open" : incoming;
   }
   const qClient = route.query.client_account_id;
-  if (typeof qClient === "string" && qClient.trim()) {
+  if (!props.portalMode && typeof qClient === "string" && qClient.trim()) {
     query.client_account_id = qClient.trim();
   }
   const qPaymentType = route.query.payment_type;
@@ -912,7 +967,11 @@ onUnmounted(() => {
       <div class="min-w-0 flex-grow-1">
         <h1 class="h4 mb-1 fw-semibold text-body">Invoices</h1>
         <p class="text-secondary small mb-0">
-          Fulfillment billing — search, filter, and manage client invoices
+          {{
+            portalMode
+              ? "Your fulfillment invoices — view and pay online."
+              : "Fulfillment billing — search, filter, and manage client invoices"
+          }}
         </p>
       </div>
       <div v-if="canCreate" class="d-flex flex-wrap gap-2 ms-md-auto">
@@ -1011,7 +1070,7 @@ onUnmounted(() => {
             v-model="query.search"
             type="search"
             class="form-control staff-toolbar-search staff-toolbar-search--inline"
-            placeholder="Search invoice # or client"
+            :placeholder="portalMode ? 'Search invoice #' : 'Search invoice # or client'"
             autocomplete="off"
             @keydown.enter.prevent="fetchRows"
           />
@@ -1056,7 +1115,7 @@ onUnmounted(() => {
                   class="btn btn-link btn-sm text-secondary text-decoration-none p-0"
                   @click="
                     query.status = 'all';
-                    query.client_account_id = '';
+                    if (!portalMode) query.client_account_id = '';
                     query.payment_type = '';
                     filterMenuOpen = false;
                   "
@@ -1079,17 +1138,19 @@ onUnmounted(() => {
                     {{ statusFilterLabel(st) }}
                   </option>
                 </select>
-                <label class="form-label" for="inv-filter-client">Client</label>
-                <CrmSearchableSelect
-                  v-model="query.client_account_id"
-                  appearance="staff"
-                  aria-label="Client"
-                  :options="meta.client_accounts"
-                  placeholder="All clients"
-                  search-placeholder="Search clients…"
-                  empty-label="All clients"
-                  button-id="inv-filter-client"
-                />
+                <template v-if="!portalMode">
+                  <label class="form-label" for="inv-filter-client">Client</label>
+                  <CrmSearchableSelect
+                    v-model="query.client_account_id"
+                    appearance="staff"
+                    aria-label="Client"
+                    :options="meta.client_accounts"
+                    placeholder="All clients"
+                    search-placeholder="Search clients…"
+                    empty-label="All clients"
+                    button-id="inv-filter-client"
+                  />
+                </template>
                 <label class="form-label mt-3" for="inv-filter-payment-type">Payment Type</label>
                 <select
                   id="inv-filter-payment-type"
@@ -1290,7 +1351,7 @@ onUnmounted(() => {
                   }}</span>
                 </button>
               </th>
-              <th class="staff-table-head__th" scope="col">Client</th>
+              <th v-if="!portalMode" class="staff-table-head__th" scope="col">Client</th>
               <th
                 class="staff-table-head__th staff-table-head__th--sort"
                 scope="col"
@@ -1352,7 +1413,7 @@ onUnmounted(() => {
                 class="staff-table-head__th staff-actions-col text-center billing-invoices-actions-col"
                 scope="col"
               >
-                Actions
+                {{ portalMode ? "View" : "Actions" }}
               </th>
             </tr>
           </thead>
@@ -1391,6 +1452,15 @@ onUnmounted(() => {
               </td>
               <td class="fw-medium text-body">
                 <a
+                  v-if="portalMode"
+                  href="#"
+                  class="text-decoration-none text-body billing-inv-row-link"
+                  @click.prevent="openPublicInvoice(row)"
+                >
+                  {{ row.invoice_number }}
+                </a>
+                <a
+                  v-else
                   :href="invoiceDetailHref(row)"
                   target="_blank"
                   rel="noopener noreferrer"
@@ -1399,7 +1469,7 @@ onUnmounted(() => {
                   {{ row.invoice_number }}
                 </a>
               </td>
-              <td class="text-secondary staff-table-cell__meta">
+              <td v-if="!portalMode" class="text-secondary staff-table-cell__meta">
                 <a
                   v-if="row.client_company_name"
                   :href="invoiceDetailHref(row)"
@@ -1423,7 +1493,7 @@ onUnmounted(() => {
               <td class="text-body staff-table-cell__meta">
                 {{ formatCents(row.balance_due_cents, row.currency) }}
               </td>
-              <td class="staff-actions-cell text-center billing-invoices-actions-cell">
+              <td v-if="!portalMode" class="staff-actions-cell text-center billing-invoices-actions-cell">
                 <div
                   data-row-actions
                   class="staff-actions-inner staff-actions-inner--single billing-invoices-actions-inner"
@@ -1440,6 +1510,16 @@ onUnmounted(() => {
                     <CrmIconRowActions variant="horizontal" />
                   </button>
                 </div>
+              </td>
+              <td v-else class="staff-actions-cell text-center billing-invoices-actions-cell">
+                <button
+                  type="button"
+                  class="btn btn-sm btn-outline-secondary orders-toolbar-outline-btn"
+                  :disabled="publicViewBusyId === row.id"
+                  @click="openPublicInvoice(row)"
+                >
+                  View
+                </button>
               </td>
             </tr>
             <tr v-if="!loading && rows.length === 0">
@@ -1527,7 +1607,7 @@ onUnmounted(() => {
         leave-to-class="opacity-0"
       >
         <div
-          v-if="manageMenuRow"
+          v-if="!portalMode && manageMenuRow"
           data-row-actions
           class="staff-row-menu fixed z-[300] overflow-hidden"
           role="menu"

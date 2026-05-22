@@ -2947,4 +2947,155 @@ class BillingInvoiceApiTest extends TestCase
             ->assertStatus(422)
             ->assertJsonFragment(['message' => 'Send the invoice first before messaging via WhatsApp.']);
     }
+
+    public function test_portal_user_lists_only_own_account_invoices(): void
+    {
+        $accountA = ClientAccount::query()->create([
+            'status' => ClientAccount::STATUS_ACTIVE,
+            'company_name' => 'Portal Co',
+            'email' => 'portal@example.com',
+            'invoice_share_slug' => 'portal-co',
+        ]);
+        $accountB = ClientAccount::query()->create([
+            'status' => ClientAccount::STATUS_ACTIVE,
+            'company_name' => 'Other Co',
+            'email' => 'other@example.com',
+        ]);
+        $portalUser = User::factory()->create(['client_account_id' => $accountA->id]);
+
+        Invoice::query()->create([
+            'invoice_number' => 'INV-PORTAL-A',
+            'client_account_id' => $accountA->id,
+            'status' => Invoice::STATUS_SENT,
+            'currency' => 'USD',
+            'subtotal_cents' => 500,
+            'tax_cents' => 0,
+            'total_cents' => 500,
+            'amount_paid_cents' => 0,
+            'balance_due_cents' => 500,
+        ]);
+        Invoice::query()->create([
+            'invoice_number' => 'INV-OTHER-B',
+            'client_account_id' => $accountB->id,
+            'status' => Invoice::STATUS_SENT,
+            'currency' => 'USD',
+            'subtotal_cents' => 900,
+            'tax_cents' => 0,
+            'total_cents' => 900,
+            'amount_paid_cents' => 0,
+            'balance_due_cents' => 900,
+        ]);
+
+        Sanctum::actingAs($portalUser);
+
+        $this->getJson('/api/invoices?client_account_id='.$accountB->id)
+            ->assertForbidden();
+
+        $response = $this->getJson('/api/invoices');
+        $response->assertOk();
+        $numbers = collect($response->json('data'))->pluck('invoice_number')->all();
+        $this->assertContains('INV-PORTAL-A', $numbers);
+        $this->assertNotContains('INV-OTHER-B', $numbers);
+    }
+
+    public function test_portal_user_cannot_mutate_invoice(): void
+    {
+        $client = ClientAccount::query()->create([
+            'status' => ClientAccount::STATUS_ACTIVE,
+            'company_name' => 'Portal Mutate Co',
+            'email' => 'mutate@example.com',
+        ]);
+        $portalUser = User::factory()->create(['client_account_id' => $client->id]);
+        $invoice = Invoice::query()->create([
+            'invoice_number' => 'INV-PORTAL-MUT',
+            'client_account_id' => $client->id,
+            'status' => Invoice::STATUS_SENT,
+            'currency' => 'USD',
+            'subtotal_cents' => 1000,
+            'tax_cents' => 0,
+            'total_cents' => 1000,
+            'amount_paid_cents' => 0,
+            'balance_due_cents' => 1000,
+        ]);
+
+        Sanctum::actingAs($portalUser);
+
+        $this->postJson("/api/invoices/{$invoice->id}/record-payment", [
+            'amount_cents' => 1000,
+        ])->assertForbidden();
+    }
+
+    public function test_portal_user_can_get_share_link_for_own_invoice(): void
+    {
+        $client = ClientAccount::query()->create([
+            'status' => ClientAccount::STATUS_ACTIVE,
+            'company_name' => 'Share Co',
+            'email' => 'share@example.com',
+            'invoice_share_slug' => 'share-co',
+        ]);
+        $portalUser = User::factory()->create(['client_account_id' => $client->id]);
+        $invoice = Invoice::query()->create([
+            'invoice_number' => 'INV-PORTAL-SHARE',
+            'client_account_id' => $client->id,
+            'status' => Invoice::STATUS_SENT,
+            'currency' => 'USD',
+            'subtotal_cents' => 1200,
+            'tax_cents' => 0,
+            'total_cents' => 1200,
+            'amount_paid_cents' => 0,
+            'balance_due_cents' => 1200,
+        ]);
+
+        Sanctum::actingAs($portalUser);
+
+        $response = $this->postJson("/api/invoices/{$invoice->id}/share-link");
+        $response->assertOk()
+            ->assertJsonStructure(['customer_view_url', 'customer_pdf_url']);
+        $viewUrl = (string) $response->json('customer_view_url');
+        $this->assertStringStartsWith(url('/billing-invoice/share-co/'), $viewUrl);
+    }
+
+    public function test_portal_billing_summary_is_scoped_to_account(): void
+    {
+        $accountA = ClientAccount::query()->create([
+            'status' => ClientAccount::STATUS_ACTIVE,
+            'company_name' => 'Summary A',
+            'email' => 'a@example.com',
+        ]);
+        $accountB = ClientAccount::query()->create([
+            'status' => ClientAccount::STATUS_ACTIVE,
+            'company_name' => 'Summary B',
+            'email' => 'b@example.com',
+        ]);
+        $portalUser = User::factory()->create(['client_account_id' => $accountA->id]);
+
+        Invoice::query()->create([
+            'invoice_number' => 'INV-SUM-A',
+            'client_account_id' => $accountA->id,
+            'status' => Invoice::STATUS_SENT,
+            'currency' => 'USD',
+            'subtotal_cents' => 3000,
+            'tax_cents' => 0,
+            'total_cents' => 3000,
+            'amount_paid_cents' => 0,
+            'balance_due_cents' => 3000,
+        ]);
+        Invoice::query()->create([
+            'invoice_number' => 'INV-SUM-B',
+            'client_account_id' => $accountB->id,
+            'status' => Invoice::STATUS_SENT,
+            'currency' => 'USD',
+            'subtotal_cents' => 9000,
+            'tax_cents' => 0,
+            'total_cents' => 9000,
+            'amount_paid_cents' => 0,
+            'balance_due_cents' => 9000,
+        ]);
+
+        Sanctum::actingAs($portalUser);
+
+        $this->getJson('/api/billing/summary')
+            ->assertOk()
+            ->assertJsonPath('open_balance_due_cents', 3000);
+    }
 }

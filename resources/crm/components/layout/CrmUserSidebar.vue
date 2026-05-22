@@ -47,6 +47,7 @@ function navActive(mode) {
   if (mode === "returns-orders") return p === "/users/returns/orders";
   if (mode === "returns-items") return p === "/users/returns/items";
   if (mode === "returns-create") return p.startsWith("/users/returns/create");
+  if (mode === "billing") return p.startsWith("/users/billing");
   return false;
 }
 
@@ -348,6 +349,30 @@ function collapseNav() {
                 d="m20.25 7.5-.625 10.632a2.25 2.25 0 0 1-2.247 2.118H6.622a2.25 2.25 0 0 1-2.247-2.118L3.75 7.5M10 11.25h4M3.375 7.5h17.25c.621 0 1.125-.504 1.125-1.125v-1.5c0-.621-.504-1.125-1.125-1.125H3.375c-.621 0-1.125.504-1.125 1.125v1.5c0 .621.504 1.125 1.125 1.125Z"
               />
             </svg>
+          </RouterLink>
+        </li>
+        <li>
+          <RouterLink
+            to="/users/billing/invoices"
+            class="vx-nav-link"
+            :class="{ 'vx-nav-link--active': navActive('billing') }"
+            :title="!isExpanded ? 'Billing' : undefined"
+            @click="closeMobile"
+          >
+            <svg
+              fill="none"
+              viewBox="0 0 24 24"
+              stroke="currentColor"
+              stroke-width="1.5"
+              aria-hidden="true"
+            >
+              <path
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                d="M2.25 8.25h19.5M2.25 9h19.5m-16.5 5.25h6m-6 2.25h10.5M2.25 6.75h19.5a1.5 1.5 0 0 0 1.5-1.5v-1.5a1.5 1.5 0 0 0-1.5-1.5H2.25a1.5 1.5 0 0 0-1.5 1.5v1.5a1.5 1.5 0 0 0 1.5 1.5Z"
+              />
+            </svg>
+            <span v-if="isExpanded">Billing</span>
           </RouterLink>
         </li>
       </ul>

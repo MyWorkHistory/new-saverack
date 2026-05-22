@@ -437,6 +437,13 @@ const routes = [
     component: () => import("../pages/user-portal/UserPortalSupportPage.vue"),
     meta: { title: "Save Rack | Support", description: "Portal support.", userPortal: true },
   },
+  {
+    path: "/users/billing/invoices",
+    name: "user-billing-invoices",
+    component: () => import("../pages/user-portal/UserBillingInvoicesPage.vue"),
+    meta: { title: "Save Rack | Invoices", description: "Your fulfillment invoices.", userPortal: true },
+  },
+  { path: "/users/billing", redirect: "/users/billing/invoices" },
   { path: "/users/orders", name: "user-orders", component: OrdersListPage, meta: { ...meta.ordersAwaiting, orderTab: "awaiting", userPortal: true } },
   { path: "/users", redirect: "/users/dashboard" },
   { path: "/users/orders/ready-to-ship", name: "user-orders-awaiting", component: OrdersListPage, meta: { ...meta.ordersAwaiting, orderTab: "awaiting", userPortal: true } },

@@ -2142,30 +2142,35 @@ class InvoiceService
     /**
      * @return array<string, int|string>
      */
-    public function summary(): array
+    public function summary(?int $clientAccountId = null): array
     {
         $openStatuses = [Invoice::STATUS_SENT, Invoice::STATUS_PARTIAL, Invoice::STATUS_PROCESSING, Invoice::STATUS_PAYMENT_FAILED, 'past_due', 'open'];
-        $openBalance = (int) Invoice::query()
+        $base = Invoice::query();
+        if ($clientAccountId !== null && $clientAccountId > 0) {
+            $base->where('client_account_id', $clientAccountId);
+        }
+
+        $openBalance = (int) (clone $base)
             ->whereIn('status', $openStatuses)
             ->sum('balance_due_cents');
 
-        $overdueCount = (int) Invoice::query()
+        $overdueCount = (int) (clone $base)
             ->whereIn('status', $openStatuses)
             ->where('balance_due_cents', '>', 0)
             ->whereNotNull('due_at')
             ->where('due_at', '<', now()->startOfDay())
             ->count();
 
-        $draftCount = (int) Invoice::query()->where('status', Invoice::STATUS_DRAFT)->count();
+        $draftCount = (int) (clone $base)->where('status', Invoice::STATUS_DRAFT)->count();
 
         $startMtd = now()->startOfMonth();
-        $paidMtdCents = (int) Invoice::query()
+        $paidMtdCents = (int) (clone $base)
             ->where('status', Invoice::STATUS_PAID)
             ->whereNotNull('paid_at')
             ->where('paid_at', '>=', $startMtd)
             ->sum('amount_paid_cents');
 
-        $countsByStatus = Invoice::query()
+        $countsByStatus = (clone $base)
             ->selectRaw('status, count(*) as c')
             ->groupBy('status')
             ->pluck('c', 'status')

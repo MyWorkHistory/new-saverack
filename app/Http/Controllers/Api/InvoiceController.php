@@ -20,6 +20,7 @@ use App\Http\Requests\InvoiceUpdateRequest;
 use App\Models\ClientAccount;
 use App\Models\Invoice;
 use App\Models\InvoiceItem;
+use App\Models\User;
 use App\Services\InvoiceService;
 use App\Services\StripeInvoicePaymentService;
 use Barryvdh\DomPDF\Facade\Pdf;
@@ -62,7 +63,7 @@ class InvoiceController extends Controller
     {
         $this->authorize('viewAny', Invoice::class);
 
-        $data = $this->invoices->paginate($request->only([
+        $filters = $request->only([
             'search',
             'status',
             'client_account_id',
@@ -73,9 +74,38 @@ class InvoiceController extends Controller
             'sort_dir',
             'per_page',
             'page',
-        ]));
+        ]);
+
+        $portalAccountId = $this->resolvePortalClientAccountId($request);
+        if ($portalAccountId !== null) {
+            $filters['client_account_id'] = $portalAccountId;
+        }
+
+        $data = $this->invoices->paginate($filters);
 
         return response()->json($data);
+    }
+
+    private function resolvePortalClientAccountId(Request $request): ?int
+    {
+        $user = $request->user();
+        if (! $user instanceof User) {
+            return null;
+        }
+
+        $portalId = (int) ($user->client_account_id ?? 0);
+        if ($portalId <= 0) {
+            return null;
+        }
+
+        if ($request->has('client_account_id')) {
+            $requested = (int) $request->input('client_account_id');
+            if ($requested > 0 && $requested !== $portalId) {
+                abort(403);
+            }
+        }
+
+        return $portalId;
     }
 
     public function store(InvoiceStoreRequest $request): JsonResponse

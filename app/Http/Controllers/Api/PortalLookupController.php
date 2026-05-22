@@ -87,6 +87,33 @@ class PortalLookupController extends Controller
     }
 
     /**
+     * @param  array<string, mixed>  $row
+     */
+    private function orderRowMatchesLookupNumber(array $row, string $needle): bool
+    {
+        if ($needle === '') {
+            return false;
+        }
+
+        $fields = [
+            (string) ($row['order_number'] ?? ''),
+            (string) ($row['partner_order_id'] ?? ''),
+        ];
+        if (isset($row['legacy_id']) && $row['legacy_id'] !== null && $row['legacy_id'] !== '') {
+            $fields[] = (string) $row['legacy_id'];
+        }
+
+        foreach ($fields as $raw) {
+            $normalized = $this->normalizeOrderNumber($raw);
+            if ($normalized !== '' && $normalized === $needle) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /**
      * @return array<string, mixed>|null  May include key "multiple" => true for ambiguous matches.
      */
     private function findExactOrder(string $customerId, int $clientAccountId, string $query)
@@ -107,18 +134,26 @@ class PortalLookupController extends Controller
         }
 
         $needle = $this->normalizeOrderNumber($query);
-        $rows = is_array($payload['data'] ?? null) ? $payload['data'] : [];
+        $rows = is_array($payload['rows'] ?? null) ? $payload['rows'] : [];
         $matches = [];
         foreach ($rows as $row) {
             if (! is_array($row)) {
                 continue;
             }
-            $num = $this->normalizeOrderNumber((string) ($row['order_number'] ?? ''));
-            if ($num !== '' && $num === $needle) {
-                $id = trim((string) ($row['id'] ?? ''));
-                if ($id !== '') {
-                    $matches[] = $row;
-                }
+            if (! $this->orderRowMatchesLookupNumber($row, $needle)) {
+                continue;
+            }
+            $id = trim((string) ($row['id'] ?? ''));
+            if ($id !== '') {
+                $matches[] = $row;
+            }
+        }
+
+        // ShipHero may match partner_order_id while order_number differs; trust a single hit.
+        if (count($matches) === 0 && count($rows) === 1 && is_array($rows[0])) {
+            $only = $rows[0];
+            if (trim((string) ($only['id'] ?? '')) !== '') {
+                $matches[] = $only;
             }
         }
 

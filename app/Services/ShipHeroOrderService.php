@@ -174,6 +174,7 @@ query ShipHeroOrders(
           id
           legacy_id
           order_number
+          partner_order_id
           shop_name
           fulfillment_status
           order_date
@@ -1497,6 +1498,7 @@ GQL;
             'has_active_hold' => $this->orderHoldsArrayHasActive($holdsApi),
             'recipient_name' => $recipient,
             'order_number' => (string) ($node['order_number'] ?? ''),
+            'partner_order_id' => (string) ($node['partner_order_id'] ?? ''),
             'order_date' => $this->nullableIso($node['order_date'] ?? null),
             'required_ship_date' => $this->nullableIso($node['required_ship_date'] ?? null),
             'account' => (string) ($node['shop_name'] ?? ''),

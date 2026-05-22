@@ -54,7 +54,7 @@ class PortalLookupController extends Controller
 
         $orderMatch = $this->findExactOrder($customerId, $clientAccountId, $query);
         if ($orderMatch !== null) {
-            if ($orderMatch === 'multiple') {
+            if (! empty($orderMatch['multiple'])) {
                 return response()->json([
                     'message' => 'Multiple orders match that number.',
                 ], 422);
@@ -87,9 +87,9 @@ class PortalLookupController extends Controller
     }
 
     /**
-     * @return array<string, mixed>|null|'multiple'
+     * @return array<string, mixed>|null  May include key "multiple" => true for ambiguous matches.
      */
-    private function findExactOrder(string $customerId, int $clientAccountId, string $query): array|string|null
+    private function findExactOrder(string $customerId, int $clientAccountId, string $query)
     {
         try {
             $payload = $this->orders->listOrders([
@@ -126,7 +126,7 @@ class PortalLookupController extends Controller
             return null;
         }
         if (count($matches) > 1) {
-            return 'multiple';
+            return ['multiple' => true];
         }
 
         $row = $matches[0];
@@ -142,7 +142,7 @@ class PortalLookupController extends Controller
     /**
      * @return array<string, mixed>|null
      */
-    private function findExactSku(string $customerId, string $query): ?array
+    private function findExactSku(string $customerId, string $query)
     {
         try {
             $product = $this->inventory->getProductDetailBySku($query, null, $customerId);

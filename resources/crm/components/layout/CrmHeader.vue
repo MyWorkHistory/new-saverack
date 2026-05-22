@@ -519,7 +519,7 @@ onUnmounted(() => {
 
         <template v-if="isPortalUser">
           <div
-            class="crm-portal-navbar-search d-flex align-items-center gap-2 flex-grow-1 min-w-0 order-3 order-lg-2 w-100 w-lg-auto mx-lg-1"
+            class="crm-portal-navbar-search d-flex align-items-center gap-2 flex-grow-1 min-w-0"
           >
             <div class="vx-search-merge flex-grow-1 min-w-0">
               <div class="input-group">
@@ -563,7 +563,7 @@ onUnmounted(() => {
             </button>
           </div>
 
-          <div class="d-flex align-items-center flex-shrink-0 ms-lg-auto">
+          <div class="d-flex align-items-center flex-shrink-0 ms-auto">
             <div ref="menuRoot" class="position-relative">
               <button
                 type="button"

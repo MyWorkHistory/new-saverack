@@ -271,15 +271,19 @@ $vx-sidebar-collapsed: 80px;
   border-radius: 50rem;
 }
 
-/* Portal header: compact pill search + separate Search button (not full navbar width) */
+/* Portal header: search left of avatar; cap width so focus ring stays compact */
 .crm-portal-navbar-search {
-  flex: 1 1 auto;
+  flex: 0 1 auto;
   min-width: 0;
+  width: 100%;
   max-width: 28rem;
+  margin-right: auto;
 }
 
 @media (min-width: 992px) {
   .crm-portal-navbar-search {
+    flex: 1 1 auto;
+    width: auto;
     max-width: 32rem;
   }
 }

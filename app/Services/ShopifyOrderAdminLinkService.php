@@ -3,6 +3,8 @@
 namespace App\Services;
 
 use App\Models\ClientStore;
+use Illuminate\Support\Facades\Log;
+use Throwable;
 
 class ShopifyOrderAdminLinkService
 {
@@ -12,9 +14,16 @@ class ShopifyOrderAdminLinkService
      */
     public function enrichOrder(int $clientAccountId, array $order): array
     {
-        $url = $this->buildAdminUrl($clientAccountId, $order);
-        if ($url !== null) {
-            $order['shopify_admin_url'] = $url;
+        try {
+            $url = $this->buildAdminUrl($clientAccountId, $order);
+            if ($url !== null) {
+                $order['shopify_admin_url'] = $url;
+            }
+        } catch (Throwable $e) {
+            Log::warning('shopify.order_admin_link.enrich_failed', [
+                'client_account_id' => $clientAccountId,
+                'message' => $e->getMessage(),
+            ]);
         }
 
         return $order;

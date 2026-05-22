@@ -4,10 +4,16 @@ namespace App\Services;
 
 use App\Models\ShipHeroOrderDetailCache;
 use Illuminate\Support\Carbon;
+use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Schema;
+use Throwable;
 
 class ShipHeroOrderDetailCacheService
 {
     public const TTL_MINUTES = 30;
+
+    /** @var bool|null */
+    private static $tableAvailable;
 
     public function normalizeOrderId(string $orderId): string
     {
@@ -16,12 +22,43 @@ class ShipHeroOrderDetailCacheService
 
     public function clearForClientAccount(int $clientAccountId): void
     {
-        if ($clientAccountId <= 0) {
+        if (! $this->tableAvailable()) {
             return;
         }
-        ShipHeroOrderDetailCache::query()
-            ->where('client_account_id', $clientAccountId)
-            ->delete();
+        try {
+            ShipHeroOrderDetailCache::query()
+                ->where('client_account_id', $clientAccountId)
+                ->delete();
+        } catch (Throwable $e) {
+            $this->logCacheFailure('clear', $e);
+        }
+    }
+
+    /**
+     * @return array{order: array<string, mixed>, cached_at: string|null}|null
+     */
+    public function getCachedOrderWithMeta(int $clientAccountId, string $orderId): ?array
+    {
+        if (! $this->tableAvailable()) {
+            return null;
+        }
+        try {
+            $row = $this->findFreshRow($clientAccountId, $orderId);
+            if ($row === null || ! is_array($row->order_json)) {
+                return null;
+            }
+
+            return [
+                'order' => $row->order_json,
+                'cached_at' => $row->synced_at !== null
+                    ? $row->synced_at->toIso8601String()
+                    : null,
+            ];
+        } catch (Throwable $e) {
+            $this->logCacheFailure('read', $e);
+
+            return null;
+        }
     }
 
     /**
@@ -29,22 +66,16 @@ class ShipHeroOrderDetailCacheService
      */
     public function getCachedOrder(int $clientAccountId, string $orderId): ?array
     {
-        $row = $this->findFreshRow($clientAccountId, $orderId);
-        if ($row === null || ! is_array($row->order_json)) {
-            return null;
-        }
+        $payload = $this->getCachedOrderWithMeta($clientAccountId, $orderId);
 
-        return $row->order_json;
+        return $payload !== null ? $payload['order'] : null;
     }
 
     public function getCachedAtIso(int $clientAccountId, string $orderId): ?string
     {
-        $row = $this->findFreshRow($clientAccountId, $orderId);
-        if ($row === null || $row->synced_at === null) {
-            return null;
-        }
+        $payload = $this->getCachedOrderWithMeta($clientAccountId, $orderId);
 
-        return $row->synced_at->toIso8601String();
+        return $payload !== null ? $payload['cached_at'] : null;
     }
 
     /**
@@ -52,17 +83,36 @@ class ShipHeroOrderDetailCacheService
      */
     public function putOrder(int $clientAccountId, string $orderId, array $order): void
     {
-        if ($clientAccountId <= 0) {
+        if (! $this->tableAvailable()) {
             return;
         }
-        $id = $this->normalizeOrderId($orderId);
-        if ($id === '') {
-            return;
+        try {
+            $id = $this->normalizeOrderId($orderId);
+            if ($id === '') {
+                return;
+            }
+            $row = $this->findOrNewRow($clientAccountId, $id);
+            $row->order_json = $order;
+            $row->synced_at = now();
+            $row->save();
+        } catch (Throwable $e) {
+            $this->logCacheFailure('write', $e);
         }
-        $row = $this->findOrNewRow($clientAccountId, $id);
-        $row->order_json = $order;
-        $row->synced_at = now();
-        $row->save();
+    }
+
+    private function tableAvailable(): bool
+    {
+        if (self::$tableAvailable !== null) {
+            return self::$tableAvailable;
+        }
+        try {
+            self::$tableAvailable = Schema::hasTable('shiphero_order_detail_cache');
+        } catch (Throwable $e) {
+            self::$tableAvailable = false;
+            $this->logCacheFailure('schema', $e);
+        }
+
+        return self::$tableAvailable;
     }
 
     private function findFreshRow(int $clientAccountId, string $orderId): ?ShipHeroOrderDetailCache
@@ -110,5 +160,12 @@ class ShipHeroOrderDetailCacheService
         $row->save();
 
         return $row;
+    }
+
+    private function logCacheFailure(string $operation, Throwable $e): void
+    {
+        Log::warning('shiphero.order_detail.cache.'.$operation.'_failed', [
+            'message' => $e->getMessage(),
+        ]);
     }
 }

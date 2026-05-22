@@ -392,14 +392,12 @@ class OrderController extends Controller
                 'user_id' => optional($request->user())->id,
             ]);
             if ($clientAccountId > 0 && ! $refresh) {
-                $cached = $this->orderDetailCache->getCachedOrder($clientAccountId, $orderId);
-                if ($cached !== null) {
-                    $cachedAt = $this->orderDetailCache->getCachedAtIso($clientAccountId, $orderId);
-
+                $cachedPayload = $this->orderDetailCache->getCachedOrderWithMeta($clientAccountId, $orderId);
+                if ($cachedPayload !== null) {
                     return response()->json([
-                        'order' => $this->shopifyOrderLinks->enrichOrder($clientAccountId, $cached),
+                        'order' => $this->enrichOrderDetailForResponse($clientAccountId, $cachedPayload['order']),
                         'cached' => true,
-                        'cached_at' => $cachedAt,
+                        'cached_at' => $cachedPayload['cached_at'],
                     ]);
                 }
             }
@@ -412,7 +410,7 @@ class OrderController extends Controller
                 'items_count' => is_array($order['items'] ?? null) ? count($order['items']) : 0,
                 'history_count' => is_array($order['history'] ?? null) ? count($order['history']) : 0,
             ]);
-            $order = $this->shopifyOrderLinks->enrichOrder($clientAccountId, $order);
+            $order = $this->enrichOrderDetailForResponse($clientAccountId, $order);
             if ($clientAccountId > 0) {
                 $this->orderDetailCache->putOrder($clientAccountId, $orderId, $order);
             }
@@ -440,7 +438,7 @@ class OrderController extends Controller
                 $fallbackOrder = $this->hydrateOrderFallbackFromSummary($orderId, $summary);
 
                 return response()->json([
-                    'order' => $this->shopifyOrderLinks->enrichOrder($clientAccountId, $fallbackOrder),
+                    'order' => $this->enrichOrderDetailForResponse($clientAccountId, $fallbackOrder),
                     'fallback' => [
                         'source' => 'orders_list_summary',
                     ],
@@ -1354,6 +1352,24 @@ class OrderController extends Controller
     private function isNotFoundMessage(string $message): bool
     {
         return str_contains(strtolower(trim($message)), 'not found');
+    }
+
+    /**
+     * @param  array<string, mixed>  $order
+     * @return array<string, mixed>
+     */
+    private function enrichOrderDetailForResponse(int $clientAccountId, array $order): array
+    {
+        try {
+            return $this->shopifyOrderLinks->enrichOrder($clientAccountId, $order);
+        } catch (Throwable $e) {
+            Log::warning('shopify.order_admin_link.controller_enrich_failed', [
+                'client_account_id' => $clientAccountId,
+                'message' => $e->getMessage(),
+            ]);
+
+            return $order;
+        }
     }
 
     /**

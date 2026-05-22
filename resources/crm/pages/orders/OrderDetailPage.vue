@@ -30,6 +30,8 @@ const toast = useToast();
 
 const loading = ref(false);
 const refreshing = ref(false);
+/** Prevents a second load when stripping ?refresh=1 from the URL after list navigation. */
+const skipOrderLoadFromRouteWatch = ref(false);
 const { markRefreshed, lastRefreshedLabel, lastRefreshedAt } = usePortalLastRefreshed();
 const order = ref(null);
 const selectedAccountId = ref(String(route.query.client_account_id || ""));
@@ -726,13 +728,18 @@ watch(
 );
 
 watch(
-  () => [orderId.value, selectedAccountId.value, route.query.refresh],
+  () => [orderId.value, selectedAccountId.value],
   () => {
+    if (skipOrderLoadFromRouteWatch.value) {
+      skipOrderLoadFromRouteWatch.value = false;
+      return;
+    }
     if (selectedAccountId.value && orderId.value) {
       const forceRefresh =
         route.query.refresh === "1" || route.query.refresh === 1 || route.query.refresh === true;
       void loadOrder({ refresh: forceRefresh }).then(() => {
         if (forceRefresh && isPortalUser.value) {
+          skipOrderLoadFromRouteWatch.value = true;
           const q = { ...route.query };
           delete q.refresh;
           router.replace({ query: q });

@@ -13,9 +13,7 @@ return new class extends Migration
         }
 
         Schema::table('client_accounts', function (Blueprint $table) {
-            $table->unsignedBigInteger('billing_available_funds_cents')
-                ->default(0)
-                ->after('cc_fee_percent');
+            $table->unsignedBigInteger('billing_available_funds_cents')->default(0);
         });
     }
 

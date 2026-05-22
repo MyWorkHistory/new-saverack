@@ -7,6 +7,7 @@ use App\Models\ClientAccount;
 use App\Models\Invoice;
 use App\Support\Billing\InvoiceHistoryEventType;
 use App\Support\Billing\InvoiceLineCategory;
+use App\Support\BillingAvailableFundsSchema;
 use App\Models\InvoiceHistory;
 use App\Models\InvoiceItem;
 use App\Models\User;
@@ -735,6 +736,7 @@ class InvoiceService
      */
     public function paymentAllocationContext(Invoice $invoice): array
     {
+        BillingAvailableFundsSchema::ensureColumn();
         $invoice->loadMissing('clientAccount');
         if ($invoice->clientAccount === null) {
             throw new \RuntimeException('Invoice account is unavailable.');
@@ -809,6 +811,7 @@ class InvoiceService
         ?User $actor,
         array $paymentMeta = []
     ): array {
+        BillingAvailableFundsSchema::ensureColumn();
         if ($invoice->isVoid()) {
             throw new \RuntimeException('Cannot add funds for this invoice.');
         }
@@ -853,6 +856,7 @@ class InvoiceService
         ?User $actor,
         array $paymentMeta = []
     ): array {
+        BillingAvailableFundsSchema::ensureColumn();
         if ($rootInvoice->isVoid()) {
             throw new \RuntimeException('Cannot record payment on this invoice.');
         }

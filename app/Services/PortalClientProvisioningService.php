@@ -2,6 +2,7 @@
 
 namespace App\Services;
 
+use App\Mail\NewAccountWelcomeMailable;
 use App\Mail\NewPortalRegistrationStaffMailable;
 use App\Models\ClientAccount;
 use App\Models\User;
@@ -180,7 +181,29 @@ class PortalClientProvisioningService
 
         $user->roles()->sync([]);
 
-        return $user->fresh(['roles.permissions', 'profile', 'permissions', 'clientAccount']);
+        $user = $user->fresh(['roles.permissions', 'profile', 'permissions', 'clientAccount']);
+
+        $this->notifyNewAccountWelcome($account, $user);
+
+        return $user;
+    }
+
+    private function notifyNewAccountWelcome(ClientAccount $account, User $user): void
+    {
+        $to = trim((string) $user->email);
+        if ($to === '') {
+            return;
+        }
+
+        try {
+            Mail::to($to)->send(new NewAccountWelcomeMailable($account, $user));
+        } catch (\Throwable $e) {
+            Log::warning('portal.registration.welcome_email_failed', [
+                'client_account_id' => $account->id,
+                'user_id' => $user->id,
+                'message' => $e->getMessage(),
+            ]);
+        }
     }
 
     private function notifyStaffOfRegistration(ClientAccount $account, User $user): void

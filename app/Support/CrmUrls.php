@@ -25,4 +25,9 @@ class CrmUrls
     {
         return self::frontendBase().'/admin/clients/accounts/'.$clientAccountId;
     }
+
+    public static function portalLoginUrl(): string
+    {
+        return self::frontendBase().'/login';
+    }
 }

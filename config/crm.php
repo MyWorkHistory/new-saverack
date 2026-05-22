@@ -31,6 +31,10 @@ return [
     'password_reset_from_address' => env('CRM_PASSWORD_RESET_FROM_ADDRESS', 'info@saverack.com'),
     'password_reset_from_name' => env('CRM_PASSWORD_RESET_FROM_NAME', env('CRM_MAIL_FROM_NAME', 'Save Rack')),
 
+    /** From address for new account welcome emails (must be verified in SES). */
+    'account_welcome_from_address' => env('CRM_ACCOUNT_WELCOME_FROM_ADDRESS', 'info@saverack.com'),
+    'account_welcome_from_name' => env('CRM_ACCOUNT_WELCOME_FROM_NAME', env('CRM_MAIL_FROM_NAME', 'Save Rack')),
+
     /** Notified when a new 3PL self-serve account is created. */
     'registration_notify_email' => env('REGISTRATION_NOTIFY_EMAIL') ?: env('ADMIN_EMAIL'),
 

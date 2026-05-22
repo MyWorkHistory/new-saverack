@@ -160,13 +160,36 @@ const accountOptions = computed(() => {
     }));
 });
 
+const ORDER_DETAIL_CACHE_TTL_MS = 30 * 60 * 1000;
+
+function orderDetailFetchedAtKey(rowId) {
+  return `orders.detail.fetchedAt.${selectedAccountId.value}.${String(rowId)}`;
+}
+
+function orderDetailShouldRefreshFromList(rowId) {
+  try {
+    const fetchedAt = Number(sessionStorage.getItem(orderDetailFetchedAtKey(rowId)) || 0);
+    return !fetchedAt || Date.now() - fetchedAt > ORDER_DETAIL_CACHE_TTL_MS;
+  } catch (_) {
+    return true;
+  }
+}
+
+function orderDetailQuery(row) {
+  const query = { client_account_id: String(selectedAccountId.value) };
+  if (row?.id && orderDetailShouldRefreshFromList(row.id)) {
+    query.refresh = "1";
+  }
+  return query;
+}
+
 function orderDetailHref(row) {
   if (!row?.id || !selectedAccountId.value) return "#";
   const name = isPortalOrderList.value ? "user-order-detail" : "order-detail";
   return router.resolve({
     name,
     params: { shipheroOrderId: String(row.id) },
-    query: { client_account_id: String(selectedAccountId.value) },
+    query: orderDetailQuery(row),
   }).href;
 }
 

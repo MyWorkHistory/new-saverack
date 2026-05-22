@@ -7,6 +7,7 @@ import CrmIconRowActions from "../../components/common/CrmIconRowActions.vue";
 import ConfirmModal from "../../components/common/ConfirmModal.vue";
 import OrdersRemoveHoldsModal from "../../components/orders/OrdersRemoveHoldsModal.vue";
 import { setCrmPageMeta } from "../../composables/useCrmPageMeta.js";
+import { usePortalLastRefreshed } from "../../composables/usePortalLastRefreshed.js";
 import { useToast } from "../../composables/useToast.js";
 import { crmIsPortalUser } from "../../utils/crmUser";
 import { canWriteShipHeroOrders } from "../../utils/crmShipHeroOrders";
@@ -28,6 +29,8 @@ const router = useRouter();
 const toast = useToast();
 
 const loading = ref(false);
+const refreshing = ref(false);
+const { markRefreshed, lastRefreshedLabel, lastRefreshedAt } = usePortalLastRefreshed();
 const order = ref(null);
 const selectedAccountId = ref(String(route.query.client_account_id || ""));
 const loadError = ref("");
@@ -621,26 +624,66 @@ function fallbackOrderSnapshot() {
   }
 }
 
-async function loadOrder() {
+function orderDetailFetchedAtKey() {
+  return `orders.detail.fetchedAt.${selectedAccountId.value}.${orderId.value}`;
+}
+
+function recordOrderDetailFetchedAt() {
+  if (!selectedAccountId.value || !orderId.value) return;
+  try {
+    sessionStorage.setItem(orderDetailFetchedAtKey(), String(Date.now()));
+  } catch (_) {
+    // ignore quota errors
+  }
+}
+
+function applyLastRefreshedFromResponse(data, didRefresh) {
+  const iso = typeof data?.cached_at === "string" ? data.cached_at.trim() : "";
+  if (iso) {
+    const d = new Date(iso);
+    if (!Number.isNaN(d.getTime())) {
+      lastRefreshedAt.value = d;
+      return;
+    }
+  }
+  if (!data?.cached || didRefresh) {
+    markRefreshed();
+  }
+}
+
+async function loadOrder({ refresh = false } = {}) {
   loadError.value = "";
   loadNotice.value = "";
   if (!selectedAccountId.value || !orderId.value) {
     order.value = null;
     return;
   }
-  const requestKey = `${selectedAccountId.value}:${orderId.value}`;
-  if (loading.value && activeLoadKey.value === requestKey) {
+  const requestKey = `${selectedAccountId.value}:${orderId.value}:${refresh ? "r" : "c"}`;
+  if ((loading.value || refreshing.value) && activeLoadKey.value === requestKey) {
     return;
   }
   activeLoadKey.value = requestKey;
-  loading.value = true;
-  order.value = null;
+  const sameOrder = String(order.value?.id || "") === orderId.value;
+  if (!sameOrder) {
+    loading.value = true;
+    order.value = null;
+  } else if (refresh) {
+    refreshing.value = true;
+  } else if (!order.value) {
+    loading.value = true;
+  }
   itemMenuOpenId.value = null;
   try {
-    const { data } = await api.get(`/orders/${encodeURIComponent(orderId.value)}`, {
-      params: { client_account_id: Number(selectedAccountId.value) },
-    });
+    const params = { client_account_id: Number(selectedAccountId.value) };
+    if (refresh) params.refresh = 1;
+    const { data } = await api.get(`/orders/${encodeURIComponent(orderId.value)}`, { params });
     order.value = data?.order ?? null;
+    if (order.value) {
+      recordOrderDetailFetchedAt();
+      if (isPortalUser.value) {
+        applyLastRefreshedFromResponse(data, refresh);
+      }
+    }
     if (data?.fallback?.source) {
       loadNotice.value = "Live detail endpoint was temporarily unavailable. Showing summary data from orders list.";
     }
@@ -660,10 +703,16 @@ async function loadOrder() {
     toast.errorFrom(e, "Could not load order details.");
   } finally {
     loading.value = false;
+    refreshing.value = false;
     if (activeLoadKey.value === requestKey) {
       activeLoadKey.value = "";
     }
   }
+}
+
+async function refreshOrderDetail() {
+  if (loading.value || refreshing.value) return;
+  await loadOrder({ refresh: true });
 }
 
 watch(
@@ -677,10 +726,18 @@ watch(
 );
 
 watch(
-  () => [orderId.value, selectedAccountId.value],
+  () => [orderId.value, selectedAccountId.value, route.query.refresh],
   () => {
     if (selectedAccountId.value && orderId.value) {
-      loadOrder();
+      const forceRefresh =
+        route.query.refresh === "1" || route.query.refresh === 1 || route.query.refresh === true;
+      void loadOrder({ refresh: forceRefresh }).then(() => {
+        if (forceRefresh && isPortalUser.value) {
+          const q = { ...route.query };
+          delete q.refresh;
+          router.replace({ query: q });
+        }
+      });
     } else {
       order.value = null;
       loadError.value = "";
@@ -705,7 +762,7 @@ async function runMarkFulfilled() {
     });
     toast.success("Order marked fulfilled.");
     closeActionConfirms();
-    await loadOrder();
+    await loadOrder({ refresh: true });
   } catch (e) {
     toast.errorFrom(e, "Could not mark order fulfilled.");
   } finally {
@@ -722,7 +779,7 @@ async function runCancelOrder() {
     });
     toast.success("Order canceled.");
     closeActionConfirms();
-    await loadOrder();
+    await loadOrder({ refresh: true });
   } catch (e) {
     toast.errorFrom(e, "Could not cancel order.");
   } finally {
@@ -751,7 +808,7 @@ async function onRemoveHoldsConfirm(payload) {
     toast.success("Holds removed.");
     removeHoldsBusy.value = false;
     removeHoldsModalOpen.value = false;
-    await loadOrder();
+    await loadOrder({ refresh: true });
   } catch (e) {
     toast.errorFrom(e, "Could not remove holds.");
   } finally {
@@ -769,7 +826,7 @@ async function saveSignatureGiftNote() {
       gift_note: giftNoteLocal.value,
     });
     toast.success("Options updated.");
-    await loadOrder();
+    await loadOrder({ refresh: true });
   } catch (e) {
     toast.errorFrom(e, "Could not save options.");
   } finally {
@@ -826,7 +883,7 @@ async function saveShippingAddress() {
     });
     toast.success("Shipping address updated.");
     shippingModalOpen.value = false;
-    await loadOrder();
+    await loadOrder({ refresh: true });
   } catch (e) {
     toast.errorFrom(e, "Could not update shipping address.");
   } finally {
@@ -844,7 +901,7 @@ async function saveShippingLines() {
       method: methodField.value,
     });
     toast.success("Shipping carrier and method updated.");
-    await loadOrder();
+    await loadOrder({ refresh: true });
   } catch (e) {
     toast.errorFrom(e, "Could not update shipping lines.");
   } finally {
@@ -862,7 +919,7 @@ async function onAllowPartialChange() {
       allow_partial: allowPartialLocal.value,
     });
     toast.success("Allow partial updated.");
-    await loadOrder();
+    await loadOrder({ refresh: true });
   } catch (e) {
     allowPartialLocal.value = prev;
     toast.errorFrom(e, "Could not update allow partial.");
@@ -905,7 +962,7 @@ async function saveTags() {
       tags: tagsLocal.value,
     });
     toast.success("Order tags updated.");
-    await loadOrder();
+    await loadOrder({ refresh: true });
   } catch (e) {
     toast.errorFrom(e, "Could not update tags.");
   } finally {
@@ -1031,7 +1088,7 @@ async function submitEditLinePending() {
     toast.success("Quantity to ship updated.");
     editLineBusy.value = false;
     closeEditLineModal();
-    await loadOrder();
+    await loadOrder({ refresh: true });
   } catch (e) {
     toast.errorFrom(e, "Could not update quantity to ship.");
   } finally {
@@ -1063,7 +1120,7 @@ async function runRemoveLineItem() {
     toast.success("Line item removed.");
     confirmDeleteLineOpen.value = false;
     deleteLineRow.value = null;
-    await loadOrder();
+    await loadOrder({ refresh: true });
   } catch (e) {
     toast.errorFrom(e, "Could not remove line item.");
   } finally {
@@ -1080,7 +1137,7 @@ async function savePackingNote() {
       packing_note: packingNoteLocal.value,
     });
     toast.success("Warehouse note updated.");
-    await loadOrder();
+    await loadOrder({ refresh: true });
   } catch (e) {
     toast.errorFrom(e, "Could not save warehouse note.");
   } finally {
@@ -1183,7 +1240,7 @@ async function submitAddItems() {
     toast.success("Items added.");
     addItemsModalOpen.value = false;
     addItemForm.value = { sku: "", quantity: 1, product_name: "" };
-    await loadOrder();
+    await loadOrder({ refresh: true });
   } catch (e) {
     toast.errorFrom(e, "Could not add items.");
   } finally {
@@ -1208,7 +1265,7 @@ async function onAttachmentFileChange(ev) {
     const { data } = await api.post(`/orders/${encodeURIComponent(orderId.value)}/attachments`, fd);
     toast.success("Attachment added.");
     input.value = "";
-    await loadOrder();
+    await loadOrder({ refresh: true });
     if (data?.attachment && order.value && (data.attachment.id || data.attachment.url)) {
       const key = String(data.attachment.id || data.attachment.url);
       const list = [...(order.value.attachments || [])];
@@ -1334,6 +1391,36 @@ function goToOrdersList() {
               v-if="canUseStaffOrderHeaderActions"
               class="d-flex flex-wrap gap-2 align-items-center flex-shrink-0"
             >
+              <template v-if="isPortalUser">
+                <p v-if="lastRefreshedLabel" class="small text-secondary mb-0">
+                  Last refreshed: {{ lastRefreshedLabel }}
+                </p>
+                <button
+                  type="button"
+                  class="btn btn-outline-secondary btn-sm orders-toolbar-outline-btn d-inline-flex align-items-center gap-2"
+                  :disabled="loading || refreshing"
+                  title="Refresh"
+                  aria-label="Refresh order from ShipHero"
+                  @click="refreshOrderDetail"
+                >
+                  <svg
+                    width="18"
+                    height="18"
+                    fill="none"
+                    stroke="currentColor"
+                    viewBox="0 0 24 24"
+                    aria-hidden="true"
+                  >
+                    <path
+                      stroke-linecap="round"
+                      stroke-linejoin="round"
+                      stroke-width="2"
+                      d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"
+                    />
+                  </svg>
+                  {{ refreshing ? "Refreshing…" : "Refresh" }}
+                </button>
+              </template>
               <div class="dropdown order-detail-page__more-actions position-relative">
                 <button
                   ref="moreActionsBtnRef"
@@ -1935,7 +2022,7 @@ function goToOrdersList() {
             role="menuitem"
             @click="
               closeMoreActionsMenu();
-              loadOrder();
+              refreshOrderDetail();
             "
           >
             Refresh

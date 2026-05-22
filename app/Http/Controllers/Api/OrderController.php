@@ -4,7 +4,8 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Models\ClientAccount;
-use App\Services\ShipifyOrderAdminLinkService;
+use App\Services\ShipHeroOrderDetailCacheService;
+use App\Services\ShopifyOrderAdminLinkService;
 use App\Services\ShipHeroOrderService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -27,10 +28,17 @@ class OrderController extends Controller
     /** @var ShopifyOrderAdminLinkService */
     protected $shopifyOrderLinks;
 
-    public function __construct(ShipHeroOrderService $orders, ShopifyOrderAdminLinkService $shopifyOrderLinks)
-    {
+    /** @var ShipHeroOrderDetailCacheService */
+    protected $orderDetailCache;
+
+    public function __construct(
+        ShipHeroOrderService $orders,
+        ShopifyOrderAdminLinkService $shopifyOrderLinks,
+        ShipHeroOrderDetailCacheService $orderDetailCache
+    ) {
         $this->orders = $orders;
         $this->shopifyOrderLinks = $shopifyOrderLinks;
+        $this->orderDetailCache = $orderDetailCache;
     }
 
     public function index(Request $request): JsonResponse
@@ -358,10 +366,13 @@ class OrderController extends Controller
     {
         $validated = $request->validate([
             'client_account_id' => ['required', 'integer', 'exists:client_accounts,id'],
+            'refresh' => ['nullable', 'boolean'],
             'debug_shiphero_raw' => ['nullable', 'boolean'],
             'debug_variant' => ['nullable', 'string', 'in:minimal,core,pricing,addresses'],
         ]);
-        $customerId = $this->resolveShipHeroCustomerAccountId((int) $validated['client_account_id'], $request);
+        $clientAccountId = (int) $validated['client_account_id'];
+        $refresh = (bool) ($validated['refresh'] ?? false);
+        $customerId = $this->resolveShipHeroCustomerAccountId($clientAccountId, $request);
 
         try {
             if ((bool) ($validated['debug_shiphero_raw'] ?? false)) {
@@ -380,6 +391,19 @@ class OrderController extends Controller
                 'shiphero_customer_account_id' => $customerId,
                 'user_id' => optional($request->user())->id,
             ]);
+            if ($clientAccountId > 0 && ! $refresh) {
+                $cached = $this->orderDetailCache->getCachedOrder($clientAccountId, $orderId);
+                if ($cached !== null) {
+                    $cachedAt = $this->orderDetailCache->getCachedAtIso($clientAccountId, $orderId);
+
+                    return response()->json([
+                        'order' => $this->shopifyOrderLinks->enrichOrder($clientAccountId, $cached),
+                        'cached' => true,
+                        'cached_at' => $cachedAt,
+                    ]);
+                }
+            }
+
             $order = $this->orders->getOrder($orderId, $customerId);
 
             Log::info('shiphero.order_detail.request.success', [
@@ -388,10 +412,14 @@ class OrderController extends Controller
                 'items_count' => is_array($order['items'] ?? null) ? count($order['items']) : 0,
                 'history_count' => is_array($order['history'] ?? null) ? count($order['history']) : 0,
             ]);
-            $clientAccountId = (int) $validated['client_account_id'];
+            $order = $this->shopifyOrderLinks->enrichOrder($clientAccountId, $order);
+            if ($clientAccountId > 0) {
+                $this->orderDetailCache->putOrder($clientAccountId, $orderId, $order);
+            }
 
             return response()->json([
-                'order' => $this->shopifyOrderLinks->enrichOrder($clientAccountId, $order),
+                'order' => $order,
+                'cached' => false,
             ]);
         } catch (ValidationException $e) {
             throw $e;
@@ -409,7 +437,6 @@ class OrderController extends Controller
                     'order_id' => $orderId,
                     'shiphero_customer_account_id' => $customerId,
                 ]);
-                $clientAccountId = (int) $validated['client_account_id'];
                 $fallbackOrder = $this->hydrateOrderFallbackFromSummary($orderId, $summary);
 
                 return response()->json([
@@ -417,6 +444,7 @@ class OrderController extends Controller
                     'fallback' => [
                         'source' => 'orders_list_summary',
                     ],
+                    'cached' => false,
                 ]);
             }
             return response()->json([

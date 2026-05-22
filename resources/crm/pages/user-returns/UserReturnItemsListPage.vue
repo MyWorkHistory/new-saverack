@@ -67,7 +67,7 @@ onMounted(() => {
 </script>
 
 <template>
-  <div class="staff-page staff-page--wide">
+  <div class="staff-page staff-page--wide user-return-page">
     <div class="mb-4">
       <h1 class="h4 mb-1 fw-semibold text-body">Returned Items</h1>
       <p class="staff-page__intro mb-0">Items included on returns. Search by SKU, item name, order #, or RMA #.</p>

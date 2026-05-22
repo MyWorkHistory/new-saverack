@@ -18,6 +18,8 @@ import {
 
 const props = defineProps({
   portalReturnPreview: { type: Boolean, default: false },
+  /** When nested inside another staff-page (e.g. return create order preview), omit duplicate page shell. */
+  embeddedInParent: { type: Boolean, default: false },
 });
 
 const crmUser = inject("crmUser", ref(null));
@@ -155,6 +157,12 @@ const statusClass = computed(() => {
 });
 
 const isReturnPreviewMode = computed(() => props.portalReturnPreview === true);
+
+const orderDetailRootClass = computed(() =>
+  props.embeddedInParent
+    ? "order-detail-page order-detail-page--embedded"
+    : "staff-page staff-page--wide order-detail-page",
+);
 
 const canRunShipHeroActions = computed(
   () => !isReturnPreviewMode.value && canWriteShipHeroOrders(crmUser.value),
@@ -1265,7 +1273,7 @@ function goToOrdersList() {
 </script>
 
 <template>
-  <div class="staff-page staff-page--wide order-detail-page">
+  <div :class="orderDetailRootClass">
     <div v-if="loading" class="order-detail-page__fullscreen-loading">
       <CrmLoadingSpinner message="Loading order detail..." :center="true" />
     </div>
@@ -2388,5 +2396,14 @@ function goToOrdersList() {
 .modal-panel-leave-to {
   opacity: 0;
   transform: scale(0.97) translateY(0.5rem);
+}
+
+.order-detail-page--embedded {
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+  background: transparent;
+  padding: 0;
+  margin: 0;
 }
 </style>

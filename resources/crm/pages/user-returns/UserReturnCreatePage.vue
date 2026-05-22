@@ -206,23 +206,31 @@ onMounted(() => {
   });
   init();
 });
-
 </script>
 
 <template>
-  <div class="staff-page staff-page--wide user-return-create-page order-detail-page">
-    <div v-if="loading" class="py-5">
-      <CrmLoadingSpinner message="Preparing return…" />
-    </div>
+  <div v-if="loading" class="staff-page staff-page--wide py-5 user-return-page">
+    <CrmLoadingSpinner message="Preparing return…" :center="true" />
+  </div>
 
-    <template v-else-if="ret">
-      <div class="staff-table-card staff-datatable-card staff-datatable-card--white mb-4">
-        <div class="p-4 pb-3 d-flex flex-wrap justify-content-between align-items-start gap-3">
-          <div>
-            <h1 class="h4 mb-1 fw-semibold text-body">Create Return</h1>
-            <p class="small text-secondary mb-0">Order {{ ret.order_number || "—" }}</p>
+  <div v-else-if="ret" class="staff-page staff-page--wide user-return-page user-return-detail-page order-detail-page">
+    <div class="staff-table-card staff-datatable-card staff-datatable-card--white user-return-page__header-shell mb-4">
+      <div class="p-4 pb-3">
+        <div class="d-flex flex-wrap justify-content-between align-items-start gap-3">
+          <div class="min-w-0">
+            <h1 class="h4 mb-0 fw-semibold text-body">Create Return</h1>
+            <p class="small text-secondary mb-0 mt-2">
+              Order {{ ret.order_number || "—" }} · {{ ret.customer_name || "—" }}
+            </p>
+            <button
+              type="button"
+              class="btn btn-link btn-sm text-secondary px-0 py-0 mt-1 text-decoration-none"
+              @click="router.push({ name: 'user-return-create-order', params: { shipheroOrderId }, query: { client_account_id: String(clientAccountId) } })"
+            >
+              &lt; Order
+            </button>
           </div>
-          <div class="d-flex flex-wrap gap-2">
+          <div class="d-flex flex-wrap gap-2 flex-shrink-0 align-items-center">
             <button
               type="button"
               class="btn btn-outline-secondary btn-sm fw-semibold orders-toolbar-outline-btn"
@@ -245,161 +253,179 @@ onMounted(() => {
           </div>
         </div>
       </div>
+    </div>
 
-      <div class="row g-4">
-        <div class="col-lg-8">
-          <div class="staff-table-card staff-datatable-card staff-datatable-card--white p-4 mb-4">
-            <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-2">
-              <span class="small text-secondary fw-semibold text-uppercase">RMA #</span>
-              <button type="button" class="btn btn-sm btn-outline-secondary fw-semibold" @click="copyRma">Copy</button>
+    <div class="row g-4">
+      <div class="col-lg-8">
+        <div class="staff-table-card staff-datatable-card staff-datatable-card--white p-0 mb-4">
+          <div class="px-4 py-3 border-bottom d-flex flex-wrap justify-content-between align-items-center gap-2">
+            <h2 class="h6 mb-0 fw-semibold">Return Items</h2>
+            <div class="d-flex align-items-center gap-2">
+              <label class="small text-secondary mb-0" for="return-type-select">Type</label>
+              <select id="return-type-select" v-model="returnType" class="form-select form-select-sm user-return-page__type-select">
+                <option value="direct">Direct</option>
+                <option value="amazon">Amazon</option>
+                <option value="nordstrom">Nordstrom</option>
+              </select>
             </div>
-            <div class="user-return-create-page__rma-display">{{ ret.rma_number }}</div>
-            <p class="small text-secondary mb-0 mt-2">{{ formatRmaLabel(ret.rma_number) }}</p>
           </div>
 
-          <div class="staff-table-card staff-datatable-card staff-datatable-card--white p-4 mb-4">
-            <h2 class="h6 fw-semibold mb-3">Return Address</h2>
-            <div class="user-return-create-page__address small">
-              <div class="fw-semibold">{{ accountName }}</div>
-              <div>{{ formatRmaLabel(ret.rma_number) }}</div>
-              <div v-for="(line, i) in warehouseLines" :key="'addr-' + i">{{ line }}</div>
-            </div>
+          <div
+            v-if="selectedCount > 0"
+            class="staff-bulk-selection-bar d-flex flex-wrap align-items-center gap-2 gap-md-3 px-3 px-md-4 py-3"
+          >
+            <span class="small staff-bulk-selection-bar__count me-md-1">{{ selectedCount }} selected</span>
             <button
               type="button"
-              class="btn btn-outline-secondary btn-sm fw-semibold orders-toolbar-outline-btn mt-3"
-              @click="openShippingLabel"
+              class="btn btn-primary btn-sm staff-page-primary fw-semibold"
+              @click="returnAllSelected"
             >
-              View Shipping Label
+              Return All Selected
             </button>
           </div>
 
-          <div class="staff-table-card staff-datatable-card staff-datatable-card--white p-0 mb-4">
-            <div class="px-4 py-3 border-bottom d-flex flex-wrap justify-content-between align-items-center gap-2">
-              <h2 class="h6 mb-0 fw-semibold">Return Items</h2>
-              <div class="d-flex align-items-center gap-2">
-                <label class="small text-secondary mb-0" for="return-type-select">Type</label>
-                <select id="return-type-select" v-model="returnType" class="form-select form-select-sm" style="width: 10rem">
-                  <option value="direct">Direct</option>
-                  <option value="amazon">Amazon</option>
-                  <option value="nordstrom">Nordstrom</option>
-                </select>
-              </div>
-            </div>
-
-            <div
-              v-if="selectedCount > 0"
-              class="staff-bulk-selection-bar d-flex flex-wrap align-items-center gap-2 gap-md-3 px-3 px-md-4 py-3"
-            >
-              <span class="small staff-bulk-selection-bar__count me-md-1">{{ selectedCount }} selected</span>
-              <button
-                type="button"
-                class="btn btn-primary btn-sm staff-page-primary fw-semibold"
-                @click="returnAllSelected"
-              >
-                Return All Selected
-              </button>
-            </div>
-
-            <div class="table-responsive staff-table-wrap">
-              <table class="table table-hover align-middle mb-0 staff-data-table">
-                <thead class="table-light staff-table-head">
-                  <tr>
-                    <th class="staff-table-head__th text-center" style="width: 2.75rem" scope="col">
-                      <input
-                        type="checkbox"
-                        class="form-check-input m-0"
-                        :checked="allSelected"
-                        :disabled="!formLines.length"
-                        aria-label="Select all items"
-                        @change="toggleAll"
+          <div class="table-responsive staff-table-wrap">
+            <table class="table table-hover align-middle mb-0 staff-data-table">
+              <thead class="table-light staff-table-head">
+                <tr>
+                  <th class="staff-table-head__th text-center user-return-page__check-col" scope="col">
+                    <input
+                      type="checkbox"
+                      class="form-check-input staff-table-head__check m-0"
+                      :checked="allSelected"
+                      :disabled="!formLines.length"
+                      aria-label="Select all items"
+                      @change="toggleAll"
+                    />
+                  </th>
+                  <th class="staff-table-head__th order-detail-page__items-col" scope="col">Item</th>
+                  <th class="staff-table-head__th text-center" scope="col">Order Qty</th>
+                  <th class="staff-table-head__th text-center" scope="col">Return Items</th>
+                  <th class="staff-table-head__th" scope="col">Reason</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr v-for="(row, idx) in formLines" :key="lineKey(idx)">
+                  <td class="text-center staff-table-cell--tight-check" @click.stop>
+                    <input
+                      type="checkbox"
+                      class="form-check-input staff-table-head__check m-0"
+                      :checked="selected.has(idx)"
+                      :aria-label="`Select ${row.sku}`"
+                      @change="toggleOne(idx)"
+                    />
+                  </td>
+                  <td>
+                    <div class="d-flex align-items-center gap-2 order-detail-page__item-cell">
+                      <img
+                        v-if="row.image_url"
+                        :src="row.image_url"
+                        alt=""
+                        class="order-detail-page__item-thumb rounded border flex-shrink-0"
+                        width="48"
+                        height="48"
+                        loading="lazy"
                       />
-                    </th>
-                    <th class="staff-table-head__th" scope="col">Item</th>
-                    <th class="staff-table-head__th text-center" scope="col">Order Qty</th>
-                    <th class="staff-table-head__th text-center" scope="col">Return Items</th>
-                    <th class="staff-table-head__th" scope="col">Reason</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  <tr v-for="(row, idx) in formLines" :key="lineKey(idx)">
-                    <td class="text-center" @click.stop>
-                      <input
-                        type="checkbox"
-                        class="form-check-input m-0"
-                        :checked="selected.has(idx)"
-                        :aria-label="`Select ${row.sku}`"
-                        @change="toggleOne(idx)"
-                      />
-                    </td>
-                    <td>
-                      <div class="d-flex align-items-center gap-2">
-                        <img
-                          v-if="row.image_url"
-                          :src="row.image_url"
-                          alt=""
-                          class="rounded border flex-shrink-0"
-                          width="40"
-                          height="40"
-                          style="object-fit: cover"
-                        />
-                        <div class="min-w-0">
-                          <div class="small fw-semibold text-truncate">{{ row.name || "—" }}</div>
-                          <div class="small text-secondary">{{ row.sku }}</div>
-                        </div>
+                      <div class="min-w-0 order-detail-page__item-copy">
+                        <div class="order-detail-page__item-name fw-semibold text-truncate">{{ row.name || "—" }}</div>
+                        <div class="order-detail-page__item-sku small text-secondary">{{ row.sku }}</div>
                       </div>
-                    </td>
-                    <td class="text-center">{{ row.order_qty }}</td>
-                    <td class="text-center" style="width: 6rem">
-                      <input
-                        v-model.number="row.return_qty"
-                        type="number"
-                        min="0"
-                        :max="row.order_qty"
-                        class="form-control form-control-sm text-center"
-                        @change="clampReturnQty(row)"
-                      />
-                    </td>
-                    <td style="min-width: 11rem">
-                      <select v-model="row.return_reason" class="form-select form-select-sm" :disabled="!row.return_qty">
-                        <option value="">Select reason</option>
-                        <option v-for="(label, key) in reasonOptions" :key="key" :value="key">{{ label }}</option>
-                      </select>
-                    </td>
-                  </tr>
-                </tbody>
-              </table>
-            </div>
+                    </div>
+                  </td>
+                  <td class="text-center">{{ row.order_qty }}</td>
+                  <td class="text-center user-return-page__qty-col">
+                    <input
+                      v-model.number="row.return_qty"
+                      type="number"
+                      min="0"
+                      :max="row.order_qty"
+                      class="form-control form-control-sm text-center"
+                      @change="clampReturnQty(row)"
+                    />
+                  </td>
+                  <td class="user-return-page__reason-col">
+                    <select v-model="row.return_reason" class="form-select form-select-sm" :disabled="!row.return_qty">
+                      <option value="">Select reason</option>
+                      <option v-for="(label, key) in reasonOptions" :key="key" :value="key">{{ label }}</option>
+                    </select>
+                  </td>
+                </tr>
+                <tr v-if="!formLines.length">
+                  <td colspan="5" class="text-center text-secondary py-4">No line items on this order.</td>
+                </tr>
+              </tbody>
+            </table>
           </div>
-        </div>
-
-        <div class="col-lg-4">
-          <div class="staff-table-card staff-datatable-card staff-datatable-card--white p-4">
-            <label for="warehouse-private-note" class="form-label fw-semibold small mb-2">
-              Private note to warehouse only
-            </label>
-            <textarea
-              id="warehouse-private-note"
-              v-model="warehouseNote"
-              class="form-control"
-              rows="5"
-              maxlength="20000"
-              placeholder="Notes visible to warehouse staff on this return."
-            />
-          </div>
+          <p class="staff-table-mobile-scroll-cue d-md-none px-3 pb-2 mb-0" aria-hidden="true">
+            Scroll sideways or swipe to see all columns.
+          </p>
         </div>
       </div>
-    </template>
+
+      <div class="col-lg-4 d-flex flex-column gap-4 user-return-page__side-column">
+        <div class="staff-table-card staff-datatable-card staff-datatable-card--white p-4">
+          <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-2">
+            <h3 class="h6 fw-semibold mb-0">RMA #</h3>
+            <button type="button" class="btn btn-sm btn-outline-secondary fw-semibold" @click="copyRma">Copy</button>
+          </div>
+          <div class="user-return-page__rma-display">{{ ret.rma_number }}</div>
+          <p class="small text-secondary mb-0 mt-2">{{ formatRmaLabel(ret.rma_number) }}</p>
+        </div>
+
+        <div class="staff-table-card staff-datatable-card staff-datatable-card--white p-4">
+          <h3 class="h6 fw-semibold mb-3">Return Address</h3>
+          <div class="user-return-page__address-block small">
+            <p class="mb-1 fw-semibold text-body">{{ accountName }}</p>
+            <p class="mb-1 fw-semibold text-body">{{ formatRmaLabel(ret.rma_number) }}</p>
+            <p v-for="(line, i) in warehouseLines" :key="'addr-' + i" class="mb-0 text-secondary">{{ line }}</p>
+          </div>
+          <button
+            type="button"
+            class="btn btn-outline-secondary btn-sm fw-semibold orders-toolbar-outline-btn mt-3 w-100"
+            @click="openShippingLabel"
+          >
+            View Shipping Label
+          </button>
+        </div>
+
+        <div class="staff-table-card staff-datatable-card staff-datatable-card--white p-4">
+          <h3 class="h6 fw-semibold mb-3">Private Note</h3>
+          <p class="small text-secondary mb-2">Private note to warehouse only</p>
+          <textarea
+            id="warehouse-private-note"
+            v-model="warehouseNote"
+            class="form-control form-control-sm mb-0"
+            rows="5"
+            maxlength="20000"
+            placeholder="Notes visible to warehouse staff on this return."
+          />
+        </div>
+      </div>
+    </div>
   </div>
 </template>
 
 <style scoped>
-.user-return-create-page__rma-display {
-  font-size: 2.75rem;
+.user-return-page__rma-display {
+  font-size: 2.25rem;
   font-weight: 800;
   letter-spacing: 0.06em;
   line-height: 1.1;
 }
-.user-return-create-page__address {
+.user-return-page__type-select {
+  width: 10rem;
+  max-width: 100%;
+}
+.user-return-page__qty-col {
+  width: 6.5rem;
+}
+.user-return-page__reason-col {
+  min-width: 11rem;
+}
+.user-return-page__check-col {
+  width: 2.75rem;
+}
+.user-return-page__address-block {
   line-height: 1.5;
 }
 </style>

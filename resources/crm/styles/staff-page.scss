@@ -130,6 +130,21 @@ button.staff-stat-card {
   padding: 0;
 }
 
+.user-return-page__header-shell {
+  border: 1px solid rgba(0, 0, 0, 0.08);
+  border-radius: 0.5rem;
+  overflow: visible;
+  background: var(--bs-body-bg, #fff);
+}
+
+.user-return-page__side-column {
+  position: sticky;
+  top: 1rem;
+  align-self: flex-start;
+  max-height: none;
+  overflow: visible;
+}
+
 [data-bs-theme="dark"] .staff-page--wide {
   background: var(--bs-tertiary-bg);
 }

@@ -1,9 +1,8 @@
 <script setup>
-import { computed, inject, ref } from "vue";
+import { computed, inject, onMounted, ref } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import OrderDetailPage from "../orders/OrderDetailPage.vue";
 import { setCrmPageMeta } from "../../composables/useCrmPageMeta.js";
-import { onMounted } from "vue";
 
 const route = useRoute();
 const router = useRouter();
@@ -29,17 +28,26 @@ onMounted(() => {
 </script>
 
 <template>
-  <div class="user-return-create-order-page">
-    <div class="staff-page staff-page--wide mb-3">
-      <div
-        class="staff-table-card staff-datatable-card staff-datatable-card--white d-flex flex-wrap justify-content-between align-items-center gap-3 p-3 px-4"
-      >
-        <p class="mb-0 small text-secondary">Review this order, then create a return for the items you are sending back.</p>
-        <button type="button" class="btn btn-primary staff-page-primary fw-semibold" @click="startCreateReturn">
-          Create a Return
-        </button>
+  <div class="staff-page staff-page--wide user-return-page user-return-create-order-page order-detail-page">
+    <div class="staff-table-card staff-datatable-card staff-datatable-card--white user-return-page__header-shell mb-4">
+      <div class="p-4 d-flex flex-wrap justify-content-between align-items-center gap-3">
+        <p class="mb-0 small text-secondary">
+          Review this order, then create a return for the items you are sending back.
+        </p>
+        <div class="d-flex flex-wrap gap-2 flex-shrink-0">
+          <button
+            type="button"
+            class="btn btn-outline-secondary btn-sm fw-semibold orders-toolbar-outline-btn"
+            @click="router.push({ name: 'user-return-create-search' })"
+          >
+            Back to Search
+          </button>
+          <button type="button" class="btn btn-primary staff-page-primary btn-sm fw-semibold" @click="startCreateReturn">
+            Create a Return
+          </button>
+        </div>
       </div>
     </div>
-    <OrderDetailPage portal-return-preview />
+    <OrderDetailPage portal-return-preview embedded-in-parent />
   </div>
 </template>

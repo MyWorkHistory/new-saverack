@@ -1,5 +1,5 @@
 <script setup>
-import { computed, inject, onMounted, ref } from "vue";
+import { computed, onMounted, ref } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import api from "../../services/api";
 import CrmLoadingSpinner from "../../components/common/CrmLoadingSpinner.vue";
@@ -15,7 +15,6 @@ import {
 const route = useRoute();
 const router = useRouter();
 const toast = useToast();
-const crmUser = inject("crmUser", ref(null));
 
 const loading = ref(true);
 const ret = ref(null);
@@ -123,14 +122,14 @@ onMounted(() => {
 </script>
 
 <template>
-  <div class="staff-page staff-page--wide user-return-detail-page order-detail-page">
-    <div v-if="loading" class="py-5">
-      <CrmLoadingSpinner message="Loading return…" />
-    </div>
+  <div v-if="loading" class="staff-page staff-page--wide py-5 user-return-page">
+    <CrmLoadingSpinner message="Loading return…" :center="true" />
+  </div>
 
-    <template v-else-if="ret">
-      <div class="staff-table-card staff-datatable-card staff-datatable-card--white mb-4">
-        <div class="p-4 pb-3 d-flex flex-wrap justify-content-between align-items-start gap-3">
+  <div v-else-if="ret" class="staff-page staff-page--wide user-return-page user-return-detail-page order-detail-page">
+    <div class="staff-table-card staff-datatable-card staff-datatable-card--white user-return-page__header-shell mb-4">
+      <div class="p-4 pb-3">
+        <div class="d-flex flex-wrap justify-content-between align-items-start gap-3">
           <div class="min-w-0">
             <div class="d-flex flex-wrap align-items-center gap-2 mb-1">
               <h1 class="h4 mb-0 fw-semibold text-body">Order {{ ret.order_number || "—" }}</h1>
@@ -138,7 +137,9 @@ onMounted(() => {
                 {{ returnStatusLabel(ret.status) }}
               </span>
             </div>
-            <p class="small text-secondary mb-0">{{ ret.customer_name || "—" }} · {{ returnTypeLabel(ret.return_type) }}</p>
+            <p class="small text-secondary mb-0 mt-2">
+              {{ ret.customer_name || "—" }} · {{ returnTypeLabel(ret.return_type) }}
+            </p>
             <button
               type="button"
               class="btn btn-link btn-sm text-secondary px-0 py-0 mt-1 text-decoration-none"
@@ -147,12 +148,12 @@ onMounted(() => {
               &lt; Returned Orders
             </button>
           </div>
-          <div class="d-flex flex-wrap gap-2 align-items-center">
+          <div class="d-flex flex-wrap gap-2 flex-shrink-0 align-items-center">
             <select
-              class="form-select form-select-sm"
-              style="width: 10rem"
+              class="form-select form-select-sm user-return-page__status-select"
               :value="ret.status"
               :disabled="statusBusy"
+              aria-label="Return status"
               @change="updateStatus($event.target.value)"
             >
               <option value="pending">Pending</option>
@@ -183,104 +184,118 @@ onMounted(() => {
           </div>
         </div>
       </div>
+    </div>
 
-      <div class="row g-4">
-        <div class="col-lg-8">
-          <div class="staff-table-card staff-datatable-card staff-datatable-card--white p-4 mb-4">
-            <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-2">
-              <span class="small text-secondary fw-semibold text-uppercase">RMA #</span>
-              <button type="button" class="btn btn-sm btn-outline-secondary fw-semibold" @click="copyRma">Copy</button>
-            </div>
-            <div class="user-return-detail-page__rma-display">{{ ret.rma_number }}</div>
+    <div class="row g-4">
+      <div class="col-lg-8">
+        <div class="staff-table-card staff-datatable-card staff-datatable-card--white p-0 mb-4">
+          <div class="px-4 py-3 border-bottom">
+            <h2 class="h6 mb-0 fw-semibold">Returned Items</h2>
           </div>
-
-          <div class="staff-table-card staff-datatable-card staff-datatable-card--white p-4 mb-4">
-            <h2 class="h6 fw-semibold mb-3">Return Address</h2>
-            <div class="small user-return-detail-page__address">
-              <div class="fw-semibold">{{ accountName }}</div>
-              <div>{{ formatRmaLabel(ret.rma_number) }}</div>
-              <div v-for="(line, i) in warehouseLines" :key="'addr-' + i">{{ line }}</div>
-            </div>
-          </div>
-
-          <div class="staff-table-card staff-datatable-card staff-datatable-card--white p-0 mb-4">
-            <div class="px-4 py-3 border-bottom">
-              <h2 class="h6 mb-0 fw-semibold">Returned Items</h2>
-            </div>
-            <div class="table-responsive staff-table-wrap">
-              <table class="table table-hover align-middle mb-0 staff-data-table">
-                <thead class="table-light staff-table-head">
-                  <tr>
-                    <th class="staff-table-head__th" scope="col">Item</th>
-                    <th class="staff-table-head__th text-center" scope="col">Return Qty</th>
-                    <th class="staff-table-head__th" scope="col">Reason</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  <tr v-if="!returnedLines.length">
-                    <td colspan="3" class="text-center text-secondary py-4">No items on this return.</td>
-                  </tr>
-                  <tr v-for="line in returnedLines" :key="line.id">
-                    <td>
-                      <div class="d-flex align-items-center gap-2">
-                        <img
-                          v-if="line.image_url"
-                          :src="line.image_url"
-                          alt=""
-                          class="rounded border flex-shrink-0"
-                          width="40"
-                          height="40"
-                          style="object-fit: cover"
-                        />
-                        <div class="min-w-0">
-                          <div class="small fw-semibold">{{ line.name }}</div>
-                          <div class="small text-secondary">{{ line.sku }}</div>
-                        </div>
+          <div class="table-responsive staff-table-wrap">
+            <table class="table table-hover align-middle mb-0 staff-data-table">
+              <thead class="table-light staff-table-head">
+                <tr>
+                  <th class="staff-table-head__th order-detail-page__items-col" scope="col">Item</th>
+                  <th class="staff-table-head__th text-center" scope="col">Return Qty</th>
+                  <th class="staff-table-head__th" scope="col">Reason</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr v-if="!returnedLines.length">
+                  <td colspan="3" class="text-center text-secondary py-4">No items on this return.</td>
+                </tr>
+                <tr v-for="line in returnedLines" :key="line.id">
+                  <td>
+                    <div class="d-flex align-items-center gap-2 order-detail-page__item-cell">
+                      <img
+                        v-if="line.image_url"
+                        :src="line.image_url"
+                        alt=""
+                        class="order-detail-page__item-thumb rounded border flex-shrink-0"
+                        width="48"
+                        height="48"
+                        loading="lazy"
+                      />
+                      <div class="min-w-0 order-detail-page__item-copy">
+                        <div class="order-detail-page__item-name fw-semibold">{{ line.name }}</div>
+                        <div class="order-detail-page__item-sku small text-secondary">{{ line.sku }}</div>
                       </div>
-                    </td>
-                    <td class="text-center">{{ line.return_qty }}</td>
-                    <td class="small">{{ line.return_reason_label || "—" }}</td>
-                  </tr>
-                </tbody>
-              </table>
-            </div>
+                    </div>
+                  </td>
+                  <td class="text-center">{{ line.return_qty }}</td>
+                  <td class="small">{{ line.return_reason_label || "—" }}</td>
+                </tr>
+              </tbody>
+            </table>
           </div>
-        </div>
-
-        <div class="col-lg-4">
-          <div class="staff-table-card staff-datatable-card staff-datatable-card--white p-4">
-            <label for="return-detail-note" class="form-label fw-semibold small mb-2">
-              Private note to warehouse only
-            </label>
-            <textarea
-              id="return-detail-note"
-              v-model="warehouseNote"
-              class="form-control mb-2"
-              rows="5"
-              maxlength="20000"
-            />
-            <button
-              type="button"
-              class="btn btn-primary btn-sm staff-page-primary fw-semibold"
-              :disabled="noteBusy"
-              @click="saveNote"
-            >
-              Save Note
-            </button>
-          </div>
+          <p class="staff-table-mobile-scroll-cue d-md-none px-3 pb-2 mb-0" aria-hidden="true">
+            Scroll sideways or swipe to see all columns.
+          </p>
         </div>
       </div>
-    </template>
+
+      <div class="col-lg-4 d-flex flex-column gap-4 user-return-page__side-column">
+        <div class="staff-table-card staff-datatable-card staff-datatable-card--white p-4">
+          <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-2">
+            <h3 class="h6 fw-semibold mb-0">RMA #</h3>
+            <button type="button" class="btn btn-sm btn-outline-secondary fw-semibold" @click="copyRma">Copy</button>
+          </div>
+          <div class="user-return-page__rma-display">{{ ret.rma_number }}</div>
+        </div>
+
+        <div class="staff-table-card staff-datatable-card staff-datatable-card--white p-4">
+          <h3 class="h6 fw-semibold mb-3">Return Address</h3>
+          <div class="user-return-page__address-block small">
+            <p class="mb-1 fw-semibold text-body">{{ accountName }}</p>
+            <p class="mb-1 fw-semibold text-body">{{ formatRmaLabel(ret.rma_number) }}</p>
+            <p v-for="(line, i) in warehouseLines" :key="'addr-' + i" class="mb-0 text-secondary">{{ line }}</p>
+          </div>
+          <button
+            type="button"
+            class="btn btn-outline-secondary btn-sm fw-semibold orders-toolbar-outline-btn mt-3 w-100"
+            @click="openShippingLabel"
+          >
+            View Shipping Label
+          </button>
+        </div>
+
+        <div class="staff-table-card staff-datatable-card staff-datatable-card--white p-4">
+          <h3 class="h6 fw-semibold mb-3">Private Note</h3>
+          <p class="small text-secondary mb-2">Private note to warehouse only</p>
+          <textarea
+            id="return-detail-note"
+            v-model="warehouseNote"
+            class="form-control form-control-sm mb-3"
+            rows="5"
+            maxlength="20000"
+          />
+          <button
+            type="button"
+            class="btn btn-primary btn-sm staff-page-primary fw-semibold w-100"
+            :disabled="noteBusy"
+            @click="saveNote"
+          >
+            {{ noteBusy ? "Saving…" : "Save Note" }}
+          </button>
+        </div>
+      </div>
+    </div>
   </div>
 </template>
 
 <style scoped>
-.user-return-detail-page__rma-display {
-  font-size: 2.75rem;
+.user-return-page__rma-display {
+  font-size: 2.25rem;
   font-weight: 800;
   letter-spacing: 0.06em;
+  line-height: 1.1;
 }
-.user-return-detail-page__address {
+.user-return-page__status-select {
+  width: 10rem;
+  max-width: 100%;
+}
+.user-return-page__address-block {
   line-height: 1.5;
 }
 </style>

@@ -4,6 +4,7 @@ namespace App\Services;
 
 use App\Models\Invoice;
 use App\Models\User;
+use App\Services\PortalOnboardingStripeService;
 use Illuminate\Support\Str;
 use Stripe\Exception\ApiErrorException;
 use Stripe\Exception\SignatureVerificationException;
@@ -257,6 +258,11 @@ class StripeInvoicePaymentService
         ];
         if (!in_array($type, $supported, true)) {
             return ['handled' => true, 'event_type' => $type, 'applied' => false];
+        }
+
+        $onboardingResult = app(PortalOnboardingStripeService::class)->tryHandleEvent($event);
+        if ($onboardingResult !== null) {
+            return $onboardingResult;
         }
 
         $stripe = $this->client();

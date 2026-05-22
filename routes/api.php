@@ -16,6 +16,7 @@ use App\Http\Controllers\Api\InvoiceImportController;
 use App\Http\Controllers\Api\InventoryController;
 use App\Http\Controllers\Api\OrderController;
 use App\Http\Controllers\Api\PortalLookupController;
+use App\Http\Controllers\Api\PortalOnboardingController;
 use App\Http\Controllers\Api\PortalProfileController;
 use App\Http\Controllers\Api\UserController;
 use App\Http\Controllers\Api\WebmasterTaskController;
@@ -105,6 +106,9 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::get('/lookup', [PortalLookupController::class, 'lookup'])->middleware('can:inventory.view');
         Route::get('/profile', [PortalProfileController::class, 'show'])->middleware('can:inventory.view');
         Route::patch('/profile', [PortalProfileController::class, 'update'])->middleware('can:inventory.view');
+        Route::get('/onboarding', [PortalOnboardingController::class, 'show'])->middleware('can:inventory.view');
+        Route::post('/onboarding/billing/manual', [PortalOnboardingController::class, 'saveManualBilling'])->middleware('can:inventory.view');
+        Route::post('/onboarding/billing/stripe-checkout', [PortalOnboardingController::class, 'startStripeCheckout'])->middleware('can:inventory.view');
     });
 
     Route::prefix('returns')->group(function () {

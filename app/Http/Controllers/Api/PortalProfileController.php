@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Models\ClientAccount;
 use App\Models\User;
+use App\Services\PortalOnboardingService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -14,6 +15,14 @@ use Illuminate\Validation\ValidationException;
 
 class PortalProfileController extends Controller
 {
+    /** @var PortalOnboardingService */
+    protected $onboarding;
+
+    public function __construct(PortalOnboardingService $onboarding)
+    {
+        $this->onboarding = $onboarding;
+    }
+
     public function show(Request $request): JsonResponse
     {
         [$user, $account] = $this->resolvePortalUserAndAccount($request);
@@ -99,25 +108,7 @@ class PortalProfileController extends Controller
      */
     private function serializeProfile(User $user, ClientAccount $account): array
     {
-        $contactName = trim(implode(' ', array_filter([
-            trim((string) $account->contact_first_name),
-            trim((string) $account->contact_last_name),
-        ])));
-
-        return [
-            'user_id' => $user->id,
-            'client_account_id' => $account->id,
-            'name' => $user->name,
-            'email' => $user->email,
-            'company_name' => $account->company_name,
-            'contact_full_name' => $contactName !== '' ? $contactName : $user->name,
-            'phone' => $account->phone,
-            'street' => $account->street,
-            'city' => $account->city,
-            'state' => $account->state,
-            'zip' => $account->zip,
-            'country' => $account->country,
-        ];
+        return $this->onboarding->serializeProfile($user, $account);
     }
 
     private function nullableTrim(?string $value): ?string

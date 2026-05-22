@@ -31,15 +31,11 @@ export function crmIsPortalUser(user) {
   return v !== "" && v !== "0";
 }
 
-/** Pending signup or missing ShipHero setup — show welcome instead of dashboard. */
+/** Client account still pending review — show onboarding welcome instead of dashboard. */
 export function crmPortalNeedsWelcome(user) {
   if (!crmIsPortalUser(user)) return false;
-  if (user.portal_setup_complete === true) return false;
-  if (user.status === "pending") return true;
-  if (user.client_account_status === "pending") return true;
-  if (!user.shiphero_ready) return true;
 
-  return false;
+  return user.client_account_status === "pending";
 }
 
 /** Default path after portal login/register. */

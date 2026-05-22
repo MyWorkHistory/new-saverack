@@ -15,8 +15,6 @@ const heroImageSrc = computed(() => loginHeroImageUrl());
         class="auth-vuexy-hero__image"
         :src="heroImageSrc"
         alt=""
-        width="960"
-        height="720"
         decoding="async"
       />
     </div>

@@ -21,22 +21,20 @@ $auth-hero-bg: #f8f7fa;
   min-height: 100vh;
   background: #eef0f4;
   overflow: hidden;
-  align-items: center;
-  justify-content: center;
-  padding: clamp(1.5rem, 4vw, 3rem);
+  padding: 0;
 
   @media (min-width: 992px) {
-    display: flex;
+    display: block;
   }
 }
 
 .auth-vuexy-hero__image {
+  position: absolute;
+  inset: 0;
   width: 100%;
-  max-width: min(42rem, 92%);
-  height: auto;
-  max-height: min(85vh, 36rem);
-  object-fit: contain;
-  object-position: center;
+  height: 100%;
+  object-fit: cover;
+  object-position: center 55%;
   user-select: none;
   pointer-events: none;
 }

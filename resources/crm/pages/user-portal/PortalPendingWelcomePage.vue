@@ -234,19 +234,29 @@ onUnmounted(() => {
         </div>
 
         <div class="col-lg-4">
-          <div class="staff-table-card p-4 mb-3 portal-welcome-page__progress">
-            <h2 class="h6 fw-semibold mb-2">Your progress</h2>
-            <p class="display-6 fw-semibold mb-1">
+          <div class="staff-stat-card mb-3 portal-welcome-page__progress">
+            <p class="staff-stat-card__label">Your progress</p>
+            <p class="staff-stat-card__value">
               {{ progress.completed }} of {{ progress.total }}
             </p>
-            <p class="small text-secondary mb-0">tasks complete</p>
+            <p class="staff-stat-card__sub">tasks complete</p>
+            <div
+              class="staff-stat-card__icon portal-welcome-page__progress-icon"
+              aria-hidden="true"
+            >
+              <svg fill="currentColor" viewBox="0 0 24 24">
+                <path
+                  d="M19 3H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm-5 14H7v-2h7v2zm3-4H7v-2h10v2zm0-4H7V7h10v2z"
+                />
+              </svg>
+            </div>
           </div>
 
           <div class="staff-table-card p-4 portal-welcome-page__help">
             <h2 class="h6 fw-semibold mb-2">Need help?</h2>
             <p class="small text-secondary mb-0">
               Questions about onboarding? Contact your Save Rack account manager or email
-              <a href="mailto:billing@saverack.com" class="auth-vuexy-link">billing@saverack.com</a>.
+              <a href="mailto:audi@saverack.com" class="auth-vuexy-link">audi@saverack.com</a>.
             </p>
           </div>
         </div>
@@ -316,5 +326,10 @@ onUnmounted(() => {
 .portal-onboard-status--processing {
   background: rgba(255, 159, 67, 0.15);
   color: #ff9f43;
+}
+
+.portal-welcome-page__progress-icon {
+  background: rgba(37, 99, 235, 0.12);
+  color: #2563eb;
 }
 </style>

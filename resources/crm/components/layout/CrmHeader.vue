@@ -939,8 +939,7 @@ onUnmounted(() => {
   </header>
 
   <UserEditModal
-    v-if="!isPortalUser"
-    v-if="user?.id"
+    v-if="!isPortalUser && user?.id"
     v-model:open="editProfileModalOpen"
     :user-id="String(user.id)"
     @saved="$emit('refresh-user')"

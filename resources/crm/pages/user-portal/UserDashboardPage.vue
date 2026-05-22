@@ -4,6 +4,7 @@ import { RouterLink } from "vue-router";
 import CrmLoadingSpinner from "../../components/common/CrmLoadingSpinner.vue";
 import { setCrmPageMeta } from "../../composables/useCrmPageMeta.js";
 import { usePortalDashboardCounts } from "../../composables/usePortalDashboardCounts.js";
+import { usePortalOutOfStockPreview } from "../../composables/usePortalOutOfStockPreview.js";
 import { useToast } from "../../composables/useToast.js";
 
 const toast = useToast();
@@ -20,12 +21,20 @@ const { counts, loading, refreshing, loadCounts, refreshCounts, lastRefreshedLab
   },
 );
 
+const {
+  loading: oosLoading,
+  topRows: oosTopRows,
+  loadPreview: loadOosPreview,
+} = usePortalOutOfStockPreview(() => clientAccountId.value, {
+  getShipheroReady: () => counts.value.shiphero_ready && shipheroReady.value,
+  onError: (e) => toast.errorFrom(e, "Could not load out-of-stock inventory."),
+});
+
 /**
  * Material Symbols paths (24×24 viewBox), sourced from Iconify’s Material Symbols set
  * (same glyphs as Google Fonts Material Symbols).
  */
 const DASHBOARD_ICON = {
-  /** Inventory-style box + check mark */
   readyBox:
     "M5 22q-.825 0-1.412-.587T3 20V8.725q-.45-.275-.725-.712T2 7V4q0-.825.588-1.412T4 2h16q.825 0 1.413.588T22 4v3q0 .575-.275 1.013T21 8.724V20q0 .825-.587 1.413T19 22zM4 7h16V4H4zm5 7h6v-2H9z",
   readyCheck: "M10.6 16.6l7.05-7.05l-1.4-1.4l-5.65 5.65l-2.85-2.85l-1.4 1.4z",
@@ -34,7 +43,12 @@ const DASHBOARD_ICON = {
   shelves: "M3 23V1h2v2h14V1h2v22h-2v-2H5v2zm2-12h2V7h6v4h6V5H5zm0 8h6v-4h6v4h2v-6H5z",
   truck:
     "M3.875 19.125Q3 18.25 3 17H1V6q0-.825.588-1.412T3 4h14v4h3l3 4v5h-2q0 1.25-.875 2.125T18 20t-2.125-.875T15 17H9q0 1.25-.875 2.125T6 20t-2.125-.875m2.838-1.412Q7 17.425 7 17t-.288-.712T6 16t-.712.288T5 17t.288.713T6 18t.713-.288m12 0Q19 17.426 19 17t-.288-.712T18 16t-.712.288T17 17t.288.713T18 18t.713-.288M17 13h4.25L19 10h-2z",
+  chart:
+    "M3 13.125C3 12.504 3.504 12 4.125 12h2.25c.621 0 1.125.504 1.125 1.125v6.75C7.5 20.496 6.996 21 6.375 21h-2.25A1.125 1.125 0 0 1 3 19.875v-6.75ZM9.75 8.625c0-.621.504-1.125 1.125-1.125h2.25c.621 0 1.125.504 1.125 1.125v11.25c0 .621-.504 1.125-1.125 1.125h-2.25a1.125 1.125 0 0 1-1.125-1.125V8.625ZM16.5 4.125c0-.621.504-1.125 1.125-1.125h2.25C20.496 3 21 3.504 21 4.125v15.75c0 .621-.504 1.125-1.125 1.125h-2.25a1.125 1.125 0 0 1-1.125-1.125V4.125Z",
 };
+
+const OOS_PANEL_ICON_STYLE = { background: "#ffe4e6", color: "#be123c" };
+const COMING_SOON_ICON_STYLE = { background: "#f3f4f6", color: "#6b7280" };
 
 const accountDisplayName = computed(() => {
   const u = crmUser.value;
@@ -52,13 +66,6 @@ const accountDisplayName = computed(() => {
   return "";
 });
 
-/**
- * Counts from GET /api/orders/queue-counts (OrderController::queueCounts):
- * — Ready to Ship: awaiting tab, order_date last 7 calendar days through today.
- * — On-Hold / Backorder: respective tabs, order_date today (local day bounds).
- * — Shipped: fulfilled in today’s window (optional order_date_from/to override on API).
- * Defaults align with the portal orders list for each tab.
- */
 const cards = computed(() => [
   {
     key: "ready_to_ship",
@@ -82,7 +89,7 @@ const cards = computed(() => [
     sub: "Orders with items out of stock.",
     value: counts.value.backorder,
     to: "/users/orders/backorder",
-    iconStyle: { background: "#ffe4e6", color: "#be123c" },
+    iconStyle: OOS_PANEL_ICON_STYLE,
   },
   {
     key: "shipped",
@@ -94,6 +101,18 @@ const cards = computed(() => [
   },
 ]);
 
+function inventoryDetailTo(sku) {
+  const s = String(sku || "").trim();
+  if (!s) {
+    return { name: "user-inventory" };
+  }
+  return {
+    name: "user-inventory-detail",
+    params: { sku: s },
+    query: { client_account_id: String(clientAccountId.value) },
+  };
+}
+
 function syncPageMeta() {
   const name = accountDisplayName.value;
   setCrmPageMeta({
@@ -102,7 +121,22 @@ function syncPageMeta() {
   });
 }
 
+async function onRefreshDashboard() {
+  await refreshCounts();
+  await loadOosPreview({ bustCache: true });
+}
+
 watch(accountDisplayName, syncPageMeta, { immediate: true });
+
+watch(
+  () => [clientAccountId.value, counts.value.shiphero_ready, shipheroReady.value],
+  ([id, countsReady, userReady]) => {
+    if (id && countsReady && userReady) {
+      loadOosPreview();
+    }
+  },
+  { immediate: true },
+);
 
 onMounted(() => {
   loadCounts();
@@ -122,8 +156,8 @@ onMounted(() => {
           class="btn btn-outline-secondary btn-sm orders-toolbar-outline-btn d-inline-flex align-items-center gap-2"
           :disabled="loading || refreshing"
           title="Refresh"
-          aria-label="Refresh dashboard counts"
-          @click="refreshCounts"
+          aria-label="Refresh dashboard"
+          @click="onRefreshDashboard"
         >
           <svg
             width="18"
@@ -224,17 +258,127 @@ onMounted(() => {
           </div>
         </div>
 
-        <section class="staff-surface p-4 user-dashboard__analytics">
-          <h2 class="h6 fw-semibold mb-1">Analytics</h2>
-          <p class="small text-secondary mb-0">
-            Order trends and charts will appear here in a future update.
-          </p>
-          <div
-            class="user-dashboard__chart-placeholder d-flex align-items-center justify-content-center text-secondary small rounded mt-3"
-          >
-            Chart coming soon
+        <div class="row g-3">
+          <div class="col-12 col-lg-6 d-flex">
+            <section class="staff-surface p-3 p-md-4 user-dashboard-panel h-100 w-100 d-flex flex-column">
+              <div class="user-dashboard-panel__header d-flex align-items-start gap-3 mb-3">
+                <div
+                  class="user-dashboard-panel__icon flex-shrink-0"
+                  :style="OOS_PANEL_ICON_STYLE"
+                  aria-hidden="true"
+                >
+                  <svg class="user-dashboard-stat-svg" fill="currentColor" viewBox="0 0 24 24">
+                    <path :d="DASHBOARD_ICON.shelves" />
+                  </svg>
+                </div>
+                <div class="min-w-0">
+                  <h2 class="staff-user-section-title mb-1">Out of Stock</h2>
+                  <p class="small text-secondary mb-0">
+                    Inventory that is currently out of stock with orders on hold.
+                  </p>
+                </div>
+              </div>
+
+              <div class="user-dashboard-panel__body flex-grow-1 position-relative">
+                <div
+                  v-if="oosLoading"
+                  class="user-dashboard-panel__loading d-flex align-items-center justify-content-center py-4"
+                  aria-busy="true"
+                >
+                  <CrmLoadingSpinner message="Loading…" :center="true" />
+                </div>
+                <template v-else-if="!counts.shiphero_ready">
+                  <p class="small text-secondary mb-0 py-3">
+                    Out-of-stock inventory will appear here once your warehouse connection is ready.
+                  </p>
+                </template>
+                <template v-else>
+                  <div class="table-responsive user-dashboard-oos-table-wrap">
+                    <table class="table table-sm align-middle mb-0 staff-data-table user-dashboard-oos-table">
+                      <thead class="table-light staff-table-head">
+                        <tr>
+                          <th class="staff-table-head__th text-center user-dashboard-oos-table__image-col" scope="col">
+                            Image
+                          </th>
+                          <th class="staff-table-head__th user-dashboard-oos-table__sku-col" scope="col">SKU</th>
+                          <th class="staff-table-head__th" scope="col">Name</th>
+                          <th class="staff-table-head__th text-center" scope="col">Oversold</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        <tr v-if="!oosTopRows.length">
+                          <td colspan="4" class="text-center text-secondary py-4 small">
+                            No out-of-stock items right now.
+                          </td>
+                        </tr>
+                        <tr v-for="row in oosTopRows" :key="`${row.sku}-${row.warehouse_id}`">
+                          <td class="text-center user-dashboard-oos-table__image-col">
+                            <img
+                              v-if="row.image_url"
+                              :src="row.image_url"
+                              alt=""
+                              class="user-inventory-thumb"
+                              loading="lazy"
+                            />
+                            <div v-else class="user-inventory-thumb user-inventory-thumb--empty" />
+                          </td>
+                          <td class="user-dashboard-oos-table__sku-col">
+                            <RouterLink
+                              :to="inventoryDetailTo(row.sku)"
+                              class="user-inv-table__sku-link text-decoration-none"
+                            >
+                              {{ row.sku || "—" }}
+                            </RouterLink>
+                          </td>
+                          <td>
+                            <span class="user-inv-table__name-text">{{ row.name || "—" }}</span>
+                          </td>
+                          <td class="text-center fw-semibold">{{ Number(row.backorder || 0) }}</td>
+                        </tr>
+                      </tbody>
+                    </table>
+                  </div>
+                </template>
+              </div>
+
+              <div class="pt-3 mt-auto border-top">
+                <RouterLink
+                  to="/users/inventory/out-of-stock"
+                  class="btn btn-outline-secondary btn-sm orders-toolbar-outline-btn"
+                >
+                  View All
+                </RouterLink>
+              </div>
+            </section>
           </div>
-        </section>
+
+          <div class="col-12 col-lg-6 d-flex">
+            <section class="staff-surface p-3 p-md-4 user-dashboard-panel h-100 w-100 d-flex flex-column">
+              <div class="user-dashboard-panel__header d-flex align-items-start gap-3 mb-3">
+                <div
+                  class="user-dashboard-panel__icon flex-shrink-0"
+                  :style="COMING_SOON_ICON_STYLE"
+                  aria-hidden="true"
+                >
+                  <svg class="user-dashboard-stat-svg" fill="currentColor" viewBox="0 0 24 24">
+                    <path :d="DASHBOARD_ICON.chart" />
+                  </svg>
+                </div>
+                <div class="min-w-0">
+                  <h2 class="staff-user-section-title mb-1">Coming Soon</h2>
+                  <p class="small text-secondary mb-0">
+                    More insights and tools for your account will appear here.
+                  </p>
+                </div>
+              </div>
+              <div
+                class="user-dashboard__chart-placeholder flex-grow-1 d-flex align-items-center justify-content-center text-secondary small rounded"
+              >
+                Coming soon
+              </div>
+            </section>
+          </div>
+        </div>
       </template>
     </div>
   </div>
@@ -272,6 +416,15 @@ onMounted(() => {
   border-radius: 0.4375rem;
 }
 
+.user-dashboard-panel__icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 2.875rem;
+  height: 2.875rem;
+  border-radius: 0.4375rem;
+}
+
 .user-dashboard-stat-svg {
   width: 1.4375rem;
   height: 1.4375rem;
@@ -281,7 +434,7 @@ onMounted(() => {
 }
 
 .user-dashboard__chart-placeholder {
-  min-height: 220px;
+  min-height: 180px;
   border: 1px dashed rgba(47, 43, 61, 0.18);
   background: var(--bs-body-bg, #fff);
 }
@@ -305,5 +458,61 @@ onMounted(() => {
 
 [data-bs-theme="dark"] .user-dashboard__loading-overlay {
   background: rgba(22, 22, 26, 0.88);
+}
+
+.user-dashboard-oos-table-wrap {
+  margin: 0 -0.25rem;
+}
+
+.user-dashboard-oos-table {
+  font-size: 0.875rem;
+}
+
+.user-dashboard-oos-table__image-col {
+  width: 1%;
+  min-width: 3.5rem;
+}
+
+.user-dashboard-oos-table__sku-col {
+  white-space: nowrap;
+}
+
+.user-inventory-thumb {
+  width: 44px;
+  height: 44px;
+  border-radius: 0.4rem;
+  object-fit: cover;
+  border: 1px solid rgba(0, 0, 0, 0.08);
+  background: #fff;
+}
+
+.user-inventory-thumb--empty {
+  display: inline-block;
+  background: rgba(0, 0, 0, 0.05);
+}
+
+[data-bs-theme="dark"] .user-inventory-thumb {
+  border-color: rgba(255, 255, 255, 0.12);
+  background: rgba(255, 255, 255, 0.04);
+}
+
+[data-bs-theme="dark"] .user-inventory-thumb--empty {
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.user-inv-table__sku-link {
+  color: var(--bs-primary, #2563eb);
+  font-weight: 600;
+}
+
+.user-inv-table__sku-link:hover {
+  color: var(--bs-primary, #2563eb);
+  text-decoration: underline !important;
+}
+
+.user-inv-table__name-text {
+  display: block;
+  white-space: normal;
+  word-break: break-word;
 }
 </style>

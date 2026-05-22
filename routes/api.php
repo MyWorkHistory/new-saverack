@@ -1,6 +1,7 @@
 <?php
 
 use App\Http\Controllers\Api\AsnController;
+use App\Http\Controllers\Api\ReturnController;
 use App\Http\Controllers\Api\AuthController;
 use App\Http\Controllers\Api\BillingSummaryController;
 use App\Http\Controllers\Api\CustomBillController;
@@ -96,6 +97,20 @@ Route::middleware('auth:sanctum')->group(function () {
             ->middleware('can:inventory.update');
         Route::delete('/on-demand-products/{onDemandProduct}', [InventoryController::class, 'destroyOnDemandProduct'])
             ->middleware('can:inventory.update');
+    });
+
+    Route::prefix('returns')->group(function () {
+        Route::get('/items', [ReturnController::class, 'itemsIndex'])->middleware('can:inventory.view');
+        Route::post('/draft', [ReturnController::class, 'storeDraft'])->middleware('can:inventory.view');
+        Route::get('/', [ReturnController::class, 'index'])->middleware('can:inventory.view');
+        Route::get('/{clientAccountReturn}/packing-slip.pdf', [ReturnController::class, 'packingSlipPdf'])->middleware('can:inventory.view');
+        Route::get('/{clientAccountReturn}/shipping-label.pdf', [ReturnController::class, 'shippingLabelPdf'])->middleware('can:inventory.view');
+        Route::get('/{clientAccountReturn}/rma-barcode.pdf', [ReturnController::class, 'rmaBarcodePdf'])->middleware('can:inventory.view');
+        Route::put('/{clientAccountReturn}/submit', [ReturnController::class, 'submit'])->middleware('can:inventory.view');
+        Route::patch('/{clientAccountReturn}/warehouse-note', [ReturnController::class, 'updateWarehouseNote'])->middleware('can:inventory.view');
+        Route::get('/{clientAccountReturn}', [ReturnController::class, 'show'])->middleware('can:inventory.view');
+        Route::patch('/{clientAccountReturn}', [ReturnController::class, 'update'])->middleware('can:inventory.view');
+        Route::delete('/{clientAccountReturn}', [ReturnController::class, 'destroy'])->middleware('can:inventory.view');
     });
 
     Route::prefix('asns')->group(function () {

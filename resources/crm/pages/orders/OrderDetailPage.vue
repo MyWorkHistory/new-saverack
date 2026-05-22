@@ -16,6 +16,10 @@ import {
   formatCurrentShippingMethod,
 } from "../../utils/orderShippingDisplay.js";
 
+const props = defineProps({
+  portalReturnPreview: { type: Boolean, default: false },
+});
+
 const crmUser = inject("crmUser", ref(null));
 const route = useRoute();
 const router = useRouter();
@@ -150,9 +154,15 @@ const statusClass = computed(() => {
   return "text-secondary bg-secondary-subtle";
 });
 
-const canRunShipHeroActions = computed(() => canWriteShipHeroOrders(crmUser.value));
+const isReturnPreviewMode = computed(() => props.portalReturnPreview === true);
 
-const canUseStaffOrderHeaderActions = computed(() => Boolean(order.value));
+const canRunShipHeroActions = computed(
+  () => !isReturnPreviewMode.value && canWriteShipHeroOrders(crmUser.value),
+);
+
+const canUseStaffOrderHeaderActions = computed(
+  () => Boolean(order.value) && !isReturnPreviewMode.value,
+);
 
 function orderHasActiveHold(o) {
   if (!o || typeof o !== "object") return false;
@@ -1241,6 +1251,10 @@ onMounted(async () => {
 });
 
 function goToOrdersList() {
+  if (isReturnPreviewMode.value) {
+    router.push({ name: "user-return-create-search" });
+    return;
+  }
   const q = selectedAccountId.value ? { client_account_id: selectedAccountId.value } : {};
   if (isPortalUser.value) {
     router.push({ name: "user-orders", query: q });
@@ -1287,7 +1301,7 @@ function goToOrdersList() {
                 class="btn btn-link btn-sm text-secondary px-0 py-0 mt-1 text-decoration-none"
                 @click="goToOrdersList"
               >
-                &lt; Orders
+                {{ isReturnPreviewMode ? "&lt; Create a Return" : "&lt; Orders" }}
               </button>
             </div>
             <div
@@ -1321,7 +1335,7 @@ function goToOrdersList() {
           </div>
         </div>
         <div
-          v-if="showNotReadyToShipBanner"
+          v-if="showNotReadyToShipBanner && !isReturnPreviewMode"
           class="order-detail-page__nrts-banner px-4 py-3 border-top border-warning border-2"
         >
           <div class="d-flex gap-3 align-items-start">
@@ -1354,6 +1368,7 @@ function goToOrdersList() {
             <div class="px-4 py-3 border-bottom d-flex justify-content-between align-items-center flex-wrap gap-2">
               <h2 class="h6 mb-0 fw-semibold">Items</h2>
               <button
+                v-if="!isReturnPreviewMode"
                 type="button"
                 class="btn btn-outline-secondary btn-sm order-detail-page__add-items-btn"
                 :disabled="loading || !canRunShipHeroActions"
@@ -1382,7 +1397,9 @@ function goToOrdersList() {
                         Quantity to ship <span class="order-detail-page__sort-icon">{{ sortIndicator("quantity_pending_fulfillment") }}</span>
                       </button>
                     </th>
-                    <th class="staff-table-head__th text-center order-detail-page__items-actions-col">Actions</th>
+                    <th v-if="!isReturnPreviewMode" class="staff-table-head__th text-center order-detail-page__items-actions-col">
+                      Actions
+                    </th>
                   </tr>
                 </thead>
                 <tbody>
@@ -1431,7 +1448,7 @@ function goToOrdersList() {
                       </div>
                     </td>
                     <td class="text-end">{{ item.quantity_pending_fulfillment ?? 0 }}</td>
-                    <td class="text-center align-middle order-detail-page__items-actions-col">
+                    <td v-if="!isReturnPreviewMode" class="text-center align-middle order-detail-page__items-actions-col">
                       <div
                         v-if="canRunShipHeroActions && itemRowMenuKey(item)"
                         data-row-actions
@@ -1454,7 +1471,7 @@ function goToOrdersList() {
                     </td>
                   </tr>
                   <tr v-if="!sortedItems.length">
-                    <td colspan="4" class="text-center text-secondary py-4">No items</td>
+                    <td :colspan="isReturnPreviewMode ? 3 : 4" class="text-center text-secondary py-4">No items</td>
                   </tr>
                 </tbody>
               </table>

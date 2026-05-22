@@ -10,6 +10,7 @@ defineProps({
 
 const route = useRoute();
 const ordersGroupOpen = ref(route.path.startsWith("/users/orders"));
+const returnsGroupOpen = ref(route.path.startsWith("/users/returns"));
 const productsGroupOpen = ref(
   route.path.startsWith("/users/inventory") || route.path.startsWith("/users/asn"),
 );
@@ -18,6 +19,7 @@ watch(
   () => route.path,
   (p) => {
     if (p.startsWith("/users/orders")) ordersGroupOpen.value = true;
+    if (p.startsWith("/users/returns")) returnsGroupOpen.value = true;
     if (p.startsWith("/users/inventory") || p.startsWith("/users/asn")) productsGroupOpen.value = true;
   },
 );
@@ -41,6 +43,10 @@ function navActive(mode) {
   }
   if (mode === "products-out-of-stock") return p === "/users/inventory/out-of-stock";
   if (mode === "products-asn") return p.startsWith("/users/asn");
+  if (mode === "returns") return p.startsWith("/users/returns");
+  if (mode === "returns-orders") return p === "/users/returns/orders";
+  if (mode === "returns-items") return p === "/users/returns/items";
+  if (mode === "returns-create") return p.startsWith("/users/returns/create");
   return false;
 }
 
@@ -172,6 +178,85 @@ function collapseNav() {
                 stroke-linecap="round"
                 stroke-linejoin="round"
                 d="M3 6.75A2.25 2.25 0 0 1 5.25 4.5h13.5A2.25 2.25 0 0 1 21 6.75v10.5A2.25 2.25 0 0 1 18.75 19.5H5.25A2.25 2.25 0 0 1 3 17.25V6.75Zm3 1.5h12M7.5 12h3m-3 3h6"
+              />
+            </svg>
+          </RouterLink>
+        </li>
+        <li>
+          <div v-if="isExpanded">
+            <button
+              type="button"
+              class="vx-nav-link"
+              :class="{ 'vx-nav-link--active': navActive('returns') }"
+              :aria-expanded="returnsGroupOpen"
+              @click="returnsGroupOpen = !returnsGroupOpen"
+            >
+              <svg fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5" aria-hidden="true">
+                <path
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                  d="M9 15 3 9m0 0 6-6M3 9h12a6 6 0 0 1 0 12h-3"
+                />
+              </svg>
+              <span class="text-truncate">Returns</span>
+              <svg
+                class="ms-auto flex-shrink-0 transition"
+                :class="returnsGroupOpen ? 'rotate-180' : ''"
+                style="width: 1rem; height: 1rem"
+                fill="none"
+                viewBox="0 0 24 24"
+                stroke="currentColor"
+                stroke-width="1.5"
+                aria-hidden="true"
+              >
+                <path stroke-linecap="round" stroke-linejoin="round" d="M19 9l-7 7-7-7" />
+              </svg>
+            </button>
+            <ul v-show="returnsGroupOpen" class="list-unstyled mb-0 mt-1">
+              <li>
+                <RouterLink
+                  to="/users/returns/orders"
+                  class="vx-nav-link vx-nav-sublink"
+                  :class="{ 'vx-nav-link--active': navActive('returns-orders') }"
+                  @click="closeMobile"
+                >
+                  Returned Orders
+                </RouterLink>
+              </li>
+              <li>
+                <RouterLink
+                  to="/users/returns/items"
+                  class="vx-nav-link vx-nav-sublink"
+                  :class="{ 'vx-nav-link--active': navActive('returns-items') }"
+                  @click="closeMobile"
+                >
+                  Returned Items
+                </RouterLink>
+              </li>
+              <li>
+                <RouterLink
+                  to="/users/returns/create"
+                  class="vx-nav-link vx-nav-sublink"
+                  :class="{ 'vx-nav-link--active': navActive('returns-create') }"
+                  @click="closeMobile"
+                >
+                  Create a Return
+                </RouterLink>
+              </li>
+            </ul>
+          </div>
+          <RouterLink
+            v-else
+            to="/users/returns/orders"
+            class="vx-nav-link"
+            title="Returns"
+            @click="closeMobile"
+          >
+            <svg fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5" aria-hidden="true">
+              <path
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                d="M9 15 3 9m0 0 6-6M3 9h12a6 6 0 0 1 0 12h-3"
               />
             </svg>
           </RouterLink>

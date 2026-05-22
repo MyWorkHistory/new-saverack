@@ -1,0 +1,20 @@
+<?php
+
+return [
+
+    'return_warehouse_address' => [
+        'line1' => '3135 Drane Field Rd #21',
+        'line2' => 'Lakeland, FL 33811',
+    ],
+
+    'return_reasons' => [
+        'wrong_item' => 'Wrong Item',
+        'damaged' => 'Damaged',
+        'defective' => 'Defective',
+        'not_as_described' => 'Not As Described',
+        'wrong_size' => 'Ordered Wrong Size',
+        'no_longer_needed' => 'No Longer Needed',
+        'other' => 'Other',
+    ],
+
+];

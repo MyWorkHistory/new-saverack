@@ -4,6 +4,7 @@ namespace App\Providers;
 
 use App\Models\ClientAccount;
 use App\Models\ClientAccountAsn;
+use App\Models\ClientAccountReturn;
 use App\Models\ClientAccountOnDemandProduct;
 use App\Models\ClientStore;
 use App\Models\CustomBill;
@@ -12,6 +13,7 @@ use App\Models\Task;
 use App\Models\Ticket;
 use App\Models\User;
 use App\Policies\ClientAccountAsnPolicy;
+use App\Policies\ClientAccountReturnPolicy;
 use App\Policies\ClientAccountOnDemandProductPolicy;
 use App\Policies\ClientAccountPolicy;
 use App\Policies\ClientStorePolicy;
@@ -34,6 +36,7 @@ class AuthServiceProvider extends ServiceProvider
         User::class => UserPolicy::class,
         ClientAccount::class => ClientAccountPolicy::class,
         ClientAccountAsn::class => ClientAccountAsnPolicy::class,
+        ClientAccountReturn::class => ClientAccountReturnPolicy::class,
         ClientAccountOnDemandProduct::class => ClientAccountOnDemandProductPolicy::class,
         ClientStore::class => ClientStorePolicy::class,
         Invoice::class => InvoicePolicy::class,

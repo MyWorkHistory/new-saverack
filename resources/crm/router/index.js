@@ -167,6 +167,30 @@ const meta = {
     title: "Save Rack | ASN Detail",
     description: "ASN line items, tracking, and warehouse details.",
   },
+  userReturnOrdersList: {
+    title: "Save Rack | Returned Orders",
+    description: "Returns created for your account.",
+  },
+  userReturnItemsList: {
+    title: "Save Rack | Returned Items",
+    description: "Line items on returns for your account.",
+  },
+  userReturnCreateSearch: {
+    title: "Save Rack | Create a Return",
+    description: "Search for an order to start a return.",
+  },
+  userReturnCreateOrder: {
+    title: "Save Rack | Order",
+    description: "Review order before creating a return.",
+  },
+  userReturnCreate: {
+    title: "Save Rack | Create Return",
+    description: "Select items and complete your return.",
+  },
+  userReturnDetail: {
+    title: "Save Rack | Return",
+    description: "Return detail and documents.",
+  },
 };
 
 const routes = [
@@ -416,6 +440,14 @@ const routes = [
   { path: "/users/asn/:id/print-shipping-label", name: "user-asn-print-shipping-label", component: () => import("../pages/user-asn/UserAsnPrintShippingLabelPage.vue"), props: true, meta: { title: "Save Rack | Print Shipping Label", description: "4x6 shipping label.", userPortal: true, bareLayout: true } },
   { path: "/users/asn/:id/print-packing-slip", name: "user-asn-print-packing-slip", component: () => import("../pages/user-asn/UserAsnPrintPackingSlipPage.vue"), props: true, meta: { title: "Save Rack | Packing Slip", description: "ASN packing slip.", userPortal: true, bareLayout: true } },
   { path: "/users/asn/:asnId/print-barcode/:lineId", name: "user-asn-print-barcode", component: () => import("../pages/user-asn/UserAsnPrintBarcodePage.vue"), props: true, meta: { title: "Save Rack | Barcode", description: "Product barcode.", userPortal: true, bareLayout: true } },
+  { path: "/users/returns/orders", name: "user-return-orders", component: () => import("../pages/user-returns/UserReturnOrdersListPage.vue"), meta: { ...meta.userReturnOrdersList, userPortal: true } },
+  { path: "/users/returns/items", name: "user-return-items", component: () => import("../pages/user-returns/UserReturnItemsListPage.vue"), meta: { ...meta.userReturnItemsList, userPortal: true } },
+  { path: "/users/returns/create", name: "user-return-create-search", component: () => import("../pages/user-returns/UserReturnCreateSearchPage.vue"), meta: { ...meta.userReturnCreateSearch, userPortal: true } },
+  { path: "/users/returns/create/order/:shipheroOrderId", name: "user-return-create-order", component: () => import("../pages/user-returns/UserReturnCreateOrderPage.vue"), props: true, meta: { ...meta.userReturnCreateOrder, userPortal: true } },
+  { path: "/users/returns/create/order/:shipheroOrderId/new", name: "user-return-create", component: () => import("../pages/user-returns/UserReturnCreatePage.vue"), props: true, meta: { ...meta.userReturnCreate, userPortal: true } },
+  { path: "/users/returns/:id", name: "user-return-detail", component: () => import("../pages/user-returns/UserReturnDetailPage.vue"), props: true, meta: { ...meta.userReturnDetail, userPortal: true } },
+  { path: "/users/returns/:id/print-packing-slip", name: "user-return-print-packing-slip", component: () => import("../pages/user-returns/UserReturnPrintPackingSlipPage.vue"), props: true, meta: { title: "Save Rack | Return Packing Slip", description: "Return packing slip.", userPortal: true, bareLayout: true } },
+  { path: "/users/returns/:id/print-shipping-label", name: "user-return-print-shipping-label", component: () => import("../pages/user-returns/UserReturnPrintShippingLabelPage.vue"), props: true, meta: { title: "Save Rack | Shipping Label", description: "4x6 return shipping label.", userPortal: true, bareLayout: true } },
   { path: "/tickets/board", redirect: "/admin/dashboard" },
   { path: "/tickets/:id", redirect: "/admin/dashboard" },
   { path: "/tickets", redirect: "/admin/dashboard" },

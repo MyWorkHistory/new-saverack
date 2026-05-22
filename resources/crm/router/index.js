@@ -425,6 +425,18 @@ const routes = [
     component: UserDashboardPage,
     meta: { ...meta.userPortalDashboard, userPortal: true },
   },
+  {
+    path: "/users/account-settings",
+    name: "user-account-settings",
+    component: () => import("../pages/user-portal/UserPortalAccountSettingsPage.vue"),
+    meta: { title: "Save Rack | Account Settings", description: "Portal account settings.", userPortal: true },
+  },
+  {
+    path: "/users/support",
+    name: "user-support",
+    component: () => import("../pages/user-portal/UserPortalSupportPage.vue"),
+    meta: { title: "Save Rack | Support", description: "Portal support.", userPortal: true },
+  },
   { path: "/users/orders", name: "user-orders", component: OrdersListPage, meta: { ...meta.ordersAwaiting, orderTab: "awaiting", userPortal: true } },
   { path: "/users", redirect: "/users/dashboard" },
   { path: "/users/orders/ready-to-ship", name: "user-orders-awaiting", component: OrdersListPage, meta: { ...meta.ordersAwaiting, orderTab: "awaiting", userPortal: true } },

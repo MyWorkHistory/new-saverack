@@ -8,6 +8,7 @@ import { setThemeMode, themeMode } from "../../composables/useCrmTheme.js";
 import UserEditModal from "../users/UserEditModal.vue";
 import { crmIsAdmin } from "../../utils/crmUser";
 import { resolvePublicUrl } from "../../utils/resolvePublicUrl.js";
+import { useToast } from "../../composables/useToast.js";
 
 const props = defineProps({
   user: { type: Object, required: true },
@@ -16,8 +17,13 @@ const props = defineProps({
 const emit = defineEmits(["logout", "refresh-user"]);
 
 const router = useRouter();
+const toast = useToast();
 const { isMobileOpen, toggleSidebar } = useCrmSidebar();
 const markSrc = computed(() => BRAND_MARK_SRC());
+
+const isPortalUser = computed(() => (props.user?.client_account_id ?? 0) > 0);
+const portalSearch = ref("");
+const portalSearchLoading = ref(false);
 
 const menuOpen = ref(false);
 const menuRoot = ref(null);
@@ -246,6 +252,7 @@ watch(
 );
 
 function onGlobalSearchKey(e) {
+  if (isPortalUser.value) return;
   if (!(e instanceof KeyboardEvent)) return;
   if ((e.ctrlKey || e.metaKey) && (e.key === "k" || e.key === "K")) {
     e.preventDefault();
@@ -254,6 +261,48 @@ function onGlobalSearchKey(e) {
       el.focus();
       el.select?.();
     }
+  }
+}
+
+async function submitPortalSearch() {
+  const q = portalSearch.value.trim();
+  if (!q || portalSearchLoading.value) return;
+  portalSearchLoading.value = true;
+  try {
+    const { data } = await api.get("/portal/lookup", { params: { query: q } });
+    if (data?.type === "order") {
+      await router.push({
+        name: "user-order-detail",
+        params: { shipheroOrderId: String(data.shiphero_order_id) },
+        query: {
+          client_account_id: String(data.client_account_id ?? props.user?.client_account_id ?? ""),
+        },
+      });
+      portalSearch.value = "";
+    } else if (data?.type === "sku") {
+      await router.push({
+        name: "user-inventory-detail",
+        params: { sku: String(data.sku) },
+      });
+      portalSearch.value = "";
+    }
+  } catch (e) {
+    const status = e?.response?.status;
+    const msg = e?.response?.data?.message;
+    if (status === 404 || status === 422) {
+      toast.error(typeof msg === "string" && msg ? msg : "Not found.");
+    } else {
+      toast.errorFrom(e, "Search failed.");
+    }
+  } finally {
+    portalSearchLoading.value = false;
+  }
+}
+
+function onPortalSearchKeydown(e) {
+  if (e.key === "Enter") {
+    e.preventDefault();
+    submitPortalSearch();
   }
 }
 
@@ -314,6 +363,7 @@ onUnmounted(() => {
             </svg>
           </button>
 
+          <template v-if="!isPortalUser">
           <div
             ref="accountRoot"
             class="position-relative flex-grow-1 flex-md-grow-0 min-w-0 d-none d-md-block crm-navbar-account"
@@ -464,8 +514,130 @@ onUnmounted(() => {
               >Save Rack</span
             >
           </RouterLink>
+          </template>
         </div>
 
+        <template v-if="isPortalUser">
+          <div
+            class="d-flex align-items-center vx-search-merge flex-grow-1 min-w-0 w-100 w-lg-auto mx-lg-1"
+          >
+            <div class="input-group w-100">
+              <span class="input-group-text border-end-0">
+                <svg
+                  width="20"
+                  height="20"
+                  class="text-secondary opacity-75 flex-shrink-0"
+                  fill="none"
+                  viewBox="0 0 24 24"
+                  stroke="currentColor"
+                  stroke-width="1.5"
+                  aria-hidden="true"
+                >
+                  <path
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                    d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"
+                  />
+                </svg>
+              </span>
+              <input
+                v-model="portalSearch"
+                type="search"
+                class="form-control border-start-0 staff-toolbar-search"
+                placeholder="Search order # or SKU"
+                autocomplete="off"
+                aria-label="Search order number or SKU"
+                :disabled="portalSearchLoading"
+                @keydown="onPortalSearchKeydown"
+              />
+              <button
+                type="button"
+                class="btn btn-outline-secondary orders-toolbar-outline-btn"
+                :disabled="portalSearchLoading || !portalSearch.trim()"
+                @click="submitPortalSearch"
+              >
+                Search
+              </button>
+            </div>
+          </div>
+
+          <div class="d-flex align-items-center flex-shrink-0 ms-lg-auto">
+            <div ref="menuRoot" class="position-relative">
+              <button
+                type="button"
+                class="btn btn-link text-decoration-none text-body d-flex align-items-center rounded-3 py-1 ps-1 pe-1 border-0"
+                :aria-expanded="menuOpen"
+                aria-haspopup="true"
+                @click.stop="menuOpen = !menuOpen"
+              >
+                <span class="position-relative flex-shrink-0 d-inline-flex">
+                  <img
+                    v-if="user.profile?.avatar_url"
+                    :src="resolvePublicUrl(user.profile.avatar_url)"
+                    alt=""
+                    class="rounded-circle object-fit-cover"
+                    width="40"
+                    height="40"
+                  />
+                  <span
+                    v-else
+                    class="d-flex align-items-center justify-content-center rounded-circle fw-bold small"
+                    style="width: 2.5rem; height: 2.5rem"
+                    :class="avatarClass(user.email)"
+                  >
+                    {{ initials(user.name) }}
+                  </span>
+                  <span class="vx-avatar-online" aria-hidden="true" />
+                </span>
+              </button>
+
+              <div
+                v-if="menuOpen"
+                class="position-absolute end-0 mt-2 rounded-4 border bg-body shadow overflow-hidden"
+                style="width: 16rem; z-index: 1080"
+                role="menu"
+              >
+                <div class="border-bottom px-3 pb-3 pt-3">
+                  <p class="fw-medium mb-0 text-body">{{ user.name }}</p>
+                  <p class="mb-0 small text-secondary text-truncate">
+                    {{ user.email }}
+                  </p>
+                </div>
+                <ul class="list-unstyled mb-0 py-1">
+                  <li>
+                    <RouterLink
+                      to="/users/account-settings"
+                      class="d-block py-2 px-3 text-body text-decoration-none"
+                      @click="closeMenu"
+                    >
+                      Account Settings
+                    </RouterLink>
+                  </li>
+                  <li>
+                    <RouterLink
+                      to="/users/support"
+                      class="d-block py-2 px-3 text-body text-decoration-none"
+                      @click="closeMenu"
+                    >
+                      Support
+                    </RouterLink>
+                  </li>
+                </ul>
+                <div class="border-top" />
+                <button
+                  type="button"
+                  class="btn btn-link text-start text-danger w-100 py-2 px-3 rounded-0 text-decoration-none"
+                  role="menuitem"
+                  @click="signOut"
+                >
+                  Sign out
+                </button>
+              </div>
+            </div>
+          </div>
+        </template>
+
+        <template v-else>
         <div
           class="d-flex align-items-center vx-search-merge flex-grow-1 min-w-0 order-3 order-lg-2 w-100 w-lg-auto mx-lg-1"
         >
@@ -760,12 +932,14 @@ onUnmounted(() => {
             </div>
           </div>
         </div>
+        </template>
         </div>
       </div>
     </div>
   </header>
 
   <UserEditModal
+    v-if="!isPortalUser"
     v-if="user?.id"
     v-model:open="editProfileModalOpen"
     :user-id="String(user.id)"

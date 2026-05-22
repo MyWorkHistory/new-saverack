@@ -15,6 +15,8 @@ use App\Http\Controllers\Api\InvoiceController;
 use App\Http\Controllers\Api\InvoiceImportController;
 use App\Http\Controllers\Api\InventoryController;
 use App\Http\Controllers\Api\OrderController;
+use App\Http\Controllers\Api\PortalLookupController;
+use App\Http\Controllers\Api\PortalProfileController;
 use App\Http\Controllers\Api\UserController;
 use App\Http\Controllers\Api\WebmasterTaskController;
 use App\Http\Controllers\StripeWebhookController;
@@ -97,6 +99,12 @@ Route::middleware('auth:sanctum')->group(function () {
             ->middleware('can:inventory.update');
         Route::delete('/on-demand-products/{onDemandProduct}', [InventoryController::class, 'destroyOnDemandProduct'])
             ->middleware('can:inventory.update');
+    });
+
+    Route::prefix('portal')->group(function () {
+        Route::get('/lookup', [PortalLookupController::class, 'lookup'])->middleware('can:inventory.view');
+        Route::get('/profile', [PortalProfileController::class, 'show'])->middleware('can:inventory.view');
+        Route::patch('/profile', [PortalProfileController::class, 'update'])->middleware('can:inventory.view');
     });
 
     Route::prefix('returns')->group(function () {

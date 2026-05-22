@@ -1,11 +1,9 @@
 <script setup>
 import { computed, onMounted, ref } from "vue";
-import { useRouter } from "vue-router";
 import api from "../../services/api";
 import { setCrmPageMeta } from "../../composables/useCrmPageMeta.js";
 import { useToast } from "../../composables/useToast.js";
 
-const router = useRouter();
 const toast = useToast();
 
 const queryInput = ref("");
@@ -66,13 +64,15 @@ async function runSearch() {
   }
 }
 
-function openDetail(product) {
-  if (!product?.sku) return;
-  const href = router.resolve({
+function inventoryDetailTo(product) {
+  const sku = String(product?.sku || "").trim();
+  if (!sku) {
+    return { name: "inventory" };
+  }
+  return {
     name: "inventory-detail",
-    params: { sku: String(product.sku) },
-  }).href;
-  window.open(href, "_blank", "noopener,noreferrer");
+    params: { sku },
+  };
 }
 </script>
 
@@ -122,10 +122,9 @@ function openDetail(product) {
           :key="product.sku"
           class="col-12"
         >
-          <button
-            type="button"
-            class="card w-100 text-start border-0 shadow-sm inventory-summary-card"
-            @click="openDetail(product)"
+          <RouterLink
+            :to="inventoryDetailTo(product)"
+            class="card w-100 text-start border-0 shadow-sm inventory-summary-card text-decoration-none text-body"
           >
             <div class="card-body">
               <div class="d-flex align-items-start justify-content-between gap-3 flex-wrap">
@@ -144,7 +143,7 @@ function openDetail(product) {
                 </div>
               </div>
             </div>
-          </button>
+          </RouterLink>
         </div>
       </div>
   </div>

@@ -545,21 +545,29 @@ onUnmounted(() => {
                   v-model="portalSearch"
                   type="search"
                   class="form-control border-start-0"
-                  placeholder="Search order # or SKU"
+                  :placeholder="portalSearchLoading ? 'Searching…' : 'Search Exact Order # or SKU'"
                   autocomplete="off"
-                  aria-label="Search order number or SKU"
+                  aria-label="Search exact order number or SKU"
                   :disabled="portalSearchLoading"
+                  :aria-busy="portalSearchLoading"
                   @keydown="onPortalSearchKeydown"
                 />
               </div>
             </div>
             <button
               type="button"
-              class="btn btn-outline-secondary btn-sm orders-toolbar-outline-btn flex-shrink-0"
+              class="btn btn-outline-secondary btn-sm orders-toolbar-outline-btn flex-shrink-0 d-inline-flex align-items-center"
               :disabled="portalSearchLoading || !portalSearch.trim()"
+              :aria-busy="portalSearchLoading"
               @click="submitPortalSearch"
             >
-              Search
+              <span
+                v-if="portalSearchLoading"
+                class="spinner-border spinner-border-sm me-1"
+                role="status"
+                aria-hidden="true"
+              />
+              {{ portalSearchLoading ? "Searching…" : "Search" }}
             </button>
           </div>
 

@@ -415,21 +415,25 @@ async function bulkSetActive(active) {
   }
 }
 
-function openDetail(row) {
+function inventoryDetailTo(row) {
   const sku = String(row?.sku || "").trim();
-  if (!sku) return;
-  const href = router.resolve({
+  if (!sku) {
+    return { name: "user-inventory" };
+  }
+  return {
     name: "user-inventory-detail",
     params: { sku },
     query: { client_account_id: String(accountId.value) },
-  }).href;
-  window.open(href, "_blank", "noopener,noreferrer");
+  };
 }
 
 function editFirstSelected() {
   const first = selectedRows.value[0];
-  if (first) openDetail(first);
-  else toast.error("Select a row to edit.");
+  if (!first?.sku) {
+    toast.error("Select a row to edit.");
+    return;
+  }
+  router.push(inventoryDetailTo(first));
 }
 
 function clearSelection() {
@@ -820,20 +824,30 @@ onUnmounted(() => {
                 />
               </td>
               <td class="text-center user-inv-table__image-col">
-                <img
-                  v-if="row.image_url"
-                  :src="row.image_url"
-                  alt=""
-                  class="user-inventory-thumb"
-                  loading="lazy"
-                />
-                <div v-else class="user-inventory-thumb user-inventory-thumb--empty" />
+                <RouterLink
+                  :to="inventoryDetailTo(row)"
+                  class="user-inv-table__image-link"
+                  :aria-label="`View ${row.sku || 'product'}`"
+                >
+                  <img
+                    v-if="row.image_url"
+                    :src="row.image_url"
+                    alt=""
+                    class="user-inventory-thumb"
+                    loading="lazy"
+                  />
+                  <div v-else class="user-inventory-thumb user-inventory-thumb--empty" />
+                </RouterLink>
               </td>
               <td class="user-inv-table__sku-col">
-                <a href="#" class="user-inv-table__sku-link" @click.prevent="openDetail(row)">{{ row.sku || "—" }}</a>
+                <RouterLink :to="inventoryDetailTo(row)" class="user-inv-table__sku-link">
+                  {{ row.sku || "—" }}
+                </RouterLink>
               </td>
               <td class="user-inv-table__name-col">
-                <span class="user-inv-table__name-text">{{ row.name || "—" }}</span>
+                <RouterLink :to="inventoryDetailTo(row)" class="user-inv-table__sku-link user-inv-table__name-link">
+                  <span class="user-inv-table__name-text">{{ row.name || "—" }}</span>
+                </RouterLink>
               </td>
               <td class="text-center user-inv-table__num-col">{{ Number(row.backorder || 0) }}</td>
               <td class="text-center user-inv-table__num-col">{{ Number(row.on_hand || 0) }}</td>
@@ -908,6 +922,12 @@ onUnmounted(() => {
   max-width: min(16rem, 28vw);
 }
 
+.user-inv-table__image-link {
+  display: inline-block;
+  line-height: 0;
+  text-decoration: none;
+}
+
 .user-inv-table__sku-link {
   color: #2563eb;
   font-weight: 600;
@@ -919,6 +939,10 @@ onUnmounted(() => {
 .user-inv-table__sku-link:hover {
   color: #1d4ed8;
   text-decoration: underline;
+}
+
+.user-inv-table__name-link {
+  font-weight: 400;
 }
 
 .user-inv-table__name-text {

@@ -313,14 +313,20 @@ onMounted(() => {
                         </tr>
                         <tr v-for="row in oosTopRows" :key="`${row.sku}-${row.warehouse_id}`">
                           <td class="text-center user-dashboard-oos-table__image-col">
-                            <img
-                              v-if="row.image_url"
-                              :src="row.image_url"
-                              alt=""
-                              class="user-inventory-thumb"
-                              loading="lazy"
-                            />
-                            <div v-else class="user-inventory-thumb user-inventory-thumb--empty" />
+                            <RouterLink
+                              :to="inventoryDetailTo(row.sku)"
+                              class="user-inv-table__image-link text-decoration-none"
+                              :aria-label="`View ${row.sku || 'product'}`"
+                            >
+                              <img
+                                v-if="row.image_url"
+                                :src="row.image_url"
+                                alt=""
+                                class="user-inventory-thumb"
+                                loading="lazy"
+                              />
+                              <div v-else class="user-inventory-thumb user-inventory-thumb--empty" />
+                            </RouterLink>
                           </td>
                           <td class="user-dashboard-oos-table__sku-col">
                             <RouterLink
@@ -331,7 +337,12 @@ onMounted(() => {
                             </RouterLink>
                           </td>
                           <td>
-                            <span class="user-inv-table__name-text">{{ row.name || "—" }}</span>
+                            <RouterLink
+                              :to="inventoryDetailTo(row.sku)"
+                              class="user-inv-table__sku-link user-inv-table__name-link text-decoration-none"
+                            >
+                              <span class="user-inv-table__name-text">{{ row.name || "—" }}</span>
+                            </RouterLink>
                           </td>
                           <td class="text-center fw-semibold">{{ Number(row.backorder || 0) }}</td>
                         </tr>
@@ -500,6 +511,11 @@ onMounted(() => {
   background: rgba(255, 255, 255, 0.08);
 }
 
+.user-inv-table__image-link {
+  display: inline-block;
+  line-height: 0;
+}
+
 .user-inv-table__sku-link {
   color: var(--bs-primary, #2563eb);
   font-weight: 600;
@@ -508,6 +524,10 @@ onMounted(() => {
 .user-inv-table__sku-link:hover {
   color: var(--bs-primary, #2563eb);
   text-decoration: underline !important;
+}
+
+.user-inv-table__name-link {
+  font-weight: 400;
 }
 
 .user-inv-table__name-text {

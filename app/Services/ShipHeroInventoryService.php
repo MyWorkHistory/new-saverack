@@ -2139,6 +2139,10 @@ query ShipHeroProductBySku($sku: String!) {
         quantity
         sku
       }
+      components {
+        sku
+        name
+      }
       warehouse_products {
         warehouse_id
         warehouse_identifier
@@ -2209,6 +2213,10 @@ query ShipHeroProductBySku($sku: String!, $customer_account_id: String) {
       kit_components {
         quantity
         sku
+      }
+      components {
+        sku
+        name
       }
       warehouse_products {
         warehouse_id
@@ -2290,6 +2298,10 @@ query ShipHeroProductByBarcode($barcode: String!) {
         quantity
         sku
       }
+      components {
+        sku
+        name
+      }
       warehouse_products {
         warehouse_id
         warehouse_identifier
@@ -2360,6 +2372,10 @@ query ShipHeroProductByBarcode($barcode: String!, $customer_account_id: String) 
       kit_components {
         quantity
         sku
+      }
+      components {
+        sku
+        name
       }
       warehouse_products {
         warehouse_id
@@ -2490,6 +2506,10 @@ query ShipHeroProductById($id: String!, $customer_account_id: String) {
       kit_components {
         quantity
         sku
+      }
+      components {
+        sku
+        name
       }
     }
   }
@@ -2625,9 +2645,10 @@ GQL;
                 'backorder' => $backorder,
                 'asn' => 0,
             ],
-            'kit' => ($data['kit'] ?? false) === true,
-            'kit_build' => ($data['kit_build'] ?? false) === true,
-            'kit_components' => $this->normalizeKitComponents($data['kit_components'] ?? null),
+            'kit' => $this->normalizeShipHeroBool($data['kit'] ?? null),
+            'kit_build' => $this->normalizeShipHeroBool($data['kit_build'] ?? null),
+            'kit_components' => $this->resolveKitComponentsFromProductData($data),
+            'parent_kits' => $this->normalizeParentKits($data['parent_kits'] ?? null),
             'warehouses' => $warehousesOut,
         ];
     }
@@ -2806,6 +2827,59 @@ GQL;
     }
 
     /**
+     * @param  array<string, mixed>  $data
+     * @return list<array{sku:string,quantity:float}>
+     */
+    private function resolveKitComponentsFromProductData(array $data): array
+    {
+        $fromKitComponents = $this->normalizeKitComponents($data['kit_components'] ?? null);
+        if ($fromKitComponents !== []) {
+            return $fromKitComponents;
+        }
+
+        return $this->normalizeKitComponentsFromProductNodes($data['components'] ?? null);
+    }
+
+    /**
+     * @param  array<string, mixed>  $base
+     * @param  array<string, mixed>  $full
+     * @param  array<string, mixed>  $merged
+     * @return array<string, mixed>
+     */
+    private function mergeProductKitFields(array $base, array $full, array $merged): array
+    {
+        $merged['kit'] = $this->normalizeShipHeroBool($full['kit'] ?? null)
+            || $this->normalizeShipHeroBool($base['kit'] ?? null);
+        $merged['kit_build'] = $this->normalizeShipHeroBool($full['kit_build'] ?? null)
+            || $this->normalizeShipHeroBool($base['kit_build'] ?? null);
+
+        $components = $this->resolveKitComponentsFromProductData($full);
+        if ($components === []) {
+            $components = $this->resolveKitComponentsFromProductData($base);
+        }
+        $merged['kit_components'] = $components;
+
+        return $merged;
+    }
+
+    private function normalizeShipHeroBool($value): bool
+    {
+        if ($value === true || $value === 1) {
+            return true;
+        }
+        if ($value === false || $value === 0 || $value === null) {
+            return false;
+        }
+        if (is_string($value)) {
+            $normalized = strtolower(trim($value));
+
+            return in_array($normalized, ['1', 'true', 'yes', 'y', 'on'], true);
+        }
+
+        return (bool) $value;
+    }
+
+    /**
      * @param mixed $components
      * @return list<array{sku:string,quantity:float}>
      */
@@ -2814,8 +2888,22 @@ GQL;
         if (! is_array($components)) {
             return [];
         }
+
+        if (isset($components['edges']) && is_array($components['edges'])) {
+            return $this->normalizeKitComponents($components['edges']);
+        }
+        if (isset($components['data']['edges']) && is_array($components['data']['edges'])) {
+            return $this->normalizeKitComponents($components['data']['edges']);
+        }
+
         $out = [];
-        foreach ($components as $component) {
+        foreach ($components as $key => $component) {
+            if ($key === 'edges' || $key === 'data') {
+                continue;
+            }
+            if (is_array($component) && isset($component['node']) && is_array($component['node'])) {
+                $component = $component['node'];
+            }
             if (! is_array($component)) {
                 continue;
             }
@@ -2825,9 +2913,173 @@ GQL;
             }
             $out[] = [
                 'sku' => $sku,
-                'quantity' => (float) ($component['quantity'] ?? 0),
+                'quantity' => (float) ($component['quantity'] ?? 1),
             ];
         }
+
+        return $out;
+    }
+
+    /**
+     * ShipHero {@see Product::components} — kit member products when kit_components is empty.
+     *
+     * @param mixed $nodes
+     * @return list<array{sku:string,quantity:float}>
+     */
+    private function normalizeKitComponentsFromProductNodes($nodes): array
+    {
+        if (! is_array($nodes)) {
+            return [];
+        }
+        if (isset($nodes['edges']) && is_array($nodes['edges'])) {
+            $nodes = $nodes['edges'];
+        }
+
+        $out = [];
+        foreach ($nodes as $node) {
+            if (! is_array($node)) {
+                continue;
+            }
+            if (isset($node['node']) && is_array($node['node'])) {
+                $node = $node['node'];
+            }
+            $sku = trim((string) ($node['sku'] ?? ''));
+            if ($sku === '') {
+                continue;
+            }
+            $out[] = [
+                'sku' => $sku,
+                'quantity' => (float) ($node['quantity'] ?? 1),
+            ];
+        }
+
+        return $out;
+    }
+
+    /**
+     * Kits (parent products) that include this SKU as a component.
+     *
+     * @return list<array{sku:string,name:?string,quantity:float,kit:bool,kit_build:bool}>
+     */
+    public function findParentKitsForComponentSku(string $customerAccountId, string $componentSku, int $maxResults = 40): array
+    {
+        $customer = trim($customerAccountId);
+        $componentSkuNorm = mb_strtolower(trim($componentSku));
+        if ($customer === '' || $componentSkuNorm === '') {
+            return [];
+        }
+
+        $graphql = <<<'GQL'
+query ShipHeroKitProductsForParentLookup($customer_account_id: String, $first: Int!, $after: String) {
+  products(customer_account_id: $customer_account_id) {
+    data(first: $first, after: $after) {
+      pageInfo {
+        hasNextPage
+        endCursor
+      }
+      edges {
+        node {
+          sku
+          name
+          kit
+          kit_build
+          kit_components {
+            sku
+            quantity
+          }
+          components {
+            sku
+            name
+          }
+        }
+      }
+    }
+  }
+}
+GQL;
+
+        $matches = [];
+        $after = null;
+        $perPage = 50;
+        $maxPages = 12;
+
+        for ($page = 0; $page < $maxPages && count($matches) < $maxResults; $page++) {
+            $json = $this->client->query($graphql, array_merge(
+                ['first' => $perPage, 'after' => $after],
+                $this->customerAccountVariables($customer)
+            ));
+            $edges = data_get($json, 'data.products.data.edges', []);
+            if (! is_array($edges)) {
+                break;
+            }
+
+            foreach ($edges as $edge) {
+                if (count($matches) >= $maxResults) {
+                    break 2;
+                }
+                $node = is_array($edge['node'] ?? null) ? $edge['node'] : null;
+                if ($node === null) {
+                    continue;
+                }
+                if (! $this->normalizeShipHeroBool($node['kit'] ?? null) && ! $this->normalizeShipHeroBool($node['kit_build'] ?? null)) {
+                    continue;
+                }
+                $kitSku = trim((string) ($node['sku'] ?? ''));
+                if ($kitSku === '' || mb_strtolower($kitSku) === $componentSkuNorm) {
+                    continue;
+                }
+                foreach ($this->resolveKitComponentsFromProductData($node) as $component) {
+                    if (mb_strtolower($component['sku']) !== $componentSkuNorm) {
+                        continue;
+                    }
+                    $matches[] = [
+                        'sku' => $kitSku,
+                        'name' => isset($node['name']) && is_string($node['name']) ? trim($node['name']) : null,
+                        'quantity' => (float) ($component['quantity'] ?? 1),
+                        'kit' => $this->normalizeShipHeroBool($node['kit'] ?? null),
+                        'kit_build' => $this->normalizeShipHeroBool($node['kit_build'] ?? null),
+                    ];
+                    break;
+                }
+            }
+
+            $hasNext = (bool) data_get($json, 'data.products.data.pageInfo.hasNextPage', false);
+            $after = data_get($json, 'data.products.data.pageInfo.endCursor');
+            if (! $hasNext || ! is_string($after) || $after === '') {
+                break;
+            }
+        }
+
+        return $matches;
+    }
+
+    /**
+     * @param mixed $rows
+     * @return list<array{sku:string,name:?string,quantity:float,kit:bool,kit_build:bool}>
+     */
+    private function normalizeParentKits($rows): array
+    {
+        if (! is_array($rows)) {
+            return [];
+        }
+        $out = [];
+        foreach ($rows as $row) {
+            if (! is_array($row)) {
+                continue;
+            }
+            $sku = trim((string) ($row['sku'] ?? ''));
+            if ($sku === '') {
+                continue;
+            }
+            $out[] = [
+                'sku' => $sku,
+                'name' => isset($row['name']) && is_string($row['name']) ? trim($row['name']) : null,
+                'quantity' => (float) ($row['quantity'] ?? 1),
+                'kit' => $this->normalizeShipHeroBool($row['kit'] ?? null),
+                'kit_build' => $this->normalizeShipHeroBool($row['kit_build'] ?? null),
+            ];
+        }
+
         return $out;
     }
 
@@ -2981,7 +3233,14 @@ GQL;
                     $base['warehouse_products'] ?? null,
                     $full['warehouse_products'] ?? null
                 );
+                $merged = $this->mergeProductKitFields($base, $full, $merged);
                 $normalized = $this->normalizeProduct($merged, $warehouseId);
+                if ($normalized['parent_kits'] === [] && $customerAccountId !== null && trim($customerAccountId) !== '') {
+                    $normalized['parent_kits'] = $this->findParentKitsForComponentSku(
+                        $customerAccountId,
+                        (string) ($normalized['sku'] ?? $sku)
+                    );
+                }
                 Log::info('shiphero.inventory.detail.normalized', [
                     'sku' => $normalized['sku'] ?? null,
                     'customer_account_id' => $customerAccountId,
@@ -3010,6 +3269,12 @@ GQL;
         }
 
         $normalized = $this->normalizeProduct($base, $warehouseId);
+        if ($normalized['parent_kits'] === [] && $customerAccountId !== null && trim($customerAccountId) !== '') {
+            $normalized['parent_kits'] = $this->findParentKitsForComponentSku(
+                $customerAccountId,
+                (string) ($normalized['sku'] ?? $sku)
+            );
+        }
         Log::info('shiphero.inventory.detail.normalized', [
             'sku' => $normalized['sku'] ?? null,
             'customer_account_id' => $customerAccountId,

@@ -1,12 +1,13 @@
 <script setup>
 import { computed, inject, onMounted, onUnmounted, ref } from "vue";
-import { useRoute, useRouter } from "vue-router";
+import { RouterLink, useRoute, useRouter } from "vue-router";
 import { setCrmPageMeta } from "../../composables/useCrmPageMeta.js";
 import api from "../../services/api";
 import CrmLoadingSpinner from "../../components/common/CrmLoadingSpinner.vue";
 import PortalOnboardingAccountModal from "../../components/user-portal/PortalOnboardingAccountModal.vue";
 import PortalOnboardingBillingModal from "../../components/user-portal/PortalOnboardingBillingModal.vue";
 import { useToast } from "../../composables/useToast";
+import { PORTAL_MATERIAL_ICON } from "../../constants/portalMaterialIcons.js";
 
 const router = useRouter();
 const route = useRoute();
@@ -25,11 +26,6 @@ const progress = computed(() => onboarding.value?.progress || { total: 2, comple
 const manualInstructions = computed(
   () => onboarding.value?.manual_payment_instructions || null,
 );
-
-function signOut() {
-  localStorage.removeItem("auth_token");
-  router.push("/login");
-}
 
 function statusLabel(status) {
   if (status === "completed") return "Completed";
@@ -173,7 +169,7 @@ onUnmounted(() => {
     <template v-else>
       <div class="row g-4">
         <div class="col-lg-8">
-          <div class="portal-welcome-page__intro mb-4">
+          <div class="staff-table-card p-4 p-md-4 mb-4 portal-welcome-page__intro">
             <h1 class="h4 fw-semibold mb-3">Welcome to Save Rack Fulfillment!</h1>
             <p class="text-secondary mb-2">
               Your account has been created, but a few setup steps are required before we can start
@@ -221,16 +217,6 @@ onUnmounted(() => {
               </div>
             </button>
           </div>
-
-          <div class="mt-4">
-            <button
-              type="button"
-              class="btn btn-outline-secondary orders-toolbar-outline-btn"
-              @click="signOut"
-            >
-              Sign Out
-            </button>
-          </div>
         </div>
 
         <div class="col-lg-4">
@@ -239,25 +225,41 @@ onUnmounted(() => {
             <p class="staff-stat-card__value">
               {{ progress.completed }} of {{ progress.total }}
             </p>
-            <p class="staff-stat-card__sub">tasks complete</p>
+            <p class="staff-stat-card__sub">Onboarding tasks complete</p>
             <div
               class="staff-stat-card__icon portal-welcome-page__progress-icon"
               aria-hidden="true"
             >
-              <svg fill="currentColor" viewBox="0 0 24 24">
-                <path
-                  d="M19 3H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm-5 14H7v-2h7v2zm3-4H7v-2h10v2zm0-4H7V7h10v2z"
-                />
+              <svg class="portal-welcome-page__icon-svg" fill="currentColor" viewBox="0 0 24 24">
+                <path :d="PORTAL_MATERIAL_ICON.hourglass" />
               </svg>
             </div>
           </div>
 
-          <div class="staff-table-card p-4 portal-welcome-page__help">
-            <h2 class="h6 fw-semibold mb-2">Need help?</h2>
-            <p class="small text-secondary mb-0">
-              Questions about onboarding? Contact your Save Rack account manager or email
-              <a href="mailto:audi@saverack.com" class="auth-vuexy-link">audi@saverack.com</a>.
-            </p>
+          <div class="staff-table-card p-3 p-md-4 portal-welcome-page__support">
+            <div class="d-flex align-items-start gap-3 mb-2">
+              <div
+                class="portal-welcome-page__panel-icon portal-welcome-page__panel-icon--support flex-shrink-0"
+                aria-hidden="true"
+              >
+                <svg class="portal-welcome-page__icon-svg" fill="currentColor" viewBox="0 0 24 24">
+                  <path :d="PORTAL_MATERIAL_ICON.supportAgent" />
+                </svg>
+              </div>
+              <div class="min-w-0">
+                <h2 class="h6 fw-semibold mb-2">Support</h2>
+                <p class="small text-secondary mb-2">
+                  Questions about onboarding? Contact your Save Rack account manager or email
+                  <a href="mailto:support@saverack.com" class="auth-vuexy-link">support@saverack.com</a>.
+                </p>
+                <RouterLink
+                  to="/users/support"
+                  class="small auth-vuexy-link text-decoration-none"
+                >
+                  Visit Support
+                </RouterLink>
+              </div>
+            </div>
           </div>
         </div>
       </div>
@@ -328,8 +330,60 @@ onUnmounted(() => {
   color: #ff9f43;
 }
 
+.portal-welcome-page__icon-svg {
+  width: 1.25rem;
+  height: 1.25rem;
+  display: block;
+  overflow: visible;
+}
+
+.portal-welcome-page__progress {
+  padding: 1rem 1.125rem;
+  min-height: 5.25rem;
+}
+
+.portal-welcome-page__progress .staff-stat-card__value {
+  font-size: 1.5rem;
+  margin-top: 0.2rem;
+}
+
+.portal-welcome-page__progress .staff-stat-card__label {
+  font-size: 0.9375rem;
+}
+
+.portal-welcome-page__progress .staff-stat-card__sub {
+  margin-top: 0.25rem;
+}
+
 .portal-welcome-page__progress-icon {
+  top: 50%;
+  right: 1rem;
+  transform: translateY(-50%);
+  width: 2.5rem;
+  height: 2.5rem;
+  background: rgba(255, 159, 67, 0.15);
+  color: #ff9f43;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.portal-welcome-page__panel-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 2.75rem;
+  height: 2.75rem;
+  border-radius: 0.4375rem;
+}
+
+.portal-welcome-page__panel-icon--support {
   background: rgba(37, 99, 235, 0.12);
   color: #2563eb;
+}
+
+.portal-welcome-page__panel-icon .portal-welcome-page__icon-svg {
+  width: 1.4375rem;
+  height: 1.4375rem;
 }
 </style>

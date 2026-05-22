@@ -79,16 +79,34 @@ const backorderLoadedAt = ref(null);
 
 const ORDER_SECTION_TIMEOUT_MS = 90000;
 
-const showKitSection = computed(() => {
+const isKitProduct = computed(() => {
   const p = product.value;
   if (!p) return false;
   return Boolean(p.kit || p.kit_build);
 });
 
-const showKitComponents = computed(() => {
+const kitComponents = computed(() => {
   const list = product.value?.kit_components;
-  return Array.isArray(list) && list.length > 0;
+  return Array.isArray(list) ? list : [];
 });
+
+const parentKits = computed(() => {
+  const list = product.value?.parent_kits;
+  return Array.isArray(list) ? list : [];
+});
+
+function inventoryDetailTo(sku) {
+  const value = String(sku || "").trim();
+  if (!value) return { name: isPortalView.value ? "user-inventory-detail" : "inventory-detail", params: {} };
+  const query = {};
+  const clientId = Number(route.query.client_account_id || 0);
+  if (clientId > 0) query.client_account_id = clientId;
+  return {
+    name: isPortalView.value ? "user-inventory-detail" : "inventory-detail",
+    params: { sku: value },
+    query,
+  };
+}
 
 const metricCards = computed(() => ([
   { key: "on_hand", label: "On Hand", iconPath: "M3 7.5 12 3l9 4.5v9L12 21l-9-4.5z M12 12l9-4.5 M12 12 3 7.5 M12 12v9", tone: "blue" },
@@ -215,10 +233,7 @@ async function openBarcodeLabelPdf() {
 
 async function loadPortalOrderSections({ refresh = false } = {}) {
   if (!isPortalView.value || !product.value?.sku) return;
-  await Promise.allSettled([
-    loadAllocatedOrders({ refresh }),
-    loadBackorderOrders({ refresh }),
-  ]);
+  await loadAllocatedOrders({ refresh });
 }
 
 function finishOrderSectionLoad(section, { ok, data, errText = "" }) {
@@ -305,7 +320,6 @@ async function loadBackorderOrders({ refresh = false } = {}) {
   } catch (e) {
     const msg = apiErrorMessage(e, "Could not load backorder orders.");
     finishOrderSectionLoad("backorder", { ok: false, errText: msg });
-    toast.errorFrom(e, "Could not load backorder orders.");
   }
 }
 
@@ -569,11 +583,8 @@ async function togglePickable(loc) {
           <span class="text-body-secondary">Detail</span>
         </nav>
 
-        <div class="staff-user-view__title-row inventory-portal-detail__title-row d-flex flex-wrap align-items-start justify-content-between gap-2 mb-3">
-          <h1 class="staff-user-view__title mb-0">
-            {{ product.name || product.sku || "Product" }}
-          </h1>
-          <div class="d-flex align-items-center gap-2 flex-shrink-0 ms-md-auto">
+        <div class="staff-user-view__title-row inventory-portal-detail__title-row d-flex flex-wrap align-items-center justify-content-end gap-2 mb-3">
+          <div class="d-flex align-items-center gap-2 flex-shrink-0">
             <p v-if="lastRefreshedLabel" class="small text-secondary mb-0">
               Last refreshed: {{ lastRefreshedLabel }}
             </p>
@@ -702,27 +713,71 @@ async function togglePickable(loc) {
                   <dt class="staff-user-profile__dt">Custom Description</dt>
                   <dd class="staff-user-profile__dd">{{ displayVal(product.customs_description) }}</dd>
                 </div>
+                <div>
+                  <dt class="staff-user-profile__dt">Kit</dt>
+                  <dd class="staff-user-profile__dd">
+                    {{
+                      isKitProduct
+                        ? product.kit_build
+                          ? "Kit build"
+                          : "Yes"
+                        : "No"
+                    }}
+                  </dd>
+                </div>
               </dl>
             </aside>
           </div>
 
           <div class="col-12 col-xl-8">
-            <div v-if="showKitSection" class="staff-table-card inventory-portal-detail__section p-0">
+            <div class="staff-table-card inventory-portal-detail__section p-0">
               <div class="inventory-portal-detail__section-head">
-                <h2 class="inventory-portal-detail__section-title">Kit</h2>
-              </div>
-              <div class="px-3 py-3">
-                <p class="mb-0">
-                  {{ product.kit_build ? "Kit build product" : "Kit product" }}
+                <h2 class="inventory-portal-detail__section-title">Kits</h2>
+                <p class="small text-body-secondary mb-0">
+                  Kit products that include this SKU as a component
                 </p>
               </div>
+              <div
+                v-if="parentKits.length"
+                class="table-responsive inventory-portal-detail__table-wrap"
+              >
+                <table class="table table-hover align-middle mb-0 staff-data-table">
+                  <thead class="table-light staff-table-head">
+                    <tr>
+                      <th class="staff-table-head__th">SKU</th>
+                      <th class="staff-table-head__th">Name</th>
+                      <th class="staff-table-head__th text-end">Qty in kit</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr v-for="kit in parentKits" :key="kit.sku">
+                      <td>
+                        <RouterLink :to="inventoryDetailTo(kit.sku)">
+                          {{ kit.sku }}
+                        </RouterLink>
+                      </td>
+                      <td>{{ kit.name || "—" }}</td>
+                      <td class="text-end">{{ kit.quantity }}</td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+              <p v-else class="inventory-portal-detail__empty">
+                No kits found that use this SKU as a component.
+              </p>
             </div>
 
-            <div v-if="showKitComponents" class="staff-table-card inventory-portal-detail__section p-0">
+            <div class="staff-table-card inventory-portal-detail__section p-0">
               <div class="inventory-portal-detail__section-head">
                 <h2 class="inventory-portal-detail__section-title">Kit Components</h2>
+                <p class="small text-body-secondary mb-0">
+                  Products that make up this kit
+                </p>
               </div>
-              <div class="table-responsive inventory-portal-detail__table-wrap">
+              <div
+                v-if="kitComponents.length"
+                class="table-responsive inventory-portal-detail__table-wrap"
+              >
                 <table class="table table-hover align-middle mb-0 staff-data-table">
                   <thead class="table-light staff-table-head">
                     <tr>
@@ -731,13 +786,20 @@ async function togglePickable(loc) {
                     </tr>
                   </thead>
                   <tbody>
-                    <tr v-for="component in product.kit_components" :key="component.sku">
-                      <td>{{ component.sku }}</td>
+                    <tr v-for="component in kitComponents" :key="component.sku">
+                      <td>
+                        <RouterLink :to="inventoryDetailTo(component.sku)">
+                          {{ component.sku }}
+                        </RouterLink>
+                      </td>
                       <td class="text-end">{{ component.quantity }}</td>
                     </tr>
                   </tbody>
                 </table>
               </div>
+              <p v-else class="inventory-portal-detail__empty">
+                No kit components configured for this SKU.
+              </p>
             </div>
 
             <div class="staff-table-card inventory-portal-detail__section p-0">
@@ -756,7 +818,7 @@ async function togglePickable(loc) {
                   type="button"
                   class="btn btn-outline-secondary btn-sm orders-toolbar-outline-btn d-inline-flex align-items-center gap-2"
                   :disabled="allocatedLoading"
-                  title="Refresh allocated orders from ShipHero"
+                  title="Refresh allocated orders"
                   aria-label="Refresh allocated orders"
                   @click="loadAllocatedOrders({ refresh: true })"
                 >
@@ -819,7 +881,7 @@ async function togglePickable(loc) {
                 v-else-if="allocatedLoaded && !allocatedOrders.length"
                 class="inventory-portal-detail__empty"
               >
-                No open ready-to-ship orders with allocated quantity for this SKU. Use Refresh to reload from ShipHero.
+                No open ready-to-ship orders with allocated quantity for this SKU. Use Refresh to reload.
               </p>
             </div>
 
@@ -827,6 +889,9 @@ async function togglePickable(loc) {
               <div class="inventory-portal-detail__section-head">
                 <div>
                   <h2 class="inventory-portal-detail__section-title">Backorder Orders</h2>
+                  <p class="small text-body-secondary mb-0">
+                    Orders with backorder quantity for this SKU (last 180 days)
+                  </p>
                   <p v-if="backorderLoaded" class="small text-secondary mb-0">
                     <span v-if="backorderLoadedAt">Loaded: {{ formatDateTimeUs(backorderLoadedAt) }} · </span>
                     {{ backorderOrders.length }} order{{ backorderOrders.length === 1 ? "" : "s" }}
@@ -836,9 +901,9 @@ async function togglePickable(loc) {
                   type="button"
                   class="btn btn-outline-secondary btn-sm orders-toolbar-outline-btn d-inline-flex align-items-center gap-2"
                   :disabled="backorderLoading"
-                  title="Refresh backorder orders from ShipHero"
-                  aria-label="Refresh backorder orders"
-                  @click="loadBackorderOrders({ refresh: true })"
+                  :title="backorderLoaded ? 'Refresh backorder orders' : 'Load backorder orders'"
+                  :aria-label="backorderLoaded ? 'Refresh backorder orders' : 'Load backorder orders'"
+                  @click="loadBackorderOrders({ refresh: backorderLoaded })"
                 >
                   <svg
                     width="16"
@@ -855,7 +920,15 @@ async function togglePickable(loc) {
                       d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"
                     />
                   </svg>
-                  {{ backorderLoading ? "Refreshing…" : "Refresh" }}
+                  {{
+                    backorderLoading
+                      ? backorderLoaded
+                        ? "Refreshing…"
+                        : "Loading…"
+                      : backorderLoaded
+                        ? "Refresh"
+                        : "Load"
+                  }}
                 </button>
               </div>
               <p v-if="backorderTruncatedMessage" class="inventory-portal-detail__truncated">
@@ -899,7 +972,13 @@ async function togglePickable(loc) {
                 v-else-if="backorderLoaded && !backorderOrders.length"
                 class="inventory-portal-detail__empty"
               >
-                No backorder orders found for this SKU in the last 180 days. Use Refresh to reload from ShipHero.
+                No backorder orders found for this SKU in the last 180 days. Use Refresh to reload.
+              </p>
+              <p
+                v-else-if="!backorderLoaded"
+                class="inventory-portal-detail__empty"
+              >
+                Backorder orders are not loaded yet. Select Load to fetch them from ShipHero.
               </p>
             </div>
           </div>
@@ -1052,26 +1131,66 @@ async function togglePickable(loc) {
               </div>
             </div>
 
-            <div v-if="(product.kit_components || []).length" class="staff-table-card p-0">
+            <div class="staff-table-card p-0">
               <div class="px-3 py-2 border-bottom">
-                <h3 class="h6 mb-0">Kit Components</h3>
+                <h3 class="h6 mb-0">Kits</h3>
+                <p class="small text-body-secondary mb-0">
+                  Kit products that include this SKU as a component
+                </p>
               </div>
-              <div class="table-responsive">
+              <div v-if="parentKits.length" class="table-responsive">
                 <table class="table table-hover align-middle mb-0">
                   <thead class="table-light">
                     <tr>
                       <th>SKU</th>
-                      <th>Quantity</th>
+                      <th>Name</th>
+                      <th class="text-end">Qty in kit</th>
                     </tr>
                   </thead>
                   <tbody>
-                    <tr v-for="component in product.kit_components" :key="component.sku">
-                      <td>{{ component.sku }}</td>
-                      <td>{{ component.quantity }}</td>
+                    <tr v-for="kit in parentKits" :key="kit.sku">
+                      <td>
+                        <RouterLink :to="inventoryDetailTo(kit.sku)">{{ kit.sku }}</RouterLink>
+                      </td>
+                      <td>{{ kit.name || "—" }}</td>
+                      <td class="text-end">{{ kit.quantity }}</td>
                     </tr>
                   </tbody>
                 </table>
               </div>
+              <p v-else class="text-secondary small px-3 py-3 mb-0">
+                No kits found that use this SKU as a component.
+              </p>
+            </div>
+
+            <div class="staff-table-card p-0">
+              <div class="px-3 py-2 border-bottom">
+                <h3 class="h6 mb-0">Kit Components</h3>
+                <p class="small text-body-secondary mb-0">
+                  Products that make up this kit
+                </p>
+              </div>
+              <div v-if="kitComponents.length" class="table-responsive">
+                <table class="table table-hover align-middle mb-0">
+                  <thead class="table-light">
+                    <tr>
+                      <th>SKU</th>
+                      <th class="text-end">Quantity</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr v-for="component in kitComponents" :key="component.sku">
+                      <td>
+                        <RouterLink :to="inventoryDetailTo(component.sku)">{{ component.sku }}</RouterLink>
+                      </td>
+                      <td class="text-end">{{ component.quantity }}</td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+              <p v-else class="text-secondary small px-3 py-3 mb-0">
+                No kit components configured for this SKU.
+              </p>
             </div>
           </div>
         </div>

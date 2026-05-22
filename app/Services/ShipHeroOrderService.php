@@ -2678,7 +2678,7 @@ GQL;
 
         $out = [];
         $truncated = false;
-        $maxPages = $mode === 'backorder' ? 8 : 6;
+        $maxPages = $mode === 'backorder' ? 5 : 6;
         $perPage = 50;
         $after = null;
         $startedAt = microtime(true);
@@ -2879,8 +2879,8 @@ GQL;
             $vars['after'] = trim($after);
         }
         if ($mode === 'backorder') {
+            // Match Orders list backorder tab: has_backorder only (not fulfillment_status).
             $vars['has_backorder'] = true;
-            $vars['fulfillment_status'] = 'unfulfilled';
         } else {
             $vars['ready_to_ship'] = true;
             $vars['fulfillment_status'] = 'unfulfilled';

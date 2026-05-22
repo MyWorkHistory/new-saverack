@@ -163,4 +163,71 @@ class ShipHeroInventoryRefreshTest extends TestCase
         $this->assertSame(5.0, (float) ($row['allocated'] ?? 0));
         $this->assertSame(3.0, (float) ($row['backorder'] ?? 0));
     }
+
+    public function test_backorder_only_list_excludes_zero_oversold_even_when_allocated_exceeds_on_hand(): void
+    {
+        $account = ClientAccount::query()->create([
+            'company_name' => 'OOS Filter Co',
+            'status' => ClientAccount::STATUS_ACTIVE,
+            'shiphero_customer_account_id' => 'sh-oos-filter-1',
+        ]);
+
+        ShipHeroInventoryProductIndex::query()->create([
+            'client_account_id' => $account->id,
+            'shiphero_customer_account_id' => 'sh-oos-filter-1',
+            'shiphero_product_id' => 'prod-oos-zero',
+            'sku' => 'ZERO-OOS',
+            'sku_search' => 'zero-oos',
+            'name' => 'Zero oversold',
+            'name_search' => 'zero oversold',
+            'product_active' => true,
+            'kit' => false,
+            'kit_build' => false,
+            'warehouse_id' => 'WH1',
+            'warehouse_active' => true,
+            'on_hand' => 2,
+            'allocated' => 5,
+            'backorder' => 0,
+            'synced_at' => now(),
+        ]);
+
+        ShipHeroInventoryProductIndex::query()->create([
+            'client_account_id' => $account->id,
+            'shiphero_customer_account_id' => 'sh-oos-filter-1',
+            'shiphero_product_id' => 'prod-oos-pos',
+            'sku' => 'POS-OOS',
+            'sku_search' => 'pos-oos',
+            'name' => 'Positive oversold',
+            'name_search' => 'positive oversold',
+            'product_active' => true,
+            'kit' => false,
+            'kit_build' => false,
+            'warehouse_id' => 'WH1',
+            'warehouse_active' => true,
+            'on_hand' => 1,
+            'allocated' => 4,
+            'backorder' => 2,
+            'synced_at' => now(),
+        ]);
+
+        $client = Mockery::mock(ShipHeroClient::class);
+        $client->shouldNotReceive('query');
+
+        $service = new ShipHeroInventoryService($client);
+        $payload = $service->listInventoryRows(
+            'sh-oos-filter-1',
+            50,
+            null,
+            'all',
+            'active',
+            null,
+            0,
+            $account->id,
+            true,
+            false
+        );
+
+        $this->assertCount(1, $payload['rows']);
+        $this->assertSame('POS-OOS', $payload['rows'][0]['sku'] ?? null);
+    }
 }

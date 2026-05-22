@@ -176,7 +176,7 @@ async function continueSearchInBackground(runId) {
 }
 
 const sortedRows = computed(() => {
-  const list = [...rows.value];
+  const list = rows.value.filter((r) => Number(r?.backorder ?? 0) > 0);
   const key = sortKey.value;
   const dir = sortDir.value === "asc" ? 1 : -1;
   const num = (v) => Number(v ?? 0);
@@ -506,7 +506,7 @@ onUnmounted(() => {
         <h1 class="h4 mb-1 fw-semibold text-body">Products</h1>
         <p class="text-secondary small mb-1">Out of Stock</p>
         <p class="text-secondary small mb-0 user-inv-load-hint">
-          Showing out-of-stock and oversold rows (no sellable available or backorder) in batches of {{ LIST_PAGE_SIZE }}.
+          Showing products with oversold quantity greater than zero, in batches of {{ LIST_PAGE_SIZE }}.
         </p>
       </div>
       <div class="d-flex align-items-center gap-2 flex-shrink-0 ms-md-auto">

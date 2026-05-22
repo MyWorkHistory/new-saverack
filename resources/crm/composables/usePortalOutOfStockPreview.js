@@ -5,9 +5,9 @@ const PREVIEW_FETCH_SIZE = 100;
 const PREVIEW_TOP_N = 5;
 
 function sortByBackorderDesc(rows) {
-  return [...rows].sort(
-    (a, b) => Number(b?.backorder ?? 0) - Number(a?.backorder ?? 0),
-  );
+  return [...rows]
+    .filter((r) => Number(r?.backorder ?? 0) > 0)
+    .sort((a, b) => Number(b?.backorder ?? 0) - Number(a?.backorder ?? 0));
 }
 
 /**

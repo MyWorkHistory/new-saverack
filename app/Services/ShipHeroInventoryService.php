@@ -317,7 +317,7 @@ GQL;
         }
         $rows = $this->expandInventoryProductEdgesToRows($edges, $kitsFilter, $activeStatus);
         if ($backorderOnly) {
-            $rows = $this->filterOutOfStockInventoryRows($rows);
+            $rows = $this->filterOversoldInventoryRows($rows);
         }
         $this->upsertInventoryIndexRows($clientAccountId, $customerAccountId, $rows);
 
@@ -332,7 +332,7 @@ GQL;
 
     /**
      * Use the local index whenever we are not actively rebuilding it via refresh=1.
-     * OOS rows are filtered from the index (backorder / on_hand vs allocated); live scan is fallback when index is empty.
+     * Oversold rows are filtered from the index (backorder &gt; 0); live scan is fallback when index is empty.
      */
     private function inventoryListUseIndex(bool $refresh, bool $backorderOnly): bool
     {
@@ -478,10 +478,7 @@ GQL;
             $query->where('kit', false)->where('kit_build', false);
         }
         if ($backorderOnly) {
-            $query->where(function ($q) {
-                $q->where('backorder', '>', 0)
-                    ->orWhereColumn('on_hand', '<=', 'allocated');
-            });
+            $query->where('backorder', '>', 0);
         }
 
         $term = $this->normalizeInventoryIndexSearchValue($searchQuery ?? '');
@@ -529,7 +526,7 @@ GQL;
             return $this->inventoryIndexRowToListRow($row);
         })->values()->all();
         if ($backorderOnly) {
-            $rows = $this->filterOutOfStockInventoryRows($rows);
+            $rows = $this->filterOversoldInventoryRows($rows);
         }
         $next = $offset + count($rows);
 
@@ -544,32 +541,23 @@ GQL;
     }
 
     /**
-     * ShipHero "Out of Stock" / not "In Stock": no sellable available, or oversold (backorder).
+     * Portal out-of-stock list: only rows with oversold quantity (ShipHero backorder) &gt; 0.
      *
      * @param  array<string, mixed>  $row
      */
-    private function isOutOfStockInventoryRow(array $row): bool
+    private function isOversoldInventoryRow(array $row): bool
     {
-        if ((float) ($row['backorder'] ?? 0) > 0) {
-            return true;
-        }
-        if (array_key_exists('available', $row)) {
-            return (float) $row['available'] <= 0;
-        }
-        $onHand = (float) ($row['on_hand'] ?? 0);
-        $allocated = (float) ($row['allocated'] ?? 0);
-
-        return $onHand <= 0 || $allocated > $onHand;
+        return (float) ($row['backorder'] ?? 0) > 0;
     }
 
     /**
      * @param  list<array<string, mixed>>  $rows
      * @return list<array<string, mixed>>
      */
-    private function filterOutOfStockInventoryRows(array $rows): array
+    private function filterOversoldInventoryRows(array $rows): array
     {
         return array_values(array_filter($rows, function ($row) {
-            return is_array($row) && $this->isOutOfStockInventoryRow($row);
+            return is_array($row) && $this->isOversoldInventoryRow($row);
         }));
     }
 
@@ -634,7 +622,7 @@ GQL;
         $edges = [['node' => $data]];
         $expanded = $this->expandInventoryProductEdgesToRows($edges, $kitsFilter, $activeStatus);
         if ($backorderOnly) {
-            $expanded = $this->filterOutOfStockInventoryRows($expanded);
+            $expanded = $this->filterOversoldInventoryRows($expanded);
         }
         $this->upsertInventoryIndexRows($clientAccountId, $customerAccountId, $expanded);
 
@@ -727,7 +715,7 @@ GQL;
             $pageRows = $this->expandInventoryProductEdgesToRows($edges, $kitsFilter, $activeStatus);
             $this->upsertInventoryIndexRows($clientAccountId, $customerAccountId, $pageRows);
             if ($backorderOnly) {
-                $pageRows = $this->filterOutOfStockInventoryRows($pageRows);
+                $pageRows = $this->filterOversoldInventoryRows($pageRows);
             }
 
             foreach ($pageRows as $r) {

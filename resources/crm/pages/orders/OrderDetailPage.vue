@@ -172,6 +172,24 @@ const canUseStaffOrderHeaderActions = computed(
   () => Boolean(order.value) && !isReturnPreviewMode.value,
 );
 
+const portalPrimaryBtnClass = "btn btn-primary btn-sm staff-page-primary";
+
+const addItemsBtnClass = computed(() =>
+  isPortalUser.value
+    ? portalPrimaryBtnClass
+    : "btn btn-outline-secondary btn-sm order-detail-page__add-items-btn",
+);
+
+const shippingEditBtnClass = computed(() =>
+  isPortalUser.value ? portalPrimaryBtnClass : "btn btn-outline-secondary btn-sm",
+);
+
+const moreActionsBtnClass = computed(() =>
+  isPortalUser.value
+    ? "btn btn-outline-secondary dropdown-toggle order-detail-page__more-actions-toggle orders-toolbar-outline-btn"
+    : "btn btn-outline-secondary dropdown-toggle order-detail-page__more-actions-toggle",
+);
+
 function orderHasActiveHold(o) {
   if (!o || typeof o !== "object") return false;
   if (o.has_active_hold === true) return true;
@@ -1321,7 +1339,7 @@ function goToOrdersList() {
                   ref="moreActionsBtnRef"
                   id="order-detail-more-actions"
                   type="button"
-                  class="btn btn-outline-secondary dropdown-toggle order-detail-page__more-actions-toggle"
+                  :class="moreActionsBtnClass"
                   aria-haspopup="true"
                   :aria-expanded="moreActionsOpen ? 'true' : 'false'"
                   @click.stop="toggleMoreActionsMenu"
@@ -1378,7 +1396,7 @@ function goToOrdersList() {
               <button
                 v-if="!isReturnPreviewMode"
                 type="button"
-                class="btn btn-outline-secondary btn-sm order-detail-page__add-items-btn"
+                :class="addItemsBtnClass"
                 :disabled="loading || !canRunShipHeroActions"
                 :title="!canRunShipHeroActions ? 'Requires inventory update permission' : undefined"
                 @click="openAddItemsModal"
@@ -1522,7 +1540,7 @@ function goToOrdersList() {
               <button
                 v-if="canUseStaffOrderHeaderActions"
                 type="button"
-                class="btn btn-outline-secondary btn-sm"
+                :class="shippingEditBtnClass"
                 @click="openShippingModal"
               >
                 Edit
@@ -1586,6 +1604,19 @@ function goToOrdersList() {
               <dd>{{ fmtCreationDate(order.order_date) }}</dd>
               <dt class="text-secondary">Store</dt>
               <dd class="text-break">{{ order.account || "—" }}</dd>
+              <template v-if="order.shopify_admin_url">
+                <dt class="text-secondary mt-2">Shopify</dt>
+                <dd>
+                  <a
+                    :href="order.shopify_admin_url"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    class="small text-primary text-decoration-none"
+                  >
+                    View in Shopify
+                  </a>
+                </dd>
+              </template>
             </dl>
           </div>
 

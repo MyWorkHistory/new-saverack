@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Models\ClientAccount;
+use App\Services\ShipifyOrderAdminLinkService;
 use App\Services\ShipHeroOrderService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -23,9 +24,13 @@ class OrderController extends Controller
     /** @var ShipHeroOrderService */
     protected $orders;
 
-    public function __construct(ShipHeroOrderService $orders)
+    /** @var ShopifyOrderAdminLinkService */
+    protected $shopifyOrderLinks;
+
+    public function __construct(ShipHeroOrderService $orders, ShopifyOrderAdminLinkService $shopifyOrderLinks)
     {
         $this->orders = $orders;
+        $this->shopifyOrderLinks = $shopifyOrderLinks;
     }
 
     public function index(Request $request): JsonResponse
@@ -383,8 +388,10 @@ class OrderController extends Controller
                 'items_count' => is_array($order['items'] ?? null) ? count($order['items']) : 0,
                 'history_count' => is_array($order['history'] ?? null) ? count($order['history']) : 0,
             ]);
+            $clientAccountId = (int) $validated['client_account_id'];
+
             return response()->json([
-                'order' => $order,
+                'order' => $this->shopifyOrderLinks->enrichOrder($clientAccountId, $order),
             ]);
         } catch (ValidationException $e) {
             throw $e;
@@ -402,8 +409,11 @@ class OrderController extends Controller
                     'order_id' => $orderId,
                     'shiphero_customer_account_id' => $customerId,
                 ]);
+                $clientAccountId = (int) $validated['client_account_id'];
+                $fallbackOrder = $this->hydrateOrderFallbackFromSummary($orderId, $summary);
+
                 return response()->json([
-                    'order' => $this->hydrateOrderFallbackFromSummary($orderId, $summary),
+                    'order' => $this->shopifyOrderLinks->enrichOrder($clientAccountId, $fallbackOrder),
                     'fallback' => [
                         'source' => 'orders_list_summary',
                     ],
@@ -1328,7 +1338,8 @@ class OrderController extends Controller
             'id' => (string) ($summary['id'] ?? $orderId),
             'legacy_id' => is_numeric($summary['legacy_id'] ?? null) ? (int) $summary['legacy_id'] : null,
             'order_number' => (string) ($summary['order_number'] ?? ''),
-            'partner_order_id' => '',
+            'partner_order_id' => (string) ($summary['partner_order_id'] ?? ''),
+            'source' => '',
             'status' => (string) ($summary['status'] ?? ''),
             'hold_reason' => is_string($summary['hold_reason'] ?? null) ? $summary['hold_reason'] : null,
             'holds' => [

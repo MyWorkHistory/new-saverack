@@ -1534,6 +1534,7 @@ GQL;
             'legacy_id' => is_numeric($node['legacy_id'] ?? null) ? (int) $node['legacy_id'] : null,
             'order_number' => (string) ($node['order_number'] ?? ''),
             'partner_order_id' => (string) ($node['partner_order_id'] ?? ''),
+            'source' => (string) ($node['source'] ?? ''),
             'status' => $this->normalizeFulfillmentStatus($node),
             'raw_fulfillment_status' => trim((string) ($node['fulfillment_status'] ?? '')),
             'hold_reason' => $this->extractHoldReason($node),

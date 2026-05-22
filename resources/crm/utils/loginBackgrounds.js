@@ -7,6 +7,9 @@ export const LOGIN_BG_INTERVAL_MS = 4500;
  * Files in `public/login_images/` (served at /login_images/...).
  * Add or remove filenames to match assets you ship.
  */
+/** Primary illustration for auth split layout (login, register, etc.). */
+export const LOGIN_HERO_IMAGE = "saverack-login.png";
+
 export const LOGIN_IMAGE_FILES = [
   "1.jpg",
   "2.jpg",
@@ -14,6 +17,10 @@ export const LOGIN_IMAGE_FILES = [
   "4.jpg",
   "5.jpg",
 ];
+
+export function loginHeroImageUrl() {
+  return publicAssetUrl(`/login_images/${LOGIN_HERO_IMAGE}?v=1`);
+}
 
 export function loginBackgroundImageUrls() {
   const v = "1";

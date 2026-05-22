@@ -67,9 +67,9 @@ const submit = async () => {
 
 <template>
   <AuthVuexyShell>
-    <h1 class="auth-vuexy-heading">Welcome to Save Rack! 👋</h1>
+    <h1 class="auth-vuexy-heading">Login to Your Account</h1>
     <p class="auth-vuexy-lead">
-      Please sign in to your account and start the adventure.
+      Access your fulfillment dashboard.
     </p>
 
     <div
@@ -185,34 +185,6 @@ const submit = async () => {
         New on our platform?
         <a :href="publicSignupUrl" class="auth-vuexy-link">Create an account</a>
       </p>
-
-      <div class="auth-vuexy-divider"><span>or</span></div>
-
-      <div class="auth-vuexy-social">
-        <button type="button" aria-label="Facebook (coming soon)">
-          <svg width="18" height="18" fill="currentColor" viewBox="0 0 24 24" aria-hidden="true">
-            <path d="M24 12.073c0-6.627-5.373-12-12-12s-12 5.373-12 12c0 5.99 4.388 10.954 10.125 11.854v-8.385H7.078v-3.47h3.047V9.43c0-3.007 1.792-4.669 4.533-4.669 1.312 0 2.686.235 2.686.235v2.953H15.83c-1.491 0-1.956.925-1.956 1.874v2.25h3.328l-.532 3.47h-2.796v8.385C19.612 23.027 24 18.062 24 12.073z" />
-          </svg>
-        </button>
-        <button type="button" aria-label="Twitter (coming soon)">
-          <svg width="18" height="18" fill="currentColor" viewBox="0 0 24 24" aria-hidden="true">
-            <path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z" />
-          </svg>
-        </button>
-        <button type="button" aria-label="GitHub (coming soon)">
-          <svg width="18" height="18" fill="currentColor" viewBox="0 0 24 24" aria-hidden="true">
-            <path fill-rule="evenodd" d="M12 2C6.477 2 2 6.484 2 12.017c0 4.425 2.865 8.18 6.839 9.504.5.092.682-.217.682-.483 0-.237-.008-.868-.013-1.703-2.782.605-3.369-1.343-3.369-1.343-.454-1.158-1.11-1.466-1.11-1.466-.908-.62.069-.608.069-.608 1.003.07 1.531 1.032 1.531 1.032.892 1.53 2.341 1.088 2.91.832.092-.647.35-1.088.636-1.338-2.22-.253-4.555-1.113-4.555-4.951 0-1.093.39-1.988 1.029-2.688-.103-.253-.446-1.272.098-2.65 0 0 .84-.27 2.75 1.026A9.564 9.564 0 0112 6.844c.85.004 1.705.115 2.504.337 1.909-1.296 2.747-1.027 2.747-1.027.546 1.379.202 2.398.1 2.651.64.7 1.028 1.595 1.028 2.688 0 3.848-2.339 4.695-4.566 4.943.359.309.678.92.678 1.855 0 1.338-.012 2.419-.012 2.747 0 .268.18.58.688.482A10.019 10.019 0 0022 12.017C22 6.484 17.522 2 12 2z" clip-rule="evenodd" />
-          </svg>
-        </button>
-        <button type="button" aria-label="Google (coming soon)">
-          <svg width="18" height="18" viewBox="0 0 24 24" aria-hidden="true">
-            <path fill="#EA4335" d="M12 10.2v3.9h5.5c-.2 1.5-1.8 4.4-5.5 4.4-3.3 0-6-2.7-6-6s2.7-6 6-6c1.9 0 3.2.8 3.9 1.5l2.6-2.5C16.6 3.6 14.5 2.7 12 2.7 6.9 2.7 2.7 6.9 2.7 12s4.2 9.3 9.3 9.3c5.4 0 8.9-3.8 8.9-9.3 0-.6-.1-1.1-.2-1.6H12z" />
-            <path fill="#4285F4" d="M3.3 7.1l3.3 2.4C7.4 8 9.5 6.7 12 6.7c1.9 0 3.2.8 3.9 1.5l2.6-2.5C16.6 3.6 14.5 2.7 12 2.7 8 2.7 4.7 4.6 3.3 7.1z" />
-            <path fill="#FBBC05" d="M12 21.3c2.4 0 4.5-.8 6-2.2l-2.8-2.2c-.8.5-1.8.9-3.2.9-2.5 0-4.6-1.7-5.4-4l-3.2 2.5c1.4 2.8 4.3 5 8.4 5z" />
-            <path fill="#34A853" d="M21.6 12.2c0-.6-.1-1.1-.2-1.6H12v3.9h5.5c-.2 1.5-1.8 4.4-5.5 4.4-1.5 0-2.9-.5-3.9-1.5l-3.3 2.4c1.5 2.2 4 3.7 7.2 3.7 5.2 0 9.6-3.8 9.6-8.9 0-.6-.1-1.3-.2-1.9z" />
-          </svg>
-        </button>
-      </div>
     </form>
   </AuthVuexyShell>
 </template>

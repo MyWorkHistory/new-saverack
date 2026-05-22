@@ -19,224 +19,26 @@ $auth-hero-bg: #f8f7fa;
   flex: 1 1 58%;
   max-width: 100%;
   min-height: 100vh;
-  background: $auth-hero-bg;
+  background: #eef0f4;
   overflow: hidden;
   align-items: center;
   justify-content: center;
-  padding: 2rem;
+  padding: clamp(1.5rem, 4vw, 3rem);
 
   @media (min-width: 992px) {
     display: flex;
   }
 }
 
-.auth-vuexy-hero__blobs {
-  position: absolute;
-  inset: 0;
-  pointer-events: none;
-}
-
-.auth-vuexy-hero__blob {
-  position: absolute;
-  border-radius: 50%;
-  opacity: 0.45;
-}
-
-.auth-vuexy-hero__blob--1 {
-  width: min(85vw, 520px);
-  height: min(85vw, 520px);
-  background: radial-gradient(
-    circle,
-    rgba(37, 99, 235, 0.14) 0%,
-    transparent 70%
-  );
-  top: -12%;
-  right: -8%;
-}
-
-.auth-vuexy-hero__blob--2 {
-  width: min(70vw, 420px);
-  height: min(70vw, 420px);
-  background: radial-gradient(
-    circle,
-    rgba(0, 186, 209, 0.12) 0%,
-    transparent 70%
-  );
-  bottom: 8%;
-  left: -10%;
-}
-
-.auth-vuexy-hero__ring {
-  position: absolute;
-  width: min(90vw, 560px);
-  height: min(90vw, 560px);
-  border: 1px solid rgba(47, 43, 61, 0.06);
-  border-radius: 50%;
-  top: 50%;
-  left: 50%;
-  translate: -50% -50%;
-}
-
-.auth-vuexy-hero__content {
-  position: relative;
-  z-index: 1;
+.auth-vuexy-hero__image {
   width: 100%;
-  max-width: 420px;
-  text-align: center;
-}
-
-.auth-vuexy-hero__figure {
-  position: relative;
-  height: 280px;
-  margin-bottom: 1.5rem;
-}
-
-.auth-vuexy-hero__mock-card {
-  position: absolute;
-  background: #fff;
-  border-radius: 0.5rem;
-  box-shadow: 0 2px 10px rgba(47, 43, 61, 0.06);
-  padding: 0.75rem 1rem;
-  text-align: start;
-  animation: auth-vuexy-float 5s ease-in-out infinite;
-}
-
-.auth-vuexy-hero__mock-card--profit {
-  width: 11rem;
-  top: 12%;
-  left: 8%;
-  animation-delay: -1s;
-}
-
-.auth-vuexy-hero__mock-card--orders {
-  width: 11rem;
-  bottom: 18%;
-  right: 6%;
-  animation-delay: -2.5s;
-}
-
-@keyframes auth-vuexy-float {
-  0%,
-  100% {
-    transform: translateY(0);
-  }
-  50% {
-    transform: translateY(-8px);
-  }
-}
-
-.auth-vuexy-mock-chart {
-  display: flex;
-  align-items: flex-end;
-  gap: 3px;
-  height: 40px;
-  margin-top: 0.35rem;
-}
-
-.auth-vuexy-mock-bar {
-  flex: 1;
-  border-radius: 2px 2px 0 0;
-  background: rgba(37, 99, 235, 0.25);
-}
-
-.auth-vuexy-mock-bar--hi {
-  background: $auth-primary;
-  height: 100%;
-}
-
-.auth-vuexy-mock-line {
-  height: 2px;
-  border-radius: 1px;
-  background: linear-gradient(
-    90deg,
-    rgba(0, 186, 209, 0.3),
-    #00bad1
-  );
-  margin-top: 0.5rem;
-}
-
-.auth-vuexy-mock-value {
-  font-size: 1.125rem;
-  font-weight: 700;
-  color: #2f2b3d;
-}
-
-.auth-vuexy-mock-badge {
-  font-size: 0.6875rem;
-  font-weight: 600;
-  color: #28c76f;
-}
-
-.auth-vuexy-character {
-  position: absolute;
-  left: 50%;
-  bottom: 0;
-  translate: -50% 0;
-  width: 140px;
-  height: 200px;
-}
-
-.auth-vuexy-character__body {
-  position: absolute;
-  bottom: 48px;
-  left: 50%;
-  translate: -50% 0;
-  width: 72px;
-  height: 88px;
-  background: linear-gradient(180deg, $auth-primary 0%, #5e50eb 100%);
-  border-radius: 1rem 1rem 0.5rem 0.5rem;
-}
-
-.auth-vuexy-character__head {
-  position: absolute;
-  bottom: 128px;
-  left: 50%;
-  translate: -50% 0;
-  width: 52px;
-  height: 52px;
-  background: #fdbf8f;
-  border-radius: 50%;
-}
-
-.auth-vuexy-character__arm {
-  position: absolute;
-  bottom: 100px;
-  right: 22%;
-  width: 36px;
-  height: 14px;
-  background: #fdbf8f;
-  border-radius: 0.5rem;
-  rotate: -25deg;
-}
-
-.auth-vuexy-character__leg {
-  position: absolute;
-  bottom: 0;
-  width: 26px;
-  height: 52px;
-  background: #3d3d5c;
-  border-radius: 0 0 0.25rem 0.25rem;
-}
-
-.auth-vuexy-character__leg--l {
-  left: calc(50% - 28px);
-}
-
-.auth-vuexy-character__leg--r {
-  right: calc(50% - 28px);
-}
-
-.auth-vuexy-hero__title {
-  font-size: 1.75rem;
-  font-weight: 700;
-  color: #2f2b3d;
-  margin: 0;
-}
-
-.auth-vuexy-hero__sub {
-  font-size: 0.875rem;
-  color: #7c7a8b;
-  margin: 0.5rem 0 0;
+  max-width: min(42rem, 92%);
+  height: auto;
+  max-height: min(85vh, 36rem);
+  object-fit: contain;
+  object-position: center;
+  user-select: none;
+  pointer-events: none;
 }
 
 .auth-vuexy-form-column {

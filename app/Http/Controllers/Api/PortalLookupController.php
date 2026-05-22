@@ -15,10 +15,17 @@ use Throwable;
 
 class PortalLookupController extends Controller
 {
-    public function __construct(
-        private ShipHeroOrderService $orders,
-        private ShipHeroInventoryService $inventory,
-    ) {}
+    /** @var ShipHeroOrderService */
+    private $orders;
+
+    /** @var ShipHeroInventoryService */
+    private $inventory;
+
+    public function __construct(ShipHeroOrderService $orders, ShipHeroInventoryService $inventory)
+    {
+        $this->orders = $orders;
+        $this->inventory = $inventory;
+    }
 
     public function lookup(Request $request): JsonResponse
     {

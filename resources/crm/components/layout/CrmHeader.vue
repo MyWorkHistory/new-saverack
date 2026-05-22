@@ -519,46 +519,48 @@ onUnmounted(() => {
 
         <template v-if="isPortalUser">
           <div
-            class="d-flex align-items-center vx-search-merge flex-grow-1 min-w-0 w-100 w-lg-auto mx-lg-1"
+            class="crm-portal-navbar-search d-flex align-items-center gap-2 flex-grow-1 min-w-0 order-3 order-lg-2 w-100 w-lg-auto mx-lg-1"
           >
-            <div class="input-group w-100">
-              <span class="input-group-text border-end-0">
-                <svg
-                  width="20"
-                  height="20"
-                  class="text-secondary opacity-75 flex-shrink-0"
-                  fill="none"
-                  viewBox="0 0 24 24"
-                  stroke="currentColor"
-                  stroke-width="1.5"
-                  aria-hidden="true"
-                >
-                  <path
-                    stroke-linecap="round"
-                    stroke-linejoin="round"
-                    d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"
-                  />
-                </svg>
-              </span>
-              <input
-                v-model="portalSearch"
-                type="search"
-                class="form-control border-start-0 staff-toolbar-search"
-                placeholder="Search order # or SKU"
-                autocomplete="off"
-                aria-label="Search order number or SKU"
-                :disabled="portalSearchLoading"
-                @keydown="onPortalSearchKeydown"
-              />
-              <button
-                type="button"
-                class="btn btn-outline-secondary orders-toolbar-outline-btn"
-                :disabled="portalSearchLoading || !portalSearch.trim()"
-                @click="submitPortalSearch"
-              >
-                Search
-              </button>
+            <div class="vx-search-merge flex-grow-1 min-w-0">
+              <div class="input-group">
+                <span class="input-group-text border-end-0">
+                  <svg
+                    width="20"
+                    height="20"
+                    class="text-secondary opacity-75 flex-shrink-0"
+                    fill="none"
+                    viewBox="0 0 24 24"
+                    stroke="currentColor"
+                    stroke-width="1.5"
+                    aria-hidden="true"
+                  >
+                    <path
+                      stroke-linecap="round"
+                      stroke-linejoin="round"
+                      d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"
+                    />
+                  </svg>
+                </span>
+                <input
+                  v-model="portalSearch"
+                  type="search"
+                  class="form-control border-start-0"
+                  placeholder="Search order # or SKU"
+                  autocomplete="off"
+                  aria-label="Search order number or SKU"
+                  :disabled="portalSearchLoading"
+                  @keydown="onPortalSearchKeydown"
+                />
+              </div>
             </div>
+            <button
+              type="button"
+              class="btn btn-outline-secondary btn-sm orders-toolbar-outline-btn flex-shrink-0"
+              :disabled="portalSearchLoading || !portalSearch.trim()"
+              @click="submitPortalSearch"
+            >
+              Search
+            </button>
           </div>
 
           <div class="d-flex align-items-center flex-shrink-0 ms-lg-auto">

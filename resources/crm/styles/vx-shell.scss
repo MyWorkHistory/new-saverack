@@ -271,6 +271,25 @@ $vx-sidebar-collapsed: 80px;
   border-radius: 50rem;
 }
 
+/* Portal header: compact pill search + separate Search button (not full navbar width) */
+.crm-portal-navbar-search {
+  flex: 1 1 auto;
+  min-width: 0;
+  max-width: 28rem;
+}
+
+@media (min-width: 992px) {
+  .crm-portal-navbar-search {
+    max-width: 32rem;
+  }
+}
+
+.crm-portal-navbar-search .vx-search-merge {
+  flex: 1 1 auto;
+  min-width: 0;
+  max-width: none;
+}
+
 [data-bs-theme="dark"] .vx-search-merge .input-group-text,
 [data-bs-theme="dark"] .vx-search-merge .form-control {
   border-color: transparent;

@@ -5,8 +5,10 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Models\ClientAccount;
 use App\Models\User;
+use App\Services\ClientBrandLogoService;
 use App\Services\PortalOnboardingService;
 use App\Services\PortalOnboardingStripeService;
+use App\Support\PortalOnboardingSectionRegistry;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Gate;
@@ -22,12 +24,17 @@ class PortalOnboardingController extends Controller
     /** @var PortalOnboardingStripeService */
     protected $stripeOnboarding;
 
+    /** @var ClientBrandLogoService */
+    protected $brandLogos;
+
     public function __construct(
         PortalOnboardingService $onboarding,
-        PortalOnboardingStripeService $stripeOnboarding
+        PortalOnboardingStripeService $stripeOnboarding,
+        ClientBrandLogoService $brandLogos
     ) {
         $this->onboarding = $onboarding;
         $this->stripeOnboarding = $stripeOnboarding;
+        $this->brandLogos = $brandLogos;
     }
 
     public function show(Request $request): JsonResponse
@@ -71,6 +78,53 @@ class PortalOnboardingController extends Controller
 
         return response()->json([
             'checkout_url' => $checkoutUrl,
+            'onboarding' => $this->onboarding->buildOnboardingPayload($user, $account),
+        ]);
+    }
+
+    public function savePreferences(Request $request, string $section): JsonResponse
+    {
+        [$user, $account] = $this->resolvePortalUserAndAccount($request);
+        Gate::forUser($request->user())->authorize('view', $account);
+
+        if (! PortalOnboardingSectionRegistry::isValidSectionId($section)) {
+            throw ValidationException::withMessages([
+                'section' => ['Unknown onboarding section.'],
+            ]);
+        }
+
+        $input = $request->except(['_token']);
+        try {
+            $account = $this->onboarding->savePreferenceSection($account, $section, $input);
+        } catch (\InvalidArgumentException $e) {
+            throw ValidationException::withMessages([
+                'section' => [$e->getMessage()],
+            ]);
+        }
+
+        if (! $this->onboarding->isPreferenceSectionComplete($account, $section)) {
+            throw ValidationException::withMessages([
+                'section' => ['Please complete all required fields for this section.'],
+            ]);
+        }
+
+        return response()->json($this->onboarding->buildOnboardingPayload($user, $account));
+    }
+
+    public function uploadBrandLogo(Request $request): JsonResponse
+    {
+        [$user, $account] = $this->resolvePortalUserAndAccount($request);
+        Gate::forUser($request->user())->authorize('view', $account);
+
+        $request->validate([
+            'logo' => ['required', 'file', 'max:2048', 'mimes:jpg,jpeg,png'],
+        ]);
+
+        $this->brandLogos->replaceForAccount($account, $request->file('logo'));
+        $account = $account->fresh();
+
+        return response()->json([
+            'brand_logo_url' => $this->brandLogos->publicUrl($account->brand_logo_path),
             'onboarding' => $this->onboarding->buildOnboardingPayload($user, $account),
         ]);
     }

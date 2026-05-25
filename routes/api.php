@@ -107,6 +107,8 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::get('/profile', [PortalProfileController::class, 'show'])->middleware('can:inventory.view');
         Route::patch('/profile', [PortalProfileController::class, 'update'])->middleware('can:inventory.view');
         Route::get('/onboarding', [PortalOnboardingController::class, 'show'])->middleware('can:inventory.view');
+        Route::patch('/onboarding/preferences/{section}', [PortalOnboardingController::class, 'savePreferences'])->middleware('can:inventory.view');
+        Route::post('/onboarding/branding/logo', [PortalOnboardingController::class, 'uploadBrandLogo'])->middleware('can:inventory.view');
         Route::post('/onboarding/billing/manual', [PortalOnboardingController::class, 'saveManualBilling'])->middleware('can:inventory.view');
         Route::post('/onboarding/billing/stripe-checkout', [PortalOnboardingController::class, 'startStripeCheckout'])->middleware('can:inventory.view');
     });

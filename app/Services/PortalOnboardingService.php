@@ -5,6 +5,7 @@ namespace App\Services;
 use App\Models\ClientAccount;
 use App\Models\User;
 use App\Support\CrmUrls;
+use App\Support\PortalOnboardingSectionRegistry;
 
 class PortalOnboardingService
 {
@@ -21,6 +22,14 @@ class PortalOnboardingService
     public const BILLING_STATUS_COMPLETED = 'completed';
 
     public const BILLING_STATUS_FAILED = 'failed';
+
+    /** @var ClientBrandLogoService */
+    protected $brandLogos;
+
+    public function __construct(ClientBrandLogoService $brandLogos)
+    {
+        $this->brandLogos = $brandLogos;
+    }
 
     public function isAccountInformationComplete(User $user, ClientAccount $account): bool
     {
@@ -62,6 +71,8 @@ class PortalOnboardingService
         return [
             'client_account_status' => (string) $account->status,
             'profile' => $profile,
+            'preferences' => $this->serializePreferences($account),
+            'brand_logo_url' => $this->brandLogos->publicUrl($account->brand_logo_path),
             'tasks' => $tasks,
             'progress' => [
                 'total' => count($tasks),
@@ -74,6 +85,41 @@ class PortalOnboardingService
     }
 
     /**
+     * @param  array<string, mixed>  $input
+     */
+    public function savePreferenceSection(ClientAccount $account, string $sectionId, array $input): ClientAccount
+    {
+        if (! PortalOnboardingSectionRegistry::isValidSectionId($sectionId)) {
+            throw new \InvalidArgumentException('Invalid onboarding section.');
+        }
+
+        $sanitized = PortalOnboardingSectionRegistry::sanitizeSectionInput($sectionId, $input);
+        $prefs = $this->preferencesArray($account);
+        $prefs[$sectionId] = array_merge($prefs[$sectionId] ?? [], $sanitized);
+        $account->onboarding_preferences = $prefs;
+
+        if ($sectionId === 'branding_information' && isset($sanitized['brand_name'])) {
+            $account->brand_name = $sanitized['brand_name'];
+        }
+
+        $account->save();
+
+        return $account->fresh();
+    }
+
+    public function isPreferenceSectionComplete(ClientAccount $account, string $sectionId): bool
+    {
+        if (! PortalOnboardingSectionRegistry::isValidSectionId($sectionId)) {
+            return false;
+        }
+
+        $prefs = $this->preferencesArray($account);
+        $sectionData = is_array($prefs[$sectionId] ?? null) ? $prefs[$sectionId] : [];
+
+        return PortalOnboardingSectionRegistry::isSectionComplete($sectionId, $sectionData);
+    }
+
+    /**
      * @return list<array<string, mixed>>
      */
     private function buildTasks(User $user, ClientAccount $account): array
@@ -81,7 +127,64 @@ class PortalOnboardingService
         $accountComplete = $this->isAccountInformationComplete($user, $account);
         $billingUiStatus = $this->billingTaskUiStatus($account);
 
-        return [
+        $preferenceTasks = [
+            [
+                'id' => 'branding_information',
+                'title' => 'Branding Information',
+                'description' => 'Complete your branding setup by submitting your brand name, logo files, packaging preferences, and other important details.',
+                'icon' => 'palette',
+            ],
+            [
+                'id' => 'order_handling_preferences',
+                'title' => 'Order Handling Preferences',
+                'description' => 'Set your preferred order handling rules, shipping preferences, and fulfillment instructions for how orders should be processed and shipped.',
+                'icon' => 'tune',
+            ],
+            [
+                'id' => 'out_of_stock_handling',
+                'title' => 'Out-of-Stock Handling',
+                'description' => 'Choose how orders should be handled when one or more items are out of stock, including holding, partially shipping, or canceling unavailable items.',
+                'icon' => 'shelves',
+            ],
+            [
+                'id' => 'address_verification',
+                'title' => 'Address Verification',
+                'description' => 'Choose how orders with invalid, incomplete, or flagged shipping addresses should be handled before shipment.',
+                'icon' => 'location',
+            ],
+            [
+                'id' => 'fraud_review_holds',
+                'title' => 'Fraud Review Holds',
+                'description' => 'Choose how orders flagged as potentially fraudulent or high-risk should be handled before shipment.',
+                'icon' => 'shield',
+            ],
+            [
+                'id' => 'packing_slips_preferences',
+                'title' => 'Packing Slips Preferences',
+                'description' => 'Choose how packing slips should be included with shipments, including branded documents, pricing visibility, and custom order notes.',
+                'icon' => 'description',
+            ],
+            [
+                'id' => 'shipping_carrier_preferences',
+                'title' => 'Shipping Carrier Preferences',
+                'description' => 'Choose your preferred shipping carriers, service levels, and delivery preferences for outbound shipments.',
+                'icon' => 'local_shipping',
+            ],
+            [
+                'id' => 'returns_handling_preferences',
+                'title' => 'Returns Handling Preferences',
+                'description' => 'Choose how returned orders and inventory should be handled once received at the fulfillment center.',
+                'icon' => 'assignment_return',
+            ],
+            [
+                'id' => 'inventory_sync',
+                'title' => 'Inventory Sync',
+                'description' => 'Choose how inventory quantities should sync between your store, sales channels, and warehouse inventory management system.',
+                'icon' => 'sync',
+            ],
+        ];
+
+        $tasks = [
             [
                 'id' => 'account_information',
                 'title' => 'Add Account Information',
@@ -97,6 +200,19 @@ class PortalOnboardingService
                 'icon' => 'billing',
             ],
         ];
+
+        foreach ($preferenceTasks as $meta) {
+            $id = $meta['id'];
+            $tasks[] = [
+                'id' => $id,
+                'title' => $meta['title'],
+                'description' => $meta['description'],
+                'status' => $this->isPreferenceSectionComplete($account, $id) ? 'completed' : 'not_completed',
+                'icon' => $meta['icon'],
+            ];
+        }
+
+        return $tasks;
     }
 
     private function billingTaskUiStatus(ClientAccount $account): string
@@ -169,5 +285,32 @@ class PortalOnboardingService
             'onboarding_billing_method' => $account->onboarding_billing_method,
             'onboarding_billing_status' => $account->onboarding_billing_status,
         ];
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function serializePreferences(ClientAccount $account): array
+    {
+        return $this->preferencesArray($account);
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function preferencesArray(ClientAccount $account): array
+    {
+        $raw = $account->onboarding_preferences;
+        if (is_string($raw) && $raw !== '') {
+            $decoded = json_decode($raw, true);
+            if (is_array($decoded)) {
+                return $decoded;
+            }
+        }
+        if (is_array($raw)) {
+            return $raw;
+        }
+
+        return [];
     }
 }

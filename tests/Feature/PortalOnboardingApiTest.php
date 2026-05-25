@@ -44,7 +44,7 @@ class PortalOnboardingApiTest extends TestCase
         return [$account, $user];
     }
 
-    public function test_onboarding_returns_two_tasks_with_account_incomplete(): void
+    public function test_onboarding_returns_eleven_tasks_with_account_incomplete(): void
     {
         [$account] = $this->pendingPortalUser();
 
@@ -52,13 +52,52 @@ class PortalOnboardingApiTest extends TestCase
 
         $response->assertOk();
         $response->assertJsonPath('client_account_status', ClientAccount::STATUS_PENDING);
-        $response->assertJsonCount(2, 'tasks');
+        $response->assertJsonCount(11, 'tasks');
         $response->assertJsonPath('tasks.0.id', 'account_information');
         $response->assertJsonPath('tasks.0.status', 'not_completed');
+        $response->assertJsonPath('tasks.2.id', 'branding_information');
+        $response->assertJsonPath('tasks.10.id', 'inventory_sync');
         $response->assertJsonPath('profile.client_account_id', $account->id);
         $response->assertJsonPath('profile.account_information_complete', false);
-        $response->assertJsonPath('progress.total', 2);
+        $response->assertJsonPath('progress.total', 11);
         $response->assertJsonPath('progress.completed', 0);
+        $response->assertJsonStructure(['preferences', 'brand_logo_url']);
+    }
+
+    public function test_save_branding_preferences_completes_section_task(): void
+    {
+        [$account] = $this->pendingPortalUser();
+
+        $response = $this->patchJson('/api/portal/onboarding/preferences/branding_information', [
+            'brand_name' => 'Test Brand',
+            'branded_packaging' => 'no',
+            'custom_inserts' => 'no',
+        ]);
+
+        $response->assertOk();
+        $response->assertJsonPath('tasks.2.id', 'branding_information');
+        $response->assertJsonPath('tasks.2.status', 'completed');
+        $response->assertJsonPath('preferences.branding_information.brand_name', 'Test Brand');
+
+        $account->refresh();
+        $this->assertSame('Test Brand', $account->brand_name);
+    }
+
+    public function test_save_preferences_rejects_unknown_section(): void
+    {
+        $this->pendingPortalUser();
+
+        $this->patchJson('/api/portal/onboarding/preferences/not_a_section', [
+            'brand_name' => 'X',
+        ])->assertStatus(422);
+    }
+
+    public function test_brand_logo_upload_requires_image(): void
+    {
+        $this->pendingPortalUser();
+
+        $this->postJson('/api/portal/onboarding/branding/logo', [])
+            ->assertStatus(422);
     }
 
     public function test_profile_patch_completes_account_task_when_all_fields_present(): void

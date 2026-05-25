@@ -65,12 +65,15 @@ class ClientAccount extends Model
         'default_payment_type',
         'onboarding_billing_method',
         'onboarding_billing_status',
+        'onboarding_preferences',
+        'brand_logo_path',
         'cc_fee_percent',
         'billing_available_funds_cents',
     ];
 
     protected $casts = [
         'notify_email' => 'boolean',
+        'onboarding_preferences' => 'array',
         'contract_date' => 'date',
         'cc_fee_percent' => 'decimal:2',
         'billing_available_funds_cents' => 'integer',

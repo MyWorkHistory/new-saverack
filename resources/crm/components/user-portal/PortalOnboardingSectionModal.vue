@@ -1,0 +1,245 @@
+<script setup>
+import { computed, onUnmounted, reactive, ref, watch } from "vue";
+import api from "../../services/api";
+import CrmLoadingSpinner from "../common/CrmLoadingSpinner.vue";
+import { getPortalOnboardingSection } from "../../constants/portalOnboardingSections.js";
+import { useToast } from "../../composables/useToast";
+
+const props = defineProps({
+  open: { type: Boolean, default: false },
+  sectionId: { type: String, default: "" },
+  preferences: { type: Object, default: () => ({}) },
+  brandLogoUrl: { type: String, default: "" },
+});
+
+const emit = defineEmits(["update:open", "saved"]);
+
+const toast = useToast();
+const saving = ref(false);
+const logoUploading = ref(false);
+const errorMsg = ref("");
+const logoPreviewUrl = ref("");
+const logoFile = ref(null);
+
+const form = reactive({});
+
+const section = computed(() => getPortalOnboardingSection(props.sectionId));
+
+const sectionPrefs = computed(() => {
+  const prefs = props.preferences;
+  if (!prefs || typeof prefs !== "object") return {};
+  const block = prefs[props.sectionId];
+  return block && typeof block === "object" ? block : {};
+});
+
+function fieldVisible(field) {
+  const rule = field.showWhen;
+  if (!rule || typeof rule !== "object") return true;
+  return String(form[rule.field] ?? "") === String(rule.value);
+}
+
+function close() {
+  emit("update:open", false);
+}
+
+function onEsc(e) {
+  if (e.key === "Escape") close();
+}
+
+function fillForm() {
+  const fields = section.value?.fields || [];
+  for (const f of fields) {
+    if (f.type === "file") continue;
+    form[f.key] = sectionPrefs.value[f.key] ?? "";
+  }
+  logoPreviewUrl.value = props.brandLogoUrl || "";
+  logoFile.value = null;
+}
+
+watch(
+  () => [props.open, props.sectionId, props.preferences, props.brandLogoUrl],
+  ([open]) => {
+    if (open) {
+      document.addEventListener("keydown", onEsc);
+      fillForm();
+      errorMsg.value = "";
+    } else {
+      document.removeEventListener("keydown", onEsc);
+    }
+  },
+);
+
+onUnmounted(() => document.removeEventListener("keydown", onEsc));
+
+function onLogoChange(ev) {
+  const file = ev?.target?.files?.[0];
+  logoFile.value = file || null;
+  if (file) {
+    logoPreviewUrl.value = URL.createObjectURL(file);
+  }
+}
+
+async function uploadLogoIfNeeded() {
+  if (!logoFile.value || props.sectionId !== "branding_information") {
+    return null;
+  }
+  logoUploading.value = true;
+  try {
+    const fd = new FormData();
+    fd.append("logo", logoFile.value);
+    const { data } = await api.post("/portal/onboarding/branding/logo", fd);
+    return data;
+  } finally {
+    logoUploading.value = false;
+  }
+}
+
+async function save() {
+  if (saving.value || !section.value) return;
+  saving.value = true;
+  errorMsg.value = "";
+  try {
+    if (props.sectionId === "branding_information" && logoFile.value) {
+      await uploadLogoIfNeeded();
+    }
+
+    const payload = {};
+    for (const field of section.value.fields) {
+      if (field.type === "file") continue;
+      if (!fieldVisible(field)) continue;
+      payload[field.key] = form[field.key];
+    }
+
+    const { data } = await api.patch(`/portal/onboarding/preferences/${props.sectionId}`, payload);
+    toast.success("Saved.");
+    emit("saved", data);
+    close();
+  } catch (e) {
+    errorMsg.value = "Could not save. Check required fields.";
+    toast.errorFrom(e, "Could not save preferences.");
+  } finally {
+    saving.value = false;
+  }
+}
+</script>
+
+<template>
+  <Teleport to="body">
+    <div
+      v-if="open && section"
+      class="modal fade show d-block"
+      tabindex="-1"
+      role="dialog"
+      aria-modal="true"
+      @click.self="close"
+    >
+      <div class="modal-dialog modal-dialog-centered modal-lg modal-dialog-scrollable">
+        <div class="modal-content border-0 shadow">
+          <div class="modal-header border-bottom">
+            <h2 class="modal-title h5 mb-0">{{ section.modalTitle }}</h2>
+            <button type="button" class="btn-close" aria-label="Close" @click="close" />
+          </div>
+          <div class="modal-body">
+            <p v-if="errorMsg" class="text-danger small">{{ errorMsg }}</p>
+
+            <div
+              v-for="field in section.fields"
+              v-show="fieldVisible(field)"
+              :key="field.key"
+              class="mb-4"
+            >
+              <label v-if="field.type !== 'file'" class="form-label fw-semibold" :for="`onboard-${field.key}`">
+                {{ field.label }}
+              </label>
+              <label v-else class="form-label fw-semibold" :for="`onboard-${field.key}`">
+                {{ field.label }}
+              </label>
+
+              <input
+                v-if="field.type === 'text'"
+                :id="`onboard-${field.key}`"
+                v-model="form[field.key]"
+                type="text"
+                class="form-control"
+                :required="field.required"
+              />
+
+              <select
+                v-else-if="field.type === 'select'"
+                :id="`onboard-${field.key}`"
+                v-model="form[field.key]"
+                class="form-select"
+                :required="field.required"
+              >
+                <option value="" disabled>Select…</option>
+                <option v-for="opt in field.options" :key="opt.value" :value="opt.value">
+                  {{ opt.label }}
+                </option>
+              </select>
+
+              <textarea
+                v-else-if="field.type === 'textarea'"
+                :id="`onboard-${field.key}`"
+                v-model="form[field.key]"
+                class="form-control"
+                rows="4"
+                :required="field.required"
+              />
+
+              <div v-else-if="field.type === 'file'" class="portal-onboard-file-field">
+                <div v-if="logoPreviewUrl" class="mb-2">
+                  <img
+                    :src="logoPreviewUrl"
+                    alt=""
+                    class="portal-onboard-logo-preview"
+                  />
+                </div>
+                <input
+                  :id="`onboard-${field.key}`"
+                  type="file"
+                  class="form-control"
+                  accept=".jpg,.jpeg,.png,image/jpeg,image/png"
+                  @change="onLogoChange"
+                />
+              </div>
+
+              <p v-if="field.help" class="small text-secondary mb-0 mt-2">
+                {{ field.help }}
+              </p>
+            </div>
+          </div>
+          <div class="modal-footer border-top">
+            <button
+              type="button"
+              class="btn btn-outline-secondary"
+              :disabled="saving || logoUploading"
+              @click="close"
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              class="btn btn-primary staff-page-primary"
+              :disabled="saving || logoUploading"
+              @click="save"
+            >
+              <CrmLoadingSpinner v-if="saving || logoUploading" small class="me-1" />
+              Save
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div v-if="open && section" class="modal-backdrop fade show" />
+  </Teleport>
+</template>
+
+<style scoped>
+.portal-onboard-logo-preview {
+  max-height: 120px;
+  max-width: 100%;
+  object-fit: contain;
+  border-radius: 0.375rem;
+  border: 1px solid var(--bs-border-color);
+}
+</style>

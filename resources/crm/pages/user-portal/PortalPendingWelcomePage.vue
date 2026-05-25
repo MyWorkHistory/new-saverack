@@ -6,8 +6,13 @@ import api from "../../services/api";
 import CrmLoadingSpinner from "../../components/common/CrmLoadingSpinner.vue";
 import PortalOnboardingAccountModal from "../../components/user-portal/PortalOnboardingAccountModal.vue";
 import PortalOnboardingBillingModal from "../../components/user-portal/PortalOnboardingBillingModal.vue";
+import PortalOnboardingSectionModal from "../../components/user-portal/PortalOnboardingSectionModal.vue";
 import { useToast } from "../../composables/useToast";
 import { PORTAL_MATERIAL_ICON } from "../../constants/portalMaterialIcons.js";
+import {
+  PORTAL_ONBOARDING_SECTION_IDS,
+  PORTAL_ONBOARDING_TASK_ICON_KEYS,
+} from "../../constants/portalOnboardingSections.js";
 
 const router = useRouter();
 const route = useRoute();
@@ -19,10 +24,14 @@ const refreshingBilling = ref(false);
 const onboarding = ref(null);
 const accountModalOpen = ref(false);
 const billingModalOpen = ref(false);
+const sectionModalOpen = ref(false);
+const activeSectionId = ref("");
 
 const profile = computed(() => onboarding.value?.profile || null);
 const tasks = computed(() => onboarding.value?.tasks || []);
-const progress = computed(() => onboarding.value?.progress || { total: 2, completed: 0, remaining: 2 });
+const preferences = computed(() => onboarding.value?.preferences || {});
+const brandLogoUrl = computed(() => onboarding.value?.brand_logo_url || "");
+const progress = computed(() => onboarding.value?.progress || { total: 11, completed: 0, remaining: 11 });
 const manualInstructions = computed(
   () => onboarding.value?.manual_payment_instructions || null,
 );
@@ -39,11 +48,9 @@ function statusClass(status) {
   return "portal-onboard-status--pending";
 }
 
-function taskIcon(task) {
-  if (task?.icon === "billing") {
-    return "billing";
-  }
-  return "account";
+function taskIconPath(task) {
+  const key = PORTAL_ONBOARDING_TASK_ICON_KEYS[task?.icon] || task?.icon || "account";
+  return PORTAL_MATERIAL_ICON[key] || PORTAL_MATERIAL_ICON.account;
 }
 
 function openTask(task) {
@@ -54,6 +61,11 @@ function openTask(task) {
   }
   if (task.id === "billing_information") {
     billingModalOpen.value = true;
+    return;
+  }
+  if (PORTAL_ONBOARDING_SECTION_IDS.includes(task.id)) {
+    activeSectionId.value = task.id;
+    sectionModalOpen.value = true;
   }
 }
 
@@ -91,13 +103,17 @@ function onAccountSaved(profileData) {
   loadOnboarding({ quiet: true });
 }
 
+function onSectionSaved(data) {
+  applyOnboardingPayload(data);
+}
+
 function onBillingSaved(data) {
   applyOnboardingPayload(data);
   loadOnboarding({ quiet: true });
 }
 
 function recalcProgress(taskList) {
-  const total = taskList.length || 2;
+  const total = taskList.length || 11;
   const completed = taskList.filter((t) => t.status === "completed").length;
   return { total, completed, remaining: total - completed };
 }
@@ -137,13 +153,19 @@ async function refreshAfterBillingReturn() {
   await poll();
 }
 
-let billingPollTimer = null;
+function onWindowFocus() {
+  if (document.visibilityState === "visible") {
+    loadOnboarding({ quiet: true });
+  }
+}
 
 onMounted(() => {
   setCrmPageMeta({
     title: "Save Rack | Account setup",
     description: "Complete your account onboarding checklist.",
   });
+  document.addEventListener("visibilitychange", onWindowFocus);
+  window.addEventListener("focus", onWindowFocus);
   loadOnboarding().then(() => {
     const billing = String(route.query.billing || "");
     if (billing === "success") {
@@ -156,7 +178,8 @@ onMounted(() => {
 });
 
 onUnmounted(() => {
-  if (billingPollTimer) window.clearTimeout(billingPollTimer);
+  document.removeEventListener("visibilitychange", onWindowFocus);
+  window.removeEventListener("focus", onWindowFocus);
 });
 </script>
 
@@ -167,98 +190,99 @@ onUnmounted(() => {
     </div>
 
     <template v-else>
-      <div class="row g-4">
-        <div class="col-lg-8">
-          <div class="staff-table-card p-4 p-md-4 mb-4 portal-welcome-page__intro">
-            <h1 class="h4 fw-semibold mb-3">Welcome to Save Rack Fulfillment!</h1>
-            <p class="text-secondary mb-2">
-              Your account has been created, but a few setup steps are required before we can start
-              receiving inventory and shipping orders for your store.
-            </p>
-            <p class="text-secondary mb-0">
-              Please complete the onboarding checklist below so our team can prepare your account,
-              connect your store, and make sure your fulfillment process is set up correctly.
-            </p>
-          </div>
-
-          <p
-            v-if="refreshingBilling"
-            class="small text-secondary mb-3"
-          >
-            Refreshing payment status…
+      <div class="portal-welcome-page__stack d-flex flex-column gap-3 gap-md-4">
+        <div class="staff-table-card staff-datatable-card--white p-4 p-md-4 portal-welcome-page__intro">
+          <h1 class="h4 fw-semibold mb-3">Welcome to Save Rack Fulfillment!</h1>
+          <p class="text-secondary mb-2">
+            Your account has been created, but a few setup steps are required before we can start
+            receiving inventory and shipping orders for your store.
           </p>
+          <p class="text-secondary mb-0">
+            Please complete the onboarding checklist below so our team can prepare your account,
+            connect your store, and make sure your fulfillment process is set up correctly.
+          </p>
+        </div>
 
-          <div class="portal-onboard-tasks d-flex flex-column gap-3">
-            <button
-              v-for="task in tasks"
-              :key="task.id"
-              type="button"
-              class="portal-onboard-task staff-table-card text-start border-0 w-100 p-3 p-md-4"
-              @click="openTask(task)"
-            >
-              <div class="d-flex align-items-start gap-3">
-                <div
-                  class="portal-onboard-task__icon flex-shrink-0"
-                  :class="`portal-onboard-task__icon--${taskIcon(task)}`"
-                  aria-hidden="true"
-                />
-                <div class="flex-grow-1 min-w-0">
-                  <div class="d-flex flex-wrap align-items-center justify-content-between gap-2 mb-1">
-                    <h2 class="h6 fw-semibold mb-0">{{ task.title }}</h2>
-                    <span
-                      class="portal-onboard-status badge rounded-pill"
-                      :class="statusClass(task.status)"
-                    >
-                      {{ statusLabel(task.status) }}
-                    </span>
-                  </div>
-                  <p class="small text-secondary mb-0">{{ task.description }}</p>
-                </div>
-              </div>
-            </button>
+        <div class="staff-stat-card portal-welcome-page__progress w-100">
+          <p class="staff-stat-card__label">Your progress</p>
+          <p class="staff-stat-card__value">
+            {{ progress.completed }} of {{ progress.total }}
+          </p>
+          <p class="staff-stat-card__sub">Onboarding tasks complete</p>
+          <div
+            class="staff-stat-card__icon portal-welcome-page__progress-icon"
+            aria-hidden="true"
+          >
+            <svg class="portal-welcome-page__icon-svg" fill="currentColor" viewBox="0 0 24 24">
+              <path :d="PORTAL_MATERIAL_ICON.hourglass" />
+            </svg>
           </div>
         </div>
 
-        <div class="col-lg-4">
-          <div class="staff-stat-card mb-3 portal-welcome-page__progress">
-            <p class="staff-stat-card__label">Your progress</p>
-            <p class="staff-stat-card__value">
-              {{ progress.completed }} of {{ progress.total }}
-            </p>
-            <p class="staff-stat-card__sub">Onboarding tasks complete</p>
+        <p
+          v-if="refreshingBilling"
+          class="small text-secondary mb-0"
+        >
+          Refreshing payment status…
+        </p>
+
+        <div class="portal-onboard-tasks d-flex flex-column gap-3 w-100">
+          <button
+            v-for="task in tasks"
+            :key="task.id"
+            type="button"
+            class="portal-onboard-task staff-table-card staff-datatable-card--white text-start border-0 w-100 p-3 p-md-4"
+            @click="openTask(task)"
+          >
+            <div class="portal-onboard-task__grid">
+              <div class="portal-onboard-task__lead d-flex align-items-start gap-3 min-w-0">
+                <div
+                  class="portal-onboard-task__icon flex-shrink-0"
+                  aria-hidden="true"
+                >
+                  <svg class="portal-onboard-task__icon-svg" fill="currentColor" viewBox="0 0 24 24">
+                    <path :d="taskIconPath(task)" />
+                  </svg>
+                </div>
+                <div class="min-w-0">
+                  <h2 class="h6 fw-semibold mb-1">{{ task.title }}</h2>
+                  <p class="small text-secondary mb-0">{{ task.description }}</p>
+                </div>
+              </div>
+              <div class="portal-onboard-task__status-wrap">
+                <span
+                  class="portal-onboard-status badge rounded-pill"
+                  :class="statusClass(task.status)"
+                >
+                  {{ statusLabel(task.status) }}
+                </span>
+              </div>
+            </div>
+          </button>
+        </div>
+
+        <div class="staff-table-card staff-datatable-card--white p-3 p-md-4 portal-welcome-page__support w-100">
+          <div class="d-flex align-items-start gap-3">
             <div
-              class="staff-stat-card__icon portal-welcome-page__progress-icon"
+              class="portal-welcome-page__panel-icon portal-welcome-page__panel-icon--support flex-shrink-0"
               aria-hidden="true"
             >
               <svg class="portal-welcome-page__icon-svg" fill="currentColor" viewBox="0 0 24 24">
-                <path :d="PORTAL_MATERIAL_ICON.hourglass" />
+                <path :d="PORTAL_MATERIAL_ICON.supportAgent" />
               </svg>
             </div>
-          </div>
-
-          <div class="staff-table-card p-3 p-md-4 portal-welcome-page__support">
-            <div class="d-flex align-items-start gap-3 mb-2">
-              <div
-                class="portal-welcome-page__panel-icon portal-welcome-page__panel-icon--support flex-shrink-0"
-                aria-hidden="true"
+            <div class="min-w-0">
+              <h2 class="h6 fw-semibold mb-2">Support</h2>
+              <p class="small text-secondary mb-2">
+                Questions about onboarding? Contact your Save Rack account manager or email
+                <a href="mailto:support@saverack.com" class="auth-vuexy-link">support@saverack.com</a>.
+              </p>
+              <RouterLink
+                to="/users/support"
+                class="small auth-vuexy-link text-decoration-none"
               >
-                <svg class="portal-welcome-page__icon-svg" fill="currentColor" viewBox="0 0 24 24">
-                  <path :d="PORTAL_MATERIAL_ICON.supportAgent" />
-                </svg>
-              </div>
-              <div class="min-w-0">
-                <h2 class="h6 fw-semibold mb-2">Support</h2>
-                <p class="small text-secondary mb-2">
-                  Questions about onboarding? Contact your Save Rack account manager or email
-                  <a href="mailto:support@saverack.com" class="auth-vuexy-link">support@saverack.com</a>.
-                </p>
-                <RouterLink
-                  to="/users/support"
-                  class="small auth-vuexy-link text-decoration-none"
-                >
-                  Visit Support
-                </RouterLink>
-              </div>
+                Visit Support
+              </RouterLink>
             </div>
           </div>
         </div>
@@ -275,10 +299,21 @@ onUnmounted(() => {
       :manual-instructions="manualInstructions"
       @saved="onBillingSaved"
     />
+    <PortalOnboardingSectionModal
+      v-model:open="sectionModalOpen"
+      :section-id="activeSectionId"
+      :preferences="preferences"
+      :brand-logo-url="brandLogoUrl"
+      @saved="onSectionSaved"
+    />
   </div>
 </template>
 
 <style scoped>
+.portal-welcome-page__stack {
+  width: 100%;
+}
+
 .portal-onboard-task {
   cursor: pointer;
   transition: box-shadow 0.15s ease;
@@ -288,31 +323,59 @@ onUnmounted(() => {
   box-shadow: 0 0.25rem 0.75rem rgba(15, 23, 42, 0.08);
 }
 
+.portal-onboard-task__grid {
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
+  align-items: center;
+  gap: 0.75rem 1rem;
+}
+
+.portal-onboard-task__status-wrap {
+  grid-column: 2;
+  justify-self: center;
+}
+
+.portal-onboard-task__lead {
+  grid-column: 1 / -1;
+}
+
+@media (max-width: 575.98px) {
+  .portal-onboard-task__grid {
+    grid-template-columns: 1fr;
+  }
+
+  .portal-onboard-task__status-wrap {
+    grid-column: 1;
+    justify-self: center;
+    margin-top: 0.25rem;
+  }
+}
+
+@media (min-width: 576px) {
+  .portal-onboard-task__lead {
+    grid-column: 1;
+  }
+
+  .portal-onboard-task__status-wrap {
+    grid-column: 2;
+  }
+}
+
 .portal-onboard-task__icon {
   width: 2.5rem;
   height: 2.5rem;
   border-radius: 0.5rem;
   background: rgba(var(--bs-primary-rgb), 0.12);
-  position: relative;
+  color: var(--bs-primary);
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 
-.portal-onboard-task__icon--account::after,
-.portal-onboard-task__icon--billing::after {
-  content: "";
-  position: absolute;
-  inset: 0.55rem;
-  background: var(--bs-primary);
-  mask-size: contain;
-  mask-repeat: no-repeat;
-  mask-position: center;
-}
-
-.portal-onboard-task__icon--account::after {
-  mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath fill='black' d='M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z'/%3E%3C/svg%3E");
-}
-
-.portal-onboard-task__icon--billing::after {
-  mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath fill='black' d='M20 4H4c-1.11 0-2 .89-2 2v12c0 1.11.89 2 2 2h16c1.11 0 2-.89 2-2V6c0-1.11-.89-2-2-2zm0 14H4V6h16v12z'/%3E%3C/svg%3E");
+.portal-onboard-task__icon-svg {
+  width: 1.35rem;
+  height: 1.35rem;
+  display: block;
 }
 
 .portal-onboard-status--pending {
@@ -338,34 +401,37 @@ onUnmounted(() => {
 }
 
 .portal-welcome-page__progress {
-  padding: 1rem 1.125rem;
-  min-height: 5.25rem;
+  padding: 0.875rem 1rem;
+  min-height: 4.5rem;
+  position: relative;
 }
 
 .portal-welcome-page__progress .staff-stat-card__value {
-  font-size: 1.5rem;
-  margin-top: 0.2rem;
+  font-size: 1.375rem;
+  margin-top: 0.15rem;
 }
 
 .portal-welcome-page__progress .staff-stat-card__label {
-  font-size: 0.9375rem;
+  font-size: 0.875rem;
 }
 
 .portal-welcome-page__progress .staff-stat-card__sub {
-  margin-top: 0.25rem;
+  margin-top: 0.2rem;
+  font-size: 0.8125rem;
 }
 
 .portal-welcome-page__progress-icon {
   top: 50%;
   right: 1rem;
   transform: translateY(-50%);
-  width: 2.5rem;
-  height: 2.5rem;
+  width: 2.25rem;
+  height: 2.25rem;
   background: rgba(255, 159, 67, 0.15);
   color: #ff9f43;
   display: flex;
   align-items: center;
   justify-content: center;
+  border-radius: 0.4375rem;
 }
 
 .portal-welcome-page__panel-icon {

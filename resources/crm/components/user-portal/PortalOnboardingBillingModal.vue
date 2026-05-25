@@ -70,7 +70,8 @@ async function startStripeCheckout(billingMethod) {
       throw new Error("Checkout URL missing.");
     }
     emit("saved", data?.onboarding || null);
-    window.location.href = url;
+    window.open(url, "_blank", "noopener,noreferrer");
+    toast.info("Complete payment setup in the new tab, then return here.");
   } catch (e) {
     errorMsg.value = "Could not start checkout.";
     toast.errorFrom(e, "Could not start checkout.");

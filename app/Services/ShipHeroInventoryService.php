@@ -605,7 +605,7 @@ GQL;
         } catch (\Throwable $e) {
             $data = null;
         }
-        if ($data === null) {
+            if ($data === null) {
             try {
                 $data = $this->fetchProductByBarcode($term, $customerAccountId);
                 $relaxedSubstring = true;

@@ -171,6 +171,17 @@ button.staff-stat-card {
   text-decoration: underline;
 }
 
+.user-return-page .staff-table-wrap .table.staff-data-table > thead > tr > th.staff-actions-col,
+.user-return-page .staff-table-wrap .table.staff-data-table > tbody > tr > td.staff-actions-cell {
+  text-align: center !important;
+}
+
+.user-return-page__action-inner {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+}
+
 [data-bs-theme="dark"] .staff-page--wide {
   background: var(--bs-tertiary-bg);
 }

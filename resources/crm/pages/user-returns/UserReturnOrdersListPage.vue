@@ -1,6 +1,6 @@
 <script setup>
 import { computed, inject, onMounted, ref, watch } from "vue";
-import { RouterLink, useRouter } from "vue-router";
+import { useRouter } from "vue-router";
 import api from "../../services/api";
 import CrmLoadingSpinner from "../../components/common/CrmLoadingSpinner.vue";
 import { setCrmPageMeta } from "../../composables/useCrmPageMeta.js";
@@ -90,8 +90,15 @@ async function load() {
   }
 }
 
-function openRow(r) {
-  router.push({ name: "user-return-detail", params: { id: String(r.id) } });
+function returnDetailHref(r) {
+  if (!r?.id) return "";
+  return router.resolve({ name: "user-return-detail", params: { id: String(r.id) } }).href;
+}
+
+function openReturnInNewTab(r) {
+  const href = returnDetailHref(r);
+  if (!href) return;
+  window.open(href, "_blank", "noopener,noreferrer");
 }
 
 function goCreate() {
@@ -205,27 +212,31 @@ onMounted(() => {
                 </span>
               </td>
               <td class="text-center">
-                <RouterLink
-                  v-if="r.id"
-                  :to="{ name: 'user-return-detail', params: { id: String(r.id) } }"
+                <a
+                  v-if="returnDetailHref(r)"
+                  :href="returnDetailHref(r)"
+                  target="_blank"
+                  rel="noopener noreferrer"
                   class="user-return-page__order-link"
                 >
                   {{ r.order_number || "—" }}
-                </RouterLink>
+                </a>
                 <span v-else>—</span>
               </td>
               <td class="text-center">{{ r.customer_name || "—" }}</td>
               <td class="text-center fw-semibold">{{ formatRmaLabel(r.rma_number) }}</td>
               <td class="text-center">{{ Number(r.items_count ?? 0).toLocaleString() }}</td>
               <td class="text-center">{{ returnTypeLabel(r.return_type) }}</td>
-              <td class="text-center">
-                <button
-                  type="button"
-                  class="btn btn-sm btn-outline-secondary orders-toolbar-outline-btn fw-semibold"
-                  @click="openRow(r)"
-                >
-                  View
-                </button>
+              <td class="text-center staff-actions-cell">
+                <div class="user-return-page__action-inner">
+                  <button
+                    type="button"
+                    class="btn btn-sm btn-outline-secondary orders-toolbar-outline-btn fw-semibold"
+                    @click="openReturnInNewTab(r)"
+                  >
+                    View
+                  </button>
+                </div>
               </td>
             </tr>
           </tbody>

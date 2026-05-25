@@ -1,6 +1,6 @@
 <script setup>
 import { computed, inject, onMounted, ref } from "vue";
-import { RouterLink, useRouter } from "vue-router";
+import { useRouter } from "vue-router";
 import api from "../../services/api";
 import CrmLoadingSpinner from "../../components/common/CrmLoadingSpinner.vue";
 import { setCrmPageMeta } from "../../composables/useCrmPageMeta.js";
@@ -74,14 +74,20 @@ function customerDisplay(row) {
   return row?.customer_name || row?.email || "—";
 }
 
-function openOrder(row) {
+function returnCreateOrderHref(row) {
   const id = row?.id || row?.shiphero_order_id;
-  if (!id) return;
-  router.push({
+  if (!id || !clientAccountId.value) return "";
+  return router.resolve({
     name: "user-return-create-order",
     params: { shipheroOrderId: String(id) },
     query: { client_account_id: String(clientAccountId.value) },
-  });
+  }).href;
+}
+
+function openOrderInNewTab(row) {
+  const href = returnCreateOrderHref(row);
+  if (!href) return;
+  window.open(href, "_blank", "noopener,noreferrer");
 }
 
 onMounted(() => {
@@ -163,29 +169,29 @@ onMounted(() => {
             </tr>
             <tr v-for="row in results" v-else :key="row.id" class="align-middle">
               <td class="text-center">
-                <RouterLink
-                  v-if="row.id"
-                  :to="{
-                    name: 'user-return-create-order',
-                    params: { shipheroOrderId: String(row.id) },
-                    query: { client_account_id: String(clientAccountId) },
-                  }"
+                <a
+                  v-if="returnCreateOrderHref(row)"
+                  :href="returnCreateOrderHref(row)"
+                  target="_blank"
+                  rel="noopener noreferrer"
                   class="user-return-page__order-link"
                 >
                   {{ row.order_number || "—" }}
-                </RouterLink>
+                </a>
                 <span v-else>—</span>
               </td>
               <td class="text-center">{{ customerDisplay(row) }}</td>
               <td class="text-center small text-secondary">{{ row.status || row.fulfillment_status || "—" }}</td>
-              <td class="text-center">
-                <button
-                  type="button"
-                  class="btn btn-sm btn-outline-secondary orders-toolbar-outline-btn fw-semibold"
-                  @click="openOrder(row)"
-                >
-                  View
-                </button>
+              <td class="text-center staff-actions-cell">
+                <div class="user-return-page__action-inner">
+                  <button
+                    type="button"
+                    class="btn btn-sm btn-outline-secondary orders-toolbar-outline-btn fw-semibold"
+                    @click="openOrderInNewTab(row)"
+                  >
+                    View
+                  </button>
+                </div>
               </td>
             </tr>
           </tbody>

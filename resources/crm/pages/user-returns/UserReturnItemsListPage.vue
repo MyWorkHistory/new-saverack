@@ -1,6 +1,6 @@
 <script setup>
 import { computed, inject, onMounted, ref, watch } from "vue";
-import { RouterLink } from "vue-router";
+import { useRouter } from "vue-router";
 import api from "../../services/api";
 import CrmLoadingSpinner from "../../components/common/CrmLoadingSpinner.vue";
 import { setCrmPageMeta } from "../../composables/useCrmPageMeta.js";
@@ -13,6 +13,7 @@ import {
 } from "../../utils/formatReturnDisplay.js";
 
 const toast = useToast();
+const router = useRouter();
 const crmUser = inject("crmUser", ref(null));
 
 const loading = ref(true);
@@ -43,6 +44,11 @@ watch(search, (v) => {
     load();
   }, 300);
 });
+
+function returnDetailHref(r) {
+  if (!r?.return_id) return "";
+  return router.resolve({ name: "user-return-detail", params: { id: String(r.return_id) } }).href;
+}
 
 async function load() {
   if (!clientAccountId.value) {
@@ -143,13 +149,15 @@ onMounted(() => {
                 </span>
               </td>
               <td class="text-center">
-                <RouterLink
-                  v-if="r.return_id"
-                  :to="{ name: 'user-return-detail', params: { id: String(r.return_id) } }"
+                <a
+                  v-if="returnDetailHref(r)"
+                  :href="returnDetailHref(r)"
+                  target="_blank"
+                  rel="noopener noreferrer"
                   class="user-return-page__order-link"
                 >
                   {{ r.order_number || "—" }}
-                </RouterLink>
+                </a>
                 <span v-else>—</span>
               </td>
               <td class="text-center small fw-semibold">{{ r.sku || "—" }}</td>

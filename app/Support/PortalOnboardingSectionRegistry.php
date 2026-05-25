@@ -17,36 +17,46 @@ class PortalOnboardingSectionRegistry
     ];
 
     /**
-     * @return array<string, list<string>>
+     * @return list<string>
      */
     public static function requiredFieldKeys(string $sectionId): array
     {
-        return match ($sectionId) {
-            'branding_information' => ['brand_name', 'branded_packaging', 'custom_inserts'],
-            'order_handling_preferences' => ['order_shipment_timeline', 'multi_warehouse_routing'],
-            'out_of_stock_handling' => ['out_of_stock_handling'],
-            'address_verification' => ['address_verification'],
-            'fraud_review_holds' => ['fraud_review_holds'],
-            'packing_slips_preferences' => [
-                'include_packing_slips',
-                'include_brand_logo',
-                'show_product_pricing',
-                'include_support_phone',
-                'include_note',
-            ],
-            'shipping_carrier_preferences' => [
-                'domestic_carriers',
-                'international_carriers',
-                'international_customs_declaration',
-            ],
-            'returns_handling_preferences' => [
-                'returned_items',
-                'returned_item_disposal',
-                'photos_of_returns',
-            ],
-            'inventory_sync' => ['real_time_inventory_sync'],
-            default => [],
-        };
+        switch ($sectionId) {
+            case 'branding_information':
+                return ['brand_name', 'branded_packaging', 'custom_inserts'];
+            case 'order_handling_preferences':
+                return ['order_shipment_timeline', 'multi_warehouse_routing'];
+            case 'out_of_stock_handling':
+                return ['out_of_stock_handling'];
+            case 'address_verification':
+                return ['address_verification'];
+            case 'fraud_review_holds':
+                return ['fraud_review_holds'];
+            case 'packing_slips_preferences':
+                return [
+                    'include_packing_slips',
+                    'include_brand_logo',
+                    'show_product_pricing',
+                    'include_support_phone',
+                    'include_note',
+                ];
+            case 'shipping_carrier_preferences':
+                return [
+                    'domestic_carriers',
+                    'international_carriers',
+                    'international_customs_declaration',
+                ];
+            case 'returns_handling_preferences':
+                return [
+                    'returned_items',
+                    'returned_item_disposal',
+                    'photos_of_returns',
+                ];
+            case 'inventory_sync':
+                return ['real_time_inventory_sync'];
+            default:
+                return [];
+        }
     }
 
     /**

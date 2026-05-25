@@ -36,6 +36,9 @@ const manualInstructions = computed(
   () => onboarding.value?.manual_payment_instructions || null,
 );
 
+/** Portal dashboard stat tiles: light blue tile, dark blue icon */
+const PROGRESS_ICON_STYLE = { background: "#dbeafe", color: "#1e3a8a" };
+
 function statusLabel(status) {
   if (status === "completed") return "Completed";
   if (status === "processing") return "Processing";
@@ -210,10 +213,11 @@ onUnmounted(() => {
           </p>
           <p class="staff-stat-card__sub">Onboarding tasks complete</p>
           <div
-            class="staff-stat-card__icon portal-welcome-page__progress-icon"
+            class="staff-stat-card__icon user-dashboard-stat-icon portal-welcome-page__progress-icon"
+            :style="PROGRESS_ICON_STYLE"
             aria-hidden="true"
           >
-            <svg class="portal-welcome-page__icon-svg" fill="currentColor" viewBox="0 0 24 24">
+            <svg class="user-dashboard-stat-svg" fill="currentColor" viewBox="0 0 24 24">
               <path :d="PORTAL_MATERIAL_ICON.hourglass" />
             </svg>
           </div>
@@ -422,15 +426,10 @@ onUnmounted(() => {
 
 .portal-welcome-page__progress-icon {
   top: 50%;
-  right: 1rem;
+  right: 1.125rem;
   transform: translateY(-50%);
-  width: 2.25rem;
-  height: 2.25rem;
-  background: rgba(255, 159, 67, 0.15);
-  color: #ff9f43;
-  display: flex;
-  align-items: center;
-  justify-content: center;
+  width: 2.875rem;
+  height: 2.875rem;
   border-radius: 0.4375rem;
 }
 

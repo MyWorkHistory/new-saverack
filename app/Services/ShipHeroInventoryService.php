@@ -3181,7 +3181,12 @@ GQL;
      * @param string|null $customerAccountId
      * @return array<string,mixed>|null
      */
-    public function getProductDetailBySku(string $sku, ?string $warehouseId = null, ?string $customerAccountId = null): ?array
+    public function getProductDetailBySku(
+        string $sku,
+        ?string $warehouseId = null,
+        ?string $customerAccountId = null,
+        bool $includeKits = false
+    ): ?array
     {
         $base = null;
         try {
@@ -3235,7 +3240,10 @@ GQL;
                 );
                 $merged = $this->mergeProductKitFields($base, $full, $merged);
                 $normalized = $this->normalizeProduct($merged, $warehouseId);
-                if ($normalized['parent_kits'] === [] && $customerAccountId !== null && trim($customerAccountId) !== '') {
+                if (! $includeKits) {
+                    $normalized['parent_kits'] = [];
+                    $normalized['kit_components'] = [];
+                } elseif ($normalized['parent_kits'] === [] && $customerAccountId !== null && trim($customerAccountId) !== '') {
                     $normalized['parent_kits'] = $this->findParentKitsForComponentSku(
                         $customerAccountId,
                         (string) ($normalized['sku'] ?? $sku)
@@ -3269,7 +3277,10 @@ GQL;
         }
 
         $normalized = $this->normalizeProduct($base, $warehouseId);
-        if ($normalized['parent_kits'] === [] && $customerAccountId !== null && trim($customerAccountId) !== '') {
+        if (! $includeKits) {
+            $normalized['parent_kits'] = [];
+            $normalized['kit_components'] = [];
+        } elseif ($normalized['parent_kits'] === [] && $customerAccountId !== null && trim($customerAccountId) !== '') {
             $normalized['parent_kits'] = $this->findParentKitsForComponentSku(
                 $customerAccountId,
                 (string) ($normalized['sku'] ?? $sku)
@@ -3284,6 +3295,71 @@ GQL;
             'source' => 'product_by_sku_or_barcode',
         ]);
         return $this->enrichProductLocationsMeta($normalized, $customerAccountId);
+    }
+
+    /**
+     * @return list<array<string, mixed>>
+     */
+    public function getParentKitsForSku(string $sku, ?string $customerAccountId = null): array
+    {
+        if ($customerAccountId === null || trim($customerAccountId) === '') {
+            return [];
+        }
+
+        return $this->findParentKitsForComponentSku(
+            $customerAccountId,
+            trim($sku)
+        );
+    }
+
+    /**
+     * @return list<array<string, mixed>>
+     */
+    public function getKitComponentsForSku(string $sku, ?string $customerAccountId = null): array
+    {
+        $base = null;
+        try {
+            $base = $this->fetchProductBySku(trim($sku), $customerAccountId);
+        } catch (\Throwable $e) {
+            Log::warning('shiphero.inventory.kit_components.by_sku_failed', [
+                'sku' => $sku,
+                'customer_account_id' => $customerAccountId,
+                'message' => $e->getMessage(),
+            ]);
+        }
+        if ($base === null) {
+            try {
+                $base = $this->fetchProductByBarcode(trim($sku), $customerAccountId);
+            } catch (\Throwable $e) {
+                Log::warning('shiphero.inventory.kit_components.by_barcode_failed', [
+                    'sku_or_barcode' => $sku,
+                    'customer_account_id' => $customerAccountId,
+                    'message' => $e->getMessage(),
+                ]);
+            }
+        }
+        if ($base === null) {
+            return [];
+        }
+        $merged = $base;
+        $id = isset($base['id']) && is_string($base['id']) ? trim($base['id']) : '';
+        if ($id !== '') {
+            try {
+                $full = $this->fetchProductById($id, $customerAccountId);
+                if (is_array($full)) {
+                    $merged = $this->mergeProductKitFields($base, $full, array_merge($base, $full));
+                }
+            } catch (\Throwable $e) {
+                Log::warning('shiphero.inventory.kit_components.by_id_failed', [
+                    'sku' => $sku,
+                    'product_id' => $id,
+                    'customer_account_id' => $customerAccountId,
+                    'message' => $e->getMessage(),
+                ]);
+            }
+        }
+
+        return $this->resolveKitComponentsFromProductData($merged);
     }
 
     /**

@@ -263,7 +263,7 @@ class InventoryController extends Controller
             if ($clientAccountId > 0) {
                 $shipheroCustomerId = $this->resolveShipHeroCustomerAccountId($clientAccountId, $request);
             }
-            $product = $this->inventory->getProductDetailBySku($sku, $warehouseId, $shipheroCustomerId);
+            $product = $this->inventory->getProductDetailBySku($sku, $warehouseId, $shipheroCustomerId, false);
             if (! is_array($product)) {
                 return response()->json(['message' => 'Product not found.'], 404);
             }
@@ -294,6 +294,16 @@ class InventoryController extends Controller
     public function productBackorderOrders(Request $request, string $sku): JsonResponse
     {
         return $this->productOrdersForSku($request, $sku, 'backorder');
+    }
+
+    public function productParentKits(Request $request, string $sku): JsonResponse
+    {
+        return $this->productKitSectionForSku($request, $sku, 'parent_kits');
+    }
+
+    public function productKitComponents(Request $request, string $sku): JsonResponse
+    {
+        return $this->productKitSectionForSku($request, $sku, 'kit_components');
     }
 
     /**
@@ -348,6 +358,68 @@ class InventoryController extends Controller
                 'message' => config('app.debug')
                     ? $e->getMessage()
                     : 'Could not generate barcode label.',
+            ], 502);
+        }
+    }
+
+    /**
+     * @return JsonResponse
+     */
+    private function productKitSectionForSku(Request $request, string $sku, string $section): JsonResponse
+    {
+        $validated = $request->validate([
+            'client_account_id' => ['nullable', 'integer', 'exists:client_accounts,id'],
+            'refresh' => ['nullable', 'boolean'],
+        ]);
+        $clientAccountId = isset($validated['client_account_id'])
+            ? (int) $validated['client_account_id']
+            : 0;
+        $refresh = (bool) ($validated['refresh'] ?? false);
+
+        try {
+            if ($clientAccountId > 0 && ! $refresh) {
+                $cached = $section === 'parent_kits'
+                    ? $this->detailCache->getCachedParentKits($clientAccountId, $sku)
+                    : $this->detailCache->getCachedKitComponents($clientAccountId, $sku);
+                if ($cached !== null) {
+                    return response()->json([
+                        'rows' => $cached,
+                        'cached' => true,
+                    ]);
+                }
+            }
+
+            $shipheroCustomerId = $clientAccountId > 0
+                ? $this->resolveShipHeroCustomerAccountId($clientAccountId, $request)
+                : null;
+            $rows = $section === 'parent_kits'
+                ? $this->inventory->getParentKitsForSku($sku, $shipheroCustomerId)
+                : $this->inventory->getKitComponentsForSku($sku, $shipheroCustomerId);
+
+            if ($clientAccountId > 0) {
+                if ($section === 'parent_kits') {
+                    $this->detailCache->putParentKits($clientAccountId, $sku, $rows);
+                } else {
+                    $this->detailCache->putKitComponents($clientAccountId, $sku, $rows);
+                }
+            }
+
+            return response()->json([
+                'rows' => $rows,
+                'cached' => false,
+            ]);
+        } catch (ValidationException $e) {
+            throw $e;
+        } catch (RuntimeException $e) {
+            return response()->json(['message' => $e->getMessage()], 502);
+        } catch (Throwable $e) {
+            report($e);
+            $label = $section === 'parent_kits' ? 'parent kits' : 'kit components';
+
+            return response()->json([
+                'message' => config('app.debug')
+                    ? $e->getMessage()
+                    : 'Could not load '.$label.' from ShipHero.',
             ], 502);
         }
     }

@@ -1,5 +1,5 @@
 <script setup>
-import { computed, inject, onMounted, reactive, ref } from "vue";
+import { computed, inject, onMounted, reactive, ref, watch } from "vue";
 import { RouterLink, useRoute } from "vue-router";
 import api from "../../services/api";
 import CrmIconRowActions from "../../components/common/CrmIconRowActions.vue";
@@ -64,6 +64,17 @@ const summaryMetrics = computed(() => product.value?.metrics || {
   asn: 0,
 });
 
+const parentKitsList = ref([]);
+const kitComponentsList = ref([]);
+const parentKitsLoading = ref(false);
+const kitComponentsLoading = ref(false);
+const parentKitsLoaded = ref(false);
+const kitComponentsLoaded = ref(false);
+const parentKitsError = ref("");
+const kitComponentsError = ref("");
+const parentKitsLoadedAt = ref(null);
+const kitComponentsLoadedAt = ref(null);
+
 const allocatedOrders = ref([]);
 const backorderOrders = ref([]);
 const allocatedLoading = ref(false);
@@ -85,15 +96,10 @@ const isKitProduct = computed(() => {
   return Boolean(p.kit || p.kit_build);
 });
 
-const kitComponents = computed(() => {
-  const list = product.value?.kit_components;
-  return Array.isArray(list) ? list : [];
-});
-
-const parentKits = computed(() => {
-  const list = product.value?.parent_kits;
-  return Array.isArray(list) ? list : [];
-});
+function sectionActionLabel({ loading, loaded }) {
+  if (loading) return loaded ? "Refreshing…" : "Loading…";
+  return loaded ? "Refresh" : "Load";
+}
 
 function inventoryDetailTo(sku) {
   const value = String(sku || "").trim();
@@ -181,6 +187,15 @@ onMounted(() => {
   document.addEventListener("click", onDocClick);
 });
 
+watch(
+  () => String(route.params.sku || "").trim(),
+  (next, prev) => {
+    if (next && next !== prev) {
+      loadDetail();
+    }
+  },
+);
+
 function onDocClick(e) {
   if (!e.target?.closest?.("[data-row-actions]")) {
     actionMenuLocationId.value = null;
@@ -231,9 +246,100 @@ async function openBarcodeLabelPdf() {
   }
 }
 
-async function loadPortalOrderSections({ refresh = false } = {}) {
-  if (!isPortalView.value || !product.value?.sku) return;
-  await loadAllocatedOrders({ refresh });
+function resetDeferredSections() {
+  parentKitsList.value = [];
+  kitComponentsList.value = [];
+  parentKitsLoading.value = false;
+  kitComponentsLoading.value = false;
+  parentKitsLoaded.value = false;
+  kitComponentsLoaded.value = false;
+  parentKitsError.value = "";
+  kitComponentsError.value = "";
+  parentKitsLoadedAt.value = null;
+  kitComponentsLoadedAt.value = null;
+
+  allocatedOrders.value = [];
+  backorderOrders.value = [];
+  allocatedLoading.value = false;
+  backorderLoading.value = false;
+  allocatedLoaded.value = false;
+  backorderLoaded.value = false;
+  allocatedLoadedAt.value = null;
+  backorderLoadedAt.value = null;
+  allocatedTruncatedMessage.value = "";
+  backorderTruncatedMessage.value = "";
+  allocatedError.value = "";
+  backorderError.value = "";
+}
+
+function finishKitSectionLoad(section, { ok, data, errText = "" }) {
+  if (section === "parent_kits") {
+    parentKitsLoading.value = false;
+    parentKitsLoaded.value = true;
+    if (ok) {
+      parentKitsList.value = Array.isArray(data?.rows) ? data.rows : [];
+      parentKitsError.value = "";
+      parentKitsLoadedAt.value = new Date();
+    } else {
+      parentKitsList.value = [];
+      parentKitsError.value = errText;
+      parentKitsLoadedAt.value = null;
+    }
+    return;
+  }
+  kitComponentsLoading.value = false;
+  kitComponentsLoaded.value = true;
+  if (ok) {
+    kitComponentsList.value = Array.isArray(data?.rows) ? data.rows : [];
+    kitComponentsError.value = "";
+    kitComponentsLoadedAt.value = new Date();
+  } else {
+    kitComponentsList.value = [];
+    kitComponentsError.value = errText;
+    kitComponentsLoadedAt.value = null;
+  }
+}
+
+async function loadParentKits({ refresh = false } = {}) {
+  if (!product.value?.sku) return;
+  parentKitsLoading.value = true;
+  if (!refresh) {
+    parentKitsLoaded.value = false;
+  }
+  parentKitsError.value = "";
+  try {
+    const sku = String(route.params.sku || product.value.sku).trim();
+    const { data } = await api.get(
+      `/inventory/products/${encodeURIComponent(sku)}/parent-kits`,
+      { params: requestParams({ refresh }), timeout: ORDER_SECTION_TIMEOUT_MS },
+    );
+    finishKitSectionLoad("parent_kits", { ok: true, data });
+  } catch (e) {
+    const msg = apiErrorMessage(e, "Could not load kits.");
+    finishKitSectionLoad("parent_kits", { ok: false, errText: msg });
+    toast.errorFrom(e, "Could not load kits.");
+  }
+}
+
+async function loadKitComponents({ refresh = false } = {}) {
+  if (!product.value?.sku) return;
+  kitComponentsLoading.value = true;
+  if (!refresh) {
+    kitComponentsLoaded.value = false;
+  }
+  kitComponentsError.value = "";
+  try {
+    const sku = String(route.params.sku || product.value.sku).trim();
+    const { data } = await api.get(
+      `/inventory/products/${encodeURIComponent(sku)}/kit-components`,
+      { params: requestParams({ refresh }), timeout: ORDER_SECTION_TIMEOUT_MS },
+    );
+    finishKitSectionLoad("kit_components", { ok: true, data });
+  } catch (e) {
+    const msg = apiErrorMessage(e, "Could not load kit components.");
+    finishKitSectionLoad("kit_components", { ok: false, errText: msg });
+    toast.errorFrom(e, "Could not load kit components.");
+  }
 }
 
 function finishOrderSectionLoad(section, { ok, data, errText = "" }) {
@@ -323,46 +429,37 @@ async function loadBackorderOrders({ refresh = false } = {}) {
   }
 }
 
-async function loadDetail({ refresh = false } = {}) {
-  loading.value = true;
+async function loadProduct({ refresh = false } = {}) {
   productLoadError.value = "";
-  allocatedOrders.value = [];
-  backorderOrders.value = [];
-  allocatedLoading.value = false;
-  backorderLoading.value = false;
-  allocatedLoaded.value = false;
-  backorderLoaded.value = false;
-  allocatedLoadedAt.value = null;
-  backorderLoadedAt.value = null;
-  allocatedTruncatedMessage.value = "";
-  backorderTruncatedMessage.value = "";
-  allocatedError.value = "";
-  backorderError.value = "";
-  let loadedOk = false;
   try {
     const sku = String(route.params.sku || "").trim();
     const { data } = await api.get(`/inventory/products/${encodeURIComponent(sku)}`, {
       params: requestParams({ refresh }),
     });
     product.value = data?.product ?? null;
-    loadedOk = true;
+    return true;
   } catch (e) {
     productLoadError.value = apiErrorMessage(e, "Could not load inventory detail.");
     toast.errorFrom(e, "Could not load inventory detail.");
-  } finally {
-    loading.value = false;
-    refreshing.value = false;
-    if (loadedOk && isPortalView.value) {
-      if (refresh) markRefreshed();
-      void loadPortalOrderSections({ refresh });
-    }
+    return false;
   }
+}
+
+async function loadDetail() {
+  loading.value = true;
+  resetDeferredSections();
+  await loadProduct({ refresh: false });
+  loading.value = false;
 }
 
 async function refreshDetail() {
   if (loading.value || refreshing.value) return;
   refreshing.value = true;
-  await loadDetail({ refresh: true });
+  const ok = await loadProduct({ refresh: true });
+  refreshing.value = false;
+  if (ok && isPortalView.value) {
+    markRefreshed();
+  }
 }
 
 function placeActionMenu(anchorEl) {
@@ -447,7 +544,7 @@ async function submitUpdateQty() {
     await api.post("/inventory/replace", body);
     toast.success("Quantity updated.");
     updateModalOpen.value = false;
-    await loadDetail();
+    await loadProduct({ refresh: true });
   } catch (e) {
     toast.errorFrom(e, "Could not update quantity.");
   } finally {
@@ -486,7 +583,7 @@ async function submitAddLocationQty() {
     await api.post("/inventory/locations/add-qty", body);
     toast.success("Location quantity updated.");
     addLocationModalOpen.value = false;
-    await loadDetail();
+    await loadProduct({ refresh: true });
   } catch (e) {
     toast.errorFrom(e, "Location not found or quantity update failed.");
   } finally {
@@ -521,7 +618,7 @@ async function submitTransferQty() {
     await api.post("/inventory/transfer", body);
     toast.success("Quantity transferred.");
     transferModalOpen.value = false;
-    await loadDetail();
+    await loadProduct({ refresh: true });
   } catch (e) {
     toast.errorFrom(e, "Could not transfer quantity.");
   } finally {
@@ -553,7 +650,7 @@ async function togglePickable(loc) {
       });
     });
     toast.success("Pickable updated.");
-    await loadDetail();
+    await loadProduct({ refresh: true });
   } catch (e) {
     toast.errorFrom(e, "Could not update pickable.");
   } finally {
@@ -732,13 +829,32 @@ async function togglePickable(loc) {
           <div class="col-12 col-xl-8">
             <div class="staff-table-card inventory-portal-detail__section p-0">
               <div class="inventory-portal-detail__section-head">
-                <h2 class="inventory-portal-detail__section-title">Kits</h2>
-                <p class="small text-body-secondary mb-0">
-                  Kit products that include this SKU as a component
-                </p>
+                <div>
+                  <h2 class="inventory-portal-detail__section-title">Kits</h2>
+                  <p class="small text-body-secondary mb-0">
+                    Kit products that include this SKU as a component
+                  </p>
+                  <p v-if="parentKitsLoaded" class="small text-secondary mb-0">
+                    <span v-if="parentKitsLoadedAt">Loaded: {{ formatDateTimeUs(parentKitsLoadedAt) }} · </span>
+                    {{ parentKitsList.length }} kit{{ parentKitsList.length === 1 ? "" : "s" }}
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  class="btn btn-outline-secondary btn-sm orders-toolbar-outline-btn d-inline-flex align-items-center gap-2"
+                  :disabled="parentKitsLoading"
+                  :title="parentKitsLoaded ? 'Refresh kits' : 'Load kits'"
+                  :aria-label="parentKitsLoaded ? 'Refresh kits' : 'Load kits'"
+                  @click="loadParentKits({ refresh: parentKitsLoaded })"
+                >
+                  <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                  </svg>
+                  {{ sectionActionLabel({ loading: parentKitsLoading, loaded: parentKitsLoaded }) }}
+                </button>
               </div>
               <div
-                v-if="parentKits.length"
+                v-if="parentKitsLoaded && parentKitsList.length"
                 class="table-responsive inventory-portal-detail__table-wrap"
               >
                 <table class="table table-hover align-middle mb-0 staff-data-table">
@@ -750,7 +866,7 @@ async function togglePickable(loc) {
                     </tr>
                   </thead>
                   <tbody>
-                    <tr v-for="kit in parentKits" :key="kit.sku">
+                    <tr v-for="kit in parentKitsList" :key="kit.sku">
                       <td>
                         <RouterLink :to="inventoryDetailTo(kit.sku)">
                           {{ kit.sku }}
@@ -762,20 +878,48 @@ async function togglePickable(loc) {
                   </tbody>
                 </table>
               </div>
-              <p v-else class="inventory-portal-detail__empty">
+              <p v-else-if="parentKitsLoading" class="inventory-portal-detail__empty">
+                Loading kits…
+              </p>
+              <p v-else-if="parentKitsError" class="inventory-portal-detail__empty text-danger">
+                {{ parentKitsError }}
+              </p>
+              <p v-else-if="parentKitsLoaded && !parentKitsList.length" class="inventory-portal-detail__empty">
                 No kits found that use this SKU as a component.
+              </p>
+              <p v-else class="inventory-portal-detail__empty">
+                Kits are not loaded yet. Select Load to fetch them from ShipHero.
               </p>
             </div>
 
             <div class="staff-table-card inventory-portal-detail__section p-0">
               <div class="inventory-portal-detail__section-head">
-                <h2 class="inventory-portal-detail__section-title">Kit Components</h2>
-                <p class="small text-body-secondary mb-0">
-                  Products that make up this kit
-                </p>
+                <div>
+                  <h2 class="inventory-portal-detail__section-title">Kit Components</h2>
+                  <p class="small text-body-secondary mb-0">
+                    Products that make up this kit
+                  </p>
+                  <p v-if="kitComponentsLoaded" class="small text-secondary mb-0">
+                    <span v-if="kitComponentsLoadedAt">Loaded: {{ formatDateTimeUs(kitComponentsLoadedAt) }} · </span>
+                    {{ kitComponentsList.length }} component{{ kitComponentsList.length === 1 ? "" : "s" }}
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  class="btn btn-outline-secondary btn-sm orders-toolbar-outline-btn d-inline-flex align-items-center gap-2"
+                  :disabled="kitComponentsLoading"
+                  :title="kitComponentsLoaded ? 'Refresh kit components' : 'Load kit components'"
+                  :aria-label="kitComponentsLoaded ? 'Refresh kit components' : 'Load kit components'"
+                  @click="loadKitComponents({ refresh: kitComponentsLoaded })"
+                >
+                  <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                  </svg>
+                  {{ sectionActionLabel({ loading: kitComponentsLoading, loaded: kitComponentsLoaded }) }}
+                </button>
               </div>
               <div
-                v-if="kitComponents.length"
+                v-if="kitComponentsLoaded && kitComponentsList.length"
                 class="table-responsive inventory-portal-detail__table-wrap"
               >
                 <table class="table table-hover align-middle mb-0 staff-data-table">
@@ -786,7 +930,7 @@ async function togglePickable(loc) {
                     </tr>
                   </thead>
                   <tbody>
-                    <tr v-for="component in kitComponents" :key="component.sku">
+                    <tr v-for="component in kitComponentsList" :key="component.sku">
                       <td>
                         <RouterLink :to="inventoryDetailTo(component.sku)">
                           {{ component.sku }}
@@ -797,8 +941,17 @@ async function togglePickable(loc) {
                   </tbody>
                 </table>
               </div>
-              <p v-else class="inventory-portal-detail__empty">
+              <p v-else-if="kitComponentsLoading" class="inventory-portal-detail__empty">
+                Loading kit components…
+              </p>
+              <p v-else-if="kitComponentsError" class="inventory-portal-detail__empty text-danger">
+                {{ kitComponentsError }}
+              </p>
+              <p v-else-if="kitComponentsLoaded && !kitComponentsList.length" class="inventory-portal-detail__empty">
                 No kit components configured for this SKU.
+              </p>
+              <p v-else class="inventory-portal-detail__empty">
+                Kit components are not loaded yet. Select Load to fetch them from ShipHero.
               </p>
             </div>
 
@@ -818,9 +971,9 @@ async function togglePickable(loc) {
                   type="button"
                   class="btn btn-outline-secondary btn-sm orders-toolbar-outline-btn d-inline-flex align-items-center gap-2"
                   :disabled="allocatedLoading"
-                  title="Refresh allocated orders"
-                  aria-label="Refresh allocated orders"
-                  @click="loadAllocatedOrders({ refresh: true })"
+                  :title="allocatedLoaded ? 'Refresh allocated orders' : 'Load allocated orders'"
+                  :aria-label="allocatedLoaded ? 'Refresh allocated orders' : 'Load allocated orders'"
+                  @click="loadAllocatedOrders({ refresh: allocatedLoaded })"
                 >
                   <svg
                     width="16"
@@ -837,7 +990,7 @@ async function togglePickable(loc) {
                       d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"
                     />
                   </svg>
-                  {{ allocatedLoading ? "Refreshing…" : "Refresh" }}
+                  {{ sectionActionLabel({ loading: allocatedLoading, loaded: allocatedLoaded }) }}
                 </button>
               </div>
               <p v-if="allocatedTruncatedMessage" class="inventory-portal-detail__truncated">
@@ -881,7 +1034,13 @@ async function togglePickable(loc) {
                 v-else-if="allocatedLoaded && !allocatedOrders.length"
                 class="inventory-portal-detail__empty"
               >
-                No open ready-to-ship orders with allocated quantity for this SKU. Use Refresh to reload.
+                No open ready-to-ship orders with allocated quantity for this SKU.
+              </p>
+              <p
+                v-else-if="!allocatedLoaded"
+                class="inventory-portal-detail__empty"
+              >
+                Allocated orders are not loaded yet. Select Load to fetch them from ShipHero.
               </p>
             </div>
 
@@ -1132,13 +1291,23 @@ async function togglePickable(loc) {
             </div>
 
             <div class="staff-table-card p-0">
-              <div class="px-3 py-2 border-bottom">
-                <h3 class="h6 mb-0">Kits</h3>
-                <p class="small text-body-secondary mb-0">
-                  Kit products that include this SKU as a component
-                </p>
+              <div class="px-3 py-2 border-bottom d-flex flex-wrap align-items-start justify-content-between gap-2">
+                <div>
+                  <h3 class="h6 mb-0">Kits</h3>
+                  <p class="small text-body-secondary mb-0">
+                    Kit products that include this SKU as a component
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  class="btn btn-outline-secondary btn-sm d-inline-flex align-items-center gap-2"
+                  :disabled="parentKitsLoading"
+                  @click="loadParentKits({ refresh: parentKitsLoaded })"
+                >
+                  {{ sectionActionLabel({ loading: parentKitsLoading, loaded: parentKitsLoaded }) }}
+                </button>
               </div>
-              <div v-if="parentKits.length" class="table-responsive">
+              <div v-if="parentKitsLoaded && parentKitsList.length" class="table-responsive">
                 <table class="table table-hover align-middle mb-0">
                   <thead class="table-light">
                     <tr>
@@ -1148,7 +1317,7 @@ async function togglePickable(loc) {
                     </tr>
                   </thead>
                   <tbody>
-                    <tr v-for="kit in parentKits" :key="kit.sku">
+                    <tr v-for="kit in parentKitsList" :key="kit.sku">
                       <td>
                         <RouterLink :to="inventoryDetailTo(kit.sku)">{{ kit.sku }}</RouterLink>
                       </td>
@@ -1158,19 +1327,34 @@ async function togglePickable(loc) {
                   </tbody>
                 </table>
               </div>
-              <p v-else class="text-secondary small px-3 py-3 mb-0">
+              <p v-else-if="parentKitsLoading" class="text-secondary small px-3 py-3 mb-0">Loading kits…</p>
+              <p v-else-if="parentKitsError" class="text-danger small px-3 py-3 mb-0">{{ parentKitsError }}</p>
+              <p v-else-if="parentKitsLoaded" class="text-secondary small px-3 py-3 mb-0">
                 No kits found that use this SKU as a component.
+              </p>
+              <p v-else class="text-secondary small px-3 py-3 mb-0">
+                Select Load to fetch kits from ShipHero.
               </p>
             </div>
 
             <div class="staff-table-card p-0">
-              <div class="px-3 py-2 border-bottom">
-                <h3 class="h6 mb-0">Kit Components</h3>
-                <p class="small text-body-secondary mb-0">
-                  Products that make up this kit
-                </p>
+              <div class="px-3 py-2 border-bottom d-flex flex-wrap align-items-start justify-content-between gap-2">
+                <div>
+                  <h3 class="h6 mb-0">Kit Components</h3>
+                  <p class="small text-body-secondary mb-0">
+                    Products that make up this kit
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  class="btn btn-outline-secondary btn-sm d-inline-flex align-items-center gap-2"
+                  :disabled="kitComponentsLoading"
+                  @click="loadKitComponents({ refresh: kitComponentsLoaded })"
+                >
+                  {{ sectionActionLabel({ loading: kitComponentsLoading, loaded: kitComponentsLoaded }) }}
+                </button>
               </div>
-              <div v-if="kitComponents.length" class="table-responsive">
+              <div v-if="kitComponentsLoaded && kitComponentsList.length" class="table-responsive">
                 <table class="table table-hover align-middle mb-0">
                   <thead class="table-light">
                     <tr>
@@ -1179,7 +1363,7 @@ async function togglePickable(loc) {
                     </tr>
                   </thead>
                   <tbody>
-                    <tr v-for="component in kitComponents" :key="component.sku">
+                    <tr v-for="component in kitComponentsList" :key="component.sku">
                       <td>
                         <RouterLink :to="inventoryDetailTo(component.sku)">{{ component.sku }}</RouterLink>
                       </td>
@@ -1188,8 +1372,13 @@ async function togglePickable(loc) {
                   </tbody>
                 </table>
               </div>
-              <p v-else class="text-secondary small px-3 py-3 mb-0">
+              <p v-else-if="kitComponentsLoading" class="text-secondary small px-3 py-3 mb-0">Loading kit components…</p>
+              <p v-else-if="kitComponentsError" class="text-danger small px-3 py-3 mb-0">{{ kitComponentsError }}</p>
+              <p v-else-if="kitComponentsLoaded" class="text-secondary small px-3 py-3 mb-0">
                 No kit components configured for this SKU.
+              </p>
+              <p v-else class="text-secondary small px-3 py-3 mb-0">
+                Select Load to fetch kit components from ShipHero.
               </p>
             </div>
           </div>

@@ -2,6 +2,7 @@
 
 namespace App\Services;
 
+use App\Support\OrderShipmentTracking;
 use Carbon\Carbon;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
@@ -421,13 +422,29 @@ GQL;
         // should still show items + order/shipping/billing details.
         $history = [];
 
+        $trackingPayload = ['labels' => [], 'total_label_cost' => null];
+        if ($this->orderNodeIsShipped($node)) {
+            try {
+                $trackingPayload = $this->fetchOrderShipmentTracking($relayId);
+            } catch (\Throwable $e) {
+                Log::warning('shiphero.order_detail.shipments.failed', [
+                    'order_id' => $id,
+                    'relay_id' => $relayId,
+                    'customer_account_id' => $customer,
+                    'exception' => $e->getMessage(),
+                ]);
+            }
+        }
+
         Log::info('shiphero.order_detail.normalize.done', [
             'order_id' => $id,
             'relay_id' => $relayId,
             'line_items_count' => count($lineItems),
             'history_count' => count($history),
+            'tracking_labels_count' => count($trackingPayload['labels']),
         ]);
-        return $this->normalizeOrderDetail($node, $lineItems, $history);
+
+        return $this->normalizeOrderDetail($node, $lineItems, $history, $trackingPayload);
     }
 
     /**
@@ -1514,7 +1531,68 @@ GQL;
      * @param  array<string, mixed>  $node
      * @return array<string, mixed>
      */
-    private function normalizeOrderDetail(array $node, array $items, array $history = []): array
+    /**
+     * @param  array{labels: list<array<string, mixed>>, total_label_cost: float|null}  $trackingPayload
+     * @return array{labels: list<array<string, mixed>>, total_label_cost: float|null}
+     */
+    private function fetchOrderShipmentTracking(string $orderRelayId): array
+    {
+        $graphql = <<<'GQL'
+query ShipHeroOrderShipmentTracking($id: String!) {
+  order(id: $id) {
+    data {
+      shipments {
+        shipping_labels {
+          id
+          status
+          tracking_number
+          carrier
+          shipping_name
+          shipping_method
+          cost
+          tracking_url
+        }
+      }
+    }
+  }
+}
+GQL;
+
+        $json = $this->client->query($graphql, [
+            'id' => $orderRelayId,
+        ]);
+        $shipments = data_get($json, 'data.order.data.shipments');
+        if (! is_array($shipments)) {
+            return ['labels' => [], 'total_label_cost' => null];
+        }
+
+        return OrderShipmentTracking::fromShipHeroShipments($shipments);
+    }
+
+    /**
+     * @param  array<string, mixed>  $node
+     */
+    private function orderNodeIsShipped(array $node): bool
+    {
+        $status = strtolower(trim((string) ($node['fulfillment_status'] ?? '')));
+        if ($status === '') {
+            return false;
+        }
+        if (strpos($status, 'cancel') !== false) {
+            return false;
+        }
+
+        return $status === 'shipped'
+            || $status === 'fulfilled'
+            || $status === 'complete'
+            || strpos($status, 'shipped') === 0
+            || strpos($status, 'fulfilled') !== false;
+    }
+
+    /**
+     * @param  array{labels: list<array<string, mixed>>, total_label_cost: float|null}  $trackingPayload
+     */
+    private function normalizeOrderDetail(array $node, array $items, array $history = [], array $trackingPayload = []): array
     {
         $shippingLine = $this->resolveShippingLine($node['shipping_lines'] ?? null);
 
@@ -1580,6 +1658,10 @@ GQL;
                     'user_id' => (string) ($row['user_id'] ?? ''),
                 ];
             }, $history))),
+            'tracking_labels' => is_array($trackingPayload['labels'] ?? null) ? $trackingPayload['labels'] : [],
+            'total_label_cost' => isset($trackingPayload['total_label_cost']) && is_numeric($trackingPayload['total_label_cost'])
+                ? (float) $trackingPayload['total_label_cost']
+                : null,
         ];
     }
 

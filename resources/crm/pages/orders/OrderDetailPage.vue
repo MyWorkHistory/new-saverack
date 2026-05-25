@@ -440,6 +440,20 @@ const currentShippingMethodDisplay = computed(() => {
   );
 });
 
+const trackingLabels = computed(() => {
+  const rows = order.value?.tracking_labels;
+  return Array.isArray(rows) ? rows : [];
+});
+
+const trackingLabelCostDisplay = computed(() => {
+  const cost = order.value?.total_label_cost;
+  if (cost === null || cost === undefined || Number.isNaN(Number(cost))) {
+    return null;
+  }
+  const n = Number(cost);
+  return `$${n.toFixed(2)}`;
+});
+
 const carrierSelectOptions = computed(() => {
   const labels = new Map();
   for (const p of CARRIER_PRESETS) {
@@ -1734,44 +1748,74 @@ function goToOrdersList() {
                 {{ shippingAddressDisplayCaps }}
               </div>
             </div>
-            <div class="mb-3 pb-3 border-bottom">
-              <div class="form-label small text-secondary mb-1">Current Shipping Method</div>
-              <div class="small fw-semibold text-body">{{ currentShippingMethodDisplay }}</div>
-            </div>
-            <div class="mb-3">
-              <label class="form-label small text-secondary mb-1" for="order-detail-carrier">Shipping Carrier</label>
-              <select
-                id="order-detail-carrier"
-                v-model="carrierField"
-                class="form-select form-select-sm"
-                :disabled="!canRunShipHeroActions"
+            <template v-if="orderIsShipped">
+              <div>
+                <div class="form-label small text-secondary mb-2">Tracking Info</div>
+                <div v-if="trackingLabels.length" class="order-detail-page__tracking-list">
+                  <div
+                    v-for="label in trackingLabels"
+                    :key="label.id || `${label.service_label}-${label.tracking_number}`"
+                    class="order-detail-page__tracking-line small text-body mb-2"
+                  >
+                    <span class="fw-semibold">{{ label.service_label }}:</span>
+                    <a
+                      v-if="label.tracking_url"
+                      :href="label.tracking_url"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      class="text-primary text-decoration-none ms-1"
+                    >
+                      {{ label.tracking_number }}
+                    </a>
+                    <span v-else class="ms-1">{{ label.tracking_number }}</span>
+                  </div>
+                </div>
+                <p v-else class="small text-secondary mb-0">No tracking information available.</p>
+                <p v-if="trackingLabelCostDisplay" class="small text-secondary mb-0 mt-2">
+                  Label cost: <span class="fw-semibold text-body">{{ trackingLabelCostDisplay }}</span>
+                </p>
+              </div>
+            </template>
+            <template v-else>
+              <div class="mb-3 pb-3 border-bottom">
+                <div class="form-label small text-secondary mb-1">Current Shipping Method</div>
+                <div class="small fw-semibold text-body">{{ currentShippingMethodDisplay }}</div>
+              </div>
+              <div class="mb-3">
+                <label class="form-label small text-secondary mb-1" for="order-detail-carrier">Shipping Carrier</label>
+                <select
+                  id="order-detail-carrier"
+                  v-model="carrierField"
+                  class="form-select form-select-sm"
+                  :disabled="!canRunShipHeroActions"
+                >
+                  <option v-for="c in carrierSelectOptions" :key="'c-' + (c || 'empty')" :value="c">
+                    {{ c === "" ? "—" : c }}
+                  </option>
+                </select>
+              </div>
+              <div class="mb-3">
+                <label class="form-label small text-secondary mb-1" for="order-detail-method">Method</label>
+                <select
+                  id="order-detail-method"
+                  v-model="methodField"
+                  class="form-select form-select-sm"
+                  :disabled="!canRunShipHeroActions"
+                >
+                  <option v-for="m in methodSelectOptions" :key="'m-' + (m || 'empty')" :value="m">
+                    {{ m === "" ? "—" : m }}
+                  </option>
+                </select>
+              </div>
+              <button
+                type="button"
+                class="btn btn-primary btn-sm staff-page-primary"
+                :disabled="!canRunShipHeroActions || shippingLinesSaveBusy"
+                @click="saveShippingLines"
               >
-                <option v-for="c in carrierSelectOptions" :key="'c-' + (c || 'empty')" :value="c">
-                  {{ c === "" ? "—" : c }}
-                </option>
-              </select>
-            </div>
-            <div class="mb-3">
-              <label class="form-label small text-secondary mb-1" for="order-detail-method">Method</label>
-              <select
-                id="order-detail-method"
-                v-model="methodField"
-                class="form-select form-select-sm"
-                :disabled="!canRunShipHeroActions"
-              >
-                <option v-for="m in methodSelectOptions" :key="'m-' + (m || 'empty')" :value="m">
-                  {{ m === "" ? "—" : m }}
-                </option>
-              </select>
-            </div>
-            <button
-              type="button"
-              class="btn btn-primary btn-sm staff-page-primary"
-              :disabled="!canRunShipHeroActions || shippingLinesSaveBusy"
-              @click="saveShippingLines"
-            >
-              {{ shippingLinesSaveBusy ? "Saving…" : "Save Carrier & Method" }}
-            </button>
+                {{ shippingLinesSaveBusy ? "Saving…" : "Save Carrier & Method" }}
+              </button>
+            </template>
           </div>
 
           <div class="staff-table-card staff-datatable-card staff-datatable-card--white p-4 order-detail-page__side-panel">
@@ -2522,6 +2566,16 @@ function goToOrdersList() {
 .order-detail-page__shopify-header-link {
   line-height: 1.35;
   white-space: nowrap;
+}
+
+.order-detail-page__tracking-line {
+  line-height: 1.45;
+  word-break: break-word;
+}
+
+.order-detail-page__tracking-line a:hover,
+.order-detail-page__tracking-line a:focus-visible {
+  text-decoration: underline !important;
 }
 
 .order-detail-page__shopify-header-link:hover,

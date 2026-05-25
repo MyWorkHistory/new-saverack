@@ -1564,16 +1564,7 @@ function goToOrdersList() {
                 <tbody>
                   <tr v-for="item in sortedItems" :key="item.id || item.sku">
                     <td class="order-detail-page__items-col">
-                      <a
-                        v-if="inventoryDetailHref(item)"
-                        :href="inventoryDetailHref(item)"
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        class="order-detail-page__item-cell order-detail-page__item-cell--link text-decoration-none text-body"
-                        :title="`View ${item.sku} inventory (opens in new tab)`"
-                        :aria-label="`View inventory for SKU ${item.sku} in new tab`"
-                        @click="openItemInventoryInNewTab(item, $event)"
-                      >
+                      <div class="order-detail-page__item-cell">
                         <img
                           v-if="item.image_url"
                           :src="item.image_url"
@@ -1597,39 +1588,20 @@ function goToOrdersList() {
                           >
                             {{ item.fulfillment_status }}
                           </span>
-                          <div
-                            class="order-detail-page__item-sku"
-                            :title="item.sku ? `SKU ${item.sku}` : undefined"
+                          <a
+                            v-if="inventoryDetailHref(item)"
+                            :href="inventoryDetailHref(item)"
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            class="order-detail-page__item-sku-link small text-primary text-decoration-none"
+                            :title="`View ${item.sku} inventory (opens in new tab)`"
+                            :aria-label="`View inventory for SKU ${item.sku} in new tab`"
+                            @click="openItemInventoryInNewTab(item, $event)"
                           >
-                            SKU {{ item.sku || "—" }}
-                          </div>
-                        </div>
-                      </a>
-                      <div v-else class="order-detail-page__item-cell">
-                        <img
-                          v-if="item.image_url"
-                          :src="item.image_url"
-                          alt=""
-                          class="order-detail-page__item-thumb"
-                          loading="lazy"
-                        />
-                        <div v-else class="order-detail-page__item-thumb order-detail-page__item-thumb--empty" aria-hidden="true"></div>
-                        <div class="order-detail-page__item-copy">
+                            SKU {{ item.sku }}
+                          </a>
                           <div
-                            class="order-detail-page__item-name order-detail-page__item-name--plain"
-                            :title="item.name ? String(item.name) : undefined"
-                          >
-                            {{ item.name || "—" }}
-                          </div>
-                          <span
-                            v-if="item.fulfillment_status"
-                            class="badge rounded-pill fw-medium order-detail-page__item-line-status-badge"
-                            :class="lineItemStatusBadgeClass(item.fulfillment_status)"
-                            :title="String(item.fulfillment_status)"
-                          >
-                            {{ item.fulfillment_status }}
-                          </span>
-                          <div
+                            v-else
                             class="order-detail-page__item-sku"
                             :title="item.sku ? `SKU ${item.sku}` : undefined"
                           >
@@ -2381,21 +2353,6 @@ function goToOrdersList() {
   width: 100%;
 }
 
-.order-detail-page__item-cell--link {
-  cursor: pointer;
-  border-radius: 0.25rem;
-}
-
-.order-detail-page__item-cell--link:hover .order-detail-page__item-name,
-.order-detail-page__item-cell--link:focus-visible .order-detail-page__item-name {
-  text-decoration: underline;
-}
-
-.order-detail-page__item-name--plain {
-  color: inherit;
-  font-weight: 600;
-}
-
 .order-detail-page__item-copy {
   min-width: 0;
   flex: 1 1 auto;
@@ -2425,6 +2382,22 @@ function goToOrdersList() {
   text-overflow: ellipsis;
 }
 
+.order-detail-page__item-sku-link {
+  display: block;
+  min-width: 0;
+  max-width: 100%;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  line-height: 1.3;
+  font-weight: 400;
+}
+
+.order-detail-page__item-sku-link:hover,
+.order-detail-page__item-sku-link:focus-visible {
+  text-decoration: underline !important;
+}
+
 .order-detail-page__item-sku {
   color: #6c757d;
   display: block;
@@ -2433,7 +2406,7 @@ function goToOrdersList() {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-  font-size: 0.875rem;
+  font-size: 0.8125rem;
   line-height: 1.3;
 }
 

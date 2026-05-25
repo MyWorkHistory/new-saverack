@@ -101,7 +101,7 @@ function goCreate() {
 onMounted(() => {
   setCrmPageMeta({
     title: "Save Rack | Return Orders",
-    description: "Returns created for your account.",
+    description: "View returned orders that are pending processing or completed.",
   });
   load();
 });
@@ -112,7 +112,9 @@ onMounted(() => {
     <div class="d-flex flex-wrap align-items-end justify-content-between gap-3 mb-4">
       <div>
         <h1 class="h4 mb-1 fw-semibold text-body">Return Orders</h1>
-        <p class="staff-page__intro mb-0">RMA returns for your account. Search by order #, name, or RMA #.</p>
+        <p class="text-secondary small mb-0">
+          View all returned orders that are pending processing or completed.
+        </p>
       </div>
       <button type="button" class="btn btn-primary staff-page-primary" @click="goCreate">Create Return</button>
     </div>

@@ -43,7 +43,7 @@ onMounted(() => {
             Back to Search
           </button>
           <button type="button" class="btn btn-primary staff-page-primary btn-sm fw-semibold" @click="startCreateReturn">
-            Create a Return
+            Create Return
           </button>
         </div>
       </div>

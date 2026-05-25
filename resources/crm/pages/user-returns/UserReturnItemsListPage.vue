@@ -24,10 +24,20 @@ let searchTimer = null;
 const clientAccountId = computed(() => Number(crmUser.value?.client_account_id || 0));
 const tableColspan = 8;
 
+function applySearch() {
+  if (searchTimer) {
+    clearTimeout(searchTimer);
+    searchTimer = null;
+  }
+  searchDebounced.value = search.value.trim().replace(/^#+/, "");
+  meta.value.current_page = 1;
+  load();
+}
+
 watch(search, (v) => {
   clearTimeout(searchTimer);
   searchTimer = setTimeout(() => {
-    searchDebounced.value = v.trim();
+    searchDebounced.value = String(v).trim().replace(/^#+/, "");
     meta.value.current_page = 1;
     load();
   }, 300);
@@ -59,7 +69,7 @@ async function load() {
 
 onMounted(() => {
   setCrmPageMeta({
-    title: "Save Rack | Returned Items",
+    title: "Save Rack | Return Items",
     description: "Line items on returns for your account.",
   });
   load();
@@ -69,7 +79,7 @@ onMounted(() => {
 <template>
   <div class="staff-page staff-page--wide user-return-page">
     <div class="mb-4">
-      <h1 class="h4 mb-1 fw-semibold text-body">Returned Items</h1>
+      <h1 class="h4 mb-1 fw-semibold text-body">Return Items</h1>
       <p class="staff-page__intro mb-0">Items included on returns. Search by SKU, item name, order #, or RMA #.</p>
     </div>
 
@@ -82,9 +92,17 @@ onMounted(() => {
             class="form-control staff-toolbar-search staff-toolbar-search--inline"
             placeholder="Search SKU, item, order #, or RMA #"
             autocomplete="off"
-            aria-label="Search returned items"
-            @keydown.enter.prevent="load"
+            aria-label="Search return items"
+            @keydown.enter.prevent="applySearch"
           />
+          <button
+            type="button"
+            class="btn btn-primary staff-page-primary fw-semibold"
+            :disabled="loading"
+            @click="applySearch"
+          >
+            Search
+          </button>
         </div>
       </div>
 
@@ -111,7 +129,9 @@ onMounted(() => {
               </td>
             </tr>
             <tr v-else-if="!rows.length">
-              <td :colspan="tableColspan" class="text-center text-secondary py-5">No returned items yet.</td>
+              <td :colspan="tableColspan" class="text-center text-secondary py-5">
+                {{ searchDebounced ? "No items match your search." : "No return items yet." }}
+              </td>
             </tr>
             <tr v-for="r in rows" v-else :key="r.id" class="align-middle">
               <td class="text-center">

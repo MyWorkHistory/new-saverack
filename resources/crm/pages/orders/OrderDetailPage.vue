@@ -1453,7 +1453,7 @@ function goToOrdersList() {
                 class="btn btn-link btn-sm text-secondary px-0 py-0 mt-1 text-decoration-none"
                 @click="goToOrdersList"
               >
-                {{ isReturnPreviewMode ? "&lt; Create a Return" : "&lt; Orders" }}
+                {{ isReturnPreviewMode ? "&lt; Create Return" : "&lt; Orders" }}
               </button>
             </div>
             <div

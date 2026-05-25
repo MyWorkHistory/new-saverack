@@ -12,27 +12,49 @@ const crmUser = inject("crmUser", ref(null));
 
 const orderNumber = ref("");
 const searching = ref(false);
+const hasSearched = ref(false);
 const results = ref([]);
 
 const clientAccountId = computed(() => Number(crmUser.value?.client_account_id || 0));
 const tableColspan = 4;
 
+function normalizeOrderNumber(raw) {
+  return String(raw || "").trim().replace(/^#+/, "").toLowerCase();
+}
+
+function orderMatchesQuery(row, query) {
+  const needle = normalizeOrderNumber(query);
+  if (!needle) return false;
+  const fields = [
+    row?.order_number,
+    row?.partner_order_id,
+    row?.legacy_id != null && row?.legacy_id !== "" ? String(row.legacy_id) : "",
+  ];
+  return fields.some((f) => normalizeOrderNumber(f) === needle);
+}
+
 async function search() {
   const q = orderNumber.value.trim();
   if (!q || !clientAccountId.value) return;
   searching.value = true;
+  hasSearched.value = true;
   results.value = [];
   try {
     const { data } = await api.get("/orders", {
       params: {
         client_account_id: clientAccountId.value,
-        order_number: q,
-        per_page: 25,
-        page: 1,
+        tab: "manage",
+        order_number: q.replace(/^#+/, ""),
+        first: 25,
       },
     });
-    results.value = data.data || [];
-    if (!results.value.length) {
+    const rows = Array.isArray(data?.rows) ? data.rows : [];
+    let matched = rows.filter((row) => orderMatchesQuery(row, q));
+    if (!matched.length && rows.length === 1 && rows[0]?.id) {
+      matched = rows;
+    }
+    results.value = matched;
+    if (!matched.length) {
       toast.error("No order found for that order number.");
     }
   } catch (e) {
@@ -43,6 +65,8 @@ async function search() {
 }
 
 function customerDisplay(row) {
+  const recipient = String(row?.recipient_name || "").trim();
+  if (recipient && recipient !== "—") return recipient;
   const ship = row?.shipping_address || row?.ship_to || {};
   const name = [ship.first_name, ship.last_name].filter(Boolean).join(" ").trim();
   if (name) return name;
@@ -62,7 +86,7 @@ function openOrder(row) {
 
 onMounted(() => {
   setCrmPageMeta({
-    title: "Save Rack | Create a Return",
+    title: "Save Rack | Create Return",
     description: "Search for an order to start a return.",
   });
 });
@@ -72,7 +96,7 @@ onMounted(() => {
   <div class="staff-page staff-page--wide user-return-page">
     <div class="d-flex flex-wrap align-items-end justify-content-between gap-3 mb-4">
       <div>
-        <h1 class="h4 mb-1 fw-semibold text-body">Create a Return</h1>
+        <h1 class="h4 mb-1 fw-semibold text-body">Create Return</h1>
         <p class="staff-page__intro mb-0">Search by order number, then open the order to start your return.</p>
       </div>
       <button
@@ -80,7 +104,7 @@ onMounted(() => {
         class="btn btn-outline-secondary btn-sm fw-semibold orders-toolbar-outline-btn"
         @click="router.push({ name: 'user-return-orders' })"
       >
-        Returned Orders
+        Return Orders
       </button>
     </div>
 
@@ -128,7 +152,11 @@ onMounted(() => {
             </tr>
             <tr v-else-if="!results.length">
               <td :colspan="tableColspan" class="text-center text-secondary py-5">
-                Enter an order number and search to find an order.
+                {{
+                  hasSearched
+                    ? "No order found for that order number."
+                    : "Enter an order number and select Search."
+                }}
               </td>
             </tr>
             <tr v-for="row in results" v-else :key="row.id" class="align-middle">

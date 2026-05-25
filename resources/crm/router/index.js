@@ -168,15 +168,15 @@ const meta = {
     description: "ASN line items, tracking, and warehouse details.",
   },
   userReturnOrdersList: {
-    title: "Save Rack | Returned Orders",
+    title: "Save Rack | Return Orders",
     description: "Returns created for your account.",
   },
   userReturnItemsList: {
-    title: "Save Rack | Returned Items",
+    title: "Save Rack | Return Items",
     description: "Line items on returns for your account.",
   },
   userReturnCreateSearch: {
-    title: "Save Rack | Create a Return",
+    title: "Save Rack | Create Return",
     description: "Search for an order to start a return.",
   },
   userReturnCreateOrder: {

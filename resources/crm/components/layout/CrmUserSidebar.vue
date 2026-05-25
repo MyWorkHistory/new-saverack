@@ -221,7 +221,7 @@ function collapseNav() {
                   :class="{ 'vx-nav-link--active': navActive('returns-orders') }"
                   @click="closeMobile"
                 >
-                  Returned Orders
+                  Return Orders
                 </RouterLink>
               </li>
               <li>
@@ -231,7 +231,7 @@ function collapseNav() {
                   :class="{ 'vx-nav-link--active': navActive('returns-items') }"
                   @click="closeMobile"
                 >
-                  Returned Items
+                  Return Items
                 </RouterLink>
               </li>
               <li>
@@ -241,7 +241,7 @@ function collapseNav() {
                   :class="{ 'vx-nav-link--active': navActive('returns-create') }"
                   @click="closeMobile"
                 >
-                  Create a Return
+                  Create Return
                 </RouterLink>
               </li>
             </ul>

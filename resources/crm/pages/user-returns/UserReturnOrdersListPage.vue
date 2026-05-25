@@ -29,10 +29,20 @@ const sortDir = ref("desc");
 const clientAccountId = computed(() => Number(crmUser.value?.client_account_id || 0));
 const tableColspan = 7;
 
+function applySearch() {
+  if (searchTimer) {
+    clearTimeout(searchTimer);
+    searchTimer = null;
+  }
+  searchDebounced.value = search.value.trim().replace(/^#+/, "");
+  meta.value.current_page = 1;
+  load();
+}
+
 watch(search, (v) => {
   clearTimeout(searchTimer);
   searchTimer = setTimeout(() => {
-    searchDebounced.value = v.trim();
+    searchDebounced.value = String(v).trim().replace(/^#+/, "");
     meta.value.current_page = 1;
     load();
   }, 300);
@@ -90,7 +100,7 @@ function goCreate() {
 
 onMounted(() => {
   setCrmPageMeta({
-    title: "Save Rack | Returned Orders",
+    title: "Save Rack | Return Orders",
     description: "Returns created for your account.",
   });
   load();
@@ -101,10 +111,10 @@ onMounted(() => {
   <div class="staff-page staff-page--wide user-return-page">
     <div class="d-flex flex-wrap align-items-end justify-content-between gap-3 mb-4">
       <div>
-        <h1 class="h4 mb-1 fw-semibold text-body">Returned Orders</h1>
+        <h1 class="h4 mb-1 fw-semibold text-body">Return Orders</h1>
         <p class="staff-page__intro mb-0">RMA returns for your account. Search by order #, name, or RMA #.</p>
       </div>
-      <button type="button" class="btn btn-primary staff-page-primary" @click="goCreate">Create a Return</button>
+      <button type="button" class="btn btn-primary staff-page-primary" @click="goCreate">Create Return</button>
     </div>
 
     <div class="staff-table-card staff-datatable-card staff-datatable-card--white w-100">
@@ -117,8 +127,16 @@ onMounted(() => {
             placeholder="Search order #, name, or RMA #"
             autocomplete="off"
             aria-label="Search returns"
-            @keydown.enter.prevent="load"
+            @keydown.enter.prevent="applySearch"
           />
+          <button
+            type="button"
+            class="btn btn-primary staff-page-primary fw-semibold"
+            :disabled="loading"
+            @click="applySearch"
+          >
+            Search
+          </button>
         </div>
       </div>
 
@@ -174,7 +192,9 @@ onMounted(() => {
               </td>
             </tr>
             <tr v-else-if="!rows.length">
-              <td :colspan="tableColspan" class="text-center text-secondary py-5">No returned orders yet.</td>
+              <td :colspan="tableColspan" class="text-center text-secondary py-5">
+                {{ searchDebounced ? "No returns match your search." : "No return orders yet." }}
+              </td>
             </tr>
             <tr v-for="r in rows" v-else :key="r.id" class="align-middle">
               <td class="text-center">

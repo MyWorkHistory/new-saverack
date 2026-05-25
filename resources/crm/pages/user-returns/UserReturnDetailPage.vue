@@ -145,7 +145,7 @@ onMounted(() => {
               class="btn btn-link btn-sm text-secondary px-0 py-0 mt-1 text-decoration-none"
               @click="router.push({ name: 'user-return-orders' })"
             >
-              &lt; Returned Orders
+              &lt; Return Orders
             </button>
           </div>
           <div class="d-flex flex-wrap gap-2 flex-shrink-0 align-items-center">
@@ -190,7 +190,7 @@ onMounted(() => {
       <div class="col-lg-8">
         <div class="staff-table-card staff-datatable-card staff-datatable-card--white p-0 mb-4">
           <div class="px-4 py-3 border-bottom">
-            <h2 class="h6 mb-0 fw-semibold">Returned Items</h2>
+            <h2 class="h6 mb-0 fw-semibold">Return Items</h2>
           </div>
           <div class="table-responsive staff-table-wrap">
             <table class="table table-hover align-middle mb-0 staff-data-table">

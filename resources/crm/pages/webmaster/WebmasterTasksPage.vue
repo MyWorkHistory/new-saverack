@@ -9,15 +9,15 @@ import {
   ref,
   watch,
 } from "vue";
-import draggable from "vuedraggable";
+import { RouterLink, useRoute, useRouter } from "vue-router";
 import api from "../../services/api";
 import ConfirmModal from "../../components/common/ConfirmModal.vue";
 import WebmasterTaskDrawer from "../../components/webmaster/WebmasterTaskDrawer.vue";
 import WebmasterTaskModal from "../../components/webmaster/WebmasterTaskModal.vue";
+import WebmasterTasksBulkEditModal from "../../components/webmaster/WebmasterTasksBulkEditModal.vue";
 import CrmLoadingSpinner from "../../components/common/CrmLoadingSpinner.vue";
 import { useToast } from "../../composables/useToast";
 import { errorMessage } from "../../utils/apiError";
-import { useRoute, useRouter } from "vue-router";
 import { crmIsAdmin } from "../../utils/crmUser";
 import { DEFAULT_PER_PAGE, PER_PAGE_OPTIONS } from "../../constants/pagination";
 import { formatUsdPrice } from "../../utils/formatPrice";
@@ -29,21 +29,41 @@ const toast = useToast();
 const route = useRoute();
 const router = useRouter();
 
+function userHasPerm(key) {
+  const u = crmUser.value;
+  if (!u) return false;
+  if (crmIsAdmin(u) || u.is_crm_owner) return true;
+  return Array.isArray(u.permission_keys) && u.permission_keys.includes(key);
+}
+
+const canCreateTasks = computed(() => userHasPerm("webmaster.create"));
+const canUpdateTasks = computed(() => userHasPerm("webmaster.update"));
+const canDeleteTasks = computed(() => userHasPerm("webmaster.delete"));
+const showRowActions = computed(() => canUpdateTasks.value || canDeleteTasks.value);
+const showCheckboxColumn = computed(() => canUpdateTasks.value || canDeleteTasks.value);
+
+const TASK_SORT_KEYS = ["title", "status", "priority", "due_date", "created_at"];
+
 const loading = ref(true);
 const rows = ref([]);
 const pagination = ref({ current_page: 1, last_page: 1, total: 0 });
 const users = ref([]);
 const meta = ref({ statuses: [], priorities: [] });
-const boardColumns = ref([]);
 const manageOpenId = ref(null);
+const manageMenuRect = ref({ top: 0, left: 0 });
 const filterMenuOpen = ref(false);
+const bulkMenuOpen = ref(false);
 const drawerOpen = ref(false);
 const taskEditModalOpen = ref(false);
 const editingTask = ref(null);
 const deleteTarget = ref(null);
 const deleteBusy = ref(false);
 const deleteError = ref("");
-const statusUpdateError = ref("");
+const bulkEditOpen = ref(false);
+const bulkEditBusy = ref(false);
+const bulkDeleteOpen = ref(false);
+const bulkDeleteBusy = ref(false);
+const selectedIds = ref([]);
 
 const query = reactive({
   search: "",
@@ -58,23 +78,39 @@ const query = reactive({
   max_price: "",
 });
 
-const canMutateWebmasterTasks = computed(() => {
-  const u = crmUser?.value;
-  if (!u) return false;
-  return !!u.is_crm_owner || crmIsAdmin(u);
-});
-
 let searchDebounce = null;
 let searchWatchLock = false;
+
+const MENU_W = 200;
+const MENU_H = 160;
+
+const tableColspan = computed(() => {
+  let n = 7;
+  if (showCheckboxColumn.value) n += 1;
+  if (showRowActions.value) n += 1;
+  return n;
+});
+
+const manageMenuTask = computed(
+  () => rows.value.find((t) => t.id === manageOpenId.value) ?? null,
+);
 
 const deleteModalOpen = computed(() => deleteTarget.value !== null);
 const deleteMessage = computed(() => {
   const t = deleteTarget.value;
-  return t ? `Delete Task “${t.title}”? This Cannot Be Undone.` : "";
+  return t ? `Delete task “${t.title}”? This cannot be undone.` : "";
 });
 
-const hasMorePages = computed(
-  () => pagination.value.last_page > 1,
+const bulkDeleteMessage = computed(() => {
+  const n = selectedIds.value.length;
+  if (n < 1) return "";
+  return `Delete ${n} task${n === 1 ? "" : "s"}? This cannot be undone.`;
+});
+
+const isAllPageSelected = computed(
+  () =>
+    rows.value.length > 0 &&
+    rows.value.every((t) => selectedIds.value.includes(t.id)),
 );
 
 const showingFrom = computed(() => {
@@ -86,10 +122,7 @@ const showingFrom = computed(() => {
 const showingTo = computed(() => {
   const t = pagination.value.total;
   if (t === 0) return 0;
-  return Math.min(
-    pagination.value.current_page * query.per_page,
-    t,
-  );
+  return Math.min(pagination.value.current_page * query.per_page, t);
 });
 
 const pageItems = computed(() => {
@@ -102,22 +135,12 @@ const pageItems = computed(() => {
       value: i + 1,
     }));
   }
-  const nums = new Set([
-    1,
-    last,
-    cur,
-    cur - 1,
-    cur + 1,
-    cur - 2,
-    cur + 2,
-  ]);
+  const nums = new Set([1, last, cur, cur - 1, cur + 1, cur - 2, cur + 2]);
   const sorted = [...nums].filter((p) => p >= 1 && p <= last).sort((a, b) => a - b);
   const out = [];
   let prev = 0;
   for (const p of sorted) {
-    if (prev && p - prev > 1) {
-      out.push({ type: "gap" });
-    }
+    if (prev && p - prev > 1) out.push({ type: "gap" });
     out.push({ type: "page", value: p });
     prev = p;
   }
@@ -131,6 +154,7 @@ watch(
     clearTimeout(searchDebounce);
     searchDebounce = setTimeout(() => {
       query.page = 1;
+      selectedIds.value = [];
       fetchTasks();
     }, 300);
   },
@@ -139,9 +163,7 @@ watch(
 watch(
   () => route.query.edit,
   (v) => {
-    if (v) {
-      openTaskEditFromQuery();
-    }
+    if (v) openTaskEditFromQuery();
   },
   { immediate: true },
 );
@@ -156,38 +178,52 @@ function priorityLabel(v) {
   return p ? p.label : v;
 }
 
-const priorityClass = (p) => {
-  const x = String(p || "").toLowerCase();
+function statusBadgeClass(status) {
+  const x = String(status || "").toLowerCase();
   const map = {
-    low: "bg-slate-100 text-slate-800 dark:bg-slate-800 dark:text-slate-200",
-    medium:
-      "bg-blue-50 text-blue-800 dark:bg-blue-500/10 dark:text-blue-200",
-    high: "bg-amber-50 text-amber-900 dark:bg-amber-500/10 dark:text-amber-200",
-    urgent: "bg-red-50 text-red-800 dark:bg-red-500/10 dark:text-red-200",
+    pending: "text-secondary-emphasis bg-secondary-subtle",
+    in_progress: "text-primary-emphasis bg-primary-subtle",
+    review: "text-warning-emphasis bg-warning-subtle",
+    completed: "text-success-emphasis bg-success-subtle",
   };
-  return (
-    map[x] ||
-    "bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-300"
-  );
-};
-
-const avatarPalettes = [
-  "bg-sky-100 text-sky-800 dark:bg-sky-500/20 dark:text-sky-200",
-  "bg-violet-100 text-violet-800 dark:bg-violet-500/20 dark:text-violet-200",
-  "bg-amber-100 text-amber-900 dark:bg-amber-500/20 dark:text-amber-200",
-];
-
-function avatarClassForUser(email) {
-  let h = 0;
-  const s = email || "";
-  for (let i = 0; i < s.length; i++) h = (h + s.charCodeAt(i)) % 997;
-  return avatarPalettes[h % avatarPalettes.length];
+  return map[x] || "text-secondary-emphasis bg-secondary-subtle";
 }
 
-function initials(name) {
-  if (!name || typeof name !== "string") return "?";
-  const parts = name.trim().split(/\s+/).slice(0, 2);
-  return parts.map((p) => p[0]?.toUpperCase() ?? "").join("") || "?";
+function priorityBadgeClass(priority) {
+  const x = String(priority || "").toLowerCase();
+  const map = {
+    low: "text-secondary-emphasis bg-secondary-subtle",
+    medium: "text-primary-emphasis bg-primary-subtle",
+    high: "text-warning-emphasis bg-warning-subtle",
+    urgent: "text-danger-emphasis bg-danger-subtle",
+  };
+  return map[x] || "text-secondary-emphasis bg-secondary-subtle";
+}
+
+function toggleSort(column) {
+  if (!TASK_SORT_KEYS.includes(column)) return;
+  if (query.sort_by === column) {
+    query.sort_dir = query.sort_dir === "asc" ? "desc" : "asc";
+  } else {
+    query.sort_by = column;
+    query.sort_dir = column === "title" || column === "due_date" ? "asc" : "desc";
+  }
+  query.page = 1;
+  selectedIds.value = [];
+  fetchTasks();
+}
+
+function sortIndicator(column) {
+  if (query.sort_by !== column) return "";
+  return query.sort_dir === "asc" ? "↑" : "↓";
+}
+
+function thAriaSort(column) {
+  return query.sort_by === column
+    ? query.sort_dir === "asc"
+      ? "ascending"
+      : "descending"
+    : "none";
 }
 
 async function fetchMeta() {
@@ -222,32 +258,14 @@ const buildParams = () => {
   if (query.status) p.status = query.status;
   if (query.priority) p.priority = query.priority;
   if (query.assigned_to) p.assigned_to = query.assigned_to;
-  if (query.min_price !== "" && query.min_price != null) {
-    p.min_price = query.min_price;
-  }
-  if (query.max_price !== "" && query.max_price != null) {
-    p.max_price = query.max_price;
-  }
+  if (query.min_price !== "" && query.min_price != null) p.min_price = query.min_price;
+  if (query.max_price !== "" && query.max_price != null) p.max_price = query.max_price;
   return p;
 };
-
-function syncBoardFromRows() {
-  const statuses = meta.value.statuses;
-  if (!statuses.length) {
-    boardColumns.value = [];
-    return;
-  }
-  boardColumns.value = statuses.map((s) => ({
-    value: s.value,
-    label: s.label,
-    tasks: rows.value.filter((t) => t.status === s.value),
-  }));
-}
 
 const fetchTasks = async () => {
   loading.value = true;
   deleteError.value = "";
-  statusUpdateError.value = "";
   manageOpenId.value = null;
   try {
     const { data } = await api.get("/webmaster/tasks", { params: buildParams() });
@@ -257,8 +275,6 @@ const fetchTasks = async () => {
       last_page: data.last_page,
       total: data.total,
     };
-    await nextTick();
-    syncBoardFromRows();
   } finally {
     loading.value = false;
   }
@@ -267,6 +283,7 @@ const fetchTasks = async () => {
 const applySearch = () => {
   clearTimeout(searchDebounce);
   query.page = 1;
+  selectedIds.value = [];
   fetchTasks();
 };
 
@@ -280,6 +297,7 @@ const clearFilters = () => {
   query.min_price = "";
   query.max_price = "";
   query.page = 1;
+  selectedIds.value = [];
   fetchTasks().finally(() => {
     searchWatchLock = false;
   });
@@ -291,20 +309,13 @@ function openAdd() {
 
 function openEdit(row) {
   editingTask.value = { ...row };
-  manageOpenId.value = null;
+  closeManageMenu();
   taskEditModalOpen.value = true;
 }
 
 function goTaskDetail(task) {
-  manageOpenId.value = null;
+  closeManageMenu();
   router.push(`/admin/webmaster/tasks/${task.id}`);
-}
-
-function onKanbanCardClick(task, e) {
-  if (e.target instanceof Element && e.target.closest("[data-kanban-card-actions]")) {
-    return;
-  }
-  goTaskDetail(task);
 }
 
 async function openTaskEditFromQuery() {
@@ -316,7 +327,7 @@ async function openTaskEditFromQuery() {
         ? String(raw[0])
         : null;
   if (!id) return;
-  if (!canMutateWebmasterTasks.value) {
+  if (!canUpdateTasks.value) {
     router.replace({ path: "/admin/webmaster", query: {} });
     return;
   }
@@ -324,28 +335,130 @@ async function openTaskEditFromQuery() {
     const { data } = await api.get(`/webmaster/tasks/${id}`);
     openEdit(data);
   } catch {
-    /* drawer stays closed */
+    /* modal stays closed */
   } finally {
     router.replace({ path: "/admin/webmaster", query: {} });
   }
 }
 
-const toggleManageMenu = (id, e) => {
+function placeManageMenu(anchorEl) {
+  if (!(anchorEl instanceof HTMLElement)) return;
+  const r = anchorEl.getBoundingClientRect();
+  let top = r.bottom + 4;
+  let left = r.right - MENU_W;
+  left = Math.max(8, Math.min(left, window.innerWidth - MENU_W - 8));
+  if (top + MENU_H > window.innerHeight - 8) {
+    top = Math.max(8, r.top - MENU_H - 4);
+  }
+  manageMenuRect.value = { top, left };
+}
+
+function closeManageMenu() {
+  manageOpenId.value = null;
+}
+
+async function toggleManageMenu(taskId, e) {
   e.stopPropagation();
-  manageOpenId.value = manageOpenId.value === id ? null : id;
-};
+  if (manageOpenId.value === taskId) {
+    closeManageMenu();
+    return;
+  }
+  const btn = e.currentTarget;
+  manageOpenId.value = taskId;
+  await nextTick();
+  requestAnimationFrame(() => {
+    requestAnimationFrame(() => {
+      if (manageOpenId.value !== taskId) return;
+      if (btn instanceof HTMLElement) placeManageMenu(btn);
+    });
+  });
+}
+
+function toggleSelectAll(ev) {
+  if (ev.target.checked) {
+    selectedIds.value = rows.value.map((t) => t.id);
+  } else {
+    selectedIds.value = [];
+  }
+}
+
+function toggleRowSelect(taskId) {
+  const i = selectedIds.value.indexOf(taskId);
+  if (i === -1) {
+    selectedIds.value = [...selectedIds.value, taskId];
+  } else {
+    selectedIds.value = selectedIds.value.filter((id) => id !== taskId);
+  }
+}
 
 function onDocClick(e) {
-  if (!e.target.closest("[data-kanban-card-actions]")) {
-    manageOpenId.value = null;
+  if (!e.target.closest("[data-toolbar-filter]")) filterMenuOpen.value = false;
+  if (!e.target.closest("[data-toolbar-bulk]")) bulkMenuOpen.value = false;
+  if (!e.target.closest("[data-row-actions]")) closeManageMenu();
+}
+
+function onWindowScrollOrResize() {
+  if (manageOpenId.value !== null) closeManageMenu();
+}
+
+function openBulkEdit() {
+  if (!selectedIds.value.length) {
+    toast.error("Select one or more tasks.");
+    return;
   }
-  if (!e.target.closest("[data-toolbar-filter]")) {
-    filterMenuOpen.value = false;
+  bulkEditOpen.value = true;
+}
+
+async function onBulkApply(payload) {
+  bulkEditBusy.value = true;
+  try {
+    await api.patch("/webmaster/tasks/bulk", {
+      task_ids: selectedIds.value,
+      ...payload,
+    });
+    toast.success("Tasks updated.");
+    bulkEditOpen.value = false;
+    selectedIds.value = [];
+    await fetchTasks();
+  } catch (e) {
+    toast.errorFrom(e, "Could not update tasks.");
+  } finally {
+    bulkEditBusy.value = false;
+  }
+}
+
+function openBulkDelete() {
+  if (!selectedIds.value.length) {
+    toast.error("Select one or more tasks.");
+    return;
+  }
+  bulkDeleteOpen.value = true;
+}
+
+function closeBulkDelete() {
+  if (bulkDeleteBusy.value) return;
+  bulkDeleteOpen.value = false;
+}
+
+async function confirmBulkDelete() {
+  const ids = selectedIds.value;
+  if (!ids.length) return;
+  bulkDeleteBusy.value = true;
+  try {
+    await api.delete("/webmaster/tasks/bulk", { data: { task_ids: ids } });
+    toast.success("Tasks deleted.");
+    bulkDeleteOpen.value = false;
+    selectedIds.value = [];
+    await fetchTasks();
+  } catch (e) {
+    toast.errorFrom(e, "Could not delete tasks.");
+  } finally {
+    bulkDeleteBusy.value = false;
   }
 }
 
 const openDeleteModal = (row) => {
-  manageOpenId.value = null;
+  closeManageMenu();
   deleteTarget.value = row;
 };
 
@@ -362,31 +475,27 @@ const confirmDelete = async () => {
   try {
     await api.delete(`/webmaster/tasks/${t.id}`);
     deleteTarget.value = null;
-    toast.success("Task Deleted.");
+    toast.success("Task deleted.");
     await fetchTasks();
   } catch (e) {
-    deleteError.value = errorMessage(e, "Could Not Delete Task.");
-    toast.errorFrom(e, "Could Not Delete Task.");
+    deleteError.value = errorMessage(e, "Could not delete task.");
+    toast.errorFrom(e, "Could not delete task.");
   } finally {
     deleteBusy.value = false;
   }
 };
 
-function descSnippet(text) {
-  if (!text) return "";
-  const s = String(text).trim();
-  return s.length > 72 ? `${s.slice(0, 72)}…` : s;
-}
-
 function onPerPageChange(e) {
   query.per_page = Number(e.target.value);
   query.page = 1;
+  selectedIds.value = [];
   fetchTasks();
 }
 
 function goPage(p) {
   if (p < 1 || p > pagination.value.last_page) return;
   query.page = p;
+  selectedIds.value = [];
   fetchTasks();
 }
 
@@ -398,43 +507,10 @@ function goLastPage() {
   goPage(pagination.value.last_page);
 }
 
-function dueBadgeLabel(dueDate) {
-  if (!dueDate) return null;
-  const d = new Date(dueDate + "T12:00:00");
-  if (Number.isNaN(d.getTime())) return dueDate;
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
-  const day = new Date(d);
-  day.setHours(0, 0, 0, 0);
-  const diff = Math.round((day - today) / 86400000);
-  if (diff === 0) return "Today";
-  if (diff === 1) return "Tomorrow";
-  if (diff === -1) return "Yesterday";
-  return formatDateUs(dueDate);
-}
-
-async function onColumnChange(columnStatus, evt) {
-  if (!evt.added) return;
-  const task = evt.added.element;
-  if (!task || task.status === columnStatus) return;
-  const prev = task.status;
-  task.status = columnStatus;
-  statusUpdateError.value = "";
-  try {
-    await api.put(`/webmaster/tasks/${task.id}`, { status: columnStatus });
-  } catch (e) {
-    task.status = prev;
-    statusUpdateError.value = errorMessage(
-      e,
-      "Could not update task status.",
-    );
-    toast.errorFrom(e, "Could not update task status.");
-    await fetchTasks();
-  }
-}
-
 onMounted(async () => {
   document.addEventListener("click", onDocClick);
+  window.addEventListener("scroll", onWindowScrollOrResize, true);
+  window.addEventListener("resize", onWindowScrollOrResize);
   await fetchMeta();
   await fetchUsers();
   await fetchTasks();
@@ -442,6 +518,8 @@ onMounted(async () => {
 
 onUnmounted(() => {
   document.removeEventListener("click", onDocClick);
+  window.removeEventListener("scroll", onWindowScrollOrResize, true);
+  window.removeEventListener("resize", onWindowScrollOrResize);
   clearTimeout(searchDebounce);
 });
 </script>
@@ -463,50 +541,40 @@ onUnmounted(() => {
       :priorities="meta.priorities"
       @saved="fetchTasks"
     />
+    <WebmasterTasksBulkEditModal
+      v-model:open="bulkEditOpen"
+      :statuses="meta.statuses"
+      :priorities="meta.priorities"
+      :users="users"
+      :selected-count="selectedIds.length"
+      :busy="bulkEditBusy"
+      @apply="onBulkApply"
+    />
 
-    <div
-      v-if="deleteError"
-      class="alert alert-danger mb-3 mb-md-4"
-      role="alert"
-    >
+    <div v-if="deleteError" class="alert alert-danger mb-3 mb-md-4" role="alert">
       {{ deleteError }}
     </div>
-    <div
-      v-if="statusUpdateError"
-      class="alert alert-danger mb-3 mb-md-4"
-      role="alert"
-    >
-      {{ statusUpdateError }}
-    </div>
 
     <div
-      class="d-flex flex-column flex-md-row align-items-start align-items-md-center gap-3 mb-4"
+      class="d-flex flex-column flex-md-row align-items-center justify-content-between gap-3 mb-4"
     >
-      <div class="min-w-0 flex-grow-1">
-        <h1 class="h4 mb-1 fw-semibold text-body">Webmaster</h1>
-        <p class="text-secondary small mb-0">
-          Site development tasks — drag cards between columns to change status
-        </p>
+      <div class="min-w-0 flex-grow-1 text-center text-md-start w-100">
+        <h1 class="h4 mb-1 fw-semibold text-body staff-page__heading">Webmaster</h1>
+        <p class="staff-page__intro mb-0">Site development tasks</p>
       </div>
       <div
-        class="d-flex flex-wrap align-items-center gap-2 ms-md-auto flex-shrink-0"
+        class="d-flex flex-wrap align-items-center justify-content-center justify-content-md-end gap-2 flex-shrink-0"
       >
         <button
-          v-if="canMutateWebmasterTasks"
+          v-if="canCreateTasks"
           type="button"
           class="btn btn-primary staff-page-primary d-inline-flex align-items-center gap-2"
           @click="openAdd"
         >
-          <svg
-            width="18"
-            height="18"
-            fill="currentColor"
-            viewBox="0 0 24 24"
-            aria-hidden="true"
-          >
+          <svg width="18" height="18" fill="currentColor" viewBox="0 0 24 24" aria-hidden="true">
             <path d="M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z" />
           </svg>
-          Add task
+          Add Task
         </button>
         <button
           type="button"
@@ -516,14 +584,7 @@ onUnmounted(() => {
           aria-label="Refresh list"
           @click="fetchTasks"
         >
-          <svg
-            width="18"
-            height="18"
-            fill="none"
-            stroke="currentColor"
-            viewBox="0 0 24 24"
-            aria-hidden="true"
-          >
+          <svg width="18" height="18" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
             <path
               stroke-linecap="round"
               stroke-linejoin="round"
@@ -536,7 +597,7 @@ onUnmounted(() => {
       </div>
     </div>
 
-    <div class="staff-table-card staff-datatable-card">
+    <div class="staff-table-card staff-datatable-card staff-datatable-card--white">
       <div class="staff-table-toolbar">
         <div class="staff-table-toolbar--row">
           <input
@@ -556,7 +617,10 @@ onUnmounted(() => {
               aria-haspopup="true"
               aria-controls="wm-filter-panel"
               :disabled="loading"
-              @click.stop="filterMenuOpen = !filterMenuOpen"
+              @click.stop="
+                bulkMenuOpen = false;
+                filterMenuOpen = !filterMenuOpen;
+              "
             >
               <svg
                 width="18"
@@ -606,18 +670,12 @@ onUnmounted(() => {
                   :disabled="loading"
                   @change="applySearch"
                 >
-                  <option value="">All columns</option>
-                  <option
-                    v-for="s in meta.statuses"
-                    :key="s.value"
-                    :value="s.value"
-                  >
+                  <option value="">All statuses</option>
+                  <option v-for="s in meta.statuses" :key="s.value" :value="s.value">
                     {{ s.label }}
                   </option>
                 </select>
-                <label class="form-label" for="wm-filter-priority"
-                  >Priority</label
-                >
+                <label class="form-label" for="wm-filter-priority">Priority</label>
                 <select
                   id="wm-filter-priority"
                   v-model="query.priority"
@@ -626,17 +684,11 @@ onUnmounted(() => {
                   @change="applySearch"
                 >
                   <option value="">All priorities</option>
-                  <option
-                    v-for="p in meta.priorities"
-                    :key="p.value"
-                    :value="p.value"
-                  >
+                  <option v-for="p in meta.priorities" :key="p.value" :value="p.value">
                     {{ p.label }}
                   </option>
                 </select>
-                <label class="form-label" for="wm-filter-assignee"
-                  >Assignee</label
-                >
+                <label class="form-label" for="wm-filter-assignee">Assignee</label>
                 <select
                   id="wm-filter-assignee"
                   v-model="query.assigned_to"
@@ -645,26 +697,18 @@ onUnmounted(() => {
                   @change="applySearch"
                 >
                   <option value="">Anyone</option>
-                  <option
-                    v-for="u in users"
-                    :key="u.id"
-                    :value="String(u.id)"
-                  >
-                    {{ u.name }}
-                  </option>
+                  <option v-for="u in users" :key="u.id" :value="String(u.id)">{{ u.name }}</option>
                 </select>
                 <div class="row g-2">
                   <div class="col-12 col-sm-6">
-                    <label class="form-label" for="wm-min-price"
-                      >Min price</label
-                    >
+                    <label class="form-label" for="wm-min-price">Min price</label>
                     <input
                       id="wm-min-price"
                       v-model="query.min_price"
                       type="number"
                       min="0"
                       step="0.01"
-                      class="form-control staff-datatable-filters__select"
+                      class="form-control"
                       placeholder="Min"
                       :disabled="loading"
                       @change="applySearch"
@@ -672,16 +716,14 @@ onUnmounted(() => {
                     />
                   </div>
                   <div class="col-12 col-sm-6">
-                    <label class="form-label" for="wm-max-price"
-                      >Max price</label
-                    >
+                    <label class="form-label" for="wm-max-price">Max price</label>
                     <input
                       id="wm-max-price"
                       v-model="query.max_price"
                       type="number"
                       min="0"
                       step="0.01"
-                      class="form-control staff-datatable-filters__select"
+                      class="form-control"
                       placeholder="Max"
                       :disabled="loading"
                       @change="applySearch"
@@ -692,199 +734,242 @@ onUnmounted(() => {
               </div>
             </div>
           </div>
-        </div>
-      </div>
-
-      <div
-        v-if="hasMorePages"
-        class="alert alert-warning border-start-0 border-end-0 rounded-0 border-top-0 border-bottom mb-0 py-2 px-3 small"
-        role="status"
-      >
-        Page {{ pagination.current_page }} of {{ pagination.last_page }} —
-        {{ rows.length }} tasks loaded on this page. Increase rows per page or
-        use pagination below to see more.
-      </div>
-
-      <div
-        class="px-3 px-md-4 py-4 wm-kanban-board-host"
-        :class="{ 'wm-kanban-board-host--loading': loading }"
-      >
-        <div v-if="loading" class="d-flex justify-content-center py-5">
-          <CrmLoadingSpinner message="Loading tasks…" />
-        </div>
-        <p
-          v-else-if="pagination.total === 0"
-          class="py-5 text-center text-secondary small mb-0"
-        >
-          No tasks yet. Add one to get started.
-        </p>
-        <div
-          v-else
-          class="row g-3 g-md-4 wm-kanban-grid"
-        >
           <div
-            v-for="col in boardColumns"
-            :key="col.value"
-            class="col-12 col-sm-6 col-xl-3"
+            v-if="canUpdateTasks || canDeleteTasks"
+            class="staff-toolbar-row-actions d-flex flex-wrap align-items-center gap-2 gap-md-3 ms-md-auto flex-shrink-0"
           >
-            <section
-              class="wm-kanban-column d-flex flex-column rounded border bg-body-secondary h-100"
-              style="min-height: 12rem"
-            >
-            <header
-              class="d-flex flex-shrink-0 align-items-center justify-content-between gap-2 border-bottom px-3 py-3"
-            >
-              <h2 class="small fw-semibold text-body mb-0">
-                {{ col.label }}
-              </h2>
-              <span
-                class="badge rounded-pill text-bg-light border"
+            <div class="d-none d-md-flex align-items-center gap-2 flex-shrink-0">
+              <button
+                v-if="canUpdateTasks"
+                type="button"
+                class="btn btn-outline-secondary staff-toolbar-btn"
+                :disabled="!selectedIds.length || loading"
+                @click="openBulkEdit"
               >
-                {{ col.tasks.length }}
-              </span>
-            </header>
-            <draggable
-              v-model="col.tasks"
-              :disabled="!canMutateWebmasterTasks"
-              :group="{ name: 'webmaster-tasks', pull: true, put: true }"
-              :animation="200"
-              :delay="175"
-              item-key="id"
-              tag="div"
-              class="d-flex flex-column flex-grow-1 gap-3 p-3 wm-kanban-dropzone"
-              ghost-class="kanban-ghost"
-              drag-class="kanban-drag"
-              @change="onColumnChange(col.value, $event)"
+                Bulk Edit
+              </button>
+              <button
+                v-if="canDeleteTasks"
+                type="button"
+                class="btn btn-outline-danger staff-toolbar-btn"
+                :disabled="!selectedIds.length || loading"
+                @click="openBulkDelete"
+              >
+                Bulk Delete
+              </button>
+            </div>
+            <div
+              v-if="canUpdateTasks && canDeleteTasks"
+              class="d-md-none position-relative flex-shrink-0"
+              data-toolbar-bulk
             >
-              <template #item="{ element: task }">
-                <article
-                  class="wm-kanban-card position-relative rounded border bg-body p-3 shadow-sm"
-                  role="button"
-                  tabindex="0"
-                  @click="onKanbanCardClick(task, $event)"
-                  @keydown.enter.prevent="goTaskDetail(task)"
+              <button
+                type="button"
+                class="btn btn-outline-secondary staff-toolbar-btn d-inline-flex align-items-center gap-1"
+                :aria-expanded="bulkMenuOpen"
+                aria-haspopup="true"
+                :disabled="loading"
+                @click.stop="
+                  filterMenuOpen = false;
+                  bulkMenuOpen = !bulkMenuOpen;
+                "
+              >
+                Bulk Actions
+                <svg width="14" height="14" fill="currentColor" viewBox="0 0 24 24" class="text-secondary" aria-hidden="true">
+                  <path d="M7 10l5 5 5-5H7z" />
+                </svg>
+              </button>
+              <div
+                v-if="bulkMenuOpen"
+                class="dropdown-menu show shadow border px-0 py-1 mt-1 staff-toolbar-bulk-dropdown"
+                style="right: 0; left: auto"
+                role="menu"
+                aria-label="Bulk actions"
+                @click.stop
+              >
+                <button
+                  type="button"
+                  class="dropdown-item small"
+                  role="menuitem"
+                  :disabled="!selectedIds.length || loading"
+                  @click="
+                    bulkMenuOpen = false;
+                    openBulkEdit();
+                  "
                 >
-                  <div class="d-flex align-items-start justify-content-between gap-2 pe-1">
-                    <h3 class="min-w-0 flex-grow-1 small fw-semibold lh-sm text-body mb-0">
-                      {{ task.title }}
-                    </h3>
-                    <div
-                      data-kanban-card-actions
-                      class="position-relative flex-shrink-0"
-                      @click.stop
-                    >
-                      <button
-                        type="button"
-                        class="staff-action-btn staff-action-btn--more"
-                        :class="{ 'is-open': manageOpenId === task.id }"
-                        :aria-expanded="manageOpenId === task.id"
-                        aria-haspopup="true"
-                        aria-label="Row actions"
-                        @click="toggleManageMenu(task.id, $event)"
-                      >
-                        <CrmIconRowActions variant="horizontal" />
-                      </button>
-                      <Transition
-                        enter-active-class="transition ease-out duration-100"
-                        enter-from-class="opacity-0"
-                        enter-to-class="opacity-100"
-                        leave-active-class="transition ease-in duration-75"
-                        leave-from-class="opacity-100"
-                        leave-to-class="opacity-0"
-                      >
-                        <div
-                          v-if="manageOpenId === task.id"
-                          class="dropdown-menu show position-absolute end-0 mt-1 p-0 shadow"
-                          style="top: 100%"
-                          data-kanban-card-actions
-                          role="menu"
-                          @click.stop
-                        >
-                          <div class="d-flex flex-column">
-                            <button
-                              type="button"
-                              class="dropdown-item small"
-                              role="menuitem"
-                              @click="goTaskDetail(task)"
-                            >
-                              View
-                            </button>
-                            <button
-                              v-if="canMutateWebmasterTasks"
-                              type="button"
-                              class="dropdown-item small"
-                              role="menuitem"
-                              @click="openEdit(task)"
-                            >
-                              Edit
-                            </button>
-                            <button
-                              v-if="canMutateWebmasterTasks"
-                              type="button"
-                              class="dropdown-item small text-danger"
-                              role="menuitem"
-                              @click="openDeleteModal(task)"
-                            >
-                              Delete
-                            </button>
-                          </div>
-                        </div>
-                      </Transition>
-                    </div>
-                  </div>
-                  <p
-                    v-if="descSnippet(task.description)"
-                    class="mt-1.5 text-xs leading-relaxed text-gray-500 dark:text-gray-400"
-                  >
-                    {{ descSnippet(task.description) }}
-                  </p>
-                  <div class="mt-3 d-flex flex-wrap align-items-center gap-2">
-                    <span
-                      v-if="formatUsdPrice(task.price)"
-                      class="inline-flex max-w-full truncate rounded-md bg-emerald-50 px-2 py-0.5 text-[11px] font-medium text-emerald-900 dark:bg-emerald-500/15 dark:text-emerald-200"
-                    >
-                      {{ formatUsdPrice(task.price) }}
-                    </span>
-                    <span
-                      class="inline-flex rounded-full px-2 py-0.5 text-[11px] font-medium capitalize ring-1 ring-inset ring-gray-200 dark:ring-gray-600"
-                      :class="priorityClass(task.priority)"
-                    >
-                      {{ priorityLabel(task.priority) }}
-                    </span>
-                    <span
-                      v-if="dueBadgeLabel(task.due_date)"
-                      class="inline-flex items-center rounded-md bg-blue-50 px-2 py-0.5 text-[11px] font-medium text-blue-800 dark:bg-blue-500/15 dark:text-blue-200"
-                    >
-                      {{ dueBadgeLabel(task.due_date) }}
-                    </span>
-                  </div>
-                  <div v-if="task.assignee" class="mt-3 d-flex align-items-center gap-2 border-top pt-3">
-                    <span
-                      class="d-flex align-items-center justify-content-center rounded-circle flex-shrink-0 small fw-semibold wm-kanban-avatar"
-                      :class="avatarClassForUser(task.assignee.email)"
-                    >
-                      {{ initials(task.assignee.name) }}
-                    </span>
-                    <span class="min-w-0 text-truncate small text-body-secondary">{{
-                      task.assignee.name
-                    }}</span>
-                  </div>
-                  <div v-else class="mt-3 border-top pt-3 small text-body-secondary">
-                    Unassigned
-                  </div>
-                </article>
-              </template>
-            </draggable>
-            </section>
+                  Bulk Edit
+                </button>
+                <button
+                  type="button"
+                  class="dropdown-item small text-danger"
+                  role="menuitem"
+                  :disabled="!selectedIds.length || loading"
+                  @click="
+                    bulkMenuOpen = false;
+                    openBulkDelete();
+                  "
+                >
+                  Bulk Delete
+                </button>
+              </div>
+            </div>
           </div>
-          <p
-            v-if="!boardColumns.length"
-            class="col-12 py-5 text-center text-secondary small mb-0"
-          >
-            No status columns. Reload the page.
-          </p>
         </div>
       </div>
+
+      <div class="table-responsive staff-table-wrap">
+        <table class="table table-hover align-middle mb-0 staff-data-table">
+          <thead class="table-light staff-table-head">
+            <tr>
+              <th
+                v-if="showCheckboxColumn"
+                class="staff-table-head__th staff-table-head__th--select"
+                scope="col"
+              >
+                <input
+                  type="checkbox"
+                  class="form-check-input staff-table-head__check mt-0"
+                  :checked="isAllPageSelected"
+                  :disabled="loading || !rows.length"
+                  aria-label="Select all on page"
+                  @change="toggleSelectAll"
+                />
+              </th>
+              <th
+                class="staff-table-head__th staff-table-head__th--sort"
+                scope="col"
+                :aria-sort="thAriaSort('title')"
+              >
+                <button type="button" class="staff-sort-btn" :disabled="loading" @click="toggleSort('title')">
+                  Task
+                  <span v-if="sortIndicator('title')" class="staff-sort-ind">{{ sortIndicator("title") }}</span>
+                </button>
+              </th>
+              <th
+                class="staff-table-head__th staff-table-head__th--sort"
+                scope="col"
+                :aria-sort="thAriaSort('status')"
+              >
+                <button type="button" class="staff-sort-btn" :disabled="loading" @click="toggleSort('status')">
+                  Status
+                  <span v-if="sortIndicator('status')" class="staff-sort-ind">{{ sortIndicator("status") }}</span>
+                </button>
+              </th>
+              <th
+                class="staff-table-head__th staff-table-head__th--sort"
+                scope="col"
+                :aria-sort="thAriaSort('priority')"
+              >
+                <button type="button" class="staff-sort-btn" :disabled="loading" @click="toggleSort('priority')">
+                  Priority
+                  <span v-if="sortIndicator('priority')" class="staff-sort-ind">{{ sortIndicator("priority") }}</span>
+                </button>
+              </th>
+              <th class="staff-table-head__th" scope="col">Assignee</th>
+              <th
+                class="staff-table-head__th staff-table-head__th--sort"
+                scope="col"
+                :aria-sort="thAriaSort('due_date')"
+              >
+                <button type="button" class="staff-sort-btn" :disabled="loading" @click="toggleSort('due_date')">
+                  Due Date
+                  <span v-if="sortIndicator('due_date')" class="staff-sort-ind">{{ sortIndicator("due_date") }}</span>
+                </button>
+              </th>
+              <th class="staff-table-head__th" scope="col">Price</th>
+              <th
+                v-if="showRowActions"
+                class="staff-table-head__th staff-actions-col"
+                scope="col"
+                aria-sort="none"
+              >
+                Actions
+              </th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr v-if="loading">
+              <td :colspan="tableColspan" class="py-5">
+                <div class="d-flex justify-content-center py-3">
+                  <CrmLoadingSpinner message="Loading tasks…" />
+                </div>
+              </td>
+            </tr>
+            <tr v-for="task in rows" v-else :key="task.id" class="align-middle">
+              <td v-if="showCheckboxColumn" class="staff-table-cell--tight-check">
+                <input
+                  type="checkbox"
+                  class="form-check-input staff-table-head__check mt-0"
+                  :checked="selectedIds.includes(task.id)"
+                  :aria-label="`Select ${task.title}`"
+                  @change="toggleRowSelect(task.id)"
+                />
+              </td>
+              <td>
+                <RouterLink
+                  :to="`/admin/webmaster/tasks/${task.id}`"
+                  class="fw-semibold text-body text-decoration-none d-block text-truncate"
+                  style="max-width: 16rem"
+                  :title="task.title"
+                >
+                  {{ task.title }}
+                </RouterLink>
+              </td>
+              <td>
+                <span
+                  class="badge rounded-pill text-capitalize fw-medium"
+                  :class="statusBadgeClass(task.status)"
+                >
+                  {{ statusLabel(task.status) }}
+                </span>
+              </td>
+              <td>
+                <span
+                  class="badge rounded-pill text-capitalize fw-medium"
+                  :class="priorityBadgeClass(task.priority)"
+                >
+                  {{ priorityLabel(task.priority) }}
+                </span>
+              </td>
+              <td class="text-body staff-table-cell__meta text-truncate" style="max-width: 10rem">
+                {{ task.assignee?.name || "—" }}
+              </td>
+              <td class="text-body staff-table-cell__meta text-nowrap">
+                {{ task.due_date ? formatDateUs(task.due_date) : "—" }}
+              </td>
+              <td class="text-body staff-table-cell__meta text-nowrap">
+                {{ formatUsdPrice(task.price) || "—" }}
+              </td>
+              <td v-if="showRowActions" class="staff-actions-cell text-center">
+                <div
+                  data-row-actions
+                  class="staff-actions-inner staff-actions-inner--single justify-content-center"
+                >
+                  <button
+                    type="button"
+                    class="staff-action-btn staff-action-btn--more"
+                    :class="{ 'is-open': manageOpenId === task.id }"
+                    :aria-expanded="manageOpenId === task.id"
+                    aria-haspopup="true"
+                    aria-label="Row actions"
+                    @click="toggleManageMenu(task.id, $event)"
+                  >
+                    <CrmIconRowActions variant="horizontal" />
+                  </button>
+                </div>
+              </td>
+            </tr>
+            <tr v-if="!loading && rows.length === 0">
+              <td :colspan="tableColspan" class="px-4 py-5 text-center text-secondary">
+                No tasks found.
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+      <p class="staff-table-mobile-scroll-cue d-md-none" aria-hidden="true">
+        Scroll sideways or swipe to see all columns.
+      </p>
 
       <div
         class="d-flex flex-column flex-lg-row align-items-lg-center justify-content-lg-between gap-3 border-top staff-table-footer"
@@ -892,9 +977,7 @@ onUnmounted(() => {
         <div
           class="d-flex flex-column flex-sm-row align-items-sm-center gap-2 gap-sm-4 flex-wrap order-2 order-lg-1 justify-content-center justify-content-lg-start"
         >
-          <p
-            class="small text-secondary mb-0 text-center text-sm-start"
-          >
+          <p class="small text-secondary mb-0 text-center text-sm-start">
             Showing
             <span class="fw-semibold text-body">{{ showingFrom }}</span>
             to
@@ -902,18 +985,9 @@ onUnmounted(() => {
             of
             <span class="fw-semibold text-body">{{ pagination.total }}</span>
             entries
-            <span v-if="query.status" class="text-secondary">
-              · {{ statusLabel(query.status) }}
-            </span>
           </p>
-          <div
-            class="d-flex align-items-center gap-2 justify-content-center justify-content-sm-start"
-          >
-            <label
-              class="small text-secondary text-nowrap mb-0"
-              for="wm-per-page-footer"
-              >Rows per page</label
-            >
+          <div class="d-flex align-items-center gap-2 justify-content-center justify-content-sm-start">
+            <label class="small text-secondary text-nowrap mb-0" for="wm-per-page-footer">Rows per page</label>
             <select
               id="wm-per-page-footer"
               class="form-select form-select-sm staff-table-footer-per-page"
@@ -921,9 +995,7 @@ onUnmounted(() => {
               :disabled="loading"
               @change="onPerPageChange"
             >
-              <option v-for="n in PER_PAGE_OPTIONS" :key="n" :value="n">
-                {{ n }}
-              </option>
+              <option v-for="n in PER_PAGE_OPTIONS" :key="n" :value="n">{{ n }}</option>
             </select>
           </div>
         </div>
@@ -941,16 +1013,8 @@ onUnmounted(() => {
                 aria-label="First page"
                 @click="goFirstPage"
               >
-                <svg
-                  width="18"
-                  height="18"
-                  fill="currentColor"
-                  viewBox="0 0 24 24"
-                  aria-hidden="true"
-                >
-                  <path
-                    d="M5.59 18L7 16.59 2.41 12 7 7.41 5.59 6l-6 6 6 6zm8 0L15 16.59 10.41 12 15 7.41 13.59 6l-6 6 6 6z"
-                  />
+                <svg width="18" height="18" fill="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+                  <path d="M5.59 18L7 16.59 2.41 12 7 7.41 5.59 6l-6 6 6 6zm8 0L15 16.59 10.41 12 15 7.41 13.59 6l-6 6 6 6z" />
                 </svg>
               </button>
               <button
@@ -960,13 +1024,7 @@ onUnmounted(() => {
                 aria-label="Previous page"
                 @click="goPage(pagination.current_page - 1)"
               >
-                <svg
-                  width="18"
-                  height="18"
-                  fill="currentColor"
-                  viewBox="0 0 24 24"
-                  aria-hidden="true"
-                >
+                <svg width="18" height="18" fill="currentColor" viewBox="0 0 24 24" aria-hidden="true">
                   <path d="M15.41 7.41L14 6l-6 6 6 6 1.41-1.41L10.83 12z" />
                 </svg>
               </button>
@@ -974,19 +1032,12 @@ onUnmounted(() => {
             <div class="staff-page-pager__pages">
               <div class="staff-page-pager-inner d-flex align-items-center">
                 <template v-for="(item, idx) in pageItems" :key="'wm-pi-' + idx">
-                  <span
-                    v-if="item.type === 'gap'"
-                    class="px-1 small text-secondary user-select-none"
-                    >…</span
-                  >
+                  <span v-if="item.type === 'gap'" class="px-1 small text-secondary user-select-none">…</span>
                   <button
                     v-else
                     type="button"
                     class="staff-page-pager-tile"
-                    :class="{
-                      'staff-page-pager-tile--active':
-                        item.value === pagination.current_page,
-                    }"
+                    :class="{ 'staff-page-pager-tile--active': item.value === pagination.current_page }"
                     :disabled="loading"
                     @click="goPage(item.value)"
                   >
@@ -999,41 +1050,23 @@ onUnmounted(() => {
               <button
                 type="button"
                 class="staff-page-pager-tile staff-page-pager-tile--nav"
-                :disabled="
-                  loading || pagination.current_page >= pagination.last_page
-                "
+                :disabled="loading || pagination.current_page >= pagination.last_page"
                 aria-label="Next page"
                 @click="goPage(pagination.current_page + 1)"
               >
-                <svg
-                  width="18"
-                  height="18"
-                  fill="currentColor"
-                  viewBox="0 0 24 24"
-                  aria-hidden="true"
-                >
+                <svg width="18" height="18" fill="currentColor" viewBox="0 0 24 24" aria-hidden="true">
                   <path d="M8.59 16.59L10 18l6-6-6-6-1.41 1.41L13.17 12z" />
                 </svg>
               </button>
               <button
                 type="button"
                 class="staff-page-pager-tile staff-page-pager-tile--nav"
-                :disabled="
-                  loading || pagination.current_page >= pagination.last_page
-                "
+                :disabled="loading || pagination.current_page >= pagination.last_page"
                 aria-label="Last page"
                 @click="goLastPage"
               >
-                <svg
-                  width="18"
-                  height="18"
-                  fill="currentColor"
-                  viewBox="0 0 24 24"
-                  aria-hidden="true"
-                >
-                  <path
-                    d="M6.41 6L5 7.41 9.58 12 5 16.59 6.41 18l6-6-6-6zm8 0L13 7.41 17.58 12 13 16.59 14.41 18l6-6-6-6z"
-                  />
+                <svg width="18" height="18" fill="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+                  <path d="M6.41 6L5 7.41 9.58 12 5 16.59 6.41 18l6-6-6-6zm8 0L13 7.41 17.58 12 13 16.59 14.41 18l6-6-6-6z" />
                 </svg>
               </button>
             </div>
@@ -1052,34 +1085,61 @@ onUnmounted(() => {
       @close="closeDeleteModal"
       @confirm="confirmDelete"
     />
+
+    <ConfirmModal
+      :open="bulkDeleteOpen"
+      title="Delete Tasks?"
+      :message="bulkDeleteMessage"
+      confirm-label="Delete"
+      cancel-label="Cancel"
+      :busy="bulkDeleteBusy"
+      danger
+      @close="closeBulkDelete"
+      @confirm="confirmBulkDelete"
+    />
+
+    <Teleport to="body">
+      <Transition
+        enter-active-class="transition ease-out duration-100"
+        enter-from-class="opacity-0"
+        enter-to-class="opacity-100"
+        leave-active-class="transition ease-in duration-75"
+        leave-from-class="opacity-100"
+        leave-to-class="opacity-0"
+      >
+        <div
+          v-if="manageMenuTask"
+          data-row-actions
+          class="staff-row-menu fixed z-[300] overflow-hidden"
+          role="menu"
+          :style="{ top: `${manageMenuRect.top}px`, left: `${manageMenuRect.left}px` }"
+          @click.stop
+        >
+          <button type="button" class="staff-row-menu__item" role="menuitem" @click="goTaskDetail(manageMenuTask)">
+            View
+          </button>
+          <hr v-if="canUpdateTasks || canDeleteTasks" class="staff-row-menu__divider" />
+          <button
+            v-if="canUpdateTasks"
+            type="button"
+            class="staff-row-menu__item"
+            role="menuitem"
+            @click="openEdit(manageMenuTask)"
+          >
+            Edit
+          </button>
+          <hr v-if="canUpdateTasks && canDeleteTasks" class="staff-row-menu__divider" />
+          <button
+            v-if="canDeleteTasks"
+            type="button"
+            class="staff-row-menu__item staff-row-menu__item--danger"
+            role="menuitem"
+            @click="openDeleteModal(manageMenuTask)"
+          >
+            Delete
+          </button>
+        </div>
+      </Transition>
+    </Teleport>
   </div>
 </template>
-
-<style scoped>
-.kanban-ghost {
-  opacity: 0.65;
-}
-.kanban-drag {
-  opacity: 0.98;
-}
-.wm-kanban-board-host--loading {
-  min-height: 280px;
-}
-.wm-kanban-grid {
-  min-height: min(70vh, 640px);
-}
-.wm-kanban-dropzone {
-  min-height: 200px;
-}
-.wm-kanban-card {
-  cursor: pointer;
-}
-.wm-kanban-card:hover {
-  box-shadow: 0 0.125rem 0.5rem rgba(47, 43, 61, 0.08);
-}
-.wm-kanban-avatar {
-  width: 2rem;
-  height: 2rem;
-  font-size: 0.6875rem;
-}
-</style>

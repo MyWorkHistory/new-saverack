@@ -3,6 +3,8 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use App\Http\Requests\TaskBulkDeleteRequest;
+use App\Http\Requests\TaskBulkUpdateRequest;
 use App\Http\Requests\TaskCommentStoreRequest;
 use App\Http\Requests\TaskStoreRequest;
 use App\Http\Requests\TaskUpdateRequest;
@@ -154,6 +156,57 @@ class WebmasterTaskController extends Controller
         $task->update($request->validated());
 
         return response()->json($this->transformTask($task->fresh(['creator', 'assignee'])));
+    }
+
+    public function bulkUpdate(TaskBulkUpdateRequest $request): JsonResponse
+    {
+        $validated = $request->validated();
+        $ids = array_values(array_unique(array_map('intval', $validated['task_ids'])));
+        $patch = [];
+        if (! empty($validated['status'])) {
+            $patch['status'] = $validated['status'];
+        }
+        if (! empty($validated['priority'])) {
+            $patch['priority'] = $validated['priority'];
+        }
+        if (array_key_exists('assigned_to', $validated)) {
+            $patch['assigned_to'] = $validated['assigned_to'];
+        }
+        $updated = 0;
+        foreach ($ids as $id) {
+            $task = Task::query()->find($id);
+            if ($task === null) {
+                continue;
+            }
+            $this->authorize('update', $task);
+            $task->update($patch);
+            $updated++;
+        }
+
+        return response()->json([
+            'message' => $updated > 0 ? 'Tasks updated.' : 'No tasks updated.',
+            'updated' => $updated,
+        ]);
+    }
+
+    public function bulkDestroy(TaskBulkDeleteRequest $request): JsonResponse
+    {
+        $ids = array_values(array_unique(array_map('intval', $request->validated()['task_ids'])));
+        $deleted = 0;
+        foreach ($ids as $id) {
+            $task = Task::query()->find($id);
+            if ($task === null) {
+                continue;
+            }
+            $this->authorize('delete', $task);
+            $task->delete();
+            $deleted++;
+        }
+
+        return response()->json([
+            'message' => $deleted > 0 ? 'Tasks deleted.' : 'No tasks deleted.',
+            'deleted' => $deleted,
+        ]);
     }
 
     public function destroy(Request $request, Task $task): JsonResponse

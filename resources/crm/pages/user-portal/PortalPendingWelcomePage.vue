@@ -207,19 +207,23 @@ onUnmounted(() => {
         </div>
 
         <div class="staff-stat-card portal-welcome-page__progress w-100">
-          <p class="staff-stat-card__label">Your progress</p>
-          <p class="staff-stat-card__value">
-            {{ progress.completed }} of {{ progress.total }}
-          </p>
-          <p class="staff-stat-card__sub">Onboarding tasks complete</p>
-          <div
-            class="staff-stat-card__icon user-dashboard-stat-icon portal-welcome-page__progress-icon"
-            :style="PROGRESS_ICON_STYLE"
-            aria-hidden="true"
-          >
-            <svg class="user-dashboard-stat-svg" fill="currentColor" viewBox="0 0 24 24">
-              <path :d="PORTAL_MATERIAL_ICON.hourglass" />
-            </svg>
+          <div class="portal-welcome-page__progress-body">
+            <div class="portal-welcome-page__progress-copy min-w-0">
+              <p class="staff-stat-card__label">Your progress</p>
+              <p class="staff-stat-card__value">
+                {{ progress.completed }} of {{ progress.total }}
+              </p>
+              <p class="staff-stat-card__sub">Onboarding tasks complete</p>
+            </div>
+            <div
+              class="portal-welcome-page__progress-icon"
+              :style="PROGRESS_ICON_STYLE"
+              aria-hidden="true"
+            >
+              <svg class="portal-welcome-page__progress-icon-svg" fill="currentColor" viewBox="0 0 24 24">
+                <path :d="PORTAL_MATERIAL_ICON.hourglass" />
+              </svg>
+            </div>
           </div>
         </div>
 
@@ -407,30 +411,44 @@ onUnmounted(() => {
 .portal-welcome-page__progress {
   padding: 0.875rem 1rem;
   min-height: 4.5rem;
-  position: relative;
 }
 
-.portal-welcome-page__progress .staff-stat-card__value {
+.portal-welcome-page__progress-body {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.portal-welcome-page__progress-copy .staff-stat-card__value {
   font-size: 1.375rem;
   margin-top: 0.15rem;
 }
 
-.portal-welcome-page__progress .staff-stat-card__label {
+.portal-welcome-page__progress-copy .staff-stat-card__label {
   font-size: 0.875rem;
 }
 
-.portal-welcome-page__progress .staff-stat-card__sub {
+.portal-welcome-page__progress-copy .staff-stat-card__sub {
   margin-top: 0.2rem;
   font-size: 0.8125rem;
 }
 
 .portal-welcome-page__progress-icon {
-  top: 50%;
-  right: 1.125rem;
-  transform: translateY(-50%);
+  flex-shrink: 0;
   width: 2.875rem;
   height: 2.875rem;
   border-radius: 0.4375rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.portal-welcome-page__progress-icon-svg {
+  width: 1.4375rem;
+  height: 1.4375rem;
+  display: block;
+  overflow: visible;
 }
 
 .portal-welcome-page__panel-icon {

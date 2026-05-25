@@ -2,6 +2,7 @@
 import { computed, onUnmounted, ref, watch } from "vue";
 import api from "../../services/api";
 import CrmLoadingSpinner from "../common/CrmLoadingSpinner.vue";
+import PortalOnboardingModalShell from "./PortalOnboardingModalShell.vue";
 import { useToast } from "../../composables/useToast";
 
 const props = defineProps({
@@ -99,17 +100,8 @@ async function confirmManual() {
 </script>
 
 <template>
-  <Teleport to="body">
-    <div
-      v-if="open"
-      class="modal fade show d-block"
-      tabindex="-1"
-      role="dialog"
-      aria-modal="true"
-      @click.self="close"
-    >
-      <div class="modal-dialog modal-dialog-centered modal-lg">
-        <div class="modal-content border-0 shadow">
+  <PortalOnboardingModalShell :open="open" @update:open="emit('update:open', $event)">
+    <div class="modal-content border-0 shadow w-100">
           <div class="modal-header border-bottom">
             <h2 class="modal-title h5 mb-0">Select Your Payment Method</h2>
             <button
@@ -255,11 +247,8 @@ async function confirmManual() {
               </button>
             </div>
           </div>
-        </div>
-      </div>
     </div>
-    <div v-if="open" class="modal-backdrop fade show" />
-  </Teleport>
+  </PortalOnboardingModalShell>
 </template>
 
 <style scoped>

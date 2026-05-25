@@ -526,36 +526,88 @@ class OrderController extends Controller
         }
     }
 
+    public function setHolds(Request $request, string $orderId): JsonResponse
+    {
+        Gate::authorize('shiphero.orders.write');
+        $validated = $request->validate([
+            'client_account_id' => ['required', 'integer', 'exists:client_accounts,id'],
+            'fraud_hold' => ['nullable', 'boolean'],
+            'address_hold' => ['nullable', 'boolean'],
+            'payment_hold' => ['nullable', 'boolean'],
+            'client_hold' => ['nullable', 'boolean'],
+            'operator_hold' => ['nullable', 'boolean'],
+        ]);
+        $flags = [];
+        foreach (['fraud_hold', 'address_hold', 'payment_hold', 'client_hold', 'operator_hold'] as $k) {
+            if (! empty($validated[$k])) {
+                $flags[$k] = true;
+            }
+        }
+        if ($flags === []) {
+            throw ValidationException::withMessages([
+                'fraud_hold' => ['Select at least one hold type.'],
+            ]);
+        }
+        $customerId = $this->resolveShipHeroCustomerAccountId((int) $validated['client_account_id'], $request);
+        try {
+            $this->orders->setOrderHoldsTrue($orderId, $customerId, $flags);
+
+            return response()->json(['message' => 'Holds applied.']);
+        } catch (RuntimeException $e) {
+            return response()->json(['message' => $e->getMessage()], 502);
+        } catch (Throwable $e) {
+            report($e);
+
+            return response()->json([
+                'message' => config('app.debug') ? $e->getMessage() : 'Could not apply holds in ShipHero.',
+            ], 502);
+        }
+    }
+
     public function removeHolds(Request $request, string $orderId): JsonResponse
     {
         Gate::authorize('shiphero.orders.write');
         $validated = $request->validate([
             'client_account_id' => ['required', 'integer', 'exists:client_accounts,id'],
             'holds_to_clear' => ['nullable', 'array', 'min:1'],
-            'holds_to_clear.*' => ['string', Rule::in(ShipHeroOrderService::ORDER_CLEARABLE_HOLD_KEYS)],
+            'holds_to_clear.*' => ['string', Rule::in(ShipHeroOrderService::orderRemovableHoldKeys())],
             'payment_hold_reason' => ['nullable', 'string', 'max:500'],
         ]);
         $customerId = $this->resolveShipHeroCustomerAccountId((int) $validated['client_account_id'], $request);
         try {
             $holds = $this->orders->getOrderHoldsNormalized($orderId, $customerId);
-            if ($this->orders->orderHoldsOnlyOperatorHoldActive($holds)) {
-                return response()->json([
-                    'message' => ShipHeroOrderService::OPERATOR_HOLD_ONLY_MESSAGE,
-                ], 422);
-            }
             $keysToClear = isset($validated['holds_to_clear']) && is_array($validated['holds_to_clear'])
                 ? array_values(array_unique($validated['holds_to_clear']))
                 : [];
             if ($keysToClear === []) {
+                if ($this->orders->orderHoldsOnlyOperatorHoldActive($holds)) {
+                    return response()->json([
+                        'message' => ShipHeroOrderService::OPERATOR_HOLD_ONLY_MESSAGE,
+                    ], 422);
+                }
                 $this->orders->clearOrderHolds($orderId, $customerId);
 
                 return response()->json(['message' => 'Holds cleared.']);
             }
-            $reason = isset($validated['payment_hold_reason']) ? trim((string) $validated['payment_hold_reason']) : '';
-            $paymentReason = in_array('payment_hold', $keysToClear, true)
-                ? ($reason !== '' ? $reason : 'User Clear Payment Hold')
-                : null;
-            $this->orders->clearOrderHoldsSelective($orderId, $customerId, $keysToClear, $paymentReason, $holds);
+
+            $clearOperator = in_array(ShipHeroOrderService::ORDER_USER_HOLD_KEY, $keysToClear, true);
+            $clearableKeys = array_values(array_filter(
+                $keysToClear,
+                static fn (string $k): bool => in_array($k, ShipHeroOrderService::ORDER_CLEARABLE_HOLD_KEYS, true)
+            ));
+
+            if ($clearOperator) {
+                $this->orders->clearOperatorHold($orderId, $customerId);
+                $holds = $this->orders->getOrderHoldsNormalized($orderId, $customerId);
+            }
+
+            if ($clearableKeys !== []) {
+                $reason = isset($validated['payment_hold_reason']) ? trim((string) $validated['payment_hold_reason']) : '';
+                $paymentReason = in_array('payment_hold', $clearableKeys, true)
+                    ? ($reason !== '' ? $reason : 'User Clear Payment Hold')
+                    : null;
+                $this->orders->clearOrderHoldsSelective($orderId, $customerId, $clearableKeys, $paymentReason, $holds);
+            }
 
             return response()->json(['message' => 'Holds cleared.']);
         } catch (RuntimeException $e) {

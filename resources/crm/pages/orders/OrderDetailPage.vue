@@ -80,6 +80,7 @@ const attachmentUploadBusy = ref(false);
 
 const removeHoldsModalOpen = ref(false);
 const removeHoldsBusy = ref(false);
+const userHoldBusy = ref(false);
 const moreActionsOpen = ref(false);
 const moreActionsBtnRef = ref(null);
 const moreActionsMenuRef = ref(null);
@@ -319,6 +320,14 @@ const showBackorderHeaderBadge = computed(
     !orderIsTerminalFulfillment.value &&
     !showNotReadyToShipBanner.value,
 );
+
+const hasUserHold = computed(() => !!detailHoldsNormalized.value.operator_hold);
+
+const canPlaceUserHold = computed(
+  () => canRunShipHeroActions.value && !hasUserHold.value && !orderIsTerminalFulfillment.value,
+);
+
+const showRemoveUserHoldBtn = computed(() => hasUserHold.value && canRunShipHeroActions.value);
 
 const sortedItems = computed(() => {
   const rows = Array.isArray(order.value?.items) ? [...order.value.items] : [];
@@ -873,6 +882,40 @@ async function onRemoveHoldsConfirm(payload) {
     toast.errorFrom(e, "Could not remove holds.");
   } finally {
     removeHoldsBusy.value = false;
+  }
+}
+
+async function placeUserHold() {
+  if (!order.value || !selectedAccountId.value || !orderId.value || !canPlaceUserHold.value) return;
+  userHoldBusy.value = true;
+  try {
+    await api.post(`/orders/${encodeURIComponent(orderId.value)}/set-holds`, {
+      client_account_id: Number(selectedAccountId.value),
+      operator_hold: true,
+    });
+    toast.success("User hold placed.");
+    await loadOrder({ refresh: true });
+  } catch (e) {
+    toast.errorFrom(e, "Could not place hold.");
+  } finally {
+    userHoldBusy.value = false;
+  }
+}
+
+async function removeUserHold() {
+  if (!order.value || !selectedAccountId.value || !orderId.value || !showRemoveUserHoldBtn.value) return;
+  userHoldBusy.value = true;
+  try {
+    await api.post(`/orders/${encodeURIComponent(orderId.value)}/remove-holds`, {
+      client_account_id: Number(selectedAccountId.value),
+      holds_to_clear: ["operator_hold"],
+    });
+    toast.success("User hold removed.");
+    await loadOrder({ refresh: true });
+  } catch (e) {
+    toast.errorFrom(e, "Could not remove hold.");
+  } finally {
+    userHoldBusy.value = false;
   }
 }
 
@@ -1504,10 +1547,20 @@ function goToOrdersList() {
                 </button>
               </div>
               <button
+                v-if="showRemoveUserHoldBtn"
+                type="button"
+                class="btn btn-danger text-white"
+                :disabled="userHoldBusy || !canRunShipHeroActions"
+                title="Remove user hold"
+                @click="removeUserHold"
+              >
+                {{ userHoldBusy ? "Removing…" : "Remove Hold" }}
+              </button>
+              <button
                 v-if="showNotReadyToShipBanner && detailHasRemovableHolds && !detailOnlyOperatorHold"
                 type="button"
                 class="btn btn-danger text-white"
-                :disabled="!canRunShipHeroActions"
+                :disabled="!canRunShipHeroActions || removeHoldsBusy"
                 :title="!canRunShipHeroActions ? 'You do not have permission to change this order in ShipHero.' : undefined"
                 @click="removeHoldsModalOpen = true"
               >
@@ -1533,8 +1586,8 @@ function goToOrdersList() {
               <ul class="small mb-0 ps-3 mt-2 text-secondary order-detail-page__nrts-list">
                 <li v-for="(line, idx) in notReadyBannerBullets" :key="'nrts-' + idx">{{ line }}</li>
               </ul>
-              <p v-if="detailOnlyOperatorHold" class="small text-warning-emphasis mb-0 mt-3 fw-medium">
-                Contact your account manager about the operator hold on this order.
+              <p v-if="detailOnlyOperatorHold && showRemoveUserHoldBtn" class="small text-secondary mb-0 mt-3">
+                User hold is active — use Remove Hold to release.
               </p>
             </div>
           </div>
@@ -2166,6 +2219,29 @@ function goToOrdersList() {
             "
           >
             Refresh
+          </button>
+        </li>
+        <li>
+          <button
+            type="button"
+            class="dropdown-item"
+            role="menuitem"
+            :disabled="!canPlaceUserHold || userHoldBusy"
+            :title="
+              !canRunShipHeroActions
+                ? 'You do not have permission to change this order in ShipHero.'
+                : hasUserHold
+                  ? 'Order already has a user hold.'
+                  : orderIsTerminalFulfillment
+                    ? 'Cannot place hold on a shipped or canceled order.'
+                    : undefined
+            "
+            @click="
+              closeMoreActionsMenu();
+              placeUserHold();
+            "
+          >
+            {{ userHoldBusy ? "Placing Hold…" : "Place Hold" }}
           </button>
         </li>
         <li>

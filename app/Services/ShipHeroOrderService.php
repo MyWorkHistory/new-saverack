@@ -23,6 +23,9 @@ class ShipHeroOrderService
         'payment_hold',
     ];
 
+    /** ShipHero “User Hold” in UI; API field {@see operator_hold}. */
+    public const ORDER_USER_HOLD_KEY = 'operator_hold';
+
     public const NO_MATCHING_HOLDS_MESSAGE = 'No matching holds to clear on this order.';
 
     /** User-facing copy when only an operator hold blocks CRM clears. */
@@ -965,6 +968,45 @@ GQL;
     }
 
     /**
+     * Clear ShipHero user hold ({@see operator_hold}) only. Does not touch {@see client_hold} or other holds.
+     */
+    public function clearOperatorHold(string $orderId, string $customerAccountId): void
+    {
+        $relayId = $this->resolveOrderRelayIdForMutations($orderId, $customerAccountId);
+        $customer = trim($customerAccountId);
+        $current = $this->getOrderHoldsNormalized($orderId, $customerAccountId);
+        if (empty($current[self::ORDER_USER_HOLD_KEY])) {
+            throw new RuntimeException(self::NO_MATCHING_HOLDS_MESSAGE);
+        }
+        $data = [
+            'order_id' => $relayId,
+            self::ORDER_USER_HOLD_KEY => false,
+        ];
+        if ($customer !== '') {
+            $data['customer_account_id'] = $customer;
+        }
+        $graphql = <<<'GQL'
+mutation ShipHeroOrderClearOperatorHold($data: UpdateOrderHoldsInput!) {
+  order_update_holds(data: $data) {
+    request_id
+    complexity
+  }
+}
+GQL;
+        $this->client->query($graphql, ['data' => $data], true, [
+            ShipHeroClient::OPTION_GRAPHQL_SUCCESS_FIELD => 'order_update_holds',
+        ]);
+    }
+
+    /**
+     * @return list<string>
+     */
+    public static function orderRemovableHoldKeys(): array
+    {
+        return array_merge(self::ORDER_CLEARABLE_HOLD_KEYS, [self::ORDER_USER_HOLD_KEY]);
+    }
+
+    /**
      * True when the only active hold is {@see operator_hold} (nothing else for CRM “Remove hold” to clear).
      *
      * @param  array<string, mixed>|null  $holds
@@ -1717,7 +1759,7 @@ GQL;
             $parts[] = 'Order has payment hold.';
         }
         if (! empty($holds['operator_hold'])) {
-            $parts[] = 'Order has operator hold.';
+            $parts[] = 'Order has user hold.';
         }
         if (! empty($holds['address_hold'])) {
             $parts[] = 'Order has address hold.';

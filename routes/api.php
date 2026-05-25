@@ -171,6 +171,8 @@ Route::middleware('auth:sanctum')->group(function () {
             ->middleware('can:shiphero.orders.write');
         Route::post('/{orderId}/cancel', [OrderController::class, 'cancelOrder'])
             ->middleware('can:shiphero.orders.write');
+        Route::post('/{orderId}/set-holds', [OrderController::class, 'setHolds'])
+            ->middleware('can:shiphero.orders.write');
         Route::post('/{orderId}/remove-holds', [OrderController::class, 'removeHolds'])
             ->middleware('can:shiphero.orders.write');
         Route::post('/{orderId}/signature-gift-note', [OrderController::class, 'updateSignatureGiftNote'])

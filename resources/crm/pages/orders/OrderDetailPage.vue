@@ -350,6 +350,45 @@ const sortedItems = computed(() => {
   return rows;
 });
 
+function inventoryClientAccountIdForDetail() {
+  if (isPortalUser.value) {
+    const id = portalClientAccountId.value || Number(selectedAccountId.value || 0);
+    return id > 0 ? id : 0;
+  }
+  return Number(selectedAccountId.value || 0);
+}
+
+function inventoryDetailRouteForItem(item) {
+  const sku = String(item?.sku || "").trim();
+  if (!sku) return null;
+  const query = {};
+  const clientAccountId = inventoryClientAccountIdForDetail();
+  if (clientAccountId > 0) {
+    query.client_account_id = String(clientAccountId);
+  }
+  return {
+    name: isPortalUser.value ? "user-inventory-detail" : "inventory-detail",
+    params: { sku },
+    query,
+  };
+}
+
+function inventoryDetailHref(item) {
+  const route = inventoryDetailRouteForItem(item);
+  if (!route) return "";
+  return router.resolve(route).href;
+}
+
+function openItemInventoryInNewTab(item, event) {
+  if (event) {
+    event.preventDefault();
+    event.stopPropagation();
+  }
+  const href = inventoryDetailHref(item);
+  if (!href) return;
+  window.open(href, "_blank", "noopener,noreferrer");
+}
+
 function itemRowMenuKey(row) {
   if (!row || typeof row !== "object") return "";
   if (row.id) return String(row.id).trim();
@@ -1525,7 +1564,16 @@ function goToOrdersList() {
                 <tbody>
                   <tr v-for="item in sortedItems" :key="item.id || item.sku">
                     <td class="order-detail-page__items-col">
-                      <div class="order-detail-page__item-cell">
+                      <a
+                        v-if="inventoryDetailHref(item)"
+                        :href="inventoryDetailHref(item)"
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        class="order-detail-page__item-cell order-detail-page__item-cell--link text-decoration-none text-body"
+                        :title="`View ${item.sku} inventory (opens in new tab)`"
+                        :aria-label="`View inventory for SKU ${item.sku} in new tab`"
+                        @click="openItemInventoryInNewTab(item, $event)"
+                      >
                         <img
                           v-if="item.image_url"
                           :src="item.image_url"
@@ -1537,6 +1585,38 @@ function goToOrdersList() {
                         <div class="order-detail-page__item-copy">
                           <div
                             class="order-detail-page__item-name"
+                            :title="item.name ? String(item.name) : undefined"
+                          >
+                            {{ item.name || "—" }}
+                          </div>
+                          <span
+                            v-if="item.fulfillment_status"
+                            class="badge rounded-pill fw-medium order-detail-page__item-line-status-badge"
+                            :class="lineItemStatusBadgeClass(item.fulfillment_status)"
+                            :title="String(item.fulfillment_status)"
+                          >
+                            {{ item.fulfillment_status }}
+                          </span>
+                          <div
+                            class="order-detail-page__item-sku"
+                            :title="item.sku ? `SKU ${item.sku}` : undefined"
+                          >
+                            SKU {{ item.sku || "—" }}
+                          </div>
+                        </div>
+                      </a>
+                      <div v-else class="order-detail-page__item-cell">
+                        <img
+                          v-if="item.image_url"
+                          :src="item.image_url"
+                          alt=""
+                          class="order-detail-page__item-thumb"
+                          loading="lazy"
+                        />
+                        <div v-else class="order-detail-page__item-thumb order-detail-page__item-thumb--empty" aria-hidden="true"></div>
+                        <div class="order-detail-page__item-copy">
+                          <div
+                            class="order-detail-page__item-name order-detail-page__item-name--plain"
                             :title="item.name ? String(item.name) : undefined"
                           >
                             {{ item.name || "—" }}
@@ -2299,6 +2379,21 @@ function goToOrdersList() {
   gap: 0.5rem;
   min-width: 0;
   width: 100%;
+}
+
+.order-detail-page__item-cell--link {
+  cursor: pointer;
+  border-radius: 0.25rem;
+}
+
+.order-detail-page__item-cell--link:hover .order-detail-page__item-name,
+.order-detail-page__item-cell--link:focus-visible .order-detail-page__item-name {
+  text-decoration: underline;
+}
+
+.order-detail-page__item-name--plain {
+  color: inherit;
+  font-weight: 600;
 }
 
 .order-detail-page__item-copy {

@@ -1436,7 +1436,7 @@ class InvoiceService
                 'total_cents' => $total,
                 'groupKey' => 'storage',
                 'groupName' => $agg['name'],
-                'line_group_key' => $this->singleGroupKey($agg['items']),
+                'line_group_key' => $this->presentationLineGroupKey($agg['items'], 'storage', $storageKey),
                 'details' => $agg['items'],
             ];
         }
@@ -1724,6 +1724,24 @@ class InvoiceService
         }
 
         return $all[0];
+    }
+
+    /**
+     * Stable group key for presentation rows (e.g. Storage by Volume with mixed underlying group_key values).
+     *
+     * @param  list<array<string, mixed>>  $items
+     */
+    private function presentationLineGroupKey(array $items, string $categoryPrefix, string $bucketKey): ?string
+    {
+        $single = $this->singleGroupKey($items);
+        if ($single !== null) {
+            return $single;
+        }
+        if ($items === []) {
+            return null;
+        }
+
+        return 'presentation:'.$categoryPrefix.':'.md5($bucketKey);
     }
 
     private function isCreditCardFeeItem(InvoiceItem $item): bool

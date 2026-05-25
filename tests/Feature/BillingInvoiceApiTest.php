@@ -1902,6 +1902,7 @@ class BillingInvoiceApiTest extends TestCase
         $rows = $res->json('presentation.rows');
         $storageRow = collect($rows)->first(fn (array $r) => ($r['name'] ?? '') === 'Storage by Volume');
         $this->assertNotNull($storageRow);
+        $this->assertNotEmpty($storageRow['line_group_key'] ?? null, 'Storage by Volume row needs a line_group_key for staff edit/delete actions.');
         $details = $storageRow['details'] ?? [];
         $this->assertCount(1, $details);
         $this->assertSame(2.0, (float) ($details[0]['qty'] ?? 0));

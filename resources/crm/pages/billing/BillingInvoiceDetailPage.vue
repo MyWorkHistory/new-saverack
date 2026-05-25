@@ -1269,7 +1269,7 @@ function applyGroupBulkConsolidate() {
 }
 
 function openGroupDeleteFromGroupEditModal() {
-  if (!groupEditTarget.value?.line_group_key || groupEditBusy.value) return;
+  if (!resolveLineGroupKeyForRow(groupEditTarget.value) || groupEditBusy.value) return;
   groupEditModalOpen.value = false;
   groupEditLines.value = [];
   groupBulkQty.value = "";
@@ -1278,7 +1278,8 @@ function openGroupDeleteFromGroupEditModal() {
 }
 
 async function confirmGroupEdit() {
-  if (!invoice.value || !groupEditTarget.value?.line_group_key) return;
+  const groupKey = resolveLineGroupKeyForRow(groupEditTarget.value);
+  if (!invoice.value || !groupKey) return;
   groupEditBusy.value = true;
   try {
     const payloadItems = groupEditLines.value.map((line) => {
@@ -1304,7 +1305,7 @@ async function confirmGroupEdit() {
       putBody.replace_item_ids = scopedIds;
     }
     await api.put(
-      `/invoices/${invoice.value.id}/line-groups/${encodeURIComponent(groupEditTarget.value.line_group_key)}`,
+      `/invoices/${invoice.value.id}/line-groups/${encodeURIComponent(groupKey)}`,
       putBody,
     );
     toast.success("Grouped line items updated.");
@@ -1324,10 +1325,54 @@ async function confirmGroupEdit() {
 function presentationGroupedLineItemIds(row) {
   const details = row?.details;
   if (!Array.isArray(details) || !details.length) return null;
-  const ids = details
-    .map((d) => d.id)
-    .filter((id) => typeof id === "number" && Number.isFinite(id) && id > 0);
-  return ids.length ? ids : null;
+  const ids = [];
+  for (const d of details) {
+    if (Array.isArray(d?.invoice_item_ids) && d.invoice_item_ids.length) {
+      for (const id of d.invoice_item_ids) {
+        if (typeof id === "number" && Number.isFinite(id) && id > 0) {
+          ids.push(id);
+        }
+      }
+      continue;
+    }
+    if (typeof d?.id === "number" && Number.isFinite(d.id) && d.id > 0) {
+      ids.push(d.id);
+    }
+  }
+  const unique = [...new Set(ids)];
+  return unique.length ? unique : null;
+}
+
+/** Menu / row identity for a drill-down detail line (merged volume rows use invoice_item_ids). */
+function detailRowMenuKey(row) {
+  const ids = Array.isArray(row?.invoice_item_ids) ? row.invoice_item_ids : [];
+  if (ids.length) {
+    return `ids-${ids.join("-")}`;
+  }
+  if (row?.id != null && row.id !== "") {
+    return `id-${row.id}`;
+  }
+  return `row-${String(row?.name || "")}`;
+}
+
+function detailRowHasActions(row) {
+  const ids = Array.isArray(row?.invoice_item_ids) ? row.invoice_item_ids : [];
+  if (ids.length) return true;
+  return typeof row?.id === "number" && row.id > 0;
+}
+
+/** Group key for line-group API when presentation row has one shared key or scoped item ids only. */
+function resolveLineGroupKeyForRow(row) {
+  const key = String(row?.line_group_key || "").trim();
+  if (key) return key;
+  if (presentationGroupedLineItemIds(row)) {
+    return `presentation:${String(row?.id || "group")}`;
+  }
+  return null;
+}
+
+function rowSupportsGroupActions(row) {
+  return !!resolveLineGroupKeyForRow(row);
 }
 
 function openGroupDeleteModal(row) {
@@ -1342,12 +1387,13 @@ function closeGroupDeleteModal() {
 }
 
 async function confirmGroupDelete() {
-  if (!invoice.value || !groupEditTarget.value?.line_group_key) return;
+  const row = groupEditTarget.value;
+  const groupKey = resolveLineGroupKeyForRow(row);
+  if (!invoice.value || !groupKey) return;
   groupDeleteBusy.value = true;
   try {
-    const row = groupEditTarget.value;
     const scopedIds = presentationGroupedLineItemIds(row);
-    const url = `/invoices/${invoice.value.id}/line-groups/${encodeURIComponent(row.line_group_key)}`;
+    const url = `/invoices/${invoice.value.id}/line-groups/${encodeURIComponent(groupKey)}`;
     await api.delete(url, scopedIds ? { data: { item_ids: scopedIds } } : {});
     toast.success("Grouped line items deleted.");
     groupDeleteModalOpen.value = false;
@@ -2506,7 +2552,7 @@ function onDocKeydown(e) {
                         <td v-if="canUpdate && currentStatusKey !== 'void'" class="text-end" @click.stop>
                           <div data-row-actions class="position-relative d-inline-block">
                             <button
-                              v-if="row.line_group_key"
+                              v-if="rowSupportsGroupActions(row)"
                               type="button"
                               class="staff-action-btn staff-action-btn--more"
                               :class="{ 'is-open': groupMenuOpenId === row.id }"
@@ -2579,11 +2625,7 @@ function onDocKeydown(e) {
                     <tbody>
                       <tr
                         v-for="row in selectedTableRowDetails"
-                        :key="
-                          Array.isArray(row.invoice_item_ids) && row.invoice_item_ids.length
-                            ? row.invoice_item_ids.join('-')
-                            : row.id
-                        "
+                        :key="detailRowMenuKey(row)"
                         class="billing-inv-line-detail"
                         :class="{ 'billing-inv-line-detail--danger': row?.metadata?.box_not_selected }"
                       >
@@ -2596,20 +2638,24 @@ function onDocKeydown(e) {
                         <td class="text-end">{{ formatCents(row.price_cents, invoice.currency) }}</td>
                         <td class="text-end">{{ formatCents(row.total_cents, invoice.currency) }}</td>
                         <td v-if="currentStatusKey !== 'void' && canUpdate" class="text-end">
-                          <div data-row-actions class="position-relative d-inline-block">
+                          <div
+                            v-if="detailRowHasActions(row)"
+                            data-row-actions
+                            class="position-relative d-inline-block"
+                          >
                             <button
                               type="button"
                               class="staff-action-btn staff-action-btn--more"
-                              :class="{ 'is-open': lineMenuOpenId === row.id }"
-                              :aria-expanded="lineMenuOpenId === row.id"
+                              :class="{ 'is-open': lineMenuOpenId === detailRowMenuKey(row) }"
+                              :aria-expanded="lineMenuOpenId === detailRowMenuKey(row)"
                               aria-haspopup="true"
                               aria-label="Line item actions"
-                              @click.stop="toggleLineMenu(row.id, $event)"
+                              @click.stop="toggleLineMenu(detailRowMenuKey(row), $event)"
                             >
                               <CrmIconRowActions variant="horizontal" />
                             </button>
                             <div
-                              v-if="lineMenuOpenId === row.id"
+                              v-if="lineMenuOpenId === detailRowMenuKey(row)"
                               data-row-actions
                               class="billing-inline-menu billing-inline-menu--row"
                               role="menu"

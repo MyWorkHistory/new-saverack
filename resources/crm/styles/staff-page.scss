@@ -145,6 +145,32 @@ button.staff-stat-card {
   overflow: visible;
 }
 
+/* Return list tables: centered headers and cells (portal parity with inventory/ASN lists). */
+.user-return-page .staff-table-wrap .table.staff-data-table > thead > tr > th.staff-table-head__th,
+.user-return-page .staff-table-wrap .table.staff-data-table > tbody > tr > td {
+  text-align: center;
+  vertical-align: middle;
+}
+
+.user-return-page .staff-table-wrap .staff-sort-btn {
+  display: inline-flex;
+  justify-content: center;
+  width: 100%;
+  text-align: center;
+}
+
+.user-return-page__order-link {
+  font-weight: 600;
+  color: var(--bs-link-color, #2563eb);
+  text-decoration: none;
+}
+
+.user-return-page__order-link:hover,
+.user-return-page__order-link:focus-visible {
+  color: var(--bs-link-hover-color, #1d4ed8);
+  text-decoration: underline;
+}
+
 [data-bs-theme="dark"] .staff-page--wide {
   background: var(--bs-tertiary-bg);
 }

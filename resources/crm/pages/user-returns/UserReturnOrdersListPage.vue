@@ -1,6 +1,6 @@
 <script setup>
 import { computed, inject, onMounted, ref, watch } from "vue";
-import { useRouter } from "vue-router";
+import { RouterLink, useRouter } from "vue-router";
 import api from "../../services/api";
 import CrmLoadingSpinner from "../../components/common/CrmLoadingSpinner.vue";
 import { setCrmPageMeta } from "../../composables/useCrmPageMeta.js";
@@ -204,7 +204,16 @@ onMounted(() => {
                   {{ returnStatusLabel(r.status) }}
                 </span>
               </td>
-              <td class="text-center fw-semibold">{{ r.order_number || "—" }}</td>
+              <td class="text-center">
+                <RouterLink
+                  v-if="r.id"
+                  :to="{ name: 'user-return-detail', params: { id: String(r.id) } }"
+                  class="user-return-page__order-link"
+                >
+                  {{ r.order_number || "—" }}
+                </RouterLink>
+                <span v-else>—</span>
+              </td>
               <td class="text-center">{{ r.customer_name || "—" }}</td>
               <td class="text-center fw-semibold">{{ formatRmaLabel(r.rma_number) }}</td>
               <td class="text-center">{{ Number(r.items_count ?? 0).toLocaleString() }}</td>
@@ -253,6 +262,9 @@ onMounted(() => {
           </button>
         </div>
       </div>
+      <p class="staff-table-mobile-scroll-cue d-md-none px-3 pb-2 mb-0" aria-hidden="true">
+        Scroll sideways or swipe to see all columns.
+      </p>
     </div>
   </div>
 </template>

@@ -1,6 +1,6 @@
 <script setup>
 import { computed, inject, onMounted, ref } from "vue";
-import { useRouter } from "vue-router";
+import { RouterLink, useRouter } from "vue-router";
 import api from "../../services/api";
 import CrmLoadingSpinner from "../../components/common/CrmLoadingSpinner.vue";
 import { setCrmPageMeta } from "../../composables/useCrmPageMeta.js";
@@ -162,7 +162,20 @@ onMounted(() => {
               </td>
             </tr>
             <tr v-for="row in results" v-else :key="row.id" class="align-middle">
-              <td class="text-center fw-semibold">{{ row.order_number || "—" }}</td>
+              <td class="text-center">
+                <RouterLink
+                  v-if="row.id"
+                  :to="{
+                    name: 'user-return-create-order',
+                    params: { shipheroOrderId: String(row.id) },
+                    query: { client_account_id: String(clientAccountId) },
+                  }"
+                  class="user-return-page__order-link"
+                >
+                  {{ row.order_number || "—" }}
+                </RouterLink>
+                <span v-else>—</span>
+              </td>
               <td class="text-center">{{ customerDisplay(row) }}</td>
               <td class="text-center small text-secondary">{{ row.status || row.fulfillment_status || "—" }}</td>
               <td class="text-center">

@@ -5,6 +5,7 @@ import api from "../../services/api";
 import { setCrmPageMeta } from "../../composables/useCrmPageMeta.js";
 import { usePortalLastRefreshed } from "../../composables/usePortalLastRefreshed.js";
 import { useToast } from "../../composables/useToast.js";
+import { exportPortalInventoryCsv } from "../../utils/portalInventoryExport.js";
 
 const toast = useToast();
 const router = useRouter();
@@ -333,46 +334,10 @@ function resetFilters() {
 
 function exportCsv(useSelected) {
   const source = useSelected ? selectedRows.value : displayRows.value;
-  if (!source.length) {
+  if (!exportPortalInventoryCsv(source, "inventory")) {
     toast.error("Nothing to export.");
     return;
   }
-  const headers = [
-    "SKU",
-    "Name",
-    "Warehouse ID",
-    "Product Active",
-    "Kit",
-    "Warehouse Active",
-    "On Hand",
-    "Allocated",
-    "Backorder",
-  ];
-  const lines = [headers.join(",")];
-  for (const r of source) {
-    const cells = [
-      r.sku,
-      r.name,
-      r.warehouse_id ?? "",
-      r.product_active ? "yes" : "no",
-      r.kit ? "yes" : "no",
-      r.warehouse_active ? "yes" : "no",
-      r.on_hand,
-      r.allocated,
-      r.backorder,
-    ].map((c) => {
-      const s = String(c ?? "").replace(/"/g, '""');
-      return `"${s}"`;
-    });
-    lines.push(cells.join(","));
-  }
-  const blob = new Blob([lines.join("\r\n")], { type: "text/csv;charset=utf-8" });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = `inventory-${new Date().toISOString().slice(0, 10)}.csv`;
-  a.click();
-  URL.revokeObjectURL(url);
   toast.success("Export started.");
 }
 

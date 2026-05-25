@@ -2975,6 +2975,17 @@ class BillingInvoiceApiTest extends TestCase
             'balance_due_cents' => 500,
         ]);
         Invoice::query()->create([
+            'invoice_number' => 'INV-PORTAL-DRAFT',
+            'client_account_id' => $accountA->id,
+            'status' => Invoice::STATUS_DRAFT,
+            'currency' => 'USD',
+            'subtotal_cents' => 200,
+            'tax_cents' => 0,
+            'total_cents' => 200,
+            'amount_paid_cents' => 0,
+            'balance_due_cents' => 200,
+        ]);
+        Invoice::query()->create([
             'invoice_number' => 'INV-OTHER-B',
             'client_account_id' => $accountB->id,
             'status' => Invoice::STATUS_SENT,
@@ -2995,7 +3006,17 @@ class BillingInvoiceApiTest extends TestCase
         $response->assertOk();
         $numbers = collect($response->json('data'))->pluck('invoice_number')->all();
         $this->assertContains('INV-PORTAL-A', $numbers);
+        $this->assertNotContains('INV-PORTAL-DRAFT', $numbers);
         $this->assertNotContains('INV-OTHER-B', $numbers);
+
+        $metaStatuses = $this->getJson('/api/invoices/meta')
+            ->assertOk()
+            ->json('statuses');
+        $this->assertNotContains('draft', $metaStatuses);
+
+        $this->getJson('/api/billing/summary')
+            ->assertOk()
+            ->assertJsonPath('draft_invoice_count', 0);
     }
 
     public function test_portal_user_cannot_mutate_invoice(): void

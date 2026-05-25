@@ -72,6 +72,19 @@ const tableColspan = computed(() => {
   return showCheckboxColumn.value ? 9 : 8;
 });
 
+const filterStatuses = computed(() => {
+  const list = Array.isArray(meta.value.statuses) ? meta.value.statuses : ["all"];
+  if (!props.portalMode) {
+    return list;
+  }
+
+  return list.filter((st) => String(st || "").toLowerCase() !== "draft");
+});
+
+const summaryCardColClass = computed(() =>
+  props.portalMode ? "col-12 col-sm-6" : "col-12 col-sm-6 col-xl-3",
+);
+
 const publicViewBusyId = ref(null);
 
 const loading = ref(true);
@@ -389,6 +402,9 @@ async function loadSummary() {
 }
 
 function setSummaryFilterBucket(bucket) {
+  if (bucket === "draft" && props.portalMode) {
+    return;
+  }
   if (bucket === "open") query.status = "open";
   else if (bucket === "draft") query.status = "draft";
   else if (bucket === "paid") query.status = "paid";
@@ -933,7 +949,11 @@ onMounted(async () => {
   const qStatus = route.query.status;
   if (typeof qStatus === "string" && qStatus.trim()) {
     const incoming = qStatus.trim().toLowerCase();
-    query.status = incoming === "past_due" || incoming === "overdue" ? "open" : incoming;
+    if (props.portalMode && incoming === "draft") {
+      query.status = "all";
+    } else {
+      query.status = incoming === "past_due" || incoming === "overdue" ? "open" : incoming;
+    }
   }
   const qClient = route.query.client_account_id;
   if (!props.portalMode && typeof qClient === "string" && qClient.trim()) {
@@ -1000,7 +1020,7 @@ onUnmounted(() => {
       <CrmLoadingSpinner message="Loading summary…" />
     </div>
     <div v-else class="row g-4 mb-4">
-      <div class="col-12 col-sm-6 col-xl-3">
+      <div :class="summaryCardColClass">
         <button
           type="button"
           class="staff-stat-card h-100 text-start w-100 billing-inv-list-summary-btn"
@@ -1016,7 +1036,7 @@ onUnmounted(() => {
           </div>
         </button>
       </div>
-      <div class="col-12 col-sm-6 col-xl-3">
+      <div v-if="!portalMode" class="col-12 col-sm-6 col-xl-3">
         <button
           type="button"
           class="staff-stat-card h-100 text-start w-100 billing-inv-list-summary-btn"
@@ -1039,7 +1059,7 @@ onUnmounted(() => {
           </div>
         </button>
       </div>
-      <div class="col-12 col-sm-6 col-xl-3">
+      <div :class="summaryCardColClass">
         <button
           type="button"
           class="staff-stat-card h-100 text-start w-100 billing-inv-list-summary-btn"
@@ -1131,7 +1151,7 @@ onUnmounted(() => {
                   class="form-select staff-datatable-filters__select mb-3"
                 >
                   <option
-                    v-for="st in meta.statuses"
+                    v-for="st in filterStatuses"
                     :key="st"
                     :value="st"
                   >

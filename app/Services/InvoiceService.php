@@ -2075,6 +2075,10 @@ class InvoiceService
     {
         $q = Invoice::query()->with('clientAccount');
 
+        if (! empty($filters['portal_view'])) {
+            $q->whereNotIn('status', [Invoice::STATUS_DRAFT, 'pending']);
+        }
+
         if (! empty($filters['status']) && $filters['status'] !== 'all') {
             $statusFilter = strtolower((string) $filters['status']);
             if ($statusFilter === 'open') {
@@ -2146,12 +2150,15 @@ class InvoiceService
     /**
      * @return array<string, int|string>
      */
-    public function summary(?int $clientAccountId = null): array
+    public function summary(?int $clientAccountId = null, bool $portalView = false): array
     {
         $openStatuses = [Invoice::STATUS_SENT, Invoice::STATUS_PARTIAL, Invoice::STATUS_PROCESSING, Invoice::STATUS_PAYMENT_FAILED, 'past_due', 'open'];
         $base = Invoice::query();
         if ($clientAccountId !== null && $clientAccountId > 0) {
             $base->where('client_account_id', $clientAccountId);
+        }
+        if ($portalView) {
+            $base->whereNotIn('status', [Invoice::STATUS_DRAFT, 'pending']);
         }
 
         $openBalance = (int) (clone $base)
@@ -2165,7 +2172,9 @@ class InvoiceService
             ->where('due_at', '<', now()->startOfDay())
             ->count();
 
-        $draftCount = (int) (clone $base)->where('status', Invoice::STATUS_DRAFT)->count();
+        $draftCount = $portalView
+            ? 0
+            : (int) (clone $base)->where('status', Invoice::STATUS_DRAFT)->count();
 
         $startMtd = now()->startOfMonth();
         $paidMtdCents = (int) (clone $base)

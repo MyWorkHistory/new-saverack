@@ -5,6 +5,7 @@ import api from "../../services/api";
 import { setCrmPageMeta } from "../../composables/useCrmPageMeta.js";
 import { usePortalLastRefreshed } from "../../composables/usePortalLastRefreshed.js";
 import { useToast } from "../../composables/useToast.js";
+import { exportPortalInventoryCsv } from "../../utils/portalInventoryExport.js";
 
 const toast = useToast();
 const router = useRouter();
@@ -330,46 +331,10 @@ function resetFilters() {
 
 function exportCsv(useSelected) {
   const source = useSelected ? selectedRows.value : displayRows.value;
-  if (!source.length) {
+  if (!exportPortalInventoryCsv(source, "out-of-stock")) {
     toast.error("Nothing to export.");
     return;
   }
-  const headers = [
-    "SKU",
-    "Name",
-    "Warehouse ID",
-    "Product Active",
-    "Kit",
-    "Warehouse Active",
-    "On Hand",
-    "Allocated",
-    "Oversold",
-  ];
-  const lines = [headers.join(",")];
-  for (const r of source) {
-    const cells = [
-      r.sku,
-      r.name,
-      r.warehouse_id ?? "",
-      r.product_active ? "yes" : "no",
-      r.kit ? "yes" : "no",
-      r.warehouse_active ? "yes" : "no",
-      r.on_hand,
-      r.allocated,
-      r.backorder,
-    ].map((c) => {
-      const s = String(c ?? "").replace(/"/g, '""');
-      return `"${s}"`;
-    });
-    lines.push(cells.join(","));
-  }
-  const blob = new Blob([lines.join("\r\n")], { type: "text/csv;charset=utf-8" });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = `out-of-stock-${new Date().toISOString().slice(0, 10)}.csv`;
-  a.click();
-  URL.revokeObjectURL(url);
   toast.success("Export started.");
 }
 
@@ -489,7 +454,7 @@ watch(
 
 onMounted(() => {
   setCrmPageMeta({
-    title: "Save Rack | Products | Out of Stock",
+    title: "Save Rack | Out of Stock",
     description: "Inventory rows with oversold quantity.",
   });
   document.addEventListener("click", onDocClick);
@@ -507,10 +472,9 @@ onUnmounted(() => {
       class="d-flex flex-column flex-md-row align-items-start align-items-md-center gap-3 mb-4"
     >
       <div class="min-w-0 flex-grow-1">
-        <h1 class="h4 mb-1 fw-semibold text-body">Products</h1>
-        <p class="text-secondary small mb-1">Out of Stock</p>
+        <h1 class="h4 mb-1 fw-semibold text-body">Out of Stock</h1>
         <p class="text-secondary small mb-0 user-inv-load-hint">
-          Showing products with oversold quantity greater than zero, in batches of {{ LIST_PAGE_SIZE }}.
+          Products that are currently oversold.
         </p>
       </div>
       <div class="d-flex align-items-center gap-2 flex-shrink-0 ms-md-auto">
@@ -713,7 +677,7 @@ onUnmounted(() => {
                 :disabled="bulkBusy"
                 @click="runBulkSetActive(false)"
               >
-                Remove
+                Set Inactive
               </button>
             </template>
           </div>

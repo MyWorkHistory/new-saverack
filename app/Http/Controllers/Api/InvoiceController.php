@@ -47,6 +47,12 @@ class InvoiceController extends Controller
         $statuses = array_values(array_unique(array_merge(
             ['draft', 'open', 'collection', 'processing', 'payment_failed', 'paid', 'void', 'all'],
         )));
+        if ($this->resolvePortalClientAccountId($request) !== null) {
+            $statuses = array_values(array_filter(
+                $statuses,
+                static fn ($status): bool => strtolower((string) $status) !== 'draft'
+            ));
+        }
 
         return response()->json([
             'statuses' => $statuses,
@@ -79,6 +85,7 @@ class InvoiceController extends Controller
         $portalAccountId = $this->resolvePortalClientAccountId($request);
         if ($portalAccountId !== null) {
             $filters['client_account_id'] = $portalAccountId;
+            $filters['portal_view'] = true;
         }
 
         $data = $this->invoices->paginate($filters);

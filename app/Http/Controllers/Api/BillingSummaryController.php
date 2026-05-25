@@ -22,9 +22,9 @@ class BillingSummaryController extends Controller
     {
         $this->authorize('viewAny', Invoice::class);
 
-        $clientAccountId = $this->resolvePortalClientAccountId($request);
+        $portalAccountId = $this->resolvePortalClientAccountId($request);
 
-        return response()->json($this->invoices->summary($clientAccountId));
+        return response()->json($this->invoices->summary($portalAccountId, $portalAccountId !== null));
     }
 
     private function resolvePortalClientAccountId(Request $request): ?int

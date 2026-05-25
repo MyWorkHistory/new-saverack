@@ -40,6 +40,14 @@ class InvoicePolicy
 
     public function view(User $user, Invoice $invoice): bool
     {
+        if ($this->isPortalUser($user)) {
+            if ($invoice->status === Invoice::STATUS_DRAFT || $invoice->status === 'pending') {
+                return false;
+            }
+
+            return $this->ownsAccount($user, $invoice);
+        }
+
         if ($this->ownsAccount($user, $invoice)) {
             return true;
         }

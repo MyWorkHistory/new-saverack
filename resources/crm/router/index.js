@@ -173,11 +173,11 @@ const meta = {
   },
   userReturnItemsList: {
     title: "Save Rack | Return Items",
-    description: "View returned orders that are pending processing or completed.",
+    description: "Line items on returns for your account.",
   },
   userReturnCreateSearch: {
     title: "Save Rack | Create Return",
-    description: "View returned orders that are pending processing or completed.",
+    description: "Search for an order to start a return.",
   },
   userReturnCreateOrder: {
     title: "Save Rack | Order",

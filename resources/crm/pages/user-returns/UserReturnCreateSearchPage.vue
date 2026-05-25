@@ -87,7 +87,7 @@ function openOrder(row) {
 onMounted(() => {
   setCrmPageMeta({
     title: "Save Rack | Create Return",
-    description: "View returned orders that are pending processing or completed.",
+    description: "Search for an order to start a return.",
   });
 });
 </script>
@@ -98,7 +98,7 @@ onMounted(() => {
       <div>
         <h1 class="h4 mb-1 fw-semibold text-body">Create Return</h1>
         <p class="text-secondary small mb-0">
-          View all returned orders that are pending processing or completed.
+          Search by order number, then open the order to start your return.
         </p>
       </div>
       <button

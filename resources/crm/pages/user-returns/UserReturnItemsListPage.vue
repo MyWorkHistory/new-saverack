@@ -70,7 +70,7 @@ async function load() {
 onMounted(() => {
   setCrmPageMeta({
     title: "Save Rack | Return Items",
-    description: "View returned orders that are pending processing or completed.",
+    description: "Line items on returns for your account.",
   });
   load();
 });
@@ -81,7 +81,7 @@ onMounted(() => {
     <div class="mb-4">
       <h1 class="h4 mb-1 fw-semibold text-body">Return Items</h1>
       <p class="text-secondary small mb-0">
-        View all returned orders that are pending processing or completed.
+        Items included on returns. Search by SKU, item name, order #, or RMA #.
       </p>
     </div>
 

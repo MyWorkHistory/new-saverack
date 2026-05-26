@@ -199,7 +199,11 @@ onMounted(() => {
           {{ counts.message || "Your warehouse connection is still being set up." }}
           <RouterLink to="/users/welcome" class="ms-1">Learn more</RouterLink>
         </div>
-        <div v-if="counts.stale && counts.message" class="alert alert-warning small mb-3" role="status">
+        <div
+          v-if="(counts.refresh_pending || counts.stale) && counts.message"
+          class="alert alert-warning small mb-3"
+          role="status"
+        >
           {{ counts.message }}
         </div>
         <p v-if="counts.truncated" class="small text-secondary mb-3">

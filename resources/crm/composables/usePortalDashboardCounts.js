@@ -2,7 +2,7 @@ import { ref } from "vue";
 import api from "../services/api";
 import { usePortalLastRefreshed } from "./usePortalLastRefreshed.js";
 
-const CACHE_KEY_PREFIX = "portal:dashboard:queue-counts:v1:";
+const CACHE_KEY_PREFIX = "portal:dashboard:queue-counts:v2:";
 
 function storageKey(clientAccountId) {
   return `${CACHE_KEY_PREFIX}${clientAccountId}`;

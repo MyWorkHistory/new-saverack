@@ -97,9 +97,13 @@ class ShipHeroOrderService
                 && is_string($shipTo) && trim($shipTo) !== '';
             if ($hasShipWindow) {
                 $from = Carbon::parse(trim($shipFrom))->startOfDay();
+                $to = Carbon::parse(trim($shipTo))->endOfDay();
+                $nowEnd = Carbon::now()->endOfDay();
+                if ($to->gt($nowEnd)) {
+                    $to = $nowEnd;
+                }
                 $vars['updated_from'] = $from->toIso8601String();
-                // Pull through now so orders shipped in-range are not dropped when updated_at moved later.
-                $vars['updated_to'] = Carbon::now()->endOfDay()->toIso8601String();
+                $vars['updated_to'] = $to->toIso8601String();
             } else {
                 // With no ship-date window, narrow by last activity so the query is bounded (ShipHero defaults otherwise).
                 $vars['updated_from'] = Carbon::now()->subDays(180)->startOfDay()->toIso8601String();
@@ -195,13 +199,6 @@ query ShipHeroOrders(
           profile
           source
           email
-          shipments {
-            created_date
-            shipping_labels {
-              status
-              created_date
-            }
-          }
           shipping_address {
             first_name
             last_name

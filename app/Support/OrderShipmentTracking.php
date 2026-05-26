@@ -10,7 +10,8 @@ use Carbon\Carbon;
 class OrderShipmentTracking
 {
     /**
-     * Best-estimate ship date from ShipHero order node (shipments / labels, else updated_at).
+     * Best-estimate ship date from ShipHero order node (shipments / labels when present, else updated_at).
+     * List/count queries omit nested shipments for API limits; updated_at is the ship-date proxy there.
      *
      * @param  array<string, mixed>  $node
      */

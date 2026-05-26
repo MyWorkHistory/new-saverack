@@ -9,7 +9,7 @@ import {
   ref,
   watch,
 } from "vue";
-import { RouterLink, useRoute, useRouter } from "vue-router";
+import { useRoute, useRouter } from "vue-router";
 import api from "../../services/api";
 import ConfirmModal from "../../components/common/ConfirmModal.vue";
 import WebmasterTaskDrawer from "../../components/webmaster/WebmasterTaskDrawer.vue";
@@ -313,9 +313,16 @@ function openEdit(row) {
   taskEditModalOpen.value = true;
 }
 
-function goTaskDetail(task) {
+function taskDetailHref(task) {
+  if (!task?.id) return "";
+  return router.resolve({ path: `/admin/webmaster/tasks/${task.id}` }).href;
+}
+
+function openTaskDetailNewTab(task) {
   closeManageMenu();
-  router.push(`/admin/webmaster/tasks/${task.id}`);
+  const url = taskDetailHref(task);
+  if (!url) return;
+  window.open(url, "_blank", "noopener,noreferrer");
 }
 
 async function openTaskEditFromQuery() {
@@ -906,14 +913,16 @@ onUnmounted(() => {
                 />
               </td>
               <td>
-                <RouterLink
-                  :to="`/admin/webmaster/tasks/${task.id}`"
+                <a
+                  :href="taskDetailHref(task)"
+                  target="_blank"
+                  rel="noopener noreferrer"
                   class="fw-semibold text-body text-decoration-none d-block text-truncate"
                   style="max-width: 16rem"
                   :title="task.title"
                 >
                   {{ task.title }}
-                </RouterLink>
+                </a>
               </td>
               <td>
                 <span
@@ -1115,7 +1124,7 @@ onUnmounted(() => {
           :style="{ top: `${manageMenuRect.top}px`, left: `${manageMenuRect.left}px` }"
           @click.stop
         >
-          <button type="button" class="staff-row-menu__item" role="menuitem" @click="goTaskDetail(manageMenuTask)">
+          <button type="button" class="staff-row-menu__item" role="menuitem" @click="openTaskDetailNewTab(manageMenuTask)">
             View
           </button>
           <hr v-if="canUpdateTasks || canDeleteTasks" class="staff-row-menu__divider" />

@@ -107,10 +107,11 @@ class OrderController extends Controller
 
     /**
      * Portal dashboard: ShipHero order counts per queue (same filters as list orders), short-lived cache.
-     * Shipped uses ship date (label/shipment created_date), not order placement date.
+     * Shipped uses ship date (updated_at proxy on list queries; label dates on detail when loaded).
      */
     public function queueCounts(Request $request): JsonResponse
     {
+        set_time_limit(120);
         $validated = $request->validate([
             'client_account_id' => ['required', 'integer', 'exists:client_accounts,id'],
             'order_date_from' => ['nullable', 'required_with:order_date_to', 'date'],
@@ -160,7 +161,7 @@ class OrderController extends Controller
             }
 
             $cacheKey = sprintf(
-                'orders:queue_counts:v1:%d:%s',
+                'orders:queue_counts:v2:%d:%s',
                 $clientAccountId,
                 md5(implode('|', array_filter([
                     $customerId,

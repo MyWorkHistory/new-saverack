@@ -2,7 +2,7 @@ import { ref } from "vue";
 import api from "../services/api";
 import { usePortalLastRefreshed } from "./usePortalLastRefreshed.js";
 
-const CACHE_KEY_PREFIX = "portal:dashboard:queue-counts:v2:";
+const CACHE_KEY_PREFIX = "portal:dashboard:queue-counts:v3:";
 
 function storageKey(clientAccountId) {
   return `${CACHE_KEY_PREFIX}${clientAccountId}`;
@@ -15,6 +15,7 @@ export function parsePortalQueueCounts(data) {
     backorder: Number(data?.backorder ?? 0),
     shipped: Number(data?.shipped ?? 0),
     truncated: Boolean(data?.truncated),
+    stale: Boolean(data?.stale),
     shiphero_ready: data?.shiphero_ready !== false,
     message: typeof data?.message === "string" ? data.message : "",
   };

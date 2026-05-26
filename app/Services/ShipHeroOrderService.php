@@ -144,7 +144,122 @@ class ShipHeroOrderService
             $this->applyOrderNumberLookupGraphScope($vars, $orderNumber);
         }
 
-        $graphql = <<<'GQL'
+        $countOnly = ! empty($filters['count_only']);
+        $graphql = $this->ordersListGraphql($countOnly);
+
+        $json = $this->client->query($graphql, $vars);
+        $parsed = $this->parseShipHeroOrdersConnection($json, $countOnly);
+        $rows = $parsed['rows'];
+        $pageInfo = $parsed['pageInfo'];
+
+        if ($orderNumber !== '' && $rows === []) {
+            $varsPartner = $vars;
+            $varsPartner['order_number'] = null;
+            $varsPartner['partner_order_id'] = $orderNumber;
+            $jsonPartner = $this->client->query($graphql, $varsPartner);
+            $parsedPartner = $this->parseShipHeroOrdersConnection($jsonPartner, $countOnly);
+            if ($parsedPartner['rows'] !== []) {
+                $rows = $parsedPartner['rows'];
+                $pageInfo = $parsedPartner['pageInfo'];
+            }
+        }
+
+        if ($orderNumber !== '' && $rows === [] && strpos($orderNumber, '#') !== 0) {
+            $varsHash = $vars;
+            $varsHash['order_number'] = '#'.$orderNumber;
+            $varsHash['partner_order_id'] = null;
+            $jsonHash = $this->client->query($graphql, $varsHash);
+            $parsedHash = $this->parseShipHeroOrdersConnection($jsonHash, $countOnly);
+            if ($parsedHash['rows'] !== []) {
+                $rows = $parsedHash['rows'];
+                $pageInfo = $parsedHash['pageInfo'];
+            }
+        }
+
+        $upstreamCount = count($rows);
+        $rows = $this->applyListFilters($rows, $filters);
+        if ($upstreamCount > 0 && count($rows) === 0) {
+            Log::warning('shiphero.orders.list.post_filter_dropped_all', [
+                'customer_account_id' => $customerAccountId,
+                'tab' => $tab,
+                'upstream_rows' => $upstreamCount,
+            ]);
+        }
+
+        return [
+            'rows' => $rows,
+            'pagination' => [
+                'has_next_page' => (bool) ($pageInfo['hasNextPage'] ?? false),
+                'end_cursor' => isset($pageInfo['endCursor']) && is_string($pageInfo['endCursor'])
+                    ? $pageInfo['endCursor']
+                    : null,
+            ],
+        ];
+    }
+
+    private function ordersListGraphql(bool $countOnly): string
+    {
+        if ($countOnly) {
+            return <<<'GQL'
+query ShipHeroOrders(
+  $customer_account_id: String!,
+  $order_date_from: ISODateTime,
+  $order_date_to: ISODateTime,
+  $updated_from: ISODateTime,
+  $updated_to: ISODateTime,
+  $has_hold: Boolean,
+  $has_backorder: Boolean,
+  $ready_to_ship: Boolean,
+  $fulfillment_status: String,
+  $order_number: String,
+  $partner_order_id: String,
+  $fraud_hold: Boolean,
+  $operator_hold: Boolean,
+  $address_hold: Boolean,
+  $payment_hold: Boolean,
+  $first: Int!,
+  $after: String
+) {
+  orders(
+    customer_account_id: $customer_account_id,
+    order_date_from: $order_date_from,
+    order_date_to: $order_date_to,
+    updated_from: $updated_from,
+    updated_to: $updated_to,
+    has_hold: $has_hold,
+    has_backorder: $has_backorder,
+    ready_to_ship: $ready_to_ship,
+    fulfillment_status: $fulfillment_status,
+    order_number: $order_number,
+    partner_order_id: $partner_order_id,
+    fraud_hold: $fraud_hold,
+    operator_hold: $operator_hold,
+    address_hold: $address_hold,
+    payment_hold: $payment_hold
+  ) {
+    request_id
+    complexity
+    data(first: $first, after: $after) {
+      edges {
+        cursor
+        node {
+          id
+          fulfillment_status
+          order_date
+          updated_at
+        }
+      }
+      pageInfo {
+        hasNextPage
+        endCursor
+      }
+    }
+  }
+}
+GQL;
+        }
+
+        return <<<'GQL'
 query ShipHeroOrders(
   $customer_account_id: String!,
   $order_date_from: ISODateTime,
@@ -234,55 +349,6 @@ query ShipHeroOrders(
   }
 }
 GQL;
-
-        $json = $this->client->query($graphql, $vars);
-        $parsed = $this->parseShipHeroOrdersConnection($json);
-        $rows = $parsed['rows'];
-        $pageInfo = $parsed['pageInfo'];
-
-        if ($orderNumber !== '' && $rows === []) {
-            $varsPartner = $vars;
-            $varsPartner['order_number'] = null;
-            $varsPartner['partner_order_id'] = $orderNumber;
-            $jsonPartner = $this->client->query($graphql, $varsPartner);
-            $parsedPartner = $this->parseShipHeroOrdersConnection($jsonPartner);
-            if ($parsedPartner['rows'] !== []) {
-                $rows = $parsedPartner['rows'];
-                $pageInfo = $parsedPartner['pageInfo'];
-            }
-        }
-
-        if ($orderNumber !== '' && $rows === [] && strpos($orderNumber, '#') !== 0) {
-            $varsHash = $vars;
-            $varsHash['order_number'] = '#'.$orderNumber;
-            $varsHash['partner_order_id'] = null;
-            $jsonHash = $this->client->query($graphql, $varsHash);
-            $parsedHash = $this->parseShipHeroOrdersConnection($jsonHash);
-            if ($parsedHash['rows'] !== []) {
-                $rows = $parsedHash['rows'];
-                $pageInfo = $parsedHash['pageInfo'];
-            }
-        }
-
-        $upstreamCount = count($rows);
-        $rows = $this->applyListFilters($rows, $filters);
-        if ($upstreamCount > 0 && count($rows) === 0) {
-            Log::warning('shiphero.orders.list.post_filter_dropped_all', [
-                'customer_account_id' => $customerAccountId,
-                'tab' => $tab,
-                'upstream_rows' => $upstreamCount,
-            ]);
-        }
-
-        return [
-            'rows' => $rows,
-            'pagination' => [
-                'has_next_page' => (bool) ($pageInfo['hasNextPage'] ?? false),
-                'end_cursor' => isset($pageInfo['endCursor']) && is_string($pageInfo['endCursor'])
-                    ? $pageInfo['endCursor']
-                    : null,
-            ],
-        ];
     }
 
     /**
@@ -299,15 +365,24 @@ GQL;
         }
 
         $base = array_merge($filters);
-        $base['first'] = 100;
+        $base['first'] = min(100, max(1, (int) ($filters['first'] ?? 100)));
+        $base['count_only'] = true;
         unset($base['order_number']);
 
         $total = 0;
         $truncated = false;
-        $maxPages = 50;
+        $maxPages = max(1, min(50, (int) ($filters['max_pages'] ?? 50)));
+        $deadline = isset($filters['count_deadline']) && is_float($filters['count_deadline'])
+            ? $filters['count_deadline']
+            : null;
         $after = null;
 
         for ($page = 0; $page < $maxPages; $page++) {
+            if ($deadline !== null && microtime(true) >= $deadline) {
+                $truncated = true;
+                break;
+            }
+
             $base['after'] = $after;
             $payload = $this->listOrders($base);
             $total += count($payload['rows'] ?? []);
@@ -359,7 +434,7 @@ GQL;
     /**
      * @return array{rows: list<array<string, mixed>>, pageInfo: array<string, mixed>}
      */
-    private function parseShipHeroOrdersConnection(array $json): array
+    private function parseShipHeroOrdersConnection(array $json, bool $countOnly = false): array
     {
         $data = data_get($json, 'data.orders.data');
         if (! is_array($data)) {
@@ -376,7 +451,9 @@ GQL;
             if ($node === null) {
                 continue;
             }
-            $rows[] = $this->normalizeOrderRow($node, $edge['cursor'] ?? null);
+            $rows[] = $countOnly
+                ? $this->normalizeOrderRowForCount($node, $edge['cursor'] ?? null)
+                : $this->normalizeOrderRow($node, $edge['cursor'] ?? null);
         }
 
         $pageInfo = is_array($data['pageInfo'] ?? null) ? $data['pageInfo'] : [];
@@ -1545,6 +1622,27 @@ GQL;
      * @param  array<string, mixed>  $node
      * @return array<string, mixed>
      */
+    /**
+     * Minimal row for dashboard queue counts (fast ShipHero pagination).
+     *
+     * @param  array<string, mixed>  $node
+     * @return array<string, mixed>
+     */
+    private function normalizeOrderRowForCount(array $node, $cursor): array
+    {
+        return [
+            'id' => (string) ($node['id'] ?? ''),
+            'cursor' => is_string($cursor) ? $cursor : null,
+            'status' => $this->normalizeFulfillmentStatus($node),
+            'raw_fulfillment_status' => (string) ($node['fulfillment_status'] ?? ''),
+            'raw_status' => '',
+            'raw_profile' => '',
+            'hold_reason' => null,
+            'order_date' => $this->nullableIso($node['order_date'] ?? null),
+            'ship_date' => OrderShipmentTracking::resolveShipDateIso($node),
+        ];
+    }
+
     private function normalizeOrderRow(array $node, $cursor): array
     {
         $shippingLine = $this->resolveShippingLine($node['shipping_lines'] ?? null);

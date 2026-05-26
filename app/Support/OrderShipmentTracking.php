@@ -50,8 +50,9 @@ class OrderShipmentTracking
 
     /**
      * @param  list<string>  $dates
+     * @param  mixed  $raw
      */
-    private static function collectIsoDate(array &$dates, mixed $raw): void
+    private static function collectIsoDate(array &$dates, $raw): void
     {
         if (! is_string($raw) || trim($raw) === '') {
             return;

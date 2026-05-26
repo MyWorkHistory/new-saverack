@@ -2,11 +2,66 @@
 
 namespace App\Support;
 
+use Carbon\Carbon;
+
 /**
  * Normalize ShipHero order shipment labels for CRM order detail (shipped orders).
  */
 class OrderShipmentTracking
 {
+    /**
+     * Best-estimate ship date from ShipHero order node (shipments / labels, else updated_at).
+     *
+     * @param  array<string, mixed>  $node
+     */
+    public static function resolveShipDateIso(array $node): ?string
+    {
+        $dates = [];
+        $shipments = $node['shipments'] ?? null;
+        if (is_array($shipments)) {
+            foreach ($shipments as $shipment) {
+                if (! is_array($shipment)) {
+                    continue;
+                }
+                self::collectIsoDate($dates, $shipment['created_date'] ?? null);
+                $labels = $shipment['shipping_labels'] ?? null;
+                if (! is_array($labels)) {
+                    continue;
+                }
+                foreach ($labels as $label) {
+                    if (! is_array($label) || self::isVoidShippingLabel($label)) {
+                        continue;
+                    }
+                    self::collectIsoDate($dates, $label['created_date'] ?? null);
+                }
+            }
+        }
+        if ($dates === []) {
+            self::collectIsoDate($dates, $node['updated_at'] ?? null);
+        }
+        if ($dates === []) {
+            return null;
+        }
+        usort($dates, static fn (string $a, string $b): int => strcmp($a, $b));
+
+        return $dates[array_key_last($dates)] ?? null;
+    }
+
+    /**
+     * @param  list<string>  $dates
+     */
+    private static function collectIsoDate(array &$dates, mixed $raw): void
+    {
+        if (! is_string($raw) || trim($raw) === '') {
+            return;
+        }
+        try {
+            $dates[] = Carbon::parse($raw)->toIso8601String();
+        } catch (\Throwable) {
+            // ignore unparsable timestamps
+        }
+    }
+
     /**
      * @param  list<array<string, mixed>>  $shipments  order.data.shipments from ShipHero
      * @return array{labels: list<array<string, mixed>>, total_label_cost: float|null}

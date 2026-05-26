@@ -67,7 +67,7 @@ class OrderController extends Controller
                 $to = Carbon::parse((string) $validated['order_date_to']);
                 if ($from->diffInDays($to) > 30) {
                     throw ValidationException::withMessages([
-                        'order_date_to' => ['Date range for shipped orders cannot exceed 30 days.'],
+                        'order_date_to' => ['Ship date range for shipped orders cannot exceed 30 days.'],
                     ]);
                 }
             }
@@ -107,6 +107,7 @@ class OrderController extends Controller
 
     /**
      * Portal dashboard: ShipHero order counts per queue (same filters as list orders), short-lived cache.
+     * Shipped uses ship date (label/shipment created_date), not order placement date.
      */
     public function queueCounts(Request $request): JsonResponse
     {

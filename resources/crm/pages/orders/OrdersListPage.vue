@@ -282,6 +282,15 @@ function formatDate(iso) {
   return d.toLocaleDateString();
 }
 
+function rowDisplayDate(row) {
+  if (isShippedTab.value) {
+    return formatDate(row.ship_date || row.order_date);
+  }
+  return formatDate(row.order_date);
+}
+
+const orderDateColumnLabel = computed(() => (isShippedTab.value ? "Ship Date" : "Order Date"));
+
 function toDateInput(d) {
   const year = d.getFullYear();
   const month = String(d.getMonth() + 1).padStart(2, "0");
@@ -310,7 +319,7 @@ function dateRangeFromPreset() {
   };
 }
 
-/** ShipHero filters by order placement date for these params. "Any order date" sends nothing. */
+/** ShipHero date params for list API. Shipped tab uses ship date; other tabs use order placement date. */
 function orderDateParamsForRequest() {
   if (committedOrderNumber.value) {
     return {};
@@ -598,7 +607,7 @@ function exportRowsToCsv(rowList) {
     "Status",
     "Order #",
     "Name",
-    "Order Date",
+    orderDateColumnLabel.value,
     "Account",
     "Country",
     "Current Shipping Method",
@@ -612,7 +621,7 @@ function exportRowsToCsv(rowList) {
         csvEscapeCell(status),
         csvEscapeCell(row.order_number || ""),
         csvEscapeCell(row.recipient_name || "—"),
-        csvEscapeCell(formatDate(row.order_date)),
+        csvEscapeCell(rowDisplayDate(row)),
         csvEscapeCell(row.account || ""),
         csvEscapeCell(row.country || ""),
         csvEscapeCell(
@@ -1070,7 +1079,7 @@ onUnmounted(() => {
                         </template>
                       </template>
                       <template v-else-if="tabKey === 'shipped'">
-                        <strong>Shipped</strong> defaults to <strong>today</strong> by order date. Widen the date range if you need older fulfilled orders.
+                        <strong>Shipped</strong> defaults to <strong>today</strong> by <strong>ship date</strong> (when the label was created). Widen the date range if you need older fulfilled orders.
                       </template>
                       <template v-else-if="tabKey === 'awaiting'">
                         This tab lists <strong>orders awaiting shipment</strong>. The default <strong>order date</strong> window
@@ -1199,7 +1208,7 @@ onUnmounted(() => {
                 <div class="staff-toolbar-filter-dropdown__body">
                   <p class="small text-secondary mb-2">
                     <template v-if="tabKey === 'shipped'">
-                      <strong>Shipped</strong> defaults to <strong>today</strong> by order date. Widen the date range if you need older fulfilled orders.
+                      <strong>Shipped</strong> defaults to <strong>today</strong> by <strong>ship date</strong> (when the label was created). Widen the date range if you need older fulfilled orders.
                     </template>
                     <template v-else-if="tabKey === 'awaiting'">
                       This tab lists <strong>orders awaiting shipment</strong>. The default <strong>order date</strong> window
@@ -1415,7 +1424,7 @@ onUnmounted(() => {
               <th class="staff-table-head__th">{{ tabKey === "on_hold" ? "Hold Reason" : "Status" }}</th>
               <th class="staff-table-head__th">Order #</th>
               <th class="staff-table-head__th">Name</th>
-              <th class="staff-table-head__th">Order Date</th>
+              <th class="staff-table-head__th">{{ orderDateColumnLabel }}</th>
               <th class="staff-table-head__th">Account</th>
               <th class="staff-table-head__th">Country</th>
               <th class="staff-table-head__th">Current Shipping Method</th>
@@ -1465,7 +1474,7 @@ onUnmounted(() => {
                 <span v-else :title="'Select an account'">{{ row.order_number || "—" }}</span>
               </td>
               <td>{{ row.recipient_name || "—" }}</td>
-              <td>{{ formatDate(row.order_date) }}</td>
+              <td>{{ rowDisplayDate(row) }}</td>
               <td>{{ row.account || "—" }}</td>
               <td>{{ row.country || "—" }}</td>
               <td>

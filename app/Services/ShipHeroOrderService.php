@@ -88,12 +88,20 @@ class ShipHeroOrderService
         } elseif ($tab === 'shipped') {
             // ShipHero typically uses "fulfilled" for shipped/completed orders; "shipped" often returns nothing.
             $vars['fulfillment_status'] = 'fulfilled';
-            $orderFrom = $filters['order_date_from'] ?? null;
-            $orderTo = $filters['order_date_to'] ?? null;
-            $hasOrderWindow = is_string($orderFrom) && trim($orderFrom) !== ''
-                && is_string($orderTo) && trim($orderTo) !== '';
-            if (! $hasOrderWindow) {
-                // With no order-date window, narrow by last activity so the query is bounded (ShipHero defaults otherwise).
+            // CRM "shipped" queues filter by ship date (label/shipment created_date), not order placement date.
+            $vars['order_date_from'] = null;
+            $vars['order_date_to'] = null;
+            $shipFrom = $filters['order_date_from'] ?? null;
+            $shipTo = $filters['order_date_to'] ?? null;
+            $hasShipWindow = is_string($shipFrom) && trim($shipFrom) !== ''
+                && is_string($shipTo) && trim($shipTo) !== '';
+            if ($hasShipWindow) {
+                $from = Carbon::parse(trim($shipFrom))->startOfDay();
+                $vars['updated_from'] = $from->toIso8601String();
+                // Pull through now so orders shipped in-range are not dropped when updated_at moved later.
+                $vars['updated_to'] = Carbon::now()->endOfDay()->toIso8601String();
+            } else {
+                // With no ship-date window, narrow by last activity so the query is bounded (ShipHero defaults otherwise).
                 $vars['updated_from'] = Carbon::now()->subDays(180)->startOfDay()->toIso8601String();
                 $vars['updated_to'] = Carbon::now()->endOfDay()->toIso8601String();
             }
@@ -182,10 +190,18 @@ query ShipHeroOrders(
           shop_name
           fulfillment_status
           order_date
+          updated_at
           required_ship_date
           profile
           source
           email
+          shipments {
+            created_date
+            shipping_labels {
+              status
+              created_date
+            }
+          }
           shipping_address {
             first_name
             last_name
@@ -1559,6 +1575,7 @@ GQL;
             'order_number' => (string) ($node['order_number'] ?? ''),
             'partner_order_id' => (string) ($node['partner_order_id'] ?? ''),
             'order_date' => $this->nullableIso($node['order_date'] ?? null),
+            'ship_date' => OrderShipmentTracking::resolveShipDateIso($node),
             'required_ship_date' => $this->nullableIso($node['required_ship_date'] ?? null),
             'account' => (string) ($node['shop_name'] ?? ''),
             'country' => (string) ($shippingAddress['country'] ?? ''),
@@ -2144,7 +2161,8 @@ GQL;
             if ($tab === 'on_hold' && ! $skipTabScopeForOrderLookup && $this->orderRowIsFulfilledOrShipped($row)) {
                 continue;
             }
-            if (! $skipTabScopeForOrderLookup && ! $this->rowInDateRange($row, $from, $to)) {
+            $dateField = $tab === 'shipped' ? 'ship_date' : 'order_date';
+            if (! $skipTabScopeForOrderLookup && ! $this->rowInDateRange($row, $from, $to, $dateField)) {
                 continue;
             }
             $out[] = $row;
@@ -2372,12 +2390,12 @@ GQL;
         return $this->extractHoldReasonFromTextFields($node);
     }
 
-    private function rowInDateRange(array $row, ?Carbon $from, ?Carbon $to): bool
+    private function rowInDateRange(array $row, ?Carbon $from, ?Carbon $to, string $field = 'order_date'): bool
     {
         if ($from === null && $to === null) {
             return true;
         }
-        $raw = $row['order_date'] ?? null;
+        $raw = $row[$field] ?? null;
         if (! is_string($raw) || trim($raw) === '') {
             return false;
         }

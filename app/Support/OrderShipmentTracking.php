@@ -58,7 +58,7 @@ class OrderShipmentTracking
         }
         try {
             $dates[] = Carbon::parse($raw)->toIso8601String();
-        } catch (\Throwable) {
+        } catch (\Throwable $e) {
             // ignore unparsable timestamps
         }
     }

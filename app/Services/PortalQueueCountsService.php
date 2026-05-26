@@ -2,24 +2,25 @@
 
 namespace App\Services;
 
-use App\Jobs\RefreshPortalQueueCountsJob;
 use App\Models\ClientAccount;
 use Carbon\Carbon;
 use Illuminate\Support\Facades\Cache;
-use Illuminate\Support\Facades\Log;
+use RuntimeException;
+use Throwable;
 
 /**
  * Portal dashboard order queue totals.
  *
- * HTTP handlers must return immediately; ShipHero scans run via portal:refresh-queue-counts (CLI).
+ * Web requests count ONE queue at a time (short). The SPA loads four queues sequentially.
  */
 class PortalQueueCountsService
 {
-    public const PENDING_REBUILDS_CACHE_KEY = 'orders:queue_counts:pending';
+    public const QUEUES = ['awaiting', 'on_hold', 'backorder', 'shipped'];
 
     private const CACHE_TTL_MINUTES = 10;
 
-    private const PER_TAB_SECONDS = 4;
+    /** One queue per HTTP request — keep this fast to avoid Cloudflare 502. */
+    private const PER_TAB_SECONDS = 12;
 
     private const MAX_PAGES_PER_TAB = 2;
 
@@ -56,26 +57,10 @@ class PortalQueueCountsService
             $shippedTo = $openTo;
         }
 
-        $cacheKey = sprintf(
-            'orders:queue_counts:v6:%d:%s',
-            $clientAccountId,
-            md5(implode('|', array_filter([
-                $customerId,
-                $awaitingFrom,
-                $awaitingTo,
-                $openFrom,
-                $openTo,
-                $shippedFrom,
-                $shippedTo,
-            ])))
-        );
-
         return [
             'client_account_id' => $clientAccountId,
             'customer_id' => $customerId,
-            'cache_key' => $cacheKey,
             'last_good_key' => 'orders:queue_counts:last:'.$clientAccountId,
-            'lock_key' => 'orders:queue_counts:lock:'.$clientAccountId,
             'awaiting_from' => $awaitingFrom,
             'awaiting_to' => $awaitingTo,
             'open_from' => $openFrom,
@@ -86,255 +71,108 @@ class PortalQueueCountsService
     }
 
     /**
-     * Portal API response for dashboard counts.
-     * Builds synchronously with strict limits to avoid endless pending states.
+     * Instant dashboard snapshot from per-queue cache / last good — never calls ShipHero.
      *
      * @param  array<string, mixed>  $context
      * @return array<string, mixed>
      */
-    public function respond(array $context, bool $forceRefresh): array
+    public function respondFromCache(array $context): array
     {
-        // Clear stale lock values left by old async flow.
-        Cache::forget($context['lock_key']);
+        $parts = [];
+        $truncated = false;
+        $hasAny = false;
 
-        if ($forceRefresh) {
-            Cache::forget($context['cache_key']);
+        foreach (self::QUEUES as $tab) {
+            $stored = Cache::get($this->queueCacheKey($context, $tab));
+            if (is_array($stored)) {
+                $parts[$tab] = $stored;
+                $truncated = $truncated || (bool) ($stored['truncated'] ?? false);
+                $hasAny = true;
+            }
         }
 
-        $cached = Cache::get($context['cache_key']);
-        if (is_array($cached) && ! $forceRefresh && $this->cacheIsFresh($cached)) {
-            return array_merge($cached, [
-                'refresh_pending' => false,
-                'stale' => false,
-                'message' => '',
+        if ($hasAny) {
+            return $this->assembleDashboardPayload($context, $parts, $truncated);
+        }
+
+        $last = Cache::get($context['last_good_key']);
+        if (is_array($last)) {
+            return array_merge($this->assembleDashboardPayload($context, [], false), $last, [
+                'stale' => true,
+                'message' => 'Showing last saved counts.',
             ]);
         }
 
-        $lastGood = Cache::get($context['last_good_key']);
-        $lockKey = (string) $context['lock_key'];
-        if (! Cache::add($lockKey, 1, now()->addMinutes(2))) {
-            if (is_array($lastGood)) {
-                return array_merge($lastGood, [
-                    'refresh_pending' => true,
-                    'stale' => true,
-                    'message' => 'Updating counts from ShipHero…',
-                ]);
-            }
+        return $this->assembleDashboardPayload($context, [], false);
+    }
 
-            return $this->placeholder($context, true);
+    /**
+     * @param  array<string, mixed>  $context
+     * @return array<string, mixed>
+     */
+    public function respondForQueue(array $context, string $queue, bool $forceRefresh): array
+    {
+        $tab = strtolower(trim($queue));
+        if (! in_array($tab, self::QUEUES, true)) {
+            throw new RuntimeException('Invalid queue.');
+        }
+
+        $cacheKey = $this->queueCacheKey($context, $tab);
+        if ($forceRefresh) {
+            Cache::forget($cacheKey);
+        }
+
+        $cached = Cache::get($cacheKey);
+        if (is_array($cached) && ! $forceRefresh && $this->cacheIsFresh($cached)) {
+            return $this->formatQueueResponse($context, $tab, $cached);
         }
 
         try {
-            $payload = $this->buildAndStore($context);
+            $result = $this->countTab($context, $tab);
+            $stored = [
+                'count' => $result['count'],
+                'truncated' => $result['truncated'],
+                'cached_at' => now()->toIso8601String(),
+            ];
+            Cache::put($cacheKey, $stored, now()->addMinutes(self::CACHE_TTL_MINUTES));
+            $this->touchAggregateLastGood($context, $tab, $stored);
 
-            return array_merge($payload, [
-                'refresh_pending' => false,
-                'stale' => false,
-                'message' => '',
-            ]);
-        } catch (\Throwable $e) {
+            return $this->formatQueueResponse($context, $tab, $stored);
+        } catch (Throwable $e) {
             report($e);
-            if (is_array($lastGood)) {
-                return array_merge($lastGood, [
-                    'refresh_pending' => false,
+            if (is_array($cached)) {
+                return $this->formatQueueResponse($context, $tab, array_merge($cached, [
                     'stale' => true,
-                    'message' => 'Showing last saved counts. ShipHero is slow or unavailable — try Refresh again.',
-                ]);
+                ]));
             }
 
             throw $e;
-        } finally {
-            Cache::forget($lockKey);
         }
     }
 
     /**
-     * Queue a background rebuild (no ShipHero in the web request).
+     * Used by artisan portal:refresh-queue-counts (all queues).
      *
-     * @param  array<string, mixed>  $context
-     */
-    public function spawnRebuild(array $context): void
-    {
-        if (app()->runningUnitTests()) {
-            return;
-        }
-
-        $accountId = (int) $context['client_account_id'];
-        $this->enqueuePendingRebuild($accountId);
-
-        if ($this->tryDispatchQueueJob($accountId)) {
-            return;
-        }
-
-        if ($this->trySpawnShellProcess($accountId)) {
-            return;
-        }
-
-        Log::info('portal.queue_counts.queued_for_cron', [
-            'client_account_id' => $accountId,
-            'hint' => 'Run: php artisan portal:refresh-pending-queue-counts (or enable Laravel queue worker)',
-        ]);
-    }
-
-    public function enqueuePendingRebuild(int $clientAccountId): void
-    {
-        $list = Cache::get(self::PENDING_REBUILDS_CACHE_KEY, []);
-        if (! is_array($list)) {
-            $list = [];
-        }
-        $list[(string) $clientAccountId] = now()->timestamp;
-        Cache::put(self::PENDING_REBUILDS_CACHE_KEY, $list, now()->addDay());
-    }
-
-    public function dequeuePendingRebuild(int $clientAccountId): void
-    {
-        $list = Cache::get(self::PENDING_REBUILDS_CACHE_KEY, []);
-        if (! is_array($list)) {
-            return;
-        }
-        unset($list[(string) $clientAccountId]);
-        Cache::put(self::PENDING_REBUILDS_CACHE_KEY, $list, now()->addDay());
-    }
-
-    public function processPendingRebuilds(): int
-    {
-        $list = Cache::get(self::PENDING_REBUILDS_CACHE_KEY, []);
-        if (! is_array($list) || $list === []) {
-            return 0;
-        }
-
-        $processed = 0;
-        foreach (array_keys($list) as $rawId) {
-            $accountId = (int) $rawId;
-            if ($accountId < 1) {
-                continue;
-            }
-
-            $lockKey = 'orders:queue_counts:lock:'.$accountId;
-            if (! Cache::add($lockKey, 1, now()->addMinutes(5))) {
-                continue;
-            }
-
-            try {
-                $account = ClientAccount::query()->find($accountId);
-                if ($account === null) {
-                    $this->dequeuePendingRebuild($accountId);
-                    continue;
-                }
-                $sid = trim((string) ($account->shiphero_customer_account_id ?? ''));
-                if ($sid === '') {
-                    $this->dequeuePendingRebuild($accountId);
-                    continue;
-                }
-
-                $context = $this->contextForAccount($account);
-                $this->buildAndStore($context);
-                $this->dequeuePendingRebuild($accountId);
-                $processed++;
-            } catch (\Throwable $e) {
-                report($e);
-            } finally {
-                Cache::forget($lockKey);
-            }
-        }
-
-        return $processed;
-    }
-
-    private function tryDispatchQueueJob(int $accountId): bool
-    {
-        $driver = (string) config('queue.default', 'sync');
-        if ($driver === 'sync') {
-            return false;
-        }
-
-        try {
-            RefreshPortalQueueCountsJob::dispatch($accountId);
-
-            return true;
-        } catch (\Throwable $e) {
-            Log::warning('portal.queue_counts.queue_dispatch_failed', [
-                'client_account_id' => $accountId,
-                'message' => $e->getMessage(),
-            ]);
-
-            return false;
-        }
-    }
-
-    private function trySpawnShellProcess(int $accountId): bool
-    {
-        if (! $this->shellFunctionsAvailable()) {
-            return false;
-        }
-
-        $php = defined('PHP_BINARY') && is_string(PHP_BINARY) && PHP_BINARY !== ''
-            ? PHP_BINARY
-            : 'php';
-        $artisan = base_path('artisan');
-
-        try {
-            if (DIRECTORY_SEPARATOR === '\\') {
-                $inner = escapeshellarg($php).' '.escapeshellarg($artisan)
-                    .' portal:refresh-queue-counts '.(string) $accountId;
-                $cmd = 'cmd /C start /B "" '.$inner.' > NUL 2>&1';
-                $handle = @popen($cmd, 'r');
-                if (is_resource($handle)) {
-                    @pclose($handle);
-                    Log::info('portal.queue_counts.spawned', ['client_account_id' => $accountId, 'shell' => 'windows']);
-
-                    return true;
-                }
-
-                return false;
-            }
-
-            $cmd = escapeshellarg($php).' '.escapeshellarg($artisan)
-                .' portal:refresh-queue-counts '.(string) $accountId
-                .' > /dev/null 2>&1 &';
-            @exec($cmd);
-            Log::info('portal.queue_counts.spawned', ['client_account_id' => $accountId, 'shell' => 'posix']);
-
-            return true;
-        } catch (\Throwable $e) {
-            Log::warning('portal.queue_counts.shell_spawn_failed', [
-                'client_account_id' => $accountId,
-                'message' => $e->getMessage(),
-            ]);
-
-            return false;
-        }
-    }
-
-    private function shellFunctionsAvailable(): bool
-    {
-        if ($this->isPhpFunctionDisabled('exec')
-            && $this->isPhpFunctionDisabled('proc_open')
-            && $this->isPhpFunctionDisabled('popen')) {
-            return false;
-        }
-
-        return function_exists('exec') || function_exists('proc_open') || function_exists('popen');
-    }
-
-    private function isPhpFunctionDisabled(string $function): bool
-    {
-        $raw = strtolower((string) ini_get('disable_functions'));
-        if ($raw === '') {
-            return false;
-        }
-
-        return in_array(strtolower($function), array_map('trim', explode(',', $raw)), true);
-    }
-
-    /**
      * @param  array<string, mixed>  $context
      * @return array<string, mixed>
      */
-    public function buildAndStore(array $context): array
+    public function buildAllQueues(array $context): array
     {
-        $payload = $this->build($context);
-        Cache::put($context['cache_key'], $payload, now()->addMinutes(self::CACHE_TTL_MINUTES));
+        $parts = [];
+        $truncated = false;
+        foreach (self::QUEUES as $tab) {
+            $result = $this->countTab($context, $tab);
+            $stored = [
+                'count' => $result['count'],
+                'truncated' => $result['truncated'],
+                'cached_at' => now()->toIso8601String(),
+            ];
+            Cache::put($this->queueCacheKey($context, $tab), $stored, now()->addMinutes(self::CACHE_TTL_MINUTES));
+            $parts[$tab] = $stored;
+            $truncated = $truncated || $result['truncated'];
+        }
+
+        $payload = $this->assembleDashboardPayload($context, $parts, $truncated);
         Cache::put($context['last_good_key'], $payload, now()->addDay());
 
         return $payload;
@@ -342,29 +180,100 @@ class PortalQueueCountsService
 
     /**
      * @param  array<string, mixed>  $context
+     * @return array{count: int, truncated: bool}
+     */
+    private function countTab(array $context, string $tab): array
+    {
+        $from = $context['open_from'];
+        $to = $context['open_to'];
+        if ($tab === 'awaiting') {
+            $from = $context['awaiting_from'];
+            $to = $context['awaiting_to'];
+        } elseif ($tab === 'shipped') {
+            $from = $context['shipped_from'];
+            $to = $context['shipped_to'];
+        }
+
+        return $this->orders->countOrders([
+            'customer_account_id' => $context['customer_id'],
+            'tab' => $tab,
+            'order_date_from' => $from,
+            'order_date_to' => $to,
+            'max_pages' => self::MAX_PAGES_PER_TAB,
+            'count_deadline' => microtime(true) + self::PER_TAB_SECONDS,
+        ]);
+    }
+
+    /**
+     * @param  array<string, mixed>  $context
+     */
+    private function queueCacheKey(array $context, string $tab): string
+    {
+        return sprintf(
+            'orders:queue_counts:v7:%d:%s:%s',
+            (int) $context['client_account_id'],
+            $tab,
+            md5(implode('|', [
+                $context['customer_id'],
+                $context['awaiting_from'],
+                $context['awaiting_to'],
+                $context['open_from'],
+                $context['open_to'],
+                $context['shipped_from'],
+                $context['shipped_to'],
+            ]))
+        );
+    }
+
+    /**
+     * @param  array<string, mixed>  $stored
      * @return array<string, mixed>
      */
-    public function build(array $context): array
+    private function formatQueueResponse(array $context, string $tab, array $stored): array
     {
-        $customerId = $context['customer_id'];
-        $countBase = [
-            'max_pages' => self::MAX_PAGES_PER_TAB,
+        $count = (int) ($stored['count'] ?? 0);
+        $truncated = (bool) ($stored['truncated'] ?? false);
+        $stale = (bool) ($stored['stale'] ?? false);
+
+        $payload = [
+            'queue' => $tab,
+            'count' => $count,
+            'truncated' => $truncated,
+            'stale' => $stale,
+            'refresh_pending' => false,
+            'shiphero_ready' => true,
+            'message' => $stale ? 'Showing last saved count for this queue.' : '',
+            'ready_to_ship' => $tab === 'awaiting' ? $count : 0,
+            'on_hold' => $tab === 'on_hold' ? $count : 0,
+            'backorder' => $tab === 'backorder' ? $count : 0,
+            'shipped' => $tab === 'shipped' ? $count : 0,
+            'awaiting_order_date_from' => $context['awaiting_from'],
+            'awaiting_order_date_to' => $context['awaiting_to'],
+            'open_queue_order_date_from' => $context['open_from'],
+            'open_queue_order_date_to' => $context['open_to'],
+            'shipped_order_date_from' => $context['shipped_from'],
+            'shipped_order_date_to' => $context['shipped_to'],
+            'cached_at' => $stored['cached_at'] ?? now()->toIso8601String(),
         ];
 
-        $ready = $this->countTab($countBase, $customerId, 'awaiting', $context['awaiting_from'], $context['awaiting_to']);
-        $hold = $this->countTab($countBase, $customerId, 'on_hold', $context['open_from'], $context['open_to']);
-        $back = $this->countTab($countBase, $customerId, 'backorder', $context['open_from'], $context['open_to']);
-        $ship = $this->countTab($countBase, $customerId, 'shipped', $context['shipped_from'], $context['shipped_to']);
+        return $payload;
+    }
 
+    /**
+     * @param  array<string, array{count: int, truncated: bool, cached_at: string}>  $parts
+     * @return array<string, mixed>
+     */
+    private function assembleDashboardPayload(array $context, array $parts, bool $truncated): array
+    {
         return [
-            'ready_to_ship' => $ready['count'],
-            'on_hold' => $hold['count'],
-            'backorder' => $back['count'],
-            'shipped' => $ship['count'],
-            'truncated' => $ready['truncated'] || $hold['truncated'] || $back['truncated'] || $ship['truncated'],
-            'shiphero_ready' => true,
+            'ready_to_ship' => (int) ($parts['awaiting']['count'] ?? 0),
+            'on_hold' => (int) ($parts['on_hold']['count'] ?? 0),
+            'backorder' => (int) ($parts['backorder']['count'] ?? 0),
+            'shipped' => (int) ($parts['shipped']['count'] ?? 0),
+            'truncated' => $truncated,
             'stale' => false,
             'refresh_pending' => false,
+            'shiphero_ready' => true,
             'message' => '',
             'awaiting_order_date_from' => $context['awaiting_from'],
             'awaiting_order_date_to' => $context['awaiting_to'],
@@ -374,6 +283,33 @@ class PortalQueueCountsService
             'shipped_order_date_to' => $context['shipped_to'],
             'cached_at' => now()->toIso8601String(),
         ];
+    }
+
+    /**
+     * @param  array<string, mixed>  $context
+     * @param  array{count: int, truncated: bool, cached_at: string}  $stored
+     */
+    private function touchAggregateLastGood(array $context, string $tab, array $stored): void
+    {
+        $last = Cache::get($context['last_good_key'], []);
+        if (! is_array($last)) {
+            $last = $this->assembleDashboardPayload($context, [], false);
+        }
+
+        $field = $this->dashboardFieldForTab($tab);
+        $last[$field] = (int) $stored['count'];
+        $last['truncated'] = (bool) ($last['truncated'] ?? false) || (bool) $stored['truncated'];
+        $last['cached_at'] = now()->toIso8601String();
+        Cache::put($context['last_good_key'], $last, now()->addDay());
+    }
+
+    private function dashboardFieldForTab(string $tab): string
+    {
+        if ($tab === 'awaiting') {
+            return 'ready_to_ship';
+        }
+
+        return $tab;
     }
 
     /**
@@ -391,47 +327,6 @@ class PortalQueueCountsService
         } catch (\Throwable $e) {
             return false;
         }
-    }
-
-    /**
-     * @param  array<string, mixed>  $countBase
-     * @return array{count: int, truncated: bool}
-     */
-    private function countTab(array $countBase, string $customerId, string $tab, string $from, string $to): array
-    {
-        return $this->orders->countOrders(array_merge($countBase, [
-            'customer_account_id' => $customerId,
-            'tab' => $tab,
-            'order_date_from' => $from,
-            'order_date_to' => $to,
-            'count_deadline' => microtime(true) + self::PER_TAB_SECONDS,
-        ]));
-    }
-
-    /**
-     * @param  array<string, mixed>  $context
-     * @return array<string, mixed>
-     */
-    private function placeholder(array $context, bool $pending): array
-    {
-        return [
-            'ready_to_ship' => 0,
-            'on_hold' => 0,
-            'backorder' => 0,
-            'shipped' => 0,
-            'truncated' => false,
-            'shiphero_ready' => true,
-            'stale' => false,
-            'refresh_pending' => $pending,
-            'message' => $pending ? 'Updating counts from ShipHero…' : '',
-            'awaiting_order_date_from' => $context['awaiting_from'],
-            'awaiting_order_date_to' => $context['awaiting_to'],
-            'open_queue_order_date_from' => $context['open_from'],
-            'open_queue_order_date_to' => $context['open_to'],
-            'shipped_order_date_from' => $context['shipped_from'],
-            'shipped_order_date_to' => $context['shipped_to'],
-            'cached_at' => now()->toIso8601String(),
-        ];
     }
 
     private function dateStartIso(?string $value): string

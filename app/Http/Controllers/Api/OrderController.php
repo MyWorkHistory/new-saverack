@@ -107,12 +107,13 @@ class OrderController extends Controller
     }
 
     /**
-     * Portal dashboard queue totals — responds immediately; ShipHero refresh runs after the HTTP response.
+     * Portal dashboard queue totals — one queue per request, or cache-only snapshot when queue is omitted.
      */
     public function queueCounts(Request $request, PortalQueueCountsService $queueCounts): JsonResponse
     {
         $validated = $request->validate([
             'client_account_id' => ['required', 'integer', 'exists:client_accounts,id'],
+            'queue' => ['nullable', 'string', 'in:awaiting,on_hold,backorder,shipped'],
             'order_date_from' => ['nullable', 'required_with:order_date_to', 'date'],
             'order_date_to' => ['nullable', 'required_with:order_date_from', 'date'],
         ]);
@@ -143,7 +144,12 @@ class OrderController extends Controller
             }
 
             $context = $queueCounts->contextForAccount($account, $validated);
-            $payload = $queueCounts->respond($context, $request->boolean('refresh'));
+            $queue = isset($validated['queue']) ? (string) $validated['queue'] : null;
+            if ($queue !== null) {
+                $payload = $queueCounts->respondForQueue($context, $queue, $request->boolean('refresh'));
+            } else {
+                $payload = $queueCounts->respondFromCache($context);
+            }
 
             return response()->json($payload);
         } catch (ValidationException $e) {

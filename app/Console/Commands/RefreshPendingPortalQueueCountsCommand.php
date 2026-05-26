@@ -2,19 +2,17 @@
 
 namespace App\Console\Commands;
 
-use App\Services\PortalQueueCountsService;
 use Illuminate\Console\Command;
 
 class RefreshPendingPortalQueueCountsCommand extends Command
 {
     protected $signature = 'portal:refresh-pending-queue-counts';
 
-    protected $description = 'Process portal dashboard queue-count rebuilds queued when shell exec is unavailable';
+    protected $description = 'Deprecated — use portal:refresh-queue-counts {client_account_id} or per-queue API refresh';
 
-    public function handle(PortalQueueCountsService $queueCounts): int
+    public function handle(): int
     {
-        $count = $queueCounts->processPendingRebuilds();
-        $this->info('Refreshed queue counts for '.$count.' account(s).');
+        $this->line('No pending queue. Run: php artisan portal:refresh-queue-counts {client_account_id}');
 
         return 0;
     }

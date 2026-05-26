@@ -41,8 +41,7 @@ class RefreshPortalQueueCountsCommand extends Command
 
         try {
             $context = $queueCounts->contextForAccount($account);
-            $queueCounts->buildAndStore($context);
-            $queueCounts->dequeuePendingRebuild($accountId);
+            $queueCounts->buildAllQueues($context);
             $this->info('Queue counts cached for account #'.$accountId);
         } catch (Throwable $e) {
             report($e);

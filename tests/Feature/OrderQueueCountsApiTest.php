@@ -5,6 +5,7 @@ namespace Tests\Feature;
 use App\Models\ClientAccount;
 use App\Models\Permission;
 use App\Models\User;
+use App\Services\PortalQueueCountsService;
 use App\Services\ShipHeroOrderService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Cache;
@@ -39,45 +40,12 @@ class OrderQueueCountsApiTest extends TestCase
         ]);
     }
 
-    public function test_queue_counts_returns_immediately_without_calling_shiphero_when_cache_cold(): void
+    public function test_queue_counts_without_queue_returns_cache_only_without_shiphero(): void
     {
         $account = $this->makeAccountWithShipHero();
         $user = User::factory()->create(['client_account_id' => $account->id]);
         $user->permissions()->attach($this->inventoryViewPermission()->id);
         Sanctum::actingAs($user);
-
-        $mock = Mockery::mock(ShipHeroOrderService::class);
-        $mock->shouldReceive('countOrders')->never();
-        $this->app->instance(ShipHeroOrderService::class, $mock);
-
-        $response = $this->getJson('/api/orders/queue-counts?client_account_id='.$account->id);
-
-        $response->assertOk()
-            ->assertJsonPath('refresh_pending', true)
-            ->assertJsonPath('ready_to_ship', 0);
-    }
-
-    public function test_queue_counts_returns_fresh_cache_without_rebuilding(): void
-    {
-        $account = $this->makeAccountWithShipHero();
-        $user = User::factory()->create(['client_account_id' => $account->id]);
-        $user->permissions()->attach($this->inventoryViewPermission()->id);
-        Sanctum::actingAs($user);
-
-        $service = app(\App\Services\PortalQueueCountsService::class);
-        $context = $service->contextForAccount($account);
-        Cache::put($context['cache_key'], [
-            'ready_to_ship' => 11,
-            'on_hold' => 2,
-            'backorder' => 1,
-            'shipped' => 44,
-            'truncated' => false,
-            'shiphero_ready' => true,
-            'stale' => false,
-            'refresh_pending' => false,
-            'message' => '',
-            'cached_at' => now()->toIso8601String(),
-        ], now()->addMinutes(10));
 
         $mock = Mockery::mock(ShipHeroOrderService::class);
         $mock->shouldReceive('countOrders')->never();
@@ -85,6 +53,39 @@ class OrderQueueCountsApiTest extends TestCase
 
         $this->getJson('/api/orders/queue-counts?client_account_id='.$account->id)
             ->assertOk()
+            ->assertJsonPath('refresh_pending', false)
+            ->assertJsonPath('ready_to_ship', 0);
+    }
+
+    public function test_queue_counts_single_queue_uses_fresh_per_queue_cache(): void
+    {
+        $account = $this->makeAccountWithShipHero();
+        $user = User::factory()->create(['client_account_id' => $account->id]);
+        $user->permissions()->attach($this->inventoryViewPermission()->id);
+        Sanctum::actingAs($user);
+
+        $service = app(PortalQueueCountsService::class);
+        $context = $service->contextForAccount($account);
+
+        $reflection = new \ReflectionClass($service);
+        $method = $reflection->getMethod('queueCacheKey');
+        $method->setAccessible(true);
+        $cacheKey = $method->invoke($service, $context, 'awaiting');
+
+        Cache::put($cacheKey, [
+            'count' => 11,
+            'truncated' => false,
+            'cached_at' => now()->toIso8601String(),
+        ], now()->addMinutes(10));
+
+        $mock = Mockery::mock(ShipHeroOrderService::class);
+        $mock->shouldReceive('countOrders')->never();
+        $this->app->instance(ShipHeroOrderService::class, $mock);
+
+        $this->getJson('/api/orders/queue-counts?client_account_id='.$account->id.'&queue=awaiting')
+            ->assertOk()
+            ->assertJsonPath('queue', 'awaiting')
+            ->assertJsonPath('count', 11)
             ->assertJsonPath('ready_to_ship', 11)
             ->assertJsonPath('refresh_pending', false);
     }
@@ -101,7 +102,7 @@ class OrderQueueCountsApiTest extends TestCase
         $user->permissions()->attach($this->inventoryViewPermission()->id);
         Sanctum::actingAs($user);
 
-        $this->getJson('/api/orders/queue-counts?client_account_id='.$accountB->id)
+        $this->getJson('/api/orders/queue-counts?client_account_id='.$accountB->id.'&queue=awaiting')
             ->assertForbidden();
     }
 

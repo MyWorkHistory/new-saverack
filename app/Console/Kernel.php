@@ -16,10 +16,6 @@ class Kernel extends ConsoleKernel
      */
     protected function schedule(Schedule $schedule)
     {
-        // Portal dashboard counts when exec() is disabled (cPanel): requires cron → schedule:run
-        $schedule->command('portal:refresh-pending-queue-counts')
-            ->everyMinute()
-            ->withoutOverlapping(5);
     }
 
     /**

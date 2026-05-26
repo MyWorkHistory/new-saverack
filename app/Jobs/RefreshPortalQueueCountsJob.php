@@ -43,8 +43,7 @@ class RefreshPortalQueueCountsJob implements ShouldQueue
                 return;
             }
             $context = $queueCounts->contextForAccount($account);
-            $queueCounts->buildAndStore($context);
-            $queueCounts->dequeuePendingRebuild($this->clientAccountId);
+            $queueCounts->buildAllQueues($context);
         } catch (Throwable $e) {
             report($e);
             throw $e;

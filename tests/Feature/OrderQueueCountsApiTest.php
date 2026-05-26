@@ -5,21 +5,15 @@ namespace Tests\Feature;
 use App\Models\ClientAccount;
 use App\Models\Permission;
 use App\Models\User;
-use App\Services\ShipHeroOrderService;
+use App\Services\PortalQueueCountsService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Cache;
 use Laravel\Sanctum\Sanctum;
-use Mockery;
 use Tests\TestCase;
 
 class OrderQueueCountsApiTest extends TestCase
 {
     use RefreshDatabase;
-
-    protected function tearDown(): void
-    {
-        Mockery::close();
-        parent::tearDown();
-    }
 
     private function inventoryViewPermission(): Permission
     {
@@ -38,26 +32,52 @@ class OrderQueueCountsApiTest extends TestCase
         ]);
     }
 
-    public function test_queue_counts_returns_counts_for_authorized_portal_user(): void
+    public function test_queue_counts_returns_immediately_when_cache_cold(): void
     {
         $account = $this->makeAccountWithShipHero();
         $user = User::factory()->create(['client_account_id' => $account->id]);
         $user->permissions()->attach($this->inventoryViewPermission()->id);
         Sanctum::actingAs($user);
 
-        $mock = Mockery::mock(ShipHeroOrderService::class);
-        $mock->shouldReceive('countOrders')
-            ->times(4)
-            ->andReturnUsing(static function (array $filters): array {
-                return match ($filters['tab'] ?? '') {
-                    'awaiting' => ['count' => 11, 'truncated' => false],
-                    'on_hold' => ['count' => 2, 'truncated' => false],
-                    'backorder' => ['count' => 1, 'truncated' => false],
-                    'shipped' => ['count' => 44, 'truncated' => true],
-                    default => ['count' => 0, 'truncated' => false],
-                };
-            });
-        $this->app->instance(ShipHeroOrderService::class, $mock);
+        $response = $this->getJson('/api/orders/queue-counts?client_account_id='.$account->id);
+
+        $response->assertOk()
+            ->assertJsonPath('refresh_pending', true)
+            ->assertJsonPath('ready_to_ship', 0)
+            ->assertJsonStructure([
+                'awaiting_order_date_from',
+                'shipped_order_date_from',
+                'cached_at',
+            ]);
+    }
+
+    public function test_queue_counts_returns_cached_payload_without_blocking(): void
+    {
+        $account = $this->makeAccountWithShipHero();
+        $user = User::factory()->create(['client_account_id' => $account->id]);
+        $user->permissions()->attach($this->inventoryViewPermission()->id);
+        Sanctum::actingAs($user);
+
+        $service = app(PortalQueueCountsService::class);
+        $context = $service->contextForAccount($account);
+        Cache::put($context['cache_key'], [
+            'ready_to_ship' => 11,
+            'on_hold' => 2,
+            'backorder' => 1,
+            'shipped' => 44,
+            'truncated' => true,
+            'shiphero_ready' => true,
+            'stale' => false,
+            'refresh_pending' => false,
+            'message' => '',
+            'awaiting_order_date_from' => $context['awaiting_from'],
+            'awaiting_order_date_to' => $context['awaiting_to'],
+            'open_queue_order_date_from' => $context['open_from'],
+            'open_queue_order_date_to' => $context['open_to'],
+            'shipped_order_date_from' => $context['shipped_from'],
+            'shipped_order_date_to' => $context['shipped_to'],
+            'cached_at' => now()->toIso8601String(),
+        ], now()->addMinutes(10));
 
         $response = $this->getJson('/api/orders/queue-counts?client_account_id='.$account->id);
 
@@ -67,15 +87,7 @@ class OrderQueueCountsApiTest extends TestCase
             ->assertJsonPath('backorder', 1)
             ->assertJsonPath('shipped', 44)
             ->assertJsonPath('truncated', true)
-            ->assertJsonStructure([
-                'awaiting_order_date_from',
-                'awaiting_order_date_to',
-                'open_queue_order_date_from',
-                'open_queue_order_date_to',
-                'shipped_order_date_from',
-                'shipped_order_date_to',
-                'cached_at',
-            ]);
+            ->assertJsonPath('refresh_pending', false);
 
         $payload = $response->json();
         $this->assertSame($payload['open_queue_order_date_from'], $payload['shipped_order_date_from']);
@@ -93,10 +105,6 @@ class OrderQueueCountsApiTest extends TestCase
         $user = User::factory()->create(['client_account_id' => $accountA->id]);
         $user->permissions()->attach($this->inventoryViewPermission()->id);
         Sanctum::actingAs($user);
-
-        $mock = Mockery::mock(ShipHeroOrderService::class);
-        $mock->shouldReceive('countOrders')->never();
-        $this->app->instance(ShipHeroOrderService::class, $mock);
 
         $this->getJson('/api/orders/queue-counts?client_account_id='.$accountB->id)
             ->assertForbidden();

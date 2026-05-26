@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Models\ClientAccount;
 use App\Services\ShipHeroOrderDetailCacheService;
 use App\Services\ShopifyOrderAdminLinkService;
+use App\Services\PortalQueueCountsService;
 use App\Services\ShipHeroOrderService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -106,10 +107,9 @@ class OrderController extends Controller
     }
 
     /**
-     * Portal dashboard: ShipHero order counts per queue (same filters as list orders), short-lived cache.
-     * Shipped uses ship date (updated_at proxy on list queries; label dates on detail when loaded).
+     * Portal dashboard queue totals — responds immediately; ShipHero refresh runs after the HTTP response.
      */
-    public function queueCounts(Request $request): JsonResponse
+    public function queueCounts(Request $request, PortalQueueCountsService $queueCounts): JsonResponse
     {
         $validated = $request->validate([
             'client_account_id' => ['required', 'integer', 'exists:client_accounts,id'],
@@ -135,122 +135,17 @@ class OrderController extends Controller
                     'backorder' => 0,
                     'shipped' => 0,
                     'truncated' => false,
+                    'refresh_pending' => false,
                     'shiphero_ready' => false,
                     'message' => 'ShipHero is not configured for this account yet. Save Rack will finish setup shortly.',
                     'cached_at' => now()->toIso8601String(),
                 ]);
             }
 
-            $customerId = trim($sid);
+            $context = $queueCounts->contextForAccount($account, $validated);
+            $payload = $queueCounts->respond($context, $request->boolean('refresh'));
 
-            $now = Carbon::now();
-            $awaitingFrom = $this->dateStartIso($now->copy()->subDays(6)->toDateString());
-            $awaitingTo = $this->dateEndIso($now->copy()->toDateString());
-            $openFrom = $this->dateStartIso($now->copy()->toDateString());
-            $openTo = $this->dateEndIso($now->copy()->toDateString());
-
-            $shippedFromInput = $validated['order_date_from'] ?? null;
-            $shippedToInput = $validated['order_date_to'] ?? null;
-            if ($shippedFromInput !== null && $shippedToInput !== null) {
-                $shippedFrom = $this->dateStartIso((string) $shippedFromInput);
-                $shippedTo = $this->dateEndIso((string) $shippedToInput);
-            } else {
-                $shippedFrom = $openFrom;
-                $shippedTo = $openTo;
-            }
-
-            $cacheKey = sprintf(
-                'orders:queue_counts:v3:%d:%s',
-                $clientAccountId,
-                md5(implode('|', array_filter([
-                    $customerId,
-                    $awaitingFrom,
-                    $awaitingTo,
-                    $openFrom,
-                    $openTo,
-                    $shippedFrom,
-                    $shippedTo,
-                ])))
-            );
-            $lastGoodKey = 'orders:queue_counts:last:'.$clientAccountId;
-
-            $buildQueueCountsPayload = function () use (
-                $customerId,
-                $awaitingFrom,
-                $awaitingTo,
-                $openFrom,
-                $openTo,
-                $shippedFrom,
-                $shippedTo
-            ) {
-                $deadline = microtime(true) + 28;
-                $countBase = [
-                    'max_pages' => 5,
-                    'count_deadline' => $deadline,
-                ];
-
-                $ready = $this->orders->countOrders(array_merge($countBase, [
-                    'customer_account_id' => $customerId,
-                    'tab' => 'awaiting',
-                    'order_date_from' => $awaitingFrom,
-                    'order_date_to' => $awaitingTo,
-                ]));
-                $hold = $this->orders->countOrders(array_merge($countBase, [
-                    'customer_account_id' => $customerId,
-                    'tab' => 'on_hold',
-                    'order_date_from' => $openFrom,
-                    'order_date_to' => $openTo,
-                ]));
-                $back = $this->orders->countOrders(array_merge($countBase, [
-                    'customer_account_id' => $customerId,
-                    'tab' => 'backorder',
-                    'order_date_from' => $openFrom,
-                    'order_date_to' => $openTo,
-                ]));
-                $ship = $this->orders->countOrders(array_merge($countBase, [
-                    'customer_account_id' => $customerId,
-                    'tab' => 'shipped',
-                    'order_date_from' => $shippedFrom,
-                    'order_date_to' => $shippedTo,
-                ]));
-
-                return [
-                    'ready_to_ship' => $ready['count'],
-                    'on_hold' => $hold['count'],
-                    'backorder' => $back['count'],
-                    'shipped' => $ship['count'],
-                    'truncated' => $ready['truncated'] || $hold['truncated'] || $back['truncated'] || $ship['truncated'],
-                    'shiphero_ready' => true,
-                    'stale' => false,
-                    'awaiting_order_date_from' => $awaitingFrom,
-                    'awaiting_order_date_to' => $awaitingTo,
-                    'open_queue_order_date_from' => $openFrom,
-                    'open_queue_order_date_to' => $openTo,
-                    'shipped_order_date_from' => $shippedFrom,
-                    'shipped_order_date_to' => $shippedTo,
-                    'cached_at' => now()->toIso8601String(),
-                ];
-            };
-
-            try {
-                if ($request->boolean('refresh')) {
-                    Cache::forget($cacheKey);
-                }
-                $payload = Cache::remember($cacheKey, now()->addMinutes(5), $buildQueueCountsPayload);
-                Cache::put($lastGoodKey, $payload, now()->addDay());
-
-                return response()->json($payload);
-            } catch (RuntimeException|Throwable $e) {
-                report($e);
-                $stale = Cache::get($lastGoodKey);
-                if (is_array($stale)) {
-                    $stale['stale'] = true;
-                    $stale['message'] = 'Showing last saved counts. ShipHero is slow or unavailable — try Refresh again in a minute.';
-
-                    return response()->json($stale);
-                }
-                throw $e;
-            }
+            return response()->json($payload);
         } catch (ValidationException $e) {
             throw $e;
         } catch (RuntimeException $e) {

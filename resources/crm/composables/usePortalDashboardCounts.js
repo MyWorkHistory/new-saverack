@@ -1,8 +1,10 @@
-import { ref } from "vue";
+import { onUnmounted, ref } from "vue";
 import api from "../services/api";
 import { usePortalLastRefreshed } from "./usePortalLastRefreshed.js";
 
-const CACHE_KEY_PREFIX = "portal:dashboard:queue-counts:v3:";
+const CACHE_KEY_PREFIX = "portal:dashboard:queue-counts:v4:";
+const POLL_MS = 2500;
+const POLL_MAX_ATTEMPTS = 24;
 
 function storageKey(clientAccountId) {
   return `${CACHE_KEY_PREFIX}${clientAccountId}`;
@@ -16,6 +18,7 @@ export function parsePortalQueueCounts(data) {
     shipped: Number(data?.shipped ?? 0),
     truncated: Boolean(data?.truncated),
     stale: Boolean(data?.stale),
+    refresh_pending: Boolean(data?.refresh_pending),
     shiphero_ready: data?.shiphero_ready !== false,
     message: typeof data?.message === "string" ? data.message : "",
   };
@@ -63,6 +66,16 @@ export function usePortalDashboardCounts(getClientAccountId, options = {}) {
   const refreshing = ref(false);
   const counts = ref(parsePortalQueueCounts(null));
   const { markRefreshed, lastRefreshedLabel } = usePortalLastRefreshed();
+  let pollTimer = null;
+  let pollAttempts = 0;
+
+  function stopPolling() {
+    if (pollTimer !== null) {
+      clearInterval(pollTimer);
+      pollTimer = null;
+    }
+    pollAttempts = 0;
+  }
 
   function shipheroReadyFlag() {
     if (typeof options.getShipheroReady === "function") {
@@ -70,6 +83,54 @@ export function usePortalDashboardCounts(getClientAccountId, options = {}) {
     }
 
     return true;
+  }
+
+  function applyCounts(next, { markFresh = false } = {}) {
+    counts.value = next;
+    const id = Number(getClientAccountId() || 0);
+    if (id) {
+      writeCache(id, next);
+    }
+    if (markFresh && !next.refresh_pending) {
+      markRefreshed();
+    }
+  }
+
+  function startPollingIfNeeded() {
+    if (!counts.value.refresh_pending) {
+      stopPolling();
+      return;
+    }
+    if (pollTimer !== null) {
+      return;
+    }
+
+    pollTimer = setInterval(async () => {
+      pollAttempts += 1;
+      const clientAccountId = Number(getClientAccountId() || 0);
+      if (!clientAccountId || pollAttempts > POLL_MAX_ATTEMPTS) {
+        stopPolling();
+        refreshing.value = false;
+        return;
+      }
+      try {
+        const { data } = await api.get("/orders/queue-counts", {
+          params: { client_account_id: clientAccountId },
+        });
+        const next = parsePortalQueueCounts(data);
+        applyCounts(next, { markFresh: true });
+        if (!next.refresh_pending) {
+          stopPolling();
+          refreshing.value = false;
+          loading.value = false;
+        }
+      } catch {
+        if (pollAttempts >= POLL_MAX_ATTEMPTS) {
+          stopPolling();
+          refreshing.value = false;
+        }
+      }
+    }, POLL_MS);
   }
 
   async function fetchCounts({ background = false, bustCache = false, shipheroReady = true } = {}) {
@@ -80,10 +141,13 @@ export function usePortalDashboardCounts(getClientAccountId, options = {}) {
       return;
     }
     if (shipheroReady === false) {
-      counts.value = parsePortalQueueCounts({
-        shiphero_ready: false,
-        message: "ShipHero is not configured for this account yet.",
-      });
+      stopPolling();
+      applyCounts(
+        parsePortalQueueCounts({
+          shiphero_ready: false,
+          message: "ShipHero is not configured for this account yet.",
+        }),
+      );
       loading.value = false;
       refreshing.value = false;
       return;
@@ -95,27 +159,28 @@ export function usePortalDashboardCounts(getClientAccountId, options = {}) {
       loading.value = true;
     }
 
-    let fetchedOk = false;
     try {
       const params = { client_account_id: clientAccountId };
       if (bustCache) {
         params.refresh = 1;
       }
-      const { data } = await api.get("/orders/queue-counts", { params });
+      const { data } = await api.get("/orders/queue-counts", { params, timeout: 20000 });
       const next = parsePortalQueueCounts(data);
-      counts.value = next;
-      writeCache(clientAccountId, next);
-      fetchedOk = true;
+      applyCounts(next, { markFresh: !next.refresh_pending });
+      if (next.refresh_pending) {
+        refreshing.value = true;
+        startPollingIfNeeded();
+      } else {
+        refreshing.value = false;
+      }
     } catch (e) {
       if (shipheroReadyFlag()) {
         options.onError?.(e);
       }
+      stopPolling();
+      refreshing.value = false;
     } finally {
       loading.value = false;
-      refreshing.value = false;
-      if (fetchedOk) {
-        markRefreshed();
-      }
     }
   }
 
@@ -128,8 +193,12 @@ export function usePortalDashboardCounts(getClientAccountId, options = {}) {
 
     const cached = readCache(clientAccountId);
     if (cached) {
-      counts.value = cached;
+      applyCounts(cached);
       loading.value = false;
+      if (cached.refresh_pending) {
+        refreshing.value = true;
+        startPollingIfNeeded();
+      }
       await fetchCounts({ background: true, shipheroReady: shipheroReadyFlag() });
       return;
     }
@@ -143,19 +212,21 @@ export function usePortalDashboardCounts(getClientAccountId, options = {}) {
       loading.value = false;
       return;
     }
+    stopPolling();
     try {
       sessionStorage.removeItem(storageKey(clientAccountId));
     } catch {
       // no-op
     }
-    loading.value = true;
-    refreshing.value = false;
+    refreshing.value = true;
     await fetchCounts({
       background: false,
       bustCache: true,
       shipheroReady: shipheroReadyFlag(),
     });
   }
+
+  onUnmounted(stopPolling);
 
   return { counts, loading, refreshing, loadCounts, refreshCounts, lastRefreshedLabel };
 }

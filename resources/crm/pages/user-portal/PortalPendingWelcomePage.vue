@@ -193,104 +193,103 @@ onUnmounted(() => {
     </div>
 
     <template v-else>
-      <div class="portal-welcome-page__stack d-flex flex-column gap-3 gap-md-4">
-        <div class="staff-table-card staff-datatable-card--white p-4 p-md-4 portal-welcome-page__intro">
-          <h1 class="h4 fw-semibold mb-3">Welcome to Save Rack Fulfillment!</h1>
-          <p class="text-secondary mb-2">
-            Your account has been created, but a few setup steps are required before we can start
-            receiving inventory and shipping orders for your store.
-          </p>
-          <p class="text-secondary mb-0">
-            Please complete the onboarding checklist below so our team can prepare your account,
-            connect your store, and make sure your fulfillment process is set up correctly.
-          </p>
-        </div>
-
-        <div class="staff-stat-card portal-welcome-page__progress w-100">
-          <div class="portal-welcome-page__progress-body">
-            <div class="portal-welcome-page__progress-copy min-w-0">
-              <p class="staff-stat-card__label">Your progress</p>
-              <p class="staff-stat-card__value">
-                {{ progress.completed }} of {{ progress.total }}
+      <div class="portal-welcome-layout row g-3 g-lg-4">
+        <div class="col-lg-8">
+          <div class="d-flex flex-column gap-3 gap-md-4">
+            <div class="staff-table-card staff-datatable-card--white p-4 p-md-4 portal-welcome-page__intro">
+              <h1 class="h4 fw-semibold mb-3">Welcome to Save Rack Fulfillment!</h1>
+              <p class="text-secondary mb-2">
+                Your account has been created, but a few setup steps are required before we can start
+                receiving inventory and shipping orders for your store.
               </p>
-              <p class="staff-stat-card__sub">Onboarding tasks complete</p>
+              <p class="text-secondary mb-0">
+                Please complete the onboarding checklist below so our team can prepare your account,
+                connect your store, and make sure your fulfillment process is set up correctly.
+              </p>
             </div>
-            <div
-              class="portal-welcome-page__progress-icon"
-              :style="PROGRESS_ICON_STYLE"
-              aria-hidden="true"
-            >
-              <svg class="portal-welcome-page__progress-icon-svg" fill="currentColor" viewBox="0 0 24 24">
-                <path :d="PORTAL_MATERIAL_ICON.hourglass" />
-              </svg>
+
+            <p v-if="refreshingBilling" class="small text-secondary mb-0">
+              Refreshing payment status…
+            </p>
+
+            <div class="portal-onboard-tasks d-flex flex-column gap-3">
+              <button
+                v-for="task in tasks"
+                :key="task.id"
+                type="button"
+                class="portal-onboard-task staff-table-card staff-datatable-card--white text-start border-0 w-100 p-3 p-md-4"
+                @click="openTask(task)"
+              >
+                <div class="portal-onboard-task__grid">
+                  <div class="portal-onboard-task__lead d-flex align-items-start gap-3 min-w-0">
+                    <div class="portal-onboard-task__icon flex-shrink-0" aria-hidden="true">
+                      <svg class="portal-onboard-task__icon-svg" fill="currentColor" viewBox="0 0 24 24">
+                        <path :d="taskIconPath(task)" />
+                      </svg>
+                    </div>
+                    <div class="min-w-0">
+                      <h2 class="h6 fw-semibold mb-1">{{ task.title }}</h2>
+                      <p class="small text-secondary mb-0">{{ task.description }}</p>
+                    </div>
+                  </div>
+                  <div class="portal-onboard-task__status-wrap">
+                    <span
+                      class="portal-onboard-status badge rounded-pill"
+                      :class="statusClass(task.status)"
+                    >
+                      {{ statusLabel(task.status) }}
+                    </span>
+                  </div>
+                </div>
+              </button>
             </div>
           </div>
         </div>
 
-        <p
-          v-if="refreshingBilling"
-          class="small text-secondary mb-0"
-        >
-          Refreshing payment status…
-        </p>
-
-        <div class="portal-onboard-tasks d-flex flex-column gap-3 w-100">
-          <button
-            v-for="task in tasks"
-            :key="task.id"
-            type="button"
-            class="portal-onboard-task staff-table-card staff-datatable-card--white text-start border-0 w-100 p-3 p-md-4"
-            @click="openTask(task)"
-          >
-            <div class="portal-onboard-task__grid">
-              <div class="portal-onboard-task__lead d-flex align-items-start gap-3 min-w-0">
+        <div class="col-lg-4">
+          <div class="portal-welcome-sidebar d-flex flex-column gap-3">
+            <div class="staff-stat-card portal-welcome-page__progress">
+              <div class="portal-welcome-page__progress-body">
+                <div class="portal-welcome-page__progress-copy min-w-0">
+                  <p class="staff-stat-card__label">Your progress</p>
+                  <p class="staff-stat-card__value">
+                    {{ progress.completed }} of {{ progress.total }}
+                  </p>
+                  <p class="staff-stat-card__sub">Onboarding tasks complete</p>
+                </div>
                 <div
-                  class="portal-onboard-task__icon flex-shrink-0"
+                  class="portal-welcome-page__progress-icon"
+                  :style="PROGRESS_ICON_STYLE"
                   aria-hidden="true"
                 >
-                  <svg class="portal-onboard-task__icon-svg" fill="currentColor" viewBox="0 0 24 24">
-                    <path :d="taskIconPath(task)" />
+                  <svg class="portal-welcome-page__progress-icon-svg" fill="currentColor" viewBox="0 0 24 24">
+                    <path :d="PORTAL_MATERIAL_ICON.hourglass" />
+                  </svg>
+                </div>
+              </div>
+            </div>
+
+            <div class="staff-table-card staff-datatable-card--white p-3 p-md-4 portal-welcome-page__support">
+              <div class="d-flex align-items-start gap-3">
+                <div
+                  class="portal-welcome-page__panel-icon portal-welcome-page__panel-icon--support flex-shrink-0"
+                  aria-hidden="true"
+                >
+                  <svg class="portal-welcome-page__icon-svg" fill="currentColor" viewBox="0 0 24 24">
+                    <path :d="PORTAL_MATERIAL_ICON.supportAgent" />
                   </svg>
                 </div>
                 <div class="min-w-0">
-                  <h2 class="h6 fw-semibold mb-1">{{ task.title }}</h2>
-                  <p class="small text-secondary mb-0">{{ task.description }}</p>
+                  <h2 class="h6 fw-semibold mb-2">Support</h2>
+                  <p class="small text-secondary mb-2">
+                    Questions about onboarding? Contact your Save Rack account manager or email
+                    <a href="mailto:support@saverack.com" class="auth-vuexy-link">support@saverack.com</a>.
+                  </p>
+                  <RouterLink to="/users/support" class="small auth-vuexy-link text-decoration-none">
+                    Visit Support
+                  </RouterLink>
                 </div>
               </div>
-              <div class="portal-onboard-task__status-wrap">
-                <span
-                  class="portal-onboard-status badge rounded-pill"
-                  :class="statusClass(task.status)"
-                >
-                  {{ statusLabel(task.status) }}
-                </span>
-              </div>
-            </div>
-          </button>
-        </div>
-
-        <div class="staff-table-card staff-datatable-card--white p-3 p-md-4 portal-welcome-page__support w-100">
-          <div class="d-flex align-items-start gap-3">
-            <div
-              class="portal-welcome-page__panel-icon portal-welcome-page__panel-icon--support flex-shrink-0"
-              aria-hidden="true"
-            >
-              <svg class="portal-welcome-page__icon-svg" fill="currentColor" viewBox="0 0 24 24">
-                <path :d="PORTAL_MATERIAL_ICON.supportAgent" />
-              </svg>
-            </div>
-            <div class="min-w-0">
-              <h2 class="h6 fw-semibold mb-2">Support</h2>
-              <p class="small text-secondary mb-2">
-                Questions about onboarding? Contact your Save Rack account manager or email
-                <a href="mailto:support@saverack.com" class="auth-vuexy-link">support@saverack.com</a>.
-              </p>
-              <RouterLink
-                to="/users/support"
-                class="small auth-vuexy-link text-decoration-none"
-              >
-                Visit Support
-              </RouterLink>
             </div>
           </div>
         </div>
@@ -318,8 +317,16 @@ onUnmounted(() => {
 </template>
 
 <style scoped>
-.portal-welcome-page__stack {
+.portal-welcome-layout {
   width: 100%;
+  align-items: flex-start;
+}
+
+@media (min-width: 992px) {
+  .portal-welcome-sidebar {
+    position: sticky;
+    top: 1rem;
+  }
 }
 
 .portal-onboard-task {

@@ -23,6 +23,7 @@ const useWideCrmContent = computed(
     route.path.startsWith("/users/returns") ||
     route.path === "/users/account-settings" ||
     route.path === "/users/support" ||
+    route.path === "/users/welcome" ||
     route.path.startsWith("/users/billing"),
 );
 

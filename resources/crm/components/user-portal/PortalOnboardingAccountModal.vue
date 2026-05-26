@@ -94,18 +94,26 @@ async function save() {
 </script>
 
 <template>
-  <PortalOnboardingModalShell :open="open" @update:open="emit('update:open', $event)">
-    <div class="modal-content border-0 shadow w-100">
-          <div class="modal-header border-bottom">
-            <h2 class="modal-title h5 mb-0">Add Account Information</h2>
-            <button
-              type="button"
-              class="btn-close"
-              aria-label="Close"
-              @click="close"
-            />
-          </div>
-          <form class="modal-body" @submit.prevent="save">
+  <PortalOnboardingModalShell :open="open" scrollable @update:open="emit('update:open', $event)">
+    <button
+      type="button"
+      class="crm-vx-modal__close"
+      aria-label="Close"
+      :disabled="saving"
+      @click="close"
+    >
+      <svg width="20" height="20" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.75">
+        <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" />
+      </svg>
+    </button>
+    <header class="crm-vx-modal__head">
+      <h2 class="crm-vx-modal__title">Add Account Information</h2>
+    </header>
+    <form
+      id="portal-onboard-account-form"
+      class="crm-vx-modal__body portal-onboard-modal__body"
+      @submit.prevent="save"
+    >
             <p v-if="errorMsg" class="text-danger small">{{ errorMsg }}</p>
 
             <h3 class="h6 fw-semibold mb-3">Personal Information</h3>
@@ -213,25 +221,25 @@ async function save() {
               </div>
             </div>
 
-            <div class="d-flex justify-content-end gap-2 pt-2">
-              <button
-                type="button"
-                class="btn btn-outline-secondary"
-                :disabled="saving"
-                @click="close"
-              >
-                Cancel
-              </button>
-              <button
-                type="submit"
-                class="btn btn-primary staff-page-primary"
-                :disabled="saving"
-              >
-                <CrmLoadingSpinner v-if="saving" small class="me-1" />
-                Save
-              </button>
-            </div>
-          </form>
-    </div>
+    </form>
+    <footer class="crm-vx-modal__footer">
+      <button
+        type="button"
+        class="crm-vx-modal-btn crm-vx-modal-btn--secondary"
+        :disabled="saving"
+        @click="close"
+      >
+        Cancel
+      </button>
+      <button
+        type="submit"
+        form="portal-onboard-account-form"
+        class="crm-vx-modal-btn crm-vx-modal-btn--primary"
+        :disabled="saving"
+      >
+        <CrmLoadingSpinner v-if="saving" small class="me-1" />
+        Save
+      </button>
+    </footer>
   </PortalOnboardingModalShell>
 </template>

@@ -100,18 +100,22 @@ async function confirmManual() {
 </script>
 
 <template>
-  <PortalOnboardingModalShell :open="open" @update:open="emit('update:open', $event)">
-    <div class="modal-content border-0 shadow w-100">
-          <div class="modal-header border-bottom">
-            <h2 class="modal-title h5 mb-0">Select Your Payment Method</h2>
-            <button
-              type="button"
-              class="btn-close"
-              aria-label="Close"
-              @click="close"
-            />
-          </div>
-          <div class="modal-body">
+  <PortalOnboardingModalShell :open="open" scrollable @update:open="emit('update:open', $event)">
+    <button
+      type="button"
+      class="crm-vx-modal__close"
+      aria-label="Close"
+      :disabled="stripeLoading || manualSaving"
+      @click="close"
+    >
+      <svg width="20" height="20" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.75">
+        <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" />
+      </svg>
+    </button>
+    <header class="crm-vx-modal__head">
+      <h2 class="crm-vx-modal__title">Select Your Payment Method</h2>
+    </header>
+    <div class="crm-vx-modal__body portal-onboard-modal__body">
             <p v-if="errorMsg" class="text-danger small">{{ errorMsg }}</p>
             <p class="text-secondary mb-4">
               Choose how you would like to pay your fulfillment invoices:
@@ -236,18 +240,17 @@ async function confirmManual() {
               </button>
             </div>
 
-            <div class="d-flex justify-content-end gap-2 pt-4">
-              <button
-                type="button"
-                class="btn btn-outline-secondary"
-                :disabled="stripeLoading || manualSaving"
-                @click="close"
-              >
-                Cancel
-              </button>
-            </div>
-          </div>
     </div>
+    <footer class="crm-vx-modal__footer">
+      <button
+        type="button"
+        class="crm-vx-modal-btn crm-vx-modal-btn--secondary"
+        :disabled="stripeLoading || manualSaving"
+        @click="close"
+      >
+        Cancel
+      </button>
+    </footer>
   </PortalOnboardingModalShell>
 </template>
 

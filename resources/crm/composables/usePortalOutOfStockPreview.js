@@ -18,20 +18,29 @@ function sortByBackorderDesc(rows) {
 export function usePortalOutOfStockPreview(getClientAccountId, options = {}) {
   const loading = ref(false);
   const rows = ref([]);
+  const hasLoaded = ref(false);
 
   const topRows = computed(() => sortByBackorderDesc(rows.value).slice(0, PREVIEW_TOP_N));
 
   async function loadPreview({ bustCache = false } = {}) {
+    if (loading.value && !bustCache) {
+      return;
+    }
+    if (hasLoaded.value && !bustCache) {
+      return;
+    }
     const clientAccountId = Number(getClientAccountId() || 0);
     if (!clientAccountId) {
       rows.value = [];
       loading.value = false;
+      hasLoaded.value = false;
       return;
     }
 
     if (typeof options.getShipheroReady === "function" && options.getShipheroReady() === false) {
       rows.value = [];
       loading.value = false;
+      hasLoaded.value = false;
       return;
     }
 
@@ -49,6 +58,7 @@ export function usePortalOutOfStockPreview(getClientAccountId, options = {}) {
       }
       const { data } = await api.get("/inventory/list", { params, timeout: 60000 });
       rows.value = Array.isArray(data?.rows) ? data.rows : [];
+      hasLoaded.value = true;
     } catch (e) {
       rows.value = [];
       options.onError?.(e);

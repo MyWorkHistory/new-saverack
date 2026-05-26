@@ -19,9 +19,9 @@ class PortalQueueCountsService
 
     private const CACHE_TTL_MINUTES = 10;
 
-    private const PER_TAB_SECONDS = 8;
+    private const PER_TAB_SECONDS = 4;
 
-    private const MAX_PAGES_PER_TAB = 4;
+    private const MAX_PAGES_PER_TAB = 2;
 
     /** @var ShipHeroOrderService */
     private $orders;
@@ -86,13 +86,15 @@ class PortalQueueCountsService
     }
 
     /**
-     * Instant JSON payload for the portal API. Never calls ShipHero.
+     * Portal API response for dashboard counts.
+     * Builds synchronously with strict limits to avoid endless pending states.
      *
      * @param  array<string, mixed>  $context
      * @return array<string, mixed>
      */
     public function respond(array $context, bool $forceRefresh): array
     {
+        // Clear stale lock values left by old async flow.
         Cache::forget($context['lock_key']);
 
         if ($forceRefresh) {
@@ -108,21 +110,42 @@ class PortalQueueCountsService
             ]);
         }
 
-        $needsRebuild = ! is_array($cached) || $forceRefresh || ! $this->cacheIsFresh($cached);
-        if ($needsRebuild) {
-            $this->spawnRebuild($context);
-        }
-
         $lastGood = Cache::get($context['last_good_key']);
-        if (is_array($lastGood)) {
-            return array_merge($lastGood, [
-                'refresh_pending' => $needsRebuild,
-                'stale' => $needsRebuild,
-                'message' => $needsRebuild ? 'Updating counts from ShipHero…' : '',
-            ]);
+        $lockKey = (string) $context['lock_key'];
+        if (! Cache::add($lockKey, 1, now()->addMinutes(2))) {
+            if (is_array($lastGood)) {
+                return array_merge($lastGood, [
+                    'refresh_pending' => true,
+                    'stale' => true,
+                    'message' => 'Updating counts from ShipHero…',
+                ]);
+            }
+
+            return $this->placeholder($context, true);
         }
 
-        return $this->placeholder($context, $needsRebuild);
+        try {
+            $payload = $this->buildAndStore($context);
+
+            return array_merge($payload, [
+                'refresh_pending' => false,
+                'stale' => false,
+                'message' => '',
+            ]);
+        } catch (\Throwable $e) {
+            report($e);
+            if (is_array($lastGood)) {
+                return array_merge($lastGood, [
+                    'refresh_pending' => false,
+                    'stale' => true,
+                    'message' => 'Showing last saved counts. ShipHero is slow or unavailable — try Refresh again.',
+                ]);
+            }
+
+            throw $e;
+        } finally {
+            Cache::forget($lockKey);
+        }
     }
 
     /**

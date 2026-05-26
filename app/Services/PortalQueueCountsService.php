@@ -2,6 +2,7 @@
 
 namespace App\Services;
 
+use App\Jobs\RefreshPortalQueueCountsJob;
 use App\Models\ClientAccount;
 use Carbon\Carbon;
 use Illuminate\Support\Facades\Cache;
@@ -14,6 +15,8 @@ use Illuminate\Support\Facades\Log;
  */
 class PortalQueueCountsService
 {
+    public const PENDING_REBUILDS_CACHE_KEY = 'orders:queue_counts:pending';
+
     private const CACHE_TTL_MINUTES = 10;
 
     private const PER_TAB_SECONDS = 8;
@@ -123,6 +126,8 @@ class PortalQueueCountsService
     }
 
     /**
+     * Queue a background rebuild (no ShipHero in the web request).
+     *
      * @param  array<string, mixed>  $context
      */
     public function spawnRebuild(array $context): void
@@ -131,31 +136,172 @@ class PortalQueueCountsService
             return;
         }
 
-        if (! Cache::add($context['lock_key'], 1, now()->addMinutes(5))) {
+        $accountId = (int) $context['client_account_id'];
+        $this->enqueuePendingRebuild($accountId);
+
+        if ($this->tryDispatchQueueJob($accountId)) {
             return;
         }
 
-        $accountId = (int) $context['client_account_id'];
+        if ($this->trySpawnShellProcess($accountId)) {
+            return;
+        }
+
+        Log::info('portal.queue_counts.queued_for_cron', [
+            'client_account_id' => $accountId,
+            'hint' => 'Run: php artisan portal:refresh-pending-queue-counts (or enable Laravel queue worker)',
+        ]);
+    }
+
+    public function enqueuePendingRebuild(int $clientAccountId): void
+    {
+        $list = Cache::get(self::PENDING_REBUILDS_CACHE_KEY, []);
+        if (! is_array($list)) {
+            $list = [];
+        }
+        $list[(string) $clientAccountId] = now()->timestamp;
+        Cache::put(self::PENDING_REBUILDS_CACHE_KEY, $list, now()->addDay());
+    }
+
+    public function dequeuePendingRebuild(int $clientAccountId): void
+    {
+        $list = Cache::get(self::PENDING_REBUILDS_CACHE_KEY, []);
+        if (! is_array($list)) {
+            return;
+        }
+        unset($list[(string) $clientAccountId]);
+        Cache::put(self::PENDING_REBUILDS_CACHE_KEY, $list, now()->addDay());
+    }
+
+    public function processPendingRebuilds(): int
+    {
+        $list = Cache::get(self::PENDING_REBUILDS_CACHE_KEY, []);
+        if (! is_array($list) || $list === []) {
+            return 0;
+        }
+
+        $processed = 0;
+        foreach (array_keys($list) as $rawId) {
+            $accountId = (int) $rawId;
+            if ($accountId < 1) {
+                continue;
+            }
+
+            $lockKey = 'orders:queue_counts:lock:'.$accountId;
+            if (! Cache::add($lockKey, 1, now()->addMinutes(5))) {
+                continue;
+            }
+
+            try {
+                $account = ClientAccount::query()->find($accountId);
+                if ($account === null) {
+                    $this->dequeuePendingRebuild($accountId);
+                    continue;
+                }
+                $sid = trim((string) ($account->shiphero_customer_account_id ?? ''));
+                if ($sid === '') {
+                    $this->dequeuePendingRebuild($accountId);
+                    continue;
+                }
+
+                $context = $this->contextForAccount($account);
+                $this->buildAndStore($context);
+                $this->dequeuePendingRebuild($accountId);
+                $processed++;
+            } catch (\Throwable $e) {
+                report($e);
+            } finally {
+                Cache::forget($lockKey);
+            }
+        }
+
+        return $processed;
+    }
+
+    private function tryDispatchQueueJob(int $accountId): bool
+    {
+        $driver = (string) config('queue.default', 'sync');
+        if ($driver === 'sync') {
+            return false;
+        }
+
+        try {
+            RefreshPortalQueueCountsJob::dispatch($accountId);
+
+            return true;
+        } catch (\Throwable $e) {
+            Log::warning('portal.queue_counts.queue_dispatch_failed', [
+                'client_account_id' => $accountId,
+                'message' => $e->getMessage(),
+            ]);
+
+            return false;
+        }
+    }
+
+    private function trySpawnShellProcess(int $accountId): bool
+    {
+        if (! $this->shellFunctionsAvailable()) {
+            return false;
+        }
+
         $php = defined('PHP_BINARY') && is_string(PHP_BINARY) && PHP_BINARY !== ''
             ? PHP_BINARY
             : 'php';
         $artisan = base_path('artisan');
 
-        if (DIRECTORY_SEPARATOR === '\\') {
-            $inner = escapeshellarg($php).' '.escapeshellarg($artisan)
-                .' portal:refresh-queue-counts '.(string) $accountId;
-            $cmd = 'cmd /C start /B "" '.$inner.' > NUL 2>&1';
-            @pclose(@popen($cmd, 'r'));
-            Log::info('portal.queue_counts.spawned', ['client_account_id' => $accountId, 'shell' => 'windows']);
+        try {
+            if (DIRECTORY_SEPARATOR === '\\') {
+                $inner = escapeshellarg($php).' '.escapeshellarg($artisan)
+                    .' portal:refresh-queue-counts '.(string) $accountId;
+                $cmd = 'cmd /C start /B "" '.$inner.' > NUL 2>&1';
+                $handle = @popen($cmd, 'r');
+                if (is_resource($handle)) {
+                    @pclose($handle);
+                    Log::info('portal.queue_counts.spawned', ['client_account_id' => $accountId, 'shell' => 'windows']);
 
-            return;
+                    return true;
+                }
+
+                return false;
+            }
+
+            $cmd = escapeshellarg($php).' '.escapeshellarg($artisan)
+                .' portal:refresh-queue-counts '.(string) $accountId
+                .' > /dev/null 2>&1 &';
+            @exec($cmd);
+            Log::info('portal.queue_counts.spawned', ['client_account_id' => $accountId, 'shell' => 'posix']);
+
+            return true;
+        } catch (\Throwable $e) {
+            Log::warning('portal.queue_counts.shell_spawn_failed', [
+                'client_account_id' => $accountId,
+                'message' => $e->getMessage(),
+            ]);
+
+            return false;
+        }
+    }
+
+    private function shellFunctionsAvailable(): bool
+    {
+        if ($this->isPhpFunctionDisabled('exec')
+            && $this->isPhpFunctionDisabled('proc_open')
+            && $this->isPhpFunctionDisabled('popen')) {
+            return false;
         }
 
-        $cmd = escapeshellarg($php).' '.escapeshellarg($artisan)
-            .' portal:refresh-queue-counts '.(string) $accountId
-            .' > /dev/null 2>&1 &';
-        exec($cmd);
-        Log::info('portal.queue_counts.spawned', ['client_account_id' => $accountId, 'shell' => 'posix']);
+        return function_exists('exec') || function_exists('proc_open') || function_exists('popen');
+    }
+
+    private function isPhpFunctionDisabled(string $function): bool
+    {
+        $raw = strtolower((string) ini_get('disable_functions'));
+        if ($raw === '') {
+            return false;
+        }
+
+        return in_array(strtolower($function), array_map('trim', explode(',', $raw)), true);
     }
 
     /**

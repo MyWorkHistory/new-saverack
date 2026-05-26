@@ -47,7 +47,7 @@ export function usePortalOutOfStockPreview(getClientAccountId, options = {}) {
       if (bustCache) {
         params.refresh = 1;
       }
-      const { data } = await api.get("/inventory/list", { params });
+      const { data } = await api.get("/inventory/list", { params, timeout: 60000 });
       rows.value = Array.isArray(data?.rows) ? data.rows : [];
     } catch (e) {
       rows.value = [];

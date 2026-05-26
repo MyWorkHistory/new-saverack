@@ -5,18 +5,19 @@ namespace App\Services;
 use App\Models\ClientAccount;
 use Carbon\Carbon;
 use Illuminate\Support\Facades\Cache;
+use RuntimeException;
 use Throwable;
 
 /**
- * Portal dashboard order queue totals. Never blocks HTTP on full ShipHero scans.
+ * Portal dashboard order queue totals (cached, synchronous build).
  */
 class PortalQueueCountsService
 {
     private const CACHE_TTL_MINUTES = 10;
 
-    private const PER_TAB_SECONDS = 8;
+    private const PER_TAB_SECONDS = 6;
 
-    private const MAX_PAGES_PER_TAB = 4;
+    private const MAX_PAGES_PER_TAB = 3;
 
     /** @var ShipHeroOrderService */
     private $orders;
@@ -28,19 +29,7 @@ class PortalQueueCountsService
 
     /**
      * @param  array{order_date_from?: string|null, order_date_to?: string|null}  $validated
-     * @return array{
-     *   client_account_id: int,
-     *   customer_id: string,
-     *   cache_key: string,
-     *   last_good_key: string,
-     *   lock_key: string,
-     *   awaiting_from: string,
-     *   awaiting_to: string,
-     *   open_from: string,
-     *   open_to: string,
-     *   shipped_from: string,
-     *   shipped_to: string
-     * }
+     * @return array<string, mixed>
      */
     public function contextForAccount(ClientAccount $account, array $validated = []): array
     {
@@ -64,7 +53,7 @@ class PortalQueueCountsService
         }
 
         $cacheKey = sprintf(
-            'orders:queue_counts:v4:%d:%s',
+            'orders:queue_counts:v5:%d:%s',
             $clientAccountId,
             md5(implode('|', array_filter([
                 $customerId,
@@ -82,7 +71,6 @@ class PortalQueueCountsService
             'customer_id' => $customerId,
             'cache_key' => $cacheKey,
             'last_good_key' => 'orders:queue_counts:last:'.$clientAccountId,
-            'lock_key' => 'orders:queue_counts:lock:'.$clientAccountId,
             'awaiting_from' => $awaitingFrom,
             'awaiting_to' => $awaitingTo,
             'open_from' => $openFrom,
@@ -98,62 +86,46 @@ class PortalQueueCountsService
      */
     public function respond(array $context, bool $forceRefresh): array
     {
-        if (Cache::has($context['lock_key'])) {
-            return $this->withRefreshPending($this->immediate($context), true);
-        }
-
-        $cached = Cache::get($context['cache_key']);
-        if (is_array($cached) && ! $forceRefresh) {
-            return array_merge($cached, ['refresh_pending' => false]);
-        }
+        // Clear legacy locks from the old afterResponse flow (PHP-FPM often never ran them).
+        Cache::forget('orders:queue_counts:lock:'.$context['client_account_id']);
 
         if ($forceRefresh) {
             Cache::forget($context['cache_key']);
         }
 
-        $this->queueRebuild($context);
-
-        return $this->withRefreshPending($this->immediate($context), true);
-    }
-
-    /**
-     * @param  array<string, mixed>  $context
-     */
-    public function queueRebuild(array $context): void
-    {
-        if (! Cache::add($context['lock_key'], 1, now()->addMinutes(3))) {
-            return;
+        $cached = Cache::get($context['cache_key']);
+        if (is_array($cached) && ! $forceRefresh) {
+            return array_merge($cached, [
+                'refresh_pending' => false,
+                'stale' => false,
+                'message' => '',
+            ]);
         }
 
-        $contextCopy = $context;
-        dispatch(function () use ($contextCopy): void {
-            try {
-                $service = app(self::class);
-                $payload = $service->buildAndStore($contextCopy);
-                $payload['refresh_pending'] = false;
-                $payload['stale'] = false;
-                $payload['message'] = '';
-                Cache::put($contextCopy['cache_key'], $payload, now()->addMinutes(self::CACHE_TTL_MINUTES));
-                Cache::put($contextCopy['last_good_key'], $payload, now()->addDay());
-            } catch (Throwable $e) {
-                report($e);
-            } finally {
-                Cache::forget($contextCopy['lock_key']);
+        try {
+            return Cache::remember($context['cache_key'], now()->addMinutes(self::CACHE_TTL_MINUTES), function () use ($context) {
+                $payload = $this->build($context);
+                Cache::put($context['last_good_key'], $payload, now()->addDay());
+
+                return $payload;
+            });
+        } catch (Throwable $e) {
+            report($e);
+            $lastGood = Cache::get($context['last_good_key']);
+            if (is_array($lastGood)) {
+                return array_merge($lastGood, [
+                    'stale' => true,
+                    'refresh_pending' => false,
+                    'message' => 'Showing last saved counts. ShipHero is slow or unavailable — try Refresh again.',
+                ]);
             }
-        })->afterResponse();
-    }
 
-    /**
-     * @param  array<string, mixed>  $context
-     * @return array<string, mixed>
-     */
-    public function buildAndStore(array $context): array
-    {
-        $payload = $this->build($context);
-        Cache::put($context['cache_key'], $payload, now()->addMinutes(self::CACHE_TTL_MINUTES));
-        Cache::put($context['last_good_key'], $payload, now()->addDay());
+            if ($e instanceof RuntimeException) {
+                throw $e;
+            }
 
-        return $payload;
+            throw new RuntimeException('Could not load order counts from ShipHero.', 0, $e);
+        }
     }
 
     /**
@@ -205,68 +177,6 @@ class PortalQueueCountsService
             'order_date_to' => $to,
             'count_deadline' => microtime(true) + self::PER_TAB_SECONDS,
         ]));
-    }
-
-    /**
-     * @param  array<string, mixed>  $context
-     * @return array<string, mixed>
-     */
-    private function immediate(array $context): array
-    {
-        $cached = Cache::get($context['cache_key']);
-        if (is_array($cached)) {
-            return $cached;
-        }
-
-        $lastGood = Cache::get($context['last_good_key']);
-        if (is_array($lastGood)) {
-            return array_merge($lastGood, [
-                'stale' => true,
-                'message' => 'Showing last saved counts while we refresh from ShipHero.',
-            ]);
-        }
-
-        return $this->placeholder($context);
-    }
-
-    /**
-     * @param  array<string, mixed>  $context
-     * @return array<string, mixed>
-     */
-    private function placeholder(array $context): array
-    {
-        return [
-            'ready_to_ship' => 0,
-            'on_hold' => 0,
-            'backorder' => 0,
-            'shipped' => 0,
-            'truncated' => false,
-            'shiphero_ready' => true,
-            'stale' => false,
-            'refresh_pending' => true,
-            'message' => 'Loading counts from ShipHero…',
-            'awaiting_order_date_from' => $context['awaiting_from'],
-            'awaiting_order_date_to' => $context['awaiting_to'],
-            'open_queue_order_date_from' => $context['open_from'],
-            'open_queue_order_date_to' => $context['open_to'],
-            'shipped_order_date_from' => $context['shipped_from'],
-            'shipped_order_date_to' => $context['shipped_to'],
-            'cached_at' => now()->toIso8601String(),
-        ];
-    }
-
-    /**
-     * @param  array<string, mixed>  $payload
-     * @return array<string, mixed>
-     */
-    private function withRefreshPending(array $payload, bool $pending): array
-    {
-        $payload['refresh_pending'] = $pending;
-        if ($pending && ($payload['message'] ?? '') === '') {
-            $payload['message'] = 'Updating counts from ShipHero…';
-        }
-
-        return $payload;
     }
 
     private function dateStartIso(?string $value): string

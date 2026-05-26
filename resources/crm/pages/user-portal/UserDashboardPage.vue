@@ -26,7 +26,7 @@ const {
   topRows: oosTopRows,
   loadPreview: loadOosPreview,
 } = usePortalOutOfStockPreview(() => clientAccountId.value, {
-  getShipheroReady: () => counts.value.shiphero_ready && shipheroReady.value,
+  getShipheroReady: () => shipheroReady.value,
   onError: (e) => toast.errorFrom(e, "Could not load out-of-stock inventory."),
 });
 
@@ -129,9 +129,9 @@ async function onRefreshDashboard() {
 watch(accountDisplayName, syncPageMeta, { immediate: true });
 
 watch(
-  () => [clientAccountId.value, counts.value.shiphero_ready, shipheroReady.value],
-  ([id, countsReady, userReady]) => {
-    if (id && countsReady && userReady) {
+  () => [clientAccountId.value, shipheroReady.value],
+  ([id, userReady]) => {
+    if (id && userReady) {
       loadOosPreview();
     }
   },
@@ -199,11 +199,7 @@ onMounted(() => {
           {{ counts.message || "Your warehouse connection is still being set up." }}
           <RouterLink to="/users/welcome" class="ms-1">Learn more</RouterLink>
         </div>
-        <div
-          v-if="(counts.stale || counts.refresh_pending) && counts.message"
-          class="alert alert-warning small mb-3"
-          role="status"
-        >
+        <div v-if="counts.stale && counts.message" class="alert alert-warning small mb-3" role="status">
           {{ counts.message }}
         </div>
         <p v-if="counts.truncated" class="small text-secondary mb-3">
@@ -294,7 +290,7 @@ onMounted(() => {
                 >
                   <CrmLoadingSpinner message="Loading…" :center="true" />
                 </div>
-                <template v-else-if="!counts.shiphero_ready">
+                <template v-else-if="!shipheroReady">
                   <p class="small text-secondary mb-0 py-3">
                     Out-of-stock inventory will appear here once your warehouse connection is ready.
                   </p>

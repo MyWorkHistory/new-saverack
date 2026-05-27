@@ -25,12 +25,16 @@ class PortalQueueCountsService
     /** One queue per HTTP request — keep this fast to avoid Cloudflare 502. */
     private const PER_TAB_SECONDS = 12;
 
-    /** Shipped is typically larger; give it a bit more time/pages to reduce truncation. */
-    private const SHIPPED_TAB_SECONDS = 20;
+    /** Shipped uses ShipHero shipments API; allow enough time to paginate busy days. */
+    private const SHIPPED_TAB_SECONDS = 45;
 
     private const MAX_PAGES_PER_TAB = 2;
 
-    private const SHIPPED_MAX_PAGES = 4;
+    /** 100 shipments/page — 50 pages supports 5k shipments/day per account. */
+    private const SHIPPED_MAX_PAGES = 50;
+
+    /** Background refresh (no HTTP deadline) can scan more pages. */
+    private const SHIPPED_MAX_PAGES_BACKGROUND = 200;
 
     /** @var ShipHeroOrderService */
     private $orders;
@@ -171,7 +175,7 @@ class PortalQueueCountsService
         $parts = [];
         $truncated = false;
         foreach (self::QUEUES as $tab) {
-            $result = $this->countTab($context, $tab);
+            $result = $this->countTab($context, $tab, true);
             $stored = [
                 'count' => $result['count'],
                 'truncated' => $result['truncated'],
@@ -192,7 +196,7 @@ class PortalQueueCountsService
      * @param  array<string, mixed>  $context
      * @return array{count: int, truncated: bool}
      */
-    private function countTab(array $context, string $tab): array
+    private function countTab(array $context, string $tab, bool $background = false): array
     {
         $from = $context['open_from'];
         $to = $context['open_to'];
@@ -204,8 +208,16 @@ class PortalQueueCountsService
         } elseif ($tab === 'shipped') {
             $from = $context['shipped_from'];
             $to = $context['shipped_to'];
-            $maxPages = self::SHIPPED_MAX_PAGES;
+            $maxPages = $background ? self::SHIPPED_MAX_PAGES_BACKGROUND : self::SHIPPED_MAX_PAGES;
             $deadlineSeconds = self::SHIPPED_TAB_SECONDS;
+
+            return $this->orders->countShipments([
+                'customer_account_id' => $context['customer_id'],
+                'date_from' => $from,
+                'date_to' => $to,
+                'max_pages' => $maxPages,
+                'count_deadline' => $background ? null : microtime(true) + $deadlineSeconds,
+            ]);
         }
 
         return $this->orders->countOrders([
@@ -224,7 +236,7 @@ class PortalQueueCountsService
     private function queueCacheKey(array $context, string $tab): string
     {
         return sprintf(
-            'orders:queue_counts:v8:%d:%s:%s',
+            'orders:queue_counts:v9:%d:%s:%s',
             (int) $context['client_account_id'],
             $tab,
             md5(implode('|', [

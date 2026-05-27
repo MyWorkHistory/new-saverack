@@ -422,6 +422,137 @@ GQL;
     }
 
     /**
+     * Shipped-today total via ShipHero {@see shipments} (same source as the ShipHero shipments report).
+     *
+     * @param  array<string, mixed>  $filters  customer_account_id, date_from, date_to, max_pages?, count_deadline?, first?
+     * @return array{count: int, truncated: bool}
+     */
+    public function countShipments(array $filters): array
+    {
+        $customerAccountId = trim((string) ($filters['customer_account_id'] ?? ''));
+        if ($customerAccountId === '') {
+            throw new RuntimeException('customer_account_id is required.');
+        }
+
+        $dateFrom = $this->nullableIso($filters['date_from'] ?? null);
+        $dateTo = $this->nullableIso($filters['date_to'] ?? null);
+        if ($dateFrom === null || $dateTo === null) {
+            throw new RuntimeException('date_from and date_to are required for shipment counts.');
+        }
+
+        $first = min(100, max(1, (int) ($filters['first'] ?? 100)));
+        $maxPages = max(1, min(200, (int) ($filters['max_pages'] ?? 50)));
+        $deadline = isset($filters['count_deadline']) && is_float($filters['count_deadline'])
+            ? $filters['count_deadline']
+            : null;
+
+        $graphql = <<<'GQL'
+query ShipHeroShipmentsCount(
+  $customer_account_id: String!,
+  $date_from: ISODateTime,
+  $date_to: ISODateTime,
+  $first: Int!,
+  $after: String
+) {
+  shipments(
+    customer_account_id: $customer_account_id,
+    date_from: $date_from,
+    date_to: $date_to
+  ) {
+    request_id
+    complexity
+    data(first: $first, after: $after) {
+      edges {
+        node {
+          id
+        }
+      }
+      pageInfo {
+        hasNextPage
+        endCursor
+      }
+    }
+  }
+}
+GQL;
+
+        $total = 0;
+        $truncated = false;
+        $after = null;
+
+        for ($page = 0; $page < $maxPages; $page++) {
+            if ($deadline !== null && microtime(true) >= $deadline) {
+                $truncated = true;
+                break;
+            }
+
+            $json = $this->client->query($graphql, [
+                'customer_account_id' => $customerAccountId,
+                'date_from' => $dateFrom,
+                'date_to' => $dateTo,
+                'first' => $first,
+                'after' => $after,
+            ]);
+
+            $parsed = $this->parseShipHeroShipmentsConnection($json);
+            $total += count($parsed['rows']);
+
+            if (! ($parsed['pageInfo']['hasNextPage'] ?? false)) {
+                break;
+            }
+
+            $next = $parsed['pageInfo']['endCursor'] ?? null;
+            if (! is_string($next) || $next === '') {
+                break;
+            }
+
+            if ($page === $maxPages - 1) {
+                $truncated = (bool) ($parsed['pageInfo']['hasNextPage'] ?? false);
+                break;
+            }
+
+            $after = $next;
+        }
+
+        return ['count' => $total, 'truncated' => $truncated];
+    }
+
+    /**
+     * @return array{rows: list<array{id: string}>, pageInfo: array<string, mixed>}
+     */
+    private function parseShipHeroShipmentsConnection(array $json): array
+    {
+        $data = data_get($json, 'data.shipments.data');
+        if (! is_array($data)) {
+            throw new RuntimeException('ShipHero did not return shipments data.');
+        }
+
+        $edges = is_array($data['edges'] ?? null) ? $data['edges'] : [];
+        $rows = [];
+        foreach ($edges as $edge) {
+            if (! is_array($edge)) {
+                continue;
+            }
+            $node = is_array($edge['node'] ?? null) ? $edge['node'] : null;
+            if ($node === null) {
+                continue;
+            }
+            $id = trim((string) ($node['id'] ?? ''));
+            if ($id === '') {
+                continue;
+            }
+            $rows[] = ['id' => $id];
+        }
+
+        $pageInfo = is_array($data['pageInfo'] ?? null) ? $data['pageInfo'] : [];
+
+        return [
+            'rows' => $rows,
+            'pageInfo' => $pageInfo,
+        ];
+    }
+
+    /**
      * When searching by order #, ShipHero ANDs filters; drop queue/tab constraints and date/update windows
      * so one order can be found. Storefront ids often live on partner_order_id instead of order_number.
      *

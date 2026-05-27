@@ -2,8 +2,9 @@ import { onUnmounted, ref } from "vue";
 import api from "../services/api";
 import { usePortalLastRefreshed } from "./usePortalLastRefreshed.js";
 
-const CACHE_KEY_PREFIX = "portal:dashboard:queue-counts:v8:";
+const CACHE_KEY_PREFIX = "portal:dashboard:queue-counts:v9:";
 const QUEUE_TIMEOUT_MS = 45000;
+const SHIPPED_QUEUE_TIMEOUT_MS = 90000;
 
 /** API queue param → dashboard count field */
 const PORTAL_QUEUES = [
@@ -117,7 +118,7 @@ export function usePortalDashboardCounts(getClientAccountId, options = {}) {
     }
     const { data } = await api.get("/orders/queue-counts", {
       params,
-      timeout: QUEUE_TIMEOUT_MS,
+      timeout: queue === "shipped" ? SHIPPED_QUEUE_TIMEOUT_MS : QUEUE_TIMEOUT_MS,
     });
     return mergeQueueIntoCounts(counts.value, field, data);
   }

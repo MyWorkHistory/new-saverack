@@ -25,8 +25,8 @@ final class ShipHeroOrderServiceCountShipmentsTest extends TestCase
                     'shipments' => [
                         'data' => [
                             'edges' => [
-                                ['node' => ['id' => 's1']],
-                                ['node' => ['id' => 's2']],
+                                ['node' => ['id' => 's1', 'order_id' => 'o1']],
+                                ['node' => ['id' => 's2', 'order_id' => 'o2']],
                             ],
                             'pageInfo' => ['hasNextPage' => true, 'endCursor' => 'c1'],
                         ],
@@ -38,8 +38,8 @@ final class ShipHeroOrderServiceCountShipmentsTest extends TestCase
                     'shipments' => [
                         'data' => [
                             'edges' => [
-                                ['node' => ['id' => 's2']],
-                                ['node' => ['id' => 's3']],
+                                ['node' => ['id' => 's2b', 'order_id' => 'o2']],
+                                ['node' => ['id' => 's3', 'order_id' => 'o3']],
                             ],
                             'pageInfo' => ['hasNextPage' => false, 'endCursor' => null],
                         ],

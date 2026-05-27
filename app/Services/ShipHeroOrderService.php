@@ -474,6 +474,7 @@ query ShipHeroShipmentsCount(
       edges {
         node {
           id
+          order_id
         }
       }
       pageInfo {
@@ -488,7 +489,7 @@ GQL;
         $total = 0;
         $truncated = false;
         $after = null;
-        $seenShipmentIds = [];
+        $seenOrderIds = [];
 
         for ($page = 0; $page < $maxPages; $page++) {
             if ($deadline !== null && microtime(true) >= $deadline) {
@@ -507,11 +508,15 @@ GQL;
 
             $parsed = $this->parseShipHeroShipmentsConnection($json);
             foreach ($parsed['rows'] as $row) {
-                $id = (string) ($row['id'] ?? '');
-                if ($id === '' || isset($seenShipmentIds[$id])) {
+                $orderId = trim((string) ($row['order_id'] ?? ''));
+                $shipmentId = trim((string) ($row['id'] ?? ''));
+                // Dashboard shipped card should align with shipped ORDERS, not package labels.
+                // Prefer order_id; fallback to shipment id if ShipHero omits order_id.
+                $dedupeKey = $orderId !== '' ? 'order:'.$orderId : 'shipment:'.$shipmentId;
+                if ($dedupeKey === 'shipment:' || isset($seenOrderIds[$dedupeKey])) {
                     continue;
                 }
-                $seenShipmentIds[$id] = true;
+                $seenOrderIds[$dedupeKey] = true;
                 $total++;
             }
 
@@ -536,7 +541,7 @@ GQL;
     }
 
     /**
-     * @return array{rows: list<array{id: string}>, pageInfo: array<string, mixed>}
+     * @return array{rows: list<array{id: string, order_id: string}>, pageInfo: array<string, mixed>}
      */
     private function parseShipHeroShipmentsConnection(array $json): array
     {
@@ -559,7 +564,10 @@ GQL;
             if ($id === '') {
                 continue;
             }
-            $rows[] = ['id' => $id];
+            $rows[] = [
+                'id' => $id,
+                'order_id' => trim((string) ($node['order_id'] ?? '')),
+            ];
         }
 
         $pageInfo = is_array($data['pageInfo'] ?? null) ? $data['pageInfo'] : [];

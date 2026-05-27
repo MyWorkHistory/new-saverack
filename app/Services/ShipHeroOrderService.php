@@ -247,6 +247,13 @@ query ShipHeroOrders(
           fulfillment_status
           order_date
           updated_at
+          shipments {
+            created_date
+            shipping_labels {
+              status
+              created_date
+            }
+          }
         }
       }
       pageInfo {

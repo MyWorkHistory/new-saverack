@@ -37,7 +37,8 @@ class OrderShipmentTracking
                 }
             }
         }
-        if ($dates === []) {
+        $hasShipmentsField = array_key_exists('shipments', $node);
+        if ($dates === [] && ! $hasShipmentsField) {
             self::collectIsoDate($dates, $node['updated_at'] ?? null);
         }
         if ($dates === []) {

@@ -128,6 +128,19 @@ class InvoicePolicy
         return $this->canManageBilling($user) || $user->hasPermission('billing.update');
     }
 
+    public function viewPaymentContext(User $user, Invoice $invoice): bool
+    {
+        if ($this->isPortalUser($user)) {
+            return false;
+        }
+
+        if ($invoice->isVoid()) {
+            return false;
+        }
+
+        return $this->canViewBilling($user);
+    }
+
     public function void(User $user, Invoice $invoice): bool
     {
         if ($this->isPortalUser($user)) {

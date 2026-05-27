@@ -792,6 +792,7 @@ async function load() {
   try {
     const { data } = await api.get(`/invoices/${props.id}`);
     invoice.value = data;
+    accountAvailableFundsCents.value = Number(data?.client_account_available_funds_cents || 0);
     if (data?.status !== "draft") {
       draftEditMode.value = false;
     }
@@ -1635,7 +1636,7 @@ async function loadPayContext(options = {}) {
 
 async function loadAccountBalanceSummary() {
   if (!invoice.value?.id || !canUpdate.value || invoice.value.status === "void") {
-    accountAvailableFundsCents.value = 0;
+    accountAvailableFundsCents.value = Number(invoice.value?.client_account_available_funds_cents || 0);
     payOpenBalanceCents.value = 0;
     payPendingBalanceCents.value = 0;
     return;
@@ -1644,7 +1645,7 @@ async function loadAccountBalanceSummary() {
   try {
     await loadPayContext();
   } catch {
-    accountAvailableFundsCents.value = 0;
+    accountAvailableFundsCents.value = Number(invoice.value?.client_account_available_funds_cents || 0);
     payOpenBalanceCents.value = 0;
     payPendingBalanceCents.value = 0;
   } finally {

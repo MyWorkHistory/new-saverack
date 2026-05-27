@@ -1105,6 +1105,9 @@ class InvoiceService
             'client_account_zip' => $account !== null ? $account->zip : null,
             'client_account_country' => $account !== null ? $account->country : null,
             'client_account_stripe_customer_id' => $account !== null ? $account->stripe_customer_id : null,
+            'client_account_available_funds_cents' => $account !== null
+                ? max(0, (int) $account->billing_available_funds_cents)
+                : 0,
             'client_account_whatsapp_e164' => $account !== null ? $account->whatsapp_e164 : null,
             'client_account_whatsapp_api_id' => $account !== null ? $account->whatsapp_api_id : null,
             'email_recipient_options' => $this->invoiceRecipientEmails($invoice),

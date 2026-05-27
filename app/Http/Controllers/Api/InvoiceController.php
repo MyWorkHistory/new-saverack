@@ -270,7 +270,7 @@ class InvoiceController extends Controller
 
     public function payContext(Invoice $invoice): JsonResponse
     {
-        $this->authorize('recordPayment', $invoice);
+        $this->authorize('viewPaymentContext', $invoice);
 
         return response()->json($this->invoices->paymentAllocationContext($invoice));
     }

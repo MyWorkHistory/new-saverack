@@ -351,6 +351,38 @@ class BillingInvoiceApiTest extends TestCase
             ->assertJsonCount(3, 'rows');
     }
 
+    public function test_pay_context_returns_available_funds_for_zero_balance_draft(): void
+    {
+        $user = User::factory()->create();
+        $user->permissions()->sync([
+            $this->billingViewPermission()->id,
+        ]);
+        Sanctum::actingAs($user);
+
+        $client = ClientAccount::query()->create([
+            'status' => ClientAccount::STATUS_ACTIVE,
+            'company_name' => 'Available Funds Co',
+            'email' => 'available-funds@acme.test',
+            'billing_available_funds_cents' => 206793,
+        ]);
+
+        $draft = Invoice::query()->create([
+            'invoice_number' => 'INV-AVAILABLE-FUNDS-001',
+            'client_account_id' => $client->id,
+            'status' => Invoice::STATUS_DRAFT,
+            'currency' => 'USD',
+            'subtotal_cents' => 0,
+            'tax_cents' => 0,
+            'total_cents' => 0,
+            'amount_paid_cents' => 0,
+            'balance_due_cents' => 0,
+        ]);
+
+        $this->getJson("/api/invoices/{$draft->id}/pay-context")
+            ->assertOk()
+            ->assertJsonPath('available_funds_cents', 206793);
+    }
+
     public function test_pay_allocate_applies_to_draft_invoice_with_balance(): void
     {
         $user = User::factory()->create();

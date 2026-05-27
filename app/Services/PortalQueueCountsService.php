@@ -17,6 +17,9 @@ class PortalQueueCountsService
 {
     public const QUEUES = ['awaiting', 'on_hold', 'backorder', 'shipped'];
 
+    /** ShipHero operational day for US accounts (matches ShipHero UI / shipments report). */
+    public const DEFAULT_ACCOUNT_TIMEZONE = 'America/New_York';
+
     private const CACHE_TTL_MINUTES = 10;
 
     /** One queue per HTTP request — keep this fast to avoid Cloudflare 502. */
@@ -45,18 +48,19 @@ class PortalQueueCountsService
     {
         $clientAccountId = (int) $account->id;
         $customerId = trim((string) $account->shiphero_customer_account_id);
+        $timezone = $this->accountTimezone($account);
 
-        $now = Carbon::now();
-        $awaitingFrom = $this->dateStartIso($now->copy()->subDays(6)->toDateString());
-        $awaitingTo = $this->dateEndIso($now->copy()->toDateString());
-        $openFrom = $this->dateStartIso($now->copy()->toDateString());
-        $openTo = $this->dateEndIso($now->copy()->toDateString());
+        $now = Carbon::now($timezone);
+        $awaitingFrom = $this->dateStartIso($now->copy()->subDays(6)->toDateString(), $timezone);
+        $awaitingTo = $this->dateEndIso($now->copy()->toDateString(), $timezone);
+        $openFrom = $this->dateStartIso($now->copy()->toDateString(), $timezone);
+        $openTo = $this->dateEndIso($now->copy()->toDateString(), $timezone);
 
         $shippedFromInput = $validated['order_date_from'] ?? null;
         $shippedToInput = $validated['order_date_to'] ?? null;
         if ($shippedFromInput !== null && $shippedToInput !== null) {
-            $shippedFrom = $this->dateStartIso((string) $shippedFromInput);
-            $shippedTo = $this->dateEndIso((string) $shippedToInput);
+            $shippedFrom = $this->dateStartIso((string) $shippedFromInput, $timezone);
+            $shippedTo = $this->dateEndIso((string) $shippedToInput, $timezone);
         } else {
             $shippedFrom = $openFrom;
             $shippedTo = $openTo;
@@ -65,6 +69,7 @@ class PortalQueueCountsService
         return [
             'client_account_id' => $clientAccountId,
             'customer_id' => $customerId,
+            'timezone' => $timezone,
             'last_good_key' => 'orders:queue_counts:last:'.$clientAccountId,
             'awaiting_from' => $awaitingFrom,
             'awaiting_to' => $awaitingTo,
@@ -219,11 +224,12 @@ class PortalQueueCountsService
     private function queueCacheKey(array $context, string $tab): string
     {
         return sprintf(
-            'orders:queue_counts:v7:%d:%s:%s',
+            'orders:queue_counts:v8:%d:%s:%s',
             (int) $context['client_account_id'],
             $tab,
             md5(implode('|', [
                 $context['customer_id'],
+                $context['timezone'] ?? self::DEFAULT_ACCOUNT_TIMEZONE,
                 $context['awaiting_from'],
                 $context['awaiting_to'],
                 $context['open_from'],
@@ -338,13 +344,31 @@ class PortalQueueCountsService
         }
     }
 
-    private function dateStartIso(?string $value): string
+    private function accountTimezone(ClientAccount $account): string
     {
-        return Carbon::parse($value ?? 'today')->startOfDay()->toIso8601String();
+        $tz = trim((string) ($account->timezone ?? ''));
+        if ($tz !== '' && in_array($tz, timezone_identifiers_list(), true)) {
+            return $tz;
+        }
+
+        return self::DEFAULT_ACCOUNT_TIMEZONE;
     }
 
-    private function dateEndIso(?string $value): string
+    private function dateStartIso(?string $value, string $timezone): string
     {
-        return Carbon::parse($value ?? 'today')->endOfDay()->toIso8601String();
+        if ($value === null || trim($value) === '') {
+            return Carbon::now($timezone)->startOfDay()->toIso8601String();
+        }
+
+        return Carbon::parse(trim($value), $timezone)->startOfDay()->toIso8601String();
+    }
+
+    private function dateEndIso(?string $value, string $timezone): string
+    {
+        if ($value === null || trim($value) === '') {
+            return Carbon::now($timezone)->endOfDay()->toIso8601String();
+        }
+
+        return Carbon::parse(trim($value), $timezone)->endOfDay()->toIso8601String();
     }
 }

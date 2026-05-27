@@ -96,8 +96,8 @@ class ShipHeroOrderService
             $hasShipWindow = is_string($shipFrom) && trim($shipFrom) !== ''
                 && is_string($shipTo) && trim($shipTo) !== '';
             if ($hasShipWindow) {
-                $from = Carbon::parse(trim($shipFrom))->startOfDay();
-                $to = Carbon::parse(trim($shipTo))->endOfDay();
+                $from = $this->parseShipWindowBoundary(trim($shipFrom), true);
+                $to = $this->parseShipWindowBoundary(trim($shipTo), false);
                 $nowEnd = Carbon::now()->endOfDay();
                 if ($to->gt($nowEnd)) {
                     $to = $nowEnd;
@@ -1644,7 +1644,7 @@ GQL;
      */
     private function normalizeOrderRowForCount(array $node, $cursor): array
     {
-        $shipmentDates = $this->extractShipmentDateIsos($node);
+        $shipmentDates = $this->extractShipmentShipDates($node);
         return [
             'id' => (string) ($node['id'] ?? ''),
             'cursor' => is_string($cursor) ? $cursor : null,
@@ -2293,10 +2293,13 @@ GQL;
     }
 
     /**
+     * One timestamp per ShipHero shipment (earliest non-void label, else shipment created_date).
+     * Matches ShipHero shipments report — not per-label totals.
+     *
      * @param  array<string, mixed>  $node
      * @return list<string>
      */
-    private function extractShipmentDateIsos(array $node): array
+    private function extractShipmentShipDates(array $node): array
     {
         $dates = [];
         $shipments = $node['shipments'] ?? null;
@@ -2308,22 +2311,51 @@ GQL;
             if (! is_array($shipment)) {
                 continue;
             }
+            $earliestLabel = null;
             $labels = $shipment['shipping_labels'] ?? null;
-            if (! is_array($labels)) {
+            if (is_array($labels)) {
+                foreach ($labels as $label) {
+                    if (! is_array($label) || OrderShipmentTracking::isVoidShippingLabel($label)) {
+                        continue;
+                    }
+                    $createdDate = $this->nullableIso($label['created_date'] ?? null);
+                    if (! is_string($createdDate) || trim($createdDate) === '') {
+                        continue;
+                    }
+                    try {
+                        $parsed = Carbon::parse($createdDate);
+                    } catch (\Throwable $e) {
+                        continue;
+                    }
+                    if ($earliestLabel === null || $parsed->lt($earliestLabel)) {
+                        $earliestLabel = $parsed;
+                    }
+                }
+            }
+            if ($earliestLabel !== null) {
+                $dates[] = $earliestLabel->toIso8601String();
                 continue;
             }
-            foreach ($labels as $label) {
-                if (! is_array($label) || OrderShipmentTracking::isVoidShippingLabel($label)) {
-                    continue;
-                }
-                $createdDate = $this->nullableIso($label['created_date'] ?? null);
-                if (is_string($createdDate) && trim($createdDate) !== '') {
-                    $dates[] = $createdDate;
-                }
+            $shipmentCreated = $this->nullableIso($shipment['created_date'] ?? null);
+            if (is_string($shipmentCreated) && trim($shipmentCreated) !== '') {
+                $dates[] = $shipmentCreated;
             }
         }
 
         return $dates;
+    }
+
+    /**
+     * Ship-date window boundary from portal/API (already ISO) or date-only input.
+     */
+    private function parseShipWindowBoundary(string $value, bool $startOfDay): Carbon
+    {
+        $parsed = Carbon::parse($value);
+        if (preg_match('/T\d{2}:/', $value)) {
+            return $parsed;
+        }
+
+        return $startOfDay ? $parsed->startOfDay() : $parsed->endOfDay();
     }
 
     /**
@@ -2604,10 +2636,15 @@ GQL;
         if (! is_string($value) || trim($value) === '') {
             return null;
         }
+        $trimmed = trim($value);
         try {
-            $date = Carbon::parse($value);
+            $date = Carbon::parse($trimmed);
         } catch (\Throwable $e) {
             return null;
+        }
+
+        if (preg_match('/T\d{2}:/', $trimmed)) {
+            return $date;
         }
 
         return $startOfDay ? $date->startOfDay() : $date->endOfDay();

@@ -22,7 +22,12 @@ class PortalQueueCountsService
     /** One queue per HTTP request — keep this fast to avoid Cloudflare 502. */
     private const PER_TAB_SECONDS = 12;
 
+    /** Shipped is typically larger; give it a bit more time/pages to reduce truncation. */
+    private const SHIPPED_TAB_SECONDS = 20;
+
     private const MAX_PAGES_PER_TAB = 2;
+
+    private const SHIPPED_MAX_PAGES = 4;
 
     /** @var ShipHeroOrderService */
     private $orders;
@@ -186,12 +191,16 @@ class PortalQueueCountsService
     {
         $from = $context['open_from'];
         $to = $context['open_to'];
+        $maxPages = self::MAX_PAGES_PER_TAB;
+        $deadlineSeconds = self::PER_TAB_SECONDS;
         if ($tab === 'awaiting') {
             $from = $context['awaiting_from'];
             $to = $context['awaiting_to'];
         } elseif ($tab === 'shipped') {
             $from = $context['shipped_from'];
             $to = $context['shipped_to'];
+            $maxPages = self::SHIPPED_MAX_PAGES;
+            $deadlineSeconds = self::SHIPPED_TAB_SECONDS;
         }
 
         return $this->orders->countOrders([
@@ -199,8 +208,8 @@ class PortalQueueCountsService
             'tab' => $tab,
             'order_date_from' => $from,
             'order_date_to' => $to,
-            'max_pages' => self::MAX_PAGES_PER_TAB,
-            'count_deadline' => microtime(true) + self::PER_TAB_SECONDS,
+            'max_pages' => $maxPages,
+            'count_deadline' => microtime(true) + $deadlineSeconds,
         ]);
     }
 

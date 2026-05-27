@@ -7,7 +7,14 @@ import { formatDateTimeUs } from "../utils/formatUserDates.js";
 export function usePortalLastRefreshed() {
   const lastRefreshedAt = ref(null);
 
-  function markRefreshed() {
+  function markRefreshed(sourceTimestamp = null) {
+    if (typeof sourceTimestamp === "string" && sourceTimestamp.trim()) {
+      const parsed = new Date(sourceTimestamp);
+      if (!Number.isNaN(parsed.getTime())) {
+        lastRefreshedAt.value = parsed;
+        return;
+      }
+    }
     lastRefreshedAt.value = new Date();
   }
 

@@ -61,6 +61,9 @@ function mergeQueueIntoCounts(counts, field, data) {
   }
   next.refresh_pending = false;
   next.shiphero_ready = data?.shiphero_ready !== false;
+  if (typeof data?.cached_at === "string" && data.cached_at) {
+    next.cached_at = data.cached_at;
+  }
   return next;
 }
 
@@ -103,7 +106,7 @@ export function usePortalDashboardCounts(getClientAccountId, options = {}) {
       writeCache(id, next);
     }
     if (markFresh) {
-      markRefreshed();
+      markRefreshed(next?.cached_at ?? null);
     }
   }
 

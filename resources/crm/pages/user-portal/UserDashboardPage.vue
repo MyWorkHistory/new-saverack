@@ -199,17 +199,6 @@ onMounted(() => {
           {{ counts.message || "Your warehouse connection is still being set up." }}
           <RouterLink to="/users/welcome" class="ms-1">Learn more</RouterLink>
         </div>
-        <div
-          v-if="(counts.refresh_pending || counts.stale) && counts.message"
-          class="alert alert-warning small mb-3"
-          role="status"
-        >
-          {{ counts.message }}
-        </div>
-        <p v-if="counts.truncated" class="small text-secondary mb-3">
-          One or more totals may be capped at the maximum page scan; open the order list for the full queue.
-        </p>
-
         <div class="row g-3 mb-4">
           <div v-for="c in cards" :key="c.key" class="col-12 col-sm-6 col-xl-3">
             <RouterLink

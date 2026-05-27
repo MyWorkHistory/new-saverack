@@ -9,7 +9,7 @@ use ReflectionMethod;
 
 final class ShipHeroOrderServiceShippedCountTest extends TestCase
 {
-    public function test_extract_shipment_ship_dates_counts_one_per_shipment_not_per_label(): void
+    public function test_extract_shipment_ship_dates_uses_shipment_created_date_once_per_shipment(): void
     {
         $svc = new ShipHeroOrderService($this->createMock(\App\Services\ShipHeroClient::class));
         $method = new ReflectionMethod(ShipHeroOrderService::class, 'extractShipmentShipDates');
@@ -25,14 +25,25 @@ final class ShipHeroOrderServiceShippedCountTest extends TestCase
                     ],
                 ],
                 [
+                    'created_date' => '2026-05-27T16:00:00Z',
+                    'shipped_off_shiphero' => true,
                     'shipping_labels' => [
                         ['status' => 'valid', 'created_date' => '2026-05-27T16:00:00Z'],
+                    ],
+                ],
+                [
+                    'created_date' => '2026-05-27T18:00:00Z',
+                    'shipping_labels' => [
+                        ['status' => 'valid', 'created_date' => '2026-05-27T19:00:00Z'],
                     ],
                 ],
             ],
         ]);
 
-        $this->assertCount(2, $dates);
+        $this->assertSame(
+            ['2026-05-27T10:00:00Z', '2026-05-27T18:00:00Z'],
+            $dates
+        );
     }
 
     public function test_row_shipment_count_in_range_uses_est_day_boundaries(): void

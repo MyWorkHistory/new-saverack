@@ -10,8 +10,7 @@ use Carbon\Carbon;
 class OrderShipmentTracking
 {
     /**
-     * Best-estimate ship date from ShipHero order node (shipments / labels when present, else updated_at).
-     * List/count queries omit nested shipments for API limits; updated_at is the ship-date proxy there.
+     * Ship date for list/detail: shipment created_date (ShipHero shipments report), not label/updated_at noise.
      *
      * @param  array<string, mixed>  $node
      */
@@ -24,17 +23,21 @@ class OrderShipmentTracking
                 if (! is_array($shipment)) {
                     continue;
                 }
-                self::collectIsoDate($dates, $shipment['created_date'] ?? null);
-                $labels = $shipment['shipping_labels'] ?? null;
-                if (! is_array($labels)) {
+                if ((bool) ($shipment['shipped_off_shiphero'] ?? false)) {
                     continue;
                 }
+                $labels = is_array($shipment['shipping_labels'] ?? null) ? $shipment['shipping_labels'] : [];
+                $hasCountableLabel = false;
                 foreach ($labels as $label) {
-                    if (! is_array($label) || self::isVoidShippingLabel($label)) {
-                        continue;
+                    if (is_array($label) && ! self::isVoidShippingLabel($label)) {
+                        $hasCountableLabel = true;
+                        break;
                     }
-                    self::collectIsoDate($dates, $label['created_date'] ?? null);
                 }
+                if ($labels !== [] && ! $hasCountableLabel) {
+                    continue;
+                }
+                self::collectIsoDate($dates, $shipment['created_date'] ?? null);
             }
         }
         $hasShipmentsField = array_key_exists('shipments', $node);

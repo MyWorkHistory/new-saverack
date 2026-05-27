@@ -215,6 +215,7 @@ class PortalQueueCountsService
                 'customer_account_id' => $context['customer_id'],
                 'date_from' => $from,
                 'date_to' => $to,
+                'timezone' => $context['timezone'] ?? self::DEFAULT_ACCOUNT_TIMEZONE,
                 'max_pages' => $maxPages,
                 'count_deadline' => $background ? null : microtime(true) + $deadlineSeconds,
             ]);
@@ -236,7 +237,7 @@ class PortalQueueCountsService
     private function queueCacheKey(array $context, string $tab): string
     {
         return sprintf(
-            'orders:queue_counts:v9:%d:%s:%s',
+            'orders:queue_counts:v10:%d:%s:%s',
             (int) $context['client_account_id'],
             $tab,
             md5(implode('|', [

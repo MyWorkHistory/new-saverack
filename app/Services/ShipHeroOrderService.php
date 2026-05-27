@@ -249,6 +249,7 @@ query ShipHeroOrders(
           updated_at
           shipments {
             created_date
+            shipped_off_shiphero
             shipping_labels {
               status
               created_date
@@ -323,6 +324,7 @@ query ShipHeroOrders(
           email
           shipments {
             created_date
+            shipped_off_shiphero
             shipping_labels {
               status
               created_date
@@ -458,15 +460,13 @@ query ShipHeroShipmentsCount(
   $customer_account_id: String!,
   $date_from: ISODateTime,
   $date_to: ISODateTime,
-  $voided: Boolean,
   $first: Int!,
   $after: String
 ) {
   shipments(
     customer_account_id: $customer_account_id,
     date_from: $date_from,
-    date_to: $date_to,
-    voided: $voided
+    date_to: $date_to
   ) {
     request_id
     complexity
@@ -474,7 +474,11 @@ query ShipHeroShipmentsCount(
       edges {
         node {
           id
-          order_id
+          created_date
+          shipped_off_shiphero
+          shipping_labels {
+            status
+          }
         }
       }
       pageInfo {
@@ -486,10 +490,21 @@ query ShipHeroShipmentsCount(
 }
 GQL;
 
+        $timezone = trim((string) ($filters['timezone'] ?? 'America/New_York'));
+        if ($timezone === '' || ! in_array($timezone, timezone_identifiers_list(), true)) {
+            $timezone = 'America/New_York';
+        }
+        try {
+            $rangeFrom = Carbon::parse($dateFrom)->setTimezone($timezone);
+            $rangeTo = Carbon::parse($dateTo)->setTimezone($timezone);
+        } catch (\Throwable $e) {
+            throw new RuntimeException('Invalid shipment count date range.');
+        }
+
         $total = 0;
         $truncated = false;
         $after = null;
-        $seenOrderIds = [];
+        $seenShipmentIds = [];
 
         for ($page = 0; $page < $maxPages; $page++) {
             if ($deadline !== null && microtime(true) >= $deadline) {
@@ -501,22 +516,20 @@ GQL;
                 'customer_account_id' => $customerAccountId,
                 'date_from' => $dateFrom,
                 'date_to' => $dateTo,
-                'voided' => false,
                 'first' => $first,
                 'after' => $after,
             ]);
 
             $parsed = $this->parseShipHeroShipmentsConnection($json);
             foreach ($parsed['rows'] as $row) {
-                $orderId = trim((string) ($row['order_id'] ?? ''));
-                $shipmentId = trim((string) ($row['id'] ?? ''));
-                // Dashboard shipped card should align with shipped ORDERS, not package labels.
-                // Prefer order_id; fallback to shipment id if ShipHero omits order_id.
-                $dedupeKey = $orderId !== '' ? 'order:'.$orderId : 'shipment:'.$shipmentId;
-                if ($dedupeKey === 'shipment:' || isset($seenOrderIds[$dedupeKey])) {
+                if (! $this->shipmentCountsForDashboard($row, $rangeFrom, $rangeTo)) {
                     continue;
                 }
-                $seenOrderIds[$dedupeKey] = true;
+                $shipmentId = trim((string) ($row['id'] ?? ''));
+                if ($shipmentId === '' || isset($seenShipmentIds[$shipmentId])) {
+                    continue;
+                }
+                $seenShipmentIds[$shipmentId] = true;
                 $total++;
             }
 
@@ -541,7 +554,7 @@ GQL;
     }
 
     /**
-     * @return array{rows: list<array{id: string, order_id: string}>, pageInfo: array<string, mixed>}
+     * @return array{rows: list<array<string, mixed>>, pageInfo: array<string, mixed>}
      */
     private function parseShipHeroShipmentsConnection(array $json): array
     {
@@ -564,9 +577,12 @@ GQL;
             if ($id === '') {
                 continue;
             }
+            $labels = is_array($node['shipping_labels'] ?? null) ? $node['shipping_labels'] : [];
             $rows[] = [
                 'id' => $id,
-                'order_id' => trim((string) ($node['order_id'] ?? '')),
+                'created_date' => $this->nullableIso($node['created_date'] ?? null),
+                'shipped_off_shiphero' => (bool) ($node['shipped_off_shiphero'] ?? false),
+                'shipping_labels' => $labels,
             ];
         }
 
@@ -576,6 +592,54 @@ GQL;
             'rows' => $rows,
             'pageInfo' => $pageInfo,
         ];
+    }
+
+    /**
+     * Match ShipHero shipments report rows (warehouse shipments, not off-platform / void-only).
+     *
+     * @param  array<string, mixed>  $row
+     */
+    private function shipmentCountsForDashboard(array $row, Carbon $from, Carbon $to): bool
+    {
+        if ((bool) ($row['shipped_off_shiphero'] ?? false)) {
+            return false;
+        }
+        if (! $this->shipmentHasCountableLabel($row['shipping_labels'] ?? null)) {
+            return false;
+        }
+
+        return $this->isoTimestampInRange($row['created_date'] ?? null, $from, $to);
+    }
+
+    /**
+     * @param  mixed  $labels
+     */
+    private function shipmentHasCountableLabel($labels): bool
+    {
+        if (! is_array($labels) || $labels === []) {
+            return true;
+        }
+        foreach ($labels as $label) {
+            if (is_array($label) && ! OrderShipmentTracking::isVoidShippingLabel($label)) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private function isoTimestampInRange($iso, Carbon $from, Carbon $to): bool
+    {
+        if (! is_string($iso) || trim($iso) === '') {
+            return false;
+        }
+        try {
+            $dt = Carbon::parse($iso);
+        } catch (\Throwable $e) {
+            return false;
+        }
+
+        return $dt->gte($from) && $dt->lte($to);
     }
 
     /**
@@ -2452,8 +2516,7 @@ GQL;
     }
 
     /**
-     * One timestamp per ShipHero shipment (earliest non-void label, else shipment created_date).
-     * Matches ShipHero shipments report — not per-label totals.
+     * One timestamp per ShipHero shipment (shipment created_date — same field as shipments report).
      *
      * @param  array<string, mixed>  $node
      * @return list<string>
@@ -2470,29 +2533,18 @@ GQL;
             if (! is_array($shipment)) {
                 continue;
             }
-            $earliestLabel = null;
-            $labels = $shipment['shipping_labels'] ?? null;
-            if (is_array($labels)) {
-                foreach ($labels as $label) {
-                    if (! is_array($label) || OrderShipmentTracking::isVoidShippingLabel($label)) {
-                        continue;
-                    }
-                    $createdDate = $this->nullableIso($label['created_date'] ?? null);
-                    if (! is_string($createdDate) || trim($createdDate) === '') {
-                        continue;
-                    }
-                    try {
-                        $parsed = Carbon::parse($createdDate);
-                    } catch (\Throwable $e) {
-                        continue;
-                    }
-                    if ($earliestLabel === null || $parsed->lt($earliestLabel)) {
-                        $earliestLabel = $parsed;
-                    }
+            if ((bool) ($shipment['shipped_off_shiphero'] ?? false)) {
+                continue;
+            }
+            $labels = is_array($shipment['shipping_labels'] ?? null) ? $shipment['shipping_labels'] : [];
+            $hasCountableLabel = false;
+            foreach ($labels as $label) {
+                if (is_array($label) && ! OrderShipmentTracking::isVoidShippingLabel($label)) {
+                    $hasCountableLabel = true;
+                    break;
                 }
             }
-            if ($earliestLabel !== null) {
-                $dates[] = $earliestLabel->toIso8601String();
+            if ($labels !== [] && ! $hasCountableLabel) {
                 continue;
             }
             $shipmentCreated = $this->nullableIso($shipment['created_date'] ?? null);

@@ -392,7 +392,14 @@ GQL;
 
             $base['after'] = $after;
             $payload = $this->listOrders($base);
-            $total += count($payload['rows'] ?? []);
+            $rows = is_array($payload['rows'] ?? null) ? $payload['rows'] : [];
+            if ($tab === 'shipped') {
+                foreach ($rows as $row) {
+                    $total += max(0, (int) ($row['shipped_label_count'] ?? 0));
+                }
+            } else {
+                $total += count($rows);
+            }
 
             if (! ($payload['pagination']['has_next_page'] ?? false)) {
                 break;
@@ -1637,6 +1644,7 @@ GQL;
      */
     private function normalizeOrderRowForCount(array $node, $cursor): array
     {
+        $shipmentDates = $this->extractShipmentDateIsos($node);
         return [
             'id' => (string) ($node['id'] ?? ''),
             'cursor' => is_string($cursor) ? $cursor : null,
@@ -1647,6 +1655,8 @@ GQL;
             'hold_reason' => null,
             'order_date' => $this->nullableIso($node['order_date'] ?? null),
             'ship_date' => OrderShipmentTracking::resolveShipDateIso($node),
+            'shipment_dates' => $shipmentDates,
+            'shipped_label_count' => 0,
         ];
     }
 
@@ -2263,6 +2273,15 @@ GQL;
             if ($tab === 'on_hold' && ! $skipTabScopeForOrderLookup && $this->orderRowIsFulfilledOrShipped($row)) {
                 continue;
             }
+            if ($tab === 'shipped' && ! $skipTabScopeForOrderLookup && isset($row['shipment_dates']) && is_array($row['shipment_dates'])) {
+                $shipmentCountInRange = $this->rowShipmentCountInRange($row, $from, $to);
+                if ($shipmentCountInRange <= 0) {
+                    continue;
+                }
+                $row['shipped_label_count'] = $shipmentCountInRange;
+                $out[] = $row;
+                continue;
+            }
             $dateField = $tab === 'shipped' ? 'ship_date' : 'order_date';
             if (! $skipTabScopeForOrderLookup && ! $this->rowInDateRange($row, $from, $to, $dateField)) {
                 continue;
@@ -2271,6 +2290,68 @@ GQL;
         }
 
         return $out;
+    }
+
+    /**
+     * @param  array<string, mixed>  $node
+     * @return list<string>
+     */
+    private function extractShipmentDateIsos(array $node): array
+    {
+        $dates = [];
+        $shipments = $node['shipments'] ?? null;
+        if (! is_array($shipments)) {
+            return $dates;
+        }
+
+        foreach ($shipments as $shipment) {
+            if (! is_array($shipment)) {
+                continue;
+            }
+            $labels = $shipment['shipping_labels'] ?? null;
+            if (! is_array($labels)) {
+                continue;
+            }
+            foreach ($labels as $label) {
+                if (! is_array($label) || OrderShipmentTracking::isVoidShippingLabel($label)) {
+                    continue;
+                }
+                $createdDate = $this->nullableIso($label['created_date'] ?? null);
+                if (is_string($createdDate) && trim($createdDate) !== '') {
+                    $dates[] = $createdDate;
+                }
+            }
+        }
+
+        return $dates;
+    }
+
+    /**
+     * @param  array<string, mixed>  $row
+     */
+    private function rowShipmentCountInRange(array $row, ?Carbon $from, ?Carbon $to): int
+    {
+        $dates = is_array($row['shipment_dates'] ?? null) ? $row['shipment_dates'] : [];
+        $count = 0;
+        foreach ($dates as $raw) {
+            if (! is_string($raw) || trim($raw) === '') {
+                continue;
+            }
+            try {
+                $date = Carbon::parse($raw);
+            } catch (\Throwable $e) {
+                continue;
+            }
+            if ($from !== null && $date->lt($from)) {
+                continue;
+            }
+            if ($to !== null && $date->gt($to)) {
+                continue;
+            }
+            $count++;
+        }
+
+        return $count;
     }
 
     /**

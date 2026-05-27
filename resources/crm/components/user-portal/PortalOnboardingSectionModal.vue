@@ -29,6 +29,25 @@ const section = computed(() => getPortalOnboardingSection(props.sectionId));
 const sectionPrefs = computed(() => {
   const prefs = props.preferences;
   if (!prefs || typeof prefs !== "object") return {};
+
+  // The welcome page uses one shared lightbox for multiple “order handling” cards.
+  // When that happens, `props.sectionId` is `order_handling_preferences`, but some
+  // fields (out_of_stock_handling/address_verification/fraud_review_holds) live in
+  // their own preference blocks in `props.preferences`.
+  if (props.sectionId === "order_handling_preferences") {
+    const orderHandling = prefs.order_handling_preferences;
+    const outOfStock = prefs.out_of_stock_handling;
+    const addressVerification = prefs.address_verification;
+    const fraudReview = prefs.fraud_review_holds;
+
+    return {
+      ...(orderHandling && typeof orderHandling === "object" ? orderHandling : {}),
+      ...(outOfStock && typeof outOfStock === "object" ? outOfStock : {}),
+      ...(addressVerification && typeof addressVerification === "object" ? addressVerification : {}),
+      ...(fraudReview && typeof fraudReview === "object" ? fraudReview : {}),
+    };
+  }
+
   const block = prefs[props.sectionId];
   return block && typeof block === "object" ? block : {};
 });
@@ -95,6 +114,14 @@ async function uploadLogoIfNeeded() {
   }
 }
 
+function sourceSectionIdForFieldKey(fieldKey) {
+  // Map merged welcome lightbox field keys back to their original save targets.
+  if (fieldKey === "out_of_stock_handling") return "out_of_stock_handling";
+  if (fieldKey === "address_verification") return "address_verification";
+  if (fieldKey === "fraud_review_holds") return "fraud_review_holds";
+  return props.sectionId;
+}
+
 async function save() {
   if (saving.value || !section.value) return;
   saving.value = true;
@@ -104,16 +131,36 @@ async function save() {
       await uploadLogoIfNeeded();
     }
 
-    const payload = {};
+    const payloadBySection = {};
     for (const field of section.value.fields) {
       if (field.type === "file") continue;
       if (!fieldVisible(field)) continue;
-      payload[field.key] = form[field.key];
+
+      const targetSectionId = sourceSectionIdForFieldKey(field.key);
+      if (!payloadBySection[targetSectionId]) {
+        payloadBySection[targetSectionId] = {};
+      }
+      payloadBySection[targetSectionId][field.key] = form[field.key];
     }
 
-    const { data } = await api.patch(`/portal/onboarding/preferences/${props.sectionId}`, payload);
+    let lastData = null;
+    const targetSectionIds = Object.keys(payloadBySection);
+    for (const targetSectionId of targetSectionIds) {
+      const { data } = await api.patch(
+        `/portal/onboarding/preferences/${targetSectionId}`,
+        payloadBySection[targetSectionId],
+      );
+      lastData = data;
+    }
+
+    if (!lastData) {
+      // Should only happen if the section has no fields.
+      toast.success("Saved.");
+      close();
+      return;
+    }
     toast.success("Saved.");
-    emit("saved", data);
+    emit("saved", lastData);
     close();
   } catch (e) {
     errorMsg.value = "Could not save. Check required fields.";

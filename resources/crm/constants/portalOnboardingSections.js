@@ -42,7 +42,6 @@ export const PORTAL_ONBOARDING_SECTIONS = [
         required: true,
         options: [
           { value: "no", label: "No" },
-          { value: "yes", label: "Yes" },
           { value: "yes_will_provide", label: "I will provide branded packaging materials" },
         ],
       },
@@ -100,12 +99,6 @@ export const PORTAL_ONBOARDING_SECTIONS = [
           },
         ],
       },
-    ],
-  },
-  {
-    id: "out_of_stock_handling",
-    modalTitle: "Out-of-Stock Handling",
-    fields: [
       {
         key: "out_of_stock_handling",
         type: "select",
@@ -122,12 +115,6 @@ export const PORTAL_ONBOARDING_SECTIONS = [
           { value: "require_manual_review", label: "Require Manual Review Before Processing" },
         ],
       },
-    ],
-  },
-  {
-    id: "address_verification",
-    modalTitle: "Address Verification",
-    fields: [
       {
         key: "address_verification",
         type: "select",
@@ -139,12 +126,6 @@ export const PORTAL_ONBOARDING_SECTIONS = [
           { value: "attempt_correction", label: "Attempt Address Correction by Account Manager" },
         ],
       },
-    ],
-  },
-  {
-    id: "fraud_review_holds",
-    modalTitle: "Fraud Review Holds",
-    fields: [
       {
         key: "fraud_review_holds",
         type: "select",
@@ -158,6 +139,21 @@ export const PORTAL_ONBOARDING_SECTIONS = [
         ],
       },
     ],
+  },
+  {
+    id: "out_of_stock_handling",
+    modalTitle: "Out-of-Stock Handling",
+    fields: [],
+  },
+  {
+    id: "address_verification",
+    modalTitle: "Address Verification",
+    fields: [],
+  },
+  {
+    id: "fraud_review_holds",
+    modalTitle: "Fraud Review Holds",
+    fields: [],
   },
   {
     id: "packing_slips_preferences",

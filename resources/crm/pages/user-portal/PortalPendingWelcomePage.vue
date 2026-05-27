@@ -66,8 +66,12 @@ function openTask(task) {
     billingModalOpen.value = true;
     return;
   }
-  if (PORTAL_ONBOARDING_SECTION_IDS.includes(task.id)) {
-    activeSectionId.value = task.id;
+  const unifiedOrderHandlingSectionId = "order_handling_preferences";
+  const unifiedCardIds = ["out_of_stock_handling", "address_verification", "fraud_review_holds"];
+  const mappedSectionId = unifiedCardIds.includes(task.id) ? unifiedOrderHandlingSectionId : task.id;
+
+  if (PORTAL_ONBOARDING_SECTION_IDS.includes(mappedSectionId)) {
+    activeSectionId.value = mappedSectionId;
     sectionModalOpen.value = true;
   }
 }
@@ -339,41 +343,23 @@ onUnmounted(() => {
 }
 
 .portal-onboard-task__grid {
-  display: grid;
-  grid-template-columns: 1fr auto 1fr;
-  align-items: center;
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
   gap: 0.75rem 1rem;
 }
 
 .portal-onboard-task__status-wrap {
-  grid-column: 2;
-  justify-self: center;
+  flex-shrink: 0;
+  display: flex;
+  justify-content: flex-end;
+  margin-left: 0.5rem;
+  padding-top: 0.125rem;
 }
 
 .portal-onboard-task__lead {
-  grid-column: 1 / -1;
-}
-
-@media (max-width: 575.98px) {
-  .portal-onboard-task__grid {
-    grid-template-columns: 1fr;
-  }
-
-  .portal-onboard-task__status-wrap {
-    grid-column: 1;
-    justify-self: center;
-    margin-top: 0.25rem;
-  }
-}
-
-@media (min-width: 576px) {
-  .portal-onboard-task__lead {
-    grid-column: 1;
-  }
-
-  .portal-onboard-task__status-wrap {
-    grid-column: 2;
-  }
+  flex: 1 1 auto;
+  min-width: 0;
 }
 
 .portal-onboard-task__icon {

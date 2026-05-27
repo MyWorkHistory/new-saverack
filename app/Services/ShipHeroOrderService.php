@@ -321,6 +321,13 @@ query ShipHeroOrders(
           profile
           source
           email
+          shipments {
+            created_date
+            shipping_labels {
+              status
+              created_date
+            }
+          }
           shipping_address {
             first_name
             last_name
@@ -451,13 +458,15 @@ query ShipHeroShipmentsCount(
   $customer_account_id: String!,
   $date_from: ISODateTime,
   $date_to: ISODateTime,
+  $voided: Boolean,
   $first: Int!,
   $after: String
 ) {
   shipments(
     customer_account_id: $customer_account_id,
     date_from: $date_from,
-    date_to: $date_to
+    date_to: $date_to,
+    voided: $voided
   ) {
     request_id
     complexity
@@ -479,6 +488,7 @@ GQL;
         $total = 0;
         $truncated = false;
         $after = null;
+        $seenShipmentIds = [];
 
         for ($page = 0; $page < $maxPages; $page++) {
             if ($deadline !== null && microtime(true) >= $deadline) {
@@ -490,12 +500,20 @@ GQL;
                 'customer_account_id' => $customerAccountId,
                 'date_from' => $dateFrom,
                 'date_to' => $dateTo,
+                'voided' => false,
                 'first' => $first,
                 'after' => $after,
             ]);
 
             $parsed = $this->parseShipHeroShipmentsConnection($json);
-            $total += count($parsed['rows']);
+            foreach ($parsed['rows'] as $row) {
+                $id = (string) ($row['id'] ?? '');
+                if ($id === '' || isset($seenShipmentIds[$id])) {
+                    continue;
+                }
+                $seenShipmentIds[$id] = true;
+                $total++;
+            }
 
             if (! ($parsed['pageInfo']['hasNextPage'] ?? false)) {
                 break;
@@ -1793,6 +1811,7 @@ GQL;
 
     private function normalizeOrderRow(array $node, $cursor): array
     {
+        $shipmentDates = $this->extractShipmentShipDates($node);
         $shippingLine = $this->resolveShippingLine($node['shipping_lines'] ?? null);
         $shippingAddress = is_array($node['shipping_address'] ?? null) ? $node['shipping_address'] : [];
         $holdsApi = $this->normalizeOrderHoldsForApi($node['holds'] ?? null);
@@ -1819,6 +1838,7 @@ GQL;
             'partner_order_id' => (string) ($node['partner_order_id'] ?? ''),
             'order_date' => $this->nullableIso($node['order_date'] ?? null),
             'ship_date' => OrderShipmentTracking::resolveShipDateIso($node),
+            'shipment_dates' => $shipmentDates,
             'required_ship_date' => $this->nullableIso($node['required_ship_date'] ?? null),
             'account' => (string) ($node['shop_name'] ?? ''),
             'country' => (string) ($shippingAddress['country'] ?? ''),

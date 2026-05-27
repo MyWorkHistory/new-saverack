@@ -11,7 +11,15 @@ final class ShipHeroOrderServiceCountShipmentsTest extends TestCase
     public function test_count_shipments_sums_pagination(): void
     {
         $client = $this->createMock(ShipHeroClient::class);
-        $client->method('query')->willReturnOnConsecutiveCalls(
+        $client->expects($this->exactly(2))
+            ->method('query')
+            ->with(
+                $this->isType('string'),
+                $this->callback(function (array $vars): bool {
+                    return ($vars['voided'] ?? null) === false;
+                })
+            )
+            ->willReturnOnConsecutiveCalls(
             [
                 'data' => [
                     'shipments' => [
@@ -30,6 +38,7 @@ final class ShipHeroOrderServiceCountShipmentsTest extends TestCase
                     'shipments' => [
                         'data' => [
                             'edges' => [
+                                ['node' => ['id' => 's2']],
                                 ['node' => ['id' => 's3']],
                             ],
                             'pageInfo' => ['hasNextPage' => false, 'endCursor' => null],
@@ -37,7 +46,7 @@ final class ShipHeroOrderServiceCountShipmentsTest extends TestCase
                     ],
                 ],
             ],
-        );
+            );
 
         $svc = new ShipHeroOrderService($client);
         $out = $svc->countShipments([

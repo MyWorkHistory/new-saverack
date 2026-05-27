@@ -44,7 +44,7 @@ class PortalOnboardingApiTest extends TestCase
         return [$account, $user];
     }
 
-    public function test_onboarding_returns_eleven_tasks_with_account_incomplete(): void
+    public function test_onboarding_returns_eight_tasks_with_account_incomplete(): void
     {
         [$account] = $this->pendingPortalUser();
 
@@ -52,14 +52,15 @@ class PortalOnboardingApiTest extends TestCase
 
         $response->assertOk();
         $response->assertJsonPath('client_account_status', ClientAccount::STATUS_PENDING);
-        $response->assertJsonCount(11, 'tasks');
+        $response->assertJsonCount(8, 'tasks');
         $response->assertJsonPath('tasks.0.id', 'account_information');
         $response->assertJsonPath('tasks.0.status', 'not_completed');
         $response->assertJsonPath('tasks.2.id', 'branding_information');
-        $response->assertJsonPath('tasks.10.id', 'inventory_sync');
+        $response->assertJsonPath('tasks.3.id', 'order_handling_preferences');
+        $response->assertJsonPath('tasks.7.id', 'inventory_sync');
         $response->assertJsonPath('profile.client_account_id', $account->id);
         $response->assertJsonPath('profile.account_information_complete', false);
-        $response->assertJsonPath('progress.total', 11);
+        $response->assertJsonPath('progress.total', 8);
         $response->assertJsonPath('progress.completed', 0);
         $response->assertJsonStructure(['preferences', 'brand_logo_url']);
     }

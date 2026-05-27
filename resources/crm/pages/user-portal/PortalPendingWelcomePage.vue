@@ -31,7 +31,7 @@ const profile = computed(() => onboarding.value?.profile || null);
 const tasks = computed(() => onboarding.value?.tasks || []);
 const preferences = computed(() => onboarding.value?.preferences || {});
 const brandLogoUrl = computed(() => onboarding.value?.brand_logo_url || "");
-const progress = computed(() => onboarding.value?.progress || { total: 11, completed: 0, remaining: 11 });
+const progress = computed(() => onboarding.value?.progress || { total: 8, completed: 0, remaining: 8 });
 const manualInstructions = computed(
   () => onboarding.value?.manual_payment_instructions || null,
 );
@@ -66,12 +66,8 @@ function openTask(task) {
     billingModalOpen.value = true;
     return;
   }
-  const unifiedOrderHandlingSectionId = "order_handling_preferences";
-  const unifiedCardIds = ["out_of_stock_handling", "address_verification", "fraud_review_holds"];
-  const mappedSectionId = unifiedCardIds.includes(task.id) ? unifiedOrderHandlingSectionId : task.id;
-
-  if (PORTAL_ONBOARDING_SECTION_IDS.includes(mappedSectionId)) {
-    activeSectionId.value = mappedSectionId;
+  if (PORTAL_ONBOARDING_SECTION_IDS.includes(task.id)) {
+    activeSectionId.value = task.id;
     sectionModalOpen.value = true;
   }
 }
@@ -120,7 +116,7 @@ function onBillingSaved(data) {
 }
 
 function recalcProgress(taskList) {
-  const total = taskList.length || 11;
+  const total = taskList.length || 8;
   const completed = taskList.filter((t) => t.status === "completed").length;
   return { total, completed, remaining: total - completed };
 }

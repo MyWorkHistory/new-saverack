@@ -137,26 +137,8 @@ class PortalOnboardingService
             [
                 'id' => 'order_handling_preferences',
                 'title' => 'Order Handling Preferences',
-                'description' => 'Set your preferred order handling rules, shipping preferences, and fulfillment instructions for how orders should be processed and shipped.',
+                'description' => 'Set how orders are processed and shipped, including shipment timing, warehouse routing, out-of-stock handling, address verification, and fraud review holds.',
                 'icon' => 'tune',
-            ],
-            [
-                'id' => 'out_of_stock_handling',
-                'title' => 'Out-of-Stock Handling',
-                'description' => 'Choose how orders should be handled when one or more items are out of stock, including holding, partially shipping, or canceling unavailable items.',
-                'icon' => 'shelves',
-            ],
-            [
-                'id' => 'address_verification',
-                'title' => 'Address Verification',
-                'description' => 'Choose how orders with invalid, incomplete, or flagged shipping addresses should be handled before shipment.',
-                'icon' => 'location',
-            ],
-            [
-                'id' => 'fraud_review_holds',
-                'title' => 'Fraud Review Holds',
-                'description' => 'Choose how orders flagged as potentially fraudulent or high-risk should be handled before shipment.',
-                'icon' => 'shield',
             ],
             [
                 'id' => 'packing_slips_preferences',
@@ -203,16 +185,38 @@ class PortalOnboardingService
 
         foreach ($preferenceTasks as $meta) {
             $id = $meta['id'];
+            $complete = $id === 'order_handling_preferences'
+                ? $this->isOrderHandlingGroupComplete($account)
+                : $this->isPreferenceSectionComplete($account, $id);
             $tasks[] = [
                 'id' => $id,
                 'title' => $meta['title'],
                 'description' => $meta['description'],
-                'status' => $this->isPreferenceSectionComplete($account, $id) ? 'completed' : 'not_completed',
+                'status' => $complete ? 'completed' : 'not_completed',
                 'icon' => $meta['icon'],
             ];
         }
 
         return $tasks;
+    }
+
+    public function isOrderHandlingGroupComplete(ClientAccount $account): bool
+    {
+        $prefs = $this->preferencesArray($account);
+        $merged = [];
+        foreach (
+            [
+                'order_handling_preferences',
+                'out_of_stock_handling',
+                'address_verification',
+                'fraud_review_holds',
+            ] as $sectionId
+        ) {
+            $block = is_array($prefs[$sectionId] ?? null) ? $prefs[$sectionId] : [];
+            $merged = array_merge($merged, $block);
+        }
+
+        return PortalOnboardingSectionRegistry::isSectionComplete('order_handling_preferences', $merged);
     }
 
     private function billingTaskUiStatus(ClientAccount $account): string

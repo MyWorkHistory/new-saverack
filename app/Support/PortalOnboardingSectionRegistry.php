@@ -25,7 +25,13 @@ class PortalOnboardingSectionRegistry
             case 'branding_information':
                 return ['brand_name', 'branded_packaging', 'custom_inserts'];
             case 'order_handling_preferences':
-                return ['order_shipment_timeline', 'multi_warehouse_routing'];
+                return [
+                    'order_shipment_timeline',
+                    'multi_warehouse_routing',
+                    'out_of_stock_handling',
+                    'address_verification',
+                    'fraud_review_holds',
+                ];
             case 'out_of_stock_handling':
                 return ['out_of_stock_handling'];
             case 'address_verification':
@@ -65,8 +71,8 @@ class PortalOnboardingSectionRegistry
     public static function allowedValues(): array
     {
         return [
-            'branded_packaging' => ['no', 'yes', 'yes_will_provide'],
-            'custom_inserts' => ['no', 'yes', 'yes_will_provide'],
+            'branded_packaging' => ['no', 'yes_will_provide'],
+            'custom_inserts' => ['no', 'yes_will_provide'],
             'order_shipment_timeline' => ['ship_as_ready', 'hold_specified', 'hold_until_approved'],
             'multi_warehouse_routing' => [
                 'import_all_locations',

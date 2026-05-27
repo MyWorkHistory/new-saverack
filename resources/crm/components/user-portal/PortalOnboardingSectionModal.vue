@@ -114,14 +114,6 @@ async function uploadLogoIfNeeded() {
   }
 }
 
-function sourceSectionIdForFieldKey(fieldKey) {
-  // Map merged welcome lightbox field keys back to their original save targets.
-  if (fieldKey === "out_of_stock_handling") return "out_of_stock_handling";
-  if (fieldKey === "address_verification") return "address_verification";
-  if (fieldKey === "fraud_review_holds") return "fraud_review_holds";
-  return props.sectionId;
-}
-
 async function save() {
   if (saving.value || !section.value) return;
   saving.value = true;
@@ -131,36 +123,19 @@ async function save() {
       await uploadLogoIfNeeded();
     }
 
-    const payloadBySection = {};
+    const payload = {};
     for (const field of section.value.fields) {
       if (field.type === "file") continue;
       if (!fieldVisible(field)) continue;
-
-      const targetSectionId = sourceSectionIdForFieldKey(field.key);
-      if (!payloadBySection[targetSectionId]) {
-        payloadBySection[targetSectionId] = {};
-      }
-      payloadBySection[targetSectionId][field.key] = form[field.key];
+      payload[field.key] = form[field.key];
     }
 
-    let lastData = null;
-    const targetSectionIds = Object.keys(payloadBySection);
-    for (const targetSectionId of targetSectionIds) {
-      const { data } = await api.patch(
-        `/portal/onboarding/preferences/${targetSectionId}`,
-        payloadBySection[targetSectionId],
-      );
-      lastData = data;
-    }
-
-    if (!lastData) {
-      // Should only happen if the section has no fields.
-      toast.success("Saved.");
-      close();
-      return;
-    }
+    const { data } = await api.patch(
+      `/portal/onboarding/preferences/${props.sectionId}`,
+      payload,
+    );
     toast.success("Saved.");
-    emit("saved", lastData);
+    emit("saved", data);
     close();
   } catch (e) {
     errorMsg.value = "Could not save. Check required fields.";

@@ -6,9 +6,6 @@
 export const PORTAL_ONBOARDING_SECTION_IDS = [
   "branding_information",
   "order_handling_preferences",
-  "out_of_stock_handling",
-  "address_verification",
-  "fraud_review_holds",
   "packing_slips_preferences",
   "shipping_carrier_preferences",
   "returns_handling_preferences",
@@ -53,7 +50,6 @@ export const PORTAL_ONBOARDING_SECTIONS = [
         required: true,
         options: [
           { value: "no", label: "No" },
-          { value: "yes", label: "Yes" },
           { value: "yes_will_provide", label: "I will provide custom inserts" },
         ],
       },
@@ -139,21 +135,6 @@ export const PORTAL_ONBOARDING_SECTIONS = [
         ],
       },
     ],
-  },
-  {
-    id: "out_of_stock_handling",
-    modalTitle: "Out-of-Stock Handling",
-    fields: [],
-  },
-  {
-    id: "address_verification",
-    modalTitle: "Address Verification",
-    fields: [],
-  },
-  {
-    id: "fraud_review_holds",
-    modalTitle: "Fraud Review Holds",
-    fields: [],
   },
   {
     id: "packing_slips_preferences",

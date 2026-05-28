@@ -275,8 +275,8 @@ onUnmounted(() => {
       </div>
 
       <div v-else class="p-3 p-md-4">
-        <div class="row g-3">
-          <div v-for="fee in filteredFees" :key="fee.id" class="col-12 col-md-6 col-xl-4">
+        <div class="settings-pricing-cards">
+          <div v-for="fee in filteredFees" :key="fee.id">
             <article class="card h-100 staff-surface border-0 shadow-sm">
               <div class="card-body d-flex flex-column">
                 <div class="d-flex align-items-start gap-3 mb-2">
@@ -343,6 +343,13 @@ onUnmounted(() => {
 .settings-pricing-page {
   width: 100%;
   max-width: none;
+}
+
+.settings-pricing-cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+  gap: 1rem;
+  width: 100%;
 }
 
 .settings-pricing-card__icon-wrap {

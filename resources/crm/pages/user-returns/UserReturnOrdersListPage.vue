@@ -1,5 +1,5 @@
 <script setup>
-import { computed, inject, onMounted, onUnmounted, ref, watch } from "vue";
+import { computed, inject, nextTick, onMounted, onUnmounted, ref, watch } from "vue";
 import { useRouter } from "vue-router";
 import api from "../../services/api";
 import CrmIconRowActions from "../../components/common/CrmIconRowActions.vue";
@@ -26,6 +26,9 @@ const sortDir = ref("desc");
 const clientAccountId = computed(() => Number(crmUser.value?.client_account_id || 0));
 const tableColspan = 8;
 const actionOpenId = ref(null);
+const actionMenuRect = ref({ top: 0, left: 0 });
+const MENU_W = 220;
+const MENU_H = 88;
 
 function applySearch() {
   if (searchTimer) {
@@ -107,9 +110,30 @@ function closeRowActionMenu() {
   actionOpenId.value = null;
 }
 
-function toggleRowActionMenu(r, event) {
+function placeActionMenu(anchorEl) {
+  if (!(anchorEl instanceof HTMLElement)) return;
+  const r = anchorEl.getBoundingClientRect();
+  let top = r.bottom + 4;
+  let left = r.right - MENU_W;
+  left = Math.max(8, Math.min(left, window.innerWidth - MENU_W - 8));
+  if (top + MENU_H > window.innerHeight - 8) {
+    top = Math.max(8, r.top - MENU_H - 4);
+  }
+  actionMenuRect.value = { top, left };
+}
+
+async function toggleRowActionMenu(r, event) {
   event.stopPropagation();
-  actionOpenId.value = actionOpenId.value === r.id ? null : r.id;
+  if (actionOpenId.value === r.id) {
+    closeRowActionMenu();
+    return;
+  }
+  const btn = event.currentTarget;
+  actionOpenId.value = r.id;
+  await nextTick();
+  requestAnimationFrame(() => {
+    if (btn instanceof HTMLElement) placeActionMenu(btn);
+  });
 }
 
 function onDocClickActions(event) {
@@ -122,6 +146,10 @@ function onEscCloseActions(event) {
   if (event.key === "Escape") {
     closeRowActionMenu();
   }
+}
+
+function onWindowCloseActions() {
+  closeRowActionMenu();
 }
 
 async function deleteReturn(r) {
@@ -138,6 +166,8 @@ async function deleteReturn(r) {
   }
 }
 
+const actionMenuRow = computed(() => rows.value.find((r) => r.id === actionOpenId.value) ?? null);
+
 function goCreate() {
   router.push({ name: "user-return-create-search" });
 }
@@ -150,11 +180,15 @@ onMounted(() => {
   load();
   document.addEventListener("click", onDocClickActions);
   document.addEventListener("keydown", onEscCloseActions);
+  window.addEventListener("scroll", onWindowCloseActions, true);
+  window.addEventListener("resize", onWindowCloseActions);
 });
 
 onUnmounted(() => {
   document.removeEventListener("click", onDocClickActions);
   document.removeEventListener("keydown", onEscCloseActions);
+  window.removeEventListener("scroll", onWindowCloseActions, true);
+  window.removeEventListener("resize", onWindowCloseActions);
 });
 </script>
 
@@ -273,28 +307,17 @@ onUnmounted(() => {
               <td class="text-center fw-semibold">{{ r.rma_number || "—" }}</td>
               <td class="text-center small text-secondary">{{ formatDateUs(r.processed_at) || "—" }}</td>
               <td class="text-center">{{ Number(r.items_count ?? 0).toLocaleString() }}</td>
-              <td class="text-center staff-actions-cell position-relative">
-                <div class="user-return-page__action-inner" data-return-row-actions>
+              <td class="text-center staff-actions-cell" @click.stop>
+                <div data-return-row-actions class="staff-actions-inner staff-actions-inner--single">
                   <button
                     type="button"
-                    class="btn btn-sm btn-outline-secondary orders-toolbar-outline-btn px-2 py-1"
+                    class="staff-action-btn staff-action-btn--more"
                     :aria-expanded="actionOpenId === r.id"
-                    aria-label="Open Row Actions"
+                    aria-label="Row Actions"
                     @click="toggleRowActionMenu(r, $event)"
                   >
                     <CrmIconRowActions variant="horizontal" />
                   </button>
-                  <div v-if="actionOpenId === r.id" class="user-return-row-menu shadow-sm">
-                    <button type="button" class="dropdown-item" @click="openReturnInNewTab(r)">View</button>
-                    <button
-                      type="button"
-                      class="dropdown-item text-danger"
-                      :disabled="!canDeleteReturn(r)"
-                      @click="deleteReturn(r)"
-                    >
-                      Delete Return
-                    </button>
-                  </div>
                 </div>
               </td>
             </tr>
@@ -336,28 +359,38 @@ onUnmounted(() => {
         Scroll sideways or swipe to see all columns.
       </p>
     </div>
+
+    <Teleport to="body">
+      <Transition
+        enter-active-class="transition ease-out duration-100"
+        enter-from-class="opacity-0"
+        enter-to-class="opacity-100"
+        leave-active-class="transition ease-in duration-75"
+        leave-from-class="opacity-100"
+        leave-to-class="opacity-0"
+      >
+        <div
+          v-if="actionMenuRow"
+          data-return-row-actions
+          class="staff-row-menu fixed z-[300] overflow-hidden"
+          role="menu"
+          :style="{ top: `${actionMenuRect.top}px`, left: `${actionMenuRect.left}px` }"
+          @click.stop
+        >
+          <button type="button" class="staff-row-menu__item" role="menuitem" @click="openReturnInNewTab(actionMenuRow)">
+            View
+          </button>
+          <button
+            type="button"
+            class="staff-row-menu__item staff-row-menu__item--danger"
+            role="menuitem"
+            :disabled="!canDeleteReturn(actionMenuRow)"
+            @click="deleteReturn(actionMenuRow)"
+          >
+            Delete Return
+          </button>
+        </div>
+      </Transition>
+    </Teleport>
   </div>
 </template>
-
-<style scoped>
-.user-return-row-menu {
-  position: absolute;
-  right: 0;
-  top: calc(100% + 0.25rem);
-  min-width: 10.5rem;
-  border: 1px solid rgba(47, 43, 61, 0.16);
-  border-radius: 0.5rem;
-  background: var(--bs-body-bg, #fff);
-  z-index: 10;
-  overflow: hidden;
-}
-
-.user-return-row-menu .dropdown-item {
-  font-size: 0.875rem;
-  padding: 0.45rem 0.75rem;
-}
-
-[data-bs-theme="dark"] .user-return-row-menu {
-  border-color: rgba(255, 255, 255, 0.16);
-}
-</style>

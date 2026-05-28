@@ -457,7 +457,7 @@ watch(
 
 onMounted(() => {
   setCrmPageMeta({
-    title: "Save Rack | Products | Inventory",
+    title: "Save Rack | Inventory",
     description: "Your account inventory.",
   });
   document.addEventListener("click", onDocClick);
@@ -475,8 +475,7 @@ onUnmounted(() => {
       class="d-flex flex-column flex-md-row align-items-start align-items-md-center gap-3 mb-4"
     >
       <div class="min-w-0 flex-grow-1">
-        <h1 class="h4 mb-1 fw-semibold text-body">Products</h1>
-        <p class="text-secondary small mb-1">Inventory</p>
+        <h1 class="h4 mb-1 fw-semibold text-body">Inventory</h1>
         <p class="text-secondary small mb-0 user-inv-load-hint">
           Showing {{ LIST_PAGE_SIZE }} products per load. Search checks your full ShipHero catalog (not only this page).
         </p>

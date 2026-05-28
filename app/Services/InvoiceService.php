@@ -845,6 +845,55 @@ class InvoiceService
     }
 
     /**
+     * Set account available funds pool to an explicit value.
+     *
+     * @param  array<string, mixed>  $meta
+     * @return array{available_funds_cents: int}
+     */
+    public function setBillingAvailableFunds(
+        Invoice $invoice,
+        int $amountCents,
+        ?User $actor,
+        array $meta = []
+    ): array {
+        BillingAvailableFundsSchema::ensureColumn();
+        if ($amountCents < 0) {
+            throw new \InvalidArgumentException('Amount must be zero or positive.');
+        }
+
+        $invoice->loadMissing('clientAccount');
+
+        return DB::transaction(function () use ($invoice, $amountCents, $actor, $meta) {
+            $account = ClientAccount::query()
+                ->whereKey($invoice->client_account_id)
+                ->lockForUpdate()
+                ->first();
+            if ($account === null) {
+                throw new \RuntimeException('Invoice account is unavailable.');
+            }
+
+            $from = max(0, (int) $account->billing_available_funds_cents);
+            $to = max(0, $amountCents);
+            $account->billing_available_funds_cents = $to;
+            $account->save();
+
+            $this->logHistory($invoice, $actor, 'available_balance_updated', $invoice->status, $invoice->status, [
+                'from_amount_cents' => $from,
+                'to_amount_cents' => $to,
+                'history_message' => sprintf(
+                    'Available balance updated from %s to %s.',
+                    $this->formatCentsForHistory($from, $invoice->currency),
+                    $this->formatCentsForHistory($to, $invoice->currency)
+                ),
+            ] + $meta);
+
+            return [
+                'available_funds_cents' => $to,
+            ];
+        });
+    }
+
+    /**
      * @param  list<int>  $invoiceIds
      * @param  array<string, mixed>  $paymentMeta
      * @return array{invoice: Invoice, allocations: list<array<string, mixed>>, remaining_amount_cents: int}
@@ -1025,6 +1074,14 @@ class InvoiceService
             default:
                 return InvoiceHistoryEventType::HEADER_EDIT;
         }
+    }
+
+    private function formatCentsForHistory(int $cents, ?string $currency): string
+    {
+        $normalized = strtoupper(trim((string) ($currency ?? 'USD')));
+        $amount = number_format($cents / 100, 2, '.', ',');
+
+        return ($normalized !== '' ? $normalized.' ' : '').$amount;
     }
 
     /**

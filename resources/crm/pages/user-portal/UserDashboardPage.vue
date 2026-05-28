@@ -176,7 +176,6 @@ onMounted(() => {
           </svg>
           {{ refreshing ? "Refreshing…" : "Refresh" }}
         </button>
-        <span v-if="refreshing" class="small text-secondary">Updating…</span>
       </div>
     </div>
 

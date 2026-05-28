@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Http\Requests\InvoiceAddAvailableFundsRequest;
+use App\Http\Requests\InvoiceSetAvailableFundsRequest;
 use App\Http\Requests\InvoiceAllocatePaymentRequest;
 use App\Http\Requests\InvoiceRecordPaymentRequest;
 use App\Http\Requests\InvoiceReplaceLineGroupRequest;
@@ -283,6 +284,24 @@ class InvoiceController extends Controller
             $invoice,
             $request->amountCents(),
             $request->user(),
+            $request->paymentMeta(),
+        );
+
+        return response()->json($result);
+    }
+
+    public function setAvailableFunds(InvoiceSetAvailableFundsRequest $request, Invoice $invoice): JsonResponse
+    {
+        $this->authorize('view', $invoice);
+        $user = $request->user();
+        if (! $user instanceof User || ! ($user->isAdministrator() || $user->isCrmOwner() || $user->hasRole('staff'))) {
+            abort(403);
+        }
+
+        $result = $this->invoices->setBillingAvailableFunds(
+            $invoice,
+            $request->amountCents(),
+            $user,
             $request->paymentMeta(),
         );
 

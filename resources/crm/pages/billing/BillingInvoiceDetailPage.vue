@@ -171,6 +171,9 @@ const groupBulkQty = ref("");
 const groupBulkPrice = ref("");
 const rightActionsMenuOpen = ref(false);
 const accountBalanceLoading = ref(false);
+const availableBalanceModalOpen = ref(false);
+const availableBalanceSaving = ref(false);
+const availableBalanceAmount = ref("");
 
 const invoiceLogoSrc = computed(() => BRAND_MARK_SRC());
 const activityCardRef = ref(null);
@@ -255,6 +258,7 @@ const canAddCharge = computed(
 const canEditInvoiceDates = computed(
   () => !!invoice.value && canUpdate.value && currentStatusKey.value !== "void",
 );
+const canEditAvailableBalance = computed(() => !!invoice.value && canUpdate.value);
 
 const canVoidInvoice = computed(
   () => !!invoice.value && canUpdate.value && currentStatusKey.value !== "void",
@@ -1845,6 +1849,42 @@ function goToInvoiceBucket(bucket) {
   });
 }
 
+function openAvailableBalanceModal() {
+  if (!invoice.value || !canEditAvailableBalance.value || availableBalanceSaving.value) return;
+  availableBalanceAmount.value = (Number(accountAvailableFundsCents.value || 0) / 100).toFixed(2);
+  availableBalanceModalOpen.value = true;
+}
+
+function closeAvailableBalanceModal(force = false) {
+  if (availableBalanceSaving.value && !force) return;
+  availableBalanceModalOpen.value = false;
+}
+
+async function saveAvailableBalance() {
+  if (!invoice.value || !canEditAvailableBalance.value) return;
+  const amountCents = dollarsToCents(availableBalanceAmount.value);
+  if (amountCents < 0) {
+    toast.error("Available balance cannot be negative.");
+    return;
+  }
+  availableBalanceSaving.value = true;
+  try {
+    const { data } = await api.patch(`/invoices/${invoice.value.id}/available-funds`, {
+      amount_cents: amountCents,
+    });
+    const available = Number(data?.available_funds_cents || 0);
+    accountAvailableFundsCents.value = available;
+    payFundsCents.value = available;
+    toast.success("Available balance updated.");
+    closeAvailableBalanceModal(true);
+    await load();
+  } catch (e) {
+    toast.errorFrom(e, "Could not update available balance.");
+  } finally {
+    availableBalanceSaving.value = false;
+  }
+}
+
 async function openPayModal() {
   if (!invoice.value || !payInvoiceEnabled.value) return;
   payAmount.value = "";
@@ -2770,15 +2810,25 @@ function onDocKeydown(e) {
                   </svg>
                 </div>
               </button>
-              <div
+              <component
+                :is="canEditAvailableBalance ? 'button' : 'div'"
+                :type="canEditAvailableBalance ? 'button' : undefined"
                 class="staff-stat-card billing-inv-summary-card billing-inv-summary-card--static"
-                :class="{ 'opacity-75': accountBalanceLoading }"
+                :class="{
+                  'opacity-75': accountBalanceLoading,
+                  'billing-inv-summary-card--editable': canEditAvailableBalance,
+                }"
+                :disabled="canEditAvailableBalance ? (accountBalanceLoading || availableBalanceSaving) : undefined"
+                @click="canEditAvailableBalance ? openAvailableBalanceModal() : undefined"
               >
                 <p class="staff-stat-card__label">Available Balance</p>
                 <p class="staff-stat-card__value">
                   {{ formatCents(accountAvailableFundsCents, invoice.currency) }}
                 </p>
-                <p class="staff-stat-card__sub">Unapplied payment credit</p>
+                <p class="staff-stat-card__sub">
+                  Unapplied payment credit
+                  <span v-if="canEditAvailableBalance" class="d-block">Click To Edit</span>
+                </p>
                 <div
                   class="staff-stat-card__icon bg-success-subtle text-success"
                   aria-hidden="true"
@@ -2789,7 +2839,7 @@ function onDocKeydown(e) {
                     />
                   </svg>
                 </div>
-              </div>
+              </component>
             </div>
           </div>
 
@@ -2916,6 +2966,54 @@ function onDocKeydown(e) {
     <div v-else class="alert alert-warning">Invoice not found.</div>
 
     <Teleport to="body">
+      <Transition name="crm-vx-confirm">
+        <div
+          v-if="availableBalanceModalOpen"
+          class="crm-vx-modal-overlay"
+          role="dialog"
+          aria-modal="true"
+          @click.self="closeAvailableBalanceModal"
+        >
+          <div class="crm-vx-modal crm-vx-modal--sm" @click.stop>
+            <header class="crm-vx-modal__head">
+              <h2 class="crm-vx-modal__title">Update Available Balance</h2>
+            </header>
+            <div class="crm-vx-modal__body">
+              <label class="form-label mb-1" for="available-balance-input">Amount</label>
+              <input
+                id="available-balance-input"
+                v-model="availableBalanceAmount"
+                type="number"
+                min="0"
+                step="0.01"
+                class="form-control"
+                :disabled="availableBalanceSaving"
+              />
+              <p class="small text-secondary mb-0 mt-2">
+                Set the account available balance for this client.
+              </p>
+            </div>
+            <footer class="crm-vx-modal__foot">
+              <button
+                type="button"
+                class="btn btn-outline-secondary"
+                :disabled="availableBalanceSaving"
+                @click="closeAvailableBalanceModal"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                class="btn btn-primary"
+                :disabled="availableBalanceSaving"
+                @click="saveAvailableBalance"
+              >
+                {{ availableBalanceSaving ? "Saving…" : "Update Balance" }}
+              </button>
+            </footer>
+          </div>
+        </div>
+      </Transition>
       <Transition name="crm-vx-confirm">
         <div
           v-if="groupEditModalOpen"
@@ -3907,6 +4005,9 @@ button.billing-inv-summary-card {
 }
 .billing-inv-summary-card--static {
   cursor: default;
+}
+.billing-inv-summary-card--editable {
+  cursor: pointer;
 }
 button.billing-inv-summary-card:hover:not(:disabled) {
   border-color: rgba(115, 103, 240, 0.35) !important;

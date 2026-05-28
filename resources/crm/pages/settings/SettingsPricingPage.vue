@@ -201,23 +201,24 @@ onUnmounted(() => {
 </script>
 
 <template>
-  <div class="staff-page staff-page--wide settings-pricing-page">
-    <header class="d-flex flex-column flex-md-row align-items-md-start justify-content-between gap-3 mb-4">
-      <div>
+  <div class="staff-page staff-page--wide">
+    <div class="d-flex flex-column flex-md-row align-items-start align-items-md-center gap-3 mb-4">
+      <div class="min-w-0 flex-grow-1">
         <h1 class="h4 fw-semibold text-body mb-1">Pricing</h1>
         <p class="text-secondary small mb-0">
           Default fees applied to new accounts. Changes sync to linked account fees.
         </p>
       </div>
-      <button
-        v-if="canUpdate"
-        type="button"
-        class="btn btn-primary staff-page-primary flex-shrink-0"
-        @click="openCreate"
-      >
-        Create Fee
-      </button>
-    </header>
+      <div v-if="canUpdate" class="ms-md-auto">
+        <button
+          type="button"
+          class="btn btn-primary staff-page-primary"
+          @click="openCreate"
+        >
+          Create Fee
+        </button>
+      </div>
+    </div>
 
     <div class="staff-table-card staff-datatable-card staff-datatable-card--white">
       <div class="staff-table-toolbar">
@@ -274,8 +275,9 @@ onUnmounted(() => {
         <p class="mb-0">No fees match your filters.</p>
       </div>
 
-      <div v-else class="p-3 p-md-4">
-        <div class="settings-pricing-cards">
+      <div v-else class="staff-table-wrap">
+        <div class="p-3 p-md-4">
+          <div class="settings-pricing-cards">
           <div v-for="fee in filteredFees" :key="fee.id">
             <article class="card h-100 staff-surface border-0 shadow-sm">
               <div class="card-body d-flex flex-column">
@@ -316,6 +318,7 @@ onUnmounted(() => {
             </article>
           </div>
         </div>
+        </div>
       </div>
     </div>
 
@@ -340,14 +343,9 @@ onUnmounted(() => {
 </template>
 
 <style scoped>
-.settings-pricing-page {
-  width: 100%;
-  max-width: none;
-}
-
 .settings-pricing-cards {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
   gap: 1rem;
   width: 100%;
 }

@@ -20,6 +20,7 @@ const useWideCrmContent = computed(
     route.path === "/admin/dashboard" ||
     route.path.startsWith("/admin/staff") ||
     route.path.startsWith("/admin/clients") ||
+    route.path.startsWith("/admin/settings") ||
     route.path.startsWith("/admin/billing") ||
     route.path.startsWith("/admin/inventory") ||
     route.path.startsWith("/admin/orders") ||

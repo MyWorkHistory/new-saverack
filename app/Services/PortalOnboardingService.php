@@ -175,6 +175,13 @@ class PortalOnboardingService
                 'icon' => 'account',
             ],
             [
+                'id' => 'communication_preferences',
+                'title' => 'Communication Preferences',
+                'description' => 'Let us know how you would like us to communicate with you regarding your orders, deliveries, inventory, and any other fulfillment-related updates.',
+                'status' => $this->isPreferenceSectionComplete($account, 'communication_preferences') ? 'completed' : 'not_completed',
+                'icon' => 'chat',
+            ],
+            [
                 'id' => 'billing_information',
                 'title' => 'Add Billing Information',
                 'description' => 'Add your payment method and billing details so invoices and fulfillment charges can be processed without delays.',

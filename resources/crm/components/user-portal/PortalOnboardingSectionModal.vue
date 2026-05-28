@@ -11,6 +11,7 @@ const props = defineProps({
   sectionId: { type: String, default: "" },
   preferences: { type: Object, default: () => ({}) },
   brandLogoUrl: { type: String, default: "" },
+  profile: { type: Object, default: null },
 });
 
 const emit = defineEmits(["update:open", "saved"]);
@@ -72,12 +73,19 @@ function fillForm() {
     if (f.type === "file") continue;
     form[f.key] = sectionPrefs.value[f.key] ?? "";
   }
+  if (
+    props.sectionId === "communication_preferences" &&
+    String(form.communication_method || "").trim() === "email" &&
+    String(form.contact_email || "").trim() === ""
+  ) {
+    form.contact_email = String(props.profile?.email || "").trim();
+  }
   logoPreviewUrl.value = props.brandLogoUrl || "";
   logoFile.value = null;
 }
 
 watch(
-  () => [props.open, props.sectionId, props.preferences, props.brandLogoUrl],
+  () => [props.open, props.sectionId, props.preferences, props.brandLogoUrl, props.profile],
   ([open]) => {
     if (open) {
       document.addEventListener("keydown", onEsc);
@@ -144,6 +152,15 @@ async function save() {
     saving.value = false;
   }
 }
+
+const isCommunicationSection = computed(() => props.sectionId === "communication_preferences");
+
+function setCommunicationMethod(value) {
+  form.communication_method = value;
+  if (value === "email" && String(form.contact_email || "").trim() === "") {
+    form.contact_email = String(props.profile?.email || "").trim();
+  }
+}
 </script>
 
 <template>
@@ -170,12 +187,91 @@ async function save() {
       <div class="crm-vx-modal__body portal-onboard-modal__body">
             <p v-if="errorMsg" class="text-danger small">{{ errorMsg }}</p>
 
-            <div
-              v-for="field in section.fields"
-              v-show="fieldVisible(field)"
-              :key="field.key"
-              class="mb-4"
-            >
+            <template v-if="isCommunicationSection">
+              <p class="text-secondary mb-4">
+                {{ section.intro }}
+              </p>
+
+              <div class="portal-billing-options d-flex flex-column gap-3">
+                <label
+                  v-for="opt in section.communicationOptions || []"
+                  :key="opt.value"
+                  class="portal-billing-option border rounded p-3 mb-0"
+                >
+                  <input
+                    :checked="form.communication_method === opt.value"
+                    type="radio"
+                    name="portal-communication-method"
+                    class="form-check-input me-2"
+                    :value="opt.value"
+                    @change="setCommunicationMethod(opt.value)"
+                  />
+                  <span class="fw-semibold">{{ opt.title }}</span>
+                  <p class="small text-secondary mb-0 mt-2 ms-4">
+                    {{ opt.description }}
+                  </p>
+                </label>
+              </div>
+
+              <div
+                v-if="form.communication_method === 'whatsapp'"
+                class="portal-billing-detail mt-4 p-3 rounded bg-light"
+              >
+                <label class="form-label fw-semibold" for="onboard-whatsapp-phone">
+                  Phone Number
+                </label>
+                <input
+                  id="onboard-whatsapp-phone"
+                  v-model="form.whatsapp_phone"
+                  type="text"
+                  class="form-control"
+                  placeholder="Enter Phone Number"
+                  required
+                />
+              </div>
+
+              <div
+                v-else-if="form.communication_method === 'slack'"
+                class="portal-billing-detail mt-4 p-3 rounded bg-light"
+              >
+                <label class="form-label fw-semibold" for="onboard-slack-email">
+                  Email Address
+                </label>
+                <input
+                  id="onboard-slack-email"
+                  v-model="form.slack_email"
+                  type="email"
+                  class="form-control"
+                  placeholder="Enter Email Address"
+                  required
+                />
+              </div>
+
+              <div
+                v-else-if="form.communication_method === 'email'"
+                class="portal-billing-detail mt-4 p-3 rounded bg-light"
+              >
+                <label class="form-label fw-semibold" for="onboard-contact-email">
+                  Enter Your Email
+                </label>
+                <input
+                  id="onboard-contact-email"
+                  v-model="form.contact_email"
+                  type="email"
+                  class="form-control"
+                  placeholder="Enter Email"
+                  required
+                />
+              </div>
+            </template>
+
+            <template v-else>
+              <div
+                v-for="field in section.fields"
+                v-show="fieldVisible(field)"
+                :key="field.key"
+                class="mb-4"
+              >
               <label v-if="field.type !== 'file'" class="form-label fw-semibold" :for="`onboard-${field.key}`">
                 {{ field.label }}
               </label>
@@ -234,7 +330,8 @@ async function save() {
               <p v-if="field.help" class="small text-secondary mb-0 mt-2">
                 {{ field.help }}
               </p>
-            </div>
+              </div>
+            </template>
       </div>
       <footer class="crm-vx-modal__footer">
         <button
@@ -266,5 +363,14 @@ async function save() {
   object-fit: contain;
   border-radius: 0.375rem;
   border: 1px solid var(--bs-border-color);
+}
+
+.portal-billing-option {
+  cursor: pointer;
+}
+
+.portal-billing-option:has(input:checked) {
+  border-color: var(--bs-primary) !important;
+  background: rgba(var(--bs-primary-rgb), 0.04);
 }
 </style>

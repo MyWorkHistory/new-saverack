@@ -4,6 +4,7 @@
  */
 
 export const PORTAL_ONBOARDING_SECTION_IDS = [
+  "communication_preferences",
   "branding_information",
   "order_handling_preferences",
   "packing_slips_preferences",
@@ -13,6 +14,69 @@ export const PORTAL_ONBOARDING_SECTION_IDS = [
 ];
 
 export const PORTAL_ONBOARDING_SECTIONS = [
+  {
+    id: "communication_preferences",
+    modalTitle: "Communication Preferences",
+    intro:
+      "Let us know how you would like us to communicate with you regarding your orders, deliveries, inventory, and any other fulfillment-related updates.",
+    communicationOptions: [
+      {
+        value: "whatsapp",
+        title: "WhatsApp Group Chat (Recommended)",
+        description:
+          "We recommend using WhatsApp as the primary communication channel. It enables faster responses and real-time communication without lengthy email threads. Please enter your phone number so we can create a group chat with your account management team.",
+      },
+      {
+        value: "slack",
+        title: "Slack",
+        description:
+          "We can also communicate through Slack for quick and organized communication. Please provide the email address you would like us to send the Slack workspace invitation to.",
+      },
+      {
+        value: "email",
+        title: "Email",
+        description:
+          "We can communicate via email if you prefer. Please note that email responses may take a few hours, and communication may not be as fast as WhatsApp or Slack.",
+      },
+    ],
+    fields: [
+      {
+        key: "communication_method",
+        type: "select",
+        label: "Communication Method",
+        required: true,
+        options: [
+          { value: "whatsapp", label: "WhatsApp Group Chat (Recommended)" },
+          { value: "slack", label: "Slack" },
+          { value: "email", label: "Email" },
+        ],
+      },
+      {
+        key: "whatsapp_phone",
+        type: "text",
+        label: "Phone Number",
+        help: "Enter your phone number so we can create a WhatsApp group chat.",
+        required: true,
+        showWhen: { field: "communication_method", value: "whatsapp" },
+      },
+      {
+        key: "slack_email",
+        type: "text",
+        label: "Slack Invite Email",
+        help: "Enter the email address we should invite to our Slack workspace.",
+        required: true,
+        showWhen: { field: "communication_method", value: "slack" },
+      },
+      {
+        key: "contact_email",
+        type: "text",
+        label: "Email",
+        help: "Enter your preferred email address for communication.",
+        required: true,
+        showWhen: { field: "communication_method", value: "email" },
+      },
+    ],
+  },
   {
     id: "branding_information",
     modalTitle: "Branding Information",
@@ -315,6 +379,7 @@ export function getPortalOnboardingSection(sectionId) {
 /** Map task.icon from API to PORTAL_MATERIAL_ICON keys */
 export const PORTAL_ONBOARDING_TASK_ICON_KEYS = {
   account: "account",
+  chat: "chat",
   billing: "payments",
   palette: "palette",
   tune: "tune",

@@ -331,6 +331,7 @@ onUnmounted(() => {
       :section-id="activeSectionId"
       :preferences="preferences"
       :brand-logo-url="brandLogoUrl"
+      :profile="profile"
       @saved="onSectionSaved"
     />
   </div>

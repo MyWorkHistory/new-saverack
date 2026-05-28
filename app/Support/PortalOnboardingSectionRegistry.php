@@ -5,6 +5,7 @@ namespace App\Support;
 class PortalOnboardingSectionRegistry
 {
     public const PREFERENCE_SECTION_IDS = [
+        'communication_preferences',
         'branding_information',
         'order_handling_preferences',
         'out_of_stock_handling',
@@ -22,6 +23,8 @@ class PortalOnboardingSectionRegistry
     public static function requiredFieldKeys(string $sectionId): array
     {
         switch ($sectionId) {
+            case 'communication_preferences':
+                return ['communication_method'];
             case 'branding_information':
                 return ['brand_name', 'branded_packaging', 'custom_inserts'];
             case 'order_handling_preferences':
@@ -73,6 +76,7 @@ class PortalOnboardingSectionRegistry
         return [
             'branded_packaging' => ['no', 'yes_will_provide'],
             'custom_inserts' => ['no', 'yes_will_provide'],
+            'communication_method' => ['whatsapp', 'slack', 'email'],
             'order_shipment_timeline' => ['ship_as_ready', 'hold_specified', 'hold_until_approved'],
             'multi_warehouse_routing' => [
                 'import_all_locations',
@@ -144,6 +148,21 @@ class PortalOnboardingSectionRegistry
             }
         }
 
+        if ($sectionId === 'communication_preferences') {
+            $method = trim((string) ($sectionData['communication_method'] ?? ''));
+            if ($method === 'whatsapp') {
+                return trim((string) ($sectionData['whatsapp_phone'] ?? '')) !== '';
+            }
+            if ($method === 'slack') {
+                return trim((string) ($sectionData['slack_email'] ?? '')) !== '';
+            }
+            if ($method === 'email') {
+                return trim((string) ($sectionData['contact_email'] ?? '')) !== '';
+            }
+
+            return false;
+        }
+
         if ($sectionId === 'packing_slips_preferences') {
             if (($sectionData['include_note'] ?? '') === 'yes') {
                 if (trim((string) ($sectionData['packing_slip_note'] ?? '')) === '') {
@@ -169,6 +188,13 @@ class PortalOnboardingSectionRegistry
         if ($sectionId === 'packing_slips_preferences') {
             $keys[] = 'packing_slip_note';
         }
+        if ($sectionId === 'communication_preferences') {
+            $keys = array_merge($keys, [
+                'whatsapp_phone',
+                'slack_email',
+                'contact_email',
+            ]);
+        }
 
         foreach ($keys as $key) {
             if (! array_key_exists($key, $input)) {
@@ -176,6 +202,10 @@ class PortalOnboardingSectionRegistry
             }
             $value = is_scalar($input[$key]) ? trim((string) $input[$key]) : '';
             if ($key === 'brand_name' || $key === 'packing_slip_note') {
+                $out[$key] = $value;
+                continue;
+            }
+            if (in_array($key, ['whatsapp_phone', 'slack_email', 'contact_email'], true)) {
                 $out[$key] = $value;
                 continue;
             }

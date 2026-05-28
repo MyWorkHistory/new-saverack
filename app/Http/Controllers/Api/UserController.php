@@ -265,8 +265,9 @@ class UserController extends Controller
             return response()->json(['message' => 'Only administrators can view permission metadata.'], 403);
         }
 
-        // Ensure core page permissions exist so the UI always renders Staff/Webmaster/Clients rows.
         User::editableCrmPermissionKeys();
+
+        $adminOnlyModules = ['users', 'webmaster', 'settings'];
 
         $permissions = Permission::query()
             ->select(['key', 'label', 'module'])
@@ -276,6 +277,7 @@ class UserController extends Controller
                     ->orWhere('key', 'like', '%.update')
                     ->orWhere('key', 'like', '%.delete');
             })
+            ->whereNotIn('module', $adminOnlyModules)
             ->orderBy('module')
             ->orderBy('key')
             ->get()

@@ -67,4 +67,80 @@ final class ShipHeroOrderServiceShippedCountTest extends TestCase
 
         $this->assertSame(1, $count);
     }
+
+    public function test_shipment_counts_for_dashboard_excludes_off_shiphero_and_void_only(): void
+    {
+        $svc = new ShipHeroOrderService($this->createMock(\App\Services\ShipHeroClient::class));
+        $method = new ReflectionMethod(ShipHeroOrderService::class, 'shipmentCountsForDashboard');
+        $method->setAccessible(true);
+
+        $tz = 'America/New_York';
+        $from = Carbon::parse('2026-05-27', $tz)->startOfDay();
+        $to = Carbon::parse('2026-05-27', $tz)->endOfDay();
+
+        $inRange = $method->invoke($svc, [
+            'shipped_off_shiphero' => false,
+            'created_date' => '2026-05-27T15:00:00Z',
+            'shipping_labels' => [['status' => 'valid']],
+        ], $from, $to);
+        $this->assertTrue($inRange);
+
+        $offPlatform = $method->invoke($svc, [
+            'shipped_off_shiphero' => true,
+            'created_date' => '2026-05-27T15:00:00Z',
+            'shipping_labels' => [['status' => 'valid']],
+        ], $from, $to);
+        $this->assertFalse($offPlatform);
+
+        $voidOnly = $method->invoke($svc, [
+            'shipped_off_shiphero' => false,
+            'created_date' => '2026-05-27T15:00:00Z',
+            'shipping_labels' => [['status' => 'void']],
+        ], $from, $to);
+        $this->assertFalse($voidOnly);
+    }
+
+    public function test_parse_shipments_connection_includes_order_id_when_requested(): void
+    {
+        $svc = new ShipHeroOrderService($this->createMock(\App\Services\ShipHeroClient::class));
+        $method = new ReflectionMethod(ShipHeroOrderService::class, 'parseShipHeroShipmentsConnection');
+        $method->setAccessible(true);
+
+        $json = [
+            'data' => [
+                'shipments' => [
+                    'data' => [
+                        'edges' => [
+                            [
+                                'node' => [
+                                    'id' => 'ship-1',
+                                    'order_id' => 'order-abc',
+                                    'created_date' => '2026-05-27T10:00:00Z',
+                                    'shipped_off_shiphero' => false,
+                                    'shipping_labels' => [],
+                                ],
+                            ],
+                        ],
+                        'pageInfo' => [
+                            'hasNextPage' => false,
+                            'endCursor' => null,
+                        ],
+                    ],
+                ],
+            ],
+        ];
+
+        $parsed = $method->invoke($svc, $json, true);
+        $this->assertSame('order-abc', $parsed['rows'][0]['order_id'] ?? null);
+    }
+
+    public function test_shipment_created_is_after_picks_latest_timestamp(): void
+    {
+        $svc = new ShipHeroOrderService($this->createMock(\App\Services\ShipHeroClient::class));
+        $method = new ReflectionMethod(ShipHeroOrderService::class, 'shipmentCreatedIsAfter');
+        $method->setAccessible(true);
+
+        $this->assertTrue($method->invoke($svc, '2026-05-28T10:00:00Z', '2026-05-27T10:00:00Z'));
+        $this->assertFalse($method->invoke($svc, '2026-05-26T10:00:00Z', '2026-05-27T10:00:00Z'));
+    }
 }

@@ -9,37 +9,27 @@ class TaskPolicy
 {
     public function viewAny(User $user): bool
     {
-        return $user->isCrmOwner()
-            || $user->isAdministrator()
-            || $user->hasPermission('webmaster.view');
+        return $user->isCrmOwner() || $user->isAdministrator();
     }
 
     public function view(User $user, Task $task): bool
     {
-        return $user->isCrmOwner()
-            || $user->isAdministrator()
-            || $user->hasPermission('webmaster.view');
+        return $user->isCrmOwner() || $user->isAdministrator();
     }
 
     public function create(User $user): bool
     {
-        return $user->isCrmOwner()
-            || $user->isAdministrator()
-            || $user->hasPermission('webmaster.create');
+        return $user->isCrmOwner() || $user->isAdministrator();
     }
 
     public function update(User $user, Task $task): bool
     {
-        return $user->isCrmOwner()
-            || $user->isAdministrator()
-            || $user->hasPermission('webmaster.update');
+        return $user->isCrmOwner() || $user->isAdministrator();
     }
 
     public function delete(User $user, Task $task): bool
     {
-        return $user->isCrmOwner()
-            || $user->isAdministrator()
-            || $user->hasPermission('webmaster.delete');
+        return $user->isCrmOwner() || $user->isAdministrator();
     }
 
     public function comment(User $user, Task $task): bool

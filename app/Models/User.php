@@ -20,15 +20,10 @@ class User extends Authenticatable
     public const ACCOUNT_USER_ROLE_CUSTOMER_SERVICE = 'customer_service';
 
     private const EDITABLE_PERMISSION_ACTIONS = ['view', 'create', 'update', 'delete'];
+    /** CRM modules gated to administrators only — not assignable to staff. */
+    private const ADMIN_ONLY_CRM_MODULES = ['users', 'webmaster', 'settings'];
+
     private const DEFAULT_EDITABLE_PERMISSION_KEYS = [
-        'users.view',
-        'users.create',
-        'users.update',
-        'users.delete',
-        'webmaster.view',
-        'webmaster.create',
-        'webmaster.update',
-        'webmaster.delete',
         'clients.view',
         'clients.create',
         'clients.update',
@@ -110,10 +105,24 @@ class User extends Authenticatable
             if (! in_array($action, self::EDITABLE_PERMISSION_ACTIONS, true)) {
                 continue;
             }
+            if (! self::isAssignableCrmPermissionKey($key)) {
+                continue;
+            }
             $out[] = $key;
         }
 
         return array_values(array_unique($out));
+    }
+
+    private static function isAssignableCrmPermissionKey(string $key): bool
+    {
+        $dot = strrpos($key, '.');
+        if ($dot === false) {
+            return false;
+        }
+        $module = strtolower(substr($key, 0, $dot));
+
+        return ! in_array($module, self::ADMIN_ONLY_CRM_MODULES, true);
     }
 
     /**

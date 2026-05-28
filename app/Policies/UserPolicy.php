@@ -14,7 +14,7 @@ class UserPolicy
 
     public function viewAny(User $user): bool
     {
-        return $this->canManageUsers($user) || $user->hasPermission('users.view');
+        return $this->canManageUsers($user);
     }
 
     public function view(User $user, User $model): bool
@@ -23,12 +23,12 @@ class UserPolicy
             return false;
         }
 
-        return $this->canManageUsers($user) || $user->hasPermission('users.view');
+        return $this->canManageUsers($user);
     }
 
     public function create(User $user): bool
     {
-        return $this->canManageUsers($user) || $user->hasPermission('users.create');
+        return $this->canManageUsers($user);
     }
 
     public function update(User $user, User $model): bool
@@ -37,7 +37,7 @@ class UserPolicy
             return false;
         }
 
-        return $this->canManageUsers($user) || $user->hasPermission('users.update');
+        return $this->canManageUsers($user);
     }
 
     public function delete(User $user, User $model): bool
@@ -50,6 +50,6 @@ class UserPolicy
             return false;
         }
 
-        return $this->canManageUsers($user) || $user->hasPermission('users.delete');
+        return $this->canManageUsers($user);
     }
 }

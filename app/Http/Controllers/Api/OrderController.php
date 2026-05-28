@@ -91,19 +91,31 @@ class OrderController extends Controller
                 $shipDateTo = $context['shipped_to'];
                 $timezone = $context['timezone'];
             }
-            $payload = $this->orders->listOrders([
-                'customer_account_id' => $customerId,
-                'tab' => $tab,
-                'order_date_from' => $shipDateFrom,
-                'order_date_to' => $shipDateTo,
-                'timezone' => $timezone,
-                'fulfillment_status' => $validated['fulfillment_status'] ?? null,
-                'ready_to_ship' => array_key_exists('ready_to_ship', $validated) ? (bool) $validated['ready_to_ship'] : null,
-                'hold_reason' => $validated['hold_reason'] ?? null,
-                'order_number' => isset($validated['order_number']) ? trim((string) $validated['order_number']) : null,
-                'after' => $validated['after'] ?? null,
-                'first' => (int) ($validated['first'] ?? 20),
-            ]);
+            if ($tab === 'shipped') {
+                $payload = $this->orders->listShippedOrders([
+                    'customer_account_id' => $customerId,
+                    'order_date_from' => $shipDateFrom,
+                    'order_date_to' => $shipDateTo,
+                    'timezone' => $timezone,
+                    'order_number' => isset($validated['order_number']) ? trim((string) $validated['order_number']) : null,
+                    'after' => $validated['after'] ?? null,
+                    'first' => (int) ($validated['first'] ?? 20),
+                ]);
+            } else {
+                $payload = $this->orders->listOrders([
+                    'customer_account_id' => $customerId,
+                    'tab' => $tab,
+                    'order_date_from' => $shipDateFrom,
+                    'order_date_to' => $shipDateTo,
+                    'timezone' => $timezone,
+                    'fulfillment_status' => $validated['fulfillment_status'] ?? null,
+                    'ready_to_ship' => array_key_exists('ready_to_ship', $validated) ? (bool) $validated['ready_to_ship'] : null,
+                    'hold_reason' => $validated['hold_reason'] ?? null,
+                    'order_number' => isset($validated['order_number']) ? trim((string) $validated['order_number']) : null,
+                    'after' => $validated['after'] ?? null,
+                    'first' => (int) ($validated['first'] ?? 20),
+                ]);
+            }
             $payload['meta'] = [
                 'client_account_id' => (int) $validated['client_account_id'],
                 'shiphero_customer_account_id' => $customerId,

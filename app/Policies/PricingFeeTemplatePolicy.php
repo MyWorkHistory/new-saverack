@@ -14,7 +14,7 @@ class PricingFeeTemplatePolicy
 
     public function viewAny(User $user): bool
     {
-        return $this->canManageSettings($user) || $user->hasPermission('settings.view');
+        return $this->canManageSettings($user);
     }
 
     public function view(User $user, PricingFeeTemplate $pricingFeeTemplate): bool
@@ -24,7 +24,7 @@ class PricingFeeTemplatePolicy
 
     public function create(User $user): bool
     {
-        return $this->canManageSettings($user) || $user->hasPermission('settings.update');
+        return $this->canManageSettings($user);
     }
 
     public function update(User $user, PricingFeeTemplate $pricingFeeTemplate): bool

@@ -9,13 +9,6 @@ const ACTION_HEADERS = ["View", "Create", "Edit", "Delete"];
 const ACTION_SUFFIXES = ["view", "create", "update", "delete"];
 
 const PAGE_META = {
-  users: { moduleKey: "staff", moduleLabel: "Staff", rowLabel: "Staff", order: 10 },
-  webmaster: {
-    moduleKey: "webmaster",
-    moduleLabel: "Webmaster",
-    rowLabel: "Webmaster",
-    order: 20,
-  },
   clients: {
     moduleKey: "clients",
     moduleLabel: "Clients",

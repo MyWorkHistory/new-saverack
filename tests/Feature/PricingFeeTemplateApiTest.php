@@ -105,7 +105,7 @@ class PricingFeeTemplateApiTest extends TestCase
         );
     }
 
-    public function test_staff_with_settings_permissions_can_update_fee(): void
+    public function test_staff_with_legacy_settings_permissions_cannot_update_fee(): void
     {
         $this->actingWithSettings(['settings.view', 'settings.update']);
 
@@ -116,33 +116,9 @@ class PricingFeeTemplateApiTest extends TestCase
             'sort_order' => 0,
         ]);
 
-        $account = ClientAccount::query()->create([
-            'status' => ClientAccount::STATUS_ACTIVE,
-            'company_name' => 'Sync Co',
-            'email' => 'sync@example.test',
-        ]);
-
-        ClientAccountFee::query()->create([
-            'client_account_id' => $account->id,
-            'pricing_template_id' => $template->id,
-            'fee_group' => ClientAccountFee::GROUP_STORAGE,
-            'line_code' => 'template_'.$template->id,
-            'label' => 'Old Name',
-            'amount' => '1.0000',
-            'currency' => 'USD',
-            'sort_order' => 0,
-        ]);
-
         $this->patchJson('/api/settings/pricing-fees/'.$template->id, [
             'name' => 'New Name',
             'amount' => 3.5,
-        ])->assertOk()->assertJsonPath('name', 'New Name');
-
-        $fee = ClientAccountFee::query()
-            ->where('pricing_template_id', $template->id)
-            ->first();
-
-        $this->assertSame('New Name', $fee->label);
-        $this->assertEquals('3.5000', (string) $fee->amount);
+        ])->assertForbidden();
     }
 }

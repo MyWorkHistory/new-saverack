@@ -533,9 +533,7 @@ export function setWebmasterNavFromUser(user) {
     webmasterNavCache = null;
     return;
   }
-  const keys = user.permission_keys;
-  const perm = Array.isArray(keys) && keys.includes("webmaster.view");
-  webmasterNavCache = perm || !!user.is_crm_owner || crmIsAdmin(user);
+  webmasterNavCache = !!user.is_crm_owner || crmIsAdmin(user);
 }
 
 export function setSettingsNavFromUser(user) {
@@ -543,9 +541,7 @@ export function setSettingsNavFromUser(user) {
     settingsNavCache = null;
     return;
   }
-  const keys = user.permission_keys;
-  const perm = Array.isArray(keys) && keys.includes("settings.view");
-  settingsNavCache = perm || !!user.is_crm_owner || crmIsAdmin(user);
+  settingsNavCache = !!user.is_crm_owner || crmIsAdmin(user);
 }
 
 export function setUsersNavFromUser(user) {
@@ -554,8 +550,8 @@ export function setUsersNavFromUser(user) {
     usersMeIsAdmin = false;
     return;
   }
-  usersMeIsAdmin = crmIsAdmin(user);
-  if (crmIsAdmin(user) || user.is_crm_owner) {
+  usersMeIsAdmin = crmIsAdmin(user) || !!user.is_crm_owner;
+  if (usersMeIsAdmin) {
     usersNavCache = {
       view: true,
       create: true,
@@ -564,12 +560,11 @@ export function setUsersNavFromUser(user) {
     };
     return;
   }
-  const k = Array.isArray(user.permission_keys) ? user.permission_keys : [];
   usersNavCache = {
-    view: k.includes("users.view"),
-    create: k.includes("users.create"),
-    update: k.includes("users.update"),
-    delete: k.includes("users.delete"),
+    view: false,
+    create: false,
+    update: false,
+    delete: false,
   };
 }
 
@@ -754,16 +749,12 @@ async function ensureUsersRouteAccess(path) {
 
 function userCanWebmaster(userLike) {
   if (!userLike) return false;
-  if (userLike.is_crm_owner || crmIsAdmin(userLike)) return true;
-  const keys = userLike.permission_keys;
-  return Array.isArray(keys) && keys.includes("webmaster.view");
+  return !!userLike.is_crm_owner || crmIsAdmin(userLike);
 }
 
 function userCanSettings(userLike) {
   if (!userLike) return false;
-  if (userLike.is_crm_owner || crmIsAdmin(userLike)) return true;
-  const keys = userLike.permission_keys;
-  return Array.isArray(keys) && keys.includes("settings.view");
+  return !!userLike.is_crm_owner || crmIsAdmin(userLike);
 }
 
 async function ensureSettingsRouteAccess() {

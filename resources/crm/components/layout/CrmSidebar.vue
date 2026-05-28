@@ -12,28 +12,18 @@ const props = defineProps({
 const route = useRoute();
 const isPortal = computed(() => crmIsPortalUser(props.user));
 
-const canViewUsers = computed(
-  () =>
-    crmIsAdmin(props.user) ||
-    !!props.user?.is_crm_owner ||
-    (Array.isArray(props.user?.permission_keys) &&
-      props.user.permission_keys.includes("users.view")),
+const isCrmAdmin = computed(
+  () => crmIsAdmin(props.user) || !!props.user?.is_crm_owner,
 );
 
-const canViewSettings = computed(
-  () =>
-    !!props.user?.is_crm_owner ||
-    crmIsAdmin(props.user) ||
-    (Array.isArray(props.user?.permission_keys) &&
-      props.user.permission_keys.includes("settings.view")),
-);
+const canViewUsers = computed(() => !isPortal.value && isCrmAdmin.value);
 
-const canViewWebmaster = computed(
-  () =>
-    !!props.user?.is_crm_owner ||
-    crmIsAdmin(props.user) ||
-    (Array.isArray(props.user?.permission_keys) &&
-      props.user.permission_keys.includes("webmaster.view")),
+const canViewSettings = computed(() => !isPortal.value && isCrmAdmin.value);
+
+const canViewWebmaster = computed(() => !isPortal.value && isCrmAdmin.value);
+
+const showAdminNavSection = computed(
+  () => canViewUsers.value || canViewSettings.value || canViewWebmaster.value,
 );
 
 const canViewClients = computed(() => {
@@ -197,7 +187,7 @@ function collapseNav() {
           <RouterLink
             to="/admin/dashboard"
             class="vx-nav-link"
-            :title="!isExpanded ? 'Dashboard' : undefined"
+            :title="!isExpanded ? 'Home' : undefined"
             @click="closeMobile"
           >
             <svg
@@ -212,207 +202,7 @@ function collapseNav() {
                 d="m2.25 12 8.954-8.955c.44-.439 1.152-.439 1.591 0L21.75 12M4.5 9.75v10.125c0 .621.504 1.125 1.125 1.125H9.75v-4.875c0-.621.504-1.125 1.125-1.125h2.25c.621 0 1.125.504 1.125 1.125V21h4.125c.621 0 1.125-.504 1.125-1.125V9.75M8.25 21h8.25"
               />
             </svg>
-            <span v-if="isExpanded">Dashboard</span>
-          </RouterLink>
-        </li>
-        <li v-if="!isPortal && canViewUsers">
-          <RouterLink
-            to="/admin/staff"
-            class="vx-nav-link"
-            :title="!isExpanded ? 'Staff' : undefined"
-            @click="closeMobile"
-          >
-            <svg
-              fill="none"
-              viewBox="0 0 24 24"
-              stroke="currentColor"
-              stroke-width="1.5"
-            >
-              <path
-                stroke-linecap="round"
-                stroke-linejoin="round"
-                d="M15.75 6a3.75 3.75 0 1 1-7.5 0 3.75 3.75 0 0 1 7.5 0ZM4.501 20.118a7.5 7.5 0 0 1 14.998 0A17.933 17.933 0 0 1 12 21.75c-2.676 0-5.216-.584-7.499-1.632Z"
-              />
-            </svg>
-            <span v-if="isExpanded">Staff</span>
-          </RouterLink>
-        </li>
-        <li v-if="!isPortal && canViewClients">
-          <template v-if="isExpanded">
-            <div>
-              <button
-                type="button"
-                class="vx-nav-link"
-                :aria-expanded="clientsGroupOpen"
-                @click="clientsGroupOpen = !clientsGroupOpen"
-              >
-                <svg
-                  fill="none"
-                  viewBox="0 0 24 24"
-                  stroke="currentColor"
-                  stroke-width="1.5"
-                >
-                  <path
-                    stroke-linecap="round"
-                    stroke-linejoin="round"
-                    d="M2.25 21h19.5m-18-18v18m10.5-18v18m6-13.5V21M6.75 6.75h.75m-.75 3h.75m-.75 3h.75m3-6h1.5m-1.5 3h1.5m-1.5 3h1.5M9 21v-3.375c0-.621.504-1.125 1.125-1.125h3.75c.621 0 1.125.504 1.125 1.125V21"
-                  />
-                </svg>
-                <span class="text-truncate">Clients</span>
-                <svg
-                  class="ms-auto flex-shrink-0 transition"
-                  :class="clientsGroupOpen ? 'rotate-180' : ''"
-                  style="width: 1rem; height: 1rem"
-                  fill="none"
-                  viewBox="0 0 24 24"
-                  stroke="currentColor"
-                  stroke-width="1.5"
-                  aria-hidden="true"
-                >
-                  <path
-                    stroke-linecap="round"
-                    stroke-linejoin="round"
-                    d="M19 9l-7 7-7-7"
-                  />
-                </svg>
-              </button>
-              <ul v-show="clientsGroupOpen" class="list-unstyled mb-0 mt-1">
-                <li>
-                  <RouterLink
-                    to="/admin/clients/accounts"
-                    class="vx-nav-link vx-nav-sublink"
-                    :class="{ 'vx-nav-link--active': navActive('clients-accounts') }"
-                    @click="closeMobile"
-                  >
-                    Accounts
-                  </RouterLink>
-                </li>
-                <li>
-                  <RouterLink
-                    to="/admin/clients/users"
-                    class="vx-nav-link vx-nav-sublink"
-                    :class="{ 'vx-nav-link--active': navActive('clients-users') }"
-                    @click="closeMobile"
-                  >
-                    Users
-                  </RouterLink>
-                </li>
-              </ul>
-            </div>
-          </template>
-          <RouterLink
-            v-else
-            to="/admin/clients/accounts"
-            class="vx-nav-link"
-            title="Accounts"
-            @click="closeMobile"
-          >
-            <svg
-              fill="none"
-              viewBox="0 0 24 24"
-              stroke="currentColor"
-              stroke-width="1.5"
-            >
-              <path
-                stroke-linecap="round"
-                stroke-linejoin="round"
-                d="M2.25 21h19.5m-18-18v18m10.5-18v18m6-13.5V21M6.75 6.75h.75m-.75 3h.75m-.75 3h.75m3-6h1.5m-1.5 3h1.5m-1.5 3h1.5M9 21v-3.375c0-.621.504-1.125 1.125-1.125h3.75c.621 0 1.125.504 1.125 1.125V21"
-              />
-            </svg>
-          </RouterLink>
-        </li>
-        <li v-if="!isPortal && canViewBilling">
-          <template v-if="isExpanded">
-            <div>
-              <button
-                type="button"
-                class="vx-nav-link"
-                :aria-expanded="billingGroupOpen"
-                @click="billingGroupOpen = !billingGroupOpen"
-              >
-                <svg
-                  fill="none"
-                  viewBox="0 0 24 24"
-                  stroke="currentColor"
-                  stroke-width="1.5"
-                >
-                  <path
-                    stroke-linecap="round"
-                    stroke-linejoin="round"
-                    d="M19.5 14.25v-2.625a3.375 3.375 0 0 0-3.375-3.375h-1.5A1.125 1.125 0 0 1 13.5 7.125v-1.5a3.375 3.375 0 0 0-3.375-3.375H8.25m0 12.75h7.5m-7.5 3H12M10.5 2.25H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 0 0-9-9Z"
-                  />
-                </svg>
-                <span class="text-truncate">Billing</span>
-                <svg
-                  class="ms-auto flex-shrink-0 transition"
-                  :class="billingGroupOpen ? 'rotate-180' : ''"
-                  style="width: 1rem; height: 1rem"
-                  fill="none"
-                  viewBox="0 0 24 24"
-                  stroke="currentColor"
-                  stroke-width="1.5"
-                  aria-hidden="true"
-                >
-                  <path
-                    stroke-linecap="round"
-                    stroke-linejoin="round"
-                    d="M19 9l-7 7-7-7"
-                  />
-                </svg>
-              </button>
-              <ul v-show="billingGroupOpen" class="list-unstyled mb-0 mt-1">
-                <li>
-                  <RouterLink
-                    to="/admin/billing/summary"
-                    class="vx-nav-link vx-nav-sublink"
-                    :class="{ 'vx-nav-link--active': navActive('billing-summary') }"
-                    @click="closeMobile"
-                  >
-                    Summary
-                  </RouterLink>
-                </li>
-                <li>
-                  <RouterLink
-                    to="/admin/billing/invoices"
-                    class="vx-nav-link vx-nav-sublink"
-                    :class="{ 'vx-nav-link--active': navActive('billing-invoices') }"
-                    @click="closeMobile"
-                  >
-                    Invoices
-                  </RouterLink>
-                </li>
-                <li>
-                  <RouterLink
-                    to="/admin/billing/custom-bills"
-                    class="vx-nav-link vx-nav-sublink"
-                    :class="{ 'vx-nav-link--active': navActive('billing-custom-bills') }"
-                    @click="closeMobile"
-                  >
-                    Custom Bills
-                  </RouterLink>
-                </li>
-              </ul>
-            </div>
-          </template>
-          <RouterLink
-            v-else
-            to="/admin/billing/summary"
-            class="vx-nav-link"
-            title="Billing"
-            @click="closeMobile"
-          >
-            <svg
-              fill="none"
-              viewBox="0 0 24 24"
-              stroke="currentColor"
-              stroke-width="1.5"
-            >
-              <path
-                stroke-linecap="round"
-                stroke-linejoin="round"
-                d="M19.5 14.25v-2.625a3.375 3.375 0 0 0-3.375-3.375h-1.5A1.125 1.125 0 0 1 13.5 7.125v-1.5a3.375 3.375 0 0 0-3.375-3.375H8.25m0 12.75h7.5m-7.5 3H12M10.5 2.25H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 0 0-9-9Z"
-              />
-            </svg>
+            <span v-if="isExpanded">Home</span>
           </RouterLink>
         </li>
         <li v-if="canViewOrders">
@@ -621,7 +411,217 @@ function collapseNav() {
             </svg>
           </RouterLink>
         </li>
-        <li v-if="!isPortal && canViewSettings">
+        <li v-if="!isPortal && canViewClients">
+          <template v-if="isExpanded">
+            <div>
+              <button
+                type="button"
+                class="vx-nav-link"
+                :aria-expanded="clientsGroupOpen"
+                @click="clientsGroupOpen = !clientsGroupOpen"
+              >
+                <svg
+                  fill="none"
+                  viewBox="0 0 24 24"
+                  stroke="currentColor"
+                  stroke-width="1.5"
+                >
+                  <path
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                    d="M2.25 21h19.5m-18-18v18m10.5-18v18m6-13.5V21M6.75 6.75h.75m-.75 3h.75m-.75 3h.75m3-6h1.5m-1.5 3h1.5m-1.5 3h1.5M9 21v-3.375c0-.621.504-1.125 1.125-1.125h3.75c.621 0 1.125.504 1.125 1.125V21"
+                  />
+                </svg>
+                <span class="text-truncate">Clients</span>
+                <svg
+                  class="ms-auto flex-shrink-0 transition"
+                  :class="clientsGroupOpen ? 'rotate-180' : ''"
+                  style="width: 1rem; height: 1rem"
+                  fill="none"
+                  viewBox="0 0 24 24"
+                  stroke="currentColor"
+                  stroke-width="1.5"
+                  aria-hidden="true"
+                >
+                  <path
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                    d="M19 9l-7 7-7-7"
+                  />
+                </svg>
+              </button>
+              <ul v-show="clientsGroupOpen" class="list-unstyled mb-0 mt-1">
+                <li>
+                  <RouterLink
+                    to="/admin/clients/accounts"
+                    class="vx-nav-link vx-nav-sublink"
+                    :class="{ 'vx-nav-link--active': navActive('clients-accounts') }"
+                    @click="closeMobile"
+                  >
+                    Accounts
+                  </RouterLink>
+                </li>
+                <li>
+                  <RouterLink
+                    to="/admin/clients/users"
+                    class="vx-nav-link vx-nav-sublink"
+                    :class="{ 'vx-nav-link--active': navActive('clients-users') }"
+                    @click="closeMobile"
+                  >
+                    Users
+                  </RouterLink>
+                </li>
+              </ul>
+            </div>
+          </template>
+          <RouterLink
+            v-else
+            to="/admin/clients/accounts"
+            class="vx-nav-link"
+            title="Accounts"
+            @click="closeMobile"
+          >
+            <svg
+              fill="none"
+              viewBox="0 0 24 24"
+              stroke="currentColor"
+              stroke-width="1.5"
+            >
+              <path
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                d="M2.25 21h19.5m-18-18v18m10.5-18v18m6-13.5V21M6.75 6.75h.75m-.75 3h.75m-.75 3h.75m3-6h1.5m-1.5 3h1.5m-1.5 3h1.5M9 21v-3.375c0-.621.504-1.125 1.125-1.125h3.75c.621 0 1.125.504 1.125 1.125V21"
+              />
+            </svg>
+          </RouterLink>
+        </li>
+        <li v-if="!isPortal && canViewBilling">
+          <template v-if="isExpanded">
+            <div>
+              <button
+                type="button"
+                class="vx-nav-link"
+                :aria-expanded="billingGroupOpen"
+                @click="billingGroupOpen = !billingGroupOpen"
+              >
+                <svg
+                  fill="none"
+                  viewBox="0 0 24 24"
+                  stroke="currentColor"
+                  stroke-width="1.5"
+                >
+                  <path
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                    d="M19.5 14.25v-2.625a3.375 3.375 0 0 0-3.375-3.375h-1.5A1.125 1.125 0 0 1 13.5 7.125v-1.5a3.375 3.375 0 0 0-3.375-3.375H8.25m0 12.75h7.5m-7.5 3H12M10.5 2.25H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 0 0-9-9Z"
+                  />
+                </svg>
+                <span class="text-truncate">Billing</span>
+                <svg
+                  class="ms-auto flex-shrink-0 transition"
+                  :class="billingGroupOpen ? 'rotate-180' : ''"
+                  style="width: 1rem; height: 1rem"
+                  fill="none"
+                  viewBox="0 0 24 24"
+                  stroke="currentColor"
+                  stroke-width="1.5"
+                  aria-hidden="true"
+                >
+                  <path
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                    d="M19 9l-7 7-7-7"
+                  />
+                </svg>
+              </button>
+              <ul v-show="billingGroupOpen" class="list-unstyled mb-0 mt-1">
+                <li>
+                  <RouterLink
+                    to="/admin/billing/summary"
+                    class="vx-nav-link vx-nav-sublink"
+                    :class="{ 'vx-nav-link--active': navActive('billing-summary') }"
+                    @click="closeMobile"
+                  >
+                    Summary
+                  </RouterLink>
+                </li>
+                <li>
+                  <RouterLink
+                    to="/admin/billing/invoices"
+                    class="vx-nav-link vx-nav-sublink"
+                    :class="{ 'vx-nav-link--active': navActive('billing-invoices') }"
+                    @click="closeMobile"
+                  >
+                    Invoices
+                  </RouterLink>
+                </li>
+                <li>
+                  <RouterLink
+                    to="/admin/billing/custom-bills"
+                    class="vx-nav-link vx-nav-sublink"
+                    :class="{ 'vx-nav-link--active': navActive('billing-custom-bills') }"
+                    @click="closeMobile"
+                  >
+                    Custom Bills
+                  </RouterLink>
+                </li>
+              </ul>
+            </div>
+          </template>
+          <RouterLink
+            v-else
+            to="/admin/billing/summary"
+            class="vx-nav-link"
+            title="Billing"
+            @click="closeMobile"
+          >
+            <svg
+              fill="none"
+              viewBox="0 0 24 24"
+              stroke="currentColor"
+              stroke-width="1.5"
+            >
+              <path
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                d="M19.5 14.25v-2.625a3.375 3.375 0 0 0-3.375-3.375h-1.5A1.125 1.125 0 0 1 13.5 7.125v-1.5a3.375 3.375 0 0 0-3.375-3.375H8.25m0 12.75h7.5m-7.5 3H12M10.5 2.25H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 0 0-9-9Z"
+              />
+            </svg>
+          </RouterLink>
+        </li>
+        <template v-if="showAdminNavSection">
+          <li
+            v-if="isExpanded"
+            class="border-top border-secondary-subtle mt-2 pt-2 mx-3 list-unstyled"
+            aria-hidden="true"
+          />
+          <li v-if="isExpanded">
+            <h2 class="vx-section-label">Admin</h2>
+          </li>
+        </template>
+        <li v-if="canViewUsers">
+          <RouterLink
+            to="/admin/staff"
+            class="vx-nav-link"
+            :title="!isExpanded ? 'Staff' : undefined"
+            @click="closeMobile"
+          >
+            <svg
+              fill="none"
+              viewBox="0 0 24 24"
+              stroke="currentColor"
+              stroke-width="1.5"
+            >
+              <path
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                d="M15.75 6a3.75 3.75 0 1 1-7.5 0 3.75 3.75 0 0 1 7.5 0ZM4.501 20.118a7.5 7.5 0 0 1 14.998 0A17.933 17.933 0 0 1 12 21.75c-2.676 0-5.216-.584-7.499-1.632Z"
+              />
+            </svg>
+            <span v-if="isExpanded">Staff</span>
+          </RouterLink>
+        </li>
+        <li v-if="canViewSettings">
           <div v-if="isExpanded">
             <button
               type="button"
@@ -700,7 +700,7 @@ function collapseNav() {
             </svg>
           </RouterLink>
         </li>
-        <li v-if="!isPortal && canViewWebmaster">
+        <li v-if="canViewWebmaster">
           <RouterLink
             to="/admin/webmaster"
             class="vx-nav-link"

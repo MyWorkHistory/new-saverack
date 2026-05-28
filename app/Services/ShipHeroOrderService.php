@@ -559,9 +559,305 @@ GQL;
     }
 
     /**
+     * Shipped orders tab — same ShipHero {@see shipments} source as dashboard counts.
+     *
+     * @param  array<string, mixed>  $filters  customer_account_id, order_date_from, order_date_to, timezone, first?, after?, order_number?
+     * @return array{rows: list<array<string, mixed>>, pagination: array{has_next_page: bool, end_cursor: string|null}}
+     */
+    public function listShippedOrders(array $filters): array
+    {
+        $customerAccountId = trim((string) ($filters['customer_account_id'] ?? ''));
+        if ($customerAccountId === '') {
+            throw new RuntimeException('customer_account_id is required.');
+        }
+
+        $dateFrom = $this->nullableIso($filters['order_date_from'] ?? $filters['date_from'] ?? null);
+        $dateTo = $this->nullableIso($filters['order_date_to'] ?? $filters['date_to'] ?? null);
+        if ($dateFrom === null || $dateTo === null) {
+            throw new RuntimeException('order_date_from and order_date_to are required for shipped orders.');
+        }
+
+        $timezone = trim((string) ($filters['timezone'] ?? PortalQueueCountsService::DEFAULT_ACCOUNT_TIMEZONE));
+        if ($timezone === '' || ! in_array($timezone, timezone_identifiers_list(), true)) {
+            $timezone = PortalQueueCountsService::DEFAULT_ACCOUNT_TIMEZONE;
+        }
+
+        try {
+            $rangeFrom = Carbon::parse($dateFrom)->setTimezone($timezone);
+            $rangeTo = Carbon::parse($dateTo)->setTimezone($timezone);
+        } catch (\Throwable $e) {
+            throw new RuntimeException('Invalid shipped orders date range.');
+        }
+
+        $targetFirst = max(1, min(100, (int) ($filters['first'] ?? 20)));
+        $shipmentAfter = isset($filters['after']) ? trim((string) $filters['after']) : null;
+        $shipmentAfter = $shipmentAfter !== '' ? $shipmentAfter : null;
+        $orderNumberNeedle = trim(ltrim((string) ($filters['order_number'] ?? ''), '#'));
+
+        $shipmentPageSize = min(100, max($targetFirst * 3, 50));
+        $maxShipmentPages = 30;
+
+        $graphql = <<<'GQL'
+query ShipHeroShipmentsList(
+  $customer_account_id: String!,
+  $date_from: ISODateTime,
+  $date_to: ISODateTime,
+  $first: Int!,
+  $after: String
+) {
+  shipments(
+    customer_account_id: $customer_account_id,
+    date_from: $date_from,
+    date_to: $date_to
+  ) {
+    request_id
+    complexity
+    data(first: $first, after: $after) {
+      edges {
+        node {
+          id
+          order_id
+          created_date
+          shipped_off_shiphero
+          shipping_labels {
+            status
+          }
+        }
+      }
+      pageInfo {
+        hasNextPage
+        endCursor
+      }
+    }
+  }
+}
+GQL;
+
+        /** @var array<string, array{ship_date: string|null, shipment_dates: list<string>, shipped_label_count: int}> $orderAgg */
+        $orderAgg = [];
+        $orderSequence = [];
+        $hasNextPage = false;
+        $endCursor = null;
+        $seenShipmentIds = [];
+
+        for ($page = 0; $page < $maxShipmentPages; $page++) {
+            $json = $this->client->query($graphql, [
+                'customer_account_id' => $customerAccountId,
+                'date_from' => $dateFrom,
+                'date_to' => $dateTo,
+                'first' => $shipmentPageSize,
+                'after' => $shipmentAfter,
+            ]);
+
+            $parsed = $this->parseShipHeroShipmentsConnection($json, true);
+            foreach ($parsed['rows'] as $shipmentRow) {
+                if (! $this->shipmentCountsForDashboard($shipmentRow, $rangeFrom, $rangeTo)) {
+                    continue;
+                }
+                $shipmentId = trim((string) ($shipmentRow['id'] ?? ''));
+                if ($shipmentId === '' || isset($seenShipmentIds[$shipmentId])) {
+                    continue;
+                }
+                $seenShipmentIds[$shipmentId] = true;
+
+                $orderId = trim((string) ($shipmentRow['order_id'] ?? ''));
+                if ($orderId === '') {
+                    continue;
+                }
+
+                $created = $shipmentRow['created_date'] ?? null;
+                if (! is_string($created) || trim($created) === '') {
+                    continue;
+                }
+
+                if (! isset($orderAgg[$orderId])) {
+                    $orderAgg[$orderId] = [
+                        'ship_date' => $created,
+                        'shipment_dates' => [$created],
+                        'shipped_label_count' => 1,
+                    ];
+                    $orderSequence[] = $orderId;
+                } else {
+                    $orderAgg[$orderId]['shipped_label_count']++;
+                    $orderAgg[$orderId]['shipment_dates'][] = $created;
+                    if ($this->shipmentCreatedIsAfter($created, $orderAgg[$orderId]['ship_date'])) {
+                        $orderAgg[$orderId]['ship_date'] = $created;
+                    }
+                }
+            }
+
+            $hasNextPage = (bool) ($parsed['pageInfo']['hasNextPage'] ?? false);
+            $endCursor = isset($parsed['pageInfo']['endCursor']) && is_string($parsed['pageInfo']['endCursor'])
+                ? $parsed['pageInfo']['endCursor']
+                : null;
+
+            if (count($orderSequence) >= $targetFirst || ! $hasNextPage || $endCursor === null || $endCursor === '') {
+                break;
+            }
+
+            $shipmentAfter = $endCursor;
+        }
+
+        if ($orderSequence === []) {
+            return [
+                'rows' => [],
+                'pagination' => [
+                    'has_next_page' => $hasNextPage,
+                    'end_cursor' => $endCursor,
+                ],
+            ];
+        }
+
+        $pageOrderIds = array_slice($orderSequence, 0, $targetFirst);
+        $hydrated = $this->fetchOrdersByIdsForList($customerAccountId, $pageOrderIds);
+        $hydratedById = [];
+        foreach ($hydrated as $row) {
+            $hydratedById[(string) ($row['id'] ?? '')] = $row;
+        }
+
+        $rows = [];
+        foreach ($pageOrderIds as $orderId) {
+            if (! isset($hydratedById[$orderId], $orderAgg[$orderId])) {
+                continue;
+            }
+            $row = $hydratedById[$orderId];
+            $agg = $orderAgg[$orderId];
+            $row['ship_date'] = $agg['ship_date'];
+            $row['shipment_dates'] = $agg['shipment_dates'];
+            $row['shipped_label_count'] = $agg['shipped_label_count'];
+            $row['status'] = $row['status'] !== '' ? $row['status'] : 'fulfilled';
+
+            if ($orderNumberNeedle !== '') {
+                $num = ltrim((string) ($row['order_number'] ?? ''), '#');
+                $partner = ltrim((string) ($row['partner_order_id'] ?? ''), '#');
+                if (
+                    strcasecmp($num, $orderNumberNeedle) !== 0
+                    && strcasecmp($partner, $orderNumberNeedle) !== 0
+                    && stripos($num, $orderNumberNeedle) === false
+                    && stripos($partner, $orderNumberNeedle) === false
+                ) {
+                    continue;
+                }
+            }
+
+            $rows[] = $row;
+        }
+
+        $pageFilled = count($orderSequence) >= $targetFirst;
+
+        return [
+            'rows' => $rows,
+            'pagination' => [
+                'has_next_page' => $pageFilled && $hasNextPage,
+                'end_cursor' => $pageFilled ? $endCursor : null,
+            ],
+        ];
+    }
+
+    /**
+     * @param  list<string>  $orderIds
+     * @return list<array<string, mixed>>
+     */
+    private function fetchOrdersByIdsForList(string $customerAccountId, array $orderIds): array
+    {
+        $ids = array_values(array_filter(array_map(static function ($id) {
+            $s = trim((string) $id);
+
+            return $s !== '' ? $s : null;
+        }, $orderIds)));
+
+        if ($ids === []) {
+            return [];
+        }
+
+        $graphql = <<<'GQL'
+query ShipHeroOrdersByIds($ids: [String], $customer_account_id: String!, $first: Int!) {
+  orders(ids: $ids, customer_account_id: $customer_account_id) {
+    request_id
+    complexity
+    data(first: $first) {
+      edges {
+        cursor
+        node {
+          id
+          legacy_id
+          order_number
+          partner_order_id
+          shop_name
+          fulfillment_status
+          order_date
+          updated_at
+          required_ship_date
+          profile
+          source
+          email
+          shipments {
+            created_date
+            shipped_off_shiphero
+            shipping_labels {
+              status
+              created_date
+            }
+          }
+          shipping_address {
+            first_name
+            last_name
+            country
+          }
+          shipping_lines {
+            title
+            carrier
+            method
+          }
+          line_items(first: 1) {
+            edges {
+              node {
+                sku
+              }
+            }
+          }
+          holds {
+            fraud_hold
+            address_hold
+            shipping_method_hold
+            operator_hold
+            payment_hold
+            client_hold
+          }
+        }
+      }
+    }
+  }
+}
+GQL;
+
+        $json = $this->client->query($graphql, [
+            'ids' => $ids,
+            'customer_account_id' => $customerAccountId,
+            'first' => min(100, count($ids)),
+        ]);
+
+        $parsed = $this->parseShipHeroOrdersConnection($json, false);
+
+        return $parsed['rows'];
+    }
+
+    private function shipmentCreatedIsAfter(string $candidate, ?string $current): bool
+    {
+        if ($current === null || trim($current) === '') {
+            return true;
+        }
+        try {
+            return Carbon::parse($candidate)->gt(Carbon::parse($current));
+        } catch (\Throwable $e) {
+            return false;
+        }
+    }
+
+    /**
      * @return array{rows: list<array<string, mixed>>, pageInfo: array<string, mixed>}
      */
-    private function parseShipHeroShipmentsConnection(array $json): array
+    private function parseShipHeroShipmentsConnection(array $json, bool $includeOrderId = false): array
     {
         $data = data_get($json, 'data.shipments.data');
         if (! is_array($data)) {
@@ -583,12 +879,19 @@ GQL;
                 continue;
             }
             $labels = is_array($node['shipping_labels'] ?? null) ? $node['shipping_labels'] : [];
-            $rows[] = [
+            $row = [
                 'id' => $id,
                 'created_date' => $this->nullableIso($node['created_date'] ?? null),
                 'shipped_off_shiphero' => (bool) ($node['shipped_off_shiphero'] ?? false),
                 'shipping_labels' => $labels,
             ];
+            if ($includeOrderId) {
+                $orderId = trim((string) ($node['order_id'] ?? ''));
+                if ($orderId !== '') {
+                    $row['order_id'] = $orderId;
+                }
+            }
+            $rows[] = $row;
         }
 
         $pageInfo = is_array($data['pageInfo'] ?? null) ? $data['pageInfo'] : [];

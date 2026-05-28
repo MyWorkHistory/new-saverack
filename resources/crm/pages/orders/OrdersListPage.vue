@@ -927,9 +927,9 @@ onUnmounted(() => {
           </div>
 
           <div
-            class="orders-toolbar-controls d-flex flex-wrap align-items-end gap-2 flex-grow-1 min-w-0"
+            class="orders-toolbar-controls d-flex flex-wrap align-items-end gap-2 min-w-0"
           >
-            <div class="flex-grow-1" style="min-width: 12rem">
+            <div class="orders-search-wrap flex-shrink-0">
               <label class="form-label small text-secondary mb-1" for="orders-order-number-search">Order Number</label>
               <div class="input-group orders-toolbar-search-group">
                 <input
@@ -1494,6 +1494,11 @@ onUnmounted(() => {
 .orders-toolbar-account {
   flex: 0 0 auto;
   width: min(280px, 100%);
+}
+
+.orders-search-wrap {
+  width: 100%;
+  max-width: min(100%, 18rem);
 }
 
 .orders-list-page__subtitle {

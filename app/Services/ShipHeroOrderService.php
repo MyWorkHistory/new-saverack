@@ -93,21 +93,26 @@ class ShipHeroOrderService
             $vars['order_date_to'] = null;
             $shipFrom = $filters['order_date_from'] ?? null;
             $shipTo = $filters['order_date_to'] ?? null;
+            $timezone = trim((string) ($filters['timezone'] ?? ''));
+            if ($timezone === '' || ! in_array($timezone, timezone_identifiers_list(), true)) {
+                $timezone = PortalQueueCountsService::DEFAULT_ACCOUNT_TIMEZONE;
+            }
             $hasShipWindow = is_string($shipFrom) && trim($shipFrom) !== ''
                 && is_string($shipTo) && trim($shipTo) !== '';
             if ($hasShipWindow) {
-                $from = $this->parseShipWindowBoundary(trim($shipFrom), true);
-                $to = $this->parseShipWindowBoundary(trim($shipTo), false);
-                $nowEnd = Carbon::now()->endOfDay();
+                $from = $this->parseShipWindowBoundary(trim($shipFrom), true, $timezone);
+                $to = $this->parseShipWindowBoundary(trim($shipTo), false, $timezone);
+                $nowEnd = Carbon::now($timezone)->endOfDay();
                 if ($to->gt($nowEnd)) {
                     $to = $nowEnd;
                 }
-                $vars['updated_from'] = $from->toIso8601String();
-                $vars['updated_to'] = $to->toIso8601String();
+                // Widen activity window: orders shipped in-range may not have updated_at in that window.
+                $vars['updated_from'] = $from->copy()->subDays(90)->toIso8601String();
+                $vars['updated_to'] = $nowEnd->toIso8601String();
             } else {
                 // With no ship-date window, narrow by last activity so the query is bounded (ShipHero defaults otherwise).
-                $vars['updated_from'] = Carbon::now()->subDays(180)->startOfDay()->toIso8601String();
-                $vars['updated_to'] = Carbon::now()->endOfDay()->toIso8601String();
+                $vars['updated_from'] = Carbon::now($timezone)->subDays(180)->startOfDay()->toIso8601String();
+                $vars['updated_to'] = Carbon::now($timezone)->endOfDay()->toIso8601String();
             }
         }
         if (isset($filters['fulfillment_status']) && is_string($filters['fulfillment_status'])) {
@@ -2559,14 +2564,19 @@ GQL;
     /**
      * Ship-date window boundary from portal/API (already ISO) or date-only input.
      */
-    private function parseShipWindowBoundary(string $value, bool $startOfDay): Carbon
+    private function parseShipWindowBoundary(string $value, bool $startOfDay, ?string $timezone = null): Carbon
     {
-        $parsed = Carbon::parse($value);
+        $tz = $timezone;
+        if ($tz === null || $tz === '' || ! in_array($tz, timezone_identifiers_list(), true)) {
+            $tz = PortalQueueCountsService::DEFAULT_ACCOUNT_TIMEZONE;
+        }
         if (preg_match('/T\d{2}:/', $value)) {
-            return $parsed;
+            return Carbon::parse($value)->setTimezone($tz);
         }
 
-        return $startOfDay ? $parsed->startOfDay() : $parsed->endOfDay();
+        $parsed = Carbon::parse(trim($value), $tz);
+
+        return $startOfDay ? $parsed->copy()->startOfDay() : $parsed->copy()->endOfDay();
     }
 
     /**

@@ -494,6 +494,18 @@ class AsnController extends Controller
         return response()->json($this->serializeAsn($asn->fresh(['lines', 'trackings', 'vendorLines', 'clientAccount'])));
     }
 
+    public function reopenForEdit(Request $request, ClientAccountAsn $asn): JsonResponse
+    {
+        $this->authorizeAsn($request, $asn);
+        if ($asn->status !== ClientAccountAsn::STATUS_PENDING) {
+            return response()->json(['message' => 'Only pending ASNs can be reopened for editing.'], 422);
+        }
+        $asn->status = ClientAccountAsn::STATUS_DRAFT;
+        $asn->save();
+
+        return response()->json($this->serializeAsn($asn->fresh(['lines', 'trackings', 'vendorLines', 'clientAccount'])));
+    }
+
     public function packingSlipPdf(Request $request, ClientAccountAsn $asn)
     {
         $this->authorizeAsn($request, $asn);

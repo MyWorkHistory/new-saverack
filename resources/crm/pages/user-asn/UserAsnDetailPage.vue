@@ -1,6 +1,6 @@
 <script setup>
 import { computed, inject, nextTick, onMounted, onUnmounted, ref, watch } from "vue";
-import { useRoute, useRouter } from "vue-router";
+import { RouterLink, useRoute, useRouter } from "vue-router";
 import api from "../../services/api";
 import CrmIconRowActions from "../../components/common/CrmIconRowActions.vue";
 import CrmLoadingSpinner from "../../components/common/CrmLoadingSpinner.vue";
@@ -61,6 +61,18 @@ const catalogQtyByKey = ref({});
 const deleteLineOpen = ref(false);
 const lineToDelete = ref(null);
 
+const addNewSkuOpen = ref(false);
+const addNewSkuBusy = ref(false);
+const addNewSkuName = ref("");
+const addNewSkuSku = ref("");
+const addNewSkuQty = ref(1);
+
+const reopenEditOpen = ref(false);
+const reopenEditBusy = ref(false);
+
+const shipmentBoxesDraft = ref(0);
+const shipmentPalletsDraft = ref(0);
+
 const lineMenuOpenId = ref(null);
 const lineMenuPos = ref({ top: 0, left: 0 });
 const LINE_MENU_W = 200;
@@ -76,6 +88,7 @@ const clientAccountId = computed(() => Number(crmUser.value?.client_account_id |
 const asnId = computed(() => String(route.params.id || ""));
 
 const isDraft = computed(() => String(asn.value?.status || "").toLowerCase() === "draft");
+const isPending = computed(() => String(asn.value?.status || "").toLowerCase() === "pending");
 const canDeleteAsn = computed(() => {
   const s = String(asn.value?.status || "").toLowerCase();
   return s === "draft" || s === "pending";
@@ -89,6 +102,16 @@ const shipToAccountName = computed(() => {
 const asnDisplayNumber = computed(() => formatAsnDisplay(asn.value?.asn_number));
 const asnHeading = computed(() => formatAsnHeading(asn.value?.asn_number));
 const asnLabel = computed(() => formatAsnLabel(asn.value?.asn_number));
+
+function inventoryDetailTo(sku) {
+  const s = String(sku || "").trim();
+  if (!s) return null;
+  return {
+    name: "user-inventory-detail",
+    params: { sku: s },
+    query: { client_account_id: String(clientAccountId.value) },
+  };
+}
 
 function catalogKey(p) {
   return String(p.id || p.sku || "");
@@ -208,6 +231,87 @@ function closeHeaderMenu() {
 function onDocClickHeaderMenu(e) {
   if (!e.target?.closest?.("[data-asn-header-actions]")) {
     headerMenuOpen.value = false;
+  }
+}
+
+function openReopenEditFromMenu() {
+  closeHeaderMenu();
+  if (!isPending.value) {
+    toast.error("Only pending ASNs can be reopened for editing.");
+    return;
+  }
+  reopenEditOpen.value = true;
+}
+
+async function confirmReopenForEdit() {
+  if (!asn.value?.id) return;
+  reopenEditBusy.value = true;
+  try {
+    const { data } = await api.post(`/asns/${asn.value.id}/reopen-for-edit`);
+    normalizeAsnStatusPayload(data);
+    asn.value = data;
+    syncDraftsFromAsn();
+    reopenEditOpen.value = false;
+    toast.success("ASN reopened for editing.");
+    addPanelOpen.value = true;
+    await nextTick();
+    document.getElementById("user-asn-items")?.scrollIntoView({ behavior: "smooth", block: "start" });
+  } catch (e) {
+    toast.errorFrom(e, "Could not reopen ASN for editing.");
+  } finally {
+    reopenEditBusy.value = false;
+  }
+}
+
+function openAddNewSkuModal() {
+  addNewSkuName.value = catalogSearchCommitted.value || "";
+  addNewSkuSku.value = "";
+  addNewSkuQty.value = 1;
+  addNewSkuOpen.value = true;
+}
+
+function closeAddNewSkuModal() {
+  if (addNewSkuBusy.value) return;
+  addNewSkuOpen.value = false;
+}
+
+async function submitAddNewSku() {
+  if (!asn.value?.id || !isDraft.value) return;
+  const sku = addNewSkuSku.value.trim();
+  const name = addNewSkuName.value.trim();
+  const qty = Math.max(0, Number(addNewSkuQty.value) || 0);
+  if (!sku || !name) {
+    toast.error("Enter product name and SKU.");
+    return;
+  }
+  if (qty <= 0) {
+    toast.error("Enter expected quantity.");
+    return;
+  }
+  const duplicate = (asn.value.lines || []).some(
+    (line) => String(line.sku || "").trim().toLowerCase() === sku.toLowerCase(),
+  );
+  if (duplicate) {
+    toast.error("This SKU is already on the ASN.");
+    return;
+  }
+  addNewSkuBusy.value = true;
+  try {
+    await api.post(`/asns/${asn.value.id}/lines`, {
+      sku,
+      name,
+      expected_qty: qty,
+      shiphero_product_id: null,
+    });
+    toast.success("SKU added.");
+    addNewSkuOpen.value = false;
+    await loadAsn();
+    resetCatalogSearchState();
+    addPanelOpen.value = false;
+  } catch (e) {
+    toast.errorFrom(e, "Could not add SKU.");
+  } finally {
+    addNewSkuBusy.value = false;
   }
 }
 
@@ -480,6 +584,8 @@ function syncDraftsFromAsn() {
     : [{ label: "" }];
   vendorDraft.value = v;
   notesDraft.value = asn.value.warehouse_notes || "";
+  shipmentBoxesDraft.value = Number(asn.value.total_boxes) || 0;
+  shipmentPalletsDraft.value = Number(asn.value.total_pallets) || 0;
 }
 
 function addTrackingRow() {
@@ -502,8 +608,15 @@ async function saveTrackings() {
   if (!asn.value?.id) return;
   trackingSaveBusy.value = true;
   try {
-    const { data } = await api.put(`/asns/${asn.value.id}/trackings`, {
+    const boxes = Math.max(0, Number(shipmentBoxesDraft.value) || 0);
+    const pallets = Math.max(0, Number(shipmentPalletsDraft.value) || 0);
+    const { data: trackingData } = await api.put(`/asns/${asn.value.id}/trackings`, {
       trackings: trackingDraft.value,
+    });
+    normalizeAsnStatusPayload(trackingData);
+    const { data } = await api.patch(`/asns/${asn.value.id}`, {
+      total_boxes: boxes,
+      total_pallets: pallets,
     });
     normalizeAsnStatusPayload(data);
     asn.value = data;
@@ -763,6 +876,13 @@ onUnmounted(() => {
                 >
                   {{ catalogRefreshing ? "Refreshing…" : "Refresh Products" }}
                 </button>
+                <button
+                  type="button"
+                  class="btn btn-sm btn-outline-secondary fw-semibold staff-page-secondary"
+                  @click="openAddNewSkuModal"
+                >
+                  Add New SKU
+                </button>
               </div>
             </div>
             <div class="p-4 bg-body-tertiary border-bottom">
@@ -810,7 +930,13 @@ onUnmounted(() => {
                     </div>
                   </div>
                   <div v-if="catalog.length === 0" class="p-3 small text-secondary">
-                    {{ catalogSearchCommitted ? "No matches." : "No products on this page." }}
+                    <template v-if="catalogSearchCommitted">
+                      No matches.
+                      <button type="button" class="btn btn-link btn-sm p-0 align-baseline" @click="openAddNewSkuModal">
+                        Add New SKU
+                      </button>
+                    </template>
+                    <template v-else>No products on this page.</template>
                   </div>
                 </div>
                 <div class="d-flex justify-content-center mt-3" v-if="catalogPageInfo.has_next_page">
@@ -858,8 +984,24 @@ onUnmounted(() => {
                       />
                       <div v-else class="asn-line-thumb asn-line-thumb--empty" aria-hidden="true"></div>
                       <div class="order-detail-page__item-copy">
-                        <div class="order-detail-page__item-name" :title="line.name">{{ line.name || "—" }}</div>
-                        <div class="order-detail-page__item-sku" :title="line.sku ? `SKU ${line.sku}` : undefined">
+                        <RouterLink
+                          v-if="inventoryDetailTo(line.sku)"
+                          :to="inventoryDetailTo(line.sku)"
+                          class="order-detail-page__item-name user-inv-table__sku-link text-decoration-none d-block"
+                          :title="line.name"
+                        >
+                          {{ line.name || "—" }}
+                        </RouterLink>
+                        <div v-else class="order-detail-page__item-name" :title="line.name">{{ line.name || "—" }}</div>
+                        <RouterLink
+                          v-if="inventoryDetailTo(line.sku)"
+                          :to="inventoryDetailTo(line.sku)"
+                          class="order-detail-page__item-sku user-inv-table__sku-link text-decoration-none d-block"
+                          :title="line.sku ? `SKU ${line.sku}` : undefined"
+                        >
+                          SKU {{ line.sku || "—" }}
+                        </RouterLink>
+                        <div v-else class="order-detail-page__item-sku" :title="line.sku ? `SKU ${line.sku}` : undefined">
                           SKU {{ line.sku || "—" }}
                         </div>
                       </div>
@@ -930,6 +1072,16 @@ onUnmounted(() => {
       <div class="col-lg-4 d-flex flex-column gap-4 order-detail-page__side-column">
         <div class="staff-table-card staff-datatable-card staff-datatable-card--white p-4">
           <h3 class="h6 fw-semibold mb-3">Tracking Details</h3>
+          <div class="row g-2 mb-3">
+            <div class="col-6">
+              <label class="form-label small mb-0">Total Boxes</label>
+              <input v-model.number="shipmentBoxesDraft" type="number" min="0" class="form-control form-control-sm" />
+            </div>
+            <div class="col-6">
+              <label class="form-label small mb-0">Total Pallets</label>
+              <input v-model.number="shipmentPalletsDraft" type="number" min="0" class="form-control form-control-sm" />
+            </div>
+          </div>
           <div v-for="(row, idx) in trackingDraft" :key="'trk' + idx" class="mb-2">
             <div class="row g-1">
               <div class="col-5">
@@ -1023,6 +1175,15 @@ onUnmounted(() => {
           :style="{ top: `${headerMenuRect.top}px`, left: `${headerMenuRect.left}px` }"
           @click.stop
         >
+          <button
+            v-if="isPending"
+            type="button"
+            class="staff-row-menu__item"
+            role="menuitem"
+            @click="openReopenEditFromMenu"
+          >
+            Edit ASN
+          </button>
           <button type="button" class="staff-row-menu__item" role="menuitem" @click="openPrintSlip(); closeHeaderMenu()">
             Print Packing Slip
           </button>
@@ -1118,6 +1279,94 @@ onUnmounted(() => {
         </div>
       </div>
     </div>
+
+    <Teleport to="body">
+      <Transition name="crm-vx-confirm">
+        <div
+          v-if="addNewSkuOpen"
+          class="crm-vx-modal-overlay"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="asn-add-new-sku-title"
+          @click.self="closeAddNewSkuModal"
+        >
+          <div class="crm-vx-modal crm-vx-modal--sm" @click.stop>
+            <button
+              type="button"
+              class="crm-vx-modal__close"
+              aria-label="Close"
+              :disabled="addNewSkuBusy"
+              @click="closeAddNewSkuModal"
+            >
+              <svg width="20" height="20" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.75" aria-hidden="true">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            </button>
+            <header class="crm-vx-modal__head">
+              <h2 id="asn-add-new-sku-title" class="crm-vx-modal__title">Add New SKU</h2>
+            </header>
+            <div class="crm-vx-modal__body">
+              <p class="small text-secondary mb-3">
+                Add a product that is not in your ShipHero catalog yet.
+              </p>
+              <label class="form-label small mb-1" for="asn-new-sku-name">Product Name</label>
+              <input
+                id="asn-new-sku-name"
+                v-model="addNewSkuName"
+                type="text"
+                class="form-control form-control-sm mb-3"
+                :disabled="addNewSkuBusy"
+              />
+              <label class="form-label small mb-1" for="asn-new-sku-code">SKU</label>
+              <input
+                id="asn-new-sku-code"
+                v-model="addNewSkuSku"
+                type="text"
+                class="form-control form-control-sm mb-3"
+                :disabled="addNewSkuBusy"
+              />
+              <label class="form-label small mb-1" for="asn-new-sku-qty">Expected QTY</label>
+              <input
+                id="asn-new-sku-qty"
+                v-model.number="addNewSkuQty"
+                type="number"
+                min="1"
+                class="form-control form-control-sm"
+                :disabled="addNewSkuBusy"
+              />
+            </div>
+            <footer class="crm-vx-modal__footer d-flex gap-2 justify-content-end">
+              <button
+                type="button"
+                class="crm-vx-modal-btn crm-vx-modal-btn--secondary"
+                :disabled="addNewSkuBusy"
+                @click="closeAddNewSkuModal"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                class="crm-vx-modal-btn crm-vx-modal-btn--primary"
+                :disabled="addNewSkuBusy"
+                @click="submitAddNewSku"
+              >
+                {{ addNewSkuBusy ? "Adding…" : "Add SKU" }}
+              </button>
+            </footer>
+          </div>
+        </div>
+      </Transition>
+    </Teleport>
+
+    <ConfirmModal
+      :open="reopenEditOpen"
+      title="Edit ASN"
+      message="Editing will move this ASN back to Draft so you can change products and shipment details. You will need to mark it as ready again when finished."
+      confirm-label="Edit ASN"
+      :busy="reopenEditBusy"
+      @close="reopenEditOpen = false"
+      @confirm="confirmReopenForEdit"
+    />
 
     <ConfirmModal
       :open="deleteAsnOpen"

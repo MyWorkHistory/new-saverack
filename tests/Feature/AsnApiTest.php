@@ -169,6 +169,34 @@ class AsnApiTest extends TestCase
         ]);
     }
 
+    public function test_portal_user_can_reopen_pending_asn_for_edit(): void
+    {
+        $account = $this->account();
+        $user = User::factory()->create(['client_account_id' => $account->id]);
+        $user->permissions()->attach($this->inventoryViewPermission()->id);
+        Sanctum::actingAs($user);
+
+        $asn = ClientAccountAsn::create([
+            'client_account_id' => $account->id,
+            'asn_number' => '0008',
+            'status' => ClientAccountAsn::STATUS_PENDING,
+            'total_boxes' => 1,
+            'total_pallets' => 0,
+            'expected_qty' => 0,
+            'accepted_qty' => 0,
+            'rejected_qty' => 0,
+        ]);
+
+        $this->postJson('/api/asns/'.$asn->id.'/reopen-for-edit')
+            ->assertOk()
+            ->assertJsonPath('status', ClientAccountAsn::STATUS_DRAFT);
+
+        $this->assertDatabaseHas('client_account_asns', [
+            'id' => $asn->id,
+            'status' => ClientAccountAsn::STATUS_DRAFT,
+        ]);
+    }
+
     public function test_portal_user_cannot_patch_status_or_date_received(): void
     {
         $account = $this->account();

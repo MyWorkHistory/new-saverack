@@ -240,10 +240,19 @@ function onWindowCloseManageMenu() {
   manageOpenId.value = null;
 }
 
-function goEditAsnFromMenu() {
+async function goEditAsnFromMenu() {
   const row = manageMenuRow.value;
   if (!row) return;
   closeManageMenu();
+  const status = String(row.status || "").toLowerCase();
+  if (status === "pending") {
+    try {
+      await api.post(`/asns/${row.id}/reopen-for-edit`);
+    } catch (e) {
+      toast.errorFrom(e, "Could not reopen ASN for editing.");
+      return;
+    }
+  }
   router.push({
     name: "user-asn-detail",
     params: { id: String(row.id) },

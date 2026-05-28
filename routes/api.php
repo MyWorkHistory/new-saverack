@@ -150,6 +150,7 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::get('/{asn}', [AsnController::class, 'show'])->middleware('can:inventory.view');
         Route::patch('/{asn}', [AsnController::class, 'update'])->middleware('can:inventory.view');
         Route::post('/{asn}/mark-ready', [AsnController::class, 'markReady'])->middleware('can:inventory.view');
+        Route::post('/{asn}/reopen-for-edit', [AsnController::class, 'reopenForEdit'])->middleware('can:inventory.view');
         Route::delete('/{asn}', [AsnController::class, 'destroy'])->middleware('can:inventory.view');
         Route::patch('/{asn}/warehouse-notes', [AsnController::class, 'updateWarehouseNotes'])->middleware('can:inventory.view');
         Route::post('/{asn}/lines', [AsnController::class, 'storeLine'])->middleware('can:inventory.view');

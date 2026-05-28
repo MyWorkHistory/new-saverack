@@ -32,14 +32,19 @@ class OrderController extends Controller
     /** @var ShipHeroOrderDetailCacheService */
     protected $orderDetailCache;
 
+    /** @var PortalQueueCountsService */
+    protected $portalQueueCounts;
+
     public function __construct(
         ShipHeroOrderService $orders,
         ShopifyOrderAdminLinkService $shopifyOrderLinks,
-        ShipHeroOrderDetailCacheService $orderDetailCache
+        ShipHeroOrderDetailCacheService $orderDetailCache,
+        PortalQueueCountsService $portalQueueCounts
     ) {
         $this->orders = $orders;
         $this->shopifyOrderLinks = $shopifyOrderLinks;
         $this->orderDetailCache = $orderDetailCache;
+        $this->portalQueueCounts = $portalQueueCounts;
     }
 
     public function index(Request $request): JsonResponse
@@ -73,11 +78,25 @@ class OrderController extends Controller
                 }
             }
             $customerId = $this->resolveShipHeroCustomerAccountId((int) $validated['client_account_id'], $request);
+            $account = ClientAccount::query()->find((int) $validated['client_account_id']);
+            $shipDateFrom = $this->dateStartIso($validated['order_date_from'] ?? null);
+            $shipDateTo = $this->dateEndIso($validated['order_date_to'] ?? null);
+            $timezone = PortalQueueCountsService::DEFAULT_ACCOUNT_TIMEZONE;
+            if ($tab === 'shipped' && $account !== null) {
+                $context = $this->portalQueueCounts->contextForAccount($account, [
+                    'order_date_from' => $validated['order_date_from'] ?? null,
+                    'order_date_to' => $validated['order_date_to'] ?? null,
+                ]);
+                $shipDateFrom = $context['shipped_from'];
+                $shipDateTo = $context['shipped_to'];
+                $timezone = $context['timezone'];
+            }
             $payload = $this->orders->listOrders([
                 'customer_account_id' => $customerId,
                 'tab' => $tab,
-                'order_date_from' => $this->dateStartIso($validated['order_date_from'] ?? null),
-                'order_date_to' => $this->dateEndIso($validated['order_date_to'] ?? null),
+                'order_date_from' => $shipDateFrom,
+                'order_date_to' => $shipDateTo,
+                'timezone' => $timezone,
                 'fulfillment_status' => $validated['fulfillment_status'] ?? null,
                 'ready_to_ship' => array_key_exists('ready_to_ship', $validated) ? (bool) $validated['ready_to_ship'] : null,
                 'hold_reason' => $validated['hold_reason'] ?? null,

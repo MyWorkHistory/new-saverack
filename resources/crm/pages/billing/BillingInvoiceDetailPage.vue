@@ -2972,11 +2972,35 @@ function onDocKeydown(e) {
           class="crm-vx-modal-overlay"
           role="dialog"
           aria-modal="true"
+          aria-labelledby="available-balance-modal-title"
           @click.self="closeAvailableBalanceModal"
         >
           <div class="crm-vx-modal crm-vx-modal--sm" @click.stop>
+            <button
+              type="button"
+              class="crm-vx-modal__close"
+              aria-label="Close"
+              :disabled="availableBalanceSaving"
+              @click="closeAvailableBalanceModal"
+            >
+              <svg
+                width="20"
+                height="20"
+                fill="none"
+                viewBox="0 0 24 24"
+                stroke="currentColor"
+                stroke-width="1.75"
+                aria-hidden="true"
+              >
+                <path
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                  d="M6 18L18 6M6 6l12 12"
+                />
+              </svg>
+            </button>
             <header class="crm-vx-modal__head">
-              <h2 class="crm-vx-modal__title">Update Available Balance</h2>
+              <h2 id="available-balance-modal-title" class="crm-vx-modal__title">Update Available Balance</h2>
             </header>
             <div class="crm-vx-modal__body">
               <label class="form-label mb-1" for="available-balance-input">Amount</label>
@@ -2993,10 +3017,10 @@ function onDocKeydown(e) {
                 Set the account available balance for this client.
               </p>
             </div>
-            <footer class="crm-vx-modal__foot">
+            <footer class="crm-vx-modal__footer d-flex gap-2 justify-content-end">
               <button
                 type="button"
-                class="btn btn-outline-secondary"
+                class="crm-vx-modal-btn crm-vx-modal-btn--secondary"
                 :disabled="availableBalanceSaving"
                 @click="closeAvailableBalanceModal"
               >
@@ -3004,7 +3028,7 @@ function onDocKeydown(e) {
               </button>
               <button
                 type="button"
-                class="btn btn-primary"
+                class="crm-vx-modal-btn crm-vx-modal-btn--primary"
                 :disabled="availableBalanceSaving"
                 @click="saveAvailableBalance"
               >

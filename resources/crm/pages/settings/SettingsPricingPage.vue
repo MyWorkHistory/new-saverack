@@ -1,5 +1,5 @@
 <script setup>
-import { computed, inject, onMounted, ref, watch } from "vue";
+import { computed, inject, onMounted, onUnmounted, ref, watch } from "vue";
 import api from "../../services/api";
 import ConfirmModal from "../../components/common/ConfirmModal.vue";
 import CrmLoadingSpinner from "../../components/common/CrmLoadingSpinner.vue";
@@ -29,6 +29,7 @@ const editingFee = ref(null);
 const saving = ref(false);
 const deleteTarget = ref(null);
 const deleteBusy = ref(false);
+const filterMenuOpen = ref(false);
 
 const canUpdate = computed(() => {
   const u = crmUser.value;
@@ -84,6 +85,17 @@ watch(search, () => {
 watch(categoryFilter, () => {
   fetchFees();
 });
+
+function resetFilters() {
+  categoryFilter.value = "all";
+  filterMenuOpen.value = false;
+}
+
+function onDocClick(event) {
+  if (!event.target.closest("[data-toolbar-filter]")) {
+    filterMenuOpen.value = false;
+  }
+}
 
 async function fetchFees() {
   loading.value = true;
@@ -179,7 +191,12 @@ onMounted(() => {
     title: "Save Rack | Pricing",
     description: "Default fees applied to new client accounts.",
   });
+  document.addEventListener("click", onDocClick);
   fetchFees();
+});
+
+onUnmounted(() => {
+  document.removeEventListener("click", onDocClick);
 });
 </script>
 
@@ -202,69 +219,103 @@ onMounted(() => {
       </button>
     </header>
 
-    <div class="d-flex flex-column flex-sm-row gap-2 mb-4">
-      <input
-        v-model="search"
-        type="search"
-        class="form-control"
-        placeholder="Search by name…"
-        aria-label="Search fees"
-      />
-      <select v-model="categoryFilter" class="form-select" style="max-width: 14rem" aria-label="Category">
-        <option v-for="opt in CATEGORY_OPTIONS" :key="opt.value" :value="opt.value">
-          {{ opt.label }}
-        </option>
-      </select>
-    </div>
-
-    <CrmLoadingSpinner v-if="loading" />
-
-    <div
-      v-else-if="!filteredFees.length"
-      class="text-center text-secondary py-5 staff-surface rounded"
-    >
-      <p class="mb-0">No fees match your filters.</p>
-    </div>
-
-    <div v-else class="row g-3 settings-pricing-grid">
-      <div v-for="fee in filteredFees" :key="fee.id" class="col-12 col-md-6 col-xl-4">
-        <article class="card h-100 staff-surface border-0 shadow-sm">
-          <div class="card-body d-flex flex-column">
-            <div class="d-flex align-items-start gap-3 mb-2">
-              <div class="settings-pricing-card__icon-wrap rounded border bg-light d-flex align-items-center justify-content-center flex-shrink-0">
-                <img
-                  v-if="fee.icon_url"
-                  :src="fee.icon_url"
-                  :alt="fee.name"
-                  class="rounded"
-                  style="width: 44px; height: 44px; object-fit: contain"
-                />
-                <span v-else class="settings-pricing-card__icon-fallback text-secondary text-center px-1">
-                  {{ categoryPlaceholder(fee.category_label) }}
-                </span>
-              </div>
-              <div class="flex-grow-1 min-w-0">
-                <h2 class="h6 fw-semibold mb-1 text-truncate">{{ fee.name }}</h2>
-                <span class="badge text-bg-light border text-secondary">{{ fee.category_label }}</span>
-              </div>
-            </div>
-            <p v-if="fee.description" class="small text-secondary mb-2 flex-grow-1">
-              {{ excerpt(fee.description) }}
-            </p>
-            <p v-else class="small text-secondary mb-2 flex-grow-1 fst-italic">No description</p>
-            <div class="d-flex align-items-center justify-content-between mt-auto pt-2 border-top">
-              <span class="fw-semibold text-body">{{ formatPrice(fee.amount) }}</span>
-              <div v-if="canUpdate" class="btn-group btn-group-sm">
-                <button type="button" class="btn btn-outline-secondary" @click="openEdit(fee)">
-                  Edit
+    <div class="staff-table-card staff-datatable-card staff-datatable-card--white">
+      <div class="staff-table-toolbar">
+        <div class="staff-table-toolbar--row">
+          <input
+            v-model="search"
+            type="search"
+            class="form-control staff-toolbar-search staff-toolbar-search--inline"
+            placeholder="Search fee name or description"
+            aria-label="Search fees"
+            autocomplete="off"
+          />
+          <div class="position-relative flex-shrink-0" data-toolbar-filter>
+            <button
+              type="button"
+              class="btn btn-outline-secondary staff-toolbar-btn d-inline-flex align-items-center gap-2"
+              @click.stop="filterMenuOpen = !filterMenuOpen"
+            >
+              Filters
+            </button>
+            <div
+              v-if="filterMenuOpen"
+              class="dropdown-menu dropdown-menu-end show shadow border p-0 staff-toolbar-filter-dropdown"
+              @click.stop
+            >
+              <div class="staff-toolbar-filter-dropdown__head">
+                <span>Filters</span>
+                <button
+                  type="button"
+                  class="btn btn-link btn-sm text-secondary text-decoration-none p-0"
+                  @click="resetFilters"
+                >
+                  Reset
                 </button>
-                <button type="button" class="btn btn-outline-danger" @click="confirmDelete(fee)">
-                  Delete
-                </button>
+              </div>
+              <div class="staff-toolbar-filter-dropdown__body">
+                <label class="form-label" for="pricing-filter-category">Category</label>
+                <select id="pricing-filter-category" v-model="categoryFilter" class="form-select">
+                  <option v-for="opt in CATEGORY_OPTIONS" :key="opt.value" :value="opt.value">
+                    {{ opt.label }}
+                  </option>
+                </select>
               </div>
             </div>
           </div>
-        </article>
+        </div>
+      </div>
+
+      <div v-if="loading" class="d-flex justify-content-center py-5">
+        <CrmLoadingSpinner message="Loading pricing fees…" />
+      </div>
+
+      <div v-else-if="!filteredFees.length" class="text-center text-secondary py-5 px-3">
+        <p class="mb-0">No fees match your filters.</p>
+      </div>
+
+      <div v-else class="p-3 p-md-4">
+        <div class="row g-3">
+          <div v-for="fee in filteredFees" :key="fee.id" class="col-12 col-md-6 col-xl-4">
+            <article class="card h-100 staff-surface border-0 shadow-sm">
+              <div class="card-body d-flex flex-column">
+                <div class="d-flex align-items-start gap-3 mb-2">
+                  <div class="settings-pricing-card__icon-wrap rounded border bg-light d-flex align-items-center justify-content-center flex-shrink-0">
+                    <img
+                      v-if="fee.icon_url"
+                      :src="fee.icon_url"
+                      :alt="fee.name"
+                      class="rounded"
+                      style="width: 44px; height: 44px; object-fit: contain"
+                    />
+                    <span v-else class="settings-pricing-card__icon-fallback text-secondary text-center px-1">
+                      {{ categoryPlaceholder(fee.category_label) }}
+                    </span>
+                  </div>
+                  <div class="flex-grow-1 min-w-0">
+                    <h2 class="h6 fw-semibold mb-1 text-truncate">{{ fee.name }}</h2>
+                    <span class="badge text-bg-light border text-secondary">{{ fee.category_label }}</span>
+                  </div>
+                </div>
+                <p v-if="fee.description" class="small text-secondary mb-2 flex-grow-1">
+                  {{ excerpt(fee.description) }}
+                </p>
+                <p v-else class="small text-secondary mb-2 flex-grow-1 fst-italic">No description</p>
+                <div class="d-flex align-items-center justify-content-between mt-auto pt-2 border-top">
+                  <span class="fw-semibold text-body">{{ formatPrice(fee.amount) }}</span>
+                  <div v-if="canUpdate" class="btn-group btn-group-sm">
+                    <button type="button" class="btn btn-outline-secondary" @click="openEdit(fee)">
+                      Edit
+                    </button>
+                    <button type="button" class="btn btn-outline-danger" @click="confirmDelete(fee)">
+                      Delete
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </article>
+          </div>
+        </div>
       </div>
     </div>
 
@@ -292,11 +343,6 @@ onMounted(() => {
 .settings-pricing-page {
   width: 100%;
   max-width: none;
-}
-
-.settings-pricing-grid {
-  margin-right: 0;
-  margin-left: 0;
 }
 
 .settings-pricing-card__icon-wrap {

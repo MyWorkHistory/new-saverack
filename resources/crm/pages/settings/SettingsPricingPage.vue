@@ -65,6 +65,14 @@ function excerpt(text, max = 100) {
   return s.length <= max ? s : `${s.slice(0, max).trim()}…`;
 }
 
+function categoryPlaceholder(label) {
+  const text = String(label || "").trim();
+  if (!text) return "Fee";
+  if (text === "Custom Work") return "CW";
+  if (text.length <= 3) return text;
+  return text.slice(0, 3).toUpperCase();
+}
+
 let searchDebounce = null;
 watch(search, () => {
   clearTimeout(searchDebounce);
@@ -176,7 +184,7 @@ onMounted(() => {
 </script>
 
 <template>
-  <div class="staff-page staff-page--wide">
+  <div class="staff-page staff-page--wide settings-pricing-page">
     <header class="d-flex flex-column flex-md-row align-items-md-start justify-content-between gap-3 mb-4">
       <div>
         <h1 class="h4 fw-semibold text-body mb-1">Pricing</h1>
@@ -218,15 +226,12 @@ onMounted(() => {
       <p class="mb-0">No fees match your filters.</p>
     </div>
 
-    <div v-else class="row g-3">
+    <div v-else class="row g-3 settings-pricing-grid">
       <div v-for="fee in filteredFees" :key="fee.id" class="col-12 col-md-6 col-xl-4">
         <article class="card h-100 staff-surface border-0 shadow-sm">
           <div class="card-body d-flex flex-column">
             <div class="d-flex align-items-start gap-3 mb-2">
-              <div
-                class="rounded border bg-light d-flex align-items-center justify-content-center flex-shrink-0"
-                style="width: 48px; height: 48px"
-              >
+              <div class="settings-pricing-card__icon-wrap rounded border bg-light d-flex align-items-center justify-content-center flex-shrink-0">
                 <img
                   v-if="fee.icon_url"
                   :src="fee.icon_url"
@@ -234,8 +239,8 @@ onMounted(() => {
                   class="rounded"
                   style="width: 44px; height: 44px; object-fit: contain"
                 />
-                <span v-else class="small text-secondary text-center px-1">
-                  {{ fee.category_label }}
+                <span v-else class="settings-pricing-card__icon-fallback text-secondary text-center px-1">
+                  {{ categoryPlaceholder(fee.category_label) }}
                 </span>
               </div>
               <div class="flex-grow-1 min-w-0">
@@ -282,3 +287,31 @@ onMounted(() => {
     />
   </div>
 </template>
+
+<style scoped>
+.settings-pricing-page {
+  width: 100%;
+  max-width: none;
+}
+
+.settings-pricing-grid {
+  margin-right: 0;
+  margin-left: 0;
+}
+
+.settings-pricing-card__icon-wrap {
+  width: 48px;
+  height: 48px;
+  overflow: hidden;
+}
+
+.settings-pricing-card__icon-fallback {
+  display: inline-block;
+  font-size: 0.7rem;
+  font-weight: 700;
+  line-height: 1;
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+  text-transform: uppercase;
+}
+</style>

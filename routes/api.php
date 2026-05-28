@@ -170,6 +170,8 @@ Route::middleware('auth:sanctum')->group(function () {
             ->middleware('can:orders.view');
         Route::get('/', [OrderController::class, 'index'])
             ->middleware('can:orders.view');
+        Route::post('/', [OrderController::class, 'store'])
+            ->middleware('can:shiphero.orders.write');
         Route::post('/bulk/mark-fulfilled', [OrderController::class, 'bulkMarkFulfilled'])
             ->middleware('can:shiphero.orders.write');
         Route::post('/bulk/cancel', [OrderController::class, 'bulkCancelOrders'])

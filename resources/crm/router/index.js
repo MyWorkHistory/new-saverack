@@ -355,7 +355,17 @@ const routes = [
   },
   {
     path: "/admin/orders",
-    redirect: "/admin/orders/manage",
+    redirect: "/admin/orders/awaiting",
+  },
+  {
+    path: "/admin/orders/create",
+    name: "orders-create",
+    component: () => import("../pages/orders/OrderCreatePage.vue"),
+    meta: {
+      title: "Save Rack | Orders | Create Order",
+      description: "Create a new ShipHero order for a client account.",
+      requiresOrdersUpdate: true,
+    },
   },
   {
     path: "/admin/orders/manage",
@@ -900,6 +910,9 @@ async function ensureOrdersRouteAccess(path) {
       }
       return false;
     }
+  }
+  if (path === "/admin/orders/create") {
+    return ordersNavCache.update === true;
   }
   if (path.startsWith("/admin/orders")) {
     return ordersNavCache.view === true;

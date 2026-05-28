@@ -56,6 +56,13 @@ const canViewOrders = computed(() => {
   return k.includes("orders.view");
 });
 
+const canWriteOrders = computed(() => {
+  if (isPortal.value) return false;
+  if (crmIsAdmin(props.user) || props.user?.is_crm_owner) return true;
+  const k = props.user?.permission_keys;
+  return Array.isArray(k) && k.includes("orders.update");
+});
+
 const clientsGroupOpen = ref(route.path.startsWith("/admin/clients"));
 const settingsGroupOpen = ref(route.path.startsWith("/admin/settings"));
 const billingGroupOpen = ref(route.path.startsWith("/admin/billing"));
@@ -98,6 +105,7 @@ function navActive(mode) {
   if (mode === "clients-accounts") return p.startsWith("/admin/clients/accounts");
   if (mode === "clients-users") return p.startsWith("/admin/clients/users");
   if (mode === "orders") return p.startsWith("/admin/orders");
+  if (mode === "orders-index") return p === "/admin/orders/awaiting";
   if (mode === "orders-manage") return p.startsWith("/admin/orders/manage");
   if (mode === "orders-awaiting") return p.startsWith("/admin/orders/awaiting");
   if (mode === "orders-on-hold") return p.startsWith("/admin/orders/on-hold");
@@ -244,22 +252,32 @@ function collapseNav() {
               <ul v-show="ordersGroupOpen" class="list-unstyled mb-0 mt-1">
                 <li>
                   <RouterLink
-                    v-if="isPortal"
-                    to="/admin/orders/manage"
+                    to="/admin/orders/awaiting"
                     class="vx-nav-link vx-nav-sublink"
                     :class="{ 'vx-nav-link--active': navActive('orders-index') }"
                     @click="closeMobile"
                   >
                     All
                   </RouterLink>
+                </li>
+                <li>
                   <RouterLink
-                    v-else
                     to="/admin/orders/manage"
                     class="vx-nav-link vx-nav-sublink"
                     :class="{ 'vx-nav-link--active': navActive('orders-manage') }"
                     @click="closeMobile"
                   >
                     Manage
+                  </RouterLink>
+                </li>
+                <li v-if="canWriteOrders">
+                  <RouterLink
+                    to="/admin/orders/create"
+                    class="vx-nav-link vx-nav-sublink"
+                    :class="{ 'vx-nav-link--active': route.path === '/admin/orders/create' }"
+                    @click="closeMobile"
+                  >
+                    Create Order
                   </RouterLink>
                 </li>
                 <li>

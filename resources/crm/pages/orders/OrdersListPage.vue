@@ -1,6 +1,6 @@
 <script setup>
 import { Transition, computed, inject, nextTick, onMounted, onUnmounted, reactive, ref, watch } from "vue";
-import { useRoute, useRouter } from "vue-router";
+import { RouterLink, useRoute, useRouter } from "vue-router";
 import api from "../../services/api";
 import CrmLoadingSpinner from "../../components/common/CrmLoadingSpinner.vue";
 import CrmIconRowActions from "../../components/common/CrmIconRowActions.vue";
@@ -88,6 +88,9 @@ const tabKey = computed(() => String(route.meta?.orderTab || "manage"));
 
 /** Portal user routes set `meta.userPortal`; staff may pass `portal-order-list` explicitly. */
 const isPortalOrderList = computed(() => props.portalOrderList === true || route.meta?.userPortal === true);
+/** Staff must click Search after picking an account; portal auto-loads. */
+const listSearchGated = computed(() => !isPortalOrderList.value);
+
 const tabTitle = computed(() => {
   if (tabKey.value === "awaiting") return "Ready to Ship";
   if (tabKey.value === "on_hold") return "On-Hold";
@@ -241,12 +244,24 @@ function normalizeOrderNumberInput(v) {
     .replace(/^#+/, "");
 }
 
-function commitOrderNumberSearch() {
-  if (tabKey.value !== "manage" && !isPortalOrderList.value) return;
-  const next = normalizeOrderNumberInput(query.orderNumber);
-  committedOrderNumber.value = next;
-
+function runListSearch() {
+  if (!selectedAccountId.value) {
+    toast.error("Select an account to load orders.");
+    return;
+  }
+  committedOrderNumber.value = normalizeOrderNumberInput(query.orderNumber);
   fetchOrders(true);
+  if (tabKey.value === "manage" && !isPortalOrderList.value) {
+    fetchReadySummary(true);
+  }
+}
+
+function resetListForSearchGate() {
+  rows.value = [];
+  hasSearched.value = false;
+  hasNextPage.value = false;
+  nextCursor.value = null;
+  clearRowSelection();
 }
 
 function firstHoldReasonLabel(row) {
@@ -344,8 +359,8 @@ function buildParams(withCursor = false) {
   if (query.fulfillmentStatus) params.fulfillment_status = query.fulfillmentStatus;
   if (query.readyToShip !== "") params.ready_to_ship = query.readyToShip === "yes";
   if (tabKey.value === "on_hold" && query.holdReason) params.hold_reason = query.holdReason;
-  if (tabKey.value === "manage" || isPortalOrderList.value) {
-    if (committedOrderNumber.value) params.order_number = committedOrderNumber.value;
+  if (committedOrderNumber.value) {
+    params.order_number = committedOrderNumber.value;
   }
   if (withCursor && nextCursor.value) params.after = nextCursor.value;
   return params;
@@ -892,6 +907,9 @@ watch(
     query.holdReason = "";
     query.orderNumber = "";
     committedOrderNumber.value = "";
+    if (listSearchGated.value) {
+      resetListForSearchGate();
+    }
   },
   { immediate: true },
 );
@@ -899,9 +917,13 @@ watch(
 watch(
   () => [selectedAccountId.value, tabKey.value],
   () => {
-    clearRowSelection();
     readySummaryOffset.value = 0;
     readySummaryHasMore.value = false;
+    if (listSearchGated.value) {
+      resetListForSearchGate();
+      return;
+    }
+    clearRowSelection();
     fetchOrders(true);
     if (tabKey.value === "manage") fetchReadySummary(true);
   },
@@ -911,7 +933,7 @@ watch(
 watch(
   () => [query.datePreset, query.from, query.to, query.fulfillmentStatus, query.readyToShip, query.holdReason],
   () => {
-    if (!showManageFilters.value) return;
+    if (!showManageFilters.value || listSearchGated.value) return;
     readySummaryOffset.value = 0;
     readySummaryHasMore.value = false;
     fetchOrders(true);
@@ -965,16 +987,24 @@ onUnmounted(() => {
             ({{ displayedRows.length }} {{ displayedRows.length === 1 ? "order" : "orders" }})
           </span>
         </h1>
-        <p v-if="!isPortalOrderList" class="staff-page__intro mb-0">
-          <template v-if="tabKey === 'manage'">
-            <strong>Manage</strong> shows every ShipHero order for this account that matches your filters — it is not limited
-            to one queue like <strong>Ready To Ship</strong>, <strong>On-Hold</strong>, <strong>Backorder</strong>, or
-            <strong>Shipped</strong> (each of those tabs applies a single queue in ShipHero). <strong>Order date</strong>
-            defaults to <strong>today</strong>; open <strong>Filters</strong> to change the range or fulfillment status.
-          </template>
-          <template v-else>ShipHero orders for the selected client account.</template>
+        <p v-if="!isPortalOrderList && tabKey === 'manage'" class="staff-page__intro mb-0">
+          <strong>Manage</strong> shows every ShipHero order for this account that matches your filters. Select an account,
+          then click <strong>Search</strong> to load orders (leave order # empty to load the full filtered list).
+        </p>
+        <p v-else-if="!isPortalOrderList" class="staff-page__intro mb-0 text-secondary small">
+          Select an account, then click <strong>Search</strong> to load orders.
         </p>
       </div>
+      <RouterLink
+        v-if="!isPortalOrderList && canWriteOrders"
+        :to="{
+          path: '/admin/orders/create',
+          query: selectedAccountId ? { client_account_id: selectedAccountId } : {},
+        }"
+        class="btn btn-primary staff-page-primary flex-shrink-0"
+      >
+        Create Order
+      </RouterLink>
     </div>
 
     <div class="staff-table-card staff-datatable-card staff-datatable-card--white w-100 orders-page-toolbar">
@@ -998,7 +1028,6 @@ onUnmounted(() => {
           </div>
 
           <div
-            v-if="tabKey === 'manage' || isPortalOrderList"
             class="d-flex flex-wrap align-items-end gap-2"
             style="min-width: min(100%, 28rem)"
           >
@@ -1014,13 +1043,13 @@ onUnmounted(() => {
                   :disabled="loading || !selectedAccountId"
                   autocomplete="off"
                   enterkeyhint="search"
-                  @keydown.enter.prevent="commitOrderNumberSearch"
+                  @keydown.enter.prevent="runListSearch"
                 />
                 <button
                   type="button"
                   class="btn btn-primary staff-page-primary orders-toolbar-search-btn"
                   :disabled="loading || !selectedAccountId"
-                  @click="commitOrderNumberSearch"
+                  @click="runListSearch"
                 >
                   Search
                 </button>
@@ -1166,134 +1195,6 @@ onUnmounted(() => {
               </div>
             </template>
           </div>
-
-          <template v-else-if="showManageFilters">
-            <div class="position-relative flex-shrink-0" data-toolbar-filter>
-              <button
-                type="button"
-                class="btn btn-outline-secondary staff-toolbar-btn orders-toolbar-outline-btn d-inline-flex align-items-center gap-2"
-                :aria-expanded="filterMenuOpen"
-                @click.stop="filterMenuOpen = !filterMenuOpen"
-              >
-                <svg
-                  width="18"
-                  height="18"
-                  fill="none"
-                  stroke="currentColor"
-                  stroke-width="2"
-                  viewBox="0 0 24 24"
-                  aria-hidden="true"
-                >
-                  <path
-                    stroke-linecap="round"
-                    stroke-linejoin="round"
-                    d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2.586a1 1 0 01-.293.707l-6.414 6.414a1 1 0 00-.293.707V17l-4 4v-6.586a1 1 0 00-.293-.707L3.293 7.293A1 1 0 013 6.586V4z"
-                  />
-                </svg>
-                <span class="staff-toolbar-filter-text">Filters</span>
-              </button>
-              <div
-                v-if="filterMenuOpen"
-                class="dropdown-menu dropdown-menu-end show shadow border p-0 staff-toolbar-filter-dropdown"
-                role="dialog"
-                aria-label="Order filters"
-                @click.stop
-              >
-                <div class="staff-toolbar-filter-dropdown__head">
-                  <span>Filters</span>
-                  <button type="button" class="btn btn-link btn-sm text-secondary text-decoration-none p-0" @click="resetToolbarFiltersFromMenu">
-                    Reset
-                  </button>
-                </div>
-                <div class="staff-toolbar-filter-dropdown__body">
-                  <p class="small text-secondary mb-2">
-                    <template v-if="tabKey === 'shipped'">
-                      <strong>Shipped</strong> defaults to <strong>today</strong> by <strong>ship date</strong> (when the label was created). Widen the date range if you need older fulfilled orders.
-                    </template>
-                    <template v-else-if="tabKey === 'awaiting'">
-                      This tab lists <strong>orders awaiting shipment</strong>. The default <strong>order date</strong> window
-                      is the <strong>last 7 days</strong> so the list stays fast; choose <strong>Today</strong>,
-                      <strong>Any Order Date</strong>, or a custom range if you need a different window (including the same
-                      window used for dashboard totals).
-                    </template>
-                    <template v-else>
-                      Defaults to <strong>today</strong> by order date. Use <strong>Any Order Date</strong> or a custom range if the list looks empty.
-                    </template>
-                  </p>
-                  <label class="form-label" for="orders-filter-date-preset-alt">Date Range</label>
-                  <select
-                    id="orders-filter-date-preset-alt"
-                    v-model="query.datePreset"
-                    class="form-select staff-datatable-filters__select mb-3"
-                    :disabled="loading"
-                  >
-                    <option value="all">Any Order Date</option>
-                    <option value="today">Today</option>
-                    <option value="last_7">Last 7 Days</option>
-                    <option value="last_30">Last 30 Days</option>
-                    <option value="custom">Custom Range</option>
-                  </select>
-                  <template v-if="isCustomDate">
-                    <label class="form-label" for="orders-filter-from-alt">From</label>
-                    <input
-                      id="orders-filter-from-alt"
-                      v-model="query.from"
-                      type="date"
-                      class="form-control staff-datatable-filters__select mb-3"
-                      :disabled="loading"
-                    />
-                    <label class="form-label" for="orders-filter-to-alt">To</label>
-                    <input
-                      id="orders-filter-to-alt"
-                      v-model="query.to"
-                      type="date"
-                      class="form-control staff-datatable-filters__select mb-3"
-                      :disabled="loading"
-                    />
-                  </template>
-                  <label class="form-label" for="orders-filter-fulfillment-status-alt">Fulfillment Status</label>
-                  <select
-                    id="orders-filter-fulfillment-status-alt"
-                    v-model="query.fulfillmentStatus"
-                    class="form-select staff-datatable-filters__select mb-3"
-                    :disabled="loading"
-                  >
-                    <option value="">All</option>
-                    <option value="unfulfilled">Unfulfilled</option>
-                    <option value="fulfilled">Fulfilled</option>
-                    <option value="shipped">Shipped</option>
-                  </select>
-                  <label class="form-label" for="orders-filter-ready-to-ship-alt">Ready to Ship</label>
-                  <select
-                    id="orders-filter-ready-to-ship-alt"
-                    v-model="query.readyToShip"
-                    class="form-select staff-datatable-filters__select"
-                    :disabled="loading"
-                  >
-                    <option value="">All</option>
-                    <option value="yes">Yes</option>
-                    <option value="no">No</option>
-                  </select>
-                  <template v-if="tabKey === 'on_hold'">
-                    <label class="form-label mt-3" for="orders-filter-hold-reason-alt">Hold Reason</label>
-                    <select
-                      id="orders-filter-hold-reason-alt"
-                      v-model="query.holdReason"
-                      class="form-select staff-datatable-filters__select"
-                      :disabled="loading"
-                    >
-                      <option value="">All Hold Reasons</option>
-                      <option value="fraud">Fraud Hold</option>
-                      <option value="address">Address Hold</option>
-                      <option value="operator">Operator Hold</option>
-                      <option value="payment">Payment Hold</option>
-                      <option value="user">User Hold</option>
-                    </select>
-                  </template>
-                </div>
-              </div>
-            </div>
-          </template>
         </div>
         <p v-if="!isPortalOrderList" class="small text-secondary mb-0 mt-2 px-1">Only accounts with a ShipHero customer ID appear here.</p>
       </div>
@@ -1442,6 +1343,9 @@ onUnmounted(() => {
             <tr v-else-if="!selectedAccountId">
               <td :colspan="tableColspan" class="text-center text-secondary py-5">Select an account to load orders.</td>
             </tr>
+            <tr v-else-if="listSearchGated && !hasSearched">
+              <td :colspan="tableColspan" class="text-center text-secondary py-5">Click Search to load orders.</td>
+            </tr>
             <tr v-else-if="hasSearched && displayedRows.length === 0">
               <td :colspan="tableColspan" class="text-center text-secondary py-5">No orders found.</td>
             </tr>
@@ -1513,7 +1417,7 @@ onUnmounted(() => {
         <button
           type="button"
           class="btn btn-outline-secondary order-1 order-lg-2 ms-lg-auto"
-          :disabled="loading || !hasNextPage || !selectedAccountId"
+          :disabled="loading || !hasNextPage || !selectedAccountId || (listSearchGated && !hasSearched)"
           @click="fetchOrders(false)"
         >
           {{ hasNextPage ? "Load More" : "No more orders" }}

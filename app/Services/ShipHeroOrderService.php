@@ -3813,5 +3813,114 @@ GQL;
                 : null,
         ];
     }
+
+    /**
+     * @param  array<string, mixed>  $payload
+     * @return array{shiphero_order_id: string, order_number: string}
+     */
+    public function createOrder(string $customerAccountId, array $payload): array
+    {
+        $customer = trim($customerAccountId);
+        if ($customer === '') {
+            throw new RuntimeException('Customer account ID is required.');
+        }
+
+        $ship = is_array($payload['shipping_address'] ?? null) ? $payload['shipping_address'] : [];
+        $lineItems = [];
+        $lines = is_array($payload['line_items'] ?? null) ? $payload['line_items'] : [];
+        foreach ($lines as $line) {
+            if (! is_array($line)) {
+                continue;
+            }
+            $sku = trim((string) ($line['sku'] ?? ''));
+            if ($sku === '') {
+                continue;
+            }
+            $partnerId = trim((string) ($line['partner_line_item_id'] ?? ''));
+            if ($partnerId === '') {
+                $partnerId = (string) Str::uuid();
+            }
+            $qty = max(1, (int) ($line['quantity'] ?? 1));
+            $price = number_format((float) ($line['price'] ?? 0), 2, '.', '');
+            $entry = [
+                'sku' => $sku,
+                'quantity' => $qty,
+                'price' => $price,
+                'partner_line_item_id' => $partnerId,
+            ];
+            $productName = trim((string) ($line['product_name'] ?? ''));
+            if ($productName !== '') {
+                $entry['product_name'] = $productName;
+            }
+            $lineItems[] = $entry;
+        }
+        if ($lineItems === []) {
+            throw new RuntimeException('At least one line item with a SKU is required.');
+        }
+
+        $shippingAddress = [
+            'first_name' => (string) ($ship['first_name'] ?? ''),
+            'last_name' => (string) ($ship['last_name'] ?? ''),
+            'address1' => (string) ($ship['address1'] ?? ''),
+            'city' => (string) ($ship['city'] ?? ''),
+            'state' => (string) ($ship['state'] ?? ''),
+            'zip' => (string) ($ship['zip'] ?? ''),
+            'country' => (string) ($ship['country'] ?? 'US'),
+            'email' => (string) ($ship['email'] ?? ''),
+            'phone' => (string) ($ship['phone'] ?? ''),
+        ];
+        $address2 = trim((string) ($ship['address2'] ?? ''));
+        if ($address2 !== '') {
+            $shippingAddress['address2'] = $address2;
+        }
+        $company = trim((string) ($ship['company'] ?? ''));
+        if ($company !== '') {
+            $shippingAddress['company'] = $company;
+        }
+
+        $data = [
+            'customer_account_id' => $customer,
+            'order_number' => (string) ($payload['order_number'] ?? ''),
+            'shop_name' => (string) ($payload['shop_name'] ?? ''),
+            'shipping_address' => $shippingAddress,
+            'line_items' => $lineItems,
+        ];
+
+        $graphql = <<<'GQL'
+mutation ShipHeroOrderCreate($data: CreateOrderInput!) {
+  order_create(data: $data) {
+    request_id
+    complexity
+    order {
+      id
+      order_number
+      legacy_id
+    }
+  }
+}
+GQL;
+
+        $json = $this->client->query($graphql, ['data' => $data], true, [
+            ShipHeroClient::OPTION_GRAPHQL_SUCCESS_FIELD => 'order_create',
+        ]);
+
+        $orderNode = $json['data']['order_create']['order'] ?? null;
+        if (! is_array($orderNode)) {
+            throw new RuntimeException('ShipHero did not return the created order.');
+        }
+
+        $orderId = trim((string) ($orderNode['id'] ?? ''));
+        if ($orderId === '' && isset($orderNode['legacy_id'])) {
+            $orderId = trim((string) $orderNode['legacy_id']);
+        }
+        if ($orderId === '') {
+            throw new RuntimeException('ShipHero did not return an order ID.');
+        }
+
+        return [
+            'shiphero_order_id' => $orderId,
+            'order_number' => (string) ($orderNode['order_number'] ?? $payload['order_number'] ?? ''),
+        ];
+    }
 }
 

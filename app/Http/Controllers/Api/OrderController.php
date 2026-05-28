@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use App\Http\Requests\OrderCreateRequest;
 use App\Models\ClientAccount;
 use App\Services\ShipHeroOrderDetailCacheService;
 use App\Services\ShopifyOrderAdminLinkService;
@@ -135,6 +136,48 @@ class OrderController extends Controller
                     : 'Could not reach ShipHero orders API.',
             ], 502);
         }
+    }
+
+    public function store(OrderCreateRequest $request): JsonResponse
+    {
+        Gate::authorize('shiphero.orders.write');
+
+        $validated = $request->validated();
+        $clientAccountId = (int) $validated['client_account_id'];
+        $customerId = $this->resolveShipHeroCustomerAccountId($clientAccountId, $request);
+
+        $account = ClientAccount::query()->findOrFail($clientAccountId);
+        $shopName = trim((string) $validated['shop_name']);
+        if ($shopName === '') {
+            $shopName = trim((string) $account->company_name) ?: 'Manual';
+        }
+
+        try {
+            $created = $this->orders->createOrder($customerId, [
+                'order_number' => $validated['order_number'],
+                'shop_name' => $shopName,
+                'shipping_address' => $validated['shipping_address'],
+                'line_items' => $validated['line_items'],
+            ]);
+        } catch (ValidationException $e) {
+            throw $e;
+        } catch (RuntimeException $e) {
+            return response()->json(['message' => $e->getMessage()], 502);
+        } catch (Throwable $e) {
+            report($e);
+
+            return response()->json([
+                'message' => config('app.debug')
+                    ? $e->getMessage()
+                    : 'Could not create order in ShipHero.',
+            ], 502);
+        }
+
+        return response()->json([
+            'shiphero_order_id' => $created['shiphero_order_id'],
+            'order_number' => $created['order_number'],
+            'client_account_id' => $clientAccountId,
+        ], 201);
     }
 
     /**

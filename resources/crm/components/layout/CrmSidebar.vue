@@ -20,6 +20,14 @@ const canViewUsers = computed(
       props.user.permission_keys.includes("users.view")),
 );
 
+const canViewSettings = computed(
+  () =>
+    !!props.user?.is_crm_owner ||
+    crmIsAdmin(props.user) ||
+    (Array.isArray(props.user?.permission_keys) &&
+      props.user.permission_keys.includes("settings.view")),
+);
+
 const canViewWebmaster = computed(
   () =>
     !!props.user?.is_crm_owner ||
@@ -53,6 +61,7 @@ const canViewInventory = computed(() => {
 const canViewOrders = computed(() => canViewInventory.value);
 
 const clientsGroupOpen = ref(route.path.startsWith("/admin/clients"));
+const settingsGroupOpen = ref(route.path.startsWith("/admin/settings"));
 const billingGroupOpen = ref(route.path.startsWith("/admin/billing"));
 const ordersGroupOpen = ref(route.path.startsWith("/admin/orders"));
 const inventoryGroupOpen = ref(route.path.startsWith("/admin/inventory"));
@@ -61,6 +70,9 @@ watch(
   (p) => {
     if (p.startsWith("/admin/clients")) {
       clientsGroupOpen.value = true;
+    }
+    if (p.startsWith("/admin/settings")) {
+      settingsGroupOpen.value = true;
     }
     if (p.startsWith("/admin/billing")) {
       billingGroupOpen.value = true;
@@ -83,6 +95,8 @@ function navActive(mode) {
   const p = route.path;
   if (mode === "dashboard") return p.startsWith("/admin/dashboard");
   if (mode === "users") return p.startsWith("/admin/staff");
+  if (mode === "settings") return p.startsWith("/admin/settings");
+  if (mode === "settings-pricing") return p.startsWith("/admin/settings/pricing");
   if (mode === "webmaster") return p.startsWith("/admin/webmaster");
   if (mode === "clients") return p.startsWith("/admin/clients");
   if (mode === "clients-accounts") return p.startsWith("/admin/clients/accounts");
@@ -597,6 +611,85 @@ function collapseNav() {
                 stroke-linecap="round"
                 stroke-linejoin="round"
                 d="m20.25 7.5-.625 10.632a2.25 2.25 0 0 1-2.247 2.118H6.622a2.25 2.25 0 0 1-2.247-2.118L3.75 7.5M10 11.25h4M3.375 7.5h17.25c.621 0 1.125-.504 1.125-1.125v-1.5c0-.621-.504-1.125-1.125-1.125H3.375c-.621 0-1.125.504-1.125 1.125v1.5c0 .621.504 1.125 1.125 1.125Z"
+              />
+            </svg>
+          </RouterLink>
+        </li>
+        <li v-if="!isPortal && canViewSettings">
+          <div v-if="isExpanded">
+            <button
+              type="button"
+              class="vx-nav-link"
+              :class="{ 'vx-nav-link--active': navActive('settings') }"
+              :aria-expanded="settingsGroupOpen"
+              @click="settingsGroupOpen = !settingsGroupOpen"
+            >
+              <svg
+                fill="none"
+                viewBox="0 0 24 24"
+                stroke="currentColor"
+                stroke-width="1.5"
+              >
+                <path
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                  d="M9.594 3.94c.09-.542.56-.94 1.11-.94h2.593c.55 0 1.02.398 1.11.94l.213 1.281c.063.374.313.686.645.87.074.04.147.083.22.127.324.196.72.257 1.075.124l1.217-.456a1.125 1.125 0 0 1 1.37.49l1.296 2.247a1.125 1.125 0 0 1-.26 1.431l-1.003.827a1.125 1.125 0 0 0-.437 1.089v2.5a1.125 1.125 0 0 0 1.125 1.125h2.5a1.125 1.125 0 0 0 1.089-.437l.827-1.003a1.125 1.125 0 0 1 1.431-.26l2.247 1.296a1.125 1.125 0 0 0 1.431-.26l1.003-.827a1.125 1.125 0 0 0 .437-1.089v-2.5a1.125 1.125 0 0 0-1.125-1.125h-2.5a1.125 1.125 0 0 0-1.089.437l-.827 1.003a1.125 1.125 0 0 1-1.431.26l-2.247-1.296a1.125 1.125 0 0 0-1.431.26l-1.003.827a1.125 1.125 0 0 0-.437 1.089v2.5a1.125 1.125 0 0 0 1.125 1.125h2.5a1.125 1.125 0 0 0 1.089-.437l.827-1.003a1.125 1.125 0 0 1 1.431-.26l2.247 1.296a1.125 1.125 0 0 0 1.431-.26l1.003-.827a1.125 1.125 0 0 0 .437-1.089v-2.5a1.125 1.125 0 0 0-1.125-1.125h-2.5a1.125 1.125 0 0 0-1.089.437l-.827 1.003a1.125 1.125 0 0 1-1.431.26l-2.247-1.296a1.125 1.125 0 0 0-1.431.26l-1.003.827a1.125 1.125 0 0 0-.437 1.089v2.5a1.125 1.125 0 0 0 1.125 1.125h2.5Z"
+                />
+                <path
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                  d="M15 12a3 3 0 1 1-6 0 3 3 0 0 1 6 0Z"
+                />
+              </svg>
+              <span class="text-truncate">Settings</span>
+              <svg
+                class="ms-auto flex-shrink-0 transition"
+                :class="settingsGroupOpen ? 'rotate-180' : ''"
+                style="width: 1rem; height: 1rem"
+                fill="none"
+                viewBox="0 0 24 24"
+                stroke="currentColor"
+                stroke-width="1.5"
+                aria-hidden="true"
+              >
+                <path stroke-linecap="round" stroke-linejoin="round" d="M19 9l-7 7-7-7" />
+              </svg>
+            </button>
+            <ul v-show="settingsGroupOpen" class="list-unstyled mb-0 mt-1">
+              <li>
+                <RouterLink
+                  to="/admin/settings/pricing"
+                  class="vx-nav-link vx-nav-sublink"
+                  :class="{ 'vx-nav-link--active': navActive('settings-pricing') }"
+                  @click="closeMobile"
+                >
+                  Pricing
+                </RouterLink>
+              </li>
+            </ul>
+          </div>
+          <RouterLink
+            v-else
+            to="/admin/settings/pricing"
+            class="vx-nav-link"
+            title="Settings"
+            @click="closeMobile"
+          >
+            <svg
+              fill="none"
+              viewBox="0 0 24 24"
+              stroke="currentColor"
+              stroke-width="1.5"
+            >
+              <path
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                d="M9.594 3.94c.09-.542.56-.94 1.11-.94h2.593c.55 0 1.02.398 1.11.94l.213 1.281c.063.374.313.686.645.87.074.04.147.083.22.127.324.196.72.257 1.075.124l1.217-.456a1.125 1.125 0 0 1 1.37.49l1.296 2.247a1.125 1.125 0 0 1-.26 1.431l-1.003.827a1.125 1.125 0 0 0-.437 1.089v2.5a1.125 1.125 0 0 0 1.125 1.125h2.5a1.125 1.125 0 0 0 1.089-.437l.827-1.003a1.125 1.125 0 0 1 1.431-.26l2.247 1.296a1.125 1.125 0 0 0 1.431-.26l1.003-.827a1.125 1.125 0 0 0 .437-1.089v-2.5a1.125 1.125 0 0 0-1.125-1.125h-2.5a1.125 1.125 0 0 0-1.089.437l-.827 1.003a1.125 1.125 0 0 1-1.431.26l-2.247-1.296a1.125 1.125 0 0 0-1.431.26l-1.003.827a1.125 1.125 0 0 0-.437 1.089v2.5a1.125 1.125 0 0 0 1.125 1.125h2.5Z"
+              />
+              <path
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                d="M15 12a3 3 0 1 1-6 0 3 3 0 0 1 6 0Z"
               />
             </svg>
           </RouterLink>

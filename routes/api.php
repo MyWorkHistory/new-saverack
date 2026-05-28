@@ -18,6 +18,7 @@ use App\Http\Controllers\Api\OrderController;
 use App\Http\Controllers\Api\PortalLookupController;
 use App\Http\Controllers\Api\PortalOnboardingController;
 use App\Http\Controllers\Api\PortalProfileController;
+use App\Http\Controllers\Api\PricingFeeTemplateController;
 use App\Http\Controllers\Api\UserController;
 use App\Http\Controllers\Api\WebmasterTaskController;
 use App\Http\Controllers\StripeWebhookController;
@@ -46,6 +47,14 @@ Route::middleware('auth:sanctum')->group(function () {
 
     Route::get('/billing/summary', BillingSummaryController::class)
         ->name('billing.summary');
+
+    Route::prefix('settings/pricing-fees')->group(function () {
+        Route::get('/', [PricingFeeTemplateController::class, 'index']);
+        Route::post('/', [PricingFeeTemplateController::class, 'store']);
+        Route::get('/{pricingFeeTemplate}', [PricingFeeTemplateController::class, 'show']);
+        Route::patch('/{pricingFeeTemplate}', [PricingFeeTemplateController::class, 'update']);
+        Route::delete('/{pricingFeeTemplate}', [PricingFeeTemplateController::class, 'destroy']);
+    });
 
     Route::prefix('custom-bills')->group(function () {
         Route::get('/', [CustomBillController::class, 'index']);

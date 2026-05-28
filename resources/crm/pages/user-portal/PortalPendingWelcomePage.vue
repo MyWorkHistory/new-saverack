@@ -249,12 +249,24 @@ onUnmounted(() => {
         <div class="col-lg-4">
           <div class="portal-welcome-sidebar d-flex flex-column gap-3">
             <div class="staff-table-card staff-datatable-card--white p-3 p-md-4 portal-welcome-page__account-status">
-              <h2 class="h6 fw-semibold mb-2">Account Status: Onboarding</h2>
-              <p class="small text-secondary mb-0">
-                Your account is currently in the onboarding stage. Once all onboarding tasks have been completed and
-                verified by your account manager, you will receive a notification confirming that your account is
-                active and ready for all fulfillment services.
-              </p>
+              <div class="d-flex align-items-start gap-3">
+                <div
+                  class="portal-welcome-page__panel-icon portal-welcome-page__panel-icon--account-status flex-shrink-0"
+                  aria-hidden="true"
+                >
+                  <svg class="portal-welcome-page__icon-svg" fill="currentColor" viewBox="0 0 24 24">
+                    <path :d="PORTAL_MATERIAL_ICON.account" />
+                  </svg>
+                </div>
+                <div class="min-w-0">
+                  <h2 class="h6 fw-semibold mb-2">Account Status: Onboarding</h2>
+                  <p class="small text-secondary mb-0">
+                    Your account is currently in the onboarding stage. Once all onboarding tasks have been completed
+                    and verified by your account manager, you will receive a notification confirming that your account
+                    is active and ready for all fulfillment services.
+                  </p>
+                </div>
+              </div>
             </div>
             <div class="staff-stat-card portal-welcome-page__progress">
               <div class="portal-welcome-page__progress-body">
@@ -460,6 +472,11 @@ onUnmounted(() => {
 .portal-welcome-page__panel-icon--support {
   background: rgba(37, 99, 235, 0.12);
   color: #2563eb;
+}
+
+.portal-welcome-page__panel-icon--account-status {
+  background: rgba(245, 158, 11, 0.14);
+  color: #b45309;
 }
 
 .portal-welcome-page__panel-icon .portal-welcome-page__icon-svg {

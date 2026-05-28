@@ -45,6 +45,12 @@ const storageRowsForDisplay = computed(() =>
     : DEFAULT_STORAGE_FEE_TYPES.map((label) => ({ id: null, label, value: "$0.00" })),
 );
 
+const catalogFulfillment = computed(() => data.value.catalogLines?.fulfillment ?? []);
+const catalogReturns = computed(() => data.value.catalogLines?.returns ?? []);
+const catalogStorage = computed(() => data.value.catalogLines?.storage ?? []);
+const catalogReceiving = computed(() => data.value.catalogLines?.receiving ?? []);
+const catalogCustomWork = computed(() => data.value.catalogLines?.custom_work ?? []);
+
 function showCell(v) {
   return v ?? "—";
 }
@@ -196,7 +202,7 @@ async function removeStorageRow(row, idx) {
           Account Fees
         </h2>
         <p class="crm-account-fees__page-sub small text-secondary mb-0">
-          Fulfillment fees, returns fees, and storage pricing for this account.
+          Fulfillment, returns, storage, receiving, and custom work pricing for this account.
         </p>
       </header>
       <div v-if="canEdit" class="d-flex flex-wrap align-items-center gap-2 flex-shrink-0">
@@ -461,6 +467,124 @@ async function removeStorageRow(row, idx) {
             No storage lines yet. Add a line or save to keep this section empty.
           </p>
         </div>
+      </div>
+    </section>
+
+    <section
+      v-if="catalogFulfillment.length"
+      class="crm-account-fees__section mb-4"
+      aria-labelledby="crm-fees-catalog-fulfillment"
+    >
+      <div class="crm-account-fees__section-card">
+        <h3 id="crm-fees-catalog-fulfillment" class="crm-account-fees__section-title mb-3">
+          Additional Fulfillment Fees
+        </h3>
+        <ul class="list-unstyled mb-0 row g-3">
+          <li v-for="row in catalogFulfillment" :key="'cf-' + row.id" class="col-12 col-md-6">
+            <div class="crm-account-fees__metric staff-surface h-100">
+              <div class="crm-account-fees__metric-body">
+                <p class="crm-account-fees__metric-label mb-0">{{ row.name }}</p>
+                <p v-if="row.description" class="crm-account-fees__metric-sub small text-secondary mb-0">
+                  {{ row.description }}
+                </p>
+              </div>
+              <p class="crm-account-fees__metric-value mb-0">{{ showCell(row.value) }}</p>
+            </div>
+          </li>
+        </ul>
+      </div>
+    </section>
+
+    <section
+      v-if="catalogReturns.length"
+      class="crm-account-fees__section mb-4"
+      aria-labelledby="crm-fees-catalog-returns"
+    >
+      <div class="crm-account-fees__section-card">
+        <h3 id="crm-fees-catalog-returns" class="crm-account-fees__section-title mb-3">
+          Additional Returns Fees
+        </h3>
+        <ul class="list-unstyled mb-0 row g-3">
+          <li v-for="row in catalogReturns" :key="'cr-' + row.id" class="col-12 col-md-6">
+            <div class="crm-account-fees__metric staff-surface h-100">
+              <div class="crm-account-fees__metric-body">
+                <p class="crm-account-fees__metric-label mb-0">{{ row.name }}</p>
+                <p v-if="row.description" class="crm-account-fees__metric-sub small text-secondary mb-0">
+                  {{ row.description }}
+                </p>
+              </div>
+              <p class="crm-account-fees__metric-value mb-0">{{ showCell(row.value) }}</p>
+            </div>
+          </li>
+        </ul>
+      </div>
+    </section>
+
+    <section
+      v-if="catalogStorage.length"
+      class="crm-account-fees__section mb-4"
+      aria-labelledby="crm-fees-catalog-storage"
+    >
+      <div class="crm-account-fees__section-card">
+        <h3 id="crm-fees-catalog-storage" class="crm-account-fees__section-title mb-3">
+          Default Storage Fees
+        </h3>
+        <ul class="list-unstyled mb-0 row g-3">
+          <li v-for="row in catalogStorage" :key="'cs-' + row.id" class="col-12 col-md-6">
+            <div class="crm-account-fees__metric staff-surface h-100">
+              <div class="crm-account-fees__metric-body">
+                <p class="crm-account-fees__metric-label mb-0">{{ row.name }}</p>
+              </div>
+              <p class="crm-account-fees__metric-value mb-0">{{ showCell(row.value) }}</p>
+            </div>
+          </li>
+        </ul>
+      </div>
+    </section>
+
+    <section
+      v-if="catalogReceiving.length"
+      class="crm-account-fees__section mb-4"
+      aria-labelledby="crm-fees-receiving"
+    >
+      <div class="crm-account-fees__section-card">
+        <h3 id="crm-fees-receiving" class="crm-account-fees__section-title mb-3">Receiving</h3>
+        <ul class="list-unstyled mb-0 row g-3">
+          <li v-for="row in catalogReceiving" :key="'rcv-' + row.id" class="col-12 col-md-6">
+            <div class="crm-account-fees__metric staff-surface h-100">
+              <div class="crm-account-fees__metric-body">
+                <p class="crm-account-fees__metric-label mb-0">{{ row.name }}</p>
+                <p v-if="row.description" class="crm-account-fees__metric-sub small text-secondary mb-0">
+                  {{ row.description }}
+                </p>
+              </div>
+              <p class="crm-account-fees__metric-value mb-0">{{ showCell(row.value) }}</p>
+            </div>
+          </li>
+        </ul>
+      </div>
+    </section>
+
+    <section
+      v-if="catalogCustomWork.length"
+      class="crm-account-fees__section mb-4"
+      aria-labelledby="crm-fees-custom-work"
+    >
+      <div class="crm-account-fees__section-card">
+        <h3 id="crm-fees-custom-work" class="crm-account-fees__section-title mb-3">Custom Work</h3>
+        <ul class="list-unstyled mb-0 row g-3">
+          <li v-for="row in catalogCustomWork" :key="'cw-' + row.id" class="col-12 col-md-6">
+            <div class="crm-account-fees__metric staff-surface h-100">
+              <div class="crm-account-fees__metric-body">
+                <p class="crm-account-fees__metric-label mb-0">{{ row.name }}</p>
+                <p v-if="row.description" class="crm-account-fees__metric-sub small text-secondary mb-0">
+                  {{ row.description }}
+                </p>
+              </div>
+              <p class="crm-account-fees__metric-value mb-0">{{ showCell(row.value) }}</p>
+            </div>
+          </li>
+        </ul>
       </div>
     </section>
   </div>

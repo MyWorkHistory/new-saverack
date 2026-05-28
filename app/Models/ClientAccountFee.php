@@ -13,11 +13,17 @@ class ClientAccountFee extends Model
 
     public const GROUP_STORAGE = 'storage';
 
+    public const GROUP_RECEIVING = 'receiving';
+
+    public const GROUP_CUSTOM_WORK = 'custom_work';
+
     /** @var list<string> */
     public const GROUPS = [
         self::GROUP_FULFILLMENT,
         self::GROUP_RETURNS,
         self::GROUP_STORAGE,
+        self::GROUP_RECEIVING,
+        self::GROUP_CUSTOM_WORK,
     ];
 
     public const LINE_FIRST_PICK = 'first_pick';
@@ -30,9 +36,12 @@ class ClientAccountFee extends Model
 
     protected $fillable = [
         'client_account_id',
+        'pricing_template_id',
         'fee_group',
         'line_code',
         'label',
+        'description',
+        'icon_path',
         'amount',
         'currency',
         'sort_order',
@@ -45,5 +54,10 @@ class ClientAccountFee extends Model
     public function clientAccount(): BelongsTo
     {
         return $this->belongsTo(ClientAccount::class, 'client_account_id');
+    }
+
+    public function pricingTemplate(): BelongsTo
+    {
+        return $this->belongsTo(PricingFeeTemplate::class, 'pricing_template_id');
     }
 }

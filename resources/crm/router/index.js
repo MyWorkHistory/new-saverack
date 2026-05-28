@@ -19,6 +19,7 @@ import UserPermissionsPage from "../pages/users/UserPermissionsPage.vue";
 import UserHistoryPage from "../pages/users/UserHistoryPage.vue";
 import WebmasterTasksPage from "../pages/webmaster/WebmasterTasksPage.vue";
 import WebmasterTaskDetailPage from "../pages/webmaster/WebmasterTaskDetailPage.vue";
+import SettingsPricingPage from "../pages/settings/SettingsPricingPage.vue";
 import ClientAccountsListPage from "../pages/clients/ClientAccountsListPage.vue";
 import ClientAccountDetailPage from "../pages/clients/ClientAccountDetailPage.vue";
 import ClientAccountUsersListPage from "../pages/clients/ClientAccountUsersListPage.vue";
@@ -73,6 +74,10 @@ const meta = {
   webmasterTask: {
     title: "Save Rack | Webmaster Task",
     description: "Webmaster Task Details.",
+  },
+  settingsPricing: {
+    title: "Save Rack | Pricing",
+    description: "Default fees applied to new client accounts.",
   },
   clientAccounts: {
     title: "Save Rack | Accounts",
@@ -401,6 +406,16 @@ const routes = [
     meta: meta.orderDetail,
   },
   {
+    path: "/admin/settings",
+    redirect: "/admin/settings/pricing",
+  },
+  {
+    path: "/admin/settings/pricing",
+    name: "settings-pricing",
+    component: SettingsPricingPage,
+    meta: meta.settingsPricing,
+  },
+  {
     path: "/admin/webmaster",
     name: "webmaster",
     component: WebmasterTasksPage,
@@ -479,6 +494,9 @@ const router = createRouter({
 
 let webmasterNavCache = null;
 
+/** Settings module: permissions from /auth/me (see setSettingsNavFromUser). */
+let settingsNavCache = null;
+
 /** Users module: per-action permissions from /auth/me (see setUsersNavFromUser). */
 let usersNavCache = null;
 
@@ -497,6 +515,7 @@ let authUserCache = null;
 
 export function clearCrmOwnerCache() {
   webmasterNavCache = null;
+  settingsNavCache = null;
   usersNavCache = null;
   clientsNavCache = null;
   billingNavCache = null;
@@ -513,6 +532,16 @@ export function setWebmasterNavFromUser(user) {
   const keys = user.permission_keys;
   const perm = Array.isArray(keys) && keys.includes("webmaster.view");
   webmasterNavCache = perm || !!user.is_crm_owner || crmIsAdmin(user);
+}
+
+export function setSettingsNavFromUser(user) {
+  if (!user) {
+    settingsNavCache = null;
+    return;
+  }
+  const keys = user.permission_keys;
+  const perm = Array.isArray(keys) && keys.includes("settings.view");
+  settingsNavCache = perm || !!user.is_crm_owner || crmIsAdmin(user);
 }
 
 export function setUsersNavFromUser(user) {
@@ -615,6 +644,7 @@ async function ensureAuthUser() {
   setUsersNavFromUser(data);
   setClientsNavFromUser(data);
   setWebmasterNavFromUser(data);
+  setSettingsNavFromUser(data);
   setBillingNavFromUser(data);
   setInventoryNavFromUser(data);
   return data;
@@ -627,6 +657,7 @@ async function ensureClientsRouteAccess(path) {
       setUsersNavFromUser(data);
       setClientsNavFromUser(data);
       setWebmasterNavFromUser(data);
+      setSettingsNavFromUser(data);
       setBillingNavFromUser(data);
       setInventoryNavFromUser(data);
     } catch (e) {
@@ -635,6 +666,7 @@ async function ensureClientsRouteAccess(path) {
         clientsNavCache = null;
         billingNavCache = null;
         inventoryNavCache = null;
+        settingsNavCache = null;
       }
       return false;
     }
@@ -652,6 +684,7 @@ async function ensureUsersRouteAccess(path) {
       setUsersNavFromUser(data);
       setClientsNavFromUser(data);
       setWebmasterNavFromUser(data);
+      setSettingsNavFromUser(data);
       setBillingNavFromUser(data);
       setInventoryNavFromUser(data);
     } catch (e) {
@@ -699,6 +732,39 @@ function userCanWebmaster(userLike) {
   return Array.isArray(keys) && keys.includes("webmaster.view");
 }
 
+function userCanSettings(userLike) {
+  if (!userLike) return false;
+  if (userLike.is_crm_owner || crmIsAdmin(userLike)) return true;
+  const keys = userLike.permission_keys;
+  return Array.isArray(keys) && keys.includes("settings.view");
+}
+
+async function ensureSettingsRouteAccess() {
+  if (settingsNavCache !== null) {
+    return settingsNavCache;
+  }
+  try {
+    const { data } = await api.get("/auth/me");
+    setUsersNavFromUser(data);
+    setClientsNavFromUser(data);
+    setWebmasterNavFromUser(data);
+    setSettingsNavFromUser(data);
+    setBillingNavFromUser(data);
+    setInventoryNavFromUser(data);
+    const ok = userCanSettings(data);
+    settingsNavCache = ok;
+    return ok;
+  } catch (e) {
+    if (e.response?.status === 401) {
+      localStorage.removeItem("auth_token");
+      settingsNavCache = null;
+    } else {
+      settingsNavCache = false;
+    }
+    return false;
+  }
+}
+
 async function ensureWebmasterRouteAccess() {
   if (webmasterNavCache !== null) {
     return webmasterNavCache;
@@ -731,6 +797,7 @@ async function ensureBillingRouteAccess(path) {
       setUsersNavFromUser(data);
       setClientsNavFromUser(data);
       setWebmasterNavFromUser(data);
+      setSettingsNavFromUser(data);
       setBillingNavFromUser(data);
       setInventoryNavFromUser(data);
     } catch (e) {
@@ -755,6 +822,7 @@ async function ensureInventoryRouteAccess(path) {
       setUsersNavFromUser(data);
       setClientsNavFromUser(data);
       setWebmasterNavFromUser(data);
+      setSettingsNavFromUser(data);
       setBillingNavFromUser(data);
       setInventoryNavFromUser(data);
     } catch (e) {
@@ -841,6 +909,16 @@ router.beforeEach(async (to) => {
     }
   } else if (to.path.startsWith("/users/")) {
     return { path: "/admin/dashboard" };
+  }
+
+  if (to.path.startsWith("/admin/settings")) {
+    const ok = await ensureSettingsRouteAccess();
+    if (!ok) {
+      if (!localStorage.getItem("auth_token")) {
+        return { name: "login", query: { redirect: to.fullPath } };
+      }
+      return { path: "/admin/dashboard" };
+    }
   }
 
   if (to.path === "/admin/webmaster" || to.path.startsWith("/admin/webmaster/")) {

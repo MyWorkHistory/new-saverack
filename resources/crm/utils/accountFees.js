@@ -123,6 +123,15 @@ export function normalizeAccountFees(account) {
     }));
   }
 
+  const catalogRaw = f.catalog_lines && typeof f.catalog_lines === "object" ? f.catalog_lines : {};
+  const catalogLines = {
+    fulfillment: mapCatalogLines(catalogRaw.fulfillment),
+    returns: mapCatalogLines(catalogRaw.returns),
+    storage: mapCatalogLines(catalogRaw.storage),
+    receiving: mapCatalogLines(catalogRaw.receiving),
+    custom_work: mapCatalogLines(catalogRaw.custom_work),
+  };
+
   return {
     fulfillment: {
       firstPick: formatFeeDisplay(firstPick),
@@ -133,7 +142,24 @@ export function normalizeAccountFees(account) {
       additionalItems: formatFeeDisplay(additionalItems),
     },
     storageRows,
+    catalogLines,
   };
+}
+
+function mapCatalogLines(rows) {
+  if (!Array.isArray(rows)) return [];
+  return rows.map((row) => {
+    if (!row || typeof row !== "object") {
+      return { id: null, name: "Fee", description: "", value: null, icon_url: null };
+    }
+    return {
+      id: row.id != null ? Number(row.id) : null,
+      name: row.name != null ? String(row.name) : "Fee",
+      description: row.description != null ? String(row.description) : "",
+      value: formatFeeDisplay(row.amount),
+      icon_url: row.icon_url != null ? String(row.icon_url) : null,
+    };
+  });
 }
 
 function humanizeFeeKey(k) {

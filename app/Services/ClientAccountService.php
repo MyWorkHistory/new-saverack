@@ -4,6 +4,7 @@ namespace App\Services;
 
 use App\Models\ClientAccount;
 use App\Models\ClientAccountFee;
+use App\Models\PricingFeeTemplate;
 use App\Models\User;
 use Illuminate\Contracts\Pagination\LengthAwarePaginator;
 use Illuminate\Database\Eloquent\Builder;
@@ -18,12 +19,17 @@ class ClientAccountService
     /** @var ActivityLogService */
     protected $activityLog;
 
+    /** @var PricingFeeTemplateService */
+    protected $pricingTemplates;
+
     public function __construct(
         PortalClientProvisioningService $portalProvisioning,
-        ActivityLogService $activityLog
+        ActivityLogService $activityLog,
+        PricingFeeTemplateService $pricingTemplates
     ) {
         $this->portalProvisioning = $portalProvisioning;
         $this->activityLog = $activityLog;
+        $this->pricingTemplates = $pricingTemplates;
     }
 
     public function filteredAccountsQuery(array $filters): Builder
@@ -205,6 +211,12 @@ class ClientAccountService
      */
     public function ensureDefaultFeeItems(ClientAccount $account): void
     {
+        if (PricingFeeTemplate::query()->exists()) {
+            $this->pricingTemplates->provisionAllTemplatesForAccount($account);
+
+            return;
+        }
+
         $defaults = [
             [ClientAccountFee::GROUP_FULFILLMENT, ClientAccountFee::LINE_FIRST_PICK],
             [ClientAccountFee::GROUP_FULFILLMENT, ClientAccountFee::LINE_ADDITIONAL_PICKS],
@@ -385,9 +397,18 @@ class ClientAccountService
             ? $account->feeItems
             : $account->feeItems()->get();
 
+        $iconService = app(PricingFeeIconService::class);
+
         $fulfillment = [];
         $returns = [];
         $storage = [];
+        $catalog = [
+            ClientAccountFee::GROUP_FULFILLMENT => [],
+            ClientAccountFee::GROUP_RETURNS => [],
+            ClientAccountFee::GROUP_STORAGE => [],
+            ClientAccountFee::GROUP_RECEIVING => [],
+            ClientAccountFee::GROUP_CUSTOM_WORK => [],
+        ];
 
         foreach ($items as $fee) {
             if (! $fee instanceof ClientAccountFee) {
@@ -419,12 +440,49 @@ class ClientAccountService
                     'currency' => $fee->currency !== null && $fee->currency !== '' ? (string) $fee->currency : 'USD',
                 ];
             }
+
+            if ($this->isCatalogFeeLine($fee)) {
+                $group = $fee->fee_group;
+                if (isset($catalog[$group])) {
+                    $catalog[$group][] = $this->catalogLinePayload($fee, $iconService);
+                }
+            }
         }
 
         return [
             'fulfillment' => $fulfillment,
             'returns' => $returns,
             'storage' => $storage,
+            'catalog_lines' => $catalog,
+        ];
+    }
+
+    private function isCatalogFeeLine(ClientAccountFee $fee): bool
+    {
+        if (in_array($fee->fee_group, [ClientAccountFee::GROUP_RECEIVING, ClientAccountFee::GROUP_CUSTOM_WORK], true)) {
+            return true;
+        }
+
+        $code = (string) ($fee->line_code ?? '');
+
+        return str_starts_with($code, 'template_');
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function catalogLinePayload(ClientAccountFee $fee, PricingFeeIconService $iconService): array
+    {
+        $amount = $fee->amount !== null ? (float) $fee->amount : null;
+
+        return [
+            'id' => $fee->id,
+            'name' => $fee->label !== null && $fee->label !== '' ? (string) $fee->label : 'Fee',
+            'description' => $fee->description,
+            'amount' => $amount,
+            'icon_url' => $iconService->publicUrl($fee->icon_path),
+            'line_code' => $fee->line_code,
+            'pricing_template_id' => $fee->pricing_template_id,
         ];
     }
 

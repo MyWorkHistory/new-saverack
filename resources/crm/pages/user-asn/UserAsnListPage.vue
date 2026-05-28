@@ -7,7 +7,7 @@ import CrmLoadingSpinner from "../../components/common/CrmLoadingSpinner.vue";
 import ConfirmModal from "../../components/common/ConfirmModal.vue";
 import { setCrmPageMeta } from "../../composables/useCrmPageMeta.js";
 import { useToast } from "../../composables/useToast.js";
-import { formatAsnHeading } from "../../utils/formatAsnDisplay.js";
+import { formatAsnDisplay } from "../../utils/formatAsnDisplay.js";
 import { formatDateUs } from "../../utils/formatUserDates.js";
 
 const toast = useToast();
@@ -290,8 +290,8 @@ async function confirmRowDelete() {
 
 onMounted(() => {
   setCrmPageMeta({
-    title: "Save Rack | ASN",
-    description: "Advance shipping notices for your account.",
+    title: "Save Rack | Advanced Shipment Notice",
+    description: "Advanced shipment notices for your account.",
   });
   document.addEventListener("click", onDocClickManage);
   window.addEventListener("scroll", onWindowCloseManageMenu, true);
@@ -310,8 +310,8 @@ onUnmounted(() => {
   <div class="staff-page staff-page--wide">
     <div class="d-flex flex-wrap align-items-end justify-content-between gap-3 mb-4">
       <div>
-        <h1 class="h4 mb-1 fw-semibold text-body">ASN</h1>
-        <p class="staff-page__intro mb-0">Advance shipping notices. Search by ASN # or tracking #.</p>
+        <h1 class="h4 mb-1 fw-semibold text-body">Advanced Shipment Notice</h1>
+        <p class="staff-page__intro user-asn-list__subtitle mb-0">Search by ASN # or tracking #.</p>
       </div>
       <button type="button" class="btn btn-primary staff-page-primary" @click="createAsn">Create ASN</button>
     </div>
@@ -440,7 +440,7 @@ onUnmounted(() => {
                     {{ statusLabel(r.status) }}
                   </span>
                 </td>
-                <td class="text-center fw-semibold user-asn-list-asn-col">{{ formatAsnHeading(r.asn_number) }}</td>
+                <td class="text-center fw-semibold user-asn-list-asn-col">{{ formatAsnDisplay(r.asn_number) }}</td>
                 <td class="text-center small text-secondary">{{ formatDateUs(r.created_at) }}</td>
                 <td class="text-center">{{ Number(r.expected_qty ?? 0).toLocaleString() }}</td>
                 <td class="text-center">{{ Number(r.accepted_qty ?? 0).toLocaleString() }}</td>
@@ -633,5 +633,9 @@ onUnmounted(() => {
   text-overflow: ellipsis;
   white-space: nowrap;
   vertical-align: bottom;
+}
+
+[data-bs-theme="dark"] .user-asn-list__subtitle {
+  color: #fff !important;
 }
 </style>

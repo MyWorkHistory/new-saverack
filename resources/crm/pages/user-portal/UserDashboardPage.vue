@@ -6,6 +6,9 @@ import { setCrmPageMeta } from "../../composables/useCrmPageMeta.js";
 import { usePortalDashboardCounts } from "../../composables/usePortalDashboardCounts.js";
 import { usePortalOutOfStockPreview } from "../../composables/usePortalOutOfStockPreview.js";
 import { useToast } from "../../composables/useToast.js";
+import api from "../../services/api.js";
+import { formatAsnDisplay } from "../../utils/formatAsnDisplay.js";
+import { formatDateUs } from "../../utils/formatUserDates.js";
 
 const toast = useToast();
 const crmUser = inject("crmUser", ref(null));
@@ -43,12 +46,14 @@ const DASHBOARD_ICON = {
   shelves: "M3 23V1h2v2h14V1h2v22h-2v-2H5v2zm2-12h2V7h6v4h6V5H5zm0 8h6v-4h6v4h2v-6H5z",
   truck:
     "M3.875 19.125Q3 18.25 3 17H1V6q0-.825.588-1.412T3 4h14v4h3l3 4v5h-2q0 1.25-.875 2.125T18 20t-2.125-.875T15 17H9q0 1.25-.875 2.125T6 20t-2.125-.875m2.838-1.412Q7 17.425 7 17t-.288-.712T6 16t-.712.288T5 17t.288.713T6 18t.713-.288m12 0Q19 17.426 19 17t-.288-.712T18 16t-.712.288T17 17t.288.713T18 18t.713-.288M17 13h4.25L19 10h-2z",
-  chart:
-    "M3 13.125C3 12.504 3.504 12 4.125 12h2.25c.621 0 1.125.504 1.125 1.125v6.75C7.5 20.496 6.996 21 6.375 21h-2.25A1.125 1.125 0 0 1 3 19.875v-6.75ZM9.75 8.625c0-.621.504-1.125 1.125-1.125h2.25c.621 0 1.125.504 1.125 1.125v11.25c0 .621-.504 1.125-1.125 1.125h-2.25a1.125 1.125 0 0 1-1.125-1.125V8.625ZM16.5 4.125c0-.621.504-1.125 1.125-1.125h2.25C20.496 3 21 3.504 21 4.125v15.75c0 .621-.504 1.125-1.125 1.125h-2.25a1.125 1.125 0 0 1-1.125-1.125V4.125Z",
+  asn:
+    "M4 4h16v14H4zM8 8h8v2H8zm0 4h6v2H8zm-2 9v-3h12v3z",
 };
 
 const OOS_PANEL_ICON_STYLE = { background: "#ffe4e6", color: "#be123c" };
-const COMING_SOON_ICON_STYLE = { background: "#f3f4f6", color: "#6b7280" };
+const ASN_PANEL_ICON_STYLE = { background: "#dbeafe", color: "#1e3a8a" };
+const asnLoading = ref(false);
+const asnRows = ref([]);
 
 const accountDisplayName = computed(() => {
   const u = crmUser.value;
@@ -124,6 +129,51 @@ function syncPageMeta() {
 async function onRefreshDashboard() {
   await refreshCounts();
   await loadOosPreview({ bustCache: true });
+  await loadAsnPreview({ bustCache: true });
+}
+
+function asnStatusLabel(value) {
+  const s = String(value || "").toLowerCase();
+  if (s === "draft") return "Draft";
+  if (s === "in_progress") return "In Progress";
+  if (s === "completed") return "Completed";
+  if (s === "pending") return "Pending";
+  return "Pending";
+}
+
+function asnStatusBadgeClass(value) {
+  const s = String(value || "").toLowerCase();
+  if (s === "draft") return "bg-warning-subtle text-warning-emphasis";
+  if (s === "in_progress") return "bg-primary-subtle text-primary-emphasis";
+  if (s === "completed") return "bg-success-subtle text-success-emphasis";
+  if (s === "pending") return "bg-secondary-subtle text-secondary-emphasis";
+  return "bg-body-secondary text-body-secondary";
+}
+
+async function loadAsnPreview({ bustCache = false } = {}) {
+  if (!clientAccountId.value) {
+    asnRows.value = [];
+    return;
+  }
+  asnLoading.value = true;
+  try {
+    const { data } = await api.get("/asns", {
+      params: {
+        client_account_id: clientAccountId.value,
+        per_page: 5,
+        page: 1,
+        sort_by: "created_at",
+        sort_dir: "desc",
+        ...(bustCache ? { _t: Date.now() } : {}),
+      },
+    });
+    asnRows.value = Array.isArray(data?.data) ? data.data : [];
+  } catch (e) {
+    toast.errorFrom(e, "Could not load ASN preview.");
+    asnRows.value = [];
+  } finally {
+    asnLoading.value = false;
+  }
 }
 
 watch(accountDisplayName, syncPageMeta, { immediate: true });
@@ -133,6 +183,7 @@ watch(
   ([id, userReady]) => {
     if (id && userReady) {
       loadOosPreview();
+      loadAsnPreview();
     }
   },
   { immediate: true },
@@ -140,6 +191,7 @@ watch(
 
 onMounted(() => {
   loadCounts();
+  loadAsnPreview();
 });
 </script>
 
@@ -363,24 +415,71 @@ onMounted(() => {
               <div class="user-dashboard-panel__header d-flex align-items-start gap-3 mb-3">
                 <div
                   class="user-dashboard-panel__icon flex-shrink-0"
-                  :style="COMING_SOON_ICON_STYLE"
+                  :style="ASN_PANEL_ICON_STYLE"
                   aria-hidden="true"
                 >
                   <svg class="user-dashboard-stat-svg" fill="currentColor" viewBox="0 0 24 24">
-                    <path :d="DASHBOARD_ICON.chart" />
+                    <path :d="DASHBOARD_ICON.asn" />
                   </svg>
                 </div>
                 <div class="min-w-0">
-                  <h2 class="staff-user-section-title mb-1">Coming Soon</h2>
+                  <h2 class="staff-user-section-title mb-1">Advanced Shipment Notice</h2>
                   <p class="small text-secondary mb-0">
-                    More insights and tools for your account will appear here.
+                    Your latest inventory shipment sent to our fulfillment center.
                   </p>
                 </div>
               </div>
-              <div
-                class="user-dashboard__chart-placeholder flex-grow-1 d-flex align-items-center justify-content-center text-secondary small rounded"
-              >
-                Coming soon
+
+              <div class="user-dashboard-panel__body flex-grow-1 position-relative">
+                <div
+                  v-if="asnLoading"
+                  class="user-dashboard-panel__loading d-flex align-items-center justify-content-center py-4"
+                  aria-busy="true"
+                >
+                  <CrmLoadingSpinner message="Loading…" :center="true" />
+                </div>
+                <div v-else class="table-responsive user-dashboard-oos-table-wrap">
+                  <table class="table table-sm align-middle mb-0 staff-data-table user-dashboard-oos-table">
+                    <thead class="table-light staff-table-head">
+                      <tr>
+                        <th class="staff-table-head__th text-center" scope="col">Status</th>
+                        <th class="staff-table-head__th text-center" scope="col">ASN #</th>
+                        <th class="staff-table-head__th text-center" scope="col">Date Created</th>
+                        <th class="staff-table-head__th text-center" scope="col">Expected QTY</th>
+                        <th class="staff-table-head__th text-center" scope="col">Accepted QTY</th>
+                        <th class="staff-table-head__th text-center" scope="col">Rejected QTY</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      <tr v-if="!asnRows.length">
+                        <td colspan="6" class="text-center text-secondary py-4 small">
+                          No ASNs yet.
+                        </td>
+                      </tr>
+                      <tr v-for="row in asnRows" :key="row.id">
+                        <td class="text-center">
+                          <span class="badge rounded-pill fw-medium" :class="asnStatusBadgeClass(row.status)">
+                            {{ asnStatusLabel(row.status) }}
+                          </span>
+                        </td>
+                        <td class="text-center fw-semibold">{{ formatAsnDisplay(row.asn_number) }}</td>
+                        <td class="text-center small text-secondary">{{ formatDateUs(row.created_at) }}</td>
+                        <td class="text-center">{{ Number(row.expected_qty ?? 0).toLocaleString() }}</td>
+                        <td class="text-center">{{ Number(row.accepted_qty ?? 0).toLocaleString() }}</td>
+                        <td class="text-center">{{ Number(row.rejected_qty ?? 0).toLocaleString() }}</td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+
+              <div class="pt-3 mt-auto border-top">
+                <RouterLink
+                  to="/users/asn"
+                  class="btn btn-outline-secondary btn-sm orders-toolbar-outline-btn"
+                >
+                  View All
+                </RouterLink>
               </div>
             </section>
           </div>
@@ -437,16 +536,6 @@ onMounted(() => {
   flex-shrink: 0;
   display: block;
   overflow: visible;
-}
-
-.user-dashboard__chart-placeholder {
-  min-height: 180px;
-  border: 1px dashed rgba(47, 43, 61, 0.18);
-  background: var(--bs-body-bg, #fff);
-}
-
-[data-bs-theme="dark"] .user-dashboard__chart-placeholder {
-  border-color: rgba(255, 255, 255, 0.12);
 }
 
 .user-dashboard__content {

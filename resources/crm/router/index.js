@@ -29,7 +29,7 @@ import BillingInvoicesListPage from "../pages/billing/BillingInvoicesListPage.vu
 import BillingInvoiceDetailPage from "../pages/billing/BillingInvoiceDetailPage.vue";
 import BillingCustomBillsListPage from "../pages/billing/BillingCustomBillsListPage.vue";
 import BillingCustomBillDetailPage from "../pages/billing/BillingCustomBillDetailPage.vue";
-import InventoryPage from "../pages/inventory/InventoryPage.vue";
+import InventoryListPage from "../pages/inventory/InventoryListPage.vue";
 import InventoryDetailPage from "../pages/inventory/InventoryDetailPage.vue";
 import InventoryOnDemandPage from "../pages/inventory/InventoryOnDemandPage.vue";
 import OrdersListPage from "../pages/orders/OrdersListPage.vue";
@@ -337,7 +337,7 @@ const routes = [
   {
     path: "/admin/inventory",
     name: "inventory",
-    component: InventoryPage,
+    component: InventoryListPage,
     meta: meta.inventory,
   },
   {
@@ -481,7 +481,7 @@ const routes = [
   { path: "/users/orders/shipped", name: "user-orders-shipped", component: OrdersListPage, meta: { ...meta.ordersShipped, orderTab: "shipped", userPortal: true } },
   { path: "/users/orders/:shipheroOrderId", name: "user-order-detail", component: () => import("../pages/user-orders/UserOrderDetailPage.vue"), props: true, meta: { ...meta.orderDetail, userPortal: true } },
   { path: "/users/inventory/out-of-stock", name: "user-inventory-out-of-stock", component: () => import("../pages/user-inventory/UserInventoryOutOfStockPage.vue"), meta: { ...meta.userPortalInventoryOutOfStock, userPortal: true } },
-  { path: "/users/inventory", name: "user-inventory", component: () => import("../pages/user-inventory/UserInventoryPage.vue"), meta: { ...meta.userPortalInventory, userPortal: true } },
+  { path: "/users/inventory", name: "user-inventory", component: InventoryListPage, meta: { ...meta.userPortalInventory, userPortal: true } },
   { path: "/users/inventory/:sku", name: "user-inventory-detail", component: () => import("../pages/user-inventory/UserInventoryDetailPage.vue"), props: true, meta: { ...meta.userPortalInventoryDetail, userPortal: true } },
   { path: "/users/asn", name: "user-asn-list", component: () => import("../pages/user-asn/UserAsnListPage.vue"), meta: { ...meta.userAsnList, userPortal: true } },
   { path: "/users/asn/:id", name: "user-asn-detail", component: () => import("../pages/user-asn/UserAsnDetailPage.vue"), props: true, meta: { ...meta.userAsnDetail, userPortal: true } },

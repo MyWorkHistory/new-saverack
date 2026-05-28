@@ -16,6 +16,15 @@ const toast = useToast();
 const crmUser = inject("crmUser", ref(null));
 
 const isPortalView = computed(() => Boolean(route.meta.userPortal));
+const usePortalDetailLayout = computed(
+  () => isPortalView.value || route.name === "inventory-detail",
+);
+const inventoryListRoute = computed(() =>
+  isPortalView.value ? "/users/inventory" : "/admin/inventory",
+);
+const inventoryListBreadcrumbLabel = computed(() =>
+  isPortalView.value ? "Products" : "Inventory",
+);
 const canManageInventoryLocations = computed(() => !isPortalView.value);
 
 const { markRefreshed, lastRefreshedLabel } = usePortalLastRefreshed();
@@ -131,7 +140,7 @@ const allLocations = computed(() => {
   if (!p?.warehouses) return out;
   p.warehouses.forEach((wh) => {
     (wh.locations || []).forEach((loc) => {
-      if (!isPortalView.value && Number(loc?.quantity || 0) <= 0) return;
+      if (!usePortalDetailLayout.value && Number(loc?.quantity || 0) <= 0) return;
       out.push({
         ...loc,
         warehouse_id: wh.warehouse_id,
@@ -220,10 +229,14 @@ function formatOrderDate(val) {
   return formatDateUs(val);
 }
 
-function portalOrderTo(orderId) {
+function orderDetailTo(orderId) {
+  const query = {};
+  const clientId = Number(route.query.client_account_id || 0);
+  if (clientId > 0) query.client_account_id = String(clientId);
   return {
-    name: "user-order-detail",
+    name: isPortalView.value ? "user-order-detail" : "order-detail",
     params: { shipheroOrderId: String(orderId) },
+    query,
   };
 }
 
@@ -670,12 +683,12 @@ async function togglePickable(loc) {
       <div v-else-if="!product" class="text-secondary small py-4 text-center">
         Product not found.
       </div>
-      <div v-else-if="isPortalView" class="staff-user-view staff-page--wide inventory-portal-detail">
+      <div v-else-if="usePortalDetailLayout" class="staff-user-view staff-page--wide inventory-portal-detail">
         <nav
           class="staff-user-view__breadcrumb d-flex flex-wrap align-items-center gap-1"
           aria-label="Breadcrumb"
         >
-          <RouterLink to="/users/inventory">Products</RouterLink>
+          <RouterLink :to="inventoryListRoute">{{ inventoryListBreadcrumbLabel }}</RouterLink>
           <span class="text-secondary" aria-hidden="true">/</span>
           <span class="text-body-secondary">Detail</span>
         </nav>
@@ -827,6 +840,92 @@ async function togglePickable(loc) {
           </div>
 
           <div class="col-12 col-xl-8">
+            <div class="staff-table-card inventory-portal-detail__section p-0 mb-3">
+              <div class="inventory-portal-detail__section-head">
+                <div>
+                  <h2 class="inventory-portal-detail__section-title">Locations</h2>
+                  <p class="small text-body-secondary mb-0">
+                    Warehouse locations for this SKU
+                  </p>
+                </div>
+              </div>
+              <div class="px-3 pb-2">
+                <input
+                  v-model="locationSearch"
+                  type="search"
+                  class="form-control staff-toolbar-search staff-toolbar-search--inline"
+                  placeholder="Search locations"
+                  aria-label="Search locations"
+                />
+              </div>
+              <div v-if="canManageInventoryLocations" class="px-3 pb-2 d-flex flex-wrap gap-2">
+                <button type="button" class="btn btn-primary btn-sm staff-toolbar-btn" @click="openAddLocationModal">
+                  Add Location
+                </button>
+              </div>
+              <div class="table-responsive inventory-portal-detail__table-wrap">
+                <table class="table table-hover align-middle mb-0 staff-data-table">
+                  <thead class="table-light staff-table-head">
+                    <tr>
+                      <th class="staff-table-head__th">Location Name</th>
+                      <th class="staff-table-head__th">Pickable</th>
+                      <th class="staff-table-head__th">QTY</th>
+                      <th class="staff-table-head__th">Type</th>
+                      <th v-if="canManageInventoryLocations" class="staff-table-head__th text-center">Action</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr v-if="!filteredLocations.length">
+                      <td :colspan="canManageInventoryLocations ? 5 : 4" class="text-center text-secondary py-4">
+                        No locations found for this product.
+                      </td>
+                    </tr>
+                    <tr v-for="loc in filteredLocations" :key="`${loc.warehouse_id}-${loc.location_id}`">
+                      <td>{{ loc.location_name || loc.location_id }}</td>
+                      <td>
+                        <button
+                          v-if="canManageInventoryLocations"
+                          type="button"
+                          class="inventory-detail__toggle"
+                          :class="{
+                            'inventory-detail__toggle--on': loc.pickable === true,
+                            'inventory-detail__toggle--off': loc.pickable === false,
+                            'inventory-detail__toggle--unknown': loc.pickable !== true && loc.pickable !== false,
+                          }"
+                          :aria-pressed="loc.pickable === true"
+                          @click="togglePickable(loc)"
+                        >
+                          <span class="inventory-detail__toggle-track">
+                            <span class="inventory-detail__toggle-thumb" />
+                          </span>
+                          <span class="inventory-detail__toggle-label">
+                            {{ loc.pickable === true ? "Yes" : loc.pickable === false ? "No" : "—" }}
+                          </span>
+                        </button>
+                        <span v-else>
+                          {{ loc.pickable === true ? "Yes" : loc.pickable === false ? "No" : "—" }}
+                        </span>
+                      </td>
+                      <td>{{ loc.quantity }}</td>
+                      <td>{{ loc.type || "—" }}</td>
+                      <td v-if="canManageInventoryLocations" class="text-center">
+                        <div data-row-actions class="d-inline-flex">
+                          <button
+                            type="button"
+                            class="staff-action-btn staff-action-btn--more"
+                            :aria-expanded="actionMenuLocationId === String(loc.location_id)"
+                            @click="openActionMenu(loc, $event)"
+                          >
+                            <CrmIconRowActions variant="horizontal" />
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
             <div class="staff-table-card inventory-portal-detail__section p-0">
               <div class="inventory-portal-detail__section-head">
                 <div>
@@ -1008,7 +1107,7 @@ async function togglePickable(loc) {
                   <tbody>
                     <tr v-for="row in allocatedOrders" :key="`${row.order_id}-${row.quantity}`">
                       <td>
-                        <RouterLink :to="portalOrderTo(row.order_id)">
+                        <RouterLink :to="orderDetailTo(row.order_id)">
                           {{ row.order_number || row.order_id }}
                         </RouterLink>
                       </td>
@@ -1105,7 +1204,7 @@ async function togglePickable(loc) {
                   <tbody>
                     <tr v-for="row in backorderOrders" :key="`${row.order_id}-${row.quantity}`">
                       <td>
-                        <RouterLink :to="portalOrderTo(row.order_id)">
+                        <RouterLink :to="orderDetailTo(row.order_id)">
                           {{ row.order_number || row.order_id }}
                         </RouterLink>
                       </td>
@@ -1143,247 +1242,6 @@ async function togglePickable(loc) {
           </div>
         </div>
       </div>
-
-      <template v-else>
-        <h1 class="h4 mb-3 fw-semibold text-body">Inventory Detail</h1>
-        <div class="row g-3 mb-3">
-          <div class="col-12 col-xl-3">
-            <div class="staff-table-card p-3 h-100">
-              <div class="text-center">
-                <img
-                  v-if="product.image_url"
-                  :src="product.image_url"
-                  alt=""
-                  class="inventory-detail__image mb-2"
-                />
-                <div v-else class="inventory-detail__image inventory-detail__image--empty mb-2" />
-                <h2 class="h6 fw-semibold mb-1">{{ product.name || "Product" }}</h2>
-                <p class="small text-secondary mb-0">{{ product.sku }}</p>
-              </div>
-              <hr />
-              <div class="small">
-                <div class="d-flex justify-content-between py-1"><span>SKU:</span><span>{{ product.sku || "—" }}</span></div>
-                <div class="d-flex justify-content-between py-1"><span>Barcode:</span><span>{{ product.barcode || "—" }}</span></div>
-                <div class="d-flex justify-content-between py-1"><span>Weight:</span><span>{{ displayNumber(product.dimensions?.weight) }}</span></div>
-                <div class="d-flex justify-content-between py-1"><span>Height:</span><span>{{ displayNumber(product.dimensions?.height) }}</span></div>
-                <div class="d-flex justify-content-between py-1"><span>Width:</span><span>{{ displayNumber(product.dimensions?.width) }}</span></div>
-                <div class="d-flex justify-content-between py-1"><span>Length:</span><span>{{ displayNumber(product.dimensions?.length) }}</span></div>
-                <div class="d-flex justify-content-between py-1"><span>Custom Value:</span><span>{{ displayNumber(product.customs_value) }}</span></div>
-                <div class="py-1">
-                  <div class="text-secondary">Custom Description:</div>
-                  <div>{{ displayVal(product.customs_description) }}</div>
-                </div>
-              </div>
-            </div>
-          </div>
-
-          <div class="col-12 col-xl-9">
-            <div class="row g-2 mb-3">
-              <div v-for="card in metricCards" :key="card.key" class="col-6 col-md">
-                <div class="staff-table-card p-3 inventory-metric-card">
-                  <div class="inventory-metric-card__head">
-                    <div class="inventory-metric-card__left">
-                      <div class="small text-secondary">{{ card.label }}</div>
-                    </div>
-                    <div class="inventory-metric-card__right">
-                      <svg
-                        class="inventory-metric-card__icon"
-                        :class="`inventory-metric-card__icon--${card.tone}`"
-                        viewBox="0 0 24 24"
-                        fill="none"
-                        stroke="currentColor"
-                        stroke-width="2"
-                        stroke-linecap="round"
-                        stroke-linejoin="round"
-                        aria-hidden="true"
-                      >
-                        <path :d="card.iconPath" />
-                      </svg>
-                    </div>
-                  </div>
-                  <div class="h5 mb-0">{{ card.value }}</div>
-                </div>
-              </div>
-            </div>
-
-            <div class="staff-table-card p-0 mb-3">
-              <div class="px-3 py-2 border-bottom">
-                <h3 class="h6 mb-0 fw-semibold">Locations</h3>
-              </div>
-              <div class="staff-table-toolbar border-0">
-                <div class="staff-table-toolbar--row">
-                  <input
-                    v-model="locationSearch"
-                    type="search"
-                    class="form-control staff-toolbar-search staff-toolbar-search--inline"
-                    placeholder="Search locations"
-                  />
-                  <template v-if="canManageInventoryLocations">
-                    <button type="button" class="btn btn-outline-secondary staff-toolbar-btn" disabled>Filters</button>
-                    <button type="button" class="btn btn-primary staff-toolbar-btn" @click="openAddLocationModal">
-                      Add Location
-                    </button>
-                  </template>
-                </div>
-              </div>
-
-              <div class="table-responsive staff-table-wrap">
-                <table class="table table-hover align-middle mb-0 staff-data-table">
-                  <thead class="table-light staff-table-head">
-                    <tr>
-                      <th class="staff-table-head__th">Location Name</th>
-                      <th class="staff-table-head__th">Pickable</th>
-                      <th class="staff-table-head__th">QTY</th>
-                      <th class="staff-table-head__th">Type</th>
-                      <th v-if="canManageInventoryLocations" class="staff-table-head__th text-center">Action</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    <tr v-if="!filteredLocations.length">
-                      <td :colspan="canManageInventoryLocations ? 5 : 4" class="text-center text-secondary py-4">
-                        {{ isPortalView ? "No locations found for this product." : "No locations with quantity." }}
-                      </td>
-                    </tr>
-                    <tr v-for="loc in filteredLocations" :key="`${loc.warehouse_id}-${loc.location_id}`">
-                      <td>{{ loc.location_name || loc.location_id }}</td>
-                      <td>
-                        <button
-                          v-if="canManageInventoryLocations"
-                          type="button"
-                          class="inventory-detail__toggle"
-                          :class="{
-                            'inventory-detail__toggle--on': loc.pickable === true,
-                            'inventory-detail__toggle--off': loc.pickable === false,
-                            'inventory-detail__toggle--unknown': loc.pickable !== true && loc.pickable !== false
-                          }"
-                          @click="togglePickable(loc)"
-                          :aria-pressed="loc.pickable === true"
-                        >
-                          <span class="inventory-detail__toggle-track">
-                            <span class="inventory-detail__toggle-thumb" />
-                          </span>
-                          <span class="inventory-detail__toggle-label">
-                            {{ loc.pickable === true ? "Yes" : (loc.pickable === false ? "No" : "—") }}
-                          </span>
-                        </button>
-                        <span v-else>
-                          {{ loc.pickable === true ? "Yes" : loc.pickable === false ? "No" : "—" }}
-                        </span>
-                      </td>
-                      <td>{{ loc.quantity }}</td>
-                      <td>{{ loc.type || "—" }}</td>
-                      <td v-if="canManageInventoryLocations" class="text-center">
-                        <div data-row-actions class="d-inline-flex">
-                          <button
-                            type="button"
-                            class="staff-action-btn staff-action-btn--more"
-                            :aria-expanded="actionMenuLocationId === String(loc.location_id)"
-                            @click="openActionMenu(loc, $event)"
-                          >
-                            <CrmIconRowActions variant="horizontal" />
-                          </button>
-                        </div>
-                      </td>
-                    </tr>
-                  </tbody>
-                </table>
-              </div>
-            </div>
-
-            <div class="staff-table-card p-0">
-              <div class="px-3 py-2 border-bottom d-flex flex-wrap align-items-start justify-content-between gap-2">
-                <div>
-                  <h3 class="h6 mb-0">Kits</h3>
-                  <p class="small text-body-secondary mb-0">
-                    Kit products that include this SKU as a component
-                  </p>
-                </div>
-                <button
-                  type="button"
-                  class="btn btn-outline-secondary btn-sm d-inline-flex align-items-center gap-2"
-                  :disabled="parentKitsLoading"
-                  @click="loadParentKits({ refresh: parentKitsLoaded })"
-                >
-                  {{ sectionActionLabel({ loading: parentKitsLoading, loaded: parentKitsLoaded }) }}
-                </button>
-              </div>
-              <div v-if="parentKitsLoaded && parentKitsList.length" class="table-responsive">
-                <table class="table table-hover align-middle mb-0">
-                  <thead class="table-light">
-                    <tr>
-                      <th>SKU</th>
-                      <th>Name</th>
-                      <th class="text-end">Qty in kit</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    <tr v-for="kit in parentKitsList" :key="kit.sku">
-                      <td>
-                        <RouterLink :to="inventoryDetailTo(kit.sku)">{{ kit.sku }}</RouterLink>
-                      </td>
-                      <td>{{ kit.name || "—" }}</td>
-                      <td class="text-end">{{ kit.quantity }}</td>
-                    </tr>
-                  </tbody>
-                </table>
-              </div>
-              <p v-else-if="parentKitsLoading" class="text-secondary small px-3 py-3 mb-0">Loading kits…</p>
-              <p v-else-if="parentKitsError" class="text-danger small px-3 py-3 mb-0">{{ parentKitsError }}</p>
-              <p v-else-if="parentKitsLoaded" class="text-secondary small px-3 py-3 mb-0">
-                No kits found that use this SKU as a component.
-              </p>
-              <p v-else class="text-secondary small px-3 py-3 mb-0">
-                Select Load to fetch kits from ShipHero.
-              </p>
-            </div>
-
-            <div class="staff-table-card p-0">
-              <div class="px-3 py-2 border-bottom d-flex flex-wrap align-items-start justify-content-between gap-2">
-                <div>
-                  <h3 class="h6 mb-0">Kit Components</h3>
-                  <p class="small text-body-secondary mb-0">
-                    Products that make up this kit
-                  </p>
-                </div>
-                <button
-                  type="button"
-                  class="btn btn-outline-secondary btn-sm d-inline-flex align-items-center gap-2"
-                  :disabled="kitComponentsLoading"
-                  @click="loadKitComponents({ refresh: kitComponentsLoaded })"
-                >
-                  {{ sectionActionLabel({ loading: kitComponentsLoading, loaded: kitComponentsLoaded }) }}
-                </button>
-              </div>
-              <div v-if="kitComponentsLoaded && kitComponentsList.length" class="table-responsive">
-                <table class="table table-hover align-middle mb-0">
-                  <thead class="table-light">
-                    <tr>
-                      <th>SKU</th>
-                      <th class="text-end">Quantity</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    <tr v-for="component in kitComponentsList" :key="component.sku">
-                      <td>
-                        <RouterLink :to="inventoryDetailTo(component.sku)">{{ component.sku }}</RouterLink>
-                      </td>
-                      <td class="text-end">{{ component.quantity }}</td>
-                    </tr>
-                  </tbody>
-                </table>
-              </div>
-              <p v-else-if="kitComponentsLoading" class="text-secondary small px-3 py-3 mb-0">Loading kit components…</p>
-              <p v-else-if="kitComponentsError" class="text-danger small px-3 py-3 mb-0">{{ kitComponentsError }}</p>
-              <p v-else-if="kitComponentsLoaded" class="text-secondary small px-3 py-3 mb-0">
-                No kit components configured for this SKU.
-              </p>
-              <p v-else class="text-secondary small px-3 py-3 mb-0">
-                Select Load to fetch kit components from ShipHero.
-              </p>
-            </div>
-          </div>
-        </div>
-      </template>
 
       <Teleport v-if="canManageInventoryLocations" to="body">
         <div

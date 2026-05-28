@@ -355,7 +355,7 @@ const routes = [
   },
   {
     path: "/admin/orders",
-    redirect: "/admin/orders/awaiting",
+    redirect: "/admin/orders/all",
   },
   {
     path: "/admin/orders/create",
@@ -368,10 +368,14 @@ const routes = [
     },
   },
   {
-    path: "/admin/orders/manage",
-    name: "orders-manage",
+    path: "/admin/orders/all",
+    name: "orders-all",
     component: OrdersListPage,
     meta: { ...meta.ordersManage, orderTab: "manage" },
+  },
+  {
+    path: "/admin/orders/manage",
+    redirect: "/admin/orders/all",
   },
   {
     path: "/admin/orders/awaiting",

@@ -1446,7 +1446,7 @@ function goToOrdersList() {
     router.push({ name: "user-orders", query: q });
     return;
   }
-  router.push({ name: "orders-manage", query: q });
+  router.push({ name: "orders-all", query: q });
 }
 </script>
 

@@ -105,8 +105,8 @@ function navActive(mode) {
   if (mode === "clients-accounts") return p.startsWith("/admin/clients/accounts");
   if (mode === "clients-users") return p.startsWith("/admin/clients/users");
   if (mode === "orders") return p.startsWith("/admin/orders");
-  if (mode === "orders-index") return p === "/admin/orders/awaiting";
-  if (mode === "orders-manage") return p.startsWith("/admin/orders/manage");
+  if (mode === "orders-index") return p === "/admin/orders/all";
+  if (mode === "orders-manage") return p.startsWith("/admin/orders/all");
   if (mode === "orders-awaiting") return p.startsWith("/admin/orders/awaiting");
   if (mode === "orders-on-hold") return p.startsWith("/admin/orders/on-hold");
   if (mode === "orders-out-of-stock") return p.startsWith("/admin/orders/backorder");
@@ -252,32 +252,12 @@ function collapseNav() {
               <ul v-show="ordersGroupOpen" class="list-unstyled mb-0 mt-1">
                 <li>
                   <RouterLink
-                    to="/admin/orders/awaiting"
+                    to="/admin/orders/all"
                     class="vx-nav-link vx-nav-sublink"
                     :class="{ 'vx-nav-link--active': navActive('orders-index') }"
                     @click="closeMobile"
                   >
                     All
-                  </RouterLink>
-                </li>
-                <li>
-                  <RouterLink
-                    to="/admin/orders/manage"
-                    class="vx-nav-link vx-nav-sublink"
-                    :class="{ 'vx-nav-link--active': navActive('orders-manage') }"
-                    @click="closeMobile"
-                  >
-                    Manage
-                  </RouterLink>
-                </li>
-                <li v-if="canWriteOrders">
-                  <RouterLink
-                    to="/admin/orders/create"
-                    class="vx-nav-link vx-nav-sublink"
-                    :class="{ 'vx-nav-link--active': route.path === '/admin/orders/create' }"
-                    @click="closeMobile"
-                  >
-                    Create Order
                   </RouterLink>
                 </li>
                 <li>
@@ -320,12 +300,22 @@ function collapseNav() {
                     Shipped
                   </RouterLink>
                 </li>
+                <li v-if="canWriteOrders">
+                  <RouterLink
+                    to="/admin/orders/create"
+                    class="vx-nav-link vx-nav-sublink"
+                    :class="{ 'vx-nav-link--active': route.path === '/admin/orders/create' }"
+                    @click="closeMobile"
+                  >
+                    Create Order
+                  </RouterLink>
+                </li>
               </ul>
             </div>
           </template>
           <RouterLink
             v-else
-            to="/admin/orders/manage"
+            to="/admin/orders/all"
             class="vx-nav-link"
             title="Orders"
             @click="closeMobile"

@@ -1,6 +1,6 @@
 <script setup>
 import { Transition, computed, inject, nextTick, onMounted, onUnmounted, reactive, ref, watch } from "vue";
-import { RouterLink, useRoute, useRouter } from "vue-router";
+import { useRoute, useRouter } from "vue-router";
 import api from "../../services/api";
 import CrmLoadingSpinner from "../../components/common/CrmLoadingSpinner.vue";
 import CrmIconRowActions from "../../components/common/CrmIconRowActions.vue";
@@ -30,18 +30,6 @@ const selectedAccountId = ref("");
 const hasSearched = ref(false);
 const nextCursor = ref(null);
 const hasNextPage = ref(false);
-const readySummaryLoading = ref(false);
-const readySummary = ref({
-  ready_to_ship_total: 0,
-  ready_to_ship_by_account: [],
-  late_orders_total: 0,
-  priority_orders_total: 0,
-});
-const READY_SUMMARY_CACHE_KEY = "orders.manage.readySummary.v1";
-const readySummaryPageSize = 7;
-const readySummaryOffset = ref(0);
-const readySummaryHasMore = ref(false);
-const readySummaryLoadingMore = ref(false);
 
 const manageOpenId = ref(null);
 const manageMenuRect = ref({ top: 0, left: 0 });
@@ -88,10 +76,11 @@ const tabKey = computed(() => String(route.meta?.orderTab || "manage"));
 
 /** Portal user routes set `meta.userPortal`; staff may pass `portal-order-list` explicitly. */
 const isPortalOrderList = computed(() => props.portalOrderList === true || route.meta?.userPortal === true);
-/** Staff must click Search after picking an account; portal auto-loads. */
-const listSearchGated = computed(() => !isPortalOrderList.value);
+
+const isOrdersAllPage = computed(() => route.name === "orders-all");
 
 const tabTitle = computed(() => {
+  if (isOrdersAllPage.value) return "All";
   if (tabKey.value === "awaiting") return "Ready to Ship";
   if (tabKey.value === "on_hold") return "On-Hold";
   if (tabKey.value === "backorder") return "Backorder";
@@ -111,9 +100,6 @@ const displayedRows = computed(() => {
 const manageMenuRow = computed(
   () => rows.value.find((row) => row.id === manageOpenId.value) ?? null,
 );
-const readySummaryVisibleAccounts = computed(() => readySummary.value.ready_to_ship_by_account || []);
-const canLoadMoreReadySummary = computed(() => readySummaryHasMore.value && !readySummaryLoading.value);
-
 const isPortalUser = computed(() => Number(crmUser.value?.client_account_id || 0) > 0);
 const portalClientAccountId = computed(() => Number(crmUser.value?.client_account_id || 0));
 
@@ -251,17 +237,6 @@ function runListSearch() {
   }
   committedOrderNumber.value = normalizeOrderNumberInput(query.orderNumber);
   fetchOrders(true);
-  if (tabKey.value === "manage" && !isPortalOrderList.value) {
-    fetchReadySummary(true);
-  }
-}
-
-function resetListForSearchGate() {
-  rows.value = [];
-  hasSearched.value = false;
-  hasNextPage.value = false;
-  nextCursor.value = null;
-  clearRowSelection();
 }
 
 function firstHoldReasonLabel(row) {
@@ -413,51 +388,6 @@ async function fetchOrders(reset = true) {
   }
 }
 
-async function fetchReadySummary(reset = true) {
-  if (!showManageFilters.value || tabKey.value !== "manage") return;
-  if (reset) {
-    readySummaryLoading.value = true;
-  } else {
-    readySummaryLoadingMore.value = true;
-  }
-  try {
-    const range = dateRangeFromPreset();
-    const { data } = await api.get("/orders/summary", {
-      params: {
-        order_date_from: range.from || undefined,
-        order_date_to: range.to || undefined,
-        accounts_limit: readySummaryPageSize,
-        accounts_offset: reset ? 0 : readySummaryOffset.value,
-      },
-    });
-    const incomingAccounts = Array.isArray(data?.ready_to_ship_by_account) ? data.ready_to_ship_by_account : [];
-    const mergedAccounts = reset
-      ? incomingAccounts
-      : [...(readySummary.value.ready_to_ship_by_account || []), ...incomingAccounts];
-    readySummary.value = {
-      ready_to_ship_total: Number(data?.ready_to_ship_total || 0),
-      ready_to_ship_by_account: mergedAccounts,
-      late_orders_total: Number(data?.late_orders_total || 0),
-      priority_orders_total: Number(data?.priority_orders_total || 0),
-    };
-    readySummaryOffset.value = mergedAccounts.length;
-    readySummaryHasMore.value = Boolean(data?.has_more_accounts);
-    try {
-      sessionStorage.setItem(READY_SUMMARY_CACHE_KEY, JSON.stringify(readySummary.value));
-    } catch (_) {
-      // no-op
-    }
-  } catch (e) {
-    toast.errorFrom(e, "Could not load Ready to Ship summary.");
-  } finally {
-    if (reset) {
-      readySummaryLoading.value = false;
-    } else {
-      readySummaryLoadingMore.value = false;
-    }
-  }
-}
-
 function openOrder(row) {
   openOrderViewNewTab(row);
 }
@@ -603,7 +533,6 @@ async function submitAddHoldModal() {
     manageOpenId.value = null;
     clearRowSelection();
     await fetchOrders(true);
-    if (tabKey.value === "manage") await fetchReadySummary(true);
   } catch (e) {
     toast.errorFrom(e, "Could not add holds.");
   } finally {
@@ -687,7 +616,6 @@ async function runBulkMarkFulfilled() {
     confirmBulkMarkFulfilledOpen.value = false;
     clearRowSelection();
     await fetchOrders(true);
-    if (tabKey.value === "manage") await fetchReadySummary(true);
   } catch (e) {
     toast.errorFrom(e, "Bulk mark fulfilled failed.");
   } finally {
@@ -711,7 +639,6 @@ async function runBulkCancel() {
     confirmBulkCancelOpen.value = false;
     clearRowSelection();
     await fetchOrders(true);
-    if (tabKey.value === "manage") await fetchReadySummary(true);
   } catch (e) {
     toast.errorFrom(e, "Bulk cancel failed.");
   } finally {
@@ -803,7 +730,6 @@ async function onRemoveHoldsModalConfirm(payload) {
       removeHoldsSingleOrderId.value = "";
       clearRowSelection();
       await fetchOrders(true);
-      if (tabKey.value === "manage") await fetchReadySummary(true);
     } else {
       const oid = removeHoldsSingleOrderId.value;
       if (!oid) {
@@ -818,7 +744,6 @@ async function onRemoveHoldsModalConfirm(payload) {
       removeHoldsModalOpen.value = false;
       removeHoldsSingleOrderId.value = "";
       await fetchOrders(true);
-      if (tabKey.value === "manage") await fetchReadySummary(true);
     }
   } catch (e) {
     toast.errorFrom(
@@ -840,7 +765,6 @@ async function runSingleMarkFulfilled(row) {
     });
     toast.success("Order marked fulfilled.");
     await fetchOrders(true);
-    if (tabKey.value === "manage") await fetchReadySummary(true);
   } catch (e) {
     toast.errorFrom(e, "Could not mark fulfilled.");
   } finally {
@@ -876,7 +800,6 @@ async function runSingleCancel(row) {
     });
     toast.success("Order canceled.");
     await fetchOrders(true);
-    if (tabKey.value === "manage") await fetchReadySummary(true);
   } catch (e) {
     toast.errorFrom(e, "Could not cancel order.");
   } finally {
@@ -907,25 +830,27 @@ watch(
     query.holdReason = "";
     query.orderNumber = "";
     committedOrderNumber.value = "";
-    if (listSearchGated.value) {
-      resetListForSearchGate();
-    }
   },
   { immediate: true },
 );
 
 watch(
   () => [selectedAccountId.value, tabKey.value],
-  () => {
-    readySummaryOffset.value = 0;
-    readySummaryHasMore.value = false;
-    if (listSearchGated.value) {
-      resetListForSearchGate();
-      return;
+  ([accountId], oldVal) => {
+    const prevAccountId = oldVal?.[0];
+    if (prevAccountId && accountId !== prevAccountId) {
+      query.orderNumber = "";
+      committedOrderNumber.value = "";
     }
     clearRowSelection();
+    if (!accountId) {
+      rows.value = [];
+      hasSearched.value = false;
+      hasNextPage.value = false;
+      nextCursor.value = null;
+      return;
+    }
     fetchOrders(true);
-    if (tabKey.value === "manage") fetchReadySummary(true);
   },
   { immediate: true },
 );
@@ -933,11 +858,8 @@ watch(
 watch(
   () => [query.datePreset, query.from, query.to, query.fulfillmentStatus, query.readyToShip, query.holdReason],
   () => {
-    if (!showManageFilters.value || listSearchGated.value) return;
-    readySummaryOffset.value = 0;
-    readySummaryHasMore.value = false;
+    if (!showManageFilters.value || !selectedAccountId.value) return;
     fetchOrders(true);
-    if (tabKey.value === "manage") fetchReadySummary(true);
   },
 );
 
@@ -947,26 +869,10 @@ onMounted(async () => {
     title: `Save Rack | Orders | ${tabTitle.value}`,
     description: route.meta?.userPortal ? "Your account orders." : "ShipHero customer orders.",
   });
-  try {
-    const cached = sessionStorage.getItem(READY_SUMMARY_CACHE_KEY);
-    if (cached) {
-      const parsed = JSON.parse(cached);
-      readySummary.value = {
-        ready_to_ship_total: Number(parsed?.ready_to_ship_total || 0),
-        ready_to_ship_by_account: Array.isArray(parsed?.ready_to_ship_by_account) ? parsed.ready_to_ship_by_account : [],
-        late_orders_total: Number(parsed?.late_orders_total || 0),
-        priority_orders_total: Number(parsed?.priority_orders_total || 0),
-      };
-      readySummaryOffset.value = (readySummary.value.ready_to_ship_by_account || []).length;
-    }
-  } catch (_) {
-    // no-op
-  }
   await loadAccounts();
   if (isPortalUser.value && portalClientAccountId.value > 0) {
     selectedAccountId.value = String(portalClientAccountId.value);
   }
-  if (tabKey.value === "manage") fetchReadySummary(true);
 });
 
 onUnmounted(() => {
@@ -976,41 +882,34 @@ onUnmounted(() => {
 
 <template>
   <div class="staff-page staff-page--wide">
-    <div class="d-flex align-items-start justify-content-between gap-3 mb-4">
-      <div>
-        <h1 class="h4 mb-1 fw-semibold text-body">
-          <span>Orders - {{ tabTitle }}</span>
-          <span
-            v-if="selectedAccountId && hasSearched"
-            class="small text-secondary fw-normal ms-1"
-          >
-            ({{ displayedRows.length }} {{ displayedRows.length === 1 ? "order" : "orders" }})
-          </span>
-        </h1>
-        <p v-if="!isPortalOrderList && tabKey === 'manage'" class="staff-page__intro mb-0">
-          <strong>Manage</strong> shows every ShipHero order for this account that matches your filters. Select an account,
-          then click <strong>Search</strong> to load orders (leave order # empty to load the full filtered list).
-        </p>
-        <p v-else-if="!isPortalOrderList" class="staff-page__intro mb-0 text-secondary small">
-          Select an account, then click <strong>Search</strong> to load orders.
-        </p>
-      </div>
-      <RouterLink
-        v-if="!isPortalOrderList && canWriteOrders"
-        :to="{
-          path: '/admin/orders/create',
-          query: selectedAccountId ? { client_account_id: selectedAccountId } : {},
-        }"
-        class="btn btn-primary staff-page-primary flex-shrink-0"
+    <div class="mb-4">
+      <h1 class="h4 mb-1 fw-semibold text-body">
+        <span>Orders - {{ tabTitle }}</span>
+        <span
+          v-if="selectedAccountId && hasSearched"
+          class="small text-secondary fw-normal ms-1"
+        >
+          ({{ displayedRows.length }} {{ displayedRows.length === 1 ? "order" : "orders" }})
+        </span>
+      </h1>
+      <p
+        v-if="isOrdersAllPage"
+        class="orders-list-page__subtitle mb-0"
       >
-        Create Order
-      </RouterLink>
+        All orders for the selected account matching your filters. Use Search for a specific order number.
+      </p>
+      <p v-else-if="!isPortalOrderList" class="staff-page__intro mb-0 text-secondary small">
+        Select an account to load orders. Use Search to find a specific order number.
+      </p>
     </div>
 
     <div class="staff-table-card staff-datatable-card staff-datatable-card--white w-100 orders-page-toolbar">
       <div class="staff-table-toolbar">
-        <div class="staff-table-toolbar--row flex-wrap align-items-end gap-2 gap-md-3">
-          <div v-if="!isPortalOrderList" class="flex-grow-1" style="min-width: 260px">
+        <div class="staff-table-toolbar--row d-flex flex-wrap align-items-end gap-2 gap-md-3 w-100">
+          <div
+            v-if="!isPortalOrderList"
+            class="orders-toolbar-account flex-shrink-0"
+          >
             <label class="form-label small text-secondary mb-1" for="orders-list-account-trigger">Account</label>
             <CrmSearchableSelect
               v-model="selectedAccountId"
@@ -1028,8 +927,7 @@ onUnmounted(() => {
           </div>
 
           <div
-            class="d-flex flex-wrap align-items-end gap-2"
-            style="min-width: min(100%, 28rem)"
+            class="orders-toolbar-controls d-flex flex-wrap align-items-end gap-2 flex-grow-1 min-w-0"
           >
             <div class="flex-grow-1" style="min-width: 12rem">
               <label class="form-label small text-secondary mb-1" for="orders-order-number-search">Order Number</label>
@@ -1097,10 +995,9 @@ onUnmounted(() => {
                     <p class="small text-secondary mb-2">
                       <template v-if="tabKey === 'manage'">
                         <template v-if="!isPortalOrderList">
-                          This tab is the broad list (all queues at once, filtered only by what you set below). The
-                          <strong>order date</strong> range matches the Ready to Ship summary above and defaults to
-                          <strong>today</strong>. Searching by <strong>order #</strong> ignores the date range so you can
-                          open a specific order.
+                          This tab is the broad list (all queues at once, filtered only by what you set below).
+                          <strong>Order date</strong> defaults to <strong>today</strong>. Searching by
+                          <strong>order #</strong> ignores the date range so you can open a specific order.
                         </template>
                         <template v-else>
                           <strong>Order date</strong> defaults to <strong>today</strong>. Searching by
@@ -1197,31 +1094,6 @@ onUnmounted(() => {
           </div>
         </div>
         <p v-if="!isPortalOrderList" class="small text-secondary mb-0 mt-2 px-1">Only accounts with a ShipHero customer ID appear here.</p>
-      </div>
-
-      <div v-if="showManageFilters && tabKey === 'manage' && !isPortalOrderList" class="px-3 px-md-4 pb-2">
-        <p class="mb-1 fw-semibold">
-          <template v-if="readySummaryLoading && !readySummaryVisibleAccounts.length">Loading summary...</template>
-          <template v-else>{{ readySummary.ready_to_ship_total }} Ready to Ship Orders</template>
-        </p>
-        <div v-if="readySummary.ready_to_ship_by_account.length" class="small text-secondary">
-          <span
-            v-for="(row, idx) in readySummaryVisibleAccounts"
-            :key="`${row.account_id}-${idx}`"
-            class="me-3 d-inline-block"
-          >
-            {{ row.account_name }}: {{ row.orders_count }} orders
-          </span>
-          <button
-            v-if="canLoadMoreReadySummary"
-            type="button"
-            class="btn btn-link btn-sm p-0 ms-1 align-baseline text-decoration-none"
-            :disabled="readySummaryLoadingMore"
-            @click="fetchReadySummary(false)"
-          >
-            {{ readySummaryLoadingMore ? "Loading..." : "Load More" }}
-          </button>
-        </div>
       </div>
 
       <div
@@ -1343,9 +1215,6 @@ onUnmounted(() => {
             <tr v-else-if="!selectedAccountId">
               <td :colspan="tableColspan" class="text-center text-secondary py-5">Select an account to load orders.</td>
             </tr>
-            <tr v-else-if="listSearchGated && !hasSearched">
-              <td :colspan="tableColspan" class="text-center text-secondary py-5">Click Search to load orders.</td>
-            </tr>
             <tr v-else-if="hasSearched && displayedRows.length === 0">
               <td :colspan="tableColspan" class="text-center text-secondary py-5">No orders found.</td>
             </tr>
@@ -1417,7 +1286,7 @@ onUnmounted(() => {
         <button
           type="button"
           class="btn btn-outline-secondary order-1 order-lg-2 ms-lg-auto"
-          :disabled="loading || !hasNextPage || !selectedAccountId || (listSearchGated && !hasSearched)"
+          :disabled="loading || !hasNextPage || !selectedAccountId"
           @click="fetchOrders(false)"
         >
           {{ hasNextPage ? "Load More" : "No more orders" }}
@@ -1620,6 +1489,21 @@ onUnmounted(() => {
 /* Search field + Search button share default input-group height (matches Filters outline button). */
 .orders-toolbar-search-group .orders-toolbar-search-btn {
   font-weight: 600;
+}
+
+.orders-toolbar-account {
+  flex: 0 0 auto;
+  width: min(280px, 100%);
+}
+
+.orders-list-page__subtitle {
+  font-size: 0.8125rem;
+  font-weight: 500;
+  color: var(--bs-secondary-color, #6c757d);
+}
+
+[data-bs-theme="dark"] .orders-list-page__subtitle {
+  color: #fff !important;
 }
 </style>
 

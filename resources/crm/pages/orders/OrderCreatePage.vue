@@ -52,7 +52,7 @@ const ordersListTo = computed(() => {
   if (selectedAccountId.value) {
     q.client_account_id = selectedAccountId.value;
   }
-  return { path: "/admin/orders/awaiting", query: q };
+  return { path: "/admin/orders/all", query: q };
 });
 
 function addLineItem() {

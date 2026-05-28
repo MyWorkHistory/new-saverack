@@ -3,6 +3,8 @@
 namespace App\Services;
 
 use App\Models\ClientAccount;
+use App\Models\User;
+use Illuminate\Support\Facades\Gate;
 use RuntimeException;
 use Throwable;
 
@@ -55,7 +57,73 @@ class OrderSkuLookupService
             return $orderMatch;
         }
 
-        return $this->findExactSku($customerId, $normalized);
+        return $this->findExactSku($customerId, $clientAccountId, $normalized);
+    }
+
+    /**
+     * Search all client accounts the user may view until an exact order or SKU match is found.
+     *
+     * @return array<string, mixed>|null
+     */
+    public function lookupAcrossAccounts(User $user, string $query): ?array
+    {
+        $normalized = $this->normalizeLookupQuery($query);
+        if ($normalized === '') {
+            return null;
+        }
+
+        $accounts = ClientAccount::query()
+            ->whereNotNull('shiphero_customer_account_id')
+            ->where('shiphero_customer_account_id', '!=', '')
+            ->orderBy('id')
+            ->get()
+            ->filter(static function (ClientAccount $account) use ($user) {
+                if ($user->isAdministrator() || $user->isCrmOwner()) {
+                    return true;
+                }
+                if (Gate::forUser($user)->allows('view', $account)) {
+                    return true;
+                }
+
+                return Gate::forUser($user)->check('orders.view')
+                    || Gate::forUser($user)->check('inventory.view');
+            });
+
+        $orderMatches = [];
+        $skuMatch = null;
+
+        foreach ($accounts as $account) {
+            try {
+                $customerId = $this->resolveShipHeroCustomerAccountId($account);
+            } catch (RuntimeException $e) {
+                continue;
+            }
+
+            $match = $this->lookup($account->id, $customerId, $normalized);
+            if ($match === null) {
+                continue;
+            }
+            if (! empty($match['multiple'])) {
+                return $match;
+            }
+            if (($match['type'] ?? '') === 'order') {
+                $orderMatches[] = $match;
+
+                continue;
+            }
+            if (($match['type'] ?? '') === 'sku' && $skuMatch === null) {
+                $skuMatch = $match;
+            }
+        }
+
+        if (count($orderMatches) > 1) {
+            return ['multiple' => true];
+        }
+        if (count($orderMatches) === 1) {
+            return $orderMatches[0];
+        }
+
+        return $skuMatch;
     }
 
     private function normalizeOrderNumber(string $raw): string
@@ -153,7 +221,7 @@ class OrderSkuLookupService
     /**
      * @return array<string, mixed>|null
      */
-    private function findExactSku(string $customerId, string $query): ?array
+    private function findExactSku(string $customerId, int $clientAccountId, string $query): ?array
     {
         try {
             $product = $this->inventory->getProductDetailBySku($query, null, $customerId);
@@ -175,6 +243,7 @@ class OrderSkuLookupService
         return [
             'type' => 'sku',
             'sku' => $sku,
+            'client_account_id' => $clientAccountId,
         ];
     }
 }

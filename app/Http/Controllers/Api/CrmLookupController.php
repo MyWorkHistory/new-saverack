@@ -25,7 +25,7 @@ class CrmLookupController extends Controller
     {
         $validated = $request->validate([
             'query' => ['required', 'string', 'max:255'],
-            'client_account_id' => ['required', 'integer', 'exists:client_accounts,id'],
+            'client_account_id' => ['nullable', 'integer', 'exists:client_accounts,id'],
         ]);
 
         $user = $request->user();
@@ -41,10 +41,6 @@ class CrmLookupController extends Controller
             return response()->json(['message' => 'You do not have permission to search orders or inventory.'], 403);
         }
 
-        $clientAccountId = (int) $validated['client_account_id'];
-        $account = ClientAccount::query()->findOrFail($clientAccountId);
-        Gate::forUser($user)->authorize('view', $account);
-
         $query = $this->lookup->normalizeLookupQuery((string) $validated['query']);
         if ($query === '') {
             throw ValidationException::withMessages([
@@ -52,15 +48,16 @@ class CrmLookupController extends Controller
             ]);
         }
 
-        try {
-            $customerId = $this->lookup->resolveShipHeroCustomerAccountId($account);
-        } catch (\RuntimeException $e) {
-            throw ValidationException::withMessages([
-                'client_account_id' => [$e->getMessage()],
-            ]);
+        $clientAccountId = isset($validated['client_account_id'])
+            ? (int) $validated['client_account_id']
+            : 0;
+
+        if ($clientAccountId > 0) {
+            $match = $this->lookupForAccount($user, $clientAccountId, $query);
+        } else {
+            $match = $this->lookup->lookupAcrossAccounts($user, $query);
         }
 
-        $match = $this->lookup->lookup($clientAccountId, $customerId, $query);
         if ($match !== null) {
             if (! empty($match['multiple'])) {
                 return response()->json([
@@ -72,5 +69,24 @@ class CrmLookupController extends Controller
         }
 
         return response()->json(['message' => 'Not found.'], 404);
+    }
+
+    /**
+     * @return array<string, mixed>|null
+     */
+    private function lookupForAccount(User $user, int $clientAccountId, string $query): ?array
+    {
+        $account = ClientAccount::query()->findOrFail($clientAccountId);
+        Gate::forUser($user)->authorize('view', $account);
+
+        try {
+            $customerId = $this->lookup->resolveShipHeroCustomerAccountId($account);
+        } catch (\RuntimeException $e) {
+            throw ValidationException::withMessages([
+                'client_account_id' => [$e->getMessage()],
+            ]);
+        }
+
+        return $this->lookup->lookup($clientAccountId, $customerId, $query);
     }
 }

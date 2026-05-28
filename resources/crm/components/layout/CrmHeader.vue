@@ -3,10 +3,8 @@ import { computed, onMounted, onUnmounted, ref, watch } from "vue";
 import { RouterLink, useRouter } from "vue-router";
 import api from "../../services/api";
 import { BRAND_MARK_SRC } from "../../utils/brandAssets.js";
-import { useCrmActiveClientAccount } from "../../composables/useCrmActiveClientAccount.js";
 import { useCrmSidebar } from "../../composables/useCrmSidebar";
 import UserEditModal from "../users/UserEditModal.vue";
-import { crmIsAdmin } from "../../utils/crmUser";
 import { resolvePublicUrl } from "../../utils/resolvePublicUrl.js";
 import { useToast } from "../../composables/useToast.js";
 
@@ -26,9 +24,6 @@ const portalSearch = ref("");
 const portalSearchLoading = ref(false);
 const staffSearch = ref("");
 const staffSearchLoading = ref(false);
-
-const { activeClientAccountId, setActiveClientAccountId, clearActiveClientAccount } =
-  useCrmActiveClientAccount();
 
 const menuOpen = ref(false);
 const menuRoot = ref(null);
@@ -51,168 +46,6 @@ const isSelfEditModal = computed(() => canManageOwnAccount.value);
 function openAccountSettingsModal() {
   editProfileModalOpen.value = true;
   closeMenu();
-}
-
-const accountRoot = ref(null);
-const accountOpen = ref(false);
-const accountFilter = ref("");
-const selectedAccountId = ref("workspace");
-
-const clientAccounts = ref([]);
-const accountsLoadState = ref("idle");
-
-const canViewClientAccounts = computed(() => {
-  const u = props.user;
-  if (!u) return false;
-  if (crmIsAdmin(u) || u.is_crm_owner) return true;
-  return (
-    Array.isArray(u.permission_keys) &&
-    u.permission_keys.includes("clients.view")
-  );
-});
-
-const accountOptions = computed(() => {
-  const workspace = {
-    id: "workspace",
-    kind: "workspace",
-    title: "Save Rack",
-    subtitle: props.user?.email || "Primary workspace",
-    accountId: null,
-  };
-  if (!canViewClientAccounts.value) {
-    return [workspace];
-  }
-  const rows = clientAccounts.value.map((row) => ({
-    id: `ca-${row.id}`,
-    kind: "client_account",
-    accountId: row.id,
-    title: row.company_name || `Account #${row.id}`,
-    subtitle:
-      row.contact_full_name && String(row.contact_full_name).trim()
-        ? String(row.contact_full_name).trim()
-        : row.email || "",
-  }));
-  return [workspace, ...rows];
-});
-
-const selectedAccount = computed(() => {
-  const list = accountOptions.value;
-  const activeId = activeClientAccountId.value;
-  if (activeId) {
-    const activeOpt = list.find(
-      (a) => a.kind === "client_account" && Number(a.accountId) === Number(activeId),
-    );
-    if (activeOpt) return activeOpt;
-  }
-  return list.find((a) => a.id === selectedAccountId.value) ?? list[0] ?? null;
-});
-
-const filteredAccounts = computed(() => {
-  const q = accountFilter.value.trim().toLowerCase();
-  const list = accountOptions.value;
-  if (!q) return list;
-  return list.filter(
-    (a) =>
-      a.title.toLowerCase().includes(q) ||
-      String(a.subtitle ?? "")
-        .toLowerCase()
-        .includes(q),
-  );
-});
-
-function toggleAccountPanel() {
-  menuOpen.value = false;
-  accountOpen.value = !accountOpen.value;
-}
-
-function selectAccount(opt) {
-  selectedAccountId.value = opt.id;
-  accountOpen.value = false;
-  accountFilter.value = "";
-}
-
-function openClientAccountDetailInNewTab(accountId) {
-  const resolved = router.resolve({
-    name: "client-account-detail",
-    params: { id: String(accountId) },
-  });
-  let href = resolved.href;
-  if (typeof href !== "string" || href === "") {
-    href = router.resolve(`/admin/clients/accounts/${accountId}`).href;
-  }
-  const absolute = /^https?:\/\//i.test(href)
-    ? href
-    : new URL(href, window.location.origin).href;
-  window.open(absolute, "_blank", "noopener,noreferrer");
-  accountOpen.value = false;
-  accountFilter.value = "";
-}
-
-function onAccountOptionClick(opt) {
-  if (opt.kind === "workspace") {
-    clearActiveClientAccount();
-    selectAccount(opt);
-    return;
-  }
-  if (opt.kind === "client_account" && opt.accountId != null) {
-    setActiveClientAccountId(opt.accountId);
-    selectedAccountId.value = opt.id;
-    accountOpen.value = false;
-    accountFilter.value = "";
-  }
-}
-
-function onAccountOpenInNewTab(opt, event) {
-  event?.stopPropagation?.();
-  if (opt.kind === "client_account" && opt.accountId != null) {
-    openClientAccountDetailInNewTab(opt.accountId);
-  }
-}
-
-watch(
-  activeClientAccountId,
-  (id) => {
-    if (id) {
-      selectedAccountId.value = `ca-${id}`;
-    }
-  },
-  { immediate: true },
-);
-
-async function loadClientAccountsForHeader() {
-  if (!canViewClientAccounts.value) {
-    clientAccounts.value = [];
-    accountsLoadState.value = "idle";
-    return;
-  }
-  accountsLoadState.value = "loading";
-  const collected = [];
-  try {
-    let page = 1;
-    let lastPage = 1;
-    do {
-      const { data } = await api.get("/client-accounts", {
-        params: {
-          per_page: 500,
-          page,
-          sort_by: "company_name",
-          sort_dir: "asc",
-        },
-      });
-      const chunk = Array.isArray(data.data) ? data.data : [];
-      collected.push(...chunk);
-      lastPage =
-        typeof data.last_page === "number" && data.last_page >= 1
-          ? data.last_page
-          : 1;
-      page += 1;
-    } while (page <= lastPage && page <= 25);
-    clientAccounts.value = collected;
-    accountsLoadState.value = "success";
-  } catch {
-    clientAccounts.value = [];
-    accountsLoadState.value = "error";
-  }
 }
 
 const firstName = computed(() => {
@@ -250,9 +83,6 @@ function onDocClick(e) {
   if (!menuRoot.value?.contains(e.target)) {
     menuOpen.value = false;
   }
-  if (!accountRoot.value?.contains(e.target)) {
-    accountOpen.value = false;
-  }
 }
 
 function signOut() {
@@ -260,39 +90,35 @@ function signOut() {
   emit("logout");
 }
 
-watch(
-  () => [props.user?.id, canViewClientAccounts.value],
-  () => {
-    loadClientAccountsForHeader();
-  },
-  { immediate: true },
-);
-
 async function submitStaffSearch() {
   const q = staffSearch.value.trim();
   if (!q || staffSearchLoading.value) return;
-  const clientAccountId = activeClientAccountId.value;
-  if (!clientAccountId) {
-    toast.error("Select a client account to search.");
-    return;
-  }
   staffSearchLoading.value = true;
   try {
     const { data } = await api.get("/crm/lookup", {
-      params: { query: q, client_account_id: clientAccountId },
+      params: { query: q },
     });
+    const accountId = data?.client_account_id;
     if (data?.type === "order") {
+      const query =
+        accountId != null && accountId !== ""
+          ? { client_account_id: String(accountId) }
+          : {};
       await router.push({
         name: "order-detail",
         params: { shipheroOrderId: String(data.shiphero_order_id) },
-        query: { client_account_id: String(data.client_account_id ?? clientAccountId) },
+        query,
       });
       staffSearch.value = "";
     } else if (data?.type === "sku") {
+      const query =
+        accountId != null && accountId !== ""
+          ? { client_account_id: String(accountId) }
+          : {};
       await router.push({
         name: "inventory-detail",
         params: { sku: String(data.sku) },
-        query: { client_account_id: String(clientAccountId) },
+        query,
       });
       staffSearch.value = "";
     }
@@ -413,146 +239,8 @@ onUnmounted(() => {
             </svg>
           </button>
 
-          <template v-if="!isPortalUser">
-          <div
-            ref="accountRoot"
-            class="position-relative flex-grow-1 flex-md-grow-0 min-w-0 d-none d-md-block crm-navbar-account"
-          >
-            <button
-              type="button"
-              class="btn btn-light border-0 d-flex align-items-center gap-2 w-100 text-start rounded-pill py-2 px-3"
-              :aria-expanded="accountOpen"
-              aria-haspopup="listbox"
-              @click.stop="toggleAccountPanel"
-            >
-              <span
-                class="d-flex align-items-center justify-content-center flex-shrink-0 rounded-3 bg-primary-subtle text-primary"
-                style="width: 2rem; height: 2rem"
-              >
-                <svg
-                  width="16"
-                  height="16"
-                  fill="none"
-                  viewBox="0 0 24 24"
-                  stroke="currentColor"
-                  stroke-width="2"
-                  aria-hidden="true"
-                >
-                  <path
-                    stroke-linecap="round"
-                    stroke-linejoin="round"
-                    d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4"
-                  />
-                </svg>
-              </span>
-              <span class="min-w-0 flex-grow-1 text-truncate">
-                <span
-                  class="d-block text-uppercase fw-semibold text-secondary"
-                  style="font-size: 0.6rem; letter-spacing: 0.06em"
-                  >Account</span
-                >
-                <span class="d-block text-truncate fw-semibold text-body small">
-                  {{ selectedAccount?.title ?? "Save Rack" }}
-                </span>
-              </span>
-              <svg
-                class="flex-shrink-0 text-secondary transition"
-                :class="{ 'rotate-180': accountOpen }"
-                width="16"
-                height="16"
-                fill="none"
-                viewBox="0 0 24 24"
-                stroke="currentColor"
-                stroke-width="2"
-                aria-hidden="true"
-              >
-                <path
-                  stroke-linecap="round"
-                  stroke-linejoin="round"
-                  d="M19 9l-7 7-7-7"
-                />
-              </svg>
-            </button>
-
-            <div
-              v-if="accountOpen"
-              class="position-absolute start-0 end-0 mt-2 rounded-4 border bg-body shadow-lg overflow-hidden"
-              style="z-index: 1080"
-              role="listbox"
-            >
-              <div class="border-bottom p-2">
-                <input
-                  v-model="accountFilter"
-                  type="search"
-                  autocomplete="off"
-                  placeholder="Search accounts…"
-                  class="form-control form-control-sm"
-                  @click.stop
-                />
-              </div>
-              <ul class="list-unstyled mb-0 overflow-auto" style="max-height: 14rem">
-                <li
-                  v-if="
-                    canViewClientAccounts && accountsLoadState === 'loading'
-                  "
-                  class="px-3 py-4 text-center small text-secondary"
-                >
-                  Loading accounts…
-                </li>
-                <li
-                  v-else-if="
-                    canViewClientAccounts &&
-                    accountsLoadState === 'error' &&
-                    !clientAccounts.length
-                  "
-                  class="px-3 py-4 text-center small text-danger"
-                >
-                  Could not load accounts.
-                </li>
-                <template v-else>
-                  <li v-for="opt in filteredAccounts" :key="opt.id">
-                    <button
-                      type="button"
-                      class="btn btn-link text-start text-decoration-none text-body w-100 rounded-0 py-2 px-3 d-flex flex-column align-items-start"
-                      :class="{
-                        'bg-body-secondary':
-                          opt.kind === 'workspace' &&
-                          opt.id === selectedAccountId,
-                      }"
-                      role="option"
-                      :aria-selected="
-                        opt.kind === 'workspace' &&
-                        opt.id === selectedAccountId
-                      "
-                      @click.stop="onAccountOptionClick(opt)"
-                    >
-                      <span
-                        class="d-flex w-100 min-w-0 justify-content-between gap-2 align-items-center"
-                      >
-                        <span class="text-truncate fw-medium">{{
-                          opt.title
-                        }}</span>
-                        <button
-                          v-if="opt.kind === 'client_account'"
-                          type="button"
-                          class="btn btn-link btn-sm p-0 text-secondary text-decoration-none flex-shrink-0"
-                          style="font-size: 0.65rem"
-                          @click.stop="onAccountOpenInNewTab(opt, $event)"
-                        >
-                          Open
-                        </button>
-                      </span>
-                      <span class="small text-secondary">{{
-                        opt.subtitle
-                      }}</span>
-                    </button>
-                  </li>
-                </template>
-              </ul>
-            </div>
-          </div>
-
           <RouterLink
+            v-if="!isPortalUser"
             to="/admin/dashboard"
             class="d-none d-sm-flex d-lg-none align-items-center gap-2 text-decoration-none text-body flex-shrink-0"
           >
@@ -567,7 +255,6 @@ onUnmounted(() => {
               >Save Rack</span
             >
           </RouterLink>
-          </template>
         </div>
 
         <template v-if="isPortalUser">
@@ -761,10 +448,7 @@ onUnmounted(() => {
                 class="btn btn-link text-decoration-none text-body d-flex align-items-center rounded-3 py-1 ps-1 pe-1 border-0"
                 :aria-expanded="menuOpen"
                 aria-haspopup="true"
-                @click.stop="
-                  accountOpen = false;
-                  menuOpen = !menuOpen;
-                "
+                @click.stop="menuOpen = !menuOpen"
               >
                 <span class="position-relative flex-shrink-0 d-inline-flex">
                   <img

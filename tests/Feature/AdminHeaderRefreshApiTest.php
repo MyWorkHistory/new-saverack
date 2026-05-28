@@ -61,16 +61,30 @@ class AdminHeaderRefreshApiTest extends TestCase
         return $user;
     }
 
-    public function test_crm_lookup_requires_client_account_id(): void
+    public function test_crm_lookup_works_without_client_account_id(): void
     {
         $this->staffWithPermissions(['orders.view', 'clients.view']);
 
+        $this->mock(OrderSkuLookupService::class, function ($mock) {
+            $mock->shouldReceive('normalizeLookupQuery')
+                ->with('ORD-1')
+                ->andReturn('ORD-1');
+            $mock->shouldReceive('lookupAcrossAccounts')
+                ->andReturn([
+                    'type' => 'order',
+                    'shiphero_order_id' => 'order-xyz',
+                    'client_account_id' => 42,
+                ]);
+        });
+
         $this->getJson('/api/crm/lookup?query=ORD-1')
-            ->assertUnprocessable()
-            ->assertJsonValidationErrors(['client_account_id']);
+            ->assertOk()
+            ->assertJsonPath('type', 'order')
+            ->assertJsonPath('shiphero_order_id', 'order-xyz')
+            ->assertJsonPath('client_account_id', 42);
     }
 
-    public function test_crm_lookup_returns_order_match(): void
+    public function test_crm_lookup_returns_order_match_for_specific_account(): void
     {
         $this->staffWithPermissions(['orders.view', 'clients.view']);
 

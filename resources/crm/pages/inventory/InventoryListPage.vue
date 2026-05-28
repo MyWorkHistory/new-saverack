@@ -135,7 +135,6 @@ async function fetchPage(append, forceRefresh = false) {
 
 async function loadRows(reset, forceRefresh = false) {
   if (!accountId.value) return;
-  if (isStaffPickerMode.value && !hasSearched.value && !forceRefresh) return;
   const runId = reset ? ++searchRunSeq : searchRunSeq;
   const previousRows = forceRefresh ? rows.value : [];
   if (reset) {
@@ -311,7 +310,7 @@ function commitSearch() {
 
 function clearSearch() {
   if (!searchDraft.value && !searchCommitted.value) return;
-  if (isStaffPickerMode.value && !hasSearched.value) {
+  if (isStaffPickerMode.value && !selectedAccountId.value) {
     searchDraft.value = "";
     return;
   }
@@ -322,7 +321,7 @@ function clearSearch() {
 
 async function refreshRows() {
   if (!accountId.value || loading.value || loadingMore.value || refreshing.value) return;
-  if (isStaffPickerMode.value && !hasSearched.value) return;
+  if (isStaffPickerMode.value && !selectedAccountId.value) return;
   const previousRows = rows.value;
   const refreshId = ++refreshRunSeq;
   ++searchRunSeq;
@@ -356,7 +355,8 @@ async function refreshRows() {
 
 function applyFilters() {
   filterMenuOpen.value = false;
-  if (isStaffPickerMode.value && !hasSearched.value) return;
+  if (isStaffPickerMode.value && !selectedAccountId.value) return;
+  if (isStaffPickerMode.value) hasSearched.value = true;
   loadRows(true);
 }
 
@@ -364,7 +364,8 @@ function resetFilters() {
   filters.kits = "all";
   filters.activeStatus = "active";
   filterMenuOpen.value = false;
-  if (isStaffPickerMode.value && !hasSearched.value) return;
+  if (isStaffPickerMode.value && !selectedAccountId.value) return;
+  if (isStaffPickerMode.value) hasSearched.value = true;
   loadRows(true);
 }
 
@@ -429,6 +430,12 @@ function inventoryDetailTo(row) {
     params: { sku },
     query: { client_account_id: String(accountId.value) },
   };
+}
+
+function inventoryDetailHref(row) {
+  const sku = String(row?.sku || "").trim();
+  if (!sku || !accountId.value) return "#";
+  return router.resolve(inventoryDetailTo(row)).href;
 }
 
 async function loadAccounts() {
@@ -505,17 +512,22 @@ watch(
 
 watch(
   () => selectedAccountId.value,
-  (accountId, prev) => {
+  (accountIdVal, prev) => {
     if (!isStaffPickerMode.value) return;
-    if (prev && accountId !== prev) {
+    if (prev && accountIdVal !== prev) {
       searchDraft.value = "";
       searchCommitted.value = "";
     }
-    rows.value = [];
-    pageInfo.value = { has_next_page: false, end_cursor: null };
     selectedKeys.value = [];
-    hasSearched.value = false;
     searchSkipNext.value = 0;
+    if (!accountIdVal) {
+      rows.value = [];
+      pageInfo.value = { has_next_page: false, end_cursor: null };
+      hasSearched.value = false;
+      return;
+    }
+    hasSearched.value = true;
+    loadRows(true);
   },
 );
 
@@ -549,7 +561,7 @@ onUnmounted(() => {
             Showing {{ LIST_PAGE_SIZE }} products per load. Search checks your full ShipHero catalog (not only this page).
           </template>
           <template v-else>
-            Select an account, then click Search to load inventory. Empty search lists all SKUs for that account.
+            Select an account to load inventory using your current filters. Use Search to filter by SKU or product name.
           </template>
         </p>
       </div>
@@ -560,7 +572,7 @@ onUnmounted(() => {
         <button
         type="button"
         class="btn btn-outline-secondary btn-sm orders-toolbar-outline-btn d-inline-flex align-items-center gap-2"
-        :disabled="loading || loadingMore || refreshing || (isStaffPickerMode && !hasSearched)"
+        :disabled="loading || loadingMore || refreshing || (isStaffPickerMode && !selectedAccountId)"
         title="Refresh"
         aria-label="Refresh inventory from ShipHero"
         @click="refreshRows"
@@ -881,9 +893,6 @@ onUnmounted(() => {
             <tr v-else-if="isStaffPickerMode && !selectedAccountId">
               <td colspan="8" class="text-center text-secondary py-5">Select an account to load inventory.</td>
             </tr>
-            <tr v-else-if="isStaffPickerMode && !hasSearched">
-              <td colspan="8" class="text-center text-secondary py-5">Click Search to load inventory.</td>
-            </tr>
             <tr v-else-if="!displayRows.length">
               <td colspan="8" class="text-center text-secondary py-5">No inventory rows found.</td>
             </tr>
@@ -898,8 +907,10 @@ onUnmounted(() => {
                 />
               </td>
               <td class="text-center user-inv-table__image-col">
-                <RouterLink
-                  :to="inventoryDetailTo(row)"
+                <a
+                  :href="inventoryDetailHref(row)"
+                  target="_blank"
+                  rel="noopener noreferrer"
                   class="user-inv-table__image-link"
                   :aria-label="`View ${row.sku || 'product'}`"
                 >
@@ -911,17 +922,27 @@ onUnmounted(() => {
                     loading="lazy"
                   />
                   <div v-else class="user-inventory-thumb user-inventory-thumb--empty" />
-                </RouterLink>
+                </a>
               </td>
               <td class="user-inv-table__sku-col">
-                <RouterLink :to="inventoryDetailTo(row)" class="user-inv-table__sku-link">
+                <a
+                  :href="inventoryDetailHref(row)"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  class="user-inv-table__sku-link"
+                >
                   {{ row.sku || "—" }}
-                </RouterLink>
+                </a>
               </td>
               <td class="user-inv-table__name-col">
-                <RouterLink :to="inventoryDetailTo(row)" class="user-inv-table__sku-link user-inv-table__name-link">
+                <a
+                  :href="inventoryDetailHref(row)"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  class="user-inv-table__sku-link user-inv-table__name-link"
+                >
                   <span class="user-inv-table__name-text">{{ row.name || "—" }}</span>
-                </RouterLink>
+                </a>
               </td>
               <td class="text-center user-inv-table__num-col">{{ (row.kit || row.kit_build) ? "Yes" : "No" }}</td>
               <td class="text-center user-inv-table__num-col">{{ Number(row.on_hand || 0) }}</td>
@@ -933,7 +954,7 @@ onUnmounted(() => {
         </div>
       </div>
       <div
-        v-if="pageInfo.has_next_page && (!isStaffPickerMode || hasSearched)"
+        v-if="pageInfo.has_next_page && (!isStaffPickerMode || selectedAccountId)"
         class="p-3 border-top text-center"
       >
         <div v-if="searchAutoLoading" class="small text-secondary py-1" aria-live="polite">

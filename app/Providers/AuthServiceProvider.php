@@ -116,8 +116,14 @@ class AuthServiceProvider extends ServiceProvider
                 return false;
             }
 
-            return Gate::forUser($user)->allows('orders.update')
-                || Gate::forUser($user)->allows('inventory.update');
+            if (Gate::forUser($user)->allows('orders.update')
+                || Gate::forUser($user)->allows('inventory.update')) {
+                return true;
+            }
+
+            // Staff CRM users with orders.view may mutate orders in admin UI (not portal accounts).
+            return $user->client_account_id === null
+                && Gate::forUser($user)->allows('orders.view');
         });
     }
 }

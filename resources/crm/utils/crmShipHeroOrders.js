@@ -17,7 +17,11 @@ export function canWriteShipHeroOrders(user) {
   if (keys.includes("orders.update") || keys.includes("inventory.update")) {
     return true;
   }
-  // Portal users are read-only for orders in CRM UI.
+  // Staff CRM (non-portal): orders.view grants detail mutations — same routes as the orders list.
+  if (!crmIsPortalUser(user) && keys.includes("orders.view")) {
+    return true;
+  }
+  // Portal: read-only unless orders.update / inventory.update matched above.
   if (crmIsPortalUser(user)) return false;
 
   return false;

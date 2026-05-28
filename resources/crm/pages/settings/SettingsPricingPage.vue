@@ -176,7 +176,7 @@ onMounted(() => {
 </script>
 
 <template>
-  <div class="staff-page px-3 px-md-4 py-4">
+  <div class="staff-page staff-page--wide">
     <header class="d-flex flex-column flex-md-row align-items-md-start justify-content-between gap-3 mb-4">
       <div>
         <h1 class="h4 fw-semibold text-body mb-1">Pricing</h1>

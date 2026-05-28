@@ -225,8 +225,8 @@ class PricingFeeTemplateService
             'amount' => $template->amount !== null ? (float) $template->amount : 0.0,
             'icon_url' => $this->icons->publicUrl($template->icon_path),
             'sort_order' => (int) $template->sort_order,
-            'created_at' => $template->created_at?->toIso8601String(),
-            'updated_at' => $template->updated_at?->toIso8601String(),
+            'created_at' => $template->created_at !== null ? $template->created_at->toIso8601String() : null,
+            'updated_at' => $template->updated_at !== null ? $template->updated_at->toIso8601String() : null,
         ];
     }
 

@@ -141,6 +141,7 @@ class ReturnController extends Controller
             'items_count' => $return->items_count,
             'warehouse_private_note' => $return->warehouse_private_note,
             'created_at' => optional($return->created_at)->toIso8601String(),
+            'processed_at' => optional($return->processed_at)->toIso8601String(),
             'updated_at' => optional($return->updated_at)->toIso8601String(),
             'lines' => $return->lines->map(fn (ClientAccountReturnLine $l) => $this->serializeLine($l))->values()->all(),
             'return_reasons' => $this->returnReasonOptions(),
@@ -163,6 +164,7 @@ class ReturnController extends Controller
             'customer_name' => $return->customer_name,
             'items_count' => $return->items_count,
             'created_at' => optional($return->created_at)->toIso8601String(),
+            'processed_at' => optional($return->processed_at)->toIso8601String(),
         ];
     }
 
@@ -361,6 +363,7 @@ class ReturnController extends Controller
                 'return_reason' => $line->return_reason,
                 'return_reason_label' => $reasonLabel,
                 'created_at' => optional($ret->created_at)->toIso8601String(),
+                'processed_at' => optional($ret->processed_at)->toIso8601String(),
             ];
         })->values()->all();
 
@@ -428,6 +431,14 @@ class ReturnController extends Controller
 
         if (isset($validated['status'])) {
             $clientAccountReturn->status = $validated['status'];
+            $nextStatus = (string) $validated['status'];
+            if (in_array($nextStatus, [ClientAccountReturn::STATUS_RECEIVED, ClientAccountReturn::STATUS_COMPLETED], true)) {
+                if ($clientAccountReturn->processed_at === null) {
+                    $clientAccountReturn->processed_at = now();
+                }
+            } elseif ($nextStatus === ClientAccountReturn::STATUS_PENDING || $nextStatus === ClientAccountReturn::STATUS_DRAFT) {
+                $clientAccountReturn->processed_at = null;
+            }
         }
         if (isset($validated['return_type'])) {
             $clientAccountReturn->return_type = $validated['return_type'];
@@ -485,6 +496,7 @@ class ReturnController extends Controller
             }
             $this->persistLines($clientAccountReturn, $normalized);
             $clientAccountReturn->status = ClientAccountReturn::STATUS_PENDING;
+            $clientAccountReturn->processed_at = null;
             $clientAccountReturn->save();
         });
 
@@ -494,8 +506,8 @@ class ReturnController extends Controller
     public function destroy(Request $request, ClientAccountReturn $clientAccountReturn): JsonResponse
     {
         $this->authorizeReturn($request, $clientAccountReturn);
-        if ($clientAccountReturn->status !== ClientAccountReturn::STATUS_DRAFT) {
-            return response()->json(['message' => 'Only draft returns can be deleted.'], 422);
+        if ($clientAccountReturn->status !== ClientAccountReturn::STATUS_PENDING) {
+            return response()->json(['message' => 'Only pending returns can be deleted.'], 422);
         }
         $clientAccountReturn->delete();
 

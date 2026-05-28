@@ -1,16 +1,13 @@
 <script setup>
-import { computed, inject, onMounted, ref, watch } from "vue";
+import { computed, inject, onMounted, onUnmounted, ref, watch } from "vue";
 import { useRouter } from "vue-router";
 import api from "../../services/api";
+import CrmIconRowActions from "../../components/common/CrmIconRowActions.vue";
 import CrmLoadingSpinner from "../../components/common/CrmLoadingSpinner.vue";
 import { setCrmPageMeta } from "../../composables/useCrmPageMeta.js";
 import { useToast } from "../../composables/useToast.js";
-import {
-  formatRmaLabel,
-  returnStatusBadgeClass,
-  returnStatusLabel,
-  returnTypeLabel,
-} from "../../utils/formatReturnDisplay.js";
+import { formatDateUs } from "../../utils/formatUserDates.js";
+import { returnStatusBadgeClass, returnStatusLabel } from "../../utils/formatReturnDisplay.js";
 
 const toast = useToast();
 const router = useRouter();
@@ -24,7 +21,8 @@ const searchDebounced = ref("");
 let searchTimer = null;
 
 const clientAccountId = computed(() => Number(crmUser.value?.client_account_id || 0));
-const tableColspan = 8;
+const tableColspan = 10;
+const actionOpenId = ref(null);
 
 function applySearch() {
   if (searchTimer) {
@@ -48,6 +46,49 @@ watch(search, (v) => {
 function returnDetailHref(r) {
   if (!r?.return_id) return "";
   return router.resolve({ name: "user-return-detail", params: { id: String(r.return_id) } }).href;
+}
+
+function goCreate() {
+  router.push({ name: "user-return-create-search" });
+}
+
+function canDeleteReturn(r) {
+  return String(r?.status || "").toLowerCase() === "pending";
+}
+
+function closeRowActionMenu() {
+  actionOpenId.value = null;
+}
+
+function toggleRowActionMenu(r, event) {
+  event.stopPropagation();
+  actionOpenId.value = actionOpenId.value === r.id ? null : r.id;
+}
+
+function onDocClickActions(event) {
+  if (!event.target?.closest?.("[data-return-row-actions]")) {
+    closeRowActionMenu();
+  }
+}
+
+function onEscCloseActions(event) {
+  if (event.key === "Escape") {
+    closeRowActionMenu();
+  }
+}
+
+async function deleteReturn(r) {
+  if (!r?.return_id || !canDeleteReturn(r)) return;
+  const ok = window.confirm("Delete Return?");
+  if (!ok) return;
+  try {
+    await api.delete(`/returns/${r.return_id}`);
+    toast.success("Return deleted.");
+    closeRowActionMenu();
+    await load();
+  } catch (e) {
+    toast.errorFrom(e, "Could not delete return.");
+  }
 }
 
 async function load() {
@@ -80,16 +121,26 @@ onMounted(() => {
     description: "Line items on returns for your account.",
   });
   load();
+  document.addEventListener("click", onDocClickActions);
+  document.addEventListener("keydown", onEscCloseActions);
+});
+
+onUnmounted(() => {
+  document.removeEventListener("click", onDocClickActions);
+  document.removeEventListener("keydown", onEscCloseActions);
 });
 </script>
 
 <template>
   <div class="staff-page staff-page--wide user-return-page">
-    <div class="mb-4">
-      <h1 class="h4 mb-1 fw-semibold text-body">Return Items</h1>
-      <p class="text-secondary small mb-0">
-        Items included on returns. Search by SKU, item name, order #, or RMA #.
-      </p>
+    <div class="d-flex flex-wrap align-items-end justify-content-between gap-3 mb-4">
+      <div>
+        <h1 class="h4 mb-1 fw-semibold text-body">Return Items</h1>
+        <p class="text-secondary small mb-0">
+          Items included on returns. Search by SKU, item name, order #, or RMA #.
+        </p>
+      </div>
+      <button type="button" class="btn btn-primary staff-page-primary" @click="goCreate">Create Return</button>
     </div>
 
     <div class="staff-table-card staff-datatable-card staff-datatable-card--white w-100">
@@ -123,10 +174,12 @@ onMounted(() => {
               <th class="staff-table-head__th text-center" scope="col">Order #</th>
               <th class="staff-table-head__th text-center" scope="col">SKU</th>
               <th class="staff-table-head__th text-center" scope="col">Item</th>
+              <th class="staff-table-head__th text-center" scope="col">Created Date</th>
               <th class="staff-table-head__th text-center" scope="col">RMA #</th>
+              <th class="staff-table-head__th text-center" scope="col">Processed Date</th>
               <th class="staff-table-head__th text-center" scope="col">Qty</th>
-              <th class="staff-table-head__th text-center" scope="col">Type</th>
               <th class="staff-table-head__th text-center" scope="col">Reason</th>
+              <th class="staff-table-head__th text-center staff-actions-col" scope="col">Action</th>
             </tr>
           </thead>
           <tbody>
@@ -162,10 +215,43 @@ onMounted(() => {
               </td>
               <td class="text-center small fw-semibold">{{ r.sku || "—" }}</td>
               <td class="text-center small">{{ r.name || "—" }}</td>
-              <td class="text-center fw-semibold">{{ formatRmaLabel(r.rma_number) }}</td>
+              <td class="text-center small text-secondary">{{ formatDateUs(r.created_at) || "—" }}</td>
+              <td class="text-center fw-semibold">{{ r.rma_number || "—" }}</td>
+              <td class="text-center small text-secondary">{{ formatDateUs(r.processed_at) || "—" }}</td>
               <td class="text-center">{{ Number(r.return_qty ?? 0).toLocaleString() }}</td>
-              <td class="text-center">{{ returnTypeLabel(r.return_type) }}</td>
               <td class="text-center small">{{ r.return_reason_label || "—" }}</td>
+              <td class="text-center staff-actions-cell position-relative">
+                <div class="user-return-page__action-inner" data-return-row-actions>
+                  <button
+                    type="button"
+                    class="btn btn-sm btn-outline-secondary orders-toolbar-outline-btn px-2 py-1"
+                    :aria-expanded="actionOpenId === r.id"
+                    aria-label="Open Row Actions"
+                    @click="toggleRowActionMenu(r, $event)"
+                  >
+                    <CrmIconRowActions variant="horizontal" />
+                  </button>
+                  <div v-if="actionOpenId === r.id" class="user-return-row-menu shadow-sm">
+                    <a
+                      v-if="returnDetailHref(r)"
+                      :href="returnDetailHref(r)"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      class="dropdown-item"
+                    >
+                      View
+                    </a>
+                    <button
+                      type="button"
+                      class="dropdown-item text-danger"
+                      :disabled="!canDeleteReturn(r)"
+                      @click="deleteReturn(r)"
+                    >
+                      Delete Return
+                    </button>
+                  </div>
+                </div>
+              </td>
             </tr>
           </tbody>
         </table>
@@ -207,3 +293,33 @@ onMounted(() => {
     </div>
   </div>
 </template>
+
+<style scoped>
+.user-return-row-menu {
+  position: absolute;
+  right: 0;
+  top: calc(100% + 0.25rem);
+  min-width: 10.5rem;
+  border: 1px solid rgba(47, 43, 61, 0.16);
+  border-radius: 0.5rem;
+  background: var(--bs-body-bg, #fff);
+  z-index: 10;
+  overflow: hidden;
+}
+
+.user-return-row-menu .dropdown-item {
+  display: block;
+  width: 100%;
+  border: 0;
+  text-align: left;
+  background: transparent;
+  font-size: 0.875rem;
+  padding: 0.45rem 0.75rem;
+  text-decoration: none;
+  color: inherit;
+}
+
+[data-bs-theme="dark"] .user-return-row-menu {
+  border-color: rgba(255, 255, 255, 0.16);
+}
+</style>

@@ -1,6 +1,6 @@
 <script setup>
 import { computed, inject, onMounted, ref } from "vue";
-import { useRouter } from "vue-router";
+import { useRoute, useRouter } from "vue-router";
 import api from "../../services/api";
 import CrmLoadingSpinner from "../../components/common/CrmLoadingSpinner.vue";
 import { setCrmPageMeta } from "../../composables/useCrmPageMeta.js";
@@ -8,6 +8,7 @@ import { useToast } from "../../composables/useToast.js";
 
 const toast = useToast();
 const router = useRouter();
+const route = useRoute();
 const crmUser = inject("crmUser", ref(null));
 
 const orderNumber = ref("");
@@ -77,10 +78,14 @@ function customerDisplay(row) {
 function returnCreateOrderHref(row) {
   const id = row?.id || row?.shiphero_order_id;
   if (!id || !clientAccountId.value) return "";
+  const baseQuery = route?.query && typeof route.query === "object" ? route.query : {};
   return router.resolve({
-    name: "user-return-create-order",
+    name: "user-return-create",
     params: { shipheroOrderId: String(id) },
-    query: { client_account_id: String(clientAccountId.value) },
+    query: {
+      ...baseQuery,
+      client_account_id: String(clientAccountId.value),
+    },
   }).href;
 }
 

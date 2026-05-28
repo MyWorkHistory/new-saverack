@@ -118,6 +118,14 @@ function inventoryDetailTo(sku) {
   };
 }
 
+function asnDetailTo(row) {
+  const id = Number(row?.id || 0);
+  if (!id) {
+    return { name: "user-asn-list" };
+  }
+  return { name: "user-asn-detail", params: { id: String(id) } };
+}
+
 function syncPageMeta() {
   const name = accountDisplayName.value;
   setCrmPageMeta({
@@ -462,7 +470,15 @@ onMounted(() => {
                             {{ asnStatusLabel(row.status) }}
                           </span>
                         </td>
-                        <td class="text-center fw-semibold">{{ formatAsnDisplay(row.asn_number) }}</td>
+                        <td class="text-center fw-semibold">
+                          <RouterLink
+                            :to="asnDetailTo(row)"
+                            class="user-inv-table__sku-link text-decoration-none"
+                            :aria-label="`View ASN ${formatAsnDisplay(row.asn_number) || row.id}`"
+                          >
+                            {{ formatAsnDisplay(row.asn_number) }}
+                          </RouterLink>
+                        </td>
                         <td class="text-center small text-secondary">{{ formatDateUs(row.created_at) }}</td>
                         <td class="text-center">{{ Number(row.expected_qty ?? 0).toLocaleString() }}</td>
                         <td class="text-center">{{ Number(row.accepted_qty ?? 0).toLocaleString() }}</td>

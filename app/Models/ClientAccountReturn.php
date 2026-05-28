@@ -51,10 +51,12 @@ class ClientAccountReturn extends Model
         'customer_name',
         'items_count',
         'warehouse_private_note',
+        'processed_at',
     ];
 
     protected $casts = [
         'items_count' => 'integer',
+        'processed_at' => 'datetime',
     ];
 
     public function clientAccount(): BelongsTo

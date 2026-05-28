@@ -1,16 +1,13 @@
 <script setup>
-import { computed, inject, onMounted, ref, watch } from "vue";
+import { computed, inject, onMounted, onUnmounted, ref, watch } from "vue";
 import { useRouter } from "vue-router";
 import api from "../../services/api";
+import CrmIconRowActions from "../../components/common/CrmIconRowActions.vue";
 import CrmLoadingSpinner from "../../components/common/CrmLoadingSpinner.vue";
 import { setCrmPageMeta } from "../../composables/useCrmPageMeta.js";
 import { useToast } from "../../composables/useToast.js";
-import {
-  formatRmaLabel,
-  returnStatusBadgeClass,
-  returnStatusLabel,
-  returnTypeLabel,
-} from "../../utils/formatReturnDisplay.js";
+import { formatDateUs } from "../../utils/formatUserDates.js";
+import { returnStatusBadgeClass, returnStatusLabel } from "../../utils/formatReturnDisplay.js";
 
 const toast = useToast();
 const router = useRouter();
@@ -27,7 +24,8 @@ const sortBy = ref("created_at");
 const sortDir = ref("desc");
 
 const clientAccountId = computed(() => Number(crmUser.value?.client_account_id || 0));
-const tableColspan = 7;
+const tableColspan = 8;
+const actionOpenId = ref(null);
 
 function applySearch() {
   if (searchTimer) {
@@ -101,6 +99,45 @@ function openReturnInNewTab(r) {
   window.open(href, "_blank", "noopener,noreferrer");
 }
 
+function canDeleteReturn(r) {
+  return String(r?.status || "").toLowerCase() === "pending";
+}
+
+function closeRowActionMenu() {
+  actionOpenId.value = null;
+}
+
+function toggleRowActionMenu(r, event) {
+  event.stopPropagation();
+  actionOpenId.value = actionOpenId.value === r.id ? null : r.id;
+}
+
+function onDocClickActions(event) {
+  if (!event.target?.closest?.("[data-return-row-actions]")) {
+    closeRowActionMenu();
+  }
+}
+
+function onEscCloseActions(event) {
+  if (event.key === "Escape") {
+    closeRowActionMenu();
+  }
+}
+
+async function deleteReturn(r) {
+  if (!r?.id || !canDeleteReturn(r)) return;
+  const ok = window.confirm("Delete Return?");
+  if (!ok) return;
+  try {
+    await api.delete(`/returns/${r.id}`);
+    toast.success("Return deleted.");
+    closeRowActionMenu();
+    await load();
+  } catch (e) {
+    toast.errorFrom(e, "Could not delete return.");
+  }
+}
+
 function goCreate() {
   router.push({ name: "user-return-create-search" });
 }
@@ -111,6 +148,13 @@ onMounted(() => {
     description: "View returned orders that are pending processing or completed.",
   });
   load();
+  document.addEventListener("click", onDocClickActions);
+  document.addEventListener("keydown", onEscCloseActions);
+});
+
+onUnmounted(() => {
+  document.removeEventListener("click", onDocClickActions);
+  document.removeEventListener("keydown", onEscCloseActions);
 });
 </script>
 
@@ -172,21 +216,22 @@ onMounted(() => {
                 </button>
               </th>
               <th class="staff-table-head__th staff-table-head__th--sort text-center" scope="col">
+                <button type="button" class="staff-sort-btn" @click="toggleSort('created_at')">
+                  Created Date
+                  <span v-if="sortIndicator('created_at')" class="staff-sort-ind">{{ sortIndicator("created_at") }}</span>
+                </button>
+              </th>
+              <th class="staff-table-head__th staff-table-head__th--sort text-center" scope="col">
                 <button type="button" class="staff-sort-btn" @click="toggleSort('rma_number')">
                   RMA #
                   <span v-if="sortIndicator('rma_number')" class="staff-sort-ind">{{ sortIndicator("rma_number") }}</span>
                 </button>
               </th>
+              <th class="staff-table-head__th text-center" scope="col">Processed Date</th>
               <th class="staff-table-head__th staff-table-head__th--sort text-center" scope="col">
                 <button type="button" class="staff-sort-btn" @click="toggleSort('items_count')">
                   Items
                   <span v-if="sortIndicator('items_count')" class="staff-sort-ind">{{ sortIndicator("items_count") }}</span>
-                </button>
-              </th>
-              <th class="staff-table-head__th staff-table-head__th--sort text-center" scope="col">
-                <button type="button" class="staff-sort-btn" @click="toggleSort('return_type')">
-                  Type
-                  <span v-if="sortIndicator('return_type')" class="staff-sort-ind">{{ sortIndicator("return_type") }}</span>
                 </button>
               </th>
               <th class="staff-table-head__th staff-actions-col text-center" scope="col">Action</th>
@@ -224,18 +269,32 @@ onMounted(() => {
                 <span v-else>—</span>
               </td>
               <td class="text-center">{{ r.customer_name || "—" }}</td>
-              <td class="text-center fw-semibold">{{ formatRmaLabel(r.rma_number) }}</td>
+              <td class="text-center small text-secondary">{{ formatDateUs(r.created_at) || "—" }}</td>
+              <td class="text-center fw-semibold">{{ r.rma_number || "—" }}</td>
+              <td class="text-center small text-secondary">{{ formatDateUs(r.processed_at) || "—" }}</td>
               <td class="text-center">{{ Number(r.items_count ?? 0).toLocaleString() }}</td>
-              <td class="text-center">{{ returnTypeLabel(r.return_type) }}</td>
-              <td class="text-center staff-actions-cell">
-                <div class="user-return-page__action-inner">
+              <td class="text-center staff-actions-cell position-relative">
+                <div class="user-return-page__action-inner" data-return-row-actions>
                   <button
                     type="button"
-                    class="btn btn-sm btn-outline-secondary orders-toolbar-outline-btn fw-semibold"
-                    @click="openReturnInNewTab(r)"
+                    class="btn btn-sm btn-outline-secondary orders-toolbar-outline-btn px-2 py-1"
+                    :aria-expanded="actionOpenId === r.id"
+                    aria-label="Open Row Actions"
+                    @click="toggleRowActionMenu(r, $event)"
                   >
-                    View
+                    <CrmIconRowActions variant="horizontal" />
                   </button>
+                  <div v-if="actionOpenId === r.id" class="user-return-row-menu shadow-sm">
+                    <button type="button" class="dropdown-item" @click="openReturnInNewTab(r)">View</button>
+                    <button
+                      type="button"
+                      class="dropdown-item text-danger"
+                      :disabled="!canDeleteReturn(r)"
+                      @click="deleteReturn(r)"
+                    >
+                      Delete Return
+                    </button>
+                  </div>
                 </div>
               </td>
             </tr>
@@ -279,3 +338,26 @@ onMounted(() => {
     </div>
   </div>
 </template>
+
+<style scoped>
+.user-return-row-menu {
+  position: absolute;
+  right: 0;
+  top: calc(100% + 0.25rem);
+  min-width: 10.5rem;
+  border: 1px solid rgba(47, 43, 61, 0.16);
+  border-radius: 0.5rem;
+  background: var(--bs-body-bg, #fff);
+  z-index: 10;
+  overflow: hidden;
+}
+
+.user-return-row-menu .dropdown-item {
+  font-size: 0.875rem;
+  padding: 0.45rem 0.75rem;
+}
+
+[data-bs-theme="dark"] .user-return-row-menu {
+  border-color: rgba(255, 255, 255, 0.16);
+}
+</style>

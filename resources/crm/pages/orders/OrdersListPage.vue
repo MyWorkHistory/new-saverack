@@ -905,12 +905,11 @@ onUnmounted(() => {
 
     <div class="staff-table-card staff-datatable-card staff-datatable-card--white w-100 orders-page-toolbar">
       <div class="staff-table-toolbar">
-        <div class="staff-table-toolbar--row d-flex flex-wrap align-items-end gap-2 gap-md-3 w-100">
+        <div class="staff-table-toolbar--row orders-toolbar-row">
           <div
             v-if="!isPortalOrderList"
             class="orders-toolbar-account flex-shrink-0"
           >
-            <label class="form-label small text-secondary mb-1" for="orders-list-account-trigger">Account</label>
             <CrmSearchableSelect
               v-model="selectedAccountId"
               class="staff-toolbar-search staff-toolbar-search--inline"
@@ -926,38 +925,36 @@ onUnmounted(() => {
             />
           </div>
 
-          <div
-            class="orders-toolbar-controls d-flex flex-wrap align-items-end gap-2 min-w-0"
-          >
-            <div class="orders-search-wrap flex-shrink-0">
-              <label class="form-label small text-secondary mb-1" for="orders-order-number-search">Order Number</label>
-              <div class="input-group orders-toolbar-search-group">
-                <input
-                  id="orders-order-number-search"
-                  v-model.trim="query.orderNumber"
-                  type="search"
-                  class="form-control"
-                  placeholder="Search by Order #"
-                  :disabled="loading || !selectedAccountId"
-                  autocomplete="off"
-                  enterkeyhint="search"
-                  @keydown.enter.prevent="runListSearch"
-                />
-                <button
-                  type="button"
-                  class="btn btn-primary staff-page-primary orders-toolbar-search-btn"
-                  :disabled="loading || !selectedAccountId"
-                  @click="runListSearch"
-                >
-                  Search
-                </button>
-              </div>
+          <div class="orders-search-wrap flex-shrink-0">
+            <div class="input-group orders-toolbar-search-group">
+              <input
+                id="orders-order-number-search"
+                v-model.trim="query.orderNumber"
+                type="search"
+                class="form-control"
+                placeholder="Search by Order #"
+                :disabled="loading || (!isPortalOrderList && !selectedAccountId)"
+                autocomplete="off"
+                enterkeyhint="search"
+                aria-label="Search by order number"
+                @keydown.enter.prevent="runListSearch"
+              />
+              <button
+                type="button"
+                class="btn btn-primary staff-page-primary orders-toolbar-search-btn"
+                :disabled="loading || (!isPortalOrderList && !selectedAccountId)"
+                @click="runListSearch"
+              >
+                Search
+              </button>
             </div>
-            <template v-if="showManageFilters">
-              <div class="position-relative flex-shrink-0" data-toolbar-filter>
-                <button
-                  type="button"
-                  class="btn btn-outline-secondary staff-toolbar-btn orders-toolbar-outline-btn d-inline-flex align-items-center gap-2"
+          </div>
+
+          <template v-if="showManageFilters">
+            <div class="position-relative flex-shrink-0" data-toolbar-filter>
+              <button
+                type="button"
+                class="btn btn-outline-secondary staff-toolbar-btn orders-toolbar-outline-btn d-inline-flex align-items-center gap-2"
                   :aria-expanded="filterMenuOpen"
                   @click.stop="filterMenuOpen = !filterMenuOpen"
                 >
@@ -1090,8 +1087,7 @@ onUnmounted(() => {
                   </div>
                 </div>
               </div>
-            </template>
-          </div>
+          </template>
         </div>
         <p v-if="!isPortalOrderList" class="small text-secondary mb-0 mt-2 px-1">Only accounts with a ShipHero customer ID appear here.</p>
       </div>
@@ -1491,14 +1487,28 @@ onUnmounted(() => {
   font-weight: 600;
 }
 
+/* Keep account, order # search, and Filters on one row (override staff mobile grid). */
+.orders-page-toolbar .staff-table-toolbar--row.orders-toolbar-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+@media (max-width: 767.98px) {
+  .orders-page-toolbar .staff-table-toolbar--row.orders-toolbar-row {
+    display: flex;
+  }
+}
+
 .orders-toolbar-account {
   flex: 0 0 auto;
   width: min(280px, 100%);
 }
 
 .orders-search-wrap {
-  width: 100%;
-  max-width: min(100%, 18rem);
+  flex: 0 0 auto;
+  width: min(18rem, 100%);
 }
 
 .orders-list-page__subtitle {

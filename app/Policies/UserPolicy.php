@@ -23,6 +23,10 @@ class UserPolicy
             return false;
         }
 
+        if ((int) $user->id === (int) $model->id) {
+            return true;
+        }
+
         return $this->canManageUsers($user);
     }
 
@@ -35,6 +39,10 @@ class UserPolicy
     {
         if ($model->client_account_id !== null) {
             return false;
+        }
+
+        if ((int) $user->id === (int) $model->id) {
+            return true;
         }
 
         return $this->canManageUsers($user);

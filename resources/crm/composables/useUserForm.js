@@ -175,7 +175,7 @@ export function useUserForm() {
   /**
    * @returns {Promise<boolean>}
    */
-  async function submit({ isEdit, userId }) {
+  async function submit({ isEdit, userId, profileOnly = false }) {
     saving.value = true;
     errorMsg.value = "";
     fieldErrors.value = {};
@@ -205,6 +205,10 @@ export function useUserForm() {
         terminate_date: form.terminate_date?.trim() || null,
         bio: form.bio?.trim() || null,
       };
+      if (profileOnly) {
+        delete payload.status;
+        delete payload.role_ids;
+      }
       if (isEdit && userId) {
         if (form.password.trim()) {
           payload.password = form.password;

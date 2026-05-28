@@ -725,18 +725,27 @@ async function ensureUsersRouteAccess(path) {
   if (staffCreate) {
     return usersNavCache.create === true;
   }
+  const me = await ensureAuthUser();
+  const myId = me?.id != null ? String(me.id) : null;
+
+  const permMatch = /^\/admin\/staff\/([^/]+)\/permissions$/.exec(path);
+  if (permMatch) {
+    if (myId && permMatch[1] === myId) {
+      return false;
+    }
+    return usersMeIsAdmin === true;
+  }
   if (/^\/admin\/staff\/[^/]+\/edit$/.test(path)) {
     return usersNavCache.update === true;
-  }
-  if (
-    /^\/admin\/staff\/[^/]+\/permissions$/.test(path)
-  ) {
-    return usersMeIsAdmin === true;
   }
   if (
     /^\/admin\/staff\/[^/]+\/history$/.test(path)
   ) {
     return usersNavCache.view === true;
+  }
+  const staffDetailMatch = /^\/admin\/staff\/(\d+)$/.exec(path);
+  if (staffDetailMatch && myId && staffDetailMatch[1] === myId) {
+    return true;
   }
   if (
     path === "/admin/staff" ||

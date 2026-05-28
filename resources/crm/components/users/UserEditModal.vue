@@ -4,9 +4,19 @@ import UserFormFields from "./UserFormFields.vue";
 import CrmLoadingSpinner from "../common/CrmLoadingSpinner.vue";
 import { useUserForm } from "../../composables/useUserForm";
 
+const SELF_EDIT_SECTIONS = [
+  "avatar",
+  "identity",
+  "contact",
+  "address",
+  "employment",
+  "bio",
+];
+
 const props = defineProps({
   open: { type: Boolean, default: false },
   userId: { type: String, default: "" },
+  selfEdit: { type: Boolean, default: false },
 });
 
 const emit = defineEmits(["update:open", "saved"]);
@@ -35,7 +45,9 @@ async function hydrate() {
   loading.value = true;
   errorMsg.value = "";
   try {
-    await loadRoles();
+    if (!props.selfEdit) {
+      await loadRoles();
+    }
     await loadUser(id);
   } catch {
     errorMsg.value = "Could Not Load User.";
@@ -81,7 +93,11 @@ onUnmounted(() => {
 async function onSubmit() {
   const id = props.userId;
   if (!id) return;
-  const ok = await submit({ isEdit: true, userId: id });
+  const ok = await submit({
+    isEdit: true,
+    userId: id,
+    profileOnly: props.selfEdit,
+  });
   if (ok) {
     emit("saved");
     close();
@@ -136,9 +152,9 @@ function onBackdropClick() {
 
             <header class="crm-vx-modal__head">
               <h2 id="user-edit-modal-title" class="crm-vx-modal__title">
-                Edit User Information
+                {{ selfEdit ? "Account Settings" : "Edit User Information" }}
               </h2>
-              <p class="crm-vx-modal__subtitle">
+              <p v-if="!selfEdit" class="crm-vx-modal__subtitle">
                 Updating user details will receive a privacy audit.
               </p>
             </header>
@@ -162,6 +178,7 @@ function onBackdropClick() {
                   :roles="roles"
                   :is-edit="true"
                   :user-id="userId"
+                  :sections="selfEdit ? SELF_EDIT_SECTIONS : null"
                   :avatar-url="profileAvatarUrl"
                   :upload-avatar="(f) => uploadAvatarFile(userId, f)"
                   :delete-avatar="() => deleteAvatarFile(userId)"

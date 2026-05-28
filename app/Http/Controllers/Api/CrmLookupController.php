@@ -8,9 +8,10 @@ use App\Models\User;
 use App\Services\OrderSkuLookupService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Gate;
 use Illuminate\Validation\ValidationException;
 
-class PortalLookupController extends Controller
+class CrmLookupController extends Controller
 {
     /** @var OrderSkuLookupService */
     private $lookup;
@@ -24,6 +25,7 @@ class PortalLookupController extends Controller
     {
         $validated = $request->validate([
             'query' => ['required', 'string', 'max:255'],
+            'client_account_id' => ['required', 'integer', 'exists:client_accounts,id'],
         ]);
 
         $user = $request->user();
@@ -31,27 +33,23 @@ class PortalLookupController extends Controller
             abort(401);
         }
 
-        $clientAccountId = (int) ($user->client_account_id ?? 0);
-        if ($clientAccountId <= 0) {
-            return response()->json(['message' => 'Portal lookup is only available for client portal users.'], 403);
+        if ((int) ($user->client_account_id ?? 0) > 0) {
+            return response()->json(['message' => 'Use portal lookup for client portal users.'], 403);
         }
+
+        if (! Gate::forUser($user)->check('orders.view') && ! Gate::forUser($user)->check('inventory.view')) {
+            return response()->json(['message' => 'You do not have permission to search orders or inventory.'], 403);
+        }
+
+        $clientAccountId = (int) $validated['client_account_id'];
+        $account = ClientAccount::query()->findOrFail($clientAccountId);
+        Gate::forUser($user)->authorize('view', $account);
 
         $query = $this->lookup->normalizeLookupQuery((string) $validated['query']);
         if ($query === '') {
             throw ValidationException::withMessages([
                 'query' => ['Enter an order number or SKU.'],
             ]);
-        }
-
-        $account = ClientAccount::query()->find($clientAccountId);
-        if ($account === null) {
-            throw ValidationException::withMessages([
-                'client_account_id' => ['Client account not found.'],
-            ]);
-        }
-
-        if ((int) ($user->client_account_id ?? 0) > 0 && (int) $user->client_account_id !== $clientAccountId) {
-            abort(403);
         }
 
         try {

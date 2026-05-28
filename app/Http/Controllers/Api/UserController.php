@@ -204,6 +204,12 @@ class UserController extends Controller
             ], 403);
         }
 
+        if ((int) $request->user()->id === (int) $user->id) {
+            return response()->json([
+                'message' => 'You cannot change your own permissions.',
+            ], 403);
+        }
+
         $this->authorize('update', $user);
 
         if ($user->isAdministrator()) {

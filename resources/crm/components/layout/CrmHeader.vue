@@ -3,8 +3,8 @@ import { computed, onMounted, onUnmounted, ref, watch } from "vue";
 import { RouterLink, useRouter } from "vue-router";
 import api from "../../services/api";
 import { BRAND_MARK_SRC } from "../../utils/brandAssets.js";
+import { useCrmActiveClientAccount } from "../../composables/useCrmActiveClientAccount.js";
 import { useCrmSidebar } from "../../composables/useCrmSidebar";
-import { setThemeMode, themeMode } from "../../composables/useCrmTheme.js";
 import UserEditModal from "../users/UserEditModal.vue";
 import { crmIsAdmin } from "../../utils/crmUser";
 import { resolvePublicUrl } from "../../utils/resolvePublicUrl.js";
@@ -24,13 +24,15 @@ const markSrc = computed(() => BRAND_MARK_SRC());
 const isPortalUser = computed(() => (props.user?.client_account_id ?? 0) > 0);
 const portalSearch = ref("");
 const portalSearchLoading = ref(false);
+const staffSearch = ref("");
+const staffSearchLoading = ref(false);
+
+const { activeClientAccountId, setActiveClientAccountId, clearActiveClientAccount } =
+  useCrmActiveClientAccount();
 
 const menuOpen = ref(false);
 const menuRoot = ref(null);
 const editProfileModalOpen = ref(false);
-const themeMenuOpen = ref(false);
-const themeMenuRoot = ref(null);
-const headerSearch = ref("");
 
 const buildEnvLabel = computed(() =>
   import.meta.env.MODE === "production" ? "Prod" : "Dev",
@@ -40,16 +42,13 @@ const buildEnvTitle = computed(
   () => `Build: ${import.meta.env.MODE}`,
 );
 
-const canEditOwnProfile = computed(() => {
-  const u = props.user;
-  if (!u) return false;
-  if (crmIsAdmin(u) || u.is_crm_owner) return true;
-  return (
-    Array.isArray(u.permission_keys) && u.permission_keys.includes("users.update")
-  );
-});
+const canManageOwnAccount = computed(
+  () => !isPortalUser.value && !!props.user?.id,
+);
 
-function openEditProfileModal() {
+const isSelfEditModal = computed(() => canManageOwnAccount.value);
+
+function openAccountSettingsModal() {
   editProfileModalOpen.value = true;
   closeMenu();
 }
@@ -98,9 +97,14 @@ const accountOptions = computed(() => {
 
 const selectedAccount = computed(() => {
   const list = accountOptions.value;
-  return (
-    list.find((a) => a.id === selectedAccountId.value) ?? list[0] ?? null
-  );
+  const activeId = activeClientAccountId.value;
+  if (activeId) {
+    const activeOpt = list.find(
+      (a) => a.kind === "client_account" && Number(a.accountId) === Number(activeId),
+    );
+    if (activeOpt) return activeOpt;
+  }
+  return list.find((a) => a.id === selectedAccountId.value) ?? list[0] ?? null;
 });
 
 const filteredAccounts = computed(() => {
@@ -146,13 +150,34 @@ function openClientAccountDetailInNewTab(accountId) {
 
 function onAccountOptionClick(opt) {
   if (opt.kind === "workspace") {
+    clearActiveClientAccount();
     selectAccount(opt);
     return;
   }
   if (opt.kind === "client_account" && opt.accountId != null) {
+    setActiveClientAccountId(opt.accountId);
+    selectedAccountId.value = opt.id;
+    accountOpen.value = false;
+    accountFilter.value = "";
+  }
+}
+
+function onAccountOpenInNewTab(opt, event) {
+  event?.stopPropagation?.();
+  if (opt.kind === "client_account" && opt.accountId != null) {
     openClientAccountDetailInNewTab(opt.accountId);
   }
 }
+
+watch(
+  activeClientAccountId,
+  (id) => {
+    if (id) {
+      selectedAccountId.value = `ca-${id}`;
+    }
+  },
+  { immediate: true },
+);
 
 async function loadClientAccountsForHeader() {
   if (!canViewClientAccounts.value) {
@@ -221,20 +246,12 @@ function closeMenu() {
   menuOpen.value = false;
 }
 
-function pickTheme(mode) {
-  setThemeMode(mode);
-  themeMenuOpen.value = false;
-}
-
 function onDocClick(e) {
   if (!menuRoot.value?.contains(e.target)) {
     menuOpen.value = false;
   }
   if (!accountRoot.value?.contains(e.target)) {
     accountOpen.value = false;
-  }
-  if (!themeMenuRoot.value?.contains(e.target)) {
-    themeMenuOpen.value = false;
   }
 }
 
@@ -251,16 +268,51 @@ watch(
   { immediate: true },
 );
 
-function onGlobalSearchKey(e) {
-  if (isPortalUser.value) return;
-  if (!(e instanceof KeyboardEvent)) return;
-  if ((e.ctrlKey || e.metaKey) && (e.key === "k" || e.key === "K")) {
-    e.preventDefault();
-    const el = document.getElementById("crm-global-search");
-    if (el instanceof HTMLInputElement) {
-      el.focus();
-      el.select?.();
+async function submitStaffSearch() {
+  const q = staffSearch.value.trim();
+  if (!q || staffSearchLoading.value) return;
+  const clientAccountId = activeClientAccountId.value;
+  if (!clientAccountId) {
+    toast.error("Select a client account to search.");
+    return;
+  }
+  staffSearchLoading.value = true;
+  try {
+    const { data } = await api.get("/crm/lookup", {
+      params: { query: q, client_account_id: clientAccountId },
+    });
+    if (data?.type === "order") {
+      await router.push({
+        name: "order-detail",
+        params: { shipheroOrderId: String(data.shiphero_order_id) },
+        query: { client_account_id: String(data.client_account_id ?? clientAccountId) },
+      });
+      staffSearch.value = "";
+    } else if (data?.type === "sku") {
+      await router.push({
+        name: "inventory-detail",
+        params: { sku: String(data.sku) },
+        query: { client_account_id: String(clientAccountId) },
+      });
+      staffSearch.value = "";
     }
+  } catch (e) {
+    const status = e?.response?.status;
+    const msg = e?.response?.data?.message;
+    if (status === 404 || status === 422) {
+      toast.error(typeof msg === "string" && msg ? msg : "Not found.");
+    } else {
+      toast.errorFrom(e, "Search failed.");
+    }
+  } finally {
+    staffSearchLoading.value = false;
+  }
+}
+
+function onStaffSearchKeydown(e) {
+  if (e.key === "Enter") {
+    e.preventDefault();
+    submitStaffSearch();
   }
 }
 
@@ -308,12 +360,10 @@ function onPortalSearchKeydown(e) {
 
 onMounted(() => {
   document.addEventListener("click", onDocClick);
-  document.addEventListener("keydown", onGlobalSearchKey);
 });
 
 onUnmounted(() => {
   document.removeEventListener("click", onDocClick);
-  document.removeEventListener("keydown", onGlobalSearchKey);
 });
 </script>
 
@@ -477,17 +527,20 @@ onUnmounted(() => {
                       @click.stop="onAccountOptionClick(opt)"
                     >
                       <span
-                        class="d-flex w-100 min-w-0 justify-content-between gap-2"
+                        class="d-flex w-100 min-w-0 justify-content-between gap-2 align-items-center"
                       >
                         <span class="text-truncate fw-medium">{{
                           opt.title
                         }}</span>
-                        <span
+                        <button
                           v-if="opt.kind === 'client_account'"
-                          class="flex-shrink-0 text-uppercase text-secondary"
+                          type="button"
+                          class="btn btn-link btn-sm p-0 text-secondary text-decoration-none flex-shrink-0"
                           style="font-size: 0.65rem"
-                          >New tab</span
+                          @click.stop="onAccountOpenInNewTab(opt, $event)"
                         >
+                          Open
+                        </button>
                       </span>
                       <span class="small text-secondary">{{
                         opt.subtitle
@@ -648,300 +701,127 @@ onUnmounted(() => {
         </template>
 
         <template v-else>
-        <div
-          class="d-flex align-items-center vx-search-merge flex-grow-1 min-w-0 order-3 order-lg-2 w-100 w-lg-auto mx-lg-1"
-        >
-          <div class="input-group w-100">
-            <span class="input-group-text border-end-0">
-              <svg
-                width="20"
-                height="20"
-                class="text-secondary opacity-75 flex-shrink-0"
-                fill="none"
-                viewBox="0 0 24 24"
-                stroke="currentColor"
-                stroke-width="1.5"
-              >
-                <path
-                  stroke-linecap="round"
-                  stroke-linejoin="round"
-                  d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"
-                />
-              </svg>
-            </span>
-            <input
-              id="crm-global-search"
-              v-model="headerSearch"
-              type="search"
-              class="form-control border-start-0"
-              placeholder="Search [CTRL + K]"
-              autocomplete="off"
-              aria-label="Search"
-            />
-          </div>
-        </div>
-
-        <div
-          class="d-flex align-items-center gap-1 gap-sm-2 flex-shrink-0 ms-lg-auto order-2 order-lg-3"
-        >
-          <span
-            class="badge rounded-pill vx-navbar-env-badge text-bg-secondary text-uppercase d-none d-sm-inline me-1"
-            :title="buildEnvTitle"
-            >{{ buildEnvLabel }}</span
+          <div
+            class="crm-portal-navbar-search d-flex align-items-center gap-2 flex-grow-1 min-w-0"
           >
-
-          <button
-            type="button"
-            class="btn vx-icon-btn d-none d-sm-inline-flex"
-            aria-label="Language"
-            title="Language"
-          >
-            <svg
-              width="20"
-              height="20"
-              fill="none"
-              viewBox="0 0 24 24"
-              stroke="currentColor"
-              stroke-width="1.5"
-              aria-hidden="true"
-            >
-              <path
-                stroke-linecap="round"
-                stroke-linejoin="round"
-                d="m10.5 21 5.25-11.25L21 21m-9-3h7.5M3 5.621a48.474 48.474 0 0 1 6-.371m0 0c1.12 0 2.233.038 3.334.114M9 5.25v13.5m.375-19.5h7.5m-12 0H9m0 0c-.884.724-1.735 1.44-2.548 2.13M9 5.25c.84 1.037 1.763 2.04 2.75 3M15 5.25a48.416 48.416 0 0 0-8 .372m0-.372c-.884.724-1.735 1.44-2.548 2.13"
-              />
-            </svg>
-          </button>
-
-          <div ref="themeMenuRoot" class="position-relative">
-            <button
-              type="button"
-              class="btn vx-icon-btn position-relative"
-              aria-label="Theme"
-              aria-haspopup="true"
-              :aria-expanded="themeMenuOpen"
-              @click.stop="themeMenuOpen = !themeMenuOpen"
-            >
-              <svg
-                width="20"
-                height="20"
-                fill="none"
-                viewBox="0 0 24 24"
-                stroke="currentColor"
-                stroke-width="1.5"
-                aria-hidden="true"
-              >
-                <path
-                  stroke-linecap="round"
-                  stroke-linejoin="round"
-                  d="M12 3v2.25m6.364.386-1.591 1.591M21 12h-2.25m-.386 6.364-1.591-1.591M12 18.75V21m-4.773-4.227-1.591 1.591M5.25 12H3m4.773-4.773-1.591-1.591M15.75 12a3.75 3.75 0 1 1-7.5 0 3.75 3.75 0 0 1 7.5 0Z"
-                />
-              </svg>
-            </button>
-            <div
-              v-if="themeMenuOpen"
-              class="position-absolute end-0 mt-2 rounded-4 border bg-body shadow py-1"
-              style="min-width: 11rem; z-index: 1080"
-              role="menu"
-            >
-              <button
-                type="button"
-                class="dropdown-item d-flex align-items-center gap-2 py-2 px-3"
-                :class="{ active: themeMode === 'light' }"
-                @click="pickTheme('light')"
-              >
-                Light
-              </button>
-              <button
-                type="button"
-                class="dropdown-item d-flex align-items-center gap-2 py-2 px-3"
-                :class="{ active: themeMode === 'dark' }"
-                @click="pickTheme('dark')"
-              >
-                Dark
-              </button>
-              <button
-                type="button"
-                class="dropdown-item d-flex align-items-center gap-2 py-2 px-3"
-                :class="{ active: themeMode === 'system' }"
-                @click="pickTheme('system')"
-              >
-                System
-              </button>
-            </div>
-          </div>
-
-          <button
-            type="button"
-            class="btn vx-icon-btn d-none d-md-inline-flex"
-            aria-label="Shortcuts"
-            title="Shortcuts"
-          >
-            <svg
-              width="20"
-              height="20"
-              fill="none"
-              viewBox="0 0 24 24"
-              stroke="currentColor"
-              stroke-width="1.5"
-              aria-hidden="true"
-            >
-              <path
-                stroke-linecap="round"
-                stroke-linejoin="round"
-                d="M3.75 3A2.25 2.25 0 0 0 1.5 5.25v2.25A2.25 2.25 0 0 0 3.75 9.75h2.25A2.25 2.25 0 0 0 8.25 7.5V5.25A2.25 2.25 0 0 0 6 3H3.75Zm9 0A2.25 2.25 0 0 0 10.5 5.25v2.25a2.25 2.25 0 0 0 2.25 2.25H15a2.25 2.25 0 0 0 2.25-2.25V5.25A2.25 2.25 0 0 0 15 3h-2.25Zm-9 7.5A2.25 2.25 0 0 0 1.5 12.75v2.25a2.25 2.25 0 0 0 2.25 2.25H6a2.25 2.25 0 0 0 2.25-2.25v-2.25A2.25 2.25 0 0 0 6 10.5H3.75Zm9 0A2.25 2.25 0 0 0 10.5 12.75v2.25a2.25 2.25 0 0 0 2.25 2.25H15a2.25 2.25 0 0 0 2.25-2.25v-2.25A2.25 2.25 0 0 0 15 10.5h-2.25Z"
-              />
-            </svg>
-          </button>
-
-          <button
-            type="button"
-            class="btn vx-icon-btn position-relative"
-            aria-label="Notifications"
-          >
-            <svg
-              width="20"
-              height="20"
-              fill="none"
-              viewBox="0 0 24 24"
-              stroke="currentColor"
-              stroke-width="1.5"
-              aria-hidden="true"
-            >
-              <path
-                stroke-linecap="round"
-                stroke-linejoin="round"
-                d="M14.857 17.082a23.848 23.848 0 0 0 5.454-1.31A8.967 8.967 0 0 0 18 9.75V9A6 6 0 0 0 6 9v.75a8.967 8.967 0 0 0 2.312 6.022c1.733.64 3.56 1.085 5.455 1.31m5.714 0a24.255 24.255 0 0 1-5.714 0m5.714 0a3.75 3.75 0 1 1-5.714 0"
-              />
-            </svg>
-            <span
-              class="position-absolute rounded-circle bg-danger border border-white p-0"
-              style="
-                width: 8px;
-                height: 8px;
-                top: 6px;
-                right: 6px;
-              "
-              aria-hidden="true"
-            />
-          </button>
-
-          <div ref="menuRoot" class="position-relative">
-            <button
-              type="button"
-              class="btn btn-link text-decoration-none text-body d-flex align-items-center gap-2 rounded-3 py-1 ps-1 pe-1 pe-sm-2 border-0"
-              :aria-expanded="menuOpen"
-              aria-haspopup="true"
-              @click.stop="
-                accountOpen = false;
-                menuOpen = !menuOpen;
-              "
-            >
-              <span class="position-relative flex-shrink-0 d-inline-flex">
-                <img
-                  v-if="user.profile?.avatar_url"
-                  :src="resolvePublicUrl(user.profile.avatar_url)"
-                  alt=""
-                  class="rounded-circle object-fit-cover"
-                  width="40"
-                  height="40"
-                />
-                <span
-                  v-else
-                  class="d-flex align-items-center justify-content-center rounded-circle fw-bold small"
-                  style="width: 2.5rem; height: 2.5rem"
-                  :class="avatarClass(user.email)"
-                >
-                  {{ initials(user.name) }}
+            <div class="vx-search-merge flex-grow-1 min-w-0">
+              <div class="input-group">
+                <span class="input-group-text border-end-0">
+                  <svg
+                    width="20"
+                    height="20"
+                    class="text-secondary opacity-75 flex-shrink-0"
+                    fill="none"
+                    viewBox="0 0 24 24"
+                    stroke="currentColor"
+                    stroke-width="1.5"
+                    aria-hidden="true"
+                  >
+                    <path
+                      stroke-linecap="round"
+                      stroke-linejoin="round"
+                      d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"
+                    />
+                  </svg>
                 </span>
-                <span class="vx-avatar-online" aria-hidden="true" />
-              </span>
-              <span
-                class="d-none d-md-inline text-truncate fw-medium d-lg-none"
-                style="max-width: 6rem"
-              >
-                {{ firstName || user.name }}
-              </span>
-              <svg
-                class="d-none d-md-inline flex-shrink-0 text-secondary d-lg-none"
-                :class="{ 'rotate-180': menuOpen }"
-                width="16"
-                height="16"
-                fill="none"
-                viewBox="0 0 24 24"
-                stroke="currentColor"
-                stroke-width="2"
-              >
-                <path
-                  stroke-linecap="round"
-                  stroke-linejoin="round"
-                  d="M19 9l-7 7-7-7"
+                <input
+                  v-model="staffSearch"
+                  type="search"
+                  class="form-control border-start-0"
+                  :placeholder="staffSearchLoading ? 'Searching…' : 'Search Exact Order # or SKU'"
+                  autocomplete="off"
+                  aria-label="Search exact order number or SKU"
+                  :disabled="staffSearchLoading"
+                  :aria-busy="staffSearchLoading"
+                  @keydown="onStaffSearchKeydown"
                 />
-              </svg>
-            </button>
-
-            <div
-              v-if="menuOpen"
-              class="position-absolute end-0 mt-2 rounded-4 border bg-body shadow overflow-hidden"
-              style="width: 16rem; z-index: 1080"
-              role="menu"
-            >
-              <div class="border-bottom px-3 pb-3 pt-3">
-                <p class="fw-medium mb-0 text-body">{{ user.name }}</p>
-                <p class="mb-0 small text-secondary text-truncate">
-                  {{ user.email }}
-                </p>
               </div>
-              <ul class="list-unstyled mb-0 py-1">
-                <li v-if="canEditOwnProfile">
-                  <button
-                    type="button"
-                    class="btn btn-link text-start text-decoration-none text-body w-100 py-2 px-3 rounded-0"
-                    @click="openEditProfileModal"
-                  >
-                    Edit profile
-                  </button>
-                </li>
-                <li v-else>
-                  <RouterLink
-                    :to="`/admin/staff/${user.id}`"
-                    class="d-block py-2 px-3 text-body text-decoration-none"
-                    @click="closeMenu"
-                  >
-                    View profile
-                  </RouterLink>
-                </li>
-                <li>
-                  <RouterLink
-                    to="/admin/dashboard"
-                    class="d-block py-2 px-3 text-body text-decoration-none"
-                    @click="closeMenu"
-                  >
-                    Account settings
-                  </RouterLink>
-                </li>
-                <li>
-                  <a
-                    href="mailto:support@saverack.com"
-                    class="d-block py-2 px-3 text-body text-decoration-none"
-                    @click="closeMenu"
-                  >
-                    Support
-                  </a>
-                </li>
-              </ul>
-              <div class="border-top" />
+            </div>
+            <button
+              type="button"
+              class="btn btn-outline-secondary btn-sm orders-toolbar-outline-btn flex-shrink-0 d-inline-flex align-items-center"
+              :disabled="staffSearchLoading || !staffSearch.trim()"
+              :aria-busy="staffSearchLoading"
+              @click="submitStaffSearch"
+            >
+              <span
+                v-if="staffSearchLoading"
+                class="spinner-border spinner-border-sm me-1"
+                role="status"
+                aria-hidden="true"
+              />
+              {{ staffSearchLoading ? "Searching…" : "Search" }}
+            </button>
+          </div>
+
+          <div class="d-flex align-items-center flex-shrink-0 ms-auto">
+            <div ref="menuRoot" class="position-relative">
               <button
                 type="button"
-                class="btn btn-link text-start text-danger w-100 py-2 px-3 rounded-0 text-decoration-none"
-                role="menuitem"
-                @click="signOut"
+                class="btn btn-link text-decoration-none text-body d-flex align-items-center rounded-3 py-1 ps-1 pe-1 border-0"
+                :aria-expanded="menuOpen"
+                aria-haspopup="true"
+                @click.stop="
+                  accountOpen = false;
+                  menuOpen = !menuOpen;
+                "
               >
-                Sign out
+                <span class="position-relative flex-shrink-0 d-inline-flex">
+                  <img
+                    v-if="user.profile?.avatar_url"
+                    :src="resolvePublicUrl(user.profile.avatar_url)"
+                    alt=""
+                    class="rounded-circle object-fit-cover"
+                    width="40"
+                    height="40"
+                  />
+                  <span
+                    v-else
+                    class="d-flex align-items-center justify-content-center rounded-circle fw-bold small"
+                    style="width: 2.5rem; height: 2.5rem"
+                    :class="avatarClass(user.email)"
+                  >
+                    {{ initials(user.name) }}
+                  </span>
+                  <span class="vx-avatar-online" aria-hidden="true" />
+                </span>
               </button>
+
+              <div
+                v-if="menuOpen"
+                class="position-absolute end-0 mt-2 rounded-4 border bg-body shadow overflow-hidden"
+                style="width: 16rem; z-index: 1080"
+                role="menu"
+              >
+                <div class="border-bottom px-3 pb-3 pt-3">
+                  <p class="fw-medium mb-0 text-body">{{ user.name }}</p>
+                  <p class="mb-0 small text-secondary text-truncate">
+                    {{ user.email }}
+                  </p>
+                </div>
+                <ul class="list-unstyled mb-0 py-1">
+                  <li v-if="canManageOwnAccount">
+                    <button
+                      type="button"
+                      class="btn btn-link text-start text-decoration-none text-body w-100 py-2 px-3 rounded-0"
+                      @click="openAccountSettingsModal"
+                    >
+                      Account Settings
+                    </button>
+                  </li>
+                </ul>
+                <div class="border-top" />
+                <button
+                  type="button"
+                  class="btn btn-link text-start text-danger w-100 py-2 px-3 rounded-0 text-decoration-none"
+                  role="menuitem"
+                  @click="signOut"
+                >
+                  Sign out
+                </button>
+              </div>
             </div>
           </div>
-        </div>
         </template>
         </div>
       </div>
@@ -952,6 +832,7 @@ onUnmounted(() => {
     v-if="!isPortalUser && user?.id"
     v-model:open="editProfileModalOpen"
     :user-id="String(user.id)"
+    :self-edit="isSelfEditModal"
     @saved="$emit('refresh-user')"
   />
 </template>

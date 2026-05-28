@@ -100,7 +100,28 @@ function userHasPerm(key) {
 }
 
 const canUpdateUsers = computed(() => userHasPerm("users.update"));
+const isOwnProfile = computed(() => {
+  const u = crmUser.value;
+  return u && String(props.id) === String(u.id);
+});
+const canEditThisProfile = computed(
+  () => canUpdateUsers.value || isOwnProfile.value,
+);
 const canManagePermissions = computed(() => crmIsAdmin(crmUser.value));
+const visibleTabs = computed(() =>
+  tabs.filter((t) => {
+    if (t.id === TAB_PERMISSIONS) {
+      return canManagePermissions.value && !isOwnProfile.value;
+    }
+    return true;
+  }),
+);
+
+watch([isOwnProfile, activeTab], () => {
+  if (isOwnProfile.value && activeTab.value === TAB_PERMISSIONS) {
+    setActiveTab(TAB_ACCOUNT);
+  }
+});
 
 const loading = ref(true);
 const errorMsg = ref("");
@@ -236,7 +257,7 @@ async function onHeroAvatarChange(e) {
   const input = e.target;
   const file = input.files?.[0];
   input.value = "";
-  if (!file || !canUpdateUsers.value) return;
+  if (!file || !canEditThisProfile.value) return;
   const fd = new FormData();
   fd.append("avatar", file);
   try {
@@ -302,7 +323,7 @@ function onPermissionsSaved() {
             />
             <div class="staff-user-profile__avatar-wrap">
               <button
-                v-if="canUpdateUsers"
+                v-if="canEditThisProfile"
                 type="button"
                 class="staff-user-profile__avatar-btn rounded focus-ring"
                 title="Change photo"
@@ -378,7 +399,7 @@ function onPermissionsSaved() {
             >
               <h3 class="staff-user-profile__details-title mb-0">Details</h3>
               <button
-                v-if="canUpdateUsers"
+                v-if="canEditThisProfile"
                 type="button"
                 class="btn btn-sm btn-primary staff-page-primary"
                 @click="
@@ -430,7 +451,7 @@ function onPermissionsSaved() {
         <div class="col-12 col-xl-8">
           <div class="staff-user-tabs" role="tablist">
             <button
-              v-for="t in tabs"
+              v-for="t in visibleTabs"
               :key="t.id"
               type="button"
               class="staff-user-tab"
@@ -445,7 +466,7 @@ function onPermissionsSaved() {
           <div
             class="staff-user-tab-panel"
             role="tabpanel"
-            :aria-label="tabs.find((x) => x.id === activeTab)?.label"
+            :aria-label="visibleTabs.find((x) => x.id === activeTab)?.label"
           >
             <template v-if="activeTab === TAB_ACCOUNT">
               <div class="staff-surface p-3 p-md-4 mb-4">
@@ -456,7 +477,7 @@ function onPermissionsSaved() {
                     Personal Information
                   </h3>
                   <button
-                    v-if="canUpdateUsers"
+                    v-if="canEditThisProfile"
                     type="button"
                     class="btn btn-sm btn-primary staff-page-primary"
                     @click="openSectionModal(['displayName', 'contact'])"
@@ -514,7 +535,7 @@ function onPermissionsSaved() {
                 >
                   <h3 class="staff-user-section-title mb-0">Address</h3>
                   <button
-                    v-if="canUpdateUsers"
+                    v-if="canEditThisProfile"
                     type="button"
                     class="btn btn-sm btn-primary staff-page-primary"
                     @click="openSectionModal(['address'], 'Address')"
@@ -573,7 +594,7 @@ function onPermissionsSaved() {
                 >
                   <h3 class="staff-user-section-title mb-0">Employment</h3>
                   <button
-                    v-if="canUpdateUsers"
+                    v-if="canEditThisProfile"
                     type="button"
                     class="btn btn-sm btn-primary staff-page-primary"
                     @click="

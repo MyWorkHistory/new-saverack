@@ -33,7 +33,7 @@ class UserUpdateRequest extends FormRequest
         $user = $this->route('user');
         $userId = $user instanceof User ? $user->id : 0;
 
-        return [
+        $rules = [
             'role_ids' => ['sometimes', 'array', 'min:1'],
             'role_ids.*' => ['integer', 'exists:roles,id'],
             'name' => ['sometimes', 'required', 'string', 'max:150'],
@@ -57,5 +57,30 @@ class UserUpdateRequest extends FormRequest
             'account_user_role' => ['prohibited'],
             'is_account_primary' => ['prohibited'],
         ];
+
+        if ($this->isSelfServiceUpdate() && ! $this->isPrivilegedEditor()) {
+            $rules['role_ids'] = ['prohibited'];
+            $rules['status'] = ['prohibited'];
+        }
+
+        return $rules;
+    }
+
+    private function isSelfServiceUpdate(): bool
+    {
+        $user = $this->route('user');
+        $authUser = $this->user();
+
+        return $user instanceof User
+            && $authUser instanceof User
+            && (int) $authUser->id === (int) $user->id;
+    }
+
+    private function isPrivilegedEditor(): bool
+    {
+        $authUser = $this->user();
+
+        return $authUser instanceof User
+            && ($authUser->isAdministrator() || $authUser->isCrmOwner());
     }
 }

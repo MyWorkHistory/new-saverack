@@ -171,6 +171,13 @@ class UserService
 
     public function update(User $user, array $data, ?User $actor = null): User
     {
+        if ($actor
+            && (int) $actor->id === (int) $user->id
+            && ! $actor->isAdministrator()
+            && ! $actor->isCrmOwner()) {
+            unset($data['role_ids'], $data['status']);
+        }
+
         return DB::transaction(function () use ($user, $data, $actor) {
             $user->load(['profile', 'roles']);
             $before = UserStaffHistory::snapshot($user);

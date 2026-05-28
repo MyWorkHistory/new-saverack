@@ -249,15 +249,7 @@ onUnmounted(() => {
         <div class="col-lg-4">
           <div class="portal-welcome-sidebar d-flex flex-column gap-3">
             <div class="staff-table-card staff-datatable-card--white p-3 p-md-4 portal-welcome-page__account-status">
-              <div class="d-flex align-items-start gap-3">
-                <div
-                  class="portal-welcome-page__panel-icon portal-welcome-page__panel-icon--account-status flex-shrink-0"
-                  aria-hidden="true"
-                >
-                  <svg class="portal-welcome-page__icon-svg" fill="currentColor" viewBox="0 0 24 24">
-                    <path :d="PORTAL_MATERIAL_ICON.account" />
-                  </svg>
-                </div>
+              <div class="d-flex align-items-start justify-content-between gap-3">
                 <div class="min-w-0">
                   <h2 class="h6 fw-semibold mb-2">Account Status: Onboarding</h2>
                   <p class="small text-secondary mb-0">
@@ -265,6 +257,14 @@ onUnmounted(() => {
                     and verified by your account manager, you will receive a notification confirming that your account
                     is active and ready for all fulfillment services.
                   </p>
+                </div>
+                <div
+                  class="portal-welcome-page__panel-icon portal-welcome-page__panel-icon--account-status flex-shrink-0"
+                  aria-hidden="true"
+                >
+                  <svg class="portal-welcome-page__icon-svg" fill="currentColor" viewBox="0 0 24 24">
+                    <path :d="PORTAL_MATERIAL_ICON.account" />
+                  </svg>
                 </div>
               </div>
             </div>
@@ -290,15 +290,7 @@ onUnmounted(() => {
             </div>
 
             <div class="staff-table-card staff-datatable-card--white p-3 p-md-4 portal-welcome-page__support">
-              <div class="d-flex align-items-start gap-3">
-                <div
-                  class="portal-welcome-page__panel-icon portal-welcome-page__panel-icon--support flex-shrink-0"
-                  aria-hidden="true"
-                >
-                  <svg class="portal-welcome-page__icon-svg" fill="currentColor" viewBox="0 0 24 24">
-                    <path :d="PORTAL_MATERIAL_ICON.supportAgent" />
-                  </svg>
-                </div>
+              <div class="d-flex align-items-start justify-content-between gap-3">
                 <div class="min-w-0">
                   <h2 class="h6 fw-semibold mb-2">Support</h2>
                   <p class="small text-secondary mb-2">
@@ -308,6 +300,14 @@ onUnmounted(() => {
                   <RouterLink to="/users/support" class="small auth-vuexy-link text-decoration-none">
                     Visit Support
                   </RouterLink>
+                </div>
+                <div
+                  class="portal-welcome-page__panel-icon portal-welcome-page__panel-icon--support flex-shrink-0"
+                  aria-hidden="true"
+                >
+                  <svg class="portal-welcome-page__icon-svg" fill="currentColor" viewBox="0 0 24 24">
+                    <path :d="PORTAL_MATERIAL_ICON.supportAgent" />
+                  </svg>
                 </div>
               </div>
             </div>

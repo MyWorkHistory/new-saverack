@@ -74,6 +74,8 @@ class RolePermissionSeeder extends Seeder
             ['key' => 'billing.delete', 'label' => 'Delete draft invoices', 'module' => 'billing'],
             ['key' => 'inventory.view', 'label' => 'View inventory', 'module' => 'inventory'],
             ['key' => 'inventory.update', 'label' => 'Update inventory quantities', 'module' => 'inventory'],
+            ['key' => 'orders.view', 'label' => 'View orders', 'module' => 'orders'],
+            ['key' => 'orders.update', 'label' => 'Update orders', 'module' => 'orders'],
             ['key' => 'settings.view', 'label' => 'View settings', 'module' => 'settings'],
             ['key' => 'settings.update', 'label' => 'Update settings', 'module' => 'settings'],
         ])->map(function (array $p) {
@@ -113,6 +115,8 @@ class RolePermissionSeeder extends Seeder
                 'stores.view',
                 'inventory.view',
                 'inventory.update',
+                'orders.view',
+                'orders.update',
             ])->pluck('id')
         );
 

@@ -161,11 +161,11 @@ Route::middleware('auth:sanctum')->group(function () {
 
     Route::prefix('orders')->group(function () {
         Route::get('/summary', [OrderController::class, 'summary'])
-            ->middleware('can:inventory.view');
+            ->middleware('can:orders.view');
         Route::get('/queue-counts', [OrderController::class, 'queueCounts'])
-            ->middleware('can:inventory.view');
+            ->middleware('can:orders.view');
         Route::get('/', [OrderController::class, 'index'])
-            ->middleware('can:inventory.view');
+            ->middleware('can:orders.view');
         Route::post('/bulk/mark-fulfilled', [OrderController::class, 'bulkMarkFulfilled'])
             ->middleware('can:shiphero.orders.write');
         Route::post('/bulk/cancel', [OrderController::class, 'bulkCancelOrders'])
@@ -205,7 +205,7 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::post('/{orderId}/attachments', [OrderController::class, 'uploadAttachment'])
             ->middleware('can:shiphero.orders.write');
         Route::get('/{orderId}', [OrderController::class, 'show'])
-            ->middleware('can:inventory.view');
+            ->middleware('can:orders.view');
     });
 
     Route::get('invoices/meta', [InvoiceController::class, 'meta'])

@@ -82,17 +82,42 @@ class AuthServiceProvider extends ServiceProvider
             return in_array('inventory.update', $user->allPermissionKeys(), true);
         });
 
+        Gate::define('orders.view', function ($user) {
+            if (! $user) {
+                return false;
+            }
+            if ((int) ($user->client_account_id ?? 0) > 0) {
+                return true;
+            }
+            if ($user->isAdministrator() || $user->isCrmOwner()) {
+                return true;
+            }
+
+            return in_array('orders.view', $user->allPermissionKeys(), true);
+        });
+
+        Gate::define('orders.update', function ($user) {
+            if (! $user) {
+                return false;
+            }
+            if ($user->isAdministrator() || $user->isCrmOwner()) {
+                return true;
+            }
+
+            return in_array('orders.update', $user->allPermissionKeys(), true);
+        });
+
         /**
-         * ShipHero order mutations: anyone who may use the orders API (inventory.view) may POST
-         * order updates; 3PL portal logins match inventory.view without explicit permission_keys rows.
+         * ShipHero order mutations: gated by explicit orders.update for CRM users.
+         * Keep inventory.update as temporary fallback for backwards compatibility.
          */
         Gate::define('shiphero.orders.write', function ($user) {
             if (! $user) {
                 return false;
             }
 
-            return Gate::forUser($user)->allows('inventory.update')
-                || Gate::forUser($user)->allows('inventory.view');
+            return Gate::forUser($user)->allows('orders.update')
+                || Gate::forUser($user)->allows('inventory.update');
         });
     }
 }

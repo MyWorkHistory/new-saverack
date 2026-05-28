@@ -506,6 +506,9 @@ let clientsNavCache = null;
 /** Billing module: permissions from /auth/me (see setBillingNavFromUser). */
 let billingNavCache = null;
 
+/** Orders module: permissions from /auth/me (see setOrdersNavFromUser). */
+let ordersNavCache = null;
+
 /** Inventory (ShipHero): permissions from /auth/me (see setInventoryNavFromUser). */
 let inventoryNavCache = null;
 
@@ -519,6 +522,7 @@ export function clearCrmOwnerCache() {
   usersNavCache = null;
   clientsNavCache = null;
   billingNavCache = null;
+  ordersNavCache = null;
   inventoryNavCache = null;
   usersMeIsAdmin = false;
   authUserCache = null;
@@ -617,6 +621,26 @@ export function setBillingNavFromUser(user) {
   };
 }
 
+export function setOrdersNavFromUser(user) {
+  if (!user) {
+    ordersNavCache = null;
+    return;
+  }
+  if (crmIsAdmin(user) || user.is_crm_owner) {
+    ordersNavCache = { view: true, update: true };
+    return;
+  }
+  if (crmIsPortalUser(user)) {
+    ordersNavCache = { view: true, update: false };
+    return;
+  }
+  const k = Array.isArray(user.permission_keys) ? user.permission_keys : [];
+  ordersNavCache = {
+    view: k.includes("orders.view"),
+    update: k.includes("orders.update"),
+  };
+}
+
 export function setInventoryNavFromUser(user) {
   if (!user) {
     inventoryNavCache = null;
@@ -646,6 +670,7 @@ async function ensureAuthUser() {
   setWebmasterNavFromUser(data);
   setSettingsNavFromUser(data);
   setBillingNavFromUser(data);
+  setOrdersNavFromUser(data);
   setInventoryNavFromUser(data);
   return data;
 }
@@ -659,6 +684,7 @@ async function ensureClientsRouteAccess(path) {
       setWebmasterNavFromUser(data);
       setSettingsNavFromUser(data);
       setBillingNavFromUser(data);
+      setOrdersNavFromUser(data);
       setInventoryNavFromUser(data);
     } catch (e) {
       if (e.response?.status === 401) {
@@ -686,6 +712,7 @@ async function ensureUsersRouteAccess(path) {
       setWebmasterNavFromUser(data);
       setSettingsNavFromUser(data);
       setBillingNavFromUser(data);
+      setOrdersNavFromUser(data);
       setInventoryNavFromUser(data);
     } catch (e) {
       if (e.response?.status === 401) {
@@ -750,6 +777,7 @@ async function ensureSettingsRouteAccess() {
     setWebmasterNavFromUser(data);
     setSettingsNavFromUser(data);
     setBillingNavFromUser(data);
+    setOrdersNavFromUser(data);
     setInventoryNavFromUser(data);
     const ok = userCanSettings(data);
     settingsNavCache = ok;
@@ -775,6 +803,7 @@ async function ensureWebmasterRouteAccess() {
     setClientsNavFromUser(data);
     setWebmasterNavFromUser(data);
     setBillingNavFromUser(data);
+    setOrdersNavFromUser(data);
     setInventoryNavFromUser(data);
     const ok = userCanWebmaster(data);
     webmasterNavCache = ok;
@@ -799,6 +828,7 @@ async function ensureBillingRouteAccess(path) {
       setWebmasterNavFromUser(data);
       setSettingsNavFromUser(data);
       setBillingNavFromUser(data);
+      setOrdersNavFromUser(data);
       setInventoryNavFromUser(data);
     } catch (e) {
       if (e.response?.status === 401) {
@@ -824,6 +854,7 @@ async function ensureInventoryRouteAccess(path) {
       setWebmasterNavFromUser(data);
       setSettingsNavFromUser(data);
       setBillingNavFromUser(data);
+      setOrdersNavFromUser(data);
       setInventoryNavFromUser(data);
     } catch (e) {
       if (e.response?.status === 401) {
@@ -837,8 +868,6 @@ async function ensureInventoryRouteAccess(path) {
   if (
     path === "/admin/inventory" ||
     path.startsWith("/admin/inventory/") ||
-    path === "/admin/orders" ||
-    path.startsWith("/admin/orders/") ||
     path === "/users/inventory" ||
     path.startsWith("/users/inventory/") ||
     path === "/users/asn" ||
@@ -849,6 +878,31 @@ async function ensureInventoryRouteAccess(path) {
     path.startsWith("/users/orders/")
   ) {
     return inventoryNavCache.view === true;
+  }
+  return true;
+}
+
+async function ensureOrdersRouteAccess(path) {
+  if (ordersNavCache === null) {
+    try {
+      const { data } = await api.get("/auth/me");
+      setUsersNavFromUser(data);
+      setClientsNavFromUser(data);
+      setWebmasterNavFromUser(data);
+      setSettingsNavFromUser(data);
+      setBillingNavFromUser(data);
+      setOrdersNavFromUser(data);
+      setInventoryNavFromUser(data);
+    } catch (e) {
+      if (e.response?.status === 401) {
+        localStorage.removeItem("auth_token");
+        ordersNavCache = null;
+      }
+      return false;
+    }
+  }
+  if (path.startsWith("/admin/orders")) {
+    return ordersNavCache.view === true;
   }
   return true;
 }
@@ -961,6 +1015,16 @@ router.beforeEach(async (to) => {
     }
   }
 
+  if (to.path.startsWith("/admin/orders")) {
+    const ok = await ensureOrdersRouteAccess(to.path);
+    if (!ok) {
+      if (!localStorage.getItem("auth_token")) {
+        return { name: "login", query: { redirect: to.fullPath } };
+      }
+      return { path: "/admin/dashboard" };
+    }
+  }
+
   if (to.path.startsWith("/admin/inventory") || to.path.startsWith("/users/inventory") || to.path.startsWith("/users/asn")) {
     const ok = await ensureInventoryRouteAccess(to.path);
     if (!ok) {
@@ -972,7 +1036,6 @@ router.beforeEach(async (to) => {
   }
 
   if (
-    to.path.startsWith("/admin/orders") ||
     to.path.startsWith("/users/orders") ||
     to.path === "/users/dashboard" ||
     to.path.startsWith("/users/asn")

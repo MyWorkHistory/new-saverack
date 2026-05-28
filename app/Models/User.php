@@ -41,6 +41,8 @@ class User extends Authenticatable
         'billing.create',
         'billing.update',
         'billing.delete',
+        'orders.view',
+        'orders.update',
     ];
 
     /**

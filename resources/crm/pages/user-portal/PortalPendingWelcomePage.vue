@@ -249,7 +249,7 @@ onUnmounted(() => {
         <div class="col-lg-4">
           <div class="portal-welcome-sidebar d-flex flex-column gap-3">
             <div class="staff-table-card staff-datatable-card--white p-3 p-md-4 portal-welcome-page__account-status">
-              <div class="d-flex align-items-start justify-content-between gap-3">
+              <div class="d-flex align-items-center justify-content-between gap-3">
                 <div class="min-w-0">
                   <h2 class="h6 fw-semibold mb-2">Account Status: Onboarding</h2>
                   <p class="small text-secondary mb-0">
@@ -290,7 +290,7 @@ onUnmounted(() => {
             </div>
 
             <div class="staff-table-card staff-datatable-card--white p-3 p-md-4 portal-welcome-page__support">
-              <div class="d-flex align-items-start justify-content-between gap-3">
+              <div class="d-flex align-items-center justify-content-between gap-3">
                 <div class="min-w-0">
                   <h2 class="h6 fw-semibold mb-2">Support</h2>
                   <p class="small text-secondary mb-2">

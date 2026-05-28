@@ -58,7 +58,13 @@ const canViewInventory = computed(() => {
   return k.includes("inventory.view");
 });
 
-const canViewOrders = computed(() => canViewInventory.value);
+const canViewOrders = computed(() => {
+  if (isPortal.value) return true;
+  if (crmIsAdmin(props.user) || props.user?.is_crm_owner) return true;
+  const k = props.user?.permission_keys;
+  if (!Array.isArray(k)) return false;
+  return k.includes("orders.view");
+});
 
 const clientsGroupOpen = ref(route.path.startsWith("/admin/clients"));
 const settingsGroupOpen = ref(route.path.startsWith("/admin/settings"));

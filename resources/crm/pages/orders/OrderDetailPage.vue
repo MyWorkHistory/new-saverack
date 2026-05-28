@@ -1607,7 +1607,7 @@ function goToOrdersList() {
                 type="button"
                 :class="addItemsBtnClass"
                 :disabled="loading || !canRunShipHeroActions"
-                :title="!canRunShipHeroActions ? 'Requires inventory update permission' : undefined"
+                :title="!canRunShipHeroActions ? 'Requires orders update permission' : undefined"
                 @click="openAddItemsModal"
               >
                 Add Items
@@ -1764,7 +1764,7 @@ function goToOrdersList() {
                 type="button"
                 class="btn btn-primary btn-sm"
                 :disabled="!canRunShipHeroActions || packingNoteSaveBusy"
-                :title="!canRunShipHeroActions ? 'Requires inventory update permission' : undefined"
+                :title="!canRunShipHeroActions ? 'Requires orders update permission' : undefined"
                 @click="savePackingNote"
               >
                 {{ packingNoteSaveBusy ? "Updating…" : "Update" }}

@@ -1,6 +1,6 @@
 ﻿<script setup>
 import { Transition, computed, nextTick, onMounted, onUnmounted, ref, watch } from "vue";
-import { RouterLink, useRoute } from "vue-router";
+import { RouterLink, useRoute, useRouter } from "vue-router";
 import api from "../../services/api";
 import CrmIconRowActions from "../../components/common/CrmIconRowActions.vue";
 import CrmLoadingSpinner from "../../components/common/CrmLoadingSpinner.vue";
@@ -13,6 +13,7 @@ import { formatDateUs } from "../../utils/formatUserDates.js";
 
 const toast = useToast();
 const route = useRoute();
+const router = useRouter();
 
 const loading = ref(true);
 const asn = ref(null);
@@ -91,6 +92,20 @@ function inventoryDetailTo(sku) {
     params: { sku: s },
     query: { client_account_id: String(accountId) },
   };
+}
+
+function inventoryDetailHref(sku) {
+  const to = inventoryDetailTo(sku);
+  if (!to) return "";
+  return router.resolve(to).href;
+}
+
+function openInventoryInNewTab(line, event) {
+  event?.preventDefault?.();
+  event?.stopPropagation?.();
+  const href = inventoryDetailHref(line.sku);
+  if (!href) return;
+  window.open(href, "_blank", "noopener,noreferrer");
 }
 
 function closeAllHeaderMenus() {
@@ -654,7 +669,16 @@ onUnmounted(() => {
                     </span>
                   </td>
                   <td class="order-detail-page__items-col">
-                    <div class="order-detail-page__item-cell">
+                    <a
+                      v-if="inventoryDetailHref(line.sku)"
+                      :href="inventoryDetailHref(line.sku)"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      class="order-detail-page__item-cell order-detail-page__item-cell--link text-decoration-none text-body"
+                      :title="line.name ? String(line.name) : undefined"
+                      :aria-label="line.sku ? `View inventory for SKU ${line.sku} in new tab` : undefined"
+                      @click="openInventoryInNewTab(line, $event)"
+                    >
                       <img
                         v-if="line.image_url"
                         :src="line.image_url"
@@ -664,24 +688,34 @@ onUnmounted(() => {
                       />
                       <div v-else class="asn-line-thumb asn-line-thumb--empty" aria-hidden="true" />
                       <div class="order-detail-page__item-copy">
-                        <RouterLink
-                          v-if="inventoryDetailTo(line.sku)"
-                          :to="inventoryDetailTo(line.sku)"
-                          class="order-detail-page__item-name user-inv-table__sku-link text-decoration-none d-block"
-                          :title="line.name"
-                        >
-                          {{ line.name || "—" }}
-                        </RouterLink>
-                        <div v-else class="order-detail-page__item-name" :title="line.name">{{ line.name || "—" }}</div>
-                        <RouterLink
-                          v-if="inventoryDetailTo(line.sku)"
-                          :to="inventoryDetailTo(line.sku)"
-                          class="order-detail-page__item-sku user-inv-table__sku-link text-decoration-none d-block"
+                        <div class="order-detail-page__item-name" :title="line.name">{{ line.name || "—" }}</div>
+                        <div
+                          class="order-detail-page__item-sku user-inv-table__sku-link"
                           :title="line.sku ? `SKU ${line.sku}` : undefined"
                         >
                           SKU {{ line.sku || "—" }}
-                        </RouterLink>
-                        <div v-else class="order-detail-page__item-sku">SKU {{ line.sku || "—" }}</div>
+                        </div>
+                        <button
+                          type="button"
+                          class="btn btn-link btn-sm px-0 small"
+                          @click.stop="openEditItem(line)"
+                        >
+                          {{ specDisplay(line.barcode) || "Add barcode" }}
+                        </button>
+                      </div>
+                    </a>
+                    <div v-else class="order-detail-page__item-cell">
+                      <img
+                        v-if="line.image_url"
+                        :src="line.image_url"
+                        alt=""
+                        class="asn-line-thumb"
+                        loading="lazy"
+                      />
+                      <div v-else class="asn-line-thumb asn-line-thumb--empty" aria-hidden="true" />
+                      <div class="order-detail-page__item-copy">
+                        <div class="order-detail-page__item-name" :title="line.name">{{ line.name || "—" }}</div>
+                        <div class="order-detail-page__item-sku">SKU {{ line.sku || "—" }}</div>
                         <button
                           type="button"
                           class="btn btn-link btn-sm px-0 small"
@@ -827,6 +861,8 @@ onUnmounted(() => {
           <RouterLink
             :to="{ name: 'billing-custom-bill-detail', params: { id: String(asn.custom_bill_id) } }"
             class="small"
+            target="_blank"
+            rel="noopener noreferrer"
           >
             View Custom Bill
           </RouterLink>
@@ -1048,6 +1084,15 @@ onUnmounted(() => {
   align-items: center;
   gap: 0.65rem;
   min-width: 0;
+}
+
+.admin-asn-detail-page .order-detail-page__item-cell--link {
+  color: inherit;
+}
+
+.admin-asn-detail-page .order-detail-page__item-cell--link:hover .order-detail-page__item-name,
+.admin-asn-detail-page .order-detail-page__item-cell--link:hover .order-detail-page__item-sku {
+  color: var(--bs-link-hover-color, #1d4ed8);
 }
 
 .admin-asn-detail-page .order-detail-page__item-copy {

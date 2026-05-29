@@ -248,7 +248,12 @@ async function confirmCreate() {
     const { data } = await api.post("/asns", { client_account_id: id });
     createModalOpen.value = false;
     toast.success("ASN created.");
-    router.push({ name: "admin-asn-detail", params: { id: String(data.id) } });
+    const href = router.resolve({
+      name: "admin-asn-detail",
+      params: { id: String(data.id) },
+    }).href;
+    window.open(href, "_blank", "noopener,noreferrer");
+    await loadList();
   } catch (e) {
     toast.errorFrom(e, "Could not create ASN.");
   } finally {
@@ -297,7 +302,12 @@ async function submitNonCompliant() {
     });
     nonCompliantOpen.value = false;
     toast.success("Non-compliant ASN created.");
-    router.push({ name: "admin-asn-detail", params: { id: String(data.id) } });
+    const href = router.resolve({
+      name: "admin-asn-detail",
+      params: { id: String(data.id) },
+    }).href;
+    window.open(href, "_blank", "noopener,noreferrer");
+    await loadList();
   } catch (e) {
     toast.errorFrom(e, "Could not create non-compliant ASN.");
   } finally {
@@ -310,7 +320,11 @@ function trackingLink(row) {
 }
 
 function openRow(r) {
-  router.push({ name: "admin-asn-detail", params: { id: String(r.id) } });
+  const href = router.resolve({
+    name: "admin-asn-detail",
+    params: { id: String(r.id) },
+  }).href;
+  window.open(href, "_blank", "noopener,noreferrer");
 }
 
 function placeManageMenu(anchorEl) {

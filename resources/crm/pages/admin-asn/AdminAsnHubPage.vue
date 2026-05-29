@@ -1,15 +1,16 @@
 <script setup>
-import { computed, onMounted, ref, watch } from "vue";
-import { RouterLink, useRoute, useRouter } from "vue-router";
+import { Transition, computed, nextTick, onMounted, onUnmounted, ref, watch } from "vue";
+import { useRoute, useRouter } from "vue-router";
 import api from "../../services/api";
+import CrmIconRowActions from "../../components/common/CrmIconRowActions.vue";
 import CrmLoadingSpinner from "../../components/common/CrmLoadingSpinner.vue";
+import CrmSearchableSelect from "../../components/common/CrmSearchableSelect.vue";
 import ConfirmModal from "../../components/common/ConfirmModal.vue";
 import { setCrmPageMeta } from "../../composables/useCrmPageMeta.js";
 import { useToast } from "../../composables/useToast.js";
 import { ASN_CARRIER_OPTIONS } from "../../utils/asnCarrierOptions.js";
 import { asnTrackingUrl } from "../../utils/asnTrackingUrl.js";
 import { formatAsnDisplay } from "../../utils/formatAsnDisplay.js";
-import { formatDateUs } from "../../utils/formatUserDates.js";
 
 const toast = useToast();
 const router = useRouter();
@@ -26,12 +27,21 @@ const summary = ref({
 const rows = ref([]);
 const meta = ref({ current_page: 1, last_page: 1, per_page: 25, total: 0 });
 
-const accountOptions = ref([]);
+const accounts = ref([]);
+const accountsLoading = ref(false);
 const accountFilter = ref("");
 const statusFilter = ref("");
 const search = ref("");
 const searchDebounced = ref("");
 let searchTimer = null;
+
+const sortBy = ref("created_at");
+const sortDir = ref("desc");
+
+const manageOpenId = ref(null);
+const manageMenuRect = ref({ top: 0, left: 0 });
+const MENU_W = 200;
+const MENU_H = 120;
 
 const createModalOpen = ref(false);
 const createAccountId = ref("");
@@ -44,6 +54,20 @@ const ncBoxes = ref(0);
 const ncPallets = ref(0);
 const ncFee = ref("");
 const ncTrackings = ref([{ carrier: "", tracking_number: "" }]);
+
+const tableColspan = 8;
+
+const accountOptions = computed(() =>
+  (accounts.value || [])
+    .filter((a) => a?.has_shiphero_customer !== false)
+    .map((a) => ({
+      id: a.id,
+      name: a.company_name || a.label || `Account #${a.id}`,
+      email: a.email ? String(a.email) : "",
+    })),
+);
+
+const manageMenuRow = computed(() => rows.value.find((r) => r.id === manageOpenId.value) ?? null);
 
 const STAT_CARDS = [
   {
@@ -117,6 +141,22 @@ function statusBadgeClass(status) {
   return "bg-body-secondary text-body-secondary";
 }
 
+function sortIndicator(column) {
+  if (sortBy.value !== column) return "";
+  return sortDir.value === "asc" ? "↑" : "↓";
+}
+
+function toggleSort(column) {
+  if (sortBy.value !== column) {
+    sortBy.value = column;
+    sortDir.value = "asc";
+  } else {
+    sortDir.value = sortDir.value === "asc" ? "desc" : "asc";
+  }
+  meta.value.current_page = 1;
+  loadList();
+}
+
 function summaryParams() {
   const p = {};
   if (accountFilter.value) {
@@ -129,8 +169,8 @@ function listParams() {
   const p = {
     page: meta.value.current_page,
     per_page: meta.value.per_page,
-    sort_by: "created_at",
-    sort_dir: "desc",
+    sort_by: sortBy.value,
+    sort_dir: sortDir.value,
   };
   if (accountFilter.value) {
     p.client_account_id = accountFilter.value;
@@ -175,11 +215,15 @@ async function loadList() {
 }
 
 async function loadAccounts() {
+  accountsLoading.value = true;
   try {
     const { data } = await api.get("/inventory/client-account-options");
-    accountOptions.value = data.data || data || [];
-  } catch {
-    accountOptions.value = [];
+    accounts.value = Array.isArray(data?.accounts) ? data.accounts : Array.isArray(data?.data) ? data.data : [];
+  } catch (e) {
+    toast.errorFrom(e, "Could not load account list.");
+    accounts.value = [];
+  } finally {
+    accountsLoading.value = false;
   }
 }
 
@@ -264,9 +308,49 @@ function trackingLink(row) {
   return asnTrackingUrl(row.tracking_carrier, row.tracking_display);
 }
 
-function goPage(page) {
-  meta.value.current_page = page;
-  loadList();
+function openRow(r) {
+  router.push({ name: "admin-asn-detail", params: { id: String(r.id) } });
+}
+
+function placeManageMenu(anchorEl) {
+  if (!(anchorEl instanceof HTMLElement)) return;
+  const r = anchorEl.getBoundingClientRect();
+  let top = r.bottom + 4;
+  let left = r.right - MENU_W;
+  left = Math.max(8, Math.min(left, window.innerWidth - MENU_W - 8));
+  if (top + MENU_H > window.innerHeight - 8) {
+    top = Math.max(8, r.top - MENU_H - 4);
+  }
+  manageMenuRect.value = { top, left };
+}
+
+async function toggleManageMenu(rowId, e) {
+  e?.stopPropagation?.();
+  if (manageOpenId.value === rowId) {
+    manageOpenId.value = null;
+    return;
+  }
+  const btn = e?.currentTarget;
+  manageOpenId.value = rowId;
+  await nextTick();
+  requestAnimationFrame(() => {
+    if (btn instanceof HTMLElement) placeManageMenu(btn);
+  });
+}
+
+function viewAsnFromMenu() {
+  if (manageMenuRow.value) openRow(manageMenuRow.value);
+  manageOpenId.value = null;
+}
+
+function onDocClick(e) {
+  if (!e.target?.closest?.("[data-row-actions]")) {
+    manageOpenId.value = null;
+  }
+}
+
+function onWindowCloseManageMenu() {
+  manageOpenId.value = null;
 }
 
 const statCardValue = (key) => summary.value[key] ?? 0;
@@ -276,17 +360,26 @@ onMounted(async () => {
   if (route.query.status) {
     statusFilter.value = String(route.query.status);
   }
+  document.addEventListener("click", onDocClick);
+  window.addEventListener("scroll", onWindowCloseManageMenu, true);
+  window.addEventListener("resize", onWindowCloseManageMenu);
   await loadAccounts();
   await Promise.all([loadSummary(), loadList()]);
+});
+
+onUnmounted(() => {
+  document.removeEventListener("click", onDocClick);
+  window.removeEventListener("scroll", onWindowCloseManageMenu, true);
+  window.removeEventListener("resize", onWindowCloseManageMenu);
 });
 </script>
 
 <template>
-  <div class="staff-page">
-    <div class="d-flex flex-wrap align-items-center justify-content-between gap-3 mb-4">
+  <div class="staff-page staff-page--wide">
+    <div class="d-flex flex-wrap align-items-end justify-content-between gap-3 mb-4">
       <div>
-        <h1 class="staff-page-title mb-1">ASN</h1>
-        <p class="staff-page-subtitle mb-0 text-body-secondary">Receiving — advance shipping notices</p>
+        <h1 class="h4 mb-1 fw-semibold text-body">ASN</h1>
+        <p class="staff-page__intro admin-asn-list__subtitle mb-0">Search by ASN # or tracking #.</p>
       </div>
       <div class="d-flex flex-wrap gap-2">
         <button type="button" class="btn btn-primary staff-page-primary" @click="openCreateModal">
@@ -301,12 +394,12 @@ onMounted(async () => {
     <div v-if="summaryLoading" class="d-flex justify-content-center py-4 mb-4">
       <CrmLoadingSpinner message="Loading summary…" />
     </div>
-    <div v-else class="row g-4 mb-4">
+    <div v-else class="row g-3 mb-4">
       <div v-for="card in STAT_CARDS" :key="card.key" class="col-12 col-sm-6 col-xl-3">
         <button
           type="button"
-          class="staff-stat-card h-100 text-start w-100 border-0"
-          :class="{ 'ring-2 ring-primary': statusFilter === card.status }"
+          class="staff-stat-card admin-asn-summary-btn h-100 text-start w-100"
+          :class="{ 'admin-asn-summary-btn--active': statusFilter === card.status }"
           @click="setStatusCard(card.status)"
         >
           <p class="staff-stat-card__label">{{ card.label }}</p>
@@ -321,106 +414,158 @@ onMounted(async () => {
       </div>
     </div>
 
-    <div class="d-flex flex-wrap align-items-end gap-3 mb-3">
-      <div style="min-width: 12rem">
-        <label class="form-label small text-body-secondary mb-1">Account</label>
-        <select v-model="accountFilter" class="form-select form-select-sm">
-          <option value="">All accounts</option>
-          <option v-for="a in accountOptions" :key="a.id" :value="String(a.id)">
-            {{ a.company_name || a.label || `Account #${a.id}` }}
-          </option>
-        </select>
+    <div class="admin-asn-list staff-table-card staff-datatable-card staff-datatable-card--white w-100">
+      <div class="staff-table-toolbar">
+        <div class="staff-table-toolbar--row flex-wrap align-items-end gap-2 gap-md-3">
+          <CrmSearchableSelect
+            v-model="accountFilter"
+            class="staff-toolbar-search staff-toolbar-search--inline"
+            appearance="staff"
+            aria-label="Client account"
+            :options="accountOptions"
+            :disabled="accountsLoading || loading"
+            placeholder="All accounts"
+            empty-label="All accounts"
+            search-placeholder="Search accounts…"
+          />
+          <input
+            id="admin-asn-list-search"
+            v-model="search"
+            type="search"
+            class="form-control staff-toolbar-search staff-toolbar-search--inline"
+            placeholder="Search ASN # or tracking #"
+            autocomplete="off"
+            aria-label="Search ASN"
+            @keydown.enter.prevent="loadList"
+          />
+        </div>
       </div>
-      <div class="flex-grow-1" style="max-width: 22rem">
-        <label class="form-label small text-body-secondary mb-1">Search</label>
-        <input
-          v-model="search"
-          type="search"
-          class="form-control form-control-sm"
-          placeholder="ASN # or Tracking #"
-          autocomplete="off"
-        />
-      </div>
-    </div>
 
-    <div class="card border-0 shadow-sm">
-      <div class="table-responsive">
-        <table class="table table-hover staff-data-table mb-0">
-          <thead>
+      <div class="table-responsive staff-table-wrap">
+        <table class="table table-hover align-middle mb-0 staff-data-table">
+          <thead class="table-light staff-table-head">
             <tr>
-              <th>Status</th>
-              <th>ASN #</th>
-              <th>Account</th>
-              <th class="text-end">Expected QTY</th>
-              <th class="text-end">Received QTY</th>
-              <th class="text-end">Boxes</th>
-              <th>Tracking #</th>
-              <th class="text-end">Action</th>
+              <th class="staff-table-head__th staff-table-head__th--sort text-center" scope="col">
+                <button type="button" class="staff-sort-btn" @click="toggleSort('status')">
+                  Status
+                  <span v-if="sortIndicator('status')" class="staff-sort-ind">{{ sortIndicator("status") }}</span>
+                </button>
+              </th>
+              <th class="staff-table-head__th staff-table-head__th--sort text-center admin-asn-list-asn-col" scope="col">
+                <button type="button" class="staff-sort-btn" @click="toggleSort('asn_number')">
+                  ASN #
+                  <span v-if="sortIndicator('asn_number')" class="staff-sort-ind">{{ sortIndicator("asn_number") }}</span>
+                </button>
+              </th>
+              <th class="staff-table-head__th text-center" scope="col">Account</th>
+              <th class="staff-table-head__th staff-table-head__th--sort text-center" scope="col">
+                <button type="button" class="staff-sort-btn" @click="toggleSort('expected_qty')">
+                  Expected QTY
+                  <span v-if="sortIndicator('expected_qty')" class="staff-sort-ind">{{ sortIndicator("expected_qty") }}</span>
+                </button>
+              </th>
+              <th class="staff-table-head__th staff-table-head__th--sort text-center" scope="col">
+                <button type="button" class="staff-sort-btn" @click="toggleSort('accepted_qty')">
+                  Received QTY
+                  <span v-if="sortIndicator('accepted_qty')" class="staff-sort-ind">{{ sortIndicator("accepted_qty") }}</span>
+                </button>
+              </th>
+              <th class="staff-table-head__th staff-table-head__th--sort text-center" scope="col">
+                <button type="button" class="staff-sort-btn" @click="toggleSort('total_boxes')">
+                  Boxes
+                  <span v-if="sortIndicator('total_boxes')" class="staff-sort-ind">{{ sortIndicator("total_boxes") }}</span>
+                </button>
+              </th>
+              <th class="staff-table-head__th text-center admin-asn-list-tracking-col" scope="col">Tracking #</th>
+              <th class="staff-table-head__th staff-actions-col text-center admin-asn-list-actions-col" scope="col">
+                Actions
+              </th>
             </tr>
           </thead>
           <tbody>
             <tr v-if="loading">
-              <td colspan="8" class="text-center py-5">
-                <CrmLoadingSpinner message="Loading ASNs…" />
+              <td :colspan="tableColspan" class="py-5">
+                <div class="d-flex justify-content-center py-3">
+                  <CrmLoadingSpinner message="Loading ASNs…" />
+                </div>
               </td>
             </tr>
-            <tr v-else-if="rows.length === 0">
-              <td colspan="8" class="text-center text-body-secondary py-5">No ASNs found.</td>
-            </tr>
-            <tr v-for="row in rows" v-else :key="row.id">
-              <td>
-                <span class="badge rounded-pill" :class="statusBadgeClass(row.status)">
-                  {{ statusLabel(row.status) }}
-                </span>
-              </td>
-              <td>
-                <RouterLink
-                  :to="{ name: 'admin-asn-detail', params: { id: String(row.id) } }"
-                  class="fw-semibold text-decoration-none"
-                >
+            <template v-else>
+              <tr
+                v-for="row in rows"
+                :key="row.id"
+                class="align-middle cursor-pointer"
+                @click="openRow(row)"
+              >
+                <td class="text-center">
+                  <span class="badge rounded-pill fw-medium" :class="statusBadgeClass(row.status)">
+                    {{ statusLabel(row.status) }}
+                  </span>
+                </td>
+                <td class="text-center fw-semibold admin-asn-list-asn-col">
                   {{ formatAsnDisplay(row.asn_number) }}
-                </RouterLink>
-              </td>
-              <td>{{ row.client_account_company_name || "—" }}</td>
-              <td class="text-end">{{ row.expected_qty }}</td>
-              <td class="text-end">{{ row.accepted_qty }}</td>
-              <td class="text-end">{{ row.total_boxes }}</td>
-              <td>
-                <a
-                  v-if="trackingLink(row)"
-                  :href="trackingLink(row)"
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  class="text-decoration-none"
-                  @click.stop
-                >
-                  {{ row.tracking_display || "—" }}
-                </a>
-                <span v-else>{{ row.tracking_display || "—" }}</span>
-              </td>
-              <td class="text-end">
-                <RouterLink
-                  :to="{ name: 'admin-asn-detail', params: { id: String(row.id) } }"
-                  class="btn btn-sm btn-outline-primary"
-                >
-                  View
-                </RouterLink>
-              </td>
-            </tr>
+                </td>
+                <td class="text-center small text-secondary">{{ row.client_account_company_name || "—" }}</td>
+                <td class="text-center">{{ Number(row.expected_qty ?? 0).toLocaleString() }}</td>
+                <td class="text-center">{{ Number(row.accepted_qty ?? 0).toLocaleString() }}</td>
+                <td class="text-center">{{ Number(row.total_boxes ?? 0).toLocaleString() }}</td>
+                <td class="text-center small text-secondary admin-asn-list-tracking-col" @click.stop>
+                  <a
+                    v-if="trackingLink(row)"
+                    :href="trackingLink(row)"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    class="text-decoration-none admin-asn-list-tracking-text"
+                  >
+                    {{ row.tracking_display || "—" }}
+                  </a>
+                  <span v-else class="admin-asn-list-tracking-text">{{ row.tracking_display || "—" }}</span>
+                </td>
+                <td class="staff-actions-cell text-center admin-asn-list-actions-cell" @click.stop>
+                  <div
+                    data-row-actions
+                    class="staff-actions-inner staff-actions-inner--single admin-asn-list-actions-inner"
+                  >
+                    <button
+                      type="button"
+                      class="staff-action-btn staff-action-btn--more"
+                      :class="{ 'is-open': manageOpenId == row.id }"
+                      :aria-expanded="manageOpenId == row.id ? 'true' : 'false'"
+                      aria-haspopup="true"
+                      aria-label="Row actions"
+                      @click="toggleManageMenu(row.id, $event)"
+                    >
+                      <CrmIconRowActions variant="horizontal" />
+                    </button>
+                  </div>
+                </td>
+              </tr>
+              <tr v-if="rows.length === 0">
+                <td :colspan="tableColspan" class="text-center text-secondary py-5">No ASNs found.</td>
+              </tr>
+            </template>
           </tbody>
         </table>
       </div>
+
+      <p class="staff-table-mobile-scroll-cue d-md-none" aria-hidden="true">
+        Scroll sideways or swipe to see all columns.
+      </p>
+
       <div
-        v-if="meta.last_page > 1"
-        class="d-flex justify-content-between align-items-center px-3 py-2 border-top"
+        v-if="!loading && meta.last_page > 1"
+        class="staff-table-footer card-footer d-flex flex-column flex-sm-row align-items-stretch align-items-sm-center justify-content-between gap-2"
       >
-        <span class="small text-body-secondary">Page {{ meta.current_page }} of {{ meta.last_page }}</span>
-        <div class="btn-group btn-group-sm">
+        <span class="small text-secondary">Page {{ meta.current_page }} of {{ meta.last_page }}</span>
+        <div class="btn-group btn-group-sm ms-sm-auto">
           <button
             type="button"
             class="btn btn-outline-secondary"
             :disabled="meta.current_page <= 1"
-            @click="goPage(meta.current_page - 1)"
+            @click="
+              meta.current_page--;
+              loadList();
+            "
           >
             Previous
           </button>
@@ -428,13 +573,43 @@ onMounted(async () => {
             type="button"
             class="btn btn-outline-secondary"
             :disabled="meta.current_page >= meta.last_page"
-            @click="goPage(meta.current_page + 1)"
+            @click="
+              meta.current_page++;
+              loadList();
+            "
           >
             Next
           </button>
         </div>
       </div>
     </div>
+
+    <Teleport to="body">
+      <Transition
+        enter-active-class="transition ease-out duration-100"
+        enter-from-class="opacity-0"
+        enter-to-class="opacity-100"
+        leave-active-class="transition ease-in duration-75"
+        leave-from-class="opacity-100"
+        leave-to-class="opacity-0"
+      >
+        <div
+          v-if="manageMenuRow"
+          data-row-actions
+          class="staff-row-menu fixed z-[300] overflow-hidden"
+          role="menu"
+          :style="{
+            top: `${manageMenuRect.top}px`,
+            left: `${manageMenuRect.left}px`,
+          }"
+          @click.stop
+        >
+          <button type="button" class="staff-row-menu__item" role="menuitem" @click="viewAsnFromMenu">
+            View ASN
+          </button>
+        </div>
+      </Transition>
+    </Teleport>
 
     <ConfirmModal
       :open="createModalOpen"
@@ -445,12 +620,14 @@ onMounted(async () => {
       @confirm="confirmCreate"
     >
       <label class="form-label">Account</label>
-      <select v-model="createAccountId" class="form-select">
-        <option value="">Select account…</option>
-        <option v-for="a in accountOptions" :key="a.id" :value="String(a.id)">
-          {{ a.company_name || a.label || `Account #${a.id}` }}
-        </option>
-      </select>
+      <CrmSearchableSelect
+        v-model="createAccountId"
+        appearance="staff"
+        :options="accountOptions"
+        placeholder="Select account…"
+        :allow-empty="false"
+        search-placeholder="Search accounts…"
+      />
     </ConfirmModal>
 
     <ConfirmModal
@@ -464,12 +641,14 @@ onMounted(async () => {
       <div class="row g-3">
         <div class="col-12">
           <label class="form-label">Account</label>
-          <select v-model="ncAccountId" class="form-select">
-            <option value="">Select account…</option>
-            <option v-for="a in accountOptions" :key="a.id" :value="String(a.id)">
-              {{ a.company_name || a.label || `Account #${a.id}` }}
-            </option>
-          </select>
+          <CrmSearchableSelect
+            v-model="ncAccountId"
+            appearance="staff"
+            :options="accountOptions"
+            placeholder="Select account…"
+            :allow-empty="false"
+            search-placeholder="Search accounts…"
+          />
         </div>
         <div class="col-6">
           <label class="form-label">Boxes</label>
@@ -510,3 +689,96 @@ onMounted(async () => {
     </ConfirmModal>
   </div>
 </template>
+
+<style scoped>
+.cursor-pointer {
+  cursor: pointer;
+}
+
+.admin-asn-summary-btn {
+  cursor: pointer;
+  font: inherit;
+  color: inherit;
+  border: 0;
+  box-shadow: 0 2px 10px rgba(47, 43, 61, 0.06);
+  transition:
+    box-shadow 0.15s ease,
+    transform 0.15s ease;
+}
+
+[data-bs-theme="dark"] .admin-asn-summary-btn {
+  box-shadow: 0 2px 14px rgba(0, 0, 0, 0.22);
+}
+
+.admin-asn-summary-btn:hover {
+  box-shadow: 0 0.45rem 1rem rgba(47, 43, 61, 0.1);
+  transform: translateY(-1px);
+}
+
+.admin-asn-summary-btn--active {
+  box-shadow:
+    0 0 0 2px rgba(115, 103, 240, 0.35),
+    0 0.45rem 1rem rgba(47, 43, 61, 0.1);
+}
+
+[data-bs-theme="dark"] .admin-asn-summary-btn:hover,
+[data-bs-theme="dark"] .admin-asn-summary-btn--active {
+  box-shadow:
+    0 0 0 2px rgba(186, 175, 255, 0.35),
+    0 0.5rem 1.15rem rgba(0, 0, 0, 0.28);
+}
+
+.admin-asn-list :deep(.staff-table-head__th--sort .staff-sort-btn) {
+  justify-content: center;
+  width: 100%;
+  text-align: center;
+}
+
+.admin-asn-list :deep(.staff-table-footer .btn-outline-secondary:hover:not(:disabled)),
+.admin-asn-list :deep(.staff-table-footer .btn-outline-secondary:focus-visible) {
+  background-color: rgba(115, 103, 240, 0.06);
+  border-color: rgba(115, 103, 240, 0.35);
+  color: var(--bs-body-color);
+}
+
+[data-bs-theme="dark"] .admin-asn-list :deep(.staff-table-footer .btn-outline-secondary:hover:not(:disabled)),
+[data-bs-theme="dark"] .admin-asn-list :deep(.staff-table-footer .btn-outline-secondary:focus-visible) {
+  background-color: rgba(115, 103, 240, 0.12);
+  border-color: rgba(186, 175, 255, 0.35);
+  color: var(--bs-body-color);
+}
+
+.admin-asn-list :deep(.table.staff-data-table > thead > tr > th.admin-asn-list-actions-col),
+.admin-asn-list :deep(.table.staff-data-table > tbody > tr > td.admin-asn-list-actions-cell) {
+  text-align: center !important;
+}
+
+.admin-asn-list :deep(.admin-asn-list-actions-inner) {
+  justify-content: center !important;
+}
+
+.admin-asn-list :deep(.admin-asn-list-tracking-col) {
+  min-width: 9rem;
+}
+
+.admin-asn-list :deep(.admin-asn-list-actions-col) {
+  min-width: 5.5rem;
+}
+
+.admin-asn-list :deep(.admin-asn-list-asn-col) {
+  min-width: 6.5rem;
+}
+
+.admin-asn-list-tracking-text {
+  display: inline-block;
+  max-width: 14rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  vertical-align: bottom;
+}
+
+[data-bs-theme="dark"] .admin-asn-list__subtitle {
+  color: #fff !important;
+}
+</style>

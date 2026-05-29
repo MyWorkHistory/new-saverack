@@ -1,6 +1,6 @@
-<script setup>
-import { computed, nextTick, onMounted, onUnmounted, ref, watch } from "vue";
-import { RouterLink, useRoute, useRouter } from "vue-router";
+﻿<script setup>
+import { Transition, computed, nextTick, onMounted, onUnmounted, ref, watch } from "vue";
+import { RouterLink, useRoute } from "vue-router";
 import api from "../../services/api";
 import CrmIconRowActions from "../../components/common/CrmIconRowActions.vue";
 import CrmLoadingSpinner from "../../components/common/CrmLoadingSpinner.vue";
@@ -8,13 +8,11 @@ import ConfirmModal from "../../components/common/ConfirmModal.vue";
 import { setCrmPageMeta } from "../../composables/useCrmPageMeta.js";
 import { useToast } from "../../composables/useToast.js";
 import { ASN_CARRIER_OPTIONS } from "../../utils/asnCarrierOptions.js";
-import { asnTrackingUrl } from "../../utils/asnTrackingUrl.js";
 import { formatAsnDisplay, formatAsnHeading } from "../../utils/formatAsnDisplay.js";
 import { formatDateUs } from "../../utils/formatUserDates.js";
 
 const toast = useToast();
 const route = useRoute();
-const router = useRouter();
 
 const loading = ref(true);
 const asn = ref(null);
@@ -27,8 +25,15 @@ const receiveDraft = ref({});
 const rejectDraft = ref({});
 const lineSaveBusy = ref({});
 
-const statusPickerOpen = ref(false);
+const statusMenuOpen = ref(false);
+const statusMenuRect = ref({ top: 0, left: 0 });
+const actionMenuOpen = ref(false);
+const actionMenuRect = ref({ top: 0, left: 0 });
+const manageMenuOpen = ref(false);
+const manageMenuRect = ref({ top: 0, left: 0 });
 const statusPickerBusy = ref(false);
+const HEADER_MENU_W = 220;
+const HEADER_MENU_H = 280;
 
 const scanOpen = ref(false);
 const scanText = ref("");
@@ -56,19 +61,18 @@ const trackingSaveBusy = ref(false);
 const reopenBusy = ref(false);
 
 const lineMenuOpenId = ref(null);
-const lineMenuPos = ref({ top: 0, left: 0 });
+const lineMenuRect = ref({ top: 0, left: 0 });
 const LINE_MENU_W = 200;
-const LINE_MENU_H = 140;
-
-const lineMenuStyle = computed(() => ({
-  top: `${lineMenuPos.value.top}px`,
-  left: `${lineMenuPos.value.left}px`,
-  zIndex: 2200,
-}));
+const LINE_MENU_H = 160;
 
 const asnId = computed(() => String(route.params.id || ""));
 const isDraft = computed(() => String(asn.value?.status || "").toLowerCase() === "draft");
+const isPending = computed(() => String(asn.value?.status || "").toLowerCase() === "pending");
 const isNonCompliant = computed(() => String(asn.value?.status || "").toLowerCase() === "non_compliant");
+
+const lineMenuRow = computed(
+  () => (asn.value?.lines || []).find((l) => l.id === lineMenuOpenId.value) ?? null,
+);
 
 const STATUS_OPTIONS = [
   { value: "draft", label: "Draft" },
@@ -77,6 +81,99 @@ const STATUS_OPTIONS = [
   { value: "completed", label: "Completed" },
   { value: "non_compliant", label: "Non-Compliant" },
 ];
+
+function inventoryDetailTo(sku) {
+  const s = String(sku || "").trim();
+  const accountId = Number(asn.value?.client_account_id || 0);
+  if (!s || !accountId) return null;
+  return {
+    name: "inventory-detail",
+    params: { sku: s },
+    query: { client_account_id: String(accountId) },
+  };
+}
+
+function closeAllHeaderMenus() {
+  statusMenuOpen.value = false;
+  actionMenuOpen.value = false;
+  manageMenuOpen.value = false;
+}
+
+function placeHeaderMenu(rectRef, anchorEl, width, height) {
+  if (!(anchorEl instanceof HTMLElement)) return;
+  const r = anchorEl.getBoundingClientRect();
+  let top = r.bottom + 4;
+  let left = r.right - width;
+  left = Math.max(8, Math.min(left, window.innerWidth - width - 8));
+  if (top + height > window.innerHeight - 8) {
+    top = Math.max(8, r.top - height - 4);
+  }
+  rectRef.value = { top, left };
+}
+
+async function toggleStatusMenu(e) {
+  e?.stopPropagation?.();
+  if (statusMenuOpen.value) {
+    statusMenuOpen.value = false;
+    return;
+  }
+  closeAllHeaderMenus();
+  const btn = e?.currentTarget;
+  statusMenuOpen.value = true;
+  await nextTick();
+  requestAnimationFrame(() => {
+    if (btn instanceof HTMLElement) placeHeaderMenu(statusMenuRect, btn, HEADER_MENU_W, HEADER_MENU_H);
+  });
+}
+
+async function toggleActionMenu(e) {
+  e?.stopPropagation?.();
+  if (actionMenuOpen.value) {
+    actionMenuOpen.value = false;
+    return;
+  }
+  closeAllHeaderMenus();
+  const btn = e?.currentTarget;
+  actionMenuOpen.value = true;
+  await nextTick();
+  requestAnimationFrame(() => {
+    if (btn instanceof HTMLElement) placeHeaderMenu(actionMenuRect, btn, HEADER_MENU_W, 120);
+  });
+}
+
+async function toggleManageMenu(e) {
+  e?.stopPropagation?.();
+  if (manageMenuOpen.value) {
+    manageMenuOpen.value = false;
+    return;
+  }
+  closeAllHeaderMenus();
+  const btn = e?.currentTarget;
+  manageMenuOpen.value = true;
+  await nextTick();
+  requestAnimationFrame(() => {
+    if (btn instanceof HTMLElement) placeHeaderMenu(manageMenuRect, btn, HEADER_MENU_W, 120);
+  });
+}
+
+function openScanFromMenu() {
+  scanOpen.value = true;
+  closeAllHeaderMenus();
+}
+
+async function reopenForEditFromMenu() {
+  closeAllHeaderMenus();
+  await reopenForEdit();
+}
+
+async function setAsnStatusFromMenu(status) {
+  closeAllHeaderMenus();
+  await setAsnStatus(status);
+}
+
+function addTrackingRow() {
+  trackingDraft.value = [...trackingDraft.value, { carrier: "", tracking_number: "" }];
+}
 
 const filteredLines = computed(() => {
   let lines = asn.value?.lines || [];
@@ -103,7 +200,7 @@ function statusLabel(s) {
   if (x === "completed") return "Completed";
   if (x === "non_compliant") return "Non-Compliant";
   if (x === "partial") return "Partial";
-  return s || "—";
+  return s || "â€”";
 }
 
 function statusBadgeClass(status) {
@@ -129,10 +226,6 @@ function specDisplay(val) {
   const n = Number(val);
   if (!Number.isFinite(n) || n <= 0) return "";
   return String(val);
-}
-
-function isSpecEditable(val) {
-  return specDisplay(val) === "";
 }
 
 async function loadAsn() {
@@ -201,27 +294,6 @@ async function saveReceive(line) {
     toast.success("Received quantity saved.");
   } catch (e) {
     toast.errorFrom(e, "Could not save received quantity.");
-  } finally {
-    lineSaveBusy.value = { ...lineSaveBusy.value, [line.id]: false };
-  }
-}
-
-async function saveReject(line) {
-  const qty = Number(rejectDraft.value[line.id]);
-  if (!Number.isFinite(qty) || qty < 0) {
-    toast.error("Enter rejected quantity.");
-    return;
-  }
-  lineSaveBusy.value = { ...lineSaveBusy.value, [line.id]: true };
-  try {
-    const { data } = await api.post(`/admin/asns/${asnId.value}/lines/${line.id}/reject-override`, {
-      rejected_qty: qty,
-    });
-    asn.value = data.asn;
-    rejectDraft.value = { ...rejectDraft.value, [line.id]: "" };
-    toast.success("Rejected quantity saved.");
-  } catch (e) {
-    toast.errorFrom(e, "Could not save rejected quantity.");
   } finally {
     lineSaveBusy.value = { ...lineSaveBusy.value, [line.id]: false };
   }
@@ -343,7 +415,7 @@ async function submitScan() {
     asn.value = data.asn;
     const unmatched = data.unmatched || [];
     if (unmatched.length) {
-      toast.error(`No match for: ${unmatched.slice(0, 3).join(", ")}${unmatched.length > 3 ? "…" : ""}`);
+      toast.error(`No match for: ${unmatched.slice(0, 3).join(", ")}${unmatched.length > 3 ? "â€¦" : ""}`);
     } else {
       toast.success(`Processed ${data.matched || 0} item(s).`);
     }
@@ -361,7 +433,7 @@ async function setAsnStatus(status) {
   try {
     const { data } = await api.patch(`/admin/asns/${asnId.value}/status`, { status });
     asn.value = data;
-    statusPickerOpen.value = false;
+    statusMenuOpen.value = false;
     toast.success("Status updated.");
   } catch (e) {
     toast.errorFrom(e, "Could not update status.");
@@ -396,15 +468,16 @@ async function reopenForEdit() {
   }
 }
 
-function placeLineMenuFromButton(btn) {
-  const r = btn.getBoundingClientRect();
+function placeLineMenu(anchorEl) {
+  if (!(anchorEl instanceof HTMLElement)) return;
+  const r = anchorEl.getBoundingClientRect();
   let top = r.bottom + 4;
   let left = r.right - LINE_MENU_W;
   left = Math.max(8, Math.min(left, window.innerWidth - LINE_MENU_W - 8));
   if (top + LINE_MENU_H > window.innerHeight - 8) {
     top = Math.max(8, r.top - LINE_MENU_H - 4);
   }
-  lineMenuPos.value = { top, left };
+  lineMenuRect.value = { top, left };
 }
 
 async function toggleLineMenu(lineId, e) {
@@ -417,7 +490,7 @@ async function toggleLineMenu(lineId, e) {
   lineMenuOpenId.value = lineId;
   await nextTick();
   requestAnimationFrame(() => {
-    if (btn instanceof HTMLElement) placeLineMenuFromButton(btn);
+    if (btn instanceof HTMLElement) placeLineMenu(btn);
   });
 }
 
@@ -425,429 +498,501 @@ function closeLineMenu() {
   lineMenuOpenId.value = null;
 }
 
-function onDocClickLineMenu(e) {
+function onDocClickMenus(e) {
   if (!e.target?.closest?.("[data-row-actions]")) {
     lineMenuOpenId.value = null;
   }
+  if (!e.target?.closest?.("[data-asn-header-actions]")) {
+    closeAllHeaderMenus();
+  }
+}
+
+function onWindowCloseMenus() {
+  lineMenuOpenId.value = null;
+  closeAllHeaderMenus();
 }
 
 watch(asnId, () => loadAsn());
 
 onMounted(() => {
   loadAsn();
-  document.addEventListener("click", onDocClickLineMenu);
+  document.addEventListener("click", onDocClickMenus);
+  window.addEventListener("scroll", onWindowCloseMenus, true);
+  window.addEventListener("resize", onWindowCloseMenus);
 });
 
 onUnmounted(() => {
-  document.removeEventListener("click", onDocClickLineMenu);
+  document.removeEventListener("click", onDocClickMenus);
+  window.removeEventListener("scroll", onWindowCloseMenus, true);
+  window.removeEventListener("resize", onWindowCloseMenus);
 });
 </script>
 
 <template>
-  <div class="staff-page">
-    <div class="mb-3">
-      <RouterLink :to="{ name: 'admin-asn-hub' }" class="text-decoration-none small">
-        ← ASN list
+  <div v-if="loading" class="staff-page staff-page--wide py-5">
+    <CrmLoadingSpinner message="Loading ASNâ€¦" />
+  </div>
+  <div v-else-if="!asn" class="staff-page staff-page--wide py-5 text-secondary">ASN not found.</div>
+  <div v-else class="staff-page staff-page--wide user-asn-detail-page order-detail-page admin-asn-detail-page">
+    <p class="small text-secondary mb-3">
+      <RouterLink :to="{ name: 'admin-asn-hub' }" class="text-decoration-none text-secondary">
+        â† ASN list
       </RouterLink>
-    </div>
+    </p>
 
-    <div v-if="loading" class="d-flex justify-content-center py-5">
-      <CrmLoadingSpinner message="Loading ASN…" />
-    </div>
-
-    <template v-else-if="asn">
-      <div class="d-flex flex-wrap align-items-start justify-content-between gap-3 mb-4">
-        <div>
-          <h1 class="staff-page-title mb-2">{{ formatAsnHeading(asn.asn_number) }}</h1>
-          <p class="mb-1 text-body-secondary">
-            <strong>{{ asn.client_account_company_name }}</strong>
-          </p>
-          <p class="mb-0 small text-body-secondary">
-            Created {{ formatDateUs(asn.created_at) }}
-            <span v-if="asn.processed_at"> · Processed {{ formatDateUs(asn.processed_at) }}</span>
-          </p>
-          <div class="mt-2 position-relative d-inline-block">
-            <button
-              type="button"
-              class="badge rounded-pill border-0"
-              :class="statusBadgeClass(asn.status)"
-              @click="statusPickerOpen = !statusPickerOpen"
-            >
-              {{ statusLabel(asn.status) }} ▾
-            </button>
-            <div
-              v-if="statusPickerOpen"
-              class="dropdown-menu show position-absolute start-0 mt-1"
-              style="z-index: 1050"
-            >
+    <div class="staff-table-card staff-datatable-card staff-datatable-card--white user-asn-detail-page__header-shell mb-4">
+      <div class="p-4 pb-3">
+        <div class="d-flex flex-wrap justify-content-between align-items-start gap-3">
+          <div class="min-w-0">
+            <div class="d-flex flex-wrap align-items-center gap-2 mb-1">
+              <h1 class="h4 mb-0 fw-semibold text-body">{{ formatAsnHeading(asn.asn_number) || "â€”" }}</h1>
               <button
-                v-for="opt in STATUS_OPTIONS"
-                :key="opt.value"
                 type="button"
-                class="dropdown-item"
-                :disabled="statusPickerBusy"
-                @click="setAsnStatus(opt.value)"
+                data-asn-header-actions
+                class="badge rounded-pill fw-medium border-0"
+                :class="statusBadgeClass(asn.status)"
+                @click="toggleStatusMenu"
               >
-                {{ opt.label }}
+                {{ statusLabel(asn.status) }} â–¾
               </button>
             </div>
+            <p class="small text-secondary mb-1 mt-2">
+              <strong>{{ asn.client_account_company_name }}</strong>
+            </p>
+            <p class="small text-secondary mb-0">
+              Created {{ formatDateUs(asn.created_at) }}
+              <span v-if="asn.processed_at"> Â· Processed {{ formatDateUs(asn.processed_at) }}</span>
+            </p>
+          </div>
+          <div class="d-flex flex-wrap gap-2 flex-shrink-0 align-items-center">
+            <div data-asn-header-actions class="position-relative">
+              <button
+                type="button"
+                class="btn btn-outline-secondary btn-sm fw-semibold"
+                :class="{ 'is-open': actionMenuOpen }"
+                aria-haspopup="true"
+                :aria-expanded="actionMenuOpen ? 'true' : 'false'"
+                @click="toggleActionMenu"
+              >
+                Action
+              </button>
+            </div>
+            <div v-if="isPending" data-asn-header-actions class="position-relative">
+              <button
+                type="button"
+                class="btn btn-outline-secondary btn-sm fw-semibold"
+                :class="{ 'is-open': manageMenuOpen }"
+                :disabled="reopenBusy"
+                aria-haspopup="true"
+                :aria-expanded="manageMenuOpen ? 'true' : 'false'"
+                @click="toggleManageMenu"
+              >
+                Manage
+              </button>
+            </div>
+            <RouterLink
+              :to="{ name: 'admin-asn-hub' }"
+              class="btn btn-outline-secondary btn-sm fw-semibold"
+            >
+              Back to List
+            </RouterLink>
           </div>
         </div>
-        <div class="d-flex flex-wrap gap-2 align-items-center">
-          <div class="dropdown">
-            <button
-              type="button"
-              class="btn btn-outline-secondary dropdown-toggle"
-              data-bs-toggle="dropdown"
-            >
-              Action
-            </button>
-            <ul class="dropdown-menu dropdown-menu-end">
-              <li>
-                <button type="button" class="dropdown-item" @click="scanOpen = true">Scan Items</button>
-              </li>
-            </ul>
-          </div>
-          <div v-if="String(asn.status) === 'pending'" class="dropdown">
-            <button
-              type="button"
-              class="btn btn-outline-secondary dropdown-toggle"
-              :disabled="reopenBusy"
-              data-bs-toggle="dropdown"
-            >
-              Manage
-            </button>
-            <ul class="dropdown-menu dropdown-menu-end">
-              <li>
-                <button type="button" class="dropdown-item" @click="reopenForEdit">Edit</button>
-              </li>
-            </ul>
-          </div>
-          <RouterLink :to="{ name: 'admin-asn-hub' }" class="btn btn-outline-secondary">
-            Back to List
+      </div>
+    </div>
+
+    <div class="row g-4">
+      <div class="col-lg-8">
+        <div v-if="isDraft" class="alert alert-info mb-4">
+          This ASN is in draft. Add products and mark ready using the same flow as the client portal, or
+          reopen after pending via Manage â†’ Edit.
+          <RouterLink
+            class="ms-1"
+            :to="{
+              name: 'user-asn-detail',
+              params: { id: asnId },
+              query: { client_account_id: asn.client_account_id },
+            }"
+            target="_blank"
+          >
+            Open client view
           </RouterLink>
+        </div>
+
+        <div v-if="!isNonCompliant" class="staff-table-card staff-datatable-card staff-datatable-card--white p-0 mb-4">
+          <div class="px-4 py-3 border-bottom d-flex justify-content-between align-items-center flex-wrap gap-2">
+            <h2 class="h6 mb-0 fw-semibold">Products</h2>
+            <button
+              type="button"
+              class="btn btn-link btn-sm px-0"
+              :disabled="enrichBusy"
+              @click="enrichSpecs(true)"
+            >
+              {{ enrichBusy ? "Refreshingâ€¦" : "Refresh Specs" }}
+            </button>
+          </div>
+
+          <div class="staff-table-toolbar border-bottom">
+            <div class="staff-table-toolbar--row flex-wrap align-items-end gap-2 gap-md-3">
+              <input
+                v-model="productSearch"
+                type="search"
+                class="form-control staff-toolbar-search staff-toolbar-search--inline"
+                placeholder="Search by name or SKU"
+                autocomplete="off"
+                aria-label="Search products"
+              />
+              <select
+                v-model="lineStatusFilter"
+                class="form-select form-select-sm staff-toolbar-search staff-toolbar-search--inline"
+                style="max-width: 10rem"
+                aria-label="Filter by line status"
+              >
+                <option value="">All status</option>
+                <option value="pending">Pending</option>
+                <option value="partial">Partial</option>
+                <option value="completed">Completed</option>
+              </select>
+            </div>
+          </div>
+
+          <div class="table-responsive staff-table-wrap">
+            <table class="table table-hover align-middle mb-0 staff-data-table">
+              <thead class="table-light staff-table-head">
+                <tr>
+                  <th class="staff-table-head__th text-center" style="width: 6rem">Status</th>
+                  <th class="staff-table-head__th order-detail-page__items-col">Product</th>
+                  <th class="staff-table-head__th">Specs</th>
+                  <th class="staff-table-head__th text-end" style="width: 6rem">Expected</th>
+                  <th class="staff-table-head__th text-end" style="width: 7rem">Received</th>
+                  <th class="staff-table-head__th text-end" style="width: 7rem">Rejected</th>
+                  <th
+                    class="staff-table-head__th text-center admin-asn-detail-lines-actions-col"
+                    style="width: 7rem"
+                  >
+                    Actions
+                  </th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr v-if="filteredLines.length === 0">
+                  <td colspan="7" class="text-center text-secondary py-4">No products.</td>
+                </tr>
+                <tr v-for="line in filteredLines" :key="line.id">
+                  <td class="text-center align-middle">
+                    <span class="badge rounded-pill fw-medium" :class="lineStatusBadgeClass(line.line_status)">
+                      {{ statusLabel(line.line_status) }}
+                    </span>
+                  </td>
+                  <td class="order-detail-page__items-col">
+                    <div class="order-detail-page__item-cell">
+                      <img
+                        v-if="line.image_url"
+                        :src="line.image_url"
+                        alt=""
+                        class="asn-line-thumb"
+                        loading="lazy"
+                      />
+                      <div v-else class="asn-line-thumb asn-line-thumb--empty" aria-hidden="true" />
+                      <div class="order-detail-page__item-copy">
+                        <RouterLink
+                          v-if="inventoryDetailTo(line.sku)"
+                          :to="inventoryDetailTo(line.sku)"
+                          class="order-detail-page__item-name user-inv-table__sku-link text-decoration-none d-block"
+                          :title="line.name"
+                        >
+                          {{ line.name || "â€”" }}
+                        </RouterLink>
+                        <div v-else class="order-detail-page__item-name" :title="line.name">{{ line.name || "â€”" }}</div>
+                        <RouterLink
+                          v-if="inventoryDetailTo(line.sku)"
+                          :to="inventoryDetailTo(line.sku)"
+                          class="order-detail-page__item-sku user-inv-table__sku-link text-decoration-none d-block"
+                          :title="line.sku ? `SKU ${line.sku}` : undefined"
+                        >
+                          SKU {{ line.sku || "â€”" }}
+                        </RouterLink>
+                        <div v-else class="order-detail-page__item-sku">SKU {{ line.sku || "â€”" }}</div>
+                        <button
+                          type="button"
+                          class="btn btn-link btn-sm px-0 small"
+                          @click="openEditItem(line)"
+                        >
+                          {{ specDisplay(line.barcode) || "Add barcode" }}
+                        </button>
+                      </div>
+                    </div>
+                  </td>
+                  <td class="small text-secondary align-middle">
+                    <div>
+                      <template v-if="specDisplay(line.weight)">Weight: {{ line.weight }} lbs</template>
+                      <button v-else type="button" class="btn btn-link btn-sm px-0" @click="openEditItem(line)">
+                        Weight
+                      </button>
+                    </div>
+                    <div>
+                      <template v-if="specDisplay(line.length)">L: {{ line.length }}</template>
+                      <button v-else type="button" class="btn btn-link btn-sm px-0" @click="openEditItem(line)">L</button>
+                      <template v-if="specDisplay(line.width)"> W: {{ line.width }}</template>
+                      <button v-else type="button" class="btn btn-link btn-sm px-0" @click="openEditItem(line)">W</button>
+                      <template v-if="specDisplay(line.height)"> H: {{ line.height }}</template>
+                      <button v-else type="button" class="btn btn-link btn-sm px-0" @click="openEditItem(line)">H</button>
+                    </div>
+                  </td>
+                  <td class="text-end align-middle">{{ Number(line.expected_qty ?? 0).toLocaleString() }}</td>
+                  <td class="text-end align-middle">
+                    <template v-if="!isDraft">
+                      <input
+                        v-model="receiveDraft[line.id]"
+                        type="number"
+                        min="0"
+                        class="form-control form-control-sm asn-line-qty-input text-end ms-auto"
+                        placeholder="0"
+                      />
+                      <div class="small text-secondary mt-1">{{ line.accepted_qty }} saved</div>
+                    </template>
+                    <span v-else>{{ Number(line.accepted_qty ?? 0).toLocaleString() }}</span>
+                  </td>
+                  <td class="text-end align-middle">
+                    <template v-if="!isDraft">
+                      <input
+                        v-model="rejectDraft[line.id]"
+                        type="number"
+                        min="0"
+                        class="form-control form-control-sm asn-line-qty-input text-end ms-auto"
+                      />
+                      <div class="small text-secondary mt-1">{{ line.rejected_qty }} saved</div>
+                    </template>
+                    <span v-else>{{ Number(line.rejected_qty ?? 0).toLocaleString() }}</span>
+                  </td>
+                  <td class="text-center admin-asn-detail-lines-actions-cell align-middle" @click.stop>
+                    <template v-if="!isDraft">
+                      <button
+                        type="button"
+                        class="btn btn-sm btn-primary staff-page-primary d-block w-100 mb-1"
+                        :disabled="lineSaveBusy[line.id]"
+                        @click="saveReceive(line)"
+                      >
+                        Save
+                      </button>
+                      <div data-row-actions class="position-relative d-inline-block">
+                        <button
+                          type="button"
+                          class="staff-action-btn staff-action-btn--more"
+                          :class="{ 'is-open': lineMenuOpenId == line.id }"
+                          :aria-expanded="lineMenuOpenId == line.id ? 'true' : 'false'"
+                          aria-haspopup="true"
+                          aria-label="Line actions"
+                          @click.stop="toggleLineMenu(line.id, $event)"
+                        >
+                          <CrmIconRowActions variant="horizontal" />
+                        </button>
+                      </div>
+                    </template>
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+
+          <p class="staff-table-mobile-scroll-cue d-md-none px-3" aria-hidden="true">
+            Scroll sideways or swipe to see all columns.
+          </p>
+
+          <div class="px-4 py-2 border-top text-end">
+            <button
+              type="button"
+              class="btn btn-link btn-sm"
+              :disabled="enrichBusy"
+              @click="enrichSpecs(true)"
+            >
+              Refresh Specs
+            </button>
+          </div>
         </div>
       </div>
 
-      <div class="row g-4">
-        <div class="col-lg-8">
-          <div v-if="isDraft" class="alert alert-info mb-4">
-            This ASN is in draft. Add products and mark ready using the same flow as the client portal, or
-            reopen after pending via Manage → Edit.
-            <RouterLink
-              class="ms-1"
-              :to="{ name: 'user-asn-detail', params: { id: asnId }, query: { client_account_id: asn.client_account_id } }"
-              target="_blank"
-            >
-              Open client view
-            </RouterLink>
-          </div>
-
-          <div v-if="!isNonCompliant" class="card border-0 shadow-sm mb-4">
-            <div class="card-body">
-              <div class="d-flex flex-wrap align-items-center justify-content-between gap-2 mb-3">
-                <h2 class="h5 mb-0">Products</h2>
-                <div class="d-flex flex-wrap gap-2 align-items-center">
-                  <input
-                    v-model="productSearch"
-                    type="search"
-                    class="form-control form-control-sm"
-                    style="width: 10rem"
-                    placeholder="Name or SKU"
-                  />
-                  <select v-model="lineStatusFilter" class="form-select form-select-sm" style="width: 8rem">
-                    <option value="">All status</option>
-                    <option value="pending">Pending</option>
-                    <option value="partial">Partial</option>
-                    <option value="completed">Completed</option>
-                  </select>
-                  <button
-                    type="button"
-                    class="btn btn-link btn-sm p-0"
-                    :disabled="enrichBusy"
-                    @click="enrichSpecs(true)"
-                  >
-                    {{ enrichBusy ? "Refreshing…" : "Refresh specs" }}
-                  </button>
-                </div>
-              </div>
-
-              <div class="table-responsive">
-                <table class="table staff-data-table mb-0">
-                  <thead>
-                    <tr>
-                      <th>Status</th>
-                      <th>Product</th>
-                      <th>Specs</th>
-                      <th class="text-end">Expected</th>
-                      <th class="text-end">Received</th>
-                      <th class="text-end">Rejected</th>
-                      <th class="text-end">Action</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    <tr v-if="filteredLines.length === 0">
-                      <td colspan="7" class="text-center text-body-secondary py-4">No products.</td>
-                    </tr>
-                    <tr v-for="line in filteredLines" :key="line.id">
-                      <td>
-                        <span class="badge rounded-pill" :class="lineStatusBadgeClass(line.line_status)">
-                          {{ statusLabel(line.line_status) }}
-                        </span>
-                      </td>
-                      <td>
-                        <div class="d-flex gap-2 align-items-start">
-                          <div
-                            class="rounded bg-body-secondary flex-shrink-0"
-                            style="width: 40px; height: 40px"
-                          >
-                            <img
-                              v-if="line.image_url"
-                              :src="line.image_url"
-                              alt=""
-                              class="rounded w-100 h-100 object-fit-cover"
-                            />
-                          </div>
-                          <div>
-                            <div class="fw-semibold small">{{ line.name }}</div>
-                            <div class="text-body-secondary small">{{ line.sku }}</div>
-                            <button
-                              v-if="isSpecEditable(line.barcode)"
-                              type="button"
-                              class="btn btn-link btn-sm p-0 text-danger"
-                              @click="openEditItem(line)"
-                            >
-                              Add barcode
-                            </button>
-                            <button
-                              v-else
-                              type="button"
-                              class="btn btn-link btn-sm p-0"
-                              @click="openEditItem(line)"
-                            >
-                              {{ line.barcode }}
-                            </button>
-                          </div>
-                        </div>
-                      </td>
-                      <td class="small">
-                        <div>
-                          <span v-if="specDisplay(line.weight)">Weight: {{ line.weight }} lbs</span>
-                          <button
-                            v-else
-                            type="button"
-                            class="btn btn-link btn-sm p-0 text-danger"
-                            @click="openEditItem(line)"
-                          >
-                            Weight
-                          </button>
-                        </div>
-                        <div class="text-body-secondary">
-                          <template v-if="specDisplay(line.length)">L: {{ line.length }}</template>
-                          <button
-                            v-else
-                            type="button"
-                            class="btn btn-link btn-sm p-0 text-danger"
-                            @click="openEditItem(line)"
-                          >
-                            L
-                          </button>
-                          <template v-if="specDisplay(line.width)"> W: {{ line.width }}</template>
-                          <button
-                            v-else
-                            type="button"
-                            class="btn btn-link btn-sm p-0 text-danger"
-                            @click="openEditItem(line)"
-                          >
-                            W
-                          </button>
-                          <template v-if="specDisplay(line.height)"> H: {{ line.height }}</template>
-                          <button
-                            v-else
-                            type="button"
-                            class="btn btn-link btn-sm p-0 text-danger"
-                            @click="openEditItem(line)"
-                          >
-                            H
-                          </button>
-                        </div>
-                      </td>
-                      <td class="text-end">{{ line.expected_qty }}</td>
-                      <td class="text-end">
-                        <template v-if="!isDraft">
-                          <input
-                            v-model="receiveDraft[line.id]"
-                            type="number"
-                            min="0"
-                            class="form-control form-control-sm d-inline-block text-end"
-                            style="width: 4.5rem"
-                            placeholder="0"
-                          />
-                          <div class="small text-body-secondary mt-1">{{ line.accepted_qty }} saved</div>
-                        </template>
-                        <span v-else>{{ line.accepted_qty }}</span>
-                      </td>
-                      <td class="text-end">
-                        <template v-if="!isDraft">
-                          <input
-                            v-model="rejectDraft[line.id]"
-                            type="number"
-                            min="0"
-                            class="form-control form-control-sm d-inline-block text-end"
-                            style="width: 4.5rem"
-                          />
-                          <div class="small text-body-secondary mt-1">{{ line.rejected_qty }} saved</div>
-                          <button
-                            type="button"
-                            class="btn btn-sm btn-outline-secondary mt-1"
-                            :disabled="lineSaveBusy[line.id]"
-                            @click="saveReject(line)"
-                          >
-                            Set Rejected
-                          </button>
-                        </template>
-                        <span v-else>{{ line.rejected_qty }}</span>
-                      </td>
-                      <td class="text-end">
-                        <template v-if="!isDraft">
-                          <button
-                            type="button"
-                            class="btn btn-sm btn-primary mb-1"
-                            :disabled="lineSaveBusy[line.id]"
-                            @click="saveReceive(line)"
-                          >
-                            Save
-                          </button>
-                          <div data-row-actions class="position-relative d-inline-block">
-                            <button
-                              type="button"
-                              class="staff-action-btn staff-action-btn--more"
-                              aria-label="Line actions"
-                              @click.stop="toggleLineMenu(line.id, $event)"
-                            >
-                              <CrmIconRowActions variant="horizontal" />
-                            </button>
-                            <div
-                              v-if="lineMenuOpenId === line.id"
-                              data-row-actions
-                              class="staff-row-menu overflow-hidden"
-                              role="menu"
-                              :style="lineMenuStyle"
-                              @click.stop
-                            >
-                              <button
-                                type="button"
-                                class="staff-row-menu__item"
-                                role="menuitem"
-                                @click="
-                                  closeLineMenu();
-                                  openEditReceived(line);
-                                "
-                              >
-                                Edit Received
-                              </button>
-                              <button
-                                type="button"
-                                class="staff-row-menu__item"
-                                role="menuitem"
-                                @click="
-                                  closeLineMenu();
-                                  openEditRejected(line);
-                                "
-                              >
-                                Edit Rejected
-                              </button>
-                              <button
-                                type="button"
-                                class="staff-row-menu__item"
-                                role="menuitem"
-                                @click="
-                                  closeLineMenu();
-                                  printBarcode(line);
-                                "
-                              >
-                                Print Barcode
-                              </button>
-                            </div>
-                          </div>
-                        </template>
-                      </td>
-                    </tr>
-                  </tbody>
-                </table>
-              </div>
-              <div class="text-end mt-2">
-                <button
-                  type="button"
-                  class="btn btn-link btn-sm"
-                  :disabled="enrichBusy"
-                  @click="enrichSpecs(true)"
-                >
-                  Refresh specs
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        <div class="col-lg-4">
-          <div class="card border-0 shadow-sm mb-4">
-            <div class="card-body">
-              <h2 class="h6 mb-3">Tracking Details</h2>
-              <div v-for="(t, i) in trackingDraft" :key="i" class="mb-2">
-                <select v-model="t.carrier" class="form-select form-select-sm mb-1">
+      <div class="col-lg-4 d-flex flex-column gap-4 order-detail-page__side-column">
+        <div class="staff-table-card staff-datatable-card staff-datatable-card--white p-4">
+          <h3 class="h6 fw-semibold mb-3">Tracking Details</h3>
+          <div v-for="(t, idx) in trackingDraft" :key="'trk' + idx" class="mb-2">
+            <div class="row g-1">
+              <div class="col-5">
+                <select v-model="t.carrier" class="form-select form-select-sm">
                   <option value="">Carrier</option>
                   <option v-for="c in ASN_CARRIER_OPTIONS" :key="c" :value="c">{{ c }}</option>
                 </select>
+              </div>
+              <div class="col-7">
                 <input
                   v-model="t.tracking_number"
-                  type="text"
                   class="form-control form-control-sm"
                   placeholder="Tracking #"
                 />
               </div>
-              <button
-                type="button"
-                class="btn btn-link btn-sm p-0 mb-2"
-                @click="trackingDraft.push({ carrier: '', tracking_number: '' })"
-              >
-                Add Row
-              </button>
-              <button
-                type="button"
-                class="btn btn-primary btn-sm w-100"
-                :disabled="trackingSaveBusy"
-                @click="saveTracking"
-              >
-                Save Tracking
-              </button>
             </div>
           </div>
+          <button type="button" class="btn btn-link btn-sm px-0 mb-2" @click="addTrackingRow">Add Row</button>
+          <button
+            type="button"
+            class="btn btn-sm btn-primary staff-page-primary w-100"
+            :disabled="trackingSaveBusy"
+            @click="saveTracking"
+          >
+            Save Tracking
+          </button>
+        </div>
 
-          <div class="card border-0 shadow-sm mb-4">
-            <div class="card-body">
-              <h2 class="h6 mb-2">Note from Client</h2>
-              <p class="mb-0 small text-body-secondary" style="white-space: pre-wrap">
-                {{ asn.warehouse_notes || "—" }}
-              </p>
-            </div>
-          </div>
+        <div class="staff-table-card staff-datatable-card staff-datatable-card--white p-4">
+          <h3 class="h6 fw-semibold mb-2">Note from Client</h3>
+          <p class="mb-0 small text-secondary" style="white-space: pre-wrap">
+            {{ asn.warehouse_notes || "â€”" }}
+          </p>
+        </div>
 
-          <div v-if="asn.custom_bill_id" class="card border-0 shadow-sm">
-            <div class="card-body">
-              <h2 class="h6 mb-2">Non-Compliant Fee</h2>
-              <p class="mb-1">${{ Number(asn.non_compliant_fee || 0).toFixed(2) }}</p>
-              <RouterLink
-                :to="{ name: 'billing-custom-bill-detail', params: { id: String(asn.custom_bill_id) } }"
-                class="small"
-              >
-                View custom bill
-              </RouterLink>
-            </div>
-          </div>
+        <div
+          v-if="asn.custom_bill_id"
+          class="staff-table-card staff-datatable-card staff-datatable-card--white p-4"
+        >
+          <h3 class="h6 fw-semibold mb-2">Non-Compliant Fee</h3>
+          <p class="mb-1">${{ Number(asn.non_compliant_fee || 0).toFixed(2) }}</p>
+          <RouterLink
+            :to="{ name: 'billing-custom-bill-detail', params: { id: String(asn.custom_bill_id) } }"
+            class="small"
+          >
+            View Custom Bill
+          </RouterLink>
         </div>
       </div>
-    </template>
+    </div>
+
+    <Teleport to="body">
+      <Transition
+        enter-active-class="transition ease-out duration-100"
+        enter-from-class="opacity-0"
+        enter-to-class="opacity-100"
+        leave-active-class="transition ease-in duration-75"
+        leave-from-class="opacity-100"
+        leave-to-class="opacity-0"
+      >
+        <div
+          v-if="statusMenuOpen"
+          data-asn-header-actions
+          class="staff-row-menu fixed z-[300] overflow-hidden"
+          role="menu"
+          :style="{ top: `${statusMenuRect.top}px`, left: `${statusMenuRect.left}px` }"
+          @click.stop
+        >
+          <button
+            v-for="opt in STATUS_OPTIONS"
+            :key="opt.value"
+            type="button"
+            class="staff-row-menu__item"
+            role="menuitem"
+            :disabled="statusPickerBusy"
+            @click="setAsnStatusFromMenu(opt.value)"
+          >
+            {{ opt.label }}
+          </button>
+        </div>
+      </Transition>
+
+      <Transition
+        enter-active-class="transition ease-out duration-100"
+        enter-from-class="opacity-0"
+        enter-to-class="opacity-100"
+        leave-active-class="transition ease-in duration-75"
+        leave-from-class="opacity-100"
+        leave-to-class="opacity-0"
+      >
+        <div
+          v-if="actionMenuOpen"
+          data-asn-header-actions
+          class="staff-row-menu fixed z-[300] overflow-hidden"
+          role="menu"
+          :style="{ top: `${actionMenuRect.top}px`, left: `${actionMenuRect.left}px` }"
+          @click.stop
+        >
+          <button type="button" class="staff-row-menu__item" role="menuitem" @click="openScanFromMenu">
+            Scan Items
+          </button>
+        </div>
+      </Transition>
+
+      <Transition
+        enter-active-class="transition ease-out duration-100"
+        enter-from-class="opacity-0"
+        enter-to-class="opacity-100"
+        leave-active-class="transition ease-in duration-75"
+        leave-from-class="opacity-100"
+        leave-to-class="opacity-0"
+      >
+        <div
+          v-if="manageMenuOpen"
+          data-asn-header-actions
+          class="staff-row-menu fixed z-[300] overflow-hidden"
+          role="menu"
+          :style="{ top: `${manageMenuRect.top}px`, left: `${manageMenuRect.left}px` }"
+          @click.stop
+        >
+          <button type="button" class="staff-row-menu__item" role="menuitem" @click="reopenForEditFromMenu">
+            Edit
+          </button>
+        </div>
+      </Transition>
+
+      <Transition
+        enter-active-class="transition ease-out duration-100"
+        enter-from-class="opacity-0"
+        enter-to-class="opacity-100"
+        leave-active-class="transition ease-in duration-75"
+        leave-from-class="opacity-100"
+        leave-to-class="opacity-0"
+      >
+        <div
+          v-if="lineMenuRow"
+          data-row-actions
+          class="staff-row-menu fixed z-[300] overflow-hidden"
+          role="menu"
+          :style="{ top: `${lineMenuRect.top}px`, left: `${lineMenuRect.left}px` }"
+          @click.stop
+        >
+          <button
+            type="button"
+            class="staff-row-menu__item"
+            role="menuitem"
+            @click="
+              closeLineMenu();
+              openEditReceived(lineMenuRow);
+            "
+          >
+            Edit Received
+          </button>
+          <button
+            type="button"
+            class="staff-row-menu__item"
+            role="menuitem"
+            @click="
+              closeLineMenu();
+              openEditRejected(lineMenuRow);
+            "
+          >
+            Edit Rejected
+          </button>
+          <button
+            type="button"
+            class="staff-row-menu__item"
+            role="menuitem"
+            @click="
+              closeLineMenu();
+              printBarcode(lineMenuRow);
+            "
+          >
+            Print Barcode
+          </button>
+        </div>
+      </Transition>
+    </Teleport>
 
     <ConfirmModal
       :open="scanOpen"
@@ -869,7 +1014,7 @@ onUnmounted(() => {
       @close="editReceivedOpen = false"
       @confirm="confirmEditReceived"
     >
-      <p class="small text-body-secondary">
+      <p class="small text-secondary">
         On-hand in Receiving: <strong>{{ editReceivedOnHand }}</strong>
       </p>
       <label class="form-label">New QTY</label>
@@ -898,12 +1043,12 @@ onUnmounted(() => {
     >
       <div v-if="editItemLine" class="mb-3">
         <div class="fw-semibold">{{ editItemLine.name }}</div>
-        <div class="small text-body-secondary">{{ editItemLine.sku }}</div>
+        <div class="small text-secondary">{{ editItemLine.sku }}</div>
       </div>
-      <p class="small fw-semibold text-body-secondary">Information</p>
+      <p class="small fw-semibold text-secondary">Information</p>
       <label class="form-label">Barcode</label>
       <input v-model="editItemForm.barcode" type="text" class="form-control mb-3" />
-      <p class="small fw-semibold text-body-secondary">Dimensions &amp; weight</p>
+      <p class="small fw-semibold text-secondary">Dimensions &amp; weight</p>
       <div class="row g-2">
         <div class="col-3">
           <label class="form-label small">Length</label>
@@ -925,3 +1070,60 @@ onUnmounted(() => {
     </ConfirmModal>
   </div>
 </template>
+
+<style scoped>
+.asn-line-thumb {
+  width: 40px;
+  height: 40px;
+  object-fit: cover;
+  border-radius: 0.375rem;
+  flex-shrink: 0;
+}
+
+.asn-line-thumb--empty {
+  background: var(--bs-secondary-bg);
+  border-radius: 0.375rem;
+}
+
+.admin-asn-detail-page .order-detail-page__item-cell {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.75rem;
+  min-width: 0;
+}
+
+.admin-asn-detail-page .order-detail-page__item-copy {
+  min-width: 0;
+  flex: 1 1 auto;
+}
+
+.admin-asn-detail-page :deep(.table-responsive.staff-table-wrap) {
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+.admin-asn-detail-page :deep(.staff-table-wrap .table.staff-data-table) {
+  min-width: 52rem;
+}
+
+.admin-asn-detail-page .btn-outline-secondary:hover:not(:disabled),
+.admin-asn-detail-page .btn-outline-secondary:focus-visible {
+  background-color: rgba(115, 103, 240, 0.06);
+  border-color: rgba(115, 103, 240, 0.35);
+}
+
+[data-bs-theme="dark"] .admin-asn-detail-page .btn-outline-secondary:hover:not(:disabled),
+[data-bs-theme="dark"] .admin-asn-detail-page .btn-outline-secondary:focus-visible {
+  background-color: rgba(115, 103, 240, 0.12);
+  border-color: rgba(186, 175, 255, 0.35);
+}
+
+.admin-asn-detail-page :deep(.table.staff-data-table > thead > tr > th.admin-asn-detail-lines-actions-col),
+.admin-asn-detail-page :deep(.table.staff-data-table > tbody > tr > td.admin-asn-detail-lines-actions-cell) {
+  text-align: center !important;
+}
+
+.admin-asn-detail-page :deep(.asn-line-qty-input) {
+  max-width: 5rem;
+}
+</style>

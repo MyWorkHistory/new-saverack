@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Controllers\Api\AdminAsnController;
 use App\Http\Controllers\Api\AsnController;
 use App\Http\Controllers\Api\ReturnController;
 use App\Http\Controllers\Api\AuthController;
@@ -141,6 +142,21 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::get('/{clientAccountReturn}', [ReturnController::class, 'show'])->middleware('can:inventory.view');
         Route::patch('/{clientAccountReturn}', [ReturnController::class, 'update'])->middleware('can:inventory.view');
         Route::delete('/{clientAccountReturn}', [ReturnController::class, 'destroy'])->middleware('can:inventory.view');
+    });
+
+    Route::prefix('admin/asns')->group(function () {
+        Route::get('/summary', [AdminAsnController::class, 'summary'])->middleware('can:inventory.view');
+        Route::get('/', [AdminAsnController::class, 'index'])->middleware('can:inventory.view');
+        Route::post('/non-compliant', [AdminAsnController::class, 'storeNonCompliant'])->middleware('can:inventory.view');
+        Route::get('/{asn}', [AdminAsnController::class, 'show'])->middleware('can:inventory.view');
+        Route::patch('/{asn}/status', [AdminAsnController::class, 'updateStatus'])->middleware('can:inventory.view');
+        Route::post('/{asn}/enrich-specs', [AdminAsnController::class, 'enrichSpecs'])->middleware('can:inventory.view');
+        Route::post('/{asn}/scan-barcodes', [AdminAsnController::class, 'scanBarcodes'])->middleware('can:inventory.view');
+        Route::get('/{asn}/lines/{line}/receiving-on-hand', [AdminAsnController::class, 'receivingOnHand'])->middleware('can:inventory.view');
+        Route::post('/{asn}/lines/{line}/receive', [AdminAsnController::class, 'receiveLine'])->middleware('can:inventory.view');
+        Route::post('/{asn}/lines/{line}/receive-override', [AdminAsnController::class, 'receiveOverride'])->middleware('can:inventory.view');
+        Route::post('/{asn}/lines/{line}/reject-override', [AdminAsnController::class, 'rejectOverride'])->middleware('can:inventory.view');
+        Route::patch('/{asn}/lines/{line}/specs', [AdminAsnController::class, 'updateLineSpecs'])->middleware('can:inventory.view');
     });
 
     Route::prefix('asns')->group(function () {

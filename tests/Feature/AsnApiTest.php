@@ -114,7 +114,7 @@ class AsnApiTest extends TestCase
         $this->getJson('/api/asns/'.$asnB->id)->assertForbidden();
     }
 
-    public function test_store_assigns_per_account_four_digit_numbers_and_draft_status(): void
+    public function test_store_assigns_global_four_digit_numbers_and_draft_status(): void
     {
         $account = $this->account();
         $user = User::factory()->create(['client_account_id' => $account->id]);

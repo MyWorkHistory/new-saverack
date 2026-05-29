@@ -16,11 +16,14 @@ class ClientAccountAsn extends Model
 
     public const STATUS_COMPLETED = 'completed';
 
+    public const STATUS_NON_COMPLIANT = 'non_compliant';
+
     public const STATUSES = [
         self::STATUS_DRAFT,
         self::STATUS_PENDING,
         self::STATUS_IN_PROGRESS,
         self::STATUS_COMPLETED,
+        self::STATUS_NON_COMPLIANT,
     ];
 
     /** Portal users may delete ASNs in these statuses. */
@@ -75,5 +78,10 @@ class ClientAccountAsn extends Model
         return $this->hasMany(ClientAccountAsnVendorLine::class, 'client_account_asn_id')
             ->orderBy('sort_order')
             ->orderBy('id');
+    }
+
+    public function customBill(): BelongsTo
+    {
+        return $this->belongsTo(CustomBill::class, 'custom_bill_id');
     }
 }

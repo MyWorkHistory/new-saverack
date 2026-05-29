@@ -7,6 +7,18 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 class ClientAccountAsnLine extends Model
 {
+    public const LINE_STATUS_PENDING = 'pending';
+
+    public const LINE_STATUS_PARTIAL = 'partial';
+
+    public const LINE_STATUS_COMPLETED = 'completed';
+
+    public const LINE_STATUSES = [
+        self::LINE_STATUS_PENDING,
+        self::LINE_STATUS_PARTIAL,
+        self::LINE_STATUS_COMPLETED,
+    ];
+
     protected $fillable = [
         'client_account_asn_id',
         'shiphero_product_id',
@@ -16,6 +28,13 @@ class ClientAccountAsnLine extends Model
         'expected_qty',
         'accepted_qty',
         'rejected_qty',
+        'line_status',
+        'barcode',
+        'weight',
+        'length',
+        'width',
+        'height',
+        'specs_cached_at',
         'sort_order',
     ];
 
@@ -24,6 +43,11 @@ class ClientAccountAsnLine extends Model
         'accepted_qty' => 'integer',
         'rejected_qty' => 'integer',
         'sort_order' => 'integer',
+        'weight' => 'decimal:4',
+        'length' => 'decimal:4',
+        'width' => 'decimal:4',
+        'height' => 'decimal:4',
+        'specs_cached_at' => 'datetime',
     ];
 
     public function asn(): BelongsTo

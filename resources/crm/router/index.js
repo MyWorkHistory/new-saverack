@@ -172,6 +172,14 @@ const meta = {
     title: "Save Rack | ASN Detail",
     description: "ASN line items, tracking, and warehouse details.",
   },
+  adminAsnHub: {
+    title: "Save Rack | ASN",
+    description: "Receiving advance shipping notices.",
+  },
+  adminAsnDetail: {
+    title: "Save Rack | ASN Detail",
+    description: "Admin ASN receiving and processing.",
+  },
   userReturnOrdersList: {
     title: "Save Rack | Return Orders",
     description: "View returned orders that are pending processing or completed.",
@@ -334,6 +342,20 @@ const routes = [
     meta: meta.billingCustomBillDetail,
   },
   { path: "/admin/billing", redirect: "/admin/billing/summary" },
+  {
+    path: "/admin/receiving/asn",
+    name: "admin-asn-hub",
+    component: () => import("../pages/admin-asn/AdminAsnHubPage.vue"),
+    meta: meta.adminAsnHub,
+  },
+  {
+    path: "/admin/receiving/asn/:id",
+    name: "admin-asn-detail",
+    component: () => import("../pages/admin-asn/AdminAsnDetailPage.vue"),
+    props: true,
+    meta: meta.adminAsnDetail,
+  },
+  { path: "/admin/receiving", redirect: "/admin/receiving/asn" },
   {
     path: "/admin/inventory",
     name: "inventory",
@@ -882,6 +904,7 @@ async function ensureInventoryRouteAccess(path) {
   if (
     path === "/admin/inventory" ||
     path.startsWith("/admin/inventory/") ||
+    path.startsWith("/admin/receiving/") ||
     path === "/users/inventory" ||
     path.startsWith("/users/inventory/") ||
     path === "/users/asn" ||
@@ -1042,7 +1065,12 @@ router.beforeEach(async (to) => {
     }
   }
 
-  if (to.path.startsWith("/admin/inventory") || to.path.startsWith("/users/inventory") || to.path.startsWith("/users/asn")) {
+  if (
+    to.path.startsWith("/admin/inventory") ||
+    to.path.startsWith("/admin/receiving") ||
+    to.path.startsWith("/users/inventory") ||
+    to.path.startsWith("/users/asn")
+  ) {
     const ok = await ensureInventoryRouteAccess(to.path);
     if (!ok) {
       if (!localStorage.getItem("auth_token")) {

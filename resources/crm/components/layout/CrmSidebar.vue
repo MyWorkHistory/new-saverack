@@ -68,6 +68,7 @@ const settingsGroupOpen = ref(route.path.startsWith("/admin/settings"));
 const billingGroupOpen = ref(route.path.startsWith("/admin/billing"));
 const ordersGroupOpen = ref(route.path.startsWith("/admin/orders"));
 const inventoryGroupOpen = ref(route.path.startsWith("/admin/inventory"));
+const receivingGroupOpen = ref(route.path.startsWith("/admin/receiving"));
 watch(
   () => route.path,
   (p) => {
@@ -85,6 +86,9 @@ watch(
     }
     if (p.startsWith("/admin/inventory")) {
       inventoryGroupOpen.value = true;
+    }
+    if (p.startsWith("/admin/receiving")) {
+      receivingGroupOpen.value = true;
     }
   },
 );
@@ -111,6 +115,8 @@ function navActive(mode) {
   if (mode === "orders-on-hold") return p.startsWith("/admin/orders/on-hold");
   if (mode === "orders-out-of-stock") return p.startsWith("/admin/orders/backorder");
   if (mode === "orders-shipped") return p.startsWith("/admin/orders/shipped");
+  if (mode === "receiving") return p.startsWith("/admin/receiving");
+  if (mode === "receiving-asn") return p.startsWith("/admin/receiving/asn");
   if (mode === "inventory") return p.startsWith("/admin/inventory");
   if (mode === "inventory-search") return p === "/admin/inventory";
   if (mode === "inventory-on-demand") return p.startsWith("/admin/inventory/on-demand");
@@ -330,6 +336,81 @@ function collapseNav() {
                 stroke-linecap="round"
                 stroke-linejoin="round"
                 d="M3 6.75A2.25 2.25 0 0 1 5.25 4.5h13.5A2.25 2.25 0 0 1 21 6.75v10.5A2.25 2.25 0 0 1 18.75 19.5H5.25A2.25 2.25 0 0 1 3 17.25V6.75Zm3 1.5h12M7.5 12h3m-3 3h6"
+              />
+            </svg>
+          </RouterLink>
+        </li>
+        <li v-if="!isPortal && canViewInventory">
+          <template v-if="isExpanded">
+            <div>
+              <button
+                type="button"
+                class="vx-nav-link"
+                :class="{ 'vx-nav-link--active': navActive('receiving') }"
+                :aria-expanded="receivingGroupOpen"
+                @click="receivingGroupOpen = !receivingGroupOpen"
+              >
+                <svg
+                  fill="none"
+                  viewBox="0 0 24 24"
+                  stroke="currentColor"
+                  stroke-width="1.5"
+                >
+                  <path
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                    d="M3 16.5v2.25A2.25 2.25 0 0 0 5.25 21h13.5A2.25 2.25 0 0 0 21 18.75V16.5M16.5 12 12 16.5m0 0L7.5 12m4.5 4.5V3.75"
+                  />
+                </svg>
+                <span class="text-truncate">Receiving</span>
+                <svg
+                  class="ms-auto flex-shrink-0 transition"
+                  :class="receivingGroupOpen ? 'rotate-180' : ''"
+                  style="width: 1rem; height: 1rem"
+                  fill="none"
+                  viewBox="0 0 24 24"
+                  stroke="currentColor"
+                  stroke-width="1.5"
+                  aria-hidden="true"
+                >
+                  <path
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                    d="M19 9l-7 7-7-7"
+                  />
+                </svg>
+              </button>
+              <ul v-show="receivingGroupOpen" class="list-unstyled mb-0 mt-1">
+                <li>
+                  <RouterLink
+                    to="/admin/receiving/asn"
+                    class="vx-nav-link vx-nav-sublink"
+                    :class="{ 'vx-nav-link--active': navActive('receiving-asn') }"
+                    @click="closeMobile"
+                  >
+                    ASN
+                  </RouterLink>
+                </li>
+              </ul>
+            </div>
+          </template>
+          <RouterLink
+            v-else
+            to="/admin/receiving/asn"
+            class="vx-nav-link"
+            title="Receiving"
+            @click="closeMobile"
+          >
+            <svg
+              fill="none"
+              viewBox="0 0 24 24"
+              stroke="currentColor"
+              stroke-width="1.5"
+            >
+              <path
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                d="M3 16.5v2.25A2.25 2.25 0 0 0 5.25 21h13.5A2.25 2.25 0 0 0 21 18.75V16.5M16.5 12 12 16.5m0 0L7.5 12m4.5 4.5V3.75"
               />
             </svg>
           </RouterLink>

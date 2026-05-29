@@ -9,6 +9,7 @@ use App\Models\ClientAccountAsnLine;
 use App\Models\ClientAccountAsnTracking;
 use App\Models\ClientAccountAsnVendorLine;
 use App\Models\User;
+use App\Services\AsnReceivingService;
 use App\Services\ShipHeroInventoryService;
 use App\Support\Barcode\Code128Svg;
 use Barryvdh\DomPDF\Facade\Pdf;
@@ -24,9 +25,13 @@ class AsnController extends Controller
     /** @var ShipHeroInventoryService */
     private $inventory;
 
-    public function __construct(ShipHeroInventoryService $inventory)
+    /** @var AsnReceivingService */
+    private $receiving;
+
+    public function __construct(ShipHeroInventoryService $inventory, AsnReceivingService $receiving)
     {
         $this->inventory = $inventory;
+        $this->receiving = $receiving;
     }
 
     private function isPortalUser(Request $request): bool
@@ -39,29 +44,6 @@ class AsnController extends Controller
         return (int) ($user->client_account_id ?? 0) > 0;
     }
 
-    private function nextAsnNumberForAccount(int $clientAccountId): string
-    {
-        $max = 0;
-        $numbers = ClientAccountAsn::query()
-            ->where('client_account_id', $clientAccountId)
-            ->pluck('asn_number');
-        foreach ($numbers as $raw) {
-            $s = trim((string) $raw);
-            if ($s === '' || $s === 'TMP') {
-                continue;
-            }
-            if (preg_match('/^(\d{1,4})$/', $s, $m)) {
-                $max = max($max, (int) $m[1]);
-
-                continue;
-            }
-            if (preg_match('/(\d+)$/', $s, $m)) {
-                $max = max($max, (int) $m[1]);
-            }
-        }
-
-        return str_pad((string) ($max + 1), 4, '0', STR_PAD_LEFT);
-    }
 
     private function assertDeletableStatus(ClientAccountAsn $asn): void
     {
@@ -200,6 +182,9 @@ class AsnController extends Controller
             'accepted_qty' => $asn->accepted_qty,
             'rejected_qty' => $asn->rejected_qty,
             'warehouse_notes' => $asn->warehouse_notes,
+            'processed_at' => optional($asn->processed_at)->toIso8601String(),
+            'non_compliant_fee' => $asn->non_compliant_fee,
+            'custom_bill_id' => $asn->custom_bill_id,
             'created_at' => optional($asn->created_at)->toIso8601String(),
             'updated_at' => optional($asn->updated_at)->toIso8601String(),
             'lines' => $asn->lines->map(fn (ClientAccountAsnLine $l) => $this->serializeLine($l))->values()->all(),
@@ -222,17 +207,7 @@ class AsnController extends Controller
      */
     private function serializeLine(ClientAccountAsnLine $line): array
     {
-        return [
-            'id' => $line->id,
-            'shiphero_product_id' => $line->shiphero_product_id,
-            'sku' => $line->sku,
-            'name' => $line->name,
-            'image_url' => $line->image_url,
-            'expected_qty' => $line->expected_qty,
-            'accepted_qty' => $line->accepted_qty,
-            'rejected_qty' => $line->rejected_qty,
-            'sort_order' => $line->sort_order,
-        ];
+        return $this->receiving->serializeLine($line);
     }
 
     /**
@@ -324,7 +299,7 @@ class AsnController extends Controller
             $asn->asn_number = 'TMP';
             $asn->status = ClientAccountAsn::STATUS_DRAFT;
             $asn->save();
-            $asn->asn_number = $this->nextAsnNumberForAccount($clientAccountId);
+            $asn->asn_number = AsnReceivingService::nextAsnNumber();
             $asn->save();
 
             $vendor = new ClientAccountAsnVendorLine;

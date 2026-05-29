@@ -77,6 +77,21 @@ $vx-modal-primary: #2563eb;
   max-height: none;
 }
 
+/* Short forms with CrmSearchableSelect — do not clip dropdown inside scrollable body. */
+.crm-vx-modal--form {
+  overflow: visible;
+}
+
+.crm-vx-modal--form .crm-vx-modal__body--form {
+  flex: none;
+  min-height: 0;
+  overflow: visible;
+}
+
+.crm-vx-modal-overlay .crm-vx-modal--form .crm-searchable-select__panel {
+  z-index: 5;
+}
+
 .crm-vx-modal--shipping-form {
   max-width: 44rem;
   max-height: min(96dvh, 960px);

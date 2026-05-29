@@ -608,7 +608,7 @@ onUnmounted(() => {
             <h2 class="h6 mb-0 fw-semibold">Products</h2>
             <button
               type="button"
-              class="btn btn-link btn-sm px-0"
+              class="btn btn-primary btn-sm staff-page-primary fw-semibold"
               :disabled="enrichBusy"
               @click="enrichSpecs(true)"
             >
@@ -647,9 +647,9 @@ onUnmounted(() => {
                   <th class="staff-table-head__th text-center" style="width: 6rem">Status</th>
                   <th class="staff-table-head__th order-detail-page__items-col">Product</th>
                   <th class="staff-table-head__th">Specs</th>
-                  <th class="staff-table-head__th text-end" style="width: 6rem">Expected</th>
-                  <th class="staff-table-head__th text-end" style="width: 7rem">Received</th>
-                  <th class="staff-table-head__th text-end" style="width: 7rem">Rejected</th>
+                  <th class="staff-table-head__th text-end" style="width: 6.5rem">Expected QTY</th>
+                  <th class="staff-table-head__th text-end" style="width: 7.5rem">Received QTY</th>
+                  <th class="staff-table-head__th text-end" style="width: 7.5rem">Rejected QTY</th>
                   <th
                     class="staff-table-head__th text-center admin-asn-detail-lines-actions-col"
                     style="width: 7rem"
@@ -1065,17 +1065,17 @@ onUnmounted(() => {
 </template>
 
 <style scoped>
-.asn-line-thumb {
-  width: 40px;
-  height: 40px;
-  border-radius: 0.35rem;
+.admin-asn-detail-page .asn-line-thumb {
+  width: 64px;
+  height: 64px;
+  border-radius: 0.4rem;
   object-fit: cover;
   border: 1px solid rgba(0, 0, 0, 0.08);
   background: #fff;
   flex-shrink: 0;
 }
 
-.asn-line-thumb--empty {
+.admin-asn-detail-page .asn-line-thumb--empty {
   display: block;
   background: rgba(0, 0, 0, 0.05);
 }
@@ -1083,7 +1083,7 @@ onUnmounted(() => {
 .admin-asn-detail-page .order-detail-page__item-cell {
   display: flex;
   align-items: center;
-  gap: 0.65rem;
+  gap: 0.75rem;
   min-width: 0;
 }
 

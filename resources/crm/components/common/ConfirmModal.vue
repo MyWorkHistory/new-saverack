@@ -8,6 +8,8 @@ const props = defineProps({
   cancelLabel: { type: String, default: "Cancel" },
   danger: { type: Boolean, default: true },
   busy: { type: Boolean, default: false },
+  /** Wider body with overflow visible for searchable selects / short forms. */
+  form: { type: Boolean, default: false },
 });
 
 const emit = defineEmits(["close", "confirm"]);
@@ -64,7 +66,7 @@ function onBackdrop() {
             </p>
           </header>
 
-          <div class="crm-vx-modal__body pt-0">
+          <div class="crm-vx-modal__body pt-0" :class="{ 'crm-vx-modal__body--form': form }">
             <slot v-if="$slots.default" />
             <p v-else-if="message" class="mb-0 text-center small text-secondary">
               {{ message }}

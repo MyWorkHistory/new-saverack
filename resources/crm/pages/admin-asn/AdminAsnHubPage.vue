@@ -515,13 +515,17 @@ onUnmounted(() => {
         <button type="button" class="btn btn-primary staff-page-primary" @click="openCreateModal">
           Create ASN
         </button>
-        <button type="button" class="btn btn-outline-secondary" @click="openNonCompliant">
+        <button
+          type="button"
+          class="btn btn-outline-secondary orders-toolbar-outline-btn fw-semibold"
+          @click="openNonCompliant"
+        >
           Non-Compliant ASN
         </button>
         <div data-asn-hub-actions class="position-relative">
           <button
             type="button"
-            class="btn btn-outline-secondary"
+            class="btn btn-outline-secondary orders-toolbar-outline-btn fw-semibold"
             :class="{ 'is-open': actionMenuOpen }"
             aria-haspopup="true"
             :aria-expanded="actionMenuOpen ? 'true' : 'false'"
@@ -794,6 +798,7 @@ onUnmounted(() => {
       :open="scanOpen"
       title="Scan Items"
       confirm-label="Save"
+      form
       :danger="false"
       :busy="scanBusy"
       @close="scanOpen = false"
@@ -840,6 +845,8 @@ onUnmounted(() => {
       :open="nonCompliantOpen"
       title="Non-Compliant ASN"
       confirm-label="Create"
+      form
+      :danger="false"
       :busy="nonCompliantBusy"
       @close="nonCompliantOpen = false"
       @confirm="submitNonCompliant"

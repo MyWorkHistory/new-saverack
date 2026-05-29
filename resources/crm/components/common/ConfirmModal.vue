@@ -31,6 +31,7 @@ function onBackdrop() {
       >
         <div
           class="crm-vx-modal crm-vx-modal--sm"
+          :class="{ 'crm-vx-modal--form': form }"
           @click.stop
         >
           <button

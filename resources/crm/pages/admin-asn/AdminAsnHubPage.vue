@@ -826,6 +826,8 @@ onUnmounted(() => {
       :open="createModalOpen"
       title="Create ASN"
       confirm-label="Continue"
+      form
+      :danger="false"
       :busy="createBusy"
       @close="createModalOpen = false"
       @confirm="confirmCreate"
@@ -834,6 +836,7 @@ onUnmounted(() => {
       <CrmSearchableSelect
         v-model="createAccountId"
         appearance="staff"
+        teleport-panel
         :options="accountOptions"
         placeholder="Select account…"
         :allow-empty="false"
@@ -857,6 +860,7 @@ onUnmounted(() => {
           <CrmSearchableSelect
             v-model="ncAccountId"
             appearance="staff"
+            teleport-panel
             :options="accountOptions"
             placeholder="Select account…"
             :allow-empty="false"

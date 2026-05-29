@@ -1,5 +1,5 @@
 <script setup>
-import { computed, onMounted, onUnmounted, ref, watch } from "vue";
+import { computed, nextTick, onMounted, onUnmounted, ref, watch } from "vue";
 
 const props = defineProps({
   modelValue: { type: String, default: "" },
@@ -21,13 +21,17 @@ const props = defineProps({
     default: "default",
     validator: (v) => v === "default" || v === "staff",
   },
+  /** Render dropdown in body (fixed position) so modals do not clip the list. */
+  teleportPanel: { type: Boolean, default: false },
 });
 
 const emit = defineEmits(["update:modelValue"]);
 
 const root = ref(null);
+const triggerRef = ref(null);
 const open = ref(false);
 const filter = ref("");
+const panelStyle = ref({});
 
 const selectedOption = computed(() => {
   const v = props.modelValue;
@@ -56,13 +60,51 @@ const filteredOptions = computed(() => {
   });
 });
 
-function toggle() {
+function updatePanelPosition() {
+  const el = triggerRef.value;
+  if (!(el instanceof HTMLElement)) return;
+  const r = el.getBoundingClientRect();
+  const maxH = Math.min(280, window.innerHeight - r.bottom - 16);
+  panelStyle.value = {
+    position: "fixed",
+    top: `${r.bottom + 8}px`,
+    left: `${r.left}px`,
+    width: `${r.width}px`,
+    maxHeight: maxH > 120 ? `${maxH}px` : undefined,
+    zIndex: 1210,
+  };
+}
+
+function bindPanelPositionListeners() {
+  window.addEventListener("scroll", updatePanelPosition, true);
+  window.addEventListener("resize", updatePanelPosition);
+}
+
+function unbindPanelPositionListeners() {
+  window.removeEventListener("scroll", updatePanelPosition, true);
+  window.removeEventListener("resize", updatePanelPosition);
+}
+
+async function toggle() {
   if (props.disabled) return;
-  open.value = !open.value;
-  if (open.value) filter.value = "";
+  const willOpen = !open.value;
+  open.value = willOpen;
+  if (willOpen) {
+    filter.value = "";
+    if (props.teleportPanel) {
+      await nextTick();
+      updatePanelPosition();
+      bindPanelPositionListeners();
+    }
+  } else if (props.teleportPanel) {
+    unbindPanelPositionListeners();
+  }
 }
 
 function close() {
+  if (props.teleportPanel) {
+    unbindPanelPositionListeners();
+  }
   open.value = false;
   filter.value = "";
 }
@@ -77,12 +119,6 @@ function selectOption(opt) {
   close();
 }
 
-function onDocClick(e) {
-  if (!root.value?.contains(e.target)) {
-    close();
-  }
-}
-
 watch(
   () => props.modelValue,
   () => {
@@ -90,8 +126,18 @@ watch(
   },
 );
 
+function onDocClick(e) {
+  const t = e.target;
+  if (root.value?.contains(t)) return;
+  if (t instanceof Element && t.closest?.("[data-crm-searchable-select-panel]")) return;
+  close();
+}
+
 onMounted(() => document.addEventListener("click", onDocClick));
-onUnmounted(() => document.removeEventListener("click", onDocClick));
+onUnmounted(() => {
+  document.removeEventListener("click", onDocClick);
+  unbindPanelPositionListeners();
+});
 </script>
 
 <template>
@@ -106,6 +152,7 @@ onUnmounted(() => document.removeEventListener("click", onDocClick));
       >{{ label }}</label
     >
     <button
+      ref="triggerRef"
       :id="buttonId || undefined"
       type="button"
       class="crm-searchable-select__trigger flex h-11 w-full min-w-0 items-center gap-2.5 rounded-xl border border-gray-200 bg-white px-3 text-left shadow-sm transition hover:border-gray-300 hover:bg-gray-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-[#2563eb]/25 disabled:cursor-not-allowed disabled:opacity-60 dark:border-gray-700 dark:bg-gray-900 dark:hover:border-gray-600 dark:hover:bg-gray-800/80"
@@ -151,8 +198,70 @@ onUnmounted(() => document.removeEventListener("click", onDocClick));
       </svg>
     </button>
 
+    <Teleport v-if="teleportPanel" to="body">
+      <div
+        v-if="open"
+        data-crm-searchable-select-panel
+        :id="listboxId || undefined"
+        class="crm-searchable-select__panel crm-searchable-select__panel--teleport flex flex-col overflow-hidden rounded-xl border border-gray-200 bg-white shadow-xl dark:border-gray-700 dark:bg-gray-900"
+        :style="panelStyle"
+        role="listbox"
+        @click.stop
+      >
+        <div class="border-b border-gray-100 p-2 dark:border-gray-800 shrink-0">
+          <input
+            v-model="filter"
+            type="search"
+            autocomplete="off"
+            :placeholder="searchPlaceholder"
+            class="h-10 w-full rounded-lg border border-gray-200 bg-gray-50 px-3 text-sm text-gray-900 placeholder:text-gray-400 focus:border-[#2563eb] focus:outline-none focus:ring-2 focus:ring-[#2563eb]/20 dark:border-gray-600 dark:bg-gray-800/80 dark:text-white dark:placeholder:text-gray-500"
+            @click.stop
+          />
+        </div>
+        <ul
+          class="min-h-0 flex-1 overflow-y-auto py-1 bg-white dark:bg-gray-900"
+          role="presentation"
+        >
+          <li v-if="allowEmpty">
+            <button
+              type="button"
+              class="flex w-full flex-col items-start gap-0.5 px-3 py-2.5 text-left text-sm transition bg-white hover:bg-blue-50 dark:bg-gray-900 dark:hover:bg-white/5"
+              :class="[modelValue === '' ? 'bg-blue-50 dark:bg-white/[0.06]' : '']"
+              role="option"
+              :aria-selected="modelValue === ''"
+              @click.stop="selectNone"
+            >
+              <span class="font-medium text-gray-900 dark:text-white">{{ emptyLabel }}</span>
+            </button>
+          </li>
+          <li v-if="options.length && !filteredOptions.length">
+            <p class="px-3 py-4 text-center text-sm text-gray-500 dark:text-gray-400">No matches.</p>
+          </li>
+          <li v-if="!options.length">
+            <p class="px-3 py-4 text-center text-sm text-gray-500 dark:text-gray-400">
+              No people in directory yet.
+            </p>
+          </li>
+          <li v-for="opt in filteredOptions" :key="opt.id">
+            <button
+              type="button"
+              class="flex w-full flex-col items-start gap-0.5 px-3 py-2.5 text-left text-sm transition bg-white hover:bg-blue-50 dark:bg-gray-900 dark:hover:bg-white/5"
+              :class="[
+                String(modelValue) === String(opt.id) ? 'bg-blue-50 dark:bg-white/[0.06]' : '',
+              ]"
+              role="option"
+              :aria-selected="String(modelValue) === String(opt.id)"
+              @click.stop="selectOption(opt)"
+            >
+              <span class="font-medium text-gray-900 dark:text-white">{{ opt.name }}</span>
+              <span v-if="opt.email" class="text-xs text-gray-500 dark:text-gray-400">{{ opt.email }}</span>
+            </button>
+          </li>
+        </ul>
+      </div>
+    </Teleport>
     <div
-      v-if="open"
+      v-else-if="open"
       :id="listboxId || undefined"
       class="crm-searchable-select__panel absolute left-0 right-0 z-[140] mt-2 overflow-hidden rounded-xl border border-gray-200 bg-white shadow-xl dark:border-gray-700 dark:bg-gray-900"
       role="listbox"
@@ -167,41 +276,24 @@ onUnmounted(() => document.removeEventListener("click", onDocClick));
           @click.stop
         />
       </div>
-      <ul
-        class="max-h-56 overflow-y-auto py-1 bg-white dark:bg-gray-900"
-        role="presentation"
-      >
+      <ul class="max-h-56 overflow-y-auto py-1 bg-white dark:bg-gray-900" role="presentation">
         <li v-if="allowEmpty">
           <button
             type="button"
             class="flex w-full flex-col items-start gap-0.5 px-3 py-2.5 text-left text-sm transition bg-white hover:bg-blue-50 dark:bg-gray-900 dark:hover:bg-white/5"
-            :class="[
-              modelValue === '' ? 'bg-blue-50 dark:bg-white/[0.06]' : '',
-            ]"
+            :class="[modelValue === '' ? 'bg-blue-50 dark:bg-white/[0.06]' : '']"
             role="option"
             :aria-selected="modelValue === ''"
             @click.stop="selectNone"
           >
-            <span class="font-medium text-gray-900 dark:text-white">{{
-              emptyLabel
-            }}</span>
+            <span class="font-medium text-gray-900 dark:text-white">{{ emptyLabel }}</span>
           </button>
         </li>
-        <li
-          v-if="options.length && !filteredOptions.length"
-        >
-          <p
-            class="px-3 py-4 text-center text-sm text-gray-500 dark:text-gray-400"
-          >
-            No matches.
-          </p>
+        <li v-if="options.length && !filteredOptions.length">
+          <p class="px-3 py-4 text-center text-sm text-gray-500 dark:text-gray-400">No matches.</p>
         </li>
-        <li
-          v-if="!options.length"
-        >
-          <p
-            class="px-3 py-4 text-center text-sm text-gray-500 dark:text-gray-400"
-          >
+        <li v-if="!options.length">
+          <p class="px-3 py-4 text-center text-sm text-gray-500 dark:text-gray-400">
             No people in directory yet.
           </p>
         </li>
@@ -210,22 +302,14 @@ onUnmounted(() => document.removeEventListener("click", onDocClick));
             type="button"
             class="flex w-full flex-col items-start gap-0.5 px-3 py-2.5 text-left text-sm transition bg-white hover:bg-blue-50 dark:bg-gray-900 dark:hover:bg-white/5"
             :class="[
-              String(modelValue) === String(opt.id)
-                ? 'bg-blue-50 dark:bg-white/[0.06]'
-                : '',
+              String(modelValue) === String(opt.id) ? 'bg-blue-50 dark:bg-white/[0.06]' : '',
             ]"
             role="option"
             :aria-selected="String(modelValue) === String(opt.id)"
             @click.stop="selectOption(opt)"
           >
-            <span class="font-medium text-gray-900 dark:text-white">{{
-              opt.name
-            }}</span>
-            <span
-              v-if="opt.email"
-              class="text-xs text-gray-500 dark:text-gray-400"
-              >{{ opt.email }}</span
-            >
+            <span class="font-medium text-gray-900 dark:text-white">{{ opt.name }}</span>
+            <span v-if="opt.email" class="text-xs text-gray-500 dark:text-gray-400">{{ opt.email }}</span>
           </button>
         </li>
       </ul>

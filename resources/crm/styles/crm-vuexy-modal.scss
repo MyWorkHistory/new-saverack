@@ -84,12 +84,12 @@ $vx-modal-primary: #2563eb;
 
 .crm-vx-modal--form .crm-vx-modal__body--form {
   flex: none;
-  min-height: 0;
+  min-height: 11rem;
   overflow: visible;
 }
 
-.crm-vx-modal-overlay .crm-vx-modal--form .crm-searchable-select__panel {
-  z-index: 5;
+.crm-vx-modal-overlay .crm-searchable-select__panel--teleport {
+  z-index: 1210;
 }
 
 .crm-vx-modal--shipping-form {

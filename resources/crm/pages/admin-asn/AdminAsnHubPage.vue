@@ -44,6 +44,16 @@ const manageMenuRect = ref({ top: 0, left: 0 });
 const MENU_W = 200;
 const MENU_H = 120;
 
+const actionMenuOpen = ref(false);
+const actionMenuRect = ref({ top: 0, left: 0 });
+const ACTION_MENU_W = 200;
+const ACTION_MENU_H = 56;
+
+const scanOpen = ref(false);
+const scanAsnNumber = ref("");
+const scanText = ref("");
+const scanBusy = ref(false);
+
 const createModalOpen = ref(false);
 const createAccountId = ref("");
 const createBusy = ref(false);
@@ -358,20 +368,123 @@ function viewAsnFromMenu() {
   manageOpenId.value = null;
 }
 
+function placeActionMenu(anchorEl) {
+  if (!(anchorEl instanceof HTMLElement)) return;
+  const r = anchorEl.getBoundingClientRect();
+  let top = r.bottom + 4;
+  let left = r.right - ACTION_MENU_W;
+  left = Math.max(8, Math.min(left, window.innerWidth - ACTION_MENU_W - 8));
+  if (top + ACTION_MENU_H > window.innerHeight - 8) {
+    top = Math.max(8, r.top - ACTION_MENU_H - 4);
+  }
+  actionMenuRect.value = { top, left };
+}
+
+async function toggleActionMenu(e) {
+  e?.stopPropagation?.();
+  if (actionMenuOpen.value) {
+    actionMenuOpen.value = false;
+    return;
+  }
+  const btn = e?.currentTarget;
+  actionMenuOpen.value = true;
+  await nextTick();
+  requestAnimationFrame(() => {
+    if (btn instanceof HTMLElement) placeActionMenu(btn);
+  });
+}
+
+function openScanFromAction() {
+  actionMenuOpen.value = false;
+  scanAsnNumber.value = "";
+  scanText.value = "";
+  scanOpen.value = true;
+}
+
+function normalizeAsnNumberInput(raw) {
+  return formatAsnDisplay(String(raw ?? "").trim());
+}
+
+async function resolveAsnIdByNumber(asnNumber) {
+  const needle = normalizeAsnNumberInput(asnNumber);
+  if (!needle) {
+    return null;
+  }
+  const params = { q: needle, per_page: 25 };
+  if (accountFilter.value) {
+    params.client_account_id = accountFilter.value;
+  }
+  const { data } = await api.get("/admin/asns", { params });
+  const list = data.data || [];
+  const matches = list.filter((row) => normalizeAsnNumberInput(row.asn_number) === needle);
+  if (matches.length === 1) {
+    return matches[0].id;
+  }
+  if (matches.length > 1) {
+    throw new Error("Multiple ASNs match that number. Narrow by account filter.");
+  }
+  return null;
+}
+
+async function submitScan() {
+  const asnNum = normalizeAsnNumberInput(scanAsnNumber.value);
+  if (!asnNum) {
+    toast.error("Enter an ASN #.");
+    return;
+  }
+  if (!String(scanText.value || "").trim()) {
+    toast.error("Enter at least one barcode.");
+    return;
+  }
+  scanBusy.value = true;
+  try {
+    const asnId = await resolveAsnIdByNumber(asnNum);
+    if (!asnId) {
+      toast.error("No ASN found for that number.");
+      return;
+    }
+    const { data } = await api.post(`/admin/asns/${asnId}/scan-barcodes`, {
+      barcodes: scanText.value,
+    });
+    const unmatched = data.unmatched || [];
+    if (unmatched.length) {
+      toast.error(`No match for: ${unmatched.slice(0, 3).join(", ")}${unmatched.length > 3 ? "…" : ""}`);
+    } else {
+      toast.success(`Processed ${data.matched || 0} item(s).`);
+    }
+    scanOpen.value = false;
+    scanAsnNumber.value = "";
+    scanText.value = "";
+    await Promise.all([loadSummary(), loadList()]);
+  } catch (e) {
+    const msg = e instanceof Error && e.message ? e.message : null;
+    toast.errorFrom(e, msg || "Could not process barcodes.");
+  } finally {
+    scanBusy.value = false;
+  }
+}
+
 function onDocClick(e) {
   if (!e.target?.closest?.("[data-row-actions]")) {
     manageOpenId.value = null;
+  }
+  if (!e.target?.closest?.("[data-asn-hub-actions]")) {
+    actionMenuOpen.value = false;
   }
 }
 
 function onWindowCloseManageMenu() {
   manageOpenId.value = null;
+  actionMenuOpen.value = false;
 }
 
 const statCardValue = (key) => summary.value[key] ?? 0;
 
 onMounted(async () => {
-  setCrmPageMeta({ title: "Save Rack | ASN", description: "Receiving advance shipping notices." });
+  setCrmPageMeta({
+    title: "Save Rack | Advanced Shipment Notice",
+    description: "Search and manage advance shipping notices.",
+  });
   if (route.query.status) {
     statusFilter.value = String(route.query.status);
   }
@@ -393,10 +506,22 @@ onUnmounted(() => {
   <div class="staff-page staff-page--wide">
     <div class="d-flex flex-wrap align-items-end justify-content-between gap-3 mb-4">
       <div>
-        <h1 class="h4 mb-1 fw-semibold text-body">ASN</h1>
-        <p class="staff-page__intro admin-asn-list__subtitle mb-0">Search by ASN # or tracking #.</p>
+        <h1 class="h4 mb-1 fw-semibold text-body">Advanced Shipment Notice</h1>
+        <p class="small admin-asn-list__subtitle mb-0">Search by ASN # or tracking #.</p>
       </div>
-      <div class="d-flex flex-wrap gap-2">
+      <div class="d-flex flex-wrap gap-2 align-items-center">
+        <div data-asn-hub-actions class="position-relative">
+          <button
+            type="button"
+            class="btn btn-outline-secondary btn-sm fw-semibold"
+            :class="{ 'is-open': actionMenuOpen }"
+            aria-haspopup="true"
+            :aria-expanded="actionMenuOpen ? 'true' : 'false'"
+            @click="toggleActionMenu"
+          >
+            Action
+          </button>
+        </div>
         <button type="button" class="btn btn-primary staff-page-primary" @click="openCreateModal">
           Create ASN
         </button>
@@ -429,30 +554,36 @@ onUnmounted(() => {
       </div>
     </div>
 
-    <div class="admin-asn-list staff-table-card staff-datatable-card staff-datatable-card--white w-100">
+    <div
+      class="admin-asn-list admin-asn-page-toolbar staff-table-card staff-datatable-card staff-datatable-card--white w-100"
+    >
       <div class="staff-table-toolbar">
-        <div class="staff-table-toolbar--row flex-wrap align-items-end gap-2 gap-md-3">
-          <CrmSearchableSelect
-            v-model="accountFilter"
-            class="staff-toolbar-search staff-toolbar-search--inline"
-            appearance="staff"
-            aria-label="Client account"
-            :options="accountOptions"
-            :disabled="accountsLoading || loading"
-            placeholder="All accounts"
-            empty-label="All accounts"
-            search-placeholder="Search accounts…"
-          />
-          <input
-            id="admin-asn-list-search"
-            v-model="search"
-            type="search"
-            class="form-control staff-toolbar-search staff-toolbar-search--inline"
-            placeholder="Search ASN # or tracking #"
-            autocomplete="off"
-            aria-label="Search ASN"
-            @keydown.enter.prevent="loadList"
-          />
+        <div class="staff-table-toolbar--row admin-asn-toolbar-row">
+          <div class="admin-asn-toolbar-account">
+            <CrmSearchableSelect
+              v-model="accountFilter"
+              class="staff-toolbar-search staff-toolbar-search--inline w-100"
+              appearance="staff"
+              aria-label="Client account"
+              :options="accountOptions"
+              :disabled="accountsLoading || loading"
+              placeholder="All accounts"
+              empty-label="All accounts"
+              search-placeholder="Search accounts…"
+            />
+          </div>
+          <div class="admin-asn-toolbar-search">
+            <input
+              id="admin-asn-list-search"
+              v-model="search"
+              type="search"
+              class="form-control staff-toolbar-search staff-toolbar-search--inline w-100"
+              placeholder="Search ASN # or tracking #"
+              autocomplete="off"
+              aria-label="Search ASN"
+              @keydown.enter.prevent="loadList"
+            />
+          </div>
         </div>
       </div>
 
@@ -616,6 +747,30 @@ onUnmounted(() => {
         leave-to-class="opacity-0"
       >
         <div
+          v-if="actionMenuOpen"
+          data-asn-hub-actions
+          class="staff-row-menu fixed z-[300] overflow-hidden"
+          role="menu"
+          :style="{
+            top: `${actionMenuRect.top}px`,
+            left: `${actionMenuRect.left}px`,
+          }"
+          @click.stop
+        >
+          <button type="button" class="staff-row-menu__item" role="menuitem" @click="openScanFromAction">
+            Scan Items
+          </button>
+        </div>
+      </Transition>
+      <Transition
+        enter-active-class="transition ease-out duration-100"
+        enter-from-class="opacity-0"
+        enter-to-class="opacity-100"
+        leave-active-class="transition ease-in duration-75"
+        leave-from-class="opacity-100"
+        leave-to-class="opacity-0"
+      >
+        <div
           v-if="manageMenuRow"
           data-row-actions
           class="staff-row-menu fixed z-[300] overflow-hidden"
@@ -632,6 +787,32 @@ onUnmounted(() => {
         </div>
       </Transition>
     </Teleport>
+
+    <ConfirmModal
+      :open="scanOpen"
+      title="Scan Items"
+      confirm-label="Save"
+      :busy="scanBusy"
+      @close="scanOpen = false"
+      @confirm="submitScan"
+    >
+      <label class="form-label" for="admin-asn-scan-asn-number">ASN #</label>
+      <input
+        id="admin-asn-scan-asn-number"
+        v-model="scanAsnNumber"
+        type="text"
+        class="form-control mb-3"
+        placeholder="e.g. 0010"
+        autocomplete="off"
+      />
+      <label class="form-label" for="admin-asn-scan-barcodes">Enter barcodes line by line</label>
+      <textarea
+        id="admin-asn-scan-barcodes"
+        v-model="scanText"
+        class="form-control font-monospace"
+        rows="10"
+      />
+    </ConfirmModal>
 
     <ConfirmModal
       :open="createModalOpen"
@@ -800,7 +981,36 @@ onUnmounted(() => {
   vertical-align: bottom;
 }
 
+.admin-asn-list__subtitle {
+  font-size: 0.8125rem;
+  font-weight: 500;
+  color: var(--bs-secondary-color, #6c757d);
+}
+
 [data-bs-theme="dark"] .admin-asn-list__subtitle {
   color: #fff !important;
+}
+
+.admin-asn-page-toolbar .admin-asn-toolbar-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+@media (max-width: 767.98px) {
+  .admin-asn-page-toolbar .admin-asn-toolbar-row {
+    display: flex;
+  }
+}
+
+.admin-asn-toolbar-account {
+  flex: 0 0 auto;
+  width: min(280px, 100%);
+}
+
+.admin-asn-toolbar-search {
+  flex: 0 0 auto;
+  width: min(18rem, 100%);
 }
 </style>

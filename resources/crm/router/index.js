@@ -173,8 +173,8 @@ const meta = {
     description: "ASN line items, tracking, and warehouse details.",
   },
   adminAsnHub: {
-    title: "Save Rack | ASN",
-    description: "Receiving advance shipping notices.",
+    title: "Save Rack | Advanced Shipment Notice",
+    description: "Search and manage advance shipping notices.",
   },
   adminAsnDetail: {
     title: "Save Rack | ASN Detail",

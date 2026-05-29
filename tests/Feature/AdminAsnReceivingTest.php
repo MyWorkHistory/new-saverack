@@ -222,6 +222,59 @@ class AdminAsnReceivingTest extends TestCase
         $this->assertSame(ClientAccountAsnLine::LINE_STATUS_COMPLETED, $line->line_status);
     }
 
+    public function test_scan_barcodes_increments_accepted_qty_by_barcode(): void
+    {
+        $account = $this->account('scan');
+        $staff = $this->staffUser();
+        Sanctum::actingAs($staff);
+
+        $asn = ClientAccountAsn::create([
+            'client_account_id' => $account->id,
+            'asn_number' => '0030',
+            'status' => ClientAccountAsn::STATUS_PENDING,
+            'total_boxes' => 1,
+            'expected_qty' => 5,
+            'accepted_qty' => 0,
+            'rejected_qty' => 0,
+        ]);
+        $line = ClientAccountAsnLine::create([
+            'client_account_asn_id' => $asn->id,
+            'sku' => 'SCAN-SKU',
+            'name' => 'Scannable',
+            'barcode' => '9945422442',
+            'expected_qty' => 5,
+            'accepted_qty' => 0,
+            'rejected_qty' => 0,
+            'line_status' => ClientAccountAsnLine::LINE_STATUS_PENDING,
+            'sort_order' => 0,
+        ]);
+
+        $mock = Mockery::mock(ShipHeroInventoryService::class);
+        $mock->shouldReceive('getProductDetailBySku')->andReturn([
+            'warehouses' => [
+                [
+                    'warehouse_id' => 'wh-1',
+                    'locations' => [
+                        ['location_name' => 'Receiving', 'quantity' => 0],
+                    ],
+                ],
+            ],
+        ]);
+        $mock->shouldReceive('resolveWarehouseLocation')->andReturn(['id' => 'loc-recv']);
+        $mock->shouldReceive('replaceLocationQuantity')->times(5);
+        $this->app->instance(ShipHeroInventoryService::class, $mock);
+        $this->app->forgetInstance(AsnReceivingService::class);
+
+        $barcodes = implode("\n", array_fill(0, 5, '9945422442'));
+        $this->postJson("/api/admin/asns/{$asn->id}/scan-barcodes", ['barcodes' => $barcodes])
+            ->assertOk()
+            ->assertJsonPath('matched', 5)
+            ->assertJsonPath('unmatched', []);
+
+        $line->refresh();
+        $this->assertSame(5, $line->accepted_qty);
+    }
+
     public function test_portal_user_forbidden_on_admin_asn_routes(): void
     {
         $account = $this->account();

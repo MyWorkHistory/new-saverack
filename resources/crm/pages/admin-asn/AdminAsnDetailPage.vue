@@ -990,6 +990,7 @@ onUnmounted(() => {
       :open="scanOpen"
       title="Scan Items"
       confirm-label="Save"
+      :danger="false"
       :busy="scanBusy"
       @close="scanOpen = false"
       @confirm="submitScan"

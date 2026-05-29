@@ -65,7 +65,8 @@ function onBackdrop() {
           </header>
 
           <div class="crm-vx-modal__body pt-0">
-            <p class="mb-0 text-center small text-secondary">
+            <slot v-if="$slots.default" />
+            <p v-else-if="message" class="mb-0 text-center small text-secondary">
               {{ message }}
             </p>
           </div>

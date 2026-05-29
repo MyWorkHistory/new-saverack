@@ -394,11 +394,13 @@ async function toggleActionMenu(e) {
   });
 }
 
-function openScanFromAction() {
+async function openScanFromAction() {
   actionMenuOpen.value = false;
   scanAsnNumber.value = "";
   scanText.value = "";
   scanOpen.value = true;
+  await nextTick();
+  document.getElementById("admin-asn-scan-asn-number")?.focus();
 }
 
 function normalizeAsnNumberInput(raw) {
@@ -510,10 +512,16 @@ onUnmounted(() => {
         <p class="small admin-asn-list__subtitle mb-0">Search by ASN # or tracking #.</p>
       </div>
       <div class="d-flex flex-wrap gap-2 align-items-center">
+        <button type="button" class="btn btn-primary staff-page-primary" @click="openCreateModal">
+          Create ASN
+        </button>
+        <button type="button" class="btn btn-outline-secondary" @click="openNonCompliant">
+          Non-Compliant ASN
+        </button>
         <div data-asn-hub-actions class="position-relative">
           <button
             type="button"
-            class="btn btn-outline-secondary btn-sm fw-semibold"
+            class="btn btn-outline-secondary"
             :class="{ 'is-open': actionMenuOpen }"
             aria-haspopup="true"
             :aria-expanded="actionMenuOpen ? 'true' : 'false'"
@@ -522,12 +530,6 @@ onUnmounted(() => {
             Action
           </button>
         </div>
-        <button type="button" class="btn btn-primary staff-page-primary" @click="openCreateModal">
-          Create ASN
-        </button>
-        <button type="button" class="btn btn-outline-secondary" @click="openNonCompliant">
-          Non-Compliant ASN
-        </button>
       </div>
     </div>
 
@@ -792,6 +794,7 @@ onUnmounted(() => {
       :open="scanOpen"
       title="Scan Items"
       confirm-label="Save"
+      :danger="false"
       :busy="scanBusy"
       @close="scanOpen = false"
       @confirm="submitScan"

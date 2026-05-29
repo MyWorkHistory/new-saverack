@@ -55,9 +55,6 @@ async function search() {
       matched = rows;
     }
     results.value = matched;
-    if (!matched.length) {
-      toast.error("No order found for that order number.");
-    }
   } catch (e) {
     toast.errorFrom(e, "Could not search orders.");
   } finally {
@@ -93,6 +90,18 @@ function openOrderInNewTab(row) {
   const href = returnCreateOrderHref(row);
   if (!href) return;
   window.open(href, "_blank", "noopener,noreferrer");
+}
+
+function goToManualReturn() {
+  const num = orderNumber.value.trim().replace(/^#+/, "");
+  if (!num || !clientAccountId.value) return;
+  router.push({
+    name: "user-return-create-manual",
+    query: {
+      order_number: num,
+      client_account_id: String(clientAccountId.value),
+    },
+  });
 }
 
 onMounted(() => {
@@ -165,11 +174,17 @@ onMounted(() => {
             </tr>
             <tr v-else-if="!results.length">
               <td :colspan="tableColspan" class="text-center text-secondary py-5">
-                {{
-                  hasSearched
-                    ? "No order found for that order number."
-                    : "Enter an order number and select Search."
-                }}
+                <template v-if="hasSearched">
+                  <p class="mb-2">No order found for that order number.</p>
+                  <button
+                    type="button"
+                    class="btn btn-link btn-sm px-0"
+                    @click="goToManualReturn"
+                  >
+                    Add Manual Return
+                  </button>
+                </template>
+                <template v-else>Enter an order number and select Search.</template>
               </td>
             </tr>
             <tr v-for="row in results" v-else :key="row.id" class="align-middle">

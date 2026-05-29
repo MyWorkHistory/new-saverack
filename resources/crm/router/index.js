@@ -200,6 +200,10 @@ const meta = {
     title: "Save Rack | Create Return",
     description: "Select items and complete your return.",
   },
+  userReturnCreateManual: {
+    title: "Save Rack | Manual Return",
+    description: "Create a return without a ShipHero order.",
+  },
   userReturnDetail: {
     title: "Save Rack | Return",
     description: "Return detail and documents.",
@@ -513,6 +517,7 @@ const routes = [
   { path: "/users/returns/orders", name: "user-return-orders", component: () => import("../pages/user-returns/UserReturnOrdersListPage.vue"), meta: { ...meta.userReturnOrdersList, userPortal: true } },
   { path: "/users/returns/items", name: "user-return-items", component: () => import("../pages/user-returns/UserReturnItemsListPage.vue"), meta: { ...meta.userReturnItemsList, userPortal: true } },
   { path: "/users/returns/create", name: "user-return-create-search", component: () => import("../pages/user-returns/UserReturnCreateSearchPage.vue"), meta: { ...meta.userReturnCreateSearch, userPortal: true } },
+  { path: "/users/returns/create/manual", name: "user-return-create-manual", component: () => import("../pages/user-returns/UserReturnManualCreatePage.vue"), meta: { ...meta.userReturnCreateManual, userPortal: true } },
   { path: "/users/returns/create/order/:shipheroOrderId", name: "user-return-create-order", component: () => import("../pages/user-returns/UserReturnCreateOrderPage.vue"), props: true, meta: { ...meta.userReturnCreateOrder, userPortal: true } },
   { path: "/users/returns/create/order/:shipheroOrderId/new", name: "user-return-create", component: () => import("../pages/user-returns/UserReturnCreatePage.vue"), props: true, meta: { ...meta.userReturnCreate, userPortal: true } },
   { path: "/users/returns/:id", name: "user-return-detail", component: () => import("../pages/user-returns/UserReturnDetailPage.vue"), props: true, meta: { ...meta.userReturnDetail, userPortal: true } },

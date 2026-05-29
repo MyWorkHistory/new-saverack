@@ -14,6 +14,7 @@ use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Gate;
+use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\ValidationException;
 
@@ -168,10 +169,15 @@ class ReturnController extends Controller
         ];
     }
 
+    private function isManualReturn(ClientAccountReturn $return): bool
+    {
+        return str_starts_with((string) $return->shiphero_order_id, 'manual:');
+    }
+
     /**
      * @param  array<int, array<string, mixed>>  $lines
      */
-    private function validateAndNormalizeLines(array $lines): array
+    private function validateAndNormalizeLines(array $lines, bool $manual = false): array
     {
         $normalized = [];
         $hasPositive = false;
@@ -186,6 +192,9 @@ class ReturnController extends Controller
                 throw ValidationException::withMessages([
                     'lines' => ['Return quantity cannot be negative.'],
                 ]);
+            }
+            if ($manual && $returnQty > $orderQty) {
+                $orderQty = $returnQty;
             }
             if ($returnQty > $orderQty) {
                 throw ValidationException::withMessages([
@@ -380,11 +389,13 @@ class ReturnController extends Controller
 
     public function storeDraft(Request $request): JsonResponse
     {
+        $manual = $request->boolean('manual');
         $validated = $request->validate([
             'client_account_id' => ['required', 'integer', 'exists:client_accounts,id'],
-            'shiphero_order_id' => ['required', 'string', 'max:64'],
+            'manual' => ['sometimes', 'boolean'],
+            'shiphero_order_id' => [Rule::requiredIf(! $manual), 'nullable', 'string', 'max:64'],
             'order_number' => ['required', 'string', 'max:128'],
-            'customer_name' => ['nullable', 'string', 'max:512'],
+            'customer_name' => [Rule::requiredIf($manual), 'nullable', 'string', 'max:512'],
             'return_type' => ['sometimes', 'string', Rule::in(ClientAccountReturn::RETURN_TYPES)],
         ]);
         $clientAccountId = $this->resolveClientAccountId($request, $validated);
@@ -395,13 +406,15 @@ class ReturnController extends Controller
         }
         Gate::authorize('view', ClientAccount::query()->findOrFail($clientAccountId));
 
-        $return = DB::transaction(function () use ($clientAccountId, $validated) {
+        $return = DB::transaction(function () use ($clientAccountId, $validated, $manual) {
             $return = new ClientAccountReturn;
             $return->client_account_id = $clientAccountId;
             $return->rma_number = ReturnRmaGenerator::generateUniqueForAccount($clientAccountId);
             $return->status = ClientAccountReturn::STATUS_DRAFT;
             $return->return_type = $validated['return_type'] ?? ClientAccountReturn::TYPE_DIRECT;
-            $return->shiphero_order_id = trim((string) $validated['shiphero_order_id']);
+            $return->shiphero_order_id = $manual
+                ? 'manual:'.(string) Str::uuid()
+                : trim((string) $validated['shiphero_order_id']);
             $return->order_number = trim((string) $validated['order_number']);
             $return->customer_name = trim((string) ($validated['customer_name'] ?? ''));
             $return->items_count = 0;
@@ -485,7 +498,10 @@ class ReturnController extends Controller
             'lines.*.return_reason' => ['nullable', 'string', 'max:64'],
         ]);
 
-        $normalized = $this->validateAndNormalizeLines($validated['lines']);
+        $normalized = $this->validateAndNormalizeLines(
+            $validated['lines'],
+            $this->isManualReturn($clientAccountReturn),
+        );
 
         DB::transaction(function () use ($clientAccountReturn, $validated, $normalized) {
             if (isset($validated['return_type'])) {
@@ -506,8 +522,8 @@ class ReturnController extends Controller
     public function destroy(Request $request, ClientAccountReturn $clientAccountReturn): JsonResponse
     {
         $this->authorizeReturn($request, $clientAccountReturn);
-        if ($clientAccountReturn->status !== ClientAccountReturn::STATUS_PENDING) {
-            return response()->json(['message' => 'Only pending returns can be deleted.'], 422);
+        if (! in_array($clientAccountReturn->status, [ClientAccountReturn::STATUS_DRAFT, ClientAccountReturn::STATUS_PENDING], true)) {
+            return response()->json(['message' => 'Only draft or pending returns can be deleted.'], 422);
         }
         $clientAccountReturn->delete();
 

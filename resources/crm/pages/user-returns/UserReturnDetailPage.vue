@@ -9,7 +9,6 @@ import {
   formatRmaLabel,
   returnStatusBadgeClass,
   returnStatusLabel,
-  returnTypeLabel,
 } from "../../utils/formatReturnDisplay.js";
 
 const route = useRoute();
@@ -19,7 +18,6 @@ const toast = useToast();
 const loading = ref(true);
 const ret = ref(null);
 const noteBusy = ref(false);
-const statusBusy = ref(false);
 const warehouseNote = ref("");
 
 const returnId = computed(() => String(route.params.id || ""));
@@ -101,20 +99,6 @@ async function saveNote() {
   }
 }
 
-async function updateStatus(next) {
-  if (!ret.value?.id || ret.value.status === next) return;
-  statusBusy.value = true;
-  try {
-    const { data } = await api.patch(`/returns/${ret.value.id}`, { status: next });
-    ret.value = data;
-    toast.success("Status updated.");
-  } catch (e) {
-    toast.errorFrom(e, "Could not update status.");
-  } finally {
-    statusBusy.value = false;
-  }
-}
-
 onMounted(() => {
   setCrmPageMeta({ title: "Save Rack | Return", description: "Return detail." });
   load();
@@ -137,29 +121,15 @@ onMounted(() => {
                 {{ returnStatusLabel(ret.status) }}
               </span>
             </div>
-            <p class="small text-secondary mb-0 mt-2">
-              {{ ret.customer_name || "—" }} · {{ returnTypeLabel(ret.return_type) }}
-            </p>
             <button
               type="button"
-              class="btn btn-link btn-sm text-secondary px-0 py-0 mt-1 text-decoration-none"
+              class="btn btn-link btn-sm text-secondary px-0 py-0 mt-2 text-decoration-none"
               @click="router.push({ name: 'user-return-orders' })"
             >
               &lt; Return Orders
             </button>
           </div>
           <div class="d-flex flex-wrap gap-2 flex-shrink-0 align-items-center">
-            <select
-              class="form-select form-select-sm user-return-page__status-select"
-              :value="ret.status"
-              :disabled="statusBusy"
-              aria-label="Return status"
-              @change="updateStatus($event.target.value)"
-            >
-              <option value="pending">Pending</option>
-              <option value="received">Received</option>
-              <option value="completed">Completed</option>
-            </select>
             <button
               type="button"
               class="btn btn-outline-secondary btn-sm fw-semibold orders-toolbar-outline-btn"
@@ -290,10 +260,6 @@ onMounted(() => {
   font-weight: 800;
   letter-spacing: 0.06em;
   line-height: 1.1;
-}
-.user-return-page__status-select {
-  width: 10rem;
-  max-width: 100%;
 }
 .user-return-page__address-block {
   line-height: 1.5;

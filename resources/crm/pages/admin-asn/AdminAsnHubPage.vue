@@ -11,6 +11,7 @@ import { useToast } from "../../composables/useToast.js";
 import { ASN_CARRIER_OPTIONS } from "../../utils/asnCarrierOptions.js";
 import { asnTrackingUrl } from "../../utils/asnTrackingUrl.js";
 import { formatAsnDisplay } from "../../utils/formatAsnDisplay.js";
+import { formatDateUs } from "../../utils/formatUserDates.js";
 
 const toast = useToast();
 const router = useRouter();
@@ -55,7 +56,7 @@ const ncPallets = ref(0);
 const ncFee = ref("");
 const ncTrackings = ref([{ carrier: "", tracking_number: "" }]);
 
-const tableColspan = 8;
+const tableColspan = 9;
 
 const accountOptions = computed(() =>
   (accounts.value || [])
@@ -457,6 +458,12 @@ onUnmounted(() => {
                   <span v-if="sortIndicator('asn_number')" class="staff-sort-ind">{{ sortIndicator("asn_number") }}</span>
                 </button>
               </th>
+              <th class="staff-table-head__th staff-table-head__th--sort text-center" scope="col">
+                <button type="button" class="staff-sort-btn" @click="toggleSort('created_at')">
+                  Date Created
+                  <span v-if="sortIndicator('created_at')" class="staff-sort-ind">{{ sortIndicator("created_at") }}</span>
+                </button>
+              </th>
               <th class="staff-table-head__th text-center" scope="col">Account</th>
               <th class="staff-table-head__th staff-table-head__th--sort text-center" scope="col">
                 <button type="button" class="staff-sort-btn" @click="toggleSort('expected_qty')">
@@ -466,17 +473,17 @@ onUnmounted(() => {
               </th>
               <th class="staff-table-head__th staff-table-head__th--sort text-center" scope="col">
                 <button type="button" class="staff-sort-btn" @click="toggleSort('accepted_qty')">
-                  Received QTY
+                  Accepted QTY
                   <span v-if="sortIndicator('accepted_qty')" class="staff-sort-ind">{{ sortIndicator("accepted_qty") }}</span>
                 </button>
               </th>
               <th class="staff-table-head__th staff-table-head__th--sort text-center" scope="col">
                 <button type="button" class="staff-sort-btn" @click="toggleSort('total_boxes')">
-                  Boxes
+                  Total Boxes
                   <span v-if="sortIndicator('total_boxes')" class="staff-sort-ind">{{ sortIndicator("total_boxes") }}</span>
                 </button>
               </th>
-              <th class="staff-table-head__th text-center admin-asn-list-tracking-col" scope="col">Tracking #</th>
+              <th class="staff-table-head__th text-center admin-asn-list-tracking-col" scope="col">Tracking</th>
               <th class="staff-table-head__th staff-actions-col text-center admin-asn-list-actions-col" scope="col">
                 Actions
               </th>
@@ -505,6 +512,7 @@ onUnmounted(() => {
                 <td class="text-center fw-semibold admin-asn-list-asn-col">
                   {{ formatAsnDisplay(row.asn_number) }}
                 </td>
+                <td class="text-center small text-secondary">{{ formatDateUs(row.created_at) }}</td>
                 <td class="text-center small text-secondary">{{ row.client_account_company_name || "—" }}</td>
                 <td class="text-center">{{ Number(row.expected_qty ?? 0).toLocaleString() }}</td>
                 <td class="text-center">{{ Number(row.accepted_qty ?? 0).toLocaleString() }}</td>

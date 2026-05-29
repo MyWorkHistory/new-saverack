@@ -27,10 +27,8 @@ const lineSaveBusy = ref({});
 
 const statusMenuOpen = ref(false);
 const statusMenuRect = ref({ top: 0, left: 0 });
-const actionMenuOpen = ref(false);
-const actionMenuRect = ref({ top: 0, left: 0 });
-const manageMenuOpen = ref(false);
-const manageMenuRect = ref({ top: 0, left: 0 });
+const headerMenuOpen = ref(false);
+const headerMenuRect = ref({ top: 0, left: 0 });
 const statusPickerBusy = ref(false);
 const HEADER_MENU_W = 220;
 const HEADER_MENU_H = 280;
@@ -56,6 +54,8 @@ const editItemForm = ref({ barcode: "", weight: "", length: "", width: "", heigh
 const editItemBusy = ref(false);
 
 const trackingDraft = ref([{ carrier: "", tracking_number: "" }]);
+const shipmentBoxesDraft = ref(0);
+const shipmentPalletsDraft = ref(0);
 const trackingSaveBusy = ref(false);
 
 const reopenBusy = ref(false);
@@ -95,8 +95,7 @@ function inventoryDetailTo(sku) {
 
 function closeAllHeaderMenus() {
   statusMenuOpen.value = false;
-  actionMenuOpen.value = false;
-  manageMenuOpen.value = false;
+  headerMenuOpen.value = false;
 }
 
 function placeHeaderMenu(rectRef, anchorEl, width, height) {
@@ -126,33 +125,18 @@ async function toggleStatusMenu(e) {
   });
 }
 
-async function toggleActionMenu(e) {
+async function toggleHeaderMenu(e) {
   e?.stopPropagation?.();
-  if (actionMenuOpen.value) {
-    actionMenuOpen.value = false;
+  if (headerMenuOpen.value) {
+    headerMenuOpen.value = false;
     return;
   }
   closeAllHeaderMenus();
   const btn = e?.currentTarget;
-  actionMenuOpen.value = true;
+  headerMenuOpen.value = true;
   await nextTick();
   requestAnimationFrame(() => {
-    if (btn instanceof HTMLElement) placeHeaderMenu(actionMenuRect, btn, HEADER_MENU_W, 120);
-  });
-}
-
-async function toggleManageMenu(e) {
-  e?.stopPropagation?.();
-  if (manageMenuOpen.value) {
-    manageMenuOpen.value = false;
-    return;
-  }
-  closeAllHeaderMenus();
-  const btn = e?.currentTarget;
-  manageMenuOpen.value = true;
-  await nextTick();
-  requestAnimationFrame(() => {
-    if (btn instanceof HTMLElement) placeHeaderMenu(manageMenuRect, btn, HEADER_MENU_W, 120);
+    if (btn instanceof HTMLElement) placeHeaderMenu(headerMenuRect, btn, HEADER_MENU_W, HEADER_MENU_H);
   });
 }
 
@@ -200,7 +184,7 @@ function statusLabel(s) {
   if (x === "completed") return "Completed";
   if (x === "non_compliant") return "Non-Compliant";
   if (x === "partial") return "Partial";
-  return s || "â€”";
+  return s || "—";
 }
 
 function statusBadgeClass(status) {
@@ -240,6 +224,8 @@ async function loadAsn() {
             tracking_number: t.tracking_number || "",
           }))
         : [{ carrier: "", tracking_number: "" }];
+    shipmentBoxesDraft.value = Number(data.total_boxes) || 0;
+    shipmentPalletsDraft.value = Number(data.total_pallets) || 0;
     const rd = {};
     const rj = {};
     for (const l of data.lines || []) {
@@ -415,7 +401,7 @@ async function submitScan() {
     asn.value = data.asn;
     const unmatched = data.unmatched || [];
     if (unmatched.length) {
-      toast.error(`No match for: ${unmatched.slice(0, 3).join(", ")}${unmatched.length > 3 ? "â€¦" : ""}`);
+      toast.error(`No match for: ${unmatched.slice(0, 3).join(", ")}${unmatched.length > 3 ? "…" : ""}`);
     } else {
       toast.success(`Processed ${data.matched || 0} item(s).`);
     }
@@ -445,8 +431,16 @@ async function setAsnStatus(status) {
 async function saveTracking() {
   trackingSaveBusy.value = true;
   try {
-    const { data } = await api.put(`/asns/${asnId.value}/trackings`, { trackings: trackingDraft.value });
-    asn.value = { ...asn.value, trackings: data.trackings };
+    const boxes = Math.max(0, Number(shipmentBoxesDraft.value) || 0);
+    const pallets = Math.max(0, Number(shipmentPalletsDraft.value) || 0);
+    await api.put(`/asns/${asnId.value}/trackings`, { trackings: trackingDraft.value });
+    const { data } = await api.patch(`/asns/${asnId.value}`, {
+      total_boxes: boxes,
+      total_pallets: pallets,
+    });
+    asn.value = data;
+    shipmentBoxesDraft.value = Number(data.total_boxes) || 0;
+    shipmentPalletsDraft.value = Number(data.total_pallets) || 0;
     toast.success("Tracking saved.");
   } catch (e) {
     toast.errorFrom(e, "Could not save tracking.");
@@ -530,22 +524,16 @@ onUnmounted(() => {
 
 <template>
   <div v-if="loading" class="staff-page staff-page--wide py-5">
-    <CrmLoadingSpinner message="Loading ASNâ€¦" />
+    <CrmLoadingSpinner message="Loading ASN…" />
   </div>
   <div v-else-if="!asn" class="staff-page staff-page--wide py-5 text-secondary">ASN not found.</div>
   <div v-else class="staff-page staff-page--wide user-asn-detail-page order-detail-page admin-asn-detail-page">
-    <p class="small text-secondary mb-3">
-      <RouterLink :to="{ name: 'admin-asn-hub' }" class="text-decoration-none text-secondary">
-        â† ASN list
-      </RouterLink>
-    </p>
-
     <div class="staff-table-card staff-datatable-card staff-datatable-card--white user-asn-detail-page__header-shell mb-4">
       <div class="p-4 pb-3">
         <div class="d-flex flex-wrap justify-content-between align-items-start gap-3">
           <div class="min-w-0">
             <div class="d-flex flex-wrap align-items-center gap-2 mb-1">
-              <h1 class="h4 mb-0 fw-semibold text-body">{{ formatAsnHeading(asn.asn_number) || "â€”" }}</h1>
+              <h1 class="h4 mb-0 fw-semibold text-body">{{ formatAsnHeading(asn.asn_number) || "—" }}</h1>
               <button
                 type="button"
                 data-asn-header-actions
@@ -553,7 +541,7 @@ onUnmounted(() => {
                 :class="statusBadgeClass(asn.status)"
                 @click="toggleStatusMenu"
               >
-                {{ statusLabel(asn.status) }} â–¾
+                {{ statusLabel(asn.status) }} ▾
               </button>
             </div>
             <p class="small text-secondary mb-1 mt-2">
@@ -561,7 +549,7 @@ onUnmounted(() => {
             </p>
             <p class="small text-secondary mb-0">
               Created {{ formatDateUs(asn.created_at) }}
-              <span v-if="asn.processed_at"> Â· Processed {{ formatDateUs(asn.processed_at) }}</span>
+              <span v-if="asn.processed_at"> · Processed {{ formatDateUs(asn.processed_at) }}</span>
             </p>
           </div>
           <div class="d-flex flex-wrap gap-2 flex-shrink-0 align-items-center">
@@ -569,33 +557,14 @@ onUnmounted(() => {
               <button
                 type="button"
                 class="btn btn-outline-secondary btn-sm fw-semibold"
-                :class="{ 'is-open': actionMenuOpen }"
+                :class="{ 'is-open': headerMenuOpen }"
                 aria-haspopup="true"
-                :aria-expanded="actionMenuOpen ? 'true' : 'false'"
-                @click="toggleActionMenu"
-              >
-                Action
-              </button>
-            </div>
-            <div v-if="isPending" data-asn-header-actions class="position-relative">
-              <button
-                type="button"
-                class="btn btn-outline-secondary btn-sm fw-semibold"
-                :class="{ 'is-open': manageMenuOpen }"
-                :disabled="reopenBusy"
-                aria-haspopup="true"
-                :aria-expanded="manageMenuOpen ? 'true' : 'false'"
-                @click="toggleManageMenu"
+                :aria-expanded="headerMenuOpen ? 'true' : 'false'"
+                @click="toggleHeaderMenu"
               >
                 Manage
               </button>
             </div>
-            <RouterLink
-              :to="{ name: 'admin-asn-hub' }"
-              class="btn btn-outline-secondary btn-sm fw-semibold"
-            >
-              Back to List
-            </RouterLink>
           </div>
         </div>
       </div>
@@ -605,7 +574,7 @@ onUnmounted(() => {
       <div class="col-lg-8">
         <div v-if="isDraft" class="alert alert-info mb-4">
           This ASN is in draft. Add products and mark ready using the same flow as the client portal, or
-          reopen after pending via Manage â†’ Edit.
+          reopen after pending via Manage → Edit.
           <RouterLink
             class="ms-1"
             :to="{
@@ -628,7 +597,7 @@ onUnmounted(() => {
               :disabled="enrichBusy"
               @click="enrichSpecs(true)"
             >
-              {{ enrichBusy ? "Refreshingâ€¦" : "Refresh Specs" }}
+              {{ enrichBusy ? "Refreshing…" : "Refresh Specs" }}
             </button>
           </div>
 
@@ -701,18 +670,18 @@ onUnmounted(() => {
                           class="order-detail-page__item-name user-inv-table__sku-link text-decoration-none d-block"
                           :title="line.name"
                         >
-                          {{ line.name || "â€”" }}
+                          {{ line.name || "—" }}
                         </RouterLink>
-                        <div v-else class="order-detail-page__item-name" :title="line.name">{{ line.name || "â€”" }}</div>
+                        <div v-else class="order-detail-page__item-name" :title="line.name">{{ line.name || "—" }}</div>
                         <RouterLink
                           v-if="inventoryDetailTo(line.sku)"
                           :to="inventoryDetailTo(line.sku)"
                           class="order-detail-page__item-sku user-inv-table__sku-link text-decoration-none d-block"
                           :title="line.sku ? `SKU ${line.sku}` : undefined"
                         >
-                          SKU {{ line.sku || "â€”" }}
+                          SKU {{ line.sku || "—" }}
                         </RouterLink>
-                        <div v-else class="order-detail-page__item-sku">SKU {{ line.sku || "â€”" }}</div>
+                        <div v-else class="order-detail-page__item-sku">SKU {{ line.sku || "—" }}</div>
                         <button
                           type="button"
                           class="btn btn-link btn-sm px-0 small"
@@ -798,23 +767,22 @@ onUnmounted(() => {
           <p class="staff-table-mobile-scroll-cue d-md-none px-3" aria-hidden="true">
             Scroll sideways or swipe to see all columns.
           </p>
-
-          <div class="px-4 py-2 border-top text-end">
-            <button
-              type="button"
-              class="btn btn-link btn-sm"
-              :disabled="enrichBusy"
-              @click="enrichSpecs(true)"
-            >
-              Refresh Specs
-            </button>
-          </div>
         </div>
       </div>
 
       <div class="col-lg-4 d-flex flex-column gap-4 order-detail-page__side-column">
         <div class="staff-table-card staff-datatable-card staff-datatable-card--white p-4">
           <h3 class="h6 fw-semibold mb-3">Tracking Details</h3>
+          <div class="row g-2 mb-3">
+            <div class="col-6">
+              <label class="form-label small mb-0">Total Boxes</label>
+              <input v-model.number="shipmentBoxesDraft" type="number" min="0" class="form-control form-control-sm" />
+            </div>
+            <div class="col-6">
+              <label class="form-label small mb-0">Total Pallets</label>
+              <input v-model.number="shipmentPalletsDraft" type="number" min="0" class="form-control form-control-sm" />
+            </div>
+          </div>
           <div v-for="(t, idx) in trackingDraft" :key="'trk' + idx" class="mb-2">
             <div class="row g-1">
               <div class="col-5">
@@ -846,7 +814,7 @@ onUnmounted(() => {
         <div class="staff-table-card staff-datatable-card staff-datatable-card--white p-4">
           <h3 class="h6 fw-semibold mb-2">Note from Client</h3>
           <p class="mb-0 small text-secondary" style="white-space: pre-wrap">
-            {{ asn.warehouse_notes || "â€”" }}
+            {{ asn.warehouse_notes || "—" }}
           </p>
         </div>
 
@@ -906,36 +874,24 @@ onUnmounted(() => {
         leave-to-class="opacity-0"
       >
         <div
-          v-if="actionMenuOpen"
+          v-if="headerMenuOpen"
           data-asn-header-actions
           class="staff-row-menu fixed z-[300] overflow-hidden"
           role="menu"
-          :style="{ top: `${actionMenuRect.top}px`, left: `${actionMenuRect.left}px` }"
+          :style="{ top: `${headerMenuRect.top}px`, left: `${headerMenuRect.left}px` }"
           @click.stop
         >
           <button type="button" class="staff-row-menu__item" role="menuitem" @click="openScanFromMenu">
             Scan Items
           </button>
-        </div>
-      </Transition>
-
-      <Transition
-        enter-active-class="transition ease-out duration-100"
-        enter-from-class="opacity-0"
-        enter-to-class="opacity-100"
-        leave-active-class="transition ease-in duration-75"
-        leave-from-class="opacity-100"
-        leave-to-class="opacity-0"
-      >
-        <div
-          v-if="manageMenuOpen"
-          data-asn-header-actions
-          class="staff-row-menu fixed z-[300] overflow-hidden"
-          role="menu"
-          :style="{ top: `${manageMenuRect.top}px`, left: `${manageMenuRect.left}px` }"
-          @click.stop
-        >
-          <button type="button" class="staff-row-menu__item" role="menuitem" @click="reopenForEditFromMenu">
+          <button
+            v-if="isPending"
+            type="button"
+            class="staff-row-menu__item"
+            role="menuitem"
+            :disabled="reopenBusy"
+            @click="reopenForEditFromMenu"
+          >
             Edit
           </button>
         </div>
@@ -1075,34 +1031,37 @@ onUnmounted(() => {
 .asn-line-thumb {
   width: 40px;
   height: 40px;
+  border-radius: 0.35rem;
   object-fit: cover;
-  border-radius: 0.375rem;
+  border: 1px solid rgba(0, 0, 0, 0.08);
+  background: #fff;
   flex-shrink: 0;
 }
 
 .asn-line-thumb--empty {
-  background: var(--bs-secondary-bg);
-  border-radius: 0.375rem;
+  display: block;
+  background: rgba(0, 0, 0, 0.05);
 }
 
 .admin-asn-detail-page .order-detail-page__item-cell {
   display: flex;
-  align-items: flex-start;
-  gap: 0.75rem;
+  align-items: center;
+  gap: 0.65rem;
   min-width: 0;
 }
 
 .admin-asn-detail-page .order-detail-page__item-copy {
   min-width: 0;
-  flex: 1 1 auto;
 }
 
 .admin-asn-detail-page :deep(.table-responsive.staff-table-wrap) {
   overflow-x: auto;
   -webkit-overflow-scrolling: touch;
+  max-width: 100%;
 }
 
 .admin-asn-detail-page :deep(.staff-table-wrap .table.staff-data-table) {
+  width: 100%;
   min-width: 52rem;
 }
 
@@ -1110,20 +1069,23 @@ onUnmounted(() => {
 .admin-asn-detail-page .btn-outline-secondary:focus-visible {
   background-color: rgba(115, 103, 240, 0.06);
   border-color: rgba(115, 103, 240, 0.35);
+  color: var(--bs-body-color);
 }
 
 [data-bs-theme="dark"] .admin-asn-detail-page .btn-outline-secondary:hover:not(:disabled),
 [data-bs-theme="dark"] .admin-asn-detail-page .btn-outline-secondary:focus-visible {
   background-color: rgba(115, 103, 240, 0.12);
   border-color: rgba(186, 175, 255, 0.35);
+  color: var(--bs-body-color);
 }
 
 .admin-asn-detail-page :deep(.table.staff-data-table > thead > tr > th.admin-asn-detail-lines-actions-col),
 .admin-asn-detail-page :deep(.table.staff-data-table > tbody > tr > td.admin-asn-detail-lines-actions-cell) {
   text-align: center !important;
+  width: 7rem;
 }
 
 .admin-asn-detail-page :deep(.asn-line-qty-input) {
-  max-width: 5rem;
+  max-width: 5.5rem;
 }
 </style>

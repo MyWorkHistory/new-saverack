@@ -226,7 +226,15 @@ const detailHasRemovableHolds = computed(() => {
   return !!(h.fraud_hold || h.address_hold || h.payment_hold);
 });
 
-const detailOnlyUserHold = computed(() => {
+/** CRM-placed user hold (3PL uses operator_hold in ShipHero). */
+const detailOnlyCrmUserHold = computed(() => {
+  const h = detailHoldsNormalized.value;
+  if (!h.operator_hold) return false;
+  return !(h.fraud_hold || h.address_hold || h.payment_hold || h.client_hold || h.shipping_method_hold);
+});
+
+/** Store/channel user hold only — 3PL cannot clear via API. */
+const detailOnlyClientHold = computed(() => {
   const h = detailHoldsNormalized.value;
   if (!h.client_hold) return false;
   return !(h.fraud_hold || h.address_hold || h.payment_hold || h.operator_hold || h.shipping_method_hold);
@@ -321,13 +329,17 @@ const showBackorderHeaderBadge = computed(
     !showNotReadyToShipBanner.value,
 );
 
-const hasUserHold = computed(() => !!detailHoldsNormalized.value.client_hold);
+const hasUserHold = computed(
+  () => !!detailHoldsNormalized.value.client_hold || !!detailHoldsNormalized.value.operator_hold,
+);
 
 const canPlaceUserHold = computed(
   () => canRunShipHeroActions.value && !hasUserHold.value && !orderIsTerminalFulfillment.value,
 );
 
-const showRemoveUserHoldBtn = computed(() => hasUserHold.value && canRunShipHeroActions.value);
+const showRemoveUserHoldBtn = computed(
+  () => detailHoldsNormalized.value.operator_hold && canRunShipHeroActions.value && !detailOnlyClientHold.value,
+);
 
 const sortedItems = computed(() => {
   const rows = Array.isArray(order.value?.items) ? [...order.value.items] : [];
@@ -891,7 +903,7 @@ async function placeUserHold() {
   try {
     await api.post(`/orders/${encodeURIComponent(orderId.value)}/set-holds`, {
       client_account_id: Number(selectedAccountId.value),
-      client_hold: true,
+      operator_hold: true,
     });
     toast.success("User hold placed.");
     await loadOrder({ refresh: true });
@@ -908,7 +920,7 @@ async function removeUserHold() {
   try {
     await api.post(`/orders/${encodeURIComponent(orderId.value)}/remove-holds`, {
       client_account_id: Number(selectedAccountId.value),
-      holds_to_clear: ["client_hold"],
+      holds_to_clear: ["operator_hold"],
     });
     toast.success("User hold removed.");
     await loadOrder({ refresh: true });
@@ -1557,7 +1569,7 @@ function goToOrdersList() {
                 {{ userHoldBusy ? "Removing…" : "Remove Hold" }}
               </button>
               <button
-                v-if="showNotReadyToShipBanner && detailHasRemovableHolds && !detailOnlyUserHold"
+                v-if="showNotReadyToShipBanner && detailHasRemovableHolds && !detailOnlyCrmUserHold"
                 type="button"
                 class="btn btn-danger text-white"
                 :disabled="!canRunShipHeroActions || removeHoldsBusy"
@@ -1586,8 +1598,11 @@ function goToOrdersList() {
               <ul class="small mb-0 ps-3 mt-2 text-secondary order-detail-page__nrts-list">
                 <li v-for="(line, idx) in notReadyBannerBullets" :key="'nrts-' + idx">{{ line }}</li>
               </ul>
-              <p v-if="detailOnlyUserHold && showRemoveUserHoldBtn" class="small text-secondary mb-0 mt-3">
-                User hold is active — use Remove Hold to release.
+              <p v-if="detailOnlyClientHold" class="small text-secondary mb-0 mt-3">
+                This user hold was set outside Save Rack. Clear it in ShipHero or your sales channel.
+              </p>
+              <p v-else-if="detailOnlyCrmUserHold && showRemoveUserHoldBtn" class="small text-secondary mb-0 mt-3">
+                User hold is active — use Remove Hold to release. ShipHero may label this hold as Operator Hold.
               </p>
             </div>
           </div>
@@ -2234,7 +2249,7 @@ function goToOrdersList() {
                   ? 'Order already has a user hold.'
                   : orderIsTerminalFulfillment
                     ? 'Cannot place hold on a shipped or canceled order.'
-                    : undefined
+                    : 'ShipHero may show this hold as Operator Hold for 3PL accounts.'
             "
             @click="
               closeMoreActionsMenu();

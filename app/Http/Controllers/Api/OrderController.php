@@ -598,7 +598,7 @@ class OrderController extends Controller
 
             return response()->json(['message' => 'Holds applied.']);
         } catch (RuntimeException $e) {
-            return response()->json(['message' => $e->getMessage()], 502);
+            return $this->shipHeroOrderRuntimeErrorResponse($e);
         } catch (Throwable $e) {
             report($e);
 
@@ -614,23 +614,27 @@ class OrderController extends Controller
         $validated = $request->validate([
             'client_account_id' => ['required', 'integer', 'exists:client_accounts,id'],
             'holds_to_clear' => ['nullable', 'array', 'min:1'],
-            'holds_to_clear.*' => ['string', Rule::in(ShipHeroOrderService::orderRemovableHoldKeys())],
+            'holds_to_clear.*' => ['string', Rule::in(array_merge(
+                ShipHeroOrderService::orderRemovableHoldKeys(),
+                [ShipHeroOrderService::ORDER_USER_HOLD_DISPLAY_KEY]
+            ))],
             'payment_hold_reason' => ['nullable', 'string', 'max:500'],
         ]);
         $customerId = $this->resolveShipHeroCustomerAccountId((int) $validated['client_account_id'], $request);
         try {
-            $holds = $this->orders->getOrderHoldsNormalized($orderId, $customerId);
+            $headerContext = $this->orders->resolveOrderHeaderForMutation($orderId, $customerId);
+            $holds = $headerContext['holds'];
             $keysToClear = isset($validated['holds_to_clear']) && is_array($validated['holds_to_clear'])
                 ? array_values(array_unique($validated['holds_to_clear']))
                 : [];
             if ($keysToClear === []) {
-                if ($this->orders->orderHoldsOnlyOperatorHoldActive($holds)) {
+                if ($this->orders->orderHoldsOnlyClientHoldActive($holds)) {
                     return response()->json([
-                        'message' => ShipHeroOrderService::OPERATOR_HOLD_ONLY_MESSAGE,
+                        'message' => ShipHeroOrderService::CLIENT_HOLD_3PL_MESSAGE,
                     ], 422);
                 }
                 if ($this->orders->orderHoldsOnlyUserHoldActive($holds)) {
-                    $this->orders->clearUserHold($orderId, $customerId);
+                    $this->orders->clearUserHold($orderId, $customerId, $headerContext);
 
                     return response()->json(['message' => 'Holds cleared.']);
                 }
@@ -639,15 +643,20 @@ class OrderController extends Controller
                 return response()->json(['message' => 'Holds cleared.']);
             }
 
-            $clearUserHold = in_array(ShipHeroOrderService::ORDER_USER_HOLD_KEY, $keysToClear, true);
+            $clearUserHold = $this->requestWantsClearUserHold($keysToClear);
             $clearableKeys = array_values(array_filter(
                 $keysToClear,
                 static fn (string $k): bool => in_array($k, ShipHeroOrderService::ORDER_CLEARABLE_HOLD_KEYS, true)
             ));
 
             if ($clearUserHold) {
-                $this->orders->clearUserHold($orderId, $customerId);
-                $holds = $this->orders->getOrderHoldsNormalized($orderId, $customerId);
+                if ($this->orders->orderHoldsOnlyClientHoldActive($holds)) {
+                    return response()->json([
+                        'message' => ShipHeroOrderService::CLIENT_HOLD_3PL_MESSAGE,
+                    ], 422);
+                }
+                $this->orders->clearUserHold($orderId, $customerId, $headerContext);
+                $holds[ShipHeroOrderService::ORDER_USER_HOLD_MUTATION_KEY] = false;
             }
 
             if ($clearableKeys !== []) {
@@ -660,7 +669,7 @@ class OrderController extends Controller
 
             return response()->json(['message' => 'Holds cleared.']);
         } catch (RuntimeException $e) {
-            return response()->json(['message' => $e->getMessage()], 502);
+            return $this->shipHeroOrderRuntimeErrorResponse($e);
         } catch (Throwable $e) {
             report($e);
 
@@ -858,7 +867,7 @@ class OrderController extends Controller
 
             return response()->json(['message' => 'Line items added.']);
         } catch (RuntimeException $e) {
-            return response()->json(['message' => $e->getMessage()], 502);
+            return $this->shipHeroOrderRuntimeErrorResponse($e);
         } catch (Throwable $e) {
             report($e);
 
@@ -1348,19 +1357,20 @@ class OrderController extends Controller
         foreach ($orderIds as $oid) {
             try {
                 $holds = $this->orders->getOrderHoldsNormalized($oid, $customerId);
-                if ($this->orders->orderHoldsOnlyOperatorHoldActive($holds)) {
-                    $results[] = [
-                        'order_id' => $oid,
-                        'ok' => false,
-                        'message' => ShipHeroOrderService::OPERATOR_HOLD_ONLY_MESSAGE,
-                    ];
-                    $failed++;
-
-                    continue;
-                }
                 if ($keysToClear === []) {
+                    if ($this->orders->orderHoldsOnlyClientHoldActive($holds)) {
+                        $results[] = [
+                            'order_id' => $oid,
+                            'ok' => false,
+                            'message' => ShipHeroOrderService::CLIENT_HOLD_3PL_MESSAGE,
+                        ];
+                        $failed++;
+
+                        continue;
+                    }
                     if ($this->orders->orderHoldsOnlyUserHoldActive($holds)) {
-                        $this->orders->clearUserHold($oid, $customerId);
+                        $ctx = $this->orders->resolveOrderHeaderForMutation($oid, $customerId);
+                        $this->orders->clearUserHold($oid, $customerId, $ctx);
                     } else {
                         $this->orders->clearOrderHolds($oid, $customerId);
                     }
@@ -1544,6 +1554,33 @@ class OrderController extends Controller
             'items' => [],
             'history' => [],
         ];
+    }
+
+    /**
+     * @param  list<string>  $keysToClear
+     */
+    private function requestWantsClearUserHold(array $keysToClear): bool
+    {
+        return in_array(ShipHeroOrderService::ORDER_USER_HOLD_MUTATION_KEY, $keysToClear, true)
+            || in_array(ShipHeroOrderService::ORDER_USER_HOLD_DISPLAY_KEY, $keysToClear, true);
+    }
+
+    private function shipHeroOrderRuntimeErrorResponse(RuntimeException $e): JsonResponse
+    {
+        $message = $e->getMessage();
+        $lower = strtolower($message);
+        $status = 502;
+        if (str_contains($lower, '3pl cannot')
+            || str_contains($lower, 'does not exist')
+            || str_contains($lower, 'not found in shiphero')
+            || $message === ShipHeroOrderService::NO_MATCHING_HOLDS_MESSAGE
+            || $message === ShipHeroOrderService::CLIENT_HOLD_3PL_MESSAGE
+            || $message === ShipHeroOrderService::OPERATOR_HOLD_ONLY_MESSAGE
+            || str_contains($lower, 'select at least one hold')) {
+            $status = 422;
+        }
+
+        return response()->json(['message' => $message], $status);
     }
 }
 

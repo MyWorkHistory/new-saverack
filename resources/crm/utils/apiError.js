@@ -48,8 +48,14 @@ export function errorMessage(e, fallback = "Something Went Wrong.") {
   if (typeof d.message === "string" && d.message) {
     return humanizeValidationMessage(d.message) || fallback;
   }
+  if (typeof d.detail === "string" && d.detail) {
+    return d.detail;
+  }
   if (d.error && typeof d.error === "string") {
     return d.error;
+  }
+  if (d.cloudflare_error === true && typeof d.title === "string" && d.title) {
+    return d.title;
   }
   return fallback;
 }

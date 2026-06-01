@@ -133,24 +133,24 @@ const somePageSelected = computed(() => {
   return ids.some((id) => selectedOrderIds.value.has(id));
 });
 
-/** Holds that “Remove Hold” can affect via ShipHero (operator hold is warehouse-only). */
+/** Holds that “Remove Hold” can affect via ShipHero (CRM user hold uses operator_hold). */
 function rowHasRemovableHolds(row) {
   const h = row?.holds && typeof row.holds === "object" ? row.holds : {};
-  return !!(h.fraud_hold || h.address_hold || h.payment_hold || h.client_hold);
+  return !!(h.fraud_hold || h.address_hold || h.payment_hold || h.operator_hold);
 }
 
-/** Only user hold (client_hold) is active. */
-function rowOnlyUserHold(row) {
-  const h = row?.holds && typeof row.holds === "object" ? row.holds : {};
-  if (!h.client_hold) return false;
-  return !(h.fraud_hold || h.address_hold || h.payment_hold || h.operator_hold || h.shipping_method_hold);
-}
-
-/** Only operator hold is active — cannot clear from CRM. */
-function rowOnlyOperatorHold(row) {
+/** Only CRM-placed user hold (operator_hold) is active. */
+function rowOnlyCrmUserHold(row) {
   const h = row?.holds && typeof row.holds === "object" ? row.holds : {};
   if (!h.operator_hold) return false;
   return !(h.fraud_hold || h.address_hold || h.payment_hold || h.client_hold || h.shipping_method_hold);
+}
+
+/** Only store client_hold — 3PL cannot clear via API. */
+function rowOnlyClientHold(row) {
+  const h = row?.holds && typeof row.holds === "object" ? row.holds : {};
+  if (!h.client_hold) return false;
+  return !(h.fraud_hold || h.address_hold || h.payment_hold || h.operator_hold || h.shipping_method_hold);
 }
 
 const accountOptions = computed(() => {
@@ -727,7 +727,7 @@ function closeRemoveHoldsModal() {
 
 function openBulkRemoveHoldsModal() {
   const rows = selectedRowsList();
-  if (rows.length > 0 && rows.every((r) => rowOnlyUserHold(r))) {
+  if (rows.length > 0 && rows.every((r) => rowOnlyCrmUserHold(r))) {
     runBulkRemoveUserHold();
     return;
   }
@@ -768,7 +768,7 @@ async function runSingleRemoveUserHold(row) {
   try {
     await api.post(`/orders/${encodeURIComponent(String(row.id))}/remove-holds`, {
       client_account_id: accountId,
-      holds_to_clear: ["client_hold"],
+      holds_to_clear: ["operator_hold"],
     });
     toast.success("User hold removed.");
     await fetchOrders(true);
@@ -783,13 +783,13 @@ async function runSinglePlaceUserHold(row) {
   const accountId = effectiveClientAccountId(row);
   if (!accountId || !row?.id) return;
   const h = row?.holds && typeof row.holds === "object" ? row.holds : {};
-  if (h.client_hold) return;
+  if (h.client_hold || h.operator_hold) return;
   manageOpenId.value = null;
   bulkBusy.value = true;
   try {
     await api.post(`/orders/${encodeURIComponent(String(row.id))}/set-holds`, {
       client_account_id: accountId,
-      client_hold: true,
+      operator_hold: true,
     });
     toast.success("User hold placed.");
     await fetchOrders(true);
@@ -1444,7 +1444,7 @@ onUnmounted(() => {
         </template>
         <template v-else>
           <button
-            v-if="canWriteOrders && tabKey === 'awaiting' && !manageMenuRow?.holds?.client_hold"
+            v-if="canWriteOrders && tabKey === 'awaiting' && !manageMenuRow?.holds?.client_hold && !manageMenuRow?.holds?.operator_hold"
             class="staff-row-menu__item"
             role="menuitem"
             @click="runSinglePlaceUserHold(manageMenuRow)"
@@ -1472,17 +1472,17 @@ onUnmounted(() => {
             v-if="canWriteOrders && rowHasRemovableHolds(manageMenuRow)"
             class="staff-row-menu__item"
             role="menuitem"
-            @click="rowOnlyUserHold(manageMenuRow) ? runSingleRemoveUserHold(manageMenuRow) : openSingleRemoveHoldsModal(manageMenuRow)"
+            @click="rowOnlyCrmUserHold(manageMenuRow) ? runSingleRemoveUserHold(manageMenuRow) : openSingleRemoveHoldsModal(manageMenuRow)"
           >
             Remove Hold
           </button>
           <button
-            v-if="canWriteOrders && rowOnlyOperatorHold(manageMenuRow)"
+            v-if="canWriteOrders && rowOnlyClientHold(manageMenuRow)"
             type="button"
             class="staff-row-menu__item text-start"
             role="menuitem"
             disabled
-            title="Contact your account manager about the operator hold on this order."
+            title="This user hold was set outside Save Rack. Clear it in ShipHero or your sales channel."
           >
             Remove Hold
           </button>
@@ -1561,6 +1561,7 @@ onUnmounted(() => {
               <div class="crm-vx-modal__body pt-0">
                 <p class="small text-secondary mb-3">
                   Apply to <strong>{{ addHoldTargetIds.length }}</strong> order{{ addHoldTargetIds.length === 1 ? "" : "s" }}. Only checked hold types are set in ShipHero.
+                  User Hold may appear as Operator Hold in ShipHero for 3PL accounts.
                 </p>
                 <div class="form-check mb-2">
                   <input id="orders-add-hold-fraud" v-model="addHoldFlags.fraud_hold" class="form-check-input" type="checkbox" />

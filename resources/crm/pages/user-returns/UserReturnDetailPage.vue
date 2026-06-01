@@ -22,6 +22,7 @@ const warehouseNote = ref("");
 
 const returnId = computed(() => String(route.params.id || ""));
 const accountName = computed(() => String(ret.value?.client_account_company_name || "").trim() || "Save Rack");
+const recipientName = computed(() => String(ret.value?.customer_name || "").trim());
 const warehouseLines = computed(() => {
   const addr = ret.value?.return_warehouse_address || {};
   return [addr.line1, addr.line2].filter((l) => String(l || "").trim() !== "");
@@ -121,6 +122,9 @@ onMounted(() => {
                 {{ returnStatusLabel(ret.status) }}
               </span>
             </div>
+            <p class="small text-secondary mb-0 mt-2">
+              Recipient: {{ recipientName || "—" }}
+            </p>
             <button
               type="button"
               class="btn btn-link btn-sm text-secondary px-0 py-0 mt-2 text-decoration-none"

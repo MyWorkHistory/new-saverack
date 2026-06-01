@@ -135,8 +135,10 @@ class ClientAccountController extends Controller
 
     public function show(ClientAccount $client_account): JsonResponse
     {
+        $this->clientAccounts->ensureDefaultFeeItems($client_account);
         $client_account->loadCount(['stores', 'accountUsers']);
         $client_account->load([
+            'feeItems',
             'comments' => fn ($q) => $q
                 ->with(['user:id,name,email', 'user.profile:id,user_id,avatar_path'])
                 ->orderBy('created_at'),

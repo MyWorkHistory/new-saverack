@@ -121,4 +121,62 @@ class PricingFeeTemplateApiTest extends TestCase
             'amount' => 3.5,
         ])->assertForbidden();
     }
+
+    public function test_admin_can_update_fee_via_multipart_post_with_method_spoof(): void
+    {
+        $this->actingAsAdmin();
+
+        $template = PricingFeeTemplate::query()->create([
+            'name' => 'Before Update',
+            'description' => 'Old desc',
+            'category' => PricingFeeTemplate::CATEGORY_FULFILLMENT,
+            'amount' => 1.25,
+            'sort_order' => 0,
+        ]);
+
+        $response = $this->post('/api/settings/pricing-fees/'.$template->id, [
+            '_method' => 'PATCH',
+            'name' => 'After Update',
+            'description' => 'New desc',
+            'category' => PricingFeeTemplate::CATEGORY_RECEIVING,
+            'amount' => 4.5,
+        ]);
+
+        $response->assertOk();
+        $response->assertJsonPath('name', 'After Update');
+        $response->assertJsonPath('description', 'New desc');
+        $response->assertJsonPath('category', PricingFeeTemplate::CATEGORY_RECEIVING);
+        $response->assertJsonPath('amount', 4.5);
+
+        $template->refresh();
+        $this->assertSame('After Update', $template->name);
+        $this->assertSame('New desc', $template->description);
+        $this->assertSame(PricingFeeTemplate::CATEGORY_RECEIVING, $template->category);
+        $this->assertSame('4.5000', $template->amount);
+    }
+
+    public function test_admin_can_clear_description_via_multipart_post_with_method_spoof(): void
+    {
+        $this->actingAsAdmin();
+
+        $template = PricingFeeTemplate::query()->create([
+            'name' => 'With Desc',
+            'description' => 'To clear',
+            'category' => PricingFeeTemplate::CATEGORY_STORAGE,
+            'amount' => 2,
+            'sort_order' => 0,
+        ]);
+
+        $this->post('/api/settings/pricing-fees/'.$template->id, [
+            '_method' => 'PATCH',
+            'name' => 'With Desc',
+            'description' => '',
+            'category' => PricingFeeTemplate::CATEGORY_STORAGE,
+            'amount' => 2,
+        ])
+            ->assertOk()
+            ->assertJsonPath('description', null);
+
+        $this->assertNull($template->fresh()->description);
+    }
 }

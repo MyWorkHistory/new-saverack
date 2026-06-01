@@ -97,6 +97,11 @@ $vx-modal-primary: #2563eb;
   max-height: min(96dvh, 960px);
 }
 
+.crm-vx-modal--pricing-fee {
+  max-width: 32rem;
+  max-height: min(90dvh, 640px);
+}
+
 .crm-vx-modal__close {
   position: absolute;
   top: 1rem;

@@ -38,18 +38,6 @@ const canUpdate = computed(() => {
   return Array.isArray(u.permission_keys) && u.permission_keys.includes("settings.update");
 });
 
-const filteredFees = computed(() => {
-  const q = search.value.trim().toLowerCase();
-  return fees.value.filter((f) => {
-    if (categoryFilter.value !== "all" && f.category !== categoryFilter.value) {
-      return false;
-    }
-    if (!q) return true;
-    const hay = `${f.name ?? ""} ${f.description ?? ""}`.toLowerCase();
-    return hay.includes(q);
-  });
-});
-
 function formatPrice(amount) {
   const n = Number(amount);
   if (!Number.isFinite(n)) return "$0.00";
@@ -132,35 +120,41 @@ function closeModal() {
   }
 }
 
-function buildFormData(payload) {
+function buildFormData(payload, forUpdate = false) {
   const fd = new FormData();
   fd.append("name", payload.name);
-  if (payload.description) fd.append("description", payload.description);
+  fd.append("description", payload.description ?? "");
   fd.append("category", payload.category);
   fd.append("amount", String(payload.amount));
   if (payload.icon) fd.append("icon", payload.icon);
   if (payload.remove_icon) fd.append("remove_icon", "1");
+  if (forUpdate) {
+    fd.append("_method", "PATCH");
+  }
   return fd;
 }
 
 async function onSave(payload) {
   if (!canUpdate.value) return;
+  const hadFilters = search.value.trim() !== "" || categoryFilter.value !== "all";
   saving.value = true;
   try {
-    const fd = buildFormData(payload);
+    const filterNote = hadFilters ? " Filters were reset so you can see the saved fee." : "";
     if (editingFee.value?.id) {
-      await api.patch(`/settings/pricing-fees/${editingFee.value.id}`, fd, {
-        headers: { "Content-Type": "multipart/form-data" },
-      });
-      toast.success("Fee updated.");
+      const fd = buildFormData(payload, true);
+      await api.post(`/settings/pricing-fees/${editingFee.value.id}`, fd);
+      toast.success(`Fee updated.${filterNote}`);
     } else {
-      await api.post("/settings/pricing-fees", fd, {
-        headers: { "Content-Type": "multipart/form-data" },
-      });
-      toast.success("Fee created.");
+      const fd = buildFormData(payload, false);
+      await api.post("/settings/pricing-fees", fd);
+      toast.success(`Fee created.${filterNote}`);
     }
     modalOpen.value = false;
     editingFee.value = null;
+    if (hadFilters) {
+      search.value = "";
+      categoryFilter.value = "all";
+    }
     await fetchFees();
   } catch (e) {
     toast.errorFrom(e, "Could not save fee.");
@@ -296,14 +290,14 @@ onUnmounted(() => {
         <CrmLoadingSpinner message="Loading pricing fees…" />
       </div>
 
-      <div v-else-if="!filteredFees.length" class="text-center text-secondary py-5 px-3">
+      <div v-else-if="!fees.length" class="text-center text-secondary py-5 px-3">
         <p class="mb-0">No fees match your filters.</p>
       </div>
 
       <div v-else class="staff-table-wrap">
         <div class="p-3 p-md-4">
           <div class="settings-pricing-cards">
-          <div v-for="fee in filteredFees" :key="fee.id">
+          <div v-for="fee in fees" :key="fee.id">
             <article class="card h-100 staff-surface border-0 shadow-sm">
               <div class="card-body d-flex flex-column">
                 <div class="d-flex align-items-start gap-3 mb-2">

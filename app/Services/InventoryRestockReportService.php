@@ -11,9 +11,13 @@ use Throwable;
 
 class InventoryRestockReportService
 {
-    public function __construct(
-        private readonly ShipHeroInventoryService $inventory
-    ) {}
+    /** @var ShipHeroInventoryService */
+    protected $inventory;
+
+    public function __construct(ShipHeroInventoryService $inventory)
+    {
+        $this->inventory = $inventory;
+    }
 
     public function resolveWarehouseId(?string $warehouseId = null): string
     {

@@ -205,9 +205,11 @@ class InventoryRestockReportService
      */
     private function serializeSnapshot(InventoryRestockSnapshot $row): array
     {
+        $computedAt = $row->computed_at;
+
         return [
             'warehouse_id' => $row->warehouse_id,
-            'computed_at' => $row->computed_at?->toIso8601String(),
+            'computed_at' => $computedAt !== null ? $computedAt->toIso8601String() : null,
             'rows' => is_array($row->rows) ? $row->rows : [],
             'row_count' => (int) $row->row_count,
             'status' => (string) $row->status,

@@ -108,6 +108,7 @@ class OrderShipmentTracking
                 }
                 $labels[] = [
                     'id' => (string) ($label['id'] ?? $trackingNumber),
+                    'carrier_display' => self::resolveCarrierDisplay($carrier, $shippingName),
                     'service_label' => $serviceLabel,
                     'tracking_number' => $trackingNumber,
                     'tracking_url' => self::buildTrackingUrl(
@@ -138,6 +139,35 @@ class OrderShipmentTracking
         }
 
         return strpos($status, 'void') !== false;
+    }
+
+    public static function resolveCarrierDisplay(string $carrier, string $shippingName = ''): string
+    {
+        $fromCarrier = self::formatCarrierSlug($carrier);
+        if ($fromCarrier !== '') {
+            return $fromCarrier;
+        }
+
+        $name = trim($shippingName);
+        if ($name === '') {
+            return '';
+        }
+
+        if (self::isUspsFamily('', $name)) {
+            return 'USPS';
+        }
+        $blob = strtolower($name);
+        if (strpos($blob, 'ups') !== false) {
+            return 'UPS';
+        }
+        if (strpos($blob, 'fedex') !== false) {
+            return 'FedEx';
+        }
+        if (strpos($blob, 'dhl') !== false) {
+            return 'DHL';
+        }
+
+        return '';
     }
 
     public static function buildServiceLabel(string $carrier, string $shippingName, string $shippingMethod): string

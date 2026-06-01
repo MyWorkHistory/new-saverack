@@ -803,8 +803,13 @@ query ShipHeroOrdersByIds($ids: [String], $customer_account_id: String!, $first:
             created_date
             shipped_off_shiphero
             shipping_labels {
+              id
               status
-              created_date
+              tracking_number
+              carrier
+              shipping_name
+              shipping_method
+              tracking_url
             }
           }
           shipping_address {
@@ -2270,6 +2275,10 @@ GQL;
             $recipient = '—';
         }
 
+        $trackingPayload = OrderShipmentTracking::fromShipHeroShipments(
+            is_array($node['shipments'] ?? null) ? $node['shipments'] : []
+        );
+
         return [
             'id' => (string) ($node['id'] ?? ''),
             'legacy_id' => is_numeric($node['legacy_id'] ?? null) ? (int) $node['legacy_id'] : null,
@@ -2294,6 +2303,7 @@ GQL;
             'method' => (string) ($shippingLine['method'] ?? ''),
             'shipping_method_title' => trim((string) ($shippingLine['title'] ?? '')),
             'email' => (string) ($node['email'] ?? ''),
+            'tracking_labels' => $trackingPayload['labels'],
         ];
     }
 

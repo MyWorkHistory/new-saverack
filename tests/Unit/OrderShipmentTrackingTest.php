@@ -34,6 +34,7 @@ class OrderShipmentTrackingTest extends TestCase
         ]);
 
         $this->assertCount(1, $result['labels']);
+        $this->assertSame('USPS', $result['labels'][0]['carrier_display']);
         $this->assertSame('USPS Priority Mail', $result['labels'][0]['service_label']);
         $this->assertSame(
             'https://tools.usps.com/tracking/?strOrigTrackNum=9405550105800027557451',
@@ -66,6 +67,33 @@ class OrderShipmentTrackingTest extends TestCase
         ]);
 
         $this->assertCount(2, $result['labels']);
+        $this->assertSame('UPS', $result['labels'][0]['carrier_display']);
+        $this->assertSame('UPS', $result['labels'][1]['carrier_display']);
         $this->assertSame(5.5, $result['total_label_cost']);
+    }
+
+    public function test_carrier_display_from_shipping_name_when_carrier_empty(): void
+    {
+        $result = OrderShipmentTracking::fromShipHeroShipments([
+            [
+                'shipping_labels' => [
+                    [
+                        'id' => 'live-1',
+                        'tracking_number' => '9405550105800027557451',
+                        'carrier' => '',
+                        'shipping_name' => 'USPS Priority Mail',
+                    ],
+                ],
+            ],
+        ]);
+
+        $this->assertCount(1, $result['labels']);
+        $this->assertSame('USPS', $result['labels'][0]['carrier_display']);
+    }
+
+    public function test_resolve_carrier_display_maps_endicia_to_usps(): void
+    {
+        $this->assertSame('USPS', OrderShipmentTracking::resolveCarrierDisplay('endicia', ''));
+        $this->assertSame('USPS', OrderShipmentTracking::resolveCarrierDisplay('', 'USPS Priority Mail'));
     }
 }

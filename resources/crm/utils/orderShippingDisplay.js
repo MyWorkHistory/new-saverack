@@ -40,6 +40,31 @@ export function formatCarrierLabel(carrier) {
   return raw;
 }
 
+/**
+ * @param {Record<string, unknown>|null|undefined} label
+ * @returns {{ carrier: string, trackingNumber: string, trackingUrl: string|null }}
+ */
+export function formatCarrierTrackingLine(label) {
+  const carrier = String(label?.carrier_display ?? "").trim() || "—";
+  const trackingNumber = String(label?.tracking_number ?? "").trim() || "—";
+  const trackingUrl = String(label?.tracking_url ?? "").trim() || null;
+
+  return {
+    carrier,
+    trackingNumber,
+    trackingUrl: trackingUrl && /^https?:\/\//i.test(trackingUrl) ? trackingUrl : null,
+  };
+}
+
+/**
+ * @param {Record<string, unknown>|null|undefined} label
+ * @returns {string}
+ */
+export function formatCarrierTrackingText(label) {
+  const { carrier, trackingNumber } = formatCarrierTrackingLine(label);
+  return `${carrier} | ${trackingNumber}`;
+}
+
 /** ShipHero API carrier slug from UI preset label. */
 export function carrierForApi(carrier) {
   const raw = String(carrier ?? "").trim();

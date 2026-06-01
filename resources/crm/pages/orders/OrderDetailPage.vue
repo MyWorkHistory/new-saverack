@@ -14,6 +14,7 @@ import { canWriteShipHeroOrders } from "../../utils/crmShipHeroOrders";
 import {
   carrierForApi,
   formatCarrierLabel,
+  formatCarrierTrackingLine,
   formatCurrentShippingMethod,
 } from "../../utils/orderShippingDisplay.js";
 
@@ -328,6 +329,14 @@ const showBackorderHeaderBadge = computed(
     !orderIsTerminalFulfillment.value &&
     !showNotReadyToShipBanner.value,
 );
+
+const shipheroAdminUrl = computed(() => {
+  const legacyId = order.value?.legacy_id;
+  if (legacyId == null || legacyId === "") return null;
+  const n = Number(legacyId);
+  if (!Number.isFinite(n) || n <= 0) return null;
+  return `https://app.shiphero.com/dashboard/orders/details/${n}`;
+});
 
 const hasUserHold = computed(
   () => !!detailHoldsNormalized.value.client_hold || !!detailHoldsNormalized.value.operator_hold,
@@ -1498,13 +1507,13 @@ function goToOrdersList() {
               <div class="d-flex align-items-center flex-wrap gap-2">
                 <h1 class="h4 mb-0 fw-bold text-body">Order {{ headingOrderNumber }}</h1>
                 <a
-                  v-if="order.shopify_admin_url"
-                  :href="order.shopify_admin_url"
+                  v-if="shipheroAdminUrl"
+                  :href="shipheroAdminUrl"
                   target="_blank"
                   rel="noopener noreferrer"
                   class="small text-primary text-decoration-none order-detail-page__shopify-header-link"
                 >
-                  View in Shopify
+                  View in ShipHero
                 </a>
                 <span
                   v-if="showOrderHeaderBadge"
@@ -1830,17 +1839,20 @@ function goToOrdersList() {
                     :key="label.id || `${label.service_label}-${label.tracking_number}`"
                     class="order-detail-page__tracking-line small text-body mb-2"
                   >
-                    <span class="fw-semibold">{{ label.service_label }}:</span>
-                    <a
-                      v-if="label.tracking_url"
-                      :href="label.tracking_url"
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      class="text-primary text-decoration-none ms-1"
-                    >
-                      {{ label.tracking_number }}
-                    </a>
-                    <span v-else class="ms-1">{{ label.tracking_number }}</span>
+                    <template v-for="parts in [formatCarrierTrackingLine(label)]" :key="parts.trackingNumber">
+                      <span class="fw-semibold">{{ parts.carrier }}</span>
+                      <span class="text-secondary mx-1">|</span>
+                      <a
+                        v-if="parts.trackingUrl"
+                        :href="parts.trackingUrl"
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        class="text-primary text-decoration-none"
+                      >
+                        {{ parts.trackingNumber }}
+                      </a>
+                      <span v-else>{{ parts.trackingNumber }}</span>
+                    </template>
                   </div>
                 </div>
                 <p v-else class="small text-secondary mb-0">No tracking information available.</p>
@@ -1904,16 +1916,16 @@ function goToOrdersList() {
               <dd>{{ fmtCreationDate(order.order_date) }}</dd>
               <dt class="text-secondary">Store</dt>
               <dd class="text-break">{{ order.account || "—" }}</dd>
-              <template v-if="order.shopify_admin_url">
-                <dt class="text-secondary mt-2">Shopify</dt>
+              <template v-if="shipheroAdminUrl">
+                <dt class="text-secondary mt-2">ShipHero</dt>
                 <dd>
                   <a
-                    :href="order.shopify_admin_url"
+                    :href="shipheroAdminUrl"
                     target="_blank"
                     rel="noopener noreferrer"
                     class="small text-primary text-decoration-none"
                   >
-                    View in Shopify
+                    View in ShipHero
                   </a>
                 </dd>
               </template>

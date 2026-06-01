@@ -10,7 +10,10 @@ import OrdersRemoveHoldsModal from "../../components/orders/OrdersRemoveHoldsMod
 import { setCrmPageMeta } from "../../composables/useCrmPageMeta.js";
 import { useToast } from "../../composables/useToast.js";
 import { canWriteShipHeroOrders } from "../../utils/crmShipHeroOrders";
-import { formatCurrentShippingMethod } from "../../utils/orderShippingDisplay.js";
+import {
+  formatCarrierTrackingLine,
+  formatCurrentShippingMethod,
+} from "../../utils/orderShippingDisplay.js";
 
 const props = defineProps({
   /** When true, hide account picker and link orders to portal detail route. */
@@ -316,6 +319,13 @@ function rowDisplayDate(row) {
 }
 
 const orderDateColumnLabel = computed(() => (isShippedTab.value ? "Ship Date" : "Order Date"));
+
+const shippingColumnLabel = computed(() => (isShippedTab.value ? "Tracking" : "Current Shipping Method"));
+
+function rowTrackingLabels(row) {
+  const labels = row?.tracking_labels;
+  return Array.isArray(labels) ? labels : [];
+}
 
 function toDateInput(d) {
   const year = d.getFullYear();
@@ -1345,7 +1355,7 @@ onUnmounted(() => {
               <th class="staff-table-head__th">{{ orderDateColumnLabel }}</th>
               <th class="staff-table-head__th">Account</th>
               <th class="staff-table-head__th">Country</th>
-              <th class="staff-table-head__th">Current Shipping Method</th>
+              <th class="staff-table-head__th">{{ shippingColumnLabel }}</th>
               <th class="staff-table-head__th text-center">Action</th>
             </tr>
           </thead>
@@ -1406,13 +1416,40 @@ onUnmounted(() => {
               <td>{{ row.client_account_company_name || row.account || "—" }}</td>
               <td>{{ row.country || "—" }}</td>
               <td>
-                {{
-                  formatCurrentShippingMethod(
-                    row.shipping_carrier,
-                    row.method,
-                    row.shipping_method_title,
-                  )
-                }}
+                <template v-if="isShippedTab">
+                  <template v-if="rowTrackingLabels(row).length">
+                    <template v-for="label in rowTrackingLabels(row)" :key="label.id || `${label.carrier_display}-${label.tracking_number}`">
+                      <div
+                        v-for="parts in [formatCarrierTrackingLine(label)]"
+                        :key="parts.trackingNumber"
+                        class="small text-body mb-1 last:mb-0"
+                      >
+                        <span class="fw-semibold">{{ parts.carrier }}</span>
+                        <span class="text-secondary mx-1">|</span>
+                        <a
+                          v-if="parts.trackingUrl"
+                          :href="parts.trackingUrl"
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          class="text-primary text-decoration-none"
+                        >
+                          {{ parts.trackingNumber }}
+                        </a>
+                        <span v-else>{{ parts.trackingNumber }}</span>
+                      </div>
+                    </template>
+                  </template>
+                  <span v-else class="text-secondary">—</span>
+                </template>
+                <template v-else>
+                  {{
+                    formatCurrentShippingMethod(
+                      row.shipping_carrier,
+                      row.method,
+                      row.shipping_method_title,
+                    )
+                  }}
+                </template>
               </td>
               <td class="text-center">
                 <div data-row-actions class="staff-actions-inner staff-actions-inner--single justify-content-center">

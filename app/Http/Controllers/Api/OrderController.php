@@ -629,19 +629,24 @@ class OrderController extends Controller
                         'message' => ShipHeroOrderService::OPERATOR_HOLD_ONLY_MESSAGE,
                     ], 422);
                 }
+                if ($this->orders->orderHoldsOnlyUserHoldActive($holds)) {
+                    $this->orders->clearUserHold($orderId, $customerId);
+
+                    return response()->json(['message' => 'Holds cleared.']);
+                }
                 $this->orders->clearOrderHolds($orderId, $customerId);
 
                 return response()->json(['message' => 'Holds cleared.']);
             }
 
-            $clearOperator = in_array(ShipHeroOrderService::ORDER_USER_HOLD_KEY, $keysToClear, true);
+            $clearUserHold = in_array(ShipHeroOrderService::ORDER_USER_HOLD_KEY, $keysToClear, true);
             $clearableKeys = array_values(array_filter(
                 $keysToClear,
                 static fn (string $k): bool => in_array($k, ShipHeroOrderService::ORDER_CLEARABLE_HOLD_KEYS, true)
             ));
 
-            if ($clearOperator) {
-                $this->orders->clearOperatorHold($orderId, $customerId);
+            if ($clearUserHold) {
+                $this->orders->clearUserHold($orderId, $customerId);
                 $holds = $this->orders->getOrderHoldsNormalized($orderId, $customerId);
             }
 
@@ -1354,7 +1359,11 @@ class OrderController extends Controller
                     continue;
                 }
                 if ($keysToClear === []) {
-                    $this->orders->clearOrderHolds($oid, $customerId);
+                    if ($this->orders->orderHoldsOnlyUserHoldActive($holds)) {
+                        $this->orders->clearUserHold($oid, $customerId);
+                    } else {
+                        $this->orders->clearOrderHolds($oid, $customerId);
+                    }
                     $results[] = ['order_id' => $oid, 'ok' => true];
                     $ok++;
 

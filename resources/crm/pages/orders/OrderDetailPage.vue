@@ -226,10 +226,10 @@ const detailHasRemovableHolds = computed(() => {
   return !!(h.fraud_hold || h.address_hold || h.payment_hold);
 });
 
-const detailOnlyOperatorHold = computed(() => {
+const detailOnlyUserHold = computed(() => {
   const h = detailHoldsNormalized.value;
-  if (!h.operator_hold) return false;
-  return !(h.fraud_hold || h.address_hold || h.payment_hold || h.client_hold || h.shipping_method_hold);
+  if (!h.client_hold) return false;
+  return !(h.fraud_hold || h.address_hold || h.payment_hold || h.operator_hold || h.shipping_method_hold);
 });
 
 const orderIsShipped = computed(() => {
@@ -321,7 +321,7 @@ const showBackorderHeaderBadge = computed(
     !showNotReadyToShipBanner.value,
 );
 
-const hasUserHold = computed(() => !!detailHoldsNormalized.value.operator_hold);
+const hasUserHold = computed(() => !!detailHoldsNormalized.value.client_hold);
 
 const canPlaceUserHold = computed(
   () => canRunShipHeroActions.value && !hasUserHold.value && !orderIsTerminalFulfillment.value,
@@ -891,7 +891,7 @@ async function placeUserHold() {
   try {
     await api.post(`/orders/${encodeURIComponent(orderId.value)}/set-holds`, {
       client_account_id: Number(selectedAccountId.value),
-      operator_hold: true,
+      client_hold: true,
     });
     toast.success("User hold placed.");
     await loadOrder({ refresh: true });
@@ -908,7 +908,7 @@ async function removeUserHold() {
   try {
     await api.post(`/orders/${encodeURIComponent(orderId.value)}/remove-holds`, {
       client_account_id: Number(selectedAccountId.value),
-      holds_to_clear: ["operator_hold"],
+      holds_to_clear: ["client_hold"],
     });
     toast.success("User hold removed.");
     await loadOrder({ refresh: true });
@@ -1557,7 +1557,7 @@ function goToOrdersList() {
                 {{ userHoldBusy ? "Removing…" : "Remove Hold" }}
               </button>
               <button
-                v-if="showNotReadyToShipBanner && detailHasRemovableHolds && !detailOnlyOperatorHold"
+                v-if="showNotReadyToShipBanner && detailHasRemovableHolds && !detailOnlyUserHold"
                 type="button"
                 class="btn btn-danger text-white"
                 :disabled="!canRunShipHeroActions || removeHoldsBusy"
@@ -1586,7 +1586,7 @@ function goToOrdersList() {
               <ul class="small mb-0 ps-3 mt-2 text-secondary order-detail-page__nrts-list">
                 <li v-for="(line, idx) in notReadyBannerBullets" :key="'nrts-' + idx">{{ line }}</li>
               </ul>
-              <p v-if="detailOnlyOperatorHold && showRemoveUserHoldBtn" class="small text-secondary mb-0 mt-3">
+              <p v-if="detailOnlyUserHold && showRemoveUserHoldBtn" class="small text-secondary mb-0 mt-3">
                 User hold is active — use Remove Hold to release.
               </p>
             </div>

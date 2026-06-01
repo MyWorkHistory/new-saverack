@@ -12,8 +12,7 @@ class ShipHeroOrderService
 {
     /**
      * Hold keys CRM may clear via {@see clearOrderHoldsSelective}.
-     * {@see client_hold} is excluded: ShipHero returns "3PL cannot set a client hold on an order" when a 3PL
-     * includes that field in {@see order_update_holds}, including clearing it to false. Clear client holds in ShipHero.
+     * {@see client_hold} (user hold) is cleared via {@see clearUserHold} only.
      *
      * @see https://developer.shiphero.com/schema/types/update-order-holds-input.html
      */
@@ -23,12 +22,12 @@ class ShipHeroOrderService
         'payment_hold',
     ];
 
-    /** ShipHero “User Hold” in UI; API field {@see operator_hold}. */
-    public const ORDER_USER_HOLD_KEY = 'operator_hold';
+    /** ShipHero “User Hold” in UI; API field {@see client_hold}. */
+    public const ORDER_USER_HOLD_KEY = 'client_hold';
 
     public const NO_MATCHING_HOLDS_MESSAGE = 'No matching holds to clear on this order.';
 
-    /** User-facing copy when only an operator hold blocks CRM clears. */
+    /** User-facing copy when only a warehouse operator hold blocks CRM clears. */
     public const OPERATOR_HOLD_ONLY_MESSAGE = 'Contact your account manager about the operator hold on this order.';
 
     /** @var ShipHeroClient */
@@ -1601,9 +1600,9 @@ GQL;
     }
 
     /**
-     * Clear ShipHero user hold ({@see operator_hold}) only. Does not touch {@see client_hold} or other holds.
+     * Clear ShipHero user hold ({@see client_hold}) only. Does not touch other hold types.
      */
-    public function clearOperatorHold(string $orderId, string $customerAccountId): void
+    public function clearUserHold(string $orderId, string $customerAccountId): void
     {
         $relayId = $this->resolveOrderRelayIdForMutations($orderId, $customerAccountId);
         $customer = trim($customerAccountId);
@@ -1619,7 +1618,7 @@ GQL;
             $data['customer_account_id'] = $customer;
         }
         $graphql = <<<'GQL'
-mutation ShipHeroOrderClearOperatorHold($data: UpdateOrderHoldsInput!) {
+mutation ShipHeroOrderClearUserHold($data: UpdateOrderHoldsInput!) {
   order_update_holds(data: $data) {
     request_id
     complexity
@@ -1640,7 +1639,30 @@ GQL;
     }
 
     /**
-     * True when the only active hold is {@see operator_hold} (nothing else for CRM “Remove hold” to clear).
+     * True when the only active hold is {@see client_hold} (ShipHero user hold).
+     *
+     * @param  array<string, mixed>|null  $holds
+     */
+    public function orderHoldsOnlyUserHoldActive($holds): bool
+    {
+        $h = $this->normalizeOrderHoldsForApi($holds);
+        if (! $this->orderHoldsArrayHasActive($h)) {
+            return false;
+        }
+        if (empty($h['client_hold'])) {
+            return false;
+        }
+        foreach (['fraud_hold', 'address_hold', 'payment_hold', 'operator_hold', 'shipping_method_hold'] as $key) {
+            if (! empty($h[$key])) {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    /**
+     * True when the only active hold is {@see operator_hold} (warehouse; not clearable via fraud/address/payment APIs).
      *
      * @param  array<string, mixed>|null  $holds
      */
@@ -2413,13 +2435,13 @@ GQL;
     {
         $parts = [];
         if (! empty($holds['client_hold'])) {
-            $parts[] = 'Order has client hold.';
+            $parts[] = 'Order has user hold.';
         }
         if (! empty($holds['payment_hold'])) {
             $parts[] = 'Order has payment hold.';
         }
         if (! empty($holds['operator_hold'])) {
-            $parts[] = 'Order has user hold.';
+            $parts[] = 'Order has operator hold.';
         }
         if (! empty($holds['address_hold'])) {
             $parts[] = 'Order has address hold.';

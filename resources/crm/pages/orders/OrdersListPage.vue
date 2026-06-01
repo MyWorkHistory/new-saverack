@@ -133,13 +133,20 @@ const somePageSelected = computed(() => {
   return ids.some((id) => selectedOrderIds.value.has(id));
 });
 
-/** Holds that “Remove Hold” can affect via ShipHero (operator is intentionally preserved). */
+/** Holds that “Remove Hold” can affect via ShipHero (operator hold is warehouse-only). */
 function rowHasRemovableHolds(row) {
   const h = row?.holds && typeof row.holds === "object" ? row.holds : {};
-  return !!(h.fraud_hold || h.address_hold || h.payment_hold);
+  return !!(h.fraud_hold || h.address_hold || h.payment_hold || h.client_hold);
 }
 
-/** Only operator hold is active — cannot clear from CRM; use ShipHero. */
+/** Only user hold (client_hold) is active. */
+function rowOnlyUserHold(row) {
+  const h = row?.holds && typeof row.holds === "object" ? row.holds : {};
+  if (!h.client_hold) return false;
+  return !(h.fraud_hold || h.address_hold || h.payment_hold || h.operator_hold || h.shipping_method_hold);
+}
+
+/** Only operator hold is active — cannot clear from CRM. */
 function rowOnlyOperatorHold(row) {
   const h = row?.holds && typeof row.holds === "object" ? row.holds : {};
   if (!h.operator_hold) return false;
@@ -537,7 +544,11 @@ function closeAddHoldModal() {
 }
 
 async function submitAddHoldModal() {
-  if (!selectedAccountId.value || !addHoldTargetIds.value.length) return;
+  if (!selectedAccountId.value) {
+    toast.error("Select an account first.");
+    return;
+  }
+  if (!addHoldTargetIds.value.length) return;
   if (!addHoldFlags.fraud_hold && !addHoldFlags.address_hold && !addHoldFlags.payment_hold && !addHoldFlags.client_hold) {
     toast.error("Select at least one hold type.");
     return;
@@ -715,8 +726,78 @@ function closeRemoveHoldsModal() {
 }
 
 function openBulkRemoveHoldsModal() {
+  const rows = selectedRowsList();
+  if (rows.length > 0 && rows.every((r) => rowOnlyUserHold(r))) {
+    runBulkRemoveUserHold();
+    return;
+  }
   removeHoldsModalVariant.value = "bulk";
   removeHoldsModalOpen.value = true;
+}
+
+async function runBulkRemoveUserHold() {
+  if (!selectedAccountId.value) {
+    toast.error("Select an account first.");
+    return;
+  }
+  const ids = selectedRowsList()
+    .map((r) => String(r.id))
+    .filter(Boolean);
+  if (!ids.length) return;
+  bulkBusy.value = true;
+  try {
+    const { data } = await api.post("/orders/bulk/clear-holds", {
+      client_account_id: Number(selectedAccountId.value),
+      order_ids: ids,
+    });
+    toast.success(`Remove hold: ${data?.summary?.ok ?? 0} ok, ${data?.summary?.failed ?? 0} failed.`);
+    clearRowSelection();
+    await fetchOrders(true);
+  } catch (e) {
+    toast.errorFrom(e, "Bulk remove holds failed.");
+  } finally {
+    bulkBusy.value = false;
+  }
+}
+
+async function runSingleRemoveUserHold(row) {
+  const accountId = effectiveClientAccountId(row);
+  if (!accountId || !row?.id) return;
+  manageOpenId.value = null;
+  bulkBusy.value = true;
+  try {
+    await api.post(`/orders/${encodeURIComponent(String(row.id))}/remove-holds`, {
+      client_account_id: accountId,
+      holds_to_clear: ["client_hold"],
+    });
+    toast.success("User hold removed.");
+    await fetchOrders(true);
+  } catch (e) {
+    toast.errorFrom(e, "Could not remove hold.");
+  } finally {
+    bulkBusy.value = false;
+  }
+}
+
+async function runSinglePlaceUserHold(row) {
+  const accountId = effectiveClientAccountId(row);
+  if (!accountId || !row?.id) return;
+  const h = row?.holds && typeof row.holds === "object" ? row.holds : {};
+  if (h.client_hold) return;
+  manageOpenId.value = null;
+  bulkBusy.value = true;
+  try {
+    await api.post(`/orders/${encodeURIComponent(String(row.id))}/set-holds`, {
+      client_account_id: accountId,
+      client_hold: true,
+    });
+    toast.success("User hold placed.");
+    await fetchOrders(true);
+  } catch (e) {
+    toast.errorFrom(e, "Could not place hold.");
+  } finally {
+    bulkBusy.value = false;
+  }
 }
 
 function openSingleRemoveHoldsModal(row) {
@@ -1363,6 +1444,14 @@ onUnmounted(() => {
         </template>
         <template v-else>
           <button
+            v-if="canWriteOrders && tabKey === 'awaiting' && !manageMenuRow?.holds?.client_hold"
+            class="staff-row-menu__item"
+            role="menuitem"
+            @click="runSinglePlaceUserHold(manageMenuRow)"
+          >
+            Place User Hold
+          </button>
+          <button
             v-if="canWriteOrders"
             class="staff-row-menu__item"
             role="menuitem"
@@ -1383,7 +1472,7 @@ onUnmounted(() => {
             v-if="canWriteOrders && rowHasRemovableHolds(manageMenuRow)"
             class="staff-row-menu__item"
             role="menuitem"
-            @click="openSingleRemoveHoldsModal(manageMenuRow)"
+            @click="rowOnlyUserHold(manageMenuRow) ? runSingleRemoveUserHold(manageMenuRow) : openSingleRemoveHoldsModal(manageMenuRow)"
           >
             Remove Hold
           </button>
@@ -1487,7 +1576,7 @@ onUnmounted(() => {
                 </div>
                 <div class="form-check mb-0">
                   <input id="orders-add-hold-client" v-model="addHoldFlags.client_hold" class="form-check-input" type="checkbox" />
-                  <label class="form-check-label" for="orders-add-hold-client">Client</label>
+                  <label class="form-check-label" for="orders-add-hold-client">User Hold</label>
                 </div>
               </div>
               <footer class="crm-vx-modal__footer">

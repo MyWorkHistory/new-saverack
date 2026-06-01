@@ -2,7 +2,8 @@ import { crmIsAdmin, crmIsPortalUser } from "./crmUser";
 
 /**
  * Matches Laravel `shiphero.orders.write`: orders.update (preferred), with inventory.update as
- * temporary backward-compatible fallback.
+ * temporary backward-compatible fallback. Portal client accounts may mutate their own orders
+ * (API enforces client_account_id scope).
  *
  * @param {object|null|undefined} user
  */
@@ -17,12 +18,14 @@ export function canWriteShipHeroOrders(user) {
   if (keys.includes("orders.update") || keys.includes("inventory.update")) {
     return true;
   }
+  // Portal: same access as orders.view (implicit for client_account_id on the user).
+  if (crmIsPortalUser(user) && Number(user.client_account_id || 0) > 0) {
+    return true;
+  }
   // Staff CRM (non-portal): orders.view grants detail mutations — same routes as the orders list.
   if (!crmIsPortalUser(user) && keys.includes("orders.view")) {
     return true;
   }
-  // Portal: read-only unless orders.update / inventory.update matched above.
-  if (crmIsPortalUser(user)) return false;
 
   return false;
 }

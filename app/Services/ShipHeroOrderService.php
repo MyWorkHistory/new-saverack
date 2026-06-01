@@ -1043,7 +1043,7 @@ GQL;
                 'relay_id' => $relayId,
                 'customer_account_id' => $customer,
             ]);
-            $lineItems = $this->fetchOrderLineItems($customer, $relayId);
+        $lineItems = $this->fetchOrderLineItems($customer, $relayId);
         } catch (\Throwable $e) {
             Log::warning('shiphero.order_detail.line_items.failed', [
                 'order_id' => $id,
@@ -1952,25 +1952,25 @@ query ShipHeroOrderHeader($id: String!) {
     request_id
     complexity
     data {
-      id
-      legacy_id
-      order_number
-      partner_order_id
-      shop_name
-      fulfillment_status
-      order_date
-      required_ship_date
-      profile
-      source
-      email
-      subtotal
-      total_tax
-      total_price
-      total_discounts
-      gift_invoice
-      allow_partial
-      require_signature
-      packing_note
+          id
+          legacy_id
+          order_number
+          partner_order_id
+          shop_name
+          fulfillment_status
+          order_date
+          required_ship_date
+          profile
+          source
+          email
+          subtotal
+          total_tax
+          total_price
+          total_discounts
+          gift_invoice
+          allow_partial
+          require_signature
+          packing_note
       gift_note
       tags
       attachments(first: 30) {
@@ -1985,33 +1985,33 @@ query ShipHeroOrderHeader($id: String!) {
           }
         }
       }
-      shipping_address {
+          shipping_address {
         first_name
         last_name
         company
-        address1
-        address2
-        city
-        state
+            address1
+            address2
+            city
+            state
         state_code
-        zip
-        country
+            zip
+            country
         country_code
         email
         phone
-      }
-      billing_address {
-        address1
-        address2
-        city
-        state
-        zip
-        country
-      }
-      shipping_lines {
+          }
+          billing_address {
+            address1
+            address2
+            city
+            state
+            zip
+            country
+          }
+          shipping_lines {
         title
-        carrier
-        method
+            carrier
+            method
         price
       }
       holds {
@@ -2053,26 +2053,26 @@ GQL;
 query ShipHeroOrderLineItems($id: String!, $first: Int!, $after: String) {
   order(id: $id) {
     data {
-      id
-      line_items(first: $first, after: $after) {
-        edges {
-          node {
-            id
-            sku
+          id
+          line_items(first: $first, after: $after) {
+            edges {
+              node {
+                id
+                sku
             product_id
             price
-            quantity
-            quantity_allocated
-            quantity_pending_fulfillment
-            backorder_quantity
+                quantity
+                quantity_allocated
+                quantity_pending_fulfillment
+                backorder_quantity
             fulfillment_status
-            product_name
-            custom_options
-          }
-        }
-        pageInfo {
-          hasNextPage
-          endCursor
+                product_name
+                custom_options
+              }
+            }
+            pageInfo {
+              hasNextPage
+              endCursor
         }
       }
     }
@@ -2138,11 +2138,11 @@ GQL;
 query ShipHeroOrderHistory($id: String!) {
   order(id: $id) {
     data {
-      id
-      order_history {
-        created_at
-        information
-        user_id
+          id
+          order_history {
+            created_at
+            information
+            user_id
       }
     }
   }

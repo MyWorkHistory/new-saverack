@@ -5,6 +5,8 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\OrderCreateRequest;
 use App\Models\ClientAccount;
+use App\Models\User;
+use App\Services\CrossAccountOrderListService;
 use App\Services\ShipHeroOrderDetailCacheService;
 use App\Services\ShopifyOrderAdminLinkService;
 use App\Services\PortalQueueCountsService;
@@ -36,22 +38,27 @@ class OrderController extends Controller
     /** @var PortalQueueCountsService */
     protected $portalQueueCounts;
 
+    /** @var CrossAccountOrderListService */
+    protected $crossAccountOrders;
+
     public function __construct(
         ShipHeroOrderService $orders,
         ShopifyOrderAdminLinkService $shopifyOrderLinks,
         ShipHeroOrderDetailCacheService $orderDetailCache,
-        PortalQueueCountsService $portalQueueCounts
+        PortalQueueCountsService $portalQueueCounts,
+        CrossAccountOrderListService $crossAccountOrders
     ) {
         $this->orders = $orders;
         $this->shopifyOrderLinks = $shopifyOrderLinks;
         $this->orderDetailCache = $orderDetailCache;
         $this->portalQueueCounts = $portalQueueCounts;
+        $this->crossAccountOrders = $crossAccountOrders;
     }
 
     public function index(Request $request): JsonResponse
     {
         $validated = $request->validate([
-            'client_account_id' => ['required', 'integer', 'exists:client_accounts,id'],
+            'client_account_id' => ['nullable', 'integer', 'exists:client_accounts,id'],
             'tab' => ['nullable', 'string', 'in:manage,awaiting,on_hold,backorder,shipped'],
             'order_date_from' => ['nullable', 'date'],
             'order_date_to' => ['nullable', 'date'],
@@ -62,6 +69,47 @@ class OrderController extends Controller
             'after' => ['nullable', 'string', 'max:255'],
             'first' => ['nullable', 'integer', 'min:1', 'max:100'],
         ]);
+
+        $user = $request->user();
+        if (! $user instanceof User) {
+            abort(401);
+        }
+
+        $clientAccountId = isset($validated['client_account_id'])
+            ? (int) $validated['client_account_id']
+            : 0;
+
+        if ($clientAccountId <= 0) {
+            if ((int) ($user->client_account_id ?? 0) > 0) {
+                throw ValidationException::withMessages([
+                    'client_account_id' => ['Select your account to load orders.'],
+                ]);
+            }
+
+            if (! empty($validated['after'])) {
+                throw ValidationException::withMessages([
+                    'after' => ['Load more is not available when searching all accounts. Filter by account or order number.'],
+                ]);
+            }
+
+            try {
+                $payload = $this->crossAccountOrders->list($user, $validated);
+
+                return response()->json($payload);
+            } catch (ValidationException $e) {
+                throw $e;
+            } catch (RuntimeException $e) {
+                return response()->json(['message' => $e->getMessage()], 502);
+            } catch (Throwable $e) {
+                report($e);
+
+                return response()->json([
+                    'message' => config('app.debug')
+                        ? $e->getMessage()
+                        : 'Could not reach ShipHero orders API.',
+                ], 502);
+            }
+        }
 
         try {
             $tab = (string) ($validated['tab'] ?? 'manage');
@@ -78,8 +126,8 @@ class OrderController extends Controller
                     ]);
                 }
             }
-            $customerId = $this->resolveShipHeroCustomerAccountId((int) $validated['client_account_id'], $request);
-            $account = ClientAccount::query()->find((int) $validated['client_account_id']);
+            $customerId = $this->resolveShipHeroCustomerAccountId($clientAccountId, $request);
+            $account = ClientAccount::query()->find($clientAccountId);
             $shipDateFrom = $this->dateStartIso($validated['order_date_from'] ?? null);
             $shipDateTo = $this->dateEndIso($validated['order_date_to'] ?? null);
             $timezone = PortalQueueCountsService::DEFAULT_ACCOUNT_TIMEZONE;
@@ -118,7 +166,7 @@ class OrderController extends Controller
                 ]);
             }
             $payload['meta'] = [
-                'client_account_id' => (int) $validated['client_account_id'],
+                'client_account_id' => $clientAccountId,
                 'shiphero_customer_account_id' => $customerId,
             ];
 

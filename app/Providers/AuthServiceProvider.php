@@ -121,7 +121,12 @@ class AuthServiceProvider extends ServiceProvider
                 return true;
             }
 
-            // Staff CRM users with orders.view may mutate orders in admin UI (not portal accounts).
+            // Portal users: manage orders for their client account (controllers enforce scope).
+            if ((int) ($user->client_account_id ?? 0) > 0) {
+                return true;
+            }
+
+            // Staff CRM users with orders.view may mutate orders in admin UI.
             return $user->client_account_id === null
                 && Gate::forUser($user)->allows('orders.view');
         });

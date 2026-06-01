@@ -27,6 +27,8 @@ const loading = ref(false);
 const accountsLoading = ref(false);
 const accounts = ref([]);
 const selectedAccountId = ref("");
+/** Admin staff: last search ran without a specific account (all accounts / order # lookup). */
+const crossAccountMode = ref(false);
 const hasSearched = ref(false);
 const nextCursor = ref(null);
 const hasNextPage = ref(false);
@@ -103,6 +105,14 @@ const manageMenuRow = computed(
 const isPortalUser = computed(() => Number(crmUser.value?.client_account_id || 0) > 0);
 const portalClientAccountId = computed(() => Number(crmUser.value?.client_account_id || 0));
 
+const isAdminOrdersList = computed(() => !isPortalOrderList.value);
+
+function effectiveClientAccountId(row = null) {
+  const fromRow = Number(row?.client_account_id || 0);
+  if (fromRow > 0) return fromRow;
+  return Number(selectedAccountId.value || 0);
+}
+
 const canWriteOrders = computed(() => canWriteShipHeroOrders(crmUser.value));
 
 const isShippedTab = computed(() => tabKey.value === "shipped");
@@ -151,13 +161,17 @@ const accountOptions = computed(() => {
 
 const ORDER_DETAIL_CACHE_TTL_MS = 30 * 60 * 1000;
 
-function orderDetailFetchedAtKey(rowId) {
-  return `orders.detail.fetchedAt.${selectedAccountId.value}.${String(rowId)}`;
+function orderDetailFetchedAtKey(rowId, row = null) {
+  return `orders.detail.fetchedAt.${effectiveClientAccountId(row)}.${String(rowId)}`;
 }
 
-function orderDetailShouldRefreshFromList(rowId) {
+function orderDetailShouldRefreshFromListForRow(row) {
+  return orderDetailShouldRefreshFromList(row?.id, row);
+}
+
+function orderDetailShouldRefreshFromList(rowId, row = null) {
   try {
-    const fetchedAt = Number(sessionStorage.getItem(orderDetailFetchedAtKey(rowId)) || 0);
+    const fetchedAt = Number(sessionStorage.getItem(orderDetailFetchedAtKey(rowId, row)) || 0);
     return !fetchedAt || Date.now() - fetchedAt > ORDER_DETAIL_CACHE_TTL_MS;
   } catch (_) {
     return true;
@@ -165,15 +179,17 @@ function orderDetailShouldRefreshFromList(rowId) {
 }
 
 function orderDetailQuery(row) {
-  const query = { client_account_id: String(selectedAccountId.value) };
-  if (row?.id && orderDetailShouldRefreshFromList(row.id)) {
+  const accountId = effectiveClientAccountId(row);
+  const query = { client_account_id: String(accountId) };
+  if (row?.id && orderDetailShouldRefreshFromListForRow(row)) {
     query.refresh = "1";
   }
   return query;
 }
 
 function orderDetailHref(row) {
-  if (!row?.id || !selectedAccountId.value) return "#";
+  const accountId = effectiveClientAccountId(row);
+  if (!row?.id || !accountId) return "#";
   const name = isPortalOrderList.value ? "user-order-detail" : "order-detail";
   return router.resolve({
     name,
@@ -183,11 +199,12 @@ function orderDetailHref(row) {
 }
 
 function openOrderViewNewTab(row) {
-  if (!row?.id || !selectedAccountId.value) {
-    toast.error("Select an account first.");
+  const accountId = effectiveClientAccountId(row);
+  if (!row?.id || !accountId) {
+    toast.error("This order has no account context.");
     return;
   }
-  const key = `orders.snapshot.${selectedAccountId.value}.${String(row.id)}`;
+  const key = `orders.snapshot.${accountId}.${String(row.id)}`;
   try {
     sessionStorage.setItem(key, JSON.stringify(row));
   } catch (_) {
@@ -231,11 +248,12 @@ function normalizeOrderNumberInput(v) {
 }
 
 function runListSearch() {
-  if (!selectedAccountId.value) {
+  if (!isAdminOrdersList.value && !selectedAccountId.value) {
     toast.error("Select an account to load orders.");
     return;
   }
   committedOrderNumber.value = normalizeOrderNumberInput(query.orderNumber);
+  crossAccountMode.value = isAdminOrdersList.value && !selectedAccountId.value;
   fetchOrders(true);
 }
 
@@ -326,18 +344,22 @@ function orderDateParamsForRequest() {
 
 function buildParams(withCursor = false) {
   const params = {
-    client_account_id: Number(selectedAccountId.value),
     tab: tabKey.value,
     first: 100,
     ...orderDateParamsForRequest(),
   };
+  if (!crossAccountMode.value && selectedAccountId.value) {
+    params.client_account_id = Number(selectedAccountId.value);
+  }
   if (query.fulfillmentStatus) params.fulfillment_status = query.fulfillmentStatus;
   if (query.readyToShip !== "") params.ready_to_ship = query.readyToShip === "yes";
   if (tabKey.value === "on_hold" && query.holdReason) params.hold_reason = query.holdReason;
   if (committedOrderNumber.value) {
     params.order_number = committedOrderNumber.value;
   }
-  if (withCursor && nextCursor.value) params.after = nextCursor.value;
+  if (withCursor && nextCursor.value && !crossAccountMode.value) {
+    params.after = nextCursor.value;
+  }
   return params;
 }
 
@@ -354,7 +376,9 @@ async function loadAccounts() {
 }
 
 async function fetchOrders(reset = true) {
-  if (!selectedAccountId.value) {
+  const canLoad =
+    selectedAccountId.value || (isAdminOrdersList.value && crossAccountMode.value);
+  if (!canLoad) {
     if (reset) {
       rows.value = [];
       hasSearched.value = false;
@@ -377,8 +401,12 @@ async function fetchOrders(reset = true) {
     });
     const incoming = Array.isArray(data?.rows) ? data.rows : [];
     rows.value = reset ? incoming : [...rows.value, ...incoming];
-    hasNextPage.value = Boolean(data?.pagination?.has_next_page);
-    nextCursor.value = data?.pagination?.end_cursor || null;
+    const crossAccount = Boolean(data?.meta?.cross_account);
+    if (crossAccount) {
+      crossAccountMode.value = true;
+    }
+    hasNextPage.value = crossAccount ? false : Boolean(data?.pagination?.has_next_page);
+    nextCursor.value = crossAccount ? null : data?.pagination?.end_cursor || null;
   } catch (e) {
     toast.errorFrom(e, "Could not load orders.");
   } finally {
@@ -692,7 +720,7 @@ function openBulkRemoveHoldsModal() {
 }
 
 function openSingleRemoveHoldsModal(row) {
-  if (!selectedAccountId.value || !row?.id) return;
+  if (!effectiveClientAccountId(row) || !row?.id) return;
   manageOpenId.value = null;
   removeHoldsModalVariant.value = "single";
   removeHoldsModalActiveHolds.value = normalizeRowHoldsForRemoveModal(row);
@@ -700,8 +728,18 @@ function openSingleRemoveHoldsModal(row) {
   removeHoldsModalOpen.value = true;
 }
 
+function removeHoldsSingleRow() {
+  const oid = removeHoldsSingleOrderId.value;
+  if (!oid) return null;
+  return displayedRows.value.find((r) => String(r.id) === oid) ?? null;
+}
+
 async function onRemoveHoldsModalConfirm(payload) {
-  if (!selectedAccountId.value || !payload?.holds_to_clear?.length) return;
+  const accountId =
+    removeHoldsModalVariant.value === "single"
+      ? effectiveClientAccountId(removeHoldsSingleRow())
+      : Number(selectedAccountId.value);
+  if (!accountId || !payload?.holds_to_clear?.length) return;
   if (removeHoldsModalVariant.value === "bulk") {
     const ids = selectedRowsList()
       .map((r) => String(r.id))
@@ -721,7 +759,7 @@ async function onRemoveHoldsModalConfirm(payload) {
         .map((r) => String(r.id))
         .filter(Boolean);
       const { data } = await api.post("/orders/bulk/clear-holds", {
-        client_account_id: Number(selectedAccountId.value),
+        client_account_id: accountId,
         order_ids: ids,
         ...bodyCommon,
       });
@@ -737,7 +775,7 @@ async function onRemoveHoldsModalConfirm(payload) {
         return;
       }
       await api.post(`/orders/${encodeURIComponent(oid)}/remove-holds`, {
-        client_account_id: Number(selectedAccountId.value),
+        client_account_id: accountId,
         ...bodyCommon,
       });
       toast.success("Holds cleared.");
@@ -756,12 +794,13 @@ async function onRemoveHoldsModalConfirm(payload) {
 }
 
 async function runSingleMarkFulfilled(row) {
-  if (!selectedAccountId.value || !row?.id) return;
+  const accountId = effectiveClientAccountId(row);
+  if (!accountId || !row?.id) return;
   manageOpenId.value = null;
   bulkBusy.value = true;
   try {
     await api.post(`/orders/${encodeURIComponent(String(row.id))}/mark-fulfilled`, {
-      client_account_id: Number(selectedAccountId.value),
+      client_account_id: accountId,
     });
     toast.success("Order marked fulfilled.");
     await fetchOrders(true);
@@ -773,12 +812,13 @@ async function runSingleMarkFulfilled(row) {
 }
 
 async function runSingleAllowPartial(row) {
-  if (!selectedAccountId.value || !row?.id) return;
+  const accountId = effectiveClientAccountId(row);
+  if (!accountId || !row?.id) return;
   manageOpenId.value = null;
   bulkBusy.value = true;
   try {
     await api.post(`/orders/${encodeURIComponent(String(row.id))}/allow-partial`, {
-      client_account_id: Number(selectedAccountId.value),
+      client_account_id: accountId,
       allow_partial: true,
     });
     toast.success("Allow partial updated.");
@@ -791,12 +831,13 @@ async function runSingleAllowPartial(row) {
 }
 
 async function runSingleCancel(row) {
-  if (!selectedAccountId.value || !row?.id) return;
+  const accountId = effectiveClientAccountId(row);
+  if (!accountId || !row?.id) return;
   manageOpenId.value = null;
   bulkBusy.value = true;
   try {
     await api.post(`/orders/${encodeURIComponent(String(row.id))}/cancel`, {
-      client_account_id: Number(selectedAccountId.value),
+      client_account_id: accountId,
     });
     toast.success("Order canceled.");
     await fetchOrders(true);
@@ -843,6 +884,7 @@ watch(
       committedOrderNumber.value = "";
     }
     clearRowSelection();
+    crossAccountMode.value = false;
     if (!accountId) {
       rows.value = [];
       hasSearched.value = false;
@@ -858,10 +900,17 @@ watch(
 watch(
   () => [query.datePreset, query.from, query.to, query.fulfillmentStatus, query.readyToShip, query.holdReason],
   () => {
-    if (!showManageFilters.value || !selectedAccountId.value) return;
+    if (!showManageFilters.value) return;
+    if (!selectedAccountId.value && !crossAccountMode.value) return;
     fetchOrders(true);
   },
 );
+
+watch(selectedAccountId, (id) => {
+  if (id) {
+    crossAccountMode.value = false;
+  }
+});
 
 onMounted(async () => {
   document.addEventListener("click", onDocClick);
@@ -899,7 +948,8 @@ onUnmounted(() => {
         All orders for the selected account matching your filters. Use Search for a specific order number.
       </p>
       <p v-else-if="!isPortalOrderList" class="staff-page__intro mb-0 text-secondary small">
-        Select an account to load orders. Use Search to find a specific order number.
+        Search across all accounts, or pick an account to filter. Leave order # blank and click Search to load
+        recent orders (up to 100).
       </p>
     </div>
 
@@ -917,10 +967,10 @@ onUnmounted(() => {
               aria-label="Client account"
               :options="accountOptions"
               :disabled="accountsLoading || loading"
-              placeholder="Select account to load orders"
+              placeholder="All accounts"
               search-placeholder="Search accounts…"
               :allow-empty="true"
-              empty-label="Select account to load orders"
+              empty-label="All accounts"
               button-id="orders-list-account-trigger"
             />
           </div>
@@ -933,7 +983,7 @@ onUnmounted(() => {
                 type="search"
                 class="form-control"
                 placeholder="Search by Order #"
-                :disabled="loading || (!isPortalOrderList && !selectedAccountId)"
+                :disabled="loading"
                 autocomplete="off"
                 enterkeyhint="search"
                 aria-label="Search by order number"
@@ -942,7 +992,7 @@ onUnmounted(() => {
               <button
                 type="button"
                 class="btn btn-primary staff-page-primary orders-toolbar-search-btn"
-                :disabled="loading || (!isPortalOrderList && !selectedAccountId)"
+                :disabled="loading"
                 @click="runListSearch"
               >
                 Search
@@ -1093,7 +1143,7 @@ onUnmounted(() => {
       </div>
 
       <div
-        v-if="selectedAccountId && selectedCount > 0"
+        v-if="selectedAccountId && !crossAccountMode && selectedCount > 0"
         class="d-flex flex-wrap align-items-center gap-2 gap-md-3 px-3 px-md-4 py-3 border-bottom bg-body-tertiary"
       >
         <span class="small fw-semibold text-body me-md-1">{{ selectedCount }} selected</span>
@@ -1185,7 +1235,7 @@ onUnmounted(() => {
                   type="checkbox"
                   class="form-check-input m-0"
                   :checked="allPageSelected"
-                  :disabled="loading || !displayedRows.length || !selectedAccountId"
+                  :disabled="loading || !displayedRows.length || !selectedAccountId || crossAccountMode"
                   :aria-label="allPageSelected ? 'Deselect all on this page' : 'Select all on this page'"
                   @change="toggleSelectAllPage"
                 />
@@ -1208,7 +1258,12 @@ onUnmounted(() => {
                 </div>
               </td>
             </tr>
-            <tr v-else-if="!selectedAccountId">
+            <tr v-else-if="!hasSearched && isAdminOrdersList && !selectedAccountId">
+              <td :colspan="tableColspan" class="text-center text-secondary py-5">
+                Click Search to load orders across all accounts, or select an account to filter.
+              </td>
+            </tr>
+            <tr v-else-if="!selectedAccountId && !crossAccountMode">
               <td :colspan="tableColspan" class="text-center text-secondary py-5">Select an account to load orders.</td>
             </tr>
             <tr v-else-if="hasSearched && displayedRows.length === 0">
@@ -1220,7 +1275,7 @@ onUnmounted(() => {
                   type="checkbox"
                   class="form-check-input m-0"
                   :checked="isRowSelected(row)"
-                  :disabled="!row.id"
+                  :disabled="!row.id || crossAccountMode || !selectedAccountId"
                   :aria-label="`Select order ${row.order_number || row.id}`"
                   @change="toggleRowSelected(row)"
                 />
@@ -1232,7 +1287,7 @@ onUnmounted(() => {
               </td>
               <td class="fw-semibold">
                 <a
-                  v-if="selectedAccountId"
+                  v-if="effectiveClientAccountId(row)"
                   :href="orderDetailHref(row)"
                   target="_blank"
                   rel="noopener noreferrer"
@@ -1244,7 +1299,7 @@ onUnmounted(() => {
               </td>
               <td>{{ row.recipient_name || "—" }}</td>
               <td>{{ rowDisplayDate(row) }}</td>
-              <td>{{ row.account || "—" }}</td>
+              <td>{{ row.client_account_company_name || row.account || "—" }}</td>
               <td>{{ row.country || "—" }}</td>
               <td>
                 {{
@@ -1282,7 +1337,7 @@ onUnmounted(() => {
         <button
           type="button"
           class="btn btn-outline-secondary order-1 order-lg-2 ms-lg-auto"
-          :disabled="loading || !hasNextPage || !selectedAccountId"
+          :disabled="loading || !hasNextPage || !selectedAccountId || crossAccountMode"
           @click="fetchOrders(false)"
         >
           {{ hasNextPage ? "Load More" : "No more orders" }}

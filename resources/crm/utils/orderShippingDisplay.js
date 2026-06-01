@@ -35,9 +35,26 @@ export function formatCarrierLabel(carrier) {
   if (lower === "cheapest") return "Cheapest";
   if (lower === "ups") return "UPS";
   if (lower === "fedex") return "FedEx";
-  if (lower === "usps") return "USPS";
+  if (lower === "usps" || lower === "endicia") return "USPS";
   if (lower === "dhl") return "DHL";
-  return raw;
+  if (lower === "ontrac") return "OnTrac";
+  if (lower === "lasership") return "LaserShip";
+  if (lower === "asendia_one" || lower === "asendia") return "Asendia";
+  return raw.replace(/\bendicia\b/gi, "USPS");
+}
+
+/**
+ * ShipHero label carrier for display (carrier_display from API, else raw carrier).
+ *
+ * @param {Record<string, unknown>|null|undefined} label
+ * @returns {string}
+ */
+export function formatShipmentCarrier(label) {
+  const display = String(label?.carrier_display ?? "").trim();
+  if (display) return display;
+  const raw = String(label?.carrier ?? "").trim();
+  if (!raw) return "—";
+  return formatCarrierLabel(raw) || raw;
 }
 
 /**
@@ -45,7 +62,7 @@ export function formatCarrierLabel(carrier) {
  * @returns {{ carrier: string, trackingNumber: string, trackingUrl: string|null }}
  */
 export function formatCarrierTrackingLine(label) {
-  const carrier = String(label?.carrier_display ?? "").trim() || "—";
+  const carrier = formatShipmentCarrier(label);
   const trackingNumber = String(label?.tracking_number ?? "").trim() || "—";
   const trackingUrl = String(label?.tracking_url ?? "").trim() || null;
 
@@ -54,15 +71,6 @@ export function formatCarrierTrackingLine(label) {
     trackingNumber,
     trackingUrl: trackingUrl && /^https?:\/\//i.test(trackingUrl) ? trackingUrl : null,
   };
-}
-
-/**
- * @param {Record<string, unknown>|null|undefined} label
- * @returns {string}
- */
-export function formatCarrierTrackingText(label) {
-  const { carrier, trackingNumber } = formatCarrierTrackingLine(label);
-  return `${carrier} | ${trackingNumber}`;
 }
 
 /** ShipHero API carrier slug from UI preset label. */

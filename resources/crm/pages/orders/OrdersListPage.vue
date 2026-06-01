@@ -13,6 +13,7 @@ import { canWriteShipHeroOrders } from "../../utils/crmShipHeroOrders";
 import {
   formatCarrierTrackingLine,
   formatCurrentShippingMethod,
+  formatShipmentCarrier,
 } from "../../utils/orderShippingDisplay.js";
 
 const props = defineProps({
@@ -96,7 +97,7 @@ const tabTitle = computed(() => {
 const showManageFilters = computed(() => !isOrdersSearchPage.value);
 const isCustomDate = computed(() => query.datePreset === "custom");
 
-const tableColspan = computed(() => 9);
+const tableColspan = computed(() => (isShippedTab.value ? 10 : 9));
 
 const displayedRows = computed(() => {
   return rows.value;
@@ -320,7 +321,6 @@ function rowDisplayDate(row) {
 
 const orderDateColumnLabel = computed(() => (isShippedTab.value ? "Ship Date" : "Order Date"));
 
-const shippingColumnLabel = computed(() => (isShippedTab.value ? "Tracking" : "Current Shipping Method"));
 
 function rowTrackingLabels(row) {
   const labels = row?.tracking_labels;
@@ -1355,7 +1355,11 @@ onUnmounted(() => {
               <th class="staff-table-head__th">{{ orderDateColumnLabel }}</th>
               <th class="staff-table-head__th">Account</th>
               <th class="staff-table-head__th">Country</th>
-              <th class="staff-table-head__th">{{ shippingColumnLabel }}</th>
+              <template v-if="isShippedTab">
+                <th class="staff-table-head__th">Carrier</th>
+                <th class="staff-table-head__th">Tracking</th>
+              </template>
+              <th v-else class="staff-table-head__th">Current Shipping Method</th>
               <th class="staff-table-head__th text-center">Action</th>
             </tr>
           </thead>
@@ -1415,17 +1419,27 @@ onUnmounted(() => {
               <td>{{ rowDisplayDate(row) }}</td>
               <td>{{ row.client_account_company_name || row.account || "—" }}</td>
               <td>{{ row.country || "—" }}</td>
-              <td>
-                <template v-if="isShippedTab">
+              <template v-if="isShippedTab">
+                <td>
                   <template v-if="rowTrackingLabels(row).length">
-                    <template v-for="label in rowTrackingLabels(row)" :key="label.id || `${label.carrier_display}-${label.tracking_number}`">
+                    <div
+                      v-for="label in rowTrackingLabels(row)"
+                      :key="`c-${label.id || label.tracking_number}`"
+                      class="small text-body mb-1 last:mb-0"
+                    >
+                      {{ formatShipmentCarrier(label) }}
+                    </div>
+                  </template>
+                  <span v-else class="text-secondary">—</span>
+                </td>
+                <td>
+                  <template v-if="rowTrackingLabels(row).length">
+                    <template v-for="label in rowTrackingLabels(row)" :key="`t-${label.id || label.tracking_number}`">
                       <div
                         v-for="parts in [formatCarrierTrackingLine(label)]"
                         :key="parts.trackingNumber"
                         class="small text-body mb-1 last:mb-0"
                       >
-                        <span class="fw-semibold">{{ parts.carrier }}</span>
-                        <span class="text-secondary mx-1">|</span>
                         <a
                           v-if="parts.trackingUrl"
                           :href="parts.trackingUrl"
@@ -1440,16 +1454,16 @@ onUnmounted(() => {
                     </template>
                   </template>
                   <span v-else class="text-secondary">—</span>
-                </template>
-                <template v-else>
-                  {{
-                    formatCurrentShippingMethod(
-                      row.shipping_carrier,
-                      row.method,
-                      row.shipping_method_title,
-                    )
-                  }}
-                </template>
+                </td>
+              </template>
+              <td v-else>
+                {{
+                  formatCurrentShippingMethod(
+                    row.shipping_carrier,
+                    row.method,
+                    row.shipping_method_title,
+                  )
+                }}
               </td>
               <td class="text-center">
                 <div data-row-actions class="staff-actions-inner staff-actions-inner--single justify-content-center">

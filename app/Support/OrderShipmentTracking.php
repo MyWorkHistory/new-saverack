@@ -108,7 +108,8 @@ class OrderShipmentTracking
                 }
                 $labels[] = [
                     'id' => (string) ($label['id'] ?? $trackingNumber),
-                    'carrier_display' => self::resolveCarrierDisplay($carrier, $shippingName),
+                    'carrier' => $carrier,
+                    'carrier_display' => self::resolveCarrierDisplay($carrier),
                     'service_label' => $serviceLabel,
                     'tracking_number' => $trackingNumber,
                     'tracking_url' => self::buildTrackingUrl(
@@ -141,33 +142,12 @@ class OrderShipmentTracking
         return strpos($status, 'void') !== false;
     }
 
-    public static function resolveCarrierDisplay(string $carrier, string $shippingName = ''): string
+    /**
+     * Display name from ShipHero label {@see carrier} only (not shipping_name / service title).
+     */
+    public static function resolveCarrierDisplay(string $carrier): string
     {
-        $fromCarrier = self::formatCarrierSlug($carrier);
-        if ($fromCarrier !== '') {
-            return $fromCarrier;
-        }
-
-        $name = trim($shippingName);
-        if ($name === '') {
-            return '';
-        }
-
-        if (self::isUspsFamily('', $name)) {
-            return 'USPS';
-        }
-        $blob = strtolower($name);
-        if (strpos($blob, 'ups') !== false) {
-            return 'UPS';
-        }
-        if (strpos($blob, 'fedex') !== false) {
-            return 'FedEx';
-        }
-        if (strpos($blob, 'dhl') !== false) {
-            return 'DHL';
-        }
-
-        return '';
+        return self::formatCarrierSlug($carrier);
     }
 
     public static function buildServiceLabel(string $carrier, string $shippingName, string $shippingMethod): string
@@ -243,6 +223,18 @@ class OrderShipmentTracking
         }
         if ($lower === 'dhl') {
             return 'DHL';
+        }
+        if ($lower === 'ontrac') {
+            return 'OnTrac';
+        }
+        if ($lower === 'lasership') {
+            return 'LaserShip';
+        }
+        if ($lower === 'asendia_one' || $lower === 'asendia') {
+            return 'Asendia';
+        }
+        if (str_contains($lower, 'amazon')) {
+            return 'Amazon';
         }
 
         return self::displayCarrierText($raw);

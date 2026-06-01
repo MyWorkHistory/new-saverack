@@ -72,7 +72,7 @@ class OrderShipmentTrackingTest extends TestCase
         $this->assertSame(5.5, $result['total_label_cost']);
     }
 
-    public function test_carrier_display_from_shipping_name_when_carrier_empty(): void
+    public function test_carrier_display_empty_when_shiphero_carrier_missing(): void
     {
         $result = OrderShipmentTracking::fromShipHeroShipments([
             [
@@ -88,12 +88,17 @@ class OrderShipmentTrackingTest extends TestCase
         ]);
 
         $this->assertCount(1, $result['labels']);
-        $this->assertSame('USPS', $result['labels'][0]['carrier_display']);
+        $this->assertSame('', $result['labels'][0]['carrier_display']);
     }
 
-    public function test_resolve_carrier_display_maps_endicia_to_usps(): void
+    public function test_carrier_display_uses_label_carrier_not_shipping_name(): void
     {
-        $this->assertSame('USPS', OrderShipmentTracking::resolveCarrierDisplay('endicia', ''));
-        $this->assertSame('USPS', OrderShipmentTracking::resolveCarrierDisplay('', 'USPS Priority Mail'));
+        $this->assertSame('UPS', OrderShipmentTracking::resolveCarrierDisplay('ups'));
+        $this->assertSame('USPS', OrderShipmentTracking::resolveCarrierDisplay('endicia'));
+    }
+
+    public function test_carrier_display_preserves_unknown_shiphero_carrier_value(): void
+    {
+        $this->assertSame('Passport Global', OrderShipmentTracking::resolveCarrierDisplay('Passport Global'));
     }
 }

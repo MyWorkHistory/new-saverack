@@ -119,6 +119,7 @@ function navActive(mode) {
   if (mode === "receiving-asn") return p.startsWith("/admin/receiving/asn");
   if (mode === "inventory") return p.startsWith("/admin/inventory");
   if (mode === "inventory-search") return p === "/admin/inventory";
+  if (mode === "inventory-restock") return p.startsWith("/admin/inventory/restock");
   if (mode === "inventory-on-demand") return p.startsWith("/admin/inventory/on-demand");
   if (mode === "billing-summary") return p === "/admin/billing/summary";
   if (mode === "billing-invoices") return p.startsWith("/admin/billing/invoices");
@@ -464,6 +465,16 @@ function collapseNav() {
                     @click="closeMobile"
                   >
                     Search
+                  </RouterLink>
+                </li>
+                <li v-if="!isPortal">
+                  <RouterLink
+                    to="/admin/inventory/restock"
+                    class="vx-nav-link vx-nav-sublink"
+                    :class="{ 'vx-nav-link--active': navActive('inventory-restock') }"
+                    @click="closeMobile"
+                  >
+                    Restock
                   </RouterLink>
                 </li>
                 <li v-if="!isPortal">

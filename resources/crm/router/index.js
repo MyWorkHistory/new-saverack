@@ -32,6 +32,7 @@ import BillingCustomBillDetailPage from "../pages/billing/BillingCustomBillDetai
 import InventoryListPage from "../pages/inventory/InventoryListPage.vue";
 import InventoryDetailPage from "../pages/inventory/InventoryDetailPage.vue";
 import InventoryOnDemandPage from "../pages/inventory/InventoryOnDemandPage.vue";
+import InventoryRestockPage from "../pages/inventory/InventoryRestockPage.vue";
 import OrdersListPage from "../pages/orders/OrdersListPage.vue";
 import OrderDetailPage from "../pages/orders/OrderDetailPage.vue";
 import OrderDetailIframePage from "../pages/orders/OrderDetailIframePage.vue";
@@ -126,6 +127,10 @@ const meta = {
   inventoryOnDemand: {
     title: "Save Rack | On-Demand Inventory",
     description: "Account On-Demand SKU catalog.",
+  },
+  inventoryRestock: {
+    title: "Save Rack | Inventory | Restock",
+    description: "Warehouse restock report for low pickable inventory with backstock.",
   },
   ordersSearch: {
     title: "Save Rack | Orders | Search",
@@ -371,17 +376,23 @@ const routes = [
     meta: meta.inventory,
   },
   {
-    path: "/admin/inventory/:sku",
-    name: "inventory-detail",
-    component: InventoryDetailPage,
-    props: true,
-    meta: meta.inventoryDetail,
+    path: "/admin/inventory/restock",
+    name: "inventory-restock",
+    component: InventoryRestockPage,
+    meta: meta.inventoryRestock,
   },
   {
     path: "/admin/inventory/on-demand",
     name: "inventory-on-demand",
     component: InventoryOnDemandPage,
     meta: meta.inventoryOnDemand,
+  },
+  {
+    path: "/admin/inventory/:sku",
+    name: "inventory-detail",
+    component: InventoryDetailPage,
+    props: true,
+    meta: meta.inventoryDetail,
   },
   {
     path: "/admin/orders",

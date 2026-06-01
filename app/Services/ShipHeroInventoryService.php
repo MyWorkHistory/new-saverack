@@ -3857,16 +3857,27 @@ GQL,
     }
 
     /**
+     * Paginate warehouse-scoped product inventory for the admin restock report.
+     * Uses warehouse_products(warehouse_id) so each page does not load every warehouse per SKU.
+     *
      * @return array{edges: list<array<string, mixed>>, page_info: array{has_next_page: bool, end_cursor: string|null}}
      */
-    public function paginateActiveProductsWithLocations(int $first = 50, ?string $after = null): array
+    public function paginateWarehouseProductsForRestock(string $warehouseId, ?string $after = null): array
     {
+        $warehouseId = trim($warehouseId);
+        if ($warehouseId === '') {
+            throw new RuntimeException('Warehouse id is required for restock report pagination.');
+        }
+
+        $first = (int) config('services.shiphero.restock_page_size', 40);
         $first = max(1, min(50, $first));
+        $locationFirst = (int) config('services.shiphero.restock_location_limit', 50);
+        $locationFirst = max(1, min(100, $locationFirst));
         $after = is_string($after) && trim($after) !== '' ? trim($after) : null;
 
         $graphql = <<<'GQL'
-query ShipHeroRestockProducts($first: Int!, $after: String) {
-  products {
+query ShipHeroRestockWarehouseProducts($warehouse_id: String!, $first: Int!, $after: String, $location_first: Int!) {
+  warehouse_products(warehouse_id: $warehouse_id) {
     data(first: $first, after: $after) {
       pageInfo {
         hasNextPage
@@ -3874,33 +3885,33 @@ query ShipHeroRestockProducts($first: Int!, $after: String) {
       }
       edges {
         node {
-          id
-          sku
-          name
+          warehouse_id
+          inventory_bin
+          inventory_overstock_bin
+          on_hand
           active
-          kit
-          kit_build
-          images {
-            src
-            position
-          }
-          warehouse_products {
-            warehouse_id
-            inventory_bin
-            inventory_overstock_bin
-            on_hand
-            active
-            locations(first: 100) {
-              edges {
-                node {
-                  id
-                  location_id
-                  quantity
-                  location {
-                    name
-                  }
+          locations(first: $location_first) {
+            edges {
+              node {
+                id
+                location_id
+                quantity
+                location {
+                  name
                 }
               }
+            }
+          }
+          product {
+            id
+            sku
+            name
+            active
+            kit
+            kit_build
+            images {
+              src
+              position
             }
           }
         }
@@ -3911,13 +3922,15 @@ query ShipHeroRestockProducts($first: Int!, $after: String) {
 GQL;
 
         $json = $this->client->query($graphql, [
+            'warehouse_id' => $warehouseId,
             'first' => $first,
             'after' => $after,
+            'location_first' => $locationFirst,
         ]);
 
-        $data = data_get($json, 'data.products.data');
+        $data = data_get($json, 'data.warehouse_products.data');
         if (! is_array($data)) {
-            throw new RuntimeException('ShipHero did not return products data for restock report.');
+            throw new RuntimeException('ShipHero did not return warehouse_products data for restock report.');
         }
 
         $edges = is_array($data['edges'] ?? null) ? $data['edges'] : [];

@@ -119,31 +119,31 @@ class InventoryRestockReportService
         $page = 0;
 
         do {
-            $pageResult = $this->inventory->paginateActiveProductsWithLocations(50, $after);
+            $pageResult = $this->inventory->paginateWarehouseProductsForRestock($warehouseId, $after);
             $edges = is_array($pageResult['edges'] ?? null) ? $pageResult['edges'] : [];
             foreach ($edges as $edge) {
-                $node = is_array($edge['node'] ?? null) ? $edge['node'] : null;
-                if ($node === null) {
-                    continue;
-                }
-                if (($node['active'] ?? null) === false) {
-                    continue;
-                }
-                $isKit = ($node['kit'] ?? false) === true || ($node['kit_build'] ?? false) === true;
-                if ($isKit) {
-                    continue;
-                }
-
-                $sku = trim((string) ($node['sku'] ?? ''));
-                if ($sku === '') {
-                    continue;
-                }
-
-                $wp = $this->warehouseProductForId($node, $warehouseId);
+                $wp = is_array($edge['node'] ?? null) ? $edge['node'] : null;
                 if ($wp === null) {
                     continue;
                 }
                 if (($wp['active'] ?? null) === false) {
+                    continue;
+                }
+
+                $product = is_array($wp['product'] ?? null) ? $wp['product'] : null;
+                if ($product === null) {
+                    continue;
+                }
+                if (($product['active'] ?? null) === false) {
+                    continue;
+                }
+                $isKit = ($product['kit'] ?? false) === true || ($product['kit_build'] ?? false) === true;
+                if ($isKit) {
+                    continue;
+                }
+
+                $sku = trim((string) ($product['sku'] ?? ''));
+                if ($sku === '') {
                     continue;
                 }
 
@@ -156,8 +156,8 @@ class InventoryRestockReportService
 
                 $built = InventoryRestockRowBuilder::buildRow(
                     $sku,
-                    (string) ($node['name'] ?? ''),
-                    $this->inventory->extractProductImageUrl($node),
+                    (string) ($product['name'] ?? ''),
+                    $this->inventory->extractProductImageUrl($product),
                     $locations
                 );
                 if ($built !== null) {
@@ -179,25 +179,6 @@ class InventoryRestockReportService
         }
 
         return $restockRows;
-    }
-
-    /**
-     * @param  array<string, mixed>  $node
-     * @return array<string, mixed>|null
-     */
-    private function warehouseProductForId(array $node, string $warehouseId): ?array
-    {
-        $wps = is_array($node['warehouse_products'] ?? null) ? $node['warehouse_products'] : [];
-        foreach ($wps as $wp) {
-            if (! is_array($wp)) {
-                continue;
-            }
-            if ((string) ($wp['warehouse_id'] ?? '') === $warehouseId) {
-                return $wp;
-            }
-        }
-
-        return null;
     }
 
     /**

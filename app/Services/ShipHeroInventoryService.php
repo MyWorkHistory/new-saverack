@@ -3834,4 +3834,173 @@ GQL,
             ? $normalized
             : $term;
     }
+
+    /**
+     * @return array{by_id: array<string, array<string, mixed>>, by_name: array<string, array<string, mixed>>}
+     */
+    public function buildWarehouseLocationPickableCatalog(string $warehouseId): array
+    {
+        $catalogById = [];
+        $catalogByName = [];
+        foreach ($this->listLocations($warehouseId, null) as $locationMeta) {
+            $idKey = strtolower(trim((string) ($locationMeta['id'] ?? '')));
+            if ($idKey !== '') {
+                $catalogById[$idKey] = $locationMeta;
+            }
+            $nameKey = strtolower(trim((string) ($locationMeta['name'] ?? '')));
+            if ($nameKey !== '') {
+                $catalogByName[$nameKey] = $locationMeta;
+            }
+        }
+
+        return ['by_id' => $catalogById, 'by_name' => $catalogByName];
+    }
+
+    /**
+     * @return array{edges: list<array<string, mixed>>, page_info: array{has_next_page: bool, end_cursor: string|null}}
+     */
+    public function paginateActiveProductsWithLocations(int $first = 50, ?string $after = null): array
+    {
+        $first = max(1, min(50, $first));
+        $after = is_string($after) && trim($after) !== '' ? trim($after) : null;
+
+        $graphql = <<<'GQL'
+query ShipHeroRestockProducts($first: Int!, $after: String) {
+  products {
+    data(first: $first, after: $after) {
+      pageInfo {
+        hasNextPage
+        endCursor
+      }
+      edges {
+        node {
+          id
+          sku
+          name
+          active
+          kit
+          kit_build
+          images {
+            src
+            position
+          }
+          warehouse_products {
+            warehouse_id
+            inventory_bin
+            inventory_overstock_bin
+            on_hand
+            active
+            locations(first: 100) {
+              edges {
+                node {
+                  id
+                  location_id
+                  quantity
+                  location {
+                    name
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}
+GQL;
+
+        $json = $this->client->query($graphql, [
+            'first' => $first,
+            'after' => $after,
+        ]);
+
+        $data = data_get($json, 'data.products.data');
+        if (! is_array($data)) {
+            throw new RuntimeException('ShipHero did not return products data for restock report.');
+        }
+
+        $edges = is_array($data['edges'] ?? null) ? $data['edges'] : [];
+        $pageInfo = is_array($data['pageInfo'] ?? null) ? $data['pageInfo'] : [];
+
+        return [
+            'edges' => $edges,
+            'page_info' => [
+                'has_next_page' => (bool) ($pageInfo['hasNextPage'] ?? false),
+                'end_cursor' => isset($pageInfo['endCursor']) && is_string($pageInfo['endCursor'])
+                    ? $pageInfo['endCursor']
+                    : null,
+            ],
+        ];
+    }
+
+    /**
+     * @param  array<string, mixed>  $wp
+     * @param  array<string, array<string, mixed>>  $catalogById
+     * @param  array<string, array<string, mixed>>  $catalogByName
+     * @return list<array{location_name: ?string, quantity: int, pickable: ?bool}>
+     */
+    public function enrichedLocationsForWarehouseProduct(
+        array $wp,
+        string $warehouseId,
+        array $catalogById,
+        array $catalogByName
+    ): array {
+        $normalized = $this->normalizeLocations($wp['locations'] ?? null, $warehouseId);
+        if ($normalized === []) {
+            $normalized = $this->fallbackLocationsFromWarehouseProduct($wp, $warehouseId);
+        }
+
+        $out = [];
+        foreach ($normalized as $location) {
+            if (! is_array($location)) {
+                continue;
+            }
+            $locationId = strtolower(trim((string) ($location['location_id'] ?? '')));
+            $locationName = strtolower(trim((string) ($location['location_name'] ?? '')));
+            $meta = null;
+            if ($locationId !== '' && isset($catalogById[$locationId])) {
+                $meta = $catalogById[$locationId];
+            } elseif ($locationName !== '' && isset($catalogByName[$locationName])) {
+                $meta = $catalogByName[$locationName];
+            }
+            $pickable = $location['pickable'] ?? null;
+            if (is_array($meta) && array_key_exists('pickable', $meta) && is_bool($meta['pickable'])) {
+                $pickable = $meta['pickable'];
+            }
+            $out[] = [
+                'location_name' => $location['location_name'] ?? null,
+                'quantity' => (int) ($location['quantity'] ?? 0),
+                'pickable' => $pickable,
+            ];
+        }
+
+        return $out;
+    }
+
+    /**
+     * @param  array<string, mixed>  $node
+     */
+    public function extractProductImageUrl(array $node): ?string
+    {
+        $imageUrl = null;
+        $images = is_array($node['images'] ?? null) ? $node['images'] : [];
+        $bestPos = PHP_INT_MAX;
+        foreach ($images as $img) {
+            if (! is_array($img)) {
+                continue;
+            }
+            $src = trim((string) ($img['src'] ?? ''));
+            if ($src === '') {
+                continue;
+            }
+            $pos = isset($img['position']) && is_numeric($img['position']) ? (int) $img['position'] : 999999;
+            if ($imageUrl === null || $pos < $bestPos) {
+                $imageUrl = $src;
+                $bestPos = $pos;
+            }
+        }
+
+        return $imageUrl;
+    }
 }

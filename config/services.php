@@ -47,6 +47,8 @@ return [
         'customer_account_id' => env('SHIPHERO_CUSTOMER_ACCOUNT_ID'),
         /** Public https origin for /storage/... URLs passed to order_add_attachment (ShipHero fetches this). */
         'attachment_public_base_url' => env('SHIPHERO_ATTACHMENT_PUBLIC_BASE_URL'),
+        /** Optional warehouse id for admin restock report; defaults to first ShipHero warehouse. */
+        'restock_warehouse_id' => env('SHIPHERO_RESTOCK_WAREHOUSE_ID'),
     ],
 
     'whatsapp' => [

@@ -8,6 +8,7 @@ use App\Models\ClientAccountAsnLine;
 use App\Models\ClientAccountOnDemandProduct;
 use App\Services\ShipHeroClient;
 use App\Services\InventoryProductDetailCacheService;
+use App\Services\InventoryRestockReportService;
 use App\Services\ShipHeroInventoryService;
 use App\Services\ShipHeroOrderService;
 use App\Support\Barcode\Code128Svg;
@@ -95,6 +96,65 @@ class InventoryController extends Controller
                     ? $e->getMessage()
                     : 'Could not reach ShipHero. Check SHIPHERO_* in .env and server logs.',
             ], 502);
+        }
+    }
+
+    public function restockReport(Request $request, InventoryRestockReportService $reports): JsonResponse
+    {
+        try {
+            $warehouseId = $request->query('warehouse_id');
+            $warehouseId = is_string($warehouseId) && trim($warehouseId) !== '' ? trim($warehouseId) : null;
+            $snapshot = $reports->latestSnapshot($warehouseId);
+            if ($snapshot !== null) {
+                return response()->json($snapshot);
+            }
+
+            return response()->json([
+                'warehouse_id' => $reports->resolveWarehouseId($warehouseId),
+                'computed_at' => null,
+                'rows' => [],
+                'row_count' => 0,
+                'status' => null,
+                'error_message' => null,
+                'duration_ms' => null,
+            ]);
+        } catch (RuntimeException $e) {
+            return response()->json(['message' => $e->getMessage()], 502);
+        } catch (Throwable $e) {
+            report($e);
+
+            return response()->json([
+                'message' => config('app.debug')
+                    ? $e->getMessage()
+                    : 'Could not load restock report.',
+            ], 500);
+        }
+    }
+
+    public function refreshRestockReport(Request $request, InventoryRestockReportService $reports): JsonResponse
+    {
+        @set_time_limit(600);
+
+        try {
+            $validated = $request->validate([
+                'warehouse_id' => ['nullable', 'string', 'max:128'],
+            ]);
+            $warehouseId = isset($validated['warehouse_id']) ? trim((string) $validated['warehouse_id']) : null;
+            $warehouseId = $warehouseId !== '' ? $warehouseId : null;
+
+            return response()->json($reports->refresh($warehouseId));
+        } catch (ValidationException $e) {
+            throw $e;
+        } catch (RuntimeException $e) {
+            return response()->json(['message' => $e->getMessage()], 502);
+        } catch (Throwable $e) {
+            report($e);
+
+            return response()->json([
+                'message' => config('app.debug')
+                    ? $e->getMessage()
+                    : 'Could not refresh restock report.',
+            ], 500);
         }
     }
 

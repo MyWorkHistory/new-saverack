@@ -1,0 +1,29 @@
+<?php
+
+namespace App\Models;
+
+use Illuminate\Database\Eloquent\Model;
+
+class InventoryRestockSnapshot extends Model
+{
+    public const STATUS_OK = 'ok';
+
+    public const STATUS_FAILED = 'failed';
+
+    protected $fillable = [
+        'warehouse_id',
+        'computed_at',
+        'rows',
+        'row_count',
+        'status',
+        'error_message',
+        'duration_ms',
+    ];
+
+    protected $casts = [
+        'computed_at' => 'datetime',
+        'rows' => 'array',
+        'row_count' => 'integer',
+        'duration_ms' => 'integer',
+    ];
+}

@@ -16,6 +16,15 @@ class Kernel extends ConsoleKernel
      */
     protected function schedule(Schedule $schedule)
     {
+        $schedule->command('inventory:refresh-restock-report')
+            ->dailyAt('07:00')
+            ->timezone('America/New_York');
+        $schedule->command('inventory:refresh-restock-report')
+            ->dailyAt('12:00')
+            ->timezone('America/New_York');
+        $schedule->command('inventory:refresh-restock-report')
+            ->dailyAt('14:30')
+            ->timezone('America/New_York');
     }
 
     /**

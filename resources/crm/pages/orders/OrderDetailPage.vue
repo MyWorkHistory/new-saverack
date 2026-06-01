@@ -341,6 +341,17 @@ const showRemoveUserHoldBtn = computed(
   () => detailHoldsNormalized.value.operator_hold && canRunShipHeroActions.value && !detailOnlyClientHold.value,
 );
 
+/** Admin sidebar hold guidance (not shown on portal order view). */
+const showAdminSidebarHoldNote = computed(
+  () =>
+    !isPortalUser.value &&
+    !isReturnPreviewMode.value &&
+    Boolean(order.value) &&
+    showNotReadyToShipBanner.value &&
+    (detailOnlyClientHold.value ||
+      (detailOnlyCrmUserHold.value && showRemoveUserHoldBtn.value)),
+);
+
 const sortedItems = computed(() => {
   const rows = Array.isArray(order.value?.items) ? [...order.value.items] : [];
   const dir = itemSortDir.value === "desc" ? -1 : 1;
@@ -1598,12 +1609,6 @@ function goToOrdersList() {
               <ul class="small mb-0 ps-3 mt-2 text-secondary order-detail-page__nrts-list">
                 <li v-for="(line, idx) in notReadyBannerBullets" :key="'nrts-' + idx">{{ line }}</li>
               </ul>
-              <p v-if="detailOnlyClientHold" class="small text-secondary mb-0 mt-3">
-                This user hold was set outside Save Rack. Clear it in ShipHero or your sales channel.
-              </p>
-              <p v-else-if="detailOnlyCrmUserHold && showRemoveUserHoldBtn" class="small text-secondary mb-0 mt-3">
-                User hold is active — use Remove Hold to release. ShipHero may label this hold as Operator Hold.
-              </p>
             </div>
           </div>
         </div>
@@ -1799,6 +1804,19 @@ function goToOrdersList() {
         </div>
 
         <div class="col-lg-4 d-flex flex-column gap-4 order-detail-page__side-column">
+          <div
+            v-if="showAdminSidebarHoldNote"
+            class="staff-table-card staff-datatable-card staff-datatable-card--white p-4 order-detail-page__side-panel"
+          >
+            <h3 class="h6 fw-semibold mb-3">Note</h3>
+            <p v-if="detailOnlyClientHold" class="small text-secondary mb-0">
+              This user hold was set outside Save Rack. Clear it in ShipHero or your sales channel.
+            </p>
+            <p v-else-if="detailOnlyCrmUserHold && showRemoveUserHoldBtn" class="small text-secondary mb-0">
+              User hold is active — use Remove Hold to release. ShipHero may label this hold as Operator Hold.
+            </p>
+          </div>
+
           <div class="staff-table-card staff-datatable-card staff-datatable-card--white p-4 order-detail-page__side-panel">
             <div class="d-flex justify-content-between align-items-start gap-2 mb-3">
               <h3 class="h6 fw-semibold mb-0">Shipping Address</h3>

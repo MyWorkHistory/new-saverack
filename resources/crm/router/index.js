@@ -127,6 +127,10 @@ const meta = {
     title: "Save Rack | On-Demand Inventory",
     description: "Account On-Demand SKU catalog.",
   },
+  ordersSearch: {
+    title: "Save Rack | Orders | Search",
+    description: "Find a ShipHero order by order number; optionally filter by client account.",
+  },
   ordersManage: {
     title: "Save Rack | Orders | Manage",
     description:
@@ -381,7 +385,7 @@ const routes = [
   },
   {
     path: "/admin/orders",
-    redirect: "/admin/orders/all",
+    redirect: "/admin/orders/search",
   },
   {
     path: "/admin/orders/create",
@@ -394,14 +398,18 @@ const routes = [
     },
   },
   {
-    path: "/admin/orders/all",
-    name: "orders-all",
+    path: "/admin/orders/search",
+    name: "orders-search",
     component: OrdersListPage,
-    meta: { ...meta.ordersManage, orderTab: "manage" },
+    meta: { ...meta.ordersSearch, orderTab: "search" },
+  },
+  {
+    path: "/admin/orders/all",
+    redirect: "/admin/orders/search",
   },
   {
     path: "/admin/orders/manage",
-    redirect: "/admin/orders/all",
+    redirect: "/admin/orders/search",
   },
   {
     path: "/admin/orders/awaiting",

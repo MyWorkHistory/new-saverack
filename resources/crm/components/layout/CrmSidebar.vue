@@ -109,8 +109,8 @@ function navActive(mode) {
   if (mode === "clients-accounts") return p.startsWith("/admin/clients/accounts");
   if (mode === "clients-users") return p.startsWith("/admin/clients/users");
   if (mode === "orders") return p.startsWith("/admin/orders");
-  if (mode === "orders-index") return p === "/admin/orders/all";
-  if (mode === "orders-manage") return p.startsWith("/admin/orders/all");
+  if (mode === "orders-index") return p === "/admin/orders/search";
+  if (mode === "orders-manage") return p.startsWith("/admin/orders/search");
   if (mode === "orders-awaiting") return p.startsWith("/admin/orders/awaiting");
   if (mode === "orders-on-hold") return p.startsWith("/admin/orders/on-hold");
   if (mode === "orders-out-of-stock") return p.startsWith("/admin/orders/backorder");
@@ -258,12 +258,12 @@ function collapseNav() {
               <ul v-show="ordersGroupOpen" class="list-unstyled mb-0 mt-1">
                 <li>
                   <RouterLink
-                    to="/admin/orders/all"
+                    to="/admin/orders/search"
                     class="vx-nav-link vx-nav-sublink"
                     :class="{ 'vx-nav-link--active': navActive('orders-index') }"
                     @click="closeMobile"
                   >
-                    All
+                    Search
                   </RouterLink>
                 </li>
                 <li>
@@ -321,7 +321,7 @@ function collapseNav() {
           </template>
           <RouterLink
             v-else
-            to="/admin/orders/all"
+            to="/admin/orders/search"
             class="vx-nav-link"
             title="Orders"
             @click="closeMobile"

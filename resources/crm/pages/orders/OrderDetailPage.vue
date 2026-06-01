@@ -1469,7 +1469,7 @@ function goToOrdersList() {
     router.push({ name: "user-orders", query: q });
     return;
   }
-  router.push({ name: "orders-all", query: q });
+  router.push({ name: "orders-search", query: q });
 }
 </script>
 
@@ -1804,19 +1804,6 @@ function goToOrdersList() {
         </div>
 
         <div class="col-lg-4 d-flex flex-column gap-4 order-detail-page__side-column">
-          <div
-            v-if="showAdminSidebarHoldNote"
-            class="staff-table-card staff-datatable-card staff-datatable-card--white p-4 order-detail-page__side-panel"
-          >
-            <h3 class="h6 fw-semibold mb-3">Note</h3>
-            <p v-if="detailOnlyClientHold" class="small text-secondary mb-0">
-              This user hold was set outside Save Rack. Clear it in ShipHero or your sales channel.
-            </p>
-            <p v-else-if="detailOnlyCrmUserHold && showRemoveUserHoldBtn" class="small text-secondary mb-0">
-              User hold is active — use Remove Hold to release. ShipHero may label this hold as Operator Hold.
-            </p>
-          </div>
-
           <div class="staff-table-card staff-datatable-card staff-datatable-card--white p-4 order-detail-page__side-panel">
             <div class="d-flex justify-content-between align-items-start gap-2 mb-3">
               <h3 class="h6 fw-semibold mb-0">Shipping Address</h3>
@@ -2057,6 +2044,19 @@ function goToOrdersList() {
               </div>
               <div>There are no attachments</div>
             </div>
+          </div>
+
+          <div
+            v-if="showAdminSidebarHoldNote"
+            class="staff-table-card staff-datatable-card staff-datatable-card--white p-4 order-detail-page__side-panel"
+          >
+            <h3 class="h6 fw-semibold mb-3">Note</h3>
+            <p v-if="detailOnlyClientHold" class="small text-secondary mb-0">
+              This user hold was set outside Save Rack. Clear it in ShipHero or your sales channel.
+            </p>
+            <p v-else-if="detailOnlyCrmUserHold && showRemoveUserHoldBtn" class="small text-secondary mb-0">
+              User hold is active — use Remove Hold to release. ShipHero may label this hold as Operator Hold.
+            </p>
           </div>
         </div>
       </div>

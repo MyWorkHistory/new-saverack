@@ -79,10 +79,10 @@ const tabKey = computed(() => String(route.meta?.orderTab || "manage"));
 /** Portal user routes set `meta.userPortal`; staff may pass `portal-order-list` explicitly. */
 const isPortalOrderList = computed(() => props.portalOrderList === true || route.meta?.userPortal === true);
 
-const isOrdersAllPage = computed(() => route.name === "orders-all");
+const isOrdersSearchPage = computed(() => tabKey.value === "search");
 
 const tabTitle = computed(() => {
-  if (isOrdersAllPage.value) return "All";
+  if (isOrdersSearchPage.value) return "Search";
   if (tabKey.value === "awaiting") return "Ready to Ship";
   if (tabKey.value === "on_hold") return "On-Hold";
   if (tabKey.value === "backorder") return "Backorder";
@@ -90,7 +90,7 @@ const tabTitle = computed(() => {
   return "Manage";
 });
 
-const showManageFilters = computed(() => true);
+const showManageFilters = computed(() => !isOrdersSearchPage.value);
 const isCustomDate = computed(() => query.datePreset === "custom");
 
 const tableColspan = computed(() => 9);
@@ -255,11 +255,22 @@ function normalizeOrderNumberInput(v) {
 }
 
 function runListSearch() {
+  const orderNum = normalizeOrderNumberInput(query.orderNumber);
+  if (isOrdersSearchPage.value) {
+    if (!orderNum) {
+      toast.error("Enter an order number to search.");
+      return;
+    }
+    committedOrderNumber.value = orderNum;
+    crossAccountMode.value = isAdminOrdersList.value && !selectedAccountId.value;
+    fetchOrders(true);
+    return;
+  }
   if (!isAdminOrdersList.value && !selectedAccountId.value) {
     toast.error("Select an account to load orders.");
     return;
   }
-  committedOrderNumber.value = normalizeOrderNumberInput(query.orderNumber);
+  committedOrderNumber.value = orderNum;
   crossAccountMode.value = isAdminOrdersList.value && !selectedAccountId.value;
   fetchOrders(true);
 }
@@ -350,8 +361,9 @@ function orderDateParamsForRequest() {
 }
 
 function buildParams(withCursor = false) {
+  const apiTab = tabKey.value === "search" ? "manage" : tabKey.value;
   const params = {
-    tab: tabKey.value,
+    tab: apiTab,
     first: 100,
     ...orderDateParamsForRequest(),
   };
@@ -383,8 +395,9 @@ async function loadAccounts() {
 }
 
 async function fetchOrders(reset = true) {
-  const canLoad =
-    selectedAccountId.value || (isAdminOrdersList.value && crossAccountMode.value);
+  const canLoad = isOrdersSearchPage.value
+    ? Boolean(committedOrderNumber.value)
+    : selectedAccountId.value || (isAdminOrdersList.value && crossAccountMode.value);
   if (!canLoad) {
     if (reset) {
       rows.value = [];
@@ -966,6 +979,13 @@ watch(
     }
     clearRowSelection();
     crossAccountMode.value = false;
+    if (tabKey.value === "search") {
+      rows.value = [];
+      hasSearched.value = false;
+      hasNextPage.value = false;
+      nextCursor.value = null;
+      return;
+    }
     if (!accountId) {
       rows.value = [];
       hasSearched.value = false;
@@ -1022,11 +1042,9 @@ onUnmounted(() => {
           ({{ displayedRows.length }} {{ displayedRows.length === 1 ? "order" : "orders" }})
         </span>
       </h1>
-      <p
-        v-if="isOrdersAllPage"
-        class="orders-list-page__subtitle mb-0"
-      >
-        All orders for the selected account matching your filters. Use Search for a specific order number.
+      <p v-if="isOrdersSearchPage" class="staff-page__intro mb-0 text-secondary small">
+        Optionally select an account, enter an order number, and click Search. Results appear only after you
+        search. ShipHero also matches storefront IDs on partner order ID when applicable.
       </p>
       <p v-else-if="!isPortalOrderList" class="staff-page__intro mb-0 text-secondary small">
         Search across all accounts, or pick an account to filter. Leave order # blank and click Search to load
@@ -1337,6 +1355,11 @@ onUnmounted(() => {
                 <div class="d-flex justify-content-center py-3">
                   <CrmLoadingSpinner message="Loading orders..." />
                 </div>
+              </td>
+            </tr>
+            <tr v-else-if="isOrdersSearchPage && !hasSearched">
+              <td :colspan="tableColspan" class="text-center text-secondary py-5">
+                Enter an order number and click Search.
               </td>
             </tr>
             <tr v-else-if="!hasSearched && isAdminOrdersList && !selectedAccountId">

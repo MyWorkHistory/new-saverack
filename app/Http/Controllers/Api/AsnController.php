@@ -19,6 +19,7 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\ValidationException;
+use RuntimeException;
 
 class AsnController extends Controller
 {
@@ -552,7 +553,12 @@ class AsnController extends Controller
         $maxSort = (int) ClientAccountAsnLine::query()->where('client_account_asn_id', $asn->id)->max('sort_order');
         $line = new ClientAccountAsnLine;
         $line->client_account_asn_id = $asn->id;
-        $line->shiphero_product_id = $validated['shiphero_product_id'] ?? null;
+        $line->shiphero_product_id = isset($validated['shiphero_product_id'])
+            ? trim((string) $validated['shiphero_product_id'])
+            : null;
+        if ($line->shiphero_product_id === '') {
+            $line->shiphero_product_id = null;
+        }
         $line->sku = $validated['sku'];
         $line->name = $validated['name'];
         $line->image_url = isset($validated['image_url']) ? trim((string) $validated['image_url']) : null;
@@ -563,6 +569,11 @@ class AsnController extends Controller
         $line->accepted_qty = $portal ? 0 : (int) ($validated['accepted_qty'] ?? 0);
         $line->rejected_qty = $portal ? 0 : (int) ($validated['rejected_qty'] ?? 0);
         $line->sort_order = $maxSort + 1;
+
+        if ($line->shiphero_product_id === null) {
+            $this->provisionShipHeroProductForAsnLine($asn, $line);
+        }
+
         $line->save();
         $this->recalcLineAggregates($asn->fresh());
 
@@ -664,5 +675,40 @@ class AsnController extends Controller
         });
 
         return response()->json($this->serializeAsn($asn->fresh(['lines', 'trackings', 'vendorLines'])));
+    }
+
+    private function provisionShipHeroProductForAsnLine(ClientAccountAsn $asn, ClientAccountAsnLine $line): void
+    {
+        $asn->loadMissing('clientAccount');
+        $customerId = $asn->clientAccount !== null
+            ? trim((string) $asn->clientAccount->shiphero_customer_account_id)
+            : '';
+        if ($customerId === '') {
+            return;
+        }
+
+        try {
+            $created = $this->inventory->createProduct($customerId, (string) $line->sku, (string) $line->name);
+            $line->shiphero_product_id = $created['id'];
+            if ($line->image_url === null && ! empty($created['image_url'])) {
+                $line->image_url = $created['image_url'];
+            }
+
+            return;
+        } catch (RuntimeException $e) {
+            $existing = $this->inventory->getProductDetailBySku((string) $line->sku, null, $customerId, false);
+            if (is_array($existing) && ! empty($existing['id'])) {
+                $line->shiphero_product_id = (string) $existing['id'];
+                if ($line->image_url === null && ! empty($existing['image_url'])) {
+                    $line->image_url = (string) $existing['image_url'];
+                }
+
+                return;
+            }
+
+            throw ValidationException::withMessages([
+                'sku' => ['Could not create this product in ShipHero: '.$e->getMessage()],
+            ]);
+        }
     }
 }

@@ -932,6 +932,141 @@ GQL;
     }
 
     /**
+     * Create a product in ShipHero for a 3PL customer account (product_create).
+     *
+     * @return array{id: string, sku: string, name: string, image_url: string|null}
+     *
+     * @throws RuntimeException
+     */
+    public function createProduct(string $customerAccountId, string $sku, string $name, ?string $barcode = null): array
+    {
+        $customerAccountId = trim($customerAccountId);
+        $sku = trim($sku);
+        $name = trim($name);
+        if ($customerAccountId === '' || $sku === '' || $name === '') {
+            throw new RuntimeException('Customer account, SKU, and product name are required to create a product in ShipHero.');
+        }
+
+        $data = [
+            'customer_account_id' => $customerAccountId,
+            'sku' => $sku,
+            'name' => $name,
+            'price' => '0.00',
+            'value' => '0.00',
+        ];
+        $barcode = $barcode !== null ? trim($barcode) : '';
+        if ($barcode !== '') {
+            $data['barcode'] = $barcode;
+        }
+
+        $warehouses = $this->listWarehouses();
+        if ($warehouses !== []) {
+            $data['warehouse_products'] = [
+                [
+                    'warehouse_id' => $warehouses[0]['id'],
+                    'on_hand' => 0,
+                ],
+            ];
+        }
+
+        $graphql = <<<'GQL'
+mutation ShipHeroProductCreate($data: CreateProductInput!) {
+  product_create(data: $data) {
+    request_id
+    complexity
+    product {
+      id
+      sku
+      name
+      barcode
+      thumbnail
+      large_thumbnail
+    }
+  }
+}
+GQL;
+
+        $json = $this->client->query($graphql, ['data' => $data], true, [
+            ShipHeroClient::OPTION_GRAPHQL_SUCCESS_FIELD => 'product_create',
+        ]);
+        $product = data_get($json, 'data.product_create.product');
+        if (! is_array($product)) {
+            $errs = $json['errors'] ?? [];
+            $msg = is_array($errs) && isset($errs[0]['message'])
+                ? (string) $errs[0]['message']
+                : 'ShipHero did not return a product after create.';
+
+            throw new RuntimeException($msg);
+        }
+
+        $id = isset($product['id']) && is_string($product['id']) ? trim($product['id']) : '';
+        if ($id === '') {
+            throw new RuntimeException('ShipHero created a product but returned no product id.');
+        }
+
+        $imageUrl = null;
+        foreach (['large_thumbnail', 'thumbnail'] as $thumbKey) {
+            $thumb = isset($product[$thumbKey]) && is_string($product[$thumbKey]) ? trim($product[$thumbKey]) : '';
+            if ($thumb !== '') {
+                $imageUrl = $thumb;
+                break;
+            }
+        }
+
+        return [
+            'id' => $id,
+            'sku' => isset($product['sku']) && is_string($product['sku']) ? trim($product['sku']) : $sku,
+            'name' => isset($product['name']) && is_string($product['name']) ? trim($product['name']) : $name,
+            'image_url' => $imageUrl,
+        ];
+    }
+
+    /**
+     * Minimal product payload for portal inventory detail when SKU exists on an ASN line but not in ShipHero yet.
+     *
+     * @return array<string, mixed>
+     */
+    public function minimalProductFromAsnLine(
+        string $sku,
+        string $name,
+        ?string $shipheroProductId = null,
+        ?string $imageUrl = null
+    ): array {
+        $sku = trim($sku);
+        $name = trim($name);
+
+        return [
+            'id' => $shipheroProductId !== null && trim($shipheroProductId) !== '' ? trim($shipheroProductId) : null,
+            'sku' => $sku,
+            'name' => $name !== '' ? $name : $sku,
+            'barcode' => null,
+            'image_url' => $imageUrl !== null && trim($imageUrl) !== '' ? trim($imageUrl) : null,
+            'customs_value' => 0.0,
+            'customs_description' => null,
+            'dimensions' => [
+                'weight' => null,
+                'height' => null,
+                'width' => null,
+                'length' => null,
+            ],
+            'storage_cubic_feet' => null,
+            'metrics' => [
+                'on_hand' => 0,
+                'allocated' => 0,
+                'available' => 0,
+                'backorder' => 0,
+                'asn' => 0,
+            ],
+            'kit' => false,
+            'kit_build' => false,
+            'kit_components' => [],
+            'parent_kits' => [],
+            'warehouses' => [],
+            'asn_line_only' => true,
+        ];
+    }
+
+    /**
      * @param  array<string, mixed>|null  $node
      * @return array{id: string, sku: string, name: string, barcode: string, image_url: string|null}|null
      */

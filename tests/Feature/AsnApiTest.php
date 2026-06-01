@@ -4,10 +4,13 @@ namespace Tests\Feature;
 
 use App\Models\ClientAccount;
 use App\Models\ClientAccountAsn;
+use App\Models\ClientAccountAsnLine;
 use App\Models\Permission;
 use App\Models\User;
+use App\Services\ShipHeroInventoryService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Laravel\Sanctum\Sanctum;
+use Mockery;
 use Tests\TestCase;
 
 class AsnApiTest extends TestCase
@@ -245,5 +248,51 @@ class AsnApiTest extends TestCase
 
         $this->deleteJson('/api/asns/'.$asn->id)->assertOk();
         $this->assertDatabaseMissing('client_account_asns', ['id' => $asn->id]);
+    }
+
+    public function test_store_line_without_shiphero_id_provisions_product_in_shiphero(): void
+    {
+        $account = $this->account();
+        $user = User::factory()->create(['client_account_id' => $account->id]);
+        $user->permissions()->attach($this->inventoryViewPermission()->id);
+        Sanctum::actingAs($user);
+
+        $asn = ClientAccountAsn::create([
+            'client_account_id' => $account->id,
+            'asn_number' => '0010',
+            'status' => ClientAccountAsn::STATUS_DRAFT,
+            'total_boxes' => 0,
+            'total_pallets' => 0,
+            'expected_qty' => 0,
+            'accepted_qty' => 0,
+            'rejected_qty' => 0,
+        ]);
+
+        $mock = Mockery::mock(ShipHeroInventoryService::class);
+        $mock->shouldReceive('createProduct')
+            ->once()
+            ->with('sh-asn-test-1', 'NEW-PORTAL-SKU', 'Portal Widget')
+            ->andReturn([
+                'id' => 'prod-sh-1',
+                'sku' => 'NEW-PORTAL-SKU',
+                'name' => 'Portal Widget',
+                'image_url' => 'https://cdn.example/p.jpg',
+            ]);
+        $this->app->instance(ShipHeroInventoryService::class, $mock);
+
+        $response = $this->postJson('/api/asns/'.$asn->id.'/lines', [
+            'sku' => 'NEW-PORTAL-SKU',
+            'name' => 'Portal Widget',
+            'expected_qty' => 5,
+        ]);
+
+        $response->assertCreated()
+            ->assertJsonPath('sku', 'NEW-PORTAL-SKU')
+            ->assertJsonPath('shiphero_product_id', 'prod-sh-1');
+
+        $line = ClientAccountAsnLine::query()->where('client_account_asn_id', $asn->id)->first();
+        $this->assertNotNull($line);
+        $this->assertSame('prod-sh-1', $line->shiphero_product_id);
+        $this->assertSame('https://cdn.example/p.jpg', $line->image_url);
     }
 }

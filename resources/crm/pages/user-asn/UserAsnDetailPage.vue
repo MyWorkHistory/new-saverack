@@ -303,7 +303,7 @@ async function submitAddNewSku() {
       expected_qty: qty,
       shiphero_product_id: null,
     });
-    toast.success("SKU added.");
+    toast.success("SKU added and created in ShipHero.");
     addNewSkuOpen.value = false;
     await loadAsn();
     resetCatalogSearchState();
@@ -1307,7 +1307,7 @@ onUnmounted(() => {
             </header>
             <div class="crm-vx-modal__body">
               <p class="small text-secondary mb-3">
-                Add a product that is not in your ShipHero catalog yet.
+                Creates the SKU in ShipHero and adds it to this ASN.
               </p>
               <label class="form-label small mb-1" for="asn-new-sku-name">Product Name</label>
               <input

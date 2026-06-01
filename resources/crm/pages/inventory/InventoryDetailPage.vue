@@ -726,6 +726,10 @@ async function togglePickable(loc) {
           </div>
         </div>
 
+        <p v-if="product.asn_line_only" class="alert alert-info small py-2 mb-3">
+          This SKU is on your ASN. Inventory counts will appear after it is received in ShipHero.
+        </p>
+
         <div class="row g-2 inventory-portal-detail__metrics">
           <div v-for="card in metricCards" :key="card.key" class="col-6 col-md">
             <div class="staff-table-card p-3 inventory-metric-card inventory-portal-detail__metric-card h-100">

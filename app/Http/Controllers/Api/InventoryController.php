@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Models\ClientAccount;
+use App\Models\ClientAccountAsnLine;
 use App\Models\ClientAccountOnDemandProduct;
 use App\Services\ShipHeroClient;
 use App\Services\InventoryProductDetailCacheService;
@@ -264,6 +265,9 @@ class InventoryController extends Controller
                 $shipheroCustomerId = $this->resolveShipHeroCustomerAccountId($clientAccountId, $request);
             }
             $product = $this->inventory->getProductDetailBySku($sku, $warehouseId, $shipheroCustomerId, false);
+            if (! is_array($product) && $clientAccountId > 0) {
+                $product = $this->resolveProductDetailForAccountSku($clientAccountId, $sku, $shipheroCustomerId);
+            }
             if (! is_array($product)) {
                 return response()->json(['message' => 'Product not found.'], 404);
             }
@@ -1032,6 +1036,65 @@ class InventoryController extends Controller
         $env = config('services.shiphero.customer_account_id');
 
         return (is_string($env) && trim($env) !== '') ? trim($env) : null;
+    }
+
+    /**
+     * When ShipHero has no product yet, link ASN lines or create the SKU in ShipHero for portal users.
+     *
+     * @return array<string, mixed>|null
+     */
+    private function resolveProductDetailForAccountSku(int $clientAccountId, string $sku, ?string $shipheroCustomerId): ?array
+    {
+        $sku = trim($sku);
+        if ($sku === '') {
+            return null;
+        }
+
+        $line = ClientAccountAsnLine::query()
+            ->where('sku', $sku)
+            ->whereHas('asn', function ($q) use ($clientAccountId) {
+                $q->where('client_account_id', $clientAccountId);
+            })
+            ->orderByDesc('id')
+            ->first();
+
+        if ($line === null) {
+            return null;
+        }
+
+        $customerId = is_string($shipheroCustomerId) ? trim($shipheroCustomerId) : '';
+        if ($customerId !== '' && trim((string) ($line->shiphero_product_id ?? '')) === '') {
+            try {
+                $created = $this->inventory->createProduct($customerId, $sku, (string) $line->name);
+                $line->shiphero_product_id = $created['id'];
+                if ($line->image_url === null && ! empty($created['image_url'])) {
+                    $line->image_url = $created['image_url'];
+                }
+                $line->save();
+
+                $fromShipHero = $this->inventory->getProductDetailBySku($sku, null, $customerId, false);
+                if (is_array($fromShipHero)) {
+                    return $fromShipHero;
+                }
+            } catch (RuntimeException $e) {
+                $existing = $this->inventory->getProductDetailBySku($sku, null, $customerId, false);
+                if (is_array($existing)) {
+                    if (trim((string) ($line->shiphero_product_id ?? '')) === '' && ! empty($existing['id'])) {
+                        $line->shiphero_product_id = (string) $existing['id'];
+                        $line->save();
+                    }
+
+                    return $existing;
+                }
+            }
+        }
+
+        return $this->inventory->minimalProductFromAsnLine(
+            $sku,
+            (string) $line->name,
+            $line->shiphero_product_id,
+            $line->image_url
+        );
     }
 
     /**

@@ -7,8 +7,6 @@ namespace App\Support;
  */
 class InventoryRestockRowBuilder
 {
-    public const PICK_QTY_THRESHOLD = 2;
-
     /**
      * @param  list<array{location_name: ?string, quantity: int, pickable: ?bool}>  $locations
      * @return array<string, mixed>|null
@@ -17,7 +15,8 @@ class InventoryRestockRowBuilder
         string $sku,
         string $name,
         ?string $imageUrl,
-        array $locations
+        array $locations,
+        int $replenishmentMinimum
     ): ?array {
         $pickQty = 0;
         $backstockQty = 0;
@@ -52,7 +51,7 @@ class InventoryRestockRowBuilder
             }
         }
 
-        if ($pickQty > self::PICK_QTY_THRESHOLD || $backstockQty <= 0) {
+        if ($pickQty > $replenishmentMinimum || $backstockQty <= 0) {
             return null;
         }
 
@@ -64,6 +63,7 @@ class InventoryRestockRowBuilder
             'image_url' => $imageUrl !== null && trim($imageUrl) !== '' ? trim($imageUrl) : null,
             'pick_location' => $pickNames !== [] ? implode(', ', $pickNames) : '—',
             'pick_qty' => $pickQty,
+            'replenishment_minimum' => $replenishmentMinimum,
             'backstock_qty' => $backstockQty,
             'backstock_location' => $backstockLocation,
         ];

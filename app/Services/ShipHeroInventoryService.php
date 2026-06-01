@@ -3840,20 +3840,25 @@ GQL,
      */
     public function buildWarehouseLocationPickableCatalog(string $warehouseId): array
     {
-        $catalogById = [];
-        $catalogByName = [];
-        foreach ($this->listLocations($warehouseId, null) as $locationMeta) {
-            $idKey = strtolower(trim((string) ($locationMeta['id'] ?? '')));
-            if ($idKey !== '') {
-                $catalogById[$idKey] = $locationMeta;
-            }
-            $nameKey = strtolower(trim((string) ($locationMeta['name'] ?? '')));
-            if ($nameKey !== '') {
-                $catalogByName[$nameKey] = $locationMeta;
-            }
-        }
+        $warehouseId = trim($warehouseId);
+        $cacheKey = 'shiphero.restock.location_catalog.'.md5($warehouseId);
 
-        return ['by_id' => $catalogById, 'by_name' => $catalogByName];
+        return Cache::remember($cacheKey, now()->addHour(), function () use ($warehouseId) {
+            $catalogById = [];
+            $catalogByName = [];
+            foreach ($this->listLocations($warehouseId, null) as $locationMeta) {
+                $idKey = strtolower(trim((string) ($locationMeta['id'] ?? '')));
+                if ($idKey !== '') {
+                    $catalogById[$idKey] = $locationMeta;
+                }
+                $nameKey = strtolower(trim((string) ($locationMeta['name'] ?? '')));
+                if ($nameKey !== '') {
+                    $catalogByName[$nameKey] = $locationMeta;
+                }
+            }
+
+            return ['by_id' => $catalogById, 'by_name' => $catalogByName];
+        });
     }
 
     /**
@@ -3862,22 +3867,48 @@ GQL,
      *
      * @return array{edges: list<array<string, mixed>>, page_info: array{has_next_page: bool, end_cursor: string|null}}
      */
-    public function paginateWarehouseProductsForRestock(string $warehouseId, ?string $after = null): array
+    public function paginateWarehouseProductsForRestock(string $warehouseId, ?string $after = null, ?int $pageSizeOverride = null): array
     {
         $warehouseId = trim($warehouseId);
         if ($warehouseId === '') {
             throw new RuntimeException('Warehouse id is required for restock report pagination.');
         }
 
-        $first = (int) config('services.shiphero.restock_page_size', 40);
+        $first = $pageSizeOverride !== null
+            ? $pageSizeOverride
+            : (int) config('services.shiphero.restock_page_size', 40);
         $first = max(1, min(50, $first));
         $locationFirst = (int) config('services.shiphero.restock_location_limit', 50);
         $locationFirst = max(1, min(100, $locationFirst));
         $after = is_string($after) && trim($after) !== '' ? trim($after) : null;
 
-        $graphql = <<<'GQL'
+        try {
+            return $this->fetchRestockWarehouseProductsPage($warehouseId, $after, $first, $locationFirst, true);
+        } catch (RuntimeException $e) {
+            if ($this->isShipHeroCreditLimitError($e->getMessage()) && $first > 5) {
+                $reduced = max(5, (int) floor($first / 2));
+
+                return $this->paginateWarehouseProductsForRestock($warehouseId, $after, $reduced);
+            }
+
+            throw $e;
+        }
+    }
+
+    /**
+     * @return array{edges: list<array<string, mixed>>, page_info: array{has_next_page: bool, end_cursor: string|null}}
+     */
+    private function fetchRestockWarehouseProductsPage(
+        string $warehouseId,
+        ?string $after,
+        int $first,
+        int $locationFirst,
+        bool $useHideEmpty
+    ): array {
+        $graphql = $useHideEmpty
+            ? <<<'GQL'
 query ShipHeroRestockWarehouseProducts($warehouse_id: String!, $first: Int!, $after: String, $location_first: Int!) {
-  warehouse_products(warehouse_id: $warehouse_id) {
+  warehouse_products(warehouse_id: $warehouse_id, hide_empty: true) {
     data(first: $first, after: $after) {
       pageInfo {
         hasNextPage
@@ -3890,6 +3921,8 @@ query ShipHeroRestockWarehouseProducts($warehouse_id: String!, $first: Int!, $af
           inventory_overstock_bin
           on_hand
           active
+          replenishment_level
+          replenishment_max_level
           locations(first: $location_first) {
             edges {
               node {
@@ -3909,10 +3942,49 @@ query ShipHeroRestockWarehouseProducts($warehouse_id: String!, $first: Int!, $af
             active
             kit
             kit_build
-            images {
-              src
-              position
+          }
+        }
+      }
+    }
+  }
+}
+GQL
+            : <<<'GQL'
+query ShipHeroRestockWarehouseProducts($warehouse_id: String!, $first: Int!, $after: String, $location_first: Int!) {
+  warehouse_products(warehouse_id: $warehouse_id) {
+    data(first: $first, after: $after) {
+      pageInfo {
+        hasNextPage
+        endCursor
+      }
+      edges {
+        node {
+          warehouse_id
+          inventory_bin
+          inventory_overstock_bin
+          on_hand
+          active
+          replenishment_level
+          replenishment_max_level
+          locations(first: $location_first) {
+            edges {
+              node {
+                id
+                location_id
+                quantity
+                location {
+                  name
+                }
+              }
             }
+          }
+          product {
+            id
+            sku
+            name
+            active
+            kit
+            kit_build
           }
         }
       }
@@ -3921,12 +3993,20 @@ query ShipHeroRestockWarehouseProducts($warehouse_id: String!, $first: Int!, $af
 }
 GQL;
 
-        $json = $this->client->query($graphql, [
-            'warehouse_id' => $warehouseId,
-            'first' => $first,
-            'after' => $after,
-            'location_first' => $locationFirst,
-        ]);
+        try {
+            $json = $this->client->query($graphql, [
+                'warehouse_id' => $warehouseId,
+                'first' => $first,
+                'after' => $after,
+                'location_first' => $locationFirst,
+            ]);
+        } catch (RuntimeException $e) {
+            if ($useHideEmpty && $this->isHideEmptyArgumentError($e->getMessage())) {
+                return $this->fetchRestockWarehouseProductsPage($warehouseId, $after, $first, $locationFirst, false);
+            }
+
+            throw $e;
+        }
 
         $data = data_get($json, 'data.warehouse_products.data');
         if (! is_array($data)) {
@@ -3945,6 +4025,22 @@ GQL;
                     : null,
             ],
         ];
+    }
+
+    private function isShipHeroCreditLimitError(string $message): bool
+    {
+        $lower = strtolower($message);
+
+        return strpos($lower, 'not enough credits') !== false
+            || strpos($lower, 'max allowed') !== false;
+    }
+
+    private function isHideEmptyArgumentError(string $message): bool
+    {
+        $lower = strtolower($message);
+
+        return strpos($lower, 'hide_empty') !== false
+            || strpos($lower, 'unknown argument') !== false;
     }
 
     /**

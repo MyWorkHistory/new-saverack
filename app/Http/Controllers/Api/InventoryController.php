@@ -7,6 +7,7 @@ use App\Models\ClientAccount;
 use App\Models\ClientAccountAsnLine;
 use App\Models\ClientAccountOnDemandProduct;
 use App\Services\ShipHeroClient;
+use App\Jobs\RefreshInventoryRestockReportJob;
 use App\Services\InventoryProductDetailCacheService;
 use App\Services\InventoryRestockReportService;
 use App\Services\ShipHeroInventoryService;
@@ -133,8 +134,6 @@ class InventoryController extends Controller
 
     public function refreshRestockReport(Request $request, InventoryRestockReportService $reports): JsonResponse
     {
-        @set_time_limit(600);
-
         try {
             $validated = $request->validate([
                 'warehouse_id' => ['nullable', 'string', 'max:128'],
@@ -142,7 +141,17 @@ class InventoryController extends Controller
             $warehouseId = isset($validated['warehouse_id']) ? trim((string) $validated['warehouse_id']) : null;
             $warehouseId = $warehouseId !== '' ? $warehouseId : null;
 
-            return response()->json($reports->refresh($warehouseId));
+            if ($reports->isRefreshInProgress($warehouseId)) {
+                $snapshot = $reports->latestSnapshot($warehouseId);
+                if ($snapshot !== null) {
+                    return response()->json($snapshot, 200);
+                }
+            }
+
+            $snapshot = $reports->markRefreshRunning($warehouseId);
+            RefreshInventoryRestockReportJob::dispatch($warehouseId);
+
+            return response()->json($snapshot, 202);
         } catch (ValidationException $e) {
             throw $e;
         } catch (RuntimeException $e) {

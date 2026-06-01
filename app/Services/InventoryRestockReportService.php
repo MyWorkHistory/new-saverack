@@ -19,6 +19,38 @@ class InventoryRestockReportService
         $this->inventory = $inventory;
     }
 
+    public function isRefreshInProgress(?string $warehouseId = null): bool
+    {
+        $wid = $this->resolveWarehouseId($warehouseId);
+        $row = InventoryRestockSnapshot::query()
+            ->where('warehouse_id', $wid)
+            ->first();
+
+        if ($row === null || $row->status !== InventoryRestockSnapshot::STATUS_RUNNING) {
+            return false;
+        }
+
+        return $row->updated_at !== null && $row->updated_at->greaterThan(now()->subMinutes(30));
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    public function markRefreshRunning(?string $warehouseId = null): array
+    {
+        $wid = $this->resolveWarehouseId($warehouseId);
+
+        $row = InventoryRestockSnapshot::query()->updateOrCreate(
+            ['warehouse_id' => $wid],
+            [
+                'status' => InventoryRestockSnapshot::STATUS_RUNNING,
+                'error_message' => null,
+            ]
+        );
+
+        return $this->serializeSnapshot($row);
+    }
+
     public function resolveWarehouseId(?string $warehouseId = null): string
     {
         $configured = trim((string) config('services.shiphero.restock_warehouse_id', ''));
@@ -154,11 +186,14 @@ class InventoryRestockReportService
                     $catalogByName
                 );
 
+                $replenishmentMinimum = max(0, (int) ($wp['replenishment_level'] ?? 0));
+
                 $built = InventoryRestockRowBuilder::buildRow(
                     $sku,
                     (string) ($product['name'] ?? ''),
-                    $this->inventory->extractProductImageUrl($product),
-                    $locations
+                    null,
+                    $locations,
+                    $replenishmentMinimum
                 );
                 if ($built !== null) {
                     $restockRows[] = $built;

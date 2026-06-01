@@ -1,5 +1,5 @@
 <script setup>
-import { computed, onMounted, ref } from "vue";
+import { computed, onBeforeUnmount, onMounted, ref } from "vue";
 import { useRouter } from "vue-router";
 import api from "../../services/api";
 import { setCrmPageMeta } from "../../composables/useCrmPageMeta.js";
@@ -8,6 +8,9 @@ import { formatDateTimeUs } from "../../utils/formatUserDates.js";
 
 const toast = useToast();
 const router = useRouter();
+
+const POLL_MS = 3000;
+const POLL_MAX_MS = 15 * 60 * 1000;
 
 const restockRows = ref([]);
 const restockLoading = ref(false);
@@ -20,6 +23,11 @@ const restockMeta = ref({
   error_message: null,
 });
 
+let pollTimer = null;
+let pollStartedAt = 0;
+
+const isRunning = computed(() => restockMeta.value.status === "running");
+
 const restockLastRunLabel = computed(() => {
   const raw = restockMeta.value.computed_at;
   if (!raw) return null;
@@ -27,6 +35,17 @@ const restockLastRunLabel = computed(() => {
   if (Number.isNaN(d.getTime())) return null;
   return formatDateTimeUs(d);
 });
+
+function applyRestockPayload(data) {
+  restockRows.value = Array.isArray(data?.rows) ? data.rows : [];
+  restockMeta.value = {
+    warehouse_id: data?.warehouse_id ?? null,
+    computed_at: data?.computed_at ?? null,
+    row_count: Number(data?.row_count || 0),
+    status: data?.status ?? null,
+    error_message: data?.error_message ?? null,
+  };
+}
 
 function inventoryDetailHref(row) {
   const sku = String(row?.sku || "").trim();
@@ -37,18 +56,67 @@ function inventoryDetailHref(row) {
   }).href;
 }
 
+function stopPolling() {
+  if (pollTimer !== null) {
+    clearInterval(pollTimer);
+    pollTimer = null;
+  }
+  pollStartedAt = 0;
+}
+
+function finishRefreshUi(successMessage) {
+  restockRefreshing.value = false;
+  stopPolling();
+  if (successMessage) {
+    toast.success(successMessage);
+  }
+}
+
+async function pollRestockOnce() {
+  try {
+    const { data } = await api.get("/inventory/restock");
+    applyRestockPayload(data);
+    const status = data?.status;
+    if (status === "ok") {
+      finishRefreshUi(`Restock report updated (${restockMeta.value.row_count} SKUs).`);
+      return;
+    }
+    if (status === "failed") {
+      restockRefreshing.value = false;
+      stopPolling();
+      const msg = data?.error_message || "Restock report refresh failed.";
+      toast.error(msg);
+      return;
+    }
+    if (pollStartedAt > 0 && Date.now() - pollStartedAt > POLL_MAX_MS) {
+      restockRefreshing.value = false;
+      stopPolling();
+      toast.error("Restock refresh is taking longer than expected. Check back in a few minutes.");
+    }
+  } catch (e) {
+    restockRefreshing.value = false;
+    stopPolling();
+    toast.errorFrom(e, "Could not load restock report.");
+  }
+}
+
+function startPolling() {
+  stopPolling();
+  pollStartedAt = Date.now();
+  pollTimer = setInterval(() => {
+    pollRestockOnce();
+  }, POLL_MS);
+}
+
 async function loadRestockReport() {
   restockLoading.value = true;
   try {
     const { data } = await api.get("/inventory/restock");
-    restockRows.value = Array.isArray(data?.rows) ? data.rows : [];
-    restockMeta.value = {
-      warehouse_id: data?.warehouse_id ?? null,
-      computed_at: data?.computed_at ?? null,
-      row_count: Number(data?.row_count || 0),
-      status: data?.status ?? null,
-      error_message: data?.error_message ?? null,
-    };
+    applyRestockPayload(data);
+    if (data?.status === "running") {
+      restockRefreshing.value = true;
+      startPolling();
+    }
   } catch (e) {
     toast.errorFrom(e, "Could not load restock report.");
   } finally {
@@ -59,29 +127,41 @@ async function loadRestockReport() {
 async function refreshRestockReport() {
   restockRefreshing.value = true;
   try {
-    const { data } = await api.post("/inventory/restock/refresh");
-    restockRows.value = Array.isArray(data?.rows) ? data.rows : [];
-    restockMeta.value = {
-      warehouse_id: data?.warehouse_id ?? null,
-      computed_at: data?.computed_at ?? null,
-      row_count: Number(data?.row_count || 0),
-      status: data?.status ?? null,
-      error_message: data?.error_message ?? null,
-    };
-    toast.success(`Restock report updated (${restockMeta.value.row_count} SKUs).`);
+    const response = await api.post("/inventory/restock/refresh");
+    const { data } = response;
+    applyRestockPayload(data);
+    if (response.status === 202 || data?.status === "running") {
+      startPolling();
+      await pollRestockOnce();
+      return;
+    }
+    if (data?.status === "ok") {
+      finishRefreshUi(`Restock report updated (${restockMeta.value.row_count} SKUs).`);
+      return;
+    }
+    if (data?.status === "failed") {
+      finishRefreshUi(null);
+      toast.error(data?.error_message || "Restock report refresh failed.");
+      return;
+    }
+    finishRefreshUi(`Restock report updated (${restockMeta.value.row_count} SKUs).`);
   } catch (e) {
-    toast.errorFrom(e, "Could not refresh restock report.");
-  } finally {
     restockRefreshing.value = false;
+    stopPolling();
+    toast.errorFrom(e, "Could not refresh restock report.");
   }
 }
 
 onMounted(() => {
   setCrmPageMeta({
     title: "Save Rack | Inventory | Restock",
-    description: "Warehouse restock report for low pickable inventory with backstock.",
+    description: "Warehouse restock report for pickable qty at or below replenishment minimum with backstock.",
   });
   loadRestockReport();
+});
+
+onBeforeUnmount(() => {
+  stopPolling();
 });
 </script>
 
@@ -93,7 +173,7 @@ onMounted(() => {
       <div class="min-w-0 flex-grow-1">
         <h1 class="h4 mb-1 fw-semibold text-body">Restock</h1>
         <p class="text-secondary small mb-0">
-          SKUs with pickable qty ≤ 2 and stock in non-pickable locations. Refreshes automatically at 7:00 AM, 12:00 PM, and 2:30 PM (US Eastern).
+          SKUs with pickable qty at or below replenishment minimum and stock in non-pickable locations. Refreshes automatically at 7:00 AM, 12:00 PM, and 2:30 PM (US Eastern).
         </p>
       </div>
       <div class="d-flex align-items-center gap-2 flex-shrink-0 ms-md-auto">
@@ -130,22 +210,25 @@ onMounted(() => {
 
     <div class="staff-table-card staff-datatable-card staff-datatable-card--white w-100">
       <div
-        v-if="restockRefreshing"
+        v-if="restockRefreshing || isRunning"
         class="user-inv-sync-banner small text-secondary px-3 py-2 border-bottom bg-body-tertiary"
         role="status"
         aria-live="polite"
       >
         Building restock report from ShipHero…
       </div>
-      <div class="table-responsive staff-table-wrap" :class="{ 'user-inv-table--syncing': restockRefreshing }">
+      <div
+        class="table-responsive staff-table-wrap"
+        :class="{ 'user-inv-table--syncing': restockRefreshing || isRunning }"
+      >
         <table class="table table-hover align-middle mb-0 staff-data-table user-inv-table">
           <thead class="table-light staff-table-head">
             <tr>
-              <th class="staff-table-head__th text-center user-inv-table__image-col" scope="col">Image</th>
               <th class="staff-table-head__th user-inv-table__text-col" scope="col">SKU</th>
               <th class="staff-table-head__th user-inv-table__text-col" scope="col">Name</th>
               <th class="staff-table-head__th" scope="col">Pick Location</th>
               <th class="staff-table-head__th text-center" scope="col">Pick QTY</th>
+              <th class="staff-table-head__th text-center" scope="col">Replenishment Min</th>
               <th class="staff-table-head__th text-center" scope="col">Backstock</th>
               <th class="staff-table-head__th" scope="col">Backstock Locations</th>
             </tr>
@@ -154,27 +237,18 @@ onMounted(() => {
             <tr v-if="restockLoading">
               <td colspan="7" class="py-5 text-center text-secondary">Loading restock report…</td>
             </tr>
-            <tr v-else-if="!restockLastRunLabel && !restockRows.length">
+            <tr v-else-if="!restockLastRunLabel && !restockRows.length && !isRunning">
               <td colspan="7" class="py-5 text-center text-secondary">
                 No restock report yet. Click Refresh to build the first snapshot.
               </td>
             </tr>
-            <tr v-else-if="restockRows.length === 0">
+            <tr v-else-if="restockRows.length === 0 && !isRunning">
               <td colspan="7" class="py-5 text-center text-secondary">Nothing to restock right now.</td>
             </tr>
+            <tr v-else-if="restockRows.length === 0 && isRunning">
+              <td colspan="7" class="py-5 text-center text-secondary">Refresh in progress…</td>
+            </tr>
             <tr v-for="row in restockRows" :key="row.sku" class="align-middle">
-              <td class="text-center user-inv-table__image-col">
-                <a
-                  v-if="row.image_url"
-                  :href="inventoryDetailHref(row)"
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  class="user-inv-table__image-link"
-                >
-                  <img :src="row.image_url" alt="" class="user-inventory-thumb" loading="lazy" />
-                </a>
-                <span v-else class="text-secondary">—</span>
-              </td>
               <td class="fw-semibold user-inv-table__sku-col">
                 <a
                   :href="inventoryDetailHref(row)"
@@ -190,6 +264,7 @@ onMounted(() => {
               </td>
               <td>{{ row.pick_location || "—" }}</td>
               <td class="text-center">{{ row.pick_qty ?? "—" }}</td>
+              <td class="text-center">{{ row.replenishment_minimum ?? "—" }}</td>
               <td class="text-center">{{ row.backstock_qty ?? "—" }}</td>
               <td>{{ row.backstock_location || "—" }}</td>
             </tr>
@@ -206,17 +281,10 @@ onMounted(() => {
   pointer-events: none;
 }
 
-.user-inv-table__image-col {
-  width: 1%;
-  min-width: 4.5rem;
-  text-align: center;
-  vertical-align: middle;
-}
-
 .user-inv-table {
   table-layout: fixed;
   width: 100%;
-  min-width: 52rem;
+  min-width: 48rem;
 }
 
 .user-inv-table__text-col,
@@ -224,11 +292,6 @@ onMounted(() => {
 .user-inv-table__name-col {
   text-align: start;
   vertical-align: middle;
-}
-
-.user-inv-table__image-link {
-  display: inline-block;
-  line-height: 0;
 }
 
 .user-inv-table__sku-link {

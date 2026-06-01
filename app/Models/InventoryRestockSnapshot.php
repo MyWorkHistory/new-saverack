@@ -10,6 +10,8 @@ class InventoryRestockSnapshot extends Model
 
     public const STATUS_FAILED = 'failed';
 
+    public const STATUS_RUNNING = 'running';
+
     protected $fillable = [
         'warehouse_id',
         'computed_at',

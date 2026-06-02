@@ -252,6 +252,8 @@ Route::middleware('auth:sanctum')->group(function () {
         ->name('invoices.email');
     Route::post('invoices/{invoice}/whatsapp', [InvoiceController::class, 'sendWhatsapp'])
         ->name('invoices.whatsapp');
+    Route::post('invoices/{invoice}/invoice-review', [InvoiceController::class, 'sendInvoiceReview'])
+        ->name('invoices.invoice-review');
     Route::get('invoices/{invoice}/pay-context', [InvoiceController::class, 'payContext'])
         ->name('invoices.pay-context');
     Route::post('invoices/{invoice}/add-available-funds', [InvoiceController::class, 'addAvailableFunds'])

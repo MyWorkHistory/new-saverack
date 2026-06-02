@@ -11,6 +11,7 @@ use App\Http\Requests\InvoiceReplaceLineGroupRequest;
 use App\Http\Requests\InvoiceAddItemRequest;
 use App\Http\Requests\InvoiceAddCcFeeRequest;
 use App\Http\Requests\InvoiceSendEmailRequest;
+use App\Http\Requests\InvoiceSendReviewSlackRequest;
 use App\Http\Requests\InvoiceSendWhatsappRequest;
 use App\Http\Requests\InvoiceStoreRequest;
 use App\Http\Requests\InvoiceStripeChargeRequest;
@@ -23,7 +24,10 @@ use App\Models\Invoice;
 use App\Models\InvoiceItem;
 use App\Models\User;
 use App\Services\InvoiceService;
+use App\Services\InvoiceSlackReviewService;
 use App\Services\StripeInvoicePaymentService;
+use App\Support\Billing\InvoiceHistoryEventType;
+use App\Support\InvoiceReviewReason;
 use Barryvdh\DomPDF\Facade\Pdf;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -32,9 +36,12 @@ class InvoiceController extends Controller
 {
     private InvoiceService $invoices;
 
-    public function __construct(InvoiceService $invoices)
+    private InvoiceSlackReviewService $invoiceReviewSlack;
+
+    public function __construct(InvoiceService $invoices, InvoiceSlackReviewService $invoiceReviewSlack)
     {
         $this->invoices = $invoices;
+        $this->invoiceReviewSlack = $invoiceReviewSlack;
     }
 
     public function meta(Request $request): JsonResponse
@@ -249,6 +256,38 @@ class InvoiceController extends Controller
             'invoice' => $this->invoices->toDetailArray($invoice),
             'whatsapp' => $result,
         ]);
+    }
+
+    public function sendInvoiceReview(InvoiceSendReviewSlackRequest $request, Invoice $invoice): JsonResponse
+    {
+        $this->authorize('view', $invoice);
+
+        $user = $request->user();
+        if (! $user instanceof User) {
+            abort(401);
+        }
+        if ((int) ($user->client_account_id ?? 0) > 0) {
+            abort(403, 'Invoice review notifications are only available for staff users.');
+        }
+
+        $reasonKey = $request->reasonKey();
+        $note = $request->noteText();
+
+        try {
+            $this->invoiceReviewSlack->postReview($invoice, $reasonKey, $note, $user);
+        } catch (\RuntimeException $e) {
+            return response()->json(['message' => $e->getMessage()], 422);
+        }
+
+        $this->invoices->logHistory($invoice, $user, 'invoice_review_slack_sent', $invoice->status, $invoice->status, [
+            'event_type' => InvoiceHistoryEventType::STATUS,
+            'history_message' => 'Invoice review sent to Slack (#accounting).',
+            'reason' => $reasonKey,
+            'reason_label' => InvoiceReviewReason::label($reasonKey),
+            'note' => $note,
+        ]);
+
+        return response()->json(['message' => 'Invoice review sent to Slack.']);
     }
 
     public function recordPayment(InvoiceRecordPaymentRequest $request, Invoice $invoice): JsonResponse

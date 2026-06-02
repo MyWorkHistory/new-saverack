@@ -20,4 +20,9 @@ return [
         'timeout_seconds' => (int) env('BILLING_WHATSAPP_TIMEOUT_SECONDS', 20),
     ],
 
+    'slack' => [
+        'accounting_channel' => env('BILLING_SLACK_ACCOUNTING_CHANNEL', '#accounting'),
+        'bot_token' => env('SLACK_BOT_USER_OAUTH_TOKEN'),
+    ],
+
 ];

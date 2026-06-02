@@ -6,6 +6,7 @@ import api from "../../services/api";
 import { BRAND_MARK_SRC } from "../../utils/brandAssets.js";
 import BillingDollarStatIcon from "../../components/billing/BillingDollarStatIcon.vue";
 import ConfirmModal from "../../components/common/ConfirmModal.vue";
+import InvoiceReviewSlackModal from "../../components/billing/InvoiceReviewSlackModal.vue";
 import CrmIconRowActions from "../../components/common/CrmIconRowActions.vue";
 import CrmLoadingSpinner from "../../components/common/CrmLoadingSpinner.vue";
 import CrmStatusUpdateModal from "../../components/common/CrmStatusUpdateModal.vue";
@@ -170,6 +171,7 @@ const groupEditLines = ref([]);
 const groupBulkQty = ref("");
 const groupBulkPrice = ref("");
 const rightActionsMenuOpen = ref(false);
+const invoiceReviewSlackModalOpen = ref(false);
 const accountBalanceLoading = ref(false);
 const availableBalanceModalOpen = ref(false);
 const availableBalanceSaving = ref(false);
@@ -1666,6 +1668,12 @@ function closeRightActionsMenu() {
   rightActionsMenuOpen.value = false;
 }
 
+function openRightMenuInvoiceReview() {
+  if (!canUpdate.value || !invoice.value) return;
+  closeRightActionsMenu();
+  invoiceReviewSlackModalOpen.value = true;
+}
+
 function openRightMenuVoid() {
   closeRightActionsMenu();
   openVoidModal();
@@ -2189,6 +2197,15 @@ function onDocKeydown(e) {
             <CrmIconRowActions variant="horizontal" />
           </button>
           <div v-if="rightActionsMenuOpen" class="staff-row-menu billing-inv-right-menu">
+            <button
+              v-if="canUpdate && invoice"
+              type="button"
+              class="staff-row-menu__item"
+              role="menuitem"
+              @click="openRightMenuInvoiceReview"
+            >
+              Invoice Review
+            </button>
             <button
               v-if="canVoidInvoice"
               type="button"
@@ -2980,6 +2997,11 @@ function onDocKeydown(e) {
     </template>
 
     <div v-else class="alert alert-warning">Invoice not found.</div>
+
+    <InvoiceReviewSlackModal
+      v-model:open="invoiceReviewSlackModalOpen"
+      :invoice="invoice"
+    />
 
     <Teleport to="body">
       <Transition name="crm-vx-confirm">

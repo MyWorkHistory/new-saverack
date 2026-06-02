@@ -103,10 +103,16 @@ function finishRefreshUi(successMessage) {
 
 async function pollRestockOnce() {
   try {
-    const { data } = await api.get("/inventory/restock");
+    const { data } = await api.get("/inventory/restock", { params: { light: 1 } });
+    const previousRows = restockRows.value;
     applyRestockPayload(data);
+    if (Array.isArray(data?.rows) && data.rows.length === 0 && previousRows.length > 0) {
+      restockRows.value = previousRows;
+    }
     const status = data?.status;
     if (status === "ok") {
+      const { data: full } = await api.get("/inventory/restock");
+      applyRestockPayload(full);
       finishRefreshUi(`Restock report updated (${restockMeta.value.row_count} SKUs).`);
       return;
     }
@@ -137,7 +143,8 @@ async function loadRestockReport() {
     const { data } = await api.get("/inventory/restock");
     applyRestockPayload(data);
     const hasNoRows = !Array.isArray(data?.rows) || data.rows.length === 0;
-    if (!autoRefreshTriggered && !data?.computed_at && hasNoRows && data?.status !== "failed") {
+    const neverBuilt = !data?.computed_at && hasNoRows && data?.status !== "failed" && data?.status !== "running";
+    if (!autoRefreshTriggered && neverBuilt) {
       autoRefreshTriggered = true;
       await refreshRestockReport();
       return;

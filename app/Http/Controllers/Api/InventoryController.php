@@ -6,7 +6,6 @@ use App\Http\Controllers\Controller;
 use App\Models\ClientAccount;
 use App\Models\ClientAccountAsnLine;
 use App\Models\ClientAccountOnDemandProduct;
-use App\Jobs\RefreshInventoryRestockReportJob;
 use App\Services\ShipHeroClient;
 use App\Services\InventoryProductDetailCacheService;
 use App\Services\InventoryRestockReportService;
@@ -105,7 +104,8 @@ class InventoryController extends Controller
         try {
             $warehouseId = $request->query('warehouse_id');
             $warehouseId = is_string($warehouseId) && trim($warehouseId) !== '' ? trim($warehouseId) : null;
-            $snapshot = $reports->latestSnapshot($warehouseId);
+            $light = filter_var($request->query('light', false), FILTER_VALIDATE_BOOLEAN);
+            $snapshot = $reports->latestSnapshot($warehouseId, $light);
             if ($snapshot !== null) {
                 return response()->json($snapshot);
             }
@@ -118,6 +118,8 @@ class InventoryController extends Controller
                 'status' => null,
                 'error_message' => null,
                 'duration_ms' => null,
+                'refresh_started_at' => null,
+                'progress_page' => null,
             ]);
         } catch (RuntimeException $e) {
             return response()->json(['message' => $e->getMessage()], 502);
@@ -149,8 +151,7 @@ class InventoryController extends Controller
             }
 
             $snapshot = $reports->markRefreshRunning($warehouseId);
-            // Important for Cloudflare 120s read timeout: return response first, then run.
-            RefreshInventoryRestockReportJob::dispatch($warehouseId)->afterResponse();
+            $reports->dispatchRefreshJob($warehouseId);
 
             return response()->json($snapshot, 202);
         } catch (ValidationException $e) {

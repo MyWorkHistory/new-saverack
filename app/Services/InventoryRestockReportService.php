@@ -2,9 +2,11 @@
 
 namespace App\Services;
 
+use App\Jobs\RefreshInventoryRestockReportJob;
 use App\Models\InventoryRestockSnapshot;
 use App\Support\InventoryRestockRowBuilder;
 use Illuminate\Support\Carbon;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Log;
 use RuntimeException;
 use Throwable;
@@ -69,7 +71,40 @@ class InventoryRestockReportService
             ]
         );
 
-        return $this->serializeSnapshot($row);
+        return $this->serializeSnapshot($row, false);
+    }
+
+    /**
+     * Queue restock refresh without blocking the HTTP request (avoids Cloudflare 502/524).
+     */
+    public function dispatchRefreshJob(?string $warehouseId = null): void
+    {
+        $job = new RefreshInventoryRestockReportJob($warehouseId);
+        $default = (string) config('queue.default', 'sync');
+        if ($default === 'sync') {
+            $async = $this->asyncQueueConnection();
+            if ($async === null) {
+                throw new RuntimeException(
+                    'Restock refresh requires a background queue. Set QUEUE_CONNECTION=database or redis and run php artisan queue:work.'
+                );
+            }
+            dispatch($job)->onConnection($async);
+
+            return;
+        }
+
+        dispatch($job);
+    }
+
+    private function asyncQueueConnection(): ?string
+    {
+        foreach (['redis', 'database', 'beanstalkd', 'sqs'] as $name) {
+            if (config("queue.connections.{$name}.driver") !== null) {
+                return $name;
+            }
+        }
+
+        return null;
     }
 
     public function markRefreshFailed(?string $warehouseId, string $message): void
@@ -105,20 +140,23 @@ class InventoryRestockReportService
 
     public function resolveWarehouseId(?string $warehouseId = null): string
     {
-        $configured = trim((string) config('services.shiphero.restock_warehouse_id', ''));
         if ($warehouseId !== null && trim($warehouseId) !== '') {
             return trim($warehouseId);
         }
+
+        $configured = trim((string) config('services.shiphero.restock_warehouse_id', ''));
         if ($configured !== '') {
             return $configured;
         }
 
-        $warehouses = $this->inventory->listWarehouses();
-        if ($warehouses === []) {
-            throw new RuntimeException('No ShipHero warehouses available for restock report.');
-        }
+        return Cache::remember('inventory.restock.default_warehouse_id', now()->addHour(), function () {
+            $warehouses = $this->inventory->listWarehouses();
+            if ($warehouses === []) {
+                throw new RuntimeException('No ShipHero warehouses available for restock report.');
+            }
 
-        return (string) ($warehouses[0]['id'] ?? '');
+            return (string) ($warehouses[0]['id'] ?? '');
+        });
     }
 
     /**
@@ -201,7 +239,7 @@ class InventoryRestockReportService
     /**
      * @return array<string, mixed>|null
      */
-    public function latestSnapshot(?string $warehouseId = null): ?array
+    public function latestSnapshot(?string $warehouseId = null, bool $light = false): ?array
     {
         $wid = $this->resolveWarehouseId($warehouseId);
         $row = InventoryRestockSnapshot::query()
@@ -214,7 +252,9 @@ class InventoryRestockReportService
 
         $row = $this->resolveStaleRunningSnapshot($row);
 
-        return $this->serializeSnapshot($row);
+        $omitRows = $light || $row->status === InventoryRestockSnapshot::STATUS_RUNNING;
+
+        return $this->serializeSnapshot($row, ! $omitRows);
     }
 
     public function resolveStaleRunningSnapshot(InventoryRestockSnapshot $row): InventoryRestockSnapshot
@@ -326,16 +366,17 @@ class InventoryRestockReportService
     /**
      * @return array<string, mixed>
      */
-    private function serializeSnapshot(InventoryRestockSnapshot $row): array
+    private function serializeSnapshot(InventoryRestockSnapshot $row, bool $includeRows = true): array
     {
         $isRunning = $row->status === InventoryRestockSnapshot::STATUS_RUNNING;
         $computedAt = $isRunning ? null : $row->computed_at;
         $refreshStartedAt = $row->refresh_started_at;
+        $rows = $includeRows && is_array($row->rows) ? $row->rows : [];
 
         return [
             'warehouse_id' => $row->warehouse_id,
             'computed_at' => $computedAt !== null ? $computedAt->toIso8601String() : null,
-            'rows' => is_array($row->rows) ? $row->rows : [],
+            'rows' => $rows,
             'row_count' => (int) $row->row_count,
             'status' => (string) $row->status,
             'error_message' => $row->error_message,

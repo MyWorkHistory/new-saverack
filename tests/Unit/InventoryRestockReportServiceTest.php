@@ -68,6 +68,25 @@ class InventoryRestockReportServiceTest extends TestCase
         $this->assertFalse($service->isRefreshInProgress('wh-1'));
     }
 
+    public function test_light_snapshot_omits_rows_while_running(): void
+    {
+        $service = $this->serviceWithWarehouse();
+
+        InventoryRestockSnapshot::query()->create([
+            'warehouse_id' => 'wh-1',
+            'status' => InventoryRestockSnapshot::STATUS_RUNNING,
+            'refresh_started_at' => now(),
+            'rows' => [['sku' => 'A']],
+            'row_count' => 1,
+        ]);
+
+        $snapshot = $service->latestSnapshot('wh-1', true);
+
+        $this->assertNotNull($snapshot);
+        $this->assertSame([], $snapshot['rows']);
+        $this->assertSame(1, $snapshot['row_count']);
+    }
+
     public function test_mark_refresh_running_clears_stale_metadata_in_response(): void
     {
         $service = $this->serviceWithWarehouse();

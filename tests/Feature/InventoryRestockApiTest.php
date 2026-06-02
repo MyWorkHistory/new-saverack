@@ -2,13 +2,11 @@
 
 namespace Tests\Feature;
 
-use App\Jobs\RefreshInventoryRestockReportJob;
 use App\Models\InventoryRestockSnapshot;
 use App\Models\Permission;
 use App\Models\User;
 use App\Services\InventoryRestockReportService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
-use Illuminate\Support\Facades\Queue;
 use Laravel\Sanctum\Sanctum;
 use Mockery;
 use Tests\TestCase;
@@ -52,7 +50,7 @@ class InventoryRestockApiTest extends TestCase
 
         $mock = Mockery::mock(InventoryRestockReportService::class);
         $mock->shouldReceive('resolveWarehouseId')->andReturn('wh-1');
-        $mock->shouldReceive('latestSnapshot')->once()->with(null)->andReturn([
+        $mock->shouldReceive('latestSnapshot')->once()->with(null, false)->andReturn([
             'warehouse_id' => 'wh-1',
             'computed_at' => now()->toIso8601String(),
             'rows' => [['sku' => 'A']],
@@ -72,11 +70,10 @@ class InventoryRestockApiTest extends TestCase
 
     public function test_post_refresh_dispatches_background_job(): void
     {
-        Queue::fake();
         Sanctum::actingAs($this->staffWithInventoryView());
 
         $mock = Mockery::mock(InventoryRestockReportService::class);
-        $mock->shouldReceive('latestSnapshot')->once()->with(null)->andReturn(null);
+        $mock->shouldReceive('latestSnapshot')->once()->with(null, false)->andReturn(null);
         $mock->shouldReceive('isRefreshInProgress')->once()->with(null)->andReturn(false);
         $mock->shouldReceive('markRefreshRunning')->once()->with(null)->andReturn([
             'warehouse_id' => 'wh-1',
@@ -89,13 +86,13 @@ class InventoryRestockApiTest extends TestCase
             'refresh_started_at' => now()->toIso8601String(),
             'progress_page' => 0,
         ]);
+        $mock->shouldReceive('dispatchRefreshJob')->once()->with(null);
         $this->app->instance(InventoryRestockReportService::class, $mock);
 
         $response = $this->postJson('/api/inventory/restock/refresh');
 
         $response->assertStatus(202);
         $response->assertJsonPath('status', InventoryRestockSnapshot::STATUS_RUNNING);
-        Queue::assertPushed(RefreshInventoryRestockReportJob::class);
     }
 
     public function test_get_restock_resolves_stale_running_snapshot(): void

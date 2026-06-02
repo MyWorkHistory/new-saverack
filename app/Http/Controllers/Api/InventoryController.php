@@ -104,9 +104,19 @@ class InventoryController extends Controller
         try {
             $warehouseId = $request->query('warehouse_id');
             $warehouseId = is_string($warehouseId) && trim($warehouseId) !== '' ? trim($warehouseId) : null;
-            $includeRows = filter_var($request->query('full', false), FILTER_VALIDATE_BOOLEAN)
+            $includeRows = $request->has('rows_limit')
+                || $request->has('rows_offset')
+                || filter_var($request->query('full', false), FILTER_VALIDATE_BOOLEAN)
                 || filter_var($request->query('include_rows', false), FILTER_VALIDATE_BOOLEAN);
-            $snapshot = $reports->latestSnapshot($warehouseId, $includeRows);
+            $rowsOffset = max(0, (int) $request->query('rows_offset', 0));
+            $rowsLimit = $request->has('rows_limit')
+                ? max(1, min(100, (int) $request->query('rows_limit')))
+                : ($includeRows ? $reports->defaultRowsPageSize() : null);
+            if (! $includeRows) {
+                $rowsLimit = null;
+                $rowsOffset = 0;
+            }
+            $snapshot = $reports->latestSnapshot($warehouseId, $includeRows, $rowsOffset, $rowsLimit);
             if ($snapshot !== null) {
                 return response()->json($snapshot);
             }
@@ -128,6 +138,7 @@ class InventoryController extends Controller
                 'refresh_started_at' => null,
                 'progress_page' => null,
                 'scan_stats' => null,
+                'has_more_rows' => false,
             ]);
         } catch (RuntimeException $e) {
             return response()->json(['message' => $e->getMessage()], 502);

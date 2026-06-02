@@ -11,12 +11,15 @@ const router = useRouter();
 
 const POLL_MS = 5000;
 const STALE_CLIENT_MS = 10 * 60 * 1000;
+const ROWS_PAGE_SIZE = 50;
 
 const restockRows = ref([]);
 const restockLoading = ref(false);
+const restockLoadingMore = ref(false);
 const restockRefreshing = ref(false);
 const pollingActive = ref(false);
 const restockPreviewLoading = ref(false);
+const hasMoreRows = ref(false);
 const restockMeta = ref({
   warehouse_id: null,
   computed_at: null,
@@ -71,6 +74,13 @@ const scanStatsLabel = computed(() => {
   return `Scanned ${scanned.toLocaleString()} products — ${matched.toLocaleString()} had pickable qty 0–${maxQty}.`;
 });
 
+const rowsShowingLabel = computed(() => {
+  const total = Number(restockMeta.value.row_count || 0);
+  const shown = restockRows.value.length;
+  if (total <= 0 || shown <= 0) return null;
+  return `Showing ${shown.toLocaleString()} of ${total.toLocaleString()} SKUs`;
+});
+
 function applyRestockMeta(data) {
   restockMeta.value = {
     warehouse_id: data?.warehouse_id ?? null,
@@ -82,26 +92,48 @@ function applyRestockMeta(data) {
     progress_page: data?.progress_page ?? null,
     scan_stats: data?.scan_stats ?? null,
   };
-}
-
-function applyRestockPayload(data) {
-  if (Array.isArray(data?.rows) && data.rows.length > 0) {
-    restockRows.value = data.rows;
+  if (typeof data?.has_more_rows === "boolean") {
+    hasMoreRows.value = data.has_more_rows;
+  } else if (data?.status === "ok") {
+    hasMoreRows.value = restockRows.value.length < restockMeta.value.row_count;
   }
-  applyRestockMeta(data);
 }
 
-/** Status-only poll — never downloads the full rows JSON blob. */
+function mergeRestockRows(chunk, reset) {
+  const list = Array.isArray(chunk) ? chunk : [];
+  if (reset) {
+    restockRows.value = list;
+    return;
+  }
+  const seen = new Set(restockRows.value.map((r) => String(r?.sku || "")));
+  const dest = [...restockRows.value];
+  for (const row of list) {
+    const sku = String(row?.sku || "");
+    if (!sku || seen.has(sku)) continue;
+    seen.add(sku);
+    dest.push(row);
+  }
+  restockRows.value = dest;
+}
+
+/** Status-only poll — never downloads row pages. */
 async function fetchRestockMeta() {
   const { data } = await api.get("/inventory/restock");
   applyRestockMeta(data);
   return data;
 }
 
-/** Full snapshot with SKU rows (can be large — only after refresh completes). */
-async function fetchRestockFull() {
-  const { data } = await api.get("/inventory/restock", { params: { full: 1 } });
-  applyRestockPayload(data);
+/** Paginated SKU rows (50 per request). */
+async function fetchRestockRowsPage(reset) {
+  const offset = reset ? 0 : restockRows.value.length;
+  const { data } = await api.get("/inventory/restock", {
+    params: {
+      rows_offset: offset,
+      rows_limit: ROWS_PAGE_SIZE,
+    },
+  });
+  mergeRestockRows(data?.rows, reset);
+  applyRestockMeta(data);
   return data;
 }
 
@@ -135,8 +167,8 @@ async function pollRestockOnce() {
     const data = await fetchRestockMeta();
     const status = data?.status;
     if (status === "ok") {
-      await fetchRestockFull();
-      finishRefreshUi(`Restock report updated (${restockMeta.value.row_count} SKUs).`);
+      await fetchRestockRowsPage(true);
+      finishRefreshUi(`Restock report updated (${restockMeta.value.row_count.toLocaleString()} SKUs).`);
       return;
     }
     if (status === "failed") {
@@ -164,9 +196,10 @@ async function loadRestockReport() {
   try {
     const data = await fetchRestockMeta();
     if (data?.status === "ok" && Number(data?.row_count || 0) > 0) {
-      await fetchRestockFull();
+      await fetchRestockRowsPage(true);
     } else if (data?.status !== "running") {
       restockRows.value = [];
+      hasMoreRows.value = false;
     }
     if (data?.status === "running") {
       restockRefreshing.value = true;
@@ -176,6 +209,18 @@ async function loadRestockReport() {
     toast.errorFrom(e, "Could not load restock report.");
   } finally {
     restockLoading.value = false;
+  }
+}
+
+async function loadMoreRestockRows() {
+  if (!hasMoreRows.value || restockLoadingMore.value || restockLoading.value) return;
+  restockLoadingMore.value = true;
+  try {
+    await fetchRestockRowsPage(false);
+  } catch (e) {
+    toast.errorFrom(e, "Could not load more restock rows.");
+  } finally {
+    restockLoadingMore.value = false;
   }
 }
 
@@ -196,6 +241,7 @@ async function previewRestockReport() {
 
 async function refreshRestockReport() {
   restockRefreshing.value = true;
+  hasMoreRows.value = false;
   try {
     const response = await api.post("/inventory/restock/refresh");
     const { data } = response;
@@ -207,8 +253,8 @@ async function refreshRestockReport() {
       return;
     }
     if (data?.status === "ok") {
-      await fetchRestockFull();
-      finishRefreshUi(`Restock report updated (${restockMeta.value.row_count} SKUs).`);
+      await fetchRestockRowsPage(true);
+      finishRefreshUi(`Restock report updated (${restockMeta.value.row_count.toLocaleString()} SKUs).`);
       return;
     }
     if (data?.status === "failed") {
@@ -216,8 +262,8 @@ async function refreshRestockReport() {
       toast.error(data?.error_message || "Restock report refresh failed.");
       return;
     }
-    await fetchRestockFull();
-    finishRefreshUi(`Restock report updated (${restockMeta.value.row_count} SKUs).`);
+    await fetchRestockRowsPage(true);
+    finishRefreshUi(`Restock report updated (${restockMeta.value.row_count.toLocaleString()} SKUs).`);
   } catch (e) {
     restockRefreshing.value = false;
     stopPolling();
@@ -377,6 +423,26 @@ onBeforeUnmount(() => {
             </tr>
           </tbody>
         </table>
+      </div>
+      <p
+        v-if="rowsShowingLabel && !showRunningBanner"
+        class="small text-secondary mb-0 px-3 pt-2"
+        role="status"
+      >
+        {{ rowsShowingLabel }}
+      </p>
+      <div
+        v-if="hasMoreRows && !showRunningBanner && restockRows.length > 0"
+        class="p-3 border-top text-center"
+      >
+        <button
+          type="button"
+          class="btn btn-outline-secondary btn-sm orders-toolbar-outline-btn"
+          :disabled="restockLoadingMore"
+          @click="loadMoreRestockRows"
+        >
+          {{ restockLoadingMore ? "Loading…" : "Load 50 More" }}
+        </button>
       </div>
     </div>
   </div>

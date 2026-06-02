@@ -58,6 +58,11 @@ class InventoryRestockReportService
         return max(1, min(100, (int) config('services.shiphero.restock_chunk_pages', 15)));
     }
 
+    public function defaultRowsPageSize(): int
+    {
+        return max(1, min(100, (int) config('services.shiphero.restock_rows_page_size', 50)));
+    }
+
     public function stallMinutes(): int
     {
         return max(3, (int) config('services.shiphero.restock_stall_minutes', 10));
@@ -318,7 +323,7 @@ class InventoryRestockReportService
             throw new RuntimeException('Restock snapshot missing after refresh.');
         }
 
-        return $this->serializeSnapshot($final, true);
+        return $this->serializeSnapshot($final, true, 0, $this->defaultRowsPageSize());
     }
 
     /**
@@ -549,8 +554,12 @@ class InventoryRestockReportService
     /**
      * @return array<string, mixed>|null
      */
-    public function latestSnapshot(?string $warehouseId = null, bool $includeRows = false): ?array
-    {
+    public function latestSnapshot(
+        ?string $warehouseId = null,
+        bool $includeRows = false,
+        int $rowsOffset = 0,
+        ?int $rowsLimit = null
+    ): ?array {
         $wid = $this->configuredWarehouseId($warehouseId) ?? $this->resolveWarehouseId($warehouseId);
         $loadRowsColumn = $includeRows;
         $row = $this->findSnapshotRow($wid, $loadRowsColumn);
@@ -562,8 +571,9 @@ class InventoryRestockReportService
         $row = $this->resolveStaleRunningSnapshot($row);
 
         $returnRows = $includeRows && $row->status !== InventoryRestockSnapshot::STATUS_RUNNING;
+        $limit = $rowsLimit ?? $this->defaultRowsPageSize();
 
-        return $this->serializeSnapshot($row, $returnRows);
+        return $this->serializeSnapshot($row, $returnRows, max(0, $rowsOffset), $returnRows ? $limit : null);
     }
 
     public function resolveWarehouseIdForApi(?string $warehouseId = null): string
@@ -745,25 +755,32 @@ class InventoryRestockReportService
     /**
      * @return array<string, mixed>
      */
-    private function serializeSnapshot(InventoryRestockSnapshot $row, bool $includeRows = true): array
-    {
+    private function serializeSnapshot(
+        InventoryRestockSnapshot $row,
+        bool $includeRows = true,
+        int $rowsOffset = 0,
+        ?int $rowsLimit = null
+    ): array {
         $isRunning = $row->status === InventoryRestockSnapshot::STATUS_RUNNING;
         $computedAt = $isRunning ? null : $row->computed_at;
         $refreshStartedAt = $row->refresh_started_at;
         $rows = [];
+        $hasMoreRows = false;
+        $pageLimit = $rowsLimit ?? $this->defaultRowsPageSize();
+        $totalRows = (int) $row->row_count;
+
         if ($includeRows && is_array($row->rows)) {
-            $rows = $row->rows;
-            $max = max(100, (int) config('services.shiphero.restock_api_max_rows', 5000));
-            if (count($rows) > $max) {
-                $rows = array_slice($rows, 0, $max);
-            }
+            $allRows = $row->rows;
+            $totalRows = max($totalRows, count($allRows));
+            $rows = array_slice($allRows, max(0, $rowsOffset), $pageLimit);
+            $hasMoreRows = ($rowsOffset + count($rows)) < $totalRows;
         }
 
-        return [
+        $payload = [
             'warehouse_id' => $row->warehouse_id,
             'computed_at' => $computedAt !== null ? $computedAt->toIso8601String() : null,
             'rows' => $rows,
-            'row_count' => (int) $row->row_count,
+            'row_count' => $totalRows,
             'status' => (string) $row->status,
             'error_message' => $row->error_message,
             'duration_ms' => $isRunning ? null : $row->duration_ms,
@@ -771,5 +788,13 @@ class InventoryRestockReportService
             'progress_page' => $isRunning ? $row->progress_page : null,
             'scan_stats' => is_array($row->scan_stats) ? $row->scan_stats : null,
         ];
+
+        if ($includeRows && ! $isRunning) {
+            $payload['rows_offset'] = max(0, $rowsOffset);
+            $payload['rows_limit'] = $pageLimit;
+            $payload['has_more_rows'] = $hasMoreRows;
+        }
+
+        return $payload;
     }
 }

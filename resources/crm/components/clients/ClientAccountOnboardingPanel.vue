@@ -70,9 +70,6 @@ function taskIconPath(task) {
 function applyOnboardingPayload(data) {
   if (data && typeof data === "object") {
     onboarding.value = data;
-    if (data.brand_logo_url) {
-      emit("account-updated", { brand_logo_url: data.brand_logo_url });
-    }
     syncActiveTaskFromPayload(data);
   }
 }
@@ -115,7 +112,12 @@ function openTask(task) {
 }
 
 function onSaved(data) {
+  const previousLogo = onboarding.value?.brand_logo_url || "";
   applyOnboardingPayload(data);
+  const nextLogo = data?.brand_logo_url || "";
+  if (nextLogo && nextLogo !== previousLogo) {
+    emit("account-updated", { brand_logo_url: nextLogo });
+  }
 }
 
 async function verifyActiveTask() {

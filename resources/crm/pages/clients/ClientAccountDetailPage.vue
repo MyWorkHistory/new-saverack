@@ -545,13 +545,11 @@ function openAccountEdit(section = "") {
 }
 
 function onOnboardingAccountUpdated(payload) {
-  if (payload?.brand_logo_url && account.value) {
-    account.value = {
-      ...account.value,
-      brand_logo_url: payload.brand_logo_url,
-    };
-  }
-  loadAccount();
+  if (!payload?.brand_logo_url || !account.value) return;
+  account.value = {
+    ...account.value,
+    brand_logo_url: payload.brand_logo_url,
+  };
 }
 
 const accountBrandLogoUrl = computed(() => {
@@ -901,13 +899,18 @@ async function fetchMeta() {
   }
 }
 
-async function loadAccount() {
-  loading.value = true;
-  errorMsg.value = "";
-  account.value = null;
+async function loadAccount({ quiet = false } = {}) {
+  if (!quiet) {
+    loading.value = true;
+    errorMsg.value = "";
+    account.value = null;
+  }
   try {
     const { data } = await api.get(`/client-accounts/${props.id}`);
     account.value = data;
+    if (quiet) {
+      errorMsg.value = "";
+    }
   } catch (e) {
     const st = e.response?.status;
     if (st === 403) {

@@ -172,6 +172,9 @@ async function onLogoChange(ev) {
       if (onboarding) {
         emit("saved", onboarding);
         toast.success("Logo uploaded.");
+      } else if (data?.brand_logo_url) {
+        emit("saved", { brand_logo_url: data.brand_logo_url });
+        toast.success("Logo uploaded.");
       }
     } catch (e) {
       errorMsg.value = "Could not upload logo.";

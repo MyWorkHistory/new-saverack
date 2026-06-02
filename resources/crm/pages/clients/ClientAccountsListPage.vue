@@ -606,9 +606,16 @@ function openEditModal(row) {
   closeManageMenu();
 }
 
+function accountDetailRoute(row) {
+  return {
+    name: "client-account-detail",
+    params: { id: String(row.id) },
+  };
+}
+
 function goViewAccount(row) {
   closeManageMenu();
-  router.push(`/admin/clients/accounts/${row.id}`);
+  router.push(accountDetailRoute(row));
 }
 
 function toggleSelectAll(ev) {
@@ -1243,10 +1250,7 @@ onUnmounted(() => {
                 />
               </td>
               <td>
-                <RouterLink
-                  :to="`/admin/clients/accounts/${row.id}`"
-                  class="d-flex align-items-center gap-3 min-w-0 text-decoration-none rounded px-1 py-1"
-                >
+                <div class="d-flex align-items-center gap-3 min-w-0">
                   <span
                     class="flex-shrink-0 rounded-circle overflow-hidden bg-body-secondary d-inline-flex"
                     style="width: 2.75rem; height: 2.75rem"
@@ -1270,11 +1274,15 @@ onUnmounted(() => {
                     </span>
                   </span>
                   <div class="min-w-0">
-                    <span class="d-block text-truncate fw-semibold text-body">{{
-                      row.company_name
-                    }}</span>
-                    <span
-                      class="d-block text-truncate text-body staff-user-cell__meta"
+                    <RouterLink
+                      :to="accountDetailRoute(row)"
+                      class="d-block text-truncate fw-semibold text-body text-decoration-none"
+                    >
+                      {{ row.company_name }}
+                    </RouterLink>
+                    <RouterLink
+                      :to="accountDetailRoute(row)"
+                      class="d-block text-truncate text-secondary text-decoration-none staff-user-cell__meta"
                     >
                       {{
                         row.contact_full_name &&
@@ -1282,9 +1290,9 @@ onUnmounted(() => {
                           ? row.contact_full_name
                           : "—"
                       }}
-                    </span>
+                    </RouterLink>
                   </div>
-                </RouterLink>
+                </div>
               </td>
               <td>
                 <span

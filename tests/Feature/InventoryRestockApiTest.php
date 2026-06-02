@@ -2,11 +2,13 @@
 
 namespace Tests\Feature;
 
+use App\Jobs\RefreshInventoryRestockReportJob;
 use App\Models\InventoryRestockSnapshot;
 use App\Models\Permission;
 use App\Models\User;
 use App\Services\InventoryRestockReportService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Queue;
 use Laravel\Sanctum\Sanctum;
 use Mockery;
 use Tests\TestCase;
@@ -68,27 +70,28 @@ class InventoryRestockApiTest extends TestCase
         $response->assertJsonPath('row_count', 1);
     }
 
-    public function test_post_refresh_runs_report_inline(): void
+    public function test_post_refresh_dispatches_background_job(): void
     {
+        Queue::fake();
         Sanctum::actingAs($this->staffWithInventoryView());
 
         $mock = Mockery::mock(InventoryRestockReportService::class);
         $mock->shouldReceive('isRefreshInProgress')->once()->with(null)->andReturn(false);
-        $mock->shouldReceive('refresh')->once()->with(null)->andReturn([
+        $mock->shouldReceive('markRefreshRunning')->once()->with(null)->andReturn([
             'warehouse_id' => 'wh-1',
-            'computed_at' => now()->toIso8601String(),
-            'rows' => [['sku' => 'A']],
-            'row_count' => 1,
-            'status' => InventoryRestockSnapshot::STATUS_OK,
+            'computed_at' => null,
+            'rows' => [],
+            'row_count' => 0,
+            'status' => InventoryRestockSnapshot::STATUS_RUNNING,
             'error_message' => null,
-            'duration_ms' => 1200,
+            'duration_ms' => null,
         ]);
         $this->app->instance(InventoryRestockReportService::class, $mock);
 
         $response = $this->postJson('/api/inventory/restock/refresh');
 
-        $response->assertOk();
-        $response->assertJsonPath('status', InventoryRestockSnapshot::STATUS_OK);
-        $response->assertJsonPath('row_count', 1);
+        $response->assertStatus(202);
+        $response->assertJsonPath('status', InventoryRestockSnapshot::STATUS_RUNNING);
+        Queue::assertPushed(RefreshInventoryRestockReportJob::class);
     }
 }

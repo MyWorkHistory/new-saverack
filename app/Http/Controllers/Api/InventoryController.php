@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Models\ClientAccount;
 use App\Models\ClientAccountAsnLine;
 use App\Models\ClientAccountOnDemandProduct;
+use App\Jobs\RefreshInventoryRestockReportJob;
 use App\Services\ShipHeroClient;
 use App\Services\InventoryProductDetailCacheService;
 use App\Services\InventoryRestockReportService;
@@ -146,10 +147,11 @@ class InventoryController extends Controller
                 }
             }
 
-            // Run refresh inline so the page works even when queue workers are not running.
-            $result = $reports->refresh($warehouseId);
+            $snapshot = $reports->markRefreshRunning($warehouseId);
+            // Important for Cloudflare 120s read timeout: return response first, then run.
+            RefreshInventoryRestockReportJob::dispatch($warehouseId)->afterResponse();
 
-            return response()->json($result, 200);
+            return response()->json($snapshot, 202);
         } catch (ValidationException $e) {
             throw $e;
         } catch (RuntimeException $e) {

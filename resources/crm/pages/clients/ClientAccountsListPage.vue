@@ -14,6 +14,7 @@ import api from "../../services/api";
 import ConfirmModal from "../../components/common/ConfirmModal.vue";
 import ClientAccountChannelIcons from "../../components/clients/ClientAccountChannelIcons.vue";
 import ClientAccountCreateDrawer from "../../components/clients/ClientAccountCreateDrawer.vue";
+import ClientAccountShippingStatusIcon from "../../components/clients/ClientAccountShippingStatusIcon.vue";
 import ClientAccountEditModal from "../../components/clients/ClientAccountEditModal.vue";
 import ClientAccountsBulkEditModal from "../../components/clients/ClientAccountsBulkEditModal.vue";
 import CrmLoadingSpinner from "../../components/common/CrmLoadingSpinner.vue";
@@ -27,6 +28,7 @@ import { setCrmPageMeta } from "../../composables/useCrmPageMeta.js";
 import { getPublicSignupUrl } from "../../utils/publicSignupUrl.js";
 import { downloadListCsv } from "../../utils/downloadListCsv.js";
 import { resolvePublicUrl } from "../../utils/resolvePublicUrl.js";
+import { warnIfShipheroSyncFailed } from "../../utils/clientAccountShipheroSync.js";
 
 const crmUser = inject("crmUser", ref(null));
 const toast = useToast();
@@ -447,11 +449,12 @@ function openBulkEdit() {
 async function onBulkApply(payload) {
   bulkEditBusy.value = true;
   try {
-    await api.patch("/client-accounts/bulk", {
+    const { data } = await api.patch("/client-accounts/bulk", {
       client_account_ids: selectedIds.value,
       ...payload,
     });
     toast.success("Accounts updated.");
+    warnIfShipheroSyncFailed(data, toast);
     bulkEditOpen.value = false;
     selectedIds.value = [];
     await refreshList();
@@ -591,8 +594,9 @@ function backToMainMenu() {
 async function setRowStatus(row, status) {
   if (!canUpdate.value) return;
   try {
-    await api.patch(`/client-accounts/${row.id}`, { status });
+    const { data } = await api.patch(`/client-accounts/${row.id}`, { status });
     toast.success("Status updated.");
+    warnIfShipheroSyncFailed(data, toast);
     closeManageMenu();
     await refreshList();
   } catch (e) {
@@ -1273,7 +1277,12 @@ onUnmounted(() => {
                       }}
                     </span>
                   </span>
-                  <div class="min-w-0">
+                  <div class="min-w-0 d-flex align-items-start gap-2">
+                    <ClientAccountShippingStatusIcon
+                      :status="row.status"
+                      class="flex-shrink-0 mt-1"
+                    />
+                    <div class="min-w-0">
                     <RouterLink
                       :to="accountDetailRoute(row)"
                       class="d-block text-truncate fw-semibold text-body text-decoration-none"
@@ -1291,6 +1300,7 @@ onUnmounted(() => {
                           : "—"
                       }}
                     </RouterLink>
+                    </div>
                   </div>
                 </div>
               </td>

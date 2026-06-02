@@ -53,6 +53,12 @@ return [
         'restock_page_size' => (int) env('SHIPHERO_RESTOCK_PAGE_SIZE', 40),
         /** Max location rows per warehouse product in restock scan. */
         'restock_location_limit' => (int) env('SHIPHERO_RESTOCK_LOCATION_LIMIT', 50),
+        /** GraphQL mutation for customer account update (from shiphero:probe-customer-mutations). */
+        'customer_account_update_mutation' => env('SHIPHERO_CUSTOMER_ACCOUNT_UPDATE_MUTATION'),
+        'customer_account_update_input_type' => env('SHIPHERO_CUSTOMER_ACCOUNT_UPDATE_INPUT_TYPE'),
+        /** Boolean input field: hide client orders from ShipHero app when CRM status is not active. */
+        'customer_account_hide_orders_field' => env('SHIPHERO_CUSTOMER_ACCOUNT_HIDE_ORDERS_FIELD'),
+        'customer_account_id_field' => env('SHIPHERO_CUSTOMER_ACCOUNT_ID_FIELD', 'customer_account_id'),
     ],
 
     'whatsapp' => [

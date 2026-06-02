@@ -1104,6 +1104,7 @@ class InvoiceService
             'is_overdue' => $this->isOverdue($invoice),
             'currency' => $invoice->currency,
             'client_account_id' => $invoice->client_account_id,
+            'client_account_status' => $invoice->clientAccount !== null ? $invoice->clientAccount->status : null,
             'client_company_name' => $invoice->clientAccount !== null ? $invoice->clientAccount->company_name : null,
             'client_account_default_payment_type' => $invoice->clientAccount !== null ? $invoice->clientAccount->default_payment_type : null,
             'client_account_stripe_customer_id' => $invoice->clientAccount !== null ? $invoice->clientAccount->stripe_customer_id : null,

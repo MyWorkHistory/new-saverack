@@ -24,6 +24,30 @@ If no suitable mutation is found, provisioning falls back to **staff manual** se
 
 Activation to `active` requires a non-empty ShipHero customer account ID (see `ClientAccountUpdateRequest`).
 
+## Hide orders from app (CRM account status sync)
+
+When CRM account status changes, the app tries to sync ShipHero **Hide Customer's Orders From App**:
+
+| CRM status | ShipHero checkbox |
+|---|---|
+| `active` | Unchecked (orders visible) |
+| `pending`, `paused`, `inactive` | Checked (orders hidden) |
+
+Probe the live schema:
+
+```bash
+php artisan shiphero:probe-customer-mutations
+```
+
+If auto-discovery succeeds, the command prints `.env` keys to copy. Otherwise set manually after confirming field names in ShipHero's GraphQL schema:
+
+- `SHIPHERO_CUSTOMER_ACCOUNT_UPDATE_MUTATION`
+- `SHIPHERO_CUSTOMER_ACCOUNT_UPDATE_INPUT_TYPE` (optional if probe can infer from mutation)
+- `SHIPHERO_CUSTOMER_ACCOUNT_HIDE_ORDERS_FIELD`
+- `SHIPHERO_CUSTOMER_ACCOUNT_ID_FIELD` (default: `customer_account_id`)
+
+Sync is skipped when `shiphero_customer_account_id` is empty. CRM status always saves even if ShipHero sync fails.
+
 ## Environment
 
 - `SHIPHERO_REFRESH_TOKEN` — required for probe and all ShipHero calls

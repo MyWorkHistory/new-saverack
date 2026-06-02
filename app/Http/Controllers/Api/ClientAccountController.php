@@ -276,9 +276,13 @@ class ClientAccountController extends Controller
 
     public function update(ClientAccountUpdateRequest $request, ClientAccount $client_account): JsonResponse
     {
-        $account = $this->clientAccounts->update($client_account, $request->validated(), $request->user());
+        $result = $this->clientAccounts->update($client_account, $request->validated(), $request->user());
+        $payload = $this->clientAccounts->toApiArray($result['account']);
+        if ($result['shiphero_sync'] !== null) {
+            $payload['shiphero_sync'] = $result['shiphero_sync'];
+        }
 
-        return response()->json($this->clientAccounts->toApiArray($account));
+        return response()->json($payload);
     }
 
     public function syncFees(ClientAccountFeesSyncRequest $request, ClientAccount $client_account): JsonResponse
@@ -363,9 +367,17 @@ class ClientAccountController extends Controller
             $this->authorize('update', ClientAccount::query()->findOrFail($id));
         }
 
-        $updated = $this->clientAccounts->bulkUpdateStatus($ids, $status);
+        $result = $this->clientAccounts->bulkUpdateStatus($ids, $status);
 
-        return response()->json(['message' => 'Client accounts updated.', 'updated' => $updated]);
+        $payload = [
+            'message' => 'Client accounts updated.',
+            'updated' => $result['updated'],
+        ];
+        if ($result['shiphero_sync'] !== null) {
+            $payload['shiphero_sync'] = $result['shiphero_sync'];
+        }
+
+        return response()->json($payload);
     }
 
     public function bulkDestroy(ClientAccountBulkDeleteRequest $request): JsonResponse

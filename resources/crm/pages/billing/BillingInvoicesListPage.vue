@@ -17,6 +17,7 @@ import CrmSearchableSelect from "../../components/common/CrmSearchableSelect.vue
 import CrmIconRowActions from "../../components/common/CrmIconRowActions.vue";
 import BillingDollarStatIcon from "../../components/billing/BillingDollarStatIcon.vue";
 import BillingInvoiceCreateDrawer from "../../components/billing/BillingInvoiceCreateDrawer.vue";
+import ClientAccountShippingStatusIcon from "../../components/clients/ClientAccountShippingStatusIcon.vue";
 import { useToast } from "../../composables/useToast";
 import { crmIsAdmin } from "../../utils/crmUser";
 import { DEFAULT_PER_PAGE, PER_PAGE_OPTIONS } from "../../constants/pagination";
@@ -1490,15 +1491,22 @@ onUnmounted(() => {
                 </a>
               </td>
               <td v-if="!portalMode" class="text-secondary staff-table-cell__meta">
-                <a
+                <div
                   v-if="row.client_company_name"
-                  :href="invoiceDetailHref(row)"
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  class="text-decoration-none text-secondary billing-inv-row-link"
+                  class="d-flex align-items-center gap-2 min-w-0"
                 >
-                  {{ row.client_company_name }}
-                </a>
+                  <ClientAccountShippingStatusIcon
+                    :status="row.client_account_status"
+                  />
+                  <a
+                    :href="invoiceDetailHref(row)"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    class="text-decoration-none text-secondary billing-inv-row-link text-truncate"
+                  >
+                    {{ row.client_company_name }}
+                  </a>
+                </div>
                 <span v-else>—</span>
               </td>
               <td class="text-body staff-table-cell__meta">

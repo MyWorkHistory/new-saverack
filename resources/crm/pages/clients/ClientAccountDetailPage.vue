@@ -24,6 +24,7 @@ import { useToast } from "../../composables/useToast";
 import { errorMessage } from "../../utils/apiError";
 import { formatDateTimeUs } from "../../utils/formatUserDates";
 import { resolvePublicUrl } from "../../utils/resolvePublicUrl.js";
+import { warnIfShipheroSyncFailed } from "../../utils/clientAccountShipheroSync.js";
 
 const props = defineProps({
   id: { type: String, required: true },
@@ -574,9 +575,10 @@ async function saveAccountStatusFromModal() {
   }
   accountStatusSaving.value = true;
   try {
-    await api.patch(`/client-accounts/${props.id}`, { status: next });
+    const { data } = await api.patch(`/client-accounts/${props.id}`, { status: next });
     account.value = { ...account.value, status: next };
     toast.success("Account status updated.");
+    warnIfShipheroSyncFailed(data, toast);
     await loadHistory();
     accountStatusModalOpen.value = false;
   } catch (e) {

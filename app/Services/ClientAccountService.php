@@ -22,14 +22,19 @@ class ClientAccountService
     /** @var PricingFeeTemplateService */
     protected $pricingTemplates;
 
+    /** @var ShipHeroCustomerAccountService */
+    protected $shipHeroCustomers;
+
     public function __construct(
         PortalClientProvisioningService $portalProvisioning,
         ActivityLogService $activityLog,
-        PricingFeeTemplateService $pricingTemplates
+        PricingFeeTemplateService $pricingTemplates,
+        ShipHeroCustomerAccountService $shipHeroCustomers
     ) {
         $this->portalProvisioning = $portalProvisioning;
         $this->activityLog = $activityLog;
         $this->pricingTemplates = $pricingTemplates;
+        $this->shipHeroCustomers = $shipHeroCustomers;
     }
 
     public function filteredAccountsQuery(array $filters): Builder
@@ -138,9 +143,12 @@ class ClientAccountService
 
     /**
      * @param  array<string, mixed>  $data
+     * @return array{account: ClientAccount, shiphero_sync: array{ok: bool, message: string|null}|null}
      */
-    public function update(ClientAccount $account, array $data, ?User $actor = null): ClientAccount
+    public function update(ClientAccount $account, array $data, ?User $actor = null): array
     {
+        $statusChanging = array_key_exists('status', $data);
+
         if ($data !== []) {
             $account->update($data);
         }
@@ -153,15 +161,44 @@ class ClientAccountService
             ]);
         }
 
-        return $account;
+        $shipheroSync = $statusChanging
+            ? $this->shipHeroCustomers->syncHideOrdersFromApp($account)
+            : null;
+
+        return ['account' => $account, 'shiphero_sync' => $shipheroSync];
     }
 
     /**
      * @param  list<int>  $ids
+     * @return array{updated: int, shiphero_sync: array{ok: bool, message: string|null}|null}
      */
-    public function bulkUpdateStatus(array $ids, string $status): int
+    public function bulkUpdateStatus(array $ids, string $status): array
     {
-        return ClientAccount::query()->whereIn('id', $ids)->update(['status' => $status]);
+        $updated = ClientAccount::query()->whereIn('id', $ids)->update(['status' => $status]);
+        $accounts = ClientAccount::query()->whereIn('id', $ids)->get();
+        $failures = [];
+
+        foreach ($accounts as $account) {
+            $sync = $this->shipHeroCustomers->syncHideOrdersFromApp($account);
+            if (! $sync['ok']) {
+                $failures[] = $account->company_name.': '.($sync['message'] ?? 'ShipHero sync failed');
+            }
+        }
+
+        $shipheroSync = null;
+        if ($accounts->isNotEmpty()) {
+            if ($failures === []) {
+                $shipheroSync = ['ok' => true, 'message' => null];
+            } else {
+                $shipheroSync = [
+                    'ok' => false,
+                    'message' => implode('; ', array_slice($failures, 0, 3))
+                        .(count($failures) > 3 ? '…' : ''),
+                ];
+            }
+        }
+
+        return ['updated' => (int) $updated, 'shiphero_sync' => $shipheroSync];
     }
 
     /**

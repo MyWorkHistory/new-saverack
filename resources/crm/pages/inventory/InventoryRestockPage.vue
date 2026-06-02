@@ -25,6 +25,7 @@ const restockMeta = ref({
 
 let pollTimer = null;
 let pollStartedAt = 0;
+let autoRefreshTriggered = false;
 
 const isRunning = computed(() => restockMeta.value.status === "running");
 
@@ -113,6 +114,12 @@ async function loadRestockReport() {
   try {
     const { data } = await api.get("/inventory/restock");
     applyRestockPayload(data);
+    const hasNoRows = !Array.isArray(data?.rows) || data.rows.length === 0;
+    if (!autoRefreshTriggered && !data?.computed_at && hasNoRows) {
+      autoRefreshTriggered = true;
+      await refreshRestockReport();
+      return;
+    }
     if (data?.status === "running") {
       restockRefreshing.value = true;
       startPolling();

@@ -135,6 +135,17 @@ class InventoryRestockReportService
             return null;
         }
 
+        // Guard against stale "running" rows when a queue worker died mid-run.
+        if (
+            $row->status === InventoryRestockSnapshot::STATUS_RUNNING
+            && $row->updated_at !== null
+            && $row->updated_at->lessThan(now()->subMinutes(30))
+        ) {
+            $row->status = InventoryRestockSnapshot::STATUS_FAILED;
+            $row->error_message = 'Restock refresh timed out. Please refresh again.';
+            $row->save();
+        }
+
         return $this->serializeSnapshot($row);
     }
 

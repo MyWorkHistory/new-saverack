@@ -7,7 +7,6 @@ use App\Models\ClientAccount;
 use App\Models\ClientAccountAsnLine;
 use App\Models\ClientAccountOnDemandProduct;
 use App\Services\ShipHeroClient;
-use App\Jobs\RefreshInventoryRestockReportJob;
 use App\Services\InventoryProductDetailCacheService;
 use App\Services\InventoryRestockReportService;
 use App\Services\ShipHeroInventoryService;
@@ -140,7 +139,6 @@ class InventoryController extends Controller
             ]);
             $warehouseId = isset($validated['warehouse_id']) ? trim((string) $validated['warehouse_id']) : null;
             $warehouseId = $warehouseId !== '' ? $warehouseId : null;
-
             if ($reports->isRefreshInProgress($warehouseId)) {
                 $snapshot = $reports->latestSnapshot($warehouseId);
                 if ($snapshot !== null) {
@@ -148,10 +146,10 @@ class InventoryController extends Controller
                 }
             }
 
-            $snapshot = $reports->markRefreshRunning($warehouseId);
-            RefreshInventoryRestockReportJob::dispatch($warehouseId);
+            // Run refresh inline so the page works even when queue workers are not running.
+            $result = $reports->refresh($warehouseId);
 
-            return response()->json($snapshot, 202);
+            return response()->json($result, 200);
         } catch (ValidationException $e) {
             throw $e;
         } catch (RuntimeException $e) {

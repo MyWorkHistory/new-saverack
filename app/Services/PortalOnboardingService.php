@@ -54,6 +54,19 @@ class PortalOnboardingService
         return true;
     }
 
+    /** @var list<string> */
+    public const ONBOARDING_TASK_IDS = [
+        'account_information',
+        'communication_preferences',
+        'billing_information',
+        'branding_information',
+        'order_handling_preferences',
+        'packing_slips_preferences',
+        'shipping_carrier_preferences',
+        'returns_handling_preferences',
+        'inventory_sync',
+    ];
+
     /**
      * @return array<string, mixed>
      */
@@ -69,6 +82,7 @@ class PortalOnboardingService
         }
 
         return [
+            'client_account_id' => $account->id,
             'client_account_status' => (string) $account->status,
             'profile' => $profile,
             'preferences' => $this->serializePreferences($account),
@@ -82,6 +96,102 @@ class PortalOnboardingService
             'manual_payment_instructions' => config('crm.portal_manual_payment_instructions'),
             'stripe_payment_link_url' => config('crm.stripe_onboarding_payment_link_url'),
         ];
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    public function buildAdminOnboardingPayload(ClientAccount $account): array
+    {
+        $user = $this->resolvePrimaryPortalUser($account);
+        $payload = $this->buildOnboardingPayload($user, $account);
+        $payload['tasks'] = $this->attachVerificationToTasks($payload['tasks'], $account);
+        $payload['primary_user_id'] = $user->id;
+
+        return $payload;
+    }
+
+    public function isTaskVerified(ClientAccount $account, string $taskId): bool
+    {
+        if (! $this->isValidTaskId($taskId)) {
+            return false;
+        }
+        $verifications = $this->verificationsArray($account);
+
+        return isset($verifications[$taskId]) && is_array($verifications[$taskId]);
+    }
+
+    public function setTaskVerified(ClientAccount $account, string $taskId, bool $verified, ?int $verifiedByUserId = null): ClientAccount
+    {
+        if (! $this->isValidTaskId($taskId)) {
+            throw new \InvalidArgumentException('Invalid onboarding task id.');
+        }
+
+        $verifications = $this->verificationsArray($account);
+        if ($verified) {
+            $verifications[$taskId] = [
+                'verified_at' => now()->toIso8601String(),
+                'verified_by' => $verifiedByUserId,
+            ];
+        } else {
+            unset($verifications[$taskId]);
+        }
+
+        $account->onboarding_verifications = $verifications;
+        $account->save();
+
+        return $account->fresh();
+    }
+
+    /**
+     * @param  array<string, mixed>  $validated
+     */
+    public function updateAccountProfile(User $user, ClientAccount $account, array $validated): void
+    {
+        $nameParts = preg_split('/\s+/', trim((string) $validated['name']), 2);
+        $firstName = $nameParts[0] ?? '';
+        $lastName = isset($nameParts[1]) ? trim($nameParts[1]) : '';
+
+        $user->name = trim((string) $validated['name']);
+        $user->email = trim((string) $validated['email']);
+        $user->save();
+
+        $account->company_name = trim((string) $validated['company_name']);
+        $account->contact_first_name = $firstName;
+        $account->contact_last_name = $lastName;
+        $account->email = trim((string) $validated['email']);
+        $account->phone = $this->nullableTrim($validated['phone'] ?? null);
+        $account->street = $this->nullableTrim($validated['street'] ?? null);
+        $account->city = $this->nullableTrim($validated['city'] ?? null);
+        $account->state = $this->nullableTrim($validated['state'] ?? null);
+        $account->zip = $this->nullableTrim($validated['zip'] ?? null);
+        $account->country = $this->nullableTrim($validated['country'] ?? null);
+        $account->save();
+    }
+
+    public function applyAdminBillingMethod(ClientAccount $account, string $method): ClientAccount
+    {
+        if ($method === self::BILLING_METHOD_MANUAL) {
+            return $this->completeManualBilling($account);
+        }
+        if ($method === self::BILLING_METHOD_ACH) {
+            $account->default_payment_type = 'ACH';
+            $account->onboarding_billing_method = self::BILLING_METHOD_ACH;
+            $account->onboarding_billing_status = self::BILLING_STATUS_COMPLETED;
+            $account->save();
+
+            return $account->fresh();
+        }
+        if ($method === self::BILLING_METHOD_CREDIT_CARD) {
+            $account->default_payment_type = 'Credit Card';
+            $account->onboarding_billing_method = self::BILLING_METHOD_CREDIT_CARD;
+            $account->onboarding_billing_status = self::BILLING_STATUS_COMPLETED;
+            $account->save();
+
+            return $account->fresh();
+        }
+
+        throw new \InvalidArgumentException('Invalid billing method.');
     }
 
     /**
@@ -169,7 +279,7 @@ class PortalOnboardingService
         $tasks = [
             [
                 'id' => 'account_information',
-                'title' => 'Add Account Information',
+                'title' => 'Account Information',
                 'description' => 'Complete your company profile, contact details, business address, and primary account contacts.',
                 'status' => $accountComplete ? 'completed' : 'not_completed',
                 'icon' => 'account',
@@ -183,7 +293,7 @@ class PortalOnboardingService
             ],
             [
                 'id' => 'billing_information',
-                'title' => 'Add Billing Information',
+                'title' => 'Billing Information',
                 'description' => 'Add your payment method and billing details so invoices and fulfillment charges can be processed without delays.',
                 'status' => $billingUiStatus,
                 'icon' => 'billing',
@@ -323,5 +433,76 @@ class PortalOnboardingService
         }
 
         return [];
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function verificationsArray(ClientAccount $account): array
+    {
+        $raw = $account->onboarding_verifications;
+        if (is_string($raw) && $raw !== '') {
+            $decoded = json_decode($raw, true);
+            if (is_array($decoded)) {
+                return $decoded;
+            }
+        }
+        if (is_array($raw)) {
+            return $raw;
+        }
+
+        return [];
+    }
+
+    /**
+     * @param  list<array<string, mixed>>  $tasks
+     * @return list<array<string, mixed>>
+     */
+    private function attachVerificationToTasks(array $tasks, ClientAccount $account): array
+    {
+        $verifications = $this->verificationsArray($account);
+        $out = [];
+        foreach ($tasks as $task) {
+            if (! is_array($task)) {
+                continue;
+            }
+            $id = (string) ($task['id'] ?? '');
+            $verified = $id !== '' && isset($verifications[$id]) && is_array($verifications[$id]);
+            $task['verified'] = $verified;
+            $task['verification_status'] = $verified ? 'verified' : 'not_verified';
+            $out[] = $task;
+        }
+
+        return $out;
+    }
+
+    public function resolvePrimaryPortalUser(ClientAccount $account): User
+    {
+        $account->loadMissing(['primaryAccountUser', 'accountUsers']);
+        $user = $account->primaryAccountUser;
+        if ($user instanceof User) {
+            return $user;
+        }
+        $user = $account->accountUsers->first();
+        if ($user instanceof User) {
+            return $user;
+        }
+
+        throw new \RuntimeException('This account has no portal user to attach onboarding data.');
+    }
+
+    public function isValidTaskId(string $taskId): bool
+    {
+        return in_array($taskId, self::ONBOARDING_TASK_IDS, true);
+    }
+
+    private function nullableTrim(?string $value): ?string
+    {
+        if ($value === null) {
+            return null;
+        }
+        $t = trim($value);
+
+        return $t === '' ? null : $t;
     }
 }

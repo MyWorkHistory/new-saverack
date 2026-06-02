@@ -12,9 +12,19 @@ const props = defineProps({
   preferences: { type: Object, default: () => ({}) },
   brandLogoUrl: { type: String, default: "" },
   profile: { type: Object, default: null },
+  clientAccountId: { type: [String, Number], default: null },
+  adminMode: { type: Boolean, default: false },
+  taskId: { type: String, default: "" },
+  taskVerified: { type: Boolean, default: false },
+  verifying: { type: Boolean, default: false },
 });
 
-const emit = defineEmits(["update:open", "saved"]);
+const emit = defineEmits(["update:open", "saved", "verify", "unverify"]);
+
+function adminOnboardingBase() {
+  if (!props.clientAccountId) return null;
+  return `/client-accounts/${props.clientAccountId}/onboarding`;
+}
 
 const toast = useToast();
 const saving = ref(false);
@@ -115,7 +125,10 @@ async function uploadLogoIfNeeded() {
   try {
     const fd = new FormData();
     fd.append("logo", logoFile.value);
-    const { data } = await api.post("/portal/onboarding/branding/logo", fd);
+    const base = adminOnboardingBase();
+    const { data } = base
+      ? await api.post(`${base}/branding/logo`, fd)
+      : await api.post("/portal/onboarding/branding/logo", fd);
     return data;
   } finally {
     logoUploading.value = false;
@@ -138,10 +151,10 @@ async function save() {
       payload[field.key] = form[field.key];
     }
 
-    const { data } = await api.patch(
-      `/portal/onboarding/preferences/${props.sectionId}`,
-      payload,
-    );
+    const base = adminOnboardingBase();
+    const { data } = base
+      ? await api.patch(`${base}/preferences/${props.sectionId}`, payload)
+      : await api.patch(`/portal/onboarding/preferences/${props.sectionId}`, payload);
     toast.success("Saved.");
     emit("saved", data);
     close();
@@ -333,11 +346,31 @@ function setCommunicationMethod(value) {
               </div>
             </template>
       </div>
-      <footer class="crm-vx-modal__footer">
+      <footer class="crm-vx-modal__footer flex-wrap gap-2">
+        <button
+          v-if="adminMode && taskVerified"
+          type="button"
+          class="crm-vx-modal-btn crm-vx-modal-btn--secondary me-auto"
+          :disabled="saving || logoUploading || verifying"
+          @click="emit('unverify')"
+        >
+          <CrmLoadingSpinner v-if="verifying" small class="me-1" />
+          Remove Verification
+        </button>
+        <button
+          v-else-if="adminMode"
+          type="button"
+          class="crm-vx-modal-btn crm-vx-modal-btn--secondary me-auto"
+          :disabled="saving || logoUploading || verifying"
+          @click="emit('verify')"
+        >
+          <CrmLoadingSpinner v-if="verifying" small class="me-1" />
+          Verify
+        </button>
         <button
           type="button"
           class="crm-vx-modal-btn crm-vx-modal-btn--secondary"
-          :disabled="saving || logoUploading"
+          :disabled="saving || logoUploading || verifying"
           @click="close"
         >
           Cancel
@@ -345,7 +378,7 @@ function setCommunicationMethod(value) {
         <button
           type="button"
           class="crm-vx-modal-btn crm-vx-modal-btn--primary"
-          :disabled="saving || logoUploading"
+          :disabled="saving || logoUploading || verifying"
           @click="save"
         >
           <CrmLoadingSpinner v-if="saving || logoUploading" small class="me-1" />
@@ -358,8 +391,10 @@ function setCommunicationMethod(value) {
 
 <style scoped>
 .portal-onboard-logo-preview {
-  max-height: 120px;
+  max-height: 200px;
   max-width: 100%;
+  width: auto;
+  height: auto;
   object-fit: contain;
   border-radius: 0.375rem;
   border: 1px solid var(--bs-border-color);

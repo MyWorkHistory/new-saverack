@@ -8,9 +8,19 @@ import { useToast } from "../../composables/useToast";
 const props = defineProps({
   open: { type: Boolean, default: false },
   profile: { type: Object, default: null },
+  clientAccountId: { type: [String, Number], default: null },
+  adminMode: { type: Boolean, default: false },
+  taskId: { type: String, default: "account_information" },
+  taskVerified: { type: Boolean, default: false },
+  verifying: { type: Boolean, default: false },
 });
 
-const emit = defineEmits(["update:open", "saved"]);
+const emit = defineEmits(["update:open", "saved", "verify", "unverify"]);
+
+function adminOnboardingBase() {
+  if (!props.clientAccountId) return null;
+  return `/client-accounts/${props.clientAccountId}/onboarding`;
+}
 
 const toast = useToast();
 const saving = ref(false);
@@ -80,9 +90,12 @@ async function save() {
       zip: form.zip.trim(),
       country: form.country.trim(),
     };
-    const { data } = await api.patch("/portal/profile", payload);
+    const base = adminOnboardingBase();
+    const { data } = base
+      ? await api.patch(`${base}/profile`, payload)
+      : await api.patch("/portal/profile", payload);
     toast.success("Saved.");
-    emit("saved", data);
+    emit("saved", base ? data : data);
     close();
   } catch (e) {
     errorMsg.value = "Could not save.";
@@ -222,11 +235,31 @@ async function save() {
             </div>
 
     </form>
-    <footer class="crm-vx-modal__footer">
+    <footer class="crm-vx-modal__footer flex-wrap gap-2">
+      <button
+        v-if="adminMode && taskVerified"
+        type="button"
+        class="crm-vx-modal-btn crm-vx-modal-btn--secondary me-auto"
+        :disabled="saving || verifying"
+        @click="emit('unverify')"
+      >
+        <CrmLoadingSpinner v-if="verifying" small class="me-1" />
+        Remove Verification
+      </button>
+      <button
+        v-else-if="adminMode"
+        type="button"
+        class="crm-vx-modal-btn crm-vx-modal-btn--secondary me-auto"
+        :disabled="saving || verifying"
+        @click="emit('verify')"
+      >
+        <CrmLoadingSpinner v-if="verifying" small class="me-1" />
+        Verify
+      </button>
       <button
         type="button"
         class="crm-vx-modal-btn crm-vx-modal-btn--secondary"
-        :disabled="saving"
+        :disabled="saving || verifying"
         @click="close"
       >
         Cancel
@@ -235,7 +268,7 @@ async function save() {
         type="submit"
         form="portal-onboard-account-form"
         class="crm-vx-modal-btn crm-vx-modal-btn--primary"
-        :disabled="saving"
+        :disabled="saving || verifying"
       >
         <CrmLoadingSpinner v-if="saving" small class="me-1" />
         Save

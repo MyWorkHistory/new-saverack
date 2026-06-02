@@ -7,6 +7,7 @@ use App\Http\Controllers\Api\AuthController;
 use App\Http\Controllers\Api\BillingSummaryController;
 use App\Http\Controllers\Api\CustomBillController;
 use App\Http\Controllers\Api\ClientAccountController;
+use App\Http\Controllers\Api\ClientAccountOnboardingController;
 use App\Http\Controllers\Api\ClientAccountUserController;
 use App\Http\Controllers\Api\ClientStoreController;
 use App\Http\Controllers\Api\DashboardController;
@@ -333,6 +334,18 @@ Route::middleware('auth:sanctum')->group(function () {
         ->name('client-accounts.export-csv');
     Route::get('client-accounts/{client_account}/history', [ClientAccountController::class, 'history'])
         ->name('client-accounts.history');
+    Route::get('client-accounts/{client_account}/onboarding', [ClientAccountOnboardingController::class, 'show'])
+        ->name('client-accounts.onboarding.show');
+    Route::patch('client-accounts/{client_account}/onboarding/profile', [ClientAccountOnboardingController::class, 'updateProfile'])
+        ->name('client-accounts.onboarding.profile');
+    Route::patch('client-accounts/{client_account}/onboarding/preferences/{section}', [ClientAccountOnboardingController::class, 'savePreferences'])
+        ->name('client-accounts.onboarding.preferences');
+    Route::post('client-accounts/{client_account}/onboarding/branding/logo', [ClientAccountOnboardingController::class, 'uploadBrandLogo'])
+        ->name('client-accounts.onboarding.brand-logo');
+    Route::post('client-accounts/{client_account}/onboarding/billing', [ClientAccountOnboardingController::class, 'saveBilling'])
+        ->name('client-accounts.onboarding.billing');
+    Route::patch('client-accounts/{client_account}/onboarding/tasks/{task}/verification', [ClientAccountOnboardingController::class, 'updateTaskVerification'])
+        ->name('client-accounts.onboarding.tasks.verification');
     Route::post('client-accounts/{client_account}/comments', [ClientAccountController::class, 'storeComment'])
         ->name('client-accounts.comments.store');
     Route::patch('client-accounts/{client_account}/comments/{comment}', [ClientAccountController::class, 'updateComment'])

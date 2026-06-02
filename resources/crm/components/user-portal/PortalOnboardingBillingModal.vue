@@ -8,14 +8,25 @@ import { useToast } from "../../composables/useToast";
 const props = defineProps({
   open: { type: Boolean, default: false },
   manualInstructions: { type: Object, default: null },
+  clientAccountId: { type: [String, Number], default: null },
+  adminMode: { type: Boolean, default: false },
+  taskId: { type: String, default: "billing_information" },
+  taskVerified: { type: Boolean, default: false },
+  verifying: { type: Boolean, default: false },
 });
 
-const emit = defineEmits(["update:open", "saved"]);
+const emit = defineEmits(["update:open", "saved", "verify", "unverify"]);
+
+function adminOnboardingBase() {
+  if (!props.clientAccountId) return null;
+  return `/client-accounts/${props.clientAccountId}/onboarding`;
+}
 
 const toast = useToast();
 const method = ref("");
 const stripeLoading = ref(false);
 const manualSaving = ref(false);
+const adminSaving = ref(false);
 const errorMsg = ref("");
 
 const manual = computed(() => {
@@ -86,15 +97,36 @@ async function confirmManual() {
   manualSaving.value = true;
   errorMsg.value = "";
   try {
-    const { data } = await api.post("/portal/onboarding/billing/manual");
+    const base = adminOnboardingBase();
+    const { data } = base
+      ? await api.post(`${base}/billing`, { method: "manual" })
+      : await api.post("/portal/onboarding/billing/manual");
     toast.success("Saved.");
-    emit("saved", data);
+    emit("saved", base ? data : data);
     close();
   } catch (e) {
     errorMsg.value = "Could not save.";
     toast.errorFrom(e, "Could not save.");
   } finally {
     manualSaving.value = false;
+  }
+}
+
+async function saveAdminBilling() {
+  if (adminSaving.value || !method.value) return;
+  adminSaving.value = true;
+  errorMsg.value = "";
+  try {
+    const base = adminOnboardingBase();
+    const { data } = await api.post(`${base}/billing`, { method: method.value });
+    toast.success("Saved.");
+    emit("saved", data);
+    close();
+  } catch (e) {
+    errorMsg.value = "Could not save billing.";
+    toast.errorFrom(e, "Could not save billing.");
+  } finally {
+    adminSaving.value = false;
   }
 }
 </script>
@@ -170,7 +202,26 @@ async function confirmManual() {
             </div>
 
             <div
-              v-if="method === 'credit_card'"
+              v-if="adminMode && method"
+              class="portal-billing-detail mt-4 p-3 rounded bg-light"
+            >
+              <p class="small text-secondary mb-3">
+                Save the selected payment method to this account. Credit Card and ACH will set the
+                account default payment type for invoices.
+              </p>
+              <button
+                type="button"
+                class="btn btn-primary staff-page-primary"
+                :disabled="adminSaving"
+                @click="saveAdminBilling"
+              >
+                <CrmLoadingSpinner v-if="adminSaving" small class="me-1" />
+                Save Billing Method
+              </button>
+            </div>
+
+            <div
+              v-else-if="method === 'credit_card'"
               class="portal-billing-detail mt-4 p-3 rounded bg-light"
             >
               <p class="mb-3">
@@ -241,11 +292,31 @@ async function confirmManual() {
             </div>
 
     </div>
-    <footer class="crm-vx-modal__footer">
+    <footer class="crm-vx-modal__footer flex-wrap gap-2">
+      <button
+        v-if="adminMode && taskVerified"
+        type="button"
+        class="crm-vx-modal-btn crm-vx-modal-btn--secondary me-auto"
+        :disabled="stripeLoading || manualSaving || adminSaving || verifying"
+        @click="emit('unverify')"
+      >
+        <CrmLoadingSpinner v-if="verifying" small class="me-1" />
+        Remove Verification
+      </button>
+      <button
+        v-else-if="adminMode"
+        type="button"
+        class="crm-vx-modal-btn crm-vx-modal-btn--secondary me-auto"
+        :disabled="stripeLoading || manualSaving || adminSaving || verifying"
+        @click="emit('verify')"
+      >
+        <CrmLoadingSpinner v-if="verifying" small class="me-1" />
+        Verify
+      </button>
       <button
         type="button"
         class="crm-vx-modal-btn crm-vx-modal-btn--secondary"
-        :disabled="stripeLoading || manualSaving"
+        :disabled="stripeLoading || manualSaving || adminSaving || verifying"
         @click="close"
       >
         Cancel

@@ -11,6 +11,7 @@ import ClientStoreCreateDrawer from "../../components/clients/ClientStoreCreateD
 import ClientStoreEditModal from "../../components/clients/ClientStoreEditModal.vue";
 import ClientStoresBulkEditModal from "../../components/clients/ClientStoresBulkEditModal.vue";
 import ClientAccountFeesPanel from "../../components/clients/ClientAccountFeesPanel.vue";
+import ClientAccountOnboardingPanel from "../../components/clients/ClientAccountOnboardingPanel.vue";
 import CrmIconRowActions from "../../components/common/CrmIconRowActions.vue";
 import { DEFAULT_PER_PAGE } from "../../constants/pagination";
 import {
@@ -91,6 +92,7 @@ const TAB_ACCOUNT_INFO = "account-info";
 const TAB_STORES = "stores";
 const TAB_FEES = "fees";
 const TAB_BILLING = "billing";
+const TAB_ONBOARDING = "onboarding";
 const TAB_SETTINGS = "settings";
 
 const accountTabList = computed(() => {
@@ -101,6 +103,7 @@ const accountTabList = computed(() => {
   tabs.push(
     { id: TAB_FEES, label: "Fees" },
     { id: TAB_BILLING, label: "Billing" },
+    { id: TAB_ONBOARDING, label: "Onboarding" },
     { id: TAB_SETTINGS, label: "Settings" },
   );
   return tabs;
@@ -112,6 +115,7 @@ function tabFromRouteQuery(tab) {
   const t = String(tab || "").toLowerCase();
   if (t === TAB_FEES) return TAB_FEES;
   if (t === TAB_BILLING) return TAB_BILLING;
+  if (t === TAB_ONBOARDING) return TAB_ONBOARDING;
   if (t === TAB_SETTINGS) return TAB_SETTINGS;
   if (t === TAB_STORES || t === "stores") return TAB_STORES;
   if (t === TAB_ACCOUNT_INFO || t === "overview") return TAB_ACCOUNT_INFO;
@@ -538,6 +542,16 @@ function onWindowScrollOrResize() {
 function openAccountEdit(section = "") {
   editAccountSection.value = section;
   editAccountOpen.value = true;
+}
+
+function onOnboardingAccountUpdated(payload) {
+  if (!account.value || !payload || typeof payload !== "object") return;
+  if (payload.brand_logo_url) {
+    account.value = {
+      ...account.value,
+      brand_logo_url: payload.brand_logo_url,
+    };
+  }
 }
 
 function openAccountStatusModal() {
@@ -1096,7 +1110,14 @@ onUnmounted(() => {
         <div class="col-12 col-xl-4">
           <aside class="staff-user-profile">
             <div class="staff-user-profile__avatar-wrap">
+              <img
+                v-if="account.brand_logo_url"
+                :src="account.brand_logo_url"
+                alt=""
+                class="staff-user-profile__avatar staff-user-profile__avatar--brand-logo"
+              />
               <span
+                v-else
                 class="staff-user-profile__avatar staff-user-profile__avatar--initials"
                 :class="avatarClassForEmail(account.email)"
               >
@@ -2173,6 +2194,17 @@ onUnmounted(() => {
             </div>
           </template>
 
+          <template v-else-if="activeTab === TAB_ONBOARDING">
+            <div class="staff-surface p-3 p-md-4">
+              <h3 class="staff-user-section-title mb-3">Onboarding</h3>
+              <ClientAccountOnboardingPanel
+                :client-account-id="account.id"
+                :can-edit="canUpdateAccount"
+                @account-updated="onOnboardingAccountUpdated"
+              />
+            </div>
+          </template>
+
           <template v-else-if="activeTab === TAB_SETTINGS">
             <div class="staff-surface p-3 p-md-4">
               <div
@@ -2336,6 +2368,17 @@ onUnmounted(() => {
 </template>
 
 <style scoped>
+.staff-user-profile__avatar--brand-logo {
+  max-height: 200px;
+  max-width: 100%;
+  width: auto;
+  height: auto;
+  object-fit: contain;
+  border-radius: 0.5rem;
+  background: #fff;
+  padding: 0.25rem;
+}
+
 .account-note-avatar {
   width: 2.25rem;
   height: 2.25rem;

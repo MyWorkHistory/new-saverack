@@ -53,26 +53,8 @@ class PortalProfileController extends Controller
             'country' => ['nullable', 'string', 'max:128'],
         ]);
 
-        $nameParts = preg_split('/\s+/', trim((string) $validated['name']), 2);
-        $firstName = $nameParts[0] ?? '';
-        $lastName = isset($nameParts[1]) ? trim($nameParts[1]) : '';
-
-        DB::transaction(function () use ($user, $account, $validated, $firstName, $lastName) {
-            $user->name = trim((string) $validated['name']);
-            $user->email = trim((string) $validated['email']);
-            $user->save();
-
-            $account->company_name = trim((string) $validated['company_name']);
-            $account->contact_first_name = $firstName;
-            $account->contact_last_name = $lastName;
-            $account->email = trim((string) $validated['email']);
-            $account->phone = $this->nullableTrim($validated['phone'] ?? null);
-            $account->street = $this->nullableTrim($validated['street'] ?? null);
-            $account->city = $this->nullableTrim($validated['city'] ?? null);
-            $account->state = $this->nullableTrim($validated['state'] ?? null);
-            $account->zip = $this->nullableTrim($validated['zip'] ?? null);
-            $account->country = $this->nullableTrim($validated['country'] ?? null);
-            $account->save();
+        DB::transaction(function () use ($user, $account, $validated) {
+            $this->onboarding->updateAccountProfile($user, $account, $validated);
         });
 
         $user->refresh();
@@ -109,15 +91,5 @@ class PortalProfileController extends Controller
     private function serializeProfile(User $user, ClientAccount $account): array
     {
         return $this->onboarding->serializeProfile($user, $account);
-    }
-
-    private function nullableTrim(?string $value): ?string
-    {
-        if ($value === null) {
-            return null;
-        }
-        $t = trim($value);
-
-        return $t === '' ? null : $t;
     }
 }

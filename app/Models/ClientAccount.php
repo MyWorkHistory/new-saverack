@@ -66,6 +66,7 @@ class ClientAccount extends Model
         'onboarding_billing_method',
         'onboarding_billing_status',
         'onboarding_preferences',
+        'onboarding_verifications',
         'brand_logo_path',
         'cc_fee_percent',
         'billing_available_funds_cents',
@@ -74,6 +75,7 @@ class ClientAccount extends Model
     protected $casts = [
         'notify_email' => 'boolean',
         'onboarding_preferences' => 'array',
+        'onboarding_verifications' => 'array',
         'contract_date' => 'date',
         'cc_fee_percent' => 'decimal:2',
         'billing_available_funds_cents' => 'integer',

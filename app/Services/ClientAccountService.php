@@ -507,11 +507,14 @@ class ClientAccountService
             $primaryAvatarUrl = $primaryLogin->profile->avatar_url;
         }
 
+        $brandLogoUrl = app(ClientBrandLogoService::class)->publicUrl($account->brand_logo_path);
+
         return [
             'id' => $account->id,
             'status' => $account->status,
             'company_name' => $account->company_name,
             'brand_name' => $account->brand_name,
+            'brand_logo_url' => $brandLogoUrl,
             'website' => $account->website,
             'contact_first_name' => $account->contact_first_name,
             'contact_last_name' => $account->contact_last_name,

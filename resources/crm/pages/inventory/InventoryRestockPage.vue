@@ -10,7 +10,7 @@ const toast = useToast();
 const router = useRouter();
 
 const POLL_MS = 5000;
-const STALE_CLIENT_MS = 20 * 60 * 1000;
+const STALE_CLIENT_MS = 10 * 60 * 1000;
 
 const restockRows = ref([]);
 const restockLoading = ref(false);
@@ -320,7 +320,7 @@ onBeforeUnmount(() => {
         aria-live="polite"
       >
         <template v-if="isRefreshStuck">
-          Refresh appears stuck — click Refresh to retry (ensure a queue worker is running).
+          Refresh appears stuck — click Refresh to retry. If it fails again, ask ops to run the queue worker or check server logs.
         </template>
         <template v-else>
           Building restock report from ShipHero…

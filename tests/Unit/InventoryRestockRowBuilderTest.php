@@ -49,14 +49,28 @@ class InventoryRestockRowBuilderTest extends TestCase
         $this->assertSame(1, $row['pick_qty']);
     }
 
-    public function test_excludes_when_pickable_null(): void
+    public function test_excludes_when_pickable_null_and_no_pickable_rows(): void
     {
         $row = InventoryRestockRowBuilder::buildRow('SKU-5', 'Product', null, [
             ['location_name' => 'A-01', 'quantity' => 1, 'pickable' => null],
         ], 2);
 
+        $this->assertNull($row);
+    }
+
+    public function test_includes_when_pickable_location_has_zero_qty(): void
+    {
+        $row = InventoryRestockRowBuilder::buildRow('SKU-5B', 'Product', null, [
+            ['location_name' => 'A-01', 'quantity' => 0, 'pickable' => true],
+        ], 2);
+
         $this->assertNotNull($row);
         $this->assertSame(0, $row['pick_qty']);
+    }
+
+    public function test_excludes_when_no_locations(): void
+    {
+        $this->assertNull(InventoryRestockRowBuilder::buildRow('SKU-8', 'Product', null, [], 2));
     }
 
     public function test_sums_multiple_pickable_locations(): void

@@ -126,6 +126,7 @@ class InventoryRestockApiTest extends TestCase
     {
         config(['services.shiphero.restock_warehouse_id' => 'wh-1']);
         config(['services.shiphero.restock_stale_minutes' => 20]);
+        config(['services.shiphero.restock_stall_minutes' => 20]);
         Sanctum::actingAs($this->staffWithInventoryView());
 
         InventoryRestockSnapshot::query()->create([
@@ -147,6 +148,6 @@ class InventoryRestockApiTest extends TestCase
         $response->assertJsonPath('status', InventoryRestockSnapshot::STATUS_FAILED);
         $response->assertJsonPath('duration_ms', null);
         $response->assertJsonPath('computed_at', null);
-        $this->assertStringContainsString('queue worker', (string) $response->json('error_message'));
+        $this->assertStringContainsString('Refresh', (string) $response->json('error_message'));
     }
 }

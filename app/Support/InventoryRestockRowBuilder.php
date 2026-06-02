@@ -20,6 +20,7 @@ class InventoryRestockRowBuilder
     ): ?array {
         $pickQty = 0;
         $pickNames = [];
+        $hasPickableLocation = false;
 
         foreach ($locations as $loc) {
             if (! is_array($loc)) {
@@ -28,6 +29,7 @@ class InventoryRestockRowBuilder
             if (($loc['pickable'] ?? null) !== true) {
                 continue;
             }
+            $hasPickableLocation = true;
             $qty = max(0, (int) ($loc['quantity'] ?? 0));
             if ($qty <= 0) {
                 continue;
@@ -40,6 +42,10 @@ class InventoryRestockRowBuilder
             if (! in_array($locName, $pickNames, true)) {
                 $pickNames[] = $locName;
             }
+        }
+
+        if (! $hasPickableLocation) {
+            return null;
         }
 
         if ($pickQty > max(0, $maxPickableQty)) {

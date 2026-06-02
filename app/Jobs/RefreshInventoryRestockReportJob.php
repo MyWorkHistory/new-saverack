@@ -17,14 +17,12 @@ class RefreshInventoryRestockReportJob implements ShouldQueue
     /** @var string|null */
     public $warehouseId;
 
-    /** One chunk per job; full scan chains additional jobs. */
-    public $timeout = 600;
+    /** Full scan (all chunks in one job). */
+    public $timeout = 3600;
 
     public $tries = 1;
 
     public $maxExceptions = 1;
-
-    public $failOnTimeout = true;
 
     public function __construct(?string $warehouseId = null)
     {
@@ -32,19 +30,18 @@ class RefreshInventoryRestockReportJob implements ShouldQueue
             ? trim($warehouseId)
             : null;
 
-        $connection = app(InventoryRestockReportService::class)->restockQueueConnection();
-        if ($connection !== null) {
-            $this->onConnection($connection);
+        if ($this->shouldUseLongQueueConnection()) {
+            $connection = app(InventoryRestockReportService::class)->restockQueueConnection();
+            if ($connection !== null) {
+                $this->onConnection($connection);
+            }
         }
     }
 
     public function handle(InventoryRestockReportService $reports): void
     {
         try {
-            $result = $reports->refreshNextChunk($this->warehouseId);
-            if ($result['has_more'] ?? false) {
-                $reports->dispatchNextRefreshChunk($this->warehouseId);
-            }
+            $reports->runFullRefreshUntilDone($this->warehouseId);
         } catch (Throwable $e) {
             report($e);
             $reports->markRefreshFailed(
@@ -61,5 +58,10 @@ class RefreshInventoryRestockReportJob implements ShouldQueue
             $this->warehouseId,
             $e->getMessage() !== '' ? $e->getMessage() : 'Restock report refresh failed.'
         );
+    }
+
+    private function shouldUseLongQueueConnection(): bool
+    {
+        return strtolower(trim((string) config('services.shiphero.restock_dispatch_mode', 'after_response'))) === 'queue';
     }
 }

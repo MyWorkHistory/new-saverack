@@ -33,6 +33,7 @@ class InventoryRestockReportServiceTest extends TestCase
     public function test_stale_running_snapshot_marked_failed_on_latest_snapshot(): void
     {
         config(['services.shiphero.restock_stale_minutes' => 20]);
+        config(['services.shiphero.restock_stall_minutes' => 20]);
         $service = $this->serviceWithWarehouse();
 
         InventoryRestockSnapshot::query()->create([
@@ -47,7 +48,7 @@ class InventoryRestockReportServiceTest extends TestCase
 
         $this->assertNotNull($snapshot);
         $this->assertSame(InventoryRestockSnapshot::STATUS_FAILED, $snapshot['status']);
-        $this->assertStringContainsString('queue worker', (string) $snapshot['error_message']);
+        $this->assertStringContainsString('Refresh', (string) $snapshot['error_message']);
         $this->assertNull($snapshot['computed_at']);
         $this->assertNull($snapshot['duration_ms']);
     }
@@ -55,6 +56,7 @@ class InventoryRestockReportServiceTest extends TestCase
     public function test_is_refresh_in_progress_false_after_stale_resolution(): void
     {
         config(['services.shiphero.restock_stale_minutes' => 20]);
+        config(['services.shiphero.restock_stall_minutes' => 20]);
         $service = $this->serviceWithWarehouse();
 
         InventoryRestockSnapshot::query()->create([

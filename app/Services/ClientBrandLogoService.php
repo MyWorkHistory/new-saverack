@@ -18,7 +18,7 @@ class ClientBrandLogoService
         }
 
         $ext = strtolower($file->getClientOriginalExtension() ?: 'png');
-        if (! in_array($ext, ['jpg', 'jpeg', 'png'], true)) {
+        if (! in_array($ext, ['jpg', 'jpeg', 'png', 'webp'], true)) {
             $ext = 'png';
         }
         $filename = Str::uuid()->toString().'.'.$ext;
@@ -39,9 +39,6 @@ class ClientBrandLogoService
     public function publicUrl(?string $path): ?string
     {
         if ($path === null || trim($path) === '') {
-            return null;
-        }
-        if (! Storage::disk('public')->exists($path)) {
             return null;
         }
 

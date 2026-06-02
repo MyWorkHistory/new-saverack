@@ -545,14 +545,25 @@ function openAccountEdit(section = "") {
 }
 
 function onOnboardingAccountUpdated(payload) {
-  if (!account.value || !payload || typeof payload !== "object") return;
-  if (payload.brand_logo_url) {
+  if (payload?.brand_logo_url && account.value) {
     account.value = {
       ...account.value,
       brand_logo_url: payload.brand_logo_url,
     };
   }
+  loadAccount();
 }
+
+const accountBrandLogoUrl = computed(() => {
+  const raw = account.value?.brand_logo_url;
+  if (!raw) return "";
+  const resolved = resolvePublicUrl(raw) || raw;
+  const v = account.value?.updated_at;
+  if (!v) return resolved;
+  const sep = resolved.includes("?") ? "&" : "?";
+
+  return `${resolved}${sep}v=${encodeURIComponent(String(v))}`;
+});
 
 function openAccountStatusModal() {
   if (!account.value || !canUpdateAccount.value) return;
@@ -1111,8 +1122,8 @@ onUnmounted(() => {
           <aside class="staff-user-profile">
             <div class="staff-user-profile__avatar-wrap">
               <img
-                v-if="account.brand_logo_url"
-                :src="account.brand_logo_url"
+                v-if="accountBrandLogoUrl"
+                :src="accountBrandLogoUrl"
                 alt=""
                 class="staff-user-profile__avatar staff-user-profile__avatar--brand-logo"
               />

@@ -5,6 +5,7 @@ import CrmLoadingSpinner from "../common/CrmLoadingSpinner.vue";
 import PortalOnboardingModalShell from "./PortalOnboardingModalShell.vue";
 import { getPortalOnboardingSection } from "../../constants/portalOnboardingSections.js";
 import { useToast } from "../../composables/useToast";
+import { resolvePublicUrl } from "../../utils/resolvePublicUrl.js";
 
 const props = defineProps({
   open: { type: Boolean, default: false },
@@ -36,6 +37,14 @@ const logoFile = ref(null);
 const form = reactive({});
 
 const section = computed(() => getPortalOnboardingSection(props.sectionId));
+
+const logoPreviewDisplayUrl = computed(() => {
+  const u = logoPreviewUrl.value;
+  if (!u) return "";
+  if (/^blob:/i.test(u)) return u;
+
+  return resolvePublicUrl(u) || u;
+});
 
 const sectionPrefs = computed(() => {
   const prefs = props.preferences;
@@ -109,29 +118,65 @@ watch(
 
 onUnmounted(() => document.removeEventListener("keydown", onEsc));
 
-function onLogoChange(ev) {
-  const file = ev?.target?.files?.[0];
-  logoFile.value = file || null;
-  if (file) {
-    logoPreviewUrl.value = URL.createObjectURL(file);
-  }
+function logoUrlFromUploadResponse(data) {
+  if (!data || typeof data !== "object") return null;
+  if (data.brand_logo_url) return data.brand_logo_url;
+  if (data.onboarding?.brand_logo_url) return data.onboarding.brand_logo_url;
+
+  return null;
 }
 
-async function uploadLogoIfNeeded() {
-  if (!logoFile.value || props.sectionId !== "branding_information") {
+function onboardingPayloadFromResponse(data) {
+  if (!data || typeof data !== "object") return null;
+  if (Array.isArray(data.tasks)) return data;
+  if (data.onboarding && typeof data.onboarding === "object") return data.onboarding;
+
+  return null;
+}
+
+async function uploadLogoFile(file) {
+  if (!file || props.sectionId !== "branding_information") {
     return null;
   }
   logoUploading.value = true;
+  errorMsg.value = "";
   try {
     const fd = new FormData();
-    fd.append("logo", logoFile.value);
+    fd.append("logo", file);
     const base = adminOnboardingBase();
     const { data } = base
       ? await api.post(`${base}/branding/logo`, fd)
       : await api.post("/portal/onboarding/branding/logo", fd);
+    const url = logoUrlFromUploadResponse(data);
+    if (url) {
+      logoPreviewUrl.value = url;
+    }
     return data;
   } finally {
     logoUploading.value = false;
+  }
+}
+
+async function onLogoChange(ev) {
+  const file = ev?.target?.files?.[0];
+  logoFile.value = file || null;
+  if (!file) {
+    return;
+  }
+  logoPreviewUrl.value = URL.createObjectURL(file);
+  if (props.adminMode && adminOnboardingBase()) {
+    try {
+      const data = await uploadLogoFile(file);
+      logoFile.value = null;
+      const onboarding = onboardingPayloadFromResponse(data);
+      if (onboarding) {
+        emit("saved", onboarding);
+        toast.success("Logo uploaded.");
+      }
+    } catch (e) {
+      errorMsg.value = "Could not upload logo.";
+      toast.errorFrom(e, "Could not upload logo.");
+    }
   }
 }
 
@@ -140,8 +185,13 @@ async function save() {
   saving.value = true;
   errorMsg.value = "";
   try {
+    let resultPayload = null;
+    let logoData = null;
+
     if (props.sectionId === "branding_information" && logoFile.value) {
-      await uploadLogoIfNeeded();
+      logoData = await uploadLogoFile(logoFile.value);
+      logoFile.value = null;
+      resultPayload = onboardingPayloadFromResponse(logoData);
     }
 
     const payload = {};
@@ -152,11 +202,24 @@ async function save() {
     }
 
     const base = adminOnboardingBase();
-    const { data } = base
-      ? await api.patch(`${base}/preferences/${props.sectionId}`, payload)
-      : await api.patch(`/portal/onboarding/preferences/${props.sectionId}`, payload);
+    const shouldPatch = Object.keys(payload).length > 0 || !base;
+    if (shouldPatch) {
+      const { data } = base
+        ? await api.patch(`${base}/preferences/${props.sectionId}`, payload)
+        : await api.patch(`/portal/onboarding/preferences/${props.sectionId}`, payload);
+      resultPayload = data;
+    }
+
+    if (!resultPayload && logoData) {
+      resultPayload = onboardingPayloadFromResponse(logoData);
+    }
+
+    if (!resultPayload) {
+      throw new Error("Nothing to save.");
+    }
+
     toast.success("Saved.");
-    emit("saved", data);
+    emit("saved", resultPayload);
     close();
   } catch (e) {
     errorMsg.value = "Could not save. Check required fields.";
@@ -326,7 +389,7 @@ function setCommunicationMethod(value) {
               <div v-else-if="field.type === 'file'" class="portal-onboard-file-field">
                 <div v-if="logoPreviewUrl" class="mb-2">
                   <img
-                    :src="logoPreviewUrl"
+                    :src="logoPreviewDisplayUrl"
                     alt=""
                     class="portal-onboard-logo-preview"
                   />
@@ -335,7 +398,7 @@ function setCommunicationMethod(value) {
                   :id="`onboard-${field.key}`"
                   type="file"
                   class="form-control"
-                  accept=".jpg,.jpeg,.png,image/jpeg,image/png"
+                  accept="image/jpeg,image/png,image/jpg,image/webp,.jpg,.jpeg,.png,.webp"
                   @change="onLogoChange"
                 />
               </div>
@@ -381,8 +444,11 @@ function setCommunicationMethod(value) {
           :disabled="saving || logoUploading || verifying"
           @click="save"
         >
-          <CrmLoadingSpinner v-if="saving || logoUploading" small class="me-1" />
-          Save
+          <template v-if="saving || logoUploading">
+            <CrmLoadingSpinner small class="me-1" />
+            Saving…
+          </template>
+          <template v-else>Save</template>
         </button>
       </footer>
     </template>

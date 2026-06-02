@@ -103,7 +103,7 @@ class ClientAccountOnboardingController extends Controller
         Gate::authorize('update', $client_account);
 
         $request->validate([
-            'logo' => ['required', 'file', 'max:2048', 'mimes:jpg,jpeg,png'],
+            'logo' => ['required', 'file', 'image', 'max:5120'],
         ]);
 
         $this->brandLogos->replaceForAccount($client_account, $request->file('logo'));

@@ -174,7 +174,7 @@ loadOnboarding();
           v-for="task in tasks"
           :key="task.id"
           type="button"
-          class="portal-onboard-task staff-table-card staff-datatable-card--white text-start border-0 w-100 p-3 p-md-4"
+          class="portal-onboard-task portal-onboard-task--bordered staff-table-card staff-datatable-card--white text-start w-100 p-3 p-md-4"
           :class="{ 'portal-onboard-task--readonly': !canEdit }"
           :disabled="!canEdit"
           @click="openTask(task)"
@@ -192,9 +192,6 @@ loadOnboarding();
               </div>
             </div>
             <div class="portal-onboard-task__status-col">
-              <span class="portal-onboard-status-label small text-secondary d-block mb-1">
-                Status
-              </span>
               <span
                 class="portal-onboard-status badge rounded-pill"
                 :class="completionClass(task.status)"
@@ -203,9 +200,6 @@ loadOnboarding();
               </span>
             </div>
             <div class="portal-onboard-task__status-col">
-              <span class="portal-onboard-status-label small text-secondary d-block mb-1">
-                Verification
-              </span>
               <span
                 class="portal-onboard-status badge rounded-pill"
                 :class="verificationClass(task)"
@@ -275,11 +269,17 @@ loadOnboarding();
   box-shadow: 0 0.25rem 0.75rem rgba(15, 23, 42, 0.08);
 }
 
+.portal-onboard-task--bordered {
+  border: 1px solid var(--bs-border-color) !important;
+  border-radius: 0.5rem;
+  background: var(--bs-body-bg, #fff);
+}
+
 .portal-onboard-task__grid--admin {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto auto;
   gap: 0.75rem 1.25rem;
-  align-items: start;
+  align-items: center;
 }
 
 @media (max-width: 767.98px) {
@@ -290,7 +290,9 @@ loadOnboarding();
 
 .portal-onboard-task__status-col {
   flex-shrink: 0;
-  text-align: end;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
 }
 
 .portal-onboard-task__icon {

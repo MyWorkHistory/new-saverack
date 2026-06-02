@@ -270,8 +270,11 @@ async function save() {
         class="crm-vx-modal-btn crm-vx-modal-btn--primary"
         :disabled="saving || verifying"
       >
-        <CrmLoadingSpinner v-if="saving" small class="me-1" />
-        Save
+        <template v-if="saving">
+          <CrmLoadingSpinner small class="me-1" />
+          Saving…
+        </template>
+        <template v-else>Save</template>
       </button>
     </footer>
   </PortalOnboardingModalShell>

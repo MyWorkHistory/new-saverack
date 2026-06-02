@@ -117,7 +117,7 @@ class PortalOnboardingController extends Controller
         Gate::forUser($request->user())->authorize('view', $account);
 
         $request->validate([
-            'logo' => ['required', 'file', 'max:2048', 'mimes:jpg,jpeg,png'],
+            'logo' => ['required', 'file', 'image', 'max:5120'],
         ]);
 
         $this->brandLogos->replaceForAccount($account, $request->file('logo'));

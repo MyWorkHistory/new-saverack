@@ -21,11 +21,11 @@ return [
     ],
 
     'slack' => [
-        'accounting_channel' => env('BILLING_SLACK_ACCOUNTING_CHANNEL') ?: '#accounting',
+        'accounting_channel' => env('BILLING_SLACK_ACCOUNTING_CHANNEL') ?: '#accounting-support',
         /** Bot User OAuth Token (xoxb-…) for chat.postMessage. */
         'bot_token' => env('SLACK_BOT_USER_OAUTH_TOKEN') ?: env('SLACK_BOT_TOKEN'),
         /**
-         * Optional Incoming Webhook URL for #accounting (https://hooks.slack.com/services/…).
+         * Optional Incoming Webhook URL for #accounting-support (https://hooks.slack.com/services/…).
          * When set, invoice review uses this instead of the bot token.
          */
         'webhook_url' => env('BILLING_SLACK_INCOMING_WEBHOOK_URL'),

@@ -25,7 +25,7 @@ class InvoiceSlackReviewService
 
             return [
                 'method' => 'webhook',
-                'channel' => trim((string) (config('billing.slack.accounting_channel') ?: '#accounting')),
+                'channel' => trim((string) (config('billing.slack.accounting_channel') ?: '#accounting-support')),
                 'ts' => null,
             ];
         }
@@ -144,7 +144,7 @@ class InvoiceSlackReviewService
         }
 
         throw new \RuntimeException(
-            'Slack webhook rejected the invoice review message. Use a webhook created for #accounting (BILLING_SLACK_INCOMING_WEBHOOK_URL), not LOG_SLACK_WEBHOOK_URL.'
+            'Slack webhook rejected the invoice review message. Use a webhook created for #accounting-support (BILLING_SLACK_INCOMING_WEBHOOK_URL), not LOG_SLACK_WEBHOOK_URL.'
         );
     }
 
@@ -252,15 +252,15 @@ class InvoiceSlackReviewService
     private function formatSlackError(string $error): string
     {
         if ($error === 'invalid_auth') {
-            return 'Slack rejected the bot token (invalid_auth). Regenerate the Bot User OAuth Token (xoxb-…) in Slack → your app → OAuth & Permissions, reinstall the app to the workspace, update .env, then run php artisan config:clear. Or use BILLING_SLACK_INCOMING_WEBHOOK_URL for #accounting instead.';
+            return 'Slack rejected the bot token (invalid_auth). Regenerate the Bot User OAuth Token (xoxb-…) in Slack → your app → OAuth & Permissions, reinstall the app to the workspace, update .env, then run php artisan config:clear. Or use BILLING_SLACK_INCOMING_WEBHOOK_URL for #accounting-support instead.';
         }
 
         if ($error === 'missing_scope') {
-            return 'Slack bot is missing required scopes. In api.slack.com → your app → OAuth & Permissions → Bot Token Scopes, add chat:write, channels:join (for private #accounting), then Reinstall to Workspace and update SLACK_BOT_USER_OAUTH_TOKEN in .env. Or use BILLING_SLACK_INCOMING_WEBHOOK_URL instead.';
+            return 'Slack bot is missing required scopes. In api.slack.com → your app → OAuth & Permissions → Bot Token Scopes, add chat:write, channels:join (for private #accounting-support), then Reinstall to Workspace and update SLACK_BOT_USER_OAUTH_TOKEN in .env. Or use BILLING_SLACK_INCOMING_WEBHOOK_URL instead.';
         }
 
         if ($error === 'channel_not_found' || $error === 'not_in_channel') {
-            return 'Slack bot is not in #accounting. Invite the bot to the channel (/invite @YourBot), add channels:join scope, or use BILLING_SLACK_INCOMING_WEBHOOK_URL for that channel.';
+            return 'Slack bot is not in #accounting-support. Invite the bot to the channel (/invite @YourBot), add channels:join scope, or use BILLING_SLACK_INCOMING_WEBHOOK_URL for that channel.';
         }
 
         return 'Slack rejected the invoice review message ('.$error.').';

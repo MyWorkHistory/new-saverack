@@ -22,7 +22,7 @@ class InvoiceReviewSlackApiTest extends TestCase
 
         config([
             'billing.slack.bot_token' => 'xoxb-test-token',
-            'billing.slack.accounting_channel' => '#accounting',
+            'billing.slack.accounting_channel' => '#accounting-support',
             'crm.frontend_url' => 'https://app.saverack.com',
         ]);
 

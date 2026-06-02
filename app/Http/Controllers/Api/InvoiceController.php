@@ -281,14 +281,14 @@ class InvoiceController extends Controller
 
         $this->invoices->logHistory($invoice, $user, 'invoice_review_slack_sent', $invoice->status, $invoice->status, [
             'event_type' => InvoiceHistoryEventType::STATUS,
-            'history_message' => 'Invoice review sent to Slack (#accounting).',
+            'history_message' => 'Invoice review sent to Slack (#accounting-support).',
             'reason' => $reasonKey,
             'reason_label' => InvoiceReviewReason::label($reasonKey),
             'note' => $note,
             'slack_delivery' => $delivery,
         ]);
 
-        $channelLabel = (string) ($delivery['channel'] ?? '#accounting');
+        $channelLabel = (string) ($delivery['channel'] ?? '#accounting-support');
 
         return response()->json([
             'message' => 'Invoice review sent to Slack.',

@@ -18,7 +18,7 @@ final class InvoiceSlackReviewServiceTest extends TestCase
         config([
             'billing.slack.bot_token' => 'xoxb-test-token',
             'billing.slack.webhook_url' => null,
-            'billing.slack.accounting_channel' => '#accounting',
+            'billing.slack.accounting_channel' => '#accounting-support',
             'crm.frontend_url' => 'https://app.saverack.com',
         ]);
     }
@@ -89,7 +89,7 @@ final class InvoiceSlackReviewServiceTest extends TestCase
             $body = $request->data();
 
             return $request->url() === 'https://slack.com/api/chat.postMessage'
-                && ($body['channel'] ?? '') === '#accounting'
+                && ($body['channel'] ?? '') === '#accounting-support'
                 && str_contains((string) ($body['text'] ?? ''), '*Invoice Review*')
                 && str_contains((string) ($body['text'] ?? ''), 'Note: Check totals');
         });
@@ -106,7 +106,7 @@ final class InvoiceSlackReviewServiceTest extends TestCase
         $invoice->setRelation('clientAccount', new ClientAccount(['company_name' => 'Co']));
 
         $this->expectException(\RuntimeException::class);
-        $this->expectExceptionMessage('not in #accounting');
+        $this->expectExceptionMessage('not in #accounting-support');
 
         app(InvoiceSlackReviewService::class)->postReview(
             $invoice,

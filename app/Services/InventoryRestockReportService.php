@@ -47,6 +47,11 @@ class InventoryRestockReportService
         return max(0, (int) config('services.shiphero.restock_max_pickable_qty', 2));
     }
 
+    public function chunkPages(): int
+    {
+        return max(1, min(100, (int) config('services.shiphero.restock_chunk_pages', 15)));
+    }
+
     public function isRefreshInProgress(?string $warehouseId = null): bool
     {
         $wid = $this->configuredWarehouseId($warehouseId) ?? $this->resolveWarehouseId($warehouseId);
@@ -81,6 +86,7 @@ class InventoryRestockReportService
                 'error_message' => null,
                 'refresh_started_at' => $now,
                 'progress_page' => 0,
+                'scan_cursor' => null,
                 'computed_at' => null,
                 'duration_ms' => null,
                 'rows' => [],
@@ -97,16 +103,24 @@ class InventoryRestockReportService
      */
     public function dispatchRefreshJob(?string $warehouseId = null): void
     {
+        $this->dispatchNextRefreshChunk($warehouseId);
+    }
+
+    /**
+     * Dispatch one refresh chunk (initial or continuation).
+     */
+    public function dispatchNextRefreshChunk(?string $warehouseId = null): void
+    {
         $mode = strtolower(trim((string) config('services.shiphero.restock_dispatch_mode', 'after_response')));
 
         if ($mode === 'queue') {
             $job = new RefreshInventoryRestockReportJob($warehouseId);
             $default = (string) config('queue.default', 'sync');
             if ($default === 'sync') {
-                $async = $this->asyncQueueConnection();
+                $async = $this->restockQueueConnection();
                 if ($async === null) {
                     throw new RuntimeException(
-                        'Restock refresh requires a background queue. Set QUEUE_CONNECTION=database or redis and run php artisan queue:work.'
+                        'Restock refresh requires a background queue. Set QUEUE_CONNECTION=database or redis and run php artisan queue:work --timeout=700.'
                     );
                 }
                 dispatch($job)->onConnection($async);
@@ -118,6 +132,16 @@ class InventoryRestockReportService
         }
 
         RefreshInventoryRestockReportJob::dispatch($warehouseId)->afterResponse();
+    }
+
+    public function restockQueueConnection(): ?string
+    {
+        $preferred = trim((string) config('queue.restock_long_connection', 'database-long'));
+        if ($preferred !== '' && config("queue.connections.{$preferred}.driver") !== null) {
+            return $preferred;
+        }
+
+        return $this->asyncQueueConnection();
     }
 
     private function asyncQueueConnection(): ?string
@@ -147,6 +171,7 @@ class InventoryRestockReportService
 
         $row->status = InventoryRestockSnapshot::STATUS_FAILED;
         $row->error_message = $message;
+        $row->scan_cursor = null;
         $row->save();
     }
 
@@ -209,7 +234,9 @@ class InventoryRestockReportService
     }
 
     /**
-     * @return array{warehouse_id: string, computed_at: string, rows: list<array<string, mixed>>, row_count: int, status: string, error_message: ?string, duration_ms: int, refresh_started_at: ?string, progress_page: ?int}
+     * Run a full refresh synchronously (artisan / tests). Chains chunks in-process.
+     *
+     * @return array<string, mixed>
      */
     public function refresh(?string $warehouseId = null): array
     {
@@ -217,29 +244,103 @@ class InventoryRestockReportService
             @set_time_limit(0);
         }
 
-        $started = microtime(true);
         $wid = $this->resolveWarehouseId($warehouseId);
-        $status = InventoryRestockSnapshot::STATUS_OK;
-        $errorMessage = null;
-        $rows = [];
-        $scanStats = null;
+        $row = InventoryRestockSnapshot::query()->where('warehouse_id', $wid)->first();
+        if ($row === null || $row->status !== InventoryRestockSnapshot::STATUS_RUNNING) {
+            $this->markRefreshRunning($warehouseId);
+        }
+
+        $result = ['has_more' => true];
+        while ($result['has_more'] ?? false) {
+            $result = $this->refreshNextChunk($warehouseId);
+        }
+
+        $final = $this->findSnapshotRow($wid, true);
+        if ($final === null) {
+            throw new RuntimeException('Restock snapshot missing after refresh.');
+        }
+
+        return $this->serializeSnapshot($final, true);
+    }
+
+    /**
+     * Process one paginated chunk of the restock scan and persist progress.
+     *
+     * @return array{has_more: bool, warehouse_id: string, row_count: int, scan_stats: ?array<string, mixed>}
+     */
+    public function refreshNextChunk(?string $warehouseId = null): array
+    {
+        if (function_exists('set_time_limit')) {
+            @set_time_limit(0);
+        }
+
+        $wid = $this->resolveWarehouseId($warehouseId);
+        $row = InventoryRestockSnapshot::query()->where('warehouse_id', $wid)->first();
+        if ($row === null || $row->status !== InventoryRestockSnapshot::STATUS_RUNNING) {
+            return [
+                'has_more' => false,
+                'warehouse_id' => $wid,
+                'row_count' => 0,
+                'scan_stats' => null,
+            ];
+        }
+
+        $existingRows = is_array($row->rows) ? $row->rows : [];
+        $priorStats = is_array($row->scan_stats) ? $row->scan_stats : [];
+        $cumulativePages = (int) ($priorStats['pages_scanned'] ?? $row->progress_page ?? 0);
+        $cumulativeProducts = (int) ($priorStats['products_scanned'] ?? 0);
+        $startCursor = is_string($row->scan_cursor) && trim($row->scan_cursor) !== ''
+            ? trim($row->scan_cursor)
+            : null;
+        $refreshStartedAt = $row->refresh_started_at ?? Carbon::now();
 
         try {
             $catalog = $this->buildLocationCatalogForRefresh($wid);
-            $scanResult = $this->scanWarehouse($wid, $catalog['by_id'], $catalog['by_name']);
+            $scanResult = $this->scanWarehouse(
+                $wid,
+                $catalog['by_id'],
+                $catalog['by_name'],
+                $this->chunkPages(),
+                null,
+                $startCursor,
+                $cumulativePages,
+                $cumulativeProducts,
+                $existingRows
+            );
+
             $rows = $scanResult['rows'];
             $scanStats = $scanResult['scan_stats'];
-        } catch (Throwable $e) {
-            $status = InventoryRestockSnapshot::STATUS_FAILED;
-            $errorMessage = $e->getMessage();
-            Log::error('inventory.restock_report.failed', [
-                'warehouse_id' => $wid,
-                'message' => $e->getMessage(),
-            ]);
-            throw $e;
-        } finally {
-            $durationMs = (int) round((microtime(true) - $started) * 1000);
+            $hasMore = (bool) ($scanStats['has_more_pages'] ?? false);
+            $endCursor = isset($scanStats['end_cursor']) && is_string($scanStats['end_cursor'])
+                ? $scanStats['end_cursor']
+                : null;
+
+            if ($hasMore && $endCursor !== null && $endCursor !== '') {
+                InventoryRestockSnapshot::query()
+                    ->where('warehouse_id', $wid)
+                    ->where('status', InventoryRestockSnapshot::STATUS_RUNNING)
+                    ->update([
+                        'rows' => $rows,
+                        'row_count' => count($rows),
+                        'progress_page' => (int) ($scanStats['pages_scanned'] ?? 0),
+                        'scan_cursor' => $endCursor,
+                        'scan_stats' => $scanStats,
+                        'updated_at' => Carbon::now(),
+                    ]);
+
+                return [
+                    'has_more' => true,
+                    'warehouse_id' => $wid,
+                    'row_count' => count($rows),
+                    'scan_stats' => $scanStats,
+                ];
+            }
+
+            usort($rows, static fn (array $a, array $b): int => strcasecmp((string) ($a['sku'] ?? ''), (string) ($b['sku'] ?? '')));
+            $durationMs = (int) max(0, $refreshStartedAt->diffInRealSeconds(Carbon::now()) * 1000);
             $computedAt = Carbon::now();
+            $scanStats['has_more_pages'] = false;
+            unset($scanStats['end_cursor']);
 
             InventoryRestockSnapshot::query()->updateOrCreate(
                 ['warehouse_id' => $wid],
@@ -247,30 +348,29 @@ class InventoryRestockReportService
                     'computed_at' => $computedAt,
                     'rows' => $rows,
                     'row_count' => count($rows),
-                    'status' => $status,
-                    'error_message' => $errorMessage,
+                    'status' => InventoryRestockSnapshot::STATUS_OK,
+                    'error_message' => null,
                     'duration_ms' => $durationMs,
                     'refresh_started_at' => null,
                     'progress_page' => null,
+                    'scan_cursor' => null,
                     'scan_stats' => $scanStats,
                 ]
             );
+
+            return [
+                'has_more' => false,
+                'warehouse_id' => $wid,
+                'row_count' => count($rows),
+                'scan_stats' => $scanStats,
+            ];
+        } catch (Throwable $e) {
+            Log::error('inventory.restock_report.chunk_failed', [
+                'warehouse_id' => $wid,
+                'message' => $e->getMessage(),
+            ]);
+            throw $e;
         }
-
-        usort($rows, static fn (array $a, array $b): int => strcasecmp((string) ($a['sku'] ?? ''), (string) ($b['sku'] ?? '')));
-
-        return [
-            'warehouse_id' => $wid,
-            'computed_at' => $computedAt->toIso8601String(),
-            'rows' => $rows,
-            'row_count' => count($rows),
-            'status' => $status,
-            'error_message' => $errorMessage,
-            'duration_ms' => $durationMs,
-            'refresh_started_at' => null,
-            'progress_page' => null,
-            'scan_stats' => $scanStats,
-        ];
     }
 
     /**
@@ -380,6 +480,7 @@ class InventoryRestockReportService
         $row->error_message = 'Refresh did not finish (queue worker may be stopped). Try Refresh again or contact ops.';
         $row->refresh_started_at = null;
         $row->progress_page = null;
+        $row->scan_cursor = null;
         $row->save();
 
         return $row;
@@ -388,6 +489,7 @@ class InventoryRestockReportService
     /**
      * @param  array<string, array<string, mixed>>  $catalogById
      * @param  array<string, array<string, mixed>>  $catalogByName
+     * @param  list<array<string, mixed>>  $existingRows
      * @return array{rows: list<array<string, mixed>>, scan_stats: array<string, mixed>}
      */
     private function scanWarehouse(
@@ -395,15 +497,20 @@ class InventoryRestockReportService
         array $catalogById,
         array $catalogByName,
         ?int $maxPagesOverride = null,
-        ?int $maxPickableQtyOverride = null
+        ?int $maxPickableQtyOverride = null,
+        ?string $startCursor = null,
+        int $cumulativePages = 0,
+        int $cumulativeProductsScanned = 0,
+        array $existingRows = []
     ): array {
-        $restockRows = [];
-        $after = null;
+        $restockRows = $existingRows;
+        $after = $startCursor;
         $maxPages = $maxPagesOverride ?? 500;
         $maxPickableQty = $maxPickableQtyOverride ?? $this->maxPickableQty();
-        $page = 0;
-        $productsScanned = 0;
+        $page = $cumulativePages;
+        $productsScanned = $cumulativeProductsScanned;
         $hasNext = false;
+        $pagesThisChunk = 0;
 
         do {
             $pageResult = $this->inventory->paginateWarehouseProductsForRestock($warehouseId, $after);
@@ -460,6 +567,7 @@ class InventoryRestockReportService
             $hasNext = (bool) ($pageInfo['has_next_page'] ?? false);
             $after = isset($pageInfo['end_cursor']) && is_string($pageInfo['end_cursor']) ? $pageInfo['end_cursor'] : null;
             $page++;
+            $pagesThisChunk++;
 
             if ($maxPagesOverride === null && ($page === 1 || $page % 3 === 0)) {
                 $partialStats = [
@@ -470,13 +578,23 @@ class InventoryRestockReportService
                     'has_more_pages' => $hasNext,
                 ];
                 $this->touchRefreshProgress($warehouseId, $page, count($restockRows), $partialStats);
+            } elseif ($maxPagesOverride !== null && ($pagesThisChunk === 1 || $pagesThisChunk % 3 === 0)) {
+                $partialStats = [
+                    'products_scanned' => $productsScanned,
+                    'products_matched' => count($restockRows),
+                    'pages_scanned' => $page,
+                    'max_pickable_qty' => $maxPickableQty,
+                    'has_more_pages' => $hasNext,
+                    'end_cursor' => $after,
+                ];
+                $this->touchRefreshProgress($warehouseId, $page, count($restockRows), $partialStats);
             }
-        } while ($hasNext && $after !== null && $after !== '' && $page < $maxPages);
+        } while ($hasNext && $after !== null && $after !== '' && $pagesThisChunk < $maxPages);
 
-        if ($page >= $maxPages && $hasNext) {
+        if ($page >= 500 && $hasNext && $maxPagesOverride === null) {
             Log::warning('inventory.restock_report.pagination_truncated', [
                 'warehouse_id' => $warehouseId,
-                'max_pages' => $maxPages,
+                'max_pages' => 500,
             ]);
         }
 
@@ -487,6 +605,9 @@ class InventoryRestockReportService
             'max_pickable_qty' => $maxPickableQty,
             'has_more_pages' => $hasNext,
         ];
+        if ($hasNext && $after !== null && $after !== '') {
+            $scanStats['end_cursor'] = $after;
+        }
 
         return [
             'rows' => $restockRows,

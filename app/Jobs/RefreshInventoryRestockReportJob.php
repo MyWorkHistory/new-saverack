@@ -17,19 +17,34 @@ class RefreshInventoryRestockReportJob implements ShouldQueue
     /** @var string|null */
     public $warehouseId;
 
-    public $timeout = 3600;
+    /** One chunk per job; full scan chains additional jobs. */
+    public $timeout = 600;
+
+    public $tries = 1;
+
+    public $maxExceptions = 1;
+
+    public $failOnTimeout = true;
 
     public function __construct(?string $warehouseId = null)
     {
         $this->warehouseId = is_string($warehouseId) && trim($warehouseId) !== ''
             ? trim($warehouseId)
             : null;
+
+        $connection = app(InventoryRestockReportService::class)->restockQueueConnection();
+        if ($connection !== null) {
+            $this->onConnection($connection);
+        }
     }
 
     public function handle(InventoryRestockReportService $reports): void
     {
         try {
-            $reports->refresh($this->warehouseId);
+            $result = $reports->refreshNextChunk($this->warehouseId);
+            if ($result['has_more'] ?? false) {
+                $reports->dispatchNextRefreshChunk($this->warehouseId);
+            }
         } catch (Throwable $e) {
             report($e);
             $reports->markRefreshFailed(

@@ -22,6 +22,7 @@ class InventoryRestockSnapshot extends Model
         'duration_ms',
         'refresh_started_at',
         'progress_page',
+        'scan_cursor',
         'scan_stats',
     ];
 

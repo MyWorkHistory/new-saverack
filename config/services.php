@@ -54,7 +54,9 @@ return [
         /** Max location rows per warehouse product in restock scan. */
         'restock_location_limit' => (int) env('SHIPHERO_RESTOCK_LOCATION_LIMIT', 25),
         /** Minutes before a running snapshot is marked failed (orphaned queue job). */
-        'restock_stale_minutes' => (int) env('SHIPHERO_RESTOCK_STALE_MINUTES', 20),
+        'restock_stale_minutes' => (int) env('SHIPHERO_RESTOCK_STALE_MINUTES', 45),
+        /** Pages scanned per refresh job chunk (keeps each job under queue retry_after). */
+        'restock_chunk_pages' => (int) env('SHIPHERO_RESTOCK_CHUNK_PAGES', 15),
         /** Skip full warehouse location catalog (saves ShipHero credits; uses product locations only). */
         'restock_skip_location_catalog' => filter_var(
             env('SHIPHERO_RESTOCK_SKIP_LOCATION_CATALOG', false),

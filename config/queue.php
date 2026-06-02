@@ -43,6 +43,16 @@ return [
             'after_commit' => false,
         ],
 
+        /** Long-running jobs (restock refresh chunks). retry_after must exceed job timeout. */
+        'database-long' => [
+            'driver' => 'database',
+            'connection' => env('DB_QUEUE_CONNECTION'),
+            'table' => env('DB_QUEUE_TABLE', 'jobs'),
+            'queue' => env('DB_QUEUE', 'default'),
+            'retry_after' => (int) env('DB_QUEUE_RETRY_AFTER_LONG', 900),
+            'after_commit' => false,
+        ],
+
         'beanstalkd' => [
             'driver' => 'beanstalkd',
             'host' => env('BEANSTALKD_QUEUE_HOST', 'localhost'),
@@ -102,6 +112,9 @@ return [
     | Supported drivers: "database-uuids", "dynamodb", "file", "null"
     |
     */
+
+    /** Queue connection for inventory restock refresh chunks (see database-long). */
+    'restock_long_connection' => env('QUEUE_RESTOCK_CONNECTION', 'database-long'),
 
     'failed' => [
         'driver' => env('QUEUE_FAILED_DRIVER', 'database-uuids'),

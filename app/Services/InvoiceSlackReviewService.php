@@ -106,7 +106,6 @@ class InvoiceSlackReviewService
         $invoiceUrl = CrmUrls::invoiceStaffUrl((int) $invoice->id);
 
         $lines = [
-            'Invoice Review',
             $summaryLine,
         ];
 
@@ -141,6 +140,7 @@ class InvoiceSlackReviewService
     {
         $payload = [
             'channel' => $channel,
+            'username' => 'Invoice Review',
             'text' => $text,
             'mrkdwn' => true,
         ];

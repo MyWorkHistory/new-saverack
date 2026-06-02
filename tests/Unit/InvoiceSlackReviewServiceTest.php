@@ -43,7 +43,6 @@ final class InvoiceSlackReviewServiceTest extends TestCase
             null,
         );
 
-        $this->assertStringContainsString('Invoice Review', $text);
         $this->assertStringContainsString('Invoice `#633947` - Spirit Nest - High Postage', $text);
         $this->assertStringNotContainsString('Note:', $text);
         $this->assertStringContainsString(
@@ -90,7 +89,7 @@ final class InvoiceSlackReviewServiceTest extends TestCase
 
             return $request->url() === 'https://slack.com/api/chat.postMessage'
                 && ($body['channel'] ?? '') === '#accounting'
-                && str_contains((string) ($body['text'] ?? ''), 'Invoice Review')
+                && str_contains((string) ($body['text'] ?? ''), 'Invoice `#100` - Test Co - Other Charges')
                 && str_contains((string) ($body['text'] ?? ''), 'Note: Check totals');
         });
     }
@@ -141,6 +140,7 @@ final class InvoiceSlackReviewServiceTest extends TestCase
 
             return str_starts_with($request->url(), 'https://hooks.slack.com/services/')
                 && ($body['channel'] ?? '') === '#accounting'
+                && ($body['username'] ?? '') === 'Invoice Review'
                 && str_contains((string) ($body['text'] ?? ''), 'High Postage');
         });
     }

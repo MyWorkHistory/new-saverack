@@ -71,7 +71,10 @@ const scanStatsLabel = computed(() => {
   const matched = Number(stats.products_matched ?? restockMeta.value.row_count ?? 0);
   const maxQty = stats.max_pickable_qty ?? 2;
   if (scanned <= 0) return null;
-  return `Scanned ${scanned.toLocaleString()} products — ${matched.toLocaleString()} had pickable qty 0–${maxQty}.`;
+  const partialNote = stats.partial
+    ? " (first " + Number(stats.pages_scanned || 0).toLocaleString() + " pages — run scheduled refresh for full warehouse)"
+    : "";
+  return `Scanned ${scanned.toLocaleString()} products — ${matched.toLocaleString()} had pickable qty 0–${maxQty}.${partialNote}`;
 });
 
 const rowsShowingLabel = computed(() => {
@@ -292,7 +295,7 @@ onBeforeUnmount(() => {
       <div class="min-w-0 flex-grow-1">
         <h1 class="h4 fw-semibold text-body mb-1">Restock</h1>
         <p class="text-secondary small mb-0">
-          SKUs with pickable qty 0–2 in pickable locations. Refreshes automatically at 7:00 AM, 12:00 PM, and 2:30 PM (US Eastern).
+          SKUs with pickable qty 0–2 in pickable locations. Manual Refresh scans the first 50 ShipHero pages (~1,000 products) so results appear in minutes; scheduled jobs scan the full warehouse.
         </p>
       </div>
       <div class="d-flex flex-column align-items-md-end gap-2 flex-shrink-0 ms-md-auto">

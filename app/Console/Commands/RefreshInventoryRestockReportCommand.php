@@ -24,6 +24,7 @@ class RefreshInventoryRestockReportCommand extends Command
                 return self::SUCCESS;
             }
 
+            $reports->useUnlimitedScanPages();
             $reports->markRefreshRunning($warehouseId);
             $result = $reports->refresh($warehouseId);
             $this->info(sprintf(

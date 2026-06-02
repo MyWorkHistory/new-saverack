@@ -63,6 +63,22 @@ class InventoryRestockReportService
         return max(1, min(100, (int) config('services.shiphero.restock_rows_page_size', 50)));
     }
 
+    /** 0 = scan entire warehouse; default 50 stops UI refresh in a few minutes. */
+    public function maxScanPages(): int
+    {
+        return max(0, (int) config('services.shiphero.restock_max_scan_pages', 50));
+    }
+
+    public function useUnlimitedScanPages(): void
+    {
+        config([
+            'services.shiphero.restock_max_scan_pages' => max(
+                0,
+                (int) config('services.shiphero.restock_scheduled_max_scan_pages', 0)
+            ),
+        ]);
+    }
+
     public function stallMinutes(): int
     {
         return max(3, (int) config('services.shiphero.restock_stall_minutes', 10));
@@ -373,12 +389,14 @@ class InventoryRestockReportService
                 $startCursor,
                 $cumulativePages,
                 $cumulativeProducts,
-                $existingRows
+                $existingRows,
+                $this->maxScanPages()
             );
 
             $rows = $scanResult['rows'];
             $scanStats = $scanResult['scan_stats'];
-            $hasMore = (bool) ($scanStats['has_more_pages'] ?? false);
+            $hitPageCap = (bool) ($scanStats['partial'] ?? false);
+            $hasMore = (bool) ($scanStats['has_more_pages'] ?? false) && ! $hitPageCap;
             $endCursor = isset($scanStats['end_cursor']) && is_string($scanStats['end_cursor'])
                 ? $scanStats['end_cursor']
                 : null;
@@ -413,6 +431,9 @@ class InventoryRestockReportService
             $computedAt = Carbon::now();
             $scanStats['has_more_pages'] = false;
             unset($scanStats['end_cursor']);
+            if ($hitPageCap) {
+                $scanStats['partial'] = true;
+            }
 
             $this->clearRefreshWorkingState($wid);
 
@@ -638,16 +659,18 @@ class InventoryRestockReportService
         ?string $startCursor = null,
         int $cumulativePages = 0,
         int $cumulativeProductsScanned = 0,
-        array $existingRows = []
+        array $existingRows = [],
+        int $totalPagesCap = 0
     ): array {
         $restockRows = $existingRows;
         $after = $startCursor;
-        $maxPages = $maxPagesOverride ?? 500;
+        $chunkPageLimit = $maxPagesOverride ?? 500;
         $maxPickableQty = $maxPickableQtyOverride ?? $this->maxPickableQty();
         $page = $cumulativePages;
         $productsScanned = $cumulativeProductsScanned;
         $hasNext = false;
         $pagesThisChunk = 0;
+        $stoppedAtPageCap = false;
 
         do {
             $pageResult = $this->inventory->paginateWarehouseProductsForRestock($warehouseId, $after);
@@ -726,12 +749,18 @@ class InventoryRestockReportService
                 ];
                 $this->touchRefreshProgress($warehouseId, $page, count($restockRows), $partialStats);
             }
-        } while ($hasNext && $after !== null && $after !== '' && $pagesThisChunk < $maxPages);
 
-        if ($page >= 500 && $hasNext && $maxPagesOverride === null) {
-            Log::warning('inventory.restock_report.pagination_truncated', [
+            if ($totalPagesCap > 0 && $page >= $totalPagesCap) {
+                $stoppedAtPageCap = $hasNext;
+                break;
+            }
+        } while ($hasNext && $after !== null && $after !== '' && $pagesThisChunk < $chunkPageLimit);
+
+        if ($stoppedAtPageCap) {
+            Log::info('inventory.restock_report.scan_page_cap_reached', [
                 'warehouse_id' => $warehouseId,
-                'max_pages' => 500,
+                'max_scan_pages' => $totalPagesCap,
+                'products_matched' => count($restockRows),
             ]);
         }
 
@@ -740,7 +769,8 @@ class InventoryRestockReportService
             'products_matched' => count($restockRows),
             'pages_scanned' => $page,
             'max_pickable_qty' => $maxPickableQty,
-            'has_more_pages' => $hasNext,
+            'has_more_pages' => $hasNext && ! $stoppedAtPageCap,
+            'partial' => $stoppedAtPageCap,
         ];
         if ($hasNext && $after !== null && $after !== '') {
             $scanStats['end_cursor'] = $after;

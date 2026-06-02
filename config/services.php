@@ -57,6 +57,10 @@ return [
         'restock_stale_minutes' => (int) env('SHIPHERO_RESTOCK_STALE_MINUTES', 45),
         /** Pages scanned per refresh job chunk (keeps each job under queue retry_after). */
         'restock_chunk_pages' => (int) env('SHIPHERO_RESTOCK_CHUNK_PAGES', 15),
+        /** Max ShipHero list pages per UI refresh (0 = unlimited). Default 50 ≈ 1000 products. */
+        'restock_max_scan_pages' => (int) env('SHIPHERO_RESTOCK_MAX_SCAN_PAGES', 50),
+        /** Max pages for scheduled inventory:refresh-restock-report (0 = full warehouse). */
+        'restock_scheduled_max_scan_pages' => (int) env('SHIPHERO_RESTOCK_SCHEDULED_MAX_SCAN_PAGES', 0),
         /** Fail a running refresh when no DB progress for this many minutes. */
         'restock_stall_minutes' => (int) env('SHIPHERO_RESTOCK_STALL_MINUTES', 10),
         /** Skip full warehouse location catalog (saves ShipHero credits; uses product locations only). */

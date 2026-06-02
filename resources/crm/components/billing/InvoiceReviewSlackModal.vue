@@ -50,11 +50,15 @@ async function submit() {
   saving.value = true;
   errorMsg.value = "";
   try {
-    await api.post(`/invoices/${invoiceId}/invoice-review`, {
+    const { data } = await api.post(`/invoices/${invoiceId}/invoice-review`, {
       reason: form.reason,
       note: form.note.trim() === "" ? null : form.note.trim(),
     });
-    toast.success("Invoice review sent to Slack.");
+    const channelHint =
+      data?.slack_channel || data?.slack?.channel
+        ? ` (${data.slack_channel || data.slack.channel})`
+        : "";
+    toast.success(`Invoice review sent to Slack${channelHint}.`);
     emit("sent");
     close();
   } catch (e) {

@@ -274,7 +274,7 @@ class InvoiceController extends Controller
         $note = $request->noteText();
 
         try {
-            $this->invoiceReviewSlack->postReview($invoice, $reasonKey, $note, $user);
+            $delivery = $this->invoiceReviewSlack->postReview($invoice, $reasonKey, $note, $user);
         } catch (\RuntimeException $e) {
             return response()->json(['message' => $e->getMessage()], 422);
         }
@@ -285,9 +285,16 @@ class InvoiceController extends Controller
             'reason' => $reasonKey,
             'reason_label' => InvoiceReviewReason::label($reasonKey),
             'note' => $note,
+            'slack_delivery' => $delivery,
         ]);
 
-        return response()->json(['message' => 'Invoice review sent to Slack.']);
+        $channelLabel = (string) ($delivery['channel'] ?? '#accounting');
+
+        return response()->json([
+            'message' => 'Invoice review sent to Slack.',
+            'slack' => $delivery,
+            'slack_channel' => $channelLabel,
+        ]);
     }
 
     public function recordPayment(InvoiceRecordPaymentRequest $request, Invoice $invoice): JsonResponse

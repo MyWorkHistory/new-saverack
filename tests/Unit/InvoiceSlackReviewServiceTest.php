@@ -71,7 +71,7 @@ final class InvoiceSlackReviewServiceTest extends TestCase
     public function test_post_review_calls_slack_api(): void
     {
         Http::fake([
-            'slack.com/api/chat.postMessage' => Http::response(['ok' => true], 200),
+            'slack.com/api/chat.postMessage' => Http::response(['ok' => true, 'channel' => 'C123', 'ts' => '1.0'], 200),
         ]);
 
         $account = new ClientAccount(['company_name' => 'Test Co']);

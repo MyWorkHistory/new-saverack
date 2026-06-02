@@ -7,10 +7,14 @@ use App\Models\User;
 use App\Support\CrmUrls;
 use App\Support\InvoiceReviewReason;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Log;
 
 class InvoiceSlackReviewService
 {
-    public function postReview(Invoice $invoice, string $reasonKey, ?string $note, ?User $actor = null): void
+    /**
+     * @return array{method: string, channel: string|null, ts: string|null}
+     */
+    public function postReview(Invoice $invoice, string $reasonKey, ?string $note, ?User $actor = null): array
     {
         $invoice->loadMissing('clientAccount');
         $text = $this->buildMessageText($invoice, $reasonKey, $note);
@@ -19,7 +23,11 @@ class InvoiceSlackReviewService
         if ($webhookUrl !== '') {
             $this->postViaWebhook($webhookUrl, $text);
 
-            return;
+            return [
+                'method' => 'webhook',
+                'channel' => trim((string) (config('billing.slack.accounting_channel') ?: '#accounting')),
+                'ts' => null,
+            ];
         }
 
         $token = $this->normalizeBotToken((string) config('billing.slack.bot_token', ''));
@@ -31,12 +39,16 @@ class InvoiceSlackReviewService
 
         $this->assertBotTokenShape($token);
 
-        $channel = trim((string) (config('billing.slack.accounting_channel') ?: '#accounting'));
+        $channel = $this->normalizeChannelName(
+            trim((string) (config('billing.slack.accounting_channel') ?: '#accounting'))
+        );
         if ($channel === '') {
             throw new \RuntimeException(
                 'Slack accounting channel is not configured. Set BILLING_SLACK_ACCOUNTING_CHANNEL=#accounting in .env.'
             );
         }
+
+        $this->joinChannelIfPossible($token, $channel);
 
         $response = Http::withToken($token)
             ->acceptJson()
@@ -56,6 +68,26 @@ class InvoiceSlackReviewService
             $error = is_array($body) ? (string) ($body['error'] ?? 'unknown_error') : 'unknown_error';
             throw new \RuntimeException($this->formatSlackError($error));
         }
+
+        $ts = isset($body['ts']) ? trim((string) $body['ts']) : '';
+        if ($ts === '') {
+            throw new \RuntimeException('Slack accepted the request but did not return a message timestamp. Check bot scopes and channel configuration.');
+        }
+
+        $postedChannel = isset($body['channel']) ? trim((string) $body['channel']) : $channel;
+
+        Log::info('invoice_review_slack_sent', [
+            'invoice_id' => $invoice->id,
+            'slack_channel' => $postedChannel,
+            'slack_ts' => $ts,
+            'actor_id' => $actor?->id,
+        ]);
+
+        return [
+            'method' => 'bot',
+            'channel' => $postedChannel,
+            'ts' => $ts,
+        ];
     }
 
     public function buildMessageText(Invoice $invoice, string $reasonKey, ?string $note): string
@@ -102,9 +134,59 @@ class InvoiceSlackReviewService
         }
 
         $body = trim($response->body());
-        if ($body !== '' && $body !== 'ok') {
-            throw new \RuntimeException('Slack webhook rejected the invoice review message.');
+        if ($body === 'ok') {
+            return;
         }
+
+        $json = $response->json();
+        if (is_array($json) && ($json['ok'] ?? false) === true) {
+            return;
+        }
+
+        throw new \RuntimeException(
+            'Slack webhook rejected the invoice review message. Use a webhook created for #accounting (BILLING_SLACK_INCOMING_WEBHOOK_URL), not LOG_SLACK_WEBHOOK_URL.'
+        );
+    }
+
+    private function joinChannelIfPossible(string $token, string $channel): void
+    {
+        if (preg_match('/^C[A-Z0-9]+$/', $channel) !== 1) {
+            $response = Http::withToken($token)
+                ->acceptJson()
+                ->timeout(10)
+                ->post('https://slack.com/api/conversations.join', [
+                    'channel' => $channel,
+                ]);
+
+            $body = $response->json();
+            if (is_array($body) && ($body['ok'] ?? false) !== true) {
+                $error = (string) ($body['error'] ?? '');
+                if (! in_array($error, ['already_in_channel', 'method_not_supported_for_channel_type'], true)) {
+                    Log::warning('invoice_review_slack_join_failed', [
+                        'channel' => $channel,
+                        'error' => $error,
+                    ]);
+                }
+            }
+        }
+    }
+
+    private function normalizeChannelName(string $channel): string
+    {
+        $channel = trim($channel);
+        if ($channel === '') {
+            return '';
+        }
+
+        if (preg_match('/^C[A-Z0-9]+$/', $channel) === 1) {
+            return $channel;
+        }
+
+        if (! str_starts_with($channel, '#')) {
+            $channel = '#'.$channel;
+        }
+
+        return $channel;
     }
 
     private function normalizeBotToken(string $raw): string
@@ -174,11 +256,11 @@ class InvoiceSlackReviewService
         }
 
         if ($error === 'missing_scope') {
-            return 'Slack bot is missing required scopes. In api.slack.com → your app → OAuth & Permissions → Bot Token Scopes, add chat:write (and chat:write.public if the bot is not in #accounting), then Reinstall to Workspace and update SLACK_BOT_USER_OAUTH_TOKEN in .env. Or use BILLING_SLACK_INCOMING_WEBHOOK_URL instead.';
+            return 'Slack bot is missing required scopes. In api.slack.com → your app → OAuth & Permissions → Bot Token Scopes, add chat:write, channels:join (for private #accounting), then Reinstall to Workspace and update SLACK_BOT_USER_OAUTH_TOKEN in .env. Or use BILLING_SLACK_INCOMING_WEBHOOK_URL instead.';
         }
 
         if ($error === 'channel_not_found' || $error === 'not_in_channel') {
-            return 'Slack bot is not in #accounting. Invite the bot to the channel or use BILLING_SLACK_INCOMING_WEBHOOK_URL for that channel.';
+            return 'Slack bot is not in #accounting. Invite the bot to the channel (/invite @YourBot), add channels:join scope, or use BILLING_SLACK_INCOMING_WEBHOOK_URL for that channel.';
         }
 
         return 'Slack rejected the invoice review message ('.$error.').';

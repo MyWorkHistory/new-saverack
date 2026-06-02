@@ -28,7 +28,7 @@ return [
          * Optional Incoming Webhook URL for #accounting (https://hooks.slack.com/services/…).
          * When set, invoice review uses this instead of the bot token.
          */
-        'webhook_url' => env('BILLING_SLACK_INCOMING_WEBHOOK_URL') ?: env('LOG_SLACK_WEBHOOK_URL'),
+        'webhook_url' => env('BILLING_SLACK_INCOMING_WEBHOOK_URL'),
     ],
 
 ];

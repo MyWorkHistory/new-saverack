@@ -3947,6 +3947,7 @@ query ShipHeroRestockWarehouseProducts($warehouse_id: String!, $first: Int!, $af
                 quantity
                 location {
                   name
+                  pickable
                 }
               }
             }
@@ -3990,6 +3991,7 @@ query ShipHeroRestockWarehouseProducts($warehouse_id: String!, $first: Int!, $af
                 quantity
                 location {
                   name
+                  pickable
                 }
               }
             }
@@ -4078,10 +4080,11 @@ GQL;
         array $wp,
         string $warehouseId,
         array $catalogById,
-        array $catalogByName
+        array $catalogByName,
+        bool $allowInventoryBinFallback = true
     ): array {
         $normalized = $this->normalizeLocations($wp['locations'] ?? null, $warehouseId);
-        if ($normalized === []) {
+        if ($normalized === [] && $allowInventoryBinFallback) {
             $normalized = $this->fallbackLocationsFromWarehouseProduct($wp, $warehouseId);
         }
 

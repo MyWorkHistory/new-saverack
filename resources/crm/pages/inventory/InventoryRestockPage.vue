@@ -16,6 +16,7 @@ const restockRows = ref([]);
 const restockLoading = ref(false);
 const restockRefreshing = ref(false);
 const pollingActive = ref(false);
+const restockPreviewLoading = ref(false);
 const restockMeta = ref({
   warehouse_id: null,
   computed_at: null,
@@ -24,6 +25,7 @@ const restockMeta = ref({
   status: null,
   error_message: null,
   progress_page: null,
+  scan_stats: null,
 });
 
 let pollTimer = null;
@@ -59,6 +61,16 @@ const refreshStartedLabel = computed(() => {
   return formatDateTimeUs(d);
 });
 
+const scanStatsLabel = computed(() => {
+  const stats = restockMeta.value.scan_stats;
+  if (!stats || typeof stats !== "object") return null;
+  const scanned = Number(stats.products_scanned || 0);
+  const matched = Number(stats.products_matched ?? restockMeta.value.row_count ?? 0);
+  const maxQty = stats.max_pickable_qty ?? 2;
+  if (scanned <= 0) return null;
+  return `Scanned ${scanned.toLocaleString()} products — ${matched.toLocaleString()} had pickable qty 0–${maxQty}.`;
+});
+
 function applyRestockMeta(data) {
   restockMeta.value = {
     warehouse_id: data?.warehouse_id ?? null,
@@ -68,6 +80,7 @@ function applyRestockMeta(data) {
     status: data?.status ?? null,
     error_message: data?.error_message ?? null,
     progress_page: data?.progress_page ?? null,
+    scan_stats: data?.scan_stats ?? null,
   };
 }
 
@@ -166,6 +179,21 @@ async function loadRestockReport() {
   }
 }
 
+async function previewRestockReport() {
+  restockPreviewLoading.value = true;
+  try {
+    const { data } = await api.get("/inventory/restock/preview", { params: { max_pages: 10 } });
+    const count = Number(data?.match_count || 0);
+    const scanned = Number(data?.products_scanned || 0);
+    const partial = data?.partial ? " (partial — first 10 pages only)" : "";
+    toast.success(`Preview: ${count} matches from ${scanned} products scanned${partial}.`);
+  } catch (e) {
+    toast.errorFrom(e, "Could not preview restock report.");
+  } finally {
+    restockPreviewLoading.value = false;
+  }
+}
+
 async function refreshRestockReport() {
   restockRefreshing.value = true;
   try {
@@ -200,7 +228,7 @@ async function refreshRestockReport() {
 onMounted(() => {
   setCrmPageMeta({
     title: "Save Rack | Inventory | Restock",
-    description: "Warehouse restock report for pickable qty at or below replenishment minimum with backstock.",
+    description: "SKUs with pickable qty 0–2 in pickable warehouse locations.",
   });
   loadRestockReport();
 });
@@ -218,24 +246,35 @@ onBeforeUnmount(() => {
       <div class="min-w-0 flex-grow-1">
         <h1 class="h4 fw-semibold text-body mb-1">Restock</h1>
         <p class="text-secondary small mb-0">
-          SKUs with pickable qty at or below replenishment minimum and stock in non-pickable locations. Refreshes automatically at 7:00 AM, 12:00 PM, and 2:30 PM (US Eastern).
+          SKUs with pickable qty 0–2 in pickable locations. Refreshes automatically at 7:00 AM, 12:00 PM, and 2:30 PM (US Eastern).
         </p>
       </div>
-      <div class="d-flex flex-column align-items-md-end gap-1 flex-shrink-0 ms-md-auto">
+      <div class="d-flex flex-column align-items-md-end gap-2 flex-shrink-0 ms-md-auto">
         <p v-if="restockLastRunLabel" class="small text-secondary mb-0">
           Last successful run: {{ restockLastRunLabel }}
         </p>
         <p v-if="refreshStartedLabel && showRunningBanner" class="small text-secondary mb-0">
           Refresh started: {{ refreshStartedLabel }}
         </p>
-        <button
-          type="button"
-          class="btn btn-outline-secondary btn-sm orders-toolbar-outline-btn d-inline-flex align-items-center gap-2"
-          :disabled="restockLoading || (restockRefreshing && showRunningBanner)"
-          title="Refresh restock report"
-          aria-label="Refresh restock report from ShipHero"
-          @click="refreshRestockReport"
-        >
+        <div class="d-flex flex-wrap gap-2 justify-content-md-end">
+          <button
+            type="button"
+            class="btn btn-outline-secondary btn-sm orders-toolbar-outline-btn"
+            :disabled="restockLoading || restockPreviewLoading || (restockRefreshing && showRunningBanner)"
+            title="Preview match count from first 10 pages"
+            aria-label="Preview restock match count"
+            @click="previewRestockReport"
+          >
+            {{ restockPreviewLoading ? "Previewing…" : "Preview" }}
+          </button>
+          <button
+            type="button"
+            class="btn btn-outline-secondary btn-sm orders-toolbar-outline-btn d-inline-flex align-items-center gap-2"
+            :disabled="restockLoading || (restockRefreshing && showRunningBanner)"
+            title="Refresh restock report"
+            aria-label="Refresh restock report from ShipHero"
+            @click="refreshRestockReport"
+          >
           <svg
             width="18"
             height="18"
@@ -252,8 +291,17 @@ onBeforeUnmount(() => {
             />
           </svg>
           {{ restockRefreshing && showRunningBanner ? "Refreshing…" : "Refresh" }}
-        </button>
+          </button>
+        </div>
       </div>
+    </div>
+
+    <div
+      v-if="scanStatsLabel && !showRunningBanner"
+      class="alert alert-info py-2 px-3 small mb-3"
+      role="status"
+    >
+      {{ scanStatsLabel }}
     </div>
 
     <div
@@ -290,25 +338,22 @@ onBeforeUnmount(() => {
               <th class="staff-table-head__th user-inv-table__text-col" scope="col">Name</th>
               <th class="staff-table-head__th" scope="col">Pick Location</th>
               <th class="staff-table-head__th text-center" scope="col">Pick QTY</th>
-              <th class="staff-table-head__th text-center" scope="col">Replenishment Min</th>
-              <th class="staff-table-head__th text-center" scope="col">Backstock</th>
-              <th class="staff-table-head__th" scope="col">Backstock Locations</th>
             </tr>
           </thead>
           <tbody>
             <tr v-if="restockLoading">
-              <td colspan="7" class="py-5 text-center text-secondary">Loading restock report…</td>
+              <td colspan="4" class="py-5 text-center text-secondary">Loading restock report…</td>
             </tr>
             <tr v-else-if="!restockLastRunLabel && !restockRows.length && !showRunningBanner && !isFailed">
-              <td colspan="7" class="py-5 text-center text-secondary">
-                No restock report yet. Click Refresh to build the first snapshot.
+              <td colspan="4" class="py-5 text-center text-secondary">
+                No restock report yet. Click Preview or Refresh to scan ShipHero.
               </td>
             </tr>
             <tr v-else-if="restockRows.length === 0 && !showRunningBanner">
-              <td colspan="7" class="py-5 text-center text-secondary">Nothing to restock right now.</td>
+              <td colspan="4" class="py-5 text-center text-secondary">Nothing to restock right now.</td>
             </tr>
             <tr v-else-if="restockRows.length === 0 && showRunningBanner">
-              <td colspan="7" class="py-5 text-center text-secondary">Refresh in progress…</td>
+              <td colspan="4" class="py-5 text-center text-secondary">Refresh in progress…</td>
             </tr>
             <tr v-for="row in restockRows" :key="row.sku" class="align-middle">
               <td class="fw-semibold user-inv-table__sku-col">
@@ -326,9 +371,6 @@ onBeforeUnmount(() => {
               </td>
               <td>{{ row.pick_location || "—" }}</td>
               <td class="text-center">{{ row.pick_qty ?? "—" }}</td>
-              <td class="text-center">{{ row.replenishment_minimum ?? "—" }}</td>
-              <td class="text-center">{{ row.backstock_qty ?? "—" }}</td>
-              <td>{{ row.backstock_location || "—" }}</td>
             </tr>
           </tbody>
         </table>
@@ -346,7 +388,7 @@ onBeforeUnmount(() => {
 .user-inv-table {
   table-layout: fixed;
   width: 100%;
-  min-width: 48rem;
+  min-width: 36rem;
 }
 
 .user-inv-table__text-col,

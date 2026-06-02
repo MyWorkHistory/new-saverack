@@ -41,15 +41,15 @@ class InventoryRestockApiTest extends TestCase
             'warehouse_id' => 'wh-1',
             'computed_at' => now(),
             'rows' => [
-                ['sku' => 'A', 'name' => 'Alpha', 'pick_qty' => 1, 'backstock_qty' => 5],
+                ['sku' => 'A', 'name' => 'Alpha', 'pick_qty' => 1],
             ],
             'row_count' => 1,
             'status' => InventoryRestockSnapshot::STATUS_OK,
             'duration_ms' => 100,
+            'scan_stats' => ['products_scanned' => 10, 'products_matched' => 1],
         ]);
 
         $mock = Mockery::mock(InventoryRestockReportService::class);
-        $mock->shouldReceive('resolveWarehouseId')->andReturn('wh-1');
         $mock->shouldReceive('latestSnapshot')->once()->with(null, false)->andReturn([
             'warehouse_id' => 'wh-1',
             'computed_at' => now()->toIso8601String(),
@@ -58,6 +58,7 @@ class InventoryRestockApiTest extends TestCase
             'status' => 'ok',
             'error_message' => null,
             'duration_ms' => 100,
+            'scan_stats' => ['products_scanned' => 10, 'products_matched' => 1, 'max_pickable_qty' => 2],
         ]);
         $this->app->instance(InventoryRestockReportService::class, $mock);
 
@@ -66,6 +67,7 @@ class InventoryRestockApiTest extends TestCase
         $response->assertOk();
         $response->assertJsonPath('warehouse_id', 'wh-1');
         $response->assertJsonPath('row_count', 1);
+        $response->assertJsonPath('scan_stats.products_matched', 1);
     }
 
     public function test_post_refresh_dispatches_background_job(): void
@@ -85,6 +87,7 @@ class InventoryRestockApiTest extends TestCase
             'duration_ms' => null,
             'refresh_started_at' => now()->toIso8601String(),
             'progress_page' => 0,
+            'scan_stats' => null,
         ]);
         $mock->shouldReceive('dispatchRefreshJob')->once()->with(null);
         $this->app->instance(InventoryRestockReportService::class, $mock);
@@ -93,6 +96,30 @@ class InventoryRestockApiTest extends TestCase
 
         $response->assertStatus(202);
         $response->assertJsonPath('status', InventoryRestockSnapshot::STATUS_RUNNING);
+    }
+
+    public function test_get_restock_preview_returns_partial_counts(): void
+    {
+        Sanctum::actingAs($this->staffWithInventoryView());
+
+        $mock = Mockery::mock(InventoryRestockReportService::class);
+        $mock->shouldReceive('preview')->once()->with(null, 10, null)->andReturn([
+            'warehouse_id' => 'wh-1',
+            'match_count' => 3,
+            'products_scanned' => 200,
+            'pages_scanned' => 10,
+            'max_pickable_qty' => 2,
+            'partial' => true,
+            'sample_rows' => [['sku' => 'A', 'pick_qty' => 1]],
+            'scan_stats' => ['products_scanned' => 200, 'products_matched' => 3],
+        ]);
+        $this->app->instance(InventoryRestockReportService::class, $mock);
+
+        $response = $this->getJson('/api/inventory/restock/preview?max_pages=10');
+
+        $response->assertOk();
+        $response->assertJsonPath('match_count', 3);
+        $response->assertJsonPath('partial', true);
     }
 
     public function test_get_restock_resolves_stale_running_snapshot(): void

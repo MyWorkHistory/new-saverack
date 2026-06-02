@@ -127,6 +127,7 @@ class InventoryController extends Controller
                 'duration_ms' => null,
                 'refresh_started_at' => null,
                 'progress_page' => null,
+                'scan_stats' => null,
             ]);
         } catch (RuntimeException $e) {
             return response()->json(['message' => $e->getMessage()], 502);
@@ -173,6 +174,7 @@ class InventoryController extends Controller
                     'duration_ms' => null,
                     'refresh_started_at' => null,
                     'progress_page' => null,
+                    'scan_stats' => null,
                 ], 503);
             }
 
@@ -188,6 +190,37 @@ class InventoryController extends Controller
                 'message' => config('app.debug')
                     ? $e->getMessage()
                     : 'Could not refresh restock report.',
+            ], 500);
+        }
+    }
+
+    public function previewRestockReport(Request $request, InventoryRestockReportService $reports): JsonResponse
+    {
+        try {
+            $validated = $request->validate([
+                'warehouse_id' => ['nullable', 'string', 'max:128'],
+                'max_pages' => ['nullable', 'integer', 'min:1', 'max:100'],
+                'max_pickable_qty' => ['nullable', 'integer', 'min:0', 'max:100'],
+            ]);
+            $warehouseId = isset($validated['warehouse_id']) ? trim((string) $validated['warehouse_id']) : null;
+            $warehouseId = $warehouseId !== '' ? $warehouseId : null;
+            $maxPages = isset($validated['max_pages']) ? (int) $validated['max_pages'] : null;
+            $maxPickableQty = isset($validated['max_pickable_qty']) ? (int) $validated['max_pickable_qty'] : null;
+
+            $preview = $reports->preview($warehouseId, $maxPages, $maxPickableQty);
+
+            return response()->json($preview);
+        } catch (ValidationException $e) {
+            throw $e;
+        } catch (RuntimeException $e) {
+            return response()->json(['message' => $e->getMessage()], 502);
+        } catch (Throwable $e) {
+            report($e);
+
+            return response()->json([
+                'message' => config('app.debug')
+                    ? $e->getMessage()
+                    : 'Could not preview restock report.',
             ], 500);
         }
     }

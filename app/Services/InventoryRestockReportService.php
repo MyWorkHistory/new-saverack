@@ -37,9 +37,15 @@ class InventoryRestockReportService
         'duration_ms',
         'refresh_started_at',
         'progress_page',
+        'scan_stats',
         'created_at',
         'updated_at',
     ];
+
+    public function maxPickableQty(): int
+    {
+        return max(0, (int) config('services.shiphero.restock_max_pickable_qty', 2));
+    }
 
     public function isRefreshInProgress(?string $warehouseId = null): bool
     {
@@ -79,6 +85,7 @@ class InventoryRestockReportService
                 'duration_ms' => null,
                 'rows' => [],
                 'row_count' => 0,
+                'scan_stats' => null,
             ]
         );
 
@@ -200,10 +207,13 @@ class InventoryRestockReportService
         $status = InventoryRestockSnapshot::STATUS_OK;
         $errorMessage = null;
         $rows = [];
+        $scanStats = null;
 
         try {
             $catalog = $this->buildLocationCatalogForRefresh($wid);
-            $rows = $this->scanWarehouse($wid, $catalog['by_id'], $catalog['by_name']);
+            $scanResult = $this->scanWarehouse($wid, $catalog['by_id'], $catalog['by_name']);
+            $rows = $scanResult['rows'];
+            $scanStats = $scanResult['scan_stats'];
         } catch (Throwable $e) {
             $status = InventoryRestockSnapshot::STATUS_FAILED;
             $errorMessage = $e->getMessage();
@@ -227,6 +237,7 @@ class InventoryRestockReportService
                     'duration_ms' => $durationMs,
                     'refresh_started_at' => null,
                     'progress_page' => null,
+                    'scan_stats' => $scanStats,
                 ]
             );
         }
@@ -243,6 +254,44 @@ class InventoryRestockReportService
             'duration_ms' => $durationMs,
             'refresh_started_at' => null,
             'progress_page' => null,
+            'scan_stats' => $scanStats,
+        ];
+    }
+
+    /**
+     * Partial scan for a quick match count (does not write snapshot).
+     *
+     * @return array<string, mixed>
+     */
+    public function preview(?string $warehouseId = null, ?int $maxPages = null, ?int $maxPickableQty = null): array
+    {
+        $wid = $this->resolveWarehouseId($warehouseId);
+        $pageLimit = max(1, min(100, $maxPages ?? 10));
+        $qtyLimit = $maxPickableQty ?? $this->maxPickableQty();
+        $catalog = $this->buildLocationCatalogForRefresh($wid);
+        $scanResult = $this->scanWarehouse(
+            $wid,
+            $catalog['by_id'],
+            $catalog['by_name'],
+            $pageLimit,
+            $qtyLimit
+        );
+
+        $rows = $scanResult['rows'];
+        usort($rows, static fn (array $a, array $b): int => strcasecmp((string) ($a['sku'] ?? ''), (string) ($b['sku'] ?? '')));
+
+        $stats = $scanResult['scan_stats'];
+        $stats['partial'] = ($stats['pages_scanned'] ?? 0) >= $pageLimit && ($stats['has_more_pages'] ?? false);
+
+        return [
+            'warehouse_id' => $wid,
+            'match_count' => count($rows),
+            'products_scanned' => (int) ($stats['products_scanned'] ?? 0),
+            'pages_scanned' => (int) ($stats['pages_scanned'] ?? 0),
+            'max_pickable_qty' => $qtyLimit,
+            'partial' => (bool) ($stats['partial'] ?? false),
+            'sample_rows' => array_slice($rows, 0, 5),
+            'scan_stats' => $stats,
         ];
     }
 
@@ -324,14 +373,22 @@ class InventoryRestockReportService
     /**
      * @param  array<string, array<string, mixed>>  $catalogById
      * @param  array<string, array<string, mixed>>  $catalogByName
-     * @return list<array<string, mixed>>
+     * @return array{rows: list<array<string, mixed>>, scan_stats: array<string, mixed>}
      */
-    private function scanWarehouse(string $warehouseId, array $catalogById, array $catalogByName): array
-    {
+    private function scanWarehouse(
+        string $warehouseId,
+        array $catalogById,
+        array $catalogByName,
+        ?int $maxPagesOverride = null,
+        ?int $maxPickableQtyOverride = null
+    ): array {
         $restockRows = [];
         $after = null;
-        $maxPages = 500;
+        $maxPages = $maxPagesOverride ?? 500;
+        $maxPickableQty = $maxPickableQtyOverride ?? $this->maxPickableQty();
         $page = 0;
+        $productsScanned = 0;
+        $hasNext = false;
 
         do {
             $pageResult = $this->inventory->paginateWarehouseProductsForRestock($warehouseId, $after);
@@ -362,21 +419,22 @@ class InventoryRestockReportService
                     continue;
                 }
 
+                $productsScanned++;
+
                 $locations = $this->inventory->enrichedLocationsForWarehouseProduct(
                     $wp,
                     $warehouseId,
                     $catalogById,
-                    $catalogByName
+                    $catalogByName,
+                    false
                 );
-
-                $replenishmentMinimum = max(0, (int) ($wp['replenishment_level'] ?? 0));
 
                 $built = InventoryRestockRowBuilder::buildRow(
                     $sku,
                     (string) ($product['name'] ?? ''),
                     null,
                     $locations,
-                    $replenishmentMinimum
+                    $maxPickableQty
                 );
                 if ($built !== null) {
                     $restockRows[] = $built;
@@ -388,7 +446,7 @@ class InventoryRestockReportService
             $after = isset($pageInfo['end_cursor']) && is_string($pageInfo['end_cursor']) ? $pageInfo['end_cursor'] : null;
             $page++;
 
-            if ($page % 10 === 0) {
+            if ($maxPagesOverride === null && $page % 10 === 0) {
                 $this->touchRefreshProgress($warehouseId, $page, count($restockRows));
             }
         } while ($hasNext && $after !== null && $after !== '' && $page < $maxPages);
@@ -400,7 +458,18 @@ class InventoryRestockReportService
             ]);
         }
 
-        return $restockRows;
+        $scanStats = [
+            'products_scanned' => $productsScanned,
+            'products_matched' => count($restockRows),
+            'pages_scanned' => $page,
+            'max_pickable_qty' => $maxPickableQty,
+            'has_more_pages' => $hasNext,
+        ];
+
+        return [
+            'rows' => $restockRows,
+            'scan_stats' => $scanStats,
+        ];
     }
 
     /**
@@ -430,6 +499,7 @@ class InventoryRestockReportService
             'duration_ms' => $isRunning ? null : $row->duration_ms,
             'refresh_started_at' => $refreshStartedAt !== null ? $refreshStartedAt->toIso8601String() : null,
             'progress_page' => $isRunning ? $row->progress_page : null,
+            'scan_stats' => is_array($row->scan_stats) ? $row->scan_stats : null,
         ];
     }
 }

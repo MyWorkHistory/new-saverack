@@ -3882,16 +3882,32 @@ GQL,
         $locationFirst = max(1, min(100, $locationFirst));
         $after = is_string($after) && trim($after) !== '' ? trim($after) : null;
 
-        try {
-            return $this->fetchRestockWarehouseProductsPage($warehouseId, $after, $first, $locationFirst, true);
-        } catch (RuntimeException $e) {
-            if ($this->isShipHeroCreditLimitError($e->getMessage()) && $first > 5) {
-                $reduced = max(5, (int) floor($first / 2));
+        $attempt = 0;
+        $maxAttempts = 5;
+        while (true) {
+            try {
+                return $this->fetchRestockWarehouseProductsPage($warehouseId, $after, $first, $locationFirst, true);
+            } catch (RuntimeException $e) {
+                $attempt++;
+                if (! $this->isShipHeroCreditLimitError($e->getMessage())) {
+                    throw $e;
+                }
 
-                return $this->paginateWarehouseProductsForRestock($warehouseId, $after, $reduced);
+                // Reduce page size first to lower per-request credit demand.
+                if ($first > 5) {
+                    $first = max(5, (int) floor($first / 2));
+                    continue;
+                }
+
+                // If ShipHero tells us when credits refill, wait and retry a few times.
+                $retrySeconds = $this->extractShipHeroCreditRetrySeconds($e->getMessage());
+                if ($retrySeconds !== null && $attempt < $maxAttempts) {
+                    sleep(min(30, max(1, $retrySeconds + 1)));
+                    continue;
+                }
+
+                throw $e;
             }
-
-            throw $e;
         }
     }
 
@@ -4033,6 +4049,15 @@ GQL;
 
         return strpos($lower, 'not enough credits') !== false
             || strpos($lower, 'max allowed') !== false;
+    }
+
+    private function extractShipHeroCreditRetrySeconds(string $message): ?int
+    {
+        if (preg_match('/in\s+(\d+)\s+seconds?/i', $message, $m) === 1) {
+            return max(1, (int) $m[1]);
+        }
+
+        return null;
     }
 
     private function isHideEmptyArgumentError(string $message): bool

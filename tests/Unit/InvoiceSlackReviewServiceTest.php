@@ -17,6 +17,7 @@ final class InvoiceSlackReviewServiceTest extends TestCase
 
         config([
             'billing.slack.bot_token' => 'xoxb-test-token',
+            'billing.slack.webhook_url' => null,
             'billing.slack.accounting_channel' => '#accounting',
             'crm.frontend_url' => 'https://app.saverack.com',
         ]);
@@ -105,7 +106,55 @@ final class InvoiceSlackReviewServiceTest extends TestCase
         $invoice->setRelation('clientAccount', new ClientAccount(['company_name' => 'Co']));
 
         $this->expectException(\RuntimeException::class);
-        $this->expectExceptionMessage('Slack rejected');
+        $this->expectExceptionMessage('not in #accounting');
+
+        app(InvoiceSlackReviewService::class)->postReview(
+            $invoice,
+            InvoiceReviewReason::OTHER_CHARGES,
+            null,
+        );
+    }
+
+    public function test_post_review_uses_webhook_when_configured(): void
+    {
+        config([
+            'billing.slack.webhook_url' => 'https://hooks.slack.com/services/T00/B00/xx',
+            'billing.slack.bot_token' => null,
+        ]);
+
+        Http::fake([
+            'hooks.slack.com/*' => Http::response('ok', 200),
+        ]);
+
+        $invoice = new Invoice(['invoice_number' => '100', 'status' => 'open']);
+        $invoice->id = 1;
+        $invoice->setRelation('clientAccount', new ClientAccount(['company_name' => 'Co']));
+
+        app(InvoiceSlackReviewService::class)->postReview(
+            $invoice,
+            InvoiceReviewReason::HIGH_POSTAGE,
+            'Test note',
+        );
+
+        Http::assertSent(function ($request) {
+            return str_starts_with($request->url(), 'https://hooks.slack.com/services/')
+                && str_contains((string) ($request->data()['text'] ?? ''), 'High Postage');
+        });
+    }
+
+    public function test_rejects_webhook_url_in_bot_token_field(): void
+    {
+        config([
+            'billing.slack.webhook_url' => null,
+            'billing.slack.bot_token' => 'https://hooks.slack.com/services/T00/B00/xx',
+        ]);
+
+        $invoice = new Invoice(['invoice_number' => '100', 'status' => 'open']);
+        $invoice->id = 1;
+        $invoice->setRelation('clientAccount', new ClientAccount(['company_name' => 'Co']));
+
+        $this->expectException(\RuntimeException::class);
+        $this->expectExceptionMessage('BILLING_SLACK_INCOMING_WEBHOOK_URL');
 
         app(InvoiceSlackReviewService::class)->postReview(
             $invoice,

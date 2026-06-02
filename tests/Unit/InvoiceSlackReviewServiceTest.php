@@ -18,7 +18,7 @@ final class InvoiceSlackReviewServiceTest extends TestCase
         config([
             'billing.slack.bot_token' => 'xoxb-test-token',
             'billing.slack.webhook_url' => null,
-            'billing.slack.accounting_channel' => '#accounting-support',
+            'billing.slack.accounting_channel' => '#accounting',
             'crm.frontend_url' => 'https://app.saverack.com',
         ]);
     }
@@ -43,8 +43,8 @@ final class InvoiceSlackReviewServiceTest extends TestCase
             null,
         );
 
-        $this->assertStringContainsString('*Invoice Review*', $text);
-        $this->assertStringContainsString('Invoice #633947 - Spirit Nest - High Postage', $text);
+        $this->assertStringContainsString('Invoice Review', $text);
+        $this->assertStringContainsString('Invoice `#633947` - Spirit Nest - High Postage', $text);
         $this->assertStringNotContainsString('Note:', $text);
         $this->assertStringContainsString(
             '<https://app.saverack.com/admin/billing/invoices/517|View Invoice>',
@@ -89,8 +89,8 @@ final class InvoiceSlackReviewServiceTest extends TestCase
             $body = $request->data();
 
             return $request->url() === 'https://slack.com/api/chat.postMessage'
-                && ($body['channel'] ?? '') === '#accounting-support'
-                && str_contains((string) ($body['text'] ?? ''), '*Invoice Review*')
+                && ($body['channel'] ?? '') === '#accounting'
+                && str_contains((string) ($body['text'] ?? ''), 'Invoice Review')
                 && str_contains((string) ($body['text'] ?? ''), 'Note: Check totals');
         });
     }
@@ -106,7 +106,7 @@ final class InvoiceSlackReviewServiceTest extends TestCase
         $invoice->setRelation('clientAccount', new ClientAccount(['company_name' => 'Co']));
 
         $this->expectException(\RuntimeException::class);
-        $this->expectExceptionMessage('not in #accounting-support');
+        $this->expectExceptionMessage('not in #accounting');
 
         app(InvoiceSlackReviewService::class)->postReview(
             $invoice,
@@ -140,7 +140,7 @@ final class InvoiceSlackReviewServiceTest extends TestCase
             $body = $request->data();
 
             return str_starts_with($request->url(), 'https://hooks.slack.com/services/')
-                && ($body['channel'] ?? '') === '#accounting-support'
+                && ($body['channel'] ?? '') === '#accounting'
                 && str_contains((string) ($body['text'] ?? ''), 'High Postage');
         });
     }
@@ -166,3 +166,4 @@ final class InvoiceSlackReviewServiceTest extends TestCase
         );
     }
 }
+

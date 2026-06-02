@@ -22,7 +22,7 @@ class InvoiceReviewSlackApiTest extends TestCase
 
         config([
             'billing.slack.bot_token' => 'xoxb-test-token',
-            'billing.slack.accounting_channel' => '#accounting-support',
+            'billing.slack.accounting_channel' => '#accounting',
             'crm.frontend_url' => 'https://app.saverack.com',
         ]);
 
@@ -74,7 +74,7 @@ class InvoiceReviewSlackApiTest extends TestCase
         Http::assertSent(function ($request) use ($invoice) {
             $text = (string) ($request->data()['text'] ?? '');
 
-            return str_contains($text, 'Invoice #633947 - Spirit Nest - High Postage')
+            return str_contains($text, 'Invoice `#633947` - Spirit Nest - High Postage')
                 && str_contains($text, 'Note: Rates look high on this period.')
                 && str_contains($text, '/admin/billing/invoices/'.$invoice->id);
         });
@@ -147,3 +147,4 @@ class InvoiceReviewSlackApiTest extends TestCase
         Http::assertNothingSent();
     }
 }
+

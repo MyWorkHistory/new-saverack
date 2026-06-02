@@ -21,7 +21,7 @@ return [
     ],
 
     'slack' => [
-        'accounting_channel' => env('BILLING_SLACK_ACCOUNTING_CHANNEL') ?: '#accounting-support',
+        'accounting_channel' => env('BILLING_SLACK_ACCOUNTING_CHANNEL') ?: '#accounting',
         /** Bot User OAuth Token (xoxb-…) for chat.postMessage. */
         'bot_token' => env('SLACK_BOT_USER_OAUTH_TOKEN') ?: env('SLACK_BOT_TOKEN'),
         /**
@@ -32,3 +32,4 @@ return [
     ],
 
 ];
+

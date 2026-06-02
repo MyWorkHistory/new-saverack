@@ -110,7 +110,7 @@ async function submit() {
               Invoice Review
             </h2>
             <p class="crm-vx-modal__subtitle mb-0">
-              Send a review note to the #accounting-support Slack channel.
+              Send a review note to the #accounting Slack channel.
             </p>
           </header>
           <form class="crm-vx-modal__body" @submit.prevent="submit">
@@ -167,3 +167,4 @@ async function submit() {
     </Transition>
   </Teleport>
 </template>
+

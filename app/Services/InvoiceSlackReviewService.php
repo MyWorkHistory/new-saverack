@@ -94,9 +94,7 @@ class InvoiceSlackReviewService
         $reasonLabel = InvoiceReviewReason::label($reasonKey);
         $invoiceNumber = trim((string) ($invoice->invoice_number ?? ''));
         if ($invoiceNumber === '') {
-            $invoiceNumber = '#'.$invoice->id;
-        } elseif (! str_starts_with($invoiceNumber, '#')) {
-            $invoiceNumber = '#'.$invoiceNumber;
+            $invoiceNumber = (string) $invoice->id;
         }
 
         $company = trim((string) ($invoice->clientAccount->company_name ?? ''));
@@ -104,11 +102,11 @@ class InvoiceSlackReviewService
             $company = '—';
         }
 
-        $summaryLine = sprintf('Invoice %s - %s - %s', $invoiceNumber, $company, $reasonLabel);
+        $summaryLine = sprintf('Invoice `#%s` - %s - %s', $invoiceNumber, $company, $reasonLabel);
         $invoiceUrl = CrmUrls::invoiceStaffUrl((int) $invoice->id);
 
         $lines = [
-            '*Invoice Review*',
+            'Invoice Review',
             $summaryLine,
         ];
 
@@ -125,11 +123,11 @@ class InvoiceSlackReviewService
     private function resolveAccountingChannel(): string
     {
         $channel = $this->normalizeChannelName(
-            trim((string) (config('billing.slack.accounting_channel') ?: '#accounting-support'))
+            trim((string) (config('billing.slack.accounting_channel') ?: '#accounting'))
         );
         if ($channel === '') {
             throw new \RuntimeException(
-                'Slack accounting channel is not configured. Set BILLING_SLACK_ACCOUNTING_CHANNEL=#accounting-support in .env.'
+                'Slack accounting channel is not configured. Set BILLING_SLACK_ACCOUNTING_CHANNEL=#accounting in .env.'
             );
         }
 
@@ -143,7 +141,6 @@ class InvoiceSlackReviewService
     {
         $payload = [
             'channel' => $channel,
-            'username' => 'Invoice Review',
             'text' => $text,
             'mrkdwn' => true,
         ];
@@ -169,7 +166,7 @@ class InvoiceSlackReviewService
         $error = is_array($json) ? (string) ($json['error'] ?? '') : '';
         if ($error === 'channel_not_found' || $error === 'invalid_channel') {
             throw new \RuntimeException(
-                'Slack webhook could not post to '.$channel.'. Check the channel name or use a webhook tied to #accounting-support.'
+                'Slack webhook could not post to '.$channel.'. Check the channel name or use a webhook tied to #accounting.'
             );
         }
 
@@ -290,9 +287,11 @@ class InvoiceSlackReviewService
         }
 
         if ($error === 'channel_not_found' || $error === 'not_in_channel') {
-            return 'Slack bot is not in #accounting-support. Invite the bot or use SLACK_WEBHOOK_URL with BILLING_SLACK_ACCOUNTING_CHANNEL=#accounting-support.';
+            return 'Slack bot is not in #accounting. Invite the bot or use SLACK_WEBHOOK_URL with BILLING_SLACK_ACCOUNTING_CHANNEL=#accounting.';
         }
 
         return 'Slack rejected the invoice review message ('.$error.').';
     }
 }
+
+

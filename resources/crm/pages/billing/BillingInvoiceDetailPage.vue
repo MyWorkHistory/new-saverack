@@ -470,14 +470,6 @@ function isIncludedPackagingName(raw) {
   return false;
 }
 
-const hasFulfillmentFirstPickRow = computed(() =>
-  invoiceTableRows.value.some(
-    (row) =>
-      String(row.type || "").toLowerCase() === "fulfillment" &&
-      /first\s*pick/i.test(String(row.name || "")),
-  ),
-);
-
 const fulfillmentBaselineQty = computed(() => {
   let sum = 0;
   for (const row of invoiceTableRows.value) {
@@ -2862,9 +2854,6 @@ function onDocKeydown(e) {
 
           <div class="staff-surface p-4 mb-4 billing-inv-totals-check-card">
             <h2 class="h6 fw-semibold mb-2">Invoice Review</h2>
-            <p v-if="!hasFulfillmentFirstPickRow" class="small text-secondary mb-3 mb-lg-2">
-              No Fulfillment (First Pick) row
-            </p>
             <ul class="list-unstyled mb-0 billing-inv-totals-check-rows">
               <li class="billing-inv-totals-check-row">
                 <span class="billing-inv-totals-check-label">Fulfillment</span>
@@ -4420,3 +4409,4 @@ button.billing-inv-summary-card:hover:not(:disabled) .staff-stat-card__icon {
   max-width: 12rem;
 }
 </style>
+

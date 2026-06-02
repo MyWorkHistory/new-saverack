@@ -93,25 +93,31 @@ class InventoryRestockReportService
     }
 
     /**
-     * Queue restock refresh without blocking the HTTP request (avoids Cloudflare 502/524).
+     * Run restock refresh after the HTTP response is sent (no separate queue worker required).
      */
     public function dispatchRefreshJob(?string $warehouseId = null): void
     {
-        $job = new RefreshInventoryRestockReportJob($warehouseId);
-        $default = (string) config('queue.default', 'sync');
-        if ($default === 'sync') {
-            $async = $this->asyncQueueConnection();
-            if ($async === null) {
-                throw new RuntimeException(
-                    'Restock refresh requires a background queue. Set QUEUE_CONNECTION=database or redis and run php artisan queue:work.'
-                );
+        $mode = strtolower(trim((string) config('services.shiphero.restock_dispatch_mode', 'after_response')));
+
+        if ($mode === 'queue') {
+            $job = new RefreshInventoryRestockReportJob($warehouseId);
+            $default = (string) config('queue.default', 'sync');
+            if ($default === 'sync') {
+                $async = $this->asyncQueueConnection();
+                if ($async === null) {
+                    throw new RuntimeException(
+                        'Restock refresh requires a background queue. Set QUEUE_CONNECTION=database or redis and run php artisan queue:work.'
+                    );
+                }
+                dispatch($job)->onConnection($async);
+            } else {
+                dispatch($job);
             }
-            dispatch($job)->onConnection($async);
 
             return;
         }
 
-        dispatch($job);
+        RefreshInventoryRestockReportJob::dispatch($warehouseId)->afterResponse();
     }
 
     private function asyncQueueConnection(): ?string
@@ -144,16 +150,21 @@ class InventoryRestockReportService
         $row->save();
     }
 
-    public function touchRefreshProgress(string $warehouseId, int $page, int $partialRowCount): void
+    public function touchRefreshProgress(string $warehouseId, int $page, int $partialRowCount, ?array $scanStats = null): void
     {
+        $payload = [
+            'progress_page' => max(0, $page),
+            'row_count' => max(0, $partialRowCount),
+            'updated_at' => Carbon::now(),
+        ];
+        if ($scanStats !== null) {
+            $payload['scan_stats'] = $scanStats;
+        }
+
         InventoryRestockSnapshot::query()
             ->where('warehouse_id', $warehouseId)
             ->where('status', InventoryRestockSnapshot::STATUS_RUNNING)
-            ->update([
-                'progress_page' => max(0, $page),
-                'row_count' => max(0, $partialRowCount),
-                'updated_at' => Carbon::now(),
-            ]);
+            ->update($payload);
     }
 
     public function configuredWarehouseId(?string $warehouseId = null): ?string
@@ -202,6 +213,10 @@ class InventoryRestockReportService
      */
     public function refresh(?string $warehouseId = null): array
     {
+        if (function_exists('set_time_limit')) {
+            @set_time_limit(0);
+        }
+
         $started = microtime(true);
         $wid = $this->resolveWarehouseId($warehouseId);
         $status = InventoryRestockSnapshot::STATUS_OK;
@@ -446,8 +461,15 @@ class InventoryRestockReportService
             $after = isset($pageInfo['end_cursor']) && is_string($pageInfo['end_cursor']) ? $pageInfo['end_cursor'] : null;
             $page++;
 
-            if ($maxPagesOverride === null && $page % 10 === 0) {
-                $this->touchRefreshProgress($warehouseId, $page, count($restockRows));
+            if ($maxPagesOverride === null && ($page === 1 || $page % 3 === 0)) {
+                $partialStats = [
+                    'products_scanned' => $productsScanned,
+                    'products_matched' => count($restockRows),
+                    'pages_scanned' => $page,
+                    'max_pickable_qty' => $maxPickableQty,
+                    'has_more_pages' => $hasNext,
+                ];
+                $this->touchRefreshProgress($warehouseId, $page, count($restockRows), $partialStats);
             }
         } while ($hasNext && $after !== null && $after !== '' && $page < $maxPages);
 

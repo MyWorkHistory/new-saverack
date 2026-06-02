@@ -325,6 +325,9 @@ onBeforeUnmount(() => {
         <template v-else>
           Building restock report from ShipHero…
           <span v-if="restockMeta.progress_page"> (page {{ restockMeta.progress_page }})</span>
+          <span v-if="restockMeta.scan_stats?.products_matched != null">
+            — {{ Number(restockMeta.scan_stats.products_matched).toLocaleString() }} matches so far
+          </span>
         </template>
       </div>
       <div

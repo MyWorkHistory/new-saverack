@@ -104,14 +104,21 @@ class InventoryController extends Controller
         try {
             $warehouseId = $request->query('warehouse_id');
             $warehouseId = is_string($warehouseId) && trim($warehouseId) !== '' ? trim($warehouseId) : null;
-            $light = filter_var($request->query('light', false), FILTER_VALIDATE_BOOLEAN);
-            $snapshot = $reports->latestSnapshot($warehouseId, $light);
+            $includeRows = filter_var($request->query('full', false), FILTER_VALIDATE_BOOLEAN)
+                || filter_var($request->query('include_rows', false), FILTER_VALIDATE_BOOLEAN);
+            $snapshot = $reports->latestSnapshot($warehouseId, $includeRows);
             if ($snapshot !== null) {
                 return response()->json($snapshot);
             }
 
+            try {
+                $resolvedWarehouseId = $reports->resolveWarehouseIdForApi($warehouseId);
+            } catch (RuntimeException $e) {
+                return response()->json(['message' => $e->getMessage()], 502);
+            }
+
             return response()->json([
-                'warehouse_id' => $reports->resolveWarehouseId($warehouseId),
+                'warehouse_id' => $resolvedWarehouseId,
                 'computed_at' => null,
                 'rows' => [],
                 'row_count' => 0,
@@ -142,16 +149,32 @@ class InventoryController extends Controller
             ]);
             $warehouseId = isset($validated['warehouse_id']) ? trim((string) $validated['warehouse_id']) : null;
             $warehouseId = $warehouseId !== '' ? $warehouseId : null;
-            $reports->latestSnapshot($warehouseId);
+            $reports->latestSnapshot($warehouseId, false);
             if ($reports->isRefreshInProgress($warehouseId)) {
-                $snapshot = $reports->latestSnapshot($warehouseId);
+                $snapshot = $reports->latestSnapshot($warehouseId, false);
                 if ($snapshot !== null) {
                     return response()->json($snapshot, 200);
                 }
             }
 
             $snapshot = $reports->markRefreshRunning($warehouseId);
-            $reports->dispatchRefreshJob($warehouseId);
+            try {
+                $reports->dispatchRefreshJob($warehouseId);
+            } catch (RuntimeException $e) {
+                $reports->markRefreshFailed($warehouseId, $e->getMessage());
+
+                return response()->json([
+                    'warehouse_id' => $snapshot['warehouse_id'] ?? null,
+                    'computed_at' => null,
+                    'rows' => [],
+                    'row_count' => 0,
+                    'status' => 'failed',
+                    'error_message' => $e->getMessage(),
+                    'duration_ms' => null,
+                    'refresh_started_at' => null,
+                    'progress_page' => null,
+                ], 503);
+            }
 
             return response()->json($snapshot, 202);
         } catch (ValidationException $e) {

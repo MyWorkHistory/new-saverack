@@ -60,6 +60,8 @@ return [
             env('SHIPHERO_RESTOCK_SKIP_LOCATION_CATALOG', false),
             FILTER_VALIDATE_BOOLEAN
         ),
+        /** Max restock rows returned in a single full=1 API response (avoids origin OOM / 502). */
+        'restock_api_max_rows' => (int) env('SHIPHERO_RESTOCK_API_MAX_ROWS', 5000),
         /** GraphQL mutation for customer account update (from shiphero:probe-customer-mutations). */
         'customer_account_update_mutation' => env('SHIPHERO_CUSTOMER_ACCOUNT_UPDATE_MUTATION'),
         'customer_account_update_input_type' => env('SHIPHERO_CUSTOMER_ACCOUNT_UPDATE_INPUT_TYPE'),

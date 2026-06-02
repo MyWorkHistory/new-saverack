@@ -26,12 +26,25 @@ class InventoryRestockReportService
         return max(5, (int) config('services.shiphero.restock_stale_minutes', 20));
     }
 
+    /** @var list<string> */
+    private const SNAPSHOT_META_COLUMNS = [
+        'id',
+        'warehouse_id',
+        'computed_at',
+        'row_count',
+        'status',
+        'error_message',
+        'duration_ms',
+        'refresh_started_at',
+        'progress_page',
+        'created_at',
+        'updated_at',
+    ];
+
     public function isRefreshInProgress(?string $warehouseId = null): bool
     {
-        $wid = $this->resolveWarehouseId($warehouseId);
-        $row = InventoryRestockSnapshot::query()
-            ->where('warehouse_id', $wid)
-            ->first();
+        $wid = $this->configuredWarehouseId($warehouseId) ?? $this->resolveWarehouseId($warehouseId);
+        $row = $this->findSnapshotRow($wid, false);
 
         if ($row === null || $row->status !== InventoryRestockSnapshot::STATUS_RUNNING) {
             return false;
@@ -49,9 +62,7 @@ class InventoryRestockReportService
     {
         $wid = $this->resolveWarehouseId($warehouseId);
 
-        $existing = InventoryRestockSnapshot::query()
-            ->where('warehouse_id', $wid)
-            ->first();
+        $existing = $this->findSnapshotRow($wid, false);
         if ($existing !== null) {
             $this->resolveStaleRunningSnapshot($existing);
         }
@@ -138,14 +149,21 @@ class InventoryRestockReportService
             ]);
     }
 
-    public function resolveWarehouseId(?string $warehouseId = null): string
+    public function configuredWarehouseId(?string $warehouseId = null): ?string
     {
         if ($warehouseId !== null && trim($warehouseId) !== '') {
             return trim($warehouseId);
         }
 
         $configured = trim((string) config('services.shiphero.restock_warehouse_id', ''));
-        if ($configured !== '') {
+
+        return $configured !== '' ? $configured : null;
+    }
+
+    public function resolveWarehouseId(?string $warehouseId = null): string
+    {
+        $configured = $this->configuredWarehouseId($warehouseId);
+        if ($configured !== null) {
             return $configured;
         }
 
@@ -157,6 +175,19 @@ class InventoryRestockReportService
 
             return (string) ($warehouses[0]['id'] ?? '');
         });
+    }
+
+    private function findSnapshotRow(string $warehouseId, bool $withRows): ?InventoryRestockSnapshot
+    {
+        $columns = self::SNAPSHOT_META_COLUMNS;
+        if ($withRows) {
+            $columns[] = 'rows';
+        }
+
+        return InventoryRestockSnapshot::query()
+            ->select($columns)
+            ->where('warehouse_id', $warehouseId)
+            ->first();
     }
 
     /**
@@ -220,7 +251,7 @@ class InventoryRestockReportService
      */
     private function buildLocationCatalogForRefresh(string $warehouseId): array
     {
-        if (config('services.shiphero.restock_skip_location_catalog')) {
+        if (filter_var(config('services.shiphero.restock_skip_location_catalog'), FILTER_VALIDATE_BOOLEAN)) {
             return ['by_id' => [], 'by_name' => []];
         }
 
@@ -239,12 +270,11 @@ class InventoryRestockReportService
     /**
      * @return array<string, mixed>|null
      */
-    public function latestSnapshot(?string $warehouseId = null, bool $light = false): ?array
+    public function latestSnapshot(?string $warehouseId = null, bool $includeRows = false): ?array
     {
-        $wid = $this->resolveWarehouseId($warehouseId);
-        $row = InventoryRestockSnapshot::query()
-            ->where('warehouse_id', $wid)
-            ->first();
+        $wid = $this->configuredWarehouseId($warehouseId) ?? $this->resolveWarehouseId($warehouseId);
+        $loadRowsColumn = $includeRows;
+        $row = $this->findSnapshotRow($wid, $loadRowsColumn);
 
         if ($row === null) {
             return null;
@@ -252,9 +282,19 @@ class InventoryRestockReportService
 
         $row = $this->resolveStaleRunningSnapshot($row);
 
-        $omitRows = $light || $row->status === InventoryRestockSnapshot::STATUS_RUNNING;
+        $returnRows = $includeRows && $row->status !== InventoryRestockSnapshot::STATUS_RUNNING;
 
-        return $this->serializeSnapshot($row, ! $omitRows);
+        return $this->serializeSnapshot($row, $returnRows);
+    }
+
+    public function resolveWarehouseIdForApi(?string $warehouseId = null): string
+    {
+        $configured = $this->configuredWarehouseId($warehouseId);
+        if ($configured !== null) {
+            return $configured;
+        }
+
+        return $this->resolveWarehouseId($warehouseId);
     }
 
     public function resolveStaleRunningSnapshot(InventoryRestockSnapshot $row): InventoryRestockSnapshot
@@ -371,7 +411,14 @@ class InventoryRestockReportService
         $isRunning = $row->status === InventoryRestockSnapshot::STATUS_RUNNING;
         $computedAt = $isRunning ? null : $row->computed_at;
         $refreshStartedAt = $row->refresh_started_at;
-        $rows = $includeRows && is_array($row->rows) ? $row->rows : [];
+        $rows = [];
+        if ($includeRows && is_array($row->rows)) {
+            $rows = $row->rows;
+            $max = max(100, (int) config('services.shiphero.restock_api_max_rows', 5000));
+            if (count($rows) > $max) {
+                $rows = array_slice($rows, 0, $max);
+            }
+        }
 
         return [
             'warehouse_id' => $row->warehouse_id,

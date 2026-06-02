@@ -9,8 +9,7 @@ import { formatDateTimeUs } from "../../utils/formatUserDates.js";
 const toast = useToast();
 const router = useRouter();
 
-const POLL_MS = 3000;
-/** Client-side hint; server marks stale runs failed after SHIPHERO_RESTOCK_STALE_MINUTES (default 20). */
+const POLL_MS = 5000;
 const STALE_CLIENT_MS = 20 * 60 * 1000;
 
 const restockRows = ref([]);
@@ -28,14 +27,11 @@ const restockMeta = ref({
 });
 
 let pollTimer = null;
-let autoRefreshTriggered = false;
 
 const isFailed = computed(() => restockMeta.value.status === "failed");
 
 const showRunningBanner = computed(
-  () =>
-    pollingActive.value &&
-    restockMeta.value.status === "running"
+  () => pollingActive.value && restockMeta.value.status === "running"
 );
 
 const isRefreshStuck = computed(() => {
@@ -63,8 +59,7 @@ const refreshStartedLabel = computed(() => {
   return formatDateTimeUs(d);
 });
 
-function applyRestockPayload(data) {
-  restockRows.value = Array.isArray(data?.rows) ? data.rows : [];
+function applyRestockMeta(data) {
   restockMeta.value = {
     warehouse_id: data?.warehouse_id ?? null,
     computed_at: data?.computed_at ?? null,
@@ -74,6 +69,27 @@ function applyRestockPayload(data) {
     error_message: data?.error_message ?? null,
     progress_page: data?.progress_page ?? null,
   };
+}
+
+function applyRestockPayload(data) {
+  if (Array.isArray(data?.rows) && data.rows.length > 0) {
+    restockRows.value = data.rows;
+  }
+  applyRestockMeta(data);
+}
+
+/** Status-only poll — never downloads the full rows JSON blob. */
+async function fetchRestockMeta() {
+  const { data } = await api.get("/inventory/restock");
+  applyRestockMeta(data);
+  return data;
+}
+
+/** Full snapshot with SKU rows (can be large — only after refresh completes). */
+async function fetchRestockFull() {
+  const { data } = await api.get("/inventory/restock", { params: { full: 1 } });
+  applyRestockPayload(data);
+  return data;
 }
 
 function inventoryDetailHref(row) {
@@ -103,24 +119,17 @@ function finishRefreshUi(successMessage) {
 
 async function pollRestockOnce() {
   try {
-    const { data } = await api.get("/inventory/restock", { params: { light: 1 } });
-    const previousRows = restockRows.value;
-    applyRestockPayload(data);
-    if (Array.isArray(data?.rows) && data.rows.length === 0 && previousRows.length > 0) {
-      restockRows.value = previousRows;
-    }
+    const data = await fetchRestockMeta();
     const status = data?.status;
     if (status === "ok") {
-      const { data: full } = await api.get("/inventory/restock");
-      applyRestockPayload(full);
+      await fetchRestockFull();
       finishRefreshUi(`Restock report updated (${restockMeta.value.row_count} SKUs).`);
       return;
     }
     if (status === "failed") {
       restockRefreshing.value = false;
       stopPolling();
-      const msg = data?.error_message || "Restock report refresh failed.";
-      toast.error(msg);
+      toast.error(data?.error_message || "Restock report refresh failed.");
     }
   } catch (e) {
     restockRefreshing.value = false;
@@ -140,14 +149,11 @@ function startPolling() {
 async function loadRestockReport() {
   restockLoading.value = true;
   try {
-    const { data } = await api.get("/inventory/restock");
-    applyRestockPayload(data);
-    const hasNoRows = !Array.isArray(data?.rows) || data.rows.length === 0;
-    const neverBuilt = !data?.computed_at && hasNoRows && data?.status !== "failed" && data?.status !== "running";
-    if (!autoRefreshTriggered && neverBuilt) {
-      autoRefreshTriggered = true;
-      await refreshRestockReport();
-      return;
+    const data = await fetchRestockMeta();
+    if (data?.status === "ok" && Number(data?.row_count || 0) > 0) {
+      await fetchRestockFull();
+    } else if (data?.status !== "running") {
+      restockRows.value = [];
     }
     if (data?.status === "running") {
       restockRefreshing.value = true;
@@ -165,13 +171,15 @@ async function refreshRestockReport() {
   try {
     const response = await api.post("/inventory/restock/refresh");
     const { data } = response;
-    applyRestockPayload(data);
+    applyRestockMeta(data);
+    restockRows.value = [];
     if (response.status === 202 || data?.status === "running") {
       startPolling();
       await pollRestockOnce();
       return;
     }
     if (data?.status === "ok") {
+      await fetchRestockFull();
       finishRefreshUi(`Restock report updated (${restockMeta.value.row_count} SKUs).`);
       return;
     }
@@ -180,6 +188,7 @@ async function refreshRestockReport() {
       toast.error(data?.error_message || "Restock report refresh failed.");
       return;
     }
+    await fetchRestockFull();
     finishRefreshUi(`Restock report updated (${restockMeta.value.row_count} SKUs).`);
   } catch (e) {
     restockRefreshing.value = false;
@@ -207,7 +216,7 @@ onBeforeUnmount(() => {
       class="d-flex flex-column flex-md-row align-items-start align-items-md-center gap-3 mb-4"
     >
       <div class="min-w-0 flex-grow-1">
-        <h1 class="h4 mb-1 fw-semibold text-body">Restock</h1>
+        <h1 class="h4 fw-semibold text-body mb-1">Restock</h1>
         <p class="text-secondary small mb-0">
           SKUs with pickable qty at or below replenishment minimum and stock in non-pickable locations. Refreshes automatically at 7:00 AM, 12:00 PM, and 2:30 PM (US Eastern).
         </p>

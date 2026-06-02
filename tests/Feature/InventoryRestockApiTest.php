@@ -53,7 +53,7 @@ class InventoryRestockApiTest extends TestCase
         $mock->shouldReceive('latestSnapshot')->once()->with(null, false)->andReturn([
             'warehouse_id' => 'wh-1',
             'computed_at' => now()->toIso8601String(),
-            'rows' => [['sku' => 'A']],
+            'rows' => [],
             'row_count' => 1,
             'status' => 'ok',
             'error_message' => null,

@@ -36,12 +36,20 @@ class ClientBrandLogoService
         return $relative;
     }
 
+    /**
+     * Relative URL for CRM/portal <img src> (resolved via /storage proxy in dev).
+     */
     public function publicUrl(?string $path): ?string
     {
         if ($path === null || trim($path) === '') {
             return null;
         }
 
-        return Storage::disk('public')->url($path);
+        $path = ltrim(str_replace('\\', '/', trim($path)), '/');
+        if (strpos($path, 'storage/') === 0) {
+            return '/'.$path;
+        }
+
+        return '/storage/'.$path;
     }
 }

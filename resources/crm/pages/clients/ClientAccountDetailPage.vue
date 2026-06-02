@@ -555,12 +555,8 @@ function onOnboardingAccountUpdated(payload) {
 const accountBrandLogoUrl = computed(() => {
   const raw = account.value?.brand_logo_url;
   if (!raw) return "";
-  const resolved = resolvePublicUrl(raw) || raw;
-  const v = account.value?.updated_at;
-  if (!v) return resolved;
-  const sep = resolved.includes("?") ? "&" : "?";
 
-  return `${resolved}${sep}v=${encodeURIComponent(String(v))}`;
+  return resolvePublicUrl(raw) || raw;
 });
 
 function openAccountStatusModal() {

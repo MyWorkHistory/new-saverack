@@ -3,12 +3,29 @@
  *
  * - Production (same origin): uses the current page origin — `/storage/...` works.
  * - Avatars are served from `/avatars/…` under public/ (see UserAvatarService). Vite proxies `/avatars`.
- * - Legacy `/storage/…` URLs still work when resolvePublicUrl receives a full `https://` URL from the API.
+ * - Full URLs from the API (e.g. http://localhost/storage/…) are normalized to pathname + origin.
  */
 export function resolvePublicUrl(path) {
   if (path == null || path === "") return "";
-  const s = String(path).trim();
-  if (/^(https?:|blob:|data:)/i.test(s)) return s;
+  let s = String(path).trim();
+  if (/^blob:|^data:/i.test(s)) return s;
+
+  if (/^https?:/i.test(s)) {
+    try {
+      const u = new URL(s);
+      if (
+        u.pathname.startsWith("/storage/") ||
+        u.pathname.startsWith("/avatars/")
+      ) {
+        s = u.pathname;
+      } else {
+        return s;
+      }
+    } catch {
+      return s;
+    }
+  }
+
   const normalized = s.startsWith("/") ? s : `/${s}`;
   const origin = (import.meta.env.VITE_APP_ORIGIN || "").replace(/\/$/, "");
   if (origin) {

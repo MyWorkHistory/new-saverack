@@ -80,7 +80,7 @@ class InvoiceSlackReviewService
             'invoice_id' => $invoice->id,
             'slack_channel' => $postedChannel,
             'slack_ts' => $ts,
-            'actor_id' => $actor?->id,
+            'actor_id' => $actor !== null ? $actor->id : null,
         ]);
 
         return [

@@ -210,6 +210,32 @@ onMounted(() => load());
           </div>
         </div>
       </div>
+
+      <div class="staff-surface p-3 p-md-4 mb-4">
+        <div
+          class="d-flex flex-wrap align-items-start justify-content-between gap-2 mb-3"
+        >
+          <h2 class="staff-user-section-title mb-0">Packaging</h2>
+          <button
+            type="button"
+            class="btn btn-sm btn-primary staff-page-primary"
+            @click="openEdit('packaging')"
+          >
+            Edit
+          </button>
+        </div>
+        <dl class="mb-0 small">
+          <dt
+            class="text-secondary text-uppercase fw-semibold mb-1"
+            style="font-size: 0.65rem"
+          >
+            Packaging materials
+          </dt>
+          <dd class="mb-0 fw-semibold text-body">
+            {{ display(profile.packaging_option_label) }}
+          </dd>
+        </dl>
+      </div>
     </template>
 
     <PortalProfileEditModal

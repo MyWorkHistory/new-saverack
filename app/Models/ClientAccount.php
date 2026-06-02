@@ -63,6 +63,8 @@ class ClientAccount extends Model
         'shiphero_customer_account_id',
         'whatsapp_api_id',
         'default_payment_type',
+        'postage_option',
+        'packaging_option',
         'onboarding_billing_method',
         'onboarding_billing_status',
         'onboarding_preferences',

@@ -2202,6 +2202,32 @@ onUnmounted(() => {
                     </dd>
                   </dl>
                 </div>
+                <div class="col-md-6">
+                  <dl class="mb-0 small">
+                    <dt
+                      class="text-secondary text-uppercase fw-semibold mb-1"
+                      style="font-size: 0.65rem"
+                    >
+                      Postage
+                    </dt>
+                    <dd class="mb-0 fw-semibold text-body">
+                      {{ display(account.postage_option_label) }}
+                    </dd>
+                  </dl>
+                </div>
+                <div class="col-md-6">
+                  <dl class="mb-0 small">
+                    <dt
+                      class="text-secondary text-uppercase fw-semibold mb-1"
+                      style="font-size: 0.65rem"
+                    >
+                      Packaging
+                    </dt>
+                    <dd class="mb-0 fw-semibold text-body">
+                      {{ display(account.packaging_option_label) }}
+                    </dd>
+                  </dl>
+                </div>
               </div>
             </div>
           </template>

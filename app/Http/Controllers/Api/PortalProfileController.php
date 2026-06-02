@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Models\ClientAccount;
 use App\Models\User;
 use App\Services\PortalOnboardingService;
+use App\Support\ClientAccountBillingPreferences;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -59,6 +60,23 @@ class PortalProfileController extends Controller
 
         $user->refresh();
         $account->refresh();
+
+        return response()->json($this->serializeProfile($user, $account));
+    }
+
+    public function updatePackaging(Request $request): JsonResponse
+    {
+        [$user, $account] = $this->resolvePortalUserAndAccount($request);
+        Gate::forUser($request->user())->authorize('view', $account);
+
+        $validated = $request->validate([
+            'packaging_option' => ['required', 'string', Rule::in(ClientAccountBillingPreferences::packagingKeys())],
+        ]);
+
+        $account = $this->onboarding->updatePackagingPreference(
+            $account,
+            (string) $validated['packaging_option']
+        );
 
         return response()->json($this->serializeProfile($user, $account));
     }

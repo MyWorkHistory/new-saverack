@@ -6,6 +6,7 @@ use App\Models\ClientAccount;
 use App\Models\ClientAccountFee;
 use App\Models\PricingFeeTemplate;
 use App\Models\User;
+use App\Support\ClientAccountBillingPreferences;
 use Illuminate\Contracts\Pagination\LengthAwarePaginator;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Facades\DB;
@@ -572,6 +573,10 @@ class ClientAccountService
             'notes' => $account->notes,
             'account_manager_id' => $account->account_manager_id,
             'default_payment_type' => $account->default_payment_type,
+            'postage_option' => ClientAccountBillingPreferences::normalizePostageKey($account->postage_option),
+            'postage_option_label' => ClientAccountBillingPreferences::postageLabel($account->postage_option),
+            'packaging_option' => ClientAccountBillingPreferences::normalizePackagingKey($account->packaging_option),
+            'packaging_option_label' => ClientAccountBillingPreferences::packagingLabel($account->packaging_option),
             'cc_fee_percent' => $account->cc_fee_percent !== null ? (float) $account->cc_fee_percent : null,
             'stripe_customer_id' => $account->stripe_customer_id,
             'shiphero_customer_account_id' => $account->shiphero_customer_account_id,

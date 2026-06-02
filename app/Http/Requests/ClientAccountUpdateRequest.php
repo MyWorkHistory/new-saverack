@@ -3,6 +3,7 @@
 namespace App\Http\Requests;
 
 use App\Models\ClientAccount;
+use App\Support\ClientAccountBillingPreferences;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
 
@@ -117,6 +118,7 @@ class ClientAccountUpdateRequest extends FormRequest
             'account_manager_id' => ['sometimes', 'nullable', 'integer', $accountManagerRule],
             'contract_date' => ['sometimes', 'nullable', 'date'],
             'default_payment_type' => ['sometimes', 'nullable', 'string', Rule::in(ClientAccount::DEFAULT_PAYMENT_TYPES)],
+            'postage_option' => ['sometimes', 'string', Rule::in(ClientAccountBillingPreferences::postageKeys())],
             'cc_fee_percent' => ['sometimes', 'nullable', 'numeric', 'min:0', 'max:100'],
             'stripe_customer_id' => ['sometimes', 'nullable', 'string', 'max:191'],
             'shiphero_customer_account_id' => ['sometimes', 'nullable', 'string', 'max:191'],

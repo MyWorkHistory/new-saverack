@@ -128,6 +128,7 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::get('/lookup', [PortalLookupController::class, 'lookup'])->middleware('can:inventory.view');
         Route::get('/profile', [PortalProfileController::class, 'show'])->middleware('can:inventory.view');
         Route::patch('/profile', [PortalProfileController::class, 'update'])->middleware('can:inventory.view');
+        Route::patch('/profile/packaging', [PortalProfileController::class, 'updatePackaging'])->middleware('can:inventory.view');
         Route::get('/onboarding', [PortalOnboardingController::class, 'show'])->middleware('can:inventory.view');
         Route::patch('/onboarding/preferences/{section}', [PortalOnboardingController::class, 'savePreferences'])->middleware('can:inventory.view');
         Route::post('/onboarding/branding/logo', [PortalOnboardingController::class, 'uploadBrandLogo'])->middleware('can:inventory.view');

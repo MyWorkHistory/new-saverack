@@ -2844,7 +2844,7 @@ function onDocKeydown(e) {
           </div>
 
           <div class="staff-surface p-4 mb-4 billing-inv-totals-check-card">
-            <h2 class="h6 fw-semibold mb-2">Category Totals</h2>
+            <h2 class="h6 fw-semibold mb-2">Invoice Review</h2>
             <p v-if="!hasFulfillmentFirstPickRow" class="small text-secondary mb-3 mb-lg-2">
               No Fulfillment (First Pick) row
             </p>
@@ -2867,7 +2867,15 @@ function onDocKeydown(e) {
                 </span>
               </li>
               <li class="billing-inv-totals-check-row">
-                <span class="billing-inv-totals-check-label">Postage</span>
+                <span class="billing-inv-totals-check-label-col">
+                  <span class="billing-inv-totals-check-label">Postage</span>
+                  <span
+                    v-if="invoice.client_account_postage_option_label"
+                    class="billing-inv-totals-check-sublabel"
+                  >
+                    {{ invoice.client_account_postage_option_label }}
+                  </span>
+                </span>
                 <span class="billing-inv-totals-check-qty text-nowrap">{{
                   formatQtyDisplay(postageCategoryQtySum)
                 }}</span>
@@ -2902,7 +2910,15 @@ function onDocKeydown(e) {
                 </span>
               </li>
               <li class="billing-inv-totals-check-row">
-                <span class="billing-inv-totals-check-label">Packaging</span>
+                <span class="billing-inv-totals-check-label-col">
+                  <span class="billing-inv-totals-check-label">Packaging</span>
+                  <span
+                    v-if="invoice.client_account_packaging_option_label"
+                    class="billing-inv-totals-check-sublabel"
+                  >
+                    {{ invoice.client_account_packaging_option_label }}
+                  </span>
+                </span>
                 <span class="billing-inv-totals-check-qty text-nowrap">{{
                   formatQtyDisplay(packagingFilteredCategoryQtySum)
                 }}</span>
@@ -3984,9 +4000,21 @@ function onDocKeydown(e) {
   gap: 0.5rem 0.75rem;
   font-size: 0.875rem;
 }
+.billing-inv-totals-check-label-col {
+  display: flex;
+  flex-direction: column;
+  gap: 0.125rem;
+  min-width: 0;
+}
 .billing-inv-totals-check-label {
   font-weight: 500;
   color: rgba(47, 43, 61, 0.85);
+}
+.billing-inv-totals-check-sublabel {
+  font-size: 0.75rem;
+  font-weight: 400;
+  line-height: 1.3;
+  color: rgba(47, 43, 61, 0.55);
 }
 .billing-inv-totals-check-qty {
   font-variant-numeric: tabular-nums;

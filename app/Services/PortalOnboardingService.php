@@ -4,6 +4,7 @@ namespace App\Services;
 
 use App\Models\ClientAccount;
 use App\Models\User;
+use App\Support\ClientAccountBillingPreferences;
 use App\Support\CrmUrls;
 use App\Support\PortalOnboardingSectionRegistry;
 
@@ -405,7 +406,19 @@ class PortalOnboardingService
             'account_information_complete' => $this->isAccountInformationComplete($user, $account),
             'onboarding_billing_method' => $account->onboarding_billing_method,
             'onboarding_billing_status' => $account->onboarding_billing_status,
+            'postage_option' => ClientAccountBillingPreferences::normalizePostageKey($account->postage_option),
+            'postage_option_label' => ClientAccountBillingPreferences::postageLabel($account->postage_option),
+            'packaging_option' => ClientAccountBillingPreferences::normalizePackagingKey($account->packaging_option),
+            'packaging_option_label' => ClientAccountBillingPreferences::packagingLabel($account->packaging_option),
         ];
+    }
+
+    public function updatePackagingPreference(ClientAccount $account, string $packagingOption): ClientAccount
+    {
+        $account->packaging_option = ClientAccountBillingPreferences::normalizePackagingKey($packagingOption);
+        $account->save();
+
+        return $account->fresh();
     }
 
     /**

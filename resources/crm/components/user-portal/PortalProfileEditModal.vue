@@ -3,10 +3,14 @@ import { computed, onUnmounted, reactive, ref, watch } from "vue";
 import api from "../../services/api";
 import CrmLoadingSpinner from "../common/CrmLoadingSpinner.vue";
 import { useToast } from "../../composables/useToast";
+import {
+  DEFAULT_PACKAGING_OPTION,
+  PACKAGING_OPTIONS,
+} from "../../constants/clientAccountBillingPreferences.js";
 
 const props = defineProps({
   open: { type: Boolean, default: false },
-  /** "account" | "address" */
+  /** "account" | "address" | "packaging" */
   section: { type: String, default: "account" },
   profile: { type: Object, default: null },
 });
@@ -27,14 +31,18 @@ const form = reactive({
   state: "",
   zip: "",
   country: "",
+  packaging_option: DEFAULT_PACKAGING_OPTION,
 });
 
 const isAccount = computed(() => props.section === "account");
 const isAddress = computed(() => props.section === "address");
+const isPackaging = computed(() => props.section === "packaging");
 
-const modalTitle = computed(() =>
-  isAddress.value ? "Edit Address" : "Edit Personal Information",
-);
+const modalTitle = computed(() => {
+  if (isAddress.value) return "Edit Address";
+  if (isPackaging.value) return "Edit Packaging";
+  return "Edit Personal Information";
+});
 
 function close() {
   emit("update:open", false);
@@ -55,6 +63,7 @@ function fillFromProfile(data) {
   form.state = data.state || "";
   form.zip = data.zip || "";
   form.country = data.country || "";
+  form.packaging_option = data.packaging_option || DEFAULT_PACKAGING_OPTION;
 }
 
 watch(
@@ -77,18 +86,25 @@ async function save() {
   saving.value = true;
   errorMsg.value = "";
   try {
-    const payload = {
-      name: form.name.trim(),
-      email: form.email.trim(),
-      company_name: form.company_name.trim(),
-      phone: form.phone,
-      street: form.street,
-      city: form.city,
-      state: form.state,
-      zip: form.zip,
-      country: form.country,
-    };
-    const { data } = await api.patch("/portal/profile", payload);
+    let data;
+    if (isPackaging.value) {
+      ({ data } = await api.patch("/portal/profile/packaging", {
+        packaging_option: form.packaging_option || DEFAULT_PACKAGING_OPTION,
+      }));
+    } else {
+      const payload = {
+        name: form.name.trim(),
+        email: form.email.trim(),
+        company_name: form.company_name.trim(),
+        phone: form.phone,
+        street: form.street,
+        city: form.city,
+        state: form.state,
+        zip: form.zip,
+        country: form.country,
+      };
+      ({ data } = await api.patch("/portal/profile", payload));
+    }
     toast.success("Saved.");
     emit("saved", data);
     close();
@@ -168,6 +184,28 @@ async function save() {
                   class="form-control"
                   autocomplete="tel"
                 />
+              </div>
+            </template>
+
+            <template v-if="isPackaging">
+              <div class="mb-3">
+                <label class="form-label" for="portal-edit-packaging">Packaging</label>
+                <select
+                  id="portal-edit-packaging"
+                  v-model="form.packaging_option"
+                  class="form-select"
+                >
+                  <option
+                    v-for="opt in PACKAGING_OPTIONS"
+                    :key="opt.value"
+                    :value="opt.value"
+                  >
+                    {{ opt.label }}
+                  </option>
+                </select>
+                <p class="small text-secondary mb-0 mt-2">
+                  Choose who supplies packaging materials for your orders.
+                </p>
               </div>
             </template>
 

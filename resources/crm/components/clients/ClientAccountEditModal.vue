@@ -4,6 +4,10 @@ import api from "../../services/api";
 import CrmLoadingSpinner from "../common/CrmLoadingSpinner.vue";
 import CrmSearchableSelect from "../common/CrmSearchableSelect.vue";
 import { useToast } from "../../composables/useToast";
+import {
+  DEFAULT_POSTAGE_OPTION,
+  POSTAGE_OPTIONS,
+} from "../../constants/clientAccountBillingPreferences.js";
 
 const props = defineProps({
   open: { type: Boolean, default: false },
@@ -42,6 +46,7 @@ const form = reactive({
   country: "",
   account_manager_id: "",
   default_payment_type: "",
+  postage_option: DEFAULT_POSTAGE_OPTION,
   cc_fee_percent: "3.50",
   stripe_customer_id: "",
   shiphero_customer_account_id: "",
@@ -102,9 +107,9 @@ const modalSubtitle = computed(() => {
     case "address":
       return "Street, city, and country.";
     case "billing":
-      return "Default payment type.";
+      return "Default payment type and postage.";
     case "payment":
-      return "Default payment type.";
+      return "Default payment type and postage.";
     case "settings":
       return "External API identifiers for integrations.";
     default:
@@ -159,6 +164,7 @@ async function load() {
       ? String(data.account_manager_id)
       : "";
     form.default_payment_type = data.default_payment_type || "";
+    form.postage_option = data.postage_option || DEFAULT_POSTAGE_OPTION;
     form.cc_fee_percent =
       data.cc_fee_percent != null && data.cc_fee_percent !== ""
         ? Number(data.cc_fee_percent).toFixed(2)
@@ -216,6 +222,7 @@ function buildPatch() {
         ? Number(form.account_manager_id)
         : null,
       default_payment_type: trimOrNull(form.default_payment_type),
+      postage_option: form.postage_option || DEFAULT_POSTAGE_OPTION,
       cc_fee_percent: trimOrNull(form.cc_fee_percent),
       stripe_customer_id: trimOrNull(form.stripe_customer_id),
       shiphero_customer_account_id: trimOrNull(form.shiphero_customer_account_id),
@@ -251,6 +258,7 @@ function buildPatch() {
   if (props.section === "billing" || props.section === "payment") {
     return {
       default_payment_type: trimOrNull(form.default_payment_type),
+      postage_option: form.postage_option || DEFAULT_POSTAGE_OPTION,
       cc_fee_percent: trimOrNull(form.cc_fee_percent),
     };
   }
@@ -594,6 +602,24 @@ async function onSubmit() {
                           step="0.01"
                           class="form-control"
                         />
+                      </div>
+                      <div class="col-12">
+                        <label class="form-label small mb-1 text-secondary" for="cae-postage-option"
+                          >Postage</label
+                        >
+                        <select
+                          id="cae-postage-option"
+                          v-model="form.postage_option"
+                          class="form-select"
+                        >
+                          <option
+                            v-for="opt in POSTAGE_OPTIONS"
+                            :key="opt.value"
+                            :value="opt.value"
+                          >
+                            {{ opt.label }}
+                          </option>
+                        </select>
                       </div>
                     </div>
                   </template>

@@ -8,6 +8,7 @@ use App\Models\Invoice;
 use App\Support\Billing\InvoiceHistoryEventType;
 use App\Support\Billing\InvoiceLineCategory;
 use App\Support\BillingAvailableFundsSchema;
+use App\Support\ClientAccountBillingPreferences;
 use App\Models\InvoiceHistory;
 use App\Models\InvoiceItem;
 use App\Models\User;
@@ -1127,7 +1128,7 @@ class InvoiceService
      */
     public function toDetailArray(Invoice $invoice): array
     {
-        $invoice->load(['items', 'histories.user', 'clientAccount', 'createdBy']);
+        $invoice->loadMissing(['items', 'histories.user', 'clientAccount', 'createdBy']);
         $account = $invoice->clientAccount;
 
         $base = $this->toListArray($invoice);
@@ -1154,6 +1155,18 @@ class InvoiceService
                 : null,
             'client_account_cc_fee_percent' => $account !== null && $account->cc_fee_percent !== null
                 ? (float) $account->cc_fee_percent
+                : null,
+            'client_account_postage_option' => $account !== null
+                ? ClientAccountBillingPreferences::normalizePostageKey($account->postage_option)
+                : null,
+            'client_account_postage_option_label' => $account !== null
+                ? ClientAccountBillingPreferences::postageLabel($account->postage_option)
+                : null,
+            'client_account_packaging_option' => $account !== null
+                ? ClientAccountBillingPreferences::normalizePackagingKey($account->packaging_option)
+                : null,
+            'client_account_packaging_option_label' => $account !== null
+                ? ClientAccountBillingPreferences::packagingLabel($account->packaging_option)
                 : null,
             'client_account_email' => $account !== null ? $account->email : null,
             'client_account_contact_name' => $account !== null ? $account->contactFullName() : null,

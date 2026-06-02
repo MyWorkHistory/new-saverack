@@ -20,12 +20,16 @@ class InventoryRestockSnapshot extends Model
         'status',
         'error_message',
         'duration_ms',
+        'refresh_started_at',
+        'progress_page',
     ];
 
     protected $casts = [
         'computed_at' => 'datetime',
+        'refresh_started_at' => 'datetime',
         'rows' => 'array',
         'row_count' => 'integer',
         'duration_ms' => 'integer',
+        'progress_page' => 'integer',
     ];
 }

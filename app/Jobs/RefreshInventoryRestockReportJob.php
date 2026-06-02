@@ -32,7 +32,19 @@ class RefreshInventoryRestockReportJob implements ShouldQueue
             $reports->refresh($this->warehouseId);
         } catch (Throwable $e) {
             report($e);
+            $reports->markRefreshFailed(
+                $this->warehouseId,
+                $e->getMessage() !== '' ? $e->getMessage() : 'Restock report refresh failed.'
+            );
             throw $e;
         }
+    }
+
+    public function failed(Throwable $e): void
+    {
+        app(InventoryRestockReportService::class)->markRefreshFailed(
+            $this->warehouseId,
+            $e->getMessage() !== '' ? $e->getMessage() : 'Restock report refresh failed.'
+        );
     }
 }

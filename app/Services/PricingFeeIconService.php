@@ -36,6 +36,9 @@ class PricingFeeIconService
         return $relative;
     }
 
+    /**
+     * Relative URL for CRM <img src> (resolved via /storage on the current app origin).
+     */
     public function publicUrl(?string $path): ?string
     {
         if ($path === null || trim($path) === '') {
@@ -45,6 +48,11 @@ class PricingFeeIconService
             return null;
         }
 
-        return Storage::disk('public')->url($path);
+        $path = ltrim(str_replace('\\', '/', trim($path)), '/');
+        if (strpos($path, 'storage/') === 0) {
+            return '/'.$path;
+        }
+
+        return '/storage/'.$path;
     }
 }

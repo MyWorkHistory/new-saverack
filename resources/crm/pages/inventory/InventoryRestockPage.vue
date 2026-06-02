@@ -10,27 +10,53 @@ const toast = useToast();
 const router = useRouter();
 
 const POLL_MS = 3000;
-const POLL_MAX_MS = 15 * 60 * 1000;
+/** Client-side hint; server marks stale runs failed after SHIPHERO_RESTOCK_STALE_MINUTES (default 20). */
+const STALE_CLIENT_MS = 20 * 60 * 1000;
 
 const restockRows = ref([]);
 const restockLoading = ref(false);
 const restockRefreshing = ref(false);
+const pollingActive = ref(false);
 const restockMeta = ref({
   warehouse_id: null,
   computed_at: null,
+  refresh_started_at: null,
   row_count: 0,
   status: null,
   error_message: null,
+  progress_page: null,
 });
 
 let pollTimer = null;
-let pollStartedAt = 0;
 let autoRefreshTriggered = false;
 
-const isRunning = computed(() => restockMeta.value.status === "running");
+const isFailed = computed(() => restockMeta.value.status === "failed");
+
+const showRunningBanner = computed(
+  () =>
+    pollingActive.value &&
+    restockMeta.value.status === "running"
+);
+
+const isRefreshStuck = computed(() => {
+  if (restockMeta.value.status !== "running") return false;
+  const raw = restockMeta.value.refresh_started_at;
+  if (!raw) return false;
+  const started = new Date(raw);
+  if (Number.isNaN(started.getTime())) return false;
+  return Date.now() - started.getTime() > STALE_CLIENT_MS;
+});
 
 const restockLastRunLabel = computed(() => {
   const raw = restockMeta.value.computed_at;
+  if (!raw) return null;
+  const d = new Date(raw);
+  if (Number.isNaN(d.getTime())) return null;
+  return formatDateTimeUs(d);
+});
+
+const refreshStartedLabel = computed(() => {
+  const raw = restockMeta.value.refresh_started_at;
   if (!raw) return null;
   const d = new Date(raw);
   if (Number.isNaN(d.getTime())) return null;
@@ -42,9 +68,11 @@ function applyRestockPayload(data) {
   restockMeta.value = {
     warehouse_id: data?.warehouse_id ?? null,
     computed_at: data?.computed_at ?? null,
+    refresh_started_at: data?.refresh_started_at ?? null,
     row_count: Number(data?.row_count || 0),
     status: data?.status ?? null,
     error_message: data?.error_message ?? null,
+    progress_page: data?.progress_page ?? null,
   };
 }
 
@@ -58,11 +86,11 @@ function inventoryDetailHref(row) {
 }
 
 function stopPolling() {
+  pollingActive.value = false;
   if (pollTimer !== null) {
     clearInterval(pollTimer);
     pollTimer = null;
   }
-  pollStartedAt = 0;
 }
 
 function finishRefreshUi(successMessage) {
@@ -87,12 +115,6 @@ async function pollRestockOnce() {
       stopPolling();
       const msg = data?.error_message || "Restock report refresh failed.";
       toast.error(msg);
-      return;
-    }
-    if (pollStartedAt > 0 && Date.now() - pollStartedAt > POLL_MAX_MS) {
-      restockRefreshing.value = false;
-      stopPolling();
-      toast.error("Restock refresh is taking longer than expected. Check back in a few minutes.");
     }
   } catch (e) {
     restockRefreshing.value = false;
@@ -103,7 +125,7 @@ async function pollRestockOnce() {
 
 function startPolling() {
   stopPolling();
-  pollStartedAt = Date.now();
+  pollingActive.value = true;
   pollTimer = setInterval(() => {
     pollRestockOnce();
   }, POLL_MS);
@@ -115,7 +137,7 @@ async function loadRestockReport() {
     const { data } = await api.get("/inventory/restock");
     applyRestockPayload(data);
     const hasNoRows = !Array.isArray(data?.rows) || data.rows.length === 0;
-    if (!autoRefreshTriggered && !data?.computed_at && hasNoRows) {
+    if (!autoRefreshTriggered && !data?.computed_at && hasNoRows && data?.status !== "failed") {
       autoRefreshTriggered = true;
       await refreshRestockReport();
       return;
@@ -183,14 +205,17 @@ onBeforeUnmount(() => {
           SKUs with pickable qty at or below replenishment minimum and stock in non-pickable locations. Refreshes automatically at 7:00 AM, 12:00 PM, and 2:30 PM (US Eastern).
         </p>
       </div>
-      <div class="d-flex align-items-center gap-2 flex-shrink-0 ms-md-auto">
+      <div class="d-flex flex-column align-items-md-end gap-1 flex-shrink-0 ms-md-auto">
         <p v-if="restockLastRunLabel" class="small text-secondary mb-0">
-          Last run: {{ restockLastRunLabel }}
+          Last successful run: {{ restockLastRunLabel }}
+        </p>
+        <p v-if="refreshStartedLabel && showRunningBanner" class="small text-secondary mb-0">
+          Refresh started: {{ refreshStartedLabel }}
         </p>
         <button
           type="button"
           class="btn btn-outline-secondary btn-sm orders-toolbar-outline-btn d-inline-flex align-items-center gap-2"
-          :disabled="restockLoading || restockRefreshing"
+          :disabled="restockLoading || (restockRefreshing && showRunningBanner)"
           title="Refresh restock report"
           aria-label="Refresh restock report from ShipHero"
           @click="refreshRestockReport"
@@ -210,23 +235,37 @@ onBeforeUnmount(() => {
               d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"
             />
           </svg>
-          {{ restockRefreshing ? "Refreshing…" : "Refresh" }}
+          {{ restockRefreshing && showRunningBanner ? "Refreshing…" : "Refresh" }}
         </button>
       </div>
     </div>
 
+    <div
+      v-if="isFailed && restockMeta.error_message"
+      class="alert alert-danger py-2 px-3 small mb-3"
+      role="alert"
+    >
+      {{ restockMeta.error_message }}
+    </div>
+
     <div class="staff-table-card staff-datatable-card staff-datatable-card--white w-100">
       <div
-        v-if="restockRefreshing || isRunning"
+        v-if="showRunningBanner"
         class="user-inv-sync-banner small text-secondary px-3 py-2 border-bottom bg-body-tertiary"
         role="status"
         aria-live="polite"
       >
-        Building restock report from ShipHero…
+        <template v-if="isRefreshStuck">
+          Refresh appears stuck — click Refresh to retry (ensure a queue worker is running).
+        </template>
+        <template v-else>
+          Building restock report from ShipHero…
+          <span v-if="restockMeta.progress_page"> (page {{ restockMeta.progress_page }})</span>
+        </template>
       </div>
       <div
         class="table-responsive staff-table-wrap"
-        :class="{ 'user-inv-table--syncing': restockRefreshing || isRunning }"
+        :class="{ 'user-inv-table--syncing': showRunningBanner }"
       >
         <table class="table table-hover align-middle mb-0 staff-data-table user-inv-table">
           <thead class="table-light staff-table-head">
@@ -244,15 +283,15 @@ onBeforeUnmount(() => {
             <tr v-if="restockLoading">
               <td colspan="7" class="py-5 text-center text-secondary">Loading restock report…</td>
             </tr>
-            <tr v-else-if="!restockLastRunLabel && !restockRows.length && !isRunning">
+            <tr v-else-if="!restockLastRunLabel && !restockRows.length && !showRunningBanner && !isFailed">
               <td colspan="7" class="py-5 text-center text-secondary">
                 No restock report yet. Click Refresh to build the first snapshot.
               </td>
             </tr>
-            <tr v-else-if="restockRows.length === 0 && !isRunning">
+            <tr v-else-if="restockRows.length === 0 && !showRunningBanner">
               <td colspan="7" class="py-5 text-center text-secondary">Nothing to restock right now.</td>
             </tr>
-            <tr v-else-if="restockRows.length === 0 && isRunning">
+            <tr v-else-if="restockRows.length === 0 && showRunningBanner">
               <td colspan="7" class="py-5 text-center text-secondary">Refresh in progress…</td>
             </tr>
             <tr v-for="row in restockRows" :key="row.sku" class="align-middle">

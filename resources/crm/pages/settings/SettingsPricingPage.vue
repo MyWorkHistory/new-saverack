@@ -7,6 +7,7 @@ import PricingFeeModal from "../../components/settings/PricingFeeModal.vue";
 import { useToast } from "../../composables/useToast.js";
 import { setCrmPageMeta } from "../../composables/useCrmPageMeta.js";
 import { crmIsAdmin } from "../../utils/crmUser.js";
+import { resolvePublicUrl } from "../../utils/resolvePublicUrl.js";
 
 const CATEGORY_OPTIONS = [
   { value: "all", label: "All Categories" },
@@ -304,7 +305,7 @@ onUnmounted(() => {
                   <div class="settings-pricing-card__icon-wrap rounded border bg-light d-flex align-items-center justify-content-center flex-shrink-0">
                     <img
                       v-if="fee.icon_url"
-                      :src="fee.icon_url"
+                      :src="resolvePublicUrl(fee.icon_url)"
                       :alt="fee.name"
                       class="rounded"
                       style="width: 44px; height: 44px; object-fit: contain"

@@ -18,6 +18,13 @@ class RefreshInventoryRestockReportCommand extends Command
         $warehouseId = is_string($warehouseId) && trim($warehouseId) !== '' ? trim($warehouseId) : null;
 
         try {
+            if ($reports->isRefreshInProgress($warehouseId)) {
+                $this->warn('A restock refresh is already in progress for this warehouse; skipping.');
+
+                return self::SUCCESS;
+            }
+
+            $reports->markRefreshRunning($warehouseId);
             $result = $reports->refresh($warehouseId);
             $this->info(sprintf(
                 'Restock report saved for warehouse %s: %d rows in %d ms.',

@@ -140,6 +140,7 @@ class InventoryController extends Controller
             ]);
             $warehouseId = isset($validated['warehouse_id']) ? trim((string) $validated['warehouse_id']) : null;
             $warehouseId = $warehouseId !== '' ? $warehouseId : null;
+            $reports->latestSnapshot($warehouseId);
             if ($reports->isRefreshInProgress($warehouseId)) {
                 $snapshot = $reports->latestSnapshot($warehouseId);
                 if ($snapshot !== null) {

@@ -1,5 +1,6 @@
 <script setup>
 import { computed, ref, watch } from "vue";
+import { resolvePublicUrl } from "../../utils/resolvePublicUrl.js";
 
 const CATEGORIES = [
   { value: "fulfillment", label: "Fulfillment" },
@@ -46,7 +47,7 @@ function resetForm() {
   category.value = f?.category != null ? String(f.category) : "fulfillment";
   amount.value = f?.amount != null && f.amount !== "" ? String(f.amount) : "";
   iconFile.value = null;
-  iconPreview.value = f?.icon_url != null ? String(f.icon_url) : null;
+  iconPreview.value = f?.icon_url != null ? resolvePublicUrl(String(f.icon_url)) : null;
   removeIcon.value = false;
 }
 
@@ -67,7 +68,7 @@ function onIconChange(event) {
   if (file) {
     iconPreview.value = URL.createObjectURL(file);
   } else if (props.fee?.icon_url) {
-    iconPreview.value = props.fee.icon_url;
+    iconPreview.value = resolvePublicUrl(props.fee.icon_url);
   } else {
     iconPreview.value = null;
   }

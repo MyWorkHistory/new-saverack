@@ -50,9 +50,16 @@ return [
         /** Optional warehouse id for admin restock report; defaults to first ShipHero warehouse. */
         'restock_warehouse_id' => env('SHIPHERO_RESTOCK_WAREHOUSE_ID'),
         /** ShipHero warehouse_products page size (keep under per-operation credit limit). */
-        'restock_page_size' => (int) env('SHIPHERO_RESTOCK_PAGE_SIZE', 40),
+        'restock_page_size' => (int) env('SHIPHERO_RESTOCK_PAGE_SIZE', 20),
         /** Max location rows per warehouse product in restock scan. */
-        'restock_location_limit' => (int) env('SHIPHERO_RESTOCK_LOCATION_LIMIT', 50),
+        'restock_location_limit' => (int) env('SHIPHERO_RESTOCK_LOCATION_LIMIT', 25),
+        /** Minutes before a running snapshot is marked failed (orphaned queue job). */
+        'restock_stale_minutes' => (int) env('SHIPHERO_RESTOCK_STALE_MINUTES', 20),
+        /** Skip full warehouse location catalog (saves ShipHero credits; uses product locations only). */
+        'restock_skip_location_catalog' => filter_var(
+            env('SHIPHERO_RESTOCK_SKIP_LOCATION_CATALOG', false),
+            FILTER_VALIDATE_BOOLEAN
+        ),
         /** GraphQL mutation for customer account update (from shiphero:probe-customer-mutations). */
         'customer_account_update_mutation' => env('SHIPHERO_CUSTOMER_ACCOUNT_UPDATE_MUTATION'),
         'customer_account_update_input_type' => env('SHIPHERO_CUSTOMER_ACCOUNT_UPDATE_INPUT_TYPE'),

@@ -19,6 +19,11 @@ class InventoryRestockReportService
         $this->inventory = $inventory;
     }
 
+    public function staleMinutes(): int
+    {
+        return max(5, (int) config('services.shiphero.restock_stale_minutes', 20));
+    }
+
     public function isRefreshInProgress(?string $warehouseId = null): bool
     {
         $wid = $this->resolveWarehouseId($warehouseId);
@@ -30,7 +35,9 @@ class InventoryRestockReportService
             return false;
         }
 
-        return $row->updated_at !== null && $row->updated_at->greaterThan(now()->subMinutes(30));
+        $row = $this->resolveStaleRunningSnapshot($row);
+
+        return $row->status === InventoryRestockSnapshot::STATUS_RUNNING;
     }
 
     /**
@@ -40,15 +47,60 @@ class InventoryRestockReportService
     {
         $wid = $this->resolveWarehouseId($warehouseId);
 
+        $existing = InventoryRestockSnapshot::query()
+            ->where('warehouse_id', $wid)
+            ->first();
+        if ($existing !== null) {
+            $this->resolveStaleRunningSnapshot($existing);
+        }
+
+        $now = Carbon::now();
         $row = InventoryRestockSnapshot::query()->updateOrCreate(
             ['warehouse_id' => $wid],
             [
                 'status' => InventoryRestockSnapshot::STATUS_RUNNING,
                 'error_message' => null,
+                'refresh_started_at' => $now,
+                'progress_page' => 0,
+                'computed_at' => null,
+                'duration_ms' => null,
+                'rows' => [],
+                'row_count' => 0,
             ]
         );
 
         return $this->serializeSnapshot($row);
+    }
+
+    public function markRefreshFailed(?string $warehouseId, string $message): void
+    {
+        $wid = $warehouseId !== null && trim($warehouseId) !== ''
+            ? trim($warehouseId)
+            : $this->resolveWarehouseId(null);
+
+        $row = InventoryRestockSnapshot::query()
+            ->where('warehouse_id', $wid)
+            ->first();
+
+        if ($row === null || $row->status !== InventoryRestockSnapshot::STATUS_RUNNING) {
+            return;
+        }
+
+        $row->status = InventoryRestockSnapshot::STATUS_FAILED;
+        $row->error_message = $message;
+        $row->save();
+    }
+
+    public function touchRefreshProgress(string $warehouseId, int $page, int $partialRowCount): void
+    {
+        InventoryRestockSnapshot::query()
+            ->where('warehouse_id', $warehouseId)
+            ->where('status', InventoryRestockSnapshot::STATUS_RUNNING)
+            ->update([
+                'progress_page' => max(0, $page),
+                'row_count' => max(0, $partialRowCount),
+                'updated_at' => Carbon::now(),
+            ]);
     }
 
     public function resolveWarehouseId(?string $warehouseId = null): string
@@ -70,7 +122,7 @@ class InventoryRestockReportService
     }
 
     /**
-     * @return array{warehouse_id: string, computed_at: string, rows: list<array<string, mixed>>, row_count: int, status: string, error_message: ?string, duration_ms: int}
+     * @return array{warehouse_id: string, computed_at: string, rows: list<array<string, mixed>>, row_count: int, status: string, error_message: ?string, duration_ms: int, refresh_started_at: ?string, progress_page: ?int}
      */
     public function refresh(?string $warehouseId = null): array
     {
@@ -81,7 +133,7 @@ class InventoryRestockReportService
         $rows = [];
 
         try {
-            $catalog = $this->inventory->buildWarehouseLocationPickableCatalog($wid);
+            $catalog = $this->buildLocationCatalogForRefresh($wid);
             $rows = $this->scanWarehouse($wid, $catalog['by_id'], $catalog['by_name']);
         } catch (Throwable $e) {
             $status = InventoryRestockSnapshot::STATUS_FAILED;
@@ -104,6 +156,8 @@ class InventoryRestockReportService
                     'status' => $status,
                     'error_message' => $errorMessage,
                     'duration_ms' => $durationMs,
+                    'refresh_started_at' => null,
+                    'progress_page' => null,
                 ]
             );
         }
@@ -118,7 +172,30 @@ class InventoryRestockReportService
             'status' => $status,
             'error_message' => $errorMessage,
             'duration_ms' => $durationMs,
+            'refresh_started_at' => null,
+            'progress_page' => null,
         ];
+    }
+
+    /**
+     * @return array{by_id: array<string, array<string, mixed>>, by_name: array<string, array<string, mixed>>}
+     */
+    private function buildLocationCatalogForRefresh(string $warehouseId): array
+    {
+        if (config('services.shiphero.restock_skip_location_catalog')) {
+            return ['by_id' => [], 'by_name' => []];
+        }
+
+        try {
+            return $this->inventory->buildWarehouseLocationPickableCatalog($warehouseId);
+        } catch (Throwable $e) {
+            Log::warning('inventory.restock_report.location_catalog_skipped', [
+                'warehouse_id' => $warehouseId,
+                'message' => $e->getMessage(),
+            ]);
+
+            return ['by_id' => [], 'by_name' => []];
+        }
     }
 
     /**
@@ -135,18 +212,33 @@ class InventoryRestockReportService
             return null;
         }
 
-        // Guard against stale "running" rows when a queue worker died mid-run.
-        if (
-            $row->status === InventoryRestockSnapshot::STATUS_RUNNING
-            && $row->updated_at !== null
-            && $row->updated_at->lessThan(now()->subMinutes(30))
-        ) {
-            $row->status = InventoryRestockSnapshot::STATUS_FAILED;
-            $row->error_message = 'Restock refresh timed out. Please refresh again.';
-            $row->save();
-        }
+        $row = $this->resolveStaleRunningSnapshot($row);
 
         return $this->serializeSnapshot($row);
+    }
+
+    public function resolveStaleRunningSnapshot(InventoryRestockSnapshot $row): InventoryRestockSnapshot
+    {
+        if ($row->status !== InventoryRestockSnapshot::STATUS_RUNNING) {
+            return $row;
+        }
+
+        $startedAt = $row->refresh_started_at ?? $row->updated_at;
+        if ($startedAt === null) {
+            return $row;
+        }
+
+        if ($startedAt->greaterThan(now()->subMinutes($this->staleMinutes()))) {
+            return $row;
+        }
+
+        $row->status = InventoryRestockSnapshot::STATUS_FAILED;
+        $row->error_message = 'Refresh did not finish (queue worker may be stopped). Try Refresh again or contact ops.';
+        $row->refresh_started_at = null;
+        $row->progress_page = null;
+        $row->save();
+
+        return $row;
     }
 
     /**
@@ -215,6 +307,10 @@ class InventoryRestockReportService
             $hasNext = (bool) ($pageInfo['has_next_page'] ?? false);
             $after = isset($pageInfo['end_cursor']) && is_string($pageInfo['end_cursor']) ? $pageInfo['end_cursor'] : null;
             $page++;
+
+            if ($page % 10 === 0) {
+                $this->touchRefreshProgress($warehouseId, $page, count($restockRows));
+            }
         } while ($hasNext && $after !== null && $after !== '' && $page < $maxPages);
 
         if ($page >= $maxPages && $hasNext) {
@@ -232,7 +328,9 @@ class InventoryRestockReportService
      */
     private function serializeSnapshot(InventoryRestockSnapshot $row): array
     {
-        $computedAt = $row->computed_at;
+        $isRunning = $row->status === InventoryRestockSnapshot::STATUS_RUNNING;
+        $computedAt = $isRunning ? null : $row->computed_at;
+        $refreshStartedAt = $row->refresh_started_at;
 
         return [
             'warehouse_id' => $row->warehouse_id,
@@ -241,7 +339,9 @@ class InventoryRestockReportService
             'row_count' => (int) $row->row_count,
             'status' => (string) $row->status,
             'error_message' => $row->error_message,
-            'duration_ms' => $row->duration_ms,
+            'duration_ms' => $isRunning ? null : $row->duration_ms,
+            'refresh_started_at' => $refreshStartedAt !== null ? $refreshStartedAt->toIso8601String() : null,
+            'progress_page' => $isRunning ? $row->progress_page : null,
         ];
     }
 }

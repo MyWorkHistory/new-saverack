@@ -76,6 +76,7 @@ class InventoryRestockApiTest extends TestCase
         Sanctum::actingAs($this->staffWithInventoryView());
 
         $mock = Mockery::mock(InventoryRestockReportService::class);
+        $mock->shouldReceive('latestSnapshot')->once()->with(null)->andReturn(null);
         $mock->shouldReceive('isRefreshInProgress')->once()->with(null)->andReturn(false);
         $mock->shouldReceive('markRefreshRunning')->once()->with(null)->andReturn([
             'warehouse_id' => 'wh-1',
@@ -85,6 +86,8 @@ class InventoryRestockApiTest extends TestCase
             'status' => InventoryRestockSnapshot::STATUS_RUNNING,
             'error_message' => null,
             'duration_ms' => null,
+            'refresh_started_at' => now()->toIso8601String(),
+            'progress_page' => 0,
         ]);
         $this->app->instance(InventoryRestockReportService::class, $mock);
 
@@ -93,5 +96,33 @@ class InventoryRestockApiTest extends TestCase
         $response->assertStatus(202);
         $response->assertJsonPath('status', InventoryRestockSnapshot::STATUS_RUNNING);
         Queue::assertPushed(RefreshInventoryRestockReportJob::class);
+    }
+
+    public function test_get_restock_resolves_stale_running_snapshot(): void
+    {
+        config(['services.shiphero.restock_warehouse_id' => 'wh-1']);
+        config(['services.shiphero.restock_stale_minutes' => 20]);
+        Sanctum::actingAs($this->staffWithInventoryView());
+
+        InventoryRestockSnapshot::query()->create([
+            'warehouse_id' => 'wh-1',
+            'status' => InventoryRestockSnapshot::STATUS_RUNNING,
+            'refresh_started_at' => now()->subMinutes(25),
+            'computed_at' => now()->subHours(2),
+            'duration_ms' => 418498,
+            'rows' => [],
+            'row_count' => 0,
+        ]);
+
+        $inventory = Mockery::mock(\App\Services\ShipHeroInventoryService::class);
+        $this->app->instance(\App\Services\ShipHeroInventoryService::class, $inventory);
+
+        $response = $this->getJson('/api/inventory/restock');
+
+        $response->assertOk();
+        $response->assertJsonPath('status', InventoryRestockSnapshot::STATUS_FAILED);
+        $response->assertJsonPath('duration_ms', null);
+        $response->assertJsonPath('computed_at', null);
+        $this->assertStringContainsString('queue worker', (string) $response->json('error_message'));
     }
 }

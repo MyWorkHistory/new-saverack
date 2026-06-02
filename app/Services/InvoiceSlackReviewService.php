@@ -17,9 +17,11 @@ class InvoiceSlackReviewService
             throw new \RuntimeException('Slack is not configured for invoice review notifications.');
         }
 
-        $channel = trim((string) config('billing.slack.accounting_channel', '#accounting'));
+        $channel = trim((string) (config('billing.slack.accounting_channel') ?: '#accounting'));
         if ($channel === '') {
-            throw new \RuntimeException('Slack accounting channel is not configured.');
+            throw new \RuntimeException(
+                'Slack accounting channel is not configured. Set BILLING_SLACK_ACCOUNTING_CHANNEL=#accounting in .env.'
+            );
         }
 
         $invoice->loadMissing('clientAccount');

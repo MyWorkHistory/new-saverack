@@ -21,7 +21,7 @@ return [
     ],
 
     'slack' => [
-        'accounting_channel' => env('BILLING_SLACK_ACCOUNTING_CHANNEL', '#accounting'),
+        'accounting_channel' => env('BILLING_SLACK_ACCOUNTING_CHANNEL') ?: '#accounting',
         'bot_token' => env('SLACK_BOT_USER_OAUTH_TOKEN'),
     ],
 

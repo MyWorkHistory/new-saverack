@@ -25,10 +25,10 @@ return [
         /** Bot User OAuth Token (xoxb-…) for chat.postMessage. */
         'bot_token' => env('SLACK_BOT_USER_OAUTH_TOKEN') ?: env('SLACK_BOT_TOKEN'),
         /**
-         * Optional Incoming Webhook URL for #accounting-support (https://hooks.slack.com/services/…).
-         * When set, invoice review uses this instead of the bot token.
+         * Incoming Webhook (legacy Save Net uses SLACK_WEBHOOK_URL + channel name in payload).
+         * BILLING_SLACK_INCOMING_WEBHOOK_URL overrides SLACK_WEBHOOK_URL when set.
          */
-        'webhook_url' => env('BILLING_SLACK_INCOMING_WEBHOOK_URL'),
+        'webhook_url' => env('BILLING_SLACK_INCOMING_WEBHOOK_URL') ?: env('SLACK_WEBHOOK_URL'),
     ],
 
 ];

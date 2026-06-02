@@ -137,8 +137,11 @@ final class InvoiceSlackReviewServiceTest extends TestCase
         );
 
         Http::assertSent(function ($request) {
+            $body = $request->data();
+
             return str_starts_with($request->url(), 'https://hooks.slack.com/services/')
-                && str_contains((string) ($request->data()['text'] ?? ''), 'High Postage');
+                && ($body['channel'] ?? '') === '#accounting-support'
+                && str_contains((string) ($body['text'] ?? ''), 'High Postage');
         });
     }
 

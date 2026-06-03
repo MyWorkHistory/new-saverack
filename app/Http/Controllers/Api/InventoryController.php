@@ -735,14 +735,23 @@ class InventoryController extends Controller
     public function asnProductCatalog(Request $request): JsonResponse
     {
         $validated = $request->validate([
-            'client_account_id' => ['required', 'integer', 'exists:client_accounts,id'],
+            'client_account_id' => ['nullable', 'integer', 'exists:client_accounts,id'],
             'first' => ['nullable', 'integer', 'min:25', 'max:100'],
             'after' => ['nullable', 'string', 'max:500'],
             'query' => ['nullable', 'string', 'max:255'],
             'search_skip' => ['nullable', 'integer', 'min:0', 'max:500000'],
             'refresh' => ['nullable', 'boolean'],
         ]);
-        $clientAccountId = (int) $validated['client_account_id'];
+        $clientAccountId = (int) ($validated['client_account_id'] ?? 0);
+        $user = $request->user();
+        if ($clientAccountId <= 0 && $user !== null && (int) ($user->client_account_id ?? 0) > 0) {
+            $clientAccountId = (int) $user->client_account_id;
+        }
+        if ($clientAccountId <= 0) {
+            throw ValidationException::withMessages([
+                'client_account_id' => ['Client account is required.'],
+            ]);
+        }
         $graphqlFirst = isset($validated['first']) ? (int) $validated['first'] : 75;
         $after = isset($validated['after']) && is_string($validated['after']) ? $validated['after'] : null;
         $query = isset($validated['query']) && is_string($validated['query']) ? trim($validated['query']) : '';
@@ -784,11 +793,20 @@ class InventoryController extends Controller
     public function storeCatalogProduct(Request $request): JsonResponse
     {
         $validated = $request->validate([
-            'client_account_id' => ['required', 'integer', 'exists:client_accounts,id'],
+            'client_account_id' => ['nullable', 'integer', 'exists:client_accounts,id'],
             'sku' => ['required', 'string', 'max:255'],
             'name' => ['required', 'string', 'max:512'],
         ]);
-        $clientAccountId = (int) $validated['client_account_id'];
+        $clientAccountId = (int) ($validated['client_account_id'] ?? 0);
+        $user = $request->user();
+        if ($clientAccountId <= 0 && $user !== null && (int) ($user->client_account_id ?? 0) > 0) {
+            $clientAccountId = (int) $user->client_account_id;
+        }
+        if ($clientAccountId <= 0) {
+            throw ValidationException::withMessages([
+                'client_account_id' => ['Client account is required.'],
+            ]);
+        }
         $sku = trim((string) $validated['sku']);
         $name = trim((string) $validated['name']);
         try {

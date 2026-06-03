@@ -13,8 +13,9 @@ export function catalogKey(product) {
  * ShipHero product catalog for ASN / order line-item pickers.
  *
  * @param {import('vue').MaybeRefOrGetter<number|string|null|undefined>} clientAccountIdSource
+ * @param {import('vue').MaybeRefOrGetter<boolean>} [useSessionClientAccountSource]
  */
-export function useAsnProductCatalog(clientAccountIdSource) {
+export function useAsnProductCatalog(clientAccountIdSource, useSessionClientAccountSource = () => false) {
   const toast = useToast();
 
   const catalog = ref([]);
@@ -35,6 +36,10 @@ export function useAsnProductCatalog(clientAccountIdSource) {
     const id = Number(unref(clientAccountIdSource) || 0);
 
     return id > 0 ? id : 0;
+  }
+
+  function allowImplicitClientAccount() {
+    return Boolean(unref(useSessionClientAccountSource));
   }
 
   function catalogQty(product) {
@@ -81,7 +86,7 @@ export function useAsnProductCatalog(clientAccountIdSource) {
       catalogLoadingMore.value ||
       catalogLoading.value ||
       catalogSearchAutoLoading.value ||
-      !resolvedAccountId()
+      (!resolvedAccountId() && !allowImplicitClientAccount())
     ) {
       return;
     }
@@ -112,8 +117,9 @@ export function useAsnProductCatalog(clientAccountIdSource) {
 
   async function loadCatalogRows(reset, forceRefresh = false) {
     const accountId = resolvedAccountId();
-    if (!accountId) {
-      catalogLoadError.value = "Client account is required to load products.";
+    if (!accountId && !allowImplicitClientAccount()) {
+      catalogLoadError.value =
+        "Client account is required to load products. Reload the page or open the order from your Orders list.";
       return;
     }
 
@@ -132,9 +138,11 @@ export function useAsnProductCatalog(clientAccountIdSource) {
 
     try {
       const params = {
-        client_account_id: accountId,
         first: ASN_CATALOG_PAGE_SIZE,
       };
+      if (accountId > 0) {
+        params.client_account_id = accountId;
+      }
       const q = catalogSearchCommitted.value;
       if (q) {
         params.query = q;

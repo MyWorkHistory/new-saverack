@@ -449,6 +449,7 @@ class OrderController extends Controller
                 if ($cachedPayload !== null) {
                     return response()->json([
                         'order' => $this->enrichOrderDetailForResponse($clientAccountId, $cachedPayload['order']),
+                        'client_account_id' => $clientAccountId,
                         'cached' => true,
                         'cached_at' => $cachedPayload['cached_at'],
                     ]);
@@ -470,6 +471,7 @@ class OrderController extends Controller
 
             return response()->json([
                 'order' => $order,
+                'client_account_id' => $clientAccountId,
                 'cached' => false,
             ]);
         } catch (ValidationException $e) {
@@ -492,6 +494,7 @@ class OrderController extends Controller
 
                 return response()->json([
                     'order' => $this->enrichOrderDetailForResponse($clientAccountId, $fallbackOrder),
+                    'client_account_id' => $clientAccountId,
                     'fallback' => [
                         'source' => 'orders_list_summary',
                     ],

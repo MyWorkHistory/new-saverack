@@ -37,6 +37,8 @@ const skipOrderLoadFromRouteWatch = ref(false);
 const { markRefreshed, lastRefreshedLabel, lastRefreshedAt } = usePortalLastRefreshed();
 const order = ref(null);
 const selectedAccountId = ref(String(route.query.client_account_id || ""));
+/** Set from order detail API / session when URL omits client_account_id (common on portal). */
+const lastOrderAccountId = ref(Number(route.query.client_account_id || 0) || 0);
 const loadError = ref("");
 const loadNotice = ref("");
 const activeLoadKey = ref("");
@@ -152,6 +154,53 @@ const orderId = computed(() => String(route.params.shipheroOrderId || ""));
 
 const isPortalUser = computed(() => crmIsPortalUser(crmUser.value));
 const portalClientAccountId = computed(() => Number(crmUser.value?.client_account_id || 0));
+const isUserPortalRoute = computed(() => route.meta?.userPortal === true);
+
+function accountIdFromSessionSnapshot() {
+  const oid = orderId.value;
+  if (!oid) return 0;
+  const prefix = "orders.snapshot.";
+  const suffix = `.${oid}`;
+  try {
+    for (let i = 0; i < sessionStorage.length; i++) {
+      const key = sessionStorage.key(i);
+      if (!key?.startsWith(prefix) || !key.endsWith(suffix)) continue;
+      const accountPart = key.slice(prefix.length, key.length - suffix.length);
+      const id = Number(accountPart || 0);
+      if (id > 0) return id;
+    }
+  } catch (_) {
+    /* ignore quota / private mode */
+  }
+  return 0;
+}
+
+function resolveClientAccountIdForOrderContext() {
+  const sources = [
+    route.query.client_account_id,
+    selectedAccountId.value,
+    lastOrderAccountId.value,
+    crmUser.value?.client_account_id,
+  ];
+  if (isUserPortalRoute.value || isPortalUser.value) {
+    sources.push(accountIdFromSessionSnapshot());
+  }
+  for (const raw of sources) {
+    const id = Number(raw || 0);
+    if (id > 0) return id;
+  }
+  return 0;
+}
+
+function applyOrderDetailAccountMeta(data) {
+  const id = Number(data?.client_account_id ?? 0);
+  if (id <= 0) return;
+  lastOrderAccountId.value = id;
+  const next = String(id);
+  if (selectedAccountId.value !== next) {
+    selectedAccountId.value = next;
+  }
+}
 
 const headingOrderNumber = computed(() => String(order.value?.order_number || "—").replace(/^#\s*/, ""));
 const statusClass = computed(() => {
@@ -190,13 +239,15 @@ const canViewProductCatalog = computed(() => {
   return keys.includes("inventory.view");
 });
 
-const catalogClientAccountId = computed(() => inventoryClientAccountIdForDetail());
+const catalogClientAccountId = computed(() => resolveClientAccountIdForOrderContext());
+
+const hasOrderAccountContext = computed(() => catalogClientAccountId.value > 0);
 
 const addItemsCatalogDeniedMessage = computed(() => {
   if (!canViewProductCatalog.value) {
     return "Inventory view permission is required to pick SKUs from the catalog.";
   }
-  if (catalogClientAccountId.value <= 0) {
+  if (catalogClientAccountId.value <= 0 && !isUserPortalRoute.value && !isPortalUser.value) {
     return "Select a client account to load products. Open this order from the Orders list or add ?client_account_id= to the URL.";
   }
 
@@ -204,7 +255,9 @@ const addItemsCatalogDeniedMessage = computed(() => {
 });
 
 const canCreateCatalogSku = computed(
-  () => canViewProductCatalog.value && catalogClientAccountId.value > 0,
+  () =>
+    canViewProductCatalog.value
+    && (catalogClientAccountId.value > 0 || isUserPortalRoute.value || isPortalUser.value),
 );
 
 const addItemsCreateSkuRoute = computed(() => {
@@ -434,11 +487,7 @@ const sortedItems = computed(() => {
 });
 
 function inventoryClientAccountIdForDetail() {
-  if (isPortalUser.value) {
-    const id = portalClientAccountId.value || Number(selectedAccountId.value || 0);
-    return id > 0 ? id : 0;
-  }
-  return Number(selectedAccountId.value || 0);
+  return resolveClientAccountIdForOrderContext();
 }
 
 function inventoryDetailRouteForItem(item) {
@@ -792,11 +841,15 @@ function applyLastRefreshedFromResponse(data, didRefresh) {
 async function loadOrder({ refresh = false } = {}) {
   loadError.value = "";
   loadNotice.value = "";
-  if (!selectedAccountId.value || !orderId.value) {
+  const accountId = resolveClientAccountIdForOrderContext();
+  if (accountId <= 0 || !orderId.value) {
     order.value = null;
     return;
   }
-  const requestKey = `${selectedAccountId.value}:${orderId.value}:${refresh ? "r" : "c"}`;
+  if (!selectedAccountId.value) {
+    selectedAccountId.value = String(accountId);
+  }
+  const requestKey = `${accountId}:${orderId.value}:${refresh ? "r" : "c"}`;
   if ((loading.value || refreshing.value) && activeLoadKey.value === requestKey) {
     return;
   }
@@ -812,13 +865,14 @@ async function loadOrder({ refresh = false } = {}) {
   }
   itemMenuOpenId.value = null;
   try {
-    const params = { client_account_id: Number(selectedAccountId.value) };
+    const params = { client_account_id: accountId };
     if (refresh) params.refresh = 1;
     const { data } = await api.get(`/orders/${encodeURIComponent(orderId.value)}`, { params });
+    applyOrderDetailAccountMeta(data);
     order.value = data?.order ?? null;
     if (order.value) {
       recordOrderDetailFetchedAt();
-      if (isPortalUser.value) {
+      if (isPortalUser.value || isUserPortalRoute.value) {
         applyLastRefreshedFromResponse(data, refresh);
       }
     }
@@ -885,7 +939,7 @@ watch(
       skipOrderLoadFromRouteWatch.value = false;
       return;
     }
-    if (selectedAccountId.value && orderId.value) {
+    if (resolveClientAccountIdForOrderContext() > 0 && orderId.value) {
       const forceRefresh =
         route.query.refresh === "1" || route.query.refresh === 1 || route.query.refresh === true;
       void loadOrder({ refresh: forceRefresh }).then(() => {
@@ -1378,11 +1432,11 @@ async function submitAddNewSku() {
   }
   addNewSkuBusy.value = true;
   try {
-    await api.post("/inventory/catalog-products", {
-      client_account_id: accountId,
-      sku,
-      name,
-    });
+    const body = { sku, name };
+    if (accountId > 0) {
+      body.client_account_id = accountId;
+    }
+    await api.post("/inventory/catalog-products", body);
     toast.success("SKU created in ShipHero.");
     addNewSkuOpen.value = false;
     addItemsCatalogPanelKey.value += 1;
@@ -1590,7 +1644,7 @@ function goToOrdersList() {
       <CrmLoadingSpinner message="Loading order detail..." :center="true" />
     </div>
     <template v-else>
-    <div v-if="!selectedAccountId" class="alert alert-light border mb-4" role="status">
+    <div v-if="!hasOrderAccountContext" class="alert alert-light border mb-4" role="status">
       <span class="small"
         >This page needs a client account. Open the order from the Orders list, or add
         <code>?client_account_id=…</code> to the URL.</span>
@@ -2478,6 +2532,7 @@ function goToOrdersList() {
                 <AsnProductCatalogPanel
                   :key="addItemsCatalogPanelKey"
                   :client-account-id="catalogClientAccountId"
+                  :use-session-client-account="isUserPortalRoute || isPortalUser"
                   :active="addItemsModalOpen"
                   :busy="addItemsBusy"
                   :permission-denied-message="addItemsCatalogDeniedMessage"

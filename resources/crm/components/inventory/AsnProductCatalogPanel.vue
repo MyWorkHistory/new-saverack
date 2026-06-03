@@ -15,6 +15,8 @@ const props = defineProps({
   permissionDeniedMessage: { type: String, default: "" },
   /** Optional route for “Create SKU” when the catalog is empty (e.g. On-Demand admin page). */
   createSkuRoute: { type: Object, default: null },
+  /** Portal: omit client_account_id on API; server uses the signed-in account. */
+  useSessionClientAccount: { type: Boolean, default: false },
 });
 
 const resolvedAccountId = computed(() => Number(props.clientAccountId || 0));
@@ -39,14 +41,14 @@ const {
   loadMoreCatalog,
   loadCatalogRows,
   refreshCatalogProducts,
-} = useAsnProductCatalog(() => props.clientAccountId);
+} = useAsnProductCatalog(() => resolvedAccountId.value, () => props.useSessionClientAccount);
 
 watch(
-  () => [props.active, props.clientAccountId, props.permissionDeniedMessage],
-  ([active, accountId, denied]) => {
+  () => [props.active, resolvedAccountId.value, props.permissionDeniedMessage, props.useSessionClientAccount],
+  ([active, accountId, denied, useSession]) => {
     if (!active) return;
     if (denied) return;
-    if (!Number(accountId || 0)) return;
+    if (!Number(accountId || 0) && !useSession) return;
     resetCatalogSearchState();
     loadCatalogRows(true);
   },
@@ -160,7 +162,7 @@ watch(
               </div>
             </div>
             <div v-if="catalog.length === 0" class="p-3 small text-secondary">
-              <template v-if="!resolvedAccountId">
+              <template v-if="!resolvedAccountId && !useSessionClientAccount">
                 Client account is required to load products. Open this order from the Orders list with a client account selected.
               </template>
               <template v-else-if="catalogSearchCommitted">

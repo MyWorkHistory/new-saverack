@@ -106,6 +106,9 @@ function normalizeRows(list) {
 }
 
 async function fetchPage(append, forceRefresh = false) {
+  if (isStaffPickerMode.value && !selectedAccountId.value) {
+    crossAccountMode.value = true;
+  }
   if (!canLoadInventory.value) return;
   const params = {
     first: LIST_PAGE_SIZE,
@@ -161,6 +164,9 @@ async function fetchPage(append, forceRefresh = false) {
 }
 
 async function loadRows(reset, forceRefresh = false) {
+  if (isStaffPickerMode.value && !selectedAccountId.value) {
+    crossAccountMode.value = true;
+  }
   if (!canLoadInventory.value) return;
   const runId = reset ? ++searchRunSeq : searchRunSeq;
   const previousRows = forceRefresh ? rows.value : [];
@@ -697,7 +703,7 @@ onUnmounted(() => {
               <button
                 type="button"
                 class="btn btn-primary staff-page-primary orders-toolbar-search-btn"
-                :disabled="loading || (isStaffPickerMode && !selectedAccountId)"
+                :disabled="loading"
                 @click="commitSearch"
               >
                 Search

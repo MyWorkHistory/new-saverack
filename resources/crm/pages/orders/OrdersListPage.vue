@@ -411,9 +411,12 @@ async function loadAccounts() {
 }
 
 async function fetchOrders(reset = true) {
+  if (isAdminOrdersList.value && !selectedAccountId.value) {
+    crossAccountMode.value = true;
+  }
   const canLoad = isOrdersSearchPage.value
     ? Boolean(committedOrderNumber.value)
-    : selectedAccountId.value || (isAdminOrdersList.value && crossAccountMode.value);
+    : selectedAccountId.value || isAdminOrdersList.value;
   if (!canLoad) {
     if (reset) {
       rows.value = [];
@@ -1033,7 +1036,7 @@ watch(
   () => [query.datePreset, query.from, query.to, query.fulfillmentStatus, query.readyToShip, query.holdReason],
   () => {
     if (!showManageFilters.value) return;
-    if (!selectedAccountId.value && !crossAccountMode.value) return;
+    if (!selectedAccountId.value && !crossAccountMode.value && !hasSearched.value) return;
     fetchOrders(true);
   },
 );
@@ -1073,11 +1076,11 @@ onUnmounted(() => {
           ({{ displayedRows.length }} {{ displayedRows.length === 1 ? "order" : "orders" }})
         </span>
       </h1>
-      <p v-if="isOrdersSearchPage" class="staff-page__intro mb-0 text-secondary small">
+      <p v-if="isOrdersSearchPage" class="text-secondary small mb-0">
         Optionally select an account, enter an order number, and click Search. Results appear only after you
         search. ShipHero also matches storefront IDs on partner order ID when applicable.
       </p>
-      <p v-else-if="!isPortalOrderList" class="staff-page__intro mb-0 text-secondary small">
+      <p v-else-if="!isPortalOrderList" class="text-secondary small mb-0">
         Search across all accounts, or pick an account to filter. Leave order # blank and click Search to load
         recent orders (up to 100, may be partial).
       </p>
@@ -1760,14 +1763,5 @@ onUnmounted(() => {
   width: min(18rem, 100%);
 }
 
-.orders-list-page__subtitle {
-  font-size: 0.8125rem;
-  font-weight: 500;
-  color: var(--bs-secondary-color, #6c757d);
-}
-
-[data-bs-theme="dark"] .orders-list-page__subtitle {
-  color: #fff !important;
-}
 </style>
 

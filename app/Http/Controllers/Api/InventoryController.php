@@ -9,6 +9,8 @@ use App\Models\ClientAccountOnDemandProduct;
 use App\Services\ShipHeroClient;
 use App\Services\InventoryProductDetailCacheService;
 use App\Services\InventoryRestockReportService;
+use App\Models\User;
+use App\Services\CrossAccountInventoryListService;
 use App\Services\ShipHeroInventoryService;
 use App\Services\ShipHeroOrderService;
 use App\Support\Barcode\Code128Svg;
@@ -33,17 +35,21 @@ class InventoryController extends Controller
     protected $orders;
     /** @var InventoryProductDetailCacheService */
     protected $detailCache;
+    /** @var CrossAccountInventoryListService */
+    protected $crossAccountInventory;
 
     public function __construct(
         ShipHeroInventoryService $inventory,
         ShipHeroClient $shipHeroClient,
         ShipHeroOrderService $orders,
-        InventoryProductDetailCacheService $detailCache
+        InventoryProductDetailCacheService $detailCache,
+        CrossAccountInventoryListService $crossAccountInventory
     ) {
         $this->inventory = $inventory;
         $this->shipHeroClient = $shipHeroClient;
         $this->orders = $orders;
         $this->detailCache = $detailCache;
+        $this->crossAccountInventory = $crossAccountInventory;
     }
 
     public function clientAccountOptions(): JsonResponse
@@ -638,7 +644,7 @@ class InventoryController extends Controller
     public function list(Request $request): JsonResponse
     {
         $validated = $request->validate([
-            'client_account_id' => ['required', 'integer', 'exists:client_accounts,id'],
+            'client_account_id' => ['nullable', 'integer', 'exists:client_accounts,id'],
             'first' => ['nullable', 'integer', 'min:1', 'max:200'],
             'after' => ['nullable', 'string', 'max:500'],
             'kits' => ['nullable', 'string', Rule::in(['all', 'yes', 'no'])],
@@ -648,7 +654,52 @@ class InventoryController extends Controller
             'backorder_only' => ['nullable', 'boolean'],
             'refresh' => ['nullable', 'boolean'],
         ]);
-        $clientAccountId = (int) $validated['client_account_id'];
+
+        $user = $request->user();
+        if (! $user instanceof User) {
+            abort(401);
+        }
+
+        $clientAccountId = isset($validated['client_account_id'])
+            ? (int) $validated['client_account_id']
+            : 0;
+
+        if ($clientAccountId <= 0) {
+            if ((int) ($user->client_account_id ?? 0) > 0) {
+                throw ValidationException::withMessages([
+                    'client_account_id' => ['Select your account to load inventory.'],
+                ]);
+            }
+
+            if (! empty($validated['after'])) {
+                throw ValidationException::withMessages([
+                    'after' => ['Load more is not available when searching all accounts. Select an account to paginate.'],
+                ]);
+            }
+
+            try {
+                $payload = $this->crossAccountInventory->list($user, $validated);
+
+                return response()->json([
+                    'rows' => $payload['rows'],
+                    'page_info' => $payload['page_info'],
+                    'meta' => $payload['meta'],
+                ]);
+            } catch (ValidationException $e) {
+                throw $e;
+            } catch (RuntimeException $e) {
+                return response()->json(['message' => $e->getMessage()], 502);
+            } catch (Throwable $e) {
+                report($e);
+
+                return response()->json([
+                    'message' => config('app.debug')
+                        ? $e->getMessage()
+                        : 'Could not reach ShipHero inventory API.',
+                ], 502);
+            }
+        }
+
         $first = isset($validated['first']) ? (int) $validated['first'] : 100;
         $after = isset($validated['after']) && is_string($validated['after']) ? $validated['after'] : null;
         $kits = isset($validated['kits']) && is_string($validated['kits']) ? $validated['kits'] : 'all';

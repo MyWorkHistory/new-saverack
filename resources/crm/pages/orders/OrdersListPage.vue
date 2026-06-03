@@ -33,6 +33,7 @@ const accounts = ref([]);
 const selectedAccountId = ref("");
 /** Admin staff: last search ran without a specific account (all accounts / order # lookup). */
 const crossAccountMode = ref(false);
+const crossAccountScanTruncated = ref(false);
 const hasSearched = ref(false);
 const nextCursor = ref(null);
 const hasNextPage = ref(false);
@@ -440,10 +441,19 @@ async function fetchOrders(reset = true) {
     if (crossAccount) {
       crossAccountMode.value = true;
     }
-    if (crossAccount && data?.meta?.scan_truncated && !incoming.length && committedOrderNumber.value) {
-      toast.error(
-        "No match in the accounts searched (scan capped for speed). Select an account and search again.",
-      );
+    crossAccountScanTruncated.value = Boolean(data?.meta?.scan_truncated);
+    if (crossAccount && data?.meta?.scan_truncated) {
+      if (!incoming.length && committedOrderNumber.value) {
+        toast.error(
+          "No match in the accounts searched (scan capped for speed). Select an account and search again.",
+        );
+      } else if (!incoming.length && !committedOrderNumber.value) {
+        toast.error(
+          "No orders returned from the accounts searched (scan capped for speed). Select an account or try again.",
+        );
+      }
+    } else {
+      crossAccountScanTruncated.value = false;
     }
     hasNextPage.value = crossAccount ? false : Boolean(data?.pagination?.has_next_page);
     nextCursor.value = crossAccount ? null : data?.pagination?.end_cursor || null;
@@ -1057,7 +1067,7 @@ onUnmounted(() => {
       <h1 class="h4 mb-1 fw-semibold text-body">
         <span>Orders - {{ tabTitle }}</span>
         <span
-          v-if="selectedAccountId && hasSearched"
+          v-if="(selectedAccountId || crossAccountMode) && hasSearched"
           class="small text-secondary fw-normal ms-1"
         >
           ({{ displayedRows.length }} {{ displayedRows.length === 1 ? "order" : "orders" }})
@@ -1069,8 +1079,17 @@ onUnmounted(() => {
       </p>
       <p v-else-if="!isPortalOrderList" class="staff-page__intro mb-0 text-secondary small">
         Search across all accounts, or pick an account to filter. Leave order # blank and click Search to load
-        recent orders (up to 100).
+        recent orders (up to 100, may be partial).
       </p>
+    </div>
+
+    <div
+      v-if="crossAccountMode && crossAccountScanTruncated && hasSearched && displayedRows.length > 0"
+      class="alert alert-warning small py-2 mb-3"
+      role="status"
+    >
+      Showing partial results — not all accounts were scanned within the time limit. Select an account for a
+      complete list.
     </div>
 
     <div class="staff-table-card staff-datatable-card staff-datatable-card--white w-100 orders-page-toolbar">

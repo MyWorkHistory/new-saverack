@@ -4,12 +4,19 @@ namespace App\Services;
 
 use App\Models\ClientAccount;
 use App\Models\User;
+use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Gate;
 use RuntimeException;
 use Throwable;
 
 class OrderSkuLookupService
 {
+    /** Max accounts scanned per header lookup (matches cross-account order-number cap). */
+    private const MAX_LOOKUP_ACCOUNT_SCAN = 50;
+
+    /** Wall-clock budget for cross-account lookup (seconds). */
+    private const LOOKUP_WALL_SECONDS = 25;
+
     /** @var ShipHeroOrderService */
     private $orders;
 
@@ -61,7 +68,7 @@ class OrderSkuLookupService
     }
 
     /**
-     * Search all client accounts the user may view until an exact order or SKU match is found.
+     * Search client accounts the user may view until an exact order or SKU match is found.
      *
      * @return array<string, mixed>|null
      */
@@ -72,9 +79,67 @@ class OrderSkuLookupService
             return null;
         }
 
-        $accounts = ClientAccount::query()
+        $accounts = $this->eligibleAccounts($user);
+        $deadline = microtime(true) + self::LOOKUP_WALL_SECONDS;
+        $orderMatches = [];
+
+        foreach ($accounts as $account) {
+            if (microtime(true) >= $deadline) {
+                break;
+            }
+
+            try {
+                $customerId = $this->resolveShipHeroCustomerAccountId($account);
+            } catch (RuntimeException $e) {
+                continue;
+            }
+
+            $orderMatch = $this->findExactOrder($customerId, (int) $account->id, $normalized);
+            if ($orderMatch === null) {
+                continue;
+            }
+            if (! empty($orderMatch['multiple'])) {
+                return $orderMatch;
+            }
+            $orderMatches[] = $orderMatch;
+            if (count($orderMatches) > 1) {
+                return ['multiple' => true];
+            }
+        }
+
+        if (count($orderMatches) === 1) {
+            return $orderMatches[0];
+        }
+
+        foreach ($accounts as $account) {
+            if (microtime(true) >= $deadline) {
+                break;
+            }
+
+            try {
+                $customerId = $this->resolveShipHeroCustomerAccountId($account);
+            } catch (RuntimeException $e) {
+                continue;
+            }
+
+            $skuMatch = $this->findExactSku($customerId, (int) $account->id, $normalized);
+            if ($skuMatch !== null) {
+                return $skuMatch;
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * @return Collection<int, ClientAccount>
+     */
+    private function eligibleAccounts(User $user): Collection
+    {
+        return ClientAccount::query()
             ->whereNotNull('shiphero_customer_account_id')
             ->where('shiphero_customer_account_id', '!=', '')
+            ->orderBy('company_name')
             ->orderBy('id')
             ->get()
             ->filter(static function (ClientAccount $account) use ($user) {
@@ -87,43 +152,9 @@ class OrderSkuLookupService
 
                 return Gate::forUser($user)->check('orders.view')
                     || Gate::forUser($user)->check('inventory.view');
-            });
-
-        $orderMatches = [];
-        $skuMatch = null;
-
-        foreach ($accounts as $account) {
-            try {
-                $customerId = $this->resolveShipHeroCustomerAccountId($account);
-            } catch (RuntimeException $e) {
-                continue;
-            }
-
-            $match = $this->lookup($account->id, $customerId, $normalized);
-            if ($match === null) {
-                continue;
-            }
-            if (! empty($match['multiple'])) {
-                return $match;
-            }
-            if (($match['type'] ?? '') === 'order') {
-                $orderMatches[] = $match;
-
-                continue;
-            }
-            if (($match['type'] ?? '') === 'sku' && $skuMatch === null) {
-                $skuMatch = $match;
-            }
-        }
-
-        if (count($orderMatches) > 1) {
-            return ['multiple' => true];
-        }
-        if (count($orderMatches) === 1) {
-            return $orderMatches[0];
-        }
-
-        return $skuMatch;
+            })
+            ->values()
+            ->take(self::MAX_LOOKUP_ACCOUNT_SCAN);
     }
 
     private function normalizeOrderNumber(string $raw): string

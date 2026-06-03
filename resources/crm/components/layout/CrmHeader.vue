@@ -2,6 +2,7 @@
 import { computed, onMounted, onUnmounted, ref, watch } from "vue";
 import { RouterLink, useRouter } from "vue-router";
 import api from "../../services/api";
+import CrmSearchableSelect from "../common/CrmSearchableSelect.vue";
 import { BRAND_MARK_SRC } from "../../utils/brandAssets.js";
 import { useCrmSidebar } from "../../composables/useCrmSidebar";
 import UserEditModal from "../users/UserEditModal.vue";
@@ -20,10 +21,23 @@ const { isMobileOpen, toggleSidebar } = useCrmSidebar();
 const markSrc = computed(() => BRAND_MARK_SRC());
 
 const isPortalUser = computed(() => (props.user?.client_account_id ?? 0) > 0);
+
+const staffLookupAccountOptions = computed(() =>
+  (staffLookupAccounts.value || [])
+    .filter((a) => a?.has_shiphero_customer)
+    .map((a) => ({
+      id: a.id,
+      name: a.company_name || `Account #${a.id}`,
+      email: a.email ? String(a.email) : "",
+    })),
+);
 const portalSearch = ref("");
 const portalSearchLoading = ref(false);
 const staffSearch = ref("");
 const staffSearchLoading = ref(false);
+const staffLookupAccountId = ref("");
+const staffLookupAccountsLoading = ref(false);
+const staffLookupAccounts = ref([]);
 
 const menuOpen = ref(false);
 const menuRoot = ref(null);
@@ -90,14 +104,28 @@ function signOut() {
   emit("logout");
 }
 
+async function loadStaffLookupAccounts() {
+  staffLookupAccountsLoading.value = true;
+  try {
+    const { data } = await api.get("/inventory/client-account-options");
+    staffLookupAccounts.value = Array.isArray(data?.accounts) ? data.accounts : [];
+  } catch (_) {
+    staffLookupAccounts.value = [];
+  } finally {
+    staffLookupAccountsLoading.value = false;
+  }
+}
+
 async function submitStaffSearch() {
   const q = staffSearch.value.trim();
   if (!q || staffSearchLoading.value) return;
   staffSearchLoading.value = true;
   try {
-    const { data } = await api.get("/crm/lookup", {
-      params: { query: q },
-    });
+    const params = { query: q };
+    if (Number(staffLookupAccountId.value || 0) > 0) {
+      params.client_account_id = Number(staffLookupAccountId.value);
+    }
+    const { data } = await api.get("/crm/lookup", { params });
     const accountId = data?.client_account_id;
     if (data?.type === "order") {
       const query =
@@ -186,6 +214,9 @@ function onPortalSearchKeydown(e) {
 
 onMounted(() => {
   document.addEventListener("click", onDocClick);
+  if (!isPortalUser.value) {
+    loadStaffLookupAccounts();
+  }
 });
 
 onUnmounted(() => {
@@ -391,6 +422,19 @@ onUnmounted(() => {
           <div
             class="crm-portal-navbar-search d-flex align-items-center gap-2 flex-grow-1 min-w-0"
           >
+            <CrmSearchableSelect
+              v-model="staffLookupAccountId"
+              class="staff-toolbar-search staff-toolbar-search--inline flex-shrink-0 crm-header-lookup-account"
+              appearance="staff"
+              aria-label="Limit search to account"
+              :options="staffLookupAccountOptions"
+              :disabled="staffLookupAccountsLoading || staffSearchLoading"
+              placeholder="All accounts"
+              search-placeholder="Search accounts…"
+              :allow-empty="true"
+              empty-label="All accounts"
+              button-id="crm-header-lookup-account-trigger"
+            />
             <div class="vx-search-merge flex-grow-1 min-w-0">
               <div class="input-group">
                 <span class="input-group-text border-end-0">

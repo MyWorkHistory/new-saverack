@@ -4,6 +4,7 @@ namespace App\Services;
 
 use App\Models\ClientAccount;
 use App\Models\User;
+use App\Support\TimeBudgetedFanout;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Gate;
@@ -55,6 +56,8 @@ class CrossAccountOrderListService
                 'meta' => [
                     'cross_account' => true,
                     'accounts_queried' => 0,
+                    'accounts_total' => 0,
+                    'scan_truncated' => false,
                 ],
             ];
         }
@@ -100,44 +103,40 @@ class CrossAccountOrderListService
      */
     private function listByOrderNumber(Collection $accounts, array $filters, string $orderNumber): array
     {
-        $rows = [];
-        $queried = 0;
         $accountsTotal = $accounts->count();
         $deadline = microtime(true) + self::CROSS_ACCOUNT_WALL_SECONDS;
-        $scanTruncated = false;
+        $rows = [];
+        $matchCount = 0;
 
-        foreach ($accounts as $account) {
-            if (microtime(true) >= $deadline) {
-                $scanTruncated = true;
-                break;
-            }
-            $queried++;
-            try {
-                $customerId = trim((string) $account->shiphero_customer_account_id);
-                $payload = $this->fetchAccountList($account, $customerId, $filters, $orderNumber, null);
-            } catch (RuntimeException $e) {
-                continue;
-            } catch (Throwable $e) {
-                report($e);
+        $fanout = TimeBudgetedFanout::run(
+            $accounts,
+            function (ClientAccount $account) use ($filters, $orderNumber, &$rows, &$matchCount) {
+                try {
+                    $customerId = trim((string) $account->shiphero_customer_account_id);
+                    $payload = $this->fetchAccountList($account, $customerId, $filters, $orderNumber, null);
+                } catch (RuntimeException $e) {
+                    return null;
+                } catch (Throwable $e) {
+                    report($e);
 
-                continue;
-            }
-
-            foreach ($payload['rows'] ?? [] as $row) {
-                if (! is_array($row)) {
-                    continue;
+                    return null;
                 }
-                $rows[] = $this->annotateRow($row, $account);
-            }
 
-            if (count($rows) >= self::MAX_ORDER_NUMBER_MATCHES) {
-                break;
-            }
-        }
+                foreach ($payload['rows'] ?? [] as $row) {
+                    if (! is_array($row)) {
+                        continue;
+                    }
+                    $rows[] = $this->annotateRow($row, $account);
+                    $matchCount++;
+                }
 
-        if ($queried < $accountsTotal) {
-            $scanTruncated = true;
-        }
+                return null;
+            },
+            $deadline,
+            static function () use (&$matchCount) {
+                return $matchCount >= self::MAX_ORDER_NUMBER_MATCHES;
+            }
+        );
 
         $rows = $this->sortRows($rows);
         $rows = array_slice($rows, 0, self::MAX_MERGED_ROWS);
@@ -150,10 +149,10 @@ class CrossAccountOrderListService
             ],
             'meta' => [
                 'cross_account' => true,
-                'accounts_queried' => $queried,
+                'accounts_queried' => $fanout['processed'],
                 'accounts_total' => $accountsTotal,
                 'accounts_scan_limit' => self::MAX_ORDER_NUMBER_ACCOUNT_SCAN,
-                'scan_truncated' => $scanTruncated,
+                'scan_truncated' => $fanout['truncated'],
                 'order_number' => $orderNumber,
             ],
         ];
@@ -166,34 +165,36 @@ class CrossAccountOrderListService
      */
     private function listMergedAcrossAccounts(Collection $accounts, array $filters): array
     {
-        $rows = [];
-        $queried = 0;
-        $perAccountFirst = max(5, (int) floor(self::MAX_MERGED_ROWS / max(1, $accounts->count())));
+        $accountsTotal = $accounts->count();
+        $perAccountFirst = max(5, (int) floor(self::MAX_MERGED_ROWS / max(1, $accountsTotal)));
         $deadline = microtime(true) + self::CROSS_ACCOUNT_WALL_SECONDS;
+        $rows = [];
 
-        foreach ($accounts as $account) {
-            if (microtime(true) >= $deadline) {
-                break;
-            }
-            $queried++;
-            try {
-                $customerId = trim((string) $account->shiphero_customer_account_id);
-                $payload = $this->fetchAccountList($account, $customerId, $filters, null, $perAccountFirst);
-            } catch (RuntimeException $e) {
-                continue;
-            } catch (Throwable $e) {
-                report($e);
+        $fanout = TimeBudgetedFanout::run(
+            $accounts,
+            function (ClientAccount $account) use ($filters, $perAccountFirst, &$rows) {
+                try {
+                    $customerId = trim((string) $account->shiphero_customer_account_id);
+                    $payload = $this->fetchAccountList($account, $customerId, $filters, null, $perAccountFirst);
+                } catch (RuntimeException $e) {
+                    return null;
+                } catch (Throwable $e) {
+                    report($e);
 
-                continue;
-            }
-
-            foreach ($payload['rows'] ?? [] as $row) {
-                if (! is_array($row)) {
-                    continue;
+                    return null;
                 }
-                $rows[] = $this->annotateRow($row, $account);
-            }
-        }
+
+                foreach ($payload['rows'] ?? [] as $row) {
+                    if (! is_array($row)) {
+                        continue;
+                    }
+                    $rows[] = $this->annotateRow($row, $account);
+                }
+
+                return null;
+            },
+            $deadline
+        );
 
         $rows = $this->sortRows($rows);
         $rows = array_slice($rows, 0, self::MAX_MERGED_ROWS);
@@ -206,7 +207,10 @@ class CrossAccountOrderListService
             ],
             'meta' => [
                 'cross_account' => true,
-                'accounts_queried' => $queried,
+                'accounts_queried' => $fanout['processed'],
+                'accounts_total' => $accountsTotal,
+                'accounts_scan_limit' => self::MAX_ACCOUNTS_PER_REQUEST,
+                'scan_truncated' => $fanout['truncated'],
             ],
         ];
     }

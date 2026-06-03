@@ -17,6 +17,8 @@ const isPortalList = computed(() => route.meta?.userPortal === true);
 const isStaffPickerMode = computed(() => !isPortalList.value);
 
 const selectedAccountId = ref("");
+const crossAccountMode = ref(false);
+const crossAccountScanTruncated = ref(false);
 const accountsLoading = ref(false);
 const accounts = ref([]);
 const hasSearched = ref(false);
@@ -62,6 +64,19 @@ const accountId = computed(() => {
   return Number(crmUser.value?.client_account_id || 0);
 });
 
+function effectiveRowAccountId(row = null) {
+  const fromRow = Number(row?.client_account_id || 0);
+  if (fromRow > 0) return fromRow;
+  return accountId.value;
+}
+
+const canLoadInventory = computed(() => {
+  if (isPortalList.value) return accountId.value > 0;
+  return accountId.value > 0 || crossAccountMode.value;
+});
+
+const tableColspan = computed(() => (crossAccountMode.value ? 9 : 8));
+
 const accountOptions = computed(() =>
   (accounts.value || [])
     .filter((a) => a?.has_shiphero_customer)
@@ -79,7 +94,11 @@ const canInventoryUpdate = computed(() => {
 });
 
 function rowKey(row) {
-  return `${String(row?.sku || "")}\u0000${String(row?.warehouse_id ?? "")}`;
+  const accountPart =
+    crossAccountMode.value && Number(row?.client_account_id || 0) > 0
+      ? `${row.client_account_id}\u0000`
+      : "";
+  return `${accountPart}${String(row?.sku || "")}\u0000${String(row?.warehouse_id ?? "")}`;
 }
 
 function normalizeRows(list) {
@@ -87,13 +106,15 @@ function normalizeRows(list) {
 }
 
 async function fetchPage(append, forceRefresh = false) {
-  if (!accountId.value) return;
+  if (!canLoadInventory.value) return;
   const params = {
-    client_account_id: accountId.value,
     first: LIST_PAGE_SIZE,
     kits: filters.kits,
     active_status: filters.activeStatus,
   };
+  if (!crossAccountMode.value && accountId.value > 0) {
+    params.client_account_id = accountId.value;
+  }
   if (append && pageInfo.value?.end_cursor) {
     params.after = pageInfo.value.end_cursor;
   }
@@ -107,9 +128,15 @@ async function fetchPage(append, forceRefresh = false) {
   }
   const { data } = await api.get("/inventory/list", { params });
   const chunk = normalizeRows(data?.rows);
+  if (Boolean(data?.meta?.cross_account)) {
+    crossAccountMode.value = true;
+  }
+  crossAccountScanTruncated.value = Boolean(data?.meta?.scan_truncated);
   pageInfo.value = {
-    has_next_page: Boolean(data?.page_info?.has_next_page),
-    end_cursor: data?.page_info?.end_cursor ?? null,
+    has_next_page: crossAccountMode.value
+      ? false
+      : Boolean(data?.page_info?.has_next_page),
+    end_cursor: crossAccountMode.value ? null : data?.page_info?.end_cursor ?? null,
   };
   if (q && typeof data?.page_info?.next_search_skip === "number") {
     searchSkipNext.value = Number(data.page_info.next_search_skip);
@@ -134,7 +161,7 @@ async function fetchPage(append, forceRefresh = false) {
 }
 
 async function loadRows(reset, forceRefresh = false) {
-  if (!accountId.value) return;
+  if (!canLoadInventory.value) return;
   const runId = reset ? ++searchRunSeq : searchRunSeq;
   const previousRows = forceRefresh ? rows.value : [];
   if (reset) {
@@ -163,7 +190,12 @@ async function loadRows(reset, forceRefresh = false) {
     loadingMore.value = false;
     refreshing.value = false;
   }
-  if (reset && searchCommitted.value.trim() && pageInfo.value.has_next_page) {
+  if (
+    reset &&
+    searchCommitted.value.trim() &&
+    pageInfo.value.has_next_page &&
+    !crossAccountMode.value
+  ) {
     continueSearchInBackground(runId);
   }
 }
@@ -299,19 +331,19 @@ const bulkEligibleRows = computed(() =>
 );
 
 function commitSearch() {
-  if (isStaffPickerMode.value && !selectedAccountId.value) {
-    toast.error("Select an account to load inventory.");
-    return;
+  if (isStaffPickerMode.value) {
+    crossAccountMode.value = !selectedAccountId.value;
+    hasSearched.value = true;
   }
   searchCommitted.value = searchDraft.value.trim();
-  if (isStaffPickerMode.value) hasSearched.value = true;
   loadRows(true);
 }
 
 function clearSearch() {
   if (!searchDraft.value && !searchCommitted.value) return;
-  if (isStaffPickerMode.value && !selectedAccountId.value) {
+  if (isStaffPickerMode.value && !canLoadInventory.value) {
     searchDraft.value = "";
+    searchCommitted.value = "";
     return;
   }
   searchDraft.value = "";
@@ -320,8 +352,11 @@ function clearSearch() {
 }
 
 async function refreshRows() {
-  if (!accountId.value || loading.value || loadingMore.value || refreshing.value) return;
-  if (isStaffPickerMode.value && !selectedAccountId.value) return;
+  if (!canLoadInventory.value || loading.value || loadingMore.value || refreshing.value) return;
+  if (crossAccountMode.value) {
+    toast.error("Select an account to refresh a single catalog.");
+    return;
+  }
   const previousRows = rows.value;
   const refreshId = ++refreshRunSeq;
   ++searchRunSeq;
@@ -355,8 +390,12 @@ async function refreshRows() {
 
 function applyFilters() {
   filterMenuOpen.value = false;
-  if (isStaffPickerMode.value && !selectedAccountId.value) return;
-  if (isStaffPickerMode.value) hasSearched.value = true;
+  if (isStaffPickerMode.value) {
+    crossAccountMode.value = !selectedAccountId.value;
+    hasSearched.value = true;
+    loadRows(true);
+    return;
+  }
   loadRows(true);
 }
 
@@ -364,8 +403,12 @@ function resetFilters() {
   filters.kits = "all";
   filters.activeStatus = "active";
   filterMenuOpen.value = false;
-  if (isStaffPickerMode.value && !selectedAccountId.value) return;
-  if (isStaffPickerMode.value) hasSearched.value = true;
+  if (isStaffPickerMode.value) {
+    crossAccountMode.value = !selectedAccountId.value;
+    hasSearched.value = true;
+    loadRows(true);
+    return;
+  }
   loadRows(true);
 }
 
@@ -379,6 +422,10 @@ function exportCsv(useSelected) {
 }
 
 async function bulkSetActive(active) {
+  if (!accountId.value) {
+    toast.error("Select an account for bulk updates.");
+    return;
+  }
   const items = bulkEligibleRows.value.map((r) => ({
     sku: String(r.sku || ""),
     warehouse_id: String(r.warehouse_id || ""),
@@ -425,16 +472,19 @@ function inventoryDetailTo(row) {
   if (!sku) {
     return { name: isPortalList.value ? "user-inventory" : "inventory" };
   }
+  const rowAccountId = effectiveRowAccountId(row);
+  const query = rowAccountId > 0 ? { client_account_id: String(rowAccountId) } : {};
   return {
     name: isPortalList.value ? "user-inventory-detail" : "inventory-detail",
     params: { sku },
-    query: { client_account_id: String(accountId.value) },
+    query,
   };
 }
 
 function inventoryDetailHref(row) {
   const sku = String(row?.sku || "").trim();
-  if (!sku || !accountId.value) return "#";
+  const rowAccountId = effectiveRowAccountId(row);
+  if (!sku || rowAccountId <= 0) return "#";
   return router.resolve(inventoryDetailTo(row)).href;
 }
 
@@ -514,6 +564,8 @@ watch(
   () => selectedAccountId.value,
   (accountIdVal, prev) => {
     if (!isStaffPickerMode.value) return;
+    crossAccountMode.value = false;
+    crossAccountScanTruncated.value = false;
     if (prev && accountIdVal !== prev) {
       searchDraft.value = "";
       searchCommitted.value = "";
@@ -561,7 +613,8 @@ onUnmounted(() => {
             Showing {{ LIST_PAGE_SIZE }} products per load. Search checks your full ShipHero catalog (not only this page).
           </template>
           <template v-else>
-            Select an account to load inventory using your current filters. Use Search to filter by SKU or product name.
+            Search across all accounts, or pick an account to filter. Click Search to load inventory (up to 100 rows,
+            may be partial).
           </template>
         </p>
       </div>
@@ -572,7 +625,7 @@ onUnmounted(() => {
         <button
         type="button"
         class="btn btn-outline-secondary btn-sm orders-toolbar-outline-btn d-inline-flex align-items-center gap-2"
-        :disabled="loading || loadingMore || refreshing || (isStaffPickerMode && !selectedAccountId)"
+        :disabled="loading || loadingMore || refreshing || (isStaffPickerMode && !canLoadInventory)"
         title="Refresh"
         aria-label="Refresh inventory from ShipHero"
         @click="refreshRows"
@@ -597,6 +650,15 @@ onUnmounted(() => {
       </div>
     </div>
 
+    <div
+      v-if="crossAccountMode && crossAccountScanTruncated && hasSearched && displayRows.length > 0"
+      class="alert alert-warning small py-2 mb-3"
+      role="status"
+    >
+      Showing partial results — not all accounts were scanned within the time limit. Select an account for a complete
+      catalog.
+    </div>
+
     <div class="staff-table-card staff-datatable-card staff-datatable-card--white w-100 inventory-list-toolbar">
       <div class="staff-table-toolbar">
         <div class="staff-table-toolbar--row inventory-toolbar-row">
@@ -611,10 +673,10 @@ onUnmounted(() => {
               aria-label="Client account"
               :options="accountOptions"
               :disabled="accountsLoading || loading"
-              placeholder="Select account"
+              placeholder="All accounts"
               search-placeholder="Search accounts…"
               :allow-empty="true"
-              empty-label="Select account"
+              empty-label="All accounts"
               button-id="inventory-list-account-trigger"
             />
           </div>
@@ -629,7 +691,7 @@ onUnmounted(() => {
                 autocomplete="off"
                 enterkeyhint="search"
                 aria-label="Search by SKU or product name"
-                :disabled="loading || (isStaffPickerMode && !selectedAccountId)"
+                :disabled="loading"
                 @keydown.enter.prevent="commitSearch"
               />
               <button
@@ -644,7 +706,7 @@ onUnmounted(() => {
                 v-if="searchDraft || searchCommitted"
                 type="button"
                 class="btn btn-outline-secondary orders-toolbar-search-btn"
-                :disabled="loading || (isStaffPickerMode && !selectedAccountId)"
+                :disabled="loading"
                 @click="clearSearch"
               >
                 Clear
@@ -656,7 +718,7 @@ onUnmounted(() => {
               type="button"
               class="btn btn-outline-secondary staff-toolbar-btn orders-toolbar-outline-btn d-inline-flex align-items-center gap-2"
               :aria-expanded="filterMenuOpen"
-              :disabled="loading || (isStaffPickerMode && !selectedAccountId)"
+              :disabled="loading"
               @click.stop="filterMenuOpen = !filterMenuOpen"
             >
               <svg
@@ -823,6 +885,13 @@ onUnmounted(() => {
               </th>
               <th class="staff-table-head__th text-center user-inv-table__image-col" scope="col">Image</th>
               <th
+                v-if="crossAccountMode"
+                class="staff-table-head__th user-inv-table__text-col"
+                scope="col"
+              >
+                Account
+              </th>
+              <th
                 class="staff-table-head__th staff-table-head__th--sort user-inv-table__text-col"
                 scope="col"
                 :aria-sort="thAriaSort('sku')"
@@ -886,15 +955,17 @@ onUnmounted(() => {
           </thead>
           <tbody>
             <tr v-if="loading">
-              <td colspan="8" class="text-center text-secondary py-5">
+              <td :colspan="tableColspan" class="text-center text-secondary py-5">
                 Loading inventory…
               </td>
             </tr>
-            <tr v-else-if="isStaffPickerMode && !selectedAccountId">
-              <td colspan="8" class="text-center text-secondary py-5">Select an account to load inventory.</td>
+            <tr v-else-if="isStaffPickerMode && !hasSearched">
+              <td :colspan="tableColspan" class="text-center text-secondary py-5">
+                Click Search to load inventory across all accounts, or select an account to filter.
+              </td>
             </tr>
             <tr v-else-if="!displayRows.length">
-              <td colspan="8" class="text-center text-secondary py-5">No inventory rows found.</td>
+              <td :colspan="tableColspan" class="text-center text-secondary py-5">No inventory rows found.</td>
             </tr>
             <tr v-for="row in displayRows" :key="rowKey(row)">
               <td class="staff-table-cell--tight-check text-center">
@@ -923,6 +994,9 @@ onUnmounted(() => {
                   />
                   <div v-else class="user-inventory-thumb user-inventory-thumb--empty" />
                 </a>
+              </td>
+              <td v-if="crossAccountMode" class="small text-secondary">
+                {{ row.client_account_company_name || "—" }}
               </td>
               <td class="user-inv-table__sku-col">
                 <a
@@ -954,7 +1028,7 @@ onUnmounted(() => {
         </div>
       </div>
       <div
-        v-if="pageInfo.has_next_page && (!isStaffPickerMode || selectedAccountId)"
+        v-if="pageInfo.has_next_page && !crossAccountMode && accountId > 0"
         class="p-3 border-top text-center"
       >
         <div v-if="searchAutoLoading" class="small text-secondary py-1" aria-live="polite">

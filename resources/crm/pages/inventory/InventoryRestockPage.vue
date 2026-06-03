@@ -11,7 +11,6 @@ const router = useRouter();
 
 const POLL_MS = 5000;
 const STALE_CLIENT_MS = 10 * 60 * 1000;
-const ROWS_PAGE_SIZE = 50;
 
 const restockRows = ref([]);
 const restockLoading = ref(false);
@@ -19,7 +18,7 @@ const restockLoadingMore = ref(false);
 const restockRefreshing = ref(false);
 const pollingActive = ref(false);
 const restockPreviewLoading = ref(false);
-const hasMoreRows = ref(false);
+const hasMoreToScan = ref(false);
 const restockMeta = ref({
   warehouse_id: null,
   computed_at: null,
@@ -70,18 +69,11 @@ const scanStatsLabel = computed(() => {
   const scanned = Number(stats.products_scanned || 0);
   const matched = Number(stats.products_matched ?? restockMeta.value.row_count ?? 0);
   const maxQty = stats.max_pickable_qty ?? 2;
-  if (scanned <= 0) return null;
-  const partialNote = stats.partial
-    ? " (first " + Number(stats.pages_scanned || 0).toLocaleString() + " pages — run scheduled refresh for full warehouse)"
+  if (matched <= 0 && scanned <= 0) return null;
+  const moreNote = hasMoreToScan.value
+    ? " Use Load 20 More to scan ShipHero for additional matches."
     : "";
-  return `Scanned ${scanned.toLocaleString()} products — ${matched.toLocaleString()} had pickable qty 0–${maxQty}.${partialNote}`;
-});
-
-const rowsShowingLabel = computed(() => {
-  const total = Number(restockMeta.value.row_count || 0);
-  const shown = restockRows.value.length;
-  if (total <= 0 || shown <= 0) return null;
-  return `Showing ${shown.toLocaleString()} of ${total.toLocaleString()} SKUs`;
+  return `${matched.toLocaleString()} SKUs with pickable qty 0–${maxQty} (scanned ${scanned.toLocaleString()} products).${moreNote}`;
 });
 
 function applyRestockMeta(data) {
@@ -95,48 +87,27 @@ function applyRestockMeta(data) {
     progress_page: data?.progress_page ?? null,
     scan_stats: data?.scan_stats ?? null,
   };
-  if (typeof data?.has_more_rows === "boolean") {
-    hasMoreRows.value = data.has_more_rows;
-  } else if (data?.status === "ok") {
-    hasMoreRows.value = restockRows.value.length < restockMeta.value.row_count;
-  }
+  hasMoreToScan.value = Boolean(data?.has_more_to_scan ?? data?.has_more_rows);
 }
 
-function mergeRestockRows(chunk, reset) {
-  const list = Array.isArray(chunk) ? chunk : [];
-  if (reset) {
-    restockRows.value = list;
-    return;
+function applyRestockPayload(data) {
+  if (Array.isArray(data?.rows)) {
+    restockRows.value = data.rows;
   }
-  const seen = new Set(restockRows.value.map((r) => String(r?.sku || "")));
-  const dest = [...restockRows.value];
-  for (const row of list) {
-    const sku = String(row?.sku || "");
-    if (!sku || seen.has(sku)) continue;
-    seen.add(sku);
-    dest.push(row);
-  }
-  restockRows.value = dest;
+  applyRestockMeta(data);
 }
 
-/** Status-only poll — never downloads row pages. */
+/** Status-only poll — never downloads rows while refresh runs. */
 async function fetchRestockMeta() {
   const { data } = await api.get("/inventory/restock");
   applyRestockMeta(data);
   return data;
 }
 
-/** Paginated SKU rows (50 per request). */
-async function fetchRestockRowsPage(reset) {
-  const offset = reset ? 0 : restockRows.value.length;
-  const { data } = await api.get("/inventory/restock", {
-    params: {
-      rows_offset: offset,
-      rows_limit: ROWS_PAGE_SIZE,
-    },
-  });
-  mergeRestockRows(data?.rows, reset);
-  applyRestockMeta(data);
+/** All matches loaded so far. */
+async function fetchRestockRows() {
+  const { data } = await api.get("/inventory/restock", { params: { include_rows: 1 } });
+  applyRestockPayload(data);
   return data;
 }
 
@@ -170,8 +141,9 @@ async function pollRestockOnce() {
     const data = await fetchRestockMeta();
     const status = data?.status;
     if (status === "ok") {
-      await fetchRestockRowsPage(true);
-      finishRefreshUi(`Restock report updated (${restockMeta.value.row_count.toLocaleString()} SKUs).`);
+      await fetchRestockRows();
+      const matched = restockMeta.value.row_count;
+      finishRefreshUi(`Restock report ready (${matched.toLocaleString()} SKUs).`);
       return;
     }
     if (status === "failed") {
@@ -199,10 +171,10 @@ async function loadRestockReport() {
   try {
     const data = await fetchRestockMeta();
     if (data?.status === "ok" && Number(data?.row_count || 0) > 0) {
-      await fetchRestockRowsPage(true);
+      await fetchRestockRows();
     } else if (data?.status !== "running") {
       restockRows.value = [];
-      hasMoreRows.value = false;
+      hasMoreToScan.value = false;
     }
     if (data?.status === "running") {
       restockRefreshing.value = true;
@@ -216,12 +188,21 @@ async function loadRestockReport() {
 }
 
 async function loadMoreRestockRows() {
-  if (!hasMoreRows.value || restockLoadingMore.value || restockLoading.value) return;
+  if (!hasMoreToScan.value || restockLoadingMore.value || restockLoading.value || showRunningBanner.value) {
+    return;
+  }
   restockLoadingMore.value = true;
   try {
-    await fetchRestockRowsPage(false);
+    const { data } = await api.post("/inventory/restock/load-more");
+    applyRestockPayload(data);
+    const added = Number(data?.scan_stats?.matches_in_batch ?? 0);
+    toast.success(
+      added > 0
+        ? `Loaded ${added.toLocaleString()} more matches (${restockMeta.value.row_count.toLocaleString()} total).`
+        : `Scan complete (${restockMeta.value.row_count.toLocaleString()} SKUs).`
+    );
   } catch (e) {
-    toast.errorFrom(e, "Could not load more restock rows.");
+    toast.errorFrom(e, "Could not load more restock matches.");
   } finally {
     restockLoadingMore.value = false;
   }
@@ -244,7 +225,7 @@ async function previewRestockReport() {
 
 async function refreshRestockReport() {
   restockRefreshing.value = true;
-  hasMoreRows.value = false;
+  hasMoreToScan.value = false;
   try {
     const response = await api.post("/inventory/restock/refresh");
     const { data } = response;
@@ -256,8 +237,8 @@ async function refreshRestockReport() {
       return;
     }
     if (data?.status === "ok") {
-      await fetchRestockRowsPage(true);
-      finishRefreshUi(`Restock report updated (${restockMeta.value.row_count.toLocaleString()} SKUs).`);
+      await fetchRestockRows();
+      finishRefreshUi(`Restock report ready (${restockMeta.value.row_count.toLocaleString()} SKUs).`);
       return;
     }
     if (data?.status === "failed") {
@@ -265,8 +246,8 @@ async function refreshRestockReport() {
       toast.error(data?.error_message || "Restock report refresh failed.");
       return;
     }
-    await fetchRestockRowsPage(true);
-    finishRefreshUi(`Restock report updated (${restockMeta.value.row_count.toLocaleString()} SKUs).`);
+    await fetchRestockRows();
+    finishRefreshUi(`Restock report ready (${restockMeta.value.row_count.toLocaleString()} SKUs).`);
   } catch (e) {
     restockRefreshing.value = false;
     stopPolling();
@@ -295,7 +276,7 @@ onBeforeUnmount(() => {
       <div class="min-w-0 flex-grow-1">
         <h1 class="h4 fw-semibold text-body mb-1">Restock</h1>
         <p class="text-secondary small mb-0">
-          SKUs with pickable qty 0–2 in pickable locations. Manual Refresh scans the first 50 ShipHero pages (~1,000 products) so results appear in minutes; scheduled jobs scan the full warehouse.
+          SKUs with pickable qty 0–2 in pickable locations. Refresh finds the first 20 matches, then use Load 20 More to scan ShipHero for the next 20.
         </p>
       </div>
       <div class="d-flex flex-column align-items-md-end gap-2 flex-shrink-0 ms-md-auto">
@@ -369,23 +350,24 @@ onBeforeUnmount(() => {
         aria-live="polite"
       >
         <template v-if="isRefreshStuck">
-          Refresh appears stuck — click Refresh to retry. If it fails again, ask ops to run the queue worker or check server logs.
+          Refresh appears stuck — click Refresh to retry.
         </template>
         <template v-else>
-          Building restock report from ShipHero…
+          Scanning ShipHero for matches (up to 20 SKUs)…
           <span v-if="restockMeta.progress_page"> (page {{ restockMeta.progress_page }})</span>
           <span v-if="restockMeta.scan_stats?.products_matched != null">
-            — {{ Number(restockMeta.scan_stats.products_matched).toLocaleString() }} matches so far
+            — {{ Number(restockMeta.scan_stats.products_matched).toLocaleString() }} found so far
           </span>
         </template>
       </div>
       <div
         class="table-responsive staff-table-wrap"
-        :class="{ 'user-inv-table--syncing': showRunningBanner }"
+        :class="{ 'user-inv-table--syncing': showRunningBanner || restockLoadingMore }"
       >
         <table class="table table-hover align-middle mb-0 staff-data-table user-inv-table">
           <thead class="table-light staff-table-head">
             <tr>
+              <th class="staff-table-head__th text-center user-inv-table__image-col" scope="col">Image</th>
               <th class="staff-table-head__th user-inv-table__text-col" scope="col">SKU</th>
               <th class="staff-table-head__th user-inv-table__text-col" scope="col">Name</th>
               <th class="staff-table-head__th" scope="col">Pick Location</th>
@@ -394,20 +376,38 @@ onBeforeUnmount(() => {
           </thead>
           <tbody>
             <tr v-if="restockLoading">
-              <td colspan="4" class="py-5 text-center text-secondary">Loading restock report…</td>
+              <td colspan="5" class="py-5 text-center text-secondary">Loading restock report…</td>
             </tr>
             <tr v-else-if="!restockLastRunLabel && !restockRows.length && !showRunningBanner && !isFailed">
-              <td colspan="4" class="py-5 text-center text-secondary">
+              <td colspan="5" class="py-5 text-center text-secondary">
                 No restock report yet. Click Preview or Refresh to scan ShipHero.
               </td>
             </tr>
             <tr v-else-if="restockRows.length === 0 && !showRunningBanner">
-              <td colspan="4" class="py-5 text-center text-secondary">Nothing to restock right now.</td>
+              <td colspan="5" class="py-5 text-center text-secondary">Nothing to restock right now.</td>
             </tr>
             <tr v-else-if="restockRows.length === 0 && showRunningBanner">
-              <td colspan="4" class="py-5 text-center text-secondary">Refresh in progress…</td>
+              <td colspan="5" class="py-5 text-center text-secondary">Refresh in progress…</td>
             </tr>
             <tr v-for="row in restockRows" :key="row.sku" class="align-middle">
+              <td class="text-center user-inv-table__image-col">
+                <a
+                  :href="inventoryDetailHref(row)"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  class="user-inv-table__image-link"
+                  :aria-label="`View ${row.sku || 'product'}`"
+                >
+                  <img
+                    v-if="row.image_url"
+                    :src="row.image_url"
+                    alt=""
+                    class="user-inventory-thumb"
+                    loading="lazy"
+                  />
+                  <div v-else class="user-inventory-thumb user-inventory-thumb--empty" />
+                </a>
+              </td>
               <td class="fw-semibold user-inv-table__sku-col">
                 <a
                   :href="inventoryDetailHref(row)"
@@ -427,15 +427,8 @@ onBeforeUnmount(() => {
           </tbody>
         </table>
       </div>
-      <p
-        v-if="rowsShowingLabel && !showRunningBanner"
-        class="small text-secondary mb-0 px-3 pt-2"
-        role="status"
-      >
-        {{ rowsShowingLabel }}
-      </p>
       <div
-        v-if="hasMoreRows && !showRunningBanner && restockRows.length > 0"
+        v-if="hasMoreToScan && !showRunningBanner && restockRows.length > 0"
         class="p-3 border-top text-center"
       >
         <button
@@ -444,7 +437,7 @@ onBeforeUnmount(() => {
           :disabled="restockLoadingMore"
           @click="loadMoreRestockRows"
         >
-          {{ restockLoadingMore ? "Loading…" : "Load 50 More" }}
+          {{ restockLoadingMore ? "Scanning…" : "Load 20 More" }}
         </button>
       </div>
     </div>
@@ -460,7 +453,11 @@ onBeforeUnmount(() => {
 .user-inv-table {
   table-layout: fixed;
   width: 100%;
-  min-width: 36rem;
+  min-width: 40rem;
+}
+
+.user-inv-table__image-col {
+  width: 4.5rem;
 }
 
 .user-inv-table__text-col,
@@ -468,6 +465,25 @@ onBeforeUnmount(() => {
 .user-inv-table__name-col {
   text-align: start;
   vertical-align: middle;
+}
+
+.user-inv-table__image-link {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.user-inventory-thumb {
+  width: 2.5rem;
+  height: 2.5rem;
+  object-fit: contain;
+  border-radius: 0.25rem;
+  background: var(--bs-body-bg);
+}
+
+.user-inventory-thumb--empty {
+  display: inline-block;
+  border: 1px dashed var(--bs-border-color);
 }
 
 .user-inv-table__sku-link {

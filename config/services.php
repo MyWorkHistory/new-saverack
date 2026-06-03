@@ -57,10 +57,10 @@ return [
         'restock_stale_minutes' => (int) env('SHIPHERO_RESTOCK_STALE_MINUTES', 45),
         /** Pages scanned per refresh job chunk (keeps each job under queue retry_after). */
         'restock_chunk_pages' => (int) env('SHIPHERO_RESTOCK_CHUNK_PAGES', 15),
-        /** Max ShipHero list pages per UI refresh (0 = unlimited). Default 50 ≈ 1000 products. */
-        'restock_max_scan_pages' => (int) env('SHIPHERO_RESTOCK_MAX_SCAN_PAGES', 50),
-        /** Max pages for scheduled inventory:refresh-restock-report (0 = full warehouse). */
-        'restock_scheduled_max_scan_pages' => (int) env('SHIPHERO_RESTOCK_SCHEDULED_MAX_SCAN_PAGES', 0),
+        /** Stop each UI scan once this many new pickable-qty matches are found (Load More fetches the next batch). */
+        'restock_match_batch_size' => (int) env('SHIPHERO_RESTOCK_MATCH_BATCH_SIZE', 20),
+        /** Safety cap on ShipHero pages per refresh / load-more request. */
+        'restock_scan_safety_max_pages' => (int) env('SHIPHERO_RESTOCK_SCAN_SAFETY_MAX_PAGES', 200),
         /** Fail a running refresh when no DB progress for this many minutes. */
         'restock_stall_minutes' => (int) env('SHIPHERO_RESTOCK_STALL_MINUTES', 10),
         /** Skip full warehouse location catalog (saves ShipHero credits; uses product locations only). */
@@ -73,8 +73,6 @@ return [
         'restock_dispatch_mode' => env('SHIPHERO_RESTOCK_DISPATCH_MODE', 'after_response'),
         /** Max restock rows returned in a single full=1 API response (avoids origin OOM / 502). */
         'restock_api_max_rows' => (int) env('SHIPHERO_RESTOCK_API_MAX_ROWS', 5000),
-        /** Rows per page for GET /inventory/restock?rows_limit=… */
-        'restock_rows_page_size' => (int) env('SHIPHERO_RESTOCK_ROWS_PAGE_SIZE', 50),
         /** GraphQL mutation for customer account update (from shiphero:probe-customer-mutations). */
         'customer_account_update_mutation' => env('SHIPHERO_CUSTOMER_ACCOUNT_UPDATE_MUTATION'),
         'customer_account_update_input_type' => env('SHIPHERO_CUSTOMER_ACCOUNT_UPDATE_INPUT_TYPE'),

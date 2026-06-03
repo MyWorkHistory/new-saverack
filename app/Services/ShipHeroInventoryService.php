@@ -3959,6 +3959,10 @@ query ShipHeroRestockWarehouseProducts($warehouse_id: String!, $first: Int!, $af
             active
             kit
             kit_build
+            images {
+              src
+              position
+            }
           }
         }
       }
@@ -4003,6 +4007,10 @@ query ShipHeroRestockWarehouseProducts($warehouse_id: String!, $first: Int!, $af
             active
             kit
             kit_build
+            images {
+              src
+              position
+            }
           }
         }
       }
@@ -4043,6 +4051,35 @@ GQL;
                     : null,
             ],
         ];
+    }
+
+    /**
+     * @param  array<string, mixed>|null  $productNode
+     */
+    public function primaryProductImageUrl(?array $productNode): ?string
+    {
+        if ($productNode === null) {
+            return null;
+        }
+        $images = is_array($productNode['images'] ?? null) ? $productNode['images'] : [];
+        $imageUrl = null;
+        $bestPos = PHP_INT_MAX;
+        foreach ($images as $img) {
+            if (! is_array($img)) {
+                continue;
+            }
+            $src = trim((string) ($img['src'] ?? ''));
+            if ($src === '') {
+                continue;
+            }
+            $pos = isset($img['position']) && is_numeric($img['position']) ? (int) $img['position'] : 999999;
+            if ($imageUrl === null || $pos < $bestPos) {
+                $imageUrl = $src;
+                $bestPos = $pos;
+            }
+        }
+
+        return $imageUrl;
     }
 
     private function isShipHeroCreditLimitError(string $message): bool

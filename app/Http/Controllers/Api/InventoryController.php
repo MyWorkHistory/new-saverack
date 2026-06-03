@@ -104,19 +104,9 @@ class InventoryController extends Controller
         try {
             $warehouseId = $request->query('warehouse_id');
             $warehouseId = is_string($warehouseId) && trim($warehouseId) !== '' ? trim($warehouseId) : null;
-            $includeRows = $request->has('rows_limit')
-                || $request->has('rows_offset')
-                || filter_var($request->query('full', false), FILTER_VALIDATE_BOOLEAN)
+            $includeRows = filter_var($request->query('full', false), FILTER_VALIDATE_BOOLEAN)
                 || filter_var($request->query('include_rows', false), FILTER_VALIDATE_BOOLEAN);
-            $rowsOffset = max(0, (int) $request->query('rows_offset', 0));
-            $rowsLimit = $request->has('rows_limit')
-                ? max(1, min(100, (int) $request->query('rows_limit')))
-                : ($includeRows ? $reports->defaultRowsPageSize() : null);
-            if (! $includeRows) {
-                $rowsLimit = null;
-                $rowsOffset = 0;
-            }
-            $snapshot = $reports->latestSnapshot($warehouseId, $includeRows, $rowsOffset, $rowsLimit);
+            $snapshot = $reports->latestSnapshot($warehouseId, $includeRows);
             if ($snapshot !== null) {
                 return response()->json($snapshot);
             }
@@ -139,6 +129,7 @@ class InventoryController extends Controller
                 'progress_page' => null,
                 'scan_stats' => null,
                 'has_more_rows' => false,
+                'has_more_to_scan' => false,
             ]);
         } catch (RuntimeException $e) {
             return response()->json(['message' => $e->getMessage()], 502);
@@ -149,6 +140,37 @@ class InventoryController extends Controller
                 'message' => config('app.debug')
                     ? $e->getMessage()
                     : 'Could not load restock report.',
+            ], 500);
+        }
+    }
+
+    public function loadMoreRestockReport(Request $request, InventoryRestockReportService $reports): JsonResponse
+    {
+        try {
+            $validated = $request->validate([
+                'warehouse_id' => ['nullable', 'string', 'max:128'],
+            ]);
+            $warehouseId = isset($validated['warehouse_id']) ? trim((string) $validated['warehouse_id']) : null;
+            $warehouseId = $warehouseId !== '' ? $warehouseId : null;
+
+            if ($reports->isRefreshInProgress($warehouseId)) {
+                return response()->json(['message' => 'Restock refresh is still running.'], 409);
+            }
+
+            $snapshot = $reports->loadMoreMatches($warehouseId);
+
+            return response()->json($snapshot);
+        } catch (ValidationException $e) {
+            throw $e;
+        } catch (RuntimeException $e) {
+            return response()->json(['message' => $e->getMessage()], 422);
+        } catch (Throwable $e) {
+            report($e);
+
+            return response()->json([
+                'message' => config('app.debug')
+                    ? $e->getMessage()
+                    : 'Could not load more restock matches.',
             ], 500);
         }
     }

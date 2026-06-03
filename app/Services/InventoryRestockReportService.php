@@ -58,25 +58,20 @@ class InventoryRestockReportService
         return max(1, min(100, (int) config('services.shiphero.restock_chunk_pages', 15)));
     }
 
-    public function defaultRowsPageSize(): int
+    /** New matches to collect per Refresh or Load More (0 = unlimited, for scheduled jobs). */
+    public function matchBatchSize(): int
     {
-        return max(1, min(100, (int) config('services.shiphero.restock_rows_page_size', 50)));
+        return max(0, (int) config('services.shiphero.restock_match_batch_size', 20));
     }
 
-    /** 0 = scan entire warehouse; default 50 stops UI refresh in a few minutes. */
-    public function maxScanPages(): int
+    public function scanSafetyMaxPages(): int
     {
-        return max(0, (int) config('services.shiphero.restock_max_scan_pages', 50));
+        return max(10, (int) config('services.shiphero.restock_scan_safety_max_pages', 200));
     }
 
-    public function useUnlimitedScanPages(): void
+    public function useUnlimitedMatchBatch(): void
     {
-        config([
-            'services.shiphero.restock_max_scan_pages' => max(
-                0,
-                (int) config('services.shiphero.restock_scheduled_max_scan_pages', 0)
-            ),
-        ]);
+        config(['services.shiphero.restock_match_batch_size' => 0]);
     }
 
     public function stallMinutes(): int
@@ -150,9 +145,12 @@ class InventoryRestockReportService
         $wid = $this->resolveWarehouseId($warehouseId);
 
         try {
-            do {
-                $result = $this->refreshNextChunk($warehouseId);
-            } while ($result['has_more'] ?? false);
+            $result = $this->refreshNextChunk($warehouseId);
+            if ($this->matchBatchSize() <= 0) {
+                while ($result['has_more'] ?? false) {
+                    $result = $this->refreshNextChunk($warehouseId);
+                }
+            }
         } finally {
             $this->clearRefreshWorkingState($wid);
         }
@@ -339,7 +337,68 @@ class InventoryRestockReportService
             throw new RuntimeException('Restock snapshot missing after refresh.');
         }
 
-        return $this->serializeSnapshot($final, true, 0, $this->defaultRowsPageSize());
+        return $this->serializeSnapshot($final, true);
+    }
+
+    /**
+     * Scan ShipHero until the next batch of matches is found; append to snapshot.
+     *
+     * @return array<string, mixed>
+     */
+    public function loadMoreMatches(?string $warehouseId = null): array
+    {
+        if (function_exists('set_time_limit')) {
+            @set_time_limit(0);
+        }
+
+        $wid = $this->resolveWarehouseId($warehouseId);
+        $row = InventoryRestockSnapshot::query()->where('warehouse_id', $wid)->first();
+        if ($row === null || $row->status !== InventoryRestockSnapshot::STATUS_OK) {
+            throw new RuntimeException('No completed restock report to extend.');
+        }
+
+        if (! $this->snapshotHasMoreToScan($row)) {
+            throw new RuntimeException('No more warehouse products to scan for restock matches.');
+        }
+
+        $existingRows = is_array($row->rows) ? $row->rows : [];
+        $priorStats = is_array($row->scan_stats) ? $row->scan_stats : [];
+        $startCursor = is_string($row->scan_cursor) && trim($row->scan_cursor) !== ''
+            ? trim($row->scan_cursor)
+            : null;
+
+        $catalog = $this->buildLocationCatalogForRefresh($wid);
+        $batchSize = max(1, $this->matchBatchSize() ?: 20);
+        $scanResult = $this->scanWarehouse(
+            $wid,
+            $catalog['by_id'],
+            $catalog['by_name'],
+            null,
+            null,
+            $startCursor,
+            (int) ($priorStats['pages_scanned'] ?? 0),
+            (int) ($priorStats['products_scanned'] ?? 0),
+            $existingRows,
+            $batchSize
+        );
+
+        $rows = $this->dedupeRestockRows($scanResult['rows']);
+        usort($rows, static fn (array $a, array $b): int => strcasecmp((string) ($a['sku'] ?? ''), (string) ($b['sku'] ?? '')));
+
+        $scanStats = $scanResult['scan_stats'];
+        $hasMoreToScan = (bool) ($scanStats['has_more_to_scan'] ?? false);
+        $endCursor = $hasMoreToScan && isset($scanStats['end_cursor']) && is_string($scanStats['end_cursor'])
+            ? $scanStats['end_cursor']
+            : null;
+        unset($scanStats['end_cursor']);
+
+        $row->rows = $rows;
+        $row->row_count = count($rows);
+        $row->scan_stats = $scanStats;
+        $row->scan_cursor = $endCursor;
+        $row->save();
+
+        return $this->serializeSnapshot($row, true);
     }
 
     /**
@@ -380,28 +439,29 @@ class InventoryRestockReportService
 
         try {
             $catalog = $this->buildLocationCatalogForRefresh($wid);
+            $batchSize = $this->matchBatchSize();
             $scanResult = $this->scanWarehouse(
                 $wid,
                 $catalog['by_id'],
                 $catalog['by_name'],
-                $this->chunkPages(),
+                $batchSize > 0 ? null : $this->chunkPages(),
                 null,
                 $startCursor,
                 $cumulativePages,
                 $cumulativeProducts,
                 $existingRows,
-                $this->maxScanPages()
+                $batchSize > 0 ? $batchSize : 0
             );
 
-            $rows = $scanResult['rows'];
+            $rows = $this->dedupeRestockRows($scanResult['rows']);
             $scanStats = $scanResult['scan_stats'];
-            $hitPageCap = (bool) ($scanStats['partial'] ?? false);
-            $hasMore = (bool) ($scanStats['has_more_pages'] ?? false) && ! $hitPageCap;
-            $endCursor = isset($scanStats['end_cursor']) && is_string($scanStats['end_cursor'])
+            $unlimitedScan = $batchSize <= 0;
+            $hasMoreToScan = (bool) ($scanStats['has_more_to_scan'] ?? false);
+            $endCursor = $hasMoreToScan && isset($scanStats['end_cursor']) && is_string($scanStats['end_cursor'])
                 ? $scanStats['end_cursor']
                 : null;
 
-            if ($hasMore && $endCursor !== null && $endCursor !== '') {
+            if ($unlimitedScan && $hasMoreToScan && $endCursor !== null && $endCursor !== '') {
                 $this->setPendingRows($wid, $rows);
                 $statsForDb = $scanStats;
                 unset($statsForDb['end_cursor']);
@@ -429,11 +489,7 @@ class InventoryRestockReportService
             usort($rows, static fn (array $a, array $b): int => strcasecmp((string) ($a['sku'] ?? ''), (string) ($b['sku'] ?? '')));
             $durationMs = (int) max(0, $refreshStartedAt->diffInRealSeconds(Carbon::now()) * 1000);
             $computedAt = Carbon::now();
-            $scanStats['has_more_pages'] = false;
             unset($scanStats['end_cursor']);
-            if ($hitPageCap) {
-                $scanStats['partial'] = true;
-            }
 
             $this->clearRefreshWorkingState($wid);
 
@@ -448,7 +504,7 @@ class InventoryRestockReportService
                     'duration_ms' => $durationMs,
                     'refresh_started_at' => null,
                     'progress_page' => null,
-                    'scan_cursor' => null,
+                    'scan_cursor' => $endCursor,
                     'scan_stats' => $scanStats,
                 ]
             );
@@ -575,12 +631,8 @@ class InventoryRestockReportService
     /**
      * @return array<string, mixed>|null
      */
-    public function latestSnapshot(
-        ?string $warehouseId = null,
-        bool $includeRows = false,
-        int $rowsOffset = 0,
-        ?int $rowsLimit = null
-    ): ?array {
+    public function latestSnapshot(?string $warehouseId = null, bool $includeRows = false): ?array
+    {
         $wid = $this->configuredWarehouseId($warehouseId) ?? $this->resolveWarehouseId($warehouseId);
         $loadRowsColumn = $includeRows;
         $row = $this->findSnapshotRow($wid, $loadRowsColumn);
@@ -592,9 +644,8 @@ class InventoryRestockReportService
         $row = $this->resolveStaleRunningSnapshot($row);
 
         $returnRows = $includeRows && $row->status !== InventoryRestockSnapshot::STATUS_RUNNING;
-        $limit = $rowsLimit ?? $this->defaultRowsPageSize();
 
-        return $this->serializeSnapshot($row, $returnRows, max(0, $rowsOffset), $returnRows ? $limit : null);
+        return $this->serializeSnapshot($row, $returnRows);
     }
 
     public function resolveWarehouseIdForApi(?string $warehouseId = null): string
@@ -650,6 +701,39 @@ class InventoryRestockReportService
      * @param  list<array<string, mixed>>  $existingRows
      * @return array{rows: list<array<string, mixed>>, scan_stats: array<string, mixed>}
      */
+    private function snapshotHasMoreToScan(InventoryRestockSnapshot $row): bool
+    {
+        if (is_string($row->scan_cursor) && trim($row->scan_cursor) !== '') {
+            return true;
+        }
+        $stats = is_array($row->scan_stats) ? $row->scan_stats : [];
+
+        return (bool) ($stats['has_more_to_scan'] ?? $stats['has_more_pages'] ?? false);
+    }
+
+    /**
+     * @param  list<array<string, mixed>>  $rows
+     * @return list<array<string, mixed>>
+     */
+    private function dedupeRestockRows(array $rows): array
+    {
+        $out = [];
+        $seen = [];
+        foreach ($rows as $row) {
+            if (! is_array($row)) {
+                continue;
+            }
+            $sku = trim((string) ($row['sku'] ?? ''));
+            if ($sku === '' || isset($seen[$sku])) {
+                continue;
+            }
+            $seen[$sku] = true;
+            $out[] = $row;
+        }
+
+        return $out;
+    }
+
     private function scanWarehouse(
         string $warehouseId,
         array $catalogById,
@@ -660,17 +744,19 @@ class InventoryRestockReportService
         int $cumulativePages = 0,
         int $cumulativeProductsScanned = 0,
         array $existingRows = [],
-        int $totalPagesCap = 0
+        int $matchBatchSize = 0
     ): array {
         $restockRows = $existingRows;
+        $matchesAtStart = count($existingRows);
         $after = $startCursor;
         $chunkPageLimit = $maxPagesOverride ?? 500;
+        $safetyPageLimit = $matchBatchSize > 0 ? $this->scanSafetyMaxPages() : $chunkPageLimit;
         $maxPickableQty = $maxPickableQtyOverride ?? $this->maxPickableQty();
         $page = $cumulativePages;
         $productsScanned = $cumulativeProductsScanned;
         $hasNext = false;
         $pagesThisChunk = 0;
-        $stoppedAtPageCap = false;
+        $stoppedAtMatchBatch = false;
 
         do {
             $pageResult = $this->inventory->paginateWarehouseProductsForRestock($warehouseId, $after);
@@ -714,7 +800,7 @@ class InventoryRestockReportService
                 $built = InventoryRestockRowBuilder::buildRow(
                     $sku,
                     (string) ($product['name'] ?? ''),
-                    null,
+                    $this->inventory->primaryProductImageUrl($product),
                     $locations,
                     $maxPickableQty
                 );
@@ -750,17 +836,23 @@ class InventoryRestockReportService
                 $this->touchRefreshProgress($warehouseId, $page, count($restockRows), $partialStats);
             }
 
-            if ($totalPagesCap > 0 && $page >= $totalPagesCap) {
-                $stoppedAtPageCap = $hasNext;
+            if ($matchBatchSize > 0 && (count($restockRows) - $matchesAtStart) >= $matchBatchSize) {
+                $stoppedAtMatchBatch = $hasNext;
+                break;
+            }
+            if ($matchBatchSize > 0 && $pagesThisChunk >= $safetyPageLimit) {
+                $stoppedAtMatchBatch = $hasNext;
                 break;
             }
         } while ($hasNext && $after !== null && $after !== '' && $pagesThisChunk < $chunkPageLimit);
 
-        if ($stoppedAtPageCap) {
-            Log::info('inventory.restock_report.scan_page_cap_reached', [
+        $hasMoreToScan = $hasNext && ($stoppedAtMatchBatch || $matchBatchSize > 0);
+        if ($stoppedAtMatchBatch && $matchBatchSize > 0) {
+            Log::info('inventory.restock_report.match_batch_ready', [
                 'warehouse_id' => $warehouseId,
-                'max_scan_pages' => $totalPagesCap,
-                'products_matched' => count($restockRows),
+                'match_batch_size' => $matchBatchSize,
+                'matches_in_batch' => count($restockRows) - $matchesAtStart,
+                'products_matched_total' => count($restockRows),
             ]);
         }
 
@@ -769,8 +861,10 @@ class InventoryRestockReportService
             'products_matched' => count($restockRows),
             'pages_scanned' => $page,
             'max_pickable_qty' => $maxPickableQty,
-            'has_more_pages' => $hasNext && ! $stoppedAtPageCap,
-            'partial' => $stoppedAtPageCap,
+            'match_batch_size' => $matchBatchSize > 0 ? $matchBatchSize : null,
+            'matches_in_batch' => $matchBatchSize > 0 ? count($restockRows) - $matchesAtStart : null,
+            'has_more_to_scan' => $hasMoreToScan,
+            'has_more_pages' => $hasMoreToScan,
         ];
         if ($hasNext && $after !== null && $after !== '') {
             $scanStats['end_cursor'] = $after;
@@ -785,28 +879,25 @@ class InventoryRestockReportService
     /**
      * @return array<string, mixed>
      */
-    private function serializeSnapshot(
-        InventoryRestockSnapshot $row,
-        bool $includeRows = true,
-        int $rowsOffset = 0,
-        ?int $rowsLimit = null
-    ): array {
+    private function serializeSnapshot(InventoryRestockSnapshot $row, bool $includeRows = true): array
+    {
         $isRunning = $row->status === InventoryRestockSnapshot::STATUS_RUNNING;
         $computedAt = $isRunning ? null : $row->computed_at;
         $refreshStartedAt = $row->refresh_started_at;
         $rows = [];
-        $hasMoreRows = false;
-        $pageLimit = $rowsLimit ?? $this->defaultRowsPageSize();
         $totalRows = (int) $row->row_count;
+        $hasMoreToScan = false;
 
         if ($includeRows && is_array($row->rows)) {
-            $allRows = $row->rows;
-            $totalRows = max($totalRows, count($allRows));
-            $rows = array_slice($allRows, max(0, $rowsOffset), $pageLimit);
-            $hasMoreRows = ($rowsOffset + count($rows)) < $totalRows;
+            $rows = $row->rows;
+            $totalRows = max($totalRows, count($rows));
         }
 
-        $payload = [
+        if (! $isRunning) {
+            $hasMoreToScan = $this->snapshotHasMoreToScan($row);
+        }
+
+        return [
             'warehouse_id' => $row->warehouse_id,
             'computed_at' => $computedAt !== null ? $computedAt->toIso8601String() : null,
             'rows' => $rows,
@@ -817,14 +908,8 @@ class InventoryRestockReportService
             'refresh_started_at' => $refreshStartedAt !== null ? $refreshStartedAt->toIso8601String() : null,
             'progress_page' => $isRunning ? $row->progress_page : null,
             'scan_stats' => is_array($row->scan_stats) ? $row->scan_stats : null,
+            'has_more_to_scan' => $hasMoreToScan,
+            'has_more_rows' => $hasMoreToScan,
         ];
-
-        if ($includeRows && ! $isRunning) {
-            $payload['rows_offset'] = max(0, $rowsOffset);
-            $payload['rows_limit'] = $pageLimit;
-            $payload['has_more_rows'] = $hasMoreRows;
-        }
-
-        return $payload;
     }
 }

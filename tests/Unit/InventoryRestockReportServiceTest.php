@@ -74,37 +74,32 @@ class InventoryRestockReportServiceTest extends TestCase
     {
         $service = $this->serviceWithWarehouse();
 
-        $allRows = [];
-        for ($i = 0; $i < 75; $i++) {
-            $allRows[] = ['sku' => 'SKU-'.$i, 'name' => 'Item '.$i, 'pick_qty' => 1];
-        }
+        $rows = [
+            ['sku' => 'SKU-1', 'name' => 'Item 1', 'pick_qty' => 1, 'image_url' => 'https://example.com/a.jpg'],
+        ];
 
         InventoryRestockSnapshot::query()->create([
             'warehouse_id' => 'wh-1',
             'status' => InventoryRestockSnapshot::STATUS_OK,
             'computed_at' => now(),
             'refresh_started_at' => null,
-            'rows' => $allRows,
-            'row_count' => count($allRows),
+            'rows' => $rows,
+            'row_count' => 1,
+            'scan_cursor' => 'cursor-abc',
+            'scan_stats' => ['has_more_to_scan' => true, 'products_scanned' => 100],
         ]);
 
         $meta = $service->latestSnapshot('wh-1', false);
         $this->assertNotNull($meta);
         $this->assertSame([], $meta['rows']);
-        $this->assertSame(75, $meta['row_count']);
-        $this->assertArrayNotHasKey('has_more_rows', $meta);
+        $this->assertSame(1, $meta['row_count']);
+        $this->assertTrue($meta['has_more_to_scan']);
 
-        $page1 = $service->latestSnapshot('wh-1', true, 0, 50);
-        $this->assertNotNull($page1);
-        $this->assertCount(50, $page1['rows']);
-        $this->assertTrue($page1['has_more_rows']);
-        $this->assertSame(0, $page1['rows_offset']);
-        $this->assertSame(50, $page1['rows_limit']);
-
-        $page2 = $service->latestSnapshot('wh-1', true, 50, 50);
-        $this->assertNotNull($page2);
-        $this->assertCount(25, $page2['rows']);
-        $this->assertFalse($page2['has_more_rows']);
+        $full = $service->latestSnapshot('wh-1', true);
+        $this->assertNotNull($full);
+        $this->assertCount(1, $full['rows']);
+        $this->assertSame('https://example.com/a.jpg', $full['rows'][0]['image_url']);
+        $this->assertTrue($full['has_more_to_scan']);
     }
 
     public function test_mark_refresh_running_clears_stale_metadata_in_response(): void

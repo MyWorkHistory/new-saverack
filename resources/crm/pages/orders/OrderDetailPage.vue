@@ -75,6 +75,11 @@ const tagsSaveBusy = ref(false);
 
 const addItemsModalOpen = ref(false);
 const addItemsBusy = ref(false);
+const addItemsCatalogPanelKey = ref(0);
+const addNewSkuOpen = ref(false);
+const addNewSkuBusy = ref(false);
+const addNewSkuName = ref("");
+const addNewSkuSku = ref("");
 
 const attachmentFileInput = ref(null);
 const attachmentUploadBusy = ref(false);
@@ -185,15 +190,31 @@ const canViewProductCatalog = computed(() => {
   return keys.includes("inventory.view");
 });
 
+const catalogClientAccountId = computed(() => inventoryClientAccountIdForDetail());
+
 const addItemsCatalogDeniedMessage = computed(() => {
   if (!canViewProductCatalog.value) {
     return "Inventory view permission is required to pick SKUs from the catalog.";
   }
-  if (!Number(selectedAccountId.value || 0)) {
-    return "Select a client account to load products.";
+  if (catalogClientAccountId.value <= 0) {
+    return "Select a client account to load products. Open this order from the Orders list or add ?client_account_id= to the URL.";
   }
 
   return "";
+});
+
+const canCreateCatalogSku = computed(
+  () => canViewProductCatalog.value && catalogClientAccountId.value > 0,
+);
+
+const addItemsCreateSkuRoute = computed(() => {
+  const id = catalogClientAccountId.value;
+  if (id <= 0 || isPortalUser.value) return null;
+
+  return {
+    name: "inventory-on-demand",
+    query: { client_account_id: String(id) },
+  };
 });
 
 const canUseStaffOrderHeaderActions = computed(
@@ -833,13 +854,28 @@ async function refreshOrderDetail() {
 }
 
 watch(
-  () => route.query.client_account_id,
-  (q) => {
-    const next = q != null && String(q) !== "" ? String(q) : "";
-    if (next !== selectedAccountId.value) {
-      selectedAccountId.value = next;
+  () => [route.query.client_account_id, portalClientAccountId.value, isPortalUser.value],
+  () => {
+    const q = route.query.client_account_id;
+    if (q != null && String(q) !== "") {
+      const next = String(q);
+      if (next !== selectedAccountId.value) {
+        selectedAccountId.value = next;
+      }
+      return;
+    }
+    if (isPortalUser.value && portalClientAccountId.value > 0) {
+      const fallback = String(portalClientAccountId.value);
+      if (selectedAccountId.value !== fallback) {
+        selectedAccountId.value = fallback;
+      }
+      return;
+    }
+    if (selectedAccountId.value !== "") {
+      selectedAccountId.value = "";
     }
   },
+  { immediate: true },
 );
 
 watch(
@@ -1306,7 +1342,7 @@ function openAddItemsModal() {
     toast.error("You do not have permission to add items.");
     return;
   }
-  if (!Number(selectedAccountId.value || 0)) {
+  if (catalogClientAccountId.value <= 0) {
     toast.error("Client account is required to add items.");
     return;
   }
@@ -1315,6 +1351,46 @@ function openAddItemsModal() {
     return;
   }
   addItemsModalOpen.value = true;
+}
+
+function openAddNewSkuModal() {
+  addNewSkuName.value = "";
+  addNewSkuSku.value = "";
+  addNewSkuOpen.value = true;
+}
+
+function closeAddNewSkuModal() {
+  if (addNewSkuBusy.value) return;
+  addNewSkuOpen.value = false;
+}
+
+async function submitAddNewSku() {
+  const accountId = catalogClientAccountId.value;
+  if (accountId <= 0) {
+    toast.error("Client account is required to create a SKU.");
+    return;
+  }
+  const sku = addNewSkuSku.value.trim();
+  const name = addNewSkuName.value.trim();
+  if (!sku || !name) {
+    toast.error("Enter product name and SKU.");
+    return;
+  }
+  addNewSkuBusy.value = true;
+  try {
+    await api.post("/inventory/catalog-products", {
+      client_account_id: accountId,
+      sku,
+      name,
+    });
+    toast.success("SKU created in ShipHero.");
+    addNewSkuOpen.value = false;
+    addItemsCatalogPanelKey.value += 1;
+  } catch (e) {
+    toast.errorFrom(e, "Could not create SKU.");
+  } finally {
+    addNewSkuBusy.value = false;
+  }
 }
 
 function layoutMoreActionsMenu() {
@@ -1387,12 +1463,13 @@ async function addOrderLineFromCatalog({ product, quantity }) {
     toast.error("Invalid product.");
     return;
   }
-  if (!selectedAccountId.value || !orderId.value) return;
+  const accountId = catalogClientAccountId.value;
+  if (accountId <= 0 || !orderId.value) return;
   addItemsBusy.value = true;
   try {
     const name = String(p?.name || "").trim();
     await api.post(`/orders/${encodeURIComponent(orderId.value)}/line-items`, {
-      client_account_id: Number(selectedAccountId.value),
+      client_account_id: accountId,
       line_items: [
         {
           sku,
@@ -1445,7 +1522,8 @@ async function onAttachmentFileChange(ev) {
 
 function modalEscHandler(e) {
   if (e.key !== "Escape") return;
-  if (shippingSaveBusy.value || addItemsBusy.value || editLineBusy.value) return;
+  if (shippingSaveBusy.value || addItemsBusy.value || editLineBusy.value || addNewSkuBusy.value) return;
+  if (addNewSkuOpen.value) addNewSkuOpen.value = false;
   if (shippingModalOpen.value) shippingModalOpen.value = false;
   if (addItemsModalOpen.value) addItemsModalOpen.value = false;
   if (editLineModalOpen.value) editLineModalOpen.value = false;
@@ -1453,8 +1531,8 @@ function modalEscHandler(e) {
   if (itemMenuOpenId.value) itemMenuOpenId.value = null;
 }
 
-watch([shippingModalOpen, addItemsModalOpen, editLineModalOpen], ([s, a, e]) => {
-  if (s || a || e) {
+watch([shippingModalOpen, addItemsModalOpen, editLineModalOpen, addNewSkuOpen], ([s, a, e, n]) => {
+  if (s || a || e || n) {
     document.addEventListener("keydown", modalEscHandler);
   } else {
     document.removeEventListener("keydown", modalEscHandler);
@@ -1490,9 +1568,6 @@ onMounted(async () => {
     title: "Save Rack | Order Detail",
     description: "ShipHero order detail.",
   });
-  if (isPortalUser.value && portalClientAccountId.value > 0 && !selectedAccountId.value) {
-    selectedAccountId.value = String(portalClientAccountId.value);
-  }
 });
 
 function goToOrdersList() {
@@ -2401,13 +2476,17 @@ function goToOrdersList() {
               </header>
               <div class="crm-vx-modal__body p-0">
                 <AsnProductCatalogPanel
-                  :client-account-id="selectedAccountId"
+                  :key="addItemsCatalogPanelKey"
+                  :client-account-id="catalogClientAccountId"
                   :active="addItemsModalOpen"
                   :busy="addItemsBusy"
                   :permission-denied-message="addItemsCatalogDeniedMessage"
+                  :show-add-new-sku="canCreateCatalogSku"
+                  :create-sku-route="addItemsCreateSkuRoute"
                   qty-label="Quantity"
                   search-input-id="order-add-items-catalog-search"
                   @add="addOrderLineFromCatalog"
+                  @add-new-sku="openAddNewSkuModal"
                 />
               </div>
               <footer class="crm-vx-modal__footer">
@@ -2422,6 +2501,75 @@ function goToOrdersList() {
               </footer>
             </div>
           </Transition>
+        </div>
+      </Transition>
+    </Teleport>
+
+    <Teleport to="body">
+      <Transition name="crm-vx-confirm">
+        <div
+          v-if="addNewSkuOpen"
+          class="crm-vx-modal-overlay"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="order-add-new-sku-title"
+          @click.self="closeAddNewSkuModal"
+        >
+          <div class="crm-vx-modal crm-vx-modal--sm" @click.stop>
+            <button
+              type="button"
+              class="crm-vx-modal__close"
+              aria-label="Close"
+              :disabled="addNewSkuBusy"
+              @click="closeAddNewSkuModal"
+            >
+              <svg width="20" height="20" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.75" aria-hidden="true">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            </button>
+            <header class="crm-vx-modal__head">
+              <h2 id="order-add-new-sku-title" class="crm-vx-modal__title">Create SKU</h2>
+            </header>
+            <div class="crm-vx-modal__body">
+              <p class="small text-secondary mb-3">
+                Creates the SKU in ShipHero so you can add it to this order.
+              </p>
+              <label class="form-label small mb-1" for="order-new-sku-name">Product Name</label>
+              <input
+                id="order-new-sku-name"
+                v-model="addNewSkuName"
+                type="text"
+                class="form-control form-control-sm mb-3"
+                :disabled="addNewSkuBusy"
+              />
+              <label class="form-label small mb-1" for="order-new-sku-code">SKU</label>
+              <input
+                id="order-new-sku-code"
+                v-model="addNewSkuSku"
+                type="text"
+                class="form-control form-control-sm"
+                :disabled="addNewSkuBusy"
+              />
+            </div>
+            <footer class="crm-vx-modal__footer d-flex gap-2 justify-content-end">
+              <button
+                type="button"
+                class="crm-vx-modal-btn crm-vx-modal-btn--secondary"
+                :disabled="addNewSkuBusy"
+                @click="closeAddNewSkuModal"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                class="crm-vx-modal-btn crm-vx-modal-btn--primary"
+                :disabled="addNewSkuBusy"
+                @click="submitAddNewSku"
+              >
+                {{ addNewSkuBusy ? "Creating…" : "Create SKU" }}
+              </button>
+            </footer>
+          </div>
         </div>
       </Transition>
     </Teleport>

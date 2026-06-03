@@ -781,6 +781,58 @@ class InventoryController extends Controller
         }
     }
 
+    public function storeCatalogProduct(Request $request): JsonResponse
+    {
+        $validated = $request->validate([
+            'client_account_id' => ['required', 'integer', 'exists:client_accounts,id'],
+            'sku' => ['required', 'string', 'max:255'],
+            'name' => ['required', 'string', 'max:512'],
+        ]);
+        $clientAccountId = (int) $validated['client_account_id'];
+        $sku = trim((string) $validated['sku']);
+        $name = trim((string) $validated['name']);
+        try {
+            $shipheroCustomerId = $this->resolveShipHeroCustomerAccountId($clientAccountId, $request);
+        } catch (ValidationException $e) {
+            throw $e;
+        }
+        if ($shipheroCustomerId === null || trim((string) $shipheroCustomerId) === '') {
+            return response()->json(['message' => 'This client account is not linked to ShipHero.'], 422);
+        }
+        $customerId = trim((string) $shipheroCustomerId);
+        try {
+            $created = $this->inventory->createProduct($customerId, $sku, $name);
+
+            return response()->json([
+                'id' => $created['id'] ?? null,
+                'sku' => $sku,
+                'name' => $name,
+                'image_url' => $created['image_url'] ?? null,
+            ], 201);
+        } catch (RuntimeException $e) {
+            $existing = $this->inventory->getProductDetailBySku($sku, null, $customerId, false);
+            if (is_array($existing) && ! empty($existing['id'])) {
+                return response()->json([
+                    'id' => (string) $existing['id'],
+                    'sku' => $sku,
+                    'name' => (string) ($existing['name'] ?? $name),
+                    'image_url' => $existing['image_url'] ?? null,
+                    'existing' => true,
+                ]);
+            }
+
+            return response()->json(['message' => $e->getMessage()], 422);
+        } catch (Throwable $e) {
+            report($e);
+
+            return response()->json([
+                'message' => config('app.debug')
+                    ? $e->getMessage()
+                    : 'Could not create product in ShipHero.',
+            ], 502);
+        }
+    }
+
     public function replaceQuantity(Request $request): JsonResponse
     {
         $validated = $request->validate([

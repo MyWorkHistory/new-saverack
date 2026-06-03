@@ -1,5 +1,6 @@
 <script setup>
-import { watch } from "vue";
+import { computed, watch } from "vue";
+import { RouterLink } from "vue-router";
 import CrmLoadingSpinner from "../common/CrmLoadingSpinner.vue";
 import { catalogKey, useAsnProductCatalog } from "../../composables/useAsnProductCatalog.js";
 
@@ -12,7 +13,11 @@ const props = defineProps({
   qtyLabel: { type: String, default: "Quantity" },
   searchInputId: { type: String, default: "asn-catalog-search" },
   permissionDeniedMessage: { type: String, default: "" },
+  /** Optional route for “Create SKU” when the catalog is empty (e.g. On-Demand admin page). */
+  createSkuRoute: { type: Object, default: null },
 });
+
+const resolvedAccountId = computed(() => Number(props.clientAccountId || 0));
 
 const emit = defineEmits(["add", "add-new-sku"]);
 
@@ -102,7 +107,7 @@ watch(
             class="btn btn-sm btn-outline-secondary fw-semibold staff-page-secondary"
             @click="emit('add-new-sku')"
           >
-            Add New SKU
+            Create SKU
           </button>
         </div>
       </div>
@@ -155,7 +160,10 @@ watch(
               </div>
             </div>
             <div v-if="catalog.length === 0" class="p-3 small text-secondary">
-              <template v-if="catalogSearchCommitted">
+              <template v-if="!resolvedAccountId">
+                Client account is required to load products. Open this order from the Orders list with a client account selected.
+              </template>
+              <template v-else-if="catalogSearchCommitted">
                 No matches.
                 <button
                   v-if="showAddNewSku"
@@ -163,10 +171,27 @@ watch(
                   class="btn btn-link btn-sm p-0 align-baseline"
                   @click="emit('add-new-sku')"
                 >
-                  Add New SKU
+                  Create SKU
                 </button>
               </template>
-              <template v-else>No products on this page.</template>
+              <template v-else>
+                No products in this account catalog.
+                <button
+                  v-if="showAddNewSku"
+                  type="button"
+                  class="btn btn-link btn-sm p-0 align-baseline"
+                  @click="emit('add-new-sku')"
+                >
+                  Create SKU
+                </button>
+                <RouterLink
+                  v-else-if="createSkuRoute"
+                  :to="createSkuRoute"
+                  class="btn btn-link btn-sm p-0 align-baseline"
+                >
+                  Create SKU
+                </RouterLink>
+              </template>
             </div>
           </div>
           <div v-if="catalogPageInfo.has_next_page" class="d-flex justify-content-center mt-3">

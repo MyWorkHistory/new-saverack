@@ -96,6 +96,8 @@ Route::middleware('auth:sanctum')->group(function () {
             ->middleware('can:inventory.update');
         Route::get('/asn-product-catalog', [InventoryController::class, 'asnProductCatalog'])
             ->middleware('can:inventory.view');
+        Route::post('/catalog-products', [InventoryController::class, 'storeCatalogProduct'])
+            ->middleware('can:inventory.view');
         Route::get('/products/{sku}', [InventoryController::class, 'productDetail'])
             ->middleware('can:inventory.view');
         Route::get('/products/{sku}/parent-kits', [InventoryController::class, 'productParentKits'])

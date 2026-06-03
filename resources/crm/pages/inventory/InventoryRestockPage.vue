@@ -258,7 +258,7 @@ async function refreshRestockReport() {
 onMounted(() => {
   setCrmPageMeta({
     title: "Save Rack | Inventory | Restock",
-    description: "SKUs with pickable qty 0–2 in pickable warehouse locations.",
+    description: "SKUs with pickable qty 0–2 and stock in non-pickable (backstock) locations.",
   });
   loadRestockReport();
 });
@@ -276,7 +276,7 @@ onBeforeUnmount(() => {
       <div class="min-w-0 flex-grow-1">
         <h1 class="h4 fw-semibold text-body mb-1">Restock</h1>
         <p class="text-secondary small mb-0">
-          SKUs with pickable qty 0–2 in pickable locations. Refresh finds the first 20 matches, then use Load 20 More to scan ShipHero for the next 20.
+          SKUs with pickable qty 0–2 and backstock in non-pickable locations. Refresh finds the first 20 matches, then use Load 20 More to scan ShipHero for the next 20.
         </p>
       </div>
       <div class="d-flex flex-column align-items-md-end gap-2 flex-shrink-0 ms-md-auto">
@@ -372,22 +372,24 @@ onBeforeUnmount(() => {
               <th class="staff-table-head__th user-inv-table__text-col" scope="col">Name</th>
               <th class="staff-table-head__th" scope="col">Pick Location</th>
               <th class="staff-table-head__th text-center" scope="col">Pick QTY</th>
+              <th class="staff-table-head__th text-center" scope="col">Backstock</th>
+              <th class="staff-table-head__th" scope="col">Backstock Locations</th>
             </tr>
           </thead>
           <tbody>
             <tr v-if="restockLoading">
-              <td colspan="5" class="py-5 text-center text-secondary">Loading restock report…</td>
+              <td colspan="7" class="py-5 text-center text-secondary">Loading restock report…</td>
             </tr>
             <tr v-else-if="!restockLastRunLabel && !restockRows.length && !showRunningBanner && !isFailed">
-              <td colspan="5" class="py-5 text-center text-secondary">
+              <td colspan="7" class="py-5 text-center text-secondary">
                 No restock report yet. Click Preview or Refresh to scan ShipHero.
               </td>
             </tr>
             <tr v-else-if="restockRows.length === 0 && !showRunningBanner">
-              <td colspan="5" class="py-5 text-center text-secondary">Nothing to restock right now.</td>
+              <td colspan="7" class="py-5 text-center text-secondary">Nothing to restock right now.</td>
             </tr>
             <tr v-else-if="restockRows.length === 0 && showRunningBanner">
-              <td colspan="5" class="py-5 text-center text-secondary">Refresh in progress…</td>
+              <td colspan="7" class="py-5 text-center text-secondary">Refresh in progress…</td>
             </tr>
             <tr v-for="row in restockRows" :key="row.sku" class="align-middle">
               <td class="text-center user-inv-table__image-col">
@@ -423,6 +425,8 @@ onBeforeUnmount(() => {
               </td>
               <td>{{ row.pick_location || "—" }}</td>
               <td class="text-center">{{ row.pick_qty ?? "—" }}</td>
+              <td class="text-center">{{ row.backstock_qty ?? "—" }}</td>
+              <td>{{ row.backstock_location || "—" }}</td>
             </tr>
           </tbody>
         </table>

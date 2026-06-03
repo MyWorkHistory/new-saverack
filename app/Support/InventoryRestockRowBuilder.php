@@ -3,7 +3,7 @@
 namespace App\Support;
 
 /**
- * Build restock report rows: pickable locations only, pickable qty within threshold.
+ * Build restock report rows: low pickable qty with stock in non-pickable (backstock) locations.
  */
 class InventoryRestockRowBuilder
 {
@@ -19,32 +19,44 @@ class InventoryRestockRowBuilder
         int $maxPickableQty = 2
     ): ?array {
         $pickQty = 0;
+        $backstockQty = 0;
         $pickNames = [];
+        $nonPickableWithQty = [];
         $hasPickableLocation = false;
 
         foreach ($locations as $loc) {
             if (! is_array($loc)) {
                 continue;
             }
-            if (($loc['pickable'] ?? null) !== true) {
-                continue;
-            }
-            $hasPickableLocation = true;
             $qty = max(0, (int) ($loc['quantity'] ?? 0));
-            if ($qty <= 0) {
-                continue;
-            }
-            $pickQty += $qty;
+            $pickable = $loc['pickable'] ?? null;
             $locName = trim((string) ($loc['location_name'] ?? ''));
             if ($locName === '') {
                 $locName = '—';
             }
-            if (! in_array($locName, $pickNames, true)) {
-                $pickNames[] = $locName;
+
+            if ($pickable === true) {
+                $hasPickableLocation = true;
+                if ($qty <= 0) {
+                    continue;
+                }
+                $pickQty += $qty;
+                if (! in_array($locName, $pickNames, true)) {
+                    $pickNames[] = $locName;
+                }
+            } elseif ($pickable === false) {
+                if ($qty <= 0) {
+                    continue;
+                }
+                $backstockQty += $qty;
+                $nonPickableWithQty[] = [
+                    'name' => $locName,
+                    'quantity' => $qty,
+                ];
             }
         }
 
-        if (! $hasPickableLocation) {
+        if (! $hasPickableLocation || $backstockQty <= 0) {
             return null;
         }
 
@@ -58,6 +70,22 @@ class InventoryRestockRowBuilder
             'image_url' => $imageUrl !== null && trim($imageUrl) !== '' ? trim($imageUrl) : null,
             'pick_location' => $pickNames !== [] ? implode(', ', $pickNames) : '—',
             'pick_qty' => $pickQty,
+            'backstock_qty' => $backstockQty,
+            'backstock_location' => self::lowestQtyLocationLabel($nonPickableWithQty),
         ];
+    }
+
+    /**
+     * @param  list<array{name: string, quantity: int}>  $locations
+     */
+    public static function lowestQtyLocationLabel(array $locations): string
+    {
+        if ($locations === []) {
+            return '—';
+        }
+        usort($locations, static fn (array $a, array $b): int => ($a['quantity'] <=> $b['quantity']) ?: strcmp($a['name'], $b['name']));
+        $low = $locations[0];
+
+        return $low['name'].' ('.$low['quantity'].')';
     }
 }

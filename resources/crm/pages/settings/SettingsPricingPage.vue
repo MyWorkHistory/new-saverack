@@ -231,7 +231,7 @@ onUnmounted(() => {
           <div class="position-relative flex-shrink-0" data-toolbar-filter>
             <button
               type="button"
-              class="btn btn-outline-secondary btn-sm orders-toolbar-outline-btn d-inline-flex align-items-center gap-2"
+              class="btn btn-outline-secondary staff-toolbar-btn d-inline-flex align-items-center gap-2"
               :aria-expanded="filterMenuOpen"
               aria-haspopup="true"
               aria-controls="pricing-filter-panel"

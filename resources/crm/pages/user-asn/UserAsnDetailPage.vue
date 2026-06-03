@@ -5,6 +5,7 @@ import api from "../../services/api";
 import CrmIconRowActions from "../../components/common/CrmIconRowActions.vue";
 import CrmLoadingSpinner from "../../components/common/CrmLoadingSpinner.vue";
 import ConfirmModal from "../../components/common/ConfirmModal.vue";
+import AsnProductCatalogPanel from "../../components/inventory/AsnProductCatalogPanel.vue";
 import { setCrmPageMeta } from "../../composables/useCrmPageMeta.js";
 import { useToast } from "../../composables/useToast.js";
 import { ASN_CARRIER_OPTIONS } from "../../utils/asnCarrierOptions.js";
@@ -34,20 +35,7 @@ const markReadyPallets = ref(0);
 const markReadyTrackingMode = ref("entered");
 const markReadyTrackings = ref([{ carrier: "", tracking_number: "" }]);
 
-const catalog = ref([]);
-const catalogLoading = ref(false);
-const catalogLoadingMore = ref(false);
-const catalogSearchAutoLoading = ref(false);
-const catalogRefreshing = ref(false);
-const catalogPageInfo = ref({ has_next_page: false, end_cursor: null });
-const catalogSearchDraft = ref("");
-const catalogSearchCommitted = ref("");
-const catalogSearchSkipNext = ref(0);
 const addPanelOpen = ref(false);
-let catalogSearchRunSeq = 0;
-
-/** GraphQL products page size (aligned with portal inventory paging; capped 25–100 on server). */
-const CATALOG_PAGE_SIZE = 50;
 
 const trackingDraft = ref([{ carrier: "", tracking_number: "" }]);
 const vendorDraft = ref([{ label: "" }]);
@@ -55,8 +43,6 @@ const notesDraft = ref("");
 const trackingSaveBusy = ref(false);
 const vendorSaveBusy = ref(false);
 const notesSaveBusy = ref(false);
-
-const catalogQtyByKey = ref({});
 
 const deleteLineOpen = ref(false);
 const lineToDelete = ref(null);
@@ -111,21 +97,6 @@ function inventoryDetailTo(sku) {
     params: { sku: s },
     query: { client_account_id: String(clientAccountId.value) },
   };
-}
-
-function catalogKey(p) {
-  return String(p.id || p.sku || "");
-}
-
-function catalogQty(p) {
-  const k = catalogKey(p);
-  const n = Number(catalogQtyByKey.value[k]);
-  return Number.isFinite(n) && n >= 0 ? n : 1;
-}
-
-function setCatalogQty(p, v) {
-  const k = catalogKey(p);
-  catalogQtyByKey.value = { ...catalogQtyByKey.value, [k]: Math.max(0, Number(v) || 0) };
 }
 
 function statusLabel(s) {
@@ -433,143 +404,6 @@ function onWindowCloseLineMenu() {
   lineMenuOpenId.value = null;
 }
 
-function commitCatalogSearch() {
-  catalogSearchCommitted.value = catalogSearchDraft.value.trim();
-  loadCatalogRows(true);
-}
-
-function resetCatalogSearchState() {
-  catalogSearchRunSeq += 1;
-  catalogSearchAutoLoading.value = false;
-  catalogSearchDraft.value = "";
-  catalogSearchCommitted.value = "";
-  catalogSearchSkipNext.value = 0;
-  catalogPageInfo.value = { has_next_page: false, end_cursor: null };
-  catalog.value = [];
-}
-
-function clearCatalogSearch() {
-  if (!catalogSearchDraft.value && !catalogSearchCommitted.value) return;
-  catalogSearchDraft.value = "";
-  catalogSearchCommitted.value = "";
-  loadCatalogRows(true);
-}
-
-function loadMoreCatalog() {
-  if (
-    !catalogPageInfo.value.has_next_page ||
-    catalogLoadingMore.value ||
-    catalogLoading.value ||
-    catalogSearchAutoLoading.value ||
-    !clientAccountId.value
-  ) {
-    return;
-  }
-  loadCatalogRows(false);
-}
-
-async function loadCatalogRows(reset, forceRefresh = false) {
-  if (!clientAccountId.value) return;
-  const runId = reset ? ++catalogSearchRunSeq : catalogSearchRunSeq;
-  if (reset) {
-    catalogLoading.value = !forceRefresh;
-    catalogRefreshing.value = forceRefresh;
-    catalogSearchAutoLoading.value = false;
-    catalog.value = [];
-    catalogPageInfo.value = { has_next_page: false, end_cursor: null };
-    catalogSearchSkipNext.value = 0;
-  } else {
-    catalogLoadingMore.value = true;
-  }
-  try {
-    const params = {
-      client_account_id: clientAccountId.value,
-      first: CATALOG_PAGE_SIZE,
-    };
-    const q = catalogSearchCommitted.value;
-    if (q) {
-      params.query = q;
-      params.search_skip = catalogSearchSkipNext.value;
-    }
-    if (forceRefresh) {
-      params.refresh = 1;
-    }
-    if (!reset && catalogPageInfo.value?.end_cursor) {
-      params.after = catalogPageInfo.value.end_cursor;
-    }
-    const { data } = await api.get("/inventory/asn-product-catalog", { params });
-    const chunk = Array.isArray(data?.products) ? data.products : [];
-    const pi = data?.page_info || {};
-    catalogPageInfo.value = {
-      has_next_page: Boolean(pi.has_next_page),
-      end_cursor: pi.end_cursor ?? null,
-    };
-    if (q && typeof pi.next_search_skip === "number") {
-      catalogSearchSkipNext.value = Number(pi.next_search_skip);
-    }
-
-    const dest = [];
-    const seen = new Set();
-    if (!reset) {
-      for (const p of catalog.value) {
-        const k = catalogKey(p);
-        seen.add(k);
-        dest.push(p);
-      }
-    }
-    for (const p of chunk) {
-      const k = catalogKey(p);
-      if (seen.has(k)) continue;
-      seen.add(k);
-      dest.push(p);
-    }
-    catalog.value = dest;
-  } catch (e) {
-    toast.errorFrom(e, "Could not load product catalog.");
-  } finally {
-    catalogLoading.value = false;
-    catalogLoadingMore.value = false;
-    catalogRefreshing.value = false;
-  }
-  if (reset && catalogSearchCommitted.value.trim() && catalogPageInfo.value.has_next_page) {
-    continueCatalogSearchInBackground(runId);
-  }
-}
-
-function refreshCatalogProducts() {
-  if (catalogLoading.value || catalogLoadingMore.value || catalogRefreshing.value) return;
-  loadCatalogRows(true, true);
-}
-
-async function continueCatalogSearchInBackground(runId) {
-  if (catalogSearchAutoLoading.value) return;
-  catalogSearchAutoLoading.value = true;
-  try {
-    let guard = 0;
-    while (
-      runId === catalogSearchRunSeq &&
-      catalogSearchCommitted.value.trim() &&
-      catalogPageInfo.value.has_next_page &&
-      guard < 200
-    ) {
-      guard += 1;
-      await loadCatalogRows(false);
-      await nextTick();
-    }
-  } finally {
-    if (runId === catalogSearchRunSeq) {
-      catalogSearchAutoLoading.value = false;
-    }
-  }
-}
-
-watch(addPanelOpen, (open) => {
-  if (open) {
-    catalogSearchDraft.value = catalogSearchCommitted.value;
-    loadCatalogRows(true);
-  }
-});
-
 function syncDraftsFromAsn() {
   if (!asn.value) return;
   const t = (asn.value.trackings || []).length
@@ -665,9 +499,10 @@ async function saveNotes() {
   }
 }
 
-async function addFromCatalog(p) {
+async function addFromCatalog({ product, quantity }) {
   if (!asn.value || !isDraft.value) return;
-  const qty = catalogQty(p);
+  const p = product && typeof product === "object" ? product : null;
+  const qty = Math.max(0, Number(quantity) || 0);
   if (qty <= 0) {
     toast.error("Enter expected quantity.");
     return;
@@ -683,7 +518,6 @@ async function addFromCatalog(p) {
     });
     toast.success("Product added.");
     await loadAsn();
-    resetCatalogSearchState();
     addPanelOpen.value = false;
   } catch (e) {
     toast.errorFrom(e, "Could not add product.");
@@ -838,123 +672,17 @@ onUnmounted(() => {
             </button>
           </div>
 
-          <div v-show="addPanelOpen">
-            <div class="staff-table-toolbar border-bottom">
-              <div class="staff-table-toolbar--row flex-wrap align-items-end gap-2 gap-md-3">
-                <input
-                  id="asn-catalog-search"
-                  v-model.trim="catalogSearchDraft"
-                  type="search"
-                  class="form-control staff-toolbar-search staff-toolbar-search--inline"
-                  placeholder="Search by SKU or name"
-                  autocomplete="off"
-                  aria-label="Search product catalog"
-                  @keydown.enter.prevent="commitCatalogSearch"
-                />
-                <button
-                  type="button"
-                  class="btn btn-sm btn-outline-secondary fw-semibold staff-page-secondary"
-                  :disabled="catalogLoading"
-                  @click="commitCatalogSearch"
-                >
-                  Search
-                </button>
-                <button
-                  v-if="catalogSearchDraft || catalogSearchCommitted"
-                  type="button"
-                  class="btn btn-sm btn-outline-secondary fw-semibold staff-page-secondary"
-                  :disabled="catalogLoading"
-                  @click="clearCatalogSearch"
-                >
-                  Clear
-                </button>
-                <button
-                  type="button"
-                  class="btn btn-sm btn-outline-secondary fw-semibold staff-page-secondary"
-                  :disabled="catalogLoading || catalogLoadingMore || catalogRefreshing"
-                  @click="refreshCatalogProducts"
-                >
-                  {{ catalogRefreshing ? "Refreshing…" : "Refresh Products" }}
-                </button>
-                <button
-                  type="button"
-                  class="btn btn-sm btn-outline-secondary fw-semibold staff-page-secondary"
-                  @click="openAddNewSkuModal"
-                >
-                  Add New SKU
-                </button>
-              </div>
-            </div>
-            <div class="p-4 bg-body-tertiary border-bottom">
-              <div v-if="catalogLoading" class="d-flex justify-content-center py-4">
-                <CrmLoadingSpinner message="Loading products…" />
-              </div>
-              <template v-else>
-                <p class="small fw-semibold mb-2">From catalog</p>
-                <div class="asn-catalog-grid border rounded bg-white">
-                  <div
-                    v-for="p in catalog"
-                    :key="catalogKey(p)"
-                    class="asn-catalog-grid__row d-flex align-items-center gap-2 border-bottom py-2 px-2"
-                  >
-                    <img
-                      v-if="p.image_url"
-                      :src="p.image_url"
-                      alt=""
-                      class="asn-catalog-thumb"
-                      loading="lazy"
-                    />
-                    <div v-else class="asn-catalog-thumb asn-catalog-thumb--empty" aria-hidden="true" />
-                    <div class="min-w-0 flex-grow-1">
-                      <div class="fw-semibold small text-truncate">{{ p.sku }}</div>
-                      <div class="text-secondary small text-truncate">{{ p.name }}</div>
-                    </div>
-                    <div class="d-flex align-items-center gap-1 flex-shrink-0">
-                      <label class="visually-hidden" :for="'catalog-qty-' + catalogKey(p)">Expected QTY</label>
-                      <input
-                        :id="'catalog-qty-' + catalogKey(p)"
-                        type="number"
-                        min="0"
-                        class="form-control form-control-sm asn-catalog-grid__qty"
-                        :value="catalogQty(p)"
-                        @input="setCatalogQty(p, $event.target.value)"
-                      />
-                      <button
-                        type="button"
-                        class="btn btn-sm btn-primary staff-page-primary"
-                        :disabled="lineBusy"
-                        @click="addFromCatalog(p)"
-                      >
-                        Add
-                      </button>
-                    </div>
-                  </div>
-                  <div v-if="catalog.length === 0" class="p-3 small text-secondary">
-                    <template v-if="catalogSearchCommitted">
-                      No matches.
-                      <button type="button" class="btn btn-link btn-sm p-0 align-baseline" @click="openAddNewSkuModal">
-                        Add New SKU
-                      </button>
-                    </template>
-                    <template v-else>No products on this page.</template>
-                  </div>
-                </div>
-                <div class="d-flex justify-content-center mt-3" v-if="catalogPageInfo.has_next_page">
-                  <div v-if="catalogSearchAutoLoading" class="small text-secondary py-1" aria-live="polite">
-                    Searching More Matches…
-                  </div>
-                  <button
-                    v-else
-                    type="button"
-                    class="btn btn-sm btn-outline-secondary fw-semibold staff-page-secondary px-4"
-                    :disabled="catalogLoadingMore"
-                    @click="loadMoreCatalog"
-                  >
-                    {{ catalogLoadingMore ? "Loading…" : "Load 50 More" }}
-                  </button>
-                </div>
-              </template>
-            </div>
+          <div v-show="addPanelOpen" class="border-bottom">
+            <AsnProductCatalogPanel
+              :client-account-id="clientAccountId"
+              :active="addPanelOpen"
+              :busy="lineBusy"
+              show-add-new-sku
+              qty-label="Expected QTY"
+              search-input-id="asn-catalog-search"
+              @add="addFromCatalog"
+              @add-new-sku="openAddNewSkuModal"
+            />
           </div>
 
           <div class="table-responsive staff-table-wrap">
@@ -1393,7 +1121,6 @@ onUnmounted(() => {
 </template>
 
 <style scoped>
-.asn-catalog-thumb,
 .asn-line-thumb {
   width: 40px;
   height: 40px;
@@ -1404,7 +1131,6 @@ onUnmounted(() => {
   flex-shrink: 0;
 }
 
-.asn-catalog-thumb--empty,
 .asn-line-thumb--empty {
   display: block;
   background: rgba(0, 0, 0, 0.05);
@@ -1423,15 +1149,6 @@ onUnmounted(() => {
 
 .user-asn-ship-to-block {
   line-height: 1.45;
-}
-
-.asn-catalog-grid {
-  max-height: 280px;
-  overflow: auto;
-}
-
-.asn-catalog-grid__qty {
-  width: 4.5rem;
 }
 
 .asn-line-qty-input {

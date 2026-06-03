@@ -6,10 +6,11 @@ import CrmLoadingSpinner from "../../components/common/CrmLoadingSpinner.vue";
 import CrmIconRowActions from "../../components/common/CrmIconRowActions.vue";
 import ConfirmModal from "../../components/common/ConfirmModal.vue";
 import OrdersRemoveHoldsModal from "../../components/orders/OrdersRemoveHoldsModal.vue";
+import AsnProductCatalogPanel from "../../components/inventory/AsnProductCatalogPanel.vue";
 import { setCrmPageMeta } from "../../composables/useCrmPageMeta.js";
 import { usePortalLastRefreshed } from "../../composables/usePortalLastRefreshed.js";
 import { useToast } from "../../composables/useToast.js";
-import { crmIsPortalUser } from "../../utils/crmUser";
+import { crmIsAdmin, crmIsPortalUser } from "../../utils/crmUser";
 import { canWriteShipHeroOrders } from "../../utils/crmShipHeroOrders";
 import {
   carrierForApi,
@@ -73,7 +74,6 @@ const tagInputValue = ref("");
 const tagsSaveBusy = ref(false);
 
 const addItemsModalOpen = ref(false);
-const addItemForm = ref({ sku: "", quantity: 1, product_name: "" });
 const addItemsBusy = ref(false);
 
 const attachmentFileInput = ref(null);
@@ -174,6 +174,27 @@ const orderDetailRootClass = computed(() =>
 const canRunShipHeroActions = computed(
   () => !isReturnPreviewMode.value && canWriteShipHeroOrders(crmUser.value),
 );
+
+const canViewProductCatalog = computed(() => {
+  const user = crmUser.value;
+  if (!user || typeof user !== "object") return false;
+  if (crmIsPortalUser(user) && Number(user.client_account_id || 0) > 0) return true;
+  if (crmIsAdmin(user) || user.is_crm_owner === true || user.is_crm_owner === 1) return true;
+  const keys = Array.isArray(user.permission_keys) ? user.permission_keys : [];
+
+  return keys.includes("inventory.view");
+});
+
+const addItemsCatalogDeniedMessage = computed(() => {
+  if (!canViewProductCatalog.value) {
+    return "Inventory view permission is required to pick SKUs from the catalog.";
+  }
+  if (!Number(selectedAccountId.value || 0)) {
+    return "Select a client account to load products.";
+  }
+
+  return "";
+});
 
 const canUseStaffOrderHeaderActions = computed(
   () => Boolean(order.value) && !isReturnPreviewMode.value,
@@ -1285,7 +1306,14 @@ function openAddItemsModal() {
     toast.error("You do not have permission to add items.");
     return;
   }
-  addItemForm.value = { sku: "", quantity: 1, product_name: "" };
+  if (!Number(selectedAccountId.value || 0)) {
+    toast.error("Client account is required to add items.");
+    return;
+  }
+  if (!canViewProductCatalog.value) {
+    toast.error(addItemsCatalogDeniedMessage.value);
+    return;
+  }
   addItemsModalOpen.value = true;
 }
 
@@ -1351,17 +1379,18 @@ function closeAddItemsModal() {
   addItemsModalOpen.value = false;
 }
 
-async function submitAddItems() {
-  const sku = String(addItemForm.value.sku || "").trim();
-  const qty = Math.max(1, parseInt(String(addItemForm.value.quantity || 1), 10) || 1);
+async function addOrderLineFromCatalog({ product, quantity }) {
+  const p = product && typeof product === "object" ? product : null;
+  const sku = String(p?.sku || "").trim();
+  const qty = Math.max(1, parseInt(String(quantity ?? 1), 10) || 1);
   if (!sku) {
-    toast.error("Enter a SKU.");
+    toast.error("Invalid product.");
     return;
   }
   if (!selectedAccountId.value || !orderId.value) return;
   addItemsBusy.value = true;
   try {
-    const name = String(addItemForm.value.product_name || "").trim();
+    const name = String(p?.name || "").trim();
     await api.post(`/orders/${encodeURIComponent(orderId.value)}/line-items`, {
       client_account_id: Number(selectedAccountId.value),
       line_items: [
@@ -1372,12 +1401,10 @@ async function submitAddItems() {
         },
       ],
     });
-    toast.success("Items added.");
-    addItemsModalOpen.value = false;
-    addItemForm.value = { sku: "", quantity: 1, product_name: "" };
+    toast.success("Item added.");
     await loadOrder({ refresh: true });
   } catch (e) {
-    toast.errorFrom(e, "Could not add items.");
+    toast.errorFrom(e, "Could not add item.");
   } finally {
     addItemsBusy.value = false;
   }
@@ -2354,7 +2381,7 @@ function goToOrdersList() {
             @click="closeAddItemsModal"
           />
           <Transition name="modal-panel" appear>
-            <div class="crm-vx-modal crm-vx-modal--sm">
+            <div class="crm-vx-modal">
               <button
                 type="button"
                 class="crm-vx-modal__close"
@@ -2368,20 +2395,20 @@ function goToOrdersList() {
               </button>
               <header class="crm-vx-modal__head">
                 <h2 id="order-add-items-modal-title" class="crm-vx-modal__title">Add Items</h2>
+                <p class="crm-vx-modal__subtitle small text-secondary mb-0">
+                  Search the account catalog and add SKUs to this order.
+                </p>
               </header>
-              <div class="crm-vx-modal__body pt-0">
-                <div class="mb-2">
-                  <label class="form-label small" for="add-item-sku">SKU</label>
-                  <input id="add-item-sku" v-model="addItemForm.sku" type="text" class="form-control form-control-sm" />
-                </div>
-                <div class="mb-2">
-                  <label class="form-label small" for="add-item-qty">Quantity</label>
-                  <input id="add-item-qty" v-model.number="addItemForm.quantity" type="number" min="1" class="form-control form-control-sm" />
-                </div>
-                <div class="mb-0">
-                  <label class="form-label small" for="add-item-name">Product Name (Optional)</label>
-                  <input id="add-item-name" v-model="addItemForm.product_name" type="text" class="form-control form-control-sm" />
-                </div>
+              <div class="crm-vx-modal__body p-0">
+                <AsnProductCatalogPanel
+                  :client-account-id="selectedAccountId"
+                  :active="addItemsModalOpen"
+                  :busy="addItemsBusy"
+                  :permission-denied-message="addItemsCatalogDeniedMessage"
+                  qty-label="Quantity"
+                  search-input-id="order-add-items-catalog-search"
+                  @add="addOrderLineFromCatalog"
+                />
               </div>
               <footer class="crm-vx-modal__footer">
                 <button
@@ -2390,15 +2417,7 @@ function goToOrdersList() {
                   :disabled="addItemsBusy"
                   @click="closeAddItemsModal"
                 >
-                  Cancel
-                </button>
-                <button
-                  type="button"
-                  class="crm-vx-modal-btn crm-vx-modal-btn--primary"
-                  :disabled="addItemsBusy"
-                  @click="submitAddItems"
-                >
-                  {{ addItemsBusy ? "Adding…" : "Add Items" }}
+                  Close
                 </button>
               </footer>
             </div>

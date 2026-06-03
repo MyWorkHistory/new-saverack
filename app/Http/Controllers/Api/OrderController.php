@@ -86,6 +86,15 @@ class OrderController extends Controller
                 ]);
             }
 
+            $crossOrderNumber = isset($validated['order_number'])
+                ? trim(ltrim((string) $validated['order_number'], '#'))
+                : '';
+            if ($crossOrderNumber === '') {
+                throw ValidationException::withMessages([
+                    'order_number' => ['Enter an order number to search all accounts, or select a client account.'],
+                ]);
+            }
+
             if (! empty($validated['after'])) {
                 throw ValidationException::withMessages([
                     'after' => ['Load more is not available when searching all accounts. Filter by account or order number.'],

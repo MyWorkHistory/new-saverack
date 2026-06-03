@@ -19,6 +19,12 @@ class CrossAccountOrderListService
     /** Stop scanning accounts once this many order-number matches are found. */
     private const MAX_ORDER_NUMBER_MATCHES = 10;
 
+    /** Max ShipHero list calls per cross-account order-number search (avoids origin timeouts). */
+    private const MAX_ORDER_NUMBER_ACCOUNT_SCAN = 50;
+
+    /** Wall-clock budget for cross-account ShipHero fan-out (seconds). */
+    private const CROSS_ACCOUNT_WALL_SECONDS = 25;
+
     /** @var ShipHeroOrderService */
     private $orders;
 
@@ -81,7 +87,7 @@ class CrossAccountOrderListService
             ->values();
 
         if ($forOrderNumberLookup) {
-            return $accounts;
+            return $accounts->take(self::MAX_ORDER_NUMBER_ACCOUNT_SCAN);
         }
 
         return $accounts->take(self::MAX_ACCOUNTS_PER_REQUEST);
@@ -96,8 +102,15 @@ class CrossAccountOrderListService
     {
         $rows = [];
         $queried = 0;
+        $accountsTotal = $accounts->count();
+        $deadline = microtime(true) + self::CROSS_ACCOUNT_WALL_SECONDS;
+        $scanTruncated = false;
 
         foreach ($accounts as $account) {
+            if (microtime(true) >= $deadline) {
+                $scanTruncated = true;
+                break;
+            }
             $queried++;
             try {
                 $customerId = trim((string) $account->shiphero_customer_account_id);
@@ -122,6 +135,10 @@ class CrossAccountOrderListService
             }
         }
 
+        if ($queried < $accountsTotal) {
+            $scanTruncated = true;
+        }
+
         $rows = $this->sortRows($rows);
         $rows = array_slice($rows, 0, self::MAX_MERGED_ROWS);
 
@@ -134,6 +151,9 @@ class CrossAccountOrderListService
             'meta' => [
                 'cross_account' => true,
                 'accounts_queried' => $queried,
+                'accounts_total' => $accountsTotal,
+                'accounts_scan_limit' => self::MAX_ORDER_NUMBER_ACCOUNT_SCAN,
+                'scan_truncated' => $scanTruncated,
                 'order_number' => $orderNumber,
             ],
         ];
@@ -149,8 +169,12 @@ class CrossAccountOrderListService
         $rows = [];
         $queried = 0;
         $perAccountFirst = max(5, (int) floor(self::MAX_MERGED_ROWS / max(1, $accounts->count())));
+        $deadline = microtime(true) + self::CROSS_ACCOUNT_WALL_SECONDS;
 
         foreach ($accounts as $account) {
+            if (microtime(true) >= $deadline) {
+                break;
+            }
             $queried++;
             try {
                 $customerId = trim((string) $account->shiphero_customer_account_id);

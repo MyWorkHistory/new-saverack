@@ -377,9 +377,9 @@ function orderDateParamsForRequest() {
 
 function buildParams(withCursor = false) {
   const apiTab = tabKey.value === "search" ? "manage" : tabKey.value;
-  const params = {
+    const params = {
     tab: apiTab,
-    first: 100,
+    first: crossAccountMode.value ? 25 : 50,
     ...orderDateParamsForRequest(),
   };
   if (!crossAccountMode.value && selectedAccountId.value) {
@@ -439,6 +439,11 @@ async function fetchOrders(reset = true) {
     const crossAccount = Boolean(data?.meta?.cross_account);
     if (crossAccount) {
       crossAccountMode.value = true;
+    }
+    if (crossAccount && data?.meta?.scan_truncated && !incoming.length && committedOrderNumber.value) {
+      toast.error(
+        "No match in the accounts searched (scan capped for speed). Select an account and search again.",
+      );
     }
     hasNextPage.value = crossAccount ? false : Boolean(data?.pagination?.has_next_page);
     nextCursor.value = crossAccount ? null : data?.pagination?.end_cursor || null;
@@ -980,6 +985,7 @@ watch(
     query.holdReason = "";
     query.orderNumber = "";
     committedOrderNumber.value = "";
+    crossAccountMode.value = false;
   },
   { immediate: true },
 );

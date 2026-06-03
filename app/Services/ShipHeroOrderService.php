@@ -158,10 +158,7 @@ class ShipHeroOrderService
         }
 
         $countOnly = ! empty($filters['count_only']);
-        $graphql = $this->ordersListGraphql($countOnly);
-
-        $json = $this->client->query($graphql, $vars);
-        $parsed = $this->parseShipHeroOrdersConnection($json, $countOnly);
+        $parsed = $this->queryOrdersListConnection($vars, $countOnly);
         $rows = $parsed['rows'];
         $pageInfo = $parsed['pageInfo'];
 
@@ -169,8 +166,7 @@ class ShipHeroOrderService
             $varsPartner = $vars;
             $varsPartner['order_number'] = null;
             $varsPartner['partner_order_id'] = $orderNumber;
-            $jsonPartner = $this->client->query($graphql, $varsPartner);
-            $parsedPartner = $this->parseShipHeroOrdersConnection($jsonPartner, $countOnly);
+            $parsedPartner = $this->queryOrdersListConnection($varsPartner, $countOnly);
             if ($parsedPartner['rows'] !== []) {
                 $rows = $parsedPartner['rows'];
                 $pageInfo = $parsedPartner['pageInfo'];
@@ -181,8 +177,7 @@ class ShipHeroOrderService
             $varsHash = $vars;
             $varsHash['order_number'] = '#'.$orderNumber;
             $varsHash['partner_order_id'] = null;
-            $jsonHash = $this->client->query($graphql, $varsHash);
-            $parsedHash = $this->parseShipHeroOrdersConnection($jsonHash, $countOnly);
+            $parsedHash = $this->queryOrdersListConnection($varsHash, $countOnly);
             if ($parsedHash['rows'] !== []) {
                 $rows = $parsedHash['rows'];
                 $pageInfo = $parsedHash['pageInfo'];
@@ -210,7 +205,34 @@ class ShipHeroOrderService
         ];
     }
 
-    private function ordersListGraphql(bool $countOnly): string
+    /**
+     * @return array{rows: list<array<string, mixed>>, pageInfo: array<string, mixed>}
+     */
+    private function queryOrdersListConnection(array $vars, bool $countOnly): array
+    {
+        try {
+            $json = $this->client->query($this->ordersListGraphql($countOnly, true), $vars);
+        } catch (RuntimeException $e) {
+            if (! $countOnly && $this->isOrderListStatusFieldError($e->getMessage())) {
+                $json = $this->client->query($this->ordersListGraphql($countOnly, false), $vars);
+            } else {
+                throw $e;
+            }
+        }
+
+        return $this->parseShipHeroOrdersConnection($json, $countOnly);
+    }
+
+    private function isOrderListStatusFieldError(string $message): bool
+    {
+        $m = strtolower($message);
+
+        return str_contains($m, 'cannot query field')
+            && str_contains($m, 'status')
+            && (str_contains($m, 'order') || str_contains($m, 'orders'));
+    }
+
+    private function ordersListGraphql(bool $countOnly, bool $includeListStatus = true): string
     {
         if ($countOnly) {
             return <<<'GQL'
@@ -280,6 +302,8 @@ query ShipHeroOrders(
 GQL;
         }
 
+        $statusField = $includeListStatus ? "          status\n" : '';
+
         return <<<'GQL'
 query ShipHeroOrders(
   $customer_account_id: String!,
@@ -329,7 +353,9 @@ query ShipHeroOrders(
           partner_order_id
           shop_name
           fulfillment_status
-          status
+GQL
+            .$statusField
+            .<<<'GQL'
           order_date
           updated_at
           required_ship_date

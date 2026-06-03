@@ -58,10 +58,19 @@ class OrderCrossAccountListApiTest extends TestCase
                 ]);
         });
 
-        $this->getJson('/api/orders?tab=manage')
+        $this->getJson('/api/orders?tab=manage&order_number=1001')
             ->assertOk()
             ->assertJsonPath('meta.cross_account', true)
             ->assertJsonPath('rows.0.order_number', '1001');
+    }
+
+    public function test_staff_cross_account_requires_order_number_without_client_account(): void
+    {
+        $this->staffWithOrdersView();
+
+        $this->getJson('/api/orders?tab=manage')
+            ->assertStatus(422)
+            ->assertJsonValidationErrors(['order_number']);
     }
 
     public function test_staff_cannot_paginate_cross_account_list_with_after_cursor(): void

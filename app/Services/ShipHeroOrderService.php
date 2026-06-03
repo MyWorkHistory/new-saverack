@@ -329,6 +329,7 @@ query ShipHeroOrders(
           partner_order_id
           shop_name
           fulfillment_status
+          status
           order_date
           updated_at
           required_ship_date
@@ -2699,16 +2700,48 @@ GQL;
     private function normalizeFulfillmentStatus(array $node): string
     {
         $status = trim((string) ($node['fulfillment_status'] ?? ''));
-        if ($this->isPlausibleOrderStatus($status)) {
+        if ($status !== '' && $this->isPlausibleOrderStatus($status)) {
+            return $status;
+        }
+        if ($status !== '' && ! $this->looksLikeNonStatusLabel($status) && $this->isRelaxedStatusToken($status)) {
             return $status;
         }
 
         $fallback = trim((string) ($node['status'] ?? ''));
-        if ($this->isPlausibleOrderStatus($fallback)) {
+        if ($fallback !== '' && $this->isPlausibleOrderStatus($fallback)) {
+            return $fallback;
+        }
+        if ($fallback !== '' && ! $this->looksLikeNonStatusLabel($fallback) && $this->isRelaxedStatusToken($fallback)) {
             return $fallback;
         }
 
         return '';
+    }
+
+    private function looksLikeNonStatusLabel(string $value): bool
+    {
+        $v = strtolower(trim($value));
+        if ($v === '') {
+            return true;
+        }
+
+        return preg_match('/^(default|manual|shopify|amazon|woocommerce|bigcommerce|magento|profile)$/i', $v) === 1;
+    }
+
+    /**
+     * ShipHero statuses are usually lowercase tokens (e.g. complete, pending), not profile names.
+     */
+    private function isRelaxedStatusToken(string $value): bool
+    {
+        $v = trim($value);
+        if ($v === '' || preg_match('/\s/', $v) === 1) {
+            return false;
+        }
+        if (str_contains($v, '_')) {
+            return preg_match('/^[A-Za-z0-9_]+$/', $v) === 1;
+        }
+
+        return $v === strtolower($v) && preg_match('/^[a-z][a-z0-9]*$/', $v) === 1;
     }
 
     private function isPlausibleOrderStatus(string $value): bool

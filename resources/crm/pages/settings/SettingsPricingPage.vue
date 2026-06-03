@@ -231,7 +231,7 @@ onUnmounted(() => {
           <div class="position-relative flex-shrink-0" data-toolbar-filter>
             <button
               type="button"
-              class="btn btn-outline-secondary staff-toolbar-btn d-inline-flex align-items-center gap-2"
+              class="btn btn-outline-secondary btn-sm orders-toolbar-outline-btn d-inline-flex align-items-center gap-2"
               :aria-expanded="filterMenuOpen"
               aria-haspopup="true"
               aria-controls="pricing-filter-panel"
@@ -386,10 +386,18 @@ onUnmounted(() => {
                 <div class="d-flex align-items-center justify-content-between mt-auto pt-2 border-top">
                   <span class="fw-semibold text-body">{{ formatPrice(fee.amount) }}</span>
                   <div v-if="canUpdate" class="btn-group btn-group-sm">
-                    <button type="button" class="btn btn-outline-secondary" @click="openEdit(fee)">
+                    <button
+                      type="button"
+                      class="btn btn-outline-secondary btn-sm orders-toolbar-outline-btn"
+                      @click="openEdit(fee)"
+                    >
                       Edit
                     </button>
-                    <button type="button" class="btn btn-outline-danger" @click="confirmDelete(fee)">
+                    <button
+                      type="button"
+                      class="btn btn-outline-danger btn-sm settings-pricing-delete-btn"
+                      @click="confirmDelete(fee)"
+                    >
                       Delete
                     </button>
                   </div>

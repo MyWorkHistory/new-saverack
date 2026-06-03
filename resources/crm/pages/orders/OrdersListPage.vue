@@ -298,7 +298,12 @@ function displayOrderStatus(row) {
   if (tabKey.value === "backorder") {
     return "Backorder";
   }
-  return row.status || "—";
+  const raw =
+    row.status ||
+    row.raw_fulfillment_status ||
+    row.raw_status ||
+    "";
+  return String(raw).trim() !== "" ? String(raw).trim() : "—";
 }
 
 function statusClassForRow(row) {
@@ -1413,7 +1418,7 @@ onUnmounted(() => {
                 >
                   {{ row.order_number || "—" }}
                 </a>
-                <span v-else :title="'Select an account'">{{ row.order_number || "—" }}</span>
+                <span v-else>{{ row.order_number || "—" }}</span>
               </td>
               <td>{{ row.recipient_name || "—" }}</td>
               <td>{{ rowDisplayDate(row) }}</td>

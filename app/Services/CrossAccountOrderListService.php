@@ -16,6 +16,9 @@ class CrossAccountOrderListService
 
     private const MAX_MERGED_ROWS = 100;
 
+    /** Stop scanning accounts once this many order-number matches are found. */
+    private const MAX_ORDER_NUMBER_MATCHES = 10;
+
     /** @var ShipHeroOrderService */
     private $orders;
 
@@ -34,7 +37,8 @@ class CrossAccountOrderListService
      */
     public function list(User $user, array $filters): array
     {
-        $accounts = $this->eligibleAccounts($user);
+        $orderNumber = isset($filters['order_number']) ? trim(ltrim((string) $filters['order_number'], '#')) : '';
+        $accounts = $this->eligibleAccounts($user, $orderNumber !== '');
         if ($accounts->isEmpty()) {
             return [
                 'rows' => [],
@@ -49,7 +53,6 @@ class CrossAccountOrderListService
             ];
         }
 
-        $orderNumber = isset($filters['order_number']) ? trim(ltrim((string) $filters['order_number'], '#')) : '';
         if ($orderNumber !== '') {
             return $this->listByOrderNumber($accounts, $filters, $orderNumber);
         }
@@ -60,9 +63,9 @@ class CrossAccountOrderListService
     /**
      * @return Collection<int, ClientAccount>
      */
-    private function eligibleAccounts(User $user): Collection
+    private function eligibleAccounts(User $user, bool $forOrderNumberLookup = false): Collection
     {
-        return ClientAccount::query()
+        $accounts = ClientAccount::query()
             ->whereNotNull('shiphero_customer_account_id')
             ->where('shiphero_customer_account_id', '!=', '')
             ->orderBy('company_name')
@@ -75,8 +78,13 @@ class CrossAccountOrderListService
 
                 return Gate::forUser($user)->allows('view', $account);
             })
-            ->values()
-            ->take(self::MAX_ACCOUNTS_PER_REQUEST);
+            ->values();
+
+        if ($forOrderNumberLookup) {
+            return $accounts;
+        }
+
+        return $accounts->take(self::MAX_ACCOUNTS_PER_REQUEST);
     }
 
     /**
@@ -107,6 +115,10 @@ class CrossAccountOrderListService
                     continue;
                 }
                 $rows[] = $this->annotateRow($row, $account);
+            }
+
+            if (count($rows) >= self::MAX_ORDER_NUMBER_MATCHES) {
+                break;
             }
         }
 

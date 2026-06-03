@@ -5,7 +5,9 @@ import CrmLoadingSpinner from "../common/CrmLoadingSpinner.vue";
 import CrmSearchableSelect from "../common/CrmSearchableSelect.vue";
 import { useToast } from "../../composables/useToast";
 import {
+  DEFAULT_PACKAGING_OPTION,
   DEFAULT_POSTAGE_OPTION,
+  PACKAGING_OPTIONS,
   POSTAGE_OPTIONS,
 } from "../../constants/clientAccountBillingPreferences.js";
 
@@ -47,6 +49,7 @@ const form = reactive({
   account_manager_id: "",
   default_payment_type: "",
   postage_option: DEFAULT_POSTAGE_OPTION,
+  packaging_option: DEFAULT_PACKAGING_OPTION,
   cc_fee_percent: "3.50",
   stripe_customer_id: "",
   shiphero_customer_account_id: "",
@@ -107,9 +110,9 @@ const modalSubtitle = computed(() => {
     case "address":
       return "Street, city, and country.";
     case "billing":
-      return "Default payment type and postage.";
+      return "Default payment type, postage, and packaging.";
     case "payment":
-      return "Default payment type and postage.";
+      return "Default payment type, postage, and packaging.";
     case "settings":
       return "External API identifiers for integrations.";
     default:
@@ -165,6 +168,7 @@ async function load() {
       : "";
     form.default_payment_type = data.default_payment_type || "";
     form.postage_option = data.postage_option || DEFAULT_POSTAGE_OPTION;
+    form.packaging_option = data.packaging_option || DEFAULT_PACKAGING_OPTION;
     form.cc_fee_percent =
       data.cc_fee_percent != null && data.cc_fee_percent !== ""
         ? Number(data.cc_fee_percent).toFixed(2)
@@ -223,6 +227,7 @@ function buildPatch() {
         : null,
       default_payment_type: trimOrNull(form.default_payment_type),
       postage_option: form.postage_option || DEFAULT_POSTAGE_OPTION,
+      packaging_option: form.packaging_option || DEFAULT_PACKAGING_OPTION,
       cc_fee_percent: trimOrNull(form.cc_fee_percent),
       stripe_customer_id: trimOrNull(form.stripe_customer_id),
       shiphero_customer_account_id: trimOrNull(form.shiphero_customer_account_id),
@@ -259,6 +264,7 @@ function buildPatch() {
     return {
       default_payment_type: trimOrNull(form.default_payment_type),
       postage_option: form.postage_option || DEFAULT_POSTAGE_OPTION,
+      packaging_option: form.packaging_option || DEFAULT_PACKAGING_OPTION,
       cc_fee_percent: trimOrNull(form.cc_fee_percent),
     };
   }
@@ -614,6 +620,24 @@ async function onSubmit() {
                         >
                           <option
                             v-for="opt in POSTAGE_OPTIONS"
+                            :key="opt.value"
+                            :value="opt.value"
+                          >
+                            {{ opt.label }}
+                          </option>
+                        </select>
+                      </div>
+                      <div class="col-12">
+                        <label class="form-label small mb-1 text-secondary" for="cae-packaging-option"
+                          >Packaging</label
+                        >
+                        <select
+                          id="cae-packaging-option"
+                          v-model="form.packaging_option"
+                          class="form-select"
+                        >
+                          <option
+                            v-for="opt in PACKAGING_OPTIONS"
                             :key="opt.value"
                             :value="opt.value"
                           >

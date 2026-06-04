@@ -13,6 +13,10 @@ use App\Http\Controllers\PublicInvoiceController;
 use App\Http\Controllers\SlackStatusIconController;
 use Illuminate\Support\Facades\Route;
 
+Route::get('/images/slack/avatars/{icon}', [SlackStatusIconController::class, 'show'])
+    ->where('icon', 'shipping-status-live\.png|shipping-status-paused\.png')
+    ->name('slack.status-icon.avatars');
+
 Route::get('/images/slack/{icon}', [SlackStatusIconController::class, 'show'])
     ->where('icon', 'shipping-status-live\.png|shipping-status-paused\.png')
     ->name('slack.status-icon.images');

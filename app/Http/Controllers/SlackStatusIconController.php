@@ -23,7 +23,7 @@ class SlackStatusIconController extends Controller
 
         $avatarPath = public_path('images/slack/avatars/'.$icon);
         if (is_file($avatarPath)) {
-            return response()->file($avatarPath, $this->pngHeaders());
+            return $this->pngResponse((string) file_get_contents($avatarPath));
         }
 
         $path = public_path('images/slack/'.$icon);
@@ -33,21 +33,19 @@ class SlackStatusIconController extends Controller
 
         $png = $this->squareAvatarPng($path);
         if ($png !== null) {
-            return response($png, 200, $this->pngHeaders());
+            return $this->pngResponse($png);
         }
 
-        return response()->file($path, $this->pngHeaders());
+        return $this->pngResponse((string) file_get_contents($path));
     }
 
-    /**
-     * @return array<string, string>
-     */
-    private function pngHeaders(): array
+    private function pngResponse(string $bytes): Response
     {
-        return [
+        return response($bytes, 200, [
             'Content-Type' => 'image/png',
+            'Content-Length' => (string) strlen($bytes),
             'Cache-Control' => 'public, max-age=31536000, immutable',
-        ];
+        ]);
     }
 
     private function squareAvatarPng(string $path): ?string

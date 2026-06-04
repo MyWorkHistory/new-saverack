@@ -41,12 +41,15 @@ class SlackStatusIconControllerTest extends TestCase
         $response->assertHeader('Content-Type', 'image/png');
     }
 
-    public function test_images_slack_route_serves_36_square_icon(): void
+    public function test_avatars_static_path_serves_36_square_icon(): void
     {
-        $response = $this->get('/images/slack/shipping-status-live.png');
+        $response = $this->get('/images/slack/avatars/shipping-status-live.png');
 
         $response->assertOk();
-        $this->assertStringContainsString('image/png', (string) $response->headers->get('Content-Type'));
+        $response->assertHeader('Content-Type', 'image/png');
+        [$w, $h] = $this->pngDimensions((string) $response->getContent());
+        $this->assertSame(36, $w);
+        $this->assertSame(36, $h);
     }
 
     /**

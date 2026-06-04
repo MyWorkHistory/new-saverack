@@ -69,6 +69,7 @@ const billingGroupOpen = ref(route.path.startsWith("/admin/billing"));
 const ordersGroupOpen = ref(route.path.startsWith("/admin/orders"));
 const inventoryGroupOpen = ref(route.path.startsWith("/admin/inventory"));
 const receivingGroupOpen = ref(route.path.startsWith("/admin/receiving"));
+const returnsGroupOpen = ref(route.path.startsWith("/admin/returns"));
 watch(
   () => route.path,
   (p) => {
@@ -117,6 +118,10 @@ function navActive(mode) {
   if (mode === "orders-shipped") return p.startsWith("/admin/orders/shipped");
   if (mode === "receiving") return p.startsWith("/admin/receiving");
   if (mode === "receiving-asn") return p.startsWith("/admin/receiving/asn");
+  if (mode === "returns") return p.startsWith("/admin/returns");
+  if (mode === "returns-process") return p.startsWith("/admin/returns/process");
+  if (mode === "returns-orders") return p === "/admin/returns/orders";
+  if (mode === "returns-items") return p === "/admin/returns/items";
   if (mode === "inventory") return p.startsWith("/admin/inventory");
   if (mode === "inventory-search" || mode === "inventory-products") return p === "/admin/inventory";
   if (mode === "inventory-restock") return p.startsWith("/admin/inventory/restock");
@@ -412,6 +417,101 @@ function collapseNav() {
                 stroke-linecap="round"
                 stroke-linejoin="round"
                 d="M3 16.5v2.25A2.25 2.25 0 0 0 5.25 21h13.5A2.25 2.25 0 0 0 21 18.75V16.5M16.5 12 12 16.5m0 0L7.5 12m4.5 4.5V3.75"
+              />
+            </svg>
+          </RouterLink>
+        </li>
+        <li v-if="!isPortal && canViewInventory">
+          <template v-if="isExpanded">
+            <div>
+              <button
+                type="button"
+                class="vx-nav-link"
+                :class="{ 'vx-nav-link--active': navActive('returns') }"
+                :aria-expanded="returnsGroupOpen"
+                @click="returnsGroupOpen = !returnsGroupOpen"
+              >
+                <svg
+                  fill="none"
+                  viewBox="0 0 24 24"
+                  stroke="currentColor"
+                  stroke-width="1.5"
+                >
+                  <path
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                    d="M9 15 3 9m0 0 6-6M3 9h12a6 6 0 0 1 0 12h-3"
+                  />
+                </svg>
+                <span class="text-truncate">Returns</span>
+                <svg
+                  class="ms-auto flex-shrink-0 transition"
+                  :class="returnsGroupOpen ? 'rotate-180' : ''"
+                  style="width: 1rem; height: 1rem"
+                  fill="none"
+                  viewBox="0 0 24 24"
+                  stroke="currentColor"
+                  stroke-width="1.5"
+                  aria-hidden="true"
+                >
+                  <path
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                    d="M19 9l-7 7-7-7"
+                  />
+                </svg>
+              </button>
+              <ul v-show="returnsGroupOpen" class="list-unstyled mb-0 mt-1">
+                <li>
+                  <RouterLink
+                    to="/admin/returns/process"
+                    class="vx-nav-link vx-nav-sublink"
+                    :class="{ 'vx-nav-link--active': navActive('returns-process') }"
+                    @click="closeMobile"
+                  >
+                    Process Returns
+                  </RouterLink>
+                </li>
+                <li>
+                  <RouterLink
+                    to="/admin/returns/orders"
+                    class="vx-nav-link vx-nav-sublink"
+                    :class="{ 'vx-nav-link--active': navActive('returns-orders') }"
+                    @click="closeMobile"
+                  >
+                    Returned Orders
+                  </RouterLink>
+                </li>
+                <li>
+                  <RouterLink
+                    to="/admin/returns/items"
+                    class="vx-nav-link vx-nav-sublink"
+                    :class="{ 'vx-nav-link--active': navActive('returns-items') }"
+                    @click="closeMobile"
+                  >
+                    Returned Items
+                  </RouterLink>
+                </li>
+              </ul>
+            </div>
+          </template>
+          <RouterLink
+            v-else
+            to="/admin/returns/process"
+            class="vx-nav-link"
+            title="Returns"
+            @click="closeMobile"
+          >
+            <svg
+              fill="none"
+              viewBox="0 0 24 24"
+              stroke="currentColor"
+              stroke-width="1.5"
+            >
+              <path
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                d="M9 15 3 9m0 0 6-6M3 9h12a6 6 0 0 1 0 12h-3"
               />
             </svg>
           </RouterLink>

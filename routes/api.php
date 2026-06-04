@@ -1,6 +1,7 @@
 <?php
 
 use App\Http\Controllers\Api\AdminAsnController;
+use App\Http\Controllers\Api\AdminReturnController;
 use App\Http\Controllers\Api\AsnController;
 use App\Http\Controllers\Api\ReturnController;
 use App\Http\Controllers\Api\AuthController;
@@ -156,6 +157,10 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::get('/{clientAccountReturn}', [ReturnController::class, 'show'])->middleware('can:inventory.view');
         Route::patch('/{clientAccountReturn}', [ReturnController::class, 'update'])->middleware('can:inventory.view');
         Route::delete('/{clientAccountReturn}', [ReturnController::class, 'destroy'])->middleware('can:inventory.view');
+    });
+
+    Route::prefix('admin/returns')->group(function () {
+        Route::get('/process-lookup', [AdminReturnController::class, 'processLookup'])->middleware('can:inventory.view');
     });
 
     Route::prefix('admin/asns')->group(function () {

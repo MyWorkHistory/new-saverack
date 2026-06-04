@@ -189,6 +189,22 @@ const meta = {
     title: "Save Rack | ASN Detail",
     description: "Admin ASN receiving and processing.",
   },
+  adminProcessReturnsSearch: {
+    title: "Save Rack | Process Returns",
+    description: "Find pending returns to process.",
+  },
+  adminProcessReturnDetail: {
+    title: "Save Rack | Process Return",
+    description: "Process a pending return.",
+  },
+  adminReturnedOrders: {
+    title: "Save Rack | Returned Orders",
+    description: "Processed returns by order.",
+  },
+  adminReturnedItems: {
+    title: "Save Rack | Returned Items",
+    description: "Processed return line items.",
+  },
   userReturnOrdersList: {
     title: "Save Rack | Return Orders",
     description: "View returned orders that are pending processing or completed.",
@@ -369,6 +385,32 @@ const routes = [
     meta: meta.adminAsnDetail,
   },
   { path: "/admin/receiving", redirect: "/admin/receiving/asn" },
+  {
+    path: "/admin/returns/process",
+    name: "admin-process-returns",
+    component: () => import("../pages/admin-returns/AdminProcessReturnsSearchPage.vue"),
+    meta: meta.adminProcessReturnsSearch,
+  },
+  {
+    path: "/admin/returns/process/:id",
+    name: "admin-process-return-detail",
+    component: () => import("../pages/admin-returns/AdminProcessReturnDetailPage.vue"),
+    props: true,
+    meta: meta.adminProcessReturnDetail,
+  },
+  {
+    path: "/admin/returns/orders",
+    name: "admin-returned-orders",
+    component: () => import("../pages/admin-returns/AdminReturnedOrdersPage.vue"),
+    meta: meta.adminReturnedOrders,
+  },
+  {
+    path: "/admin/returns/items",
+    name: "admin-returned-items",
+    component: () => import("../pages/admin-returns/AdminReturnedItemsPage.vue"),
+    meta: meta.adminReturnedItems,
+  },
+  { path: "/admin/returns", redirect: "/admin/returns/process" },
   {
     path: "/admin/inventory",
     name: "inventory",
@@ -929,6 +971,7 @@ async function ensureInventoryRouteAccess(path) {
     path === "/admin/inventory" ||
     path.startsWith("/admin/inventory/") ||
     path.startsWith("/admin/receiving/") ||
+    path.startsWith("/admin/returns/") ||
     path === "/users/inventory" ||
     path.startsWith("/users/inventory/") ||
     path === "/users/asn" ||
@@ -1092,6 +1135,7 @@ router.beforeEach(async (to) => {
   if (
     to.path.startsWith("/admin/inventory") ||
     to.path.startsWith("/admin/receiving") ||
+    to.path.startsWith("/admin/returns") ||
     to.path.startsWith("/users/inventory") ||
     to.path.startsWith("/users/asn")
   ) {

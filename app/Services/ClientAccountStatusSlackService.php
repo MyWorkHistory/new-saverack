@@ -13,10 +13,6 @@ class ClientAccountStatusSlackService
 
     private const USERNAME = 'Shipping Status Update';
 
-    private const COLOR_LIVE = '#2e7d32';
-
-    private const COLOR_PAUSED = '#d32f2f';
-
     /** @var SlackDeliveryService */
     protected $slack;
 
@@ -63,13 +59,12 @@ class ClientAccountStatusSlackService
 
         $text = (string) ($payload['text'] ?? '');
         $username = (string) ($payload['username'] ?? self::USERNAME);
-        $iconUrl = (string) ($payload['icon_url'] ?? '');
         $isLive = $newStatus === ClientAccount::STATUS_ACTIVE;
-        $thumbUrl = $isLive ? $this->iconUrls->liveThumbUrl() : $this->iconUrls->pausedThumbUrl();
-        $options = $this->deliveryOptions($text, $username, $iconUrl, $thumbUrl, $isLive);
+        $iconUrl = $isLive ? $this->iconUrls->liveThumbUrl() : $this->iconUrls->pausedThumbUrl();
+        $options = $this->deliveryOptions($text, $username, $iconUrl);
 
-        if ($thumbUrl !== '') {
-            $this->logIconUrlReachability($thumbUrl, (int) $account->id);
+        if ($iconUrl !== '') {
+            $this->logIconUrlReachability($iconUrl, (int) $account->id);
         }
 
         try {
@@ -84,7 +79,6 @@ class ClientAccountStatusSlackService
                 'slack_channel' => $result['channel'],
                 'delivery' => $result['method'],
                 'icon_url' => $iconUrl !== '' ? $iconUrl : null,
-                'thumb_url' => $thumbUrl !== '' ? $thumbUrl : null,
                 'old_status' => $oldStatus,
                 'new_status' => $newStatus,
                 'actor_id' => $actor !== null ? $actor->id : null,
@@ -101,53 +95,28 @@ class ClientAccountStatusSlackService
     }
 
     /**
-     * Webhook: attachment color + PNG thumb_url (works without bot).
-     * Bot: same attachment plus icon_url avatar.
+     * Single header line: truck icon (icon_url) + "Shipping Status Update", then message body.
      *
      * @return array{text: string, username: string, slack: array<string, mixed>}
      */
-    private function deliveryOptions(string $text, string $username, string $iconUrl, string $thumbUrl, bool $isLive): array
+    private function deliveryOptions(string $text, string $username, string $iconUrl): array
     {
-        $slack = [
-            'attachments' => [
-                $this->buildAttachment($text, $thumbUrl, $isLive),
-            ],
-        ];
+        $slack = [];
+
+        if ($iconUrl !== '') {
+            $slack['icon_url'] = $iconUrl;
+        }
 
         if ($this->slack->hasBotToken()) {
             $slack['customize_identity'] = true;
             $slack['prefer_bot'] = true;
-            if ($iconUrl !== '') {
-                $slack['icon_url'] = $iconUrl;
-            }
         }
 
         return [
-            'text' => '',
+            'text' => $text,
             'username' => $username,
             'slack' => $slack,
         ];
-    }
-
-    /**
-     * @return array{color: string, fallback: string, text: string, mrkdwn_in: array<int, string>, author_name: string, author_icon?: string, thumb_url?: string}
-     */
-    private function buildAttachment(string $text, string $thumbUrl, bool $isLive): array
-    {
-        $attachment = [
-            'color' => $isLive ? self::COLOR_LIVE : self::COLOR_PAUSED,
-            'fallback' => $text,
-            'text' => $text,
-            'mrkdwn_in' => ['text'],
-            'author_name' => self::USERNAME,
-        ];
-
-        if ($thumbUrl !== '') {
-            $attachment['author_icon'] = $thumbUrl;
-            $attachment['thumb_url'] = $thumbUrl;
-        }
-
-        return $attachment;
     }
 
     /**
@@ -162,11 +131,11 @@ class ClientAccountStatusSlackService
         $newStatus = strtolower(trim($newStatus));
 
         if ($newStatus === ClientAccount::STATUS_PAUSED) {
-            return $this->buildStatusPayload($account, 'Paused', 'Set Pause in Shiphero', $this->iconUrls->pausedUrl(), $actor);
+            return $this->buildStatusPayload($account, 'Paused', 'Set Pause in Shiphero', $this->iconUrls->pausedThumbUrl(), $actor);
         }
 
         if ($newStatus === ClientAccount::STATUS_ACTIVE) {
-            return $this->buildStatusPayload($account, 'Live', 'Set Live in Shiphero', $this->iconUrls->liveUrl(), $actor);
+            return $this->buildStatusPayload($account, 'Live', 'Set Live in Shiphero', $this->iconUrls->liveThumbUrl(), $actor);
         }
 
         return null;

@@ -89,14 +89,9 @@ final class SlackDeliveryServiceCustomizeTest extends TestCase
             'Hello',
             'Shipping Status Update',
             [
-                'icon_url' => 'https://app.saverack.com/images/slack/shipping-status-live.png',
+                'icon_url' => 'https://app.saverack.com/images/slack/shipping-status-live-thumb.png',
                 'customize_identity' => true,
                 'prefer_bot' => true,
-                'attachments' => [[
-                    'color' => '#2e7d32',
-                    'text' => 'Hello',
-                    'thumb_url' => 'https://app.saverack.com/images/slack/shipping-status-live-thumb.png',
-                ]],
             ]
         );
 
@@ -107,11 +102,10 @@ final class SlackDeliveryServiceCustomizeTest extends TestCase
             }
 
             $payload = $request->data();
-            $attachment = $payload['attachments'][0] ?? [];
 
             return ($payload['text'] ?? '') === 'Hello'
-                && ! array_key_exists('icon_url', $payload)
-                && ($attachment['thumb_url'] ?? '') !== '';
+                && str_contains((string) ($payload['icon_url'] ?? ''), 'shipping-status-live-thumb.png')
+                && ! array_key_exists('attachments', $payload);
         });
     }
 }

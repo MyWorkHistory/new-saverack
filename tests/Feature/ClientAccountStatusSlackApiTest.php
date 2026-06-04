@@ -72,17 +72,16 @@ class ClientAccountStatusSlackApiTest extends TestCase
             }
 
             $payload = $request->data();
-            $attachment = $payload['attachments'][0] ?? [];
-            $this->assertSame('#d32f2f', $attachment['color'] ?? null);
-            $this->assertStringContainsString('/images/slack/shipping-status-paused-thumb.png', (string) ($attachment['thumb_url'] ?? ''));
-            $this->assertStringContainsString('Slack Co is set to Paused.', (string) ($attachment['text'] ?? ''));
-            $this->assertArrayNotHasKey('icon_url', $payload);
+            $this->assertSame('Shipping Status Update', $payload['username'] ?? null);
+            $this->assertStringContainsString('/images/slack/shipping-status-paused-thumb.png', (string) ($payload['icon_url'] ?? ''));
+            $this->assertStringContainsString('Slack Co is set to Paused.', (string) ($payload['text'] ?? ''));
+            $this->assertArrayNotHasKey('attachments', $payload);
 
             return true;
         });
     }
 
-    public function test_status_patch_with_bot_includes_attachment_and_icon_url(): void
+    public function test_status_patch_with_bot_includes_icon_url_beside_username(): void
     {
         $this->staffWithClientsUpdate();
 
@@ -109,11 +108,10 @@ class ClientAccountStatusSlackApiTest extends TestCase
             }
 
             $payload = $request->data();
-            $attachment = $payload['attachments'][0] ?? [];
             $this->assertSame('Shipping Status Update', $payload['username'] ?? null);
-            $this->assertStringContainsString('/images/slack/shipping-status-paused.png', (string) ($payload['icon_url'] ?? ''));
-            $this->assertStringContainsString('/images/slack/shipping-status-paused-thumb.png', (string) ($attachment['thumb_url'] ?? ''));
-            $this->assertStringContainsString('Slack Co is set to Paused.', (string) ($attachment['text'] ?? ''));
+            $this->assertStringContainsString('/images/slack/shipping-status-paused-thumb.png', (string) ($payload['icon_url'] ?? ''));
+            $this->assertStringContainsString('Slack Co is set to Paused.', (string) ($payload['text'] ?? ''));
+            $this->assertArrayNotHasKey('attachments', $payload);
 
             return true;
         });

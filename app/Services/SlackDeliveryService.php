@@ -70,12 +70,11 @@ class SlackDeliveryService
                 'message' => $e->getMessage(),
                 'custom_icon' => $customizeIdentity,
                 'hint' => $customizeIdentity
-                    ? 'Invite the bot to the channel for custom avatar; message sent via webhook with PNG thumb_url attachment.'
+                    ? 'Invite the bot to the channel for custom avatar beside username.'
                     : null,
             ]);
 
-            $fallbackIconUrl = $customizeIdentity ? '' : $iconUrl;
-            $this->postViaWebhook($webhookUrl, $channel, $text, $username, $iconEmoji, $attachments, $fallbackIconUrl, null);
+            $this->postViaWebhook($webhookUrl, $channel, $text, $username, $iconEmoji, null, $iconUrl, null);
 
             return ['method' => 'webhook', 'channel' => $channel, 'ts' => null];
         }

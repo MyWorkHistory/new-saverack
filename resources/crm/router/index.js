@@ -162,15 +162,15 @@ const meta = {
     description: "Your account ShipHero order queue summary.",
   },
   userPortalInventory: {
-    title: "Save Rack | Products | Inventory",
+    title: "Save Rack | Inventory | Products",
     description: "ShipHero live inventory for your account.",
   },
   userPortalInventoryOutOfStock: {
-    title: "Save Rack | Products | Out of Stock",
+    title: "Save Rack | Inventory | Out of Stock",
     description: "Products with oversold quantity for your account.",
   },
   userPortalInventoryDetail: {
-    title: "Save Rack | Products | Inventory Detail",
+    title: "Save Rack | Inventory | Product Detail",
     description: "ShipHero product inventory detail.",
   },
   userAsnList: {

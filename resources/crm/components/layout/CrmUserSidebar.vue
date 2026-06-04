@@ -11,7 +11,7 @@ defineProps({
 const route = useRoute();
 const ordersGroupOpen = ref(route.path.startsWith("/users/orders"));
 const returnsGroupOpen = ref(route.path.startsWith("/users/returns"));
-const productsGroupOpen = ref(
+const inventoryGroupOpen = ref(
   route.path.startsWith("/users/inventory") || route.path.startsWith("/users/asn"),
 );
 
@@ -20,7 +20,7 @@ watch(
   (p) => {
     if (p.startsWith("/users/orders")) ordersGroupOpen.value = true;
     if (p.startsWith("/users/returns")) returnsGroupOpen.value = true;
-    if (p.startsWith("/users/inventory") || p.startsWith("/users/asn")) productsGroupOpen.value = true;
+    if (p.startsWith("/users/inventory") || p.startsWith("/users/asn")) inventoryGroupOpen.value = true;
   },
 );
 
@@ -272,8 +272,8 @@ function collapseNav() {
               type="button"
               class="vx-nav-link"
               :class="{ 'vx-nav-link--active': navActive('inventory') }"
-              :aria-expanded="productsGroupOpen"
-              @click="productsGroupOpen = !productsGroupOpen"
+              :aria-expanded="inventoryGroupOpen"
+              @click="inventoryGroupOpen = !inventoryGroupOpen"
             >
               <svg
                 fill="none"
@@ -287,10 +287,10 @@ function collapseNav() {
                   d="m20.25 7.5-.625 10.632a2.25 2.25 0 0 1-2.247 2.118H6.622a2.25 2.25 0 0 1-2.247-2.118L3.75 7.5M10 11.25h4M3.375 7.5h17.25c.621 0 1.125-.504 1.125-1.125v-1.5c0-.621-.504-1.125-1.125-1.125H3.375c-.621 0-1.125.504-1.125 1.125v1.5c0 .621.504 1.125 1.125 1.125Z"
                 />
               </svg>
-              <span class="text-truncate">Products</span>
+              <span class="text-truncate fw-bold">Inventory</span>
               <svg
                 class="ms-auto flex-shrink-0 transition"
-                :class="productsGroupOpen ? 'rotate-180' : ''"
+                :class="inventoryGroupOpen ? 'rotate-180' : ''"
                 style="width: 1rem; height: 1rem"
                 fill="none"
                 viewBox="0 0 24 24"
@@ -301,7 +301,7 @@ function collapseNav() {
                 <path stroke-linecap="round" stroke-linejoin="round" d="M19 9l-7 7-7-7" />
               </svg>
             </button>
-            <ul v-show="productsGroupOpen" class="list-unstyled mb-0 mt-1">
+            <ul v-show="inventoryGroupOpen" class="list-unstyled mb-0 mt-1">
               <li>
                 <RouterLink
                   to="/users/inventory"

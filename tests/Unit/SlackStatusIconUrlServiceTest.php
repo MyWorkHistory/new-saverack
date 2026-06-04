@@ -17,14 +17,14 @@ final class SlackStatusIconUrlServiceTest extends TestCase
         ]);
     }
 
-    public function test_avatar_url_uses_local_thumb_file(): void
+    public function test_avatar_url_uses_api_route_for_local_file(): void
     {
         $this->assertFileExists(public_path('images/slack/shipping-status-live-thumb.png'));
 
         $url = app(SlackStatusIconUrlService::class)->avatarUrl(true);
 
         $this->assertSame(
-            'https://app.saverack.com/images/slack/shipping-status-live-thumb.png',
+            'https://app.saverack.com/api/slack/status-icons/shipping-status-live-thumb.png',
             $url
         );
     }
@@ -33,49 +33,36 @@ final class SlackStatusIconUrlServiceTest extends TestCase
     {
         config([
             'billing.slack.status_icon_live_url' => 'https://broken.example.com/storage/slack-status-icons/shipping-status-live.png',
-            'billing.slack.status_icon_live_thumb_url' => 'https://broken.example.com/storage/slack-status-icons/shipping-status-live.png',
         ]);
 
         $url = app(SlackStatusIconUrlService::class)->avatarUrl(true);
 
         $this->assertSame(
-            'https://app.saverack.com/images/slack/shipping-status-live-thumb.png',
+            'https://app.saverack.com/api/slack/status-icons/shipping-status-live-thumb.png',
             $url
         );
     }
 
-    public function test_legacy_storage_env_url_remapped_when_local_file_missing(): void
+    public function test_legacy_storage_env_url_remapped_to_api_route(): void
     {
-        $thumb = public_path('images/slack/shipping-status-live-thumb.png');
-        $backup = $thumb.'.bak';
-        $hadThumb = is_file($thumb);
-        if ($hadThumb) {
-            rename($thumb, $backup);
-        }
-
         config([
             'billing.slack.status_icon_live_url' => 'https://app.saverack.com/storage/slack-status-icons/shipping-status-live.png',
         ]);
 
-        try {
-            $url = app(SlackStatusIconUrlService::class)->avatarUrl(true);
-            $this->assertSame(
-                'https://app.saverack.com/images/slack/shipping-status-live.png',
-                $url
-            );
-        } finally {
-            if ($hadThumb && is_file($backup)) {
-                rename($backup, $thumb);
-            }
-        }
+        $url = app(SlackStatusIconUrlService::class)->liveUrl();
+
+        $this->assertSame(
+            'https://app.saverack.com/api/slack/status-icons/shipping-status-live.png',
+            $url
+        );
     }
 
-    public function test_paused_avatar_url_uses_local_thumb(): void
+    public function test_paused_avatar_url_uses_api_route(): void
     {
         $url = app(SlackStatusIconUrlService::class)->avatarUrl(false);
 
         $this->assertSame(
-            'https://app.saverack.com/images/slack/shipping-status-paused-thumb.png',
+            'https://app.saverack.com/api/slack/status-icons/shipping-status-paused-thumb.png',
             $url
         );
     }

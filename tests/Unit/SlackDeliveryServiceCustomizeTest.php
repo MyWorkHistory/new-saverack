@@ -26,7 +26,7 @@ final class SlackDeliveryServiceCustomizeTest extends TestCase
             'Hello',
             'Shipping Status Update',
             [
-                'icon_url' => 'https://app.saverack.com/images/slack/shipping-status-live.png',
+                'icon_url' => 'https://app.saverack.com/api/slack/status-icons/shipping-status-live.png',
                 'customize_identity' => true,
                 'prefer_bot' => true,
             ]
@@ -68,19 +68,15 @@ final class SlackDeliveryServiceCustomizeTest extends TestCase
         });
     }
 
-    public function test_customize_identity_falls_back_to_webhook_when_bot_fails(): void
+    public function test_customize_identity_retries_without_icon_when_bot_rejects_icon(): void
     {
-        config([
-            'billing.slack.bot_token' => 'xoxb-test-token',
-            'billing.slack.webhook_url' => 'https://hooks.slack.com/services/T/B/x',
-        ]);
+        config(['billing.slack.bot_token' => 'xoxb-test-token']);
 
         Http::fake([
             'https://slack.com/api/conversations.join' => Http::response(['ok' => true], 200),
             'https://slack.com/api/chat.postMessage' => Http::sequence()
                 ->push(['ok' => false, 'error' => 'invalid_icon'], 200)
                 ->push(['ok' => true, 'channel' => 'C123', 'ts' => '1.0'], 200),
-            'hooks.slack.com/*' => Http::response('ok', 200),
         ]);
 
         $result = app(SlackDeliveryService::class)->post(
@@ -88,7 +84,7 @@ final class SlackDeliveryServiceCustomizeTest extends TestCase
             'Hello',
             'Shipping Status Update',
             [
-                'icon_url' => 'https://app.saverack.com/images/slack/shipping-status-live-thumb.png',
+                'icon_url' => 'https://app.saverack.com/api/slack/status-icons/shipping-status-live-thumb.png',
                 'customize_identity' => true,
                 'prefer_bot' => true,
             ]
@@ -127,7 +123,7 @@ final class SlackDeliveryServiceCustomizeTest extends TestCase
             'Hello',
             'Shipping Status Update',
             [
-                'icon_url' => 'https://app.saverack.com/images/slack/shipping-status-live-thumb.png',
+                'icon_url' => 'https://app.saverack.com/api/slack/status-icons/shipping-status-live-thumb.png',
                 'customize_identity' => true,
                 'prefer_bot' => true,
             ]
@@ -142,7 +138,7 @@ final class SlackDeliveryServiceCustomizeTest extends TestCase
             $payload = $request->data();
 
             return ($payload['text'] ?? '') === 'Hello'
-                && str_contains((string) ($payload['icon_url'] ?? ''), 'shipping-status-live-thumb.png')
+                && ! array_key_exists('icon_url', $payload)
                 && ! array_key_exists('attachments', $payload);
         });
     }

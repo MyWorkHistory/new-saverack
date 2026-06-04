@@ -4,9 +4,6 @@ namespace App\Services;
 
 /**
  * Public HTTPS URLs for Slack status truck icons (must be fetchable by Slack).
- *
- * Icons are served as static files under /images/slack/ (no storage:link required).
- * Deployed files in public/images/slack/ always win over .env overrides.
  */
 class SlackStatusIconUrlService
 {
@@ -18,16 +15,11 @@ class SlackStatusIconUrlService
 
     private const PAUSED_THUMB_FILE = 'shipping-status-paused-thumb.png';
 
-    /** @var string Relative to site root; nginx/Laravel serves public/images/slack/ directly. */
-    private const PUBLIC_PATH = '/images/slack';
+    /** Served by SlackStatusIconController — works even when static /images/slack/ 404s. */
+    private const API_PATH = '/api/slack/status-icons';
 
-    /** @var string Legacy storage path that often 404s without storage:link. */
     private const LEGACY_STORAGE_PATH = '/storage/slack-status-icons/';
 
-    /**
-     * Avatar icon for Slack header — only returns a URL when the PNG exists on disk.
-     * Prevents broken .env overrides from stripping "Shipping Status Update" in Slack.
-     */
     public function avatarUrl(bool $isLive): string
     {
         $thumb = $isLive ? self::LIVE_THUMB_FILE : self::PAUSED_THUMB_FILE;
@@ -35,7 +27,10 @@ class SlackStatusIconUrlService
 
         foreach ([$thumb, $full] as $filename) {
             if ($this->localFileExists($filename)) {
-                return $this->buildPublicUrl($filename);
+                $url = $this->buildApiUrl($filename);
+                if ($url !== '') {
+                    return $url;
+                }
             }
         }
 
@@ -70,7 +65,10 @@ class SlackStatusIconUrlService
     private function resolveUrl(string $filename, string $configKey): string
     {
         if ($this->localFileExists($filename)) {
-            return $this->buildPublicUrl($filename);
+            $url = $this->buildApiUrl($filename);
+            if ($url !== '') {
+                return $url;
+            }
         }
 
         $explicit = config($configKey);
@@ -78,7 +76,7 @@ class SlackStatusIconUrlService
             return $this->remapLegacyStorageUrl(trim($explicit), $filename, $filename);
         }
 
-        return $this->buildPublicUrl($filename);
+        return $this->buildApiUrl($filename);
     }
 
     private function resolveConfiguredUrl(
@@ -87,23 +85,19 @@ class SlackStatusIconUrlService
         string $thumbConfigKey,
         string $fullConfigKey
     ): string {
-        $explicitThumb = config($thumbConfigKey);
-        if (is_string($explicitThumb) && trim($explicitThumb) !== '') {
-            return $this->remapLegacyStorageUrl(trim($explicitThumb), $thumbFilename, $fullFilename);
-        }
-
-        $explicitFull = config($fullConfigKey);
-        if (is_string($explicitFull) && trim($explicitFull) !== '') {
-            return $this->remapLegacyStorageUrl(trim($explicitFull), $fullFilename, $fullFilename);
+        foreach ([$thumbConfigKey => $thumbFilename, $fullConfigKey => $fullFilename] as $configKey => $filename) {
+            $explicit = config($configKey);
+            if (is_string($explicit) && trim($explicit) !== '') {
+                $url = $this->remapLegacyStorageUrl(trim($explicit), $filename, $fullFilename);
+                if ($this->isPublicHttpsUrl($url)) {
+                    return $url;
+                }
+            }
         }
 
         return '';
     }
 
-    /**
-     * Old deployments pointed at /storage/slack-status-icons/ which often 404s.
-     * Prefer /images/slack/ when the file exists in public/.
-     */
     private function remapLegacyStorageUrl(string $url, string $primaryFilename, string $fallbackFilename): string
     {
         if (! str_contains($url, self::LEGACY_STORAGE_PATH)) {
@@ -112,27 +106,38 @@ class SlackStatusIconUrlService
 
         foreach ([$primaryFilename, $fallbackFilename] as $filename) {
             if ($this->localFileExists($filename)) {
-                return $this->buildPublicUrl($filename);
+                $apiUrl = $this->buildApiUrl($filename);
+                if ($apiUrl !== '') {
+                    return $apiUrl;
+                }
             }
         }
 
         return $url;
     }
 
+    private function buildApiUrl(string $filename): string
+    {
+        $base = $this->publicBaseUrl();
+        if ($base === '') {
+            return '';
+        }
+
+        return $base.self::API_PATH.'/'.$filename;
+    }
+
+    private function isPublicHttpsUrl(string $url): bool
+    {
+        if (! str_starts_with(strtolower($url), 'https://')) {
+            return false;
+        }
+
+        return ! $this->isNonPublicHost(parse_url($url, PHP_URL_HOST));
+    }
+
     private function localFileExists(string $filename): bool
     {
         return is_file(public_path('images/slack/'.$filename));
-    }
-
-    private function buildPublicUrl(string $filename): string
-    {
-        $relative = self::PUBLIC_PATH.'/'.$filename;
-        $base = $this->publicBaseUrl();
-        if ($base === '') {
-            return url($relative);
-        }
-
-        return $base.$relative;
     }
 
     private function publicBaseUrl(): string

@@ -102,16 +102,15 @@ class ClientAccountStatusSlackService
      */
     private function deliveryOptions(string $text, string $username, string $iconUrl): array
     {
-        $slack = [
-            'customize_identity' => true,
-        ];
-
-        if ($this->slack->hasBotToken()) {
-            $slack['prefer_bot'] = true;
-        }
+        $slack = [];
 
         if ($iconUrl !== '') {
             $slack['icon_url'] = $iconUrl;
+        }
+
+        if ($this->slack->hasBotToken()) {
+            $slack['customize_identity'] = true;
+            $slack['prefer_bot'] = true;
         }
 
         return [

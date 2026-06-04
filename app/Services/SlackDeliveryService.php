@@ -59,19 +59,21 @@ class SlackDeliveryService
         }
 
         try {
+            return $this->postViaBot($token, $channel, $text, $username, $iconEmoji, $attachments, $iconUrl, $blocks, $customizeIdentity);
+        } catch (\Throwable $e) {
             if ($customizeIdentity && $iconUrl !== '') {
                 try {
-                    return $this->postViaBot($token, $channel, $text, $username, $iconEmoji, $attachments, $iconUrl, $blocks, true);
-                } catch (\Throwable $iconError) {
                     Log::warning('slack_delivery_bot_icon_failed_retrying_without_icon', [
                         'channel' => $channel,
-                        'message' => $iconError->getMessage(),
+                        'message' => $e->getMessage(),
                     ]);
+
+                    return $this->postViaBot($token, $channel, $text, $username, $iconEmoji, $attachments, '', $blocks, true);
+                } catch (\Throwable $retryError) {
+                    $e = $retryError;
                 }
             }
 
-            return $this->postViaBot($token, $channel, $text, $username, $iconEmoji, $attachments, '', $blocks, $customizeIdentity || $iconUrl !== '' || $iconEmoji !== '');
-        } catch (\Throwable $e) {
             if ($webhookUrl === '') {
                 throw $e;
             }
@@ -85,7 +87,7 @@ class SlackDeliveryService
                     : null,
             ]);
 
-            $this->postViaWebhook($webhookUrl, $channel, $text, $username, $iconEmoji, null, $iconUrl, null);
+            $this->postViaWebhook($webhookUrl, $channel, $text, $username, $iconEmoji, null, '', null);
 
             return ['method' => 'webhook', 'channel' => $channel, 'ts' => null];
         }

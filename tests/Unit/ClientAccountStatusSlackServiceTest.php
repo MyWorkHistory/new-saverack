@@ -26,7 +26,7 @@ final class ClientAccountStatusSlackServiceTest extends TestCase
 
     private function iconBase(): string
     {
-        return 'https://app.saverack.com/images/slack';
+        return 'https://app.saverack.com/api/slack/status-icons';
     }
 
     public function test_build_paused_message_body_only_once(): void
@@ -102,9 +102,8 @@ final class ClientAccountStatusSlackServiceTest extends TestCase
         $this->assertSame($text, $result['text']);
         $this->assertSame('Shipping Status Update', $result['username']);
         $this->assertSame($iconUrl, $result['slack']['icon_url']);
-        $this->assertTrue($result['slack']['customize_identity']);
         $this->assertArrayNotHasKey('attachments', $result['slack']);
-        $this->assertArrayNotHasKey('prefer_bot', $result['slack']);
+        $this->assertArrayNotHasKey('customize_identity', $result['slack']);
     }
 
     public function test_delivery_uses_bot_customize_identity_for_truck_icon(): void
@@ -189,7 +188,7 @@ final class ClientAccountStatusSlackServiceTest extends TestCase
         $thumbUrl = $this->iconBase().'/shipping-status-paused-thumb.png';
 
         Http::fake([
-            'app.saverack.com/images/slack/shipping-status-paused-thumb.png' => Http::response('<html>', 404, ['Content-Type' => 'text/html']),
+            'app.saverack.com/api/slack/status-icons/shipping-status-paused-thumb.png' => Http::response('<html>', 404, ['Content-Type' => 'text/html']),
             'https://slack.com/api/*' => Http::response(['ok' => true, 'channel' => 'C1', 'ts' => '1.0'], 200),
             'hooks.slack.com/*' => Http::response('ok', 200),
         ]);
@@ -223,7 +222,7 @@ final class ClientAccountStatusSlackServiceTest extends TestCase
         ]);
 
         Http::fake([
-            'app.saverack.com/images/slack/*' => Http::response('', 200, ['Content-Type' => 'image/png']),
+            'app.saverack.com/api/slack/status-icons/*' => Http::response('', 200, ['Content-Type' => 'image/png']),
             'hooks.slack.com/*' => Http::response('ok', 200),
         ]);
 
@@ -249,7 +248,7 @@ final class ClientAccountStatusSlackServiceTest extends TestCase
 
             $payload = $request->data();
 
-            return str_contains((string) ($payload['icon_url'] ?? ''), '/images/slack/shipping-status-paused-thumb.png')
+            return str_contains((string) ($payload['icon_url'] ?? ''), '/api/slack/status-icons/shipping-status-paused-thumb.png')
                 && str_contains((string) ($payload['text'] ?? ''), 'Demo is set to Paused.')
                 && ($payload['username'] ?? '') === 'Shipping Status Update'
                 && ! array_key_exists('attachments', $payload);

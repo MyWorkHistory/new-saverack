@@ -23,6 +23,7 @@ class ClientAccountStatusSlackApiTest extends TestCase
             'billing.slack.bot_token' => null,
             'app.url' => 'https://app.saverack.com',
             'crm.frontend_url' => 'https://app.saverack.com',
+            'billing.slack.public_asset_base_url' => 'https://app.saverack.com',
         ]);
     }
 
@@ -71,6 +72,10 @@ class ClientAccountStatusSlackApiTest extends TestCase
             $this->assertSame('#slack-co', $payload['channel'] ?? null);
             $this->assertSame('Shipping Status Update', $payload['username'] ?? null);
             $this->assertStringContainsString('/images/slack/shipping-status-paused.png', (string) ($payload['icon_url'] ?? ''));
+            $blocks = $payload['blocks'] ?? [];
+            $this->assertIsArray($blocks);
+            $this->assertGreaterThanOrEqual(2, count($blocks));
+            $this->assertSame('image', $blocks[1]['type'] ?? null);
             $this->assertStringContainsString('Slack Co is set to Paused.', (string) ($payload['text'] ?? ''));
             $this->assertStringContainsString('<https://app.shiphero.com/3pl|Set Pause in Shiphero>', (string) ($payload['text'] ?? ''));
             $this->assertStringNotContainsString('View Account', (string) ($payload['text'] ?? ''));

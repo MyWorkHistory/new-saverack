@@ -29,6 +29,13 @@ return [
          * BILLING_SLACK_INCOMING_WEBHOOK_URL overrides SLACK_WEBHOOK_URL when set.
          */
         'webhook_url' => env('BILLING_SLACK_INCOMING_WEBHOOK_URL') ?: env('SLACK_WEBHOOK_URL'),
+        /**
+         * Public HTTPS base URL Slack can fetch for status icons (e.g. https://app.saverack.com).
+         * Defaults to FRONTEND_URL, then APP_URL.
+         */
+        'public_asset_base_url' => env('SLACK_PUBLIC_ASSET_BASE_URL')
+            ?: env('FRONTEND_URL')
+            ?: env('APP_URL'),
     ],
 
 ];

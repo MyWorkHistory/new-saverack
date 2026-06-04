@@ -62,6 +62,12 @@ class ClientAccountStatusSlackService
         if (! empty($payload['icon_url'])) {
             $options['icon_url'] = $payload['icon_url'];
         }
+        if (! empty($payload['blocks']) && is_array($payload['blocks'])) {
+            $options['blocks'] = $payload['blocks'];
+        }
+        if (! empty($payload['attachments']) && is_array($payload['attachments'])) {
+            $options['attachments'] = $payload['attachments'];
+        }
 
         try {
             $result = $this->slack->post($channel, $text, $username, $options);
@@ -69,6 +75,7 @@ class ClientAccountStatusSlackService
                 'client_account_id' => $account->id,
                 'slack_channel' => $result['channel'],
                 'delivery' => $result['method'],
+                'icon_url' => $payload['icon_url'] ?? null,
                 'old_status' => $oldStatus,
                 'new_status' => $newStatus,
                 'actor_id' => $actor !== null ? $actor->id : null,
@@ -85,7 +92,13 @@ class ClientAccountStatusSlackService
     }
 
     /**
-     * @return array{text: string, username: string, icon_url: string}|null
+     * @return array{
+     *     text: string,
+     *     username: string,
+     *     icon_url: string,
+     *     blocks: array<int, array<string, mixed>>,
+     *     attachments: array<int, array<string, mixed>>
+     * }|null
      */
     public function buildMessagePayload(
         ClientAccount $account,
@@ -96,11 +109,11 @@ class ClientAccountStatusSlackService
         $newStatus = strtolower(trim($newStatus));
 
         if ($newStatus === ClientAccount::STATUS_PAUSED) {
-            return $this->buildPausedPayload($account, $actor);
+            return $this->buildStatusPayload($account, 'Paused', 'Set Pause in Shiphero', self::ICON_PAUSED, $actor);
         }
 
         if ($newStatus === ClientAccount::STATUS_ACTIVE) {
-            return $this->buildLivePayload($account, $actor);
+            return $this->buildStatusPayload($account, 'Live', 'Set Live in Shiphero', self::ICON_LIVE, $actor);
         }
 
         return null;
@@ -118,38 +131,73 @@ class ClientAccountStatusSlackService
     }
 
     /**
-     * @return array{text: string, username: string, icon_url: string}
+     * @return array{
+     *     text: string,
+     *     username: string,
+     *     icon_url: string,
+     *     blocks: array<int, array<string, mixed>>,
+     *     attachments: array<int, array<string, mixed>>
+     * }
      */
-    private function buildPausedPayload(ClientAccount $account, ?User $actor): array
-    {
+    private function buildStatusPayload(
+        ClientAccount $account,
+        string $statusLabel,
+        string $shipheroLinkLabel,
+        string $iconFilename,
+        ?User $actor
+    ): array {
         $lines = [
-            $this->companyLine($account).' is set to Paused.',
+            $this->companyLine($account).' is set to '.$statusLabel.'.',
         ];
         $this->appendActorLine($lines, $actor);
-        $lines[] = '<'.self::SHIPHERO_3PL_URL.'|Set Pause in Shiphero>';
+        $lines[] = '<'.self::SHIPHERO_3PL_URL.'|'.$shipheroLinkLabel.'>';
+
+        $text = implode("\n", $lines);
+        $iconUrl = $this->slackIconUrl($iconFilename);
 
         return [
-            'text' => implode("\n", $lines),
+            'text' => $text,
             'username' => self::USERNAME,
-            'icon_url' => $this->slackIconUrl(self::ICON_PAUSED),
+            'icon_url' => $iconUrl,
+            'blocks' => $this->buildBlocks($text, $iconUrl, $statusLabel),
+            'attachments' => [
+                [
+                    'fallback' => self::USERNAME,
+                    'author_name' => self::USERNAME,
+                    'author_icon' => $iconUrl,
+                    'text' => $text,
+                    'mrkdwn_in' => ['text'],
+                ],
+            ],
         ];
     }
 
     /**
-     * @return array{text: string, username: string, icon_url: string}
+     * @return array<int, array<string, mixed>>
      */
-    private function buildLivePayload(ClientAccount $account, ?User $actor): array
+    private function buildBlocks(string $text, string $iconUrl, string $altText): array
     {
-        $lines = [
-            $this->companyLine($account).' is set to Live.',
-        ];
-        $this->appendActorLine($lines, $actor);
-        $lines[] = '<'.self::SHIPHERO_3PL_URL.'|Set Live in Shiphero>';
-
         return [
-            'text' => implode("\n", $lines),
-            'username' => self::USERNAME,
-            'icon_url' => $this->slackIconUrl(self::ICON_LIVE),
+            [
+                'type' => 'header',
+                'text' => [
+                    'type' => 'plain_text',
+                    'text' => self::USERNAME,
+                    'emoji' => false,
+                ],
+            ],
+            [
+                'type' => 'image',
+                'image_url' => $iconUrl,
+                'alt_text' => $altText,
+            ],
+            [
+                'type' => 'section',
+                'text' => [
+                    'type' => 'mrkdwn',
+                    'text' => $text,
+                ],
+            ],
         ];
     }
 
@@ -177,9 +225,16 @@ class ClientAccountStatusSlackService
 
     private function slackIconUrl(string $filename): string
     {
-        $base = rtrim((string) config('app.url'), '/');
+        $base = rtrim((string) config('billing.slack.public_asset_base_url'), '/');
         if ($base === '') {
             $base = rtrim((string) config('crm.frontend_url'), '/');
+        }
+        if ($base === '') {
+            $base = rtrim((string) config('app.url'), '/');
+        }
+
+        if (str_starts_with($base, 'http://')) {
+            $base = 'https://'.substr($base, 7);
         }
 
         return $base.'/images/slack/'.$filename;

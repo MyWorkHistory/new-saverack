@@ -11,7 +11,12 @@ use Illuminate\Support\Facades\Log;
 class SlackDeliveryService
 {
     /**
-     * @param  array{icon_emoji?: string|null, icon_url?: string|null, attachments?: array<int, array<string, mixed>>|null}  $options
+     * @param  array{
+     *     icon_emoji?: string|null,
+     *     icon_url?: string|null,
+     *     attachments?: array<int, array<string, mixed>>|null,
+     *     blocks?: array<int, array<string, mixed>>|null
+     * }  $options
      * @return array{method: string, channel: string, ts: string|null}
      */
     public function post(string $channel, string $text, string $username = 'Save Rack', array $options = []): array
@@ -29,10 +34,14 @@ class SlackDeliveryService
         if (! is_array($attachments)) {
             $attachments = null;
         }
+        $blocks = $options['blocks'] ?? null;
+        if (! is_array($blocks)) {
+            $blocks = null;
+        }
 
         $webhookUrl = $this->normalizeWebhookUrl((string) config('billing.slack.webhook_url', ''));
         if ($webhookUrl !== '') {
-            $this->postViaWebhook($webhookUrl, $channel, $text, $username, $iconEmoji, $attachments, $iconUrl);
+            $this->postViaWebhook($webhookUrl, $channel, $text, $username, $iconEmoji, $attachments, $iconUrl, $blocks);
 
             return ['method' => 'webhook', 'channel' => $channel, 'ts' => null];
         }
@@ -135,6 +144,9 @@ class SlackDeliveryService
     /**
      * @param  array<int, array<string, mixed>>|null  $attachments
      */
+    /**
+     * @param  array<int, array<string, mixed>>|null  $blocks
+     */
     private function postViaWebhook(
         string $webhookUrl,
         string $channel,
@@ -142,7 +154,8 @@ class SlackDeliveryService
         string $username,
         string $iconEmoji = '',
         ?array $attachments = null,
-        string $iconUrl = ''
+        string $iconUrl = '',
+        ?array $blocks = null
     ): void {
         $payload = [
             'channel' => $channel,
@@ -157,6 +170,9 @@ class SlackDeliveryService
         }
         if ($attachments !== null && $attachments !== []) {
             $payload['attachments'] = $attachments;
+        }
+        if ($blocks !== null && $blocks !== []) {
+            $payload['blocks'] = $blocks;
         }
 
         $response = Http::acceptJson()

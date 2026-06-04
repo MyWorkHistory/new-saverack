@@ -17,6 +17,7 @@ final class ClientAccountStatusSlackServiceTest extends TestCase
         config([
             'app.url' => 'https://app.saverack.com',
             'crm.frontend_url' => 'https://app.saverack.com',
+            'billing.slack.public_asset_base_url' => 'https://app.saverack.com',
         ]);
     }
 
@@ -47,6 +48,12 @@ final class ClientAccountStatusSlackServiceTest extends TestCase
             $payload['text']
         );
         $this->assertStringNotContainsString('View Account', $payload['text']);
+        $this->assertArrayHasKey('blocks', $payload);
+        $this->assertSame('image', $payload['blocks'][1]['type']);
+        $this->assertSame(
+            'https://app.saverack.com/images/slack/shipping-status-paused.png',
+            $payload['blocks'][1]['image_url']
+        );
     }
 
     public function test_build_live_message_uses_shipping_status_update_format(): void
@@ -75,6 +82,24 @@ final class ClientAccountStatusSlackServiceTest extends TestCase
             "Demo Account is set to Live.\nUpdated by: Audi Kowalski\n<https://app.shiphero.com/3pl|Set Live in Shiphero>",
             $payload['text']
         );
+        $this->assertSame(
+            'https://app.saverack.com/images/slack/shipping-status-live.png',
+            $payload['attachments'][0]['author_icon']
+        );
+    }
+
+    public function test_icon_url_upgrades_http_base_to_https(): void
+    {
+        config(['billing.slack.public_asset_base_url' => 'http://app.saverack.com']);
+
+        $account = new ClientAccount(['company_name' => 'Co']);
+        $payload = app(ClientAccountStatusSlackService::class)->buildMessagePayload(
+            $account,
+            ClientAccount::STATUS_PENDING,
+            ClientAccount::STATUS_ACTIVE
+        );
+
+        $this->assertStringStartsWith('https://', $payload['icon_url']);
     }
 
     public function test_other_status_changes_do_not_build_slack_payload(): void

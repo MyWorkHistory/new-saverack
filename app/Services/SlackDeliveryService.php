@@ -16,7 +16,8 @@ class SlackDeliveryService
      *     icon_url?: string|null,
      *     attachments?: array<int, array<string, mixed>>|null,
      *     blocks?: array<int, array<string, mixed>>|null,
-     *     prefer_bot?: bool|null
+     *     prefer_bot?: bool|null,
+     *     customize_identity?: bool|null
      * }  $options
      * @return array{method: string, channel: string, ts: string|null}
      */
@@ -40,8 +41,16 @@ class SlackDeliveryService
             $blocks = null;
         }
 
-        $preferBot = ! empty($options['prefer_bot']) && $this->hasBotToken();
+        $customizeIdentity = ! empty($options['customize_identity']);
+        $preferBot = (! empty($options['prefer_bot']) || $customizeIdentity) && $this->hasBotToken();
         $webhookUrl = $this->normalizeWebhookUrl((string) config('billing.slack.webhook_url', ''));
+
+        if ($customizeIdentity && ! $this->hasBotToken()) {
+            Log::warning('slack_delivery_custom_icon_requires_bot', [
+                'channel' => $channel,
+                'hint' => 'Slack app incoming webhooks ignore icon_url. Set SLACK_BOT_USER_OAUTH_TOKEN with chat:write and chat:write.customize scopes.',
+            ]);
+        }
 
         if (! $preferBot && $webhookUrl !== '') {
             $this->postViaWebhook($webhookUrl, $channel, $text, $username, $iconEmoji, $attachments, $iconUrl, $blocks);
@@ -57,7 +66,7 @@ class SlackDeliveryService
         }
 
         try {
-            return $this->postViaBot($token, $channel, $text, $iconEmoji, $attachments, $iconUrl, $blocks);
+            return $this->postViaBot($token, $channel, $text, $username, $iconEmoji, $attachments, $iconUrl, $blocks, $customizeIdentity);
         } catch (\Throwable $e) {
             if ($webhookUrl === '') {
                 throw $e;
@@ -68,7 +77,7 @@ class SlackDeliveryService
                 'message' => $e->getMessage(),
             ]);
 
-            $this->postViaWebhook($webhookUrl, $channel, $text, $username, $iconEmoji, $attachments, $iconUrl, null);
+            $this->postViaWebhook($webhookUrl, $channel, $text, $username, $iconEmoji, $attachments, $customizeIdentity ? '' : $iconUrl, null);
 
             return ['method' => 'webhook', 'channel' => $channel, 'ts' => null];
         }
@@ -83,10 +92,12 @@ class SlackDeliveryService
         string $token,
         string $channel,
         string $text,
+        string $username = 'Save Rack',
         string $iconEmoji = '',
         ?array $attachments = null,
         string $iconUrl = '',
-        ?array $blocks = null
+        ?array $blocks = null,
+        bool $customizeIdentity = false
     ): array {
         $this->assertBotTokenShape($token);
         $this->joinChannelIfPossible($token, $channel);
@@ -96,6 +107,9 @@ class SlackDeliveryService
             'text' => $text,
             'mrkdwn' => true,
         ];
+        if ($customizeIdentity || $iconUrl !== '' || $iconEmoji !== '') {
+            $payload['username'] = $username !== '' ? $username : 'Save Rack';
+        }
         if ($iconUrl !== '') {
             $payload['icon_url'] = $iconUrl;
         } elseif ($iconEmoji !== '') {
@@ -337,7 +351,7 @@ class SlackDeliveryService
         }
 
         if ($error === 'missing_scope') {
-            return 'Slack bot is missing required scopes (chat:write). Prefer SLACK_WEBHOOK_URL like legacy Save Net.';
+            return 'Slack bot is missing scopes. Status truck icons need chat:write and chat:write.customize; invite the bot to the channel.';
         }
 
         if ($error === 'channel_not_found' || $error === 'not_in_channel') {

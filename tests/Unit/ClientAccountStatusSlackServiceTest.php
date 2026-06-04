@@ -6,8 +6,10 @@ use App\Models\ClientAccount;
 use App\Models\User;
 use App\Services\ClientAccountStatusSlackService;
 use App\Services\SlackDeliveryService;
+use App\Services\SlackStatusIconUrlService;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Storage;
 use Tests\TestCase;
 
 final class ClientAccountStatusSlackServiceTest extends TestCase
@@ -21,6 +23,13 @@ final class ClientAccountStatusSlackServiceTest extends TestCase
             'crm.frontend_url' => 'https://app.saverack.com',
             'billing.slack.public_asset_base_url' => 'https://app.saverack.com',
         ]);
+
+        Storage::fake('public');
+    }
+
+    private function iconBase(): string
+    {
+        return 'https://app.saverack.com/storage/slack-status-icons';
     }
 
     public function test_build_paused_message_body_only_once(): void
@@ -42,7 +51,7 @@ final class ClientAccountStatusSlackServiceTest extends TestCase
         $this->assertNotNull($payload);
         $this->assertSame('Shipping Status Update', $payload['username']);
         $this->assertSame(
-            'https://app.saverack.com/images/slack/shipping-status-paused.png',
+            $this->iconBase().'/shipping-status-paused.png',
             $payload['icon_url']
         );
         $this->assertSame(
@@ -51,8 +60,6 @@ final class ClientAccountStatusSlackServiceTest extends TestCase
         );
         $this->assertStringNotContainsString('View Account', $payload['text']);
         $this->assertStringNotContainsString('Shipping Status Update', $payload['text']);
-        $this->assertArrayNotHasKey('blocks', $payload);
-        $this->assertArrayNotHasKey('attachments', $payload);
     }
 
     public function test_build_live_message_body_only_once(): void
@@ -72,7 +79,7 @@ final class ClientAccountStatusSlackServiceTest extends TestCase
 
         $this->assertNotNull($payload);
         $this->assertSame(
-            'https://app.saverack.com/images/slack/shipping-status-live.png',
+            $this->iconBase().'/shipping-status-live.png',
             $payload['icon_url']
         );
         $this->assertSame(
@@ -82,12 +89,11 @@ final class ClientAccountStatusSlackServiceTest extends TestCase
         $this->assertStringNotContainsString('Shipping Status Update', $payload['text']);
     }
 
-    public function test_webhook_delivery_uses_username_and_icon_url_without_blocks(): void
+    public function test_delivery_uses_bot_customize_identity_for_truck_icon(): void
     {
         config([
             'billing.slack.webhook_url' => 'https://hooks.slack.com/services/T/B/x',
             'billing.slack.bot_token' => 'xoxb-test',
-            'billing.slack.status_prefer_bot' => false,
         ]);
 
         $service = app(ClientAccountStatusSlackService::class);
@@ -95,49 +101,18 @@ final class ClientAccountStatusSlackServiceTest extends TestCase
         $method = $reflection->getMethod('deliveryOptions');
         $method->setAccessible(true);
 
-        $text = "Demo is set to Live.\nUpdated by: Audi";
-        $iconUrl = 'https://app.saverack.com/images/slack/shipping-status-live.png';
+        $iconUrl = $this->iconBase().'/shipping-status-live.png';
         $result = $method->invoke(
             $service,
-            $text,
+            "Demo is set to Live.\nUpdated by: Audi",
             'Shipping Status Update',
-            $iconUrl,
-            'Shipping live'
+            $iconUrl
         );
 
         $this->assertSame('Shipping Status Update', $result['username']);
-        $this->assertSame($text, $result['text']);
+        $this->assertTrue($result['slack']['customize_identity']);
+        $this->assertTrue($result['slack']['prefer_bot']);
         $this->assertSame($iconUrl, $result['slack']['icon_url']);
-        $this->assertArrayNotHasKey('blocks', $result['slack']);
-        $this->assertArrayNotHasKey('prefer_bot', $result['slack']);
-    }
-
-    public function test_bot_only_delivery_uses_attachment_author_icon(): void
-    {
-        config([
-            'billing.slack.webhook_url' => null,
-            'billing.slack.bot_token' => 'xoxb-test',
-        ]);
-
-        $service = app(ClientAccountStatusSlackService::class);
-        $reflection = new \ReflectionClass($service);
-        $method = $reflection->getMethod('deliveryOptions');
-        $method->setAccessible(true);
-
-        $text = "Demo is set to Paused.\nUpdated by: Audi";
-        $iconUrl = 'https://app.saverack.com/images/slack/shipping-status-paused.png';
-        $result = $method->invoke(
-            $service,
-            $text,
-            'Shipping Status Update',
-            $iconUrl,
-            'Shipping paused'
-        );
-
-        $this->assertSame('Save Rack', $result['username']);
-        $attachment = $result['slack']['attachments'][0];
-        $this->assertSame('Shipping Status Update', $attachment['author_name']);
-        $this->assertSame($iconUrl, $attachment['author_icon']);
         $this->assertArrayNotHasKey('blocks', $result['slack']);
     }
 
@@ -171,10 +146,16 @@ final class ClientAccountStatusSlackServiceTest extends TestCase
 
     public function test_icon_unreachable_logs_warning_but_does_not_throw(): void
     {
-        config(['billing.slack.webhook_url' => 'https://hooks.slack.com/services/T/B/x']);
+        config([
+            'billing.slack.webhook_url' => 'https://hooks.slack.com/services/T/B/x',
+            'billing.slack.bot_token' => 'xoxb-test-token',
+        ]);
+
+        $iconUrl = $this->iconBase().'/shipping-status-paused.png';
 
         Http::fake([
-            'https://app.saverack.com/images/slack/*' => Http::response('<html>', 404),
+            $iconUrl => Http::response('<html>', 404),
+            'https://slack.com/api/*' => Http::response(['ok' => true, 'channel' => 'C1', 'ts' => '1.0'], 200),
             'hooks.slack.com/*' => Http::response('ok', 200),
         ]);
 

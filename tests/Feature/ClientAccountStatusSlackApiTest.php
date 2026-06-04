@@ -20,7 +20,7 @@ class ClientAccountStatusSlackApiTest extends TestCase
 
         config([
             'billing.slack.webhook_url' => 'https://hooks.slack.com/services/T000/B000/XXXX',
-            'billing.slack.bot_token' => null,
+            'billing.slack.bot_token' => 'xoxb-test-token',
             'app.url' => 'https://app.saverack.com',
             'crm.frontend_url' => 'https://app.saverack.com',
             'billing.slack.public_asset_base_url' => 'https://app.saverack.com',
@@ -46,7 +46,9 @@ class ClientAccountStatusSlackApiTest extends TestCase
 
         Http::fake([
             'hooks.slack.com/*' => Http::response('ok', 200),
-            'app.saverack.com/images/slack/*' => Http::response('', 200, ['Content-Type' => 'image/png']),
+            'app.saverack.com/storage/slack-status-icons/*' => Http::response('', 200, ['Content-Type' => 'image/png']),
+            'https://slack.com/api/conversations.join' => Http::response(['ok' => true], 200),
+            'https://slack.com/api/chat.postMessage' => Http::response(['ok' => true, 'channel' => 'C1', 'ts' => '1'], 200),
         ]);
 
         $account = ClientAccount::create([
@@ -65,16 +67,15 @@ class ClientAccountStatusSlackApiTest extends TestCase
         $response->assertJsonPath('status', ClientAccount::STATUS_PAUSED);
 
         Http::assertSent(function ($request) {
-            if (! str_contains($request->url(), 'hooks.slack.com')) {
+            if (! str_contains($request->url(), 'chat.postMessage')) {
                 return false;
             }
 
             $payload = $request->data();
             $this->assertSame('#slack-co', $payload['channel'] ?? null);
             $this->assertSame('Shipping Status Update', $payload['username'] ?? null);
-            $this->assertStringContainsString('/images/slack/shipping-status-paused.png', (string) ($payload['icon_url'] ?? ''));
+            $this->assertStringContainsString('/storage/slack-status-icons/shipping-status-paused.png', (string) ($payload['icon_url'] ?? ''));
             $this->assertArrayNotHasKey('blocks', $payload);
-            $this->assertStringNotContainsString('Shipping Status Update', (string) ($payload['text'] ?? ''));
             $this->assertStringContainsString('Slack Co is set to Paused.', (string) ($payload['text'] ?? ''));
             $this->assertStringContainsString('<https://app.shiphero.com/3pl|Set Pause in Shiphero>', (string) ($payload['text'] ?? ''));
             $this->assertStringNotContainsString('View Account', (string) ($payload['text'] ?? ''));

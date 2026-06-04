@@ -209,18 +209,21 @@ class ClientAccountStatusSlackService
 
     private function slackIconUrl(string $filename): string
     {
+        $path = public_path('images/slack/'.$filename);
+        $version = is_file($path) ? (string) filemtime($path) : '1';
+
         $base = rtrim((string) config('billing.slack.public_asset_base_url'), '/');
         if ($base === '') {
-            $base = rtrim((string) config('crm.frontend_url'), '/');
+            $base = rtrim((string) config('app.url'), '/');
         }
         if ($base === '') {
-            $base = rtrim((string) config('app.url'), '/');
+            $base = rtrim((string) config('crm.frontend_url'), '/');
         }
 
         if (str_starts_with($base, 'http://')) {
             $base = 'https://'.substr($base, 7);
         }
 
-        return $base.'/images/slack/'.$filename;
+        return $base.'/api/slack/status-icons/'.$filename.'?v='.$version;
     }
 }

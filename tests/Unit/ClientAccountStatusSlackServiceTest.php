@@ -40,8 +40,8 @@ final class ClientAccountStatusSlackServiceTest extends TestCase
         $this->assertNotNull($payload);
         $this->assertSame('Shipping Status Update', $payload['username']);
         $this->assertSame(
-            'https://app.saverack.com/images/slack/shipping-status-paused.png',
-            $payload['icon_url']
+            'https://app.saverack.com/api/slack/status-icons/shipping-status-paused.png',
+            strtok($payload['icon_url'], '?')
         );
         $this->assertSame(
             "Demo Company is set to Paused.\nUpdated by: Audi Kowalski\n<https://app.shiphero.com/3pl|Set Pause in Shiphero>",
@@ -69,6 +69,10 @@ final class ClientAccountStatusSlackServiceTest extends TestCase
         );
 
         $this->assertNotNull($payload);
+        $this->assertStringStartsWith(
+            'https://app.saverack.com/api/slack/status-icons/shipping-status-live.png',
+            $payload['icon_url']
+        );
         $this->assertSame(
             "Demo Account is set to Live.\nUpdated by: Audi Kowalski\n<https://app.shiphero.com/3pl|Set Live in Shiphero>",
             $payload['text']
@@ -89,14 +93,14 @@ final class ClientAccountStatusSlackServiceTest extends TestCase
             $service,
             "Demo is set to Live.\nUpdated by: Audi",
             'Shipping Status Update',
-            'https://app.saverack.com/images/slack/shipping-status-live.png'
+            'https://app.saverack.com/api/slack/status-icons/shipping-status-live.png?v=1'
         );
 
         $this->assertSame('Shipping Status Update', $result['username']);
         $this->assertSame("Demo is set to Live.\nUpdated by: Audi", $result['text']);
         $this->assertSame(
-            'https://app.saverack.com/images/slack/shipping-status-live.png',
-            $result['slack']['icon_url']
+            'https://app.saverack.com/api/slack/status-icons/shipping-status-live.png',
+            strtok((string) $result['slack']['icon_url'], '?')
         );
         $this->assertArrayNotHasKey('blocks', $result['slack']);
         $this->assertArrayNotHasKey('attachments', $result['slack']);
@@ -112,17 +116,19 @@ final class ClientAccountStatusSlackServiceTest extends TestCase
         $method->setAccessible(true);
 
         $text = "Demo is set to Paused.\nUpdated by: Audi";
+        $iconUrl = 'https://app.saverack.com/api/slack/status-icons/shipping-status-paused.png?v=1';
         $result = $method->invoke(
             $service,
             $text,
             'Shipping Status Update',
-            'https://app.saverack.com/images/slack/shipping-status-paused.png'
+            $iconUrl
         );
 
         $this->assertSame('Save Rack', $result['username']);
         $this->assertArrayHasKey('attachments', $result['slack']);
         $attachment = $result['slack']['attachments'][0];
         $this->assertSame('Shipping Status Update', $attachment['author_name']);
+        $this->assertSame($iconUrl, $attachment['author_icon']);
         $this->assertSame($text, $attachment['text']);
         $this->assertArrayNotHasKey('blocks', $result['slack']);
     }

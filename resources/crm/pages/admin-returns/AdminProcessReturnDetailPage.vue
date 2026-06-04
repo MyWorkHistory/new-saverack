@@ -5,6 +5,7 @@ import api from "../../services/api";
 import CrmLoadingSpinner from "../../components/common/CrmLoadingSpinner.vue";
 import { setCrmPageMeta } from "../../composables/useCrmPageMeta.js";
 import { useToast } from "../../composables/useToast.js";
+import { formatDateUs } from "../../utils/formatUserDates.js";
 import {
   formatRmaLabel,
   returnStatusBadgeClass,
@@ -41,55 +42,57 @@ onMounted(load);
 </script>
 
 <template>
-  <div class="staff-page staff-page--wide admin-returns-page">
-    <div class="mb-3">
-      <button
-        type="button"
-        class="btn btn-link btn-sm px-0 text-secondary"
-        @click="router.push({ name: 'admin-process-returns' })"
-      >
-        ← Process Returns
-      </button>
-    </div>
+  <div v-if="loading" class="staff-page staff-page--wide py-5 admin-returns-page">
+    <CrmLoadingSpinner message="Loading return…" :center="true" />
+  </div>
 
-    <div v-if="loading" class="py-5">
-      <CrmLoadingSpinner message="Loading return…" />
-    </div>
-
-    <template v-else-if="ret">
-      <div class="d-flex flex-wrap align-items-start justify-content-between gap-3 mb-4">
-        <div>
-          <h1 class="h4 mb-2 fw-semibold text-body">
-            {{ formatRmaLabel(ret.rma_number) || "Process Return" }}
-          </h1>
-          <div class="d-flex flex-wrap gap-2 align-items-center">
-            <span class="badge rounded-pill" :class="returnStatusBadgeClass(ret.status)">
-              {{ returnStatusLabel(ret.status) }}
-            </span>
-            <span class="text-secondary small">Order # {{ ret.order_number || "—" }}</span>
+  <div
+    v-else-if="ret"
+    class="staff-page staff-page--wide admin-returns-page admin-returns-detail-page order-detail-page"
+  >
+    <div class="staff-table-card staff-datatable-card staff-datatable-card--white user-return-page__header-shell mb-4">
+      <div class="p-4 pb-3">
+        <div class="d-flex flex-wrap justify-content-between align-items-start gap-3">
+          <div class="min-w-0">
+            <div class="d-flex flex-wrap align-items-center gap-2 mb-1">
+              <h1 class="h4 mb-0 fw-semibold text-body">
+                {{ formatRmaLabel(ret.rma_number) || "Process Return" }}
+              </h1>
+              <span class="badge rounded-pill fw-medium" :class="returnStatusBadgeClass(ret.status)">
+                {{ returnStatusLabel(ret.status) }}
+              </span>
+            </div>
+            <p class="small text-secondary mb-1 mt-2">
+              Order # {{ ret.order_number || "—" }}
+            </p>
+            <p class="small text-secondary mb-0">
+              <strong>{{ ret.client_account_company_name || "—" }}</strong>
+              · {{ ret.customer_name || "—" }}
+              · {{ Number(ret.items_count ?? 0).toLocaleString() }} items
+            </p>
+            <button
+              type="button"
+              class="btn btn-link btn-sm text-secondary px-0 py-0 mt-2 text-decoration-none"
+              @click="router.push({ name: 'admin-process-returns' })"
+            >
+              &lt; Process Returns
+            </button>
           </div>
         </div>
       </div>
+    </div>
 
-      <div class="staff-table-card staff-datatable-card staff-datatable-card--white w-100 mb-4">
-        <div class="p-4">
-          <dl class="row mb-0 small">
-            <dt class="col-sm-3 text-secondary">Account</dt>
-            <dd class="col-sm-9">{{ ret.client_account_company_name || "—" }}</dd>
-            <dt class="col-sm-3 text-secondary">Customer</dt>
-            <dd class="col-sm-9">{{ ret.customer_name || "—" }}</dd>
-            <dt class="col-sm-3 text-secondary">Items</dt>
-            <dd class="col-sm-9">{{ ret.items_count ?? "—" }}</dd>
-          </dl>
-        </div>
+    <div class="staff-table-card staff-datatable-card staff-datatable-card--white w-100">
+      <div class="px-4 py-3 border-bottom">
+        <h2 class="h6 mb-0 fw-semibold">Processing</h2>
       </div>
-
-      <div class="staff-table-card staff-datatable-card staff-datatable-card--white w-100">
-        <div class="p-5 text-center text-secondary">
-          <p class="mb-0 fw-semibold text-body">More info coming soon</p>
-          <p class="small mb-0 mt-2">Return processing workflow will be added here.</p>
-        </div>
+      <div class="p-5 text-center text-secondary">
+        <p class="mb-0 fw-semibold text-body">More info coming soon</p>
+        <p class="small mb-0 mt-2">Return processing workflow will be added here.</p>
+        <p v-if="ret.created_at" class="small text-secondary mb-0 mt-3">
+          Submitted {{ formatDateUs(ret.created_at) }}
+        </p>
       </div>
-    </template>
+    </div>
   </div>
 </template>

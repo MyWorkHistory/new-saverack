@@ -7,7 +7,6 @@ import CrmLoadingSpinner from "../../components/common/CrmLoadingSpinner.vue";
 import { setCrmPageMeta } from "../../composables/useCrmPageMeta.js";
 import { useToast } from "../../composables/useToast.js";
 import { formatDateUs } from "../../utils/formatUserDates.js";
-import { formatRmaLabel } from "../../utils/formatReturnDisplay.js";
 
 const toast = useToast();
 const router = useRouter();
@@ -24,11 +23,13 @@ const results = ref([]);
 const tableColspan = 6;
 
 const accountOptions = computed(() =>
-  (accounts.value || []).map((a) => ({
-    id: a.id,
-    name: a.company_name || a.label || `Account #${a.id}`,
-    email: a.email ? String(a.email) : "",
-  })),
+  (accounts.value || [])
+    .filter((a) => a?.has_shiphero_customer !== false)
+    .map((a) => ({
+      id: a.id,
+      name: a.company_name || a.label || `Account #${a.id}`,
+      email: a.email ? String(a.email) : "",
+    })),
 );
 
 const canSearch = computed(
@@ -119,20 +120,22 @@ onMounted(() => {
 
 <template>
   <div class="staff-page staff-page--wide admin-returns-page">
-    <div class="mb-4">
-      <h1 class="h4 mb-1 fw-semibold text-body">Process Returns</h1>
-      <p class="text-secondary small mb-0">
-        Find a pending return by order number or RMA number. Account is optional and helps narrow the search.
-      </p>
+    <div class="d-flex flex-wrap align-items-end justify-content-between gap-3 mb-4">
+      <div>
+        <h1 class="h4 mb-1 fw-semibold text-body">Process Returns</h1>
+        <p class="small admin-returns-list__subtitle mb-0">
+          Find a pending return by order number or RMA number. Account is optional and helps narrow the search.
+        </p>
+      </div>
     </div>
 
-    <div class="staff-table-card staff-datatable-card staff-datatable-card--white w-100">
+    <div
+      class="admin-returns-list admin-returns-page-toolbar staff-table-card staff-datatable-card staff-datatable-card--white w-100"
+    >
       <div class="staff-table-toolbar">
-        <div class="staff-table-toolbar--row flex-wrap align-items-end gap-2 gap-md-3">
+        <div class="staff-table-toolbar--row admin-returns-toolbar-row">
           <div class="admin-returns-toolbar-account">
-            <label for="admin-process-return-account" class="form-label small text-secondary mb-1">Account</label>
             <CrmSearchableSelect
-              id="admin-process-return-account"
               v-model="accountFilter"
               class="staff-toolbar-search staff-toolbar-search--inline w-100"
               appearance="staff"
@@ -142,35 +145,34 @@ onMounted(() => {
               placeholder="All accounts"
               empty-label="All accounts"
               search-placeholder="Search accounts…"
+              :allow-empty="true"
             />
           </div>
-          <div>
-            <label for="admin-process-return-order" class="form-label small text-secondary mb-1">Order #</label>
+          <div class="admin-returns-toolbar-order">
             <input
               id="admin-process-return-order"
               v-model="orderNumber"
               type="search"
-              class="form-control staff-toolbar-search staff-toolbar-search--inline"
-              placeholder="Order number"
+              class="form-control staff-toolbar-search staff-toolbar-search--inline w-100"
+              placeholder="Order #"
               autocomplete="off"
               aria-label="Order number"
               @keydown.enter.prevent="search"
             />
           </div>
-          <div>
-            <label for="admin-process-return-rma" class="form-label small text-secondary mb-1">RMA #</label>
+          <div class="admin-returns-toolbar-rma">
             <input
               id="admin-process-return-rma"
               v-model="rmaNumber"
               type="search"
-              class="form-control staff-toolbar-search staff-toolbar-search--inline"
-              placeholder="RMA number"
+              class="form-control staff-toolbar-search staff-toolbar-search--inline w-100"
+              placeholder="RMA #"
               autocomplete="off"
               aria-label="RMA number"
               @keydown.enter.prevent="search"
             />
           </div>
-          <div class="pb-1">
+          <div class="admin-returns-toolbar-action">
             <button
               type="button"
               class="btn btn-primary staff-page-primary fw-semibold"
@@ -219,12 +221,12 @@ onMounted(() => {
               @click="openReturn(row)"
               @keydown.enter.prevent="openReturn(row)"
             >
-              <td class="text-center">{{ formatRmaLabel(row.rma_number) || "—" }}</td>
+              <td class="text-center fw-semibold">{{ row.rma_number || "—" }}</td>
               <td class="text-center">{{ row.order_number || "—" }}</td>
               <td class="text-center">{{ row.client_account_company_name || "—" }}</td>
               <td class="text-center">{{ row.customer_name || "—" }}</td>
               <td class="text-center">{{ row.items_count ?? "—" }}</td>
-              <td class="text-center">{{ formatDateUs(row.created_at) || "—" }}</td>
+              <td class="text-center small text-secondary">{{ formatDateUs(row.created_at) || "—" }}</td>
             </tr>
           </tbody>
         </table>
@@ -234,8 +236,36 @@ onMounted(() => {
 </template>
 
 <style scoped>
+.admin-returns-list__subtitle {
+  font-size: 0.8125rem;
+  font-weight: 500;
+  color: var(--bs-secondary-color, #6c757d);
+}
+
+[data-bs-theme="dark"] .admin-returns-list__subtitle {
+  color: #fff !important;
+}
+
+.admin-returns-page-toolbar .admin-returns-toolbar-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+}
+
 .admin-returns-toolbar-account {
-  min-width: min(100%, 16rem);
+  flex: 0 0 auto;
+  width: min(280px, 100%);
+}
+
+.admin-returns-toolbar-order,
+.admin-returns-toolbar-rma {
+  flex: 0 0 auto;
+  width: min(14rem, 100%);
+}
+
+.admin-returns-toolbar-action {
+  flex: 0 0 auto;
 }
 
 .admin-returns-result-row {

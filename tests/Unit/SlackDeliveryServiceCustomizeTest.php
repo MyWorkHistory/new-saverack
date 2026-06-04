@@ -41,7 +41,8 @@ final class SlackDeliveryServiceCustomizeTest extends TestCase
 
             return ($body['username'] ?? '') === 'Shipping Status Update'
                 && str_contains((string) ($body['icon_url'] ?? ''), 'shipping-status-live.png')
-                && ($body['text'] ?? '') === 'Hello';
+                && ($body['text'] ?? '') === 'Hello'
+                && ! array_key_exists('blocks', $body);
         });
     }
 
@@ -83,11 +84,6 @@ final class SlackDeliveryServiceCustomizeTest extends TestCase
             'hooks.slack.com/*' => Http::response('ok', 200),
         ]);
 
-        $blocks = [[
-            'type' => 'section',
-            'text' => ['type' => 'mrkdwn', 'text' => 'Hello'],
-        ]];
-
         $result = app(SlackDeliveryService::class)->post(
             '#demo-co',
             'Hello',
@@ -96,7 +92,6 @@ final class SlackDeliveryServiceCustomizeTest extends TestCase
                 'icon_url' => 'https://app.saverack.com/images/slack/shipping-status-live-thumb.png',
                 'customize_identity' => true,
                 'prefer_bot' => true,
-                'blocks' => $blocks,
             ]
         );
 
@@ -111,11 +106,11 @@ final class SlackDeliveryServiceCustomizeTest extends TestCase
 
             return ($body['username'] ?? '') === 'Shipping Status Update'
                 && ! array_key_exists('icon_url', $body)
-                && ($body['blocks'][0]['type'] ?? '') === 'section';
+                && ! array_key_exists('blocks', $body);
         });
     }
 
-    public function test_customize_identity_falls_back_to_webhook_with_blocks_when_bot_fails(): void
+    public function test_customize_identity_falls_back_to_webhook_without_blocks_when_bot_fails(): void
     {
         config([
             'billing.slack.bot_token' => 'xoxb-test-token',
@@ -131,13 +126,6 @@ final class SlackDeliveryServiceCustomizeTest extends TestCase
             'hooks.slack.com/*' => Http::response('ok', 200),
         ]);
 
-        $blocks = [[
-            'type' => 'context',
-            'elements' => [
-                ['type' => 'mrkdwn', 'text' => '*Shipping Status Update*'],
-            ],
-        ]];
-
         $result = app(SlackDeliveryService::class)->post(
             '#demo-co',
             'Hello',
@@ -146,7 +134,6 @@ final class SlackDeliveryServiceCustomizeTest extends TestCase
                 'icon_url' => 'https://app.saverack.com/images/slack/shipping-status-live-thumb.png',
                 'customize_identity' => true,
                 'prefer_bot' => true,
-                'blocks' => $blocks,
             ]
         );
 
@@ -159,7 +146,7 @@ final class SlackDeliveryServiceCustomizeTest extends TestCase
             $payload = $request->data();
 
             return ($payload['text'] ?? '') === 'Hello'
-                && ($payload['blocks'][0]['type'] ?? '') === 'context'
+                && ! array_key_exists('blocks', $payload)
                 && ! array_key_exists('attachments', $payload);
         });
     }

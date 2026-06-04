@@ -3,7 +3,6 @@
 namespace Tests\Unit;
 
 use App\Services\SlackStatusIconUrlService;
-use Illuminate\Support\Facades\Http;
 use Tests\TestCase;
 
 final class SlackStatusIconUrlServiceTest extends TestCase
@@ -31,7 +30,7 @@ final class SlackStatusIconUrlServiceTest extends TestCase
         );
     }
 
-    public function test_builds_thumb_url_for_attachment(): void
+    public function test_builds_thumb_url(): void
     {
         $source = public_path('images/slack/shipping-status-paused-thumb.png');
         $this->assertFileExists($source);
@@ -44,28 +43,17 @@ final class SlackStatusIconUrlServiceTest extends TestCase
         );
     }
 
-    public function test_resolve_reachable_icon_url_prefers_first_working_candidate(): void
+    public function test_live_and_paused_thumb_urls_use_same_pattern(): void
     {
-        Http::fake([
-            'https://app.saverack.com/images/slack/shipping-status-live-thumb.png' => Http::response('', 404),
-            'https://app.saverack.com/images/slack/shipping-status-live.png' => Http::response('', 200, ['Content-Type' => 'image/png']),
-        ]);
-
-        $url = app(SlackStatusIconUrlService::class)->resolveReachableIconUrl(true);
+        $icons = app(SlackStatusIconUrlService::class);
 
         $this->assertSame(
-            'https://app.saverack.com/images/slack/shipping-status-live.png',
-            $url
+            'https://app.saverack.com/images/slack/shipping-status-live-thumb.png',
+            $icons->liveThumbUrl()
         );
-    }
-
-    public function test_builds_api_route_url(): void
-    {
-        $url = app(SlackStatusIconUrlService::class)->liveApiUrl();
-
         $this->assertSame(
-            'https://app.saverack.com/api/slack/status-icons/shipping-status-live.png',
-            $url
+            'https://app.saverack.com/images/slack/shipping-status-paused-thumb.png',
+            $icons->pausedThumbUrl()
         );
     }
 }

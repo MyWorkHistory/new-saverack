@@ -17,8 +17,7 @@ class SlackDeliveryService
      *     attachments?: array<int, array<string, mixed>>|null,
      *     blocks?: array<int, array<string, mixed>>|null,
      *     prefer_bot?: bool|null,
-     *     customize_identity?: bool|null,
-     *     blocks_for_webhook_fallback?: array<int, array<string, mixed>>|null
+     *     customize_identity?: bool|null
      * }  $options
      * @return array{method: string, channel: string, ts: string|null}
      */
@@ -41,10 +40,6 @@ class SlackDeliveryService
         if (! is_array($blocks)) {
             $blocks = null;
         }
-        $blocksForWebhookFallback = $options['blocks_for_webhook_fallback'] ?? null;
-        if (! is_array($blocksForWebhookFallback)) {
-            $blocksForWebhookFallback = null;
-        }
 
         $customizeIdentity = ! empty($options['customize_identity']);
         $preferBot = (! empty($options['prefer_bot']) || $customizeIdentity) && $this->hasBotToken();
@@ -66,14 +61,12 @@ class SlackDeliveryService
         try {
             return $this->postViaBot($token, $channel, $text, $username, $iconEmoji, $attachments, $iconUrl, $blocks, $customizeIdentity);
         } catch (\Throwable $e) {
-            $fallbackBlocks = $blocks ?? $blocksForWebhookFallback;
-
             if ($customizeIdentity) {
                 try {
-                    return $this->postViaBot($token, $channel, $text, $username, '', $attachments, '', $blocks, true);
+                    return $this->postViaBot($token, $channel, $text, $username, '', $attachments, '', null, true);
                 } catch (\Throwable $retryWithoutIcon) {
                     try {
-                        return $this->postViaBot($token, $channel, $text, $username, ':truck:', $attachments, '', $blocks, true);
+                        return $this->postViaBot($token, $channel, $text, $username, ':truck:', $attachments, '', null, true);
                     } catch (\Throwable $retryWithEmoji) {
                         $e = $retryWithEmoji;
                     }
@@ -89,11 +82,11 @@ class SlackDeliveryService
                 'message' => $e->getMessage(),
                 'custom_icon' => $customizeIdentity,
                 'hint' => $customizeIdentity
-                    ? 'Bot retries exhausted; webhook used with Block Kit header fallback.'
+                    ? 'Bot retries exhausted; webhook used with plain text only (no custom header).'
                     : null,
             ]);
 
-            $this->postViaWebhook($webhookUrl, $channel, $text, $username, $iconEmoji, null, $iconUrl, $fallbackBlocks);
+            $this->postViaWebhook($webhookUrl, $channel, $text, $username, $iconEmoji, null, $iconUrl, null);
 
             return ['method' => 'webhook', 'channel' => $channel, 'ts' => null];
         }

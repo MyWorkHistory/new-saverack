@@ -59,16 +59,13 @@ class ClientAccountStatusSlackService
         $text = (string) ($payload['text'] ?? '');
         $username = (string) ($payload['username'] ?? self::USERNAME);
         $isLive = $newStatus === ClientAccount::STATUS_ACTIVE;
-        $statusLabel = $isLive ? 'Live' : 'Paused';
-        $iconUrl = $this->iconUrls->resolveReachableIconUrl($isLive);
-
-        $options = $this->deliveryOptions($text, $username, $iconUrl, $statusLabel);
-        $postText = $this->slack->hasBotToken() ? $text : self::USERNAME;
+        $iconUrl = $isLive ? $this->iconUrls->liveThumbUrl() : $this->iconUrls->pausedThumbUrl();
+        $options = $this->deliveryOptions($username, $iconUrl);
 
         try {
             $result = $this->slack->post(
                 $channel,
-                $postText,
+                $text,
                 (string) ($options['username'] ?? $username),
                 $options['slack'] ?? []
             );
@@ -94,13 +91,12 @@ class ClientAccountStatusSlackService
     }
 
     /**
-     * Bot: native username + icon_url header. Blocks: same header when webhook fallback is used.
+     * Native bot header: username + icon_url avatar, body in text. No Block Kit.
      *
      * @return array{username: string, slack: array<string, mixed>}
      */
-    private function deliveryOptions(string $text, string $username, string $iconUrl, string $statusLabel): array
+    private function deliveryOptions(string $username, string $iconUrl): array
     {
-        $blocks = $this->buildBlocks($text, $iconUrl, $statusLabel);
         $slack = [];
 
         if ($iconUrl !== '') {
@@ -110,46 +106,11 @@ class ClientAccountStatusSlackService
         if ($this->slack->hasBotToken()) {
             $slack['customize_identity'] = true;
             $slack['prefer_bot'] = true;
-            $slack['blocks_for_webhook_fallback'] = $blocks;
-        } else {
-            $slack['blocks'] = $blocks;
         }
 
         return [
             'username' => $username,
             'slack' => $slack,
-        ];
-    }
-
-    /**
-     * @return array<int, array<string, mixed>>
-     */
-    private function buildBlocks(string $text, string $iconUrl, string $statusLabel): array
-    {
-        $contextElements = [
-            ['type' => 'mrkdwn', 'text' => '*'.self::USERNAME.'*'],
-        ];
-
-        if ($iconUrl !== '') {
-            array_unshift($contextElements, [
-                'type' => 'image',
-                'image_url' => $iconUrl,
-                'alt_text' => $statusLabel,
-            ]);
-        }
-
-        return [
-            [
-                'type' => 'context',
-                'elements' => $contextElements,
-            ],
-            [
-                'type' => 'section',
-                'text' => [
-                    'type' => 'mrkdwn',
-                    'text' => $text,
-                ],
-            ],
         ];
     }
 

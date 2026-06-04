@@ -6,7 +6,6 @@ use App\Models\ClientAccount;
 use App\Models\User;
 use App\Services\ClientAccountStatusSlackService;
 use App\Services\SlackDeliveryService;
-use App\Services\SlackStatusIconUrlService;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 use Tests\TestCase;
@@ -78,7 +77,7 @@ final class ClientAccountStatusSlackServiceTest extends TestCase
         $this->assertStringNotContainsString('Shipping Status Update', $payload['text']);
     }
 
-    public function test_delivery_without_bot_includes_blocks_header_and_body(): void
+    public function test_delivery_without_bot_sends_icon_url_and_body_text(): void
     {
         config([
             'billing.slack.webhook_url' => 'https://hooks.slack.com/services/T/B/x',
@@ -90,29 +89,21 @@ final class ClientAccountStatusSlackServiceTest extends TestCase
         $method = $reflection->getMethod('deliveryOptions');
         $method->setAccessible(true);
 
-        $text = "Demo is set to Live.\nUpdated by: Audi";
         $iconUrl = $this->iconBase().'/shipping-status-live-thumb.png';
         $result = $method->invoke(
             $service,
-            $text,
             'Shipping Status Update',
-            $iconUrl,
-            'Live'
+            $iconUrl
         );
 
         $this->assertSame('Shipping Status Update', $result['username']);
         $this->assertSame($iconUrl, $result['slack']['icon_url']);
-        $this->assertArrayHasKey('blocks', $result['slack']);
-        $blocks = $result['slack']['blocks'];
-        $this->assertSame('context', $blocks[0]['type']);
-        $this->assertSame('image', $blocks[0]['elements'][0]['type']);
-        $this->assertSame($iconUrl, $blocks[0]['elements'][0]['image_url']);
-        $this->assertStringContainsString('Shipping Status Update', $blocks[0]['elements'][1]['text']);
-        $this->assertSame('section', $blocks[1]['type']);
-        $this->assertSame($text, $blocks[1]['text']['text']);
+        $this->assertArrayNotHasKey('blocks', $result['slack']);
+        $this->assertArrayNotHasKey('attachments', $result['slack']);
+        $this->assertArrayNotHasKey('customize_identity', $result['slack']);
     }
 
-    public function test_delivery_uses_bot_customize_identity_and_blocks(): void
+    public function test_delivery_uses_bot_customize_identity_without_blocks(): void
     {
         config([
             'billing.slack.webhook_url' => 'https://hooks.slack.com/services/T/B/x',
@@ -125,21 +116,17 @@ final class ClientAccountStatusSlackServiceTest extends TestCase
         $method->setAccessible(true);
 
         $iconUrl = $this->iconBase().'/shipping-status-live-thumb.png';
-        $body = "Demo is set to Live.\nUpdated by: Audi";
         $result = $method->invoke(
             $service,
-            $body,
             'Shipping Status Update',
-            $iconUrl,
-            'Live'
+            $iconUrl
         );
 
         $this->assertSame('Shipping Status Update', $result['username']);
         $this->assertTrue($result['slack']['customize_identity']);
         $this->assertTrue($result['slack']['prefer_bot']);
         $this->assertSame($iconUrl, $result['slack']['icon_url']);
-        $this->assertArrayHasKey('blocks_for_webhook_fallback', $result['slack']);
-        $this->assertSame($body, $result['slack']['blocks_for_webhook_fallback'][1]['text']['text']);
+        $this->assertArrayNotHasKey('blocks', $result['slack']);
     }
 
     public function test_other_status_changes_do_not_build_slack_payload(): void
@@ -154,7 +141,7 @@ final class ClientAccountStatusSlackServiceTest extends TestCase
         $this->assertNull($payload);
     }
 
-    public function test_notify_live_still_posts_when_icon_fetch_fails(): void
+    public function test_notify_live_posts_via_bot_with_native_header_fields(): void
     {
         config([
             'billing.slack.webhook_url' => 'https://hooks.slack.com/services/T/B/x',
@@ -162,7 +149,6 @@ final class ClientAccountStatusSlackServiceTest extends TestCase
         ]);
 
         Http::fake([
-            'app.saverack.com/*' => Http::response('<html>', 404),
             'https://slack.com/api/*' => Http::response(['ok' => true, 'channel' => 'C1', 'ts' => '1.0'], 200),
             'hooks.slack.com/*' => Http::response('ok', 200),
         ]);
@@ -187,14 +173,15 @@ final class ClientAccountStatusSlackServiceTest extends TestCase
             }
 
             $payload = $request->data();
-            $blocks = $payload['blocks'] ?? [];
 
             return ($payload['username'] ?? '') === 'Shipping Status Update'
-                && str_contains((string) ($payload['text'] ?? ''), 'Demo is set to Live.');
+                && str_contains((string) ($payload['icon_url'] ?? ''), 'shipping-status-live-thumb.png')
+                && str_contains((string) ($payload['text'] ?? ''), 'Demo is set to Live.')
+                && ! array_key_exists('blocks', $payload);
         });
     }
 
-    public function test_notify_without_bot_still_posts_via_webhook_with_blocks(): void
+    public function test_notify_without_bot_still_posts_via_webhook_with_body_text(): void
     {
         config([
             'billing.slack.webhook_url' => 'https://hooks.slack.com/services/T/B/x',
@@ -202,7 +189,6 @@ final class ClientAccountStatusSlackServiceTest extends TestCase
         ]);
 
         Http::fake([
-            'app.saverack.com/images/slack/*' => Http::response('', 200, ['Content-Type' => 'image/png']),
             'hooks.slack.com/*' => Http::response('ok', 200),
         ]);
 
@@ -226,12 +212,11 @@ final class ClientAccountStatusSlackServiceTest extends TestCase
             }
 
             $payload = $request->data();
-            $blocks = $payload['blocks'] ?? [];
 
             return str_contains((string) ($payload['icon_url'] ?? ''), '/images/slack/shipping-status-paused-thumb.png')
-                && ($payload['text'] ?? '') === 'Shipping Status Update'
-                && str_contains((string) ($blocks[1]['text']['text'] ?? ''), 'Demo is set to Paused.')
-                && ! array_key_exists('attachments', $payload);
+                && str_contains((string) ($payload['text'] ?? ''), 'Demo is set to Paused.')
+                && ($payload['username'] ?? '') === 'Shipping Status Update'
+                && ! array_key_exists('blocks', $payload);
         });
     }
 

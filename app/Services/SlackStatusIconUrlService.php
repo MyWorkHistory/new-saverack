@@ -22,54 +22,24 @@ class SlackStatusIconUrlService
     /** @var string Relative to site root; nginx/Laravel serves public/images/slack/ directly. */
     private const PUBLIC_PATH = '/images/slack';
 
-    private const API_PATH = '/api/slack/status-icons';
-
     public function liveUrl(): string
     {
-        return $this->resolveUrl(self::LIVE_FILE, self::PUBLIC_PATH, 'billing.slack.status_icon_live_url');
+        return $this->resolveUrl(self::LIVE_FILE, 'billing.slack.status_icon_live_url');
     }
 
     public function pausedUrl(): string
     {
-        return $this->resolveUrl(self::PAUSED_FILE, self::PUBLIC_PATH, 'billing.slack.status_icon_paused_url');
+        return $this->resolveUrl(self::PAUSED_FILE, 'billing.slack.status_icon_paused_url');
     }
 
     public function liveThumbUrl(): string
     {
-        return $this->resolveUrl(self::LIVE_THUMB_FILE, self::PUBLIC_PATH, 'billing.slack.status_icon_live_thumb_url');
+        return $this->resolveUrl(self::LIVE_THUMB_FILE, 'billing.slack.status_icon_live_thumb_url');
     }
 
     public function pausedThumbUrl(): string
     {
-        return $this->resolveUrl(self::PAUSED_THUMB_FILE, self::PUBLIC_PATH, 'billing.slack.status_icon_paused_thumb_url');
-    }
-
-    public function liveApiUrl(): string
-    {
-        return $this->resolveUrl(self::LIVE_FILE, self::API_PATH, '');
-    }
-
-    public function pausedApiUrl(): string
-    {
-        return $this->resolveUrl(self::PAUSED_FILE, self::API_PATH, '');
-    }
-
-    /**
-     * First reachable icon URL: thumb → full PNG → API route.
-     */
-    public function resolveReachableIconUrl(bool $isLive): string
-    {
-        $candidates = $isLive
-            ? [$this->liveThumbUrl(), $this->liveUrl(), $this->liveApiUrl()]
-            : [$this->pausedThumbUrl(), $this->pausedUrl(), $this->pausedApiUrl()];
-
-        foreach ($candidates as $url) {
-            if ($url !== '' && $this->isReachableImage($url)) {
-                return $url;
-            }
-        }
-
-        return $candidates[0] ?? '';
+        return $this->resolveUrl(self::PAUSED_THUMB_FILE, 'billing.slack.status_icon_paused_thumb_url');
     }
 
     public function isReachableImage(string $url): bool
@@ -86,22 +56,20 @@ class SlackStatusIconUrlService
 
             $contentType = strtolower(trim((string) $response->header('Content-Type')));
 
-            return $response->successful() && str_contains($contentType, 'image');
+            return $response->successful() && strpos($contentType, 'image') !== false;
         } catch (\Throwable $e) {
             return false;
         }
     }
 
-    private function resolveUrl(string $filename, string $pathPrefix, string $configKey): string
+    private function resolveUrl(string $filename, string $configKey): string
     {
-        if ($configKey !== '') {
-            $explicit = config($configKey);
-            if (is_string($explicit) && trim($explicit) !== '') {
-                return trim($explicit);
-            }
+        $explicit = config($configKey);
+        if (is_string($explicit) && trim($explicit) !== '') {
+            return trim($explicit);
         }
 
-        $relative = $pathPrefix.'/'.$filename;
+        $relative = self::PUBLIC_PATH.'/'.$filename;
         $base = $this->publicBaseUrl();
         if ($base === '') {
             return url($relative);

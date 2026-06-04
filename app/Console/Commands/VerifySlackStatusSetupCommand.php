@@ -118,7 +118,6 @@ class VerifySlackStatusSetupCommand extends Command
                             'icon_url_fallbacks' => $message['icon_url_fallbacks'],
                             'customize_identity' => true,
                             'prefer_bot' => true,
-                            'bot_only' => true,
                         ]
                     );
                     $this->info("  {$label}: posted via {$result['method']} — check for native header + truck avatar.");

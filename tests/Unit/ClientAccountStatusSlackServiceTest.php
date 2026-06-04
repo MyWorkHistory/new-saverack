@@ -163,9 +163,9 @@ final class ClientAccountStatusSlackServiceTest extends TestCase
         $this->assertSame('Shipping Status Update', $result['username']);
         $this->assertTrue($result['slack']['customize_identity']);
         $this->assertTrue($result['slack']['prefer_bot']);
-        $this->assertTrue($result['slack']['bot_only']);
         $this->assertSame($iconUrl, $result['slack']['icon_url']);
         $this->assertSame([$this->iconBase().'/shipping-status-live.png'], $result['slack']['icon_url_fallbacks']);
+        $this->assertArrayNotHasKey('bot_only', $result['slack']);
         $this->assertArrayNotHasKey('blocks', $result['slack']);
     }
 
@@ -303,6 +303,46 @@ final class ClientAccountStatusSlackServiceTest extends TestCase
 
             return str_contains((string) ($payload['icon_url'] ?? ''), '/images/slack/shipping-status-paused-thumb.png')
                 && str_contains((string) ($payload['text'] ?? ''), 'Demo is set to Paused.')
+                && ($payload['username'] ?? '') === 'Shipping Status Update'
+                && ! array_key_exists('blocks', $payload);
+        });
+    }
+
+    public function test_notify_falls_back_to_webhook_when_bot_cannot_post(): void
+    {
+        config([
+            'billing.slack.webhook_url' => 'https://hooks.slack.com/services/T/B/x',
+            'billing.slack.bot_token' => 'xoxb-test-token',
+        ]);
+
+        Http::fake([
+            'https://slack.com/api/*' => Http::response(['ok' => false, 'error' => 'not_in_channel'], 200),
+            'hooks.slack.com/*' => Http::response('ok', 200),
+        ]);
+
+        Log::shouldReceive('info')->andReturnNull();
+        Log::shouldReceive('warning')->andReturnNull();
+
+        $account = new ClientAccount([
+            'company_name' => 'Demo',
+            'in_house_slack' => 'demo-co',
+        ]);
+        $account->id = 1;
+
+        app(ClientAccountStatusSlackService::class)->notifyStatusChange(
+            $account,
+            ClientAccount::STATUS_ACTIVE,
+            ClientAccount::STATUS_PAUSED
+        );
+
+        Http::assertSent(function ($request) {
+            if (! str_contains($request->url(), 'hooks.slack.com')) {
+                return false;
+            }
+
+            $payload = $request->data();
+
+            return str_contains((string) ($payload['text'] ?? ''), 'Demo is set to Paused.')
                 && ($payload['username'] ?? '') === 'Shipping Status Update'
                 && ! array_key_exists('blocks', $payload);
         });

@@ -68,7 +68,7 @@ class SlackDeliveryService
         try {
             return $this->postViaBot($token, $channel, $text, $username, $iconEmoji, $attachments, $iconUrl, $blocks, $customizeIdentity);
         } catch (\Throwable $e) {
-            if ($customizeIdentity) {
+            if ($customizeIdentity && $this->shouldRetryCustomizeIdentityWithAlternateIcon($e)) {
                 try {
                     return $this->retryCustomizeIdentityBotPost(
                         $token,
@@ -133,6 +133,9 @@ class SlackDeliveryService
             try {
                 return $this->postViaBot($token, $channel, $text, $username, '', $attachments, $fallbackUrl, $blocks, true);
             } catch (\Throwable $fallbackError) {
+                if (! $this->shouldRetryCustomizeIdentityWithAlternateIcon($fallbackError)) {
+                    throw $fallbackError;
+                }
                 $e = $fallbackError;
             }
         }
@@ -426,5 +429,22 @@ class SlackDeliveryService
         }
 
         return 'Slack rejected the message ('.$error.').';
+    }
+
+    private function shouldRetryCustomizeIdentityWithAlternateIcon(\Throwable $e): bool
+    {
+        $message = strtolower($e->getMessage());
+
+        if (
+            str_contains($message, 'not in the target channel')
+            || str_contains($message, 'invalid_auth')
+            || str_contains($message, 'missing scopes')
+            || str_contains($message, 'must be a bot user oauth token')
+            || str_contains($message, 'could not send message to slack')
+        ) {
+            return false;
+        }
+
+        return true;
     }
 }

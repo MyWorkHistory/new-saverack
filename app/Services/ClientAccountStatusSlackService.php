@@ -114,7 +114,6 @@ class ClientAccountStatusSlackService
         if ($this->slack->hasBotToken()) {
             $slack['customize_identity'] = true;
             $slack['prefer_bot'] = true;
-            $slack['bot_only'] = true;
         }
 
         return [

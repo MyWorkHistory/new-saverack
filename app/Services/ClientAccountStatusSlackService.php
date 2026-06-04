@@ -90,25 +90,25 @@ class ClientAccountStatusSlackService
     }
 
     /**
-     * Webhook: username + icon_url + section block with truck accessory (small, beside text).
-     * Bot (preferred when xoxb is set): same blocks; icon_url still sent for clients that honor it.
+     * Webhook: plain text + username + icon_url (no blocks — Slack rejects the whole
+     * message when a block image URL is unreachable).
+     * Bot-only: attachment author row for the truck icon.
      *
      * @return array{text: string, username: string, slack: array<string, mixed>}
      */
     private function deliveryOptions(string $text, string $username, string $iconUrl, string $iconAlt): array
     {
-        $blocks = $this->statusBlocks($text, $iconUrl, $iconAlt);
-        $preferBot = (bool) config('billing.slack.status_prefer_bot', true);
+        unset($iconAlt);
 
-        $slack = [
-            'blocks' => $blocks,
-            'prefer_bot' => $preferBot,
-        ];
+        $slack = [];
         if ($iconUrl !== '') {
             $slack['icon_url'] = $iconUrl;
         }
 
+        $preferBot = (bool) config('billing.slack.status_prefer_bot', false);
         if ($preferBot && $this->slack->hasBotToken()) {
+            $slack['prefer_bot'] = true;
+
             return [
                 'text' => $text,
                 'username' => 'Save Rack',
@@ -124,35 +124,23 @@ class ClientAccountStatusSlackService
             ];
         }
 
+        if ($iconUrl !== '') {
+            $slack['attachments'] = [
+                [
+                    'fallback' => $username."\n".$text,
+                    'author_name' => $username,
+                    'author_icon' => $iconUrl,
+                    'text' => $text,
+                    'mrkdwn_in' => ['text'],
+                ],
+            ];
+        }
+
         return [
             'text' => $text,
             'username' => 'Save Rack',
             'slack' => $slack,
         ];
-    }
-
-    /**
-     * @return array<int, array<string, mixed>>
-     */
-    private function statusBlocks(string $text, string $iconUrl, string $iconAlt): array
-    {
-        $section = [
-            'type' => 'section',
-            'text' => [
-                'type' => 'mrkdwn',
-                'text' => $text,
-            ],
-        ];
-
-        if ($iconUrl !== '') {
-            $section['accessory'] = [
-                'type' => 'image',
-                'image_url' => $iconUrl,
-                'alt_text' => $iconAlt,
-            ];
-        }
-
-        return [$section];
     }
 
     /**

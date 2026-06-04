@@ -80,11 +80,11 @@ final class ClientAccountStatusSlackServiceTest extends TestCase
         $this->assertStringNotContainsString('Shipping Status Update', $payload['text']);
     }
 
-    public function test_webhook_delivery_uses_username_icon_url_and_truck_block(): void
+    public function test_webhook_delivery_uses_username_and_icon_url_without_blocks(): void
     {
         config([
             'billing.slack.webhook_url' => 'https://hooks.slack.com/services/T/B/x',
-            'billing.slack.bot_token' => null,
+            'billing.slack.bot_token' => 'xoxb-test',
             'billing.slack.status_prefer_bot' => false,
         ]);
 
@@ -106,19 +106,15 @@ final class ClientAccountStatusSlackServiceTest extends TestCase
         $this->assertSame('Shipping Status Update', $result['username']);
         $this->assertSame($text, $result['text']);
         $this->assertSame($iconUrl, $result['slack']['icon_url']);
-        $section = $result['slack']['blocks'][0];
-        $this->assertSame('section', $section['type']);
-        $this->assertSame($text, $section['text']['text']);
-        $this->assertSame($iconUrl, $section['accessory']['image_url']);
-        $this->assertSame('Shipping live', $section['accessory']['alt_text']);
+        $this->assertArrayNotHasKey('blocks', $result['slack']);
+        $this->assertArrayNotHasKey('prefer_bot', $result['slack']);
     }
 
-    public function test_bot_delivery_prefers_bot_with_blocks_when_token_set(): void
+    public function test_bot_only_delivery_uses_attachment_author_icon(): void
     {
         config([
-            'billing.slack.webhook_url' => 'https://hooks.slack.com/services/T/B/x',
+            'billing.slack.webhook_url' => null,
             'billing.slack.bot_token' => 'xoxb-test',
-            'billing.slack.status_prefer_bot' => true,
         ]);
 
         $service = app(ClientAccountStatusSlackService::class);
@@ -137,9 +133,10 @@ final class ClientAccountStatusSlackServiceTest extends TestCase
         );
 
         $this->assertSame('Save Rack', $result['username']);
-        $this->assertTrue($result['slack']['prefer_bot']);
-        $this->assertArrayHasKey('blocks', $result['slack']);
-        $this->assertArrayNotHasKey('attachments', $result['slack']);
+        $attachment = $result['slack']['attachments'][0];
+        $this->assertSame('Shipping Status Update', $attachment['author_name']);
+        $this->assertSame($iconUrl, $attachment['author_icon']);
+        $this->assertArrayNotHasKey('blocks', $result['slack']);
     }
 
     public function test_other_status_changes_do_not_build_slack_payload(): void

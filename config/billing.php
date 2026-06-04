@@ -39,8 +39,8 @@ return [
         /** Optional full URLs if icons are hosted on a CDN (overrides built-in routes). */
         'status_icon_live_url' => env('SLACK_STATUS_ICON_LIVE_URL'),
         'status_icon_paused_url' => env('SLACK_STATUS_ICON_PAUSED_URL'),
-        /** Account status Slack posts use the bot (xoxb) when set, so icons render reliably. */
-        'status_prefer_bot' => env('SLACK_STATUS_PREFER_BOT', true),
+        /** When true and xoxb is set, status posts use the bot instead of the webhook (off by default). */
+        'status_prefer_bot' => env('SLACK_STATUS_PREFER_BOT', false),
     ],
 
 ];

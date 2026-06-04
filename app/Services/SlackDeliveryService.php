@@ -41,8 +41,8 @@ class SlackDeliveryService
         }
 
         $preferBot = ! empty($options['prefer_bot']) && $this->hasBotToken();
-
         $webhookUrl = $this->normalizeWebhookUrl((string) config('billing.slack.webhook_url', ''));
+
         if (! $preferBot && $webhookUrl !== '') {
             $this->postViaWebhook($webhookUrl, $channel, $text, $username, $iconEmoji, $attachments, $iconUrl, $blocks);
 
@@ -56,6 +56,38 @@ class SlackDeliveryService
             );
         }
 
+        try {
+            return $this->postViaBot($token, $channel, $text, $iconEmoji, $attachments, $iconUrl, $blocks);
+        } catch (\Throwable $e) {
+            if ($webhookUrl === '') {
+                throw $e;
+            }
+
+            Log::warning('slack_delivery_bot_failed_using_webhook', [
+                'channel' => $channel,
+                'message' => $e->getMessage(),
+            ]);
+
+            $this->postViaWebhook($webhookUrl, $channel, $text, $username, $iconEmoji, $attachments, $iconUrl, null);
+
+            return ['method' => 'webhook', 'channel' => $channel, 'ts' => null];
+        }
+    }
+
+    /**
+     * @param  array<int, array<string, mixed>>|null  $attachments
+     * @param  array<int, array<string, mixed>>|null  $blocks
+     * @return array{method: string, channel: string, ts: string|null}
+     */
+    private function postViaBot(
+        string $token,
+        string $channel,
+        string $text,
+        string $iconEmoji = '',
+        ?array $attachments = null,
+        string $iconUrl = '',
+        ?array $blocks = null
+    ): array {
         $this->assertBotTokenShape($token);
         $this->joinChannelIfPossible($token, $channel);
 

@@ -17,52 +17,34 @@ final class SlackStatusIconUrlServiceTest extends TestCase
         ]);
     }
 
-    public function test_avatar_url_uses_api_route_for_local_file(): void
+    public function test_slack_avatar_url_prefers_avatars_directory(): void
     {
-        $this->assertFileExists(public_path('images/slack/shipping-status-live-thumb.png'));
+        $this->assertFileExists(public_path('images/slack/avatars/shipping-status-live.png'));
 
-        $url = app(SlackStatusIconUrlService::class)->avatarUrl(true);
+        $url = app(SlackStatusIconUrlService::class)->slackAvatarUrl(true);
 
         $this->assertSame(
-            'https://app.saverack.com/api/slack/status-icons/shipping-status-live-thumb.png',
+            'https://app.saverack.com/images/slack/avatars/shipping-status-live.png',
             $url
         );
     }
 
-    public function test_avatar_url_ignores_broken_env_when_local_file_exists(): void
+    public function test_slack_avatar_url_for_paused(): void
     {
-        config([
-            'billing.slack.status_icon_live_url' => 'https://broken.example.com/storage/slack-status-icons/shipping-status-live.png',
-        ]);
-
-        $url = app(SlackStatusIconUrlService::class)->avatarUrl(true);
+        $url = app(SlackStatusIconUrlService::class)->slackAvatarUrl(false);
 
         $this->assertSame(
-            'https://app.saverack.com/api/slack/status-icons/shipping-status-live-thumb.png',
+            'https://app.saverack.com/images/slack/avatars/shipping-status-paused.png',
             $url
         );
     }
 
-    public function test_legacy_storage_env_url_remapped_to_api_route(): void
+    public function test_builds_public_images_url(): void
     {
-        config([
-            'billing.slack.status_icon_live_url' => 'https://app.saverack.com/storage/slack-status-icons/shipping-status-live.png',
-        ]);
-
         $url = app(SlackStatusIconUrlService::class)->liveUrl();
 
         $this->assertSame(
-            'https://app.saverack.com/api/slack/status-icons/shipping-status-live.png',
-            $url
-        );
-    }
-
-    public function test_paused_avatar_url_uses_api_route(): void
-    {
-        $url = app(SlackStatusIconUrlService::class)->avatarUrl(false);
-
-        $this->assertSame(
-            'https://app.saverack.com/api/slack/status-icons/shipping-status-paused-thumb.png',
+            'https://app.saverack.com/images/slack/shipping-status-live.png',
             $url
         );
     }

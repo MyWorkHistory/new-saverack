@@ -60,8 +60,12 @@ class ClientAccountStatusSlackService
         $text = (string) ($payload['text'] ?? '');
         $username = (string) ($payload['username'] ?? self::USERNAME);
         $isLive = $newStatus === ClientAccount::STATUS_ACTIVE;
-        $iconUrl = $this->iconUrls->avatarUrl($isLive);
+        $iconUrl = $this->iconUrls->slackAvatarUrl($isLive);
         $options = $this->deliveryOptions($text, $username, $iconUrl);
+
+        if ($iconUrl !== '') {
+            $this->logIconUrlReachability($iconUrl, (int) $account->id);
+        }
 
         try {
             $result = $this->slack->post(
@@ -79,10 +83,6 @@ class ClientAccountStatusSlackService
                 'new_status' => $newStatus,
                 'actor_id' => $actor !== null ? $actor->id : null,
             ]);
-
-            if ($iconUrl !== '') {
-                $this->logIconUrlReachability($iconUrl, (int) $account->id);
-            }
         } catch (\Throwable $e) {
             Log::warning('client_account.status_slack_failed', [
                 'client_account_id' => $account->id,
@@ -96,20 +96,20 @@ class ClientAccountStatusSlackService
 
     /**
      * Single header line: truck icon (icon_url) + "Shipping Status Update", then message body.
-     * Username is always sent via bot; icon is omitted when PNG is not on disk.
      *
      * @return array{text: string, username: string, slack: array<string, mixed>}
      */
     private function deliveryOptions(string $text, string $username, string $iconUrl): array
     {
-        $slack = [];
+        $slack = [
+            'customize_identity' => true,
+        ];
 
         if ($iconUrl !== '') {
             $slack['icon_url'] = $iconUrl;
         }
 
         if ($this->slack->hasBotToken()) {
-            $slack['customize_identity'] = true;
             $slack['prefer_bot'] = true;
         }
 
@@ -132,11 +132,11 @@ class ClientAccountStatusSlackService
         $newStatus = strtolower(trim($newStatus));
 
         if ($newStatus === ClientAccount::STATUS_PAUSED) {
-            return $this->buildStatusPayload($account, 'Paused', 'Set Pause in Shiphero', $actor);
+            return $this->buildStatusPayload($account, 'Paused', 'Set Pause in Shiphero', $this->iconUrls->slackAvatarUrl(false), $actor);
         }
 
         if ($newStatus === ClientAccount::STATUS_ACTIVE) {
-            return $this->buildStatusPayload($account, 'Live', 'Set Live in Shiphero', $actor);
+            return $this->buildStatusPayload($account, 'Live', 'Set Live in Shiphero', $this->iconUrls->slackAvatarUrl(true), $actor);
         }
 
         return null;
@@ -160,6 +160,7 @@ class ClientAccountStatusSlackService
         ClientAccount $account,
         string $statusLabel,
         string $shipheroLinkLabel,
+        string $iconUrl,
         ?User $actor
     ): array {
         $lines = [
@@ -171,7 +172,7 @@ class ClientAccountStatusSlackService
         return [
             'text' => implode("\n", $lines),
             'username' => self::USERNAME,
-            'icon_url' => '',
+            'icon_url' => $iconUrl,
         ];
     }
 

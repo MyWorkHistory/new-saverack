@@ -44,10 +44,10 @@ class VerifySlackStatusSetupCommand extends Command
         }
 
         foreach ([
-            'live' => $icons->liveUrl(),
-            'live thumb' => $icons->liveThumbUrl(),
-            'paused' => $icons->pausedUrl(),
-            'paused thumb' => $icons->pausedThumbUrl(),
+            'live avatar' => $icons->slackAvatarUrl(true),
+            'paused avatar' => $icons->slackAvatarUrl(false),
+            'live full' => $icons->liveUrl(),
+            'paused full' => $icons->pausedUrl(),
         ] as $label => $url) {
             if ($url === '') {
                 $this->error("Icon URL ({$label}): could not build.");
@@ -79,9 +79,9 @@ class VerifySlackStatusSetupCommand extends Command
             $ok = false;
         }
 
-        $srcThumb = public_path('images/slack/shipping-status-live-thumb.png');
+        $srcThumb = public_path('images/slack/avatars/shipping-status-live.png');
         if (! is_file($srcThumb)) {
-            $this->warn('Missing public/images/slack/shipping-status-live-thumb.png — run scripts/optimize_slack_status_icons.py');
+            $this->warn('Missing public/images/slack/avatars/shipping-status-live.png — deploy avatar icons.');
             $ok = false;
         }
 
@@ -101,7 +101,7 @@ class VerifySlackStatusSetupCommand extends Command
                     'Slack status icon setup test (safe to delete).',
                     'Shipping Status Update',
                     [
-                        'icon_url' => $icons->liveUrl(),
+                        'icon_url' => $icons->slackAvatarUrl(true),
                         'customize_identity' => true,
                         'prefer_bot' => true,
                     ]

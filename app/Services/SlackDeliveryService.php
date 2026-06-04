@@ -61,19 +61,6 @@ class SlackDeliveryService
         try {
             return $this->postViaBot($token, $channel, $text, $username, $iconEmoji, $attachments, $iconUrl, $blocks, $customizeIdentity);
         } catch (\Throwable $e) {
-            if ($customizeIdentity && $iconUrl !== '') {
-                try {
-                    Log::warning('slack_delivery_bot_icon_failed_retrying_without_icon', [
-                        'channel' => $channel,
-                        'message' => $e->getMessage(),
-                    ]);
-
-                    return $this->postViaBot($token, $channel, $text, $username, $iconEmoji, $attachments, '', $blocks, true);
-                } catch (\Throwable $retryError) {
-                    $e = $retryError;
-                }
-            }
-
             if ($webhookUrl === '') {
                 throw $e;
             }
@@ -87,7 +74,7 @@ class SlackDeliveryService
                     : null,
             ]);
 
-            $this->postViaWebhook($webhookUrl, $channel, $text, $username, $iconEmoji, null, '', null);
+            $this->postViaWebhook($webhookUrl, $channel, $text, $username, $iconEmoji, null, $iconUrl, null);
 
             return ['method' => 'webhook', 'channel' => $channel, 'ts' => null];
         }
@@ -119,6 +106,8 @@ class SlackDeliveryService
         ];
         if ($customizeIdentity || $iconUrl !== '' || $iconEmoji !== '') {
             $payload['username'] = $username !== '' ? $username : 'Save Rack';
+        } elseif ($username !== '' && $username !== 'Save Rack') {
+            $payload['username'] = $username;
         }
         if ($iconUrl !== '') {
             $payload['icon_url'] = $iconUrl;

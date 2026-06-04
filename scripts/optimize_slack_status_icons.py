@@ -8,8 +8,8 @@ from pathlib import Path
 
 from PIL import Image
 
-SIZE = 512
-# Fraction of canvas the artwork should cover (inscribed circle ~0.88 for Slack avatars).
+# Slack incoming-webhook avatars render at 36×36 px.
+SIZE = 36
 FILL = 0.88
 WHITE_THRESHOLD = 245
 # Slack renders transparent webhook icons on gray; use opaque white instead.

@@ -164,4 +164,26 @@ class InventoryRestockReportServiceTest extends TestCase
         $this->assertSame(InventoryRestockSnapshot::STATUS_FAILED, $row->status);
         $this->assertSame('Worker timeout', $row->error_message);
     }
+
+    public function test_zombie_running_snapshot_marked_failed_on_latest_snapshot(): void
+    {
+        $service = $this->serviceWithWarehouse();
+
+        InventoryRestockSnapshot::query()->create([
+            'warehouse_id' => 'wh-1',
+            'status' => InventoryRestockSnapshot::STATUS_RUNNING,
+            'refresh_started_at' => now()->subMinutes(5),
+            'updated_at' => now()->subMinutes(5),
+            'progress_page' => 0,
+            'rows' => [],
+            'row_count' => 0,
+            'scan_stats' => null,
+        ]);
+
+        $snapshot = $service->latestSnapshot('wh-1');
+
+        $this->assertNotNull($snapshot);
+        $this->assertSame(InventoryRestockSnapshot::STATUS_FAILED, $snapshot['status']);
+        $this->assertStringContainsString('never started', (string) $snapshot['error_message']);
+    }
 }

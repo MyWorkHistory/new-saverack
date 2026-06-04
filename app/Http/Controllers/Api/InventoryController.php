@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Models\ClientAccount;
 use App\Models\ClientAccountAsnLine;
 use App\Models\ClientAccountOnDemandProduct;
+use App\Models\InventoryRestockSnapshot;
 use App\Services\ShipHeroClient;
 use App\Services\InventoryProductDetailCacheService;
 use App\Services\InventoryRestockReportService;
@@ -217,7 +218,10 @@ class InventoryController extends Controller
                 ], 503);
             }
 
-            return response()->json($snapshot, 202);
+            $snapshot = $reports->latestSnapshot($warehouseId, false) ?? $snapshot;
+            $statusCode = ($snapshot['status'] ?? null) === InventoryRestockSnapshot::STATUS_OK ? 200 : 202;
+
+            return response()->json($snapshot, $statusCode);
         } catch (ValidationException $e) {
             throw $e;
         } catch (RuntimeException $e) {

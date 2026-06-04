@@ -170,7 +170,10 @@ async function loadRestockReport() {
   restockLoading.value = true;
   try {
     const data = await fetchRestockMeta();
-    if (data?.status === "ok" && Number(data?.row_count || 0) > 0) {
+    if (data?.status === "failed") {
+      restockRefreshing.value = false;
+      stopPolling();
+    } else if (data?.status === "ok" && Number(data?.row_count || 0) > 0) {
       await fetchRestockRows();
     } else if (data?.status !== "running") {
       restockRows.value = [];
@@ -181,6 +184,8 @@ async function loadRestockReport() {
       startPolling();
     }
   } catch (e) {
+    restockRefreshing.value = false;
+    stopPolling();
     toast.errorFrom(e, "Could not load restock report.");
   } finally {
     restockLoading.value = false;

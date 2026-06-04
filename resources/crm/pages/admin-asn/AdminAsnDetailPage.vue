@@ -5,6 +5,7 @@ import api from "../../services/api";
 import CrmIconRowActions from "../../components/common/CrmIconRowActions.vue";
 import CrmLoadingSpinner from "../../components/common/CrmLoadingSpinner.vue";
 import ConfirmModal from "../../components/common/ConfirmModal.vue";
+import AsnProductCatalogPanel from "../../components/inventory/AsnProductCatalogPanel.vue";
 import { setCrmPageMeta } from "../../composables/useCrmPageMeta.js";
 import { useToast } from "../../composables/useToast.js";
 import { ASN_CARRIER_OPTIONS } from "../../utils/asnCarrierOptions.js";
@@ -61,6 +62,28 @@ const trackingSaveBusy = ref(false);
 
 const reopenBusy = ref(false);
 
+const lineBusy = ref(false);
+const addPanelOpen = ref(false);
+const markReadyOpen = ref(false);
+const markReadyBusy = ref(false);
+const markReadyBoxes = ref(0);
+const markReadyPallets = ref(0);
+const markReadyTrackingMode = ref("entered");
+const markReadyTrackings = ref([{ carrier: "", tracking_number: "" }]);
+const deleteAsnOpen = ref(false);
+const deleteAsnBusy = ref(false);
+const deleteLineOpen = ref(false);
+const lineToDelete = ref(null);
+const addNewSkuOpen = ref(false);
+const addNewSkuBusy = ref(false);
+const addNewSkuName = ref("");
+const addNewSkuSku = ref("");
+const addNewSkuQty = ref(1);
+const vendorDraft = ref([{ label: "" }]);
+const notesDraft = ref("");
+const vendorSaveBusy = ref(false);
+const notesSaveBusy = ref(false);
+
 const lineMenuOpenId = ref(null);
 const lineMenuRect = ref({ top: 0, left: 0 });
 const LINE_MENU_W = 200;
@@ -70,6 +93,11 @@ const asnId = computed(() => String(route.params.id || ""));
 const isDraft = computed(() => String(asn.value?.status || "").toLowerCase() === "draft");
 const isPending = computed(() => String(asn.value?.status || "").toLowerCase() === "pending");
 const isNonCompliant = computed(() => String(asn.value?.status || "").toLowerCase() === "non_compliant");
+const clientAccountId = computed(() => Number(asn.value?.client_account_id || 0));
+const canDeleteAsn = computed(() => {
+  const s = String(asn.value?.status || "").toLowerCase();
+  return s === "draft" || s === "pending";
+});
 
 const lineMenuRow = computed(
   () => (asn.value?.lines || []).find((l) => l.id === lineMenuOpenId.value) ?? null,
@@ -227,34 +255,63 @@ function specDisplay(val) {
   return String(val);
 }
 
+function syncDraftsFromAsn() {
+  if (!asn.value) return;
+  trackingDraft.value =
+    (asn.value.trackings || []).length > 0
+      ? asn.value.trackings.map((t) => ({
+          carrier: t.carrier || "",
+          tracking_number: t.tracking_number || "",
+        }))
+      : [{ carrier: "", tracking_number: "" }];
+  vendorDraft.value =
+    (asn.value.vendor_lines || []).length > 0
+      ? asn.value.vendor_lines.map((x) => ({ label: x.label || "" }))
+      : [{ label: "" }];
+  notesDraft.value = asn.value.warehouse_notes || "";
+  shipmentBoxesDraft.value = Number(asn.value.total_boxes) || 0;
+  shipmentPalletsDraft.value = Number(asn.value.total_pallets) || 0;
+}
+
+function resetReceiveRejectDrafts(lines) {
+  const rd = {};
+  const rj = {};
+  for (const l of lines || []) {
+    rd[l.id] = "";
+    rj[l.id] = "";
+  }
+  receiveDraft.value = rd;
+  rejectDraft.value = rj;
+}
+
+function resetMarkReadyForm() {
+  if (!asn.value) return;
+  markReadyBoxes.value = Number(asn.value.total_boxes) || 0;
+  markReadyPallets.value = Number(asn.value.total_pallets) || 0;
+  markReadyTrackingMode.value = "entered";
+  markReadyTrackings.value =
+    (asn.value.trackings || []).length > 0
+      ? asn.value.trackings.map((x) => ({
+          carrier: x.carrier || "",
+          tracking_number: x.tracking_number || "",
+        }))
+      : [{ carrier: "", tracking_number: "" }];
+}
+
 async function loadAsn() {
   loading.value = true;
   try {
     const { data } = await api.get(`/admin/asns/${asnId.value}`);
     asn.value = data;
-    trackingDraft.value =
-      (data.trackings || []).length > 0
-        ? data.trackings.map((t) => ({
-            carrier: t.carrier || "",
-            tracking_number: t.tracking_number || "",
-          }))
-        : [{ carrier: "", tracking_number: "" }];
-    shipmentBoxesDraft.value = Number(data.total_boxes) || 0;
-    shipmentPalletsDraft.value = Number(data.total_pallets) || 0;
-    const rd = {};
-    const rj = {};
-    for (const l of data.lines || []) {
-      rd[l.id] = "";
-      rj[l.id] = "";
-    }
-    receiveDraft.value = rd;
-    rejectDraft.value = rj;
+    syncDraftsFromAsn();
+    resetReceiveRejectDrafts(data.lines);
     setCrmPageMeta({
       title: `Save Rack | ${formatAsnDisplay(data.asn_number)}`,
       description: "ASN receiving detail.",
     });
     const needsSpecs = (data.lines || []).some((l) => !l.specs_cached_at);
-    if (needsSpecs && !isNonCompliant.value) {
+    const draft = String(data.status || "").toLowerCase() === "draft";
+    if (needsSpecs && !isNonCompliant.value && !draft) {
       enrichSpecs(false);
     }
   } catch (e) {
@@ -456,6 +513,7 @@ async function saveTracking() {
     asn.value = data;
     shipmentBoxesDraft.value = Number(data.total_boxes) || 0;
     shipmentPalletsDraft.value = Number(data.total_pallets) || 0;
+    syncDraftsFromAsn();
     toast.success("Tracking saved.");
   } catch (e) {
     toast.errorFrom(e, "Could not save tracking.");
@@ -469,12 +527,251 @@ async function reopenForEdit() {
   try {
     const { data } = await api.post(`/asns/${asnId.value}/reopen-for-edit`);
     asn.value = { ...asn.value, ...data };
+    syncDraftsFromAsn();
+    addPanelOpen.value = true;
     toast.success("ASN reopened for editing.");
   } catch (e) {
     toast.errorFrom(e, "Could not reopen ASN.");
   } finally {
     reopenBusy.value = false;
   }
+}
+
+function openMarkReadyModal() {
+  resetMarkReadyForm();
+  markReadyOpen.value = true;
+}
+
+function addMarkReadyTrackingRow() {
+  markReadyTrackings.value = [...markReadyTrackings.value, { carrier: "", tracking_number: "" }];
+}
+
+async function confirmMarkReady() {
+  if (!asn.value) return;
+  const boxes = Math.max(0, Number(markReadyBoxes.value) || 0);
+  const pallets = Math.max(0, Number(markReadyPallets.value) || 0);
+  if (boxes <= 0 && pallets <= 0) {
+    toast.error("Enter total boxes or pallets being shipped in this ASN.");
+    return;
+  }
+  const payload = {
+    tracking_mode: markReadyTrackingMode.value,
+    total_boxes: boxes,
+    total_pallets: pallets,
+  };
+  if (markReadyTrackingMode.value === "entered") {
+    const hasTracking = markReadyTrackings.value.some((row) => String(row.tracking_number || "").trim() !== "");
+    if (!hasTracking) {
+      toast.error("Enter at least one tracking number.");
+      return;
+    }
+    payload.trackings = markReadyTrackings.value;
+  }
+  markReadyBusy.value = true;
+  try {
+    const { data } = await api.post(`/asns/${asnId.value}/mark-ready`, payload);
+    asn.value = data;
+    syncDraftsFromAsn();
+    markReadyOpen.value = false;
+    toast.success("ASN marked as ready.");
+    await loadAsn();
+  } catch (e) {
+    toast.errorFrom(e, "Could not mark ASN as ready.");
+  } finally {
+    markReadyBusy.value = false;
+  }
+}
+
+async function addFromCatalog({ product, quantity }) {
+  if (!asn.value || !isDraft.value) return;
+  const p = product && typeof product === "object" ? product : null;
+  const qty = Math.max(0, Number(quantity) || 0);
+  if (qty <= 0) {
+    toast.error("Enter expected quantity.");
+    return;
+  }
+  lineBusy.value = true;
+  try {
+    await api.post(`/asns/${asnId.value}/lines`, {
+      shiphero_product_id: p.id,
+      sku: p.sku,
+      name: p.name,
+      image_url: p.image_url || null,
+      expected_qty: qty,
+    });
+    toast.success("Product added.");
+    await loadAsn();
+    addPanelOpen.value = false;
+  } catch (e) {
+    toast.errorFrom(e, "Could not add product.");
+  } finally {
+    lineBusy.value = false;
+  }
+}
+
+async function saveLineExpectedQty(line, rawQty) {
+  if (!asn.value || !isDraft.value || !line?.id) return;
+  const qty = Math.max(0, Number(rawQty) || 0);
+  if (qty === Number(line.expected_qty)) return;
+  lineBusy.value = true;
+  try {
+    await api.patch(`/asns/${asnId.value}/lines/${line.id}`, { expected_qty: qty });
+    await loadAsn();
+  } catch (e) {
+    toast.errorFrom(e, "Could not update quantity.");
+    await loadAsn();
+  } finally {
+    lineBusy.value = false;
+  }
+}
+
+function openAddNewSkuModal() {
+  addNewSkuName.value = productSearch.value.trim();
+  addNewSkuSku.value = "";
+  addNewSkuQty.value = 1;
+  addNewSkuOpen.value = true;
+}
+
+async function submitAddNewSku() {
+  if (!asn.value?.id || !isDraft.value) return;
+  const sku = addNewSkuSku.value.trim();
+  const name = addNewSkuName.value.trim();
+  const qty = Math.max(0, Number(addNewSkuQty.value) || 0);
+  if (!sku || !name) {
+    toast.error("Enter product name and SKU.");
+    return;
+  }
+  if (qty <= 0) {
+    toast.error("Enter expected quantity.");
+    return;
+  }
+  addNewSkuBusy.value = true;
+  try {
+    await api.post(`/asns/${asnId.value}/lines`, {
+      sku,
+      name,
+      expected_qty: qty,
+      shiphero_product_id: null,
+    });
+    toast.success("SKU added and created in ShipHero.");
+    addNewSkuOpen.value = false;
+    await loadAsn();
+    addPanelOpen.value = false;
+  } catch (e) {
+    toast.errorFrom(e, "Could not add SKU.");
+  } finally {
+    addNewSkuBusy.value = false;
+  }
+}
+
+function askDeleteLine(row) {
+  lineToDelete.value = row;
+  deleteLineOpen.value = true;
+}
+
+async function confirmDeleteLine() {
+  if (!asn.value || !lineToDelete.value) return;
+  lineBusy.value = true;
+  try {
+    await api.delete(`/asns/${asnId.value}/lines/${lineToDelete.value.id}`);
+    deleteLineOpen.value = false;
+    lineToDelete.value = null;
+    lineMenuOpenId.value = null;
+    toast.success("Line removed.");
+    await loadAsn();
+  } catch (e) {
+    toast.errorFrom(e, "Delete failed.");
+  } finally {
+    lineBusy.value = false;
+  }
+}
+
+function askDeleteLineFromMenu(line) {
+  askDeleteLine(line);
+  closeLineMenu();
+}
+
+function openDeleteAsnFromMenu() {
+  closeAllHeaderMenus();
+  if (!canDeleteAsn.value) {
+    toast.error("Only draft or pending ASNs can be removed.");
+    return;
+  }
+  deleteAsnOpen.value = true;
+}
+
+async function confirmDeleteAsn() {
+  if (!asn.value?.id) return;
+  deleteAsnBusy.value = true;
+  try {
+    await api.delete(`/asns/${asnId.value}`);
+    toast.success("ASN removed.");
+    deleteAsnOpen.value = false;
+    router.push({ name: "admin-asn-hub" });
+  } catch (e) {
+    toast.errorFrom(e, "Could not remove ASN.");
+  } finally {
+    deleteAsnBusy.value = false;
+  }
+}
+
+function addVendorRow() {
+  vendorDraft.value = [...vendorDraft.value, { label: "" }];
+}
+
+function removeVendorRow(idx) {
+  if (vendorDraft.value.length <= 1) {
+    vendorDraft.value = [{ label: "" }];
+    return;
+  }
+  vendorDraft.value = vendorDraft.value.filter((_, i) => i !== idx);
+}
+
+async function saveVendors() {
+  if (!asn.value?.id) return;
+  vendorSaveBusy.value = true;
+  try {
+    const { data } = await api.put(`/asns/${asnId.value}/vendor-lines`, {
+      vendor_lines: vendorDraft.value,
+    });
+    asn.value = data;
+    syncDraftsFromAsn();
+    toast.success("Vendor details saved.");
+  } catch (e) {
+    toast.errorFrom(e, "Could not save vendor details.");
+  } finally {
+    vendorSaveBusy.value = false;
+  }
+}
+
+async function saveNotes() {
+  if (!asn.value?.id) return;
+  notesSaveBusy.value = true;
+  try {
+    const { data } = await api.patch(`/asns/${asnId.value}/warehouse-notes`, {
+      warehouse_notes: notesDraft.value,
+    });
+    asn.value = data;
+    syncDraftsFromAsn();
+    toast.success("Notes saved.");
+  } catch (e) {
+    toast.errorFrom(e, "Could not save notes.");
+  } finally {
+    notesSaveBusy.value = false;
+  }
+}
+
+function openPrintSlip() {
+  openPdf(`/asns/${asnId.value}/packing-slip.pdf`, "Could not open packing slip PDF.");
+}
+
+function openPrintLabel() {
+  openPdf(`/asns/${asnId.value}/identification-label.pdf`, "Could not open identification label PDF.");
+}
+
+function printBarcodeFromMenu(line) {
+  printBarcode(line);
+  closeLineMenu();
 }
 
 function placeLineMenu(anchorEl) {
@@ -568,6 +865,21 @@ onUnmounted(() => {
             </p>
           </div>
           <div class="d-flex flex-wrap gap-2 flex-shrink-0 align-items-center">
+            <button
+              v-if="isDraft"
+              type="button"
+              class="btn btn-primary staff-page-primary btn-sm fw-semibold"
+              @click="openMarkReadyModal"
+            >
+              Mark as Ready
+            </button>
+            <button
+              type="button"
+              class="btn btn-outline-secondary btn-sm fw-semibold"
+              @click="openPrintSlip"
+            >
+              Print Packing Slip
+            </button>
             <div data-asn-header-actions class="position-relative">
               <button
                 type="button"
@@ -587,23 +899,93 @@ onUnmounted(() => {
 
     <div class="row g-4">
       <div class="col-lg-8">
-        <div v-if="isDraft" class="alert alert-info mb-4">
-          This ASN is in draft. Add products and mark ready using the same flow as the client portal, or
-          reopen after pending via Manage → Edit.
-          <RouterLink
-            class="ms-1"
-            :to="{
-              name: 'user-asn-detail',
-              params: { id: asnId },
-              query: { client_account_id: asn.client_account_id },
-            }"
-            target="_blank"
-          >
-            Open client view
-          </RouterLink>
+        <div v-if="isDraft" class="staff-table-card staff-datatable-card staff-datatable-card--white p-0 mb-4">
+          <div class="px-4 py-3 border-bottom d-flex justify-content-between align-items-center flex-wrap gap-2">
+            <h2 class="h6 mb-0 fw-semibold">Products</h2>
+            <button
+              type="button"
+              class="btn btn-sm btn-primary staff-page-primary"
+              @click="addPanelOpen = !addPanelOpen"
+            >
+              {{ addPanelOpen ? "Hide Add Products" : "Add Products" }}
+            </button>
+          </div>
+
+          <div v-show="addPanelOpen" class="border-bottom">
+            <AsnProductCatalogPanel
+              :client-account-id="clientAccountId"
+              :active="addPanelOpen"
+              :busy="lineBusy"
+              show-add-new-sku
+              qty-label="Expected QTY"
+              search-input-id="admin-asn-catalog-search"
+              @add="addFromCatalog"
+              @add-new-sku="openAddNewSkuModal"
+            />
+          </div>
+
+          <div class="table-responsive staff-table-wrap">
+            <table class="table table-hover align-middle mb-0 staff-data-table">
+              <thead class="table-light staff-table-head">
+                <tr>
+                  <th class="staff-table-head__th order-detail-page__items-col">Product</th>
+                  <th class="staff-table-head__th text-end" style="width: 9rem">Expected QTY</th>
+                  <th class="staff-table-head__th text-center admin-asn-detail-lines-actions-col">Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr v-for="line in asn.lines || []" :key="line.id">
+                  <td class="order-detail-page__items-col">
+                    <div class="order-detail-page__item-cell">
+                      <img
+                        v-if="line.image_url"
+                        :src="line.image_url"
+                        alt=""
+                        class="asn-line-thumb"
+                        loading="lazy"
+                      />
+                      <div v-else class="asn-line-thumb asn-line-thumb--empty" aria-hidden="true" />
+                      <div class="order-detail-page__item-copy">
+                        <div class="order-detail-page__item-name" :title="line.name">{{ line.name || "—" }}</div>
+                        <div class="order-detail-page__item-sku">SKU {{ line.sku || "—" }}</div>
+                      </div>
+                    </div>
+                  </td>
+                  <td class="text-end align-middle">
+                    <input
+                      type="number"
+                      min="0"
+                      class="form-control form-control-sm text-end ms-auto asn-line-qty-input"
+                      :value="line.expected_qty"
+                      :disabled="lineBusy"
+                      @change="saveLineExpectedQty(line, $event.target.value)"
+                    />
+                  </td>
+                  <td class="text-center admin-asn-detail-lines-actions-cell" @click.stop>
+                    <div data-row-actions class="position-relative d-inline-block">
+                      <button
+                        type="button"
+                        class="staff-action-btn staff-action-btn--more"
+                        :class="{ 'is-open': lineMenuOpenId == line.id }"
+                        aria-haspopup="true"
+                        :aria-expanded="lineMenuOpenId == line.id ? 'true' : 'false'"
+                        aria-label="Line actions"
+                        @click.stop="toggleLineMenu(line.id, $event)"
+                      >
+                        <CrmIconRowActions variant="horizontal" />
+                      </button>
+                    </div>
+                  </td>
+                </tr>
+                <tr v-if="!(asn.lines || []).length">
+                  <td colspan="3" class="text-center text-secondary py-4">No products yet.</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
         </div>
 
-        <div v-if="!isNonCompliant" class="staff-table-card staff-datatable-card staff-datatable-card--white p-0 mb-4">
+        <div v-if="!isDraft && !isNonCompliant" class="staff-table-card staff-datatable-card staff-datatable-card--white p-0 mb-4">
           <div class="px-4 py-3 border-bottom d-flex justify-content-between align-items-center flex-wrap gap-2">
             <h2 class="h6 mb-0 fw-semibold">Products</h2>
             <button
@@ -847,9 +1229,50 @@ onUnmounted(() => {
 
         <div class="staff-table-card staff-datatable-card staff-datatable-card--white p-4">
           <h3 class="h6 fw-semibold mb-2">Note from Client</h3>
-          <p class="mb-0 small text-secondary" style="white-space: pre-wrap">
+          <template v-if="isDraft">
+            <textarea
+              v-model="notesDraft"
+              class="form-control form-control-sm mb-2"
+              rows="4"
+              placeholder="Notes for warehouse staff"
+            />
+            <button
+              type="button"
+              class="btn btn-sm btn-primary staff-page-primary w-100"
+              :disabled="notesSaveBusy"
+              @click="saveNotes"
+            >
+              Save Notes
+            </button>
+          </template>
+          <p v-else class="mb-0 small text-secondary" style="white-space: pre-wrap">
             {{ asn.warehouse_notes || "—" }}
           </p>
+        </div>
+
+        <div v-if="isDraft" class="staff-table-card staff-datatable-card staff-datatable-card--white p-4">
+          <h3 class="h6 fw-semibold mb-3">Vendor Details</h3>
+          <div v-for="(row, idx) in vendorDraft" :key="'vnd' + idx" class="d-flex gap-1 mb-2">
+            <input v-model="row.label" class="form-control form-control-sm" placeholder="Vendor line" />
+            <button
+              v-if="vendorDraft.length > 1"
+              type="button"
+              class="btn btn-sm btn-outline-secondary flex-shrink-0"
+              aria-label="Remove vendor line"
+              @click="removeVendorRow(idx)"
+            >
+              ×
+            </button>
+          </div>
+          <button type="button" class="btn btn-link btn-sm px-0 mb-2" @click="addVendorRow">Add Row</button>
+          <button
+            type="button"
+            class="btn btn-sm btn-primary staff-page-primary w-100"
+            :disabled="vendorSaveBusy"
+            @click="saveVendors"
+          >
+            Save Vendor Details
+          </button>
         </div>
 
         <div
@@ -930,6 +1353,21 @@ onUnmounted(() => {
           >
             Edit
           </button>
+          <button type="button" class="staff-row-menu__item" role="menuitem" @click="openPrintSlip(); closeAllHeaderMenus()">
+            Print Packing Slip
+          </button>
+          <button type="button" class="staff-row-menu__item" role="menuitem" @click="openPrintLabel(); closeAllHeaderMenus()">
+            Print Identification Label
+          </button>
+          <button
+            v-if="canDeleteAsn"
+            type="button"
+            class="staff-row-menu__item staff-row-menu__item--danger"
+            role="menuitem"
+            @click="openDeleteAsnFromMenu"
+          >
+            Delete ASN
+          </button>
         </div>
       </Transition>
 
@@ -949,39 +1387,59 @@ onUnmounted(() => {
           :style="{ top: `${lineMenuRect.top}px`, left: `${lineMenuRect.left}px` }"
           @click.stop
         >
-          <button
-            type="button"
-            class="staff-row-menu__item"
-            role="menuitem"
-            @click="
-              closeLineMenu();
-              openEditReceived(lineMenuRow);
-            "
-          >
-            Edit Received
-          </button>
-          <button
-            type="button"
-            class="staff-row-menu__item"
-            role="menuitem"
-            @click="
-              closeLineMenu();
-              openEditRejected(lineMenuRow);
-            "
-          >
-            Edit Rejected
-          </button>
-          <button
-            type="button"
-            class="staff-row-menu__item"
-            role="menuitem"
-            @click="
-              closeLineMenu();
-              printBarcode(lineMenuRow);
-            "
-          >
-            Print Barcode
-          </button>
+          <template v-if="isDraft">
+            <button
+              type="button"
+              class="staff-row-menu__item staff-row-menu__item--danger"
+              role="menuitem"
+              @click="askDeleteLineFromMenu(lineMenuRow)"
+            >
+              Remove
+            </button>
+            <button
+              type="button"
+              class="staff-row-menu__item"
+              role="menuitem"
+              @click="printBarcodeFromMenu(lineMenuRow)"
+            >
+              Print Barcode
+            </button>
+          </template>
+          <template v-else>
+            <button
+              type="button"
+              class="staff-row-menu__item"
+              role="menuitem"
+              @click="
+                closeLineMenu();
+                openEditReceived(lineMenuRow);
+              "
+            >
+              Edit Received
+            </button>
+            <button
+              type="button"
+              class="staff-row-menu__item"
+              role="menuitem"
+              @click="
+                closeLineMenu();
+                openEditRejected(lineMenuRow);
+              "
+            >
+              Edit Rejected
+            </button>
+            <button
+              type="button"
+              class="staff-row-menu__item"
+              role="menuitem"
+              @click="
+                closeLineMenu();
+                printBarcode(lineMenuRow);
+              "
+            >
+              Print Barcode
+            </button>
+          </template>
         </div>
       </Transition>
     </Teleport>
@@ -1061,6 +1519,123 @@ onUnmounted(() => {
         </div>
       </div>
     </ConfirmModal>
+
+    <ConfirmModal
+      :open="deleteLineOpen"
+      title="Remove Product"
+      confirm-label="Remove"
+      :danger="true"
+      :busy="lineBusy"
+      @close="deleteLineOpen = false"
+      @confirm="confirmDeleteLine"
+    >
+      <p v-if="lineToDelete" class="mb-0">
+        Remove <strong>{{ lineToDelete.name || lineToDelete.sku }}</strong> from this ASN?
+      </p>
+    </ConfirmModal>
+
+    <ConfirmModal
+      :open="deleteAsnOpen"
+      title="Delete ASN"
+      confirm-label="Delete"
+      :danger="true"
+      :busy="deleteAsnBusy"
+      @close="deleteAsnOpen = false"
+      @confirm="confirmDeleteAsn"
+    >
+      <p class="mb-0">Delete this ASN? This cannot be undone.</p>
+    </ConfirmModal>
+
+    <ConfirmModal
+      :open="addNewSkuOpen"
+      title="Add New SKU"
+      confirm-label="Add SKU"
+      :busy="addNewSkuBusy"
+      @close="addNewSkuOpen = false"
+      @confirm="submitAddNewSku"
+    >
+      <p class="small text-secondary mb-3">Creates the SKU in ShipHero and adds it to this ASN.</p>
+      <label class="form-label small mb-1" for="admin-asn-new-sku-name">Product Name</label>
+      <input id="admin-asn-new-sku-name" v-model="addNewSkuName" type="text" class="form-control form-control-sm mb-3" />
+      <label class="form-label small mb-1" for="admin-asn-new-sku-code">SKU</label>
+      <input id="admin-asn-new-sku-code" v-model="addNewSkuSku" type="text" class="form-control form-control-sm mb-3" />
+      <label class="form-label small mb-1" for="admin-asn-new-sku-qty">Expected QTY</label>
+      <input id="admin-asn-new-sku-qty" v-model.number="addNewSkuQty" type="number" min="1" class="form-control form-control-sm" />
+    </ConfirmModal>
+
+    <div
+      v-if="markReadyOpen"
+      class="modal d-block"
+      tabindex="-1"
+      style="background: rgba(0, 0, 0, 0.35)"
+      @click.self="markReadyOpen = false"
+    >
+      <div class="modal-dialog modal-dialog-centered modal-lg">
+        <div class="modal-content">
+          <div class="modal-header">
+            <h2 class="modal-title h6">Mark as Ready</h2>
+            <button type="button" class="btn-close" aria-label="Close" @click="markReadyOpen = false" />
+          </div>
+          <div class="modal-body">
+            <p class="small text-secondary">
+              Enter how many boxes or pallets are being shipped. Tracking can be added now, updated later, or replaced with an identification label on each box.
+            </p>
+            <div class="row g-2 mb-3">
+              <div class="col-sm-6">
+                <label class="form-label small mb-0">Total Boxes</label>
+                <input v-model.number="markReadyBoxes" type="number" min="0" class="form-control form-control-sm" />
+              </div>
+              <div class="col-sm-6">
+                <label class="form-label small mb-0">Total Pallets</label>
+                <input v-model.number="markReadyPallets" type="number" min="0" class="form-control form-control-sm" />
+              </div>
+            </div>
+            <fieldset class="mb-3">
+              <legend class="form-label small mb-2">Tracking</legend>
+              <div class="form-check mb-1">
+                <input id="admin-asn-trk-entered" v-model="markReadyTrackingMode" class="form-check-input" type="radio" value="entered" />
+                <label class="form-check-label small" for="admin-asn-trk-entered">Tracking number(s) entered</label>
+              </div>
+              <div class="form-check mb-1">
+                <input id="admin-asn-trk-later" v-model="markReadyTrackingMode" class="form-check-input" type="radio" value="update_later" />
+                <label class="form-check-label small" for="admin-asn-trk-later">Update tracking later</label>
+              </div>
+              <div class="form-check">
+                <input id="admin-asn-trk-label" v-model="markReadyTrackingMode" class="form-check-input" type="radio" value="id_label" />
+                <label class="form-check-label small" for="admin-asn-trk-label">Identification label on each box</label>
+              </div>
+            </fieldset>
+            <div v-if="markReadyTrackingMode === 'entered'" class="border rounded p-3 bg-body-tertiary">
+              <div v-for="(row, idx) in markReadyTrackings" :key="'mr' + idx" class="mb-2">
+                <div class="row g-1">
+                  <div class="col-5">
+                    <select v-model="row.carrier" class="form-select form-select-sm">
+                      <option value="">Carrier</option>
+                      <option v-for="c in ASN_CARRIER_OPTIONS" :key="c" :value="c">{{ c }}</option>
+                    </select>
+                  </div>
+                  <div class="col-7">
+                    <input v-model="row.tracking_number" class="form-control form-control-sm" placeholder="Tracking #" />
+                  </div>
+                </div>
+              </div>
+              <button type="button" class="btn btn-link btn-sm px-0" @click="addMarkReadyTrackingRow">Add Tracking Row</button>
+            </div>
+          </div>
+          <div class="modal-footer">
+            <button type="button" class="btn btn-sm btn-outline-secondary" @click="markReadyOpen = false">Cancel</button>
+            <button
+              type="button"
+              class="btn btn-sm btn-primary staff-page-primary"
+              :disabled="markReadyBusy"
+              @click="confirmMarkReady"
+            >
+              Mark as Ready
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
   </div>
 </template>
 

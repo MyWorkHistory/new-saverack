@@ -181,6 +181,22 @@ class InventoryRestockReportService
             return;
         }
 
+        // Batch mode (default 20 matches) completes in one chunk — run inline so refresh
+        // does not depend on PHP terminating callbacks (often missing on artisan serve / Windows).
+        if ($this->matchBatchSize() > 0) {
+            try {
+                $this->runFullRefreshUntilDone($warehouseId);
+            } catch (Throwable $e) {
+                report($e);
+                $this->markRefreshFailed(
+                    $warehouseId,
+                    $e->getMessage() !== '' ? $e->getMessage() : 'Restock report refresh failed.'
+                );
+            }
+
+            return;
+        }
+
         $wid = $warehouseId;
         app()->terminating(function () use ($wid) {
             if (function_exists('fastcgi_finish_request')) {
@@ -664,6 +680,17 @@ class InventoryRestockReportService
             return $row;
         }
 
+        if ($this->isZombieRunningSnapshot($row)) {
+            $row->status = InventoryRestockSnapshot::STATUS_FAILED;
+            $row->error_message = 'Refresh never started (background worker did not run). Click Refresh to scan again.';
+            $row->refresh_started_at = null;
+            $row->progress_page = null;
+            $row->scan_cursor = null;
+            $row->save();
+
+            return $row;
+        }
+
         $lastTouch = $row->updated_at ?? $row->refresh_started_at;
         if ($lastTouch !== null && $lastTouch->lessThan(now()->subMinutes($this->stallMinutes()))) {
             $row->status = InventoryRestockSnapshot::STATUS_FAILED;
@@ -709,6 +736,37 @@ class InventoryRestockReportService
         $stats = is_array($row->scan_stats) ? $row->scan_stats : [];
 
         return (bool) ($stats['has_more_to_scan'] ?? $stats['has_more_pages'] ?? false);
+    }
+
+    /**
+     * Running row with no scan progress — background refresh likely never executed.
+     */
+    private function isZombieRunningSnapshot(InventoryRestockSnapshot $row): bool
+    {
+        if ($row->status !== InventoryRestockSnapshot::STATUS_RUNNING) {
+            return false;
+        }
+
+        $started = $row->refresh_started_at ?? $row->created_at;
+        if ($started === null || $started->greaterThan(now()->subMinutes(2))) {
+            return false;
+        }
+
+        if ((int) ($row->progress_page ?? 0) > 0) {
+            return false;
+        }
+
+        $stats = is_array($row->scan_stats) ? $row->scan_stats : [];
+        if ((int) ($stats['products_scanned'] ?? 0) > 0) {
+            return false;
+        }
+
+        $updated = $row->updated_at;
+        if ($updated !== null && $started !== null && $updated->greaterThan($started->copy()->addSeconds(30))) {
+            return false;
+        }
+
+        return true;
     }
 
     /**

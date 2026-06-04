@@ -94,23 +94,39 @@ class VerifySlackStatusSetupCommand extends Command
         if (is_string($channel) && trim($channel) !== '' && $token !== '' && str_starts_with($token, 'xoxb-')) {
             $channel = $slack->normalizeChannelName(trim($channel));
             $this->newLine();
-            $this->info("Posting test message to {$channel}…");
-            try {
-                $result = $slack->post(
-                    $channel,
-                    'Slack status icon setup test (safe to delete).',
-                    'Shipping Status Update',
-                    [
-                        'icon_url' => $icons->liveUrl(),
-                        'customize_identity' => true,
-                        'prefer_bot' => true,
-                    ]
-                );
-                $this->info('  Posted via '.$result['method'].' — check for green truck avatar.');
-            } catch (\Throwable $e) {
-                $this->error('  Post failed: '.$e->getMessage());
-                $this->line('  Invite the bot: /invite @YourBot in that channel.');
-                $ok = false;
+            $this->info("Posting Live + Paused test messages to {$channel}…");
+
+            foreach ([
+                'Live' => [
+                    'text' => 'Slack status setup test — Live (safe to delete).',
+                    'icon_url' => $icons->liveThumbUrl(),
+                    'icon_url_fallbacks' => [$icons->liveUrl()],
+                ],
+                'Paused' => [
+                    'text' => 'Slack status setup test — Paused (safe to delete).',
+                    'icon_url' => $icons->pausedThumbUrl(),
+                    'icon_url_fallbacks' => [$icons->pausedUrl()],
+                ],
+            ] as $label => $message) {
+                try {
+                    $result = $slack->post(
+                        $channel,
+                        $message['text'],
+                        'Shipping Status Update',
+                        [
+                            'icon_url' => $message['icon_url'],
+                            'icon_url_fallbacks' => $message['icon_url_fallbacks'],
+                            'customize_identity' => true,
+                            'prefer_bot' => true,
+                            'bot_only' => true,
+                        ]
+                    );
+                    $this->info("  {$label}: posted via {$result['method']} — check for native header + truck avatar.");
+                } catch (\Throwable $e) {
+                    $this->error("  {$label}: post failed — ".$e->getMessage());
+                    $this->line('  Invite the bot: /invite @YourBot in that channel.');
+                    $ok = false;
+                }
             }
         } elseif ($ok) {
             $this->newLine();

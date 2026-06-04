@@ -113,6 +113,10 @@ class ClientAccountStatusSlackApiTest extends TestCase
 
             return true;
         });
+
+        Http::assertNotSent(function ($request) {
+            return str_contains($request->url(), 'hooks.slack.com');
+        });
     }
 
     public function test_status_patch_with_bot_includes_native_header_for_live(): void
@@ -148,6 +152,10 @@ class ClientAccountStatusSlackApiTest extends TestCase
             $this->assertArrayNotHasKey('blocks', $payload);
 
             return true;
+        });
+
+        Http::assertNotSent(function ($request) {
+            return str_contains($request->url(), 'hooks.slack.com');
         });
     }
 }

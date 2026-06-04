@@ -28,7 +28,10 @@ final class ClientAccountStatusSlackServiceTest extends TestCase
         return 'https://app.saverack.com/images/slack';
     }
 
-    public function test_build_paused_message_body_only_once(): void
+    /**
+     * @return array<string, mixed>
+     */
+    private function sampleAccount(): ClientAccount
     {
         $account = new ClientAccount([
             'company_name' => 'Demo Company',
@@ -36,12 +39,24 @@ final class ClientAccountStatusSlackServiceTest extends TestCase
         ]);
         $account->id = 451;
 
-        $actor = new User(['name' => 'Audi Kowalski']);
+        return $account;
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function sampleActor(): User
+    {
+        return new User(['name' => 'Audi Kowalski']);
+    }
+
+    public function test_build_paused_message_body_only_once(): void
+    {
         $payload = app(ClientAccountStatusSlackService::class)->buildMessagePayload(
-            $account,
+            $this->sampleAccount(),
             ClientAccount::STATUS_ACTIVE,
             ClientAccount::STATUS_PAUSED,
-            $actor
+            $this->sampleActor()
         );
 
         $this->assertNotNull($payload);
@@ -50,31 +65,51 @@ final class ClientAccountStatusSlackServiceTest extends TestCase
             "Demo Company is set to Paused.\nUpdated by: Audi Kowalski\n<https://app.shiphero.com/3pl|Set Pause in Shiphero>",
             $payload['text']
         );
+        $this->assertStringContainsString('/shipping-status-paused-thumb.png', $payload['icon_url']);
+        $this->assertStringContainsString('/shipping-status-paused.png', $payload['icon_url_fallbacks'][0]);
         $this->assertStringNotContainsString('View Account', $payload['text']);
         $this->assertStringNotContainsString('Shipping Status Update', $payload['text']);
     }
 
     public function test_build_live_message_body_only_once(): void
     {
-        $account = new ClientAccount([
-            'company_name' => 'Demo Account',
-            'in_house_slack' => 'live-co',
-        ]);
-
-        $actor = new User(['name' => 'Audi Kowalski']);
         $payload = app(ClientAccountStatusSlackService::class)->buildMessagePayload(
-            $account,
+            $this->sampleAccount(),
             ClientAccount::STATUS_PAUSED,
             ClientAccount::STATUS_ACTIVE,
-            $actor
+            $this->sampleActor()
         );
 
         $this->assertNotNull($payload);
         $this->assertSame(
-            "Demo Account is set to Live.\nUpdated by: Audi Kowalski\n<https://app.shiphero.com/3pl|Set Live in Shiphero>",
+            "Demo Company is set to Live.\nUpdated by: Audi Kowalski\n<https://app.shiphero.com/3pl|Set Live in Shiphero>",
             $payload['text']
         );
+        $this->assertStringContainsString('/shipping-status-live-thumb.png', $payload['icon_url']);
+        $this->assertStringContainsString('/shipping-status-live.png', $payload['icon_url_fallbacks'][0]);
         $this->assertStringNotContainsString('Shipping Status Update', $payload['text']);
+    }
+
+    public function test_live_and_paused_payloads_share_same_shape(): void
+    {
+        $service = app(ClientAccountStatusSlackService::class);
+        $account = $this->sampleAccount();
+        $actor = $this->sampleActor();
+
+        $live = $service->buildMessagePayload($account, ClientAccount::STATUS_PAUSED, ClientAccount::STATUS_ACTIVE, $actor);
+        $paused = $service->buildMessagePayload($account, ClientAccount::STATUS_ACTIVE, ClientAccount::STATUS_PAUSED, $actor);
+
+        $this->assertNotNull($live);
+        $this->assertNotNull($paused);
+        $this->assertSame(array_keys($live), array_keys($paused));
+        $this->assertSame('Shipping Status Update', $live['username']);
+        $this->assertSame('Shipping Status Update', $paused['username']);
+        $this->assertArrayNotHasKey('blocks', $live);
+        $this->assertArrayNotHasKey('blocks', $paused);
+        $this->assertStringContainsString('is set to Live.', $live['text']);
+        $this->assertStringContainsString('is set to Paused.', $paused['text']);
+        $this->assertStringContainsString('live', $live['icon_url']);
+        $this->assertStringContainsString('paused', $paused['icon_url']);
     }
 
     public function test_delivery_without_bot_sends_icon_url_and_body_text(): void
@@ -93,7 +128,8 @@ final class ClientAccountStatusSlackServiceTest extends TestCase
         $result = $method->invoke(
             $service,
             'Shipping Status Update',
-            $iconUrl
+            $iconUrl,
+            [$this->iconBase().'/shipping-status-live.png']
         );
 
         $this->assertSame('Shipping Status Update', $result['username']);
@@ -101,6 +137,7 @@ final class ClientAccountStatusSlackServiceTest extends TestCase
         $this->assertArrayNotHasKey('blocks', $result['slack']);
         $this->assertArrayNotHasKey('attachments', $result['slack']);
         $this->assertArrayNotHasKey('customize_identity', $result['slack']);
+        $this->assertArrayNotHasKey('bot_only', $result['slack']);
     }
 
     public function test_delivery_uses_bot_customize_identity_without_blocks(): void
@@ -119,13 +156,16 @@ final class ClientAccountStatusSlackServiceTest extends TestCase
         $result = $method->invoke(
             $service,
             'Shipping Status Update',
-            $iconUrl
+            $iconUrl,
+            [$this->iconBase().'/shipping-status-live.png']
         );
 
         $this->assertSame('Shipping Status Update', $result['username']);
         $this->assertTrue($result['slack']['customize_identity']);
         $this->assertTrue($result['slack']['prefer_bot']);
+        $this->assertTrue($result['slack']['bot_only']);
         $this->assertSame($iconUrl, $result['slack']['icon_url']);
+        $this->assertSame([$this->iconBase().'/shipping-status-live.png'], $result['slack']['icon_url_fallbacks']);
         $this->assertArrayNotHasKey('blocks', $result['slack']);
     }
 
@@ -178,6 +218,54 @@ final class ClientAccountStatusSlackServiceTest extends TestCase
                 && str_contains((string) ($payload['icon_url'] ?? ''), 'shipping-status-live-thumb.png')
                 && str_contains((string) ($payload['text'] ?? ''), 'Demo is set to Live.')
                 && ! array_key_exists('blocks', $payload);
+        });
+
+        Http::assertNotSent(function ($request) {
+            return str_contains($request->url(), 'hooks.slack.com');
+        });
+    }
+
+    public function test_notify_paused_posts_via_bot_with_native_header_fields(): void
+    {
+        config([
+            'billing.slack.webhook_url' => 'https://hooks.slack.com/services/T/B/x',
+            'billing.slack.bot_token' => 'xoxb-test-token',
+        ]);
+
+        Http::fake([
+            'https://slack.com/api/*' => Http::response(['ok' => true, 'channel' => 'C1', 'ts' => '1.0'], 200),
+            'hooks.slack.com/*' => Http::response('ok', 200),
+        ]);
+
+        Log::shouldReceive('info')->andReturnNull();
+
+        $account = new ClientAccount([
+            'company_name' => 'Demo',
+            'in_house_slack' => 'demo-co',
+        ]);
+        $account->id = 1;
+
+        app(ClientAccountStatusSlackService::class)->notifyStatusChange(
+            $account,
+            ClientAccount::STATUS_ACTIVE,
+            ClientAccount::STATUS_PAUSED
+        );
+
+        Http::assertSent(function ($request) {
+            if (! str_contains($request->url(), 'chat.postMessage')) {
+                return false;
+            }
+
+            $payload = $request->data();
+
+            return ($payload['username'] ?? '') === 'Shipping Status Update'
+                && str_contains((string) ($payload['icon_url'] ?? ''), 'shipping-status-paused-thumb.png')
+                && str_contains((string) ($payload['text'] ?? ''), 'Demo is set to Paused.')
+                && ! array_key_exists('blocks', $payload);
+        });
+
+        Http::assertNotSent(function ($request) {
+            return str_contains($request->url(), 'hooks.slack.com');
         });
     }
 

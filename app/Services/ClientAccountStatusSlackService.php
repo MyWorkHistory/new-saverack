@@ -58,9 +58,12 @@ class ClientAccountStatusSlackService
 
         $text = (string) ($payload['text'] ?? '');
         $username = (string) ($payload['username'] ?? self::USERNAME);
-        $isLive = $newStatus === ClientAccount::STATUS_ACTIVE;
-        $iconUrl = $isLive ? $this->iconUrls->liveThumbUrl() : $this->iconUrls->pausedThumbUrl();
-        $options = $this->deliveryOptions($username, $iconUrl);
+        $iconUrl = (string) ($payload['icon_url'] ?? '');
+        $iconUrlFallbacks = $payload['icon_url_fallbacks'] ?? [];
+        if (! is_array($iconUrlFallbacks)) {
+            $iconUrlFallbacks = [];
+        }
+        $options = $this->deliveryOptions($username, $iconUrl, $iconUrlFallbacks);
 
         try {
             $result = $this->slack->post(
@@ -93,9 +96,10 @@ class ClientAccountStatusSlackService
     /**
      * Native bot header: username + icon_url avatar, body in text. No Block Kit.
      *
+     * @param  array<int, string>  $iconUrlFallbacks
      * @return array{username: string, slack: array<string, mixed>}
      */
-    private function deliveryOptions(string $username, string $iconUrl): array
+    private function deliveryOptions(string $username, string $iconUrl, array $iconUrlFallbacks = []): array
     {
         $slack = [];
 
@@ -103,9 +107,14 @@ class ClientAccountStatusSlackService
             $slack['icon_url'] = $iconUrl;
         }
 
+        if ($iconUrlFallbacks !== []) {
+            $slack['icon_url_fallbacks'] = $iconUrlFallbacks;
+        }
+
         if ($this->slack->hasBotToken()) {
             $slack['customize_identity'] = true;
             $slack['prefer_bot'] = true;
+            $slack['bot_only'] = true;
         }
 
         return [
@@ -115,7 +124,45 @@ class ClientAccountStatusSlackService
     }
 
     /**
-     * @return array{text: string, username: string, icon_url: string}|null
+     * @return array{
+     *     label: string,
+     *     shipheroLinkLabel: string,
+     *     iconUrl: string,
+     *     iconUrlFallbacks: array<int, string>
+     * }|null
+     */
+    private function statusNotificationConfig(string $newStatus): ?array
+    {
+        $newStatus = strtolower(trim($newStatus));
+
+        if ($newStatus === ClientAccount::STATUS_PAUSED) {
+            return [
+                'label' => 'Paused',
+                'shipheroLinkLabel' => 'Set Pause in Shiphero',
+                'iconUrl' => $this->iconUrls->pausedThumbUrl(),
+                'iconUrlFallbacks' => [$this->iconUrls->pausedUrl()],
+            ];
+        }
+
+        if ($newStatus === ClientAccount::STATUS_ACTIVE) {
+            return [
+                'label' => 'Live',
+                'shipheroLinkLabel' => 'Set Live in Shiphero',
+                'iconUrl' => $this->iconUrls->liveThumbUrl(),
+                'iconUrlFallbacks' => [$this->iconUrls->liveUrl()],
+            ];
+        }
+
+        return null;
+    }
+
+    /**
+     * @return array{
+     *     text: string,
+     *     username: string,
+     *     icon_url: string,
+     *     icon_url_fallbacks: array<int, string>
+     * }|null
      */
     public function buildMessagePayload(
         ClientAccount $account,
@@ -123,17 +170,21 @@ class ClientAccountStatusSlackService
         string $newStatus,
         ?User $actor = null
     ): ?array {
-        $newStatus = strtolower(trim($newStatus));
-
-        if ($newStatus === ClientAccount::STATUS_PAUSED) {
-            return $this->buildStatusPayload($account, 'Paused', 'Set Pause in Shiphero', $actor);
+        $config = $this->statusNotificationConfig($newStatus);
+        if ($config === null) {
+            return null;
         }
 
-        if ($newStatus === ClientAccount::STATUS_ACTIVE) {
-            return $this->buildStatusPayload($account, 'Live', 'Set Live in Shiphero', $actor);
-        }
+        $payload = $this->buildStatusPayload(
+            $account,
+            $config['label'],
+            $config['shipheroLinkLabel'],
+            $actor
+        );
+        $payload['icon_url'] = $config['iconUrl'];
+        $payload['icon_url_fallbacks'] = $config['iconUrlFallbacks'];
 
-        return null;
+        return $payload;
     }
 
     public function buildMessageText(
@@ -148,7 +199,7 @@ class ClientAccountStatusSlackService
     }
 
     /**
-     * @return array{text: string, username: string, icon_url: string}
+     * @return array{text: string, username: string}
      */
     private function buildStatusPayload(
         ClientAccount $account,
@@ -165,7 +216,6 @@ class ClientAccountStatusSlackService
         return [
             'text' => implode("\n", $lines),
             'username' => self::USERNAME,
-            'icon_url' => '',
         ];
     }
 

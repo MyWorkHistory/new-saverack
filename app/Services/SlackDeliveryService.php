@@ -14,10 +14,12 @@ class SlackDeliveryService
      * @param  array{
      *     icon_emoji?: string|null,
      *     icon_url?: string|null,
+     *     icon_url_fallbacks?: array<int, string>|null,
      *     attachments?: array<int, array<string, mixed>>|null,
      *     blocks?: array<int, array<string, mixed>>|null,
      *     prefer_bot?: bool|null,
-     *     customize_identity?: bool|null
+     *     customize_identity?: bool|null,
+     *     bot_only?: bool|null
      * }  $options
      * @return array{method: string, channel: string, ts: string|null}
      */
@@ -32,6 +34,10 @@ class SlackDeliveryService
         $iconEmoji = $iconUrl === '' && isset($options['icon_emoji'])
             ? trim((string) $options['icon_emoji'])
             : '';
+        $iconUrlFallbacks = $options['icon_url_fallbacks'] ?? [];
+        if (! is_array($iconUrlFallbacks)) {
+            $iconUrlFallbacks = [];
+        }
         $attachments = $options['attachments'] ?? null;
         if (! is_array($attachments)) {
             $attachments = null;
@@ -42,7 +48,8 @@ class SlackDeliveryService
         }
 
         $customizeIdentity = ! empty($options['customize_identity']);
-        $preferBot = (! empty($options['prefer_bot']) || $customizeIdentity) && $this->hasBotToken();
+        $botOnly = ! empty($options['bot_only']);
+        $preferBot = (! empty($options['prefer_bot']) || $customizeIdentity || $botOnly) && $this->hasBotToken();
         $webhookUrl = $this->normalizeWebhookUrl((string) config('billing.slack.webhook_url', ''));
 
         if (! $preferBot && $webhookUrl !== '') {
@@ -63,17 +70,23 @@ class SlackDeliveryService
         } catch (\Throwable $e) {
             if ($customizeIdentity) {
                 try {
-                    return $this->postViaBot($token, $channel, $text, $username, '', $attachments, '', null, true);
-                } catch (\Throwable $retryWithoutIcon) {
-                    try {
-                        return $this->postViaBot($token, $channel, $text, $username, ':truck:', $attachments, '', null, true);
-                    } catch (\Throwable $retryWithEmoji) {
-                        $e = $retryWithEmoji;
-                    }
+                    return $this->retryCustomizeIdentityBotPost(
+                        $token,
+                        $channel,
+                        $text,
+                        $username,
+                        $attachments,
+                        $blocks,
+                        $iconUrl,
+                        $iconUrlFallbacks,
+                        $e
+                    );
+                } catch (\Throwable $retryError) {
+                    $e = $retryError;
                 }
             }
 
-            if ($webhookUrl === '') {
+            if ($botOnly || $webhookUrl === '') {
                 throw $e;
             }
 
@@ -90,6 +103,51 @@ class SlackDeliveryService
 
             return ['method' => 'webhook', 'channel' => $channel, 'ts' => null];
         }
+    }
+
+    /**
+     * @param  array<int, array<string, mixed>>|null  $attachments
+     * @param  array<int, array<string, mixed>>|null  $blocks
+     * @param  array<int, string>  $iconUrlFallbacks
+     * @return array{method: string, channel: string, ts: string|null}
+     */
+    private function retryCustomizeIdentityBotPost(
+        string $token,
+        string $channel,
+        string $text,
+        string $username,
+        ?array $attachments,
+        ?array $blocks,
+        string $primaryIconUrl,
+        array $iconUrlFallbacks,
+        \Throwable $initialError
+    ): array {
+        $e = $initialError;
+
+        foreach ($iconUrlFallbacks as $fallbackUrl) {
+            $fallbackUrl = trim((string) $fallbackUrl);
+            if ($fallbackUrl === '' || $fallbackUrl === $primaryIconUrl) {
+                continue;
+            }
+
+            try {
+                return $this->postViaBot($token, $channel, $text, $username, '', $attachments, $fallbackUrl, $blocks, true);
+            } catch (\Throwable $fallbackError) {
+                $e = $fallbackError;
+            }
+        }
+
+        try {
+            return $this->postViaBot($token, $channel, $text, $username, '', $attachments, '', $blocks, true);
+        } catch (\Throwable $retryWithoutIcon) {
+            try {
+                return $this->postViaBot($token, $channel, $text, $username, ':truck:', $attachments, '', $blocks, true);
+            } catch (\Throwable $retryWithEmoji) {
+                $e = $retryWithEmoji;
+            }
+        }
+
+        throw $e;
     }
 
     /**

@@ -6,6 +6,8 @@ use App\Models\ClientAccount;
 use App\Models\User;
 use App\Services\ClientAccountStatusSlackService;
 use App\Services\SlackDeliveryService;
+use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Log;
 use Tests\TestCase;
 
 final class ClientAccountStatusSlackServiceTest extends TestCase
@@ -40,8 +42,8 @@ final class ClientAccountStatusSlackServiceTest extends TestCase
         $this->assertNotNull($payload);
         $this->assertSame('Shipping Status Update', $payload['username']);
         $this->assertSame(
-            'https://app.saverack.com/slack-icons/shipping-status-paused.png',
-            strtok($payload['icon_url'], '?')
+            'https://app.saverack.com/images/slack/shipping-status-paused.png',
+            $payload['icon_url']
         );
         $this->assertSame(
             "Demo Company is set to Paused.\nUpdated by: Audi Kowalski\n<https://app.shiphero.com/3pl|Set Pause in Shiphero>",
@@ -69,8 +71,8 @@ final class ClientAccountStatusSlackServiceTest extends TestCase
         );
 
         $this->assertNotNull($payload);
-        $this->assertStringStartsWith(
-            'https://app.saverack.com/slack-icons/shipping-status-live.png',
+        $this->assertSame(
+            'https://app.saverack.com/images/slack/shipping-status-live.png',
             $payload['icon_url']
         );
         $this->assertSame(
@@ -94,7 +96,7 @@ final class ClientAccountStatusSlackServiceTest extends TestCase
         $method->setAccessible(true);
 
         $text = "Demo is set to Live.\nUpdated by: Audi";
-        $iconUrl = 'https://app.saverack.com/slack-icons/shipping-status-live.png?v=1';
+        $iconUrl = 'https://app.saverack.com/images/slack/shipping-status-live.png';
         $result = $method->invoke(
             $service,
             $text,
@@ -123,7 +125,7 @@ final class ClientAccountStatusSlackServiceTest extends TestCase
         $method->setAccessible(true);
 
         $text = "Demo is set to Paused.\nUpdated by: Audi";
-        $iconUrl = 'https://app.saverack.com/slack-icons/shipping-status-paused.png?v=1';
+        $iconUrl = 'https://app.saverack.com/images/slack/shipping-status-paused.png';
         $result = $method->invoke(
             $service,
             $text,
@@ -149,6 +151,53 @@ final class ClientAccountStatusSlackServiceTest extends TestCase
         );
 
         $this->assertNull($payload);
+    }
+
+    public function test_explicit_cdn_icon_url_override(): void
+    {
+        config([
+            'billing.slack.status_icon_live_url' => 'https://cdn.example.com/live.png',
+        ]);
+
+        $account = new ClientAccount(['company_name' => 'Demo']);
+        $payload = app(ClientAccountStatusSlackService::class)->buildMessagePayload(
+            $account,
+            ClientAccount::STATUS_PAUSED,
+            ClientAccount::STATUS_ACTIVE
+        );
+
+        $this->assertSame('https://cdn.example.com/live.png', $payload['icon_url']);
+    }
+
+    public function test_icon_unreachable_logs_warning_but_does_not_throw(): void
+    {
+        config(['billing.slack.webhook_url' => 'https://hooks.slack.com/services/T/B/x']);
+
+        Http::fake([
+            'https://app.saverack.com/images/slack/*' => Http::response('<html>', 404),
+            'hooks.slack.com/*' => Http::response('ok', 200),
+        ]);
+
+        Log::shouldReceive('warning')
+            ->once()
+            ->withArgs(function (string $message, array $context): bool {
+                return $message === 'client_account.status_slack_icon_unreachable'
+                    && ($context['http_status'] ?? null) === 404;
+            });
+
+        Log::shouldReceive('info')->andReturnNull();
+
+        $account = new ClientAccount([
+            'company_name' => 'Demo',
+            'in_house_slack' => 'demo-co',
+        ]);
+        $account->id = 1;
+
+        app(ClientAccountStatusSlackService::class)->notifyStatusChange(
+            $account,
+            ClientAccount::STATUS_ACTIVE,
+            ClientAccount::STATUS_PAUSED
+        );
     }
 
     public function test_channel_from_in_house_slack_supports_archive_url_and_slug(): void

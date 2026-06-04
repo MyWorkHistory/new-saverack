@@ -4,6 +4,7 @@ namespace App\Services;
 
 use App\Models\ClientAccount;
 use App\Models\User;
+use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 
 class ClientAccountStatusSlackService
@@ -61,6 +62,10 @@ class ClientAccountStatusSlackService
         $iconUrl = (string) ($payload['icon_url'] ?? '');
         $iconAlt = (string) ($payload['icon_alt'] ?? 'Shipping status');
         $options = $this->deliveryOptions($text, $username, $iconUrl, $iconAlt);
+
+        if ($iconUrl !== '') {
+            $this->logIconUrlReachability($iconUrl, (int) $account->id);
+        }
 
         try {
             $result = $this->slack->post(
@@ -234,9 +239,6 @@ class ClientAccountStatusSlackService
             return trim($explicit);
         }
 
-        $path = public_path('images/slack/'.$filename);
-        $version = is_file($path) ? (string) filemtime($path) : '1';
-
         $base = rtrim((string) config('billing.slack.public_asset_base_url'), '/');
         if ($base === '') {
             $base = rtrim((string) config('app.url'), '/');
@@ -249,6 +251,37 @@ class ClientAccountStatusSlackService
             $base = 'https://'.substr($base, 7);
         }
 
-        return $base.'/slack-icons/'.$filename.'?v='.$version;
+        return $base.'/images/slack/'.$filename;
+    }
+
+    private function logIconUrlReachability(string $iconUrl, int $clientAccountId): void
+    {
+        try {
+            $response = Http::timeout(5)->head($iconUrl);
+            if (! $response->successful()) {
+                $response = Http::timeout(5)->get($iconUrl);
+            }
+
+            $contentType = strtolower(trim((string) $response->header('Content-Type')));
+            $ok = $response->successful() && str_contains($contentType, 'image');
+
+            if ($ok) {
+                return;
+            }
+
+            Log::warning('client_account.status_slack_icon_unreachable', [
+                'client_account_id' => $clientAccountId,
+                'icon_url' => $iconUrl,
+                'http_status' => $response->status(),
+                'content_type' => $contentType !== '' ? $contentType : null,
+            ]);
+        } catch (\Throwable $e) {
+            Log::warning('client_account.status_slack_icon_unreachable', [
+                'client_account_id' => $clientAccountId,
+                'icon_url' => $iconUrl,
+                'http_status' => null,
+                'message' => $e->getMessage(),
+            ]);
+        }
     }
 }

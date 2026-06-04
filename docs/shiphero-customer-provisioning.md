@@ -46,7 +46,15 @@ If auto-discovery succeeds, the command prints `.env` keys to copy. Otherwise se
 - `SHIPHERO_CUSTOMER_ACCOUNT_HIDE_ORDERS_FIELD`
 - `SHIPHERO_CUSTOMER_ACCOUNT_ID_FIELD` (default: `customer_account_id`)
 
-Sync is skipped when `shiphero_customer_account_id` is empty. CRM status always saves even if ShipHero sync fails. When a ShipHero customer ID is set but the update API is not configured, the CRM response includes `shiphero_sync.ok: false` so staff see a warning.
+Sync is skipped when `shiphero_customer_account_id` is empty. CRM status always saves even if ShipHero sync fails. When a ShipHero customer ID is set but no hide-orders mutation is available, the CRM response includes `shiphero_sync.ok: false` so staff see a warning.
+
+**If `php artisan shiphero:probe-customer-mutations` finds nothing:** ShipHero often disables GraphQL schema introspection on production tokens. The probe now tries known mutation names directly. If still nothing is found, the [Hide Customer's Orders From App](https://software-help.shiphero.com/hc/en-us/articles/4419345401485) setting may only be available in the ShipHero UI (3PL Customers), not the Public API. Toggle it manually there, or ask ShipHero support whether your account has an API mutation for it.
+
+Retry with a real customer id:
+
+```bash
+php artisan shiphero:probe-customer-mutations --test-customer-id=92441
+```
 
 ## In-house Slack on status change
 

@@ -42,7 +42,7 @@ class ShipHeroCustomerAccountService
         if ($config === null) {
             return [
                 'ok' => false,
-                'message' => 'ShipHero customer account update API not configured (run shiphero:probe-customer-mutations and set SHIPHERO_CUSTOMER_ACCOUNT_* env vars)',
+                'message' => 'ShipHero Public API has no hide-orders mutation configured. Run php artisan shiphero:probe-customer-mutations on the server; if none is found, toggle Hide Customer\'s Orders From App manually in ShipHero → 3PL Customers.',
             ];
         }
 
@@ -350,6 +350,379 @@ GQL;
     }
 
     /**
+     * Connectivity + schema diagnostics for artisan probe (no introspection required).
+     *
+     * @return array{
+     *   refresh_token_configured: bool,
+     *   token_refresh: array{ok: bool, message?: string},
+     *   account_query: array{ok: bool, request_id?: string|null, message?: string},
+     *   introspection: array{ok: bool, mutation_count: int, message?: string},
+     *   warehouses: list<array{id: string, identifier: string|null}>
+     * }
+     */
+    public function diagnoseApiAccess(): array
+    {
+        $out = [
+            'refresh_token_configured' => trim((string) config('services.shiphero.refresh_token', '')) !== '',
+            'token_refresh' => ['ok' => false],
+            'account_query' => ['ok' => false],
+            'introspection' => ['ok' => false, 'mutation_count' => 0],
+            'warehouses' => [],
+        ];
+
+        if (! $out['refresh_token_configured']) {
+            $out['token_refresh'] = [
+                'ok' => false,
+                'message' => 'SHIPHERO_REFRESH_TOKEN is empty in .env',
+            ];
+
+            return $out;
+        }
+
+        try {
+            $this->client->accessToken();
+            $out['token_refresh'] = ['ok' => true];
+        } catch (\Throwable $e) {
+            $out['token_refresh'] = ['ok' => false, 'message' => $e->getMessage()];
+
+            return $out;
+        }
+
+        try {
+            $json = $this->client->query(<<<'GQL'
+query ShipHeroProbeAccount {
+  account {
+    request_id
+    data {
+      id
+      warehouses {
+        id
+        identifier
+      }
+    }
+  }
+}
+GQL, []);
+            $out['account_query'] = [
+                'ok' => data_get($json, 'data.account.request_id') !== null,
+                'request_id' => data_get($json, 'data.account.request_id'),
+            ];
+            $warehouses = data_get($json, 'data.account.data.warehouses');
+            if (is_array($warehouses)) {
+                foreach ($warehouses as $wh) {
+                    if (! is_array($wh)) {
+                        continue;
+                    }
+                    $id = isset($wh['id']) ? trim((string) $wh['id']) : '';
+                    if ($id === '') {
+                        continue;
+                    }
+                    $out['warehouses'][] = [
+                        'id' => $id,
+                        'identifier' => isset($wh['identifier']) ? trim((string) $wh['identifier']) : null,
+                    ];
+                }
+            }
+        } catch (\Throwable $e) {
+            $out['account_query'] = ['ok' => false, 'message' => $e->getMessage()];
+        }
+
+        $introspection = $this->introspectMutationNamesWithDiagnostics();
+        $out['introspection'] = [
+            'ok' => $introspection['ok'],
+            'mutation_count' => count($introspection['names']),
+            'message' => $introspection['message'],
+        ];
+
+        return $out;
+    }
+
+    /**
+     * @return array{ok: bool, names: list<string>, message: string|null}
+     */
+    public function introspectMutationNamesWithDiagnostics(): array
+    {
+        $graphql = <<<'GQL'
+query ShipHeroSchemaMutations {
+  __schema {
+    mutationType {
+      fields {
+        name
+      }
+    }
+  }
+}
+GQL;
+
+        try {
+            $json = $this->client->query($graphql, []);
+        } catch (\Throwable $e) {
+            return ['ok' => false, 'names' => [], 'message' => $e->getMessage()];
+        }
+
+        $fields = data_get($json, 'data.__schema.mutationType.fields');
+        if (! is_array($fields)) {
+            $errors = data_get($json, 'errors');
+            $message = is_array($errors) && isset($errors[0]['message'])
+                ? (string) $errors[0]['message']
+                : 'Schema introspection returned no mutation fields (often disabled on production tokens).';
+
+            return ['ok' => false, 'names' => [], 'message' => $message];
+        }
+
+        $names = [];
+        foreach ($fields as $field) {
+            if (! is_array($field)) {
+                continue;
+            }
+            $name = isset($field['name']) && is_string($field['name']) ? trim($field['name']) : '';
+            if ($name !== '') {
+                $names[] = $name;
+            }
+        }
+        sort($names);
+
+        return ['ok' => true, 'names' => $names, 'message' => null];
+    }
+
+    /**
+     * Probe whether a mutation name exists without schema introspection.
+     *
+     * @return array{exists: bool, arg_name: string|null, input_type: string|null, message: string}
+     */
+    public function probeMutationSignature(string $mutationName): array
+    {
+        $mutationName = trim($mutationName);
+        if ($mutationName === '') {
+            return ['exists' => false, 'arg_name' => null, 'input_type' => null, 'message' => 'Empty mutation name'];
+        }
+
+        $graphql = 'mutation { '.$mutationName.' { request_id } }';
+        $raw = $this->client->queryRawDiagnostic($graphql, []);
+        $bodyRaw = is_array($raw) ? (string) ($raw['body'] ?? '') : '';
+        $body = json_decode($bodyRaw, true);
+        $message = $this->firstGraphQlErrorMessage(is_array($body) ? $body : []);
+
+        if ($message === '' && is_array($body) && data_get($body, 'data.'.$mutationName) !== null) {
+            return ['exists' => true, 'arg_name' => null, 'input_type' => null, 'message' => 'Mutation responded without required arguments'];
+        }
+
+        if ($this->graphQlErrorIndicatesMissingField($message, $mutationName)) {
+            return ['exists' => false, 'arg_name' => null, 'input_type' => null, 'message' => $message];
+        }
+
+        $argName = null;
+        $inputType = null;
+        if (preg_match('/argument "(data|input)" of type "([^"]+)!"/', $message, $matches) === 1) {
+            $argName = $matches[1];
+            $inputType = $matches[2];
+        }
+
+        return [
+            'exists' => true,
+            'arg_name' => $argName,
+            'input_type' => $inputType,
+            'message' => $message !== '' ? $message : 'Mutation exists',
+        ];
+    }
+
+    /**
+     * Brute-force hide-orders sync config when introspection is unavailable.
+     *
+     * @return array{mutation: string, input_type: string, id_field: string, hide_field: string, arg_name: string}|null
+     */
+    public function bruteForceDiscoverHideOrdersSyncConfig(?string $trialCustomerAccountId = null): ?array
+    {
+        $customerId = trim((string) $trialCustomerAccountId);
+        if ($customerId === '') {
+            $customerId = '0';
+        }
+
+        foreach ($this->hideOrdersMutationCandidates() as $mutationName) {
+            $signature = $this->probeMutationSignature($mutationName);
+            if (! $signature['exists']) {
+                continue;
+            }
+
+            $argName = $signature['arg_name'] ?? 'data';
+            $inputTypes = [];
+            if (isset($signature['input_type']) && is_string($signature['input_type']) && $signature['input_type'] !== '') {
+                $inputTypes[] = $signature['input_type'];
+            }
+            foreach ($this->hideOrdersInputTypeCandidates($mutationName) as $candidateInputType) {
+                if (! in_array($candidateInputType, $inputTypes, true)) {
+                    $inputTypes[] = $candidateInputType;
+                }
+            }
+
+            foreach ($inputTypes as $inputType) {
+                foreach ($this->hideOrdersFieldCandidates() as $hideField) {
+                    foreach (['customer_account_id', 'id', 'account_id'] as $idField) {
+                        $config = [
+                            'mutation' => $mutationName,
+                            'input_type' => $inputType,
+                            'id_field' => $idField,
+                            'hide_field' => $hideField,
+                            'arg_name' => $argName,
+                        ];
+                        if ($this->trialHideOrdersMutation($config, $customerId, true)) {
+                            return $config;
+                        }
+                        if ($this->trialHideOrdersMutation($config, $customerId, false)) {
+                            return $config;
+                        }
+                    }
+                }
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * @param  array{mutation: string, input_type: string, id_field: string, hide_field: string, arg_name: string}  $config
+     */
+    public function trialHideOrdersMutation(array $config, string $customerAccountId, bool $hide): bool
+    {
+        $data = [
+            $config['id_field'] => $customerAccountId,
+            $config['hide_field'] => $hide,
+        ];
+        $argName = $config['arg_name'];
+        $graphql = <<<GQL
+mutation ShipHeroProbeHideOrders(\${$argName}: {$config['input_type']}!) {
+  {$config['mutation']}({$argName}: \${$argName}) {
+    request_id
+  }
+}
+GQL;
+
+        $raw = $this->client->queryRawDiagnostic($graphql, [$argName => $data]);
+        $body = json_decode($raw['body'], true);
+        if (! is_array($body)) {
+            return false;
+        }
+
+        if (is_array(data_get($body, 'data.'.$config['mutation']))) {
+            return true;
+        }
+
+        $message = strtolower($this->firstGraphQlErrorMessage($body));
+        if ($message === '') {
+            return false;
+        }
+
+        if (
+            str_contains($message, 'cannot query field')
+            || str_contains($message, 'unknown argument')
+            || str_contains($message, 'is not defined on type')
+            || str_contains($message, 'field "'.strtolower($config['hide_field']).'"')
+            || str_contains($message, 'field "'.strtolower($config['id_field']).'"')
+        ) {
+            return false;
+        }
+
+        // Wrong customer id / auth issues still mean the mutation + fields exist.
+        return str_contains($message, 'customer')
+            || str_contains($message, 'account')
+            || str_contains($message, 'not found')
+            || str_contains($message, 'invalid')
+            || str_contains($message, 'permission')
+            || str_contains($message, 'access');
+    }
+
+    /**
+     * @return list<string>
+     */
+    public function hideOrdersMutationCandidates(): array
+    {
+        return [
+            'customer_account_update',
+            'three_pl_customer_update',
+            'customer_account_settings_update',
+            'three_pl_customer_settings_update',
+            'customer_warehouse_relationship_update',
+            'warehouse_relationship_update',
+            'three_pl_warehouse_relationship_update',
+            'customer_account_warehouse_relationship_update',
+            'update_customer_account',
+            'child_account_update',
+            'three_pl_child_account_update',
+            'account_customer_update',
+            'customer_relationship_update',
+            'three_pl_customer_relationship_update',
+        ];
+    }
+
+    /**
+     * @return list<string>
+     */
+    public function hideOrdersFieldCandidates(): array
+    {
+        return [
+            'hide_orders_from_app',
+            'hide_customers_orders_from_app',
+            'hide_customer_orders_from_app',
+            'orders_hidden_from_app',
+            'hide_from_app',
+            'pause_shipping',
+        ];
+    }
+
+    /**
+     * @return list<string>
+     */
+    protected function hideOrdersInputTypeCandidates(string $mutationName): array
+    {
+        $snake = strtolower($mutationName);
+        $candidates = [
+            'UpdateCustomerAccountInput',
+            'CustomerAccountUpdateInput',
+            'UpdateThreePlCustomerInput',
+            'ThreePlCustomerUpdateInput',
+            'UpdateCustomerWarehouseRelationshipInput',
+            'UpdateWarehouseRelationshipInput',
+            'ThreePlWarehouseRelationshipUpdateInput',
+        ];
+
+        if (str_contains($snake, 'warehouse') || str_contains($snake, 'relationship')) {
+            return [
+                'UpdateWarehouseRelationshipInput',
+                'UpdateCustomerWarehouseRelationshipInput',
+                'ThreePlWarehouseRelationshipUpdateInput',
+                'UpdateCustomerAccountWarehouseRelationshipInput',
+                ...$candidates,
+            ];
+        }
+
+        return $candidates;
+    }
+
+    /**
+     * @param  array<string, mixed>  $json
+     */
+    protected function firstGraphQlErrorMessage(array $json): string
+    {
+        $errors = $json['errors'] ?? null;
+        if (! is_array($errors) || ! isset($errors[0])) {
+            return '';
+        }
+        $first = $errors[0];
+
+        return is_array($first) ? trim((string) ($first['message'] ?? '')) : trim((string) $first);
+    }
+
+    protected function graphQlErrorIndicatesMissingField(string $message, string $fieldName): bool
+    {
+        $message = strtolower($message);
+        $fieldName = strtolower($fieldName);
+
+        return str_contains($message, 'cannot query field "'.$fieldName.'"')
+            || str_contains($message, 'unknown field "'.$fieldName.'"')
+            || str_contains($message, 'field "'.$fieldName.'" must not have a selection');
+    }
+
+    /**
      * Probe schema for hide-orders update capability (for artisan / docs).
      *
      * @return array{
@@ -377,6 +750,9 @@ GQL;
 
         $hideFieldCandidates = array_values(array_unique($hideFieldCandidates));
         $discovered = $this->discoverHideOrdersSyncConfigFromSchema();
+        if ($discovered === null) {
+            $discovered = $this->bruteForceDiscoverHideOrdersSyncConfig();
+        }
 
         return [
             'update_mutations' => $updateMutations,

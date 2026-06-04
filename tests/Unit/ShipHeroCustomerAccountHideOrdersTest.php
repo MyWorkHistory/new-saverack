@@ -51,6 +51,6 @@ final class ShipHeroCustomerAccountHideOrdersTest extends TestCase
         $result = $service->syncHideOrdersFromApp($account);
 
         $this->assertFalse($result['ok']);
-        $this->assertStringContainsString('not configured', (string) $result['message']);
+        $this->assertStringContainsString('hide-orders', (string) $result['message']);
     }
 }

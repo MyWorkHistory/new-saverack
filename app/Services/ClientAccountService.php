@@ -26,16 +26,21 @@ class ClientAccountService
     /** @var ShipHeroCustomerAccountService */
     protected $shipHeroCustomers;
 
+    /** @var ClientAccountStatusSlackService */
+    protected $statusSlack;
+
     public function __construct(
         PortalClientProvisioningService $portalProvisioning,
         ActivityLogService $activityLog,
         PricingFeeTemplateService $pricingTemplates,
-        ShipHeroCustomerAccountService $shipHeroCustomers
+        ShipHeroCustomerAccountService $shipHeroCustomers,
+        ClientAccountStatusSlackService $statusSlack
     ) {
         $this->portalProvisioning = $portalProvisioning;
         $this->activityLog = $activityLog;
         $this->pricingTemplates = $pricingTemplates;
         $this->shipHeroCustomers = $shipHeroCustomers;
+        $this->statusSlack = $statusSlack;
     }
 
     public function filteredAccountsQuery(array $filters): Builder
@@ -148,7 +153,9 @@ class ClientAccountService
      */
     public function update(ClientAccount $account, array $data, ?User $actor = null): array
     {
-        $statusChanging = array_key_exists('status', $data);
+        $oldStatus = (string) $account->status;
+        $statusChanging = array_key_exists('status', $data)
+            && strtolower(trim((string) $data['status'])) !== strtolower(trim($oldStatus));
 
         if ($data !== []) {
             $account->update($data);
@@ -162,6 +169,10 @@ class ClientAccountService
             ]);
         }
 
+        if ($statusChanging) {
+            $this->statusSlack->notifyStatusChange($account, $oldStatus, (string) $account->status, $actor);
+        }
+
         $shipheroSync = $statusChanging
             ? $this->shipHeroCustomers->syncHideOrdersFromApp($account)
             : null;
@@ -173,13 +184,25 @@ class ClientAccountService
      * @param  list<int>  $ids
      * @return array{updated: int, shiphero_sync: array{ok: bool, message: string|null}|null}
      */
-    public function bulkUpdateStatus(array $ids, string $status): array
+    public function bulkUpdateStatus(array $ids, string $status, ?User $actor = null): array
     {
+        $accountsBefore = ClientAccount::query()
+            ->whereIn('id', $ids)
+            ->get()
+            ->keyBy('id');
+
         $updated = ClientAccount::query()->whereIn('id', $ids)->update(['status' => $status]);
         $accounts = ClientAccount::query()->whereIn('id', $ids)->get();
         $failures = [];
 
         foreach ($accounts as $account) {
+            $before = $accountsBefore->get($account->id);
+            $oldStatus = $before instanceof ClientAccount ? (string) $before->status : (string) $account->status;
+
+            if (strtolower(trim($oldStatus)) !== strtolower(trim((string) $account->status))) {
+                $this->statusSlack->notifyStatusChange($account, $oldStatus, (string) $account->status, $actor);
+            }
+
             $sync = $this->shipHeroCustomers->syncHideOrdersFromApp($account);
             if (! $sync['ok']) {
                 $failures[] = $account->company_name.': '.($sync['message'] ?? 'ShipHero sync failed');

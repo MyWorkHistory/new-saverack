@@ -46,7 +46,11 @@ If auto-discovery succeeds, the command prints `.env` keys to copy. Otherwise se
 - `SHIPHERO_CUSTOMER_ACCOUNT_HIDE_ORDERS_FIELD`
 - `SHIPHERO_CUSTOMER_ACCOUNT_ID_FIELD` (default: `customer_account_id`)
 
-Sync is skipped when `shiphero_customer_account_id` is empty. CRM status always saves even if ShipHero sync fails.
+Sync is skipped when `shiphero_customer_account_id` is empty. CRM status always saves even if ShipHero sync fails. When a ShipHero customer ID is set but the update API is not configured, the CRM response includes `shiphero_sync.ok: false` so staff see a warning.
+
+## In-house Slack on status change
+
+When CRM account status changes (single edit or bulk), the app posts to that account's **In-house Slack** field (`in_house_slack`) — channel slug, `#name`, or Slack archive URL. Uses the same Slack delivery as invoice review (`SLACK_WEBHOOK_URL` or bot token). Failures are logged only; the CRM save still succeeds.
 
 ## Environment
 

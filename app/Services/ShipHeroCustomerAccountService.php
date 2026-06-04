@@ -41,8 +41,8 @@ class ShipHeroCustomerAccountService
         $config = $this->resolveHideOrdersSyncConfig();
         if ($config === null) {
             return [
-                'ok' => true,
-                'message' => 'skipped — ShipHero customer account update API not configured (run shiphero:probe-customer-mutations)',
+                'ok' => false,
+                'message' => 'ShipHero customer account update API not configured (run shiphero:probe-customer-mutations and set SHIPHERO_CUSTOMER_ACCOUNT_* env vars)',
             ];
         }
 
@@ -225,10 +225,17 @@ GQL;
         $out = [];
         foreach ($this->listMutationNames() as $name) {
             $lower = strtolower($name);
-            if (strpos($lower, 'customer') === false && strpos($lower, 'account') === false) {
+            $hasCustomer = strpos($lower, 'customer') !== false;
+            $hasAccount = strpos($lower, 'account') !== false;
+            $hasRelationship = strpos($lower, 'relationship') !== false;
+            if (! $hasCustomer && ! $hasAccount && ! $hasRelationship) {
                 continue;
             }
-            if (strpos($lower, 'update') !== false || strpos($lower, 'edit') !== false) {
+            if (
+                strpos($lower, 'update') !== false
+                || strpos($lower, 'edit') !== false
+                || strpos($lower, 'set') !== false
+            ) {
                 $out[] = $name;
             }
         }
@@ -426,12 +433,28 @@ GQL;
                 'input_type' => $inputType,
                 'id_field' => $idField !== '' ? $idField : 'customer_account_id',
                 'hide_field' => $hideField,
+                'arg_name' => $this->resolveMutationInputArgName($mutation) ?? 'data',
             ];
         }
 
-        return Cache::remember(self::CACHE_HIDE_ORDERS_CONFIG, 86400, function () {
-            return $this->discoverHideOrdersSyncConfigFromSchema();
-        });
+        $cached = Cache::get(self::CACHE_HIDE_ORDERS_CONFIG);
+        if ($cached === '__missing__') {
+            return null;
+        }
+        if (is_array($cached) && isset($cached['mutation'])) {
+            return $cached;
+        }
+
+        $discovered = $this->discoverHideOrdersSyncConfigFromSchema();
+        if ($discovered !== null) {
+            Cache::put(self::CACHE_HIDE_ORDERS_CONFIG, $discovered, 86400);
+
+            return $discovered;
+        }
+
+        Cache::put(self::CACHE_HIDE_ORDERS_CONFIG, '__missing__', 300);
+
+        return null;
     }
 
     /**
@@ -461,6 +484,7 @@ GQL;
                 'input_type' => $inputType,
                 'id_field' => $idField,
                 'hide_field' => $hideField,
+                'arg_name' => $this->resolveMutationInputArgName($mutationName) ?? 'data',
             ];
         }
 
@@ -475,25 +499,63 @@ GQL;
     {
         $mutation = $config['mutation'];
         $inputType = $config['input_type'];
+        $preferredArg = isset($config['arg_name']) && is_string($config['arg_name'])
+            ? $config['arg_name']
+            : 'data';
 
-        $graphql = <<<GQL
-mutation ShipHeroCustomerAccountHideOrders(\$data: {$inputType}!) {
-  {$mutation}(data: \$data) {
+        $argOrder = array_values(array_unique([$preferredArg, 'data', 'input']));
+        $lastMessage = 'ShipHero customer account update failed.';
+
+        foreach ($argOrder as $argName) {
+            $graphql = <<<GQL
+mutation ShipHeroCustomerAccountHideOrders(\${$argName}: {$inputType}!) {
+  {$mutation}({$argName}: \${$argName}) {
     request_id
   }
 }
 GQL;
 
-        $json = $this->client->query($graphql, ['data' => $data]);
-        $payload = data_get($json, 'data.'.$mutation);
-        if (! is_array($payload)) {
+            try {
+                $json = $this->client->query($graphql, [$argName => $data]);
+            } catch (\Throwable $e) {
+                $lastMessage = $e->getMessage();
+                continue;
+            }
+
+            $payload = data_get($json, 'data.'.$mutation);
+            if (is_array($payload)) {
+                return;
+            }
+
             $errors = data_get($json, 'errors');
-            $msg = is_array($errors) && isset($errors[0]['message'])
+            $lastMessage = is_array($errors) && isset($errors[0]['message'])
                 ? (string) $errors[0]['message']
                 : 'ShipHero customer account update failed.';
-
-            throw new \RuntimeException($msg);
         }
+
+        throw new \RuntimeException($lastMessage);
+    }
+
+    protected function resolveMutationInputArgName(string $mutationName): ?string
+    {
+        foreach ($this->listMutationFieldsWithArgs() as $field) {
+            if ($field['name'] !== $mutationName) {
+                continue;
+            }
+            foreach ($field['args'] as $arg) {
+                $argName = isset($arg['name']) && is_string($arg['name']) ? $arg['name'] : '';
+                if ($argName !== 'data' && $argName !== 'input') {
+                    continue;
+                }
+                $type = is_array($arg['type'] ?? null) ? $arg['type'] : [];
+                $name = $this->unwrapGraphQlTypeName($type);
+                if ($name !== null && $name !== '') {
+                    return $argName;
+                }
+            }
+        }
+
+        return null;
     }
 
     protected function resolveMutationDataInputTypeName(string $mutationName): ?string
@@ -527,10 +589,11 @@ GQL;
         $out = [];
         foreach ($fields as $field) {
             $name = strtolower($field['name']);
-            if (strpos($name, 'hide') === false) {
+            if (strpos($name, 'hide') !== false && (strpos($name, 'app') !== false || strpos($name, 'order') !== false)) {
+                $out[] = $field['name'];
                 continue;
             }
-            if (strpos($name, 'app') !== false || strpos($name, 'order') !== false) {
+            if (strpos($name, 'orders_from_app') !== false || strpos($name, 'hide_from_app') !== false) {
                 $out[] = $field['name'];
             }
         }

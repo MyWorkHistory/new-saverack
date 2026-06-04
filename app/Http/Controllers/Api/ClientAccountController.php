@@ -367,7 +367,7 @@ class ClientAccountController extends Controller
             $this->authorize('update', ClientAccount::query()->findOrFail($id));
         }
 
-        $result = $this->clientAccounts->bulkUpdateStatus($ids, $status);
+        $result = $this->clientAccounts->bulkUpdateStatus($ids, $status, $request->user());
 
         $payload = [
             'message' => 'Client accounts updated.',

@@ -251,14 +251,16 @@ class ClientAccountStatusSlackService
             $base = 'https://'.substr($base, 7);
         }
 
-        // Static 36×36 PNGs — Slack fetches these directly (no PHP route required).
-        return $base.'/images/slack/avatars/'.$filename;
+        return $base.'/images/slack/'.$filename;
     }
 
     private function logIconUrlReachability(string $iconUrl, int $clientAccountId): void
     {
         try {
-            $response = Http::timeout(5)->get($iconUrl);
+            $response = Http::timeout(5)->head($iconUrl);
+            if (! $response->successful()) {
+                $response = Http::timeout(5)->get($iconUrl);
+            }
 
             $contentType = strtolower(trim((string) $response->header('Content-Type')));
             $ok = $response->successful() && str_contains($contentType, 'image');

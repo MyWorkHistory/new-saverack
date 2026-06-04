@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Rebuild square Slack webhook avatars — truck fills frame, no gray letterboxing."""
+"""Build 512×512 Slack webhook avatars from design sources in public/images/slack/sources/."""
 
 from __future__ import annotations
 
@@ -8,90 +8,34 @@ from pathlib import Path
 
 from PIL import Image
 
-# Slack incoming-webhook avatars render at 36×36 px.
-SIZE = 36
-FILL = 0.88
-WHITE_THRESHOLD = 245
-# Slack renders transparent webhook icons on gray; use opaque white instead.
-BACKGROUND_RGB = (255, 255, 255)
+SIZE = 512
 
 ROOT = Path(__file__).resolve().parents[1]
 OUT_DIR = ROOT / "public" / "images" / "slack"
-AVATAR_DIR = OUT_DIR / "avatars"
 
-FILES = [
-    "shipping-status-live.png",
-    "shipping-status-paused.png",
+SOURCES = [
+    ("sources/live-source.png", "shipping-status-live.png"),
+    ("sources/paused-source.png", "shipping-status-paused.png"),
 ]
 
 
-def strip_white_to_alpha(im: Image.Image) -> Image.Image:
-    im = im.convert("RGBA")
-    px = im.load()
-    w, h = im.size
-    for y in range(h):
-        for x in range(w):
-            r, g, b, a = px[x, y]
-            if r >= WHITE_THRESHOLD and g >= WHITE_THRESHOLD and b >= WHITE_THRESHOLD:
-                px[x, y] = (255, 255, 255, 0)
-    return im
-
-
 def process(src: Path, dest: Path) -> None:
-    im = strip_white_to_alpha(Image.open(src))
-    bbox = im.getbbox()
-    if not bbox:
-        raise RuntimeError(f"No visible pixels in {src}")
-    cropped = im.crop(bbox)
-    avatar_dest = AVATAR_DIR / dest.name
-    write_slack_avatar(cropped, avatar_dest)
-
-    target = int(SIZE * FILL)
-    # Fit by width so the full truck is visible in Slack's circular crop (wide art).
-    scale = target / cropped.width
-    new_w = target
-    new_h = max(1, int(cropped.height * scale))
-    resized = cropped.resize((new_w, new_h), Image.Resampling.LANCZOS)
-
-    rgba = Image.new("RGBA", (SIZE, SIZE), (*BACKGROUND_RGB, 255))
-    left = (SIZE - new_w) // 2
-    top = (SIZE - new_h) // 2
-    rgba.paste(resized, (left, top), resized)
-
-    # Flatten to opaque RGB (Slack does not gray-out a solid background).
-    flat = Image.new("RGB", (SIZE, SIZE), BACKGROUND_RGB)
-    flat.paste(rgba, mask=rgba.split()[3])
+    im = Image.open(src).convert("RGB")
+    if im.size != (SIZE, SIZE):
+        im = im.resize((SIZE, SIZE), Image.Resampling.LANCZOS)
     dest.parent.mkdir(parents=True, exist_ok=True)
-    flat.save(dest, "PNG", optimize=True)
-    print(f"Wrote {dest} ({dest.stat().st_size} bytes, fit {new_w}x{new_h})")
-
-
-def write_slack_avatar(cropped: Image.Image, dest: Path) -> None:
-    """36×36 square — matches Slack webhook avatar display size."""
-    target = SIZE
-    scale = min(target / cropped.width, target / cropped.height)
-    new_w = max(1, int(cropped.width * scale))
-    new_h = max(1, int(cropped.height * scale))
-    resized = cropped.resize((new_w, new_h), Image.Resampling.LANCZOS)
-    canvas = Image.new("RGB", (target, target), BACKGROUND_RGB)
-    canvas.paste(
-        resized,
-        ((target - new_w) // 2, (target - new_h) // 2),
-        resized if resized.mode == "RGBA" else None,
-    )
-    dest.parent.mkdir(parents=True, exist_ok=True)
-    canvas.save(dest, "PNG", optimize=True)
-    print(f"Wrote {dest} ({dest.stat().st_size} bytes, {target}x{target})")
+    im.save(dest, "PNG", optimize=True)
+    print(f"Wrote {dest} ({dest.stat().st_size} bytes)")
 
 
 def main() -> int:
     OUT_DIR.mkdir(parents=True, exist_ok=True)
-    for name in FILES:
-        src = OUT_DIR / name
+    for src_rel, dest_name in SOURCES:
+        src = OUT_DIR / src_rel
         if not src.is_file():
             print(f"Missing source: {src}", file=sys.stderr)
             return 1
-        process(src, OUT_DIR / name)
+        process(src, OUT_DIR / dest_name)
     return 0
 
 

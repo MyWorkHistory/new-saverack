@@ -46,7 +46,7 @@ class ClientAccountStatusSlackApiTest extends TestCase
 
         Http::fake([
             'hooks.slack.com/*' => Http::response('ok', 200),
-            'app.saverack.com/images/slack/avatars/*' => Http::response('', 200, ['Content-Type' => 'image/png']),
+            'app.saverack.com/images/slack/*' => Http::response('', 200, ['Content-Type' => 'image/png']),
         ]);
 
         $account = ClientAccount::create([
@@ -72,7 +72,7 @@ class ClientAccountStatusSlackApiTest extends TestCase
             $payload = $request->data();
             $this->assertSame('#slack-co', $payload['channel'] ?? null);
             $this->assertSame('Shipping Status Update', $payload['username'] ?? null);
-            $this->assertStringContainsString('/images/slack/avatars/shipping-status-paused.png', (string) ($payload['icon_url'] ?? ''));
+            $this->assertStringContainsString('/images/slack/shipping-status-paused.png', (string) ($payload['icon_url'] ?? ''));
             $this->assertArrayNotHasKey('blocks', $payload);
             $this->assertStringNotContainsString('Shipping Status Update', (string) ($payload['text'] ?? ''));
             $this->assertStringContainsString('Slack Co is set to Paused.', (string) ($payload['text'] ?? ''));

@@ -33,6 +33,10 @@ class ShipHeroCustomerAccountService
      */
     public function syncHideOrdersFromApp(ClientAccount $account): array
     {
+        if (! config('services.shiphero.customer_account_hide_orders_sync_enabled', true)) {
+            return ['ok' => true, 'message' => 'skipped — hide-orders sync disabled'];
+        }
+
         $shipheroId = trim((string) $account->shiphero_customer_account_id);
         if ($shipheroId === '') {
             return ['ok' => true, 'message' => 'skipped — no ShipHero customer account ID'];
@@ -41,8 +45,8 @@ class ShipHeroCustomerAccountService
         $config = $this->resolveHideOrdersSyncConfig();
         if ($config === null) {
             return [
-                'ok' => false,
-                'message' => 'ShipHero Public API has no hide-orders mutation configured. Run php artisan shiphero:probe-customer-mutations on the server; if none is found, toggle Hide Customer\'s Orders From App manually in ShipHero → 3PL Customers.',
+                'ok' => true,
+                'message' => 'skipped — ShipHero Public API has no hide-orders mutation (toggle Hide Customer\'s Orders From App in ShipHero → 3PL Customers)',
             ];
         }
 
@@ -55,15 +59,31 @@ class ShipHeroCustomerAccountService
         try {
             $this->executeHideOrdersMutation($config, $data);
         } catch (\Throwable $e) {
+            $rawMessage = $e->getMessage();
+            if ($this->isHideOrdersSchemaError($rawMessage)) {
+                Cache::put(self::CACHE_HIDE_ORDERS_CONFIG, '__missing__', 86400);
+                Log::warning('shiphero.customer_account.hide_orders_sync_unavailable', [
+                    'client_account_id' => $account->id,
+                    'shiphero_customer_account_id' => $shipheroId,
+                    'mutation' => $config['mutation'],
+                    'message' => $rawMessage,
+                ]);
+
+                return [
+                    'ok' => true,
+                    'message' => 'skipped — ShipHero Public API does not support hide-orders sync on this account',
+                ];
+            }
+
             Log::warning('shiphero.customer_account.hide_orders_sync_failed', [
                 'client_account_id' => $account->id,
                 'shiphero_customer_account_id' => $shipheroId,
                 'hide' => $hide,
                 'mutation' => $config['mutation'],
-                'message' => $e->getMessage(),
+                'message' => $rawMessage,
             ]);
 
-            return ['ok' => false, 'message' => $e->getMessage()];
+            return ['ok' => false, 'message' => $this->formatHideOrdersSyncErrorForUser($rawMessage)];
         }
 
         Log::info('shiphero.customer_account.hide_orders_synced', [
@@ -801,16 +821,36 @@ GQL;
         if ($mutation !== '' && $hideField !== '') {
             $inputType = trim((string) config('services.shiphero.customer_account_update_input_type', ''));
             if ($inputType === '') {
-                $inputType = $this->resolveMutationDataInputTypeName($mutation) ?? 'UpdateCustomerAccountInput';
+                $inputType = $this->resolveMutationDataInputTypeName($mutation);
+            }
+            if ($inputType === null || $inputType === '') {
+                Log::warning('shiphero.customer_account.hide_orders_sync_config_invalid', [
+                    'reason' => 'missing_input_type',
+                    'mutation' => $mutation,
+                ]);
+
+                return null;
             }
 
-            return [
+            $config = [
                 'mutation' => $mutation,
                 'input_type' => $inputType,
                 'id_field' => $idField !== '' ? $idField : 'customer_account_id',
                 'hide_field' => $hideField,
                 'arg_name' => $this->resolveMutationInputArgName($mutation) ?? 'data',
             ];
+
+            if (! $this->isHideOrdersSyncConfigValid($config)) {
+                Log::warning('shiphero.customer_account.hide_orders_sync_config_invalid', [
+                    'reason' => 'mutation_not_in_schema',
+                    'mutation' => $mutation,
+                    'input_type' => $inputType,
+                ]);
+
+                return null;
+            }
+
+            return $config;
         }
 
         $cached = Cache::get(self::CACHE_HIDE_ORDERS_CONFIG);
@@ -818,7 +858,10 @@ GQL;
             return null;
         }
         if (is_array($cached) && isset($cached['mutation'])) {
-            return $cached;
+            if ($this->isHideOrdersSyncConfigValid($cached)) {
+                return $cached;
+            }
+            Cache::forget(self::CACHE_HIDE_ORDERS_CONFIG);
         }
 
         $discovered = $this->discoverHideOrdersSyncConfigFromSchema();
@@ -831,6 +874,66 @@ GQL;
         Cache::put(self::CACHE_HIDE_ORDERS_CONFIG, '__missing__', 300);
 
         return null;
+    }
+
+    /**
+     * @param  array{mutation: string, input_type: string, id_field: string, hide_field: string, arg_name?: string}  $config
+     */
+    protected function isHideOrdersSyncConfigValid(array $config): bool
+    {
+        $mutation = trim((string) ($config['mutation'] ?? ''));
+        if ($mutation === '') {
+            return false;
+        }
+
+        $signature = $this->probeMutationSignature($mutation);
+        if (! $signature['exists']) {
+            return false;
+        }
+
+        $inputType = trim((string) ($config['input_type'] ?? ''));
+        if ($inputType === '') {
+            return false;
+        }
+
+        if (
+            isset($signature['input_type'])
+            && is_string($signature['input_type'])
+            && $signature['input_type'] !== ''
+            && strcasecmp($signature['input_type'], $inputType) !== 0
+        ) {
+            return false;
+        }
+
+        return true;
+    }
+
+    protected function isHideOrdersSchemaError(string $message): bool
+    {
+        $message = strtolower($message);
+
+        return str_contains($message, 'cannot query field')
+            || str_contains($message, 'unknown type')
+            || str_contains($message, 'unknown argument')
+            || str_contains($message, 'is not defined on type');
+    }
+
+    protected function formatHideOrdersSyncErrorForUser(string $message): string
+    {
+        if ($this->isHideOrdersSchemaError($message)) {
+            return 'ShipHero hide-orders sync is not available via the Public API on this account.';
+        }
+
+        if (str_contains(strtolower($message), 'body preview:')) {
+            return 'ShipHero hide-orders sync failed. Check server logs or remove invalid SHIPHERO_CUSTOMER_ACCOUNT_* env vars.';
+        }
+
+        $trimmed = trim($message);
+        if (str_starts_with($trimmed, 'ShipHero:')) {
+            $trimmed = trim(substr($trimmed, strlen('ShipHero:')));
+        }
+
+        return $trimmed !== '' ? $trimmed : 'ShipHero hide-orders sync failed.';
     }
 
     /**

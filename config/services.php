@@ -79,6 +79,11 @@ return [
         /** Boolean input field: hide client orders from ShipHero app when CRM status is not active. */
         'customer_account_hide_orders_field' => env('SHIPHERO_CUSTOMER_ACCOUNT_HIDE_ORDERS_FIELD'),
         'customer_account_id_field' => env('SHIPHERO_CUSTOMER_ACCOUNT_ID_FIELD', 'customer_account_id'),
+        /** Set false to skip hide-orders sync attempts entirely. */
+        'customer_account_hide_orders_sync_enabled' => filter_var(
+            env('SHIPHERO_CUSTOMER_ACCOUNT_HIDE_ORDERS_SYNC', true),
+            FILTER_VALIDATE_BOOLEAN
+        ),
     ],
 
     'whatsapp' => [

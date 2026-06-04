@@ -70,7 +70,7 @@ class SlackDeliveryService
                 'message' => $e->getMessage(),
                 'custom_icon' => $customizeIdentity,
                 'hint' => $customizeIdentity
-                    ? 'Invite the bot to the channel; truck icon needs bot. Message sent via webhook with default icon.'
+                    ? 'Invite the bot to the channel for custom avatar; message sent via webhook with PNG thumb_url attachment.'
                     : null,
             ]);
 

@@ -40,15 +40,15 @@ class ClientAccountStatusSlackApiTest extends TestCase
         return $user;
     }
 
-    public function test_status_patch_posts_to_in_house_slack_channel(): void
+    public function test_status_patch_posts_to_in_house_slack_channel_via_webhook(): void
     {
+        config(['billing.slack.bot_token' => null]);
+
         $this->staffWithClientsUpdate();
 
         Http::fake([
             'hooks.slack.com/*' => Http::response('ok', 200),
             'app.saverack.com/storage/slack-status-icons/*' => Http::response('', 200, ['Content-Type' => 'image/png']),
-            'https://slack.com/api/conversations.join' => Http::response(['ok' => true], 200),
-            'https://slack.com/api/chat.postMessage' => Http::response(['ok' => true, 'channel' => 'C1', 'ts' => '1'], 200),
         ]);
 
         $account = ClientAccount::create([
@@ -67,18 +67,53 @@ class ClientAccountStatusSlackApiTest extends TestCase
         $response->assertJsonPath('status', ClientAccount::STATUS_PAUSED);
 
         Http::assertSent(function ($request) {
+            if (! str_contains($request->url(), 'hooks.slack.com')) {
+                return false;
+            }
+
+            $payload = $request->data();
+            $attachment = $payload['attachments'][0] ?? [];
+            $this->assertSame('#d32f2f', $attachment['color'] ?? null);
+            $this->assertStringContainsString('/storage/slack-status-icons/shipping-status-paused.png', (string) ($attachment['thumb_url'] ?? ''));
+            $this->assertStringContainsString('Slack Co is set to Paused.', (string) ($attachment['text'] ?? ''));
+            $this->assertArrayNotHasKey('icon_url', $payload);
+
+            return true;
+        });
+    }
+
+    public function test_status_patch_with_bot_includes_attachment_and_icon_url(): void
+    {
+        $this->staffWithClientsUpdate();
+
+        Http::fake([
+            'app.saverack.com/storage/slack-status-icons/*' => Http::response('', 200, ['Content-Type' => 'image/png']),
+            'https://slack.com/api/conversations.join' => Http::response(['ok' => true], 200),
+            'https://slack.com/api/chat.postMessage' => Http::response(['ok' => true, 'channel' => 'C1', 'ts' => '1'], 200),
+        ]);
+
+        $account = ClientAccount::create([
+            'company_name' => 'Slack Co',
+            'status' => ClientAccount::STATUS_ACTIVE,
+            'email' => 'slack-co@test.com',
+            'in_house_slack' => 'slack-co',
+        ]);
+
+        $this->patchJson('/api/client-accounts/'.$account->id, [
+            'status' => ClientAccount::STATUS_PAUSED,
+        ])->assertOk();
+
+        Http::assertSent(function ($request) {
             if (! str_contains($request->url(), 'chat.postMessage')) {
                 return false;
             }
 
             $payload = $request->data();
-            $this->assertSame('#slack-co', $payload['channel'] ?? null);
+            $attachment = $payload['attachments'][0] ?? [];
             $this->assertSame('Shipping Status Update', $payload['username'] ?? null);
             $this->assertStringContainsString('/storage/slack-status-icons/shipping-status-paused.png', (string) ($payload['icon_url'] ?? ''));
-            $this->assertArrayNotHasKey('blocks', $payload);
-            $this->assertStringContainsString('Slack Co is set to Paused.', (string) ($payload['text'] ?? ''));
-            $this->assertStringContainsString('<https://app.shiphero.com/3pl|Set Pause in Shiphero>', (string) ($payload['text'] ?? ''));
-            $this->assertStringNotContainsString('View Account', (string) ($payload['text'] ?? ''));
+            $this->assertStringContainsString('/storage/slack-status-icons/shipping-status-paused.png', (string) ($attachment['thumb_url'] ?? ''));
+            $this->assertStringContainsString('Slack Co is set to Paused.', (string) ($attachment['text'] ?? ''));
 
             return true;
         });

@@ -13,6 +13,10 @@ class ClientAccountStatusSlackService
 
     private const USERNAME = 'Shipping Status Update';
 
+    private const COLOR_LIVE = '#2e7d32';
+
+    private const COLOR_PAUSED = '#d32f2f';
+
     /** @var SlackDeliveryService */
     protected $slack;
 
@@ -60,7 +64,8 @@ class ClientAccountStatusSlackService
         $text = (string) ($payload['text'] ?? '');
         $username = (string) ($payload['username'] ?? self::USERNAME);
         $iconUrl = (string) ($payload['icon_url'] ?? '');
-        $options = $this->deliveryOptions($text, $username, $iconUrl);
+        $isLive = $newStatus === ClientAccount::STATUS_ACTIVE;
+        $options = $this->deliveryOptions($text, $username, $iconUrl, $isLive);
 
         if ($iconUrl !== '') {
             $this->logIconUrlReachability($iconUrl, (int) $account->id);
@@ -94,32 +99,51 @@ class ClientAccountStatusSlackService
     }
 
     /**
-     * Slack app webhooks ignore icon_url; truck avatars require chat.postMessage + bot token.
+     * Webhook: attachment color + PNG thumb_url (works without bot).
+     * Bot: same attachment plus icon_url avatar.
      *
      * @return array{text: string, username: string, slack: array<string, mixed>}
      */
-    private function deliveryOptions(string $text, string $username, string $iconUrl): array
+    private function deliveryOptions(string $text, string $username, string $iconUrl, bool $isLive): array
     {
-        $slack = [];
-        if ($iconUrl !== '') {
-            $slack['icon_url'] = $iconUrl;
-        }
+        $slack = [
+            'attachments' => [
+                $this->buildAttachment($text, $iconUrl, $isLive),
+            ],
+        ];
 
-        // Bot required for truck avatar; webhook still delivers the message if no bot.
         if ($this->slack->hasBotToken()) {
             $slack['customize_identity'] = true;
             $slack['prefer_bot'] = true;
-        } else {
-            Log::info('client_account.status_slack_webhook_only', [
-                'hint' => 'Message will post via SLACK_WEBHOOK_URL with default icon until SLACK_BOT_USER_OAUTH_TOKEN is set.',
-            ]);
+            if ($iconUrl !== '') {
+                $slack['icon_url'] = $iconUrl;
+            }
         }
 
         return [
-            'text' => $text,
+            'text' => '',
             'username' => $username,
             'slack' => $slack,
         ];
+    }
+
+    /**
+     * @return array{color: string, fallback: string, text: string, mrkdwn_in: array<int, string>, thumb_url: string}
+     */
+    private function buildAttachment(string $text, string $iconUrl, bool $isLive): array
+    {
+        $attachment = [
+            'color' => $isLive ? self::COLOR_LIVE : self::COLOR_PAUSED,
+            'fallback' => $text,
+            'text' => $text,
+            'mrkdwn_in' => ['text'],
+        ];
+
+        if ($iconUrl !== '') {
+            $attachment['thumb_url'] = $iconUrl;
+        }
+
+        return $attachment;
     }
 
     /**

@@ -92,12 +92,26 @@ final class SlackDeliveryServiceCustomizeTest extends TestCase
                 'icon_url' => 'https://app.saverack.com/storage/slack-status-icons/shipping-status-live.png',
                 'customize_identity' => true,
                 'prefer_bot' => true,
+                'attachments' => [[
+                    'color' => '#2e7d32',
+                    'text' => 'Hello',
+                    'thumb_url' => 'https://app.saverack.com/storage/slack-status-icons/shipping-status-live.png',
+                ]],
             ]
         );
 
         $this->assertSame('webhook', $result['method']);
         Http::assertSent(function ($request) {
-            return str_contains($request->url(), 'hooks.slack.com');
+            if (! str_contains($request->url(), 'hooks.slack.com')) {
+                return false;
+            }
+
+            $payload = $request->data();
+            $attachment = $payload['attachments'][0] ?? [];
+
+            return ($payload['text'] ?? '') === 'Hello'
+                && ! array_key_exists('icon_url', $payload)
+                && ($attachment['thumb_url'] ?? '') !== '';
         });
     }
 }

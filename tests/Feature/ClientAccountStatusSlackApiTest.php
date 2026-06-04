@@ -48,7 +48,7 @@ class ClientAccountStatusSlackApiTest extends TestCase
 
         Http::fake([
             'hooks.slack.com/*' => Http::response('ok', 200),
-            'app.saverack.com/storage/slack-status-icons/*' => Http::response('', 200, ['Content-Type' => 'image/png']),
+            'app.saverack.com/images/slack/*' => Http::response('', 200, ['Content-Type' => 'image/png']),
         ]);
 
         $account = ClientAccount::create([
@@ -74,7 +74,7 @@ class ClientAccountStatusSlackApiTest extends TestCase
             $payload = $request->data();
             $attachment = $payload['attachments'][0] ?? [];
             $this->assertSame('#d32f2f', $attachment['color'] ?? null);
-            $this->assertStringContainsString('/storage/slack-status-icons/shipping-status-paused.png', (string) ($attachment['thumb_url'] ?? ''));
+            $this->assertStringContainsString('/images/slack/shipping-status-paused-thumb.png', (string) ($attachment['thumb_url'] ?? ''));
             $this->assertStringContainsString('Slack Co is set to Paused.', (string) ($attachment['text'] ?? ''));
             $this->assertArrayNotHasKey('icon_url', $payload);
 
@@ -87,7 +87,7 @@ class ClientAccountStatusSlackApiTest extends TestCase
         $this->staffWithClientsUpdate();
 
         Http::fake([
-            'app.saverack.com/storage/slack-status-icons/*' => Http::response('', 200, ['Content-Type' => 'image/png']),
+            'app.saverack.com/images/slack/*' => Http::response('', 200, ['Content-Type' => 'image/png']),
             'https://slack.com/api/conversations.join' => Http::response(['ok' => true], 200),
             'https://slack.com/api/chat.postMessage' => Http::response(['ok' => true, 'channel' => 'C1', 'ts' => '1'], 200),
         ]);
@@ -111,8 +111,8 @@ class ClientAccountStatusSlackApiTest extends TestCase
             $payload = $request->data();
             $attachment = $payload['attachments'][0] ?? [];
             $this->assertSame('Shipping Status Update', $payload['username'] ?? null);
-            $this->assertStringContainsString('/storage/slack-status-icons/shipping-status-paused.png', (string) ($payload['icon_url'] ?? ''));
-            $this->assertStringContainsString('/storage/slack-status-icons/shipping-status-paused.png', (string) ($attachment['thumb_url'] ?? ''));
+            $this->assertStringContainsString('/images/slack/shipping-status-paused.png', (string) ($payload['icon_url'] ?? ''));
+            $this->assertStringContainsString('/images/slack/shipping-status-paused-thumb.png', (string) ($attachment['thumb_url'] ?? ''));
             $this->assertStringContainsString('Slack Co is set to Paused.', (string) ($attachment['text'] ?? ''));
 
             return true;

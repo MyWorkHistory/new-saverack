@@ -14,11 +14,11 @@ use App\Http\Controllers\SlackStatusIconController;
 use Illuminate\Support\Facades\Route;
 
 Route::get('/images/slack/{icon}', [SlackStatusIconController::class, 'show'])
-    ->where('icon', 'shipping-status-live\.png|shipping-status-paused\.png')
+    ->where('icon', 'shipping-status-(?:live|paused)(?:-thumb)?\.png')
     ->name('slack.status-icon.images');
 
 Route::get('/slack-icons/{icon}', [SlackStatusIconController::class, 'show'])
-    ->where('icon', 'shipping-status-live\.png|shipping-status-paused\.png')
+    ->where('icon', 'shipping-status-(?:live|paused)(?:-thumb)?\.png')
     ->name('slack.status-icon.web');
 
 Route::middleware(['throttle:public-invoice'])->group(function () {

@@ -39,7 +39,7 @@ Route::prefix('auth')->group(function () {
 Route::post('stripe/webhook', [StripeWebhookController::class, 'handle']);
 
 Route::get('/slack/status-icons/{icon}', [\App\Http\Controllers\SlackStatusIconController::class, 'show'])
-    ->where('icon', 'shipping-status-live\.png|shipping-status-paused\.png')
+    ->where('icon', 'shipping-status-(?:live|paused)(?:-thumb)?\.png')
     ->name('slack.status-icon');
 
 Route::middleware('auth:sanctum')->group(function () {

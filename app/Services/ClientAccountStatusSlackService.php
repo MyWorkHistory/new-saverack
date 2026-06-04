@@ -65,10 +65,11 @@ class ClientAccountStatusSlackService
         $username = (string) ($payload['username'] ?? self::USERNAME);
         $iconUrl = (string) ($payload['icon_url'] ?? '');
         $isLive = $newStatus === ClientAccount::STATUS_ACTIVE;
-        $options = $this->deliveryOptions($text, $username, $iconUrl, $isLive);
+        $thumbUrl = $isLive ? $this->iconUrls->liveThumbUrl() : $this->iconUrls->pausedThumbUrl();
+        $options = $this->deliveryOptions($text, $username, $iconUrl, $thumbUrl, $isLive);
 
-        if ($iconUrl !== '') {
-            $this->logIconUrlReachability($iconUrl, (int) $account->id);
+        if ($thumbUrl !== '') {
+            $this->logIconUrlReachability($thumbUrl, (int) $account->id);
         }
 
         try {
@@ -83,6 +84,7 @@ class ClientAccountStatusSlackService
                 'slack_channel' => $result['channel'],
                 'delivery' => $result['method'],
                 'icon_url' => $iconUrl !== '' ? $iconUrl : null,
+                'thumb_url' => $thumbUrl !== '' ? $thumbUrl : null,
                 'old_status' => $oldStatus,
                 'new_status' => $newStatus,
                 'actor_id' => $actor !== null ? $actor->id : null,
@@ -104,11 +106,11 @@ class ClientAccountStatusSlackService
      *
      * @return array{text: string, username: string, slack: array<string, mixed>}
      */
-    private function deliveryOptions(string $text, string $username, string $iconUrl, bool $isLive): array
+    private function deliveryOptions(string $text, string $username, string $iconUrl, string $thumbUrl, bool $isLive): array
     {
         $slack = [
             'attachments' => [
-                $this->buildAttachment($text, $iconUrl, $isLive),
+                $this->buildAttachment($text, $thumbUrl, $isLive),
             ],
         ];
 
@@ -128,19 +130,21 @@ class ClientAccountStatusSlackService
     }
 
     /**
-     * @return array{color: string, fallback: string, text: string, mrkdwn_in: array<int, string>, thumb_url: string}
+     * @return array{color: string, fallback: string, text: string, mrkdwn_in: array<int, string>, author_name: string, author_icon?: string, thumb_url?: string}
      */
-    private function buildAttachment(string $text, string $iconUrl, bool $isLive): array
+    private function buildAttachment(string $text, string $thumbUrl, bool $isLive): array
     {
         $attachment = [
             'color' => $isLive ? self::COLOR_LIVE : self::COLOR_PAUSED,
             'fallback' => $text,
             'text' => $text,
             'mrkdwn_in' => ['text'],
+            'author_name' => self::USERNAME,
         ];
 
-        if ($iconUrl !== '') {
-            $attachment['thumb_url'] = $iconUrl;
+        if ($thumbUrl !== '') {
+            $attachment['author_icon'] = $thumbUrl;
+            $attachment['thumb_url'] = $thumbUrl;
         }
 
         return $attachment;

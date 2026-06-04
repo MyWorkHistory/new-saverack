@@ -10,6 +10,8 @@ class SlackStatusIconController extends Controller
     private const ALLOWED = [
         'shipping-status-live.png',
         'shipping-status-paused.png',
+        'shipping-status-live-thumb.png',
+        'shipping-status-paused-thumb.png',
     ];
 
     public function show(string $icon): Response|SymfonyResponse

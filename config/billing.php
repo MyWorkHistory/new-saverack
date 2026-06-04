@@ -39,6 +39,8 @@ return [
         /** Optional full URLs if icons are hosted on a CDN (overrides built-in routes). */
         'status_icon_live_url' => env('SLACK_STATUS_ICON_LIVE_URL'),
         'status_icon_paused_url' => env('SLACK_STATUS_ICON_PAUSED_URL'),
+        'status_icon_live_thumb_url' => env('SLACK_STATUS_ICON_LIVE_THUMB_URL'),
+        'status_icon_paused_thumb_url' => env('SLACK_STATUS_ICON_PAUSED_THUMB_URL'),
     ],
 
 ];

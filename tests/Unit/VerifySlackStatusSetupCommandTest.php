@@ -3,7 +3,6 @@
 namespace Tests\Unit;
 
 use Illuminate\Support\Facades\Http;
-use Illuminate\Support\Facades\Storage;
 use Tests\TestCase;
 
 final class VerifySlackStatusSetupCommandTest extends TestCase
@@ -14,8 +13,6 @@ final class VerifySlackStatusSetupCommandTest extends TestCase
             'billing.slack.bot_token' => null,
             'billing.slack.public_asset_base_url' => 'https://app.saverack.com',
         ]);
-
-        Storage::fake('public');
 
         $this->artisan('slack:verify-status-setup')
             ->assertExitCode(1);
@@ -28,10 +25,8 @@ final class VerifySlackStatusSetupCommandTest extends TestCase
             'billing.slack.public_asset_base_url' => 'https://app.saverack.com',
         ]);
 
-        Storage::fake('public');
-
         Http::fake([
-            'https://app.saverack.com/storage/slack-status-icons/*' => Http::response('', 200, ['Content-Type' => 'image/png']),
+            'https://app.saverack.com/images/slack/*' => Http::response('', 200, ['Content-Type' => 'image/png']),
         ]);
 
         $this->artisan('slack:verify-status-setup')

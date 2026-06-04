@@ -42,4 +42,12 @@ class SlackStatusIconControllerTest extends TestCase
         $response->assertOk();
         $this->assertStringContainsString('image/png', (string) $response->headers->get('Content-Type'));
     }
+
+    public function test_static_images_path_serves_thumb_icon(): void
+    {
+        $response = $this->get('/images/slack/shipping-status-live-thumb.png');
+
+        $response->assertOk();
+        $this->assertStringContainsString('image/png', (string) $response->headers->get('Content-Type'));
+    }
 }

@@ -26,7 +26,7 @@ final class SlackDeliveryServiceCustomizeTest extends TestCase
             'Hello',
             'Shipping Status Update',
             [
-                'icon_url' => 'https://app.saverack.com/storage/slack-status-icons/shipping-status-live.png',
+                'icon_url' => 'https://app.saverack.com/images/slack/shipping-status-live.png',
                 'customize_identity' => true,
                 'prefer_bot' => true,
             ]
@@ -89,13 +89,13 @@ final class SlackDeliveryServiceCustomizeTest extends TestCase
             'Hello',
             'Shipping Status Update',
             [
-                'icon_url' => 'https://app.saverack.com/storage/slack-status-icons/shipping-status-live.png',
+                'icon_url' => 'https://app.saverack.com/images/slack/shipping-status-live.png',
                 'customize_identity' => true,
                 'prefer_bot' => true,
                 'attachments' => [[
                     'color' => '#2e7d32',
                     'text' => 'Hello',
-                    'thumb_url' => 'https://app.saverack.com/storage/slack-status-icons/shipping-status-live.png',
+                    'thumb_url' => 'https://app.saverack.com/images/slack/shipping-status-live-thumb.png',
                 ]],
             ]
         );

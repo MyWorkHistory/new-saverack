@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Build 512×512 Slack webhook avatars from design sources in public/images/slack/sources/."""
+"""Build Slack status icons from design sources in public/images/slack/sources/."""
 
 from __future__ import annotations
 
@@ -9,6 +9,7 @@ from pathlib import Path
 from PIL import Image
 
 SIZE = 512
+THUMB = 72
 
 ROOT = Path(__file__).resolve().parents[1]
 OUT_DIR = ROOT / "public" / "images" / "slack"
@@ -20,12 +21,17 @@ SOURCES = [
 
 
 def process(src: Path, dest: Path) -> None:
-    im = Image.open(src).convert("RGB")
+    im = Image.open(src).convert("RGBA")
     if im.size != (SIZE, SIZE):
         im = im.resize((SIZE, SIZE), Image.Resampling.LANCZOS)
     dest.parent.mkdir(parents=True, exist_ok=True)
     im.save(dest, "PNG", optimize=True)
     print(f"Wrote {dest} ({dest.stat().st_size} bytes)")
+
+    thumb = im.resize((THUMB, THUMB), Image.Resampling.LANCZOS)
+    thumb_dest = dest.with_name(dest.stem + "-thumb.png")
+    thumb.save(thumb_dest, "PNG", optimize=True)
+    print(f"Wrote {thumb_dest} ({thumb_dest.stat().st_size} bytes)")
 
 
 def main() -> int:

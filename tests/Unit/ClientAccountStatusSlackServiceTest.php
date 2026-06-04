@@ -9,7 +9,6 @@ use App\Services\SlackDeliveryService;
 use App\Services\SlackStatusIconUrlService;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
-use Illuminate\Support\Facades\Storage;
 use Tests\TestCase;
 
 final class ClientAccountStatusSlackServiceTest extends TestCase
@@ -23,13 +22,11 @@ final class ClientAccountStatusSlackServiceTest extends TestCase
             'crm.frontend_url' => 'https://app.saverack.com',
             'billing.slack.public_asset_base_url' => 'https://app.saverack.com',
         ]);
-
-        Storage::fake('public');
     }
 
     private function iconBase(): string
     {
-        return 'https://app.saverack.com/storage/slack-status-icons';
+        return 'https://app.saverack.com/images/slack';
     }
 
     public function test_build_paused_message_body_only_once(): void
@@ -103,11 +100,13 @@ final class ClientAccountStatusSlackServiceTest extends TestCase
 
         $text = "Demo is set to Live.\nUpdated by: Audi";
         $iconUrl = $this->iconBase().'/shipping-status-live.png';
+        $thumbUrl = $this->iconBase().'/shipping-status-live-thumb.png';
         $result = $method->invoke(
             $service,
             $text,
             'Shipping Status Update',
             $iconUrl,
+            $thumbUrl,
             true
         );
 
@@ -116,7 +115,8 @@ final class ClientAccountStatusSlackServiceTest extends TestCase
         $this->assertArrayNotHasKey('customize_identity', $result['slack']);
         $attachment = $result['slack']['attachments'][0];
         $this->assertSame('#2e7d32', $attachment['color']);
-        $this->assertSame($iconUrl, $attachment['thumb_url']);
+        $this->assertSame($thumbUrl, $attachment['thumb_url']);
+        $this->assertSame($thumbUrl, $attachment['author_icon']);
         $this->assertSame($text, $attachment['text']);
     }
 
@@ -130,16 +130,18 @@ final class ClientAccountStatusSlackServiceTest extends TestCase
         $method->setAccessible(true);
 
         $iconUrl = $this->iconBase().'/shipping-status-paused.png';
+        $thumbUrl = $this->iconBase().'/shipping-status-paused-thumb.png';
         $result = $method->invoke(
             $service,
             'Demo is set to Paused.',
             'Shipping Status Update',
             $iconUrl,
+            $thumbUrl,
             false
         );
 
         $this->assertSame('#d32f2f', $result['slack']['attachments'][0]['color']);
-        $this->assertSame($iconUrl, $result['slack']['attachments'][0]['thumb_url']);
+        $this->assertSame($thumbUrl, $result['slack']['attachments'][0]['thumb_url']);
     }
 
     public function test_delivery_uses_bot_customize_identity_for_truck_icon(): void
@@ -155,11 +157,13 @@ final class ClientAccountStatusSlackServiceTest extends TestCase
         $method->setAccessible(true);
 
         $iconUrl = $this->iconBase().'/shipping-status-live.png';
+        $thumbUrl = $this->iconBase().'/shipping-status-live-thumb.png';
         $result = $method->invoke(
             $service,
             "Demo is set to Live.\nUpdated by: Audi",
             'Shipping Status Update',
             $iconUrl,
+            $thumbUrl,
             true
         );
 
@@ -167,7 +171,7 @@ final class ClientAccountStatusSlackServiceTest extends TestCase
         $this->assertTrue($result['slack']['customize_identity']);
         $this->assertTrue($result['slack']['prefer_bot']);
         $this->assertSame($iconUrl, $result['slack']['icon_url']);
-        $this->assertSame($iconUrl, $result['slack']['attachments'][0]['thumb_url']);
+        $this->assertSame($thumbUrl, $result['slack']['attachments'][0]['thumb_url']);
         $this->assertArrayNotHasKey('blocks', $result['slack']);
     }
 
@@ -206,7 +210,7 @@ final class ClientAccountStatusSlackServiceTest extends TestCase
             'billing.slack.bot_token' => 'xoxb-test-token',
         ]);
 
-        $iconUrl = $this->iconBase().'/shipping-status-paused.png';
+        $iconUrl = $this->iconBase().'/shipping-status-paused-thumb.png';
 
         Http::fake([
             $iconUrl => Http::response('<html>', 404),
@@ -244,7 +248,7 @@ final class ClientAccountStatusSlackServiceTest extends TestCase
         ]);
 
         Http::fake([
-            'app.saverack.com/storage/slack-status-icons/*' => Http::response('', 200, ['Content-Type' => 'image/png']),
+            'app.saverack.com/images/slack/*' => Http::response('', 200, ['Content-Type' => 'image/png']),
             'hooks.slack.com/*' => Http::response('ok', 200),
         ]);
 
@@ -272,7 +276,7 @@ final class ClientAccountStatusSlackServiceTest extends TestCase
             $attachment = $payload['attachments'][0] ?? [];
 
             return ! array_key_exists('icon_url', $payload)
-                && str_contains((string) ($attachment['thumb_url'] ?? ''), '/storage/slack-status-icons/shipping-status-paused.png')
+                && str_contains((string) ($attachment['thumb_url'] ?? ''), '/images/slack/shipping-status-paused-thumb.png')
                 && ($attachment['color'] ?? '') === '#d32f2f';
         });
     }

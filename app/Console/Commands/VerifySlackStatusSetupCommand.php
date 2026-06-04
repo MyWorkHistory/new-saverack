@@ -43,7 +43,12 @@ class VerifySlackStatusSetupCommand extends Command
             $this->info('Public base URL: '.$base);
         }
 
-        foreach (['live' => $icons->liveUrl(), 'paused' => $icons->pausedUrl()] as $label => $url) {
+        foreach ([
+            'live' => $icons->liveUrl(),
+            'live thumb' => $icons->liveThumbUrl(),
+            'paused' => $icons->pausedUrl(),
+            'paused thumb' => $icons->pausedThumbUrl(),
+        ] as $label => $url) {
             if ($url === '') {
                 $this->error("Icon URL ({$label}): could not build.");
                 $ok = false;
@@ -59,7 +64,7 @@ class VerifySlackStatusSetupCommand extends Command
                     $this->info("  HTTP {$response->status()} — image OK");
                 } else {
                     $this->error("  HTTP {$response->status()} — expected image/png (got: {$type})");
-                    $this->line('  Run: php artisan storage:link && deploy public/images/slack/*.png');
+                    $this->line('  Deploy public/images/slack/*.png (including *-thumb.png) to production.');
                     $ok = false;
                 }
             } catch (\Throwable $e) {
@@ -74,9 +79,15 @@ class VerifySlackStatusSetupCommand extends Command
             $ok = false;
         }
 
+        $srcThumb = public_path('images/slack/shipping-status-live-thumb.png');
+        if (! is_file($srcThumb)) {
+            $this->warn('Missing public/images/slack/shipping-status-live-thumb.png — run scripts/optimize_slack_status_icons.py');
+            $ok = false;
+        }
+
         $link = public_path('storage');
         if (! file_exists($link)) {
-            $this->warn('public/storage symlink missing — run: php artisan storage:link');
+            $this->line('Note: public/storage symlink not required for /images/slack/ icons.');
         }
 
         $channel = $this->option('channel');

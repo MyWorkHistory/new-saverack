@@ -2,11 +2,10 @@
 
 namespace App\Services;
 
-use Illuminate\Support\Facades\File;
-use Illuminate\Support\Facades\Storage;
-
 /**
  * Public HTTPS URLs for Slack status truck icons (must be fetchable by Slack).
+ *
+ * Icons are served as static files under /images/slack/ (no storage:link required).
  */
 class SlackStatusIconUrlService
 {
@@ -14,7 +13,12 @@ class SlackStatusIconUrlService
 
     private const PAUSED_FILE = 'shipping-status-paused.png';
 
-    private const STORAGE_DIR = 'slack-status-icons';
+    private const LIVE_THUMB_FILE = 'shipping-status-live-thumb.png';
+
+    private const PAUSED_THUMB_FILE = 'shipping-status-paused-thumb.png';
+
+    /** @var string Relative to site root; nginx/Laravel serves public/images/slack/ directly. */
+    private const PUBLIC_PATH = '/images/slack';
 
     public function liveUrl(): string
     {
@@ -26,6 +30,16 @@ class SlackStatusIconUrlService
         return $this->resolveUrl(self::PAUSED_FILE, 'billing.slack.status_icon_paused_url');
     }
 
+    public function liveThumbUrl(): string
+    {
+        return $this->resolveUrl(self::LIVE_THUMB_FILE, 'billing.slack.status_icon_live_thumb_url');
+    }
+
+    public function pausedThumbUrl(): string
+    {
+        return $this->resolveUrl(self::PAUSED_THUMB_FILE, 'billing.slack.status_icon_paused_thumb_url');
+    }
+
     private function resolveUrl(string $filename, string $configKey): string
     {
         $explicit = config($configKey);
@@ -33,32 +47,13 @@ class SlackStatusIconUrlService
             return trim($explicit);
         }
 
-        $this->ensurePublished($filename);
-
-        $relative = '/storage/'.self::STORAGE_DIR.'/'.$filename;
+        $relative = self::PUBLIC_PATH.'/'.$filename;
         $base = $this->publicBaseUrl();
         if ($base === '') {
             return url($relative);
         }
 
         return $base.$relative;
-    }
-
-    private function ensurePublished(string $filename): void
-    {
-        $disk = Storage::disk('public');
-        $dest = self::STORAGE_DIR.'/'.$filename;
-        if ($disk->exists($dest)) {
-            return;
-        }
-
-        $source = public_path('images/slack/'.$filename);
-        if (! is_file($source)) {
-            return;
-        }
-
-        $disk->makeDirectory(self::STORAGE_DIR);
-        $disk->put($dest, File::get($source));
     }
 
     private function publicBaseUrl(): string

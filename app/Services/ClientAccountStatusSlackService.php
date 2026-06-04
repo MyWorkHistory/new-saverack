@@ -117,7 +117,6 @@ class ClientAccountStatusSlackService
     private function buildPausedPayload(ClientAccount $account, ?User $actor): array
     {
         $lines = [
-            '*Account Paused*',
             $this->companyLine($account),
             'Please pause this account for shipments.',
             '<'.self::SHIPHERO_3PL_URL.'|Pause in ShipHero>',
@@ -144,7 +143,6 @@ class ClientAccountStatusSlackService
     private function buildLivePayload(ClientAccount $account, ?User $actor): array
     {
         $lines = [
-            '*Account Live*',
             $this->companyLine($account),
             'Please set this account live for shipments.',
             '<'.self::SHIPHERO_3PL_URL.'|Pause in ShipHero>',

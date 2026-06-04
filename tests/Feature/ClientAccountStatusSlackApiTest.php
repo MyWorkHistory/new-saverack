@@ -70,7 +70,7 @@ class ClientAccountStatusSlackApiTest extends TestCase
             $this->assertSame('#slack-co', $payload['channel'] ?? null);
             $this->assertSame('Account Paused', $payload['username'] ?? null);
             $this->assertSame(':truck:', $payload['icon_emoji'] ?? null);
-            $this->assertStringContainsString('*Account Paused*', (string) ($payload['text'] ?? ''));
+            $this->assertStringNotContainsString('*Account Paused*', (string) ($payload['text'] ?? ''));
             $this->assertStringContainsString('Please pause this account for shipments.', (string) ($payload['text'] ?? ''));
             $this->assertStringContainsString('<https://app.shiphero.com/3pl|Pause in ShipHero>', (string) ($payload['text'] ?? ''));
 

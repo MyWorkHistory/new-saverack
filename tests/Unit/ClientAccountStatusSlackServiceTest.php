@@ -36,7 +36,7 @@ final class ClientAccountStatusSlackServiceTest extends TestCase
         $this->assertSame('Account Paused', $payload['username']);
         $this->assertSame(':truck:', $payload['icon_emoji']);
         $this->assertSame('d32f2f', $payload['attachments'][0]['color']);
-        $this->assertStringContainsString('*Account Paused*', $payload['text']);
+        $this->assertStringNotContainsString('*Account Paused*', $payload['text']);
         $this->assertStringContainsString('Demo Company', $payload['text']);
         $this->assertStringContainsString('Please pause this account for shipments.', $payload['text']);
         $this->assertStringContainsString(
@@ -67,7 +67,7 @@ final class ClientAccountStatusSlackServiceTest extends TestCase
         $this->assertSame('Account Live', $payload['username']);
         $this->assertSame(':truck:', $payload['icon_emoji']);
         $this->assertSame('2e7d32', $payload['attachments'][0]['color']);
-        $this->assertStringContainsString('*Account Live*', $payload['text']);
+        $this->assertStringNotContainsString('*Account Live*', $payload['text']);
         $this->assertStringContainsString('Please set this account live for shipments.', $payload['text']);
         $this->assertStringContainsString(
             '<https://app.shiphero.com/3pl|Pause in ShipHero>',

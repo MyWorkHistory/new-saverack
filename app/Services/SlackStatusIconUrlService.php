@@ -2,112 +2,112 @@
 
 namespace App\Services;
 
+use Illuminate\Support\Facades\Http;
+
 /**
  * Public HTTPS URLs for Slack status truck icons (must be fetchable by Slack).
  *
- * Icons are served as static files under public/images/slack/ (no storage:link required).
+ * Icons are served as static files under /images/slack/ (no storage:link required).
  */
 class SlackStatusIconUrlService
 {
-    private const LIVE_BASENAME = 'shipping-status-live.png';
+    private const LIVE_FILE = 'shipping-status-live.png';
 
-    private const PAUSED_BASENAME = 'shipping-status-paused.png';
+    private const PAUSED_FILE = 'shipping-status-paused.png';
 
-    /** @var string Relative to site root. */
+    private const LIVE_THUMB_FILE = 'shipping-status-live-thumb.png';
+
+    private const PAUSED_THUMB_FILE = 'shipping-status-paused-thumb.png';
+
+    /** @var string Relative to site root; nginx/Laravel serves public/images/slack/ directly. */
     private const PUBLIC_PATH = '/images/slack';
 
-    private const AVATAR_PATH = '/images/slack/avatars';
-
-    /**
-     * Best URL for the small avatar beside "Shipping Status Update".
-     * Prefers dedicated avatar PNGs, then full icon, then thumb.
-     */
-    public function slackAvatarUrl(bool $isLive): string
-    {
-        if ($isLive) {
-            return $this->resolveIconUrl(
-                'billing.slack.status_icon_live_url',
-                [
-                    self::AVATAR_PATH.'/'.self::LIVE_BASENAME,
-                    self::PUBLIC_PATH.'/'.self::LIVE_BASENAME,
-                    self::PUBLIC_PATH.'/shipping-status-live-thumb.png',
-                ]
-            );
-        }
-
-        return $this->resolveIconUrl(
-            'billing.slack.status_icon_paused_url',
-            [
-                self::AVATAR_PATH.'/'.self::PAUSED_BASENAME,
-                self::PUBLIC_PATH.'/'.self::PAUSED_BASENAME,
-                self::PUBLIC_PATH.'/shipping-status-paused-thumb.png',
-            ]
-        );
-    }
+    private const API_PATH = '/api/slack/status-icons';
 
     public function liveUrl(): string
     {
-        return $this->resolveIconUrl('billing.slack.status_icon_live_url', [
-            self::PUBLIC_PATH.'/'.self::LIVE_BASENAME,
-        ]);
+        return $this->resolveUrl(self::LIVE_FILE, self::PUBLIC_PATH, 'billing.slack.status_icon_live_url');
     }
 
     public function pausedUrl(): string
     {
-        return $this->resolveIconUrl('billing.slack.status_icon_paused_url', [
-            self::PUBLIC_PATH.'/'.self::PAUSED_BASENAME,
-        ]);
+        return $this->resolveUrl(self::PAUSED_FILE, self::PUBLIC_PATH, 'billing.slack.status_icon_paused_url');
     }
 
     public function liveThumbUrl(): string
     {
-        return $this->resolveIconUrl('billing.slack.status_icon_live_thumb_url', [
-            self::PUBLIC_PATH.'/shipping-status-live-thumb.png',
-            self::AVATAR_PATH.'/'.self::LIVE_BASENAME,
-            self::PUBLIC_PATH.'/'.self::LIVE_BASENAME,
-        ]);
+        return $this->resolveUrl(self::LIVE_THUMB_FILE, self::PUBLIC_PATH, 'billing.slack.status_icon_live_thumb_url');
     }
 
     public function pausedThumbUrl(): string
     {
-        return $this->resolveIconUrl('billing.slack.status_icon_paused_thumb_url', [
-            self::PUBLIC_PATH.'/shipping-status-paused-thumb.png',
-            self::AVATAR_PATH.'/'.self::PAUSED_BASENAME,
-            self::PUBLIC_PATH.'/'.self::PAUSED_BASENAME,
-        ]);
+        return $this->resolveUrl(self::PAUSED_THUMB_FILE, self::PUBLIC_PATH, 'billing.slack.status_icon_paused_thumb_url');
+    }
+
+    public function liveApiUrl(): string
+    {
+        return $this->resolveUrl(self::LIVE_FILE, self::API_PATH, '');
+    }
+
+    public function pausedApiUrl(): string
+    {
+        return $this->resolveUrl(self::PAUSED_FILE, self::API_PATH, '');
     }
 
     /**
-     * @param  list<string>  $relativePaths
+     * First reachable icon URL: thumb → full PNG → API route.
      */
-    private function resolveIconUrl(string $configKey, array $relativePaths): string
+    public function resolveReachableIconUrl(bool $isLive): string
     {
-        $explicit = config($configKey);
-        if (is_string($explicit) && trim($explicit) !== '') {
-            return trim($explicit);
-        }
+        $candidates = $isLive
+            ? [$this->liveThumbUrl(), $this->liveUrl(), $this->liveApiUrl()]
+            : [$this->pausedThumbUrl(), $this->pausedUrl(), $this->pausedApiUrl()];
 
-        $base = $this->publicBaseUrl();
-
-        foreach ($relativePaths as $relative) {
-            if ($this->iconFileExists($relative)) {
-                return ($base !== '' ? $base : '').$relative;
+        foreach ($candidates as $url) {
+            if ($url !== '' && $this->isReachableImage($url)) {
+                return $url;
             }
         }
 
-        $fallback = $relativePaths[0] ?? '';
-
-        return $base !== '' ? $base.$fallback : url($fallback);
+        return $candidates[0] ?? '';
     }
 
-    private function iconFileExists(string $relativePath): bool
+    public function isReachableImage(string $url): bool
     {
-        $relativePath = ltrim($relativePath, '/');
-        if (str_starts_with($relativePath, 'images/slack/')) {
-            $relativePath = substr($relativePath, strlen('images/slack/'));
+        if ($url === '') {
+            return false;
         }
 
-        return is_file(public_path('images/slack/'.$relativePath));
+        try {
+            $response = Http::timeout(5)->head($url);
+            if (! $response->successful()) {
+                $response = Http::timeout(5)->get($url);
+            }
+
+            $contentType = strtolower(trim((string) $response->header('Content-Type')));
+
+            return $response->successful() && str_contains($contentType, 'image');
+        } catch (\Throwable) {
+            return false;
+        }
+    }
+
+    private function resolveUrl(string $filename, string $pathPrefix, string $configKey): string
+    {
+        if ($configKey !== '') {
+            $explicit = config($configKey);
+            if (is_string($explicit) && trim($explicit) !== '') {
+                return trim($explicit);
+            }
+        }
+
+        $relative = $pathPrefix.'/'.$filename;
+        $base = $this->publicBaseUrl();
+        if ($base === '') {
+            return url($relative);
+        }
+
+        return $base.$relative;
     }
 
     private function publicBaseUrl(): string

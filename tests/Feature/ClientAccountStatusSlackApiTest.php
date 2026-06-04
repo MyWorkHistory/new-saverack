@@ -72,54 +72,17 @@ class ClientAccountStatusSlackApiTest extends TestCase
             }
 
             $payload = $request->data();
+            $blocks = $payload['blocks'] ?? [];
             $this->assertSame('Shipping Status Update', $payload['username'] ?? null);
-            $this->assertStringContainsString('/images/slack/avatars/shipping-status-paused.png', (string) ($payload['icon_url'] ?? ''));
-            $this->assertStringContainsString('Slack Co is set to Paused.', (string) ($payload['text'] ?? ''));
+            $this->assertStringContainsString('/images/slack/shipping-status-paused-thumb.png', (string) ($payload['icon_url'] ?? ''));
+            $this->assertStringContainsString('Slack Co is set to Paused.', (string) ($blocks[1]['text']['text'] ?? ''));
             $this->assertArrayNotHasKey('attachments', $payload);
 
             return true;
         });
     }
 
-    public function test_status_patch_live_posts_with_header_via_webhook(): void
-    {
-        config(['billing.slack.bot_token' => null]);
-
-        $this->staffWithClientsUpdate();
-
-        Http::fake([
-            'hooks.slack.com/*' => Http::response('ok', 200),
-            'app.saverack.com/images/slack/*' => Http::response('', 200, ['Content-Type' => 'image/png']),
-        ]);
-
-        $account = ClientAccount::create([
-            'company_name' => 'Slack Co',
-            'status' => ClientAccount::STATUS_PAUSED,
-            'email' => 'slack-co@test.com',
-            'in_house_slack' => 'slack-co',
-            'shiphero_customer_account_id' => '92441',
-        ]);
-
-        $this->patchJson('/api/client-accounts/'.$account->id, [
-            'status' => ClientAccount::STATUS_ACTIVE,
-        ])->assertOk();
-
-        Http::assertSent(function ($request) {
-            if (! str_contains($request->url(), 'hooks.slack.com')) {
-                return false;
-            }
-
-            $payload = $request->data();
-            $this->assertSame('Shipping Status Update', $payload['username'] ?? null);
-            $this->assertStringContainsString('/images/slack/avatars/shipping-status-live.png', (string) ($payload['icon_url'] ?? ''));
-            $this->assertStringContainsString('Slack Co is set to Live.', (string) ($payload['text'] ?? ''));
-            $this->assertArrayNotHasKey('attachments', $payload);
-
-            return true;
-        });
-    }
-
-    public function test_status_patch_with_bot_includes_icon_url_beside_username(): void
+    public function test_status_patch_with_bot_includes_icon_url_and_blocks_for_paused(): void
     {
         $this->staffWithClientsUpdate();
 
@@ -146,9 +109,48 @@ class ClientAccountStatusSlackApiTest extends TestCase
             }
 
             $payload = $request->data();
+            $blocks = $payload['blocks'] ?? [];
             $this->assertSame('Shipping Status Update', $payload['username'] ?? null);
-            $this->assertStringContainsString('/images/slack/avatars/shipping-status-paused.png', (string) ($payload['icon_url'] ?? ''));
-            $this->assertStringContainsString('Slack Co is set to Paused.', (string) ($payload['text'] ?? ''));
+            $this->assertStringContainsString('/images/slack/shipping-status-paused-thumb.png', (string) ($payload['icon_url'] ?? ''));
+            $this->assertStringContainsString('Slack Co is set to Paused.', (string) ($blocks[1]['text']['text'] ?? ''));
+            $this->assertArrayNotHasKey('attachments', $payload);
+
+            return true;
+        });
+    }
+
+    public function test_status_patch_with_bot_includes_icon_url_and_blocks_for_live(): void
+    {
+        $this->staffWithClientsUpdate();
+
+        Http::fake([
+            'app.saverack.com/images/slack/*' => Http::response('', 200, ['Content-Type' => 'image/png']),
+            'https://slack.com/api/conversations.join' => Http::response(['ok' => true], 200),
+            'https://slack.com/api/chat.postMessage' => Http::response(['ok' => true, 'channel' => 'C1', 'ts' => '1'], 200),
+        ]);
+
+        $account = ClientAccount::create([
+            'company_name' => 'Slack Co',
+            'status' => ClientAccount::STATUS_PAUSED,
+            'email' => 'slack-co@test.com',
+            'in_house_slack' => 'slack-co',
+            'shiphero_customer_account_id' => '12345',
+        ]);
+
+        $this->patchJson('/api/client-accounts/'.$account->id, [
+            'status' => ClientAccount::STATUS_ACTIVE,
+        ])->assertOk();
+
+        Http::assertSent(function ($request) {
+            if (! str_contains($request->url(), 'chat.postMessage')) {
+                return false;
+            }
+
+            $payload = $request->data();
+            $blocks = $payload['blocks'] ?? [];
+            $this->assertSame('Shipping Status Update', $payload['username'] ?? null);
+            $this->assertStringContainsString('/images/slack/shipping-status-live-thumb.png', (string) ($payload['icon_url'] ?? ''));
+            $this->assertStringContainsString('Slack Co is set to Live.', (string) ($blocks[1]['text']['text'] ?? ''));
             $this->assertArrayNotHasKey('attachments', $payload);
 
             return true;

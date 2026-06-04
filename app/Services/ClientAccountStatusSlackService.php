@@ -4,7 +4,6 @@ namespace App\Services;
 
 use App\Models\ClientAccount;
 use App\Models\User;
-use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 
 class ClientAccountStatusSlackService
@@ -60,17 +59,16 @@ class ClientAccountStatusSlackService
         $text = (string) ($payload['text'] ?? '');
         $username = (string) ($payload['username'] ?? self::USERNAME);
         $isLive = $newStatus === ClientAccount::STATUS_ACTIVE;
-        $iconUrl = $this->iconUrls->slackAvatarUrl($isLive);
-        $options = $this->deliveryOptions($text, $username, $iconUrl);
+        $statusLabel = $isLive ? 'Live' : 'Paused';
+        $iconUrl = $this->iconUrls->resolveReachableIconUrl($isLive);
 
-        if ($iconUrl !== '') {
-            $this->logIconUrlReachability($iconUrl, (int) $account->id);
-        }
+        $options = $this->deliveryOptions($text, $username, $iconUrl, $statusLabel);
+        $postText = $this->slack->hasBotToken() ? $text : self::USERNAME;
 
         try {
             $result = $this->slack->post(
                 $channel,
-                (string) ($options['text'] ?? $text),
+                $postText,
                 (string) ($options['username'] ?? $username),
                 $options['slack'] ?? []
             );
@@ -89,34 +87,69 @@ class ClientAccountStatusSlackService
                 'slack_channel' => $channel,
                 'old_status' => $oldStatus,
                 'new_status' => $newStatus,
+                'icon_url' => $iconUrl !== '' ? $iconUrl : null,
                 'message' => $e->getMessage(),
             ]);
         }
     }
 
     /**
-     * Single header line: truck icon (icon_url) + "Shipping Status Update", then message body.
+     * Bot: native username + icon_url header. Blocks: same header when webhook fallback is used.
      *
-     * @return array{text: string, username: string, slack: array<string, mixed>}
+     * @return array{username: string, slack: array<string, mixed>}
      */
-    private function deliveryOptions(string $text, string $username, string $iconUrl): array
+    private function deliveryOptions(string $text, string $username, string $iconUrl, string $statusLabel): array
     {
-        $slack = [
-            'customize_identity' => true,
-        ];
+        $blocks = $this->buildBlocks($text, $iconUrl, $statusLabel);
+        $slack = [];
 
         if ($iconUrl !== '') {
             $slack['icon_url'] = $iconUrl;
         }
 
         if ($this->slack->hasBotToken()) {
+            $slack['customize_identity'] = true;
             $slack['prefer_bot'] = true;
+            $slack['blocks_for_webhook_fallback'] = $blocks;
+        } else {
+            $slack['blocks'] = $blocks;
         }
 
         return [
-            'text' => $text,
             'username' => $username,
             'slack' => $slack,
+        ];
+    }
+
+    /**
+     * @return array<int, array<string, mixed>>
+     */
+    private function buildBlocks(string $text, string $iconUrl, string $statusLabel): array
+    {
+        $contextElements = [
+            ['type' => 'mrkdwn', 'text' => '*'.self::USERNAME.'*'],
+        ];
+
+        if ($iconUrl !== '') {
+            array_unshift($contextElements, [
+                'type' => 'image',
+                'image_url' => $iconUrl,
+                'alt_text' => $statusLabel,
+            ]);
+        }
+
+        return [
+            [
+                'type' => 'context',
+                'elements' => $contextElements,
+            ],
+            [
+                'type' => 'section',
+                'text' => [
+                    'type' => 'mrkdwn',
+                    'text' => $text,
+                ],
+            ],
         ];
     }
 
@@ -132,11 +165,11 @@ class ClientAccountStatusSlackService
         $newStatus = strtolower(trim($newStatus));
 
         if ($newStatus === ClientAccount::STATUS_PAUSED) {
-            return $this->buildStatusPayload($account, 'Paused', 'Set Pause in Shiphero', $this->iconUrls->slackAvatarUrl(false), $actor);
+            return $this->buildStatusPayload($account, 'Paused', 'Set Pause in Shiphero', $actor);
         }
 
         if ($newStatus === ClientAccount::STATUS_ACTIVE) {
-            return $this->buildStatusPayload($account, 'Live', 'Set Live in Shiphero', $this->iconUrls->slackAvatarUrl(true), $actor);
+            return $this->buildStatusPayload($account, 'Live', 'Set Live in Shiphero', $actor);
         }
 
         return null;
@@ -160,7 +193,6 @@ class ClientAccountStatusSlackService
         ClientAccount $account,
         string $statusLabel,
         string $shipheroLinkLabel,
-        string $iconUrl,
         ?User $actor
     ): array {
         $lines = [
@@ -172,7 +204,7 @@ class ClientAccountStatusSlackService
         return [
             'text' => implode("\n", $lines),
             'username' => self::USERNAME,
-            'icon_url' => $iconUrl,
+            'icon_url' => '',
         ];
     }
 
@@ -195,41 +227,6 @@ class ClientAccountStatusSlackService
         $actorName = trim((string) $actor->name);
         if ($actorName !== '') {
             $lines[] = 'Updated by: '.$actorName;
-        }
-    }
-
-    private function logIconUrlReachability(string $iconUrl, int $clientAccountId): void
-    {
-        if ($iconUrl === '') {
-            return;
-        }
-
-        try {
-            $response = Http::timeout(5)->head($iconUrl);
-            if (! $response->successful()) {
-                $response = Http::timeout(5)->get($iconUrl);
-            }
-
-            $contentType = strtolower(trim((string) $response->header('Content-Type')));
-            $ok = $response->successful() && str_contains($contentType, 'image');
-
-            if ($ok) {
-                return;
-            }
-
-            Log::warning('client_account.status_slack_icon_unreachable', [
-                'client_account_id' => $clientAccountId,
-                'icon_url' => $iconUrl,
-                'http_status' => $response->status(),
-                'content_type' => $contentType !== '' ? $contentType : null,
-            ]);
-        } catch (\Throwable $e) {
-            Log::warning('client_account.status_slack_icon_unreachable', [
-                'client_account_id' => $clientAccountId,
-                'icon_url' => $iconUrl,
-                'http_status' => null,
-                'message' => $e->getMessage(),
-            ]);
         }
     }
 }

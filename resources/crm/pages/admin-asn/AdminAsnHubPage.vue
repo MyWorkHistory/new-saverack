@@ -261,6 +261,7 @@ async function confirmCreate() {
     const href = router.resolve({
       name: "admin-asn-detail",
       params: { id: String(data.id) },
+      query: { client_account_id: String(id) },
     }).href;
     window.open(href, "_blank", "noopener,noreferrer");
     await loadList();
@@ -315,6 +316,7 @@ async function submitNonCompliant() {
     const href = router.resolve({
       name: "admin-asn-detail",
       params: { id: String(data.id) },
+      query: { client_account_id: String(id) },
     }).href;
     window.open(href, "_blank", "noopener,noreferrer");
     await loadList();
@@ -330,9 +332,12 @@ function trackingLink(row) {
 }
 
 function openRow(r) {
+  const accountId = Number(r.client_account_id || accountFilter.value || 0);
+  const query = accountId > 0 ? { client_account_id: String(accountId) } : {};
   const href = router.resolve({
     name: "admin-asn-detail",
     params: { id: String(r.id) },
+    query,
   }).href;
   window.open(href, "_blank", "noopener,noreferrer");
 }

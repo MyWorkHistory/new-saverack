@@ -70,7 +70,14 @@ const lineMenuStyle = computed(() => ({
   zIndex: 2200,
 }));
 
-const clientAccountId = computed(() => Number(crmUser.value?.client_account_id || 0));
+const portalClientAccountId = computed(() => Number(crmUser.value?.client_account_id || 0));
+const clientAccountId = computed(() => {
+  if (portalClientAccountId.value > 0) return portalClientAccountId.value;
+  const fromAsn = Number(asn.value?.client_account_id ?? 0);
+  if (fromAsn > 0) return fromAsn;
+  return Number(route.query.client_account_id ?? 0);
+});
+const asnNumericId = computed(() => Number(asn.value?.id ?? asnId.value ?? 0));
 const asnId = computed(() => String(route.params.id || ""));
 
 const isDraft = computed(() => String(asn.value?.status || "").toLowerCase() === "draft");
@@ -92,10 +99,12 @@ const asnLabel = computed(() => formatAsnLabel(asn.value?.asn_number));
 function inventoryDetailTo(sku) {
   const s = String(sku || "").trim();
   if (!s) return null;
+  const accountId = clientAccountId.value;
+  const query = accountId > 0 ? { client_account_id: String(accountId) } : {};
   return {
     name: "user-inventory-detail",
     params: { sku: s },
-    query: { client_account_id: String(clientAccountId.value) },
+    query,
   };
 }
 
@@ -140,7 +149,7 @@ function resetMarkReadyForm() {
 }
 
 async function loadAsn() {
-  if (!asnId.value || !clientAccountId.value) {
+  if (!asnId.value) {
     loading.value = false;
     return;
   }
@@ -268,7 +277,16 @@ async function submitAddNewSku() {
   }
   addNewSkuBusy.value = true;
   try {
-    const { data: created } = await api.post("/inventory/catalog-products", { sku, name });
+    const catalogBody = { sku, name };
+    const accountId = clientAccountId.value;
+    const asnIdForApi = asnNumericId.value;
+    if (accountId > 0) {
+      catalogBody.client_account_id = accountId;
+    }
+    if (asnIdForApi > 0) {
+      catalogBody.asn_id = asnIdForApi;
+    }
+    const { data: created } = await api.post("/inventory/catalog-products", catalogBody);
     const shipheroProductId =
       created?.id != null && String(created.id).trim() !== "" ? String(created.id).trim() : null;
     await api.post(`/asns/${asn.value.id}/lines`, {
@@ -679,7 +697,9 @@ onUnmounted(() => {
           <div v-show="addPanelOpen" class="border-bottom">
             <AsnProductCatalogPanel
               :client-account-id="clientAccountId"
+              :asn-id="asnNumericId"
               :active="addPanelOpen"
+              :use-session-client-account="portalClientAccountId > 0"
               :busy="lineBusy"
               show-add-new-sku
               qty-label="Expected QTY"

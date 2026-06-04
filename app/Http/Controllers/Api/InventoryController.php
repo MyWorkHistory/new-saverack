@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Models\ClientAccount;
+use App\Models\ClientAccountAsn;
 use App\Models\ClientAccountAsnLine;
 use App\Models\ClientAccountOnDemandProduct;
 use App\Models\InventoryRestockSnapshot;
@@ -791,22 +792,14 @@ class InventoryController extends Controller
     {
         $validated = $request->validate([
             'client_account_id' => ['nullable', 'integer', 'exists:client_accounts,id'],
+            'asn_id' => ['nullable', 'integer', 'exists:client_account_asns,id'],
             'first' => ['nullable', 'integer', 'min:25', 'max:100'],
             'after' => ['nullable', 'string', 'max:500'],
             'query' => ['nullable', 'string', 'max:255'],
             'search_skip' => ['nullable', 'integer', 'min:0', 'max:500000'],
             'refresh' => ['nullable', 'boolean'],
         ]);
-        $clientAccountId = (int) ($validated['client_account_id'] ?? 0);
-        $user = $request->user();
-        if ($clientAccountId <= 0 && $user !== null && (int) ($user->client_account_id ?? 0) > 0) {
-            $clientAccountId = (int) $user->client_account_id;
-        }
-        if ($clientAccountId <= 0) {
-            throw ValidationException::withMessages([
-                'client_account_id' => ['Client account is required.'],
-            ]);
-        }
+        $clientAccountId = $this->resolveClientAccountIdForInventoryRequest($request, $validated);
         $graphqlFirst = isset($validated['first']) ? (int) $validated['first'] : 75;
         $after = isset($validated['after']) && is_string($validated['after']) ? $validated['after'] : null;
         $query = isset($validated['query']) && is_string($validated['query']) ? trim($validated['query']) : '';
@@ -849,19 +842,11 @@ class InventoryController extends Controller
     {
         $validated = $request->validate([
             'client_account_id' => ['nullable', 'integer', 'exists:client_accounts,id'],
+            'asn_id' => ['nullable', 'integer', 'exists:client_account_asns,id'],
             'sku' => ['required', 'string', 'max:255'],
             'name' => ['required', 'string', 'max:512'],
         ]);
-        $clientAccountId = (int) ($validated['client_account_id'] ?? 0);
-        $user = $request->user();
-        if ($clientAccountId <= 0 && $user !== null && (int) ($user->client_account_id ?? 0) > 0) {
-            $clientAccountId = (int) $user->client_account_id;
-        }
-        if ($clientAccountId <= 0) {
-            throw ValidationException::withMessages([
-                'client_account_id' => ['Client account is required.'],
-            ]);
-        }
+        $clientAccountId = $this->resolveClientAccountIdForInventoryRequest($request, $validated);
         $sku = trim((string) $validated['sku']);
         $name = trim((string) $validated['name']);
         try {
@@ -1329,6 +1314,38 @@ class InventoryController extends Controller
         $env = config('services.shiphero.customer_account_id');
 
         return (is_string($env) && trim($env) !== '') ? trim($env) : null;
+    }
+
+    /**
+     * Resolve CRM client account for inventory catalog/create from explicit id, ASN, or portal user.
+     *
+     * @param  array<string, mixed>  $validated
+     */
+    private function resolveClientAccountIdForInventoryRequest(Request $request, array $validated): int
+    {
+        $clientAccountId = (int) ($validated['client_account_id'] ?? 0);
+        $asnId = (int) ($validated['asn_id'] ?? 0);
+
+        if ($clientAccountId <= 0 && $asnId > 0) {
+            $asn = ClientAccountAsn::query()->find($asnId);
+            if ($asn !== null) {
+                Gate::forUser($request->user())->authorize('view', $asn);
+                $clientAccountId = (int) $asn->client_account_id;
+            }
+        }
+
+        $user = $request->user();
+        if ($clientAccountId <= 0 && $user instanceof User && (int) ($user->client_account_id ?? 0) > 0) {
+            $clientAccountId = (int) $user->client_account_id;
+        }
+
+        if ($clientAccountId <= 0) {
+            throw ValidationException::withMessages([
+                'client_account_id' => ['Client account is required.'],
+            ]);
+        }
+
+        return $clientAccountId;
     }
 
     /**

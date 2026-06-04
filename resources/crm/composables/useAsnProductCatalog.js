@@ -14,8 +14,13 @@ export function catalogKey(product) {
  *
  * @param {import('vue').MaybeRefOrGetter<number|string|null|undefined>} clientAccountIdSource
  * @param {import('vue').MaybeRefOrGetter<boolean>} [useSessionClientAccountSource]
+ * @param {import('vue').MaybeRefOrGetter<number|string|null|undefined>} [asnIdSource]
  */
-export function useAsnProductCatalog(clientAccountIdSource, useSessionClientAccountSource = () => false) {
+export function useAsnProductCatalog(
+  clientAccountIdSource,
+  useSessionClientAccountSource = () => false,
+  asnIdSource = () => 0,
+) {
   const toast = useToast();
 
   const catalog = ref([]);
@@ -40,6 +45,12 @@ export function useAsnProductCatalog(clientAccountIdSource, useSessionClientAcco
 
   function allowImplicitClientAccount() {
     return Boolean(unref(useSessionClientAccountSource));
+  }
+
+  function resolvedAsnId() {
+    const id = Number(unref(asnIdSource) || 0);
+
+    return id > 0 ? id : 0;
   }
 
   function catalogQty(product) {
@@ -86,7 +97,7 @@ export function useAsnProductCatalog(clientAccountIdSource, useSessionClientAcco
       catalogLoadingMore.value ||
       catalogLoading.value ||
       catalogSearchAutoLoading.value ||
-      (!resolvedAccountId() && !allowImplicitClientAccount())
+      (!resolvedAccountId() && !allowImplicitClientAccount() && !resolvedAsnId())
     ) {
       return;
     }
@@ -117,7 +128,8 @@ export function useAsnProductCatalog(clientAccountIdSource, useSessionClientAcco
 
   async function loadCatalogRows(reset, forceRefresh = false) {
     const accountId = resolvedAccountId();
-    if (!accountId && !allowImplicitClientAccount()) {
+    const asnId = resolvedAsnId();
+    if (!accountId && !allowImplicitClientAccount() && !asnId) {
       catalogLoadError.value =
         "Client account is required to load products. Reload the page or open the order from your Orders list.";
       return;
@@ -142,6 +154,9 @@ export function useAsnProductCatalog(clientAccountIdSource, useSessionClientAcco
       };
       if (accountId > 0) {
         params.client_account_id = accountId;
+      }
+      if (asnId > 0) {
+        params.asn_id = asnId;
       }
       const q = catalogSearchCommitted.value;
       if (q) {

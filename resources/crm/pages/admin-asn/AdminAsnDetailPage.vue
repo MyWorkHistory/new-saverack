@@ -92,7 +92,12 @@ const asnId = computed(() => String(route.params.id || ""));
 const isDraft = computed(() => String(asn.value?.status || "").toLowerCase() === "draft");
 const isPending = computed(() => String(asn.value?.status || "").toLowerCase() === "pending");
 const isNonCompliant = computed(() => String(asn.value?.status || "").toLowerCase() === "non_compliant");
-const clientAccountId = computed(() => Number(asn.value?.client_account_id || 0));
+const clientAccountId = computed(() => {
+  const fromAsn = Number(asn.value?.client_account_id ?? 0);
+  if (fromAsn > 0) return fromAsn;
+  return Number(route.query.client_account_id ?? 0);
+});
+const asnNumericId = computed(() => Number(asn.value?.id ?? asnId.value ?? 0));
 const canDeleteAsn = computed(() => {
   const s = String(asn.value?.status || "").toLowerCase();
   return s === "draft" || s === "pending";
@@ -112,12 +117,13 @@ const STATUS_OPTIONS = [
 
 function inventoryDetailTo(sku) {
   const s = String(sku || "").trim();
-  const accountId = Number(asn.value?.client_account_id || 0);
-  if (!s || !accountId) return null;
+  if (!s) return null;
+  const accountId = clientAccountId.value;
+  const query = accountId > 0 ? { client_account_id: String(accountId) } : {};
   return {
     name: "inventory-detail",
     params: { sku: s },
-    query: { client_account_id: String(accountId) },
+    query,
   };
 }
 
@@ -300,6 +306,12 @@ async function loadAsn() {
     asn.value = data;
     syncDraftsFromAsn();
     resetReceiveRejectDrafts(data.lines);
+    const loadedAccountId = Number(data?.client_account_id ?? 0);
+    if (loadedAccountId > 0 && String(route.query.client_account_id || "") !== String(loadedAccountId)) {
+      router.replace({
+        query: { ...route.query, client_account_id: String(loadedAccountId) },
+      });
+    }
     setCrmPageMeta({
       title: `Save Rack | ${formatAsnDisplay(data.asn_number)}`,
       description: "ASN receiving detail.",
@@ -657,18 +669,22 @@ async function submitAddNewSku() {
     toast.error("Enter expected quantity.");
     return;
   }
-  const accountId = Number(asn.value?.client_account_id || 0);
-  if (accountId <= 0) {
+  const accountId = clientAccountId.value;
+  const asnIdForApi = asnNumericId.value;
+  if (accountId <= 0 && asnIdForApi <= 0) {
     toast.error("Client account is required to create a SKU.");
     return;
   }
   addNewSkuBusy.value = true;
   try {
-    const { data: created } = await api.post("/inventory/catalog-products", {
-      sku,
-      name,
-      client_account_id: accountId,
-    });
+    const catalogBody = { sku, name };
+    if (accountId > 0) {
+      catalogBody.client_account_id = accountId;
+    }
+    if (asnIdForApi > 0) {
+      catalogBody.asn_id = asnIdForApi;
+    }
+    const { data: created } = await api.post("/inventory/catalog-products", catalogBody);
     await api.post(
       `/asns/${asnId.value}/lines`,
       buildAsnLinePayload(
@@ -913,6 +929,7 @@ onUnmounted(() => {
           <div v-show="addPanelOpen" class="border-bottom">
             <AsnProductCatalogPanel
               :client-account-id="clientAccountId"
+              :asn-id="asnNumericId"
               :active="addPanelOpen"
               :busy="lineBusy"
               show-add-new-sku
@@ -935,7 +952,35 @@ onUnmounted(() => {
               <tbody>
                 <tr v-for="line in asn.lines || []" :key="line.id">
                   <td class="order-detail-page__items-col">
-                    <div class="order-detail-page__item-cell">
+                    <a
+                      v-if="inventoryDetailHref(line.sku)"
+                      :href="inventoryDetailHref(line.sku)"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      class="order-detail-page__item-cell order-detail-page__item-cell--link text-decoration-none text-body"
+                      :title="line.name ? String(line.name) : undefined"
+                      :aria-label="line.sku ? `View inventory for SKU ${line.sku} in new tab` : undefined"
+                      @click="openInventoryInNewTab(line, $event)"
+                    >
+                      <img
+                        v-if="line.image_url"
+                        :src="line.image_url"
+                        alt=""
+                        class="asn-line-thumb"
+                        loading="lazy"
+                      />
+                      <div v-else class="asn-line-thumb asn-line-thumb--empty" aria-hidden="true" />
+                      <div class="order-detail-page__item-copy">
+                        <div class="order-detail-page__item-name" :title="line.name">{{ line.name || "—" }}</div>
+                        <div
+                          class="order-detail-page__item-sku user-inv-table__sku-link"
+                          :title="line.sku ? `SKU ${line.sku}` : undefined"
+                        >
+                          SKU {{ line.sku || "—" }}
+                        </div>
+                      </div>
+                    </a>
+                    <div v-else class="order-detail-page__item-cell">
                       <img
                         v-if="line.image_url"
                         :src="line.image_url"

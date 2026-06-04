@@ -17,9 +17,15 @@ const props = defineProps({
   createSkuRoute: { type: Object, default: null },
   /** Portal: omit client_account_id on API; server uses the signed-in account. */
   useSessionClientAccount: { type: Boolean, default: false },
+  /** When set, catalog/create APIs resolve the client account from this ASN (staff admin). */
+  asnId: { type: [Number, String], default: 0 },
 });
 
 const resolvedAccountId = computed(() => Number(props.clientAccountId || 0));
+const resolvedAsnId = computed(() => Number(props.asnId || 0));
+const canLoadCatalog = computed(
+  () => resolvedAccountId.value > 0 || props.useSessionClientAccount || resolvedAsnId.value > 0,
+);
 
 const emit = defineEmits(["add", "add-new-sku"]);
 
@@ -41,14 +47,24 @@ const {
   loadMoreCatalog,
   loadCatalogRows,
   refreshCatalogProducts,
-} = useAsnProductCatalog(() => resolvedAccountId.value, () => props.useSessionClientAccount);
+} = useAsnProductCatalog(
+  () => resolvedAccountId.value,
+  () => props.useSessionClientAccount,
+  () => resolvedAsnId.value,
+);
 
 watch(
-  () => [props.active, resolvedAccountId.value, props.permissionDeniedMessage, props.useSessionClientAccount],
-  ([active, accountId, denied, useSession]) => {
+  () => [
+    props.active,
+    resolvedAccountId.value,
+    resolvedAsnId.value,
+    props.permissionDeniedMessage,
+    props.useSessionClientAccount,
+  ],
+  ([active, accountId, asnId, denied, useSession]) => {
     if (!active) return;
     if (denied) return;
-    if (!Number(accountId || 0) && !useSession) return;
+    if (!Number(accountId || 0) && !useSession && !Number(asnId || 0)) return;
     resetCatalogSearchState();
     loadCatalogRows(true);
   },
@@ -162,8 +178,8 @@ watch(
               </div>
             </div>
             <div v-if="catalog.length === 0" class="p-3 small text-secondary">
-              <template v-if="!resolvedAccountId && !useSessionClientAccount">
-                Client account is required to load products. Open this order from the Orders list with a client account selected.
+              <template v-if="!canLoadCatalog">
+                Client account is required to load products. Reload the ASN or select a client account when creating it.
               </template>
               <template v-else-if="catalogSearchCommitted">
                 No matches.

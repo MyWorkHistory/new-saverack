@@ -790,6 +790,7 @@ class InventoryController extends Controller
 
     public function asnProductCatalog(Request $request): JsonResponse
     {
+        $this->normalizeInventoryAccountRequest($request);
         $validated = $request->validate([
             'client_account_id' => ['nullable', 'integer', 'exists:client_accounts,id'],
             'asn_id' => ['nullable', 'integer', 'exists:client_account_asns,id'],
@@ -1321,10 +1322,23 @@ class InventoryController extends Controller
      *
      * @param  array<string, mixed>  $validated
      */
+    /**
+     * Drop zero/empty account ids so nullable exists rules and ASN fallback behave correctly.
+     */
+    private function normalizeInventoryAccountRequest(Request $request): void
+    {
+        if ($request->has('client_account_id') && (int) $request->input('client_account_id') <= 0) {
+            $request->merge(['client_account_id' => null]);
+        }
+        if ($request->has('asn_id') && (int) $request->input('asn_id') <= 0) {
+            $request->merge(['asn_id' => null]);
+        }
+    }
+
     private function resolveClientAccountIdForInventoryRequest(Request $request, array $validated): int
     {
-        $clientAccountId = (int) ($validated['client_account_id'] ?? 0);
-        $asnId = (int) ($validated['asn_id'] ?? 0);
+        $clientAccountId = (int) ($request->input('client_account_id') ?? $validated['client_account_id'] ?? 0);
+        $asnId = (int) ($request->input('asn_id') ?? $validated['asn_id'] ?? 0);
 
         if ($clientAccountId <= 0 && $asnId > 0) {
             $asn = ClientAccountAsn::query()->find($asnId);

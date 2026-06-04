@@ -77,8 +77,9 @@ const clientAccountId = computed(() => {
   if (fromAsn > 0) return fromAsn;
   return Number(route.query.client_account_id ?? 0);
 });
-const asnNumericId = computed(() => Number(asn.value?.id ?? asnId.value ?? 0));
 const asnId = computed(() => String(route.params.id || ""));
+const asnRouteId = computed(() => Number(asnId.value || 0));
+const asnNumericId = computed(() => asnRouteId.value || Number(asn.value?.id ?? 0));
 
 const isDraft = computed(() => String(asn.value?.status || "").toLowerCase() === "draft");
 const isPending = computed(() => String(asn.value?.status || "").toLowerCase() === "pending");
@@ -134,6 +135,12 @@ function normalizeAsnStatusPayload(data) {
     data.status = s;
   } else {
     data.status = "pending";
+  }
+  const accountId = Number(
+    data.client_account_id ?? data.client_account?.id ?? data.clientAccountId ?? 0,
+  );
+  if (accountId > 0) {
+    data.client_account_id = accountId;
   }
 }
 
@@ -277,19 +284,28 @@ async function submitAddNewSku() {
   }
   addNewSkuBusy.value = true;
   try {
-    const catalogBody = { sku, name };
+    const asnIdForApi = asnRouteId.value || asnNumericId.value;
+    const catalogBody = { sku, name, asn_id: asnIdForApi };
     const accountId = clientAccountId.value;
-    const asnIdForApi = asnNumericId.value;
     if (accountId > 0) {
       catalogBody.client_account_id = accountId;
     }
-    if (asnIdForApi > 0) {
-      catalogBody.asn_id = asnIdForApi;
+    let created = null;
+    try {
+      const { data } = await api.post("/inventory/catalog-products", catalogBody);
+      created = data;
+    } catch (catalogErr) {
+      const status = catalogErr?.response?.status;
+      const isAccountScope =
+        status === 422 &&
+        catalogErr?.response?.data?.errors?.client_account_id?.length;
+      if (!isAccountScope) {
+        throw catalogErr;
+      }
     }
-    const { data: created } = await api.post("/inventory/catalog-products", catalogBody);
     const shipheroProductId =
       created?.id != null && String(created.id).trim() !== "" ? String(created.id).trim() : null;
-    await api.post(`/asns/${asn.value.id}/lines`, {
+    await api.post(`/asns/${asnIdForApi}/lines`, {
       shiphero_product_id: shipheroProductId,
       sku,
       name,
@@ -697,7 +713,7 @@ onUnmounted(() => {
           <div v-show="addPanelOpen" class="border-bottom">
             <AsnProductCatalogPanel
               :client-account-id="clientAccountId"
-              :asn-id="asnNumericId"
+              :asn-id="asnRouteId || asnNumericId"
               :active="addPanelOpen"
               :use-session-client-account="portalClientAccountId > 0"
               :busy="lineBusy"

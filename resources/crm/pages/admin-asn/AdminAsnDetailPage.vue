@@ -89,15 +89,32 @@ const LINE_MENU_W = 200;
 const LINE_MENU_H = 160;
 
 const asnId = computed(() => String(route.params.id || ""));
+const asnRouteId = computed(() => Number(asnId.value || 0));
 const isDraft = computed(() => String(asn.value?.status || "").toLowerCase() === "draft");
 const isPending = computed(() => String(asn.value?.status || "").toLowerCase() === "pending");
 const isNonCompliant = computed(() => String(asn.value?.status || "").toLowerCase() === "non_compliant");
+
+function normalizeAsnPayload(data) {
+  if (!data || typeof data !== "object") return data;
+  const accountId = Number(
+    data.client_account_id ?? data.client_account?.id ?? data.clientAccountId ?? 0,
+  );
+  if (accountId > 0) {
+    data.client_account_id = accountId;
+  }
+  const id = Number(data.id ?? asnRouteId.value ?? 0);
+  if (id > 0) {
+    data.id = id;
+  }
+  return data;
+}
+
 const clientAccountId = computed(() => {
   const fromAsn = Number(asn.value?.client_account_id ?? 0);
   if (fromAsn > 0) return fromAsn;
   return Number(route.query.client_account_id ?? 0);
 });
-const asnNumericId = computed(() => Number(asn.value?.id ?? asnId.value ?? 0));
+const asnNumericId = computed(() => asnRouteId.value || Number(asn.value?.id ?? 0));
 const canDeleteAsn = computed(() => {
   const s = String(asn.value?.status || "").toLowerCase();
   return s === "draft" || s === "pending";
@@ -303,7 +320,7 @@ async function loadAsn() {
   loading.value = true;
   try {
     const { data } = await api.get(`/admin/asns/${asnId.value}`);
-    asn.value = data;
+    asn.value = normalizeAsnPayload(data);
     syncDraftsFromAsn();
     resetReceiveRejectDrafts(data.lines);
     const loadedAccountId = Number(data?.client_account_id ?? 0);
@@ -335,7 +352,7 @@ async function enrichSpecs(force = false) {
       params: force ? { force: 1 } : {},
     });
     if (data.asn) {
-      asn.value = data.asn;
+      asn.value = normalizeAsnPayload(data.asn);
     }
     toast.success(force ? "Product specs refreshed." : "Product specs loaded.");
   } catch (e) {
@@ -670,23 +687,32 @@ async function submitAddNewSku() {
     return;
   }
   const accountId = clientAccountId.value;
-  const asnIdForApi = asnNumericId.value;
-  if (accountId <= 0 && asnIdForApi <= 0) {
-    toast.error("Client account is required to create a SKU.");
+  const asnIdForApi = asnRouteId.value || asnNumericId.value;
+  if (asnIdForApi <= 0) {
+    toast.error("ASN is required to add a SKU.");
     return;
   }
   addNewSkuBusy.value = true;
   try {
-    const catalogBody = { sku, name };
+    const catalogBody = { sku, name, asn_id: asnIdForApi };
     if (accountId > 0) {
       catalogBody.client_account_id = accountId;
     }
-    if (asnIdForApi > 0) {
-      catalogBody.asn_id = asnIdForApi;
+    let created = null;
+    try {
+      const { data } = await api.post("/inventory/catalog-products", catalogBody);
+      created = data;
+    } catch (catalogErr) {
+      const status = catalogErr?.response?.status;
+      const isAccountScope =
+        status === 422 &&
+        catalogErr?.response?.data?.errors?.client_account_id?.length;
+      if (!isAccountScope) {
+        throw catalogErr;
+      }
     }
-    const { data: created } = await api.post("/inventory/catalog-products", catalogBody);
     await api.post(
-      `/asns/${asnId.value}/lines`,
+      `/asns/${asnIdForApi}/lines`,
       buildAsnLinePayload(
         {
           sku,
@@ -929,7 +955,7 @@ onUnmounted(() => {
           <div v-show="addPanelOpen" class="border-bottom">
             <AsnProductCatalogPanel
               :client-account-id="clientAccountId"
-              :asn-id="asnNumericId"
+              :asn-id="asnRouteId || asnNumericId"
               :active="addPanelOpen"
               :busy="lineBusy"
               show-add-new-sku

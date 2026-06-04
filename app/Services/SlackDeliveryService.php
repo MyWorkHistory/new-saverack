@@ -15,7 +15,8 @@ class SlackDeliveryService
      *     icon_emoji?: string|null,
      *     icon_url?: string|null,
      *     attachments?: array<int, array<string, mixed>>|null,
-     *     blocks?: array<int, array<string, mixed>>|null
+     *     blocks?: array<int, array<string, mixed>>|null,
+     *     prefer_bot?: bool|null
      * }  $options
      * @return array{method: string, channel: string, ts: string|null}
      */
@@ -39,8 +40,10 @@ class SlackDeliveryService
             $blocks = null;
         }
 
+        $preferBot = ! empty($options['prefer_bot']) && $this->hasBotToken();
+
         $webhookUrl = $this->normalizeWebhookUrl((string) config('billing.slack.webhook_url', ''));
-        if ($webhookUrl !== '') {
+        if (! $preferBot && $webhookUrl !== '') {
             $this->postViaWebhook($webhookUrl, $channel, $text, $username, $iconEmoji, $attachments, $iconUrl, $blocks);
 
             return ['method' => 'webhook', 'channel' => $channel, 'ts' => null];
@@ -69,6 +72,9 @@ class SlackDeliveryService
         if ($attachments !== null && $attachments !== []) {
             $payload['attachments'] = $attachments;
         }
+        if ($blocks !== null && $blocks !== []) {
+            $payload['blocks'] = $blocks;
+        }
 
         $response = Http::withToken($token)
             ->acceptJson()
@@ -94,6 +100,11 @@ class SlackDeliveryService
     public function usesIncomingWebhook(): bool
     {
         return $this->normalizeWebhookUrl((string) config('billing.slack.webhook_url', '')) !== '';
+    }
+
+    public function hasBotToken(): bool
+    {
+        return $this->normalizeBotToken((string) config('billing.slack.bot_token', '')) !== '';
     }
 
     public function normalizeChannelName(string $channel): string

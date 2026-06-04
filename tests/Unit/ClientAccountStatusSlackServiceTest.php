@@ -40,7 +40,7 @@ final class ClientAccountStatusSlackServiceTest extends TestCase
         $this->assertNotNull($payload);
         $this->assertSame('Shipping Status Update', $payload['username']);
         $this->assertSame(
-            'https://app.saverack.com/api/slack/status-icons/shipping-status-paused.png',
+            'https://app.saverack.com/slack-icons/shipping-status-paused.png',
             strtok($payload['icon_url'], '?')
         );
         $this->assertSame(
@@ -70,7 +70,7 @@ final class ClientAccountStatusSlackServiceTest extends TestCase
 
         $this->assertNotNull($payload);
         $this->assertStringStartsWith(
-            'https://app.saverack.com/api/slack/status-icons/shipping-status-live.png',
+            'https://app.saverack.com/slack-icons/shipping-status-live.png',
             $payload['icon_url']
         );
         $this->assertSame(
@@ -80,35 +80,46 @@ final class ClientAccountStatusSlackServiceTest extends TestCase
         $this->assertStringNotContainsString('Shipping Status Update', $payload['text']);
     }
 
-    public function test_webhook_delivery_uses_username_and_icon_url_only(): void
+    public function test_webhook_delivery_uses_username_icon_url_and_truck_block(): void
     {
-        config(['billing.slack.webhook_url' => 'https://hooks.slack.com/services/T/B/x']);
+        config([
+            'billing.slack.webhook_url' => 'https://hooks.slack.com/services/T/B/x',
+            'billing.slack.bot_token' => null,
+            'billing.slack.status_prefer_bot' => false,
+        ]);
 
         $service = app(ClientAccountStatusSlackService::class);
         $reflection = new \ReflectionClass($service);
         $method = $reflection->getMethod('deliveryOptions');
         $method->setAccessible(true);
 
+        $text = "Demo is set to Live.\nUpdated by: Audi";
+        $iconUrl = 'https://app.saverack.com/slack-icons/shipping-status-live.png?v=1';
         $result = $method->invoke(
             $service,
-            "Demo is set to Live.\nUpdated by: Audi",
+            $text,
             'Shipping Status Update',
-            'https://app.saverack.com/api/slack/status-icons/shipping-status-live.png?v=1'
+            $iconUrl,
+            'Shipping live'
         );
 
         $this->assertSame('Shipping Status Update', $result['username']);
-        $this->assertSame("Demo is set to Live.\nUpdated by: Audi", $result['text']);
-        $this->assertSame(
-            'https://app.saverack.com/api/slack/status-icons/shipping-status-live.png',
-            strtok((string) $result['slack']['icon_url'], '?')
-        );
-        $this->assertArrayNotHasKey('blocks', $result['slack']);
-        $this->assertArrayNotHasKey('attachments', $result['slack']);
+        $this->assertSame($text, $result['text']);
+        $this->assertSame($iconUrl, $result['slack']['icon_url']);
+        $section = $result['slack']['blocks'][0];
+        $this->assertSame('section', $section['type']);
+        $this->assertSame($text, $section['text']['text']);
+        $this->assertSame($iconUrl, $section['accessory']['image_url']);
+        $this->assertSame('Shipping live', $section['accessory']['alt_text']);
     }
 
-    public function test_bot_delivery_uses_attachment_author_icon_not_body_image(): void
+    public function test_bot_delivery_prefers_bot_with_blocks_when_token_set(): void
     {
-        config(['billing.slack.webhook_url' => null, 'billing.slack.bot_token' => 'xoxb-test']);
+        config([
+            'billing.slack.webhook_url' => 'https://hooks.slack.com/services/T/B/x',
+            'billing.slack.bot_token' => 'xoxb-test',
+            'billing.slack.status_prefer_bot' => true,
+        ]);
 
         $service = app(ClientAccountStatusSlackService::class);
         $reflection = new \ReflectionClass($service);
@@ -116,21 +127,19 @@ final class ClientAccountStatusSlackServiceTest extends TestCase
         $method->setAccessible(true);
 
         $text = "Demo is set to Paused.\nUpdated by: Audi";
-        $iconUrl = 'https://app.saverack.com/api/slack/status-icons/shipping-status-paused.png?v=1';
+        $iconUrl = 'https://app.saverack.com/slack-icons/shipping-status-paused.png?v=1';
         $result = $method->invoke(
             $service,
             $text,
             'Shipping Status Update',
-            $iconUrl
+            $iconUrl,
+            'Shipping paused'
         );
 
         $this->assertSame('Save Rack', $result['username']);
-        $this->assertArrayHasKey('attachments', $result['slack']);
-        $attachment = $result['slack']['attachments'][0];
-        $this->assertSame('Shipping Status Update', $attachment['author_name']);
-        $this->assertSame($iconUrl, $attachment['author_icon']);
-        $this->assertSame($text, $attachment['text']);
-        $this->assertArrayNotHasKey('blocks', $result['slack']);
+        $this->assertTrue($result['slack']['prefer_bot']);
+        $this->assertArrayHasKey('blocks', $result['slack']);
+        $this->assertArrayNotHasKey('attachments', $result['slack']);
     }
 
     public function test_other_status_changes_do_not_build_slack_payload(): void

@@ -59,7 +59,8 @@ class ClientAccountStatusSlackService
         $text = (string) ($payload['text'] ?? '');
         $username = (string) ($payload['username'] ?? self::USERNAME);
         $iconUrl = (string) ($payload['icon_url'] ?? '');
-        $options = $this->deliveryOptions($text, $username, $iconUrl);
+        $iconAlt = (string) ($payload['icon_alt'] ?? 'Shipping status');
+        $options = $this->deliveryOptions($text, $username, $iconUrl, $iconAlt);
 
         try {
             $result = $this->slack->post(
@@ -89,19 +90,33 @@ class ClientAccountStatusSlackService
     }
 
     /**
-     * Webhook: custom username + icon_url avatar + message text (once).
-     * Bot: attachment author row with small icon; body text only in attachment.
+     * Webhook: username + icon_url + section block with truck accessory (small, beside text).
+     * Bot (preferred when xoxb is set): same blocks; icon_url still sent for clients that honor it.
      *
      * @return array{text: string, username: string, slack: array<string, mixed>}
      */
-    private function deliveryOptions(string $text, string $username, string $iconUrl): array
+    private function deliveryOptions(string $text, string $username, string $iconUrl, string $iconAlt): array
     {
-        if ($this->slack->usesIncomingWebhook()) {
-            $slack = [];
-            if ($iconUrl !== '') {
-                $slack['icon_url'] = $iconUrl;
-            }
+        $blocks = $this->statusBlocks($text, $iconUrl, $iconAlt);
+        $preferBot = (bool) config('billing.slack.status_prefer_bot', true);
 
+        $slack = [
+            'blocks' => $blocks,
+            'prefer_bot' => $preferBot,
+        ];
+        if ($iconUrl !== '') {
+            $slack['icon_url'] = $iconUrl;
+        }
+
+        if ($preferBot && $this->slack->hasBotToken()) {
+            return [
+                'text' => $text,
+                'username' => 'Save Rack',
+                'slack' => $slack,
+            ];
+        }
+
+        if ($this->slack->usesIncomingWebhook()) {
             return [
                 'text' => $text,
                 'username' => $username,
@@ -109,28 +124,39 @@ class ClientAccountStatusSlackService
             ];
         }
 
-        $slack = [];
-        if ($iconUrl !== '') {
-            $slack['attachments'] = [
-                [
-                    'fallback' => $username."\n".$text,
-                    'author_name' => $username,
-                    'author_icon' => $iconUrl,
-                    'text' => $text,
-                    'mrkdwn_in' => ['text'],
-                ],
-            ];
-        }
-
         return [
-            'text' => $username,
+            'text' => $text,
             'username' => 'Save Rack',
             'slack' => $slack,
         ];
     }
 
     /**
-     * @return array{text: string, username: string, icon_url: string}|null
+     * @return array<int, array<string, mixed>>
+     */
+    private function statusBlocks(string $text, string $iconUrl, string $iconAlt): array
+    {
+        $section = [
+            'type' => 'section',
+            'text' => [
+                'type' => 'mrkdwn',
+                'text' => $text,
+            ],
+        ];
+
+        if ($iconUrl !== '') {
+            $section['accessory'] = [
+                'type' => 'image',
+                'image_url' => $iconUrl,
+                'alt_text' => $iconAlt,
+            ];
+        }
+
+        return [$section];
+    }
+
+    /**
+     * @return array{text: string, username: string, icon_url: string, icon_alt: string}|null
      */
     public function buildMessagePayload(
         ClientAccount $account,
@@ -141,11 +167,11 @@ class ClientAccountStatusSlackService
         $newStatus = strtolower(trim($newStatus));
 
         if ($newStatus === ClientAccount::STATUS_PAUSED) {
-            return $this->buildStatusPayload($account, 'Paused', 'Set Pause in Shiphero', self::ICON_PAUSED, $actor);
+            return $this->buildStatusPayload($account, 'Paused', 'Set Pause in Shiphero', self::ICON_PAUSED, 'Shipping paused', $actor);
         }
 
         if ($newStatus === ClientAccount::STATUS_ACTIVE) {
-            return $this->buildStatusPayload($account, 'Live', 'Set Live in Shiphero', self::ICON_LIVE, $actor);
+            return $this->buildStatusPayload($account, 'Live', 'Set Live in Shiphero', self::ICON_LIVE, 'Shipping live', $actor);
         }
 
         return null;
@@ -163,13 +189,14 @@ class ClientAccountStatusSlackService
     }
 
     /**
-     * @return array{text: string, username: string, icon_url: string}
+     * @return array{text: string, username: string, icon_url: string, icon_alt: string}
      */
     private function buildStatusPayload(
         ClientAccount $account,
         string $statusLabel,
         string $shipheroLinkLabel,
         string $iconFilename,
+        string $iconAlt,
         ?User $actor
     ): array {
         $lines = [
@@ -182,6 +209,7 @@ class ClientAccountStatusSlackService
             'text' => implode("\n", $lines),
             'username' => self::USERNAME,
             'icon_url' => $this->slackIconUrl($iconFilename),
+            'icon_alt' => $iconAlt,
         ];
     }
 
@@ -209,6 +237,15 @@ class ClientAccountStatusSlackService
 
     private function slackIconUrl(string $filename): string
     {
+        if ($filename === self::ICON_LIVE) {
+            $explicit = config('billing.slack.status_icon_live_url');
+        } else {
+            $explicit = config('billing.slack.status_icon_paused_url');
+        }
+        if (is_string($explicit) && trim($explicit) !== '') {
+            return trim($explicit);
+        }
+
         $path = public_path('images/slack/'.$filename);
         $version = is_file($path) ? (string) filemtime($path) : '1';
 
@@ -224,6 +261,6 @@ class ClientAccountStatusSlackService
             $base = 'https://'.substr($base, 7);
         }
 
-        return $base.'/api/slack/status-icons/'.$filename.'?v='.$version;
+        return $base.'/slack-icons/'.$filename.'?v='.$version;
     }
 }

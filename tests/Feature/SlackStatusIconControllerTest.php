@@ -26,4 +26,12 @@ class SlackStatusIconControllerTest extends TestCase
     {
         $this->get('/api/slack/status-icons/other.png')->assertNotFound();
     }
+
+    public function test_web_route_serves_live_icon(): void
+    {
+        $response = $this->get('/slack-icons/shipping-status-live.png');
+
+        $response->assertOk();
+        $response->assertHeader('Content-Type', 'image/png');
+    }
 }

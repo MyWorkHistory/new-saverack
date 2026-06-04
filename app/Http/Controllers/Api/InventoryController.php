@@ -22,6 +22,7 @@ use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Gate;
+use Illuminate\Support\Facades\Storage;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\ValidationException;
 use RuntimeException;
@@ -457,6 +458,121 @@ class InventoryController extends Controller
                 'message' => config('app.debug')
                     ? $e->getMessage()
                     : 'Could not reach ShipHero. Check SHIPHERO_* in .env and server logs.',
+            ], 502);
+        }
+    }
+
+    public function uploadProductImage(Request $request, string $sku): JsonResponse
+    {
+        $user = $request->user();
+        if (! $user instanceof User) {
+            abort(401);
+        }
+
+        $portalAccountId = (int) ($user->client_account_id ?? 0);
+        $isPortalUser = $portalAccountId > 0;
+
+        if ($isPortalUser) {
+            Gate::authorize('inventory.view');
+        } else {
+            Gate::authorize('inventory.update');
+        }
+
+        $validated = $request->validate([
+            'client_account_id' => [
+                $isPortalUser ? 'nullable' : 'required',
+                'integer',
+                'exists:client_accounts,id',
+            ],
+            'image' => ['required', 'file', 'max:5120', 'mimes:jpg,jpeg,png,gif,webp'],
+        ]);
+
+        $clientAccountId = $isPortalUser
+            ? $portalAccountId
+            : (int) $validated['client_account_id'];
+
+        if ($clientAccountId <= 0) {
+            throw ValidationException::withMessages([
+                'client_account_id' => ['Client account is required to update product images.'],
+            ]);
+        }
+
+        $file = $request->file('image');
+        if ($file === null) {
+            return response()->json(['message' => 'No image uploaded.'], 422);
+        }
+
+        $sku = trim($sku);
+        if ($sku === '') {
+            return response()->json(['message' => 'SKU is required.'], 422);
+        }
+
+        $path = null;
+        try {
+            $shipheroCustomerId = $this->resolveShipHeroCustomerAccountId($clientAccountId, $request);
+            $path = $file->store('product-images', 'public');
+            $publicUrl = $this->buildPublicUrlForStoredProductImage($path);
+            $this->assertProductImageUrlAcceptableForShipHero($publicUrl);
+
+            $updated = $this->inventory->updateProductImage($shipheroCustomerId, $sku, $publicUrl);
+
+            $product = $this->inventory->getProductDetailBySku($sku, null, $shipheroCustomerId, true);
+            if (is_array($product)) {
+                $this->detailCache->putProduct($clientAccountId, $sku, $product);
+                $this->inventory->upsertCreatedProductIndex($clientAccountId, $shipheroCustomerId, [
+                    'id' => (string) ($product['id'] ?? $updated['id'] ?? ''),
+                    'sku' => (string) ($product['sku'] ?? $sku),
+                    'name' => (string) ($product['name'] ?? ''),
+                    'image_url' => $product['image_url'] ?? $updated['image_url'] ?? $publicUrl,
+                ]);
+            } else {
+                $this->inventory->upsertCreatedProductIndex($clientAccountId, $shipheroCustomerId, [
+                    'id' => (string) ($updated['id'] ?? ''),
+                    'sku' => (string) ($updated['sku'] ?? $sku),
+                    'name' => '',
+                    'image_url' => $updated['image_url'] ?? $publicUrl,
+                ]);
+            }
+
+            return response()->json([
+                'message' => 'Product image updated in ShipHero.',
+                'image_url' => $updated['image_url'] ?? $publicUrl,
+                'product' => is_array($product) ? $product : null,
+            ]);
+        } catch (ValidationException $e) {
+            if ($path !== null) {
+                try {
+                    Storage::disk('public')->delete($path);
+                } catch (Throwable $cleanupIgnored) {
+                    // ignore cleanup failures
+                }
+            }
+
+            throw $e;
+        } catch (RuntimeException $e) {
+            if ($path !== null) {
+                try {
+                    Storage::disk('public')->delete($path);
+                } catch (Throwable $cleanupIgnored) {
+                    // ignore cleanup failures
+                }
+            }
+
+            return response()->json(['message' => $e->getMessage()], 502);
+        } catch (Throwable $e) {
+            if ($path !== null) {
+                try {
+                    Storage::disk('public')->delete($path);
+                } catch (Throwable $cleanupIgnored) {
+                    // ignore cleanup failures
+                }
+            }
+            report($e);
+
+            return response()->json([
+                'message' => config('app.debug')
+                    ? $e->getMessage()
+                    : 'Could not update product image in ShipHero.',
             ], 502);
         }
     }
@@ -1496,6 +1612,54 @@ class InventoryController extends Controller
                 'ms' => (int) round((microtime(true) - $startedAt) * 1000),
                 'error' => $e->getMessage(),
             ];
+        }
+    }
+
+    private function buildPublicUrlForStoredProductImage(string $path): string
+    {
+        $override = trim((string) config('services.shiphero.attachment_public_base_url', ''));
+        if ($override !== '') {
+            return rtrim($override, '/').'/storage/'.str_replace('\\', '/', $path);
+        }
+        $relative = Storage::disk('public')->url($path);
+
+        return (is_string($relative) && (str_starts_with($relative, 'http://') || str_starts_with($relative, 'https://')))
+            ? $relative
+            : url($relative);
+    }
+
+    /**
+     * @throws ValidationException
+     */
+    private function assertProductImageUrlAcceptableForShipHero(string $publicUrl): void
+    {
+        $scheme = parse_url($publicUrl, PHP_URL_SCHEME);
+        $host = parse_url($publicUrl, PHP_URL_HOST);
+        if (! is_string($scheme) || $scheme === '') {
+            throw ValidationException::withMessages([
+                'image' => ['Could not build a valid image URL. Set APP_URL, filesystems.disks.public.url, or SHIPHERO_ATTACHMENT_PUBLIC_BASE_URL.'],
+            ]);
+        }
+        if (strtolower($scheme) !== 'https') {
+            throw ValidationException::withMessages([
+                'image' => ['ShipHero requires an HTTPS URL so it can download the image. Set APP_URL to an https origin or SHIPHERO_ATTACHMENT_PUBLIC_BASE_URL to your public CRM base.'],
+            ]);
+        }
+        if (! is_string($host) || $host === '') {
+            throw ValidationException::withMessages([
+                'image' => ['Image URL is missing a hostname.'],
+            ]);
+        }
+        $hostLower = strtolower($host);
+        if ($hostLower === 'localhost' || str_ends_with($hostLower, '.localhost')) {
+            throw ValidationException::withMessages([
+                'image' => ['ShipHero cannot reach '.$host.' from the internet. Use a public https host for product images.'],
+            ]);
+        }
+        if ($hostLower === '127.0.0.1' || str_starts_with($hostLower, '127.')) {
+            throw ValidationException::withMessages([
+                'image' => ['ShipHero cannot reach '.$host.' from the internet. Use a public https host for product images.'],
+            ]);
         }
     }
 }

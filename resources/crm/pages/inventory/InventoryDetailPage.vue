@@ -22,9 +22,7 @@ const usePortalDetailLayout = computed(
 const inventoryListRoute = computed(() =>
   isPortalView.value ? "/users/inventory" : "/admin/inventory",
 );
-const inventoryListBreadcrumbLabel = computed(() =>
-  isPortalView.value ? "Products" : "Inventory",
-);
+const inventoryListBreadcrumbLabel = computed(() => "Inventory");
 const canManageInventoryLocations = computed(() => !isPortalView.value);
 
 const { markRefreshed, lastRefreshedLabel } = usePortalLastRefreshed();
@@ -32,6 +30,8 @@ const { markRefreshed, lastRefreshedLabel } = usePortalLastRefreshed();
 const loading = ref(true);
 const refreshing = ref(false);
 const barcodePdfLoading = ref(false);
+const imageUploadBusy = ref(false);
+const imageInputRef = ref(null);
 const saving = ref(false);
 const product = ref(null);
 const productLoadError = ref("");
@@ -103,6 +103,27 @@ const isKitProduct = computed(() => {
   const p = product.value;
   if (!p) return false;
   return Boolean(p.kit || p.kit_build);
+});
+
+const shipheroProductUrl = computed(() => {
+  const legacyId = Number(product.value?.shiphero_legacy_id || 0);
+  if (legacyId <= 0) return null;
+  return `https://app.shiphero.com/dashboard/products/details/${legacyId}`;
+});
+
+const canUploadProductImage = computed(() => {
+  const u = crmUser.value;
+  if (!u || !product.value?.sku) return false;
+  if (isPortalView.value) {
+    return Array.isArray(u.permission_keys) && u.permission_keys.includes("inventory.view");
+  }
+  return Array.isArray(u.permission_keys) && u.permission_keys.includes("inventory.update");
+});
+
+const detailClientAccountId = computed(() => {
+  const portalAccountId = Number(crmUser.value?.client_account_id || 0);
+  const queryAccountId = Number(route.query.client_account_id || 0);
+  return isPortalView.value ? portalAccountId || queryAccountId : queryAccountId || portalAccountId;
 });
 
 function sectionActionLabel({ loading, loaded }) {
@@ -181,17 +202,10 @@ function displayCubicFeet(v) {
 }
 
 onMounted(() => {
-  if (route.meta.userPortal) {
-    setCrmPageMeta({
-      title: "Save Rack | Products | Inventory Detail",
-      description: "Product inventory detail.",
-    });
-  } else {
-    setCrmPageMeta({
-      title: "Save Rack | Inventory Detail",
-      description: "Product inventory detail.",
-    });
-  }
+  setCrmPageMeta({
+    title: isPortalView.value ? "Save Rack | Inventory | Product Detail" : "Save Rack | Inventory Detail",
+    description: "Product inventory detail.",
+  });
   loadDetail();
   document.addEventListener("click", onDocClick);
 });
@@ -238,6 +252,51 @@ function orderDetailTo(orderId) {
     params: { shipheroOrderId: String(orderId) },
     query,
   };
+}
+
+function openImageUploadPicker() {
+  if (!canUploadProductImage.value || imageUploadBusy.value) return;
+  imageInputRef.value?.click();
+}
+
+async function onProductImageSelected(ev) {
+  const input = ev?.target;
+  const file = input?.files?.[0];
+  if (input) input.value = "";
+  if (!file || !product.value?.sku) return;
+
+  const maxBytes = 5 * 1024 * 1024;
+  if (file.size > maxBytes) {
+    toast.error("Image must be 5 MB or smaller.");
+    return;
+  }
+  if (!String(file.type || "").startsWith("image/")) {
+    toast.error("Choose a JPG, PNG, GIF, or WebP image.");
+    return;
+  }
+
+  if (!isPortalView.value && detailClientAccountId.value <= 0) {
+    toast.error("Select a client account on the inventory list before uploading an image.");
+    return;
+  }
+
+  const sku = String(product.value.sku).trim();
+  const formData = new FormData();
+  formData.append("image", file);
+  if (detailClientAccountId.value > 0) {
+    formData.append("client_account_id", String(detailClientAccountId.value));
+  }
+
+  imageUploadBusy.value = true;
+  try {
+    await api.post(`/inventory/products/${encodeURIComponent(sku)}/image`, formData);
+    toast.success("Product image updated in ShipHero.");
+    await loadProduct({ refresh: true });
+  } catch (e) {
+    toast.errorFrom(e, "Could not update product image.");
+  } finally {
+    imageUploadBusy.value = false;
+  }
 }
 
 async function openBarcodeLabelPdf() {
@@ -688,12 +747,22 @@ async function togglePickable(loc) {
           class="staff-user-view__breadcrumb d-flex flex-wrap align-items-center gap-1"
           aria-label="Breadcrumb"
         >
-          <RouterLink :to="inventoryListRoute">{{ inventoryListBreadcrumbLabel }}</RouterLink>
+          <RouterLink :to="inventoryListRoute" class="fw-bold">{{ inventoryListBreadcrumbLabel }}</RouterLink>
           <span class="text-secondary" aria-hidden="true">/</span>
-          <span class="text-body-secondary">Detail</span>
+          <span class="text-body-secondary fw-bold">Detail</span>
         </nav>
 
-        <div class="staff-user-view__title-row inventory-portal-detail__title-row d-flex flex-wrap align-items-center justify-content-end gap-2 mb-3">
+        <div class="staff-user-view__title-row inventory-portal-detail__title-row d-flex flex-wrap align-items-center gap-2 mb-3">
+          <a
+            v-if="!isPortalView && shipheroProductUrl"
+            :href="shipheroProductUrl"
+            target="_blank"
+            rel="noopener noreferrer"
+            class="btn btn-outline-secondary btn-sm orders-toolbar-outline-btn me-auto"
+          >
+            View in ShipHero
+          </a>
+          <div v-else class="me-auto" />
           <div class="d-flex align-items-center gap-2 flex-shrink-0">
             <p v-if="lastRefreshedLabel" class="small text-secondary mb-0">
               Last refreshed: {{ lastRefreshedLabel }}
@@ -762,21 +831,51 @@ async function togglePickable(loc) {
           <div class="col-12 col-xl-4">
             <aside class="staff-user-profile">
               <div class="inventory-portal-detail__hero">
-                <img
-                  v-if="product.image_url"
-                  :src="product.image_url"
-                  alt=""
-                  class="inventory-portal-detail__hero-image"
+                <input
+                  ref="imageInputRef"
+                  type="file"
+                  accept="image/jpeg,image/png,image/gif,image/webp"
+                  class="d-none"
+                  aria-hidden="true"
+                  tabindex="-1"
+                  @change="onProductImageSelected"
                 />
-                <div
-                  v-else
-                  class="inventory-portal-detail__hero-image inventory-portal-detail__hero-image--empty"
-                />
+                <button
+                  type="button"
+                  class="inventory-portal-detail__hero-image-btn"
+                  :class="{ 'inventory-portal-detail__hero-image-btn--disabled': !canUploadProductImage }"
+                  :disabled="!canUploadProductImage || imageUploadBusy"
+                  :title="canUploadProductImage ? 'Click to upload a product image' : undefined"
+                  @click="openImageUploadPicker"
+                >
+                  <img
+                    v-if="product.image_url"
+                    :src="product.image_url"
+                    alt=""
+                    class="inventory-portal-detail__hero-image"
+                  />
+                  <div
+                    v-else
+                    class="inventory-portal-detail__hero-image inventory-portal-detail__hero-image--empty"
+                  />
+                  <span
+                    v-if="canUploadProductImage && imageUploadBusy"
+                    class="inventory-portal-detail__hero-uploading"
+                  >
+                    Uploading…
+                  </span>
+                </button>
                 <div class="inventory-portal-detail__hero-text">
                   <h2 class="inventory-portal-detail__hero-name">
                     {{ product.name || "Product" }}
                   </h2>
                   <p class="inventory-portal-detail__hero-sku mb-0">{{ product.sku }}</p>
+                  <p
+                    v-if="canUploadProductImage"
+                    class="small text-body-secondary mb-0 mt-1"
+                  >
+                    Click image to upload (updates in ShipHero)
+                  </p>
                 </div>
               </div>
 
@@ -1352,6 +1451,34 @@ async function togglePickable(loc) {
 </template>
 
 <style scoped>
+.inventory-portal-detail__hero-image-btn {
+  display: block;
+  padding: 0;
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  position: relative;
+  flex-shrink: 0;
+}
+.inventory-portal-detail__hero-image-btn--disabled {
+  cursor: default;
+}
+.inventory-portal-detail__hero-image-btn:not(.inventory-portal-detail__hero-image-btn--disabled):hover .inventory-portal-detail__hero-image,
+.inventory-portal-detail__hero-image-btn:not(.inventory-portal-detail__hero-image-btn--disabled):focus-visible .inventory-portal-detail__hero-image {
+  outline: 2px solid var(--bs-primary);
+  outline-offset: 2px;
+}
+.inventory-portal-detail__hero-uploading {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.45);
+  color: #fff;
+  font-size: 0.75rem;
+  border-radius: 12px;
+}
 .inventory-detail__image {
   width: 120px;
   height: 120px;

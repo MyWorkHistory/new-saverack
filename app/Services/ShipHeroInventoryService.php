@@ -932,6 +932,107 @@ GQL;
     }
 
     /**
+     * Set or add a product image in ShipHero (product_update). ShipHero may append images rather than replace.
+     *
+     * @return array{id: string, sku: string, image_url: string|null}
+     *
+     * @throws RuntimeException
+     */
+    public function updateProductImage(string $customerAccountId, string $sku, string $imageUrl): array
+    {
+        $customerAccountId = trim($customerAccountId);
+        $sku = trim($sku);
+        $imageUrl = trim($imageUrl);
+        if ($customerAccountId === '' || $sku === '' || $imageUrl === '') {
+            throw new RuntimeException('Customer account, SKU, and image URL are required to update a product image in ShipHero.');
+        }
+
+        $graphql = <<<'GQL'
+mutation ShipHeroProductUpdateImage($data: UpdateProductInput!) {
+  product_update(data: $data) {
+    request_id
+    complexity
+    product {
+      id
+      legacy_id
+      sku
+      thumbnail
+      large_thumbnail
+      images {
+        src
+        position
+      }
+    }
+  }
+}
+GQL;
+        $data = [
+            'customer_account_id' => $customerAccountId,
+            'sku' => $sku,
+            'images' => [
+                ['src' => $imageUrl, 'position' => 1],
+            ],
+        ];
+        $json = $this->client->query($graphql, ['data' => $data], true, [
+            ShipHeroClient::OPTION_GRAPHQL_SUCCESS_FIELD => 'product_update',
+        ]);
+        $product = data_get($json, 'data.product_update.product');
+        if (! is_array($product)) {
+            $errs = $json['errors'] ?? [];
+            $msg = is_array($errs) && isset($errs[0]['message'])
+                ? (string) $errs[0]['message']
+                : 'ShipHero did not return a product after image update.';
+
+            throw new RuntimeException($msg);
+        }
+
+        $id = isset($product['id']) && is_string($product['id']) ? trim($product['id']) : '';
+        $resolvedSku = isset($product['sku']) && is_string($product['sku']) ? trim($product['sku']) : $sku;
+        $resolvedImage = $this->resolveProductImageUrlFromNode($product);
+        if ($resolvedImage === null || $resolvedImage === '') {
+            $resolvedImage = $imageUrl;
+        }
+
+        return [
+            'id' => $id,
+            'sku' => $resolvedSku,
+            'image_url' => $resolvedImage,
+        ];
+    }
+
+    /**
+     * @param  array<string, mixed>  $product
+     */
+    private function resolveProductImageUrlFromNode(array $product): ?string
+    {
+        foreach (['large_thumbnail', 'thumbnail'] as $thumbKey) {
+            $thumb = isset($product[$thumbKey]) && is_string($product[$thumbKey]) ? trim($product[$thumbKey]) : '';
+            if ($thumb !== '') {
+                return $thumb;
+            }
+        }
+        $images = is_array($product['images'] ?? null) ? $product['images'] : [];
+        $bestPos = PHP_INT_MAX;
+        $imageUrl = null;
+        foreach ($images as $img) {
+            if (! is_array($img)) {
+                continue;
+            }
+            $src = trim((string) ($img['src'] ?? ''));
+            if ($src === '') {
+                continue;
+            }
+            $pos = isset($img['position']) && is_numeric($img['position']) ? (int) $img['position'] : 999999;
+            if ($imageUrl === null || $pos < $bestPos) {
+                $imageUrl = $src;
+                $bestPos = $pos;
+            }
+        }
+
+        return $imageUrl;
+    }
+
+    /**
      * Create a product in ShipHero for a 3PL customer account (product_create).
      *
      * @return array{id: string, sku: string, name: string, image_url: string|null}
@@ -2791,8 +2892,14 @@ GQL;
             $customsDescription = $fallbackDescription;
         }
 
+        $legacyRaw = $data['legacy_id'] ?? null;
+        $shipheroLegacyId = is_int($legacyRaw)
+            ? $legacyRaw
+            : (is_numeric($legacyRaw) ? (int) $legacyRaw : null);
+
         return [
             'id' => isset($data['id']) && is_string($data['id']) ? $data['id'] : null,
+            'shiphero_legacy_id' => $shipheroLegacyId,
             'sku' => isset($data['sku']) && is_string($data['sku']) ? $data['sku'] : '',
             'name' => isset($data['name']) && is_string($data['name']) ? $data['name'] : null,
             'barcode' => isset($data['barcode']) && is_string($data['barcode']) ? $data['barcode'] : null,

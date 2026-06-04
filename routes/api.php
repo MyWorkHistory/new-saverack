@@ -110,6 +110,8 @@ Route::middleware('auth:sanctum')->group(function () {
             ->middleware('can:inventory.view');
         Route::get('/products/{sku}/barcode-label.pdf', [InventoryController::class, 'productBarcodeLabelPdf'])
             ->middleware('can:inventory.view');
+        Route::post('/products/{sku}/image', [InventoryController::class, 'uploadProductImage'])
+            ->middleware('can:inventory.view');
         Route::post('/replace', [InventoryController::class, 'replaceQuantity'])
             ->middleware('can:inventory.update');
         Route::post('/transfer', [InventoryController::class, 'transferQuantity'])

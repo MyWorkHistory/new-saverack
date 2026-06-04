@@ -72,7 +72,11 @@ function effectiveRowAccountId(row = null) {
 
 const canLoadInventory = computed(() => {
   if (isPortalList.value) return accountId.value > 0;
-  return accountId.value > 0 || crossAccountMode.value;
+  return (
+    accountId.value > 0 ||
+    crossAccountMode.value ||
+    Boolean(searchCommitted.value.trim())
+  );
 });
 
 const tableColspan = computed(() => (crossAccountMode.value ? 9 : 8));
@@ -336,12 +340,52 @@ const bulkEligibleRows = computed(() =>
   selectedRows.value.filter((r) => String(r?.warehouse_id || "").trim() !== ""),
 );
 
-function commitSearch() {
+function isSingleTokenSearch(term) {
+  const q = String(term || "").trim();
+  return q !== "" && !/\s/.test(q);
+}
+
+async function tryFastSearchToDetail() {
+  const q = searchCommitted.value.trim();
+  if (!q || !isSingleTokenSearch(q)) return false;
+  const params = { q };
+  if (accountId.value > 0) {
+    params.client_account_id = accountId.value;
+  }
+  try {
+    const { data } = await api.get("/inventory/search", { params });
+    const sku = String(data?.product?.sku || "").trim();
+    if (!sku) return false;
+    const query = {};
+    const acct = Number(accountId.value || 0);
+    if (acct > 0) query.client_account_id = String(acct);
+    await router.push({
+      name: isPortalList.value ? "user-inventory-detail" : "inventory-detail",
+      params: { sku },
+      query,
+    });
+    return true;
+  } catch (e) {
+    if (e?.response?.status === 404) return false;
+    throw e;
+  }
+}
+
+async function commitSearch() {
   if (isStaffPickerMode.value) {
     crossAccountMode.value = !selectedAccountId.value;
     hasSearched.value = true;
   }
   searchCommitted.value = searchDraft.value.trim();
+  if (!searchCommitted.value && isStaffPickerMode.value && !selectedAccountId.value) {
+    return;
+  }
+  try {
+    if (await tryFastSearchToDetail()) return;
+  } catch (e) {
+    toast.errorFrom(e, "Could not search inventory.");
+    return;
+  }
   loadRows(true);
 }
 
@@ -613,14 +657,14 @@ onUnmounted(() => {
       class="d-flex flex-column flex-md-row align-items-start align-items-md-center gap-3 mb-4"
     >
       <div class="min-w-0 flex-grow-1">
-        <h1 class="h4 mb-1 fw-semibold text-body">Inventory</h1>
+        <h1 class="h4 mb-1 fw-bold text-body">Inventory</h1>
         <p class="text-secondary small mb-0 user-inv-load-hint">
           <template v-if="isPortalList">
             Showing {{ LIST_PAGE_SIZE }} products per load. Search checks your full ShipHero catalog (not only this page).
           </template>
           <template v-else>
-            Search across all accounts, or pick an account to filter. Click Search to load inventory (up to 100 rows,
-            may be partial).
+            Search by SKU, barcode, or product name. Account filter is optional — press Enter or Search to find products
+            across all accounts, or select an account to narrow results.
           </template>
         </p>
       </div>
@@ -693,10 +737,10 @@ onUnmounted(() => {
                 v-model.trim="searchDraft"
                 type="search"
                 class="form-control"
-                placeholder="Search by SKU or Product Name"
+                placeholder="Search by SKU, barcode, or product name"
                 autocomplete="off"
                 enterkeyhint="search"
-                aria-label="Search by SKU or product name"
+                aria-label="Search by SKU, barcode, or product name"
                 :disabled="loading"
                 @keydown.enter.prevent="commitSearch"
               />
@@ -967,7 +1011,7 @@ onUnmounted(() => {
             </tr>
             <tr v-else-if="isStaffPickerMode && !hasSearched">
               <td :colspan="tableColspan" class="text-center text-secondary py-5">
-                Click Search to load inventory across all accounts, or select an account to filter.
+                Enter a SKU or barcode and press Search — account is optional. Select an account to filter the catalog.
               </td>
             </tr>
             <tr v-else-if="!displayRows.length">

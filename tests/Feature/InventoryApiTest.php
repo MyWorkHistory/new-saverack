@@ -199,4 +199,98 @@ class InventoryApiTest extends TestCase
             ->assertJsonPath('products.0.account_name', 'On Demand Co')
             ->assertJsonPath('products.0.sku', 'GSO-CBD-GM');
     }
+
+    public function test_product_detail_includes_shiphero_legacy_id(): void
+    {
+        $account = ClientAccount::query()->create([
+            'status' => ClientAccount::STATUS_ACTIVE,
+            'company_name' => 'Legacy Co',
+            'email' => 'legacy@example.test',
+            'shiphero_customer_account_id' => 'sh-legacy-1',
+        ]);
+
+        $detail = [
+            'id' => 'gid://product/1',
+            'shiphero_legacy_id' => 520926306,
+            'sku' => 'SKU-LEGACY',
+            'name' => 'Legacy Widget',
+            'barcode' => '999',
+            'image_url' => null,
+            'customs_value' => 0,
+            'customs_description' => null,
+            'dimensions' => ['weight' => 1, 'height' => 1, 'width' => 1, 'length' => 1],
+            'storage_cubic_feet' => null,
+            'metrics' => ['on_hand' => 0, 'allocated' => 0, 'available' => 0, 'backorder' => 0, 'asn' => 0],
+            'kit' => false,
+            'kit_build' => false,
+            'kit_components' => [],
+            'parent_kits' => [],
+            'warehouses' => [],
+        ];
+
+        $mock = Mockery::mock(ShipHeroInventoryService::class);
+        $mock->shouldReceive('getProductDetailBySku')
+            ->once()
+            ->with('SKU-LEGACY', null, 'sh-legacy-1', false)
+            ->andReturn($detail);
+        $this->app->instance(ShipHeroInventoryService::class, $mock);
+
+        $user = User::factory()->create();
+        $user->permissions()->attach($this->inventoryViewPermission()->id);
+        Sanctum::actingAs($user);
+
+        $this->getJson('/api/inventory/products/SKU-LEGACY?client_account_id='.$account->id)
+            ->assertOk()
+            ->assertJsonPath('product.sku', 'SKU-LEGACY')
+            ->assertJsonPath('product.shiphero_legacy_id', 520926306);
+    }
+
+    public function test_upload_product_image_requires_file(): void
+    {
+        $account = ClientAccount::query()->create([
+            'status' => ClientAccount::STATUS_ACTIVE,
+            'company_name' => 'Upload Co',
+            'email' => 'upload@example.test',
+            'shiphero_customer_account_id' => 'sh-upload-1',
+        ]);
+
+        $mock = Mockery::mock(ShipHeroInventoryService::class);
+        $mock->shouldReceive('updateProductImage')->never();
+        $this->app->instance(ShipHeroInventoryService::class, $mock);
+
+        $user = User::factory()->create();
+        $user->permissions()->sync([
+            $this->inventoryViewPermission()->id,
+            $this->inventoryUpdatePermission()->id,
+        ]);
+        Sanctum::actingAs($user);
+
+        $this->postJson('/api/inventory/products/SKU-1/image', [
+            'client_account_id' => $account->id,
+        ])
+            ->assertStatus(422)
+            ->assertJsonValidationErrors(['image']);
+    }
+
+    public function test_portal_user_without_inventory_update_can_upload_product_image(): void
+    {
+        $account = ClientAccount::query()->create([
+            'status' => ClientAccount::STATUS_ACTIVE,
+            'company_name' => 'Portal Upload Co',
+            'email' => 'portal-upload@example.test',
+            'shiphero_customer_account_id' => 'sh-portal-1',
+        ]);
+
+        $mock = Mockery::mock(ShipHeroInventoryService::class);
+        $mock->shouldReceive('updateProductImage')->never();
+        $this->app->instance(ShipHeroInventoryService::class, $mock);
+
+        $user = User::factory()->create(['client_account_id' => $account->id]);
+        $user->permissions()->attach($this->inventoryViewPermission()->id);
+        Sanctum::actingAs($user);
+
+        $this->postJson('/api/inventory/products/SKU-PORTAL/image')
+            ->assertStatus(422)
+            ->assertJsonValidationErrors(['image']);
+    }
 }

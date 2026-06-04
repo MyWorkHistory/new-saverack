@@ -36,13 +36,17 @@ function navActive(mode) {
   if (mode === "orders-on-hold") return p.startsWith("/users/orders/on-hold");
   if (mode === "orders-backorder") return p.startsWith("/users/orders/backorder");
   if (mode === "orders-shipped") return p.startsWith("/users/orders/shipped");
-  if (mode === "products") return p.startsWith("/users/inventory") || p.startsWith("/users/asn");
-  if (mode === "products-inventory") {
+  if (mode === "inventory" || mode === "products") {
+    return p.startsWith("/users/inventory") || p.startsWith("/users/asn");
+  }
+  if (mode === "inventory-products" || mode === "products-inventory") {
     if (p === "/users/inventory/out-of-stock") return false;
     return p === "/users/inventory" || (p.startsWith("/users/inventory/") && !p.startsWith("/users/inventory/out-of-stock"));
   }
-  if (mode === "products-out-of-stock") return p === "/users/inventory/out-of-stock";
-  if (mode === "products-asn") return p.startsWith("/users/asn");
+  if (mode === "inventory-out-of-stock" || mode === "products-out-of-stock") {
+    return p === "/users/inventory/out-of-stock";
+  }
+  if (mode === "inventory-asn" || mode === "products-asn") return p.startsWith("/users/asn");
   if (mode === "returns") return p.startsWith("/users/returns");
   if (mode === "returns-orders") return p === "/users/returns/orders";
   if (mode === "returns-items") return p === "/users/returns/items";
@@ -267,7 +271,7 @@ function collapseNav() {
             <button
               type="button"
               class="vx-nav-link"
-              :class="{ 'vx-nav-link--active': navActive('products') }"
+              :class="{ 'vx-nav-link--active': navActive('inventory') }"
               :aria-expanded="productsGroupOpen"
               @click="productsGroupOpen = !productsGroupOpen"
             >
@@ -302,17 +306,17 @@ function collapseNav() {
                 <RouterLink
                   to="/users/inventory"
                   class="vx-nav-link vx-nav-sublink"
-                  :class="{ 'vx-nav-link--active': navActive('products-inventory') }"
+                  :class="{ 'vx-nav-link--active': navActive('inventory-products') }"
                   @click="closeMobile"
                 >
-                  Inventory
+                  Products
                 </RouterLink>
               </li>
               <li>
                 <RouterLink
                   to="/users/inventory/out-of-stock"
                   class="vx-nav-link vx-nav-sublink"
-                  :class="{ 'vx-nav-link--active': navActive('products-out-of-stock') }"
+                  :class="{ 'vx-nav-link--active': navActive('inventory-out-of-stock') }"
                   @click="closeMobile"
                 >
                   Out of Stock
@@ -322,7 +326,7 @@ function collapseNav() {
                 <RouterLink
                   to="/users/asn"
                   class="vx-nav-link vx-nav-sublink"
-                  :class="{ 'vx-nav-link--active': navActive('products-asn') }"
+                  :class="{ 'vx-nav-link--active': navActive('inventory-asn') }"
                   @click="closeMobile"
                 >
                   ASN
@@ -334,7 +338,7 @@ function collapseNav() {
             v-else
             to="/users/inventory"
             class="vx-nav-link"
-            title="Products"
+            title="Inventory"
             @click="closeMobile"
           >
             <svg

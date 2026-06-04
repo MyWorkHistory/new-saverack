@@ -61,6 +61,19 @@ class SlackDeliveryService
         try {
             return $this->postViaBot($token, $channel, $text, $username, $iconEmoji, $attachments, $iconUrl, $blocks, $customizeIdentity);
         } catch (\Throwable $e) {
+            if ($customizeIdentity && $iconUrl !== '') {
+                try {
+                    Log::warning('slack_delivery_bot_icon_failed_retrying_without_icon', [
+                        'channel' => $channel,
+                        'message' => $e->getMessage(),
+                    ]);
+
+                    return $this->postViaBot($token, $channel, $text, $username, $iconEmoji, $attachments, '', $blocks, true);
+                } catch (\Throwable $retryError) {
+                    $e = $retryError;
+                }
+            }
+
             if ($webhookUrl === '') {
                 throw $e;
             }

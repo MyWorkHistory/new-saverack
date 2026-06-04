@@ -60,7 +60,15 @@ class ClientAccountStatusSlackService
         $text = (string) ($payload['text'] ?? '');
         $username = (string) ($payload['username'] ?? self::USERNAME);
         $isLive = $newStatus === ClientAccount::STATUS_ACTIVE;
-        $iconUrl = $isLive ? $this->iconUrls->liveThumbUrl() : $this->iconUrls->pausedThumbUrl();
+        $iconUrl = $this->resolveIconUrl($isLive);
+
+        if ($iconUrl === '') {
+            Log::warning('client_account.status_slack_icon_missing', [
+                'client_account_id' => $account->id,
+                'is_live' => $isLive,
+            ]);
+        }
+
         $options = $this->deliveryOptions($text, $username, $iconUrl);
 
         if ($iconUrl !== '') {
@@ -194,6 +202,46 @@ class ClientAccountStatusSlackService
         $actorName = trim((string) $actor->name);
         if ($actorName !== '') {
             $lines[] = 'Updated by: '.$actorName;
+        }
+    }
+
+    /**
+     * Pick the first icon URL Slack can fetch (thumb, then full-size).
+     */
+    private function resolveIconUrl(bool $isLive): string
+    {
+        $candidates = $isLive
+            ? [$this->iconUrls->liveThumbUrl(), $this->iconUrls->liveUrl()]
+            : [$this->iconUrls->pausedThumbUrl(), $this->iconUrls->pausedUrl()];
+
+        foreach ($candidates as $url) {
+            if ($url !== '' && $this->iconUrlReachable($url)) {
+                return $url;
+            }
+        }
+
+        foreach ($candidates as $url) {
+            if ($url !== '') {
+                return $url;
+            }
+        }
+
+        return '';
+    }
+
+    private function iconUrlReachable(string $iconUrl): bool
+    {
+        try {
+            $response = Http::timeout(5)->head($iconUrl);
+            if (! $response->successful()) {
+                $response = Http::timeout(5)->get($iconUrl);
+            }
+
+            $contentType = strtolower(trim((string) $response->header('Content-Type')));
+
+            return $response->successful() && str_contains($contentType, 'image');
+        } catch (\Throwable $e) {
+            return false;
         }
     }
 

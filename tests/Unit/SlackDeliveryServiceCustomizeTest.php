@@ -77,6 +77,45 @@ final class SlackDeliveryServiceCustomizeTest extends TestCase
 
         Http::fake([
             'https://slack.com/api/conversations.join' => Http::response(['ok' => true], 200),
+            'https://slack.com/api/chat.postMessage' => Http::sequence()
+                ->push(['ok' => false, 'error' => 'invalid_icon'], 200)
+                ->push(['ok' => true, 'channel' => 'C123', 'ts' => '1.0'], 200),
+            'hooks.slack.com/*' => Http::response('ok', 200),
+        ]);
+
+        $result = app(SlackDeliveryService::class)->post(
+            '#demo-co',
+            'Hello',
+            'Shipping Status Update',
+            [
+                'icon_url' => 'https://app.saverack.com/images/slack/shipping-status-live-thumb.png',
+                'customize_identity' => true,
+                'prefer_bot' => true,
+            ]
+        );
+
+        $this->assertSame('bot', $result['method']);
+        Http::assertSent(function ($request) {
+            if (! str_contains($request->url(), 'chat.postMessage')) {
+                return false;
+            }
+
+            $payload = $request->data();
+
+            return ($payload['username'] ?? '') === 'Shipping Status Update'
+                && ! array_key_exists('icon_url', $payload);
+        });
+    }
+
+    public function test_customize_identity_webhook_fallback_when_bot_retry_also_fails(): void
+    {
+        config([
+            'billing.slack.bot_token' => 'xoxb-test-token',
+            'billing.slack.webhook_url' => 'https://hooks.slack.com/services/T/B/x',
+        ]);
+
+        Http::fake([
+            'https://slack.com/api/conversations.join' => Http::response(['ok' => true], 200),
             'https://slack.com/api/chat.postMessage' => Http::response([
                 'ok' => false,
                 'error' => 'not_in_channel',

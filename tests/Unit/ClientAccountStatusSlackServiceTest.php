@@ -177,10 +177,12 @@ final class ClientAccountStatusSlackServiceTest extends TestCase
             'billing.slack.bot_token' => 'xoxb-test-token',
         ]);
 
-        $iconUrl = $this->iconBase().'/shipping-status-paused-thumb.png';
+        $thumbUrl = $this->iconBase().'/shipping-status-paused-thumb.png';
+        $fullUrl = $this->iconBase().'/shipping-status-paused.png';
 
         Http::fake([
-            $iconUrl => Http::response('<html>', 404),
+            $thumbUrl => Http::response('<html>', 404),
+            $fullUrl => Http::response('<html>', 404),
             'https://slack.com/api/*' => Http::response(['ok' => true, 'channel' => 'C1', 'ts' => '1.0'], 200),
             'hooks.slack.com/*' => Http::response('ok', 200),
         ]);

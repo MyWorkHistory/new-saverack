@@ -42,4 +42,40 @@ final class SlackStatusIconUrlServiceTest extends TestCase
             $url
         );
     }
+
+    public function test_legacy_storage_env_url_remapped_to_public_images_path(): void
+    {
+        config([
+            'billing.slack.status_icon_live_url' => 'https://app.saverack.com/storage/slack-status-icons/shipping-status-live.png',
+        ]);
+
+        $url = app(SlackStatusIconUrlService::class)->liveUrl();
+
+        $this->assertSame(
+            'https://app.saverack.com/images/slack/shipping-status-live.png',
+            $url
+        );
+    }
+
+    public function test_live_thumb_falls_back_to_full_icon_when_thumb_file_missing(): void
+    {
+        $thumb = public_path('images/slack/shipping-status-live-thumb.png');
+        $backup = $thumb.'.bak';
+        $hadThumb = is_file($thumb);
+        if ($hadThumb) {
+            rename($thumb, $backup);
+        }
+
+        try {
+            $url = app(SlackStatusIconUrlService::class)->liveThumbUrl();
+            $this->assertSame(
+                'https://app.saverack.com/images/slack/shipping-status-live.png',
+                $url
+            );
+        } finally {
+            if ($hadThumb && is_file($backup)) {
+                rename($backup, $thumb);
+            }
+        }
+    }
 }

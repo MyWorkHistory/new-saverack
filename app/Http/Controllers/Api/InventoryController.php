@@ -432,7 +432,7 @@ class InventoryController extends Controller
             // Product detail should be global unless client_account_id is explicitly provided.
             $shipheroCustomerId = null;
             if ($clientAccountId > 0) {
-                $shipheroCustomerId = $this->resolveShipHeroCustomerAccountId($clientAccountId, $request);
+                $shipheroCustomerId = $this->tryResolveShipHeroCustomerAccountId($clientAccountId, $request);
             }
             $product = $this->inventory->getProductDetailBySku($sku, $warehouseId, $shipheroCustomerId, false);
             if (! is_array($product) && $clientAccountId > 0) {
@@ -875,6 +875,7 @@ class InventoryController extends Controller
         $customerId = trim((string) $shipheroCustomerId);
         try {
             $created = $this->inventory->createProduct($customerId, $sku, $name);
+            $this->inventory->upsertCreatedProductIndex($clientAccountId, $customerId, $created);
 
             return response()->json([
                 'id' => $created['id'] ?? null,
@@ -885,6 +886,13 @@ class InventoryController extends Controller
         } catch (RuntimeException $e) {
             $existing = $this->inventory->getProductDetailBySku($sku, null, $customerId, false);
             if (is_array($existing) && ! empty($existing['id'])) {
+                $this->inventory->upsertCreatedProductIndex($clientAccountId, $customerId, [
+                    'id' => (string) $existing['id'],
+                    'sku' => $sku,
+                    'name' => (string) ($existing['name'] ?? $name),
+                    'image_url' => $existing['image_url'] ?? null,
+                ]);
+
                 return response()->json([
                     'id' => (string) $existing['id'],
                     'sku' => $sku,
@@ -1324,6 +1332,23 @@ class InventoryController extends Controller
     }
 
     /**
+     * Like resolveShipHeroCustomerAccountId but returns null when the account has no linked ShipHero id.
+     */
+    private function tryResolveShipHeroCustomerAccountId(int $clientAccountId, Request $request): ?string
+    {
+        try {
+            return $this->resolveShipHeroCustomerAccountId($clientAccountId, $request);
+        } catch (ValidationException $e) {
+            $messages = $e->errors();
+            if (isset($messages['client_account_id'])) {
+                return null;
+            }
+
+            throw $e;
+        }
+    }
+
+    /**
      * When ShipHero has no product yet, link ASN lines or create the SKU in ShipHero for portal users.
      *
      * @return array<string, mixed>|null
@@ -1335,8 +1360,9 @@ class InventoryController extends Controller
             return null;
         }
 
+        $skuLower = mb_strtolower($sku);
         $line = ClientAccountAsnLine::query()
-            ->where('sku', $sku)
+            ->whereRaw('LOWER(sku) = ?', [$skuLower])
             ->whereHas('asn', function ($q) use ($clientAccountId) {
                 $q->where('client_account_id', $clientAccountId);
             })
@@ -1356,6 +1382,7 @@ class InventoryController extends Controller
                     $line->image_url = $created['image_url'];
                 }
                 $line->save();
+                $this->inventory->upsertCreatedProductIndex($clientAccountId, $customerId, $created);
 
                 $fromShipHero = $this->inventory->getProductDetailBySku($sku, null, $customerId, false);
                 if (is_array($fromShipHero)) {
@@ -1368,14 +1395,22 @@ class InventoryController extends Controller
                         $line->shiphero_product_id = (string) $existing['id'];
                         $line->save();
                     }
+                    $this->inventory->upsertCreatedProductIndex($clientAccountId, $customerId, [
+                        'id' => (string) ($existing['id'] ?? ''),
+                        'sku' => (string) ($existing['sku'] ?? $sku),
+                        'name' => (string) ($existing['name'] ?? $line->name),
+                        'image_url' => $existing['image_url'] ?? null,
+                    ]);
 
                     return $existing;
                 }
             }
         }
 
+        $displaySku = trim((string) $line->sku) !== '' ? trim((string) $line->sku) : $sku;
+
         return $this->inventory->minimalProductFromAsnLine(
-            $sku,
+            $displaySku,
             (string) $line->name,
             $line->shiphero_product_id,
             $line->image_url

@@ -540,15 +540,51 @@ class AsnController extends Controller
     public function storeLine(Request $request, ClientAccountAsn $asn): JsonResponse
     {
         $this->authorizeAsn($request, $asn);
-        $validated = $request->validate([
+        if ($asn->status !== ClientAccountAsn::STATUS_DRAFT) {
+            throw ValidationException::withMessages([
+                'status' => ['Products can only be added while the ASN is in draft.'],
+            ]);
+        }
+
+        $payload = $request->all();
+        $rawProductId = $payload['shiphero_product_id'] ?? null;
+        if ($rawProductId !== null && $rawProductId !== '') {
+            $payload['shiphero_product_id'] = trim((string) $rawProductId);
+        } else {
+            $payload['shiphero_product_id'] = null;
+        }
+        $payload['sku'] = trim((string) ($payload['sku'] ?? ''));
+        $payload['name'] = trim((string) ($payload['name'] ?? ''));
+        if ($payload['name'] === '' && $payload['sku'] !== '') {
+            $payload['name'] = $payload['sku'];
+        }
+        if (array_key_exists('image_url', $payload) && is_string($payload['image_url'])) {
+            $imageUrl = trim($payload['image_url']);
+            if ($imageUrl === '') {
+                $payload['image_url'] = null;
+            } elseif (strlen($imageUrl) > 2048) {
+                $payload['image_url'] = substr($imageUrl, 0, 2048);
+            } else {
+                $payload['image_url'] = $imageUrl;
+            }
+        }
+        if (array_key_exists('expected_qty', $payload)) {
+            $payload['expected_qty'] = (int) $payload['expected_qty'];
+        }
+
+        $validated = validator($payload, [
             'shiphero_product_id' => ['nullable', 'string', 'max:191'],
             'sku' => ['required', 'string', 'max:255'],
             'name' => ['required', 'string', 'max:512'],
             'image_url' => ['nullable', 'string', 'max:2048'],
-            'expected_qty' => ['required', 'integer', 'min:0', 'max:99999999'],
+            'expected_qty' => ['required', 'integer', 'min:1', 'max:99999999'],
             'accepted_qty' => ['sometimes', 'integer', 'min:0', 'max:99999999'],
             'rejected_qty' => ['sometimes', 'integer', 'min:0', 'max:99999999'],
-        ]);
+        ], [
+            'sku.required' => 'SKU is required.',
+            'name.required' => 'Product name is required.',
+            'expected_qty.min' => 'Enter an expected quantity of at least 1.',
+        ])->validate();
         $portal = $this->isPortalUser($request);
         $maxSort = (int) ClientAccountAsnLine::query()->where('client_account_asn_id', $asn->id)->max('sort_order');
         $line = new ClientAccountAsnLine;
@@ -571,7 +607,7 @@ class AsnController extends Controller
         $line->sort_order = $maxSort + 1;
 
         if ($line->shiphero_product_id === null) {
-            $this->provisionShipHeroProductForAsnLine($asn, $line);
+            $this->provisionShipHeroProductForAsnLine($request, $asn, $line);
         }
 
         $line->save();
@@ -677,15 +713,10 @@ class AsnController extends Controller
         return response()->json($this->serializeAsn($asn->fresh(['lines', 'trackings', 'vendorLines'])));
     }
 
-    private function provisionShipHeroProductForAsnLine(ClientAccountAsn $asn, ClientAccountAsnLine $line): void
+    private function provisionShipHeroProductForAsnLine(Request $request, ClientAccountAsn $asn, ClientAccountAsnLine $line): void
     {
-        $asn->loadMissing('clientAccount');
-        $customerId = $asn->clientAccount !== null
-            ? trim((string) $asn->clientAccount->shiphero_customer_account_id)
-            : '';
-        if ($customerId === '') {
-            return;
-        }
+        $clientAccountId = (int) $asn->client_account_id;
+        $customerId = $this->resolveShipHeroCustomerAccountIdForWrite($clientAccountId, $request);
 
         try {
             $created = $this->inventory->createProduct($customerId, (string) $line->sku, (string) $line->name);
@@ -693,6 +724,7 @@ class AsnController extends Controller
             if ($line->image_url === null && ! empty($created['image_url'])) {
                 $line->image_url = $created['image_url'];
             }
+            $this->inventory->upsertCreatedProductIndex($clientAccountId, $customerId, $created);
 
             return;
         } catch (RuntimeException $e) {
@@ -702,6 +734,12 @@ class AsnController extends Controller
                 if ($line->image_url === null && ! empty($existing['image_url'])) {
                     $line->image_url = (string) $existing['image_url'];
                 }
+                $this->inventory->upsertCreatedProductIndex($clientAccountId, $customerId, [
+                    'id' => (string) $existing['id'],
+                    'sku' => (string) ($existing['sku'] ?? $line->sku),
+                    'name' => (string) ($existing['name'] ?? $line->name),
+                    'image_url' => $existing['image_url'] ?? null,
+                ]);
 
                 return;
             }
@@ -710,5 +748,30 @@ class AsnController extends Controller
                 'sku' => ['Could not create this product in ShipHero: '.$e->getMessage()],
             ]);
         }
+    }
+
+    /**
+     * ShipHero customer account id for ASN writes (account field only; no .env fallback).
+     */
+    private function resolveShipHeroCustomerAccountIdForWrite(int $clientAccountId, Request $request): string
+    {
+        $account = ClientAccount::query()->find($clientAccountId);
+        if ($account === null) {
+            throw ValidationException::withMessages([
+                'client_account_id' => ['Client account not found.'],
+            ]);
+        }
+        Gate::forUser($request->user())->authorize('view', $account);
+
+        $sid = $account->shiphero_customer_account_id;
+        if (! is_string($sid) || trim($sid) === '') {
+            throw ValidationException::withMessages([
+                'client_account_id' => [
+                    'This client account has no ShipHero customer account ID. Set it on the account profile (Payment section), then try again.',
+                ],
+            ]);
+        }
+
+        return trim($sid);
     }
 }

@@ -8,6 +8,7 @@ import ConfirmModal from "../../components/common/ConfirmModal.vue";
 import AsnProductCatalogPanel from "../../components/inventory/AsnProductCatalogPanel.vue";
 import { setCrmPageMeta } from "../../composables/useCrmPageMeta.js";
 import { useToast } from "../../composables/useToast.js";
+import { errorMessage } from "../../utils/apiError.js";
 import { ASN_CARRIER_OPTIONS } from "../../utils/asnCarrierOptions.js";
 import { formatAsnDisplay, formatAsnHeading } from "../../utils/formatAsnDisplay.js";
 import { formatDateUs } from "../../utils/formatUserDates.js";
@@ -79,9 +80,7 @@ const addNewSkuBusy = ref(false);
 const addNewSkuName = ref("");
 const addNewSkuSku = ref("");
 const addNewSkuQty = ref(1);
-const vendorDraft = ref([{ label: "" }]);
 const notesDraft = ref("");
-const vendorSaveBusy = ref(false);
 const notesSaveBusy = ref(false);
 
 const lineMenuOpenId = ref(null);
@@ -264,10 +263,6 @@ function syncDraftsFromAsn() {
           tracking_number: t.tracking_number || "",
         }))
       : [{ carrier: "", tracking_number: "" }];
-  vendorDraft.value =
-    (asn.value.vendor_lines || []).length > 0
-      ? asn.value.vendor_lines.map((x) => ({ label: x.label || "" }))
-      : [{ label: "" }];
   notesDraft.value = asn.value.warehouse_notes || "";
   shipmentBoxesDraft.value = Number(asn.value.total_boxes) || 0;
   shipmentPalletsDraft.value = Number(asn.value.total_pallets) || 0;
@@ -582,28 +577,45 @@ async function confirmMarkReady() {
   }
 }
 
+function buildAsnLinePayload(product, quantity) {
+  const p = product && typeof product === "object" ? product : {};
+  const sku = String(p.sku ?? "").trim();
+  const name = String(p.name ?? "").trim() || sku;
+  const rawId = p.id ?? p.shiphero_product_id ?? null;
+  const shipheroProductId =
+    rawId !== null && rawId !== undefined && String(rawId).trim() !== ""
+      ? String(rawId).trim()
+      : null;
+  let imageUrl = p.image_url != null ? String(p.image_url).trim() : null;
+  if (imageUrl === "") {
+    imageUrl = null;
+  } else if (imageUrl && imageUrl.length > 2048) {
+    imageUrl = imageUrl.slice(0, 2048);
+  }
+  return {
+    shiphero_product_id: shipheroProductId,
+    sku,
+    name,
+    image_url: imageUrl,
+    expected_qty: Math.max(1, Math.floor(Number(quantity) || 0)),
+  };
+}
+
 async function addFromCatalog({ product, quantity }) {
   if (!asn.value || !isDraft.value) return;
-  const p = product && typeof product === "object" ? product : null;
-  const qty = Math.max(0, Number(quantity) || 0);
-  if (qty <= 0) {
-    toast.error("Enter expected quantity.");
+  const payload = buildAsnLinePayload(product, quantity);
+  if (!payload.sku) {
+    toast.error("This product has no SKU.");
     return;
   }
   lineBusy.value = true;
   try {
-    await api.post(`/asns/${asnId.value}/lines`, {
-      shiphero_product_id: p.id,
-      sku: p.sku,
-      name: p.name,
-      image_url: p.image_url || null,
-      expected_qty: qty,
-    });
+    await api.post(`/asns/${asnId.value}/lines`, payload);
     toast.success("Product added.");
     await loadAsn();
     addPanelOpen.value = false;
   } catch (e) {
-    toast.errorFrom(e, "Could not add product.");
+    toast.error(errorMessage(e, "Could not add product."));
   } finally {
     lineBusy.value = false;
   }
@@ -645,15 +657,31 @@ async function submitAddNewSku() {
     toast.error("Enter expected quantity.");
     return;
   }
+  const accountId = Number(asn.value?.client_account_id || 0);
+  if (accountId <= 0) {
+    toast.error("Client account is required to create a SKU.");
+    return;
+  }
   addNewSkuBusy.value = true;
   try {
-    await api.post(`/asns/${asnId.value}/lines`, {
+    const { data: created } = await api.post("/inventory/catalog-products", {
       sku,
       name,
-      expected_qty: qty,
-      shiphero_product_id: null,
+      client_account_id: accountId,
     });
-    toast.success("SKU added and created in ShipHero.");
+    await api.post(
+      `/asns/${asnId.value}/lines`,
+      buildAsnLinePayload(
+        {
+          sku,
+          name,
+          id: created?.id ?? null,
+          image_url: created?.image_url ?? null,
+        },
+        qty,
+      ),
+    );
+    toast.success("SKU added.");
     addNewSkuOpen.value = false;
     await loadAsn();
     addPanelOpen.value = false;
@@ -712,35 +740,6 @@ async function confirmDeleteAsn() {
     toast.errorFrom(e, "Could not remove ASN.");
   } finally {
     deleteAsnBusy.value = false;
-  }
-}
-
-function addVendorRow() {
-  vendorDraft.value = [...vendorDraft.value, { label: "" }];
-}
-
-function removeVendorRow(idx) {
-  if (vendorDraft.value.length <= 1) {
-    vendorDraft.value = [{ label: "" }];
-    return;
-  }
-  vendorDraft.value = vendorDraft.value.filter((_, i) => i !== idx);
-}
-
-async function saveVendors() {
-  if (!asn.value?.id) return;
-  vendorSaveBusy.value = true;
-  try {
-    const { data } = await api.put(`/asns/${asnId.value}/vendor-lines`, {
-      vendor_lines: vendorDraft.value,
-    });
-    asn.value = data;
-    syncDraftsFromAsn();
-    toast.success("Vendor details saved.");
-  } catch (e) {
-    toast.errorFrom(e, "Could not save vendor details.");
-  } finally {
-    vendorSaveBusy.value = false;
   }
 }
 
@@ -1248,31 +1247,6 @@ onUnmounted(() => {
           <p v-else class="mb-0 small text-secondary" style="white-space: pre-wrap">
             {{ asn.warehouse_notes || "—" }}
           </p>
-        </div>
-
-        <div v-if="isDraft" class="staff-table-card staff-datatable-card staff-datatable-card--white p-4">
-          <h3 class="h6 fw-semibold mb-3">Vendor Details</h3>
-          <div v-for="(row, idx) in vendorDraft" :key="'vnd' + idx" class="d-flex gap-1 mb-2">
-            <input v-model="row.label" class="form-control form-control-sm" placeholder="Vendor line" />
-            <button
-              v-if="vendorDraft.length > 1"
-              type="button"
-              class="btn btn-sm btn-outline-secondary flex-shrink-0"
-              aria-label="Remove vendor line"
-              @click="removeVendorRow(idx)"
-            >
-              ×
-            </button>
-          </div>
-          <button type="button" class="btn btn-link btn-sm px-0 mb-2" @click="addVendorRow">Add Row</button>
-          <button
-            type="button"
-            class="btn btn-sm btn-primary staff-page-primary w-100"
-            :disabled="vendorSaveBusy"
-            @click="saveVendors"
-          >
-            Save Vendor Details
-          </button>
         </div>
 
         <div

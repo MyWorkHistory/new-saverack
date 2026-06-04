@@ -268,13 +268,17 @@ async function submitAddNewSku() {
   }
   addNewSkuBusy.value = true;
   try {
+    const { data: created } = await api.post("/inventory/catalog-products", { sku, name });
+    const shipheroProductId =
+      created?.id != null && String(created.id).trim() !== "" ? String(created.id).trim() : null;
     await api.post(`/asns/${asn.value.id}/lines`, {
+      shiphero_product_id: shipheroProductId,
       sku,
       name,
+      image_url: created?.image_url ?? null,
       expected_qty: qty,
-      shiphero_product_id: null,
     });
-    toast.success("SKU added and created in ShipHero.");
+    toast.success("SKU added.");
     addNewSkuOpen.value = false;
     await loadAsn();
     resetCatalogSearchState();

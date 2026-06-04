@@ -46,7 +46,14 @@ export function errorMessage(e, fallback = "Something Went Wrong.") {
     }
   }
   if (typeof d.message === "string" && d.message) {
-    return humanizeValidationMessage(d.message) || fallback;
+    const msg = humanizeValidationMessage(d.message) || fallback;
+    if (
+      msg.toLowerCase().includes("given data was invalid") ||
+      msg.toLowerCase().includes("validation failed")
+    ) {
+      return fallback;
+    }
+    return msg;
   }
   if (typeof d.detail === "string" && d.detail) {
     return d.detail;

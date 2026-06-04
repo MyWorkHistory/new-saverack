@@ -1022,6 +1022,34 @@ GQL;
     }
 
     /**
+     * Upsert a single product row into the local inventory index after ShipHero product_create.
+     *
+     * @param  array{id?: string, sku?: string, name?: string, image_url?: string|null}  $created
+     */
+    public function upsertCreatedProductIndex(int $clientAccountId, string $customerAccountId, array $created): void
+    {
+        if ($clientAccountId <= 0) {
+            return;
+        }
+        $sku = trim((string) ($created['sku'] ?? ''));
+        if ($sku === '') {
+            return;
+        }
+        $this->upsertInventoryIndexRows($clientAccountId, trim($customerAccountId), [
+            [
+                'sku' => $sku,
+                'product_id' => trim((string) ($created['id'] ?? '')),
+                'name' => trim((string) ($created['name'] ?? '')),
+                'image_url' => $created['image_url'] ?? null,
+                'on_hand' => 0,
+                'allocated' => 0,
+                'backorder' => 0,
+                'product_active' => true,
+            ],
+        ]);
+    }
+
+    /**
      * Minimal product payload for portal inventory detail when SKU exists on an ASN line but not in ShipHero yet.
      *
      * @return array<string, mixed>
@@ -1082,8 +1110,13 @@ GQL;
         if (($node['kit'] ?? false) === true || ($node['kit_build'] ?? false) === true) {
             return null;
         }
-        $id = isset($node['id']) && is_string($node['id']) ? trim($node['id']) : '';
+        $id = isset($node['id']) && (is_string($node['id']) || is_numeric($node['id']))
+            ? trim((string) $node['id'])
+            : '';
         $sku = isset($node['sku']) && is_string($node['sku']) ? trim($node['sku']) : '';
+        if ($sku === '' && isset($node['sku']) && is_numeric($node['sku'])) {
+            $sku = trim((string) $node['sku']);
+        }
         if ($id === '' && $sku === '') {
             return null;
         }
@@ -1135,9 +1168,9 @@ GQL;
     private function asnCatalogProductFromIndexRow(ShipHeroInventoryProductIndex $row): array
     {
         return [
-            'id' => $row->shiphero_product_id ?: $row->sku,
-            'sku' => $row->sku,
-            'name' => $row->name ?? '',
+            'id' => (string) ($row->shiphero_product_id ?: $row->sku),
+            'sku' => (string) $row->sku,
+            'name' => (string) ($row->name ?? ''),
             'barcode' => $row->barcode ?? '',
             'image_url' => $row->image_url,
         ];

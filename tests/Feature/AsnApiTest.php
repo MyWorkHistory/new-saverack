@@ -17,6 +17,12 @@ class AsnApiTest extends TestCase
 {
     use RefreshDatabase;
 
+    protected function tearDown(): void
+    {
+        Mockery::close();
+        parent::tearDown();
+    }
+
     private function inventoryViewPermission(): Permission
     {
         return Permission::query()->firstOrCreate(
@@ -278,6 +284,9 @@ class AsnApiTest extends TestCase
                 'name' => 'Portal Widget',
                 'image_url' => 'https://cdn.example/p.jpg',
             ]);
+        $mock->shouldReceive('upsertCreatedProductIndex')
+            ->once()
+            ->with($account->id, 'sh-asn-test-1', Mockery::type('array'));
         $this->app->instance(ShipHeroInventoryService::class, $mock);
 
         $response = $this->postJson('/api/asns/'.$asn->id.'/lines', [
@@ -294,5 +303,38 @@ class AsnApiTest extends TestCase
         $this->assertNotNull($line);
         $this->assertSame('prod-sh-1', $line->shiphero_product_id);
         $this->assertSame('https://cdn.example/p.jpg', $line->image_url);
+    }
+
+    public function test_store_line_without_shiphero_id_requires_linked_shiphero_customer_account(): void
+    {
+        $account = ClientAccount::create([
+            'company_name' => 'ASN No ShipHero',
+            'status' => ClientAccount::STATUS_ACTIVE,
+            'shiphero_customer_account_id' => null,
+        ]);
+        $user = User::factory()->create(['client_account_id' => $account->id]);
+        $user->permissions()->attach($this->inventoryViewPermission()->id);
+        Sanctum::actingAs($user);
+
+        $asn = ClientAccountAsn::create([
+            'client_account_id' => $account->id,
+            'asn_number' => '0011',
+            'status' => ClientAccountAsn::STATUS_DRAFT,
+            'total_boxes' => 0,
+            'total_pallets' => 0,
+            'expected_qty' => 0,
+            'accepted_qty' => 0,
+            'rejected_qty' => 0,
+        ]);
+
+        $this->postJson('/api/asns/'.$asn->id.'/lines', [
+            'sku' => 'NEEDS-SH-LINK',
+            'name' => 'Widget',
+            'expected_qty' => 1,
+        ])
+            ->assertStatus(422)
+            ->assertJsonValidationErrors(['client_account_id']);
+
+        $this->assertDatabaseCount('client_account_asn_lines', 0);
     }
 }

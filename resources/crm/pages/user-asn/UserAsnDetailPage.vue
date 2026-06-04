@@ -6,6 +6,7 @@ import CrmIconRowActions from "../../components/common/CrmIconRowActions.vue";
 import CrmLoadingSpinner from "../../components/common/CrmLoadingSpinner.vue";
 import ConfirmModal from "../../components/common/ConfirmModal.vue";
 import AsnProductCatalogPanel from "../../components/inventory/AsnProductCatalogPanel.vue";
+import { asnCatalogApiBase } from "../../composables/useAsnProductCatalog.js";
 import { setCrmPageMeta } from "../../composables/useCrmPageMeta.js";
 import { useToast } from "../../composables/useToast.js";
 import { ASN_CARRIER_OPTIONS } from "../../utils/asnCarrierOptions.js";
@@ -285,9 +286,14 @@ async function submitAddNewSku() {
   addNewSkuBusy.value = true;
   try {
     const asnIdForApi = asnRouteId.value || asnNumericId.value;
+    const catalogBase =
+      asnCatalogApiBase(asnIdForApi, {
+        routeName: route.name,
+        routePath: route.path,
+      }) || `/asns/${asnIdForApi}`;
     let created = null;
     try {
-      const { data } = await api.post(`/asns/${asnIdForApi}/catalog-products`, { sku, name });
+      const { data } = await api.post(`${catalogBase}/catalog-products`, { sku, name });
       created = data;
     } catch (catalogErr) {
       const status = catalogErr?.response?.status;
@@ -708,7 +714,7 @@ onUnmounted(() => {
           <div v-show="addPanelOpen" class="border-bottom">
             <AsnProductCatalogPanel
               :client-account-id="clientAccountId"
-              :asn-id="asnRouteId || asnNumericId"
+              :asn-id="asnRouteId"
               :active="addPanelOpen"
               :use-session-client-account="portalClientAccountId > 0"
               :busy="lineBusy"

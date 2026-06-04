@@ -387,4 +387,39 @@ class AsnApiTest extends TestCase
             ->assertJsonPath('client_account_id', $account->id)
             ->assertJsonPath('products.0.sku', 'CATALOG-SKU');
     }
+
+    public function test_inventory_asn_catalog_resolves_account_from_referer_when_params_missing(): void
+    {
+        $account = $this->account();
+        $user = User::factory()->create(['client_account_id' => $account->id]);
+        $user->permissions()->attach($this->inventoryViewPermission()->id);
+        Sanctum::actingAs($user);
+
+        $asn = ClientAccountAsn::create([
+            'client_account_id' => $account->id,
+            'asn_number' => '0013',
+            'status' => ClientAccountAsn::STATUS_DRAFT,
+            'total_boxes' => 0,
+            'total_pallets' => 0,
+            'expected_qty' => 0,
+            'accepted_qty' => 0,
+            'rejected_qty' => 0,
+        ]);
+
+        $mock = Mockery::mock(ShipHeroInventoryService::class);
+        $mock->shouldReceive('listAsnProductCatalogPage')
+            ->once()
+            ->with('sh-asn-test-1', Mockery::type('int'), null, null, 0, $account->id, false)
+            ->andReturn([
+                'products' => [],
+                'page_info' => ['has_next_page' => false, 'end_cursor' => null],
+            ]);
+        $this->app->instance(ShipHeroInventoryService::class, $mock);
+
+        $this->getJson('/api/inventory/asn-product-catalog?first=50', [
+            'Referer' => 'https://app.example.com/admin/receiving/asn/'.$asn->id,
+        ])
+            ->assertOk()
+            ->assertJsonPath('client_account_id', $account->id);
+    }
 }

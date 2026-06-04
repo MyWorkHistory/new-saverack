@@ -160,6 +160,8 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::get('/summary', [AdminAsnController::class, 'summary'])->middleware('can:inventory.view');
         Route::get('/', [AdminAsnController::class, 'index'])->middleware('can:inventory.view');
         Route::post('/non-compliant', [AdminAsnController::class, 'storeNonCompliant'])->middleware('can:inventory.view');
+        Route::get('/{asn}/product-catalog', [AsnController::class, 'productCatalog'])->middleware('can:inventory.view');
+        Route::post('/{asn}/catalog-products', [AsnController::class, 'storeCatalogProduct'])->middleware('can:inventory.view');
         Route::get('/{asn}', [AdminAsnController::class, 'show'])->middleware('can:inventory.view');
         Route::patch('/{asn}/status', [AdminAsnController::class, 'updateStatus'])->middleware('can:inventory.view');
         Route::post('/{asn}/enrich-specs', [AdminAsnController::class, 'enrichSpecs'])->middleware('can:inventory.view');

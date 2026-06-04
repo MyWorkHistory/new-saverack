@@ -1,4 +1,5 @@
 import { nextTick, ref, unref } from "vue";
+import { useRoute } from "vue-router";
 import api from "../services/api";
 import { useToast } from "./useToast";
 
@@ -10,9 +11,45 @@ export function catalogKey(product) {
 }
 
 /**
+ * Base path for ASN-scoped catalog APIs (`/admin/asns/{id}` or `/asns/{id}`).
+ * @param {number|string} asnId
+ * @param {{ routeName?: string, routePath?: string }} [opts]
+ */
+export function asnCatalogApiBase(asnId, opts = {}) {
+  const id = Number(asnId || 0);
+  if (id <= 0) return null;
+  const routeName = opts.routeName ?? "";
+  const routePath = opts.routePath ?? currentBrowserPath();
+  const admin =
+    routeName === "admin-asn-detail" ||
+    /\/admin\/receiving\/asn\b/i.test(String(routePath));
+  return admin ? `/admin/asns/${id}` : `/asns/${id}`;
+}
+
+function currentBrowserPath() {
+  if (typeof window === "undefined") return "";
+  return String(window.location.pathname || "");
+}
+
+function asnIdFromBrowserPath() {
+  const path = currentBrowserPath();
+  const patterns = [
+    /\/admin\/receiving\/asn\/(\d+)/i,
+    /\/receiving\/asn\/(\d+)/i,
+    /\/asn\/(\d+)/i,
+  ];
+  for (const re of patterns) {
+    const m = path.match(re);
+    if (m) return Number(m[1]);
+  }
+  return 0;
+}
+
+/**
  * ShipHero product catalog for ASN / order line-item pickers.
  *
  * @param {import('vue').MaybeRefOrGetter<number|string|null|undefined>} clientAccountIdSource
+ * CRM client account id (the business customer), not the logged-in user id.
  * @param {import('vue').MaybeRefOrGetter<boolean>} [useSessionClientAccountSource]
  * @param {import('vue').MaybeRefOrGetter<number|string|null|undefined>} [asnIdSource]
  */
@@ -22,6 +59,7 @@ export function useAsnProductCatalog(
   asnIdSource = () => 0,
 ) {
   const toast = useToast();
+  const route = useRoute();
 
   const catalog = ref([]);
   const catalogLoading = ref(false);
@@ -48,9 +86,19 @@ export function useAsnProductCatalog(
   }
 
   function resolvedAsnId() {
-    const id = Number(unref(asnIdSource) || 0);
+    let id = Number(unref(asnIdSource) || 0);
+    if (id > 0) return id;
+    id = Number(route.params?.id || 0);
+    if (id > 0) return id;
+    return asnIdFromBrowserPath();
+  }
 
-    return id > 0 ? id : 0;
+  /** ASN-scoped catalog URL (preferred); null falls back to legacy inventory endpoint. */
+  function scopedCatalogBasePath() {
+    return asnCatalogApiBase(resolvedAsnId(), {
+      routeName: route.name,
+      routePath: route.path,
+    });
   }
 
   function catalogQty(product) {
@@ -97,7 +145,7 @@ export function useAsnProductCatalog(
       catalogLoadingMore.value ||
       catalogLoading.value ||
       catalogSearchAutoLoading.value ||
-      (!resolvedAccountId() && !allowImplicitClientAccount() && !resolvedAsnId())
+      (!resolvedAsnId() && !resolvedAccountId() && !allowImplicitClientAccount())
     ) {
       return;
     }
@@ -129,7 +177,8 @@ export function useAsnProductCatalog(
   async function loadCatalogRows(reset, forceRefresh = false) {
     const accountId = resolvedAccountId();
     const asnId = resolvedAsnId();
-    if (!asnId && !accountId && !allowImplicitClientAccount()) {
+    const scopedBase = scopedCatalogBasePath();
+    if (!scopedBase && !accountId && !allowImplicitClientAccount()) {
       catalogLoadError.value =
         "Could not determine which customer account owns this ASN. Reload the page.";
       return;
@@ -152,15 +201,14 @@ export function useAsnProductCatalog(
       const params = {
         first: ASN_CATALOG_PAGE_SIZE,
       };
-      const catalogUrl =
-        asnId > 0 ? `/asns/${asnId}/product-catalog` : "/inventory/asn-product-catalog";
-      if (catalogUrl === "/inventory/asn-product-catalog") {
-        if (accountId > 0) {
-          params.client_account_id = accountId;
-        }
-        if (asnId > 0) {
-          params.asn_id = asnId;
-        }
+      const catalogUrl = scopedBase
+        ? `${scopedBase}/product-catalog`
+        : "/inventory/asn-product-catalog";
+      if (asnId > 0) {
+        params.asn_id = asnId;
+      }
+      if (accountId > 0) {
+        params.client_account_id = accountId;
       }
       const q = catalogSearchCommitted.value;
       if (q) {
@@ -213,14 +261,13 @@ export function useAsnProductCatalog(
       catalogRefreshing.value = false;
     }
 
-    if (reset && catalogSearchCommitted.value.trim() && catalogPageInfo.value.has_next_page) {
+    if (reset && catalogSearchCommitted.value.trim()) {
       continueCatalogSearchInBackground(runId);
     }
   }
 
-  function refreshCatalogProducts() {
-    if (catalogLoading.value || catalogLoadingMore.value || catalogRefreshing.value) return;
-    loadCatalogRows(true, true);
+  async function refreshCatalogProducts() {
+    await loadCatalogRows(true, true);
   }
 
   return {
@@ -232,9 +279,7 @@ export function useAsnProductCatalog(
     catalogPageInfo,
     catalogSearchDraft,
     catalogSearchCommitted,
-    catalogQtyByKey,
     catalogLoadError,
-    catalogKey,
     catalogQty,
     setCatalogQty,
     resetCatalogSearchState,
@@ -243,5 +288,7 @@ export function useAsnProductCatalog(
     loadMoreCatalog,
     loadCatalogRows,
     refreshCatalogProducts,
+    resolvedAsnId,
+    scopedCatalogBasePath,
   };
 }

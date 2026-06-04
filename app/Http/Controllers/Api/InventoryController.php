@@ -1335,6 +1335,9 @@ class InventoryController extends Controller
     {
         $clientAccountId = (int) ($request->input('client_account_id') ?? $validated['client_account_id'] ?? 0);
         $asnId = (int) ($request->input('asn_id') ?? $validated['asn_id'] ?? 0);
+        if ($asnId <= 0) {
+            $asnId = $this->resolveAsnIdFromReferer($request);
+        }
 
         if ($clientAccountId <= 0 && $asnId > 0) {
             $asn = ClientAccountAsn::query()->find($asnId);
@@ -1356,6 +1359,25 @@ class InventoryController extends Controller
         }
 
         return $clientAccountId;
+    }
+
+    /**
+     * When the CRM page URL includes an ASN id (e.g. /admin/receiving/asn/22), resolve account from that ASN.
+     */
+    private function resolveAsnIdFromReferer(Request $request): int
+    {
+        $referer = (string) $request->headers->get('referer', '');
+        if ($referer === '') {
+            return 0;
+        }
+        if (preg_match('#/receiving/asn/(\d+)#i', $referer, $m) === 1) {
+            return (int) $m[1];
+        }
+        if (preg_match('#/asns?/(\d+)#i', $referer, $m) === 1) {
+            return (int) $m[1];
+        }
+
+        return 0;
     }
 
     /**

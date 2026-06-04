@@ -58,24 +58,21 @@ class ClientAccountStatusSlackService
 
         $text = (string) ($payload['text'] ?? '');
         $username = (string) ($payload['username'] ?? self::USERNAME);
-        $options = [];
-        if (! empty($payload['icon_url'])) {
-            $options['icon_url'] = $payload['icon_url'];
-        }
-        if (! empty($payload['blocks']) && is_array($payload['blocks'])) {
-            $options['blocks'] = $payload['blocks'];
-        }
-        if (! empty($payload['attachments']) && is_array($payload['attachments'])) {
-            $options['attachments'] = $payload['attachments'];
-        }
+        $iconUrl = (string) ($payload['icon_url'] ?? '');
+        $options = $this->deliveryOptions($text, $username, $iconUrl);
 
         try {
-            $result = $this->slack->post($channel, $text, $username, $options);
+            $result = $this->slack->post(
+                $channel,
+                (string) ($options['text'] ?? $text),
+                (string) ($options['username'] ?? $username),
+                $options['slack'] ?? []
+            );
             Log::info('client_account.status_slack_sent', [
                 'client_account_id' => $account->id,
                 'slack_channel' => $result['channel'],
                 'delivery' => $result['method'],
-                'icon_url' => $payload['icon_url'] ?? null,
+                'icon_url' => $iconUrl !== '' ? $iconUrl : null,
                 'old_status' => $oldStatus,
                 'new_status' => $newStatus,
                 'actor_id' => $actor !== null ? $actor->id : null,
@@ -92,13 +89,48 @@ class ClientAccountStatusSlackService
     }
 
     /**
-     * @return array{
-     *     text: string,
-     *     username: string,
-     *     icon_url: string,
-     *     blocks: array<int, array<string, mixed>>,
-     *     attachments: array<int, array<string, mixed>>
-     * }|null
+     * Webhook: custom username + icon_url avatar + message text (once).
+     * Bot: attachment author row with small icon; body text only in attachment.
+     *
+     * @return array{text: string, username: string, slack: array<string, mixed>}
+     */
+    private function deliveryOptions(string $text, string $username, string $iconUrl): array
+    {
+        if ($this->slack->usesIncomingWebhook()) {
+            $slack = [];
+            if ($iconUrl !== '') {
+                $slack['icon_url'] = $iconUrl;
+            }
+
+            return [
+                'text' => $text,
+                'username' => $username,
+                'slack' => $slack,
+            ];
+        }
+
+        $slack = [];
+        if ($iconUrl !== '') {
+            $slack['attachments'] = [
+                [
+                    'fallback' => $username."\n".$text,
+                    'author_name' => $username,
+                    'author_icon' => $iconUrl,
+                    'text' => $text,
+                    'mrkdwn_in' => ['text'],
+                ],
+            ];
+        }
+
+        return [
+            'text' => $username,
+            'username' => 'Save Rack',
+            'slack' => $slack,
+        ];
+    }
+
+    /**
+     * @return array{text: string, username: string, icon_url: string}|null
      */
     public function buildMessagePayload(
         ClientAccount $account,
@@ -131,13 +163,7 @@ class ClientAccountStatusSlackService
     }
 
     /**
-     * @return array{
-     *     text: string,
-     *     username: string,
-     *     icon_url: string,
-     *     blocks: array<int, array<string, mixed>>,
-     *     attachments: array<int, array<string, mixed>>
-     * }
+     * @return array{text: string, username: string, icon_url: string}
      */
     private function buildStatusPayload(
         ClientAccount $account,
@@ -152,52 +178,10 @@ class ClientAccountStatusSlackService
         $this->appendActorLine($lines, $actor);
         $lines[] = '<'.self::SHIPHERO_3PL_URL.'|'.$shipheroLinkLabel.'>';
 
-        $text = implode("\n", $lines);
-        $iconUrl = $this->slackIconUrl($iconFilename);
-
         return [
-            'text' => $text,
+            'text' => implode("\n", $lines),
             'username' => self::USERNAME,
-            'icon_url' => $iconUrl,
-            'blocks' => $this->buildBlocks($text, $iconUrl, $statusLabel),
-            'attachments' => [
-                [
-                    'fallback' => self::USERNAME,
-                    'author_name' => self::USERNAME,
-                    'author_icon' => $iconUrl,
-                    'text' => $text,
-                    'mrkdwn_in' => ['text'],
-                ],
-            ],
-        ];
-    }
-
-    /**
-     * @return array<int, array<string, mixed>>
-     */
-    private function buildBlocks(string $text, string $iconUrl, string $altText): array
-    {
-        return [
-            [
-                'type' => 'header',
-                'text' => [
-                    'type' => 'plain_text',
-                    'text' => self::USERNAME,
-                    'emoji' => false,
-                ],
-            ],
-            [
-                'type' => 'image',
-                'image_url' => $iconUrl,
-                'alt_text' => $altText,
-            ],
-            [
-                'type' => 'section',
-                'text' => [
-                    'type' => 'mrkdwn',
-                    'text' => $text,
-                ],
-            ],
+            'icon_url' => $this->slackIconUrl($iconFilename),
         ];
     }
 

@@ -72,10 +72,8 @@ class ClientAccountStatusSlackApiTest extends TestCase
             $this->assertSame('#slack-co', $payload['channel'] ?? null);
             $this->assertSame('Shipping Status Update', $payload['username'] ?? null);
             $this->assertStringContainsString('/images/slack/shipping-status-paused.png', (string) ($payload['icon_url'] ?? ''));
-            $blocks = $payload['blocks'] ?? [];
-            $this->assertIsArray($blocks);
-            $this->assertGreaterThanOrEqual(2, count($blocks));
-            $this->assertSame('image', $blocks[1]['type'] ?? null);
+            $this->assertArrayNotHasKey('blocks', $payload);
+            $this->assertStringNotContainsString('Shipping Status Update', (string) ($payload['text'] ?? ''));
             $this->assertStringContainsString('Slack Co is set to Paused.', (string) ($payload['text'] ?? ''));
             $this->assertStringContainsString('<https://app.shiphero.com/3pl|Set Pause in Shiphero>', (string) ($payload['text'] ?? ''));
             $this->assertStringNotContainsString('View Account', (string) ($payload['text'] ?? ''));

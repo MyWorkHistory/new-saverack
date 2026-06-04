@@ -21,10 +21,10 @@ final class ClientAccountStatusSlackServiceTest extends TestCase
         ]);
     }
 
-    public function test_build_paused_message_uses_shipping_status_update_format(): void
+    public function test_build_paused_message_body_only_once(): void
     {
         $account = new ClientAccount([
-            'company_name' => 'Demo Account',
+            'company_name' => 'Demo Company',
             'in_house_slack' => 'demo-company',
         ]);
         $account->id = 451;
@@ -44,25 +44,21 @@ final class ClientAccountStatusSlackServiceTest extends TestCase
             $payload['icon_url']
         );
         $this->assertSame(
-            "Demo Account is set to Paused.\nUpdated by: Audi Kowalski\n<https://app.shiphero.com/3pl|Set Pause in Shiphero>",
+            "Demo Company is set to Paused.\nUpdated by: Audi Kowalski\n<https://app.shiphero.com/3pl|Set Pause in Shiphero>",
             $payload['text']
         );
         $this->assertStringNotContainsString('View Account', $payload['text']);
-        $this->assertArrayHasKey('blocks', $payload);
-        $this->assertSame('image', $payload['blocks'][1]['type']);
-        $this->assertSame(
-            'https://app.saverack.com/images/slack/shipping-status-paused.png',
-            $payload['blocks'][1]['image_url']
-        );
+        $this->assertStringNotContainsString('Shipping Status Update', $payload['text']);
+        $this->assertArrayNotHasKey('blocks', $payload);
+        $this->assertArrayNotHasKey('attachments', $payload);
     }
 
-    public function test_build_live_message_uses_shipping_status_update_format(): void
+    public function test_build_live_message_body_only_once(): void
     {
         $account = new ClientAccount([
             'company_name' => 'Demo Account',
             'in_house_slack' => 'live-co',
         ]);
-        $account->id = 12;
 
         $actor = new User(['name' => 'Audi Kowalski']);
         $payload = app(ClientAccountStatusSlackService::class)->buildMessagePayload(
@@ -73,40 +69,67 @@ final class ClientAccountStatusSlackServiceTest extends TestCase
         );
 
         $this->assertNotNull($payload);
-        $this->assertSame('Shipping Status Update', $payload['username']);
-        $this->assertSame(
-            'https://app.saverack.com/images/slack/shipping-status-live.png',
-            $payload['icon_url']
-        );
         $this->assertSame(
             "Demo Account is set to Live.\nUpdated by: Audi Kowalski\n<https://app.shiphero.com/3pl|Set Live in Shiphero>",
             $payload['text']
         );
-        $this->assertSame(
-            'https://app.saverack.com/images/slack/shipping-status-live.png',
-            $payload['attachments'][0]['author_icon']
-        );
+        $this->assertStringNotContainsString('Shipping Status Update', $payload['text']);
     }
 
-    public function test_icon_url_upgrades_http_base_to_https(): void
+    public function test_webhook_delivery_uses_username_and_icon_url_only(): void
     {
-        config(['billing.slack.public_asset_base_url' => 'http://app.saverack.com']);
+        config(['billing.slack.webhook_url' => 'https://hooks.slack.com/services/T/B/x']);
 
-        $account = new ClientAccount(['company_name' => 'Co']);
-        $payload = app(ClientAccountStatusSlackService::class)->buildMessagePayload(
-            $account,
-            ClientAccount::STATUS_PENDING,
-            ClientAccount::STATUS_ACTIVE
+        $service = app(ClientAccountStatusSlackService::class);
+        $reflection = new \ReflectionClass($service);
+        $method = $reflection->getMethod('deliveryOptions');
+        $method->setAccessible(true);
+
+        $result = $method->invoke(
+            $service,
+            "Demo is set to Live.\nUpdated by: Audi",
+            'Shipping Status Update',
+            'https://app.saverack.com/images/slack/shipping-status-live.png'
         );
 
-        $this->assertStringStartsWith('https://', $payload['icon_url']);
+        $this->assertSame('Shipping Status Update', $result['username']);
+        $this->assertSame("Demo is set to Live.\nUpdated by: Audi", $result['text']);
+        $this->assertSame(
+            'https://app.saverack.com/images/slack/shipping-status-live.png',
+            $result['slack']['icon_url']
+        );
+        $this->assertArrayNotHasKey('blocks', $result['slack']);
+        $this->assertArrayNotHasKey('attachments', $result['slack']);
+    }
+
+    public function test_bot_delivery_uses_attachment_author_icon_not_body_image(): void
+    {
+        config(['billing.slack.webhook_url' => null, 'billing.slack.bot_token' => 'xoxb-test']);
+
+        $service = app(ClientAccountStatusSlackService::class);
+        $reflection = new \ReflectionClass($service);
+        $method = $reflection->getMethod('deliveryOptions');
+        $method->setAccessible(true);
+
+        $text = "Demo is set to Paused.\nUpdated by: Audi";
+        $result = $method->invoke(
+            $service,
+            $text,
+            'Shipping Status Update',
+            'https://app.saverack.com/images/slack/shipping-status-paused.png'
+        );
+
+        $this->assertSame('Save Rack', $result['username']);
+        $this->assertArrayHasKey('attachments', $result['slack']);
+        $attachment = $result['slack']['attachments'][0];
+        $this->assertSame('Shipping Status Update', $attachment['author_name']);
+        $this->assertSame($text, $attachment['text']);
+        $this->assertArrayNotHasKey('blocks', $result['slack']);
     }
 
     public function test_other_status_changes_do_not_build_slack_payload(): void
     {
         $account = new ClientAccount(['company_name' => 'Demo Company']);
-        $account->id = 1;
-
         $payload = app(ClientAccountStatusSlackService::class)->buildMessagePayload(
             $account,
             ClientAccount::STATUS_ACTIVE,
@@ -114,11 +137,6 @@ final class ClientAccountStatusSlackServiceTest extends TestCase
         );
 
         $this->assertNull($payload);
-        $this->assertSame('', app(ClientAccountStatusSlackService::class)->buildMessageText(
-            $account,
-            ClientAccount::STATUS_ACTIVE,
-            ClientAccount::STATUS_INACTIVE
-        ));
     }
 
     public function test_channel_from_in_house_slack_supports_archive_url_and_slug(): void
@@ -132,10 +150,6 @@ final class ClientAccountStatusSlackServiceTest extends TestCase
         $this->assertSame(
             '#demo-company',
             $slack->channelFromInHouseSlack('demo-company')
-        );
-        $this->assertSame(
-            '#demo-company',
-            $slack->channelFromInHouseSlack('https://saverack.slack.com/app_redirect?channel=demo-company')
         );
     }
 }

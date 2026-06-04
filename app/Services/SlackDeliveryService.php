@@ -91,6 +91,11 @@ class SlackDeliveryService
         return ['method' => 'bot', 'channel' => $postedChannel, 'ts' => $ts !== '' ? $ts : null];
     }
 
+    public function usesIncomingWebhook(): bool
+    {
+        return $this->normalizeWebhookUrl((string) config('billing.slack.webhook_url', '')) !== '';
+    }
+
     public function normalizeChannelName(string $channel): string
     {
         $channel = trim($channel);

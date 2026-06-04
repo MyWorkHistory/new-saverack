@@ -11,18 +11,25 @@ use Illuminate\Support\Facades\Log;
 class SlackDeliveryService
 {
     /**
+     * @param  array{icon_emoji?: string|null, attachments?: array<int, array<string, mixed>>|null}  $options
      * @return array{method: string, channel: string, ts: string|null}
      */
-    public function post(string $channel, string $text, string $username = 'Save Rack'): array
+    public function post(string $channel, string $text, string $username = 'Save Rack', array $options = []): array
     {
         $channel = $this->normalizeChannelName($channel);
         if ($channel === '') {
             throw new \RuntimeException('Slack channel is required.');
         }
 
+        $iconEmoji = isset($options['icon_emoji']) ? trim((string) $options['icon_emoji']) : '';
+        $attachments = $options['attachments'] ?? null;
+        if (! is_array($attachments)) {
+            $attachments = null;
+        }
+
         $webhookUrl = $this->normalizeWebhookUrl((string) config('billing.slack.webhook_url', ''));
         if ($webhookUrl !== '') {
-            $this->postViaWebhook($webhookUrl, $channel, $text, $username);
+            $this->postViaWebhook($webhookUrl, $channel, $text, $username, $iconEmoji, $attachments);
 
             return ['method' => 'webhook', 'channel' => $channel, 'ts' => null];
         }
@@ -37,14 +44,22 @@ class SlackDeliveryService
         $this->assertBotTokenShape($token);
         $this->joinChannelIfPossible($token, $channel);
 
+        $payload = [
+            'channel' => $channel,
+            'text' => $text,
+            'mrkdwn' => true,
+        ];
+        if ($iconEmoji !== '') {
+            $payload['icon_emoji'] = $iconEmoji;
+        }
+        if ($attachments !== null && $attachments !== []) {
+            $payload['attachments'] = $attachments;
+        }
+
         $response = Http::withToken($token)
             ->acceptJson()
             ->timeout(15)
-            ->post('https://slack.com/api/chat.postMessage', [
-                'channel' => $channel,
-                'text' => $text,
-                'mrkdwn' => true,
-            ]);
+            ->post('https://slack.com/api/chat.postMessage', $payload);
 
         if (! $response->successful()) {
             throw new \RuntimeException('Could not send message to Slack.');
@@ -112,16 +127,33 @@ class SlackDeliveryService
         return $this->normalizeChannelName(ltrim($s, '#'));
     }
 
-    private function postViaWebhook(string $webhookUrl, string $channel, string $text, string $username): void
-    {
+    /**
+     * @param  array<int, array<string, mixed>>|null  $attachments
+     */
+    private function postViaWebhook(
+        string $webhookUrl,
+        string $channel,
+        string $text,
+        string $username,
+        string $iconEmoji = '',
+        ?array $attachments = null
+    ): void {
+        $payload = [
+            'channel' => $channel,
+            'username' => $username,
+            'text' => $text,
+            'mrkdwn' => true,
+        ];
+        if ($iconEmoji !== '') {
+            $payload['icon_emoji'] = $iconEmoji;
+        }
+        if ($attachments !== null && $attachments !== []) {
+            $payload['attachments'] = $attachments;
+        }
+
         $response = Http::acceptJson()
             ->timeout(15)
-            ->post($webhookUrl, [
-                'channel' => $channel,
-                'username' => $username,
-                'text' => $text,
-                'mrkdwn' => true,
-            ]);
+            ->post($webhookUrl, $payload);
 
         if (! $response->successful()) {
             throw new \RuntimeException('Could not send message to Slack webhook.');

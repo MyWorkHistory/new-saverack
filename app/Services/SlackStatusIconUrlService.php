@@ -87,7 +87,7 @@ class SlackStatusIconUrlService
             $contentType = strtolower(trim((string) $response->header('Content-Type')));
 
             return $response->successful() && str_contains($contentType, 'image');
-        } catch (\Throwable) {
+        } catch (\Throwable $e) {
             return false;
         }
     }

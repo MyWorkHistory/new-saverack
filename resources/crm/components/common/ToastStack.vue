@@ -18,7 +18,9 @@ const { items, remove } = useToast();
           :class="
             t.type === 'success'
               ? 'border-emerald-200 bg-emerald-50/95 text-emerald-900 dark:border-emerald-800 dark:bg-emerald-950/90 dark:text-emerald-100'
-              : 'border-red-200 bg-red-50/95 text-red-900 dark:border-red-900 dark:bg-red-950/90 dark:text-red-100'
+              : t.type === 'warning'
+                ? 'border-amber-200 bg-amber-50/95 text-amber-950 dark:border-amber-800 dark:bg-amber-950/90 dark:text-amber-100'
+                : 'border-red-200 bg-red-50/95 text-red-900 dark:border-red-900 dark:bg-red-950/90 dark:text-red-100'
           "
           role="alert"
         >
@@ -35,6 +37,20 @@ const { items, remove } = useToast();
                 stroke-linecap="round"
                 stroke-linejoin="round"
                 d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"
+              />
+            </svg>
+            <svg
+              v-else-if="t.type === 'warning'"
+              class="h-5 w-5 text-amber-600 dark:text-amber-400"
+              fill="none"
+              viewBox="0 0 24 24"
+              stroke="currentColor"
+              stroke-width="2"
+            >
+              <path
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                d="M12 9v2m0 4h.01M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"
               />
             </svg>
             <svg

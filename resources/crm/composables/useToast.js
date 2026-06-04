@@ -30,6 +30,7 @@ export function useToast() {
   return {
     items: state.items,
     success: (msg, durationMs) => push("success", msg, durationMs),
+    warning: (msg, durationMs) => push("warning", msg, durationMs),
     error: (msg, durationMs) => push("error", msg, durationMs),
     /** Prefer this for catch blocks: extracts Laravel message / validation. */
     errorFrom: (e, fallback) => push("error", errorMessage(e, fallback), 7000),

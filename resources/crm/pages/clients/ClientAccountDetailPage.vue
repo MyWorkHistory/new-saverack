@@ -576,11 +576,14 @@ async function saveAccountStatusFromModal() {
   accountStatusSaving.value = true;
   try {
     const { data } = await api.patch(`/client-accounts/${props.id}`, { status: next });
-    account.value = { ...account.value, status: next };
+    account.value = {
+      ...account.value,
+      status: data?.status ?? next,
+    };
+    accountStatusModalOpen.value = false;
     toast.success("Account status updated.");
     warnIfShipheroSyncFailed(data, toast);
     await loadHistory();
-    accountStatusModalOpen.value = false;
   } catch (e) {
     toast.errorFrom(e, "Could not update status.");
   } finally {

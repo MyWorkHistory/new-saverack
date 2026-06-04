@@ -100,12 +100,19 @@ class ClientAccountStatusSlackService
      */
     private function deliveryOptions(string $text, string $username, string $iconUrl): array
     {
-        $slack = [
-            'customize_identity' => true,
-            'prefer_bot' => true,
-        ];
+        $slack = [];
         if ($iconUrl !== '') {
             $slack['icon_url'] = $iconUrl;
+        }
+
+        // Bot required for truck avatar; webhook still delivers the message if no bot.
+        if ($this->slack->hasBotToken()) {
+            $slack['customize_identity'] = true;
+            $slack['prefer_bot'] = true;
+        } else {
+            Log::info('client_account.status_slack_webhook_only', [
+                'hint' => 'Message will post via SLACK_WEBHOOK_URL with default icon until SLACK_BOT_USER_OAUTH_TOKEN is set.',
+            ]);
         }
 
         return [

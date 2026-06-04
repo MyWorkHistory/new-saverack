@@ -45,13 +45,6 @@ class SlackDeliveryService
         $preferBot = (! empty($options['prefer_bot']) || $customizeIdentity) && $this->hasBotToken();
         $webhookUrl = $this->normalizeWebhookUrl((string) config('billing.slack.webhook_url', ''));
 
-        if ($customizeIdentity && ! $this->hasBotToken()) {
-            throw new \RuntimeException(
-                'Slack truck icons require SLACK_BOT_USER_OAUTH_TOKEN (xoxb-) with chat:write and chat:write.customize. '
-                .'Incoming webhooks cannot set icon_url or a custom username.'
-            );
-        }
-
         if (! $preferBot && $webhookUrl !== '') {
             $this->postViaWebhook($webhookUrl, $channel, $text, $username, $iconEmoji, $attachments, $iconUrl, $blocks);
 
@@ -68,15 +61,6 @@ class SlackDeliveryService
         try {
             return $this->postViaBot($token, $channel, $text, $username, $iconEmoji, $attachments, $iconUrl, $blocks, $customizeIdentity);
         } catch (\Throwable $e) {
-            if ($customizeIdentity) {
-                Log::error('slack_delivery_bot_failed_status_icon', [
-                    'channel' => $channel,
-                    'message' => $e->getMessage(),
-                    'hint' => 'Invite the bot to the channel and ensure chat:write.customize is granted after reinstalling the Slack app.',
-                ]);
-                throw $e;
-            }
-
             if ($webhookUrl === '') {
                 throw $e;
             }
@@ -84,9 +68,14 @@ class SlackDeliveryService
             Log::warning('slack_delivery_bot_failed_using_webhook', [
                 'channel' => $channel,
                 'message' => $e->getMessage(),
+                'custom_icon' => $customizeIdentity,
+                'hint' => $customizeIdentity
+                    ? 'Invite the bot to the channel; truck icon needs bot. Message sent via webhook with default icon.'
+                    : null,
             ]);
 
-            $this->postViaWebhook($webhookUrl, $channel, $text, $username, $iconEmoji, $attachments, $iconUrl, null);
+            $fallbackIconUrl = $customizeIdentity ? '' : $iconUrl;
+            $this->postViaWebhook($webhookUrl, $channel, $text, $username, $iconEmoji, $attachments, $fallbackIconUrl, null);
 
             return ['method' => 'webhook', 'channel' => $channel, 'ts' => null];
         }

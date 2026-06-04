@@ -89,6 +89,29 @@ final class ClientAccountStatusSlackServiceTest extends TestCase
         $this->assertStringNotContainsString('Shipping Status Update', $payload['text']);
     }
 
+    public function test_delivery_without_bot_uses_webhook_only(): void
+    {
+        config([
+            'billing.slack.webhook_url' => 'https://hooks.slack.com/services/T/B/x',
+            'billing.slack.bot_token' => null,
+        ]);
+
+        $service = app(ClientAccountStatusSlackService::class);
+        $reflection = new \ReflectionClass($service);
+        $method = $reflection->getMethod('deliveryOptions');
+        $method->setAccessible(true);
+
+        $result = $method->invoke(
+            $service,
+            "Demo is set to Live.\nUpdated by: Audi",
+            'Shipping Status Update',
+            'https://app.saverack.com/storage/slack-status-icons/shipping-status-live.png'
+        );
+
+        $this->assertArrayNotHasKey('customize_identity', $result['slack']);
+        $this->assertArrayNotHasKey('prefer_bot', $result['slack']);
+    }
+
     public function test_delivery_uses_bot_customize_identity_for_truck_icon(): void
     {
         config([
@@ -181,7 +204,7 @@ final class ClientAccountStatusSlackServiceTest extends TestCase
         );
     }
 
-    public function test_notify_without_bot_logs_failure_and_does_not_use_webhook(): void
+    public function test_notify_without_bot_still_posts_via_webhook(): void
     {
         config([
             'billing.slack.webhook_url' => 'https://hooks.slack.com/services/T/B/x',
@@ -190,11 +213,11 @@ final class ClientAccountStatusSlackServiceTest extends TestCase
 
         Http::fake([
             'app.saverack.com/storage/slack-status-icons/*' => Http::response('', 200, ['Content-Type' => 'image/png']),
+            'hooks.slack.com/*' => Http::response('ok', 200),
         ]);
 
         Log::shouldReceive('warning')->andReturnNull();
         Log::shouldReceive('info')->andReturnNull();
-        Log::shouldReceive('error')->andReturnNull();
 
         $account = new ClientAccount([
             'company_name' => 'Demo',
@@ -208,7 +231,7 @@ final class ClientAccountStatusSlackServiceTest extends TestCase
             ClientAccount::STATUS_PAUSED
         );
 
-        Http::assertNotSent(function ($request) {
+        Http::assertSent(function ($request) {
             return str_contains($request->url(), 'hooks.slack.com');
         });
     }

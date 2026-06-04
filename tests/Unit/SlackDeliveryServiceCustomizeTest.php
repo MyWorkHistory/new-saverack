@@ -45,25 +45,30 @@ final class SlackDeliveryServiceCustomizeTest extends TestCase
         });
     }
 
-    public function test_customize_identity_without_bot_token_throws(): void
+    public function test_customize_identity_without_bot_uses_webhook(): void
     {
         config([
             'billing.slack.bot_token' => null,
             'billing.slack.webhook_url' => 'https://hooks.slack.com/services/T/B/x',
         ]);
 
-        $this->expectException(\RuntimeException::class);
-        $this->expectExceptionMessage('SLACK_BOT_USER_OAUTH_TOKEN');
+        Http::fake(['hooks.slack.com/*' => Http::response('ok', 200)]);
 
-        app(SlackDeliveryService::class)->post(
+        $result = app(SlackDeliveryService::class)->post(
             '#demo-co',
             'Hello',
             'Shipping Status Update',
-            ['customize_identity' => true]
+            ['customize_identity' => true, 'icon_url' => 'https://example.com/icon.png']
         );
+
+        $this->assertSame('webhook', $result['method']);
+        Http::assertSent(function ($request) {
+            return str_contains($request->url(), 'hooks.slack.com')
+                && ($request->data()['text'] ?? '') === 'Hello';
+        });
     }
 
-    public function test_customize_identity_does_not_fallback_to_webhook_when_bot_fails(): void
+    public function test_customize_identity_falls_back_to_webhook_when_bot_fails(): void
     {
         config([
             'billing.slack.bot_token' => 'xoxb-test-token',
@@ -76,24 +81,23 @@ final class SlackDeliveryServiceCustomizeTest extends TestCase
                 'ok' => false,
                 'error' => 'not_in_channel',
             ], 200),
+            'hooks.slack.com/*' => Http::response('ok', 200),
         ]);
 
-        $this->expectException(\RuntimeException::class);
+        $result = app(SlackDeliveryService::class)->post(
+            '#demo-co',
+            'Hello',
+            'Shipping Status Update',
+            [
+                'icon_url' => 'https://app.saverack.com/storage/slack-status-icons/shipping-status-live.png',
+                'customize_identity' => true,
+                'prefer_bot' => true,
+            ]
+        );
 
-        try {
-            app(SlackDeliveryService::class)->post(
-                '#demo-co',
-                'Hello',
-                'Shipping Status Update',
-                [
-                    'icon_url' => 'https://app.saverack.com/storage/slack-status-icons/shipping-status-live.png',
-                    'customize_identity' => true,
-                ]
-            );
-        } finally {
-            Http::assertNotSent(function ($request) {
-                return str_contains($request->url(), 'hooks.slack.com');
-            });
-        }
+        $this->assertSame('webhook', $result['method']);
+        Http::assertSent(function ($request) {
+            return str_contains($request->url(), 'hooks.slack.com');
+        });
     }
 }

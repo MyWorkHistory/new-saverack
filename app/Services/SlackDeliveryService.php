@@ -46,10 +46,10 @@ class SlackDeliveryService
         $webhookUrl = $this->normalizeWebhookUrl((string) config('billing.slack.webhook_url', ''));
 
         if ($customizeIdentity && ! $this->hasBotToken()) {
-            Log::warning('slack_delivery_custom_icon_requires_bot', [
-                'channel' => $channel,
-                'hint' => 'Slack app incoming webhooks ignore icon_url. Set SLACK_BOT_USER_OAUTH_TOKEN with chat:write and chat:write.customize scopes.',
-            ]);
+            throw new \RuntimeException(
+                'Slack truck icons require SLACK_BOT_USER_OAUTH_TOKEN (xoxb-) with chat:write and chat:write.customize. '
+                .'Incoming webhooks cannot set icon_url or a custom username.'
+            );
         }
 
         if (! $preferBot && $webhookUrl !== '') {
@@ -68,6 +68,15 @@ class SlackDeliveryService
         try {
             return $this->postViaBot($token, $channel, $text, $username, $iconEmoji, $attachments, $iconUrl, $blocks, $customizeIdentity);
         } catch (\Throwable $e) {
+            if ($customizeIdentity) {
+                Log::error('slack_delivery_bot_failed_status_icon', [
+                    'channel' => $channel,
+                    'message' => $e->getMessage(),
+                    'hint' => 'Invite the bot to the channel and ensure chat:write.customize is granted after reinstalling the Slack app.',
+                ]);
+                throw $e;
+            }
+
             if ($webhookUrl === '') {
                 throw $e;
             }
@@ -77,7 +86,7 @@ class SlackDeliveryService
                 'message' => $e->getMessage(),
             ]);
 
-            $this->postViaWebhook($webhookUrl, $channel, $text, $username, $iconEmoji, $attachments, $customizeIdentity ? '' : $iconUrl, null);
+            $this->postViaWebhook($webhookUrl, $channel, $text, $username, $iconEmoji, $attachments, $iconUrl, null);
 
             return ['method' => 'webhook', 'channel' => $channel, 'ts' => null];
         }

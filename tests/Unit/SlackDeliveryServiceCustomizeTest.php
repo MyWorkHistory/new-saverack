@@ -44,4 +44,56 @@ final class SlackDeliveryServiceCustomizeTest extends TestCase
                 && ($body['text'] ?? '') === 'Hello';
         });
     }
+
+    public function test_customize_identity_without_bot_token_throws(): void
+    {
+        config([
+            'billing.slack.bot_token' => null,
+            'billing.slack.webhook_url' => 'https://hooks.slack.com/services/T/B/x',
+        ]);
+
+        $this->expectException(\RuntimeException::class);
+        $this->expectExceptionMessage('SLACK_BOT_USER_OAUTH_TOKEN');
+
+        app(SlackDeliveryService::class)->post(
+            '#demo-co',
+            'Hello',
+            'Shipping Status Update',
+            ['customize_identity' => true]
+        );
+    }
+
+    public function test_customize_identity_does_not_fallback_to_webhook_when_bot_fails(): void
+    {
+        config([
+            'billing.slack.bot_token' => 'xoxb-test-token',
+            'billing.slack.webhook_url' => 'https://hooks.slack.com/services/T/B/x',
+        ]);
+
+        Http::fake([
+            'https://slack.com/api/conversations.join' => Http::response(['ok' => true], 200),
+            'https://slack.com/api/chat.postMessage' => Http::response([
+                'ok' => false,
+                'error' => 'not_in_channel',
+            ], 200),
+        ]);
+
+        $this->expectException(\RuntimeException::class);
+
+        try {
+            app(SlackDeliveryService::class)->post(
+                '#demo-co',
+                'Hello',
+                'Shipping Status Update',
+                [
+                    'icon_url' => 'https://app.saverack.com/storage/slack-status-icons/shipping-status-live.png',
+                    'customize_identity' => true,
+                ]
+            );
+        } finally {
+            Http::assertNotSent(function ($request) {
+                return str_contains($request->url(), 'hooks.slack.com');
+            });
+        }
+    }
 }

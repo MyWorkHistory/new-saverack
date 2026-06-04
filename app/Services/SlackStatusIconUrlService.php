@@ -37,6 +37,9 @@ class SlackStatusIconUrlService
 
         $relative = '/storage/'.self::STORAGE_DIR.'/'.$filename;
         $base = $this->publicBaseUrl();
+        if ($base === '') {
+            return url($relative);
+        }
 
         return $base.$relative;
     }

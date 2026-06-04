@@ -181,6 +181,38 @@ final class ClientAccountStatusSlackServiceTest extends TestCase
         );
     }
 
+    public function test_notify_without_bot_logs_failure_and_does_not_use_webhook(): void
+    {
+        config([
+            'billing.slack.webhook_url' => 'https://hooks.slack.com/services/T/B/x',
+            'billing.slack.bot_token' => null,
+        ]);
+
+        Http::fake([
+            'app.saverack.com/storage/slack-status-icons/*' => Http::response('', 200, ['Content-Type' => 'image/png']),
+        ]);
+
+        Log::shouldReceive('warning')->andReturnNull();
+        Log::shouldReceive('info')->andReturnNull();
+        Log::shouldReceive('error')->andReturnNull();
+
+        $account = new ClientAccount([
+            'company_name' => 'Demo',
+            'in_house_slack' => 'demo-co',
+        ]);
+        $account->id = 1;
+
+        app(ClientAccountStatusSlackService::class)->notifyStatusChange(
+            $account,
+            ClientAccount::STATUS_ACTIVE,
+            ClientAccount::STATUS_PAUSED
+        );
+
+        Http::assertNotSent(function ($request) {
+            return str_contains($request->url(), 'hooks.slack.com');
+        });
+    }
+
     public function test_channel_from_in_house_slack_supports_archive_url_and_slug(): void
     {
         $slack = app(SlackDeliveryService::class);

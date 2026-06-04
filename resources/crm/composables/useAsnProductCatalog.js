@@ -129,9 +129,9 @@ export function useAsnProductCatalog(
   async function loadCatalogRows(reset, forceRefresh = false) {
     const accountId = resolvedAccountId();
     const asnId = resolvedAsnId();
-    if (!accountId && !allowImplicitClientAccount() && !asnId) {
+    if (!asnId && !accountId && !allowImplicitClientAccount()) {
       catalogLoadError.value =
-        "Client account is required to load products. Reload the page or open the order from your Orders list.";
+        "Could not determine which customer account owns this ASN. Reload the page.";
       return;
     }
 
@@ -152,11 +152,15 @@ export function useAsnProductCatalog(
       const params = {
         first: ASN_CATALOG_PAGE_SIZE,
       };
-      if (accountId > 0) {
-        params.client_account_id = accountId;
-      }
-      if (asnId > 0) {
-        params.asn_id = asnId;
+      const catalogUrl =
+        asnId > 0 ? `/asns/${asnId}/product-catalog` : "/inventory/asn-product-catalog";
+      if (catalogUrl === "/inventory/asn-product-catalog") {
+        if (accountId > 0) {
+          params.client_account_id = accountId;
+        }
+        if (asnId > 0) {
+          params.asn_id = asnId;
+        }
       }
       const q = catalogSearchCommitted.value;
       if (q) {
@@ -169,7 +173,7 @@ export function useAsnProductCatalog(
       if (!reset && catalogPageInfo.value?.end_cursor) {
         params.after = catalogPageInfo.value.end_cursor;
       }
-      const { data } = await api.get("/inventory/asn-product-catalog", { params });
+      const { data } = await api.get(catalogUrl, { params });
       const chunk = Array.isArray(data?.products) ? data.products : [];
       const pi = data?.page_info || {};
       catalogPageInfo.value = {

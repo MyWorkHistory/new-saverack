@@ -179,7 +179,7 @@ watch(
             </div>
             <div v-if="catalog.length === 0" class="p-3 small text-secondary">
               <template v-if="!canLoadCatalog">
-                Client account is required to load products. Reload the ASN or select a client account when creating it.
+                Could not determine which customer account owns this ASN. Reload the page.
               </template>
               <template v-else-if="catalogSearchCommitted">
                 No matches.

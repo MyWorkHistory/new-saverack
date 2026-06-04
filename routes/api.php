@@ -178,6 +178,8 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::get('/{asn}/packing-slip.pdf', [AsnController::class, 'packingSlipPdf'])->middleware('can:inventory.view');
         Route::get('/{asn}/identification-label.pdf', [AsnController::class, 'identificationLabelPdf'])->middleware('can:inventory.view');
         Route::get('/{asn}/lines/{line}/barcode.pdf', [AsnController::class, 'barcodePdf'])->middleware('can:inventory.view');
+        Route::get('/{asn}/product-catalog', [AsnController::class, 'productCatalog'])->middleware('can:inventory.view');
+        Route::post('/{asn}/catalog-products', [AsnController::class, 'storeCatalogProduct'])->middleware('can:inventory.view');
         Route::get('/{asn}', [AsnController::class, 'show'])->middleware('can:inventory.view');
         Route::patch('/{asn}', [AsnController::class, 'update'])->middleware('can:inventory.view');
         Route::post('/{asn}/mark-ready', [AsnController::class, 'markReady'])->middleware('can:inventory.view');

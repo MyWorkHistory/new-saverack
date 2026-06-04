@@ -841,6 +841,7 @@ class InventoryController extends Controller
 
     public function storeCatalogProduct(Request $request): JsonResponse
     {
+        $this->normalizeInventoryAccountRequest($request);
         $validated = $request->validate([
             'client_account_id' => ['nullable', 'integer', 'exists:client_accounts,id'],
             'asn_id' => ['nullable', 'integer', 'exists:client_account_asns,id'],
@@ -1317,11 +1318,6 @@ class InventoryController extends Controller
         return (is_string($env) && trim($env) !== '') ? trim($env) : null;
     }
 
-    /**
-     * Resolve CRM client account for inventory catalog/create from explicit id, ASN, or portal user.
-     *
-     * @param  array<string, mixed>  $validated
-     */
     /**
      * Drop zero/empty account ids so nullable exists rules and ASN fallback behave correctly.
      */

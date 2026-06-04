@@ -20,6 +20,7 @@ use Illuminate\Support\Facades\Gate;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\ValidationException;
 use RuntimeException;
+use Throwable;
 
 class AsnController extends Controller
 {
@@ -537,6 +538,118 @@ class AsnController extends Controller
         return $pdf->stream('asn-'.$this->safePdfName($asn->asn_number).'-'.$this->safePdfName($line->sku).'-barcode.pdf');
     }
 
+    /**
+     * Product catalog for ASN line picker — scoped to this ASN's client account (CRM customer).
+     */
+    public function productCatalog(Request $request, ClientAccountAsn $asn): JsonResponse
+    {
+        $this->authorizeAsn($request, $asn);
+
+        $validated = $request->validate([
+            'first' => ['nullable', 'integer', 'min:25', 'max:100'],
+            'after' => ['nullable', 'string', 'max:500'],
+            'query' => ['nullable', 'string', 'max:255'],
+            'search_skip' => ['nullable', 'integer', 'min:0', 'max:500000'],
+            'refresh' => ['nullable', 'boolean'],
+        ]);
+
+        $clientAccountId = (int) $asn->client_account_id;
+        $shipheroCustomerId = $this->shipheroCustomerIdForClientAccount($clientAccountId, $request);
+        $graphqlFirst = isset($validated['first']) ? (int) $validated['first'] : 75;
+        $after = isset($validated['after']) && is_string($validated['after']) ? $validated['after'] : null;
+        $query = isset($validated['query']) && is_string($validated['query']) ? trim($validated['query']) : '';
+        $searchSkip = isset($validated['search_skip']) ? (int) $validated['search_skip'] : 0;
+        $refresh = (bool) ($validated['refresh'] ?? false);
+
+        try {
+            $payload = $this->inventory->listAsnProductCatalogPage(
+                $shipheroCustomerId,
+                $graphqlFirst,
+                $after,
+                $query !== '' ? $query : null,
+                $searchSkip,
+                $clientAccountId,
+                $refresh
+            );
+
+            return response()->json([
+                'products' => $payload['products'],
+                'page_info' => $payload['page_info'],
+                'client_account_id' => $clientAccountId,
+            ]);
+        } catch (RuntimeException $e) {
+            return response()->json(['message' => $e->getMessage()], 502);
+        } catch (Throwable $e) {
+            report($e);
+
+            return response()->json([
+                'message' => config('app.debug')
+                    ? $e->getMessage()
+                    : 'Could not load product catalog from ShipHero.',
+            ], 502);
+        }
+    }
+
+    /**
+     * Create a SKU in ShipHero for this ASN's client account, then use on ASN lines.
+     */
+    public function storeCatalogProduct(Request $request, ClientAccountAsn $asn): JsonResponse
+    {
+        $this->authorizeAsn($request, $asn);
+
+        $validated = $request->validate([
+            'sku' => ['required', 'string', 'max:255'],
+            'name' => ['required', 'string', 'max:512'],
+        ]);
+
+        $clientAccountId = (int) $asn->client_account_id;
+        $sku = trim((string) $validated['sku']);
+        $name = trim((string) $validated['name']);
+        $shipheroCustomerId = $this->shipheroCustomerIdForClientAccount($clientAccountId, $request);
+
+        try {
+            $created = $this->inventory->createProduct($shipheroCustomerId, $sku, $name);
+            $this->inventory->upsertCreatedProductIndex($clientAccountId, $shipheroCustomerId, $created);
+
+            return response()->json([
+                'id' => $created['id'] ?? null,
+                'sku' => $sku,
+                'name' => $name,
+                'image_url' => $created['image_url'] ?? null,
+                'client_account_id' => $clientAccountId,
+            ], 201);
+        } catch (RuntimeException $e) {
+            $existing = $this->inventory->getProductDetailBySku($sku, null, $shipheroCustomerId, false);
+            if (is_array($existing) && ! empty($existing['id'])) {
+                $this->inventory->upsertCreatedProductIndex($clientAccountId, $shipheroCustomerId, [
+                    'id' => (string) $existing['id'],
+                    'sku' => $sku,
+                    'name' => (string) ($existing['name'] ?? $name),
+                    'image_url' => $existing['image_url'] ?? null,
+                ]);
+
+                return response()->json([
+                    'id' => (string) $existing['id'],
+                    'sku' => $sku,
+                    'name' => (string) ($existing['name'] ?? $name),
+                    'image_url' => $existing['image_url'] ?? null,
+                    'existing' => true,
+                    'client_account_id' => $clientAccountId,
+                ]);
+            }
+
+            return response()->json(['message' => $e->getMessage()], 422);
+        } catch (Throwable $e) {
+            report($e);
+
+            return response()->json([
+                'message' => config('app.debug')
+                    ? $e->getMessage()
+                    : 'Could not create product in ShipHero.',
+            ], 502);
+        }
+    }
+
     public function storeLine(Request $request, ClientAccountAsn $asn): JsonResponse
     {
         $this->authorizeAsn($request, $asn);
@@ -751,9 +864,9 @@ class AsnController extends Controller
     }
 
     /**
-     * ShipHero customer account id for ASN writes (account field only; no .env fallback).
+     * ShipHero customer account id for this CRM client account (the business customer on the ASN).
      */
-    private function resolveShipHeroCustomerAccountIdForWrite(int $clientAccountId, Request $request): string
+    private function shipheroCustomerIdForClientAccount(int $clientAccountId, Request $request): string
     {
         $account = ClientAccount::query()->find($clientAccountId);
         if ($account === null) {
@@ -773,5 +886,13 @@ class AsnController extends Controller
         }
 
         return trim($sid);
+    }
+
+    /**
+     * ShipHero customer account id for ASN writes (account field only; no .env fallback).
+     */
+    private function resolveShipHeroCustomerAccountIdForWrite(int $clientAccountId, Request $request): string
+    {
+        return $this->shipheroCustomerIdForClientAccount($clientAccountId, $request);
     }
 }

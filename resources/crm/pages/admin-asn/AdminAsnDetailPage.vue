@@ -686,7 +686,6 @@ async function submitAddNewSku() {
     toast.error("Enter expected quantity.");
     return;
   }
-  const accountId = clientAccountId.value;
   const asnIdForApi = asnRouteId.value || asnNumericId.value;
   if (asnIdForApi <= 0) {
     toast.error("ASN is required to add a SKU.");
@@ -694,13 +693,9 @@ async function submitAddNewSku() {
   }
   addNewSkuBusy.value = true;
   try {
-    const catalogBody = { sku, name, asn_id: asnIdForApi };
-    if (accountId > 0) {
-      catalogBody.client_account_id = accountId;
-    }
     let created = null;
     try {
-      const { data } = await api.post("/inventory/catalog-products", catalogBody);
+      const { data } = await api.post(`/asns/${asnIdForApi}/catalog-products`, { sku, name });
       created = data;
     } catch (catalogErr) {
       const status = catalogErr?.response?.status;

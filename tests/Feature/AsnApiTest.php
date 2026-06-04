@@ -337,4 +337,54 @@ class AsnApiTest extends TestCase
 
         $this->assertDatabaseCount('client_account_asn_lines', 0);
     }
+
+    public function test_asn_product_catalog_uses_asn_client_account_without_request_params(): void
+    {
+        $account = $this->account();
+        $user = User::factory()->create(['client_account_id' => $account->id]);
+        $user->permissions()->attach($this->inventoryViewPermission()->id);
+        Sanctum::actingAs($user);
+
+        $asn = ClientAccountAsn::create([
+            'client_account_id' => $account->id,
+            'asn_number' => '0012',
+            'status' => ClientAccountAsn::STATUS_DRAFT,
+            'total_boxes' => 0,
+            'total_pallets' => 0,
+            'expected_qty' => 0,
+            'accepted_qty' => 0,
+            'rejected_qty' => 0,
+        ]);
+
+        $mock = Mockery::mock(ShipHeroInventoryService::class);
+        $mock->shouldReceive('listAsnProductCatalogPage')
+            ->once()
+            ->with(
+                'sh-asn-test-1',
+                Mockery::type('int'),
+                null,
+                null,
+                0,
+                $account->id,
+                false
+            )
+            ->andReturn([
+                'products' => [
+                    [
+                        'id' => 'prod-1',
+                        'sku' => 'CATALOG-SKU',
+                        'name' => 'Catalog Item',
+                        'barcode' => '',
+                        'image_url' => null,
+                    ],
+                ],
+                'page_info' => ['has_next_page' => false, 'end_cursor' => null],
+            ]);
+        $this->app->instance(ShipHeroInventoryService::class, $mock);
+
+        $this->getJson('/api/asns/'.$asn->id.'/product-catalog?first=50')
+            ->assertOk()
+            ->assertJsonPath('client_account_id', $account->id)
+            ->assertJsonPath('products.0.sku', 'CATALOG-SKU');
+    }
 }

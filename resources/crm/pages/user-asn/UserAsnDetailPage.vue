@@ -285,14 +285,9 @@ async function submitAddNewSku() {
   addNewSkuBusy.value = true;
   try {
     const asnIdForApi = asnRouteId.value || asnNumericId.value;
-    const catalogBody = { sku, name, asn_id: asnIdForApi };
-    const accountId = clientAccountId.value;
-    if (accountId > 0) {
-      catalogBody.client_account_id = accountId;
-    }
     let created = null;
     try {
-      const { data } = await api.post("/inventory/catalog-products", catalogBody);
+      const { data } = await api.post(`/asns/${asnIdForApi}/catalog-products`, { sku, name });
       created = data;
     } catch (catalogErr) {
       const status = catalogErr?.response?.status;

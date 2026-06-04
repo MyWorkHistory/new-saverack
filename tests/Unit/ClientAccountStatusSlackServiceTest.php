@@ -14,18 +14,21 @@ final class ClientAccountStatusSlackServiceTest extends TestCase
     {
         parent::setUp();
 
-        config(['crm.frontend_url' => 'https://app.saverack.com']);
+        config([
+            'app.url' => 'https://app.saverack.com',
+            'crm.frontend_url' => 'https://app.saverack.com',
+        ]);
     }
 
-    public function test_build_paused_message_includes_shiphero_link_and_truck_icon(): void
+    public function test_build_paused_message_uses_shipping_status_update_format(): void
     {
         $account = new ClientAccount([
-            'company_name' => 'Demo Company',
+            'company_name' => 'Demo Account',
             'in_house_slack' => 'demo-company',
         ]);
         $account->id = 451;
 
-        $actor = new User(['name' => 'Taylor May']);
+        $actor = new User(['name' => 'Audi Kowalski']);
         $payload = app(ClientAccountStatusSlackService::class)->buildMessagePayload(
             $account,
             ClientAccount::STATUS_ACTIVE,
@@ -33,61 +36,64 @@ final class ClientAccountStatusSlackServiceTest extends TestCase
             $actor
         );
 
-        $this->assertSame('Account Paused', $payload['username']);
-        $this->assertSame(':truck:', $payload['icon_emoji']);
-        $this->assertSame('d32f2f', $payload['attachments'][0]['color']);
-        $this->assertStringNotContainsString('*Account Paused*', $payload['text']);
-        $this->assertStringContainsString('Demo Company', $payload['text']);
-        $this->assertStringContainsString('Please pause this account for shipments.', $payload['text']);
-        $this->assertStringContainsString(
-            '<https://app.shiphero.com/3pl|Pause in ShipHero>',
+        $this->assertNotNull($payload);
+        $this->assertSame('Shipping Status Update', $payload['username']);
+        $this->assertSame(
+            'https://app.saverack.com/images/slack/shipping-status-paused.png',
+            $payload['icon_url']
+        );
+        $this->assertSame(
+            "Demo Account is set to Paused.\nUpdated by: Audi Kowalski\n<https://app.shiphero.com/3pl|Set Pause in Shiphero>",
             $payload['text']
         );
-        $this->assertStringContainsString('Updated by: Taylor May', $payload['text']);
-        $this->assertStringContainsString(
-            '<https://app.saverack.com/admin/clients/accounts/451|View Account>',
-            $payload['text']
-        );
+        $this->assertStringNotContainsString('View Account', $payload['text']);
     }
 
-    public function test_build_live_message_includes_shiphero_link_and_green_attachment(): void
+    public function test_build_live_message_uses_shipping_status_update_format(): void
     {
         $account = new ClientAccount([
-            'company_name' => 'Live Co',
+            'company_name' => 'Demo Account',
             'in_house_slack' => 'live-co',
         ]);
         $account->id = 12;
 
+        $actor = new User(['name' => 'Audi Kowalski']);
         $payload = app(ClientAccountStatusSlackService::class)->buildMessagePayload(
             $account,
             ClientAccount::STATUS_PAUSED,
-            ClientAccount::STATUS_ACTIVE
+            ClientAccount::STATUS_ACTIVE,
+            $actor
         );
 
-        $this->assertSame('Account Live', $payload['username']);
-        $this->assertSame(':truck:', $payload['icon_emoji']);
-        $this->assertSame('2e7d32', $payload['attachments'][0]['color']);
-        $this->assertStringNotContainsString('*Account Live*', $payload['text']);
-        $this->assertStringContainsString('Please set this account live for shipments.', $payload['text']);
-        $this->assertStringContainsString(
-            '<https://app.shiphero.com/3pl|Pause in ShipHero>',
+        $this->assertNotNull($payload);
+        $this->assertSame('Shipping Status Update', $payload['username']);
+        $this->assertSame(
+            'https://app.saverack.com/images/slack/shipping-status-live.png',
+            $payload['icon_url']
+        );
+        $this->assertSame(
+            "Demo Account is set to Live.\nUpdated by: Audi Kowalski\n<https://app.shiphero.com/3pl|Set Live in Shiphero>",
             $payload['text']
         );
     }
 
-    public function test_build_generic_message_for_other_status_changes(): void
+    public function test_other_status_changes_do_not_build_slack_payload(): void
     {
         $account = new ClientAccount(['company_name' => 'Demo Company']);
         $account->id = 1;
 
-        $text = app(ClientAccountStatusSlackService::class)->buildMessageText(
+        $payload = app(ClientAccountStatusSlackService::class)->buildMessagePayload(
             $account,
             ClientAccount::STATUS_ACTIVE,
             ClientAccount::STATUS_INACTIVE
         );
 
-        $this->assertStringContainsString('Account status changed: Demo Company — Active → Inactive', $text);
-        $this->assertStringNotContainsString('*Account Paused*', $text);
+        $this->assertNull($payload);
+        $this->assertSame('', app(ClientAccountStatusSlackService::class)->buildMessageText(
+            $account,
+            ClientAccount::STATUS_ACTIVE,
+            ClientAccount::STATUS_INACTIVE
+        ));
     }
 
     public function test_channel_from_in_house_slack_supports_archive_url_and_slug(): void

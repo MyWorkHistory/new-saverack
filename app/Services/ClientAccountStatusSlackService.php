@@ -4,14 +4,17 @@ namespace App\Services;
 
 use App\Models\ClientAccount;
 use App\Models\User;
-use App\Support\CrmUrls;
 use Illuminate\Support\Facades\Log;
 
 class ClientAccountStatusSlackService
 {
     private const SHIPHERO_3PL_URL = 'https://app.shiphero.com/3pl';
 
-    private const TRUCK_EMOJI = ':truck:';
+    private const USERNAME = 'Shipping Status Update';
+
+    private const ICON_LIVE = 'shipping-status-live.png';
+
+    private const ICON_PAUSED = 'shipping-status-paused.png';
 
     /** @var SlackDeliveryService */
     protected $slack;
@@ -22,7 +25,7 @@ class ClientAccountStatusSlackService
     }
 
     /**
-     * Post to the account in-house Slack channel when CRM status changes.
+     * Post to the account in-house Slack channel when CRM status changes to active or paused.
      * Failures are logged and do not block the CRM save.
      */
     public function notifyStatusChange(
@@ -38,6 +41,11 @@ class ClientAccountStatusSlackService
             return;
         }
 
+        $payload = $this->buildMessagePayload($account, $oldStatus, $newStatus, $actor);
+        if ($payload === null) {
+            return;
+        }
+
         $channel = $this->slack->channelFromInHouseSlack($account->in_house_slack);
         if ($channel === null || $channel === '') {
             Log::info('client_account.status_slack_skipped', [
@@ -48,15 +56,11 @@ class ClientAccountStatusSlackService
             return;
         }
 
-        $payload = $this->buildMessagePayload($account, $oldStatus, $newStatus, $actor);
         $text = (string) ($payload['text'] ?? '');
-        $username = (string) ($payload['username'] ?? 'Account Status');
+        $username = (string) ($payload['username'] ?? self::USERNAME);
         $options = [];
-        if (! empty($payload['icon_emoji'])) {
-            $options['icon_emoji'] = $payload['icon_emoji'];
-        }
-        if (! empty($payload['attachments']) && is_array($payload['attachments'])) {
-            $options['attachments'] = $payload['attachments'];
+        if (! empty($payload['icon_url'])) {
+            $options['icon_url'] = $payload['icon_url'];
         }
 
         try {
@@ -81,14 +85,14 @@ class ClientAccountStatusSlackService
     }
 
     /**
-     * @return array{text: string, username?: string, icon_emoji?: string, attachments?: array<int, array<string, mixed>>}
+     * @return array{text: string, username: string, icon_url: string}|null
      */
     public function buildMessagePayload(
         ClientAccount $account,
         string $oldStatus,
         string $newStatus,
         ?User $actor = null
-    ): array {
+    ): ?array {
         $newStatus = strtolower(trim($newStatus));
 
         if ($newStatus === ClientAccount::STATUS_PAUSED) {
@@ -99,7 +103,7 @@ class ClientAccountStatusSlackService
             return $this->buildLivePayload($account, $actor);
         }
 
-        return $this->buildGenericPayload($account, $oldStatus, $newStatus, $actor);
+        return null;
     }
 
     public function buildMessageText(
@@ -108,86 +112,44 @@ class ClientAccountStatusSlackService
         string $newStatus,
         ?User $actor = null
     ): string {
-        return (string) ($this->buildMessagePayload($account, $oldStatus, $newStatus, $actor)['text'] ?? '');
+        $payload = $this->buildMessagePayload($account, $oldStatus, $newStatus, $actor);
+
+        return $payload !== null ? (string) ($payload['text'] ?? '') : '';
     }
 
     /**
-     * @return array{text: string, username: string, icon_emoji: string, attachments: array<int, array<string, mixed>>}
+     * @return array{text: string, username: string, icon_url: string}
      */
     private function buildPausedPayload(ClientAccount $account, ?User $actor): array
     {
         $lines = [
-            $this->companyLine($account),
-            'Please pause this account for shipments.',
-            '<'.self::SHIPHERO_3PL_URL.'|Pause in ShipHero>',
+            $this->companyLine($account).' is set to Paused.',
         ];
         $this->appendActorLine($lines, $actor);
-        $lines[] = '<'.CrmUrls::clientAccountStaffUrl((int) $account->id).'|View Account>';
+        $lines[] = '<'.self::SHIPHERO_3PL_URL.'|Set Pause in Shiphero>';
 
         return [
             'text' => implode("\n", $lines),
-            'username' => 'Account Paused',
-            'icon_emoji' => self::TRUCK_EMOJI,
-            'attachments' => [
-                [
-                    'color' => 'd32f2f',
-                    'fallback' => 'Account Paused',
-                ],
-            ],
+            'username' => self::USERNAME,
+            'icon_url' => $this->slackIconUrl(self::ICON_PAUSED),
         ];
     }
 
     /**
-     * @return array{text: string, username: string, icon_emoji: string, attachments: array<int, array<string, mixed>>}
+     * @return array{text: string, username: string, icon_url: string}
      */
     private function buildLivePayload(ClientAccount $account, ?User $actor): array
     {
         $lines = [
-            $this->companyLine($account),
-            'Please set this account live for shipments.',
-            '<'.self::SHIPHERO_3PL_URL.'|Pause in ShipHero>',
+            $this->companyLine($account).' is set to Live.',
         ];
         $this->appendActorLine($lines, $actor);
-        $lines[] = '<'.CrmUrls::clientAccountStaffUrl((int) $account->id).'|View Account>';
+        $lines[] = '<'.self::SHIPHERO_3PL_URL.'|Set Live in Shiphero>';
 
         return [
             'text' => implode("\n", $lines),
-            'username' => 'Account Live',
-            'icon_emoji' => self::TRUCK_EMOJI,
-            'attachments' => [
-                [
-                    'color' => '2e7d32',
-                    'fallback' => 'Account Live',
-                ],
-            ],
-        ];
-    }
-
-    /**
-     * @return array{text: string, username: string}
-     */
-    private function buildGenericPayload(
-        ClientAccount $account,
-        string $oldStatus,
-        string $newStatus,
-        ?User $actor
-    ): array {
-        $company = $this->companyLine($account);
-
-        $lines = [
-            sprintf(
-                'Account status changed: %s — %s → %s',
-                $company,
-                $this->statusLabel($oldStatus),
-                $this->statusLabel($newStatus)
-            ),
-        ];
-        $this->appendActorLine($lines, $actor);
-        $lines[] = '<'.CrmUrls::clientAccountStaffUrl((int) $account->id).'|View Account>';
-
-        return [
-            'text' => implode("\n", $lines),
-            'username' => 'Account Status',
+            'username' => self::USERNAME,
+            'icon_url' => $this->slackIconUrl(self::ICON_LIVE),
         ];
     }
 
@@ -213,13 +175,13 @@ class ClientAccountStatusSlackService
         }
     }
 
-    private function statusLabel(string $status): string
+    private function slackIconUrl(string $filename): string
     {
-        $status = strtolower(trim($status));
-        if ($status === '') {
-            return 'Unknown';
+        $base = rtrim((string) config('app.url'), '/');
+        if ($base === '') {
+            $base = rtrim((string) config('crm.frontend_url'), '/');
         }
 
-        return ucfirst($status);
+        return $base.'/images/slack/'.$filename;
     }
 }

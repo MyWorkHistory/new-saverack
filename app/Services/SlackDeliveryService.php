@@ -11,7 +11,7 @@ use Illuminate\Support\Facades\Log;
 class SlackDeliveryService
 {
     /**
-     * @param  array{icon_emoji?: string|null, attachments?: array<int, array<string, mixed>>|null}  $options
+     * @param  array{icon_emoji?: string|null, icon_url?: string|null, attachments?: array<int, array<string, mixed>>|null}  $options
      * @return array{method: string, channel: string, ts: string|null}
      */
     public function post(string $channel, string $text, string $username = 'Save Rack', array $options = []): array
@@ -21,7 +21,10 @@ class SlackDeliveryService
             throw new \RuntimeException('Slack channel is required.');
         }
 
-        $iconEmoji = isset($options['icon_emoji']) ? trim((string) $options['icon_emoji']) : '';
+        $iconUrl = isset($options['icon_url']) ? trim((string) $options['icon_url']) : '';
+        $iconEmoji = $iconUrl === '' && isset($options['icon_emoji'])
+            ? trim((string) $options['icon_emoji'])
+            : '';
         $attachments = $options['attachments'] ?? null;
         if (! is_array($attachments)) {
             $attachments = null;
@@ -29,7 +32,7 @@ class SlackDeliveryService
 
         $webhookUrl = $this->normalizeWebhookUrl((string) config('billing.slack.webhook_url', ''));
         if ($webhookUrl !== '') {
-            $this->postViaWebhook($webhookUrl, $channel, $text, $username, $iconEmoji, $attachments);
+            $this->postViaWebhook($webhookUrl, $channel, $text, $username, $iconEmoji, $attachments, $iconUrl);
 
             return ['method' => 'webhook', 'channel' => $channel, 'ts' => null];
         }
@@ -49,7 +52,9 @@ class SlackDeliveryService
             'text' => $text,
             'mrkdwn' => true,
         ];
-        if ($iconEmoji !== '') {
+        if ($iconUrl !== '') {
+            $payload['icon_url'] = $iconUrl;
+        } elseif ($iconEmoji !== '') {
             $payload['icon_emoji'] = $iconEmoji;
         }
         if ($attachments !== null && $attachments !== []) {
@@ -136,7 +141,8 @@ class SlackDeliveryService
         string $text,
         string $username,
         string $iconEmoji = '',
-        ?array $attachments = null
+        ?array $attachments = null,
+        string $iconUrl = ''
     ): void {
         $payload = [
             'channel' => $channel,
@@ -144,7 +150,9 @@ class SlackDeliveryService
             'text' => $text,
             'mrkdwn' => true,
         ];
-        if ($iconEmoji !== '') {
+        if ($iconUrl !== '') {
+            $payload['icon_url'] = $iconUrl;
+        } elseif ($iconEmoji !== '') {
             $payload['icon_emoji'] = $iconEmoji;
         }
         if ($attachments !== null && $attachments !== []) {

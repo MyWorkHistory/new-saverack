@@ -21,6 +21,7 @@ class ClientAccountStatusSlackApiTest extends TestCase
         config([
             'billing.slack.webhook_url' => 'https://hooks.slack.com/services/T000/B000/XXXX',
             'billing.slack.bot_token' => null,
+            'app.url' => 'https://app.saverack.com',
             'crm.frontend_url' => 'https://app.saverack.com',
         ]);
     }
@@ -68,11 +69,11 @@ class ClientAccountStatusSlackApiTest extends TestCase
 
             $payload = $request->data();
             $this->assertSame('#slack-co', $payload['channel'] ?? null);
-            $this->assertSame('Account Paused', $payload['username'] ?? null);
-            $this->assertSame(':truck:', $payload['icon_emoji'] ?? null);
-            $this->assertStringNotContainsString('*Account Paused*', (string) ($payload['text'] ?? ''));
-            $this->assertStringContainsString('Please pause this account for shipments.', (string) ($payload['text'] ?? ''));
-            $this->assertStringContainsString('<https://app.shiphero.com/3pl|Pause in ShipHero>', (string) ($payload['text'] ?? ''));
+            $this->assertSame('Shipping Status Update', $payload['username'] ?? null);
+            $this->assertStringContainsString('/images/slack/shipping-status-paused.png', (string) ($payload['icon_url'] ?? ''));
+            $this->assertStringContainsString('Slack Co is set to Paused.', (string) ($payload['text'] ?? ''));
+            $this->assertStringContainsString('<https://app.shiphero.com/3pl|Set Pause in Shiphero>', (string) ($payload['text'] ?? ''));
+            $this->assertStringNotContainsString('View Account', (string) ($payload['text'] ?? ''));
 
             return true;
         });

@@ -60,20 +60,8 @@ class ClientAccountStatusSlackService
         $text = (string) ($payload['text'] ?? '');
         $username = (string) ($payload['username'] ?? self::USERNAME);
         $isLive = $newStatus === ClientAccount::STATUS_ACTIVE;
-        $iconUrl = $this->resolveIconUrl($isLive);
-
-        if ($iconUrl === '') {
-            Log::warning('client_account.status_slack_icon_missing', [
-                'client_account_id' => $account->id,
-                'is_live' => $isLive,
-            ]);
-        }
-
+        $iconUrl = $this->iconUrls->avatarUrl($isLive);
         $options = $this->deliveryOptions($text, $username, $iconUrl);
-
-        if ($iconUrl !== '') {
-            $this->logIconUrlReachability($iconUrl, (int) $account->id);
-        }
 
         try {
             $result = $this->slack->post(
@@ -91,6 +79,10 @@ class ClientAccountStatusSlackService
                 'new_status' => $newStatus,
                 'actor_id' => $actor !== null ? $actor->id : null,
             ]);
+
+            if ($iconUrl !== '') {
+                $this->logIconUrlReachability($iconUrl, (int) $account->id);
+            }
         } catch (\Throwable $e) {
             Log::warning('client_account.status_slack_failed', [
                 'client_account_id' => $account->id,
@@ -104,20 +96,22 @@ class ClientAccountStatusSlackService
 
     /**
      * Single header line: truck icon (icon_url) + "Shipping Status Update", then message body.
+     * Username is always sent via bot; icon is omitted when PNG is not on disk.
      *
      * @return array{text: string, username: string, slack: array<string, mixed>}
      */
     private function deliveryOptions(string $text, string $username, string $iconUrl): array
     {
-        $slack = [];
+        $slack = [
+            'customize_identity' => true,
+        ];
+
+        if ($this->slack->hasBotToken()) {
+            $slack['prefer_bot'] = true;
+        }
 
         if ($iconUrl !== '') {
             $slack['icon_url'] = $iconUrl;
-        }
-
-        if ($this->slack->hasBotToken()) {
-            $slack['customize_identity'] = true;
-            $slack['prefer_bot'] = true;
         }
 
         return [
@@ -139,11 +133,11 @@ class ClientAccountStatusSlackService
         $newStatus = strtolower(trim($newStatus));
 
         if ($newStatus === ClientAccount::STATUS_PAUSED) {
-            return $this->buildStatusPayload($account, 'Paused', 'Set Pause in Shiphero', $this->iconUrls->pausedThumbUrl(), $actor);
+            return $this->buildStatusPayload($account, 'Paused', 'Set Pause in Shiphero', $actor);
         }
 
         if ($newStatus === ClientAccount::STATUS_ACTIVE) {
-            return $this->buildStatusPayload($account, 'Live', 'Set Live in Shiphero', $this->iconUrls->liveThumbUrl(), $actor);
+            return $this->buildStatusPayload($account, 'Live', 'Set Live in Shiphero', $actor);
         }
 
         return null;
@@ -167,7 +161,6 @@ class ClientAccountStatusSlackService
         ClientAccount $account,
         string $statusLabel,
         string $shipheroLinkLabel,
-        string $iconUrl,
         ?User $actor
     ): array {
         $lines = [
@@ -179,7 +172,7 @@ class ClientAccountStatusSlackService
         return [
             'text' => implode("\n", $lines),
             'username' => self::USERNAME,
-            'icon_url' => $iconUrl,
+            'icon_url' => '',
         ];
     }
 
@@ -202,46 +195,6 @@ class ClientAccountStatusSlackService
         $actorName = trim((string) $actor->name);
         if ($actorName !== '') {
             $lines[] = 'Updated by: '.$actorName;
-        }
-    }
-
-    /**
-     * Pick the first icon URL Slack can fetch (thumb, then full-size).
-     */
-    private function resolveIconUrl(bool $isLive): string
-    {
-        $candidates = $isLive
-            ? [$this->iconUrls->liveThumbUrl(), $this->iconUrls->liveUrl()]
-            : [$this->iconUrls->pausedThumbUrl(), $this->iconUrls->pausedUrl()];
-
-        foreach ($candidates as $url) {
-            if ($url !== '' && $this->iconUrlReachable($url)) {
-                return $url;
-            }
-        }
-
-        foreach ($candidates as $url) {
-            if ($url !== '') {
-                return $url;
-            }
-        }
-
-        return '';
-    }
-
-    private function iconUrlReachable(string $iconUrl): bool
-    {
-        try {
-            $response = Http::timeout(5)->head($iconUrl);
-            if (! $response->successful()) {
-                $response = Http::timeout(5)->get($iconUrl);
-            }
-
-            $contentType = strtolower(trim((string) $response->header('Content-Type')));
-
-            return $response->successful() && str_contains($contentType, 'image');
-        } catch (\Throwable $e) {
-            return false;
         }
     }
 

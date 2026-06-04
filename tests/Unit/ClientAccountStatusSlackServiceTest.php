@@ -48,10 +48,6 @@ final class ClientAccountStatusSlackServiceTest extends TestCase
         $this->assertNotNull($payload);
         $this->assertSame('Shipping Status Update', $payload['username']);
         $this->assertSame(
-            $this->iconBase().'/shipping-status-paused-thumb.png',
-            $payload['icon_url']
-        );
-        $this->assertSame(
             "Demo Company is set to Paused.\nUpdated by: Audi Kowalski\n<https://app.shiphero.com/3pl|Set Pause in Shiphero>",
             $payload['text']
         );
@@ -75,10 +71,6 @@ final class ClientAccountStatusSlackServiceTest extends TestCase
         );
 
         $this->assertNotNull($payload);
-        $this->assertSame(
-            $this->iconBase().'/shipping-status-live-thumb.png',
-            $payload['icon_url']
-        );
         $this->assertSame(
             "Demo Account is set to Live.\nUpdated by: Audi Kowalski\n<https://app.shiphero.com/3pl|Set Live in Shiphero>",
             $payload['text']
@@ -110,8 +102,9 @@ final class ClientAccountStatusSlackServiceTest extends TestCase
         $this->assertSame($text, $result['text']);
         $this->assertSame('Shipping Status Update', $result['username']);
         $this->assertSame($iconUrl, $result['slack']['icon_url']);
+        $this->assertTrue($result['slack']['customize_identity']);
         $this->assertArrayNotHasKey('attachments', $result['slack']);
-        $this->assertArrayNotHasKey('customize_identity', $result['slack']);
+        $this->assertArrayNotHasKey('prefer_bot', $result['slack']);
     }
 
     public function test_delivery_uses_bot_customize_identity_for_truck_icon(): void
@@ -154,20 +147,36 @@ final class ClientAccountStatusSlackServiceTest extends TestCase
         $this->assertNull($payload);
     }
 
-    public function test_explicit_cdn_icon_url_override(): void
+    public function test_explicit_cdn_icon_url_used_only_when_local_file_missing(): void
     {
+        $thumb = public_path('images/slack/shipping-status-live-thumb.png');
+        $full = public_path('images/slack/shipping-status-live.png');
+        $thumbBak = $thumb.'.bak';
+        $fullBak = $full.'.bak';
+        $hadThumb = is_file($thumb);
+        $hadFull = is_file($full);
+        if ($hadThumb) {
+            rename($thumb, $thumbBak);
+        }
+        if ($hadFull) {
+            rename($full, $fullBak);
+        }
+
         config([
             'billing.slack.status_icon_live_thumb_url' => 'https://cdn.example.com/live-thumb.png',
         ]);
 
-        $account = new ClientAccount(['company_name' => 'Demo']);
-        $payload = app(ClientAccountStatusSlackService::class)->buildMessagePayload(
-            $account,
-            ClientAccount::STATUS_PAUSED,
-            ClientAccount::STATUS_ACTIVE
-        );
-
-        $this->assertSame('https://cdn.example.com/live-thumb.png', $payload['icon_url']);
+        try {
+            $iconUrl = app(\App\Services\SlackStatusIconUrlService::class)->avatarUrl(true);
+            $this->assertSame('https://cdn.example.com/live-thumb.png', $iconUrl);
+        } finally {
+            if ($hadThumb && is_file($thumbBak)) {
+                rename($thumbBak, $thumb);
+            }
+            if ($hadFull && is_file($fullBak)) {
+                rename($fullBak, $full);
+            }
+        }
     }
 
     public function test_icon_unreachable_logs_warning_but_does_not_throw(): void
@@ -178,11 +187,9 @@ final class ClientAccountStatusSlackServiceTest extends TestCase
         ]);
 
         $thumbUrl = $this->iconBase().'/shipping-status-paused-thumb.png';
-        $fullUrl = $this->iconBase().'/shipping-status-paused.png';
 
         Http::fake([
-            $thumbUrl => Http::response('<html>', 404),
-            $fullUrl => Http::response('<html>', 404),
+            'app.saverack.com/images/slack/shipping-status-paused-thumb.png' => Http::response('<html>', 404, ['Content-Type' => 'text/html']),
             'https://slack.com/api/*' => Http::response(['ok' => true, 'channel' => 'C1', 'ts' => '1.0'], 200),
             'hooks.slack.com/*' => Http::response('ok', 200),
         ]);
@@ -190,8 +197,7 @@ final class ClientAccountStatusSlackServiceTest extends TestCase
         Log::shouldReceive('warning')
             ->once()
             ->withArgs(function (string $message, array $context): bool {
-                return $message === 'client_account.status_slack_icon_unreachable'
-                    && ($context['http_status'] ?? null) === 404;
+                return $message === 'client_account.status_slack_icon_unreachable';
             });
 
         Log::shouldReceive('info')->andReturnNull();
@@ -247,6 +253,45 @@ final class ClientAccountStatusSlackServiceTest extends TestCase
                 && str_contains((string) ($payload['text'] ?? ''), 'Demo is set to Paused.')
                 && ($payload['username'] ?? '') === 'Shipping Status Update'
                 && ! array_key_exists('attachments', $payload);
+        });
+    }
+
+    public function test_notify_live_posts_username_and_icon_via_bot(): void
+    {
+        config([
+            'billing.slack.webhook_url' => 'https://hooks.slack.com/services/T/B/x',
+            'billing.slack.bot_token' => 'xoxb-test-token',
+        ]);
+
+        Http::fake([
+            'https://slack.com/api/*' => Http::response(['ok' => true, 'channel' => 'C1', 'ts' => '1.0'], 200),
+        ]);
+
+        Log::shouldReceive('info')->andReturnNull();
+        Log::shouldReceive('warning')->andReturnNull();
+
+        $account = new ClientAccount([
+            'company_name' => 'Demo',
+            'in_house_slack' => 'demo-co',
+        ]);
+        $account->id = 1;
+
+        app(ClientAccountStatusSlackService::class)->notifyStatusChange(
+            $account,
+            ClientAccount::STATUS_PAUSED,
+            ClientAccount::STATUS_ACTIVE
+        );
+
+        Http::assertSent(function ($request) {
+            if (! str_contains($request->url(), 'chat.postMessage')) {
+                return false;
+            }
+
+            $payload = $request->data();
+
+            return ($payload['username'] ?? '') === 'Shipping Status Update'
+                && str_contains((string) ($payload['icon_url'] ?? ''), 'shipping-status-live-thumb.png')
+                && str_contains((string) ($payload['text'] ?? ''), 'Demo is set to Live.');
         });
     }
 

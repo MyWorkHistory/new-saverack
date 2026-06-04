@@ -116,10 +116,9 @@ final class SlackDeliveryServiceCustomizeTest extends TestCase
 
         Http::fake([
             'https://slack.com/api/conversations.join' => Http::response(['ok' => true], 200),
-            'https://slack.com/api/chat.postMessage' => Http::response([
-                'ok' => false,
-                'error' => 'not_in_channel',
-            ], 200),
+            'https://slack.com/api/chat.postMessage' => Http::sequence()
+                ->push(['ok' => false, 'error' => 'not_in_channel'], 200)
+                ->push(['ok' => false, 'error' => 'not_in_channel'], 200),
             'hooks.slack.com/*' => Http::response('ok', 200),
         ]);
 

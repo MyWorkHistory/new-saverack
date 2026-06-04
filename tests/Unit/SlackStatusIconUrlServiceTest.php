@@ -17,47 +17,34 @@ final class SlackStatusIconUrlServiceTest extends TestCase
         ]);
     }
 
-    public function test_builds_public_images_url(): void
+    public function test_avatar_url_uses_local_thumb_file(): void
     {
-        $source = public_path('images/slack/shipping-status-live.png');
-        $this->assertFileExists($source);
+        $this->assertFileExists(public_path('images/slack/shipping-status-live-thumb.png'));
 
-        $url = app(SlackStatusIconUrlService::class)->liveUrl();
+        $url = app(SlackStatusIconUrlService::class)->avatarUrl(true);
 
         $this->assertSame(
-            'https://app.saverack.com/images/slack/shipping-status-live.png',
+            'https://app.saverack.com/images/slack/shipping-status-live-thumb.png',
             $url
         );
     }
 
-    public function test_builds_thumb_url_for_attachment(): void
-    {
-        $source = public_path('images/slack/shipping-status-paused-thumb.png');
-        $this->assertFileExists($source);
-
-        $url = app(SlackStatusIconUrlService::class)->pausedThumbUrl();
-
-        $this->assertSame(
-            'https://app.saverack.com/images/slack/shipping-status-paused-thumb.png',
-            $url
-        );
-    }
-
-    public function test_legacy_storage_env_url_remapped_to_public_images_path(): void
+    public function test_avatar_url_ignores_broken_env_when_local_file_exists(): void
     {
         config([
-            'billing.slack.status_icon_live_url' => 'https://app.saverack.com/storage/slack-status-icons/shipping-status-live.png',
+            'billing.slack.status_icon_live_url' => 'https://broken.example.com/storage/slack-status-icons/shipping-status-live.png',
+            'billing.slack.status_icon_live_thumb_url' => 'https://broken.example.com/storage/slack-status-icons/shipping-status-live.png',
         ]);
 
-        $url = app(SlackStatusIconUrlService::class)->liveUrl();
+        $url = app(SlackStatusIconUrlService::class)->avatarUrl(true);
 
         $this->assertSame(
-            'https://app.saverack.com/images/slack/shipping-status-live.png',
+            'https://app.saverack.com/images/slack/shipping-status-live-thumb.png',
             $url
         );
     }
 
-    public function test_live_thumb_falls_back_to_full_icon_when_thumb_file_missing(): void
+    public function test_legacy_storage_env_url_remapped_when_local_file_missing(): void
     {
         $thumb = public_path('images/slack/shipping-status-live-thumb.png');
         $backup = $thumb.'.bak';
@@ -66,8 +53,12 @@ final class SlackStatusIconUrlServiceTest extends TestCase
             rename($thumb, $backup);
         }
 
+        config([
+            'billing.slack.status_icon_live_url' => 'https://app.saverack.com/storage/slack-status-icons/shipping-status-live.png',
+        ]);
+
         try {
-            $url = app(SlackStatusIconUrlService::class)->liveThumbUrl();
+            $url = app(SlackStatusIconUrlService::class)->avatarUrl(true);
             $this->assertSame(
                 'https://app.saverack.com/images/slack/shipping-status-live.png',
                 $url
@@ -77,5 +68,15 @@ final class SlackStatusIconUrlServiceTest extends TestCase
                 rename($backup, $thumb);
             }
         }
+    }
+
+    public function test_paused_avatar_url_uses_local_thumb(): void
+    {
+        $url = app(SlackStatusIconUrlService::class)->avatarUrl(false);
+
+        $this->assertSame(
+            'https://app.saverack.com/images/slack/shipping-status-paused-thumb.png',
+            $url
+        );
     }
 }

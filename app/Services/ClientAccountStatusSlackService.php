@@ -251,7 +251,8 @@ class ClientAccountStatusSlackService
             $base = 'https://'.substr($base, 7);
         }
 
-        return $base.'/images/slack/'.$filename;
+        // Served via SlackStatusIconController as a 36×36 square (Slack avatar size).
+        return $base.'/slack-icons/'.$filename;
     }
 
     private function logIconUrlReachability(string $iconUrl, int $clientAccountId): void

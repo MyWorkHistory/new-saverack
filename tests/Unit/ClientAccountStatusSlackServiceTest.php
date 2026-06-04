@@ -42,7 +42,7 @@ final class ClientAccountStatusSlackServiceTest extends TestCase
         $this->assertNotNull($payload);
         $this->assertSame('Shipping Status Update', $payload['username']);
         $this->assertSame(
-            'https://app.saverack.com/images/slack/shipping-status-paused.png',
+            'https://app.saverack.com/slack-icons/shipping-status-paused.png',
             $payload['icon_url']
         );
         $this->assertSame(
@@ -72,7 +72,7 @@ final class ClientAccountStatusSlackServiceTest extends TestCase
 
         $this->assertNotNull($payload);
         $this->assertSame(
-            'https://app.saverack.com/images/slack/shipping-status-live.png',
+            'https://app.saverack.com/slack-icons/shipping-status-live.png',
             $payload['icon_url']
         );
         $this->assertSame(
@@ -96,7 +96,7 @@ final class ClientAccountStatusSlackServiceTest extends TestCase
         $method->setAccessible(true);
 
         $text = "Demo is set to Live.\nUpdated by: Audi";
-        $iconUrl = 'https://app.saverack.com/images/slack/shipping-status-live.png';
+        $iconUrl = 'https://app.saverack.com/slack-icons/shipping-status-live.png';
         $result = $method->invoke(
             $service,
             $text,
@@ -125,7 +125,7 @@ final class ClientAccountStatusSlackServiceTest extends TestCase
         $method->setAccessible(true);
 
         $text = "Demo is set to Paused.\nUpdated by: Audi";
-        $iconUrl = 'https://app.saverack.com/images/slack/shipping-status-paused.png';
+        $iconUrl = 'https://app.saverack.com/slack-icons/shipping-status-paused.png';
         $result = $method->invoke(
             $service,
             $text,
@@ -174,7 +174,7 @@ final class ClientAccountStatusSlackServiceTest extends TestCase
         config(['billing.slack.webhook_url' => 'https://hooks.slack.com/services/T/B/x']);
 
         Http::fake([
-            'https://app.saverack.com/images/slack/*' => Http::response('<html>', 404),
+            'https://app.saverack.com/slack-icons/*' => Http::response('<html>', 404),
             'hooks.slack.com/*' => Http::response('ok', 200),
         ]);
 

@@ -856,8 +856,8 @@ async function loadOrder({ refresh = false } = {}) {
   activeLoadKey.value = requestKey;
   const sameOrder = String(order.value?.id || "") === orderId.value;
   if (!sameOrder) {
-    loading.value = true;
-    order.value = null;
+  loading.value = true;
+  order.value = null;
   } else if (refresh) {
     refreshing.value = true;
   } else if (!order.value) {
@@ -884,13 +884,13 @@ async function loadOrder({ refresh = false } = {}) {
       toast.error("Order not found.");
     }
   } catch (e) {
-    const cached = fallbackOrderSnapshot();
-    if (cached) {
-      order.value = cached;
-      loadNotice.value = "Live detail endpoint was temporarily unavailable. Showing cached summary from this browser.";
-    } else {
-      loadError.value = extractErrorMessage(e);
-      order.value = null;
+      const cached = fallbackOrderSnapshot();
+      if (cached) {
+        order.value = cached;
+        loadNotice.value = "Live detail endpoint was temporarily unavailable. Showing cached summary from this browser.";
+      } else {
+        loadError.value = extractErrorMessage(e);
+        order.value = null;
     }
     toast.errorFrom(e, "Could not load order details.");
   } finally {
@@ -913,8 +913,8 @@ watch(
     const q = route.query.client_account_id;
     if (q != null && String(q) !== "") {
       const next = String(q);
-      if (next !== selectedAccountId.value) {
-        selectedAccountId.value = next;
+    if (next !== selectedAccountId.value) {
+      selectedAccountId.value = next;
       }
       return;
     }
@@ -1642,7 +1642,7 @@ function goToOrdersList() {
   <div :class="orderDetailRootClass">
     <div v-if="loading" class="order-detail-page__fullscreen-loading">
       <CrmLoadingSpinner message="Loading order detail..." :center="true" />
-    </div>
+      </div>
     <template v-else>
     <div v-if="!hasOrderAccountContext" class="alert alert-light border mb-4" role="status">
       <span class="small"
@@ -1678,15 +1678,15 @@ function goToOrdersList() {
                 >
                   {{ orderHeaderBadgeLabel }}
                 </span>
-              </div>
-              <button
-                type="button"
+          </div>
+          <button
+            type="button"
                 class="btn btn-link btn-sm text-secondary px-0 py-0 mt-1 text-decoration-none"
                 @click="goToOrdersList"
-              >
+          >
                 {{ isReturnPreviewMode ? "&lt; Create Return" : "&lt; Orders" }}
-              </button>
-            </div>
+          </button>
+        </div>
             <div
               v-if="canUseStaffOrderHeaderActions"
               class="d-flex flex-wrap gap-2 align-items-center flex-shrink-0"
@@ -1733,7 +1733,7 @@ function goToOrdersList() {
                 >
                   More Actions
                 </button>
-              </div>
+      </div>
               <button
                 v-if="showRemoveUserHoldBtn"
                 type="button"
@@ -1754,9 +1754,9 @@ function goToOrdersList() {
               >
                 Remove Hold
               </button>
-            </div>
-          </div>
-        </div>
+    </div>
+    </div>
+    </div>
         <div
           v-if="showNotReadyToShipBanner && !isReturnPreviewMode"
           class="order-detail-page__nrts-banner px-4 py-3 border-top border-warning border-2"
@@ -1774,8 +1774,8 @@ function goToOrdersList() {
               <ul class="small mb-0 ps-3 mt-2 text-secondary order-detail-page__nrts-list">
                 <li v-for="(line, idx) in notReadyBannerBullets" :key="'nrts-' + idx">{{ line }}</li>
               </ul>
-            </div>
-          </div>
+    </div>
+    </div>
         </div>
       </div>
 
@@ -1965,8 +1965,8 @@ function goToOrdersList() {
             <p v-if="!canRunShipHeroActions" class="small text-secondary mt-2 mb-0">
               You do not have permission to edit this note.
             </p>
+            </div>
           </div>
-        </div>
 
         <div class="col-lg-4 d-flex flex-column gap-4 order-detail-page__side-column">
           <div class="staff-table-card staff-datatable-card staff-datatable-card--white p-4 order-detail-page__side-panel">
@@ -2009,7 +2009,7 @@ function goToOrdersList() {
                       </a>
                       <span v-else>{{ parts.trackingNumber }}</span>
                     </template>
-                  </div>
+          </div>
                 </div>
                 <p v-else class="small text-secondary mb-0">No tracking information available.</p>
                 <p v-if="trackingLabelCostDisplay" class="small text-secondary mb-0 mt-2">
@@ -2057,7 +2057,7 @@ function goToOrdersList() {
                 {{ shippingLinesSaveBusy ? "Saving…" : "Save Carrier & Method" }}
               </button>
             </template>
-          </div>
+        </div>
 
           <div class="staff-table-card staff-datatable-card staff-datatable-card--white p-4 order-detail-page__side-panel">
             <h3 class="h6 fw-semibold mb-3">Order details</h3>
@@ -2181,7 +2181,7 @@ function goToOrdersList() {
               >
                 Attach File
               </button>
-            </div>
+          </div>
             <input
               ref="attachmentFileInput"
               type="file"

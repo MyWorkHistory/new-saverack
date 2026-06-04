@@ -17,6 +17,7 @@ BACKGROUND_RGB = (255, 255, 255)
 
 ROOT = Path(__file__).resolve().parents[1]
 OUT_DIR = ROOT / "public" / "images" / "slack"
+AVATAR_DIR = OUT_DIR / "avatars"
 
 FILES = [
     "shipping-status-live.png",
@@ -42,6 +43,8 @@ def process(src: Path, dest: Path) -> None:
     if not bbox:
         raise RuntimeError(f"No visible pixels in {src}")
     cropped = im.crop(bbox)
+    avatar_dest = AVATAR_DIR / dest.name
+    write_slack_avatar(cropped, avatar_dest)
 
     target = int(SIZE * FILL)
     # Fit by width so the full truck is visible in Slack's circular crop (wide art).
@@ -61,6 +64,24 @@ def process(src: Path, dest: Path) -> None:
     dest.parent.mkdir(parents=True, exist_ok=True)
     flat.save(dest, "PNG", optimize=True)
     print(f"Wrote {dest} ({dest.stat().st_size} bytes, fit {new_w}x{new_h})")
+
+
+def write_slack_avatar(cropped: Image.Image, dest: Path) -> None:
+    """36×36 square — matches Slack webhook avatar display size."""
+    target = SIZE
+    scale = min(target / cropped.width, target / cropped.height)
+    new_w = max(1, int(cropped.width * scale))
+    new_h = max(1, int(cropped.height * scale))
+    resized = cropped.resize((new_w, new_h), Image.Resampling.LANCZOS)
+    canvas = Image.new("RGB", (target, target), BACKGROUND_RGB)
+    canvas.paste(
+        resized,
+        ((target - new_w) // 2, (target - new_h) // 2),
+        resized if resized.mode == "RGBA" else None,
+    )
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    canvas.save(dest, "PNG", optimize=True)
+    print(f"Wrote {dest} ({dest.stat().st_size} bytes, {target}x{target})")
 
 
 def main() -> int:

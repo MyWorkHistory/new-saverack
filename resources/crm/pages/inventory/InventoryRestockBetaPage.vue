@@ -229,16 +229,18 @@ onMounted(() => {
         <p v-if="rows.length" class="small text-danger fw-semibold mb-0">
           Restock Needed: {{ visibleRestockNeededTotal.toLocaleString() }}
         </p>
-        <p v-if="lastUploadDateLabel" class="small text-danger mb-0">
-          Last Upload: {{ lastUploadDateLabel }}
-        </p>
-        <button
-          type="button"
-          class="btn btn-outline-secondary btn-sm orders-toolbar-outline-btn"
-          @click="openUploadModal"
-        >
-          Upload CSV
-        </button>
+        <div class="d-flex flex-wrap align-items-center gap-3 justify-content-md-end">
+          <p v-if="lastUploadDateLabel" class="small text-secondary mb-0">
+            Last Upload: {{ lastUploadDateLabel }}
+          </p>
+          <button
+            type="button"
+            class="btn btn-outline-secondary btn-sm orders-toolbar-outline-btn"
+            @click="openUploadModal"
+          >
+            Upload CSV
+          </button>
+        </div>
       </div>
     </div>
 

@@ -24,6 +24,9 @@ const enrichBusy = ref(false);
 
 const productSearch = ref("");
 const lineStatusFilter = ref("");
+const lineDateFrom = ref("");
+const lineDateTo = ref("");
+const filterMenuOpen = ref(false);
 
 const receiveDraft = ref({});
 const rejectDraft = ref({});
@@ -87,7 +90,7 @@ const notesSaveBusy = ref(false);
 const lineMenuOpenId = ref(null);
 const lineMenuRect = ref({ top: 0, left: 0 });
 const LINE_MENU_W = 200;
-const LINE_MENU_H = 160;
+const LINE_MENU_H = 220;
 
 const asnId = computed(() => String(route.params.id || ""));
 const asnRouteId = computed(() => Number(asnId.value || 0));
@@ -225,7 +228,30 @@ function addTrackingRow() {
   trackingDraft.value = [...trackingDraft.value, { carrier: "", tracking_number: "" }];
 }
 
+function toCalendarDate(iso) {
+  if (!iso) return "";
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return "";
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
+}
+
+function asnCreatedInDateRange() {
+  const from = lineDateFrom.value.trim();
+  const to = lineDateTo.value.trim();
+  if (!from && !to) return true;
+  if (from && to && from > to) return false;
+  const created = toCalendarDate(asn.value?.created_at);
+  if (!created) return false;
+  if (from && created < from) return false;
+  if (to && created > to) return false;
+  return true;
+}
+
 const filteredLines = computed(() => {
+  if (!asnCreatedInDateRange()) return [];
   let lines = asn.value?.lines || [];
   const q = productSearch.value.trim().toLowerCase();
   if (q) {
@@ -241,6 +267,12 @@ const filteredLines = computed(() => {
   }
   return lines;
 });
+
+function clearLineFilters() {
+  lineStatusFilter.value = "";
+  lineDateFrom.value = "";
+  lineDateTo.value = "";
+}
 
 function statusLabel(s) {
   const x = String(s || "").toLowerCase();
@@ -291,6 +323,10 @@ function hasSpecValue(val) {
 
 function specEditButtonClass(hasValue) {
   return hasValue ? "btn btn-link btn-sm px-0" : "btn btn-link btn-sm px-0 text-danger";
+}
+
+function specRowLabel(prefix, val) {
+  return hasSpecValue(val) ? `${prefix}: ${val}` : `${prefix}:`;
 }
 
 function syncDraftsFromAsn() {
@@ -763,7 +799,7 @@ async function confirmDeleteLine() {
     deleteLineOpen.value = false;
     lineToDelete.value = null;
     lineMenuOpenId.value = null;
-    toast.success("Line removed.");
+    toast.success("Product deleted.");
     await loadAsn();
   } catch (e) {
     toast.errorFrom(e, "Delete failed.");
@@ -868,11 +904,15 @@ function onDocClickMenus(e) {
   if (!e.target?.closest?.("[data-asn-header-actions]")) {
     closeAllHeaderMenus();
   }
+  if (!e.target?.closest?.("[data-toolbar-filter]")) {
+    filterMenuOpen.value = false;
+  }
 }
 
 function onWindowCloseMenus() {
   lineMenuOpenId.value = null;
   closeAllHeaderMenus();
+  filterMenuOpen.value = false;
 }
 
 watch(asnId, () => loadAsn());
@@ -1081,17 +1121,82 @@ onUnmounted(() => {
                 autocomplete="off"
                 aria-label="Search products"
               />
-              <select
-                v-model="lineStatusFilter"
-                class="form-select form-select-sm staff-toolbar-search staff-toolbar-search--inline"
-                style="max-width: 10rem"
-                aria-label="Filter by line status"
-              >
-                <option value="">All status</option>
-                <option value="pending">Pending</option>
-                <option value="partial">Partial</option>
-                <option value="completed">Completed</option>
-              </select>
+              <div class="position-relative flex-shrink-0" data-toolbar-filter>
+                <button
+                  type="button"
+                  class="btn btn-outline-secondary staff-toolbar-btn d-inline-flex align-items-center gap-2"
+                  :aria-expanded="filterMenuOpen"
+                  aria-haspopup="true"
+                  aria-controls="admin-asn-lines-filter-panel"
+                  @click.stop="filterMenuOpen = !filterMenuOpen"
+                >
+                  <svg
+                    width="18"
+                    height="18"
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-width="2"
+                    viewBox="0 0 24 24"
+                    aria-hidden="true"
+                  >
+                    <path
+                      stroke-linecap="round"
+                      stroke-linejoin="round"
+                      d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2.586a1 1 0 01-.293.707l-6.414 6.414a1 1 0 00-.293.707V17l-4 4v-6.586a1 1 0 00-.293-.707L3.293 7.293A1 1 0 013 6.586V4z"
+                    />
+                  </svg>
+                  <span class="staff-toolbar-filter-text">Filters</span>
+                </button>
+                <div
+                  v-if="filterMenuOpen"
+                  id="admin-asn-lines-filter-panel"
+                  class="dropdown-menu dropdown-menu-end show shadow border p-0 staff-toolbar-filter-dropdown"
+                  role="dialog"
+                  aria-label="Product filters"
+                  @click.stop
+                >
+                  <div class="staff-toolbar-filter-dropdown__head">
+                    <span>Filters</span>
+                    <button
+                      type="button"
+                      class="btn btn-link btn-sm text-secondary text-decoration-none p-0"
+                      @click="
+                        clearLineFilters();
+                        filterMenuOpen = false;
+                      "
+                    >
+                      Reset
+                    </button>
+                  </div>
+                  <div class="staff-toolbar-filter-dropdown__body">
+                    <label class="form-label" for="admin-asn-line-filter-status">Status</label>
+                    <select
+                      id="admin-asn-line-filter-status"
+                      v-model="lineStatusFilter"
+                      class="form-select staff-datatable-filters__select mb-3"
+                    >
+                      <option value="">All status</option>
+                      <option value="pending">Pending</option>
+                      <option value="partial">Partial</option>
+                      <option value="completed">Completed</option>
+                    </select>
+                    <label class="form-label" for="admin-asn-line-filter-from">Date From</label>
+                    <input
+                      id="admin-asn-line-filter-from"
+                      v-model="lineDateFrom"
+                      type="date"
+                      class="form-control staff-datatable-filters__select mb-3"
+                    />
+                    <label class="form-label" for="admin-asn-line-filter-to">Date To</label>
+                    <input
+                      id="admin-asn-line-filter-to"
+                      v-model="lineDateTo"
+                      type="date"
+                      class="form-control staff-datatable-filters__select"
+                    />
+                  </div>
+                </div>
+              </div>
             </div>
           </div>
 
@@ -1175,11 +1280,7 @@ onUnmounted(() => {
                         :class="specEditButtonClass(hasSpecValue(line.weight))"
                         @click="openEditItem(line)"
                       >
-                        {{
-                          hasSpecValue(line.weight)
-                            ? `Weight: ${line.weight} lbs`
-                            : "Weight"
-                        }}
+                        {{ specRowLabel("LBS", line.weight) }}
                       </button>
                     </div>
                     <div>
@@ -1188,21 +1289,25 @@ onUnmounted(() => {
                         :class="specEditButtonClass(hasSpecValue(line.length))"
                         @click="openEditItem(line)"
                       >
-                        {{ hasSpecValue(line.length) ? `L: ${line.length}` : "L" }}
+                        {{ specRowLabel("L", line.length) }}
                       </button>
+                    </div>
+                    <div>
                       <button
                         type="button"
                         :class="specEditButtonClass(hasSpecValue(line.width))"
                         @click="openEditItem(line)"
                       >
-                        {{ hasSpecValue(line.width) ? `W: ${line.width}` : "W" }}
+                        {{ specRowLabel("W", line.width) }}
                       </button>
+                    </div>
+                    <div>
                       <button
                         type="button"
                         :class="specEditButtonClass(hasSpecValue(line.height))"
                         @click="openEditItem(line)"
                       >
-                        {{ hasSpecValue(line.height) ? `H: ${line.height}` : "H" }}
+                        {{ specRowLabel("H", line.height) }}
                       </button>
                     </div>
                   </td>
@@ -1465,7 +1570,7 @@ onUnmounted(() => {
               role="menuitem"
               @click="askDeleteLineFromMenu(lineMenuRow)"
             >
-              Remove
+              Delete
             </button>
             <button
               type="button"
@@ -1509,6 +1614,14 @@ onUnmounted(() => {
               "
             >
               Print Barcode
+            </button>
+            <button
+              type="button"
+              class="staff-row-menu__item staff-row-menu__item--danger"
+              role="menuitem"
+              @click="askDeleteLineFromMenu(lineMenuRow)"
+            >
+              Delete
             </button>
           </template>
         </div>
@@ -1593,15 +1706,15 @@ onUnmounted(() => {
 
     <ConfirmModal
       :open="deleteLineOpen"
-      title="Remove Product"
-      confirm-label="Remove"
+      title="Delete Product"
+      confirm-label="Delete"
       :danger="true"
       :busy="lineBusy"
       @close="deleteLineOpen = false"
       @confirm="confirmDeleteLine"
     >
       <p v-if="lineToDelete" class="mb-0">
-        Remove <strong>{{ lineToDelete.name || lineToDelete.sku }}</strong> from this ASN?
+        Delete <strong>{{ lineToDelete.name || lineToDelete.sku }}</strong> from this ASN?
       </p>
     </ConfirmModal>
 

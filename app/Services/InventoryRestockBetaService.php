@@ -10,9 +10,13 @@ use RuntimeException;
 
 final class InventoryRestockBetaService
 {
-    public function __construct(
-        private RestockBetaCsvParser $parser,
-    ) {}
+    /** @var RestockBetaCsvParser */
+    private $parser;
+
+    public function __construct(RestockBetaCsvParser $parser)
+    {
+        $this->parser = $parser;
+    }
 
     /**
      * @return array<string, mixed>
@@ -30,7 +34,7 @@ final class InventoryRestockBetaService
         InventoryRestockBetaSnapshot::query()->delete();
 
         $snapshot = InventoryRestockBetaSnapshot::query()->create([
-            'uploaded_by_user_id' => $actor?->id,
+            'uploaded_by_user_id' => $actor !== null ? $actor->id : null,
             'original_filename' => $file->getClientOriginalName(),
             'row_count' => count($rows),
             'rows' => $rows,
@@ -62,10 +66,12 @@ final class InventoryRestockBetaService
      */
     private function toArray(InventoryRestockBetaSnapshot $snapshot): array
     {
+        $uploadedAt = $snapshot->uploaded_at;
+
         return [
             'original_filename' => $snapshot->original_filename,
             'row_count' => (int) $snapshot->row_count,
-            'uploaded_at' => $snapshot->uploaded_at?->toIso8601String(),
+            'uploaded_at' => $uploadedAt !== null ? $uploadedAt->toIso8601String() : null,
             'rows' => is_array($snapshot->rows) ? $snapshot->rows : [],
         ];
     }

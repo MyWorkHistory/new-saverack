@@ -175,7 +175,7 @@ async function submitUpload() {
       headers: { "Content-Type": "multipart/form-data" },
     });
     applySnapshot(data);
-    toast.success(`Uploaded ${Number(data?.active_row_count ?? data?.row_count || 0).toLocaleString()} rows.`);
+    toast.success(`Uploaded ${Number(data?.active_row_count ?? data?.row_count ?? 0).toLocaleString()} rows.`);
     closeUploadModal(true);
   } catch (e) {
     toast.errorFrom(e, "Could not upload CSV.");

@@ -101,6 +101,8 @@ Route::middleware('auth:sanctum')->group(function () {
             ->middleware('can:inventory.view');
         Route::post('/restock-beta/import', [InventoryController::class, 'importRestockBetaCsv'])
             ->middleware('can:inventory.view');
+        Route::post('/restock-beta/complete', [InventoryController::class, 'completeRestockBetaRow'])
+            ->middleware('can:inventory.view');
         Route::post('/warehouse-products/bulk-active', [InventoryController::class, 'bulkWarehouseProductActive'])
             ->middleware('can:inventory.update');
         Route::get('/asn-product-catalog', [InventoryController::class, 'asnProductCatalog'])

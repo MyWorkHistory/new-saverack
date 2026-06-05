@@ -2,8 +2,10 @@
 
 namespace Tests\Feature;
 
+use App\Models\ClientAccount;
 use App\Models\InventoryRestockBetaSnapshot;
 use App\Models\Permission;
+use App\Models\ShipHeroInventoryProductIndex;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\UploadedFile;
@@ -46,6 +48,8 @@ CSV;
 
         $response->assertCreated();
         $response->assertJsonPath('row_count', 1);
+        $response->assertJsonPath('active_row_count', 1);
+        $response->assertJsonPath('restock_needed_total', 42);
         $response->assertJsonPath('original_filename', 'restock.csv');
         $response->assertJsonPath('rows.0.sku', 'ABC-123');
         $response->assertJsonPath('rows.0.restock_needed', 42);
@@ -72,6 +76,7 @@ CSV;
                     'backstock_locations' => 'bin-a',
                 ],
             ],
+            'completed_skus' => [],
             'uploaded_at' => now(),
         ]);
 
@@ -80,6 +85,8 @@ CSV;
         $response->assertOk();
         $response->assertJsonPath('original_filename', 'saved.csv');
         $response->assertJsonPath('row_count', 1);
+        $response->assertJsonPath('active_row_count', 1);
+        $response->assertJsonPath('restock_needed_total', 3);
         $response->assertJsonPath('rows.0.sku', 'SAVE-1');
     }
 
@@ -91,6 +98,8 @@ CSV;
 
         $response->assertOk();
         $response->assertJsonPath('row_count', 0);
+        $response->assertJsonPath('active_row_count', 0);
+        $response->assertJsonPath('restock_needed_total', 0);
         $response->assertJsonPath('rows', []);
     }
 
@@ -116,6 +125,7 @@ CSV;
             'original_filename' => 'old.csv',
             'row_count' => 1,
             'rows' => [['sku' => 'OLD-1', 'name' => 'Old']],
+            'completed_skus' => ['OLD-1'],
             'uploaded_at' => now()->subDay(),
         ]);
 
@@ -123,11 +133,83 @@ CSV;
 
         $this->postJson('/api/inventory/restock-beta/import', ['file' => $file])
             ->assertCreated()
-            ->assertJsonPath('rows.0.sku', 'ABC-123');
+            ->assertJsonPath('rows.0.sku', 'ABC-123')
+            ->assertJsonPath('active_row_count', 1);
 
         $this->assertDatabaseCount('inventory_restock_beta_snapshots', 1);
         $this->assertDatabaseHas('inventory_restock_beta_snapshots', [
             'original_filename' => 'new.csv',
         ]);
+    }
+
+    public function test_post_complete_hides_sku_from_get_rows(): void
+    {
+        Sanctum::actingAs($this->staffWithInventoryView());
+
+        InventoryRestockBetaSnapshot::query()->create([
+            'original_filename' => 'saved.csv',
+            'row_count' => 2,
+            'rows' => [
+                [
+                    'sku' => 'KEEP-1',
+                    'name' => 'Keep Row',
+                    'restock_needed' => 2,
+                ],
+                [
+                    'sku' => 'DONE-1',
+                    'name' => 'Done Row',
+                    'restock_needed' => 5,
+                ],
+            ],
+            'completed_skus' => [],
+            'uploaded_at' => now(),
+        ]);
+
+        $this->postJson('/api/inventory/restock-beta/complete', ['sku' => 'DONE-1'])
+            ->assertOk()
+            ->assertJsonPath('active_row_count', 1)
+            ->assertJsonPath('restock_needed_total', 2)
+            ->assertJsonPath('rows.0.sku', 'KEEP-1');
+
+        $this->getJson('/api/inventory/restock-beta')
+            ->assertOk()
+            ->assertJsonCount(1, 'rows')
+            ->assertJsonPath('rows.0.sku', 'KEEP-1');
+    }
+
+    public function test_import_enriches_account_from_inventory_index(): void
+    {
+        Sanctum::actingAs($this->staffWithInventoryView());
+
+        $account = ClientAccount::query()->create([
+            'company_name' => 'Acme Shoes',
+            'status' => ClientAccount::STATUS_ACTIVE,
+            'shiphero_customer_account_id' => 'sh-acme-1',
+        ]);
+
+        ShipHeroInventoryProductIndex::query()->create([
+            'client_account_id' => $account->id,
+            'shiphero_customer_account_id' => 'sh-acme-1',
+            'sku' => 'ABC-123',
+            'sku_search' => 'abc-123',
+            'name' => 'Widget Alpha',
+            'name_search' => 'widget alpha',
+            'product_active' => true,
+            'kit' => false,
+            'kit_build' => false,
+            'warehouse_id' => 'WH1',
+            'warehouse_active' => true,
+            'on_hand' => 100,
+            'allocated' => 10,
+            'backorder' => 0,
+            'synced_at' => now(),
+        ]);
+
+        $file = UploadedFile::fake()->createWithContent('restock.csv', $this->sampleCsv());
+
+        $this->postJson('/api/inventory/restock-beta/import', ['file' => $file])
+            ->assertCreated()
+            ->assertJsonPath('rows.0.client_account_id', $account->id)
+            ->assertJsonPath('rows.0.account_name', 'Acme Shoes');
     }
 }

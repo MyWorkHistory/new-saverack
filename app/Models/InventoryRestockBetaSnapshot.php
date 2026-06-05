@@ -12,11 +12,13 @@ class InventoryRestockBetaSnapshot extends Model
         'original_filename',
         'row_count',
         'rows',
+        'completed_skus',
         'uploaded_at',
     ];
 
     protected $casts = [
         'rows' => 'array',
+        'completed_skus' => 'array',
         'row_count' => 'integer',
         'uploaded_at' => 'datetime',
     ];

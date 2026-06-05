@@ -278,12 +278,39 @@ class InventoryController extends Controller
             return response()->json([
                 'original_filename' => null,
                 'row_count' => 0,
+                'active_row_count' => 0,
+                'restock_needed_total' => 0,
                 'uploaded_at' => null,
                 'rows' => [],
             ]);
         }
 
         return response()->json($snapshot);
+    }
+
+    public function completeRestockBetaRow(Request $request, InventoryRestockBetaService $restockBeta): JsonResponse
+    {
+        try {
+            $validated = $request->validate([
+                'sku' => ['required', 'string', 'max:255'],
+            ]);
+
+            $snapshot = $restockBeta->completeSku(trim((string) $validated['sku']));
+
+            return response()->json($snapshot);
+        } catch (ValidationException $e) {
+            throw $e;
+        } catch (RuntimeException $e) {
+            return response()->json(['message' => $e->getMessage()], 422);
+        } catch (Throwable $e) {
+            report($e);
+
+            return response()->json([
+                'message' => config('app.debug')
+                    ? $e->getMessage()
+                    : 'Could not complete restock row.',
+            ], 500);
+        }
     }
 
     public function importRestockBetaCsv(Request $request, InventoryRestockBetaService $restockBeta): JsonResponse

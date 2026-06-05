@@ -10,6 +10,7 @@ use App\Models\ClientAccountOnDemandProduct;
 use App\Models\InventoryRestockSnapshot;
 use App\Services\ShipHeroClient;
 use App\Services\InventoryProductDetailCacheService;
+use App\Services\InventoryRestockBetaService;
 use App\Services\InventoryRestockReportService;
 use App\Models\User;
 use App\Services\CrossAccountInventoryListService;
@@ -266,6 +267,46 @@ class InventoryController extends Controller
                 'message' => config('app.debug')
                     ? $e->getMessage()
                     : 'Could not preview restock report.',
+            ], 500);
+        }
+    }
+
+    public function restockBetaSnapshot(InventoryRestockBetaService $restockBeta): JsonResponse
+    {
+        $snapshot = $restockBeta->latestSnapshot();
+        if ($snapshot === null) {
+            return response()->json([
+                'original_filename' => null,
+                'row_count' => 0,
+                'uploaded_at' => null,
+                'rows' => [],
+            ]);
+        }
+
+        return response()->json($snapshot);
+    }
+
+    public function importRestockBetaCsv(Request $request, InventoryRestockBetaService $restockBeta): JsonResponse
+    {
+        try {
+            $validated = $request->validate([
+                'file' => ['required', 'file', 'mimes:csv,txt', 'max:10240'],
+            ]);
+
+            $snapshot = $restockBeta->importCsv($validated['file'], $request->user());
+
+            return response()->json($snapshot, 201);
+        } catch (ValidationException $e) {
+            throw $e;
+        } catch (RuntimeException $e) {
+            return response()->json(['message' => $e->getMessage()], 422);
+        } catch (Throwable $e) {
+            report($e);
+
+            return response()->json([
+                'message' => config('app.debug')
+                    ? $e->getMessage()
+                    : 'Could not import restock CSV.',
             ], 500);
         }
     }

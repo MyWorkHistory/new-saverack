@@ -33,6 +33,7 @@ import InventoryListPage from "../pages/inventory/InventoryListPage.vue";
 import InventoryDetailPage from "../pages/inventory/InventoryDetailPage.vue";
 import InventoryOnDemandPage from "../pages/inventory/InventoryOnDemandPage.vue";
 import InventoryRestockPage from "../pages/inventory/InventoryRestockPage.vue";
+import InventoryRestockBetaPage from "../pages/inventory/InventoryRestockBetaPage.vue";
 import OrdersListPage from "../pages/orders/OrdersListPage.vue";
 import OrderDetailPage from "../pages/orders/OrderDetailPage.vue";
 import OrderDetailIframePage from "../pages/orders/OrderDetailIframePage.vue";
@@ -131,6 +132,10 @@ const meta = {
   inventoryRestock: {
     title: "Save Rack | Inventory | Restock",
     description: "Warehouse restock report for low pickable inventory with backstock.",
+  },
+  inventoryRestockBeta: {
+    title: "Save Rack | Inventory | Restock (Beta)",
+    description: "Upload a restock CSV and review SKUs that need replenishment.",
   },
   ordersSearch: {
     title: "Save Rack | Orders | Search",
@@ -422,6 +427,12 @@ const routes = [
     name: "inventory-restock",
     component: InventoryRestockPage,
     meta: meta.inventoryRestock,
+  },
+  {
+    path: "/admin/inventory/restock-beta",
+    name: "inventory-restock-beta",
+    component: InventoryRestockBetaPage,
+    meta: meta.inventoryRestockBeta,
   },
   {
     path: "/admin/inventory/on-demand",

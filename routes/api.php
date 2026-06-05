@@ -81,6 +81,8 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::prefix('inventory')->group(function () {
         Route::get('/client-account-options', [InventoryController::class, 'clientAccountOptions'])
             ->middleware('can:inventory.view');
+        Route::get('/adjustment-reasons', [InventoryController::class, 'adjustmentReasons'])
+            ->middleware('can:inventory.view');
         Route::get('/warehouses', [InventoryController::class, 'warehouses'])
             ->middleware('can:inventory.view');
         Route::get('/diagnostic', [InventoryController::class, 'diagnostic'])

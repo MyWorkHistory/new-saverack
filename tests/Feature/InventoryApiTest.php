@@ -352,7 +352,7 @@ class InventoryApiTest extends TestCase
             ]);
         $mock->shouldReceive('transferLocationQuantity')
             ->once()
-            ->with('SKU-1', 'WH1', 'LOC-A', 'test-3-id', 2, 'CRM inventory transfer', null)
+            ->with('SKU-1', 'WH1', 'LOC-A', 'test-3-id', 2, 'Restock', null)
             ->andReturn([
                 'warehouse_id' => 'WH1',
                 'warehouse_name' => 'Main',

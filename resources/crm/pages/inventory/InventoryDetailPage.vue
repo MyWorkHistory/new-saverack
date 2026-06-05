@@ -52,11 +52,11 @@ const transferForm = reactive({
   to_location_id: "",
   to_location: "",
   quantity: "",
-  reason: "Inventory Reclassification",
+  reason: "Restock",
 });
 const addLocationForm = reactive({ location: "", quantity: "", reason: "Inventory Reclassification" });
 
-const inventoryReasons = [
+const inventoryReasons = ref([
   "Account Setup",
   "Amazon Return",
   "Client-Requested Adjustments",
@@ -69,10 +69,12 @@ const inventoryReasons = [
   "Lost or Missing Units",
   "Order Fulfilment",
   "Quality Control Holds",
+  "Restock",
   "Returns Processing",
   "Shipped via Shipstation",
   "System Sync or Integration Corrections",
-];
+]);
+const defaultTransferReason = ref("Restock");
 
 const summaryMetrics = computed(() => product.value?.metrics || {
   on_hand: 0,
@@ -309,9 +311,27 @@ onMounted(() => {
     title: isPortalView.value ? "Save Rack | Inventory | Product Detail" : "Save Rack | Inventory Detail",
     description: "Product inventory detail.",
   });
+  loadAdjustmentReasons();
   loadDetail();
   document.addEventListener("click", onDocClick);
 });
+
+async function loadAdjustmentReasons() {
+  try {
+    const { data } = await api.get("/inventory/adjustment-reasons");
+    const reasons = Array.isArray(data?.reasons) ? data.reasons.filter(Boolean) : [];
+    if (reasons.length) {
+      inventoryReasons.value = reasons;
+    }
+    const defaultReason = String(data?.default_transfer_reason || "").trim();
+    if (defaultReason) {
+      defaultTransferReason.value = defaultReason;
+      transferForm.reason = defaultReason;
+    }
+  } catch {
+    /* keep fallback list */
+  }
+}
 
 watch(
   () => String(route.params.sku || "").trim(),
@@ -684,6 +704,7 @@ function openTransferQtyModal() {
   transferForm.to_location_id = "";
   transferForm.to_location = "";
   transferForm.quantity = "";
+  transferForm.reason = defaultTransferReason.value;
   transferModalOpen.value = true;
   actionMenuLocationId.value = null;
 }

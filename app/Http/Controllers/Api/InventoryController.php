@@ -88,6 +88,32 @@ class InventoryController extends Controller
         }
     }
 
+    public function adjustmentReasons(): JsonResponse
+    {
+        /** @var list<string> $reasons */
+        $reasons = config('inventory.adjustment_reasons', []);
+        if (! is_array($reasons)) {
+            $reasons = [];
+        }
+        $reasons = array_values(array_filter(array_map(static function ($reason) {
+            return is_string($reason) ? trim($reason) : '';
+        }, $reasons)));
+
+        $defaultTransfer = config('inventory.default_transfer_reason', 'Restock');
+        if (! is_string($defaultTransfer) || trim($defaultTransfer) === '') {
+            $defaultTransfer = 'Restock';
+        }
+        if ($reasons !== [] && ! in_array($defaultTransfer, $reasons, true)) {
+            $reasons[] = $defaultTransfer;
+            sort($reasons);
+        }
+
+        return response()->json([
+            'reasons' => $reasons,
+            'default_transfer_reason' => $defaultTransfer,
+        ]);
+    }
+
     public function warehouses(): JsonResponse
     {
         try {
@@ -1151,7 +1177,7 @@ class InventoryController extends Controller
         ]);
         $reason = isset($validated['reason']) && is_string($validated['reason'])
             ? $validated['reason']
-            : 'CRM inventory transfer';
+            : (string) config('inventory.default_transfer_reason', 'Restock');
         $clientAccountId = isset($validated['client_account_id'])
             ? (int) $validated['client_account_id']
             : null;

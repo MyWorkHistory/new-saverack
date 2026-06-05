@@ -2365,6 +2365,71 @@ GQL,
     }
 
     /**
+     * Resolve a location from the product's warehouse snapshot (by id or display name).
+     *
+     * @return array{id:string,name:string,type:?string,pickable:?bool,sellable:?bool}|null
+     */
+    public function resolveProductWarehouseLocation(
+        string $sku,
+        string $warehouseId,
+        string $locationInput,
+        ?string $customerAccountId = null
+    ): ?array {
+        $needle = trim($locationInput);
+        if ($needle === '') {
+            return null;
+        }
+        $product = $this->searchProduct($sku, $warehouseId, $customerAccountId);
+        if (! is_array($product)) {
+            return null;
+        }
+        $warehouse = null;
+        foreach (($product['warehouses'] ?? []) as $wh) {
+            if (is_array($wh) && (string) ($wh['warehouse_id'] ?? '') === $warehouseId) {
+                $warehouse = $wh;
+                break;
+            }
+        }
+        if (! is_array($warehouse)) {
+            return null;
+        }
+        foreach (($warehouse['locations'] ?? []) as $loc) {
+            if (! is_array($loc)) {
+                continue;
+            }
+            $locId = trim((string) ($loc['location_id'] ?? ''));
+            $locName = trim((string) ($loc['location_name'] ?? ''));
+            if ($locId !== '' && strcasecmp($locId, $needle) === 0) {
+                return [
+                    'id' => $locId,
+                    'name' => $locName !== '' ? $locName : $locId,
+                    'type' => isset($loc['type']) && is_string($loc['type']) ? $loc['type'] : null,
+                    'pickable' => array_key_exists('pickable', $loc) ? $loc['pickable'] : null,
+                    'sellable' => null,
+                ];
+            }
+        }
+        foreach (($warehouse['locations'] ?? []) as $loc) {
+            if (! is_array($loc)) {
+                continue;
+            }
+            $locId = trim((string) ($loc['location_id'] ?? ''));
+            $locName = trim((string) ($loc['location_name'] ?? ''));
+            if ($locName !== '' && strcasecmp($locName, $needle) === 0) {
+                return [
+                    'id' => $locId !== '' ? $locId : $locName,
+                    'name' => $locName,
+                    'type' => isset($loc['type']) && is_string($loc['type']) ? $loc['type'] : null,
+                    'pickable' => array_key_exists('pickable', $loc) ? $loc['pickable'] : null,
+                    'sellable' => null,
+                ];
+            }
+        }
+
+        return null;
+    }
+
+    /**
      * @param string|null $customerAccountId
      * @return array{id:string,name:string,type:?string,pickable:?bool,sellable:?bool}
      */

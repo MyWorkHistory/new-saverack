@@ -36,6 +36,9 @@ const saving = ref(false);
 const product = ref(null);
 const productLoadError = ref("");
 const locationSearch = ref("");
+const locationFilterMenuOpen = ref(false);
+const locationBinTypeFilter = ref("");
+const locationPickableFilter = ref("");
 const actionMenuLocationId = ref(null);
 const actionMenuRect = ref({ top: 0, left: 0 });
 
@@ -44,7 +47,13 @@ const transferModalOpen = ref(false);
 const addLocationModalOpen = ref(false);
 const activeLocation = ref(null);
 const updateForm = reactive({ quantity: "", reason: "Client-Requested Adjustments" });
-const transferForm = reactive({ to_location: "", quantity: "", reason: "Inventory Reclassification" });
+const transferForm = reactive({
+  transfer_type: "current",
+  to_location_id: "",
+  to_location: "",
+  quantity: "",
+  reason: "Inventory Reclassification",
+});
 const addLocationForm = reactive({ location: "", quantity: "", reason: "Inventory Reclassification" });
 
 const inventoryReasons = [
@@ -172,13 +181,48 @@ const allLocations = computed(() => {
   return out;
 });
 
-const filteredLocations = computed(() => {
-  const q = locationSearch.value.trim().toLowerCase();
-  if (!q) return allLocations.value;
-  return allLocations.value.filter((loc) =>
-    String(loc.location_name || loc.location_id || "").toLowerCase().includes(q),
+const locationBinTypeOptions = computed(() => {
+  const types = new Set();
+  allLocations.value.forEach((loc) => {
+    const t = String(loc.type || "").trim();
+    if (t) types.add(t);
+  });
+  return [...types].sort((a, b) => a.localeCompare(b));
+});
+
+const transferDestinationOptions = computed(() => {
+  const source = activeLocation.value;
+  if (!source) return [];
+  const whId = String(source.warehouse_id || "");
+  const fromId = String(source.location_id || "");
+  return allLocations.value.filter(
+    (loc) => String(loc.warehouse_id || "") === whId && String(loc.location_id || "") !== fromId,
   );
 });
+
+const filteredLocations = computed(() => {
+  let rows = allLocations.value;
+  const q = locationSearch.value.trim().toLowerCase();
+  if (q) {
+    rows = rows.filter((loc) =>
+      String(loc.location_name || loc.location_id || "").toLowerCase().includes(q),
+    );
+  }
+  if (locationBinTypeFilter.value) {
+    rows = rows.filter((loc) => String(loc.type || "") === locationBinTypeFilter.value);
+  }
+  if (locationPickableFilter.value === "yes") {
+    rows = rows.filter((loc) => loc.pickable === true);
+  } else if (locationPickableFilter.value === "no") {
+    rows = rows.filter((loc) => loc.pickable === false);
+  }
+  return rows;
+});
+
+function clearLocationFilters() {
+  locationBinTypeFilter.value = "";
+  locationPickableFilter.value = "";
+}
 
 function displayVal(v) {
   if (v === null || v === undefined) return "—";
@@ -222,6 +266,9 @@ watch(
 function onDocClick(e) {
   if (!e.target?.closest?.("[data-row-actions]")) {
     actionMenuLocationId.value = null;
+  }
+  if (!e.target?.closest?.("[data-toolbar-filter]")) {
+    locationFilterMenuOpen.value = false;
   }
 }
 
@@ -574,10 +621,16 @@ function openTransferQtyModal() {
   const loc = currentMenuLocation();
   if (!loc) return;
   activeLocation.value = loc;
+  transferForm.transfer_type = "current";
+  transferForm.to_location_id = "";
   transferForm.to_location = "";
   transferForm.quantity = "";
   transferModalOpen.value = true;
   actionMenuLocationId.value = null;
+}
+
+function fillTransferAllQty() {
+  transferForm.quantity = String(activeLocation.value?.quantity ?? 0);
 }
 
 function openAddLocationModal() {
@@ -670,7 +723,12 @@ async function submitTransferQty() {
     toast.error("Enter a valid transfer quantity.");
     return;
   }
-  if (!transferForm.to_location.trim()) {
+  if (transferForm.transfer_type === "current") {
+    if (!String(transferForm.to_location_id || "").trim()) {
+      toast.error("Select a destination location.");
+      return;
+    }
+  } else if (!transferForm.to_location.trim()) {
     toast.error("Enter destination location.");
     return;
   }
@@ -680,10 +738,14 @@ async function submitTransferQty() {
       sku: product.value.sku,
       warehouse_id: activeLocation.value.warehouse_id,
       from_location_id: activeLocation.value.location_id,
-      to_location: transferForm.to_location.trim(),
       quantity: qty,
       reason: transferForm.reason,
     };
+    if (transferForm.transfer_type === "current") {
+      body.to_location_id = String(transferForm.to_location_id).trim();
+    } else {
+      body.to_location = transferForm.to_location.trim();
+    }
     if (route.query.client_account_id) {
       body.client_account_id = Number(route.query.client_account_id);
     }
@@ -952,19 +1014,96 @@ async function togglePickable(loc) {
                   </p>
                 </div>
               </div>
-              <div class="px-3 pb-2">
-                <input
-                  v-model="locationSearch"
-                  type="search"
-                  class="form-control staff-toolbar-search staff-toolbar-search--inline"
-                  placeholder="Search locations"
-                  aria-label="Search locations"
-                />
-              </div>
-              <div v-if="canManageInventoryLocations" class="px-3 pb-2 d-flex flex-wrap gap-2">
-                <button type="button" class="btn btn-primary btn-sm staff-toolbar-btn" @click="openAddLocationModal">
-                  Add Location
-                </button>
+              <div class="staff-table-toolbar border-bottom">
+                <div class="staff-table-toolbar--row flex-wrap align-items-end gap-2 gap-md-3">
+                  <input
+                    v-model="locationSearch"
+                    type="search"
+                    class="form-control staff-toolbar-search staff-toolbar-search--inline"
+                    placeholder="Search locations"
+                    aria-label="Search locations"
+                  />
+                  <div class="position-relative flex-shrink-0" data-toolbar-filter>
+                    <button
+                      type="button"
+                      class="btn btn-outline-secondary staff-toolbar-btn d-inline-flex align-items-center gap-2"
+                      :aria-expanded="locationFilterMenuOpen"
+                      aria-haspopup="true"
+                      aria-controls="inventory-locations-filter-panel"
+                      @click.stop="locationFilterMenuOpen = !locationFilterMenuOpen"
+                    >
+                      <svg
+                        width="18"
+                        height="18"
+                        fill="none"
+                        stroke="currentColor"
+                        stroke-width="2"
+                        viewBox="0 0 24 24"
+                        aria-hidden="true"
+                      >
+                        <path
+                          stroke-linecap="round"
+                          stroke-linejoin="round"
+                          d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2.586a1 1 0 01-.293.707l-6.414 6.414a1 1 0 00-.293.707V17l-4 4v-6.586a1 1 0 00-.293-.707L3.293 7.293A1 1 0 013 6.586V4z"
+                        />
+                      </svg>
+                      <span class="staff-toolbar-filter-text">Filters</span>
+                    </button>
+                    <div
+                      v-if="locationFilterMenuOpen"
+                      id="inventory-locations-filter-panel"
+                      class="dropdown-menu dropdown-menu-end show shadow border p-0 staff-toolbar-filter-dropdown"
+                      role="dialog"
+                      aria-label="Location filters"
+                      @click.stop
+                    >
+                      <div class="staff-toolbar-filter-dropdown__head">
+                        <span>Filters</span>
+                        <button
+                          type="button"
+                          class="btn btn-link btn-sm text-secondary text-decoration-none p-0"
+                          @click="
+                            clearLocationFilters();
+                            locationFilterMenuOpen = false;
+                          "
+                        >
+                          Reset
+                        </button>
+                      </div>
+                      <div class="staff-toolbar-filter-dropdown__body">
+                        <label class="form-label" for="inventory-loc-filter-bin-type">Bin Type</label>
+                        <select
+                          id="inventory-loc-filter-bin-type"
+                          v-model="locationBinTypeFilter"
+                          class="form-select staff-datatable-filters__select mb-3"
+                        >
+                          <option value="">All bin types</option>
+                          <option v-for="binType in locationBinTypeOptions" :key="binType" :value="binType">
+                            {{ binType }}
+                          </option>
+                        </select>
+                        <label class="form-label" for="inventory-loc-filter-pickable">Pickable</label>
+                        <select
+                          id="inventory-loc-filter-pickable"
+                          v-model="locationPickableFilter"
+                          class="form-select staff-datatable-filters__select"
+                        >
+                          <option value="">All</option>
+                          <option value="yes">Yes</option>
+                          <option value="no">No</option>
+                        </select>
+                      </div>
+                    </div>
+                  </div>
+                  <div
+                    v-if="canManageInventoryLocations"
+                    class="d-flex flex-wrap align-items-center ms-md-auto"
+                  >
+                    <button type="button" class="btn btn-primary btn-sm staff-toolbar-btn" @click="openAddLocationModal">
+                      Add Location
+                    </button>
+                  </div>
+                </div>
               </div>
               <div class="table-responsive inventory-portal-detail__table-wrap">
                 <table class="table table-hover align-middle mb-0 staff-data-table">
@@ -1359,7 +1498,7 @@ async function togglePickable(loc) {
             Update QTY
           </button>
           <button type="button" class="staff-row-menu__item" role="menuitem" @click="openTransferQtyModal">
-            Transfer QTY
+            Transfer To
           </button>
         </div>
       </Teleport>
@@ -1398,10 +1537,56 @@ async function togglePickable(loc) {
               <h2 class="crm-vx-modal__title">Transfer QTY</h2>
             </header>
             <div class="crm-vx-modal__body">
-              <label class="form-label small">Transfer To</label>
-              <input v-model="transferForm.to_location" type="text" class="form-control mb-3" placeholder="Type location name" />
-              <label class="form-label small">QTY</label>
-              <input v-model="transferForm.quantity" type="number" min="1" class="form-control mb-3" />
+              <p class="small text-secondary mb-1">
+                Transfer From: {{ activeLocation?.location_name || activeLocation?.location_id || "—" }}
+              </p>
+              <p class="small text-secondary mb-3">QTY: {{ activeLocation?.quantity ?? 0 }}</p>
+              <label class="form-label small" for="transfer-type">Transfer Type</label>
+              <select id="transfer-type" v-model="transferForm.transfer_type" class="form-select mb-3">
+                <option value="current">Current Locations</option>
+                <option value="new">Transfer New</option>
+              </select>
+              <label class="form-label small" for="transfer-to">Transfer To</label>
+              <select
+                v-if="transferForm.transfer_type === 'current'"
+                id="transfer-to"
+                v-model="transferForm.to_location_id"
+                class="form-select mb-3"
+              >
+                <option value="">Select location</option>
+                <option
+                  v-for="dest in transferDestinationOptions"
+                  :key="`${dest.warehouse_id}-${dest.location_id}`"
+                  :value="dest.location_id"
+                >
+                  {{ dest.location_name || dest.location_id }}
+                </option>
+              </select>
+              <input
+                v-else
+                id="transfer-to"
+                v-model="transferForm.to_location"
+                type="text"
+                class="form-control mb-3"
+                placeholder="Type location name"
+              />
+              <div class="row g-2 align-items-end mb-3">
+                <div class="col-6">
+                  <label class="form-label small" for="transfer-qty">QTY</label>
+                  <input
+                    id="transfer-qty"
+                    v-model="transferForm.quantity"
+                    type="number"
+                    min="1"
+                    class="form-control"
+                  />
+                </div>
+                <div class="col-6">
+                  <button type="button" class="btn btn-outline-secondary w-100" @click="fillTransferAllQty">
+                    Transfer All
+                  </button>
+                </div>
+              </div>
               <label class="form-label small">Reason</label>
               <select v-model="transferForm.reason" class="form-select">
                 <option v-for="reason in inventoryReasons" :key="reason" :value="reason">{{ reason }}</option>

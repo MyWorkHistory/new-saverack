@@ -293,4 +293,86 @@ class InventoryApiTest extends TestCase
             ->assertStatus(422)
             ->assertJsonValidationErrors(['image']);
     }
+
+    public function test_transfer_with_to_location_id_succeeds(): void
+    {
+        $mock = Mockery::mock(ShipHeroInventoryService::class);
+        $mock->shouldReceive('transferLocationQuantity')
+            ->once()
+            ->with('SKU-1', 'WH1', 'LOC-A', 'LOC-B', 4, 'Inventory Reclassification', null)
+            ->andReturn([
+                'warehouse_id' => 'WH1',
+                'warehouse_name' => 'Main',
+                'locations' => [
+                    [
+                        'item_location_id' => 'IL2',
+                        'location_id' => 'LOC-B',
+                        'location_name' => 'Bin B',
+                        'quantity' => 9,
+                    ],
+                ],
+            ]);
+        $this->app->instance(ShipHeroInventoryService::class, $mock);
+
+        $user = User::factory()->create();
+        $user->permissions()->sync([
+            $this->inventoryViewPermission()->id,
+            $this->inventoryUpdatePermission()->id,
+        ]);
+        Sanctum::actingAs($user);
+
+        $this->postJson('/api/inventory/transfer', [
+            'sku' => 'SKU-1',
+            'warehouse_id' => 'WH1',
+            'from_location_id' => 'LOC-A',
+            'to_location_id' => 'LOC-B',
+            'quantity' => 4,
+            'reason' => 'Inventory Reclassification',
+        ])
+            ->assertOk()
+            ->assertJsonPath('warehouse.locations.0.quantity', 9);
+    }
+
+    public function test_transfer_resolves_location_name_from_product_snapshot(): void
+    {
+        $mock = Mockery::mock(ShipHeroInventoryService::class);
+        $mock->shouldReceive('resolveWarehouseLocation')
+            ->once()
+            ->with('WH1', 'test 3', null)
+            ->andReturn(null);
+        $mock->shouldReceive('resolveProductWarehouseLocation')
+            ->once()
+            ->with('SKU-1', 'WH1', 'test 3', null)
+            ->andReturn([
+                'id' => 'test-3-id',
+                'name' => 'test 3',
+                'type' => 'Bin (Small)',
+                'pickable' => false,
+                'sellable' => null,
+            ]);
+        $mock->shouldReceive('transferLocationQuantity')
+            ->once()
+            ->with('SKU-1', 'WH1', 'LOC-A', 'test-3-id', 2, 'CRM inventory transfer', null)
+            ->andReturn([
+                'warehouse_id' => 'WH1',
+                'warehouse_name' => 'Main',
+                'locations' => [],
+            ]);
+        $this->app->instance(ShipHeroInventoryService::class, $mock);
+
+        $user = User::factory()->create();
+        $user->permissions()->sync([
+            $this->inventoryViewPermission()->id,
+            $this->inventoryUpdatePermission()->id,
+        ]);
+        Sanctum::actingAs($user);
+
+        $this->postJson('/api/inventory/transfer', [
+            'sku' => 'SKU-1',
+            'warehouse_id' => 'WH1',
+            'from_location_id' => 'LOC-A',
+            'to_location' => 'test 3',
+            'quantity' => 2,
+        ])->assertOk();
+    }
 }

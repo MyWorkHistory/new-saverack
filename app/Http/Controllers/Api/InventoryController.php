@@ -1106,6 +1106,14 @@ class InventoryController extends Controller
                     $shipheroCustomerId
                 );
                 if (! is_array($resolved)) {
+                    $resolved = $this->inventory->resolveProductWarehouseLocation(
+                        $validated['sku'],
+                        $validated['warehouse_id'],
+                        $toLocationInput,
+                        $shipheroCustomerId
+                    );
+                }
+                if (! is_array($resolved)) {
                     throw ValidationException::withMessages([
                         'to_location' => ['Location not found in this warehouse.'],
                     ]);

@@ -86,10 +86,13 @@ class AdminAsnController extends Controller
      */
     private function serializeAsn(ClientAccountAsn $asn): array
     {
-        $asn->loadMissing(['lines', 'trackings', 'vendorLines', 'clientAccount']);
+        $asn->loadMissing(['lines', 'trackings', 'vendorLines', 'clientAccount', 'processedBy']);
 
         $companyName = $asn->clientAccount !== null
             ? trim((string) $asn->clientAccount->company_name)
+            : '';
+        $processedByName = $asn->processedBy !== null
+            ? trim((string) $asn->processedBy->name)
             : '';
 
         return [
@@ -100,6 +103,7 @@ class AdminAsnController extends Controller
             'status' => $asn->status,
             'date_received' => optional($asn->date_received)->toDateString(),
             'processed_at' => optional($asn->processed_at)->toIso8601String(),
+            'processed_by_name' => $processedByName !== '' ? $processedByName : null,
             'total_boxes' => $asn->total_boxes,
             'total_pallets' => $asn->total_pallets,
             'expected_qty' => $asn->expected_qty,
@@ -246,7 +250,7 @@ class AdminAsnController extends Controller
         ]);
 
         $asn->loadMissing('clientAccount');
-        $updated = $this->receiving->receiveIncrement($asn, $line, (int) $validated['delta']);
+        $updated = $this->receiving->receiveIncrement($asn, $line, (int) $validated['delta'], $request->user());
 
         return response()->json([
             'line' => $this->receiving->serializeLine($updated),
@@ -265,7 +269,7 @@ class AdminAsnController extends Controller
         ]);
 
         $asn->loadMissing('clientAccount');
-        $updated = $this->receiving->receiveOverride($asn, $line, (int) $validated['accepted_qty']);
+        $updated = $this->receiving->receiveOverride($asn, $line, (int) $validated['accepted_qty'], $request->user());
 
         return response()->json([
             'line' => $this->receiving->serializeLine($updated),
@@ -340,7 +344,7 @@ class AdminAsnController extends Controller
         ]);
         $lines = preg_split('/\r\n|\r|\n/', (string) $validated['barcodes']) ?: [];
         $asn->loadMissing('clientAccount');
-        $result = $this->receiving->scanBarcodes($asn, $lines);
+        $result = $this->receiving->scanBarcodes($asn, $lines, $request->user());
 
         return response()->json(array_merge(
             $result,

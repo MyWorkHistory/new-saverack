@@ -5,6 +5,7 @@ namespace App\Services;
 use App\Models\ClientAccount;
 use App\Models\ClientAccountAsn;
 use App\Models\ClientAccountAsnLine;
+use App\Models\User;
 use App\Support\Billing\InvoiceLineCategory;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
@@ -156,13 +157,16 @@ class AsnReceivingService
         $asn->saveQuietly();
     }
 
-    public function markProcessedIfNeeded(ClientAccountAsn $asn): void
+    public function markProcessedIfNeeded(ClientAccountAsn $asn, ?User $actor = null): void
     {
         if ($asn->processed_at !== null) {
             return;
         }
         if ((int) $asn->accepted_qty > 0) {
             $asn->processed_at = now();
+            if ($actor !== null) {
+                $asn->processed_by_user_id = $actor->id;
+            }
             $asn->saveQuietly();
         }
     }
@@ -209,6 +213,30 @@ class AsnReceivingService
     }
 
     /**
+     * @param  array<string, mixed>  $product
+     */
+    public function skuHasLocationNamed(array $product, string $locationName): bool
+    {
+        $needle = strtolower(trim($locationName));
+        foreach ($product['warehouses'] ?? [] as $wh) {
+            if (! is_array($wh)) {
+                continue;
+            }
+            foreach ($wh['locations'] ?? [] as $loc) {
+                if (! is_array($loc)) {
+                    continue;
+                }
+                $name = strtolower(trim((string) ($loc['location_name'] ?? '')));
+                if ($name === $needle) {
+                    return true;
+                }
+            }
+        }
+
+        return false;
+    }
+
+    /**
      * @return array{warehouse_id: string, location_id: string}
      */
     public function resolveReceivingLocation(ClientAccount $account, string $sku): array
@@ -232,7 +260,7 @@ class AsnReceivingService
                 'sku' => ['No warehouse found for this SKU.'],
             ]);
         }
-        $resolved = $this->inventory->resolveWarehouseLocation(
+        $resolved = $this->inventory->ensureWarehouseLocation(
             $warehouseId,
             self::RECEIVING_LOCATION_NAME,
             $customerId !== '' ? $customerId : null
@@ -264,15 +292,33 @@ class AsnReceivingService
             ]);
         }
         $customerId = trim((string) $account->shiphero_customer_account_id);
+        $product = $this->inventory->getProductDetailBySku($sku, null, $customerId !== '' ? $customerId : null);
         $resolved = $this->resolveReceivingLocation($account, $sku);
-        $current = $this->receivingOnHandForSku($account, $sku);
+        $customer = $customerId !== '' ? $customerId : null;
+
+        if (is_array($product) && ! $this->skuHasLocationNamed($product, self::RECEIVING_LOCATION_NAME)) {
+            $this->inventory->addLocationQuantity(
+                $sku,
+                $resolved['warehouse_id'],
+                $resolved['location_id'],
+                $delta,
+                $reason,
+                $customer
+            );
+
+            return;
+        }
+
+        $current = is_array($product)
+            ? $this->quantityAtLocationName($product, self::RECEIVING_LOCATION_NAME)
+            : $this->receivingOnHandForSku($account, $sku);
         $this->inventory->replaceLocationQuantity(
             $sku,
             $resolved['warehouse_id'],
             $resolved['location_id'],
             $current + $delta,
             $reason,
-            $customerId !== '' ? $customerId : null
+            $customer
         );
     }
 
@@ -288,21 +334,42 @@ class AsnReceivingService
             ]);
         }
         $customerId = trim((string) $account->shiphero_customer_account_id);
+        $product = $this->inventory->getProductDetailBySku($sku, null, $customerId !== '' ? $customerId : null);
         $resolved = $this->resolveReceivingLocation($account, $sku);
+        $customer = $customerId !== '' ? $customerId : null;
+
+        if (
+            $quantity > 0
+            && is_array($product)
+            && ! $this->skuHasLocationNamed($product, self::RECEIVING_LOCATION_NAME)
+        ) {
+            $this->inventory->addLocationQuantity(
+                $sku,
+                $resolved['warehouse_id'],
+                $resolved['location_id'],
+                $quantity,
+                $reason,
+                $customer
+            );
+
+            return;
+        }
+
         $this->inventory->replaceLocationQuantity(
             $sku,
             $resolved['warehouse_id'],
             $resolved['location_id'],
             $quantity,
             $reason,
-            $customerId !== '' ? $customerId : null
+            $customer
         );
     }
 
     public function receiveIncrement(
         ClientAccountAsn $asn,
         ClientAccountAsnLine $line,
-        int $delta
+        int $delta,
+        ?User $actor = null
     ): ClientAccountAsnLine {
         if ($delta <= 0) {
             throw ValidationException::withMessages([
@@ -310,7 +377,7 @@ class AsnReceivingService
             ]);
         }
 
-        return DB::transaction(function () use ($asn, $line, $delta) {
+        return DB::transaction(function () use ($asn, $line, $delta, $actor) {
             $account = $asn->clientAccount ?? ClientAccount::query()->findOrFail($asn->client_account_id);
             $this->incrementReceivingInventory($account, (string) $line->sku, $delta);
             $line->accepted_qty = (int) $line->accepted_qty + $delta;
@@ -318,7 +385,7 @@ class AsnReceivingService
             $this->syncLineStatus($line);
             $this->recalcAsnAggregates($asn->fresh());
             $asn->refresh();
-            $this->markProcessedIfNeeded($asn);
+            $this->markProcessedIfNeeded($asn, $actor);
             $this->applyAutoAsnStatus($asn);
 
             return $line->fresh();
@@ -328,7 +395,8 @@ class AsnReceivingService
     public function receiveOverride(
         ClientAccountAsn $asn,
         ClientAccountAsnLine $line,
-        int $newAcceptedQty
+        int $newAcceptedQty,
+        ?User $actor = null
     ): ClientAccountAsnLine {
         if ($newAcceptedQty < 0) {
             throw ValidationException::withMessages([
@@ -336,7 +404,7 @@ class AsnReceivingService
             ]);
         }
 
-        return DB::transaction(function () use ($asn, $line, $newAcceptedQty) {
+        return DB::transaction(function () use ($asn, $line, $newAcceptedQty, $actor) {
             $account = $asn->clientAccount ?? ClientAccount::query()->findOrFail($asn->client_account_id);
             $this->setReceivingInventoryAbsolute($account, (string) $line->sku, $newAcceptedQty);
             $line->accepted_qty = $newAcceptedQty;
@@ -344,7 +412,7 @@ class AsnReceivingService
             $this->syncLineStatus($line);
             $this->recalcAsnAggregates($asn->fresh());
             $asn->refresh();
-            $this->markProcessedIfNeeded($asn);
+            $this->markProcessedIfNeeded($asn, $actor);
             $this->applyAutoAsnStatus($asn);
 
             return $line->fresh();
@@ -375,7 +443,7 @@ class AsnReceivingService
      * @param  list<string>  $barcodes
      * @return array{matched: int, unmatched: list<string>}
      */
-    public function scanBarcodes(ClientAccountAsn $asn, array $barcodes): array
+    public function scanBarcodes(ClientAccountAsn $asn, array $barcodes, ?User $actor = null): array
     {
         $asn->loadMissing('lines');
         $matched = 0;
@@ -389,7 +457,7 @@ class AsnReceivingService
             $counts[$c] = ($counts[$c] ?? 0) + 1;
         }
 
-        DB::transaction(function () use ($asn, $counts, &$matched, &$unmatched) {
+        DB::transaction(function () use ($asn, $counts, &$matched, &$unmatched, $actor) {
             foreach ($counts as $code => $qty) {
                 $line = $this->findLineByBarcodeOrSku($asn, $code);
                 if ($line === null) {
@@ -397,7 +465,7 @@ class AsnReceivingService
 
                     continue;
                 }
-                $this->receiveIncrement($asn, $line, (int) $qty);
+                $this->receiveIncrement($asn, $line, (int) $qty, $actor);
                 $matched += (int) $qty;
                 $asn->refresh();
                 $asn->load('lines');

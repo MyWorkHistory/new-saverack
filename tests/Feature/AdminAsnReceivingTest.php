@@ -207,15 +207,17 @@ class AdminAsnReceivingTest extends TestCase
                 ],
             ],
         ]);
-        $mock->shouldReceive('resolveWarehouseLocation')->andReturn(['id' => 'loc-recv']);
+        $mock->shouldReceive('ensureWarehouseLocation')->andReturn(['id' => 'loc-recv', 'name' => 'Receiving']);
         $mock->shouldReceive('replaceLocationQuantity')->once();
+        $mock->shouldNotReceive('addLocationQuantity');
         $this->app->instance(ShipHeroInventoryService::class, $mock);
         $this->app->forgetInstance(AsnReceivingService::class);
 
         $this->postJson("/api/admin/asns/{$asn->id}/lines/{$line->id}/receive", ['delta' => 10])
             ->assertOk()
             ->assertJsonPath('line.accepted_qty', 10)
-            ->assertJsonPath('asn.status', ClientAccountAsn::STATUS_IN_PROGRESS);
+            ->assertJsonPath('asn.status', ClientAccountAsn::STATUS_IN_PROGRESS)
+            ->assertJsonPath('asn.processed_by_name', $staff->name);
 
         $line->refresh();
         $this->assertSame(10, $line->accepted_qty);
@@ -260,8 +262,9 @@ class AdminAsnReceivingTest extends TestCase
                 ],
             ],
         ]);
-        $mock->shouldReceive('resolveWarehouseLocation')->andReturn(['id' => 'loc-recv']);
+        $mock->shouldReceive('ensureWarehouseLocation')->andReturn(['id' => 'loc-recv', 'name' => 'Receiving']);
         $mock->shouldReceive('replaceLocationQuantity')->times(5);
+        $mock->shouldNotReceive('addLocationQuantity');
         $this->app->instance(ShipHeroInventoryService::class, $mock);
         $this->app->forgetInstance(AsnReceivingService::class);
 
@@ -273,6 +276,55 @@ class AdminAsnReceivingTest extends TestCase
 
         $line->refresh();
         $this->assertSame(5, $line->accepted_qty);
+    }
+
+    public function test_receive_increment_uses_inventory_add_when_sku_has_no_receiving_row(): void
+    {
+        $account = $this->account('new-loc');
+        $staff = $this->staffUser();
+        Sanctum::actingAs($staff);
+
+        $asn = ClientAccountAsn::create([
+            'client_account_id' => $account->id,
+            'asn_number' => '0021',
+            'status' => ClientAccountAsn::STATUS_PENDING,
+            'total_boxes' => 1,
+            'expected_qty' => 5,
+            'accepted_qty' => 0,
+            'rejected_qty' => 0,
+        ]);
+        $line = ClientAccountAsnLine::create([
+            'client_account_asn_id' => $asn->id,
+            'sku' => 'NEW-SKU',
+            'name' => 'New SKU',
+            'expected_qty' => 5,
+            'accepted_qty' => 0,
+            'rejected_qty' => 0,
+            'line_status' => ClientAccountAsnLine::LINE_STATUS_PENDING,
+            'sort_order' => 0,
+        ]);
+
+        $mock = Mockery::mock(ShipHeroInventoryService::class);
+        $mock->shouldReceive('getProductDetailBySku')->andReturn([
+            'warehouses' => [
+                [
+                    'warehouse_id' => 'wh-1',
+                    'locations' => [],
+                ],
+            ],
+        ]);
+        $mock->shouldReceive('ensureWarehouseLocation')->once()->andReturn(['id' => 'loc-recv', 'name' => 'Receiving']);
+        $mock->shouldReceive('addLocationQuantity')->once();
+        $mock->shouldNotReceive('replaceLocationQuantity');
+        $this->app->instance(ShipHeroInventoryService::class, $mock);
+        $this->app->forgetInstance(AsnReceivingService::class);
+
+        $this->postJson("/api/admin/asns/{$asn->id}/lines/{$line->id}/receive", ['delta' => 3])
+            ->assertOk()
+            ->assertJsonPath('line.accepted_qty', 3);
+
+        $line->refresh();
+        $this->assertSame(3, $line->accepted_qty);
     }
 
     public function test_portal_user_forbidden_on_admin_asn_routes(): void

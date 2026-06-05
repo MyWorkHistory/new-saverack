@@ -37,6 +37,8 @@ class ClientAccountAsn extends Model
         'asn_number',
         'status',
         'date_received',
+        'processed_at',
+        'processed_by_user_id',
         'total_boxes',
         'total_pallets',
         'expected_qty',
@@ -47,6 +49,7 @@ class ClientAccountAsn extends Model
 
     protected $casts = [
         'date_received' => 'date',
+        'processed_at' => 'datetime',
         'total_boxes' => 'integer',
         'total_pallets' => 'integer',
         'expected_qty' => 'integer',
@@ -57,6 +60,11 @@ class ClientAccountAsn extends Model
     public function clientAccount(): BelongsTo
     {
         return $this->belongsTo(ClientAccount::class, 'client_account_id');
+    }
+
+    public function processedBy(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'processed_by_user_id');
     }
 
     public function lines(): HasMany

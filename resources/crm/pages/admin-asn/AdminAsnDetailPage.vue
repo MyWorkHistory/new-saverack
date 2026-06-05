@@ -278,6 +278,21 @@ function specDisplay(val) {
   return String(val);
 }
 
+function hasBarcodeValue(val) {
+  return String(val ?? "").trim() !== "";
+}
+
+function hasSpecValue(val) {
+  if (val === null || val === undefined || val === "") return false;
+  const n = Number(val);
+  if (Number.isFinite(n)) return n > 0;
+  return String(val).trim() !== "";
+}
+
+function specEditButtonClass(hasValue) {
+  return hasValue ? "btn btn-link btn-sm px-0" : "btn btn-link btn-sm px-0 text-danger";
+}
+
 function syncDraftsFromAsn() {
   if (!asn.value) return;
   trackingDraft.value =
@@ -898,13 +913,6 @@ onUnmounted(() => {
                 {{ statusLabel(asn.status) }} ▾
               </button>
             </div>
-            <p class="small text-secondary mb-1 mt-2">
-              <strong>{{ asn.client_account_company_name }}</strong>
-            </p>
-            <p class="small text-secondary mb-0">
-              Created {{ formatDateUs(asn.created_at) }}
-              <span v-if="asn.processed_at"> · Processed {{ formatDateUs(asn.processed_at) }}</span>
-            </p>
           </div>
           <div class="d-flex flex-wrap gap-2 flex-shrink-0 align-items-center">
             <button
@@ -979,46 +987,40 @@ onUnmounted(() => {
               <tbody>
                 <tr v-for="line in asn.lines || []" :key="line.id">
                   <td class="order-detail-page__items-col">
-                    <a
-                      v-if="inventoryDetailHref(line.sku)"
-                      :href="inventoryDetailHref(line.sku)"
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      class="order-detail-page__item-cell order-detail-page__item-cell--link text-decoration-none text-body"
-                      :title="line.name ? String(line.name) : undefined"
-                      :aria-label="line.sku ? `View inventory for SKU ${line.sku} in new tab` : undefined"
-                      @click="openInventoryInNewTab(line, $event)"
-                    >
-                      <img
-                        v-if="line.image_url"
-                        :src="line.image_url"
-                        alt=""
-                        class="asn-line-thumb"
-                        loading="lazy"
-                      />
-                      <div v-else class="asn-line-thumb asn-line-thumb--empty" aria-hidden="true" />
+                    <div class="order-detail-page__item-cell">
+                      <a
+                        v-if="inventoryDetailHref(line.sku)"
+                        :href="inventoryDetailHref(line.sku)"
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        class="asn-line-thumb-link text-decoration-none"
+                        :aria-label="line.sku ? `View inventory for SKU ${line.sku} in new tab` : undefined"
+                        @click="openInventoryInNewTab(line, $event)"
+                      >
+                        <img
+                          v-if="line.image_url"
+                          :src="line.image_url"
+                          alt=""
+                          class="asn-line-thumb"
+                          loading="lazy"
+                        />
+                        <div v-else class="asn-line-thumb asn-line-thumb--empty" aria-hidden="true" />
+                      </a>
+                      <template v-else>
+                        <img
+                          v-if="line.image_url"
+                          :src="line.image_url"
+                          alt=""
+                          class="asn-line-thumb"
+                          loading="lazy"
+                        />
+                        <div v-else class="asn-line-thumb asn-line-thumb--empty" aria-hidden="true" />
+                      </template>
                       <div class="order-detail-page__item-copy">
                         <div class="order-detail-page__item-name" :title="line.name">{{ line.name || "—" }}</div>
-                        <div
-                          class="order-detail-page__item-sku user-inv-table__sku-link"
-                          :title="line.sku ? `SKU ${line.sku}` : undefined"
-                        >
+                        <div class="order-detail-page__item-sku" :title="line.sku ? `SKU ${line.sku}` : undefined">
                           SKU {{ line.sku || "—" }}
                         </div>
-                      </div>
-                    </a>
-                    <div v-else class="order-detail-page__item-cell">
-                      <img
-                        v-if="line.image_url"
-                        :src="line.image_url"
-                        alt=""
-                        class="asn-line-thumb"
-                        loading="lazy"
-                      />
-                      <div v-else class="asn-line-thumb asn-line-thumb--empty" aria-hidden="true" />
-                      <div class="order-detail-page__item-copy">
-                        <div class="order-detail-page__item-name" :title="line.name">{{ line.name || "—" }}</div>
-                        <div class="order-detail-page__item-sku">SKU {{ line.sku || "—" }}</div>
                       </div>
                     </div>
                   </td>
@@ -1122,77 +1124,86 @@ onUnmounted(() => {
                     </span>
                   </td>
                   <td class="order-detail-page__items-col">
-                    <a
-                      v-if="inventoryDetailHref(line.sku)"
-                      :href="inventoryDetailHref(line.sku)"
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      class="order-detail-page__item-cell order-detail-page__item-cell--link text-decoration-none text-body"
-                      :title="line.name ? String(line.name) : undefined"
-                      :aria-label="line.sku ? `View inventory for SKU ${line.sku} in new tab` : undefined"
-                      @click="openInventoryInNewTab(line, $event)"
-                    >
-                      <img
-                        v-if="line.image_url"
-                        :src="line.image_url"
-                        alt=""
-                        class="asn-line-thumb"
-                        loading="lazy"
-                      />
-                      <div v-else class="asn-line-thumb asn-line-thumb--empty" aria-hidden="true" />
+                    <div class="order-detail-page__item-cell">
+                      <a
+                        v-if="inventoryDetailHref(line.sku)"
+                        :href="inventoryDetailHref(line.sku)"
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        class="asn-line-thumb-link text-decoration-none"
+                        :aria-label="line.sku ? `View inventory for SKU ${line.sku} in new tab` : undefined"
+                        @click="openInventoryInNewTab(line, $event)"
+                      >
+                        <img
+                          v-if="line.image_url"
+                          :src="line.image_url"
+                          alt=""
+                          class="asn-line-thumb"
+                          loading="lazy"
+                        />
+                        <div v-else class="asn-line-thumb asn-line-thumb--empty" aria-hidden="true" />
+                      </a>
+                      <template v-else>
+                        <img
+                          v-if="line.image_url"
+                          :src="line.image_url"
+                          alt=""
+                          class="asn-line-thumb"
+                          loading="lazy"
+                        />
+                        <div v-else class="asn-line-thumb asn-line-thumb--empty" aria-hidden="true" />
+                      </template>
                       <div class="order-detail-page__item-copy">
                         <div class="order-detail-page__item-name" :title="line.name">{{ line.name || "—" }}</div>
-                        <div
-                          class="order-detail-page__item-sku user-inv-table__sku-link"
-                          :title="line.sku ? `SKU ${line.sku}` : undefined"
-                        >
+                        <div class="order-detail-page__item-sku" :title="line.sku ? `SKU ${line.sku}` : undefined">
                           SKU {{ line.sku || "—" }}
                         </div>
                         <button
                           type="button"
-                          class="btn btn-link btn-sm px-0 small"
-                          @click.stop="openEditItem(line)"
-                        >
-                          {{ specDisplay(line.barcode) || "Add barcode" }}
-                        </button>
-                      </div>
-                    </a>
-                    <div v-else class="order-detail-page__item-cell">
-                      <img
-                        v-if="line.image_url"
-                        :src="line.image_url"
-                        alt=""
-                        class="asn-line-thumb"
-                        loading="lazy"
-                      />
-                      <div v-else class="asn-line-thumb asn-line-thumb--empty" aria-hidden="true" />
-                      <div class="order-detail-page__item-copy">
-                        <div class="order-detail-page__item-name" :title="line.name">{{ line.name || "—" }}</div>
-                        <div class="order-detail-page__item-sku">SKU {{ line.sku || "—" }}</div>
-                        <button
-                          type="button"
-                          class="btn btn-link btn-sm px-0 small"
+                          :class="[specEditButtonClass(hasBarcodeValue(line.barcode)), 'small']"
                           @click="openEditItem(line)"
                         >
-                          {{ specDisplay(line.barcode) || "Add barcode" }}
+                          {{ hasBarcodeValue(line.barcode) ? line.barcode : "Add barcode" }}
                         </button>
                       </div>
                     </div>
                   </td>
                   <td class="small text-secondary align-middle">
                     <div>
-                      <template v-if="specDisplay(line.weight)">Weight: {{ line.weight }} lbs</template>
-                      <button v-else type="button" class="btn btn-link btn-sm px-0" @click="openEditItem(line)">
-                        Weight
+                      <button
+                        type="button"
+                        :class="specEditButtonClass(hasSpecValue(line.weight))"
+                        @click="openEditItem(line)"
+                      >
+                        {{
+                          hasSpecValue(line.weight)
+                            ? `Weight: ${line.weight} lbs`
+                            : "Weight"
+                        }}
                       </button>
                     </div>
                     <div>
-                      <template v-if="specDisplay(line.length)">L: {{ line.length }}</template>
-                      <button v-else type="button" class="btn btn-link btn-sm px-0" @click="openEditItem(line)">L</button>
-                      <template v-if="specDisplay(line.width)"> W: {{ line.width }}</template>
-                      <button v-else type="button" class="btn btn-link btn-sm px-0" @click="openEditItem(line)">W</button>
-                      <template v-if="specDisplay(line.height)"> H: {{ line.height }}</template>
-                      <button v-else type="button" class="btn btn-link btn-sm px-0" @click="openEditItem(line)">H</button>
+                      <button
+                        type="button"
+                        :class="specEditButtonClass(hasSpecValue(line.length))"
+                        @click="openEditItem(line)"
+                      >
+                        {{ hasSpecValue(line.length) ? `L: ${line.length}` : "L" }}
+                      </button>
+                      <button
+                        type="button"
+                        :class="specEditButtonClass(hasSpecValue(line.width))"
+                        @click="openEditItem(line)"
+                      >
+                        {{ hasSpecValue(line.width) ? `W: ${line.width}` : "W" }}
+                      </button>
+                      <button
+                        type="button"
+                        :class="specEditButtonClass(hasSpecValue(line.height))"
+                        @click="openEditItem(line)"
+                      >
+                        {{ hasSpecValue(line.height) ? `H: ${line.height}` : "H" }}
+                      </button>
                     </div>
                   </td>
                   <td class="text-end align-middle">{{ Number(line.expected_qty ?? 0).toLocaleString() }}</td>
@@ -1296,6 +1307,20 @@ onUnmounted(() => {
           >
             Save Tracking
           </button>
+        </div>
+
+        <div class="staff-table-card staff-datatable-card staff-datatable-card--white p-4">
+          <h3 class="h6 fw-semibold mb-3">ASN Info</h3>
+          <dl class="row mb-0 small">
+            <dt class="col-5 text-secondary fw-normal">Company</dt>
+            <dd class="col-7 mb-2">{{ asn.client_account_company_name || "—" }}</dd>
+            <dt class="col-5 text-secondary fw-normal">Created Date</dt>
+            <dd class="col-7 mb-2">{{ formatDateUs(asn.created_at) || "—" }}</dd>
+            <dt class="col-5 text-secondary fw-normal">Processed Date</dt>
+            <dd class="col-7 mb-2">{{ formatDateUs(asn.processed_at) || "—" }}</dd>
+            <dt class="col-5 text-secondary fw-normal mb-0">Processed By</dt>
+            <dd class="col-7 mb-0">{{ asn.processed_by_name || "—" }}</dd>
+          </dl>
         </div>
 
         <div class="staff-table-card staff-datatable-card staff-datatable-card--white p-4">
@@ -1708,13 +1733,13 @@ onUnmounted(() => {
   min-width: 0;
 }
 
-.admin-asn-detail-page .order-detail-page__item-cell--link {
-  color: inherit;
+.admin-asn-detail-page .asn-line-thumb-link {
+  flex-shrink: 0;
+  line-height: 0;
 }
 
-.admin-asn-detail-page .order-detail-page__item-cell--link:hover .order-detail-page__item-name,
-.admin-asn-detail-page .order-detail-page__item-cell--link:hover .order-detail-page__item-sku {
-  color: var(--bs-link-hover-color, #1d4ed8);
+.admin-asn-detail-page .asn-line-thumb-link:hover .asn-line-thumb {
+  opacity: 0.88;
 }
 
 .admin-asn-detail-page .order-detail-page__item-copy {

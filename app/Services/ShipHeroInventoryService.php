@@ -2058,6 +2058,145 @@ GQL;
     }
 
     /**
+     * Add quantity at a location (creates SKU location assignment when missing).
+     *
+     * @return array<string, mixed> Normalized single-warehouse slice
+     */
+    public function addLocationQuantity(
+        string $sku,
+        string $warehouseId,
+        string $locationId,
+        int $quantity,
+        string $reason,
+        ?string $customerAccountId = null
+    ): array {
+        $sku = trim($sku);
+        if ($sku === '') {
+            throw new RuntimeException('SKU is required.');
+        }
+        $warehouseId = trim($warehouseId);
+        $locationId = trim($locationId);
+        if ($warehouseId === '' || $locationId === '') {
+            throw new RuntimeException('warehouse_id and location_id are required.');
+        }
+        if ($quantity <= 0) {
+            throw new RuntimeException('quantity must be greater than zero.');
+        }
+
+        $input = [
+            'sku' => $sku,
+            'warehouse_id' => $warehouseId,
+            'location_id' => $locationId,
+            'quantity' => $quantity,
+            'reason' => $reason !== '' ? $reason : 'CRM inventory add',
+        ];
+        if (is_string($customerAccountId) && trim($customerAccountId) !== '') {
+            $input['customer_account_id'] = trim($customerAccountId);
+        }
+
+        $graphql = <<<'GQL'
+mutation ShipHeroInventoryAdd($data: AddInventoryInput!) {
+  inventory_add(data: $data) {
+    request_id
+    complexity
+    warehouse_product {
+      warehouse_id
+      warehouse {
+        identifier
+        company_name
+      }
+      locations(first: 100) {
+        edges {
+          node {
+            id
+            location_id
+            quantity
+            location {
+              name
+            }
+          }
+        }
+      }
+    }
+  }
+}
+GQL;
+
+        $json = $this->client->query($graphql, ['data' => $input]);
+        $wp = data_get($json, 'data.inventory_add.warehouse_product');
+        if (! is_array($wp)) {
+            throw new RuntimeException('ShipHero did not return warehouse_product after add.');
+        }
+
+        $wid = isset($wp['warehouse_id']) && is_string($wp['warehouse_id']) ? $wp['warehouse_id'] : $warehouseId;
+        $whName = $this->warehouseDisplayName(is_array($wp['warehouse'] ?? null) ? $wp['warehouse'] : []);
+
+        return [
+            'warehouse_id' => $wid,
+            'warehouse_name' => $whName,
+            'locations' => $this->normalizeLocations($wp['locations'] ?? null, $wid),
+        ];
+    }
+
+    /**
+     * Resolve a warehouse location by name, creating it when missing.
+     *
+     * @return array{id: string, name: string, type: ?string, pickable: ?bool, sellable: ?bool}
+     */
+    public function ensureWarehouseLocation(string $warehouseId, string $name, ?string $customerAccountId = null): array
+    {
+        $warehouseId = trim($warehouseId);
+        $name = trim($name);
+        if ($warehouseId === '' || $name === '') {
+            throw new RuntimeException('warehouse_id and location name are required.');
+        }
+
+        $existing = $this->resolveWarehouseLocation($warehouseId, $name, $customerAccountId);
+        if (is_array($existing) && trim((string) ($existing['id'] ?? '')) !== '') {
+            return $existing;
+        }
+
+        $input = [
+            'warehouse_id' => $warehouseId,
+            'name' => $name,
+            'pickable' => false,
+            'sellable' => true,
+        ];
+
+        $graphql = <<<'GQL'
+mutation ShipHeroLocationCreate($data: CreateLocationInput!) {
+  location_create(data: $data) {
+    request_id
+    location {
+      id
+      name
+      pickable
+      sellable
+    }
+  }
+}
+GQL;
+
+        $json = $this->client->query($graphql, ['data' => $input]);
+        $node = data_get($json, 'data.location_create.location');
+        if (! is_array($node)) {
+            throw new RuntimeException('ShipHero did not return location after create.');
+        }
+        $id = trim((string) ($node['id'] ?? ''));
+        if ($id === '') {
+            throw new RuntimeException('ShipHero location_create response is missing id.');
+        }
+
+        return [
+            'id' => $id,
+            'name' => trim((string) ($node['name'] ?? $name)),
+            'type' => null,
+            'pickable' => array_key_exists('pickable', $node) ? (bool) $node['pickable'] : false,
+            'sellable' => array_key_exists('sellable', $node) ? (bool) $node['sellable'] : true,
+        ];
+    }
+
+    /**
      * @param string|null $customerAccountId
      * @return list<array{id:string,name:string,type:?string,pickable:?bool,sellable:?bool}>
      */

@@ -981,6 +981,18 @@ class InvoiceService
             $account->billing_available_funds_cents = max(0, $remaining);
             $account->save();
 
+            if ($allocations !== []) {
+                $singleSelfPay = count($allocations) === 1
+                    && (int) ($allocations[0]['invoice_id'] ?? 0) === (int) $rootInvoice->id;
+                if (! $singleSelfPay) {
+                    $this->logHistory($rootInvoice, $actor, 'payment_allocated', $rootInvoice->status, $rootInvoice->status, [
+                        'total_applied_cents' => array_sum(array_column($allocations, 'applied_cents')),
+                        'allocations' => $allocations,
+                        'remaining_amount_cents' => $remaining,
+                    ] + $paymentMeta);
+                }
+            }
+
             return [
                 'invoice' => $rootInvoice->fresh(['items', 'histories.user', 'clientAccount', 'createdBy']) ?? $rootInvoice,
                 'allocations' => $allocations,
@@ -1068,6 +1080,7 @@ class InvoiceService
                 return InvoiceHistoryEventType::HEADER_EDIT;
             case 'sent':
             case 'payment_applied':
+            case 'payment_allocated':
             case 'voided':
             case 'emailed':
             case 'whatsapp_sent':

@@ -8,6 +8,7 @@ use App\Models\ClientAccountOnDemandProduct;
 use App\Services\InvoiceService;
 use App\Services\StripeInvoicePaymentService;
 use App\Models\Invoice;
+use App\Models\InvoiceHistory;
 use App\Models\InvoiceItem;
 use App\Models\Permission;
 use App\Models\Role;
@@ -466,6 +467,18 @@ class BillingInvoiceApiTest extends TestCase
         $this->getJson("/api/invoices/{$invoice->id}/pay-context")
             ->assertOk()
             ->assertJsonPath('available_funds_cents', 4000);
+
+        $this->assertDatabaseHas('invoice_histories', [
+            'invoice_id' => $invoice->id,
+            'action' => 'funds_added',
+        ]);
+        $history = InvoiceHistory::query()
+            ->where('invoice_id', $invoice->id)
+            ->where('action', 'funds_added')
+            ->latest('id')
+            ->first();
+        $this->assertNotNull($history);
+        $this->assertSame(1500, (int) ($history->meta['amount_cents'] ?? 0));
     }
 
     public function test_pay_allocate_distributes_payment_across_selected_invoices(): void
@@ -529,6 +542,31 @@ class BillingInvoiceApiTest extends TestCase
         $this->assertSame(3000, (int) $invoiceB->amount_paid_cents);
         $this->assertSame(0, (int) $invoiceB->balance_due_cents);
         $this->assertSame(Invoice::STATUS_PAID, $invoiceB->status);
+
+        $allocatedHistory = InvoiceHistory::query()
+            ->where('invoice_id', $invoiceA->id)
+            ->where('action', 'payment_allocated')
+            ->latest('id')
+            ->first();
+        $this->assertNotNull($allocatedHistory);
+        $this->assertSame(6000, (int) ($allocatedHistory->meta['total_applied_cents'] ?? 0));
+        $this->assertCount(2, $allocatedHistory->meta['allocations'] ?? []);
+
+        $appliedB = InvoiceHistory::query()
+            ->where('invoice_id', $invoiceB->id)
+            ->where('action', 'payment_applied')
+            ->latest('id')
+            ->first();
+        $this->assertNotNull($appliedB);
+        $this->assertSame(3000, (int) ($appliedB->meta['amount_cents'] ?? 0));
+
+        $appliedA = InvoiceHistory::query()
+            ->where('invoice_id', $invoiceA->id)
+            ->where('action', 'payment_applied')
+            ->latest('id')
+            ->first();
+        $this->assertNotNull($appliedA);
+        $this->assertSame(3000, (int) ($appliedA->meta['amount_cents'] ?? 0));
     }
 
     public function test_user_without_billing_view_cannot_list_invoices(): void

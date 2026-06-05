@@ -622,6 +622,72 @@ function formatHistoryTimestamp(iso) {
   return `${date} ${hour}:${minute}:${second} ${meridiem}`;
 }
 
+const HISTORY_ACTION_LABELS = {
+  funds_added: "Funds Added",
+  payment_applied: "Payment Applied",
+  payment_allocated: "Payment Allocated",
+  available_balance_updated: "Available Balance Updated",
+};
+
+function historyActionLabel(action) {
+  const key = String(action || "").trim();
+  if (HISTORY_ACTION_LABELS[key]) return HISTORY_ACTION_LABELS[key];
+  return key.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
+}
+
+function historyMetaCents(meta, key) {
+  if (!meta || meta[key] === null || meta[key] === undefined) return null;
+  const n = Number(meta[key]);
+  return Number.isFinite(n) ? n : null;
+}
+
+function historyPaymentContextLine(meta) {
+  if (!meta || typeof meta !== "object") return "";
+  const parts = [];
+  const type = String(meta.payment_type || "").trim();
+  const date = String(meta.payment_date || "").trim();
+  if (type) parts.push(type);
+  if (date) parts.push(formatIsoDate(date));
+  return parts.join(" · ");
+}
+
+function historyPrimaryLines(h, currency) {
+  const meta = h?.meta && typeof h.meta === "object" ? h.meta : {};
+  const action = String(h?.action || "");
+  const cur = currency || "USD";
+  const lines = [];
+
+  if (action === "funds_added") {
+    const amount = historyMetaCents(meta, "amount_cents");
+    if (amount !== null) {
+      lines.push(`${formatCents(amount, cur)} added to available balance`);
+    }
+  } else if (action === "payment_applied") {
+    const amount = historyMetaCents(meta, "amount_cents");
+    if (amount !== null) {
+      lines.push(`${formatCents(amount, cur)} applied`);
+    }
+  } else if (action === "payment_allocated") {
+    const total = historyMetaCents(meta, "total_applied_cents");
+    if (total !== null) {
+      lines.push(`${formatCents(total, cur)} allocated`);
+    }
+    const allocations = Array.isArray(meta.allocations) ? meta.allocations : [];
+    allocations.forEach((row) => {
+      const applied = historyMetaCents(row, "applied_cents");
+      if (applied === null) return;
+      const num = String(row.invoice_number || row.invoice_id || "").trim();
+      lines.push(`Invoice #${num || "—"}: ${formatCents(applied, cur)}`);
+    });
+  }
+
+  return lines;
+}
+
+function historyShowPaymentContext(action) {
+  return action === "funds_added" || action === "payment_applied" || action === "payment_allocated";
+}
+
 function formatQtyOneDecimal(v) {
   const n = Number(v);
   if (!Number.isFinite(n)) return "0.0";
@@ -1935,6 +2001,7 @@ async function addFundsToPayPool() {
     accountAvailableFundsCents.value = available;
     payAmount.value = "";
     toast.success("Funds added to available balance.");
+    await load();
   } catch (e) {
     toast.errorFrom(e, "Could not add funds.");
   } finally {
@@ -2971,8 +3038,22 @@ function onDocKeydown(e) {
                 :key="h.id"
                 class="border-bottom border-light py-2"
               >
-                <div class="fw-medium text-capitalize">{{ h.action.replace(/_/g, " ") }}</div>
-                <div v-if="h.message" class="text-body">{{ h.message }}</div>
+                <div class="fw-medium">{{ historyActionLabel(h.action) }}</div>
+                <div v-if="h.message && h.action !== 'available_balance_updated'" class="text-body">{{ h.message }}</div>
+                <div
+                  v-for="(line, lineIdx) in historyPrimaryLines(h, invoice.currency)"
+                  :key="`${h.id}-detail-${lineIdx}`"
+                  class="text-body"
+                >
+                  {{ line }}
+                </div>
+                <div
+                  v-if="historyShowPaymentContext(h.action) && historyPaymentContextLine(h.meta)"
+                  class="text-secondary"
+                >
+                  {{ historyPaymentContextLine(h.meta) }}
+                </div>
+                <div v-if="h.message && h.action === 'available_balance_updated'" class="text-body">{{ h.message }}</div>
                 <div class="text-secondary">
                   {{ h.user?.name || "System" }} ·
                   {{ formatHistoryTimestamp(h.created_at) }}

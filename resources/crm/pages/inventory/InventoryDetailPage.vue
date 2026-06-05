@@ -224,6 +224,65 @@ function clearLocationFilters() {
   locationPickableFilter.value = "";
 }
 
+function metricsFromWarehouses(warehouses, previousMetrics = {}) {
+  let onHand = 0;
+  (warehouses || []).forEach((wh) => {
+    (wh.locations || []).forEach((loc) => {
+      onHand += Number(loc.quantity ?? 0);
+    });
+  });
+  const allocated = Number(previousMetrics.allocated ?? 0);
+  return {
+    ...previousMetrics,
+    on_hand: onHand,
+    available: Math.max(0, onHand - allocated),
+  };
+}
+
+function applyWarehouseSliceToProduct(warehouseSlice) {
+  if (!product.value || !warehouseSlice?.warehouse_id) return;
+  const whId = String(warehouseSlice.warehouse_id);
+  const incomingLocs = Array.isArray(warehouseSlice.locations) ? warehouseSlice.locations : [];
+  if (incomingLocs.length === 0) return;
+
+  const qtyByLocId = new Map();
+  incomingLocs.forEach((loc) => {
+    const id = String(loc.location_id || "").trim();
+    if (id) qtyByLocId.set(id, Number(loc.quantity ?? 0));
+  });
+
+  const warehouses = Array.isArray(product.value.warehouses) ? [...product.value.warehouses] : [];
+  let whIndex = warehouses.findIndex((wh) => String(wh.warehouse_id || "") === whId);
+  if (whIndex < 0) {
+    warehouses.push({
+      warehouse_id: whId,
+      warehouse_name: warehouseSlice.warehouse_name || "",
+      locations: incomingLocs.map((loc) => ({ ...loc })),
+    });
+  } else {
+    const wh = { ...warehouses[whIndex] };
+    const locations = Array.isArray(wh.locations) ? [...wh.locations] : [];
+    const nextLocations = locations.map((loc) => {
+      const id = String(loc.location_id || "");
+      if (!qtyByLocId.has(id)) return { ...loc };
+      return { ...loc, quantity: qtyByLocId.get(id) };
+    });
+    incomingLocs.forEach((inc) => {
+      const id = String(inc.location_id || "");
+      if (!id || nextLocations.some((row) => String(row.location_id) === id)) return;
+      nextLocations.push({ ...inc });
+    });
+    wh.locations = nextLocations;
+    warehouses[whIndex] = wh;
+  }
+
+  product.value = {
+    ...product.value,
+    warehouses,
+    metrics: metricsFromWarehouses(warehouses, product.value.metrics),
+  };
+}
+
 function displayVal(v) {
   if (v === null || v === undefined) return "—";
   if (typeof v === "string" && v.trim() === "") return "—";
@@ -666,10 +725,13 @@ async function submitUpdateQty() {
     if (route.query.client_account_id) {
       body.client_account_id = Number(route.query.client_account_id);
     }
-    await api.post("/inventory/replace", body);
+    const { data } = await api.post("/inventory/replace", body);
+    const warehouseSlice = data?.warehouse;
+    applyWarehouseSliceToProduct(warehouseSlice);
     toast.success("Quantity updated.");
     updateModalOpen.value = false;
     await loadProduct({ refresh: true });
+    applyWarehouseSliceToProduct(warehouseSlice);
   } catch (e) {
     toast.errorFrom(e, "Could not update quantity.");
   } finally {
@@ -705,10 +767,13 @@ async function submitAddLocationQty() {
     if (route.query.client_account_id) {
       body.client_account_id = Number(route.query.client_account_id);
     }
-    await api.post("/inventory/locations/add-qty", body);
+    const { data } = await api.post("/inventory/locations/add-qty", body);
+    const warehouseSlice = data?.warehouse;
+    applyWarehouseSliceToProduct(warehouseSlice);
     toast.success("Location quantity updated.");
     addLocationModalOpen.value = false;
     await loadProduct({ refresh: true });
+    applyWarehouseSliceToProduct(warehouseSlice);
   } catch (e) {
     toast.errorFrom(e, "Location not found or quantity update failed.");
   } finally {
@@ -749,10 +814,13 @@ async function submitTransferQty() {
     if (route.query.client_account_id) {
       body.client_account_id = Number(route.query.client_account_id);
     }
-    await api.post("/inventory/transfer", body);
+    const { data } = await api.post("/inventory/transfer", body);
+    const warehouseSlice = data?.warehouse;
+    applyWarehouseSliceToProduct(warehouseSlice);
     toast.success("Quantity transferred.");
     transferModalOpen.value = false;
     await loadProduct({ refresh: true });
+    applyWarehouseSliceToProduct(warehouseSlice);
   } catch (e) {
     toast.errorFrom(e, "Could not transfer quantity.");
   } finally {
@@ -1582,7 +1650,11 @@ async function togglePickable(loc) {
                   />
                 </div>
                 <div class="col-6">
-                  <button type="button" class="btn btn-outline-secondary w-100" @click="fillTransferAllQty">
+                  <button
+                    type="button"
+                    class="btn inventory-detail__transfer-all-btn w-100"
+                    @click="fillTransferAllQty"
+                  >
                     Transfer All
                   </button>
                 </div>
@@ -1709,6 +1781,18 @@ async function togglePickable(loc) {
 .inventory-detail__toggle-label {
   min-width: 22px;
   text-align: left;
+}
+.inventory-detail__transfer-all-btn {
+  border: 1px solid var(--bs-primary);
+  color: var(--bs-primary);
+  background: transparent;
+  font-weight: 600;
+}
+.inventory-detail__transfer-all-btn:hover,
+.inventory-detail__transfer-all-btn:focus-visible {
+  background: var(--bs-primary);
+  border-color: var(--bs-primary);
+  color: #fff;
 }
 .inventory-detail__toggle--on {
   border-color: rgba(34, 197, 94, 0.45);

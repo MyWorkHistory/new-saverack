@@ -322,11 +322,27 @@ function hasSpecValue(val) {
 }
 
 function specEditButtonClass(hasValue) {
-  return hasValue ? "btn btn-link btn-sm px-0" : "btn btn-link btn-sm px-0 text-danger";
+  return hasValue ? "btn btn-link btn-sm px-0 asn-line-meta-link" : "btn btn-link btn-sm px-0 asn-line-meta-link asn-line-meta-link--empty";
 }
 
-function specRowLabel(prefix, val) {
-  return hasSpecValue(val) ? `${prefix}: ${val}` : `${prefix}:`;
+function skuLineLabel(sku) {
+  const val = String(sku || "").trim();
+  return val ? `SKU: ${val}` : "SKU: —";
+}
+
+function weightLineLabel(val) {
+  return hasSpecValue(val) ? `Weight: ${val} Lbs` : "Weight:";
+}
+
+function dimensionsLineLabel(line) {
+  const l = hasSpecValue(line.length) ? line.length : "";
+  const w = hasSpecValue(line.width) ? line.width : "";
+  const h = hasSpecValue(line.height) ? line.height : "";
+  return `L: ${l}  W: ${w}  H: ${h}`;
+}
+
+function barcodeLineLabel(barcode) {
+  return hasBarcodeValue(barcode) ? `Barcode: ${barcode}` : "Barcode: Add barcode";
 }
 
 function syncDraftsFromAsn() {
@@ -1058,8 +1074,8 @@ onUnmounted(() => {
                       </template>
                       <div class="order-detail-page__item-copy">
                         <div class="order-detail-page__item-name" :title="line.name">{{ line.name || "—" }}</div>
-                        <div class="order-detail-page__item-sku" :title="line.sku ? `SKU ${line.sku}` : undefined">
-                          SKU {{ line.sku || "—" }}
+                        <div class="order-detail-page__item-sku" :title="line.sku ? `SKU: ${line.sku}` : undefined">
+                          {{ skuLineLabel(line.sku) }}
                         </div>
                       </div>
                     </div>
@@ -1206,7 +1222,6 @@ onUnmounted(() => {
                 <tr>
                   <th class="staff-table-head__th text-center" style="width: 6rem">Status</th>
                   <th class="staff-table-head__th order-detail-page__items-col">Product</th>
-                  <th class="staff-table-head__th">Specs</th>
                   <th class="staff-table-head__th text-end" style="width: 6.5rem">Expected QTY</th>
                   <th class="staff-table-head__th text-end" style="width: 7.5rem">Received QTY</th>
                   <th class="staff-table-head__th text-end" style="width: 7.5rem">Rejected QTY</th>
@@ -1220,7 +1235,7 @@ onUnmounted(() => {
               </thead>
               <tbody>
                 <tr v-if="filteredLines.length === 0">
-                  <td colspan="7" class="text-center text-secondary py-4">No products.</td>
+                  <td colspan="6" class="text-center text-secondary py-4">No products.</td>
                 </tr>
                 <tr v-for="line in filteredLines" :key="line.id">
                   <td class="text-center align-middle">
@@ -1260,55 +1275,41 @@ onUnmounted(() => {
                       </template>
                       <div class="order-detail-page__item-copy">
                         <div class="order-detail-page__item-name" :title="line.name">{{ line.name || "—" }}</div>
-                        <div class="order-detail-page__item-sku" :title="line.sku ? `SKU ${line.sku}` : undefined">
-                          SKU {{ line.sku || "—" }}
+                        <div class="order-detail-page__item-meta">
+                          <div class="order-detail-page__item-sku" :title="line.sku ? `SKU: ${line.sku}` : undefined">
+                            {{ skuLineLabel(line.sku) }}
+                          </div>
+                          <div>
+                            <button
+                              type="button"
+                              :class="specEditButtonClass(hasBarcodeValue(line.barcode))"
+                              @click="openEditItem(line)"
+                            >
+                              {{ barcodeLineLabel(line.barcode) }}
+                            </button>
+                          </div>
+                          <div>
+                            <button
+                              type="button"
+                              :class="specEditButtonClass(hasSpecValue(line.weight))"
+                              @click="openEditItem(line)"
+                            >
+                              {{ weightLineLabel(line.weight) }}
+                            </button>
+                          </div>
+                          <div>
+                            <button
+                              type="button"
+                              :class="specEditButtonClass(
+                                hasSpecValue(line.length) || hasSpecValue(line.width) || hasSpecValue(line.height),
+                              )"
+                              @click="openEditItem(line)"
+                            >
+                              {{ dimensionsLineLabel(line) }}
+                            </button>
+                          </div>
                         </div>
-                        <button
-                          type="button"
-                          :class="[specEditButtonClass(hasBarcodeValue(line.barcode)), 'small']"
-                          @click="openEditItem(line)"
-                        >
-                          {{ hasBarcodeValue(line.barcode) ? line.barcode : "Add barcode" }}
-                        </button>
                       </div>
-                    </div>
-                  </td>
-                  <td class="small text-secondary align-middle">
-                    <div>
-                      <button
-                        type="button"
-                        :class="specEditButtonClass(hasSpecValue(line.weight))"
-                        @click="openEditItem(line)"
-                      >
-                        {{ specRowLabel("LBS", line.weight) }}
-                      </button>
-                    </div>
-                    <div>
-                      <button
-                        type="button"
-                        :class="specEditButtonClass(hasSpecValue(line.length))"
-                        @click="openEditItem(line)"
-                      >
-                        {{ specRowLabel("L", line.length) }}
-                      </button>
-                    </div>
-                    <div>
-                      <button
-                        type="button"
-                        :class="specEditButtonClass(hasSpecValue(line.width))"
-                        @click="openEditItem(line)"
-                      >
-                        {{ specRowLabel("W", line.width) }}
-                      </button>
-                    </div>
-                    <div>
-                      <button
-                        type="button"
-                        :class="specEditButtonClass(hasSpecValue(line.height))"
-                        @click="openEditItem(line)"
-                      >
-                        {{ specRowLabel("H", line.height) }}
-                      </button>
                     </div>
                   </td>
                   <td class="text-end align-middle">{{ Number(line.expected_qty ?? 0).toLocaleString() }}</td>
@@ -1645,6 +1646,7 @@ onUnmounted(() => {
       :open="editReceivedOpen"
       title="Edit Received"
       confirm-label="Save"
+      :danger="false"
       :busy="editReceivedBusy"
       @close="editReceivedOpen = false"
       @confirm="confirmEditReceived"
@@ -1660,6 +1662,7 @@ onUnmounted(() => {
       :open="editRejectedOpen"
       title="Edit Rejected"
       confirm-label="Save"
+      :danger="false"
       :busy="editRejectedBusy"
       @close="editRejectedOpen = false"
       @confirm="confirmEditRejected"
@@ -1672,6 +1675,7 @@ onUnmounted(() => {
       :open="editItemOpen"
       title="Edit Item"
       confirm-label="Save"
+      :danger="false"
       :busy="editItemBusy"
       @close="editItemOpen = false"
       @confirm="confirmEditItem"
@@ -1841,9 +1845,53 @@ onUnmounted(() => {
 
 .admin-asn-detail-page .order-detail-page__item-cell {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   gap: 0.75rem;
   min-width: 0;
+}
+
+.admin-asn-detail-page .order-detail-page__items-col {
+  width: 48%;
+  min-width: 16rem;
+  vertical-align: middle;
+}
+
+.admin-asn-detail-page .order-detail-page__item-name {
+  white-space: normal;
+  word-break: break-word;
+  line-height: 1.35;
+  margin-bottom: 0.35rem;
+}
+
+.admin-asn-detail-page .order-detail-page__item-meta {
+  display: flex;
+  flex-direction: column;
+  gap: 0.125rem;
+  font-size: 0.8125rem;
+  line-height: 1.4;
+  color: var(--bs-secondary-color);
+}
+
+.admin-asn-detail-page .order-detail-page__item-sku {
+  user-select: text;
+}
+
+.admin-asn-detail-page .asn-line-meta-link {
+  text-align: left;
+  text-decoration: none;
+  color: var(--bs-secondary-color);
+  font-size: inherit;
+  line-height: inherit;
+  vertical-align: baseline;
+}
+
+.admin-asn-detail-page .asn-line-meta-link:hover {
+  color: #2563eb;
+  text-decoration: underline;
+}
+
+.admin-asn-detail-page .asn-line-meta-link--empty {
+  font-style: italic;
 }
 
 .admin-asn-detail-page .asn-line-thumb-link {
@@ -1867,7 +1915,7 @@ onUnmounted(() => {
 
 .admin-asn-detail-page :deep(.staff-table-wrap .table.staff-data-table) {
   width: 100%;
-  min-width: 52rem;
+  min-width: 46rem;
 }
 
 .admin-asn-detail-page .btn-outline-secondary:hover:not(:disabled),

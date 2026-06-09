@@ -170,6 +170,38 @@ class AdminAsnReceivingTest extends TestCase
         $this->assertDatabaseHas('custom_bills', ['id' => $billId]);
     }
 
+    public function test_staff_can_add_line_to_non_compliant_asn(): void
+    {
+        $account = $this->account();
+        $staff = $this->staffUser();
+        Sanctum::actingAs($staff);
+
+        $asn = ClientAccountAsn::create([
+            'client_account_id' => $account->id,
+            'asn_number' => '0025',
+            'status' => ClientAccountAsn::STATUS_NON_COMPLIANT,
+            'total_boxes' => 2,
+            'expected_qty' => 0,
+            'accepted_qty' => 0,
+            'rejected_qty' => 0,
+        ]);
+
+        $this->postJson("/api/asns/{$asn->id}/lines", [
+            'sku' => 'NC-SKU-1',
+            'name' => 'Non-Compliant Item',
+            'expected_qty' => 3,
+        ])
+            ->assertCreated()
+            ->assertJsonPath('sku', 'NC-SKU-1')
+            ->assertJsonPath('expected_qty', 3);
+
+        $this->assertDatabaseHas('client_account_asn_lines', [
+            'client_account_asn_id' => $asn->id,
+            'sku' => 'NC-SKU-1',
+            'expected_qty' => 3,
+        ]);
+    }
+
     public function test_receive_increment_updates_line_and_status(): void
     {
         $account = $this->account();

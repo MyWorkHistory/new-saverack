@@ -97,6 +97,7 @@ const asnRouteId = computed(() => Number(asnId.value || 0));
 const isDraft = computed(() => String(asn.value?.status || "").toLowerCase() === "draft");
 const isPending = computed(() => String(asn.value?.status || "").toLowerCase() === "pending");
 const isNonCompliant = computed(() => String(asn.value?.status || "").toLowerCase() === "non_compliant");
+const canAddProducts = computed(() => isDraft.value || isNonCompliant.value);
 
 const receivingFees = computed(() => {
   const rows = asn.value?.receiving_fees;
@@ -710,7 +711,7 @@ function buildAsnLinePayload(product, quantity) {
 }
 
 async function addFromCatalog({ product, quantity }) {
-  if (!asn.value || !isDraft.value) return;
+  if (!asn.value || !canAddProducts.value) return;
   const payload = buildAsnLinePayload(product, quantity);
   if (!payload.sku) {
     toast.error("This product has no SKU.");
@@ -730,7 +731,7 @@ async function addFromCatalog({ product, quantity }) {
 }
 
 async function saveLineExpectedQty(line, rawQty) {
-  if (!asn.value || !isDraft.value || !line?.id) return;
+  if (!asn.value || !canAddProducts.value || !line?.id) return;
   const qty = Math.max(0, Number(rawQty) || 0);
   if (qty === Number(line.expected_qty)) return;
   lineBusy.value = true;
@@ -753,7 +754,7 @@ function openAddNewSkuModal() {
 }
 
 async function submitAddNewSku() {
-  if (!asn.value?.id || !isDraft.value) return;
+  if (!asn.value?.id || !canAddProducts.value) return;
   const sku = addNewSkuSku.value.trim();
   const name = addNewSkuName.value.trim();
   const qty = Math.max(0, Number(addNewSkuQty.value) || 0);
@@ -1125,17 +1126,41 @@ onUnmounted(() => {
           </div>
         </div>
 
-        <div v-if="!isDraft && !isNonCompliant" class="staff-table-card staff-datatable-card staff-datatable-card--white p-0 mb-4">
+        <div v-if="!isDraft" class="staff-table-card staff-datatable-card staff-datatable-card--white p-0 mb-4">
           <div class="px-4 py-3 border-bottom d-flex justify-content-between align-items-center flex-wrap gap-2">
             <h2 class="h6 mb-0 fw-semibold">Products</h2>
-            <button
-              type="button"
-              class="btn btn-primary btn-sm staff-page-primary fw-semibold"
-              :disabled="enrichBusy"
-              @click="enrichSpecs(true)"
-            >
-              {{ enrichBusy ? "Refreshing…" : "Refresh Specs" }}
-            </button>
+            <div class="d-flex flex-wrap gap-2">
+              <button
+                v-if="isNonCompliant"
+                type="button"
+                class="btn btn-sm btn-primary staff-page-primary"
+                @click="addPanelOpen = !addPanelOpen"
+              >
+                {{ addPanelOpen ? "Hide Add Products" : "Add Products" }}
+              </button>
+              <button
+                type="button"
+                class="btn btn-primary btn-sm staff-page-primary fw-semibold"
+                :disabled="enrichBusy"
+                @click="enrichSpecs(true)"
+              >
+                {{ enrichBusy ? "Refreshing…" : "Refresh Specs" }}
+              </button>
+            </div>
+          </div>
+
+          <div v-if="isNonCompliant" v-show="addPanelOpen" class="border-bottom">
+            <AsnProductCatalogPanel
+              :client-account-id="clientAccountId"
+              :asn-id="asnRouteId"
+              :active="addPanelOpen"
+              :busy="lineBusy"
+              show-add-new-sku
+              qty-label="Expected QTY"
+              search-input-id="admin-asn-noncompliant-catalog-search"
+              @add="addFromCatalog"
+              @add-new-sku="openAddNewSkuModal"
+            />
           </div>
 
           <div class="staff-table-toolbar border-bottom">

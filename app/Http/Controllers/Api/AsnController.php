@@ -653,7 +653,10 @@ class AsnController extends Controller
     public function storeLine(Request $request, ClientAccountAsn $asn): JsonResponse
     {
         $this->authorizeAsn($request, $asn);
-        if ($asn->status !== ClientAccountAsn::STATUS_DRAFT) {
+        $portal = $this->isPortalUser($request);
+        $canAddLines = $asn->status === ClientAccountAsn::STATUS_DRAFT
+            || (! $portal && $asn->status === ClientAccountAsn::STATUS_NON_COMPLIANT);
+        if (! $canAddLines) {
             throw ValidationException::withMessages([
                 'status' => ['Products can only be added while the ASN is in draft.'],
             ]);
@@ -698,7 +701,6 @@ class AsnController extends Controller
             'name.required' => 'Product name is required.',
             'expected_qty.min' => 'Enter an expected quantity of at least 1.',
         ])->validate();
-        $portal = $this->isPortalUser($request);
         $maxSort = (int) ClientAccountAsnLine::query()->where('client_account_asn_id', $asn->id)->max('sort_order');
         $line = new ClientAccountAsnLine;
         $line->client_account_asn_id = $asn->id;

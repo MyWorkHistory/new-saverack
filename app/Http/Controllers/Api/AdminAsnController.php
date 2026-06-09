@@ -8,6 +8,7 @@ use App\Models\ClientAccountAsn;
 use App\Models\ClientAccountAsnLine;
 use App\Models\ClientAccountAsnTracking;
 use App\Models\CustomBill;
+use App\Models\PricingFeeTemplate;
 use App\Models\User;
 use App\Services\AsnReceivingService;
 use App\Services\CustomBillService;
@@ -112,6 +113,7 @@ class AdminAsnController extends Controller
             'warehouse_notes' => $asn->warehouse_notes,
             'non_compliant_fee' => $asn->non_compliant_fee,
             'custom_bill_id' => $asn->custom_bill_id,
+            'receiving_fees' => $this->receivingFeeRows(),
             'created_at' => optional($asn->created_at)->toIso8601String(),
             'updated_at' => optional($asn->updated_at)->toIso8601String(),
             'lines' => $asn->lines->map(fn (ClientAccountAsnLine $l) => $this->receiving->serializeLine($l))->values()->all(),
@@ -127,6 +129,28 @@ class AdminAsnController extends Controller
                 'sort_order' => $v->sort_order,
             ])->values()->all(),
         ];
+    }
+
+    /**
+     * @return list<array<string, mixed>>
+     */
+    private function receivingFeeRows(): array
+    {
+        return PricingFeeTemplate::query()
+            ->where('category', PricingFeeTemplate::CATEGORY_RECEIVING)
+            ->orderBy('sort_order')
+            ->orderBy('id')
+            ->get()
+            ->map(function (PricingFeeTemplate $template) {
+                return [
+                    'id' => $template->id,
+                    'name' => $template->name,
+                    'description' => $template->description,
+                    'amount' => 0.0,
+                ];
+            })
+            ->values()
+            ->all();
     }
 
     public function summary(Request $request): JsonResponse

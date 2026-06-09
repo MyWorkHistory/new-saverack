@@ -98,6 +98,17 @@ const isDraft = computed(() => String(asn.value?.status || "").toLowerCase() ===
 const isPending = computed(() => String(asn.value?.status || "").toLowerCase() === "pending");
 const isNonCompliant = computed(() => String(asn.value?.status || "").toLowerCase() === "non_compliant");
 
+const receivingFees = computed(() => {
+  const rows = asn.value?.receiving_fees;
+  return Array.isArray(rows) ? rows : [];
+});
+
+function formatReceivingFeeAmount(amount) {
+  const n = Number(amount);
+  if (!Number.isFinite(n)) return "$0.00";
+  return `$${n.toFixed(2)}`;
+}
+
 function normalizeAsnPayload(data) {
   if (!data || typeof data !== "object") return data;
   const accountId = Number(
@@ -1452,15 +1463,29 @@ onUnmounted(() => {
           </p>
         </div>
 
-        <div
-          v-if="asn.custom_bill_id"
-          class="staff-table-card staff-datatable-card staff-datatable-card--white p-4"
-        >
-          <h3 class="h6 fw-semibold mb-2">Non-Compliant Fee</h3>
-          <p class="mb-1">${{ Number(asn.non_compliant_fee || 0).toFixed(2) }}</p>
+        <div class="staff-table-card staff-datatable-card staff-datatable-card--white p-4">
+          <h3 class="h6 fw-semibold mb-2">Receiving Fees</h3>
+          <ul v-if="receivingFees.length" class="list-unstyled mb-0 small">
+            <li
+              v-for="fee in receivingFees"
+              :key="fee.id"
+              class="d-flex justify-content-between align-items-start gap-2 mb-2"
+            >
+              <span class="min-w-0">
+                {{ fee.name }}
+                <span v-if="fee.description" class="d-block text-secondary">{{ fee.description }}</span>
+              </span>
+              <span class="text-secondary flex-shrink-0">{{ formatReceivingFeeAmount(fee.amount) }}</span>
+            </li>
+          </ul>
+          <p v-else class="mb-0 small text-secondary">
+            No receiving fees configured in
+            <RouterLink to="/admin/settings/pricing" class="text-decoration-none">Pricing</RouterLink>.
+          </p>
           <RouterLink
+            v-if="asn.custom_bill_id"
             :to="{ name: 'billing-custom-bill-detail', params: { id: String(asn.custom_bill_id) } }"
-            class="small"
+            class="small d-inline-block mt-2"
             target="_blank"
             rel="noopener noreferrer"
           >

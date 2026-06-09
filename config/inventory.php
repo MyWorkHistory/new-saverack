@@ -31,4 +31,6 @@ return [
 
     'default_transfer_reason' => 'Restock',
 
+    'default_put_away_reason' => 'Inbound Receiving Adjustments',
+
 ];

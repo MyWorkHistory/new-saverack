@@ -23,6 +23,7 @@ use App\Http\Controllers\Api\PortalLookupController;
 use App\Http\Controllers\Api\PortalOnboardingController;
 use App\Http\Controllers\Api\PortalProfileController;
 use App\Http\Controllers\Api\PricingFeeTemplateController;
+use App\Http\Controllers\Api\PutAwayController;
 use App\Http\Controllers\Api\UserController;
 use App\Http\Controllers\Api\WebmasterTaskController;
 use App\Http\Controllers\StripeWebhookController;
@@ -190,6 +191,11 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::post('/{asn}/lines/{line}/receive-override', [AdminAsnController::class, 'receiveOverride'])->middleware('can:inventory.view');
         Route::post('/{asn}/lines/{line}/reject-override', [AdminAsnController::class, 'rejectOverride'])->middleware('can:inventory.view');
         Route::patch('/{asn}/lines/{line}/specs', [AdminAsnController::class, 'updateLineSpecs'])->middleware('can:inventory.view');
+    });
+
+    Route::prefix('admin/put-away')->group(function () {
+        Route::get('/', [PutAwayController::class, 'index'])->middleware('can:inventory.view');
+        Route::post('/refresh', [PutAwayController::class, 'refresh'])->middleware('can:inventory.view');
     });
 
     Route::prefix('asns')->group(function () {

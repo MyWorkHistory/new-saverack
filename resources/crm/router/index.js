@@ -194,6 +194,14 @@ const meta = {
     title: "Save Rack | ASN Detail",
     description: "Admin ASN receiving and processing.",
   },
+  adminPutAway: {
+    title: "Save Rack | Put Away",
+    description: "Move inventory from Receiving to warehouse locations.",
+  },
+  adminPutAwayDetail: {
+    title: "Save Rack | Put Away Detail",
+    description: "Put away product locations and transfers.",
+  },
   adminProcessReturnsSearch: {
     title: "Save Rack | Process Returns",
     description: "Find pending returns to process.",
@@ -388,6 +396,18 @@ const routes = [
     component: () => import("../pages/admin-asn/AdminAsnDetailPage.vue"),
     props: true,
     meta: meta.adminAsnDetail,
+  },
+  {
+    path: "/admin/receiving/put-away",
+    name: "admin-put-away",
+    component: () => import("../pages/admin-put-away/AdminPutAwayListPage.vue"),
+    meta: meta.adminPutAway,
+  },
+  {
+    path: "/admin/receiving/put-away/:sku",
+    name: "admin-put-away-detail",
+    component: () => import("../pages/admin-put-away/PutAwayDetailPage.vue"),
+    meta: meta.adminPutAwayDetail,
   },
   { path: "/admin/receiving", redirect: "/admin/receiving/asn" },
   {

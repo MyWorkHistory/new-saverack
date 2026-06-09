@@ -1,0 +1,429 @@
+<script setup>
+import { computed, onMounted, onUnmounted, ref } from "vue";
+import { useRouter } from "vue-router";
+import api from "../../services/api";
+import CrmIconRowActions from "../../components/common/CrmIconRowActions.vue";
+import CrmLoadingSpinner from "../../components/common/CrmLoadingSpinner.vue";
+import CrmSearchableSelect from "../../components/common/CrmSearchableSelect.vue";
+import { setCrmPageMeta } from "../../composables/useCrmPageMeta.js";
+import { useToast } from "../../composables/useToast.js";
+import { formatDateTimeUs } from "../../utils/formatUserDates.js";
+
+const LIST_PAGE_SIZE = 50;
+
+const toast = useToast();
+const router = useRouter();
+
+const rows = ref([]);
+const loading = ref(false);
+const loadingMore = ref(false);
+const refreshing = ref(false);
+const accountsLoading = ref(false);
+const accounts = ref([]);
+const selectedAccountId = ref("");
+const searchDraft = ref("");
+const searchCommitted = ref("");
+const pageInfo = ref({ has_next_page: false, end_cursor: null });
+const meta = ref({ computed_at: null, stale: false, row_count: 0 });
+
+const lineMenuOpenSku = ref(null);
+const lineMenuRect = ref({ top: 0, left: 0 });
+const LINE_MENU_W = 180;
+const LINE_MENU_H = 56;
+
+const accountOptions = computed(() =>
+  (accounts.value || [])
+    .filter((a) => a?.has_shiphero_customer)
+    .map((a) => ({
+      id: a.id,
+      name: a.company_name || `Account #${a.id}`,
+      email: "",
+    })),
+);
+
+const accountId = computed(() => Number(selectedAccountId.value || 0));
+const canLoad = computed(() => accountId.value > 0);
+
+const lastUpdatedLabel = computed(() => {
+  const raw = meta.value?.computed_at;
+  if (!raw) return null;
+  const d = new Date(raw);
+  if (Number.isNaN(d.getTime())) return null;
+  return formatDateTimeUs(d);
+});
+
+function putAwayDetailTo(row) {
+  const sku = String(row?.sku || "").trim();
+  const clientAccountId = Number(row?.client_account_id || accountId.value || 0);
+  if (!sku || clientAccountId <= 0) {
+    return { name: "admin-put-away" };
+  }
+  return {
+    name: "admin-put-away-detail",
+    params: { sku },
+    query: { client_account_id: String(clientAccountId) },
+  };
+}
+
+function putAwayDetailHref(row) {
+  const sku = String(row?.sku || "").trim();
+  const clientAccountId = Number(row?.client_account_id || accountId.value || 0);
+  if (!sku || clientAccountId <= 0) return "";
+  return router.resolve(putAwayDetailTo(row)).href;
+}
+
+function openPutAwayInNewTab(row, event) {
+  event?.preventDefault?.();
+  const href = putAwayDetailHref(row);
+  if (!href) return;
+  window.open(href, "_blank", "noopener,noreferrer");
+}
+
+async function loadAccounts() {
+  accountsLoading.value = true;
+  try {
+    const { data } = await api.get("/inventory/client-account-options");
+    accounts.value = Array.isArray(data?.accounts) ? data.accounts : [];
+  } catch (e) {
+    toast.errorFrom(e, "Could not load account list.");
+  } finally {
+    accountsLoading.value = false;
+  }
+}
+
+async function fetchPage(append, forceRefresh = false) {
+  if (!canLoad.value) return;
+  const params = {
+    client_account_id: accountId.value,
+    first: LIST_PAGE_SIZE,
+  };
+  if (append && pageInfo.value?.end_cursor) {
+    params.after = pageInfo.value.end_cursor;
+  }
+  const q = searchCommitted.value.trim();
+  if (q) {
+    params.query = q;
+  }
+  if (forceRefresh) {
+    params.refresh = 1;
+  }
+  const { data } = await api.get("/admin/put-away", { params });
+  const nextRows = Array.isArray(data?.rows) ? data.rows : [];
+  rows.value = append ? [...rows.value, ...nextRows] : nextRows;
+  pageInfo.value = data?.page_info || { has_next_page: false, end_cursor: null };
+  meta.value = data?.meta || meta.value;
+}
+
+async function loadRows(reset = false, forceRefresh = false) {
+  if (!canLoad.value) {
+    rows.value = [];
+    return;
+  }
+  loading.value = true;
+  if (reset) {
+    pageInfo.value = { has_next_page: false, end_cursor: null };
+  }
+  try {
+    await fetchPage(false, forceRefresh);
+  } catch (e) {
+    toast.errorFrom(e, "Could not load put away list.");
+  } finally {
+    loading.value = false;
+  }
+}
+
+async function loadMore() {
+  if (!pageInfo.value?.has_next_page || loadingMore.value) return;
+  loadingMore.value = true;
+  try {
+    await fetchPage(true, false);
+  } catch (e) {
+    toast.errorFrom(e, "Could not load more rows.");
+  } finally {
+    loadingMore.value = false;
+  }
+}
+
+async function refreshRows() {
+  if (!canLoad.value) {
+    toast.error("Select a client account first.");
+    return;
+  }
+  refreshing.value = true;
+  try {
+    await api.post("/admin/put-away/refresh", { client_account_id: accountId.value });
+    searchCommitted.value = searchDraft.value.trim();
+    await loadRows(true, false);
+    toast.success("Put away list refreshed.");
+  } catch (e) {
+    toast.errorFrom(e, "Could not refresh put away list.");
+  } finally {
+    refreshing.value = false;
+  }
+}
+
+function commitSearch() {
+  searchCommitted.value = searchDraft.value.trim();
+  loadRows(true);
+}
+
+function onAccountChange() {
+  searchDraft.value = "";
+  searchCommitted.value = "";
+  loadRows(true);
+}
+
+function toggleLineMenu(sku, event) {
+  if (lineMenuOpenSku.value === sku) {
+    lineMenuOpenSku.value = null;
+    return;
+  }
+  const rect = event?.currentTarget?.getBoundingClientRect?.();
+  if (!rect) return;
+  lineMenuOpenSku.value = sku;
+  lineMenuRect.value = {
+    top: Math.max(8, rect.bottom + 4),
+    left: Math.max(8, rect.right - LINE_MENU_W),
+  };
+}
+
+function closeLineMenu() {
+  lineMenuOpenSku.value = null;
+}
+
+function openFromMenu(row) {
+  openPutAwayInNewTab(row);
+  closeLineMenu();
+}
+
+function onDocClick(e) {
+  if (!e.target?.closest?.("[data-row-actions]")) {
+    closeLineMenu();
+  }
+}
+
+onMounted(async () => {
+  setCrmPageMeta({
+    title: "Save Rack | Put Away",
+    description: "Move inventory from Receiving to warehouse locations.",
+  });
+  await loadAccounts();
+  document.addEventListener("click", onDocClick);
+});
+
+onUnmounted(() => {
+  document.removeEventListener("click", onDocClick);
+});
+</script>
+
+<template>
+  <div class="staff-page staff-page--wide">
+    <div class="d-flex flex-column flex-md-row align-items-start align-items-md-center gap-3 mb-4">
+      <div class="min-w-0 flex-grow-1">
+        <h1 class="h4 mb-1 fw-bold text-body">Put Away</h1>
+        <p class="text-secondary small mb-0">
+          Search by name, SKU, or barcode. Select a client account to load products. Data refreshes every 30 minutes.
+        </p>
+      </div>
+      <div class="d-flex align-items-center gap-2 flex-shrink-0 ms-md-auto">
+        <p v-if="lastUpdatedLabel" class="small text-secondary mb-0">
+          Last Updated: {{ lastUpdatedLabel }}
+        </p>
+        <button
+          type="button"
+          class="btn btn-outline-secondary btn-sm orders-toolbar-outline-btn d-inline-flex align-items-center gap-2"
+          :disabled="loading || loadingMore || refreshing || !canLoad"
+          title="Refresh"
+          aria-label="Refresh put away list from ShipHero"
+          @click="refreshRows"
+        >
+          {{ refreshing ? "Refreshing…" : "Refresh" }}
+        </button>
+      </div>
+    </div>
+
+    <div class="staff-table-card staff-datatable-card staff-datatable-card--white w-100">
+      <div class="staff-table-toolbar">
+        <div class="staff-table-toolbar--row inventory-toolbar-row">
+          <div class="inventory-toolbar-account flex-shrink-0">
+            <CrmSearchableSelect
+              v-model="selectedAccountId"
+              class="staff-toolbar-search staff-toolbar-search--inline"
+              appearance="staff"
+              aria-label="Client account"
+              :options="accountOptions"
+              :disabled="accountsLoading || loading"
+              placeholder="Select account"
+              search-placeholder="Search accounts…"
+              :allow-empty="false"
+              button-id="put-away-list-account-trigger"
+              @update:model-value="onAccountChange"
+            />
+          </div>
+          <div class="user-inv-search-wrap flex-shrink-0">
+            <div class="input-group orders-toolbar-search-group">
+              <input
+                v-model.trim="searchDraft"
+                type="search"
+                class="form-control"
+                placeholder="Search by name, SKU, or barcode"
+                autocomplete="off"
+                enterkeyhint="search"
+                aria-label="Search by name, SKU, or barcode"
+                :disabled="loading || !canLoad"
+                @keydown.enter.prevent="commitSearch"
+              />
+              <button
+                type="button"
+                class="btn btn-primary staff-page-primary orders-toolbar-search-btn"
+                :disabled="loading || !canLoad"
+                @click="commitSearch"
+              >
+                Search
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div v-if="!canLoad && !accountsLoading" class="text-center text-secondary py-5 px-3">
+        Select a client account to load the put away list.
+      </div>
+
+      <div v-else-if="loading && !rows.length" class="text-center py-5">
+        <CrmLoadingSpinner label="Loading put away list…" />
+      </div>
+
+      <div v-else class="table-responsive staff-table-wrap">
+        <table class="table table-hover align-middle mb-0 staff-data-table user-inv-table put-away-list-table">
+          <thead class="table-light staff-table-head">
+            <tr>
+              <th class="staff-table-head__th user-inv-table__image-col" scope="col">Image</th>
+              <th class="staff-table-head__th user-inv-table__sku-col" scope="col">SKU</th>
+              <th class="staff-table-head__th user-inv-table__name-col" scope="col">Name</th>
+              <th class="staff-table-head__th user-inv-table__text-col" scope="col">Barcode</th>
+              <th class="staff-table-head__th user-inv-table__num-col" scope="col">Receiving</th>
+              <th class="staff-table-head__th user-inv-table__num-col" scope="col">Pickable</th>
+              <th class="staff-table-head__th user-inv-table__num-col" scope="col">Non-Pickable</th>
+              <th class="staff-table-head__th user-inv-table__num-col" scope="col">On-Hand</th>
+              <th class="staff-table-head__th user-inv-table__num-col" scope="col">Backorder</th>
+              <th class="staff-table-head__th text-center put-away-list-table__action-col" scope="col">Action</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr v-if="!rows.length">
+              <td colspan="10" class="text-center text-secondary py-4">
+                {{ canLoad ? "No products found." : "Select an account." }}
+              </td>
+            </tr>
+            <tr v-for="row in rows" :key="`${row.client_account_id}-${row.sku}`">
+              <td class="text-center user-inv-table__image-col">
+                <a
+                  :href="putAwayDetailHref(row)"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  class="user-inv-table__image-link"
+                  :aria-label="`View put away for ${row.sku || 'product'}`"
+                  @click="openPutAwayInNewTab(row, $event)"
+                >
+                  <img
+                    v-if="row.image_url"
+                    :src="row.image_url"
+                    alt=""
+                    class="user-inventory-thumb"
+                    loading="lazy"
+                  />
+                  <div v-else class="user-inventory-thumb user-inventory-thumb--empty" />
+                </a>
+              </td>
+              <td class="user-inv-table__sku-col">
+                <a
+                  :href="putAwayDetailHref(row)"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  class="user-inv-table__sku-link"
+                  @click="openPutAwayInNewTab(row, $event)"
+                >
+                  {{ row.sku || "—" }}
+                </a>
+              </td>
+              <td class="user-inv-table__name-col">
+                <a
+                  :href="putAwayDetailHref(row)"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  class="user-inv-table__sku-link user-inv-table__name-link"
+                  @click="openPutAwayInNewTab(row, $event)"
+                >
+                  <span class="user-inv-table__name-text">{{ row.name || "—" }}</span>
+                </a>
+              </td>
+              <td class="user-inv-table__text-col small">{{ row.barcode || "—" }}</td>
+              <td class="user-inv-table__num-col text-center">{{ Number(row.receiving_qty ?? 0).toLocaleString() }}</td>
+              <td class="user-inv-table__num-col text-center">{{ Number(row.pickable_qty ?? 0).toLocaleString() }}</td>
+              <td class="user-inv-table__num-col text-center">{{ Number(row.non_pickable_qty ?? 0).toLocaleString() }}</td>
+              <td class="user-inv-table__num-col text-center">{{ Number(row.on_hand ?? 0).toLocaleString() }}</td>
+              <td class="user-inv-table__num-col text-center">{{ Number(row.backorder ?? 0).toLocaleString() }}</td>
+              <td class="text-center put-away-list-table__action-col" @click.stop>
+                <div data-row-actions class="position-relative d-inline-block">
+                  <button
+                    type="button"
+                    class="staff-action-btn staff-action-btn--more"
+                    :class="{ 'is-open': lineMenuOpenSku === row.sku }"
+                    aria-haspopup="true"
+                    :aria-expanded="lineMenuOpenSku === row.sku ? 'true' : 'false'"
+                    aria-label="Row actions"
+                    @click.stop="toggleLineMenu(row.sku, $event)"
+                  >
+                    <CrmIconRowActions variant="horizontal" />
+                  </button>
+                </div>
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div v-if="pageInfo.has_next_page" class="p-3 border-top text-center">
+        <button
+          type="button"
+          class="btn btn-outline-secondary btn-sm"
+          :disabled="loadingMore || loading"
+          @click="loadMore"
+        >
+          {{ loadingMore ? "Loading…" : "Load 50 More" }}
+        </button>
+      </div>
+    </div>
+
+    <Teleport to="body">
+      <div
+        v-if="lineMenuOpenSku"
+        data-row-actions
+        class="staff-row-menu fixed z-[300] overflow-hidden"
+        role="menu"
+        :style="{ top: `${lineMenuRect.top}px`, left: `${lineMenuRect.left}px`, minWidth: `${LINE_MENU_W}px` }"
+        @click.stop
+      >
+        <button
+          type="button"
+          class="staff-row-menu__item"
+          role="menuitem"
+          @click="openFromMenu(rows.find((r) => r.sku === lineMenuOpenSku))"
+        >
+          Open Put Away
+        </button>
+      </div>
+    </Teleport>
+  </div>
+</template>
+
+<style scoped>
+.put-away-list-table {
+  min-width: 64rem;
+}
+
+.put-away-list-table__action-col {
+  width: 4.5rem;
+}
+</style>

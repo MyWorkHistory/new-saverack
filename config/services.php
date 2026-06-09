@@ -49,6 +49,8 @@ return [
         'attachment_public_base_url' => env('SHIPHERO_ATTACHMENT_PUBLIC_BASE_URL'),
         /** Optional warehouse id for admin restock report; defaults to first ShipHero warehouse. */
         'restock_warehouse_id' => env('SHIPHERO_RESTOCK_WAREHOUSE_ID'),
+        /** Optional warehouse id for admin put away; defaults to restock warehouse. */
+        'put_away_warehouse_id' => env('SHIPHERO_PUT_AWAY_WAREHOUSE_ID'),
         /** ShipHero warehouse_products page size (keep under per-operation credit limit). */
         'restock_page_size' => (int) env('SHIPHERO_RESTOCK_PAGE_SIZE', 20),
         /** Max location rows per warehouse product in restock scan. */

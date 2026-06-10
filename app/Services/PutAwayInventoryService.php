@@ -65,7 +65,7 @@ class PutAwayInventoryService
             return $this->paginateSnapshotRows($snapshot, $query, $first, $after);
         }
 
-        return $this->listLiveFromInventory($clientAccountId, $query, $first, $after, $searchSkip);
+        return $this->listLiveFromInventory($clientAccountId, $customerId, $query, $first, $after, $searchSkip);
     }
 
     /**
@@ -104,6 +104,7 @@ class PutAwayInventoryService
      */
     private function listLiveFromInventory(
         int $clientAccountId,
+        string $customerId,
         ?string $query,
         int $first,
         ?string $after,

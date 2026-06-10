@@ -33,13 +33,11 @@ const LINE_MENU_W = 180;
 const LINE_MENU_H = 56;
 
 const accountOptions = computed(() =>
-  (accounts.value || [])
-    .filter((a) => a?.has_shiphero_customer)
-    .map((a) => ({
-      id: a.id,
-      name: a.company_name || `Account #${a.id}`,
-      email: "",
-    })),
+  (accounts.value || []).map((a) => ({
+    id: a.id,
+    name: a.company_name || `Account #${a.id}`,
+    email: a.has_shiphero_customer ? "" : "(No ShipHero)",
+  })),
 );
 
 const accountId = computed(() => Number(selectedAccountId.value || 0));
@@ -474,9 +472,9 @@ onUnmounted(() => {
 }
 
 .put-away-list-table .user-inv-table__name-col {
-  width: 8rem;
+  width: 12rem;
   min-width: 0;
-  max-width: 8rem;
+  max-width: 12rem;
 }
 
 .put-away-list-table .user-inv-table__text-col {

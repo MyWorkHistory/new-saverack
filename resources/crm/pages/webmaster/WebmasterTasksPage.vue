@@ -393,7 +393,6 @@ function openStatusModal(task) {
 }
 
 function closeStatusModal() {
-  if (statusPickerBusy.value) return;
   statusModalOpen.value = false;
   statusModalTask.value = null;
 }
@@ -416,7 +415,8 @@ async function saveTaskStatusFromModal() {
       rows.value[idx] = { ...rows.value[idx], ...data };
     }
     toast.success("Status updated.");
-    closeStatusModal();
+    statusModalOpen.value = false;
+    statusModalTask.value = null;
   } catch (e) {
     task.status = prev;
     toast.errorFrom(e, "Could not update status.");

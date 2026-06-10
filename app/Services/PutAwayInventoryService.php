@@ -61,11 +61,25 @@ class PutAwayInventoryService
             $snapshot !== null
             && $snapshot->status === PutAwaySnapshot::STATUS_OK
             && (int) $snapshot->row_count > 0
+            && $this->snapshotHasUsableMetrics($snapshot)
         ) {
             return $this->paginateSnapshotRows($snapshot, $query, $first, $after);
         }
 
         return $this->listLiveFromInventory($clientAccountId, $customerId, $query, $first, $after, $searchSkip);
+    }
+
+    private function snapshotHasUsableMetrics(PutAwaySnapshot $snapshot): bool
+    {
+        return PutAwaySnapshotRow::query()
+            ->where('put_away_snapshot_id', $snapshot->id)
+            ->where(function ($q) {
+                $q->where('on_hand', '>', 0)
+                    ->orWhere('receiving_qty', '>', 0)
+                    ->orWhere('pickable_qty', '>', 0)
+                    ->orWhere('backorder', '>', 0);
+            })
+            ->exists();
     }
 
     /**
@@ -151,9 +165,10 @@ class PutAwayInventoryService
                 'client_account_id' => $clientAccountId,
             ];
         }
-        $rows = $this->enrichLivePutAwayRows($clientAccountId, $rows);
+        $rows = $this->hydrateLivePutAwayRows($clientAccountId, $rows);
 
         $pageInfo = is_array($page['page_info'] ?? null) ? $page['page_info'] : [];
+        $metaSource = 'inventory_list';
 
         return [
             'rows' => $rows,
@@ -174,7 +189,7 @@ class PutAwayInventoryService
                 'status' => 'live',
                 'error_message' => null,
                 'duration_ms' => null,
-                'source' => 'inventory_list',
+                'source' => $metaSource,
             ],
         ];
     }
@@ -183,33 +198,95 @@ class PutAwayInventoryService
      * @param  list<array<string, mixed>>  $rows
      * @return list<array<string, mixed>>
      */
-    private function enrichLivePutAwayRows(int $clientAccountId, array $rows): array
+    private function hydrateLivePutAwayRows(int $clientAccountId, array $rows): array
     {
         if ($rows === []) {
             return [];
         }
 
+        $snapshot = PutAwaySnapshot::query()
+            ->where('client_account_id', $clientAccountId)
+            ->where('status', PutAwaySnapshot::STATUS_OK)
+            ->first();
+
+        $snapshotBySku = [];
+        if ($snapshot !== null) {
+            $skuKeys = [];
+            foreach ($rows as $row) {
+                $sku = trim((string) ($row['sku'] ?? ''));
+                if ($sku !== '') {
+                    $skuKeys[mb_strtolower($sku)] = $sku;
+                }
+            }
+            if ($skuKeys !== []) {
+                $placeholders = implode(',', array_fill(0, count($skuKeys), '?'));
+                $snapshotRows = PutAwaySnapshotRow::query()
+                    ->where('put_away_snapshot_id', $snapshot->id)
+                    ->whereRaw('LOWER(sku) IN ('.$placeholders.')', array_keys($skuKeys))
+                    ->get();
+                foreach ($snapshotRows as $snapRow) {
+                    $snapshotBySku[mb_strtolower((string) $snapRow->sku)] = $snapRow;
+                }
+            }
+        }
+
         $out = [];
         foreach ($rows as $row) {
             $sku = trim((string) ($row['sku'] ?? ''));
-            $product = $sku !== '' ? $this->detailCache->getCachedProduct($clientAccountId, $sku) : null;
-            $locations = PutAwayRowBuilder::locationsFromProductDetail($product);
-            $metrics = is_array($product['metrics'] ?? null) ? $product['metrics'] : [];
+            $skuKey = mb_strtolower($sku);
+            $snapRow = $snapshotBySku[$skuKey] ?? null;
+            if ($snapRow !== null && $this->snapshotRowHasUsableMetrics($snapRow)) {
+                $out[] = [
+                    'sku' => $snapRow->sku,
+                    'name' => $snapRow->name,
+                    'barcode' => $snapRow->barcode,
+                    'image_url' => $snapRow->image_url,
+                    'receiving_qty' => (int) $snapRow->receiving_qty,
+                    'pickable_qty' => (int) $snapRow->pickable_qty,
+                    'non_pickable_qty' => (int) $snapRow->non_pickable_qty,
+                    'on_hand' => (int) $snapRow->on_hand,
+                    'backorder' => (int) $snapRow->backorder,
+                    'client_account_id' => $clientAccountId,
+                ];
+                continue;
+            }
 
-            $built = PutAwayRowBuilder::buildRow(
-                $sku,
-                (string) ($row['name'] ?? $product['name'] ?? $sku),
-                isset($row['barcode']) ? (string) $row['barcode'] : (isset($product['barcode']) ? (string) $product['barcode'] : null),
-                isset($row['image_url']) ? (string) $row['image_url'] : (isset($product['image_url']) ? (string) $product['image_url'] : null),
-                $locations,
-                (int) round((float) ($metrics['on_hand'] ?? $row['on_hand'] ?? 0)),
-                (int) round((float) ($metrics['backorder'] ?? $row['backorder'] ?? 0))
-            );
-            $built['client_account_id'] = $clientAccountId;
-            $out[] = $built;
+            $out[] = $this->buildLivePutAwayRow($clientAccountId, $row);
         }
 
         return $out;
+    }
+
+    private function snapshotRowHasUsableMetrics(PutAwaySnapshotRow $row): bool
+    {
+        return (int) $row->on_hand > 0
+            || (int) $row->receiving_qty > 0
+            || (int) $row->pickable_qty > 0
+            || (int) $row->backorder > 0;
+    }
+
+    /**
+     * @param  array<string, mixed>  $row
+     * @return array<string, mixed>
+     */
+    private function buildLivePutAwayRow(int $clientAccountId, array $row): array
+    {
+        $sku = trim((string) ($row['sku'] ?? ''));
+        $product = $sku !== '' ? $this->detailCache->getCachedProduct($clientAccountId, $sku) : null;
+        $locations = PutAwayRowBuilder::locationsFromProductDetail($product);
+
+        $built = PutAwayRowBuilder::buildRow(
+            $sku,
+            (string) ($row['name'] ?? $product['name'] ?? $sku),
+            isset($row['barcode']) ? (string) $row['barcode'] : (isset($product['barcode']) ? (string) $product['barcode'] : null),
+            isset($row['image_url']) ? (string) $row['image_url'] : (isset($product['image_url']) ? (string) $product['image_url'] : null),
+            $locations,
+            (int) ($row['on_hand'] ?? 0),
+            (int) ($row['backorder'] ?? 0)
+        );
+        $built['client_account_id'] = $clientAccountId;
+
+        return $built;
     }
 
     /**
@@ -254,6 +331,7 @@ class PutAwayInventoryService
 
         try {
             PutAwaySnapshotRow::query()->where('put_away_snapshot_id', $snapshot->id)->delete();
+            $this->detailCache->clearForClientAccount($clientAccountId);
 
             $this->ensureAccountIndex($clientAccountId, $customerId);
             $allowList = $this->loadAccountSkuAllowList($clientAccountId);
@@ -269,11 +347,11 @@ class PutAwayInventoryService
                 $backorder = (int) round((float) ($indexRow['backorder'] ?? 0));
 
                 if ($locations === []) {
-                    $product = $this->resolveProductDetailForPutAway(
-                        $clientAccountId,
-                        $customerId,
-                        (string) ($indexRow['sku'] ?? '')
-                    );
+                    $sku = (string) ($indexRow['sku'] ?? '');
+                    $product = $this->inventory->getProductDetailBySku($sku, null, $customerId, false);
+                    if ($product !== null) {
+                        $this->detailCache->putProduct($clientAccountId, $sku, $product);
+                    }
                     $locations = PutAwayRowBuilder::locationsFromProductDetail($product);
                     $metrics = is_array($product['metrics'] ?? null) ? $product['metrics'] : [];
                     if ($metrics !== []) {

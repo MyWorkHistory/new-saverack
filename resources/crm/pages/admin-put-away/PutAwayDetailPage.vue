@@ -71,25 +71,49 @@ const receivingLocation = computed(
   () => allLocations.value.find((loc) => isReceivingLocation(loc)) ?? null,
 );
 
-const receivingQty = computed(() => Number(receivingLocation.value?.quantity ?? 0));
-
 const putAwayMetrics = computed(() => {
   let pickable = 0;
   let nonPickable = 0;
-  allLocations.value.forEach((loc) => {
-    const qty = Number(loc.quantity ?? 0);
-    if (loc.pickable === true) pickable += qty;
-    else if (loc.pickable === false) nonPickable += qty;
+  let receiving = 0;
+  let onHandFromWh = 0;
+  let backorderFromWh = 0;
+  const receivingName = RECEIVING_LOCATION_NAME.toLowerCase();
+
+  (product.value?.warehouses || []).forEach((wh) => {
+    onHandFromWh += Number(wh.on_hand ?? 0);
+    backorderFromWh += Number(wh.backorder ?? 0);
+    (wh.locations || []).forEach((loc) => {
+      const qty = Number(loc?.quantity ?? 0);
+      if (qty <= 0) return;
+      const locName = String(loc.location_name || "").trim().toLowerCase();
+      if (locName === receivingName) receiving += qty;
+      if (loc.pickable === true) pickable += qty;
+      else if (loc.pickable === false) nonPickable += qty;
+    });
   });
+
   const m = product.value?.metrics || {};
   return {
-    receiving: receivingQty.value,
+    receiving,
     pickable,
     non_pickable: nonPickable,
-    on_hand: Number(m.on_hand ?? 0),
-    backorder: Number(m.backorder ?? 0),
+    on_hand: Number(m.on_hand ?? 0) || onHandFromWh,
+    backorder: Number(m.backorder ?? 0) || backorderFromWh,
   };
 });
+
+const receivingQty = computed(() => Number(putAwayMetrics.value.receiving ?? 0));
+
+function metricsAllZero() {
+  const m = putAwayMetrics.value;
+  return (
+    Number(m.receiving || 0) === 0
+    && Number(m.pickable || 0) === 0
+    && Number(m.non_pickable || 0) === 0
+    && Number(m.on_hand || 0) === 0
+    && Number(m.backorder || 0) === 0
+  );
+}
 
 const metricCards = computed(() =>
   [
@@ -238,6 +262,9 @@ async function loadProduct({ refresh = false } = {}) {
 async function loadDetail() {
   loading.value = true;
   await loadProduct({ refresh: false });
+  if (product.value && metricsAllZero()) {
+    await loadProduct({ refresh: true });
+  }
   loading.value = false;
 }
 

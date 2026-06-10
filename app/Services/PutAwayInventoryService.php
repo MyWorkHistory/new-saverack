@@ -50,14 +50,9 @@ class PutAwayInventoryService
             throw new RuntimeException('This account is not linked to ShipHero.');
         }
 
-        $snapshot = PutAwaySnapshot::query()->where('client_account_id', $clientAccountId)->first();
         if ($refresh) {
             $snapshot = $this->rebuildSnapshot($clientAccountId, $account, $customerId);
 
-            return $this->paginateSnapshotRows($snapshot, $query, $first, $after);
-        }
-
-        if ($snapshot !== null && $snapshot->status === PutAwaySnapshot::STATUS_OK) {
             return $this->paginateSnapshotRows($snapshot, $query, $first, $after);
         }
 
@@ -185,53 +180,52 @@ class PutAwayInventoryService
             return [];
         }
 
-        $warehouseId = $this->resolveWarehouseId();
-        $allowList = [];
-        foreach ($rows as $row) {
-            $sku = trim((string) ($row['sku'] ?? ''));
-            if ($sku === '') {
-                continue;
-            }
-            $allowList[mb_strtolower($sku)] = ['sku' => $sku];
-        }
-
-        $locationDataBySku = $this->scanWarehouseLocationsForSkus($warehouseId, $allowList, true);
         $out = [];
         foreach ($rows as $row) {
             $sku = trim((string) ($row['sku'] ?? ''));
-            $skuKey = mb_strtolower($sku);
-            $locData = $locationDataBySku[$skuKey] ?? null;
-            $locations = is_array($locData['locations'] ?? null) ? $locData['locations'] : [];
-
-            if ($locations === [] && $sku !== '') {
-                $product = $this->detailCache->getCachedProduct($clientAccountId, $sku);
-                if ($product === null) {
-                    $product = $this->inventory->getProductDetailBySku($sku, $warehouseId, $customerId);
-                    if ($product !== null) {
-                        $this->detailCache->putProduct($clientAccountId, $sku, $product);
-                    }
-                }
-                $locations = PutAwayRowBuilder::locationsFromProductDetail($product);
-            }
-
-            $onHand = isset($locData['on_hand'])
-                ? (int) $locData['on_hand']
-                : (int) ($row['on_hand'] ?? 0);
+            $product = $this->resolveProductDetailForPutAway($clientAccountId, $customerId, $sku);
+            $locations = PutAwayRowBuilder::locationsFromProductDetail($product);
+            $metrics = is_array($product['metrics'] ?? null) ? $product['metrics'] : [];
 
             $built = PutAwayRowBuilder::buildRow(
                 $sku,
-                (string) ($row['name'] ?? $sku),
-                isset($row['barcode']) ? (string) $row['barcode'] : null,
-                isset($row['image_url']) ? (string) $row['image_url'] : null,
+                (string) ($row['name'] ?? $product['name'] ?? $sku),
+                isset($row['barcode']) ? (string) $row['barcode'] : (isset($product['barcode']) ? (string) $product['barcode'] : null),
+                isset($row['image_url']) ? (string) $row['image_url'] : (isset($product['image_url']) ? (string) $product['image_url'] : null),
                 $locations,
-                $onHand,
-                (int) ($row['backorder'] ?? 0)
+                (int) round((float) ($metrics['on_hand'] ?? $row['on_hand'] ?? 0)),
+                (int) round((float) ($metrics['backorder'] ?? $row['backorder'] ?? 0))
             );
             $built['client_account_id'] = $clientAccountId;
             $out[] = $built;
         }
 
         return $out;
+    }
+
+    /**
+     * Match inventory product detail: load by account SKU without warehouse filter.
+     *
+     * @return array<string, mixed>|null
+     */
+    private function resolveProductDetailForPutAway(int $clientAccountId, string $customerId, string $sku): ?array
+    {
+        $sku = trim($sku);
+        if ($sku === '') {
+            return null;
+        }
+
+        $product = $this->detailCache->getCachedProduct($clientAccountId, $sku);
+        if ($product !== null) {
+            return $product;
+        }
+
+        $product = $this->inventory->getProductDetailBySku($sku, null, $customerId, false);
+        if ($product !== null) {
+            $this->detailCache->putProduct($clientAccountId, $sku, $product);
+        }
+
+        return $product;
     }
 
     private function rebuildSnapshot(int $clientAccountId, ClientAccount $account, string $customerId): PutAwaySnapshot
@@ -264,6 +258,20 @@ class PutAwayInventoryService
                     ? (int) $locData['on_hand']
                     : (int) round((float) ($indexRow['on_hand'] ?? 0));
                 $backorder = (int) round((float) ($indexRow['backorder'] ?? 0));
+
+                if ($locations === []) {
+                    $product = $this->resolveProductDetailForPutAway(
+                        $clientAccountId,
+                        $customerId,
+                        (string) ($indexRow['sku'] ?? '')
+                    );
+                    $locations = PutAwayRowBuilder::locationsFromProductDetail($product);
+                    $metrics = is_array($product['metrics'] ?? null) ? $product['metrics'] : [];
+                    if ($metrics !== []) {
+                        $onHand = (int) round((float) ($metrics['on_hand'] ?? $onHand));
+                        $backorder = (int) round((float) ($metrics['backorder'] ?? $backorder));
+                    }
+                }
 
                 $builtRows[] = PutAwayRowBuilder::buildRow(
                     (string) $indexRow['sku'],

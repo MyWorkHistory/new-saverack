@@ -374,7 +374,7 @@ onUnmounted(() => {
                   class="user-inv-table__sku-link user-inv-table__name-link"
                   @click="openPutAwayInNewTab(row, $event)"
                 >
-                  <span class="user-inv-table__name-text">{{ row.name || "—" }}</span>
+                  <span class="user-inv-table__name-text" :title="row.name || undefined">{{ row.name || "—" }}</span>
                 </a>
               </td>
               <td class="user-inv-table__text-col small">{{ row.barcode || "—" }}</td>
@@ -446,7 +446,6 @@ onUnmounted(() => {
 .put-away-list-table {
   table-layout: fixed;
   width: 100%;
-  min-width: 52rem;
 }
 
 .put-away-list-table--syncing {
@@ -473,18 +472,19 @@ onUnmounted(() => {
 }
 
 .put-away-list-table .user-inv-table__sku-col {
-  width: 10rem;
-  min-width: 8rem;
+  width: 8rem;
+  min-width: 6rem;
 }
 
 .put-away-list-table .user-inv-table__name-col {
   width: auto;
   min-width: 0;
+  max-width: 14rem;
 }
 
 .put-away-list-table .user-inv-table__text-col {
-  width: 8rem;
-  min-width: 6rem;
+  width: 7rem;
+  min-width: 5rem;
 }
 
 .put-away-list-table .user-inv-table__image-link {
@@ -509,15 +509,22 @@ onUnmounted(() => {
 }
 
 .put-away-list-table .user-inv-table__name-text {
-  display: block;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
   white-space: normal;
   word-break: break-word;
-  line-height: 1.4;
+  line-height: 1.35;
+  max-height: calc(1.35em * 2);
 }
 
 .put-away-list-table .user-inv-table__num-col {
-  min-width: 5rem;
-  width: 5rem;
+  min-width: 4.25rem;
+  width: 4.25rem;
+  padding-left: 0.25rem;
+  padding-right: 0.25rem;
+  font-size: 0.875rem;
 }
 
 .put-away-list-table .user-inventory-thumb {

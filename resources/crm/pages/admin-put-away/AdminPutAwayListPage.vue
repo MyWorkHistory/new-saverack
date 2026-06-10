@@ -122,7 +122,7 @@ async function fetchPage(append) {
   } else if (append && pageInfo.value?.end_cursor) {
     params.after = pageInfo.value.end_cursor;
   }
-  const { data } = await api.get("/admin/put-away", { params });
+  const { data } = await api.get("/admin/put-away", { params, timeout: 120000 });
   applyListPayload(data, append);
 }
 
@@ -444,7 +444,9 @@ onUnmounted(() => {
 }
 
 .put-away-list-table {
-  min-width: 64rem;
+  table-layout: fixed;
+  width: 100%;
+  min-width: 52rem;
 }
 
 .put-away-list-table--syncing {
@@ -461,6 +463,61 @@ onUnmounted(() => {
   min-width: 4.5rem;
   text-align: center;
   vertical-align: middle;
+}
+
+.put-away-list-table .user-inv-table__text-col,
+.put-away-list-table .user-inv-table__sku-col,
+.put-away-list-table .user-inv-table__name-col {
+  text-align: start;
+  vertical-align: middle;
+}
+
+.put-away-list-table .user-inv-table__sku-col {
+  width: 10rem;
+  min-width: 8rem;
+}
+
+.put-away-list-table .user-inv-table__name-col {
+  width: auto;
+  min-width: 0;
+}
+
+.put-away-list-table .user-inv-table__text-col {
+  width: 8rem;
+  min-width: 6rem;
+}
+
+.put-away-list-table .user-inv-table__image-link {
+  display: inline-block;
+  line-height: 0;
+  text-decoration: none;
+}
+
+.put-away-list-table .user-inv-table__sku-link {
+  color: #2563eb;
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.put-away-list-table .user-inv-table__sku-link:hover {
+  color: #1d4ed8;
+  text-decoration: underline;
+}
+
+.put-away-list-table .user-inv-table__name-link {
+  font-weight: 400;
+}
+
+.put-away-list-table .user-inv-table__name-text {
+  display: block;
+  white-space: normal;
+  word-break: break-word;
+  line-height: 1.4;
+}
+
+.put-away-list-table .user-inv-table__num-col {
+  min-width: 5rem;
+  width: 5rem;
 }
 
 .put-away-list-table .user-inventory-thumb {

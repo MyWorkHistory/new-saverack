@@ -93,8 +93,8 @@ class PutAwayInventoryService
     }
 
     /**
-     * Fast list path (no snapshot): same inventory index / ShipHero pagination as the inventory list page.
-     * Receiving / pickable columns use cached product detail when available; use Refresh for a full snapshot.
+     * Fast list path (no snapshot): same inventory index / ShipHero pagination as the inventory list page,
+     * with warehouse location enrichment for receiving / pickable / non-pickable columns.
      *
      * @return array{rows: list<array<string, mixed>>, page_info: array{has_next_page: bool, end_cursor: string|null, next_search_skip?: int|null}, meta: array<string, mixed>}
      */
@@ -137,8 +137,17 @@ class PutAwayInventoryService
             if (! is_array($invRow)) {
                 continue;
             }
-            $rows[] = $this->putAwayRowFromInventoryListRow($clientAccountId, $invRow);
+            $rows[] = [
+                'sku' => trim((string) ($invRow['sku'] ?? '')),
+                'name' => (string) ($invRow['name'] ?? ''),
+                'barcode' => isset($invRow['barcode']) ? (string) $invRow['barcode'] : null,
+                'image_url' => isset($invRow['image_url']) ? (string) $invRow['image_url'] : null,
+                'on_hand' => (int) round((float) ($invRow['on_hand'] ?? 0)),
+                'backorder' => (int) round((float) ($invRow['backorder'] ?? 0)),
+                'client_account_id' => $clientAccountId,
+            ];
         }
+        $rows = $this->enrichLivePutAwayRows($clientAccountId, $customerId, $rows);
 
         $pageInfo = is_array($page['page_info'] ?? null) ? $page['page_info'] : [];
 
@@ -167,27 +176,62 @@ class PutAwayInventoryService
     }
 
     /**
-     * @param  array<string, mixed>  $invRow
-     * @return array<string, mixed>
+     * @param  list<array<string, mixed>>  $rows
+     * @return list<array<string, mixed>>
      */
-    private function putAwayRowFromInventoryListRow(int $clientAccountId, array $invRow): array
+    private function enrichLivePutAwayRows(int $clientAccountId, string $customerId, array $rows): array
     {
-        $sku = trim((string) ($invRow['sku'] ?? ''));
-        $product = $sku !== '' ? $this->detailCache->getCachedProduct($clientAccountId, $sku) : null;
-        $locations = PutAwayRowBuilder::locationsFromProductDetail($product);
+        if ($rows === []) {
+            return [];
+        }
 
-        $row = PutAwayRowBuilder::buildRow(
-            $sku,
-            (string) ($invRow['name'] ?? $sku),
-            isset($invRow['barcode']) ? (string) $invRow['barcode'] : null,
-            isset($invRow['image_url']) ? (string) $invRow['image_url'] : null,
-            $locations,
-            (int) round((float) ($invRow['on_hand'] ?? 0)),
-            (int) round((float) ($invRow['backorder'] ?? 0))
-        );
-        $row['client_account_id'] = $clientAccountId;
+        $warehouseId = $this->resolveWarehouseId();
+        $allowList = [];
+        foreach ($rows as $row) {
+            $sku = trim((string) ($row['sku'] ?? ''));
+            if ($sku === '') {
+                continue;
+            }
+            $allowList[mb_strtolower($sku)] = ['sku' => $sku];
+        }
 
-        return $row;
+        $locationDataBySku = $this->scanWarehouseLocationsForSkus($warehouseId, $allowList, true);
+        $out = [];
+        foreach ($rows as $row) {
+            $sku = trim((string) ($row['sku'] ?? ''));
+            $skuKey = mb_strtolower($sku);
+            $locData = $locationDataBySku[$skuKey] ?? null;
+            $locations = is_array($locData['locations'] ?? null) ? $locData['locations'] : [];
+
+            if ($locations === [] && $sku !== '') {
+                $product = $this->detailCache->getCachedProduct($clientAccountId, $sku);
+                if ($product === null) {
+                    $product = $this->inventory->getProductDetailBySku($sku, $warehouseId, $customerId);
+                    if ($product !== null) {
+                        $this->detailCache->putProduct($clientAccountId, $sku, $product);
+                    }
+                }
+                $locations = PutAwayRowBuilder::locationsFromProductDetail($product);
+            }
+
+            $onHand = isset($locData['on_hand'])
+                ? (int) $locData['on_hand']
+                : (int) ($row['on_hand'] ?? 0);
+
+            $built = PutAwayRowBuilder::buildRow(
+                $sku,
+                (string) ($row['name'] ?? $sku),
+                isset($row['barcode']) ? (string) $row['barcode'] : null,
+                isset($row['image_url']) ? (string) $row['image_url'] : null,
+                $locations,
+                $onHand,
+                (int) ($row['backorder'] ?? 0)
+            );
+            $built['client_account_id'] = $clientAccountId;
+            $out[] = $built;
+        }
+
+        return $out;
     }
 
     private function rebuildSnapshot(int $clientAccountId, ClientAccount $account, string $customerId): PutAwaySnapshot
@@ -354,7 +398,7 @@ class PutAwayInventoryService
      * @param  array<string, array<string, mixed>>  $allowList
      * @return array<string, array{locations: list<array<string, mixed>>, on_hand: int}>
      */
-    private function scanWarehouseLocationsForSkus(string $warehouseId, array $allowList): array
+    private function scanWarehouseLocationsForSkus(string $warehouseId, array $allowList, bool $stopWhenComplete = false): array
     {
         if ($allowList === []) {
             return [];
@@ -365,6 +409,7 @@ class PutAwayInventoryService
         $catalogByName = is_array($catalog['by_name'] ?? null) ? $catalog['by_name'] : [];
 
         $out = [];
+        $remaining = $stopWhenComplete ? count($allowList) : null;
         $after = null;
         do {
             $pageResult = $this->inventory->paginateWarehouseProductsForRestock($warehouseId, $after);
@@ -386,7 +431,7 @@ class PutAwayInventoryService
                     continue;
                 }
                 $skuKey = mb_strtolower($sku);
-                if (! isset($allowList[$skuKey])) {
+                if (! isset($allowList[$skuKey]) || isset($out[$skuKey])) {
                     continue;
                 }
 
@@ -401,6 +446,13 @@ class PutAwayInventoryService
                     'locations' => $locations,
                     'on_hand' => (int) round((float) ($wp['on_hand'] ?? 0)),
                 ];
+
+                if ($stopWhenComplete && $remaining !== null) {
+                    $remaining--;
+                    if ($remaining <= 0) {
+                        break 2;
+                    }
+                }
             }
 
             $pageInfo = is_array($pageResult['page_info'] ?? null) ? $pageResult['page_info'] : [];

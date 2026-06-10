@@ -113,7 +113,7 @@ const metricCards = computed(() =>
     },
     {
       key: "on_hand",
-      label: "On-Hand",
+      label: "On Hand",
       tone: "purple",
       iconPath: "M2 13h11l2-3h7v7h-2 M6 17a2 2 0 1 0 0 .01 M18 17a2 2 0 1 0 0 .01",
     },
@@ -563,7 +563,7 @@ onUnmounted(() => {
                   </svg>
                 </div>
               </div>
-              <div class="inventory-portal-detail__metric-value">{{ card.value }}</div>
+              <div class="inventory-portal-detail__metric-value">{{ card.value.toLocaleString() }}</div>
             </div>
           </div>
         </div>
@@ -891,6 +891,65 @@ onUnmounted(() => {
 </style>
 
 <style scoped>
+.inventory-metric-card {
+  text-align: left;
+  position: relative;
+  min-height: 96px;
+}
+.inventory-metric-card__head {
+  display: block;
+  margin-bottom: 0.5rem;
+}
+.inventory-metric-card__left {
+  padding-right: 56px;
+}
+.inventory-metric-card__right {
+  width: 44px;
+  height: 44px;
+  position: absolute;
+  right: 0.75rem;
+  top: 50%;
+  transform: translateY(-50%);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.inventory-metric-card__icon {
+  width: 44px;
+  height: 44px;
+  padding: 9px;
+  border-radius: 999px;
+  flex-shrink: 0;
+  margin: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  line-height: 0;
+}
+.inventory-metric-card__icon path {
+  display: block;
+}
+.inventory-metric-card__icon--blue {
+  color: #1d4ed8;
+  background: #dbeafe;
+}
+.inventory-metric-card__icon--amber {
+  color: #b45309;
+  background: #fef3c7;
+}
+.inventory-metric-card__icon--green {
+  color: #15803d;
+  background: #dcfce7;
+}
+.inventory-metric-card__icon--red {
+  color: #b91c1c;
+  background: #fee2e2;
+}
+.inventory-metric-card__icon--purple {
+  color: #6d28d9;
+  background: #ede9fe;
+}
+
 .inventory-detail__toggle {
   border: 1px solid rgba(15, 23, 42, 0.12);
   border-radius: 999px;

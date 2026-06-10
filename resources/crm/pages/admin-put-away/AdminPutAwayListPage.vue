@@ -23,8 +23,9 @@ const accounts = ref([]);
 const selectedAccountId = ref("");
 const searchDraft = ref("");
 const searchCommitted = ref("");
+const searchSkipNext = ref(0);
 const pageInfo = ref({ has_next_page: false, end_cursor: null });
-const meta = ref({ computed_at: null, stale: false, row_count: 0 });
+const meta = ref({ computed_at: null, stale: false, row_count: 0, source: null });
 
 const lineMenuOpenSku = ref(null);
 const lineMenuRect = ref({ top: 0, left: 0 });
@@ -52,24 +53,21 @@ const lastUpdatedLabel = computed(() => {
   return formatDateTimeUs(d);
 });
 
-const isBuildingSnapshot = computed(() => meta.value?.status === "running" || refreshing.value);
-
 const emptyTableMessage = computed(() => {
   if (!canLoad.value) return "Select an account.";
-  if (meta.value?.status === "failed") {
-    return meta.value?.error_message || "Snapshot failed. Click Refresh to try again.";
-  }
-  if (isBuildingSnapshot.value) return "Building snapshot from ShipHero…";
-  if (!meta.value?.computed_at && Number(meta.value?.row_count || 0) === 0) {
-    return "Click Refresh to load products from ShipHero.";
-  }
   return "No products found.";
 });
 
-function applyListPayload(data) {
-  rows.value = Array.isArray(data?.rows) ? data.rows : [];
+function applyListPayload(data, append = false) {
+  const nextRows = Array.isArray(data?.rows) ? data.rows : [];
+  rows.value = append ? [...rows.value, ...nextRows] : nextRows;
   pageInfo.value = data?.page_info || { has_next_page: false, end_cursor: null };
   meta.value = data?.meta || meta.value;
+  if (typeof data?.page_info?.next_search_skip === "number") {
+    searchSkipNext.value = Number(data.page_info.next_search_skip);
+  } else if (!append) {
+    searchSkipNext.value = 0;
+  }
 }
 
 function putAwayDetailTo(row) {
@@ -111,61 +109,48 @@ async function loadAccounts() {
   }
 }
 
-async function fetchPage(append, forceRefresh = false) {
+async function fetchPage(append) {
   if (!canLoad.value) return;
   const params = {
     client_account_id: accountId.value,
     first: LIST_PAGE_SIZE,
   };
-  if (append && pageInfo.value?.end_cursor) {
-    params.after = pageInfo.value.end_cursor;
-  }
   const q = searchCommitted.value.trim();
   if (q) {
     params.query = q;
-  }
-  if (forceRefresh) {
-    params.refresh = 1;
+    params.search_skip = searchSkipNext.value;
+  } else if (append && pageInfo.value?.end_cursor) {
+    params.after = pageInfo.value.end_cursor;
   }
   const { data } = await api.get("/admin/put-away", { params });
-  const nextRows = Array.isArray(data?.rows) ? data.rows : [];
-  if (append) {
-    rows.value = [...rows.value, ...nextRows];
-    pageInfo.value = data?.page_info || { has_next_page: false, end_cursor: null };
-    meta.value = data?.meta || meta.value;
-  } else {
-    applyListPayload(data);
-  }
+  applyListPayload(data, append);
 }
 
-async function loadRows(reset = false, forceRefresh = false) {
+async function loadRows(reset = false) {
   if (!canLoad.value) {
     rows.value = [];
     return;
   }
-  loading.value = true;
   if (reset) {
+    loading.value = true;
     pageInfo.value = { has_next_page: false, end_cursor: null };
+    searchSkipNext.value = 0;
+  } else {
+    loadingMore.value = true;
   }
   try {
-    await fetchPage(false, forceRefresh);
+    await fetchPage(!reset);
   } catch (e) {
     toast.errorFrom(e, "Could not load put away list.");
   } finally {
     loading.value = false;
+    loadingMore.value = false;
   }
 }
 
 async function loadMore() {
-  if (!pageInfo.value?.has_next_page || loadingMore.value) return;
-  loadingMore.value = true;
-  try {
-    await fetchPage(true, false);
-  } catch (e) {
-    toast.errorFrom(e, "Could not load more rows.");
-  } finally {
-    loadingMore.value = false;
-  }
+  if (!pageInfo.value?.has_next_page || loadingMore.value || loading.value) return;
+  await loadRows(false);
 }
 
 async function refreshRows() {
@@ -192,12 +177,15 @@ async function refreshRows() {
 
 function commitSearch() {
   searchCommitted.value = searchDraft.value.trim();
+  searchSkipNext.value = 0;
   loadRows(true);
 }
 
 function onAccountChange() {
   searchDraft.value = "";
   searchCommitted.value = "";
+  searchSkipNext.value = 0;
+  rows.value = [];
   loadRows(true);
 }
 
@@ -250,7 +238,7 @@ onUnmounted(() => {
       <div class="min-w-0 flex-grow-1">
         <h1 class="h4 mb-1 fw-bold text-body">Put Away</h1>
         <p class="text-secondary small mb-0">
-          Search by name, SKU, or barcode. Select a client account to load products. Data refreshes every 30 minutes.
+          Search by name, SKU, or barcode. Select a client account to load products. Use Refresh to sync receiving and pickable quantities from ShipHero.
         </p>
       </div>
       <div class="d-flex align-items-center gap-2 flex-shrink-0 ms-md-auto">
@@ -270,7 +258,7 @@ onUnmounted(() => {
       </div>
     </div>
 
-    <div class="staff-table-card staff-datatable-card staff-datatable-card--white w-100">
+    <div class="staff-table-card staff-datatable-card staff-datatable-card--white w-100 put-away-list-toolbar">
       <div class="staff-table-toolbar">
         <div class="staff-table-toolbar--row inventory-toolbar-row">
           <div class="inventory-toolbar-account flex-shrink-0">
@@ -280,7 +268,7 @@ onUnmounted(() => {
               appearance="staff"
               aria-label="Client account"
               :options="accountOptions"
-              :disabled="accountsLoading || loading"
+              :disabled="accountsLoading"
               placeholder="Select account"
               search-placeholder="Search accounts…"
               :allow-empty="false"
@@ -318,22 +306,15 @@ onUnmounted(() => {
         Select a client account to load the put away list.
       </div>
 
-      <div v-else-if="(loading || isBuildingSnapshot) && !rows.length" class="text-center py-5">
-        <CrmLoadingSpinner :label="isBuildingSnapshot ? 'Building snapshot from ShipHero…' : 'Loading put away list…'" />
-      </div>
-
-      <div
-        v-else-if="meta.status === 'failed' && !rows.length"
-        class="text-center text-secondary py-5 px-3"
-      >
-        <p class="mb-2">{{ emptyTableMessage }}</p>
-        <button type="button" class="btn btn-sm btn-primary staff-page-primary" :disabled="refreshing" @click="refreshRows">
-          Retry Refresh
-        </button>
+      <div v-else-if="loading && !rows.length" class="text-center py-5">
+        <CrmLoadingSpinner label="Loading put away list…" />
       </div>
 
       <div v-else class="table-responsive staff-table-wrap">
-        <table class="table table-hover align-middle mb-0 staff-data-table user-inv-table put-away-list-table">
+        <table
+          class="table table-hover align-middle mb-0 staff-data-table user-inv-table put-away-list-table"
+          :class="{ 'put-away-list-table--syncing': loading || loadingMore }"
+        >
           <thead class="table-light staff-table-head">
             <tr>
               <th class="staff-table-head__th user-inv-table__image-col" scope="col">Image</th>
@@ -457,8 +438,18 @@ onUnmounted(() => {
 </template>
 
 <style scoped>
+.put-away-list-toolbar .inventory-toolbar-account {
+  flex: 0 0 auto;
+  width: min(280px, 100%);
+}
+
 .put-away-list-table {
   min-width: 64rem;
+}
+
+.put-away-list-table--syncing {
+  opacity: 0.55;
+  pointer-events: none;
 }
 
 .put-away-list-table__action-col {

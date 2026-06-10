@@ -20,12 +20,17 @@ class PutAwayInventoryService
     /** @var InventoryRestockReportService */
     protected $restockReports;
 
+    /** @var InventoryProductDetailCacheService */
+    protected $detailCache;
+
     public function __construct(
         ShipHeroInventoryService $inventory,
-        InventoryRestockReportService $restockReports
+        InventoryRestockReportService $restockReports,
+        InventoryProductDetailCacheService $detailCache
     ) {
         $this->inventory = $inventory;
         $this->restockReports = $restockReports;
+        $this->detailCache = $detailCache;
     }
 
     /**
@@ -36,7 +41,8 @@ class PutAwayInventoryService
         ?string $query,
         int $first,
         ?string $after,
-        bool $refresh = false
+        bool $refresh = false,
+        int $searchSkip = 0
     ): array {
         $account = ClientAccount::query()->findOrFail($clientAccountId);
         $customerId = trim((string) $account->shiphero_customer_account_id);
@@ -45,11 +51,17 @@ class PutAwayInventoryService
         }
 
         $snapshot = PutAwaySnapshot::query()->where('client_account_id', $clientAccountId)->first();
-        if ($refresh || $snapshot === null) {
+        if ($refresh) {
             $snapshot = $this->rebuildSnapshot($clientAccountId, $account, $customerId);
+
+            return $this->paginateSnapshotRows($snapshot, $query, $first, $after);
         }
 
-        return $this->paginateSnapshotRows($snapshot, $query, $first, $after);
+        if ($snapshot !== null && $snapshot->status === PutAwaySnapshot::STATUS_OK) {
+            return $this->paginateSnapshotRows($snapshot, $query, $first, $after);
+        }
+
+        return $this->listLiveFromInventory($clientAccountId, $customerId, $query, $first, $after, $searchSkip);
     }
 
     /**
@@ -78,6 +90,104 @@ class PutAwayInventoryService
         }
 
         return $snapshot->computed_at->gte(now()->subMinutes(self::CACHE_TTL_MINUTES));
+    }
+
+    /**
+     * Fast list path (no snapshot): same inventory index / ShipHero pagination as the inventory list page.
+     * Receiving / pickable columns use cached product detail when available; use Refresh for a full snapshot.
+     *
+     * @return array{rows: list<array<string, mixed>>, page_info: array{has_next_page: bool, end_cursor: string|null, next_search_skip?: int|null}, meta: array<string, mixed>}
+     */
+    private function listLiveFromInventory(
+        int $clientAccountId,
+        string $customerId,
+        ?string $query,
+        int $first,
+        ?string $after,
+        int $searchSkip = 0
+    ): array {
+        $searchQuery = is_string($query) ? trim($query) : '';
+        $graphqlAfter = null;
+
+        if ($searchQuery === '' && is_string($after) && $after !== '') {
+            if (preg_match('/^idx:(\d+)$/', $after, $m)) {
+                $searchSkip = max(0, (int) $m[1]);
+            } elseif (ctype_digit($after)) {
+                $searchSkip = max(0, (int) $after);
+            } else {
+                $graphqlAfter = $after;
+            }
+        }
+
+        $page = $this->inventory->listInventoryRows(
+            $customerId,
+            $first,
+            $graphqlAfter,
+            'no',
+            'active',
+            $searchQuery !== '' ? $searchQuery : null,
+            $searchSkip,
+            $clientAccountId,
+            false,
+            false
+        );
+
+        $rows = [];
+        foreach ($page['rows'] ?? [] as $invRow) {
+            if (! is_array($invRow)) {
+                continue;
+            }
+            $rows[] = $this->putAwayRowFromInventoryListRow($clientAccountId, $invRow);
+        }
+
+        $pageInfo = is_array($page['page_info'] ?? null) ? $page['page_info'] : [];
+
+        return [
+            'rows' => $rows,
+            'page_info' => [
+                'has_next_page' => (bool) ($pageInfo['has_next_page'] ?? false),
+                'end_cursor' => isset($pageInfo['end_cursor']) && is_string($pageInfo['end_cursor']) && $pageInfo['end_cursor'] !== ''
+                    ? $pageInfo['end_cursor']
+                    : null,
+                'next_search_skip' => isset($pageInfo['next_search_skip']) && is_numeric($pageInfo['next_search_skip'])
+                    ? (int) $pageInfo['next_search_skip']
+                    : null,
+            ],
+            'meta' => [
+                'computed_at' => null,
+                'stale' => true,
+                'row_count' => count($rows),
+                'filtered_count' => count($rows),
+                'status' => 'live',
+                'error_message' => null,
+                'duration_ms' => null,
+                'source' => 'inventory_list',
+            ],
+        ];
+    }
+
+    /**
+     * @param  array<string, mixed>  $invRow
+     * @return array<string, mixed>
+     */
+    private function putAwayRowFromInventoryListRow(int $clientAccountId, array $invRow): array
+    {
+        $sku = trim((string) ($invRow['sku'] ?? ''));
+        $product = $sku !== '' ? $this->detailCache->getCachedProduct($clientAccountId, $sku) : null;
+        $locations = PutAwayRowBuilder::locationsFromProductDetail($product);
+
+        $row = PutAwayRowBuilder::buildRow(
+            $sku,
+            (string) ($invRow['name'] ?? $sku),
+            isset($invRow['barcode']) ? (string) $invRow['barcode'] : null,
+            isset($invRow['image_url']) ? (string) $invRow['image_url'] : null,
+            $locations,
+            (int) round((float) ($invRow['on_hand'] ?? 0)),
+            (int) round((float) ($invRow['backorder'] ?? 0))
+        );
+        $row['client_account_id'] = $clientAccountId;
+
+        return $row;
     }
 
     private function rebuildSnapshot(int $clientAccountId, ClientAccount $account, string $customerId): PutAwaySnapshot
@@ -368,6 +478,7 @@ class PutAwayInventoryService
                 'status' => $snapshot->status,
                 'error_message' => $snapshot->error_message,
                 'duration_ms' => $snapshot->duration_ms,
+                'source' => 'snapshot',
             ],
         ];
     }

@@ -18,7 +18,8 @@ class PutAwayController extends Controller
             'client_account_id' => ['required', 'integer', 'exists:client_accounts,id'],
             'query' => ['nullable', 'string', 'max:255'],
             'first' => ['sometimes', 'integer', 'min:1', 'max:200'],
-            'after' => ['nullable', 'string', 'max:64'],
+            'after' => ['nullable', 'string', 'max:500'],
+            'search_skip' => ['nullable', 'integer', 'min:0', 'max:500000'],
             'refresh' => ['sometimes', 'boolean'],
         ]);
 
@@ -26,10 +27,11 @@ class PutAwayController extends Controller
         $first = (int) ($validated['first'] ?? 50);
         $after = isset($validated['after']) ? (string) $validated['after'] : null;
         $query = isset($validated['query']) ? (string) $validated['query'] : null;
+        $searchSkip = isset($validated['search_skip']) ? (int) $validated['search_skip'] : 0;
         $refresh = filter_var($validated['refresh'] ?? false, FILTER_VALIDATE_BOOLEAN);
 
         try {
-            return response()->json($putAway->list($clientAccountId, $query, $first, $after, $refresh));
+            return response()->json($putAway->list($clientAccountId, $query, $first, $after, $refresh, $searchSkip));
         } catch (ValidationException $e) {
             throw $e;
         } catch (RuntimeException $e) {

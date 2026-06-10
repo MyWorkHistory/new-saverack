@@ -150,6 +150,11 @@ const isAllPageSelected = computed(
     rows.value.every((r) => selectedIds.value.includes(r.id)),
 );
 
+const selectedDraftCount = computed(() => {
+  const idSet = new Set(selectedIds.value);
+  return rows.value.filter((r) => idSet.has(r.id) && legacyStatusKey(r) === "draft").length;
+});
+
 function toggleRowSelect(id) {
   const i = selectedIds.value.indexOf(id);
   if (i === -1) {
@@ -808,10 +813,13 @@ function closeBulkDelete() {
 }
 
 const bulkSendMessage = computed(() => {
-  const n = selectedIds.value.length;
-  return n
-    ? `Send ${n} selected invoice${n === 1 ? "" : "s"}? Only drafts will be sent successfully; other statuses are skipped.`
-    : "";
+  const n = selectedDraftCount.value;
+  const total = selectedIds.value.length;
+  if (n < 1) return "";
+  if (n === total) {
+    return `Send ${n} draft invoice${n === 1 ? "" : "s"}?`;
+  }
+  return `Send ${n} draft invoice${n === 1 ? "" : "s"}? Already-sent or paid invoices in your selection will be skipped.`;
 });
 
 const bulkVoidMessage = computed(() => {
@@ -832,16 +840,23 @@ const bulkDeleteMessage = computed(() => {
 
 async function confirmBulkSend() {
   const ids = [...selectedIds.value];
-  if (!ids.length) return;
+  if (!ids.length || selectedDraftCount.value < 1) return;
   bulkBusy.value = true;
   let ok = 0;
-  let fail = 0;
+  let skippedNotDraft = 0;
+  let failed = 0;
+  const rowById = new Map(rows.value.map((r) => [r.id, r]));
   for (const id of ids) {
+    const row = rowById.get(id);
+    if (!row || legacyStatusKey(row) !== "draft") {
+      skippedNotDraft++;
+      continue;
+    }
     try {
       await api.post(`/invoices/${id}/send`);
       ok++;
     } catch {
-      fail++;
+      failed++;
     }
   }
   bulkSendOpen.value = false;
@@ -849,10 +864,12 @@ async function confirmBulkSend() {
   await loadSummary();
   await fetchRows();
   bulkBusy.value = false;
-  if (ok && !fail) {
+  if (ok && skippedNotDraft === 0 && failed === 0) {
     toast.success(`Sent ${ok} invoice${ok === 1 ? "" : "s"}.`);
+  } else if (ok && failed === 0) {
+    toast.success(`Sent ${ok}; ${skippedNotDraft} skipped (not draft).`);
   } else if (ok) {
-    toast.success(`Sent ${ok}; ${fail} skipped or failed.`);
+    toast.success(`Sent ${ok}; ${skippedNotDraft + failed} skipped or failed.`);
   } else {
     toast.error("No invoices were sent. Select drafts you can send.");
   }
@@ -1199,7 +1216,7 @@ onUnmounted(() => {
                 v-if="canUpdate"
                 type="button"
                 class="btn btn-outline-secondary staff-toolbar-btn"
-                :disabled="!selectedIds.length || loading || bulkBusy"
+                :disabled="!selectedDraftCount || loading || bulkBusy"
                 @click="bulkSendOpen = true"
               >
                 Bulk Send
@@ -1263,7 +1280,7 @@ onUnmounted(() => {
                   type="button"
                   class="dropdown-item small"
                   role="menuitem"
-                  :disabled="!selectedIds.length || loading || bulkBusy"
+                  :disabled="!selectedDraftCount || loading || bulkBusy"
                   @click="
                     bulkMenuOpen = false;
                     bulkSendOpen = true;
@@ -1301,7 +1318,7 @@ onUnmounted(() => {
               v-if="canUpdate && !canDelete"
               type="button"
               class="btn btn-outline-secondary staff-toolbar-btn d-md-none flex-shrink-0"
-              :disabled="!selectedIds.length || loading || bulkBusy"
+              :disabled="!selectedDraftCount || loading || bulkBusy"
               @click="bulkSendOpen = true"
             >
               Bulk Send

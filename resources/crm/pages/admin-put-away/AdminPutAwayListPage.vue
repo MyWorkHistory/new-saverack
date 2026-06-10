@@ -52,6 +52,26 @@ const lastUpdatedLabel = computed(() => {
   return formatDateTimeUs(d);
 });
 
+const isBuildingSnapshot = computed(() => meta.value?.status === "running" || refreshing.value);
+
+const emptyTableMessage = computed(() => {
+  if (!canLoad.value) return "Select an account.";
+  if (meta.value?.status === "failed") {
+    return meta.value?.error_message || "Snapshot failed. Click Refresh to try again.";
+  }
+  if (isBuildingSnapshot.value) return "Building snapshot from ShipHero…";
+  if (!meta.value?.computed_at && Number(meta.value?.row_count || 0) === 0) {
+    return "Click Refresh to load products from ShipHero.";
+  }
+  return "No products found.";
+});
+
+function applyListPayload(data) {
+  rows.value = Array.isArray(data?.rows) ? data.rows : [];
+  pageInfo.value = data?.page_info || { has_next_page: false, end_cursor: null };
+  meta.value = data?.meta || meta.value;
+}
+
 function putAwayDetailTo(row) {
   const sku = String(row?.sku || "").trim();
   const clientAccountId = Number(row?.client_account_id || accountId.value || 0);
@@ -109,9 +129,13 @@ async function fetchPage(append, forceRefresh = false) {
   }
   const { data } = await api.get("/admin/put-away", { params });
   const nextRows = Array.isArray(data?.rows) ? data.rows : [];
-  rows.value = append ? [...rows.value, ...nextRows] : nextRows;
-  pageInfo.value = data?.page_info || { has_next_page: false, end_cursor: null };
-  meta.value = data?.meta || meta.value;
+  if (append) {
+    rows.value = [...rows.value, ...nextRows];
+    pageInfo.value = data?.page_info || { has_next_page: false, end_cursor: null };
+    meta.value = data?.meta || meta.value;
+  } else {
+    applyListPayload(data);
+  }
 }
 
 async function loadRows(reset = false, forceRefresh = false) {
@@ -151,9 +175,13 @@ async function refreshRows() {
   }
   refreshing.value = true;
   try {
-    await api.post("/admin/put-away/refresh", { client_account_id: accountId.value });
+    const { data } = await api.post(
+      "/admin/put-away/refresh",
+      { client_account_id: accountId.value },
+      { timeout: 600000 },
+    );
     searchCommitted.value = searchDraft.value.trim();
-    await loadRows(true, false);
+    applyListPayload(data);
     toast.success("Put away list refreshed.");
   } catch (e) {
     toast.errorFrom(e, "Could not refresh put away list.");
@@ -290,8 +318,18 @@ onUnmounted(() => {
         Select a client account to load the put away list.
       </div>
 
-      <div v-else-if="loading && !rows.length" class="text-center py-5">
-        <CrmLoadingSpinner label="Loading put away list…" />
+      <div v-else-if="(loading || isBuildingSnapshot) && !rows.length" class="text-center py-5">
+        <CrmLoadingSpinner :label="isBuildingSnapshot ? 'Building snapshot from ShipHero…' : 'Loading put away list…'" />
+      </div>
+
+      <div
+        v-else-if="meta.status === 'failed' && !rows.length"
+        class="text-center text-secondary py-5 px-3"
+      >
+        <p class="mb-2">{{ emptyTableMessage }}</p>
+        <button type="button" class="btn btn-sm btn-primary staff-page-primary" :disabled="refreshing" @click="refreshRows">
+          Retry Refresh
+        </button>
       </div>
 
       <div v-else class="table-responsive staff-table-wrap">
@@ -313,7 +351,7 @@ onUnmounted(() => {
           <tbody>
             <tr v-if="!rows.length">
               <td colspan="10" class="text-center text-secondary py-4">
-                {{ canLoad ? "No products found." : "Select an account." }}
+                {{ emptyTableMessage }}
               </td>
             </tr>
             <tr v-for="row in rows" :key="`${row.client_account_id}-${row.sku}`">

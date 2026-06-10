@@ -1,6 +1,5 @@
 <script setup>
 import { computed, onMounted, ref } from "vue";
-import { useRouter } from "vue-router";
 import api from "../../services/api";
 import CrmSearchableSelect from "../../components/common/CrmSearchableSelect.vue";
 import { setCrmPageMeta } from "../../composables/useCrmPageMeta.js";
@@ -8,7 +7,6 @@ import { useToast } from "../../composables/useToast.js";
 import { formatDateTimeUs, formatIsoDate } from "../../utils/formatUserDates.js";
 
 const toast = useToast();
-const router = useRouter();
 
 const rows = ref([]);
 const loading = ref(false);
@@ -19,7 +17,6 @@ const searchQuery = ref("");
 const uploadModalOpen = ref(false);
 const uploadBusy = ref(false);
 const uploadFile = ref(null);
-const completingSku = ref("");
 const meta = ref({
   original_filename: null,
   row_count: 0,
@@ -66,33 +63,6 @@ const filteredRows = computed(() => {
     return sku.includes(q) || name.includes(q) || account.includes(q);
   });
 });
-
-const visibleRestockNeededTotal = computed(() =>
-  filteredRows.value.reduce((sum, row) => {
-    const n = Number(row?.restock_needed);
-    return sum + (Number.isNaN(n) ? 0 : n);
-  }, 0),
-);
-
-function inventoryDetailTo(row) {
-  const sku = String(row?.sku || "").trim();
-  if (!sku) {
-    return { name: "inventory-detail", params: { sku: "" } };
-  }
-  const accountId = Number(row?.client_account_id || 0);
-  const query = accountId > 0 ? { client_account_id: String(accountId) } : {};
-  return {
-    name: "inventory-detail",
-    params: { sku },
-    query,
-  };
-}
-
-function inventoryDetailHref(row) {
-  const sku = String(row?.sku || "").trim();
-  if (!sku) return "#";
-  return router.resolve(inventoryDetailTo(row)).href;
-}
 
 function splitBackstockLocations(text) {
   const raw = String(text || "").trim();
@@ -184,22 +154,6 @@ async function submitUpload() {
   }
 }
 
-async function completeRow(row) {
-  const sku = String(row?.sku || "").trim();
-  if (!sku || completingSku.value) return;
-
-  completingSku.value = sku;
-  try {
-    const { data } = await api.post("/inventory/restock-beta/complete", { sku });
-    applySnapshot(data);
-    toast.success(`${sku} marked complete.`);
-  } catch (e) {
-    toast.errorFrom(e, "Could not complete row.");
-  } finally {
-    completingSku.value = "";
-  }
-}
-
 onMounted(() => {
   setCrmPageMeta({
     title: "Save Rack | Inventory | Restock (Beta)",
@@ -226,9 +180,6 @@ onMounted(() => {
         </p>
       </div>
       <div class="d-flex flex-column align-items-md-end gap-2 flex-shrink-0 ms-md-auto">
-        <p v-if="rows.length" class="small text-danger fw-semibold mb-0">
-          Restock Needed: {{ visibleRestockNeededTotal.toLocaleString() }}
-        </p>
         <div class="d-flex flex-wrap align-items-center gap-3 justify-content-md-end">
           <p v-if="lastUploadDateLabel" class="small text-secondary mb-0">
             Last Upload: {{ lastUploadDateLabel }}
@@ -277,44 +228,33 @@ onMounted(() => {
           <thead class="table-light staff-table-head">
             <tr>
               <th class="staff-table-head__th" scope="col">Product</th>
-              <th class="staff-table-head__th" scope="col">Account</th>
               <th class="staff-table-head__th text-center" scope="col">On Hand</th>
               <th class="staff-table-head__th text-center" scope="col">Allocated</th>
               <th class="staff-table-head__th text-center" scope="col">Pickable QTY</th>
               <th class="staff-table-head__th text-center" scope="col">Backstock</th>
               <th class="staff-table-head__th text-center" scope="col">Restock Needed</th>
               <th class="staff-table-head__th" scope="col">Backstock locations</th>
-              <th class="staff-table-head__th text-center staff-actions-col" scope="col">Actions</th>
             </tr>
           </thead>
           <tbody>
             <tr v-if="loading">
-              <td colspan="9" class="py-5 text-center text-secondary">Loading restock data…</td>
+              <td colspan="7" class="py-5 text-center text-secondary">Loading restock data…</td>
             </tr>
             <tr v-else-if="!rows.length">
-              <td colspan="9" class="py-5 text-center text-secondary">
+              <td colspan="7" class="py-5 text-center text-secondary">
                 Upload a restock CSV to get started.
               </td>
             </tr>
             <tr v-else-if="!filteredRows.length">
-              <td colspan="9" class="py-5 text-center text-secondary">No rows match your search.</td>
+              <td colspan="7" class="py-5 text-center text-secondary">No rows match your search.</td>
             </tr>
             <tr v-for="row in filteredRows" :key="row.sku" class="align-middle">
               <td class="restock-beta-product-col">
                 <div class="restock-beta-product">
                   <div class="restock-beta-product__name">{{ row.name || "—" }}</div>
                   <div class="restock-beta-product__sku text-secondary small">{{ row.sku }}</div>
-                  <a
-                    :href="inventoryDetailHref(row)"
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    class="btn btn-outline-primary btn-sm mt-2"
-                  >
-                    Restock
-                  </a>
                 </div>
               </td>
-              <td class="small">{{ row.account_name || "—" }}</td>
               <td class="text-center">{{ formatQty(row.on_hand) }}</td>
               <td class="text-center">{{ formatQty(row.allocated) }}</td>
               <td class="text-center">{{ formatQty(row.pickable_qty) }}</td>
@@ -331,16 +271,6 @@ onMounted(() => {
                   </div>
                 </template>
                 <span v-else class="text-secondary">—</span>
-              </td>
-              <td class="text-center">
-                <button
-                  type="button"
-                  class="btn btn-outline-secondary btn-sm orders-toolbar-outline-btn"
-                  :disabled="completingSku === row.sku"
-                  @click="completeRow(row)"
-                >
-                  {{ completingSku === row.sku ? "Completing…" : "Complete" }}
-                </button>
               </td>
             </tr>
           </tbody>

@@ -51,6 +51,9 @@ const users = ref([]);
 const meta = ref({ statuses: [], priorities: [] });
 const manageOpenId = ref(null);
 const manageMenuRect = ref({ top: 0, left: 0 });
+const statusMenuOpenId = ref(null);
+const statusMenuRect = ref({ top: 0, left: 0 });
+const statusPickerBusy = ref(false);
 const filterMenuOpen = ref(false);
 const bulkMenuOpen = ref(false);
 const drawerOpen = ref(false);
@@ -83,6 +86,8 @@ let searchWatchLock = false;
 
 const MENU_W = 200;
 const MENU_H = 160;
+const STATUS_MENU_W = 168;
+const STATUS_MENU_H = 168;
 
 const tableColspan = computed(() => {
   let n = 7;
@@ -93,6 +98,10 @@ const tableColspan = computed(() => {
 
 const manageMenuTask = computed(
   () => rows.value.find((t) => t.id === manageOpenId.value) ?? null,
+);
+
+const statusMenuTask = computed(
+  () => rows.value.find((t) => t.id === statusMenuOpenId.value) ?? null,
 );
 
 const deleteModalOpen = computed(() => deleteTarget.value !== null);
@@ -364,12 +373,73 @@ function closeManageMenu() {
   manageOpenId.value = null;
 }
 
+function closeStatusMenu() {
+  statusMenuOpenId.value = null;
+}
+
+function placeStatusMenu(anchorEl) {
+  if (!(anchorEl instanceof HTMLElement)) return;
+  const r = anchorEl.getBoundingClientRect();
+  let top = r.bottom + 4;
+  let left = r.right - STATUS_MENU_W;
+  left = Math.max(8, Math.min(left, window.innerWidth - STATUS_MENU_W - 8));
+  if (top + STATUS_MENU_H > window.innerHeight - 8) {
+    top = Math.max(8, r.top - STATUS_MENU_H - 4);
+  }
+  statusMenuRect.value = { top, left };
+}
+
+async function toggleStatusMenu(taskId, e) {
+  e.stopPropagation();
+  if (!canUpdateTasks.value) return;
+  if (statusMenuOpenId.value === taskId) {
+    closeStatusMenu();
+    return;
+  }
+  closeManageMenu();
+  const btn = e.currentTarget;
+  statusMenuOpenId.value = taskId;
+  await nextTick();
+  requestAnimationFrame(() => {
+    requestAnimationFrame(() => {
+      if (statusMenuOpenId.value !== taskId) return;
+      if (btn instanceof HTMLElement) placeStatusMenu(btn);
+    });
+  });
+}
+
+async function setTaskStatusFromMenu(task, status) {
+  if (!task || statusPickerBusy.value) return;
+  const prev = task.status;
+  if (prev === status) {
+    closeStatusMenu();
+    return;
+  }
+  closeStatusMenu();
+  task.status = status;
+  statusPickerBusy.value = true;
+  try {
+    const { data } = await api.patch(`/webmaster/tasks/${task.id}`, { status });
+    const idx = rows.value.findIndex((t) => t.id === task.id);
+    if (idx !== -1 && data) {
+      rows.value[idx] = { ...rows.value[idx], ...data };
+    }
+    toast.success("Status updated.");
+  } catch (e) {
+    task.status = prev;
+    toast.errorFrom(e, "Could not update status.");
+  } finally {
+    statusPickerBusy.value = false;
+  }
+}
+
 async function toggleManageMenu(taskId, e) {
   e.stopPropagation();
   if (manageOpenId.value === taskId) {
     closeManageMenu();
     return;
   }
+  closeStatusMenu();
   const btn = e.currentTarget;
   manageOpenId.value = taskId;
   await nextTick();
@@ -402,10 +472,12 @@ function onDocClick(e) {
   if (!e.target.closest("[data-toolbar-filter]")) filterMenuOpen.value = false;
   if (!e.target.closest("[data-toolbar-bulk]")) bulkMenuOpen.value = false;
   if (!e.target.closest("[data-row-actions]")) closeManageMenu();
+  if (!e.target.closest("[data-status-menu]")) closeStatusMenu();
 }
 
 function onWindowScrollOrResize() {
   if (manageOpenId.value !== null) closeManageMenu();
+  if (statusMenuOpenId.value !== null) closeStatusMenu();
 }
 
 function openBulkEdit() {
@@ -845,21 +917,21 @@ onUnmounted(() => {
               <th
                 class="staff-table-head__th staff-table-head__th--sort"
                 scope="col"
-                :aria-sort="thAriaSort('title')"
-              >
-                <button type="button" class="staff-sort-btn" :disabled="loading" @click="toggleSort('title')">
-                  Task
-                  <span v-if="sortIndicator('title')" class="staff-sort-ind">{{ sortIndicator("title") }}</span>
-                </button>
-              </th>
-              <th
-                class="staff-table-head__th staff-table-head__th--sort"
-                scope="col"
                 :aria-sort="thAriaSort('status')"
               >
                 <button type="button" class="staff-sort-btn" :disabled="loading" @click="toggleSort('status')">
                   Status
                   <span v-if="sortIndicator('status')" class="staff-sort-ind">{{ sortIndicator("status") }}</span>
+                </button>
+              </th>
+              <th
+                class="staff-table-head__th staff-table-head__th--sort"
+                scope="col"
+                :aria-sort="thAriaSort('title')"
+              >
+                <button type="button" class="staff-sort-btn" :disabled="loading" @click="toggleSort('title')">
+                  Task
+                  <span v-if="sortIndicator('title')" class="staff-sort-ind">{{ sortIndicator("title") }}</span>
                 </button>
               </th>
               <th
@@ -913,6 +985,29 @@ onUnmounted(() => {
                 />
               </td>
               <td>
+                <div data-status-menu class="d-inline-block">
+                  <button
+                    v-if="canUpdateTasks"
+                    type="button"
+                    class="badge rounded-pill text-capitalize fw-medium border-0"
+                    :class="statusBadgeClass(task.status)"
+                    :disabled="statusPickerBusy"
+                    aria-haspopup="true"
+                    :aria-expanded="statusMenuOpenId === task.id"
+                    @click.stop="toggleStatusMenu(task.id, $event)"
+                  >
+                    {{ statusLabel(task.status) }}
+                  </button>
+                  <span
+                    v-else
+                    class="badge rounded-pill text-capitalize fw-medium"
+                    :class="statusBadgeClass(task.status)"
+                  >
+                    {{ statusLabel(task.status) }}
+                  </span>
+                </div>
+              </td>
+              <td>
                 <a
                   :href="taskDetailHref(task)"
                   target="_blank"
@@ -923,14 +1018,6 @@ onUnmounted(() => {
                 >
                   {{ task.title }}
                 </a>
-              </td>
-              <td>
-                <span
-                  class="badge rounded-pill text-capitalize fw-medium"
-                  :class="statusBadgeClass(task.status)"
-                >
-                  {{ statusLabel(task.status) }}
-                </span>
               </td>
               <td>
                 <span
@@ -1108,6 +1195,36 @@ onUnmounted(() => {
     />
 
     <Teleport to="body">
+      <Transition
+        enter-active-class="transition ease-out duration-100"
+        enter-from-class="opacity-0"
+        enter-to-class="opacity-100"
+        leave-active-class="transition ease-in duration-75"
+        leave-from-class="opacity-100"
+        leave-to-class="opacity-0"
+      >
+        <div
+          v-if="statusMenuTask"
+          data-status-menu
+          class="staff-row-menu fixed z-[300] overflow-hidden"
+          role="menu"
+          :style="{ top: `${statusMenuRect.top}px`, left: `${statusMenuRect.left}px` }"
+          @click.stop
+        >
+          <button
+            v-for="opt in meta.statuses"
+            :key="opt.value"
+            type="button"
+            class="staff-row-menu__item"
+            role="menuitem"
+            :disabled="statusPickerBusy"
+            @click="setTaskStatusFromMenu(statusMenuTask, opt.value)"
+          >
+            {{ opt.label }}
+          </button>
+        </div>
+      </Transition>
+
       <Transition
         enter-active-class="transition ease-out duration-100"
         enter-from-class="opacity-0"

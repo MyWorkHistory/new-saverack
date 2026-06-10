@@ -15,7 +15,7 @@ import ConfirmModal from "../../components/common/ConfirmModal.vue";
 import WebmasterTaskDrawer from "../../components/webmaster/WebmasterTaskDrawer.vue";
 import WebmasterTaskModal from "../../components/webmaster/WebmasterTaskModal.vue";
 import WebmasterTasksBulkEditModal from "../../components/webmaster/WebmasterTasksBulkEditModal.vue";
-import WebmasterTaskStatusModal from "../../components/webmaster/WebmasterTaskStatusModal.vue";
+import CrmStatusUpdateModal from "../../components/common/CrmStatusUpdateModal.vue";
 import CrmLoadingSpinner from "../../components/common/CrmLoadingSpinner.vue";
 import { useToast } from "../../composables/useToast";
 import { errorMessage } from "../../utils/apiError";
@@ -54,6 +54,7 @@ const manageOpenId = ref(null);
 const manageMenuRect = ref({ top: 0, left: 0 });
 const statusModalOpen = ref(false);
 const statusModalTask = ref(null);
+const statusForm = ref("pending");
 const statusPickerBusy = ref(false);
 const filterMenuOpen = ref(false);
 const bulkMenuOpen = ref(false);
@@ -109,6 +110,15 @@ const bulkDeleteMessage = computed(() => {
   const n = selectedIds.value.length;
   if (n < 1) return "";
   return `Delete ${n} task${n === 1 ? "" : "s"}? This cannot be undone.`;
+});
+
+const taskStatusOptions = computed(() =>
+  (meta.value.statuses || []).map((s) => s.value),
+);
+
+const statusModalSubtitle = computed(() => {
+  const title = String(statusModalTask.value?.title || "").trim();
+  return title ? `Update status for “${title}”.` : "Choose a new status.";
 });
 
 const isAllPageSelected = computed(
@@ -378,6 +388,7 @@ function openStatusModal(task) {
   if (!canUpdateTasks.value || !task) return;
   closeManageMenu();
   statusModalTask.value = task;
+  statusForm.value = String(task.status || "pending");
   statusModalOpen.value = true;
 }
 
@@ -387,7 +398,9 @@ function closeStatusModal() {
   statusModalTask.value = null;
 }
 
-async function saveTaskStatus({ task, status }) {
+async function saveTaskStatusFromModal() {
+  const task = statusModalTask.value;
+  const status = String(statusForm.value || "").trim();
   if (!task || statusPickerBusy.value) return;
   const prev = task.status;
   if (prev === status) {
@@ -1155,12 +1168,14 @@ onUnmounted(() => {
       @confirm="confirmDelete"
     />
 
-    <WebmasterTaskStatusModal
+    <CrmStatusUpdateModal
       v-model:open="statusModalOpen"
-      :task="statusModalTask"
-      :statuses="meta.statuses"
+      v-model:status="statusForm"
+      title="Task Status"
+      :subtitle="statusModalSubtitle"
+      :statuses="taskStatusOptions"
       :busy="statusPickerBusy"
-      @save="saveTaskStatus"
+      @save="saveTaskStatusFromModal"
     />
 
     <ConfirmModal

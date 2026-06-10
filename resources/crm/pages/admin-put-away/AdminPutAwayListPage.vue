@@ -406,7 +406,7 @@ onUnmounted(() => {
       <div v-if="pageInfo.has_next_page" class="p-3 border-top text-center">
         <button
           type="button"
-          class="btn btn-outline-secondary btn-sm"
+          class="btn btn-outline-secondary btn-sm orders-toolbar-outline-btn"
           :disabled="loadingMore || loading"
           @click="loadMore"
         >
@@ -454,5 +454,26 @@ onUnmounted(() => {
 
 .put-away-list-table__action-col {
   width: 4.5rem;
+}
+
+.put-away-list-table .user-inv-table__image-col {
+  width: 1%;
+  min-width: 4.5rem;
+  text-align: center;
+  vertical-align: middle;
+}
+
+.put-away-list-table .user-inventory-thumb {
+  width: 52px;
+  height: 52px;
+  border-radius: 0.4rem;
+  object-fit: cover;
+  border: 1px solid rgba(0, 0, 0, 0.08);
+  background: #fff;
+}
+
+.put-away-list-table .user-inventory-thumb--empty {
+  display: inline-block;
+  background: rgba(0, 0, 0, 0.05);
 }
 </style>

@@ -122,7 +122,7 @@ async function fetchPage(append) {
   } else if (append && pageInfo.value?.end_cursor) {
     params.after = pageInfo.value.end_cursor;
   }
-  const { data } = await api.get("/admin/put-away", { params, timeout: 120000 });
+  const { data } = await api.get("/admin/put-away", { params });
   applyListPayload(data, append);
 }
 
@@ -238,7 +238,8 @@ onUnmounted(() => {
       <div class="min-w-0 flex-grow-1">
         <h1 class="h4 mb-1 fw-bold text-body">Put Away</h1>
         <p class="text-secondary small mb-0">
-          Search by name, SKU, or barcode. Select a client account to load products. Use Refresh to sync receiving and pickable quantities from ShipHero.
+          Search by name, SKU, or barcode. Select a client account to load products.
+          <span v-if="meta.source === 'inventory_list'"> Click Refresh for full receiving and pickable counts.</span>
         </p>
       </div>
       <div class="d-flex align-items-center gap-2 flex-shrink-0 ms-md-auto">
@@ -453,10 +454,6 @@ onUnmounted(() => {
   pointer-events: none;
 }
 
-.put-away-list-table__action-col {
-  width: 4.5rem;
-}
-
 .put-away-list-table .user-inv-table__image-col {
   width: 1%;
   min-width: 4.5rem;
@@ -472,19 +469,19 @@ onUnmounted(() => {
 }
 
 .put-away-list-table .user-inv-table__sku-col {
-  width: 8rem;
-  min-width: 6rem;
+  width: 6.5rem;
+  min-width: 5rem;
 }
 
 .put-away-list-table .user-inv-table__name-col {
-  width: auto;
+  width: 8rem;
   min-width: 0;
-  max-width: 14rem;
+  max-width: 8rem;
 }
 
 .put-away-list-table .user-inv-table__text-col {
-  width: 7rem;
-  min-width: 5rem;
+  width: 6rem;
+  min-width: 4.5rem;
 }
 
 .put-away-list-table .user-inv-table__image-link {
@@ -520,11 +517,18 @@ onUnmounted(() => {
 }
 
 .put-away-list-table .user-inv-table__num-col {
-  min-width: 4.25rem;
-  width: 4.25rem;
+  min-width: 3.75rem;
+  width: 3.75rem;
+  padding-left: 0.2rem;
+  padding-right: 0.2rem;
+  font-size: 0.8125rem;
+}
+
+.put-away-list-table .put-away-list-table__action-col {
+  width: 3.25rem;
+  min-width: 3.25rem;
   padding-left: 0.25rem;
   padding-right: 0.25rem;
-  font-size: 0.875rem;
 }
 
 .put-away-list-table .user-inventory-thumb {

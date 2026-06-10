@@ -56,7 +56,16 @@ class PutAwayInventoryService
             return $this->paginateSnapshotRows($snapshot, $query, $first, $after);
         }
 
-        return $this->listLiveFromInventory($clientAccountId, $customerId, $query, $first, $after, $searchSkip);
+        $snapshot = PutAwaySnapshot::query()->where('client_account_id', $clientAccountId)->first();
+        if (
+            $snapshot !== null
+            && $snapshot->status === PutAwaySnapshot::STATUS_OK
+            && (int) $snapshot->row_count > 0
+        ) {
+            return $this->paginateSnapshotRows($snapshot, $query, $first, $after);
+        }
+
+        return $this->listLiveFromInventory($clientAccountId, $query, $first, $after, $searchSkip);
     }
 
     /**
@@ -88,14 +97,13 @@ class PutAwayInventoryService
     }
 
     /**
-     * Fast list path (no snapshot): same inventory index / ShipHero pagination as the inventory list page,
-     * with warehouse location enrichment for receiving / pickable / non-pickable columns.
+     * Fast list path (no snapshot): same inventory index pagination as the inventory list page.
+     * Location metrics use local detail cache only — no per-SKU ShipHero calls (use Refresh for full counts).
      *
      * @return array{rows: list<array<string, mixed>>, page_info: array{has_next_page: bool, end_cursor: string|null, next_search_skip?: int|null}, meta: array<string, mixed>}
      */
     private function listLiveFromInventory(
         int $clientAccountId,
-        string $customerId,
         ?string $query,
         int $first,
         ?string $after,
@@ -142,7 +150,7 @@ class PutAwayInventoryService
                 'client_account_id' => $clientAccountId,
             ];
         }
-        $rows = $this->enrichLivePutAwayRows($clientAccountId, $customerId, $rows);
+        $rows = $this->enrichLivePutAwayRows($clientAccountId, $rows);
 
         $pageInfo = is_array($page['page_info'] ?? null) ? $page['page_info'] : [];
 
@@ -174,7 +182,7 @@ class PutAwayInventoryService
      * @param  list<array<string, mixed>>  $rows
      * @return list<array<string, mixed>>
      */
-    private function enrichLivePutAwayRows(int $clientAccountId, string $customerId, array $rows): array
+    private function enrichLivePutAwayRows(int $clientAccountId, array $rows): array
     {
         if ($rows === []) {
             return [];
@@ -183,7 +191,7 @@ class PutAwayInventoryService
         $out = [];
         foreach ($rows as $row) {
             $sku = trim((string) ($row['sku'] ?? ''));
-            $product = $this->resolveProductDetailForPutAway($clientAccountId, $customerId, $sku);
+            $product = $sku !== '' ? $this->detailCache->getCachedProduct($clientAccountId, $sku) : null;
             $locations = PutAwayRowBuilder::locationsFromProductDetail($product);
             $metrics = is_array($product['metrics'] ?? null) ? $product['metrics'] : [];
 

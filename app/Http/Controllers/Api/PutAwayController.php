@@ -24,7 +24,7 @@ class PutAwayController extends Controller
         ]);
 
         $clientAccountId = (int) $validated['client_account_id'];
-        $first = (int) ($validated['first'] ?? 50);
+        $first = (int) ($validated['first'] ?? PutAwayInventoryService::LIST_PAGE_SIZE);
         $after = isset($validated['after']) ? (string) $validated['after'] : null;
         $query = isset($validated['query']) ? (string) $validated['query'] : null;
         $searchSkip = isset($validated['search_skip']) ? (int) $validated['search_skip'] : 0;
@@ -43,6 +43,35 @@ class PutAwayController extends Controller
                 'message' => config('app.debug')
                     ? $e->getMessage()
                     : 'Could not load put away list.',
+            ], 500);
+        }
+    }
+
+    public function show(Request $request, string $sku, PutAwayInventoryService $putAway): JsonResponse
+    {
+        $validated = $request->validate([
+            'client_account_id' => ['required', 'integer', 'exists:client_accounts,id'],
+            'refresh' => ['sometimes', 'boolean'],
+        ]);
+
+        $refresh = filter_var($validated['refresh'] ?? false, FILTER_VALIDATE_BOOLEAN);
+
+        try {
+            $row = $putAway->rowForSku((int) $validated['client_account_id'], $sku, $refresh);
+            if ($row === null) {
+                return response()->json(['message' => 'Product not found.'], 404);
+            }
+
+            return response()->json(['row' => $row]);
+        } catch (RuntimeException $e) {
+            return response()->json(['message' => $e->getMessage()], 422);
+        } catch (Throwable $e) {
+            report($e);
+
+            return response()->json([
+                'message' => config('app.debug')
+                    ? $e->getMessage()
+                    : 'Could not load put away product.',
             ], 500);
         }
     }

@@ -195,6 +195,7 @@ Route::middleware('auth:sanctum')->group(function () {
 
     Route::prefix('admin/put-away')->group(function () {
         Route::get('/', [PutAwayController::class, 'index'])->middleware('can:inventory.view');
+        Route::get('/products/{sku}', [PutAwayController::class, 'show'])->middleware('can:inventory.view');
         Route::post('/refresh', [PutAwayController::class, 'refresh'])->middleware('can:inventory.view');
     });
 

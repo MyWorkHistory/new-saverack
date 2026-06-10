@@ -20,6 +20,7 @@ const loading = ref(true);
 const refreshing = ref(false);
 const saving = ref(false);
 const product = ref(null);
+const putAwayRow = ref(null);
 const productLoadError = ref("");
 
 const locationSearch = ref("");
@@ -71,36 +72,14 @@ const receivingLocation = computed(
   () => allLocations.value.find((loc) => isReceivingLocation(loc)) ?? null,
 );
 
-const putAwayMetrics = computed(() => {
-  let pickable = 0;
-  let nonPickable = 0;
-  let receiving = 0;
-  let onHandFromWh = 0;
-  let backorderFromWh = 0;
-  const receivingName = RECEIVING_LOCATION_NAME.toLowerCase();
-
-  (product.value?.warehouses || []).forEach((wh) => {
-    onHandFromWh += Number(wh.on_hand ?? 0);
-    backorderFromWh += Number(wh.backorder ?? 0);
-    (wh.locations || []).forEach((loc) => {
-      const qty = Number(loc?.quantity ?? 0);
-      if (qty <= 0) return;
-      const locName = String(loc.location_name || "").trim().toLowerCase();
-      if (locName === receivingName) receiving += qty;
-      if (loc.pickable === true) pickable += qty;
-      else if (loc.pickable === false) nonPickable += qty;
-    });
-  });
-
-  const m = product.value?.metrics || {};
-  return {
-    receiving,
-    pickable,
-    non_pickable: nonPickable,
-    on_hand: Number(m.on_hand ?? 0) || onHandFromWh,
-    backorder: Number(m.backorder ?? 0) || backorderFromWh,
-  };
-});
+// Same backend source as the put-away list (PutAwayRowBuilder via /admin/put-away/products/{sku}).
+const putAwayMetrics = computed(() => ({
+  receiving: Number(putAwayRow.value?.receiving_qty ?? 0),
+  pickable: Number(putAwayRow.value?.pickable_qty ?? 0),
+  non_pickable: Number(putAwayRow.value?.non_pickable_qty ?? 0),
+  on_hand: Number(putAwayRow.value?.on_hand ?? 0),
+  backorder: Number(putAwayRow.value?.backorder ?? 0),
+}));
 
 const receivingQty = computed(() => Number(putAwayMetrics.value.receiving ?? 0));
 
@@ -259,11 +238,33 @@ async function loadProduct({ refresh = false } = {}) {
   }
 }
 
+async function loadPutAwayRow({ refresh = false } = {}) {
+  if (!clientAccountId.value) {
+    putAwayRow.value = null;
+    return false;
+  }
+  try {
+    const sku = String(route.params.sku || "").trim();
+    const params = { client_account_id: clientAccountId.value };
+    if (refresh) params.refresh = 1;
+    const { data } = await api.get(`/admin/put-away/products/${encodeURIComponent(sku)}`, { params });
+    putAwayRow.value = data?.row ?? null;
+    return true;
+  } catch {
+    putAwayRow.value = null;
+    return false;
+  }
+}
+
+async function reloadProductData({ refresh = false } = {}) {
+  await Promise.all([loadProduct({ refresh }), loadPutAwayRow({ refresh })]);
+}
+
 async function loadDetail() {
   loading.value = true;
-  await loadProduct({ refresh: false });
+  await reloadProductData({ refresh: false });
   if (product.value && metricsAllZero()) {
-    await loadProduct({ refresh: true });
+    await reloadProductData({ refresh: true });
   }
   loading.value = false;
 }
@@ -271,7 +272,7 @@ async function loadDetail() {
 async function refreshDetail() {
   if (loading.value || refreshing.value) return;
   refreshing.value = true;
-  await loadProduct({ refresh: true });
+  await reloadProductData({ refresh: true });
   refreshing.value = false;
 }
 
@@ -391,7 +392,7 @@ async function executeTransfer(quantity, toLocation) {
     const { data } = await api.post("/inventory/transfer", body);
     applyWarehouseSliceToProduct(data?.warehouse);
     toast.success("Quantity transferred.");
-    await loadProduct({ refresh: true });
+    await reloadProductData({ refresh: true });
     applyWarehouseSliceToProduct(data?.warehouse);
   } catch (e) {
     toast.errorFrom(e, "Could not transfer quantity.");
@@ -426,7 +427,7 @@ async function confirmDeleteLocation() {
     toast.success("Location cleared.");
     deleteLocationOpen.value = false;
     deleteLocationTarget.value = null;
-    await loadProduct({ refresh: true });
+    await reloadProductData({ refresh: true });
     applyWarehouseSliceToProduct(data?.warehouse);
   } catch (e) {
     toast.errorFrom(e, "Could not delete location.");
@@ -473,7 +474,7 @@ async function submitAddLocationQty() {
     applyWarehouseSliceToProduct(data?.warehouse);
     toast.success("Location quantity updated.");
     addLocationModalOpen.value = false;
-    await loadProduct({ refresh: true });
+    await reloadProductData({ refresh: true });
     applyWarehouseSliceToProduct(data?.warehouse);
   } catch (e) {
     toast.errorFrom(e, "Location not found or quantity update failed.");
@@ -504,7 +505,7 @@ async function togglePickable(loc) {
       });
     });
     toast.success("Pickable updated.");
-    await loadProduct({ refresh: true });
+    await reloadProductData({ refresh: true });
   } catch (e) {
     toast.errorFrom(e, "Could not update pickable.");
   } finally {

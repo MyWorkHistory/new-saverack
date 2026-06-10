@@ -9,7 +9,7 @@ import { setCrmPageMeta } from "../../composables/useCrmPageMeta.js";
 import { useToast } from "../../composables/useToast.js";
 import { formatDateTimeUs } from "../../utils/formatUserDates.js";
 
-const LIST_PAGE_SIZE = 50;
+const LIST_PAGE_SIZE = 20;
 
 const toast = useToast();
 const router = useRouter();
@@ -409,7 +409,7 @@ onUnmounted(() => {
           :disabled="loadingMore || loading"
           @click="loadMore"
         >
-          {{ loadingMore ? "Loading…" : "Load 50 More" }}
+          {{ loadingMore ? "Loading…" : "Load 20 More" }}
         </button>
       </div>
     </div>

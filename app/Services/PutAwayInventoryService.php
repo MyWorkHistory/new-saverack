@@ -14,6 +14,8 @@ class PutAwayInventoryService
 {
     public const CACHE_TTL_MINUTES = 30;
 
+    public const LIST_PAGE_SIZE = 20;
+
     /** @var ShipHeroInventoryService */
     protected $inventory;
 
@@ -95,7 +97,43 @@ class PutAwayInventoryService
 
         $snapshot = $this->rebuildSnapshot($clientAccountId, $account, $customerId);
 
-        return $this->paginateSnapshotRows($snapshot, null, 50, null);
+        return $this->paginateSnapshotRows($snapshot, null, self::LIST_PAGE_SIZE, null);
+    }
+
+    /**
+     * Single source of truth for put-away row metrics (list + detail).
+     *
+     * @return array<string, mixed>|null
+     */
+    public function rowForSku(int $clientAccountId, string $sku, bool $refreshProduct = false): ?array
+    {
+        $sku = trim($sku);
+        if ($sku === '') {
+            return null;
+        }
+
+        $account = ClientAccount::query()->findOrFail($clientAccountId);
+        $customerId = trim((string) $account->shiphero_customer_account_id);
+        if ($customerId === '') {
+            throw new RuntimeException('This account is not linked to ShipHero.');
+        }
+
+        $snapRow = $this->findSnapshotRow($clientAccountId, $sku);
+        if ($snapRow !== null && $this->snapshotRowHasUsableMetrics($snapRow)) {
+            return $this->snapshotRowToPayload($snapRow, $clientAccountId);
+        }
+
+        $index = $this->indexFieldsForSku($clientAccountId, $sku);
+        if ($refreshProduct) {
+            $product = $this->inventory->getProductDetailBySku($sku, null, $customerId, false);
+            if ($product !== null) {
+                $this->detailCache->putProduct($clientAccountId, $sku, $product);
+            }
+        } else {
+            $product = $this->resolveProductDetailForPutAway($clientAccountId, $customerId, $sku);
+        }
+
+        return $this->buildPutAwayRowPayload($clientAccountId, $sku, $product, $index);
     }
 
     private function isFresh(PutAwaySnapshot $snapshot): bool
@@ -204,54 +242,20 @@ class PutAwayInventoryService
             return [];
         }
 
-        $snapshot = PutAwaySnapshot::query()
-            ->where('client_account_id', $clientAccountId)
-            ->where('status', PutAwaySnapshot::STATUS_OK)
-            ->first();
-
-        $snapshotBySku = [];
-        if ($snapshot !== null) {
-            $skuKeys = [];
-            foreach ($rows as $row) {
-                $sku = trim((string) ($row['sku'] ?? ''));
-                if ($sku !== '') {
-                    $skuKeys[mb_strtolower($sku)] = $sku;
-                }
-            }
-            if ($skuKeys !== []) {
-                $placeholders = implode(',', array_fill(0, count($skuKeys), '?'));
-                $snapshotRows = PutAwaySnapshotRow::query()
-                    ->where('put_away_snapshot_id', $snapshot->id)
-                    ->whereRaw('LOWER(sku) IN ('.$placeholders.')', array_keys($skuKeys))
-                    ->get();
-                foreach ($snapshotRows as $snapRow) {
-                    $snapshotBySku[mb_strtolower((string) $snapRow->sku)] = $snapRow;
-                }
-            }
-        }
-
         $out = [];
         foreach ($rows as $row) {
             $sku = trim((string) ($row['sku'] ?? ''));
-            $skuKey = mb_strtolower($sku);
-            $snapRow = $snapshotBySku[$skuKey] ?? null;
-            if ($snapRow !== null && $this->snapshotRowHasUsableMetrics($snapRow)) {
-                $out[] = [
-                    'sku' => $snapRow->sku,
-                    'name' => $snapRow->name,
-                    'barcode' => $snapRow->barcode,
-                    'image_url' => $snapRow->image_url,
-                    'receiving_qty' => (int) $snapRow->receiving_qty,
-                    'pickable_qty' => (int) $snapRow->pickable_qty,
-                    'non_pickable_qty' => (int) $snapRow->non_pickable_qty,
-                    'on_hand' => (int) $snapRow->on_hand,
-                    'backorder' => (int) $snapRow->backorder,
-                    'client_account_id' => $clientAccountId,
-                ];
+            if ($sku === '') {
                 continue;
             }
-
-            $out[] = $this->buildLivePutAwayRow($clientAccountId, $row);
+            $built = $this->rowForSku($clientAccountId, $sku, false);
+            if ($built === null) {
+                continue;
+            }
+            if (! empty($row['name'])) {
+                $built['name'] = (string) $row['name'];
+            }
+            $out[] = $built;
         }
 
         return $out;
@@ -265,24 +269,97 @@ class PutAwayInventoryService
             || (int) $row->backorder > 0;
     }
 
+    private function findSnapshotRow(int $clientAccountId, string $sku): ?PutAwaySnapshotRow
+    {
+        $snapshot = PutAwaySnapshot::query()
+            ->where('client_account_id', $clientAccountId)
+            ->where('status', PutAwaySnapshot::STATUS_OK)
+            ->first();
+        if ($snapshot === null) {
+            return null;
+        }
+
+        return PutAwaySnapshotRow::query()
+            ->where('put_away_snapshot_id', $snapshot->id)
+            ->whereRaw('LOWER(sku) = ?', [mb_strtolower(trim($sku))])
+            ->first();
+    }
+
     /**
-     * @param  array<string, mixed>  $row
      * @return array<string, mixed>
      */
-    private function buildLivePutAwayRow(int $clientAccountId, array $row): array
+    private function snapshotRowToPayload(PutAwaySnapshotRow $row, int $clientAccountId): array
     {
-        $sku = trim((string) ($row['sku'] ?? ''));
-        $product = $sku !== '' ? $this->detailCache->getCachedProduct($clientAccountId, $sku) : null;
+        return [
+            'sku' => $row->sku,
+            'name' => $row->name,
+            'barcode' => $row->barcode,
+            'image_url' => $row->image_url,
+            'receiving_qty' => (int) $row->receiving_qty,
+            'pickable_qty' => (int) $row->pickable_qty,
+            'non_pickable_qty' => (int) $row->non_pickable_qty,
+            'on_hand' => (int) $row->on_hand,
+            'backorder' => (int) $row->backorder,
+            'client_account_id' => $clientAccountId,
+        ];
+    }
+
+    /**
+     * @return array{name: string, barcode: ?string, image_url: ?string, on_hand: int, backorder: int}
+     */
+    private function indexFieldsForSku(int $clientAccountId, string $sku): array
+    {
+        $row = ShipHeroInventoryProductIndex::query()
+            ->where('client_account_id', $clientAccountId)
+            ->whereRaw('LOWER(sku) = ?', [mb_strtolower(trim($sku))])
+            ->orderByDesc('on_hand')
+            ->first();
+
+        if ($row === null) {
+            return [
+                'name' => '',
+                'barcode' => null,
+                'image_url' => null,
+                'on_hand' => 0,
+                'backorder' => 0,
+            ];
+        }
+
+        return [
+            'name' => (string) ($row->name ?? ''),
+            'barcode' => $row->barcode !== null ? trim((string) $row->barcode) : null,
+            'image_url' => $row->image_url !== null ? trim((string) $row->image_url) : null,
+            'on_hand' => (int) round((float) $row->on_hand),
+            'backorder' => (int) round((float) $row->backorder),
+        ];
+    }
+
+    /**
+     * @param  array{name: string, barcode: ?string, image_url: ?string, on_hand: int, backorder: int}  $index
+     * @return array<string, mixed>
+     */
+    private function buildPutAwayRowPayload(int $clientAccountId, string $sku, ?array $product, array $index): array
+    {
         $locations = PutAwayRowBuilder::locationsFromProductDetail($product);
+        $metrics = is_array($product['metrics'] ?? null) ? $product['metrics'] : [];
+
+        $onHand = (int) round((float) ($metrics['on_hand'] ?? 0));
+        if ($onHand <= 0) {
+            $onHand = (int) ($index['on_hand'] ?? 0);
+        }
+        $backorder = (int) round((float) ($metrics['backorder'] ?? 0));
+        if ($backorder <= 0) {
+            $backorder = (int) ($index['backorder'] ?? 0);
+        }
 
         $built = PutAwayRowBuilder::buildRow(
             $sku,
-            (string) ($row['name'] ?? $product['name'] ?? $sku),
-            isset($row['barcode']) ? (string) $row['barcode'] : (isset($product['barcode']) ? (string) $product['barcode'] : null),
-            isset($row['image_url']) ? (string) $row['image_url'] : (isset($product['image_url']) ? (string) $product['image_url'] : null),
+            (string) (($index['name'] ?? '') !== '' ? $index['name'] : ($product['name'] ?? $sku)),
+            ($index['barcode'] ?? null) ?: (isset($product['barcode']) ? (string) $product['barcode'] : null),
+            ($index['image_url'] ?? null) ?: (isset($product['image_url']) ? (string) $product['image_url'] : null),
             $locations,
-            (int) ($row['on_hand'] ?? 0),
-            (int) ($row['backorder'] ?? 0)
+            $onHand,
+            $backorder
         );
         $built['client_account_id'] = $clientAccountId;
 

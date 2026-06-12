@@ -254,12 +254,12 @@ onMounted(() => {
         <table class="table table-hover align-middle mb-0 staff-data-table">
           <thead class="table-light staff-table-head">
             <tr>
+              <th class="staff-table-head__th text-center" scope="col">Status</th>
               <th class="staff-table-head__th text-center" scope="col">RMA #</th>
               <th class="staff-table-head__th text-center" scope="col">Order #</th>
               <th class="staff-table-head__th text-center" scope="col">Account</th>
               <th class="staff-table-head__th text-center" scope="col">Customer</th>
               <th class="staff-table-head__th text-center" scope="col">Items</th>
-              <th class="staff-table-head__th text-center" scope="col">Status</th>
               <th class="staff-table-head__th text-center" scope="col">Created</th>
             </tr>
           </thead>
@@ -287,11 +287,6 @@ onMounted(() => {
               @click="openRow(row)"
               @keydown.enter.prevent="openRow(row)"
             >
-              <td class="text-center fw-semibold">{{ row.rma_number || "—" }}</td>
-              <td class="text-center">{{ row.order_number || "—" }}</td>
-              <td class="text-center">{{ row.client_account_company_name || "—" }}</td>
-              <td class="text-center">{{ row.customer_name || "—" }}</td>
-              <td class="text-center">{{ row.items_count ?? "—" }}</td>
               <td class="text-center">
                 <span
                   class="badge rounded-pill fw-medium"
@@ -300,6 +295,11 @@ onMounted(() => {
                   {{ processDisplayStatusLabel(row.display_status) }}
                 </span>
               </td>
+              <td class="text-center fw-semibold">{{ row.rma_number || "—" }}</td>
+              <td class="text-center">{{ row.order_number || "—" }}</td>
+              <td class="text-center">{{ row.client_account_company_name || "—" }}</td>
+              <td class="text-center">{{ row.customer_name || "—" }}</td>
+              <td class="text-center">{{ row.items_count ?? "—" }}</td>
               <td class="text-center small text-secondary">{{ formatDateUs(row.created_at) || "—" }}</td>
             </tr>
           </tbody>

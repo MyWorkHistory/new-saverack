@@ -600,27 +600,28 @@ class AdminReturnController extends Controller
                 $reasonLabel = $reasonKey !== null && $reasonKey !== ''
                     ? ($this->returnReasonOptions()[$reasonKey] ?? $reasonKey)
                     : null;
-                $companyName = $ret?->clientAccount !== null
-                    ? trim((string) $ret->clientAccount->company_name)
-                    : '';
+                $companyName = '';
+                if ($ret !== null && $ret->clientAccount !== null) {
+                    $companyName = trim((string) $ret->clientAccount->company_name);
+                }
 
                 return [
                     'id' => $line->id,
-                    'return_id' => $ret?->id,
-                    'status' => $ret?->status,
+                    'return_id' => $ret !== null ? $ret->id : null,
+                    'status' => $ret !== null ? $ret->status : null,
                     'display_status' => 'returned',
-                    'order_number' => $ret?->order_number,
+                    'order_number' => $ret !== null ? $ret->order_number : null,
                     'sku' => $line->sku,
                     'name' => $line->name,
-                    'rma_number' => $ret?->rma_number,
+                    'rma_number' => $ret !== null ? $ret->rma_number : null,
                     'return_qty' => $line->return_qty,
-                    'return_type' => $ret?->return_type,
+                    'return_type' => $ret !== null ? $ret->return_type : null,
                     'return_reason' => $line->return_reason,
                     'return_reason_label' => $reasonLabel,
-                    'client_account_id' => $ret?->client_account_id,
+                    'client_account_id' => $ret !== null ? $ret->client_account_id : null,
                     'client_account_company_name' => $companyName,
-                    'created_at' => optional($ret?->created_at)->toIso8601String(),
-                    'processed_at' => optional($ret?->processed_at)->toIso8601String(),
+                    'created_at' => $ret !== null ? optional($ret->created_at)->toIso8601String() : null,
+                    'processed_at' => $ret !== null ? optional($ret->processed_at)->toIso8601String() : null,
                 ];
             })
             ->values()

@@ -471,10 +471,16 @@ class ClientAccountService
             ClientAccountFee::GROUP_CUSTOM_WORK => [],
         ];
 
-        foreach ($items as $fee) {
-            if (! $fee instanceof ClientAccountFee) {
-                continue;
-            }
+        $feeItems = $items
+            ->filter(fn ($fee) => $fee instanceof ClientAccountFee)
+            ->sortBy(fn (ClientAccountFee $fee) => [(int) $fee->sort_order, (int) $fee->id])
+            ->values();
+
+        $flatItems = $feeItems
+            ->map(fn (ClientAccountFee $fee) => $this->feeItemPayloadForApi($fee, $iconService))
+            ->all();
+
+        foreach ($feeItems as $fee) {
             $amount = $fee->amount !== null ? (float) $fee->amount : null;
 
             if ($fee->fee_group === ClientAccountFee::GROUP_FULFILLMENT) {
@@ -515,7 +521,74 @@ class ClientAccountService
             'returns' => $returns,
             'storage' => $storage,
             'catalog_lines' => $catalog,
+            'items' => $flatItems,
         ];
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function feeItemPayloadForApi(ClientAccountFee $fee, PricingFeeIconService $iconService): array
+    {
+        $category = (string) $fee->fee_group;
+        $amount = $fee->amount !== null ? (float) $fee->amount : null;
+
+        return [
+            'id' => $fee->id,
+            'name' => $this->feeDisplayName($fee),
+            'description' => $fee->description,
+            'category' => $category,
+            'category_label' => PricingFeeTemplate::categoryLabel($category),
+            'amount' => $amount,
+            'icon_url' => $iconService->publicUrl($fee->icon_path),
+            'pricing_template_id' => $fee->pricing_template_id,
+            'sort_order' => (int) $fee->sort_order,
+            'line_code' => $fee->line_code,
+        ];
+    }
+
+    private function feeDisplayName(ClientAccountFee $fee): string
+    {
+        if ($fee->label !== null && trim((string) $fee->label) !== '') {
+            return trim((string) $fee->label);
+        }
+
+        $legacy = [
+            ClientAccountFee::LINE_FIRST_PICK => 'First Pick',
+            ClientAccountFee::LINE_ADDITIONAL_PICKS => 'Additional Picks',
+            ClientAccountFee::LINE_RETURNS_PROCESSING => 'Returns Processing',
+            ClientAccountFee::LINE_RETURNS_ADDITIONAL_ITEMS => 'Returns Additional Items',
+        ];
+
+        $code = (string) ($fee->line_code ?? '');
+
+        return $legacy[$code] ?? 'Fee';
+    }
+
+    /**
+     * Update a single account fee amount (account-specific override).
+     */
+    public function updateFeeAmount(
+        ClientAccount $account,
+        ClientAccountFee $fee,
+        ?float $amount,
+        ?User $actor = null
+    ): ClientAccount {
+        if ((int) $fee->client_account_id !== (int) $account->id) {
+            throw new \InvalidArgumentException('Fee does not belong to this account.');
+        }
+
+        $fee->update(['amount' => $this->normalizeFeeAmount($amount)]);
+
+        if ($actor !== null) {
+            $this->activityLog->log($actor, 'client_account.updated', $account, null, [
+                'fields' => ['fees'],
+            ]);
+        }
+
+        $fresh = $account->fresh(['feeItems']);
+
+        return $fresh !== null ? $fresh : $account;
     }
 
     private function isCatalogFeeLine(ClientAccountFee $fee): bool

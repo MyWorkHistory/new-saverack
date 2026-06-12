@@ -206,7 +206,6 @@ class PricingFeeTemplateService
                 'fee_group' => $feeGroup,
                 'label' => $template->name,
                 'description' => $template->description,
-                'amount' => $template->amount,
                 'icon_path' => $template->icon_path,
             ]);
     }

@@ -399,6 +399,8 @@ Route::middleware('auth:sanctum')->group(function () {
         ->name('client-accounts.invoice-imports.storage');
     Route::put('client-accounts/{client_account}/fees', [ClientAccountController::class, 'syncFees'])
         ->name('client-accounts.fees.sync');
+    Route::patch('client-accounts/{client_account}/fees/{fee}', [ClientAccountController::class, 'updateFeeAmount'])
+        ->name('client-accounts.fees.update');
     Route::delete('client-accounts/{client_account}/fees/{fee}', [ClientAccountController::class, 'destroyFeeItem'])
         ->name('client-accounts.fees.destroy');
     Route::patch('client-accounts/bulk', [ClientAccountController::class, 'bulkUpdate'])

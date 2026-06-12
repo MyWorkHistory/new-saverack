@@ -7,6 +7,7 @@ use App\Http\Requests\ClientAccountBulkDeleteRequest;
 use App\Http\Requests\ClientAccountBulkUpdateRequest;
 use App\Http\Requests\ClientAccountCommentStoreRequest;
 use App\Http\Requests\ClientAccountCommentUpdateRequest;
+use App\Http\Requests\ClientAccountFeeAmountRequest;
 use App\Http\Requests\ClientAccountFeesSyncRequest;
 use App\Http\Requests\ClientAccountStoreRequest;
 use App\Http\Requests\ClientAccountUpdateRequest;
@@ -292,6 +293,32 @@ class ClientAccountController extends Controller
             $request->validated(),
             $request->user()
         );
+
+        return response()->json($this->clientAccounts->toApiArray($account));
+    }
+
+    public function updateFeeAmount(
+        ClientAccountFeeAmountRequest $request,
+        ClientAccount $client_account,
+        ClientAccountFee $fee
+    ): JsonResponse {
+        if ((int) $fee->client_account_id !== (int) $client_account->id) {
+            abort(404);
+        }
+
+        $validated = $request->validated();
+        $rawAmount = array_key_exists('amount', $validated) ? $validated['amount'] : null;
+
+        try {
+            $account = $this->clientAccounts->updateFeeAmount(
+                $client_account,
+                $fee,
+                $rawAmount !== null ? (float) $rawAmount : null,
+                $request->user()
+            );
+        } catch (\InvalidArgumentException $e) {
+            return response()->json(['message' => $e->getMessage()], 422);
+        }
 
         return response()->json($this->clientAccounts->toApiArray($account));
     }

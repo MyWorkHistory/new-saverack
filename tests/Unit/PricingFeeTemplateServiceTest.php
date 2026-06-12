@@ -50,7 +50,7 @@ class PricingFeeTemplateServiceTest extends TestCase
         $this->assertEquals('2.5000', (string) $fee->amount);
     }
 
-    public function test_template_update_syncs_linked_account_fees(): void
+    public function test_template_update_syncs_linked_account_fee_metadata_not_amount(): void
     {
         $account = $this->account();
 
@@ -65,6 +65,8 @@ class PricingFeeTemplateServiceTest extends TestCase
             ->where('pricing_template_id', $template->id)
             ->value('id');
 
+        ClientAccountFee::query()->whereKey($feeId)->update(['amount' => '9.9900']);
+
         $this->service()->update($template, [
             'name' => 'Kitting (Updated)',
             'amount' => 4.25,
@@ -72,7 +74,7 @@ class PricingFeeTemplateServiceTest extends TestCase
 
         $fee = ClientAccountFee::query()->findOrFail($feeId);
         $this->assertSame('Kitting (Updated)', $fee->label);
-        $this->assertEquals('4.2500', (string) $fee->amount);
+        $this->assertEquals('9.9900', (string) $fee->amount);
     }
 
     public function test_provision_all_templates_on_account_create_path(): void

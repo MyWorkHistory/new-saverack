@@ -27,3 +27,18 @@ export function returnStatusBadgeClass(status) {
   if (s === "draft") return "bg-secondary-subtle text-secondary-emphasis";
   return "bg-body-secondary text-body-secondary";
 }
+
+/** Admin process page display status (not_returned | pending | returned). */
+export function processDisplayStatusLabel(displayStatus) {
+  const s = String(displayStatus || "").toLowerCase();
+  if (s === "not_returned") return "Not Returned";
+  if (s === "returned") return "Returned";
+  return "Pending";
+}
+
+export function processDisplayStatusBadgeClass(displayStatus) {
+  const s = String(displayStatus || "").toLowerCase();
+  if (s === "not_returned") return "bg-secondary-subtle text-secondary-emphasis";
+  if (s === "returned") return "bg-success-subtle text-success-emphasis";
+  return "bg-warning-subtle text-warning-emphasis";
+}

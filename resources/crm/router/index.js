@@ -206,6 +206,10 @@ const meta = {
     title: "Save Rack | Process Returns",
     description: "Find pending returns to process.",
   },
+  adminReturnCreate: {
+    title: "Save Rack | Create Return",
+    description: "Create a return for a client order.",
+  },
   adminProcessReturnDetail: {
     title: "Save Rack | Process Return",
     description: "Process a pending return.",
@@ -415,6 +419,13 @@ const routes = [
     name: "admin-process-returns",
     component: () => import("../pages/admin-returns/AdminProcessReturnsSearchPage.vue"),
     meta: meta.adminProcessReturnsSearch,
+  },
+  {
+    path: "/admin/returns/process/create/order/:shipheroOrderId",
+    name: "admin-return-create",
+    component: () => import("../pages/admin-returns/AdminReturnCreatePage.vue"),
+    props: true,
+    meta: meta.adminReturnCreate,
   },
   {
     path: "/admin/returns/process/:id",

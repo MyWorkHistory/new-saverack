@@ -173,6 +173,12 @@ Route::middleware('auth:sanctum')->group(function () {
     });
 
     Route::prefix('admin/returns')->group(function () {
+        Route::get('/pending', [AdminReturnController::class, 'pending'])->middleware('can:inventory.view');
+        Route::get('/order-lookup', [AdminReturnController::class, 'orderLookup'])->middleware('can:inventory.view');
+        Route::get('/rma-lookup', [AdminReturnController::class, 'rmaLookup'])->middleware('can:inventory.view');
+        Route::get('/orders', [AdminReturnController::class, 'returnedOrders'])->middleware('can:inventory.view');
+        Route::get('/items', [AdminReturnController::class, 'returnedItems'])->middleware('can:inventory.view');
+        Route::post('/{clientAccountReturn}/process', [AdminReturnController::class, 'process'])->middleware('can:inventory.view');
         Route::get('/process-lookup', [AdminReturnController::class, 'processLookup'])->middleware('can:inventory.view');
     });
 

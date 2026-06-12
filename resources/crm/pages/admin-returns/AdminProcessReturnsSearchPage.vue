@@ -7,6 +7,10 @@ import CrmLoadingSpinner from "../../components/common/CrmLoadingSpinner.vue";
 import { setCrmPageMeta } from "../../composables/useCrmPageMeta.js";
 import { useToast } from "../../composables/useToast.js";
 import { formatDateUs } from "../../utils/formatUserDates.js";
+import {
+  processDisplayStatusBadgeClass,
+  processDisplayStatusLabel,
+} from "../../utils/formatReturnDisplay.js";
 
 const toast = useToast();
 const router = useRouter();
@@ -16,11 +20,12 @@ const accountsLoading = ref(false);
 const accountFilter = ref("");
 const orderNumber = ref("");
 const rmaNumber = ref("");
+const loading = ref(true);
 const searching = ref(false);
-const hasSearched = ref(false);
+const searchMode = ref(false);
 const results = ref([]);
 
-const tableColspan = 6;
+const tableColspan = 7;
 
 const accountOptions = computed(() =>
   (accounts.value || [])
@@ -32,27 +37,18 @@ const accountOptions = computed(() =>
     })),
 );
 
-const canSearch = computed(
-  () => orderNumber.value.trim() !== "" || rmaNumber.value.trim() !== "",
-);
+const accountNameById = computed(() => {
+  const map = new Map();
+  accountOptions.value.forEach((a) => map.set(Number(a.id), a.name));
+  return map;
+});
 
-function normalizeOrderNumber(raw) {
-  return String(raw || "")
-    .trim()
-    .replace(/^#+/, "")
-    .toLowerCase();
-}
-
-function normalizeRmaNumber(raw) {
-  let s = String(raw || "")
-    .trim()
-    .replace(/^#+/, "")
-    .toLowerCase();
-  if (s.startsWith("rma")) {
-    s = s.slice(3).trim().replace(/^#+/, "");
-  }
-  return s;
-}
+const canSearch = computed(() => {
+  const hasRma = rmaNumber.value.trim() !== "";
+  const hasOrder = orderNumber.value.trim() !== "";
+  if (hasRma) return true;
+  return hasOrder && Boolean(accountFilter.value);
+});
 
 async function loadAccounts() {
   accountsLoading.value = true;
@@ -71,50 +67,111 @@ async function loadAccounts() {
   }
 }
 
-function openReturn(row) {
-  router.push({
-    name: "admin-process-return-detail",
-    params: { id: String(row.id) },
-  });
+async function loadPending() {
+  loading.value = true;
+  searchMode.value = false;
+  try {
+    const params = {};
+    if (accountFilter.value) params.client_account_id = Number(accountFilter.value);
+    const { data } = await api.get("/admin/returns/pending", { params });
+    results.value = Array.isArray(data?.data) ? data.data : [];
+  } catch (e) {
+    toast.errorFrom(e, "Could not load pending returns.");
+    results.value = [];
+  } finally {
+    loading.value = false;
+  }
+}
+
+function openRow(row) {
+  const status = String(row.display_status || "").toLowerCase();
+  if (status === "not_returned" && row.shiphero_order_id && row.client_account_id) {
+    router.push({
+      name: "admin-return-create",
+      params: { shipheroOrderId: String(row.shiphero_order_id) },
+      query: { client_account_id: String(row.client_account_id) },
+    });
+    return;
+  }
+  if (row.id) {
+    router.push({
+      name: "admin-process-return-detail",
+      params: { id: String(row.id) },
+    });
+  }
 }
 
 async function search() {
-  const order = normalizeOrderNumber(orderNumber.value);
-  const rma = normalizeRmaNumber(rmaNumber.value);
-  if (!order && !rma) {
+  const order = orderNumber.value.trim();
+  const rma = rmaNumber.value.trim();
+  if (!rma && !order) {
     toast.error("Enter an order number or RMA number.");
+    return;
+  }
+  if (order && !accountFilter.value) {
+    toast.error("Select an account to search by order number.");
     return;
   }
 
   searching.value = true;
-  hasSearched.value = true;
+  searchMode.value = true;
   results.value = [];
 
-  const params = {};
-  if (orderNumber.value.trim()) params.order_number = orderNumber.value.trim().replace(/^#+/, "");
-  if (rmaNumber.value.trim()) params.rma_number = rmaNumber.value.trim();
-  if (accountFilter.value) params.client_account_id = Number(accountFilter.value);
-
   try {
-    const { data } = await api.get("/admin/returns/process-lookup", { params });
-    const rows = Array.isArray(data?.data) ? data.data : [];
-    results.value = rows;
-    if (rows.length === 1) {
-      openReturn(rows[0]);
+    if (rma) {
+      const params = { rma_number: rma };
+      if (accountFilter.value) params.client_account_id = Number(accountFilter.value);
+      const { data } = await api.get("/admin/returns/rma-lookup", { params });
+      results.value = data?.data ? [data.data] : [];
+      return;
     }
+
+    const { data } = await api.get("/admin/returns/order-lookup", {
+      params: {
+        order_number: order.replace(/^#+/, ""),
+        client_account_id: Number(accountFilter.value),
+      },
+    });
+
+    const ret = data?.return;
+    const ord = data?.order || {};
+    const accountId = Number(data?.client_account_id || accountFilter.value);
+    results.value = [
+      {
+        id: ret?.id ?? null,
+        rma_number: ret?.rma_number ?? null,
+        order_number: ord.order_number || order,
+        client_account_id: accountId,
+        client_account_company_name:
+          ret?.client_account_company_name || accountNameById.value.get(accountId) || "—",
+        customer_name: ret?.customer_name || ord.recipient_name || "—",
+        items_count: ret?.items_count ?? null,
+        display_status: data?.display_status || "not_returned",
+        shiphero_order_id: ord.id || ret?.shiphero_order_id || null,
+        created_at: ret?.created_at ?? null,
+      },
+    ];
   } catch (e) {
-    toast.errorFrom(e, "Could not search returns.");
+    toast.errorFrom(e, "Could not search.");
+    results.value = [];
   } finally {
     searching.value = false;
   }
 }
 
+function clearSearch() {
+  orderNumber.value = "";
+  rmaNumber.value = "";
+  loadPending();
+}
+
 onMounted(() => {
   setCrmPageMeta({
     title: "Save Rack | Process Returns",
-    description: "Find pending returns to process.",
+    description: "Review pending returns and search by order or RMA.",
   });
   loadAccounts();
+  loadPending();
 });
 </script>
 
@@ -124,9 +181,17 @@ onMounted(() => {
       <div>
         <h1 class="h4 mb-1 fw-semibold text-body">Process Returns</h1>
         <p class="small admin-returns-list__subtitle mb-0">
-          Find a pending return by order number or RMA number. Account is optional and helps narrow the search.
+          Pending user returns are listed below. Search by order number (ShipHero) or RMA number (database).
         </p>
       </div>
+      <button
+        v-if="searchMode"
+        type="button"
+        class="btn btn-outline-secondary btn-sm"
+        @click="clearSearch"
+      >
+        Show All Pending
+      </button>
     </div>
 
     <div
@@ -141,7 +206,7 @@ onMounted(() => {
               appearance="staff"
               aria-label="Client account"
               :options="accountOptions"
-              :disabled="accountsLoading || searching"
+              :disabled="accountsLoading || searching || loading"
               placeholder="All accounts"
               empty-label="All accounts"
               search-placeholder="Search accounts…"
@@ -176,10 +241,10 @@ onMounted(() => {
             <button
               type="button"
               class="btn btn-primary staff-page-primary fw-semibold"
-              :disabled="searching || !canSearch"
+              :disabled="searching || loading || !canSearch"
               @click="search"
             >
-              Find Return
+              Search
             </button>
           </div>
         </div>
@@ -194,38 +259,47 @@ onMounted(() => {
               <th class="staff-table-head__th text-center" scope="col">Account</th>
               <th class="staff-table-head__th text-center" scope="col">Customer</th>
               <th class="staff-table-head__th text-center" scope="col">Items</th>
+              <th class="staff-table-head__th text-center" scope="col">Status</th>
               <th class="staff-table-head__th text-center" scope="col">Created</th>
             </tr>
           </thead>
           <tbody>
-            <tr v-if="searching">
+            <tr v-if="loading || searching">
               <td :colspan="tableColspan" class="py-5">
                 <div class="d-flex justify-content-center py-3">
-                  <CrmLoadingSpinner message="Searching returns…" />
+                  <CrmLoadingSpinner :message="searching ? 'Searching…' : 'Loading pending returns…'" />
                 </div>
               </td>
             </tr>
             <tr v-else-if="!results.length">
               <td :colspan="tableColspan" class="text-center text-secondary py-5">
-                <template v-if="hasSearched">No pending return found.</template>
-                <template v-else>Enter an order number or RMA number and select Find Return.</template>
+                <template v-if="searchMode">No matching return found.</template>
+                <template v-else>No pending returns.</template>
               </td>
             </tr>
             <tr
-              v-for="row in results"
+              v-for="(row, idx) in results"
               v-else
-              :key="row.id"
+              :key="row.id ?? 'search-' + idx"
               class="align-middle admin-returns-result-row"
               role="button"
               tabindex="0"
-              @click="openReturn(row)"
-              @keydown.enter.prevent="openReturn(row)"
+              @click="openRow(row)"
+              @keydown.enter.prevent="openRow(row)"
             >
               <td class="text-center fw-semibold">{{ row.rma_number || "—" }}</td>
               <td class="text-center">{{ row.order_number || "—" }}</td>
               <td class="text-center">{{ row.client_account_company_name || "—" }}</td>
               <td class="text-center">{{ row.customer_name || "—" }}</td>
               <td class="text-center">{{ row.items_count ?? "—" }}</td>
+              <td class="text-center">
+                <span
+                  class="badge rounded-pill fw-medium"
+                  :class="processDisplayStatusBadgeClass(row.display_status)"
+                >
+                  {{ processDisplayStatusLabel(row.display_status) }}
+                </span>
+              </td>
               <td class="text-center small text-secondary">{{ formatDateUs(row.created_at) || "—" }}</td>
             </tr>
           </tbody>

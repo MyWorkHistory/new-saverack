@@ -325,18 +325,18 @@ const detailHasRemovableHolds = computed(() => {
   return !!(h.fraud_hold || h.address_hold || h.payment_hold);
 });
 
-/** CRM-placed user hold (3PL uses operator_hold in ShipHero). */
+/** CRM user hold (client_hold in ShipHero). */
 const detailOnlyCrmUserHold = computed(() => {
-  const h = detailHoldsNormalized.value;
-  if (!h.operator_hold) return false;
-  return !(h.fraud_hold || h.address_hold || h.payment_hold || h.client_hold || h.shipping_method_hold);
-});
-
-/** Store/channel user hold only — 3PL cannot clear via API. */
-const detailOnlyClientHold = computed(() => {
   const h = detailHoldsNormalized.value;
   if (!h.client_hold) return false;
   return !(h.fraud_hold || h.address_hold || h.payment_hold || h.operator_hold || h.shipping_method_hold);
+});
+
+/** Warehouse operator hold only — not clearable as user hold from CRM. */
+const detailOnlyOperatorHold = computed(() => {
+  const h = detailHoldsNormalized.value;
+  if (!h.operator_hold) return false;
+  return !(h.fraud_hold || h.address_hold || h.payment_hold || h.client_hold || h.shipping_method_hold);
 });
 
 const orderIsShipped = computed(() => {
@@ -445,7 +445,7 @@ const canPlaceHold = computed(
 );
 
 const showRemoveUserHoldBtn = computed(
-  () => detailHoldsNormalized.value.operator_hold && canRunShipHeroActions.value && !detailOnlyClientHold.value,
+  () => detailHoldsNormalized.value.client_hold && canRunShipHeroActions.value && detailOnlyCrmUserHold.value,
 );
 
 /** Admin sidebar hold guidance (not shown on portal order view). */
@@ -455,7 +455,7 @@ const showAdminSidebarHoldNote = computed(
     !isReturnPreviewMode.value &&
     Boolean(order.value) &&
     showNotReadyToShipBanner.value &&
-    (detailOnlyClientHold.value ||
+    (detailOnlyOperatorHold.value ||
       (detailOnlyCrmUserHold.value && showRemoveUserHoldBtn.value)),
 );
 
@@ -1072,7 +1072,7 @@ async function removeUserHold() {
   try {
     await api.post(`/orders/${encodeURIComponent(orderId.value)}/remove-holds`, {
       client_account_id: Number(selectedAccountId.value),
-      holds_to_clear: ["operator_hold"],
+      holds_to_clear: ["client_hold"],
     });
     toast.success("User hold removed.");
     await loadOrder({ refresh: true });
@@ -2240,11 +2240,11 @@ function goToOrdersList() {
             class="staff-table-card staff-datatable-card staff-datatable-card--white p-4 order-detail-page__side-panel"
           >
             <h3 class="h6 fw-semibold mb-3">Note</h3>
-            <p v-if="detailOnlyClientHold" class="small text-secondary mb-0">
-              This user hold was set outside Save Rack. Clear it in ShipHero or your sales channel.
+            <p v-if="detailOnlyOperatorHold" class="small text-secondary mb-0">
+              This order has a warehouse operator hold. Contact your account manager to release it.
             </p>
             <p v-else-if="detailOnlyCrmUserHold && showRemoveUserHoldBtn" class="small text-secondary mb-0">
-              User hold is active — use Remove Hold to release. ShipHero may label this hold as Operator Hold.
+              User hold is active — use Remove Hold to release.
             </p>
           </div>
         </div>

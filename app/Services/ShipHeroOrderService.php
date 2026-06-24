@@ -12,7 +12,7 @@ class ShipHeroOrderService
 {
     /**
      * Hold keys CRM may clear via {@see clearOrderHoldsSelective}.
-     * CRM “user hold” place/clear uses {@see ORDER_USER_HOLD_MUTATION_KEY} ({@see operator_hold}); 3PL cannot touch {@see client_hold}.
+     * CRM user hold place/clear uses {@see client_hold} ({@see ORDER_USER_HOLD_MUTATION_KEY}).
      *
      * @see https://developer.shiphero.com/schema/types/update-order-holds-input.html
      */
@@ -22,13 +22,13 @@ class ShipHeroOrderService
         'payment_hold',
     ];
 
-    /** ShipHero “User Hold” label in UI when reading orders; API field {@see client_hold}. */
+    /** ShipHero “User Hold” in UI; API field for CRM user hold place/clear. */
     public const ORDER_USER_HOLD_DISPLAY_KEY = 'client_hold';
 
-    /** CRM place/clear “user hold” via 3PL API ({@see operator_hold}). ShipHero may show Operator Hold. */
-    public const ORDER_USER_HOLD_MUTATION_KEY = 'operator_hold';
+    /** CRM place/clear user hold via ShipHero {@see client_hold}. */
+    public const ORDER_USER_HOLD_MUTATION_KEY = 'client_hold';
 
-    /** @deprecated Use {@see ORDER_USER_HOLD_MUTATION_KEY} for removable keys / mutations. */
+    /** @deprecated Use {@see ORDER_USER_HOLD_MUTATION_KEY}. */
     public const ORDER_USER_HOLD_KEY = self::ORDER_USER_HOLD_MUTATION_KEY;
 
     public const NO_MATCHING_HOLDS_MESSAGE = 'No matching holds to clear on this order.';
@@ -1655,7 +1655,7 @@ GQL;
     }
 
     /**
-     * Clear CRM-placed user hold ({@see operator_hold} via 3PL). Does not touch {@see client_hold} or other types.
+     * Clear CRM-placed user hold ({@see client_hold}). Does not touch {@see operator_hold} or other types.
      *
      * @param  array{relay_id: string, holds: array<string, bool>}|null  $headerContext  from {@see resolveOrderHeaderForMutation}
      */
@@ -1696,7 +1696,7 @@ GQL;
     }
 
     /**
-     * True when the only active hold is CRM-clearable user hold ({@see operator_hold}).
+     * True when the only active hold is CRM user hold ({@see client_hold}).
      *
      * @param  array<string, mixed>|null  $holds
      */
@@ -1709,29 +1709,6 @@ GQL;
         if (empty($h[self::ORDER_USER_HOLD_MUTATION_KEY])) {
             return false;
         }
-        foreach (['fraud_hold', 'address_hold', 'payment_hold', 'client_hold', 'shipping_method_hold'] as $key) {
-            if (! empty($h[$key])) {
-                return false;
-            }
-        }
-
-        return true;
-    }
-
-    /**
-     * True when the only active hold is store {@see client_hold} (3PL cannot clear).
-     *
-     * @param  array<string, mixed>|null  $holds
-     */
-    public function orderHoldsOnlyClientHoldActive($holds): bool
-    {
-        $h = $this->normalizeOrderHoldsForApi($holds);
-        if (! $this->orderHoldsArrayHasActive($h)) {
-            return false;
-        }
-        if (empty($h[self::ORDER_USER_HOLD_DISPLAY_KEY])) {
-            return false;
-        }
         foreach (['fraud_hold', 'address_hold', 'payment_hold', 'operator_hold', 'shipping_method_hold'] as $key) {
             if (! empty($h[$key])) {
                 return false;
@@ -1742,27 +1719,47 @@ GQL;
     }
 
     /**
-     * True when the only active hold is {@see operator_hold} (warehouse; not clearable via fraud/address/payment APIs).
+     * True when the only active hold is {@see client_hold} with no other hold types.
      *
      * @param  array<string, mixed>|null  $holds
      */
-    public function orderHoldsOnlyOperatorHoldActive($holds): bool
+    public function orderHoldsOnlyClientHoldActive($holds): bool
     {
         return $this->orderHoldsOnlyUserHoldActive($holds);
     }
 
     /**
-     * Map CRM “user hold” ({@see client_hold} flag) to {@see operator_hold} for 3PL mutations; never send {@see client_hold}.
+     * True when the only active hold is warehouse {@see operator_hold}.
+     *
+     * @param  array<string, mixed>|null  $holds
+     */
+    public function orderHoldsOnlyOperatorHoldActive($holds): bool
+    {
+        $h = $this->normalizeOrderHoldsForApi($holds);
+        if (! $this->orderHoldsArrayHasActive($h)) {
+            return false;
+        }
+        if (empty($h['operator_hold'])) {
+            return false;
+        }
+        foreach (['fraud_hold', 'address_hold', 'payment_hold', 'client_hold', 'shipping_method_hold'] as $key) {
+            if (! empty($h[$key])) {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    /**
+     * Normalize CRM place-hold flags; CRM does not set warehouse {@see operator_hold}.
      *
      * @param  array<string, bool>  $flags
      * @return array<string, bool>
      */
     public function normalizeUserHoldMutationFlags(array $flags): array
     {
-        if (! empty($flags[self::ORDER_USER_HOLD_DISPLAY_KEY])) {
-            $flags[self::ORDER_USER_HOLD_MUTATION_KEY] = true;
-        }
-        unset($flags[self::ORDER_USER_HOLD_DISPLAY_KEY]);
+        unset($flags['operator_hold']);
 
         return $flags;
     }
@@ -1778,7 +1775,7 @@ GQL;
         $ctx = $this->resolveOrderHeaderForMutation($orderId, $customerAccountId);
         $customer = trim($customerAccountId);
         $flags = $this->normalizeUserHoldMutationFlags($flags);
-        $allowed = ['fraud_hold', 'address_hold', 'payment_hold', 'operator_hold'];
+        $allowed = ['fraud_hold', 'address_hold', 'payment_hold', 'client_hold'];
         $current = $ctx['holds'];
         $userWantsAny = false;
         foreach ($allowed as $key) {

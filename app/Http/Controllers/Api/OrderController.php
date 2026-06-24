@@ -582,10 +582,9 @@ class OrderController extends Controller
             'address_hold' => ['nullable', 'boolean'],
             'payment_hold' => ['nullable', 'boolean'],
             'client_hold' => ['nullable', 'boolean'],
-            'operator_hold' => ['nullable', 'boolean'],
         ]);
         $flags = [];
-        foreach (['fraud_hold', 'address_hold', 'payment_hold', 'client_hold', 'operator_hold'] as $k) {
+        foreach (['fraud_hold', 'address_hold', 'payment_hold', 'client_hold'] as $k) {
             if (! empty($validated[$k])) {
                 $flags[$k] = true;
             }
@@ -631,11 +630,6 @@ class OrderController extends Controller
                 ? array_values(array_unique($validated['holds_to_clear']))
                 : [];
             if ($keysToClear === []) {
-                if ($this->orders->orderHoldsOnlyClientHoldActive($holds)) {
-                    return response()->json([
-                        'message' => ShipHeroOrderService::CLIENT_HOLD_3PL_MESSAGE,
-                    ], 422);
-                }
                 if ($this->orders->orderHoldsOnlyUserHoldActive($holds)) {
                     $this->orders->clearUserHold($orderId, $customerId, $headerContext);
 
@@ -653,11 +647,6 @@ class OrderController extends Controller
             ));
 
             if ($clearUserHold) {
-                if ($this->orders->orderHoldsOnlyClientHoldActive($holds)) {
-                    return response()->json([
-                        'message' => ShipHeroOrderService::CLIENT_HOLD_3PL_MESSAGE,
-                    ], 422);
-                }
                 $this->orders->clearUserHold($orderId, $customerId, $headerContext);
                 $holds[ShipHeroOrderService::ORDER_USER_HOLD_MUTATION_KEY] = false;
             }
@@ -1295,10 +1284,9 @@ class OrderController extends Controller
             'address_hold' => ['nullable', 'boolean'],
             'payment_hold' => ['nullable', 'boolean'],
             'client_hold' => ['nullable', 'boolean'],
-            'operator_hold' => ['nullable', 'boolean'],
         ]);
         $flags = [];
-        foreach (['fraud_hold', 'address_hold', 'payment_hold', 'client_hold', 'operator_hold'] as $k) {
+        foreach (['fraud_hold', 'address_hold', 'payment_hold', 'client_hold'] as $k) {
             if (! empty($validated[$k])) {
                 $flags[$k] = true;
             }
@@ -1361,16 +1349,6 @@ class OrderController extends Controller
             try {
                 $holds = $this->orders->getOrderHoldsNormalized($oid, $customerId);
                 if ($keysToClear === []) {
-                    if ($this->orders->orderHoldsOnlyClientHoldActive($holds)) {
-                        $results[] = [
-                            'order_id' => $oid,
-                            'ok' => false,
-                            'message' => ShipHeroOrderService::CLIENT_HOLD_3PL_MESSAGE,
-                        ];
-                        $failed++;
-
-                        continue;
-                    }
                     if ($this->orders->orderHoldsOnlyUserHoldActive($holds)) {
                         $ctx = $this->orders->resolveOrderHeaderForMutation($oid, $customerId);
                         $this->orders->clearUserHold($oid, $customerId, $ctx);

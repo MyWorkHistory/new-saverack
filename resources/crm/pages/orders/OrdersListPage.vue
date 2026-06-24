@@ -133,21 +133,14 @@ const somePageSelected = computed(() => {
   return ids.some((id) => selectedOrderIds.value.has(id));
 });
 
-/** Holds that “Remove Hold” can affect via ShipHero (CRM user hold uses operator_hold). */
+/** Holds that “Remove Hold” can affect via ShipHero. */
 function rowHasRemovableHolds(row) {
   const h = row?.holds && typeof row.holds === "object" ? row.holds : {};
-  return !!(h.fraud_hold || h.address_hold || h.payment_hold || h.operator_hold);
+  return !!(h.fraud_hold || h.address_hold || h.payment_hold || h.client_hold);
 }
 
-/** Only CRM-placed user hold (operator_hold) is active. */
+/** Only user hold (client_hold) is active. */
 function rowOnlyCrmUserHold(row) {
-  const h = row?.holds && typeof row.holds === "object" ? row.holds : {};
-  if (!h.operator_hold) return false;
-  return !(h.fraud_hold || h.address_hold || h.payment_hold || h.client_hold || h.shipping_method_hold);
-}
-
-/** Only store client_hold — 3PL cannot clear via API. */
-function rowOnlyClientHold(row) {
   const h = row?.holds && typeof row.holds === "object" ? row.holds : {};
   if (!h.client_hold) return false;
   return !(h.fraud_hold || h.address_hold || h.payment_hold || h.operator_hold || h.shipping_method_hold);
@@ -801,7 +794,7 @@ async function runSingleRemoveUserHold(row) {
   try {
     await api.post(`/orders/${encodeURIComponent(String(row.id))}/remove-holds`, {
       client_account_id: accountId,
-      holds_to_clear: ["operator_hold"],
+      holds_to_clear: ["client_hold"],
     });
     toast.success("User hold removed.");
     await fetchOrders(true);
@@ -1538,16 +1531,6 @@ onUnmounted(() => {
             class="staff-row-menu__item"
             role="menuitem"
             @click="rowOnlyCrmUserHold(manageMenuRow) ? runSingleRemoveUserHold(manageMenuRow) : openSingleRemoveHoldsModal(manageMenuRow)"
-          >
-            Remove Hold
-          </button>
-          <button
-            v-if="canWriteOrders && rowOnlyClientHold(manageMenuRow)"
-            type="button"
-            class="staff-row-menu__item text-start"
-            role="menuitem"
-            disabled
-            title="This user hold was set outside Save Rack. Clear it in ShipHero or your sales channel."
           >
             Remove Hold
           </button>

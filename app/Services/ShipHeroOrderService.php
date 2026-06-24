@@ -35,6 +35,26 @@ class ShipHeroOrderService
 
     public const ORDER_USER_HOLD_CLEAR_HISTORY_MESSAGE = 'Hold removed by User';
 
+    public static function formatUserHoldPlacedHistoryMessage(?string $actorName = null): string
+    {
+        $name = trim((string) $actorName);
+        if ($name !== '') {
+            return 'Hold was placed by User ('.$name.')';
+        }
+
+        return self::ORDER_USER_HOLD_HISTORY_MESSAGE;
+    }
+
+    public static function formatUserHoldClearedHistoryMessage(?string $actorName = null): string
+    {
+        $name = trim((string) $actorName);
+        if ($name !== '') {
+            return 'Hold removed by User ('.$name.')';
+        }
+
+        return self::ORDER_USER_HOLD_CLEAR_HISTORY_MESSAGE;
+    }
+
     /** @deprecated Use {@see ORDER_USER_HOLD_MUTATION_KEY}. */
     public const ORDER_USER_HOLD_KEY = self::ORDER_USER_HOLD_MUTATION_KEY;
 
@@ -1547,7 +1567,7 @@ GQL;
         string $orderId,
         string $customerAccountId,
         string $message,
-        string $source = 'Save Rack'
+        ?string $source = null
     ): void {
         $relayId = $this->resolveOrderRelayIdForMutations($orderId, $customerAccountId);
         $customer = trim($customerAccountId);
@@ -1555,12 +1575,14 @@ GQL;
         if ($note === '') {
             return;
         }
+        $historyEntry = ['message' => $note];
+        $sourceTrimmed = trim((string) $source);
+        if ($sourceTrimmed !== '') {
+            $historyEntry['source'] = $sourceTrimmed;
+        }
         $data = [
             'order_id' => $relayId,
-            'history_entry' => [
-                'message' => $note,
-                'source' => trim($source) !== '' ? trim($source) : 'Save Rack',
-            ],
+            'history_entry' => $historyEntry,
         ];
         if ($customer !== '') {
             $data['customer_account_id'] = $customer;
@@ -1781,8 +1803,12 @@ GQL;
      *
      * @param  array{relay_id: string, holds: array<string, bool>, tags?: list<string>}|null  $headerContext
      */
-    public function clearUserHold(string $orderId, string $customerAccountId, ?array $headerContext = null): void
-    {
+    public function clearUserHold(
+        string $orderId,
+        string $customerAccountId,
+        ?array $headerContext = null,
+        ?string $historyActorName = null
+    ): void {
         $ctx = $headerContext ?? $this->resolveOrderHeaderForMutation($orderId, $customerAccountId);
         $current = $ctx['holds'];
         $tags = isset($ctx['tags']) && is_array($ctx['tags']) ? $ctx['tags'] : [];
@@ -1809,7 +1835,11 @@ GQL;
             ShipHeroClient::OPTION_GRAPHQL_SUCCESS_FIELD => 'order_update_holds',
         ]);
         $this->updateOrderTags($orderId, $customerAccountId, self::stripUserHoldTag($tags));
-        $this->addOrderHistoryEntry($orderId, $customerAccountId, self::ORDER_USER_HOLD_CLEAR_HISTORY_MESSAGE);
+        $this->addOrderHistoryEntry(
+            $orderId,
+            $customerAccountId,
+            self::formatUserHoldClearedHistoryMessage($historyActorName)
+        );
     }
 
     /**
@@ -1900,8 +1930,12 @@ GQL;
      *
      * @param  array<string, bool>  $flags
      */
-    public function setOrderHoldsTrue(string $orderId, string $customerAccountId, array $flags): void
-    {
+    public function setOrderHoldsTrue(
+        string $orderId,
+        string $customerAccountId,
+        array $flags,
+        ?string $historyActorName = null
+    ): void {
         $wantsUserHold = ! empty($flags[self::ORDER_USER_HOLD_DISPLAY_KEY])
             || ! empty($flags['client_hold']);
         $ctx = $this->resolveOrderHeaderForMutation($orderId, $customerAccountId);
@@ -1948,7 +1982,11 @@ GQL;
         if ($wantsUserHold) {
             $tags = isset($ctx['tags']) && is_array($ctx['tags']) ? $ctx['tags'] : [];
             $this->updateOrderTags($orderId, $customerAccountId, self::mergeUserHoldTag($tags));
-            $this->addOrderHistoryEntry($orderId, $customerAccountId, self::ORDER_USER_HOLD_HISTORY_MESSAGE);
+            $this->addOrderHistoryEntry(
+                $orderId,
+                $customerAccountId,
+                self::formatUserHoldPlacedHistoryMessage($historyActorName)
+            );
         }
     }
 

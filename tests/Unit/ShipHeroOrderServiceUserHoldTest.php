@@ -129,4 +129,24 @@ final class ShipHeroOrderServiceUserHoldTest extends TestCase
         $this->assertTrue($svc->orderHoldsOnlyClientHoldActive($holds, $tags));
         $this->assertTrue($svc->orderHoldsOnlyUserHoldActive($holds, $tags));
     }
+
+    public function test_format_user_hold_placed_history_message_includes_actor_name(): void
+    {
+        $this->assertSame(
+            'Hold was placed by User (Jane Doe)',
+            ShipHeroOrderService::formatUserHoldPlacedHistoryMessage('Jane Doe')
+        );
+        $this->assertSame(
+            'Hold was placed by User',
+            ShipHeroOrderService::formatUserHoldPlacedHistoryMessage(null)
+        );
+    }
+
+    public function test_format_user_hold_cleared_history_message_includes_actor_name(): void
+    {
+        $this->assertSame(
+            'Hold removed by User (Jane Doe)',
+            ShipHeroOrderService::formatUserHoldClearedHistoryMessage('Jane Doe')
+        );
+    }
 }

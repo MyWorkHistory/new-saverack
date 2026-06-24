@@ -147,13 +147,6 @@ function rowHasRemovableHolds(row) {
   return !!(h.fraud_hold || h.address_hold || h.payment_hold || rowIsCrmUserHold(row));
 }
 
-/** Only CRM User Hold is active (operator_hold + tag, or legacy client_hold). */
-function rowOnlyCrmUserHold(row) {
-  const h = row?.holds && typeof row.holds === "object" ? row.holds : {};
-  if (!rowIsCrmUserHold(row)) return false;
-  return !(h.fraud_hold || h.address_hold || h.payment_hold || h.shipping_method_hold);
-}
-
 const accountOptions = computed(() => {
   const source = isPortalUser.value
     ? (accounts.value || []).filter((a) => Number(a?.id || 0) === portalClientAccountId.value)
@@ -765,57 +758,8 @@ function closeRemoveHoldsModal() {
 }
 
 function openBulkRemoveHoldsModal() {
-  const rows = selectedRowsList();
-  if (rows.length > 0 && rows.every((r) => rowOnlyCrmUserHold(r))) {
-    runBulkRemoveUserHold();
-    return;
-  }
   removeHoldsModalVariant.value = "bulk";
   removeHoldsModalOpen.value = true;
-}
-
-async function runBulkRemoveUserHold() {
-  if (!selectedAccountId.value) {
-    toast.error("Select an account first.");
-    return;
-  }
-  const ids = selectedRowsList()
-    .map((r) => String(r.id))
-    .filter(Boolean);
-  if (!ids.length) return;
-  bulkBusy.value = true;
-  try {
-    const { data } = await api.post("/orders/bulk/clear-holds", {
-      client_account_id: Number(selectedAccountId.value),
-      order_ids: ids,
-    });
-    toast.success(`Remove hold: ${data?.summary?.ok ?? 0} ok, ${data?.summary?.failed ?? 0} failed.`);
-    clearRowSelection();
-    await fetchOrders(true);
-  } catch (e) {
-    toast.errorFrom(e, "Bulk remove holds failed.");
-  } finally {
-    bulkBusy.value = false;
-  }
-}
-
-async function runSingleRemoveUserHold(row) {
-  const accountId = effectiveClientAccountId(row);
-  if (!accountId || !row?.id) return;
-  manageOpenId.value = null;
-  bulkBusy.value = true;
-  try {
-    await api.post(`/orders/${encodeURIComponent(String(row.id))}/remove-holds`, {
-      client_account_id: accountId,
-      holds_to_clear: ["client_hold"],
-    });
-    toast.success("User hold removed.");
-    await fetchOrders(true);
-  } catch (e) {
-    toast.errorFrom(e, "Could not remove hold.");
-  } finally {
-    bulkBusy.value = false;
-  }
 }
 
 function openSingleRemoveHoldsModal(row) {
@@ -1543,7 +1487,7 @@ onUnmounted(() => {
             v-if="canWriteOrders && rowHasRemovableHolds(manageMenuRow)"
             class="staff-row-menu__item"
             role="menuitem"
-            @click="rowOnlyCrmUserHold(manageMenuRow) ? runSingleRemoveUserHold(manageMenuRow) : openSingleRemoveHoldsModal(manageMenuRow)"
+            @click="openSingleRemoveHoldsModal(manageMenuRow)"
           >
             Remove Hold
           </button>

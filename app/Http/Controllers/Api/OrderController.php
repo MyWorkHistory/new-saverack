@@ -595,8 +595,9 @@ class OrderController extends Controller
             ]);
         }
         $customerId = $this->resolveShipHeroCustomerAccountId((int) $validated['client_account_id'], $request);
+        $historyActor = $this->userHoldHistoryActorName($request);
         try {
-            $this->orders->setOrderHoldsTrue($orderId, $customerId, $flags);
+            $this->orders->setOrderHoldsTrue($orderId, $customerId, $flags, $historyActor);
 
             return response()->json(['message' => 'Holds applied.']);
         } catch (RuntimeException $e) {
@@ -623,6 +624,7 @@ class OrderController extends Controller
             'payment_hold_reason' => ['nullable', 'string', 'max:500'],
         ]);
         $customerId = $this->resolveShipHeroCustomerAccountId((int) $validated['client_account_id'], $request);
+        $historyActor = $this->userHoldHistoryActorName($request);
         try {
             $headerContext = $this->orders->resolveOrderHeaderForMutation($orderId, $customerId);
             $holds = $headerContext['holds'];
@@ -635,7 +637,7 @@ class OrderController extends Controller
                 : $this->requestWantsClearUserHold($keysToClear);
             if ($keysToClear === []) {
                 if ($this->orders->orderHoldsOnlyUserHoldActive($holds, $tags)) {
-                    $this->orders->clearUserHold($orderId, $customerId, $headerContext);
+                    $this->orders->clearUserHold($orderId, $customerId, $headerContext, $historyActor);
 
                     return response()->json(['message' => 'Holds cleared.']);
                 }
@@ -650,7 +652,7 @@ class OrderController extends Controller
             ));
 
             if ($clearUserHold) {
-                $this->orders->clearUserHold($orderId, $customerId, $headerContext);
+                $this->orders->clearUserHold($orderId, $customerId, $headerContext, $historyActor);
                 $holds[ShipHeroOrderService::ORDER_USER_HOLD_MUTATION_KEY] = false;
             }
 
@@ -1301,12 +1303,13 @@ class OrderController extends Controller
         }
         $customerId = $this->resolveShipHeroCustomerAccountId((int) $validated['client_account_id'], $request);
         $orderIds = $this->normalizeBulkOrderIds($validated['order_ids']);
+        $historyActor = $this->userHoldHistoryActorName($request);
         $results = [];
         $ok = 0;
         $failed = 0;
         foreach ($orderIds as $oid) {
             try {
-                $this->orders->setOrderHoldsTrue($oid, $customerId, $flags);
+                $this->orders->setOrderHoldsTrue($oid, $customerId, $flags, $historyActor);
                 $results[] = ['order_id' => $oid, 'ok' => true];
                 $ok++;
             } catch (RuntimeException $e) {
@@ -1337,7 +1340,10 @@ class OrderController extends Controller
             'order_ids' => ['required', 'array', 'min:1', 'max:'.self::BULK_ORDER_IDS_MAX],
             'order_ids.*' => ['string', 'max:255'],
             'holds_to_clear' => ['nullable', 'array', 'min:1'],
-            'holds_to_clear.*' => ['string', Rule::in(ShipHeroOrderService::ORDER_CLEARABLE_HOLD_KEYS)],
+            'holds_to_clear.*' => ['string', Rule::in(array_merge(
+                ShipHeroOrderService::ORDER_CLEARABLE_HOLD_KEYS,
+                [ShipHeroOrderService::ORDER_USER_HOLD_DISPLAY_KEY]
+            ))],
             'payment_hold_reason' => ['nullable', 'string', 'max:500'],
         ]);
         $customerId = $this->resolveShipHeroCustomerAccountId((int) $validated['client_account_id'], $request);
@@ -1349,6 +1355,7 @@ class OrderController extends Controller
         $paymentReason = $keysToClear !== [] && in_array('payment_hold', $keysToClear, true)
             ? ($reasonRaw !== '' ? $reasonRaw : 'User Clear Payment Hold')
             : null;
+        $historyActor = $this->userHoldHistoryActorName($request);
         $results = [];
         $ok = 0;
         $failed = 0;
@@ -1359,7 +1366,7 @@ class OrderController extends Controller
                 $tags = isset($ctx['tags']) && is_array($ctx['tags']) ? $ctx['tags'] : [];
                 if ($keysToClear === []) {
                     if ($this->orders->orderHoldsOnlyUserHoldActive($holds, $tags)) {
-                        $this->orders->clearUserHold($oid, $customerId, $ctx);
+                        $this->orders->clearUserHold($oid, $customerId, $ctx, $historyActor);
                     } else {
                         $this->orders->clearOrderHolds($oid, $customerId);
                     }
@@ -1369,7 +1376,21 @@ class OrderController extends Controller
                     continue;
                 }
                 try {
-                    $this->orders->clearOrderHoldsSelective($oid, $customerId, $keysToClear, $paymentReason, $holds);
+                    $clearUserHold = $this->requestWantsClearUserHold($keysToClear);
+                    $clearableKeys = array_values(array_filter(
+                        $keysToClear,
+                        static fn (string $k): bool => in_array($k, ShipHeroOrderService::ORDER_CLEARABLE_HOLD_KEYS, true)
+                    ));
+
+                    if ($clearUserHold) {
+                        $this->orders->clearUserHold($oid, $customerId, $ctx, $historyActor);
+                        $holds[ShipHeroOrderService::ORDER_USER_HOLD_MUTATION_KEY] = false;
+                    }
+
+                    if ($clearableKeys !== []) {
+                        $this->orders->clearOrderHoldsSelective($oid, $customerId, $clearableKeys, $paymentReason, $holds);
+                    }
+
                     $results[] = ['order_id' => $oid, 'ok' => true];
                     $ok++;
                 } catch (RuntimeException $e) {
@@ -1552,6 +1573,21 @@ class OrderController extends Controller
     {
         return in_array(ShipHeroOrderService::ORDER_USER_HOLD_MUTATION_KEY, $keysToClear, true)
             || in_array(ShipHeroOrderService::ORDER_USER_HOLD_DISPLAY_KEY, $keysToClear, true);
+    }
+
+    private function userHoldHistoryActorName(Request $request): ?string
+    {
+        $user = $request->user();
+        if (! $user instanceof User) {
+            return null;
+        }
+        $name = trim((string) $user->name);
+        if ($name !== '') {
+            return $name;
+        }
+        $email = trim((string) $user->email);
+
+        return $email !== '' ? $email : null;
     }
 
     private function shipHeroOrderRuntimeErrorResponse(RuntimeException $e): JsonResponse

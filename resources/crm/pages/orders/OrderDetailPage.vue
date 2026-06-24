@@ -91,7 +91,6 @@ const removeHoldsModalOpen = ref(false);
 const removeHoldsBusy = ref(false);
 const placeHoldModalOpen = ref(false);
 const placeHoldBusy = ref(false);
-const userHoldBusy = ref(false);
 const moreActionsOpen = ref(false);
 const moreActionsBtnRef = ref(null);
 const moreActionsMenuRef = ref(null);
@@ -330,7 +329,18 @@ const detailIsCrmUserHold = computed(() => {
 
 const detailHasRemovableHolds = computed(() => {
   const h = detailHoldsNormalized.value;
-  return !!(h.fraud_hold || h.address_hold || h.payment_hold);
+  return !!(h.fraud_hold || h.address_hold || h.payment_hold || detailIsCrmUserHold.value);
+});
+
+/** Hold flags for Remove Holds modal (User Hold uses operator_hold + tag, not client_hold). */
+const detailHoldsForRemoveModal = computed(() => {
+  const h = detailHoldsNormalized.value;
+  return {
+    fraud_hold: h.fraud_hold,
+    address_hold: h.address_hold,
+    payment_hold: h.payment_hold,
+    client_hold: detailIsCrmUserHold.value,
+  };
 });
 
 /** CRM User Hold (operator_hold + tag, or legacy client_hold). */
@@ -450,8 +460,11 @@ const canPlaceHold = computed(
   () => canRunShipHeroActions.value && !orderIsTerminalFulfillment.value,
 );
 
-const showRemoveUserHoldBtn = computed(
-  () => detailIsCrmUserHold.value && canRunShipHeroActions.value && detailOnlyCrmUserHold.value,
+const showRemoveHoldBtn = computed(
+  () =>
+    showNotReadyToShipBanner.value &&
+    detailHasRemovableHolds.value &&
+    canRunShipHeroActions.value,
 );
 
 /** Admin sidebar hold guidance (not shown on portal order view). */
@@ -462,7 +475,7 @@ const showAdminSidebarHoldNote = computed(
     Boolean(order.value) &&
     showNotReadyToShipBanner.value &&
     (detailOnlyOperatorHold.value ||
-      (detailOnlyCrmUserHold.value && showRemoveUserHoldBtn.value)),
+      (detailOnlyCrmUserHold.value && showRemoveHoldBtn.value)),
 );
 
 const sortedItems = computed(() => {
@@ -1069,23 +1082,6 @@ async function submitPlaceHoldModal(flags) {
     toast.errorFrom(e, "Could not place hold.");
   } finally {
     placeHoldBusy.value = false;
-  }
-}
-
-async function removeUserHold() {
-  if (!order.value || !selectedAccountId.value || !orderId.value || !showRemoveUserHoldBtn.value) return;
-  userHoldBusy.value = true;
-  try {
-    await api.post(`/orders/${encodeURIComponent(orderId.value)}/remove-holds`, {
-      client_account_id: Number(selectedAccountId.value),
-      holds_to_clear: ["client_hold"],
-    });
-    toast.success("User hold removed.");
-    await loadOrder({ refresh: true });
-  } catch (e) {
-    toast.errorFrom(e, "Could not remove hold.");
-  } finally {
-    userHoldBusy.value = false;
   }
 }
 
@@ -1762,24 +1758,14 @@ function goToOrdersList() {
                 </button>
       </div>
               <button
-                v-if="showRemoveUserHoldBtn"
+                v-if="showRemoveHoldBtn"
                 type="button"
                 class="btn btn-danger text-white"
-                :disabled="userHoldBusy || !canRunShipHeroActions"
-                title="Remove user hold"
-                @click="removeUserHold"
-              >
-                {{ userHoldBusy ? "Removing…" : "Remove Hold" }}
-              </button>
-              <button
-                v-if="showNotReadyToShipBanner && detailHasRemovableHolds && !detailOnlyCrmUserHold"
-                type="button"
-                class="btn btn-danger text-white"
-                :disabled="!canRunShipHeroActions || removeHoldsBusy"
-                :title="!canRunShipHeroActions ? 'You do not have permission to change this order in ShipHero.' : undefined"
+                :disabled="removeHoldsBusy"
+                title="Remove holds"
                 @click="removeHoldsModalOpen = true"
               >
-                Remove Hold
+                {{ removeHoldsBusy ? "Removing…" : "Remove Hold" }}
               </button>
     </div>
     </div>
@@ -2249,7 +2235,7 @@ function goToOrdersList() {
             <p v-if="detailOnlyOperatorHold" class="small text-secondary mb-0">
               This order has a warehouse operator hold. Contact your account manager to release it.
             </p>
-            <p v-else-if="detailOnlyCrmUserHold && showRemoveUserHoldBtn" class="small text-secondary mb-0">
+            <p v-else-if="detailOnlyCrmUserHold && showRemoveHoldBtn" class="small text-secondary mb-0">
               User hold is active — use Remove Hold to release.
             </p>
           </div>
@@ -2726,7 +2712,7 @@ function goToOrdersList() {
       :open="removeHoldsModalOpen"
       :busy="removeHoldsBusy"
       variant="single"
-      :active-holds="detailHoldsNormalized"
+      :active-holds="detailHoldsForRemoveModal"
       @close="closeRemoveHoldsModal"
       @confirm="onRemoveHoldsConfirm"
     />

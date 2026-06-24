@@ -7,6 +7,16 @@ use PHPUnit\Framework\TestCase;
 
 final class ShipHeroOrderServiceUserHoldTest extends TestCase
 {
+    public function test_humanize_hold_error_message_maps_client_hold_to_user_hold(): void
+    {
+        $humanized = ShipHeroOrderService::humanizeHoldErrorMessage(
+            'ShipHero: 3PL cannot set a client hold on an order'
+        );
+
+        $this->assertStringContainsString('User Hold', $humanized);
+        $this->assertStringNotContainsString('client hold', strtolower($humanized));
+    }
+
     public function test_order_removable_hold_keys_includes_client_hold(): void
     {
         $keys = ShipHeroOrderService::orderRemovableHoldKeys();

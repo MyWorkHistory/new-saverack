@@ -1318,7 +1318,11 @@ class OrderController extends Controller
                 $results[] = ['order_id' => $oid, 'ok' => true];
                 $ok++;
             } catch (RuntimeException $e) {
-                $results[] = ['order_id' => $oid, 'ok' => false, 'message' => $e->getMessage()];
+                $results[] = [
+                    'order_id' => $oid,
+                    'ok' => false,
+                    'message' => ShipHeroOrderService::humanizeHoldErrorMessage($e->getMessage()),
+                ];
                 $failed++;
             } catch (Throwable $e) {
                 report($e);
@@ -1573,7 +1577,7 @@ class OrderController extends Controller
 
     private function shipHeroOrderRuntimeErrorResponse(RuntimeException $e): JsonResponse
     {
-        $message = $e->getMessage();
+        $message = ShipHeroOrderService::humanizeHoldErrorMessage($e->getMessage());
         $lower = strtolower($message);
         $status = 422;
         if (str_contains($lower, 'cloudflare')

@@ -37,7 +37,33 @@ class ShipHeroOrderService
     public const CLIENT_HOLD_3PL_MESSAGE = 'This order has a user hold from your store. Clear it in ShipHero or your sales channel; Save Rack cannot remove it via API.';
 
     /** User Hold requires a ShipHero developer token on the child (client) account. */
-    public const CLIENT_HOLD_TOKEN_MISSING_MESSAGE = 'User Hold is not configured for this account. Save Rack must add a ShipHero client API refresh token on the account before User Hold can be placed.';
+    public const CLIENT_HOLD_TOKEN_MISSING_MESSAGE = 'User Hold could not be placed: Save Rack must add a ShipHero client API refresh token on this account (Account Settings). Fraud, Address, and Payment holds are not affected.';
+
+    /**
+     * Map ShipHero hold API wording to CRM copy ({@see client_hold} → User Hold).
+     */
+    public static function humanizeHoldErrorMessage(string $message): string
+    {
+        $trimmed = trim($message);
+        if ($trimmed === '') {
+            return $trimmed;
+        }
+
+        $lower = strtolower($trimmed);
+        if (str_contains($lower, '3pl cannot set a client hold')
+            || str_contains($lower, '3pl cannot remove a client hold')
+            || str_contains($lower, 'cannot set a client hold')
+            || str_contains($lower, 'cannot remove a client hold')) {
+            return self::CLIENT_HOLD_TOKEN_MISSING_MESSAGE;
+        }
+
+        $humanized = preg_replace('/client[\s_-]*hold/i', 'User Hold', $trimmed) ?? $trimmed;
+        if (stripos($humanized, 'ShipHero:') === 0) {
+            $humanized = trim(substr($humanized, strlen('ShipHero:')));
+        }
+
+        return $humanized;
+    }
 
     /** @var list<string> */
     private const WAREHOUSE_HOLD_MUTATION_KEYS = [
@@ -1676,7 +1702,7 @@ GQL;
         if (empty($current[self::ORDER_USER_HOLD_MUTATION_KEY])) {
             throw new RuntimeException(self::NO_MATCHING_HOLDS_MESSAGE);
         }
-        $this->mutateClientHold($ctx['relay_id'], false, $clientRefreshToken, $customerAccountId);
+        $this->mutateClientHold($ctx['relay_id'], false, $clientRefreshToken);
     }
 
     /**
@@ -1781,7 +1807,7 @@ GQL;
             $this->applyWarehouseHoldsTrue($ctx, $customerAccountId, $warehouseFlags);
         }
         if ($wantsClient) {
-            $this->mutateClientHold($ctx['relay_id'], true, $clientRefreshToken, $customerAccountId);
+            $this->mutateClientHold($ctx['relay_id'], true, $clientRefreshToken);
         }
     }
 
@@ -1821,24 +1847,20 @@ GQL;
         ]);
     }
 
-    private function mutateClientHold(string $relayId, bool $value, ?string $clientRefreshToken, string $customerAccountId): void
+    private function mutateClientHold(string $relayId, bool $value, ?string $clientRefreshToken): void
     {
         $refresh = trim((string) $clientRefreshToken);
+        if ($refresh === '') {
+            throw new RuntimeException(self::CLIENT_HOLD_TOKEN_MISSING_MESSAGE);
+        }
         $data = [
             'order_id' => $relayId,
             self::ORDER_USER_HOLD_MUTATION_KEY => $value,
         ];
         $options = [
             ShipHeroClient::OPTION_GRAPHQL_SUCCESS_FIELD => 'order_update_holds',
+            ShipHeroClient::OPTION_REFRESH_TOKEN => $refresh,
         ];
-        if ($refresh !== '') {
-            $options[ShipHeroClient::OPTION_REFRESH_TOKEN] = $refresh;
-        } else {
-            $customer = trim($customerAccountId);
-            if ($customer !== '') {
-                $data['customer_account_id'] = $customer;
-            }
-        }
         $graphql = <<<'GQL'
 mutation ShipHeroOrderClientHold($data: UpdateOrderHoldsInput!) {
   order_update_holds(data: $data) {
@@ -1847,7 +1869,11 @@ mutation ShipHeroOrderClientHold($data: UpdateOrderHoldsInput!) {
   }
 }
 GQL;
-        $this->client->query($graphql, ['data' => $data], true, $options);
+        try {
+            $this->client->query($graphql, ['data' => $data], true, $options);
+        } catch (RuntimeException $e) {
+            throw new RuntimeException(self::humanizeHoldErrorMessage($e->getMessage()), 0, $e);
+        }
     }
 
     /**

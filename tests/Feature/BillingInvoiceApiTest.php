@@ -3190,4 +3190,143 @@ class BillingInvoiceApiTest extends TestCase
             ->assertOk()
             ->assertJsonPath('open_balance_due_cents', 3000);
     }
+
+    public function test_import_duties_taxes_csv_creates_draft_invoice_with_breakdown(): void
+    {
+        $user = User::factory()->create();
+        $user->permissions()->sync([
+            $this->billingViewPermission()->id,
+            $this->billingCreatePermission()->id,
+            $this->clientsViewPermission()->id,
+        ]);
+        Sanctum::actingAs($user);
+
+        $client = ClientAccount::query()->create([
+            'status' => ClientAccount::STATUS_ACTIVE,
+            'company_name' => 'Duties Co',
+            'email' => 'duties@acme.test',
+        ]);
+        $client->refresh();
+
+        $csv = "Invoice Number,Order Number,Product,Duty,Tax\n"
+            ."26B016694,#20177,Duty & Taxes,41.02,81.56\n"
+            ."26B016694,#20163,Duty & Taxes,26.45,49.49\n";
+        $file = UploadedFile::fake()->createWithContent('asendia-duties.csv', $csv);
+
+        $res = $this->post(
+            "/api/client-accounts/{$client->id}/invoice-imports/duties-taxes",
+            [
+                'due_at' => '2026-06-15',
+                'file' => $file,
+            ],
+            ['Accept' => 'application/json']
+        );
+
+        $res->assertStatus(201)
+            ->assertJsonPath('invoice.status', Invoice::STATUS_DRAFT)
+            ->assertJsonPath('import.import_type', 'duties_taxes_csv');
+
+        $items = $res->json('invoice.items') ?? [];
+        $this->assertCount(4, $items);
+
+        $duties = array_values(array_filter($items, static fn ($i) => ($i['display_name'] ?? '') === 'International Duties (Asendia)'));
+        $taxes = array_values(array_filter($items, static fn ($i) => ($i['display_name'] ?? '') === 'International Taxes (Asendia)'));
+        $this->assertCount(2, $duties);
+        $this->assertCount(2, $taxes);
+        $this->assertSame(4102, (int) ($duties[0]['line_total_cents'] ?? 0));
+        $this->assertSame(2645, (int) ($duties[1]['line_total_cents'] ?? 0));
+        $this->assertSame(8156, (int) ($taxes[0]['line_total_cents'] ?? 0));
+        $this->assertSame(4949, (int) ($taxes[1]['line_total_cents'] ?? 0));
+        $this->assertSame('#20177', $duties[0]['metadata']['order_number'] ?? null);
+        $this->assertSame('#20163', $taxes[1]['metadata']['order_number'] ?? null);
+
+        $invoiceId = $res->json('invoice.id');
+        $this->assertIsInt($invoiceId);
+        $show = $this->getJson("/api/invoices/{$invoiceId}");
+        $show->assertOk();
+
+        $presentationRows = collect($show->json('presentation.rows') ?? [])
+            ->filter(static fn ($row) => ($row['type'] ?? '') === 'Duties & Taxes')
+            ->values()
+            ->all();
+        $this->assertCount(2, $presentationRows);
+
+        $dutiesRow = collect($presentationRows)->firstWhere('name', 'International Duties (Asendia)');
+        $taxesRow = collect($presentationRows)->firstWhere('name', 'International Taxes (Asendia)');
+        $this->assertNotNull($dutiesRow);
+        $this->assertNotNull($taxesRow);
+        $this->assertCount(2, $dutiesRow['details'] ?? []);
+        $this->assertCount(2, $taxesRow['details'] ?? []);
+        $this->assertContains('#20177', array_column($dutiesRow['details'], 'order_number'));
+        $this->assertContains('#20163', array_column($taxesRow['details'], 'order_number'));
+    }
+
+    public function test_import_duties_taxes_csv_requires_order_number_column(): void
+    {
+        $user = User::factory()->create();
+        $user->permissions()->sync([
+            $this->billingViewPermission()->id,
+            $this->billingCreatePermission()->id,
+            $this->clientsViewPermission()->id,
+        ]);
+        Sanctum::actingAs($user);
+
+        $client = ClientAccount::query()->create([
+            'status' => ClientAccount::STATUS_ACTIVE,
+            'company_name' => 'Duties Missing Col',
+            'email' => 'duties-missing@acme.test',
+        ]);
+        $client->refresh();
+
+        $csv = "Invoice Number,Product,Duty,Tax\n"
+            ."26B016694,Duty & Taxes,41.02,81.56\n";
+        $file = UploadedFile::fake()->createWithContent('asendia-bad.csv', $csv);
+
+        $this->post(
+            "/api/client-accounts/{$client->id}/invoice-imports/duties-taxes",
+            [
+                'due_at' => '2026-06-15',
+                'file' => $file,
+            ],
+            ['Accept' => 'application/json']
+        )->assertStatus(500);
+    }
+
+    public function test_import_duties_taxes_csv_skips_zero_duty_amount(): void
+    {
+        $user = User::factory()->create();
+        $user->permissions()->sync([
+            $this->billingViewPermission()->id,
+            $this->billingCreatePermission()->id,
+            $this->clientsViewPermission()->id,
+        ]);
+        Sanctum::actingAs($user);
+
+        $client = ClientAccount::query()->create([
+            'status' => ClientAccount::STATUS_ACTIVE,
+            'company_name' => 'Duties Zero',
+            'email' => 'duties-zero@acme.test',
+        ]);
+        $client->refresh();
+
+        $csv = "Order Number,Product,Duty,Tax\n"
+            ."#30001,Duty & Taxes,0,12.50\n";
+        $file = UploadedFile::fake()->createWithContent('asendia-zero-duty.csv', $csv);
+
+        $res = $this->post(
+            "/api/client-accounts/{$client->id}/invoice-imports/duties-taxes",
+            [
+                'due_at' => '2026-06-15',
+                'file' => $file,
+            ],
+            ['Accept' => 'application/json']
+        );
+
+        $res->assertStatus(201);
+        $items = $res->json('invoice.items') ?? [];
+        $this->assertCount(1, $items);
+        $this->assertSame('International Taxes (Asendia)', $items[0]['display_name'] ?? null);
+        $this->assertSame(1250, (int) ($items[0]['line_total_cents'] ?? 0));
+        $this->assertSame('#30001', $items[0]['metadata']['order_number'] ?? null);
+    }
 }

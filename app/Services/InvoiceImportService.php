@@ -213,6 +213,95 @@ class InvoiceImportService
     }
 
     /**
+     * @return array{
+     *   invoice: \App\Models\Invoice,
+     *   import: InvoiceImport,
+     *   rows_processed: int,
+     *   skipped: int
+     * }
+     */
+    public function importDutiesTaxesCsv(
+        ClientAccount $account,
+        UploadedFile $file,
+        string $dueDateYmd,
+        ?string $invoiceNumber,
+        ?User $actor
+    ): array {
+        $path = $file->getRealPath();
+        if ($path === false) {
+            throw new \RuntimeException('Invalid upload.');
+        }
+
+        $parser = new InvoiceDutiesTaxesImportParser();
+        $parsed = $parser->parseFile($path);
+        $lines = $parsed['lines'];
+        $rowsProcessed = (int) $parsed['rows_processed'];
+        $skipped = (int) $parsed['skipped'];
+
+        $originalFilename = $file->getClientOriginalName();
+        $billingPeriod = self::billingPeriodFromFilename($originalFilename);
+
+        $import = new InvoiceImport([
+            'client_account_id' => $account->id,
+            'user_id' => $actor !== null ? $actor->id : null,
+            'import_type' => InvoiceImport::TYPE_DUTIES_TAXES_CSV,
+            'original_filename' => $originalFilename,
+            'status' => InvoiceImport::STATUS_PENDING,
+        ]);
+        $import->save();
+
+        try {
+            $invoice = DB::transaction(function () use ($account, $lines, $dueDateYmd, $invoiceNumber, $actor, $import, $rowsProcessed, $skipped, $billingPeriod) {
+                $header = [
+                    'client_account_id' => $account->id,
+                    'currency' => 'USD',
+                    'due_at' => $dueDateYmd,
+                ];
+                if ($billingPeriod !== null) {
+                    $header['billing_period_start'] = $billingPeriod['start'];
+                    $header['billing_period_end'] = $billingPeriod['end'];
+                }
+                $inv = $this->invoices->createDraft($header, $lines, $actor, $invoiceNumber);
+                $this->invoices->logHistory($inv, $actor, 'updated', $inv->status, $inv->status, [
+                    'event_type' => InvoiceHistoryEventType::IMPORT,
+                    'history_message' => 'Imported duties & taxes CSV ('.count($lines).' lines).',
+                    'import_id' => $import->id,
+                    'csv_rows_processed' => $rowsProcessed,
+                    'csv_rows_skipped' => $skipped,
+                    'billing_period_start' => $billingPeriod['start'] ?? null,
+                    'billing_period_end' => $billingPeriod['end'] ?? null,
+                ]);
+
+                return $inv;
+            });
+
+            $import->invoice_id = $invoice->id;
+            $import->rows_processed = count($lines);
+            $import->status = InvoiceImport::STATUS_COMPLETED;
+            $import->result_summary = [
+                'line_count' => count($lines),
+                'csv_rows_processed' => $rowsProcessed,
+                'csv_rows_skipped' => $skipped,
+                'billing_period_start' => $billingPeriod['start'] ?? null,
+                'billing_period_end' => $billingPeriod['end'] ?? null,
+            ];
+            $import->save();
+
+            return [
+                'invoice' => $invoice->fresh(['items', 'clientAccount']),
+                'import' => $import,
+                'rows_processed' => $rowsProcessed,
+                'skipped' => $skipped,
+            ];
+        } catch (\Throwable $e) {
+            $import->status = InvoiceImport::STATUS_FAILED;
+            $import->error_message = $e->getMessage();
+            $import->save();
+            throw $e;
+        }
+    }
+
+    /**
      * @return array{start: string, end: string}|null
      */
     public static function billingPeriodFromFilename(?string $filename): ?array

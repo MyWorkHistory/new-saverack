@@ -1254,6 +1254,7 @@ class InvoiceService
         $ccFees = [];
         $returns = [];
         $onDemand = [];
+        $dutiesTaxes = [];
         $otherItems = [];
         /** @var list<InvoiceItem> */
         $storageVolumeItems = [];
@@ -1412,6 +1413,21 @@ class InvoiceService
                 $onDemand[$key]['items'][] = $this->detailLeafRow($item, 'Product (On-Demand)', $rawName, $unitRate, $total);
                 $onDemand[$key]['qty'] += $qty;
                 $onDemand[$key]['total'] += $total;
+            } elseif ($this->isDutiesTaxesCategory($category)) {
+                $rawName = $this->oldBetaDisplayName($item, 'Duties & Taxes');
+                $key = strtolower($rawName);
+                if (! isset($dutiesTaxes[$key])) {
+                    $dutiesTaxes[$key] = ['name' => $rawName, 'items' => [], 'qty' => 0.0, 'total' => 0];
+                }
+                $qty = (float) $item->quantity;
+                $total = (int) $item->line_total_cents;
+                $unitRate = (int) $item->unit_price_cents;
+                if ($unitRate === 0 && $qty != 0.0 && $total !== 0) {
+                    $unitRate = (int) round($total / $qty);
+                }
+                $dutiesTaxes[$key]['items'][] = $this->detailLeafRow($item, 'Duties & Taxes', $rawName, $unitRate, $total);
+                $dutiesTaxes[$key]['qty'] += $qty;
+                $dutiesTaxes[$key]['total'] += $total;
             } else {
                 $qty = (float) $item->quantity;
                 $total = (int) $item->line_total_cents;
@@ -1554,6 +1570,22 @@ class InvoiceService
                 'price_cents' => $qty != 0.0 ? (int) round($total / $qty) : 0,
                 'total_cents' => $total,
                 'groupKey' => 'ad_hoc',
+                'groupName' => $agg['name'],
+                'line_group_key' => $this->singleGroupKey($agg['items']),
+                'details' => $agg['items'],
+            ];
+        }
+        foreach ($dutiesTaxes as $serviceKey => $agg) {
+            $qty = (float) $agg['qty'];
+            $total = (int) $agg['total'];
+            $rows[] = [
+                'id' => 'duties-'.$serviceKey,
+                'name' => $agg['name'],
+                'type' => 'Duties & Taxes',
+                'qty' => $qty,
+                'price_cents' => $qty != 0.0 ? (int) round($total / $qty) : 0,
+                'total_cents' => $total,
+                'groupKey' => 'duties_taxes',
                 'groupName' => $agg['name'],
                 'line_group_key' => $this->singleGroupKey($agg['items']),
                 'details' => $agg['items'],
@@ -2037,6 +2069,15 @@ class InvoiceService
             || $c === 'scion cbo'
             || $c === 'scion cbd oil'
             || str_contains($c, 'cbd oil');
+    }
+
+    private function isDutiesTaxesCategory(string $category): bool
+    {
+        $c = strtolower(trim((string) preg_replace('/\s+/', ' ', $category)));
+        $c = str_replace('&', ' and ', $c);
+        $c = preg_replace('/\s+/', ' ', $c) ?? $c;
+
+        return $c === 'duties and taxes' || $c === 'duties & taxes';
     }
 
     public function isOverdue(Invoice $invoice): bool

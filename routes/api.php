@@ -403,6 +403,8 @@ Route::middleware('auth:sanctum')->group(function () {
         ->name('client-accounts.invoice-imports.charges');
     Route::post('client-accounts/{client_account}/invoice-imports/storage', [InvoiceImportController::class, 'importStorage'])
         ->name('client-accounts.invoice-imports.storage');
+    Route::post('client-accounts/{client_account}/invoice-imports/duties-taxes', [InvoiceImportController::class, 'importDutiesTaxes'])
+        ->name('client-accounts.invoice-imports.duties-taxes');
     Route::put('client-accounts/{client_account}/fees', [ClientAccountController::class, 'syncFees'])
         ->name('client-accounts.fees.sync');
     Route::patch('client-accounts/{client_account}/fees/{fee}', [ClientAccountController::class, 'updateFeeAmount'])

@@ -24,6 +24,16 @@ If no suitable mutation is found, provisioning falls back to **staff manual** se
 
 Activation to `active` requires a non-empty ShipHero customer account ID (see `ClientAccountUpdateRequest`).
 
+## User Hold (client portal)
+
+ShipHero **Client Hold** (`client_hold`, shown as **User Hold** in Save Rack) cannot be set with the 3PL master `SHIPHERO_REFRESH_TOKEN`. Each child account needs its own **third-party developer** refresh token:
+
+1. In ShipHero, open the **child (client) account** (not the 3PL parent).
+2. Go to **My Account → Developer Users** and add a third-party developer.
+3. Copy the **refresh token** and paste it into CRM → client account → **Settings** → **ShipHero client API refresh token**.
+
+Fraud, address, and payment holds still use the 3PL token. User Hold place/remove uses the child token so the hold appears as **User Hold** in ShipHero.
+
 ## Hide orders from app (CRM account status sync)
 
 When CRM account status changes, the app tries to sync ShipHero **Hide Customer's Orders From App**:

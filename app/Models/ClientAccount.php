@@ -61,6 +61,7 @@ class ClientAccount extends Model
         'contract_date',
         'stripe_customer_id',
         'shiphero_customer_account_id',
+        'shiphero_client_refresh_token',
         'whatsapp_api_id',
         'default_payment_type',
         'postage_option',
@@ -75,8 +76,13 @@ class ClientAccount extends Model
         'billing_available_funds_cents',
     ];
 
+    protected $hidden = [
+        'shiphero_client_refresh_token',
+    ];
+
     protected $casts = [
         'notify_email' => 'boolean',
+        'shiphero_client_refresh_token' => 'encrypted',
         'onboarding_preferences' => 'array',
         'onboarding_verifications' => 'array',
         'contract_date' => 'date',

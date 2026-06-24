@@ -592,7 +592,12 @@ async function submitPlaceHoldModal(flags) {
     });
     const ok = Number(data?.summary?.ok ?? 0);
     const failed = Number(data?.summary?.failed ?? 0);
-    toast.success(`Holds applied: ${ok} succeeded${failed ? `, ${failed} failed` : ""}.`);
+    const firstErr = (data?.results || []).find((r) => r && r.ok === false)?.message;
+    if (failed > 0) {
+      toast.error(firstErr || `Holds applied: ${ok} succeeded, ${failed} failed.`);
+    } else {
+      toast.success(`Holds applied: ${ok} succeeded.`);
+    }
     placeHoldModalOpen.value = false;
     placeHoldTargetIds.value = [];
     manageOpenId.value = null;

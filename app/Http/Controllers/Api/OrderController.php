@@ -595,8 +595,9 @@ class OrderController extends Controller
             ]);
         }
         $customerId = $this->resolveShipHeroCustomerAccountId((int) $validated['client_account_id'], $request);
+        $clientRefreshToken = $this->resolveShipHeroClientRefreshToken((int) $validated['client_account_id'], $request);
         try {
-            $this->orders->setOrderHoldsTrue($orderId, $customerId, $flags);
+            $this->orders->setOrderHoldsTrue($orderId, $customerId, $flags, $clientRefreshToken);
 
             return response()->json(['message' => 'Holds applied.']);
         } catch (RuntimeException $e) {
@@ -623,6 +624,7 @@ class OrderController extends Controller
             'payment_hold_reason' => ['nullable', 'string', 'max:500'],
         ]);
         $customerId = $this->resolveShipHeroCustomerAccountId((int) $validated['client_account_id'], $request);
+        $clientRefreshToken = $this->resolveShipHeroClientRefreshToken((int) $validated['client_account_id'], $request);
         try {
             $headerContext = $this->orders->resolveOrderHeaderForMutation($orderId, $customerId);
             $holds = $headerContext['holds'];
@@ -631,7 +633,7 @@ class OrderController extends Controller
                 : [];
             if ($keysToClear === []) {
                 if ($this->orders->orderHoldsOnlyUserHoldActive($holds)) {
-                    $this->orders->clearUserHold($orderId, $customerId, $headerContext);
+                    $this->orders->clearUserHold($orderId, $customerId, $headerContext, $clientRefreshToken);
 
                     return response()->json(['message' => 'Holds cleared.']);
                 }
@@ -647,7 +649,7 @@ class OrderController extends Controller
             ));
 
             if ($clearUserHold) {
-                $this->orders->clearUserHold($orderId, $customerId, $headerContext);
+                $this->orders->clearUserHold($orderId, $customerId, $headerContext, $clientRefreshToken);
                 $holds[ShipHeroOrderService::ORDER_USER_HOLD_MUTATION_KEY] = false;
             }
 
@@ -1297,13 +1299,14 @@ class OrderController extends Controller
             ]);
         }
         $customerId = $this->resolveShipHeroCustomerAccountId((int) $validated['client_account_id'], $request);
+        $clientRefreshToken = $this->resolveShipHeroClientRefreshToken((int) $validated['client_account_id'], $request);
         $orderIds = $this->normalizeBulkOrderIds($validated['order_ids']);
         $results = [];
         $ok = 0;
         $failed = 0;
         foreach ($orderIds as $oid) {
             try {
-                $this->orders->setOrderHoldsTrue($oid, $customerId, $flags);
+                $this->orders->setOrderHoldsTrue($oid, $customerId, $flags, $clientRefreshToken);
                 $results[] = ['order_id' => $oid, 'ok' => true];
                 $ok++;
             } catch (RuntimeException $e) {
@@ -1334,6 +1337,7 @@ class OrderController extends Controller
             'payment_hold_reason' => ['nullable', 'string', 'max:500'],
         ]);
         $customerId = $this->resolveShipHeroCustomerAccountId((int) $validated['client_account_id'], $request);
+        $clientRefreshToken = $this->resolveShipHeroClientRefreshToken((int) $validated['client_account_id'], $request);
         $orderIds = $this->normalizeBulkOrderIds($validated['order_ids']);
         $keysToClear = isset($validated['holds_to_clear']) && is_array($validated['holds_to_clear'])
             ? array_values(array_unique($validated['holds_to_clear']))
@@ -1351,7 +1355,7 @@ class OrderController extends Controller
                 if ($keysToClear === []) {
                     if ($this->orders->orderHoldsOnlyUserHoldActive($holds)) {
                         $ctx = $this->orders->resolveOrderHeaderForMutation($oid, $customerId);
-                        $this->orders->clearUserHold($oid, $customerId, $ctx);
+                        $this->orders->clearUserHold($oid, $customerId, $ctx, $clientRefreshToken);
                     } else {
                         $this->orders->clearOrderHolds($oid, $customerId);
                     }
@@ -1412,6 +1416,21 @@ class OrderController extends Controller
         }
 
         return trim($sid);
+    }
+
+    private function resolveShipHeroClientRefreshToken(int $clientAccountId, Request $request): ?string
+    {
+        $account = ClientAccount::query()->find($clientAccountId);
+        if ($account === null) {
+            throw ValidationException::withMessages([
+                'client_account_id' => ['Client account not found.'],
+            ]);
+        }
+        Gate::forUser($request->user())->authorize('view', $account);
+
+        $token = trim((string) ($account->shiphero_client_refresh_token ?? ''));
+
+        return $token !== '' ? $token : null;
     }
 
     private function dateStartIso($value): ?string

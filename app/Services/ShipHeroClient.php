@@ -13,6 +13,9 @@ class ShipHeroClient
     /** Option key for {@see ShipHeroClient::query()}: tolerate top-level GraphQL `errors` when this mutation field has `request_id`. */
     public const OPTION_GRAPHQL_SUCCESS_FIELD = 'graphql_success_field';
 
+    /** Option key for {@see ShipHeroClient::query()}: use this ShipHero refresh token instead of {@see SHIPHERO_REFRESH_TOKEN}. */
+    public const OPTION_REFRESH_TOKEN = 'refresh_token';
+
     /**
      * Exchange refresh token for a bearer access token (cached ~20 days).
      */
@@ -24,31 +27,53 @@ class ShipHeroClient
         }
 
         return Cache::remember('shiphero.access_token', now()->addDays(20), function () use ($refresh) {
-            $authBase = rtrim((string) config('services.shiphero.auth_url', 'https://public-api.shiphero.com/auth'), '/');
-            try {
-                $response = $this->http()->post($authBase.'/refresh', [
-                    'json' => [
-                        'refresh_token' => $refresh,
-                    ],
-                    'connect_timeout' => 3,
-                    'timeout' => 6,
-                ]);
-            } catch (Throwable $e) {
-                throw new RuntimeException('ShipHero token refresh request failed: '.$e->getMessage(), 0, $e);
-            }
-
-            if ($response->getStatusCode() < 200 || $response->getStatusCode() >= 300) {
-                throw new RuntimeException('ShipHero token refresh failed (HTTP '.$response->getStatusCode().').');
-            }
-
-            $body = json_decode((string) $response->getBody(), true);
-            $token = is_array($body) ? ($body['access_token'] ?? null) : null;
-            if (! is_string($token) || $token === '') {
-                throw new RuntimeException('ShipHero token refresh returned no access_token.');
-            }
-
-            return $token;
+            return $this->refreshAccessToken($refresh);
         });
+    }
+
+    /**
+     * Access token for a 3PL child-account developer refresh token (User Hold mutations).
+     */
+    public function accessTokenForRefreshToken(string $refreshToken): string
+    {
+        $refresh = trim($refreshToken);
+        if ($refresh === '') {
+            throw new RuntimeException('ShipHero client refresh token is empty.');
+        }
+
+        $cacheKey = 'shiphero.access_token.'.hash('sha256', $refresh);
+
+        return Cache::remember($cacheKey, now()->addDays(20), function () use ($refresh) {
+            return $this->refreshAccessToken($refresh);
+        });
+    }
+
+    private function refreshAccessToken(string $refresh): string
+    {
+        $authBase = rtrim((string) config('services.shiphero.auth_url', 'https://public-api.shiphero.com/auth'), '/');
+        try {
+            $response = $this->http()->post($authBase.'/refresh', [
+                'json' => [
+                    'refresh_token' => $refresh,
+                ],
+                'connect_timeout' => 3,
+                'timeout' => 6,
+            ]);
+        } catch (Throwable $e) {
+            throw new RuntimeException('ShipHero token refresh request failed: '.$e->getMessage(), 0, $e);
+        }
+
+        if ($response->getStatusCode() < 200 || $response->getStatusCode() >= 300) {
+            throw new RuntimeException('ShipHero token refresh failed (HTTP '.$response->getStatusCode().').');
+        }
+
+        $body = json_decode((string) $response->getBody(), true);
+        $token = is_array($body) ? ($body['access_token'] ?? null) : null;
+        if (! is_string($token) || $token === '') {
+            throw new RuntimeException('ShipHero token refresh returned no access_token.');
+        }
+
+        return $token;
     }
 
     /**
@@ -61,7 +86,12 @@ class ShipHeroClient
     public function query(string $graphql, array $variables = [], bool $allowTokenRetry = true, array $options = []): array
     {
         $url = rtrim((string) config('services.shiphero.api_url', 'https://public-api.shiphero.com/graphql'), '/');
-        $token = $this->accessToken();
+        $refreshOverride = isset($options[self::OPTION_REFRESH_TOKEN])
+            ? trim((string) $options[self::OPTION_REFRESH_TOKEN])
+            : '';
+        $token = $refreshOverride !== ''
+            ? $this->accessTokenForRefreshToken($refreshOverride)
+            : $this->accessToken();
         $operation = $this->extractOperationName($graphql);
 
         $payload = ['query' => $graphql];
@@ -110,7 +140,10 @@ class ShipHeroClient
                 'body_bytes' => strlen($bodyRaw),
             ]);
             if ($status === 401 && $allowTokenRetry) {
-                Cache::forget('shiphero.access_token');
+                $cacheKey = $refreshOverride !== ''
+                    ? 'shiphero.access_token.'.hash('sha256', $refreshOverride)
+                    : 'shiphero.access_token';
+                Cache::forget($cacheKey);
 
                 return $this->query($graphql, $variables, false, $options);
             }

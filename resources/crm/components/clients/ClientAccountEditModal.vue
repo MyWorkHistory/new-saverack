@@ -54,6 +54,8 @@ const form = reactive({
   cc_fee_percent: "3.50",
   stripe_customer_id: "",
   shiphero_customer_account_id: "",
+  shiphero_client_refresh_token: "",
+  shiphero_client_refresh_token_configured: false,
   whatsapp_api_id: "",
 });
 
@@ -177,6 +179,8 @@ async function load() {
         : "3.50";
     form.stripe_customer_id = data.stripe_customer_id || "";
     form.shiphero_customer_account_id = data.shiphero_customer_account_id || "";
+    form.shiphero_client_refresh_token = "";
+    form.shiphero_client_refresh_token_configured = !!data.shiphero_client_refresh_token_configured;
     form.whatsapp_api_id = data.whatsapp_api_id || "";
   } catch (e) {
     errorMsg.value = "Could not load account.";
@@ -234,6 +238,9 @@ function buildPatch() {
       cc_fee_percent: trimOrNull(form.cc_fee_percent),
       stripe_customer_id: trimOrNull(form.stripe_customer_id),
       shiphero_customer_account_id: trimOrNull(form.shiphero_customer_account_id),
+      ...(form.shiphero_client_refresh_token.trim()
+        ? { shiphero_client_refresh_token: form.shiphero_client_refresh_token.trim() }
+        : {}),
       whatsapp_api_id: trimOrNull(form.whatsapp_api_id),
     };
   }
@@ -277,6 +284,9 @@ function buildPatch() {
       whatsapp_api_id: trimOrNull(form.whatsapp_api_id),
       stripe_customer_id: trimOrNull(form.stripe_customer_id),
       shiphero_customer_account_id: trimOrNull(form.shiphero_customer_account_id),
+      ...(form.shiphero_client_refresh_token.trim()
+        ? { shiphero_client_refresh_token: form.shiphero_client_refresh_token.trim() }
+        : {}),
     };
   }
   if (props.section === "address") {
@@ -711,6 +721,32 @@ async function onSubmit() {
                         <p class="small text-secondary mb-0 mt-1">
                           Used when this client is selected on the Inventory page. Leave empty if not
                           applicable.
+                        </p>
+                      </div>
+                      <div class="col-12">
+                        <label
+                          class="form-label small mb-1 text-secondary"
+                          for="cae-shiphero-client-refresh-token"
+                          >ShipHero client API refresh token</label
+                        >
+                        <input
+                          id="cae-shiphero-client-refresh-token"
+                          v-model="form.shiphero_client_refresh_token"
+                          type="password"
+                          class="form-control"
+                          :placeholder="
+                            form.shiphero_client_refresh_token_configured
+                              ? 'Leave blank to keep current token'
+                              : 'Paste refresh token from child account developer user'
+                          "
+                          autocomplete="off"
+                        />
+                        <p class="small text-secondary mb-0 mt-1">
+                          Required for User Hold in the client portal. Create a third-party developer
+                          user on the ShipHero child account, then paste its refresh token here.
+                          <span v-if="form.shiphero_client_refresh_token_configured" class="text-success">
+                            Token is configured.
+                          </span>
                         </p>
                       </div>
                     </div>

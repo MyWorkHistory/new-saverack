@@ -36,6 +36,16 @@ class ShipHeroOrderService
     /** Store/brand {@see client_hold} only — 3PL cannot clear via API. */
     public const CLIENT_HOLD_3PL_MESSAGE = 'This order has a user hold from your store. Clear it in ShipHero or your sales channel; Save Rack cannot remove it via API.';
 
+    /** User Hold requires a ShipHero developer token on the child (client) account. */
+    public const CLIENT_HOLD_TOKEN_MISSING_MESSAGE = 'User Hold is not configured for this account. Save Rack must add a ShipHero client API refresh token on the account before User Hold can be placed.';
+
+    /** @var list<string> */
+    private const WAREHOUSE_HOLD_MUTATION_KEYS = [
+        'fraud_hold',
+        'address_hold',
+        'payment_hold',
+    ];
+
     /** User-facing copy when only a warehouse operator hold blocks CRM clears. */
     public const OPERATOR_HOLD_ONLY_MESSAGE = 'Contact your account manager about the operator hold on this order.';
 
@@ -1659,32 +1669,14 @@ GQL;
      *
      * @param  array{relay_id: string, holds: array<string, bool>}|null  $headerContext  from {@see resolveOrderHeaderForMutation}
      */
-    public function clearUserHold(string $orderId, string $customerAccountId, ?array $headerContext = null): void
+    public function clearUserHold(string $orderId, string $customerAccountId, ?array $headerContext = null, ?string $clientRefreshToken = null): void
     {
         $ctx = $headerContext ?? $this->resolveOrderHeaderForMutation($orderId, $customerAccountId);
-        $customer = trim($customerAccountId);
         $current = $ctx['holds'];
         if (empty($current[self::ORDER_USER_HOLD_MUTATION_KEY])) {
             throw new RuntimeException(self::NO_MATCHING_HOLDS_MESSAGE);
         }
-        $data = [
-            'order_id' => $ctx['relay_id'],
-            self::ORDER_USER_HOLD_MUTATION_KEY => false,
-        ];
-        if ($customer !== '') {
-            $data['customer_account_id'] = $customer;
-        }
-        $graphql = <<<'GQL'
-mutation ShipHeroOrderClearUserHold($data: UpdateOrderHoldsInput!) {
-  order_update_holds(data: $data) {
-    request_id
-    complexity
-  }
-}
-GQL;
-        $this->client->query($graphql, ['data' => $data], true, [
-            ShipHeroClient::OPTION_GRAPHQL_SUCCESS_FIELD => 'order_update_holds',
-        ]);
+        $this->mutateClientHold($ctx['relay_id'], false, $clientRefreshToken);
     }
 
     /**
@@ -1765,32 +1757,46 @@ GQL;
     }
 
     /**
-     * Set holds to true for keys the user selected, merged with holds already on the order so other
-     * active holds are not dropped when ShipHero applies the mutation.
+     * Set holds to true for keys the user selected. Warehouse holds use the 3PL token; User Hold
+     * ({@see client_hold}) uses the child-account refresh token because ShipHero rejects 3PL
+     * operators setting client holds.
      *
      * @param  array<string, bool>  $flags
      */
-    public function setOrderHoldsTrue(string $orderId, string $customerAccountId, array $flags): void
+    public function setOrderHoldsTrue(string $orderId, string $customerAccountId, array $flags, ?string $clientRefreshToken = null): void
     {
         $ctx = $this->resolveOrderHeaderForMutation($orderId, $customerAccountId);
-        $customer = trim($customerAccountId);
         $flags = $this->normalizeUserHoldMutationFlags($flags);
-        $allowed = ['fraud_hold', 'address_hold', 'payment_hold', 'client_hold'];
-        $current = $ctx['holds'];
-        $userWantsAny = false;
-        foreach ($allowed as $key) {
+        $wantsClient = ! empty($flags[self::ORDER_USER_HOLD_MUTATION_KEY]);
+        $warehouseFlags = [];
+        foreach (self::WAREHOUSE_HOLD_MUTATION_KEYS as $key) {
             if (! empty($flags[$key])) {
-                $userWantsAny = true;
-                break;
+                $warehouseFlags[$key] = true;
             }
         }
-        if (! $userWantsAny) {
+        if ($warehouseFlags === [] && ! $wantsClient) {
             throw new RuntimeException('Select at least one hold type to apply.');
         }
+        if ($wantsClient) {
+            $this->mutateClientHold($ctx['relay_id'], true, $clientRefreshToken);
+        }
+        if ($warehouseFlags !== []) {
+            $this->applyWarehouseHoldsTrue($ctx, $customerAccountId, $warehouseFlags);
+        }
+    }
+
+    /**
+     * @param  array{relay_id: string, holds: array<string, bool>}  $ctx
+     * @param  array<string, bool>  $flags
+     */
+    private function applyWarehouseHoldsTrue(array $ctx, string $customerAccountId, array $flags): void
+    {
+        $customer = trim($customerAccountId);
+        $current = $ctx['holds'];
         $data = [
             'order_id' => $ctx['relay_id'],
         ];
-        foreach ($allowed as $key) {
+        foreach (self::WAREHOUSE_HOLD_MUTATION_KEYS as $key) {
             $on = ! empty($current[$key]) || ! empty($flags[$key]);
             if ($on) {
                 $data[$key] = true;
@@ -1812,6 +1818,30 @@ mutation ShipHeroOrderSetHolds($data: UpdateOrderHoldsInput!) {
 GQL;
         $this->client->query($graphql, ['data' => $data], true, [
             ShipHeroClient::OPTION_GRAPHQL_SUCCESS_FIELD => 'order_update_holds',
+        ]);
+    }
+
+    private function mutateClientHold(string $relayId, bool $value, ?string $clientRefreshToken): void
+    {
+        $refresh = trim((string) $clientRefreshToken);
+        if ($refresh === '') {
+            throw new RuntimeException(self::CLIENT_HOLD_TOKEN_MISSING_MESSAGE);
+        }
+        $data = [
+            'order_id' => $relayId,
+            self::ORDER_USER_HOLD_MUTATION_KEY => $value,
+        ];
+        $graphql = <<<'GQL'
+mutation ShipHeroOrderClientHold($data: UpdateOrderHoldsInput!) {
+  order_update_holds(data: $data) {
+    request_id
+    complexity
+  }
+}
+GQL;
+        $this->client->query($graphql, ['data' => $data], true, [
+            ShipHeroClient::OPTION_GRAPHQL_SUCCESS_FIELD => 'order_update_holds',
+            ShipHeroClient::OPTION_REFRESH_TOKEN => $refresh,
         ]);
     }
 

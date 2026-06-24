@@ -56,6 +56,8 @@ class OrderUserHoldApiTest extends TestCase
     public function test_set_holds_applies_client_hold_for_user_hold(): void
     {
         $account = $this->makeAccountWithShipHero();
+        $account->shiphero_client_refresh_token = 'sh-client-refresh-test';
+        $account->save();
         $user = User::factory()->create(['client_account_id' => $account->id]);
         $user->permissions()->attach($this->inventoryViewPermission()->id);
         Sanctum::actingAs($user);
@@ -63,7 +65,7 @@ class OrderUserHoldApiTest extends TestCase
         $mock = Mockery::mock(ShipHeroOrderService::class);
         $mock->shouldReceive('setOrderHoldsTrue')
             ->once()
-            ->with('T3JkZXI6MTIz', 'sh-user-hold-1', ['client_hold' => true]);
+            ->with('T3JkZXI6MTIz', 'sh-user-hold-1', ['client_hold' => true], 'sh-client-refresh-test');
         $this->app->instance(ShipHeroOrderService::class, $mock);
 
         $response = $this->postJson('/api/orders/T3JkZXI6MTIz/set-holds', [
@@ -85,7 +87,7 @@ class OrderUserHoldApiTest extends TestCase
         $mock = Mockery::mock(ShipHeroOrderService::class);
         $mock->shouldReceive('setOrderHoldsTrue')
             ->once()
-            ->with('T3JkZXI6MTIz', 'sh-user-hold-1', ['fraud_hold' => true]);
+            ->with('T3JkZXI6MTIz', 'sh-user-hold-1', ['fraud_hold' => true], null);
         $this->app->instance(ShipHeroOrderService::class, $mock);
 
         $response = $this->postJson('/api/orders/T3JkZXI6MTIz/set-holds', [
@@ -100,6 +102,8 @@ class OrderUserHoldApiTest extends TestCase
     public function test_remove_holds_clears_client_hold_when_requested(): void
     {
         $account = $this->makeAccountWithShipHero();
+        $account->shiphero_client_refresh_token = 'sh-client-refresh-test';
+        $account->save();
         $user = User::factory()->create(['client_account_id' => $account->id]);
         $user->permissions()->attach($this->inventoryViewPermission()->id);
         Sanctum::actingAs($user);
@@ -112,7 +116,7 @@ class OrderUserHoldApiTest extends TestCase
             ->andReturn($ctx);
         $mock->shouldReceive('clearUserHold')
             ->once()
-            ->with('T3JkZXI6MTIz', 'sh-user-hold-1', $ctx);
+            ->with('T3JkZXI6MTIz', 'sh-user-hold-1', $ctx, 'sh-client-refresh-test');
         $this->app->instance(ShipHeroOrderService::class, $mock);
 
         $response = $this->postJson('/api/orders/T3JkZXI6MTIz/remove-holds', [
@@ -127,6 +131,8 @@ class OrderUserHoldApiTest extends TestCase
     public function test_remove_holds_without_keys_clears_crm_user_hold(): void
     {
         $account = $this->makeAccountWithShipHero();
+        $account->shiphero_client_refresh_token = 'sh-client-refresh-test';
+        $account->save();
         $user = User::factory()->create(['client_account_id' => $account->id]);
         $user->permissions()->attach($this->inventoryViewPermission()->id);
         Sanctum::actingAs($user);
@@ -142,7 +148,7 @@ class OrderUserHoldApiTest extends TestCase
             ->andReturn(true);
         $mock->shouldReceive('clearUserHold')
             ->once()
-            ->with('T3JkZXI6MTIz', 'sh-user-hold-1', $ctx);
+            ->with('T3JkZXI6MTIz', 'sh-user-hold-1', $ctx, 'sh-client-refresh-test');
         $this->app->instance(ShipHeroOrderService::class, $mock);
 
         $response = $this->postJson('/api/orders/T3JkZXI6MTIz/remove-holds', [

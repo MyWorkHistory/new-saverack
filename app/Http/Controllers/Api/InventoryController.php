@@ -1132,9 +1132,12 @@ class InventoryController extends Controller
             'client_account_id' => ['nullable', 'integer', 'exists:client_accounts,id'],
         ]);
 
-        $reason = isset($validated['reason']) && is_string($validated['reason'])
-            ? $validated['reason']
-            : 'CRM inventory replace';
+        $reason = $this->inventoryReasonWithActor(
+            isset($validated['reason']) && is_string($validated['reason'])
+                ? $validated['reason']
+                : 'CRM inventory replace',
+            $request
+        );
 
         $clientAccountId = isset($validated['client_account_id'])
             ? (int) $validated['client_account_id']
@@ -1185,9 +1188,12 @@ class InventoryController extends Controller
             'reason' => ['nullable', 'string', 'max:500'],
             'client_account_id' => ['nullable', 'integer', 'exists:client_accounts,id'],
         ]);
-        $reason = isset($validated['reason']) && is_string($validated['reason'])
-            ? $validated['reason']
-            : (string) config('inventory.default_transfer_reason', 'Restock');
+        $reason = $this->inventoryReasonWithActor(
+            isset($validated['reason']) && is_string($validated['reason'])
+                ? $validated['reason']
+                : (string) config('inventory.default_transfer_reason', 'Restock'),
+            $request
+        );
         $clientAccountId = isset($validated['client_account_id'])
             ? (int) $validated['client_account_id']
             : null;
@@ -1298,9 +1304,12 @@ class InventoryController extends Controller
             'reason' => ['nullable', 'string', 'max:500'],
             'client_account_id' => ['nullable', 'integer', 'exists:client_accounts,id'],
         ]);
-        $reason = isset($validated['reason']) && is_string($validated['reason'])
-            ? $validated['reason']
-            : 'CRM inventory replace';
+        $reason = $this->inventoryReasonWithActor(
+            isset($validated['reason']) && is_string($validated['reason'])
+                ? $validated['reason']
+                : 'CRM inventory replace',
+            $request
+        );
         $clientAccountId = isset($validated['client_account_id']) ? (int) $validated['client_account_id'] : null;
         try {
             $shipheroCustomerId = $this->resolveShipHeroCustomerAccountId(
@@ -1781,5 +1790,42 @@ class InventoryController extends Controller
                 'image' => ['ShipHero cannot reach '.$host.' from the internet. Use a public https host for product images.'],
             ]);
         }
+    }
+
+    private function inventoryReasonWithActor(string $reason, Request $request): string
+    {
+        $base = trim($reason);
+        if ($base === '') {
+            return $base;
+        }
+        $actor = $this->inventoryAdjustmentActorLabel($request);
+        if ($actor === null || $actor === '') {
+            return $base;
+        }
+        $suffix = ' ('.$actor.')';
+        if (str_ends_with($base, $suffix)) {
+            return $base;
+        }
+        $maxLen = 500;
+        if (strlen($base) + strlen($suffix) > $maxLen) {
+            $base = rtrim(substr($base, 0, max(0, $maxLen - strlen($suffix))));
+        }
+
+        return $base.$suffix;
+    }
+
+    private function inventoryAdjustmentActorLabel(Request $request): ?string
+    {
+        $user = $request->user();
+        if (! $user instanceof User) {
+            return null;
+        }
+        $name = trim((string) $user->name);
+        if ($name !== '') {
+            return $name;
+        }
+        $email = trim((string) $user->email);
+
+        return $email !== '' ? $email : null;
     }
 }

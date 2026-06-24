@@ -111,14 +111,7 @@ function onSubmit() {
               <h2 id="orders-remove-holds-modal-title" class="crm-vx-modal__title">Remove Holds</h2>
             </header>
             <div class="crm-vx-modal__body pt-0">
-              <p v-if="variant === 'bulk'" class="small text-secondary mb-3">
-                Selected hold types are cleared on each order that has them. Warehouse operator holds (without a
-                Save Rack user hold) and shipping method holds cannot be cleared here.
-              </p>
-              <p v-else class="small text-secondary mb-3">
-                Checked holds are removed in ShipHero. Uncheck a hold to leave it on the order. Warehouse operator holds
-                and shipping method holds cannot be removed here.
-              </p>
+              <p class="small text-secondary mb-3">Select the holds you would like to remove.</p>
               <div v-if="!visibleRows.length" class="small text-secondary">No removable holds on this order.</div>
               <ul v-else class="list-unstyled mb-0 d-flex flex-column gap-2">
                 <li v-for="row in visibleRows" :key="row.key" class="form-check">

@@ -35,6 +35,9 @@ class ShipHeroOrderService
 
     public const ORDER_USER_HOLD_CLEAR_HISTORY_MESSAGE = 'Hold removed by User';
 
+    /** ShipHero shows “via {source}” on API history notes; omitting source defaults to “public-api”. */
+    public const ORDER_USER_HOLD_HISTORY_SOURCE = 'Save Rack';
+
     public static function formatUserHoldPlacedHistoryMessage(?string $actorName = null): string
     {
         $name = trim((string) $actorName);
@@ -1838,7 +1841,8 @@ GQL;
         $this->addOrderHistoryEntry(
             $orderId,
             $customerAccountId,
-            self::formatUserHoldClearedHistoryMessage($historyActorName)
+            self::formatUserHoldClearedHistoryMessage($historyActorName),
+            self::ORDER_USER_HOLD_HISTORY_SOURCE
         );
     }
 
@@ -1985,7 +1989,8 @@ GQL;
             $this->addOrderHistoryEntry(
                 $orderId,
                 $customerAccountId,
-                self::formatUserHoldPlacedHistoryMessage($historyActorName)
+                self::formatUserHoldPlacedHistoryMessage($historyActorName),
+                self::ORDER_USER_HOLD_HISTORY_SOURCE
             );
         }
     }

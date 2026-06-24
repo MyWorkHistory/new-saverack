@@ -7,6 +7,7 @@ use App\Models\ClientAccountOnDemandProduct;
 use App\Models\InvoiceImport;
 use App\Models\User;
 use App\Support\Billing\InvoiceHistoryEventType;
+use App\Support\Billing\InvoiceImportTabularFileReader;
 use App\Support\Billing\InvoiceLineCategory;
 use Carbon\Carbon;
 use Illuminate\Http\UploadedFile;
@@ -43,78 +44,80 @@ class InvoiceImportService
         ?string $invoiceNumber,
         ?User $actor
     ): array {
-        $path = $file->getRealPath();
-        if ($path === false) {
-            throw new \RuntimeException('Invalid upload.');
-        }
-
-        $parser = new InvoiceChargeImportParser();
-        $lines = $parser->parseFile($path);
-        $aggregate = $this->aggregateOnDemandCatalogPickLines($account, $lines);
-        $lines = $aggregate['lines'];
-        $onDemandDebug = $aggregate['debug'];
-        if (count($lines) === 0) {
-            throw new \RuntimeException('No billable rows found in CSV.');
-        }
-
-        $originalFilename = $file->getClientOriginalName();
-        $billingPeriod = self::billingPeriodFromFilename($originalFilename);
-
-        $import = new InvoiceImport([
-            'client_account_id' => $account->id,
-            'user_id' => $actor !== null ? $actor->id : null,
-            'import_type' => InvoiceImport::TYPE_FULL_CHARGE_CSV,
-            'original_filename' => $originalFilename,
-            'status' => InvoiceImport::STATUS_PENDING,
-        ]);
-        $import->save();
+        $resolved = $this->resolveParserPath($file);
+        $path = $resolved['path'];
 
         try {
-            $invoice = DB::transaction(function () use ($account, $lines, $dueDateYmd, $invoiceNumber, $actor, $import, $billingPeriod) {
-                $header = [
-                    'client_account_id' => $account->id,
-                    'currency' => 'USD',
-                    'due_at' => $dueDateYmd,
-                ];
-                if ($billingPeriod !== null) {
-                    $header['billing_period_start'] = $billingPeriod['start'];
-                    $header['billing_period_end'] = $billingPeriod['end'];
-                }
-                $inv = $this->invoices->createDraft($header, $lines, $actor, $invoiceNumber);
-                $this->invoices->logHistory($inv, $actor, 'updated', $inv->status, $inv->status, [
-                    'event_type' => InvoiceHistoryEventType::IMPORT,
-                    'history_message' => 'Imported charge CSV ('.count($lines).' lines).',
-                    'import_id' => $import->id,
+            $parser = new InvoiceChargeImportParser();
+            $lines = $parser->parseFile($path);
+            $aggregate = $this->aggregateOnDemandCatalogPickLines($account, $lines);
+            $lines = $aggregate['lines'];
+            $onDemandDebug = $aggregate['debug'];
+            if (count($lines) === 0) {
+                throw new \RuntimeException('No billable rows found in CSV.');
+            }
+
+            $originalFilename = $file->getClientOriginalName();
+            $billingPeriod = self::billingPeriodFromFilename($originalFilename);
+
+            $import = new InvoiceImport([
+                'client_account_id' => $account->id,
+                'user_id' => $actor !== null ? $actor->id : null,
+                'import_type' => InvoiceImport::TYPE_FULL_CHARGE_CSV,
+                'original_filename' => $originalFilename,
+                'status' => InvoiceImport::STATUS_PENDING,
+            ]);
+            $import->save();
+
+            try {
+                $invoice = DB::transaction(function () use ($account, $lines, $dueDateYmd, $invoiceNumber, $actor, $import, $billingPeriod) {
+                    $header = [
+                        'client_account_id' => $account->id,
+                        'currency' => 'USD',
+                        'due_at' => $dueDateYmd,
+                    ];
+                    if ($billingPeriod !== null) {
+                        $header['billing_period_start'] = $billingPeriod['start'];
+                        $header['billing_period_end'] = $billingPeriod['end'];
+                    }
+                    $inv = $this->invoices->createDraft($header, $lines, $actor, $invoiceNumber);
+                    $this->invoices->logHistory($inv, $actor, 'updated', $inv->status, $inv->status, [
+                        'event_type' => InvoiceHistoryEventType::IMPORT,
+                        'history_message' => 'Imported charge CSV ('.count($lines).' lines).',
+                        'import_id' => $import->id,
+                        'billing_period_start' => $billingPeriod['start'] ?? null,
+                        'billing_period_end' => $billingPeriod['end'] ?? null,
+                    ]);
+
+                    return $inv;
+                });
+
+                $import->invoice_id = $invoice->id;
+                $import->rows_processed = count($lines);
+                $import->status = InvoiceImport::STATUS_COMPLETED;
+                $import->result_summary = array_filter([
+                    'line_count' => count($lines),
                     'billing_period_start' => $billingPeriod['start'] ?? null,
                     'billing_period_end' => $billingPeriod['end'] ?? null,
-                ]);
+                    'on_demand_debug' => $onDemandDebug,
+                ], static function ($value) {
+                    return $value !== null;
+                });
+                $import->save();
 
-                return $inv;
-            });
-
-            $import->invoice_id = $invoice->id;
-            $import->rows_processed = count($lines);
-            $import->status = InvoiceImport::STATUS_COMPLETED;
-            $import->result_summary = array_filter([
-                'line_count' => count($lines),
-                'billing_period_start' => $billingPeriod['start'] ?? null,
-                'billing_period_end' => $billingPeriod['end'] ?? null,
-                'on_demand_debug' => $onDemandDebug,
-            ], static function ($value) {
-                return $value !== null;
-            });
-            $import->save();
-
-            return [
-                'invoice' => $invoice->fresh(['items', 'clientAccount']),
-                'import' => $import,
-                'on_demand_debug' => $onDemandDebug,
-            ];
-        } catch (\Throwable $e) {
-            $import->status = InvoiceImport::STATUS_FAILED;
-            $import->error_message = $e->getMessage();
-            $import->save();
-            throw $e;
+                return [
+                    'invoice' => $invoice->fresh(['items', 'clientAccount']),
+                    'import' => $import,
+                    'on_demand_debug' => $onDemandDebug,
+                ];
+            } catch (\Throwable $e) {
+                $import->status = InvoiceImport::STATUS_FAILED;
+                $import->error_message = $e->getMessage();
+                $import->save();
+                throw $e;
+            }
+        } finally {
+            $this->cleanupResolvedParserPath($resolved);
         }
     }
 
@@ -128,87 +131,89 @@ class InvoiceImportService
         ?string $invoiceNumber,
         ?User $actor
     ): array {
-        $path = $file->getRealPath();
-        if ($path === false) {
-            throw new \RuntimeException('Invalid upload.');
-        }
-
-        $storageFees = $account->feeItems()
-            ->get()
-            ->filter(static function ($f) {
-                return strcasecmp((string) $f->fee_group, \App\Models\ClientAccountFee::GROUP_STORAGE) === 0;
-            });
-
-        $parser = new InvoiceStorageImportParser();
-        $parsed = $parser->parseFile($path, $storageFees);
-        $lines = $parsed['lines'];
-        $skipped = $parsed['skipped'];
-
-        if (count($lines) === 0) {
-            throw new \RuntimeException(
-                count($skipped) > 0
-                    ? 'No storage fees matched CSV types. Check account fee catalog.'
-                    : 'No storage rows found in CSV.'
-            );
-        }
-
-        $originalFilename = $file->getClientOriginalName();
-        $billingPeriod = self::billingPeriodFromFilename($originalFilename);
-
-        $import = new InvoiceImport([
-            'client_account_id' => $account->id,
-            'user_id' => $actor !== null ? $actor->id : null,
-            'import_type' => InvoiceImport::TYPE_STORAGE_CSV,
-            'original_filename' => $originalFilename,
-            'status' => InvoiceImport::STATUS_PENDING,
-        ]);
-        $import->save();
+        $resolved = $this->resolveParserPath($file);
+        $path = $resolved['path'];
 
         try {
-            $invoice = DB::transaction(function () use ($account, $lines, $dueDateYmd, $invoiceNumber, $actor, $import, $skipped, $billingPeriod) {
-                $header = [
-                    'client_account_id' => $account->id,
-                    'currency' => 'USD',
-                    'due_at' => $dueDateYmd,
-                ];
-                if ($billingPeriod !== null) {
-                    $header['billing_period_start'] = $billingPeriod['start'];
-                    $header['billing_period_end'] = $billingPeriod['end'];
-                }
-                $inv = $this->invoices->createDraft($header, $lines, $actor, $invoiceNumber);
-                $this->invoices->logHistory($inv, $actor, 'updated', $inv->status, $inv->status, [
-                    'event_type' => InvoiceHistoryEventType::IMPORT,
-                    'history_message' => 'Imported storage CSV ('.count($lines).' lines).',
-                    'import_id' => $import->id,
-                    'skipped_types' => $skipped,
+            $storageFees = $account->feeItems()
+                ->get()
+                ->filter(static function ($f) {
+                    return strcasecmp((string) $f->fee_group, \App\Models\ClientAccountFee::GROUP_STORAGE) === 0;
+                });
+
+            $parser = new InvoiceStorageImportParser();
+            $parsed = $parser->parseFile($path, $storageFees);
+            $lines = $parsed['lines'];
+            $skipped = $parsed['skipped'];
+
+            if (count($lines) === 0) {
+                throw new \RuntimeException(
+                    count($skipped) > 0
+                        ? 'No storage fees matched CSV types. Check account fee catalog.'
+                        : 'No storage rows found in CSV.'
+                );
+            }
+
+            $originalFilename = $file->getClientOriginalName();
+            $billingPeriod = self::billingPeriodFromFilename($originalFilename);
+
+            $import = new InvoiceImport([
+                'client_account_id' => $account->id,
+                'user_id' => $actor !== null ? $actor->id : null,
+                'import_type' => InvoiceImport::TYPE_STORAGE_CSV,
+                'original_filename' => $originalFilename,
+                'status' => InvoiceImport::STATUS_PENDING,
+            ]);
+            $import->save();
+
+            try {
+                $invoice = DB::transaction(function () use ($account, $lines, $dueDateYmd, $invoiceNumber, $actor, $import, $skipped, $billingPeriod) {
+                    $header = [
+                        'client_account_id' => $account->id,
+                        'currency' => 'USD',
+                        'due_at' => $dueDateYmd,
+                    ];
+                    if ($billingPeriod !== null) {
+                        $header['billing_period_start'] = $billingPeriod['start'];
+                        $header['billing_period_end'] = $billingPeriod['end'];
+                    }
+                    $inv = $this->invoices->createDraft($header, $lines, $actor, $invoiceNumber);
+                    $this->invoices->logHistory($inv, $actor, 'updated', $inv->status, $inv->status, [
+                        'event_type' => InvoiceHistoryEventType::IMPORT,
+                        'history_message' => 'Imported storage CSV ('.count($lines).' lines).',
+                        'import_id' => $import->id,
+                        'skipped_types' => $skipped,
+                        'billing_period_start' => $billingPeriod['start'] ?? null,
+                        'billing_period_end' => $billingPeriod['end'] ?? null,
+                    ]);
+
+                    return $inv;
+                });
+
+                $import->invoice_id = $invoice->id;
+                $import->rows_processed = count($lines);
+                $import->status = InvoiceImport::STATUS_COMPLETED;
+                $import->result_summary = [
+                    'line_count' => count($lines),
+                    'skipped' => $skipped,
                     'billing_period_start' => $billingPeriod['start'] ?? null,
                     'billing_period_end' => $billingPeriod['end'] ?? null,
-                ]);
+                ];
+                $import->save();
 
-                return $inv;
-            });
-
-            $import->invoice_id = $invoice->id;
-            $import->rows_processed = count($lines);
-            $import->status = InvoiceImport::STATUS_COMPLETED;
-            $import->result_summary = [
-                'line_count' => count($lines),
-                'skipped' => $skipped,
-                'billing_period_start' => $billingPeriod['start'] ?? null,
-                'billing_period_end' => $billingPeriod['end'] ?? null,
-            ];
-            $import->save();
-
-            return [
-                'invoice' => $invoice->fresh(['items', 'clientAccount']),
-                'import' => $import,
-                'skipped' => $skipped,
-            ];
-        } catch (\Throwable $e) {
-            $import->status = InvoiceImport::STATUS_FAILED;
-            $import->error_message = $e->getMessage();
-            $import->save();
-            throw $e;
+                return [
+                    'invoice' => $invoice->fresh(['items', 'clientAccount']),
+                    'import' => $import,
+                    'skipped' => $skipped,
+                ];
+            } catch (\Throwable $e) {
+                $import->status = InvoiceImport::STATUS_FAILED;
+                $import->error_message = $e->getMessage();
+                $import->save();
+                throw $e;
+            }
+        } finally {
+            $this->cleanupResolvedParserPath($resolved);
         }
     }
 
@@ -227,77 +232,79 @@ class InvoiceImportService
         ?string $invoiceNumber,
         ?User $actor
     ): array {
-        $path = $file->getRealPath();
-        if ($path === false) {
-            throw new \RuntimeException('Invalid upload.');
-        }
-
-        $parser = new InvoiceDutiesTaxesImportParser();
-        $parsed = $parser->parseFile($path);
-        $lines = $parsed['lines'];
-        $rowsProcessed = (int) $parsed['rows_processed'];
-        $skipped = (int) $parsed['skipped'];
-
-        $originalFilename = $file->getClientOriginalName();
-        $billingPeriod = self::billingPeriodFromFilename($originalFilename);
-
-        $import = new InvoiceImport([
-            'client_account_id' => $account->id,
-            'user_id' => $actor !== null ? $actor->id : null,
-            'import_type' => InvoiceImport::TYPE_DUTIES_TAXES_CSV,
-            'original_filename' => $originalFilename,
-            'status' => InvoiceImport::STATUS_PENDING,
-        ]);
-        $import->save();
+        $resolved = $this->resolveParserPath($file);
+        $path = $resolved['path'];
 
         try {
-            $invoice = DB::transaction(function () use ($account, $lines, $dueDateYmd, $invoiceNumber, $actor, $import, $rowsProcessed, $skipped, $billingPeriod) {
-                $header = [
-                    'client_account_id' => $account->id,
-                    'currency' => 'USD',
-                    'due_at' => $dueDateYmd,
-                ];
-                if ($billingPeriod !== null) {
-                    $header['billing_period_start'] = $billingPeriod['start'];
-                    $header['billing_period_end'] = $billingPeriod['end'];
-                }
-                $inv = $this->invoices->createDraft($header, $lines, $actor, $invoiceNumber);
-                $this->invoices->logHistory($inv, $actor, 'updated', $inv->status, $inv->status, [
-                    'event_type' => InvoiceHistoryEventType::IMPORT,
-                    'history_message' => 'Imported duties & taxes CSV ('.count($lines).' lines).',
-                    'import_id' => $import->id,
+            $parser = new InvoiceDutiesTaxesImportParser();
+            $parsed = $parser->parseFile($path);
+            $lines = $parsed['lines'];
+            $rowsProcessed = (int) $parsed['rows_processed'];
+            $skipped = (int) $parsed['skipped'];
+
+            $originalFilename = $file->getClientOriginalName();
+            $billingPeriod = self::billingPeriodFromFilename($originalFilename);
+
+            $import = new InvoiceImport([
+                'client_account_id' => $account->id,
+                'user_id' => $actor !== null ? $actor->id : null,
+                'import_type' => InvoiceImport::TYPE_DUTIES_TAXES_CSV,
+                'original_filename' => $originalFilename,
+                'status' => InvoiceImport::STATUS_PENDING,
+            ]);
+            $import->save();
+
+            try {
+                $invoice = DB::transaction(function () use ($account, $lines, $dueDateYmd, $invoiceNumber, $actor, $import, $rowsProcessed, $skipped, $billingPeriod) {
+                    $header = [
+                        'client_account_id' => $account->id,
+                        'currency' => 'USD',
+                        'due_at' => $dueDateYmd,
+                    ];
+                    if ($billingPeriod !== null) {
+                        $header['billing_period_start'] = $billingPeriod['start'];
+                        $header['billing_period_end'] = $billingPeriod['end'];
+                    }
+                    $inv = $this->invoices->createDraft($header, $lines, $actor, $invoiceNumber);
+                    $this->invoices->logHistory($inv, $actor, 'updated', $inv->status, $inv->status, [
+                        'event_type' => InvoiceHistoryEventType::IMPORT,
+                        'history_message' => 'Imported duties & taxes CSV ('.count($lines).' lines).',
+                        'import_id' => $import->id,
+                        'csv_rows_processed' => $rowsProcessed,
+                        'csv_rows_skipped' => $skipped,
+                        'billing_period_start' => $billingPeriod['start'] ?? null,
+                        'billing_period_end' => $billingPeriod['end'] ?? null,
+                    ]);
+
+                    return $inv;
+                });
+
+                $import->invoice_id = $invoice->id;
+                $import->rows_processed = count($lines);
+                $import->status = InvoiceImport::STATUS_COMPLETED;
+                $import->result_summary = [
+                    'line_count' => count($lines),
                     'csv_rows_processed' => $rowsProcessed,
                     'csv_rows_skipped' => $skipped,
                     'billing_period_start' => $billingPeriod['start'] ?? null,
                     'billing_period_end' => $billingPeriod['end'] ?? null,
-                ]);
+                ];
+                $import->save();
 
-                return $inv;
-            });
-
-            $import->invoice_id = $invoice->id;
-            $import->rows_processed = count($lines);
-            $import->status = InvoiceImport::STATUS_COMPLETED;
-            $import->result_summary = [
-                'line_count' => count($lines),
-                'csv_rows_processed' => $rowsProcessed,
-                'csv_rows_skipped' => $skipped,
-                'billing_period_start' => $billingPeriod['start'] ?? null,
-                'billing_period_end' => $billingPeriod['end'] ?? null,
-            ];
-            $import->save();
-
-            return [
-                'invoice' => $invoice->fresh(['items', 'clientAccount']),
-                'import' => $import,
-                'rows_processed' => $rowsProcessed,
-                'skipped' => $skipped,
-            ];
-        } catch (\Throwable $e) {
-            $import->status = InvoiceImport::STATUS_FAILED;
-            $import->error_message = $e->getMessage();
-            $import->save();
-            throw $e;
+                return [
+                    'invoice' => $invoice->fresh(['items', 'clientAccount']),
+                    'import' => $import,
+                    'rows_processed' => $rowsProcessed,
+                    'skipped' => $skipped,
+                ];
+            } catch (\Throwable $e) {
+                $import->status = InvoiceImport::STATUS_FAILED;
+                $import->error_message = $e->getMessage();
+                $import->save();
+                throw $e;
+            }
+        } finally {
+            $this->cleanupResolvedParserPath($resolved);
         }
     }
 
@@ -580,5 +587,24 @@ class InvoiceImportService
         }
 
         return trim($value, " \t\n\r\0\x0B.\"'");
+    }
+
+    /**
+     * @return array{path: string, cleanup: callable|null}
+     */
+    private function resolveParserPath(UploadedFile $file): array
+    {
+        return (new InvoiceImportTabularFileReader())->resolveParserPath($file);
+    }
+
+    /**
+     * @param  array{path: string, cleanup: callable|null}  $resolved
+     */
+    private function cleanupResolvedParserPath(array $resolved): void
+    {
+        $cleanup = $resolved['cleanup'] ?? null;
+        if (is_callable($cleanup)) {
+            $cleanup();
+        }
     }
 }

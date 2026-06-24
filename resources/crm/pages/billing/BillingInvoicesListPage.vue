@@ -1772,12 +1772,12 @@ onUnmounted(() => {
                 </select>
               </div>
               <div class="mb-3">
-                <label class="form-label" for="billing-import-file">CSV File</label>
+                <label class="form-label" for="billing-import-file">Import File</label>
                 <input
                   id="billing-import-file"
                   type="file"
                   class="form-control"
-                  accept=".csv,text/csv,text/plain"
+                  accept=".csv,.txt,.xlsx,text/csv,text/plain,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
                   @change="onImportFileChange"
                 />
               </div>

@@ -2782,7 +2782,7 @@ class BillingInvoiceApiTest extends TestCase
             'client_account_id' => $client->id,
             'status' => Invoice::STATUS_SENT,
             'currency' => 'USD',
-            'due_at' => now()->subDays(2),
+            'due_at' => now()->subDays(3)->startOfDay(),
             'subtotal_cents' => 1000,
             'tax_cents' => 0,
             'total_cents' => 1000,
@@ -2795,6 +2795,91 @@ class BillingInvoiceApiTest extends TestCase
             ->assertJsonPath('status_key', 'past_due')
             ->assertJsonPath('status_label', 'Past Due')
             ->assertJsonPath('status_code', 2);
+    }
+
+    public function test_invoice_is_open_not_past_due_within_three_day_grace(): void
+    {
+        $user = User::factory()->create();
+        $user->permissions()->sync([$this->billingViewPermission()->id]);
+        Sanctum::actingAs($user);
+
+        $client = ClientAccount::query()->create([
+            'status' => ClientAccount::STATUS_ACTIVE,
+            'company_name' => 'Grace Period Co',
+            'email' => 'grace-period@acme.test',
+        ]);
+        $invoice = Invoice::query()->create([
+            'invoice_number' => 'INV-GRACE-STATUS-001',
+            'client_account_id' => $client->id,
+            'status' => Invoice::STATUS_SENT,
+            'currency' => 'USD',
+            'due_at' => now()->subDays(2)->startOfDay(),
+            'subtotal_cents' => 1000,
+            'tax_cents' => 0,
+            'total_cents' => 1000,
+            'amount_paid_cents' => 0,
+            'balance_due_cents' => 1000,
+        ]);
+
+        $this->getJson("/api/invoices/{$invoice->id}")
+            ->assertOk()
+            ->assertJsonPath('status_key', 'open')
+            ->assertJsonPath('status_label', 'Open');
+    }
+
+    public function test_invoice_list_can_filter_past_due_status(): void
+    {
+        $user = User::factory()->create();
+        $user->permissions()->sync([$this->billingViewPermission()->id]);
+        Sanctum::actingAs($user);
+
+        $client = ClientAccount::query()->create([
+            'status' => ClientAccount::STATUS_ACTIVE,
+            'company_name' => 'Past Due Filter Co',
+            'email' => 'past-due-filter@acme.test',
+        ]);
+
+        $pastDue = Invoice::query()->create([
+            'invoice_number' => 'INV-PAST-DUE-001',
+            'client_account_id' => $client->id,
+            'status' => Invoice::STATUS_SENT,
+            'currency' => 'USD',
+            'due_at' => now()->subDays(4)->startOfDay(),
+            'subtotal_cents' => 1000,
+            'tax_cents' => 0,
+            'total_cents' => 1000,
+            'amount_paid_cents' => 0,
+            'balance_due_cents' => 1000,
+        ]);
+        Invoice::query()->create([
+            'invoice_number' => 'INV-OPEN-001',
+            'client_account_id' => $client->id,
+            'status' => Invoice::STATUS_SENT,
+            'currency' => 'USD',
+            'due_at' => now()->subDay()->startOfDay(),
+            'subtotal_cents' => 500,
+            'tax_cents' => 0,
+            'total_cents' => 500,
+            'amount_paid_cents' => 0,
+            'balance_due_cents' => 500,
+        ]);
+
+        $this->getJson('/api/invoices?status=past_due')
+            ->assertOk()
+            ->assertJsonCount(1, 'data')
+            ->assertJsonPath('data.0.id', $pastDue->id)
+            ->assertJsonPath('data.0.status_key', 'past_due');
+    }
+
+    public function test_invoice_meta_includes_past_due_status(): void
+    {
+        $user = User::factory()->create();
+        $user->permissions()->sync([$this->billingViewPermission()->id]);
+        Sanctum::actingAs($user);
+
+        $this->getJson('/api/invoices/meta')
+            ->assertOk()
+            ->assertJsonFragment(['past_due']);
     }
 
     public function test_manual_legacy_status_update_requires_zero_balance_for_paid(): void

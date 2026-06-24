@@ -121,7 +121,7 @@ class Invoice extends Model
         return in_array($this->status, [self::STATUS_PAID, self::STATUS_VOID], true);
     }
 
-    /** Past due: open-like status and due date before today (see InvoiceLifecycleStatus). */
+    /** Past due: open-like status and due date + grace days on or before today. */
     public function isPastDueDerived(): bool
     {
         return InvoiceLifecycleStatus::isPastDue($this);

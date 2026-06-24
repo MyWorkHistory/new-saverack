@@ -196,7 +196,7 @@ function payRowStatusLabel(row) {
   if (label) return label;
 
   const key = payRowStatusKey(row);
-  if (key === "past_due") return "Open";
+  if (key === "past_due") return "Past Due";
   if (key === "draft") return "Draft";
   if (key === "collection") return "Collection";
   if (key === "processing") return "Processing";
@@ -561,15 +561,16 @@ function payDueInLabel(days) {
 
 function isPastDueByLogic(inv) {
   if (!inv) return false;
-  const dueIn = Number(inv.due_in);
-  if (Number.isFinite(dueIn) && dueIn < 0) return true;
+  const statusKey = String(inv.status_key || inv.status || "").trim().toLowerCase();
+  if (statusKey === "past_due") return true;
   const dueAt = inv.due_at ? parseCalendarDay(inv.due_at) : null;
   if (!dueAt) return false;
   const today = new Date();
   today.setHours(0, 0, 0, 0);
-  const due0 = new Date(dueAt.getFullYear(), dueAt.getMonth(), dueAt.getDate());
-  due0.setHours(0, 0, 0, 0);
-  return due0 < today;
+  const pastDueStarts = new Date(dueAt.getFullYear(), dueAt.getMonth(), dueAt.getDate());
+  pastDueStarts.setDate(pastDueStarts.getDate() + 3);
+  pastDueStarts.setHours(0, 0, 0, 0);
+  return today >= pastDueStarts;
 }
 
 const statusDisplayText = computed(() => {
@@ -990,21 +991,24 @@ function statusBadgeClass(status) {
   if (s === "failed" || s === "payment failed" || s === "payment_failed") {
     return "bg-danger-subtle text-danger-emphasis";
   }
-  if (s === "past due" || s === "past_due") return "bg-primary-subtle text-primary-emphasis";
+  if (s === "past due" || s === "past_due") return "bg-danger-subtle text-danger-emphasis";
   if (s === "open") return "bg-primary-subtle text-primary-emphasis";
   return "bg-body-secondary text-body-secondary";
 }
 
 function openStatusModal() {
   if (!canUpdateInvoiceStatus.value || !invoice.value) return;
-  statusForm.value = currentStatusKey.value || "draft";
+  const key = currentStatusKey.value || "draft";
+  statusForm.value = key === "past_due" ? "open" : key;
   statusModalOpen.value = true;
 }
 
 async function saveStatusFromModal() {
   if (!canUpdateInvoiceStatus.value || !invoice.value) return;
   const next = statusForm.value;
-  if (next === currentStatusKey.value) {
+  const current = currentStatusKey.value;
+  const comparableCurrent = current === "past_due" ? "open" : current;
+  if (next === comparableCurrent) {
     statusModalOpen.value = false;
     return;
   }
@@ -1904,7 +1908,7 @@ function goToInvoiceBucket(bucket) {
   if (!invoice.value?.client_account_id) return;
   let status = "all";
   if (bucket === "open") status = "open";
-  if (bucket === "past_due") status = "open";
+  if (bucket === "past_due") status = "past_due";
   if (bucket === "draft") status = "draft";
   router.push({
     path: "/admin/billing/invoices",

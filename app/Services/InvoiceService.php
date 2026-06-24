@@ -6,6 +6,7 @@ use App\Mail\InvoiceSentMailable;
 use App\Models\ClientAccount;
 use App\Models\Invoice;
 use App\Support\Billing\InvoiceHistoryEventType;
+use App\Support\Billing\InvoiceLifecycleStatus;
 use App\Support\Billing\InvoiceLineCategory;
 use App\Support\BillingAvailableFundsSchema;
 use App\Support\ClientAccountBillingPreferences;
@@ -2082,18 +2083,15 @@ class InvoiceService
 
     public function isOverdue(Invoice $invoice): bool
     {
-        if ($invoice->isPaidLike() || $invoice->status === Invoice::STATUS_DRAFT) {
-            return false;
-        }
-        if ($invoice->due_at === null) {
-            return false;
-        }
-
-        return $invoice->due_at->isPast() && $invoice->balance_due_cents > 0;
+        return InvoiceLifecycleStatus::isPastDue($invoice);
     }
 
     public function legacyStatusKey(Invoice $invoice): string
     {
+        if (InvoiceLifecycleStatus::isPastDue($invoice)) {
+            return InvoiceLifecycleStatus::PAST_DUE;
+        }
+
         $raw = strtolower(trim((string) $invoice->status));
         if ($raw === 'void') return 'void';
         if ($raw === 'paid') return 'paid';
@@ -2112,6 +2110,7 @@ class InvoiceService
     public function legacyStatusLabel(Invoice $invoice): string
     {
         $key = $this->legacyStatusKey($invoice);
+        if ($key === InvoiceLifecycleStatus::PAST_DUE) return 'Past Due';
         if ($key === 'collection') return 'Collection';
         if ($key === 'paid') return 'Paid';
         if ($key === Invoice::STATUS_PROCESSING) return 'Processing';
@@ -2217,6 +2216,18 @@ class InvoiceService
         return $this->addCcFee($invoice, 'Credit Card Fee', $actor);
     }
 
+    /**
+     * @param  \Illuminate\Database\Eloquent\Builder<Invoice>  $query
+     */
+    private function applyPastDueScope($query): void
+    {
+        $openStatuses = [Invoice::STATUS_SENT, Invoice::STATUS_PARTIAL, Invoice::STATUS_PROCESSING, Invoice::STATUS_PAYMENT_FAILED, 'past_due', 'open', 'collection'];
+        $query->whereIn('status', $openStatuses)
+            ->where('balance_due_cents', '>', 0)
+            ->whereNotNull('due_at')
+            ->whereDate('due_at', '<=', InvoiceLifecycleStatus::latestDueDateNotPastDue()->toDateString());
+    }
+
     public function paginate(array $filters): \Illuminate\Contracts\Pagination\LengthAwarePaginator
     {
         $q = Invoice::query()->with('clientAccount');
@@ -2228,11 +2239,10 @@ class InvoiceService
         if (! empty($filters['status']) && $filters['status'] !== 'all') {
             $statusFilter = strtolower((string) $filters['status']);
             if ($statusFilter === 'open') {
-                $q->whereIn('status', [Invoice::STATUS_SENT, Invoice::STATUS_PARTIAL, Invoice::STATUS_PROCESSING, Invoice::STATUS_PAYMENT_FAILED, 'past_due', 'open'])
+                $q->whereIn('status', [Invoice::STATUS_SENT, Invoice::STATUS_PARTIAL, Invoice::STATUS_PROCESSING, Invoice::STATUS_PAYMENT_FAILED, 'past_due', 'open', 'collection'])
                     ->where('balance_due_cents', '>', 0);
             } elseif ($statusFilter === 'past_due' || $statusFilter === 'overdue') {
-                $q->whereIn('status', [Invoice::STATUS_SENT, Invoice::STATUS_PARTIAL, Invoice::STATUS_PROCESSING, Invoice::STATUS_PAYMENT_FAILED, 'past_due', 'open'])
-                    ->where('balance_due_cents', '>', 0);
+                $this->applyPastDueScope($q);
             } elseif ($statusFilter === 'draft') {
                 $q->whereIn('status', [Invoice::STATUS_DRAFT, 'pending']);
             } elseif ($statusFilter === 'collection') {
@@ -2315,7 +2325,7 @@ class InvoiceService
             ->whereIn('status', $openStatuses)
             ->where('balance_due_cents', '>', 0)
             ->whereNotNull('due_at')
-            ->where('due_at', '<', now()->startOfDay())
+            ->whereDate('due_at', '<=', InvoiceLifecycleStatus::latestDueDateNotPastDue()->toDateString())
             ->count();
 
         $draftCount = $portalView

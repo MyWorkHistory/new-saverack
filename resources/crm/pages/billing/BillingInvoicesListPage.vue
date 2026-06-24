@@ -299,7 +299,7 @@ function statusBadgeClass(status) {
   if (s === "collection") return "bg-warning-subtle text-warning-emphasis";
   if (s === "processing") return "bg-warning-subtle text-warning-emphasis";
   if (s === "payment_failed") return "bg-danger-subtle text-danger-emphasis";
-  if (s === "past_due") return "bg-primary-subtle text-primary-emphasis";
+  if (s === "past_due") return "bg-danger-subtle text-danger-emphasis";
   if (s === "open") return "bg-primary-subtle text-primary-emphasis";
   return "bg-body-secondary text-body-secondary";
 }
@@ -342,8 +342,8 @@ function statusFilterLabel(status) {
     all: "All statuses",
     draft: "Draft",
     open: "Open",
-    past_due: "Open",
-    overdue: "Open",
+    past_due: "Past Due",
+    overdue: "Past Due",
     collection: "Collection",
     processing: "Processing",
     payment_failed: "Failed",
@@ -373,11 +373,7 @@ function toggleSort(column) {
 async function fetchMeta() {
   const { data } = await api.get("/invoices/meta");
   const rawStatuses = Array.isArray(data?.statuses) ? data.statuses : ["all"];
-  const mapped = rawStatuses.map((st) => {
-    const key = String(st || "").toLowerCase();
-    if (key === "past_due" || key === "overdue") return "open";
-    return st;
-  });
+  const mapped = rawStatuses.map((st) => String(st || "").toLowerCase());
   meta.value = {
     statuses: [...new Set(mapped)],
     client_accounts: data?.client_accounts ?? [],
@@ -427,13 +423,7 @@ async function fetchRows() {
         page: query.page,
         sort_by: query.sort_by,
         sort_dir: query.sort_dir,
-        status:
-          query.status === "all"
-            ? undefined
-            : (String(query.status).toLowerCase() === "past_due" ||
-                String(query.status).toLowerCase() === "overdue")
-              ? "open"
-              : query.status,
+        status: query.status === "all" ? undefined : query.status,
         client_account_id: query.client_account_id || undefined,
         payment_type: query.payment_type || undefined,
       },
@@ -972,7 +962,7 @@ onMounted(async () => {
     if (props.portalMode && incoming === "draft") {
       query.status = "all";
     } else {
-      query.status = incoming === "past_due" || incoming === "overdue" ? "open" : incoming;
+      query.status = incoming === "overdue" ? "past_due" : incoming;
     }
   }
   const qClient = route.query.client_account_id;

@@ -16,11 +16,16 @@ final class InvoiceLifecycleStatus
 
     public const OPEN = 'open';
 
+    public const PAST_DUE = 'past_due';
+
     public const COLLECTION = 'collection';
 
     public const PAID = 'paid';
 
     public const VOID = 'void';
+
+    /** Days after due date before an open invoice is considered past due. */
+    public const PAST_DUE_GRACE_DAYS = 3;
 
     /** @return list<string> */
     public static function canonical(): array
@@ -29,6 +34,7 @@ final class InvoiceLifecycleStatus
             self::DRAFT,
             self::PENDING,
             self::OPEN,
+            self::PAST_DUE,
             self::COLLECTION,
             self::PAID,
             self::VOID,
@@ -48,7 +54,8 @@ final class InvoiceLifecycleStatus
             Invoice::STATUS_VOID => self::VOID,
             self::PENDING => self::PENDING,
             self::OPEN => self::OPEN,
-            'past_due' => self::OPEN,
+            self::PAST_DUE => self::PAST_DUE,
+            'past_due' => self::PAST_DUE,
             self::COLLECTION => self::COLLECTION,
             self::PAID => self::PAID,
             self::VOID => self::VOID,
@@ -59,21 +66,49 @@ final class InvoiceLifecycleStatus
     }
 
     /**
-     * Past due is derived: open (or legacy sent/partial) with due date before start of today.
+     * Past due is derived: open-like invoice with balance due, due date + grace days on or before today.
      */
     public static function isPastDue(Invoice $invoice): bool
     {
         if ($invoice->due_at === null) {
             return false;
         }
-        $openLike = in_array($invoice->status, [
+        if ($invoice->isPaidLike() || $invoice->status === Invoice::STATUS_DRAFT) {
+            return false;
+        }
+        if ((int) $invoice->balance_due_cents <= 0) {
+            return false;
+        }
+        if (! self::isOpenLikeStoredStatus((string) $invoice->status)) {
+            return false;
+        }
+
+        $pastDueStartsOn = $invoice->due_at->copy()->startOfDay()->addDays(self::PAST_DUE_GRACE_DAYS);
+
+        return now()->startOfDay()->greaterThanOrEqualTo($pastDueStartsOn);
+    }
+
+    /**
+     * Latest due_at date (inclusive) that is still not past due as of today.
+     */
+    public static function latestDueDateNotPastDue(): \Carbon\Carbon
+    {
+        return now()->startOfDay()->subDays(self::PAST_DUE_GRACE_DAYS);
+    }
+
+    public static function isOpenLikeStoredStatus(string $stored): bool
+    {
+        $status = strtolower(trim($stored));
+
+        return in_array($status, [
             self::OPEN,
             self::PENDING,
+            self::PAST_DUE,
             Invoice::STATUS_SENT,
             Invoice::STATUS_PARTIAL,
+            Invoice::STATUS_PROCESSING,
+            Invoice::STATUS_PAYMENT_FAILED,
+            self::COLLECTION,
         ], true);
-
-        return $openLike
-            && $invoice->due_at->copy()->startOfDay()->lt(now()->startOfDay());
     }
 }

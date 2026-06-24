@@ -134,16 +134,24 @@ const somePageSelected = computed(() => {
 });
 
 /** Holds that “Remove Hold” can affect via ShipHero. */
-function rowHasRemovableHolds(row) {
+function rowIsCrmUserHold(row) {
+  if (row?.is_crm_user_hold === true) return true;
   const h = row?.holds && typeof row.holds === "object" ? row.holds : {};
-  return !!(h.fraud_hold || h.address_hold || h.payment_hold || h.client_hold);
+  if (h.client_hold) return true;
+  const tags = Array.isArray(row?.tags) ? row.tags : [];
+  return !!(h.operator_hold && tags.includes("saverack:user_hold"));
 }
 
-/** Only user hold (client_hold) is active. */
+function rowHasRemovableHolds(row) {
+  const h = row?.holds && typeof row.holds === "object" ? row.holds : {};
+  return !!(h.fraud_hold || h.address_hold || h.payment_hold || rowIsCrmUserHold(row));
+}
+
+/** Only CRM User Hold is active (operator_hold + tag, or legacy client_hold). */
 function rowOnlyCrmUserHold(row) {
   const h = row?.holds && typeof row.holds === "object" ? row.holds : {};
-  if (!h.client_hold) return false;
-  return !(h.fraud_hold || h.address_hold || h.payment_hold || h.operator_hold || h.shipping_method_hold);
+  if (!rowIsCrmUserHold(row)) return false;
+  return !(h.fraud_hold || h.address_hold || h.payment_hold || h.shipping_method_hold);
 }
 
 const accountOptions = computed(() => {
@@ -746,7 +754,7 @@ function normalizeRowHoldsForRemoveModal(row) {
     fraud_hold: !!h.fraud_hold,
     address_hold: !!h.address_hold,
     payment_hold: !!h.payment_hold,
-    client_hold: !!h.client_hold,
+    client_hold: rowIsCrmUserHold(row),
   };
 }
 

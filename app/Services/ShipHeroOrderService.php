@@ -12,7 +12,7 @@ class ShipHeroOrderService
 {
     /**
      * Hold keys CRM may clear via {@see clearOrderHoldsSelective}.
-     * CRM user hold place/clear uses {@see client_hold} ({@see ORDER_USER_HOLD_MUTATION_KEY}).
+     * CRM User Hold is placed as ShipHero {@see operator_hold} with tag {@see ORDER_USER_HOLD_TAG}.
      *
      * @see https://developer.shiphero.com/schema/types/update-order-holds-input.html
      */
@@ -22,22 +22,26 @@ class ShipHeroOrderService
         'payment_hold',
     ];
 
-    /** ShipHero “User Hold” in UI; API field for CRM user hold place/clear. */
+    /** Frontend/API checkbox key for CRM User Hold (maps to {@see ORDER_USER_HOLD_MUTATION_KEY}). */
     public const ORDER_USER_HOLD_DISPLAY_KEY = 'client_hold';
 
-    /** CRM place/clear user hold via ShipHero {@see client_hold}. */
-    public const ORDER_USER_HOLD_MUTATION_KEY = 'client_hold';
+    /** ShipHero mutation field for CRM User Hold (3PL token). */
+    public const ORDER_USER_HOLD_MUTATION_KEY = 'operator_hold';
+
+    /** Order tag marking CRM portal User Hold (distinct from warehouse operator holds). */
+    public const ORDER_USER_HOLD_TAG = 'saverack:user_hold';
+
+    public const ORDER_USER_HOLD_HISTORY_MESSAGE = 'Hold was placed by User';
+
+    public const ORDER_USER_HOLD_CLEAR_HISTORY_MESSAGE = 'Hold removed by User';
 
     /** @deprecated Use {@see ORDER_USER_HOLD_MUTATION_KEY}. */
     public const ORDER_USER_HOLD_KEY = self::ORDER_USER_HOLD_MUTATION_KEY;
 
     public const NO_MATCHING_HOLDS_MESSAGE = 'No matching holds to clear on this order.';
 
-    /** Store/brand {@see client_hold} only — 3PL cannot clear via API. */
+    /** Native ShipHero store {@see client_hold}; 3PL cannot clear via API. */
     public const CLIENT_HOLD_3PL_MESSAGE = 'This order has a user hold from your store. Clear it in ShipHero or your sales channel; Save Rack cannot remove it via API.';
-
-    /** User Hold requires a ShipHero developer token on the child (client) account. */
-    public const CLIENT_HOLD_TOKEN_MISSING_MESSAGE = 'User Hold could not be placed: Save Rack must add a ShipHero client API refresh token on this account (Account Settings). Fraud, Address, and Payment holds are not affected.';
 
     /**
      * Map ShipHero hold API wording to CRM copy ({@see client_hold} → User Hold).
@@ -49,14 +53,6 @@ class ShipHeroOrderService
             return $trimmed;
         }
 
-        $lower = strtolower($trimmed);
-        if (str_contains($lower, '3pl cannot set a client hold')
-            || str_contains($lower, '3pl cannot remove a client hold')
-            || str_contains($lower, 'cannot set a client hold')
-            || str_contains($lower, 'cannot remove a client hold')) {
-            return self::CLIENT_HOLD_TOKEN_MISSING_MESSAGE;
-        }
-
         $humanized = preg_replace('/client[\s_-]*hold/i', 'User Hold', $trimmed) ?? $trimmed;
         if (stripos($humanized, 'ShipHero:') === 0) {
             $humanized = trim(substr($humanized, strlen('ShipHero:')));
@@ -64,13 +60,6 @@ class ShipHeroOrderService
 
         return $humanized;
     }
-
-    /** @var list<string> */
-    private const WAREHOUSE_HOLD_MUTATION_KEYS = [
-        'fraud_hold',
-        'address_hold',
-        'payment_hold',
-    ];
 
     /** User-facing copy when only a warehouse operator hold blocks CRM clears. */
     public const OPERATOR_HOLD_ONLY_MESSAGE = 'Contact your account manager about the operator hold on this order.';
@@ -431,6 +420,7 @@ GQL
             payment_hold
             client_hold
           }
+          tags
         }
       }
       pageInfo {
@@ -1162,7 +1152,7 @@ GQL;
     /**
      * Single header fetch for hold mutations: relay id + normalized holds.
      *
-     * @return array{relay_id: string, holds: array<string, bool>}
+     * @return array{relay_id: string, holds: array<string, bool>, tags: list<string>}
      */
     public function resolveOrderHeaderForMutation(string $orderId, string $customerAccountId): array
     {
@@ -1187,6 +1177,7 @@ GQL;
             return [
                 'relay_id' => $relay,
                 'holds' => $this->normalizeOrderHoldsForApi($node['holds'] ?? null),
+                'tags' => $this->normalizeOrderTags($node['tags'] ?? null),
             ];
         }
 
@@ -1552,6 +1543,101 @@ GQL;
         $this->client->query($graphql, ['data' => $data]);
     }
 
+    public function addOrderHistoryEntry(
+        string $orderId,
+        string $customerAccountId,
+        string $message,
+        string $source = 'Save Rack'
+    ): void {
+        $relayId = $this->resolveOrderRelayIdForMutations($orderId, $customerAccountId);
+        $customer = trim($customerAccountId);
+        $note = trim($message);
+        if ($note === '') {
+            return;
+        }
+        $data = [
+            'order_id' => $relayId,
+            'history_entry' => [
+                'message' => $note,
+                'source' => trim($source) !== '' ? trim($source) : 'Save Rack',
+            ],
+        ];
+        if ($customer !== '') {
+            $data['customer_account_id'] = $customer;
+        }
+        $graphql = <<<'GQL'
+mutation ShipHeroOrderAddHistoryEntry($data: AddHistoryInput!) {
+  order_add_history_entry(data: $data) {
+    request_id
+    complexity
+  }
+}
+GQL;
+        $this->client->query($graphql, ['data' => $data], true, [
+            ShipHeroClient::OPTION_GRAPHQL_SUCCESS_FIELD => 'order_add_history_entry',
+        ]);
+    }
+
+    /**
+     * @param  list<string>  $tags
+     * @return list<string>
+     */
+    public static function mergeUserHoldTag(array $tags): array
+    {
+        $normalized = [];
+        foreach ($tags as $tag) {
+            if (! is_string($tag)) {
+                continue;
+            }
+            $s = trim($tag);
+            if ($s !== '' && ! in_array($s, $normalized, true)) {
+                $normalized[] = $s;
+            }
+        }
+        if (! in_array(self::ORDER_USER_HOLD_TAG, $normalized, true)) {
+            $normalized[] = self::ORDER_USER_HOLD_TAG;
+        }
+
+        return $normalized;
+    }
+
+    /**
+     * @param  list<string>  $tags
+     * @return list<string>
+     */
+    public static function stripUserHoldTag(array $tags): array
+    {
+        $out = [];
+        foreach ($tags as $tag) {
+            if (! is_string($tag)) {
+                continue;
+            }
+            $s = trim($tag);
+            if ($s !== '' && $s !== self::ORDER_USER_HOLD_TAG && ! in_array($s, $out, true)) {
+                $out[] = $s;
+            }
+        }
+
+        return $out;
+    }
+
+    /**
+     * @param  list<string>|mixed  $tags
+     */
+    public static function orderHasUserHoldTag($tags): bool
+    {
+        if (! is_array($tags)) {
+            return false;
+        }
+        foreach ($tags as $tag) {
+            if (is_string($tag) && trim($tag) === self::ORDER_USER_HOLD_TAG) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
     /**
      * Clear fraud, address, and payment holds to false. Does not change {@see shipping_method_hold},
      * {@see operator_hold}, or {@see client_hold} (3PL API cannot update client_hold; use ShipHero for that).
@@ -1691,18 +1777,39 @@ GQL;
     }
 
     /**
-     * Clear CRM-placed user hold ({@see client_hold}). Does not touch {@see operator_hold} or other types.
+     * Clear CRM-placed User Hold ({@see operator_hold} + {@see ORDER_USER_HOLD_TAG}).
      *
-     * @param  array{relay_id: string, holds: array<string, bool>}|null  $headerContext  from {@see resolveOrderHeaderForMutation}
+     * @param  array{relay_id: string, holds: array<string, bool>, tags?: list<string>}|null  $headerContext
      */
-    public function clearUserHold(string $orderId, string $customerAccountId, ?array $headerContext = null, ?string $clientRefreshToken = null): void
+    public function clearUserHold(string $orderId, string $customerAccountId, ?array $headerContext = null): void
     {
         $ctx = $headerContext ?? $this->resolveOrderHeaderForMutation($orderId, $customerAccountId);
         $current = $ctx['holds'];
-        if (empty($current[self::ORDER_USER_HOLD_MUTATION_KEY])) {
+        $tags = isset($ctx['tags']) && is_array($ctx['tags']) ? $ctx['tags'] : [];
+        if (empty($current[self::ORDER_USER_HOLD_MUTATION_KEY]) || ! self::orderHasUserHoldTag($tags)) {
             throw new RuntimeException(self::NO_MATCHING_HOLDS_MESSAGE);
         }
-        $this->mutateClientHold($ctx['relay_id'], false, $clientRefreshToken);
+        $customer = trim($customerAccountId);
+        $data = [
+            'order_id' => $ctx['relay_id'],
+            self::ORDER_USER_HOLD_MUTATION_KEY => false,
+        ];
+        if ($customer !== '') {
+            $data['customer_account_id'] = $customer;
+        }
+        $graphql = <<<'GQL'
+mutation ShipHeroOrderClearUserHold($data: UpdateOrderHoldsInput!) {
+  order_update_holds(data: $data) {
+    request_id
+    complexity
+  }
+}
+GQL;
+        $this->client->query($graphql, ['data' => $data], true, [
+            ShipHeroClient::OPTION_GRAPHQL_SUCCESS_FIELD => 'order_update_holds',
+        ]);
+        $this->updateOrderTags($orderId, $customerAccountId, self::stripUserHoldTag($tags));
+        $this->addOrderHistoryEntry($orderId, $customerAccountId, self::ORDER_USER_HOLD_CLEAR_HISTORY_MESSAGE);
     }
 
     /**
@@ -1710,54 +1817,22 @@ GQL;
      */
     public static function orderRemovableHoldKeys(): array
     {
-        return array_merge(self::ORDER_CLEARABLE_HOLD_KEYS, [self::ORDER_USER_HOLD_MUTATION_KEY]);
+        return array_merge(self::ORDER_CLEARABLE_HOLD_KEYS, [self::ORDER_USER_HOLD_DISPLAY_KEY]);
     }
 
     /**
-     * True when the only active hold is CRM user hold ({@see client_hold}).
+     * True when the only active hold is CRM User Hold ({@see operator_hold} + {@see ORDER_USER_HOLD_TAG}).
      *
      * @param  array<string, mixed>|null  $holds
+     * @param  list<string>|mixed|null  $tags
      */
-    public function orderHoldsOnlyUserHoldActive($holds): bool
+    public function orderHoldsOnlyUserHoldActive($holds, $tags = null): bool
     {
         $h = $this->normalizeOrderHoldsForApi($holds);
         if (! $this->orderHoldsArrayHasActive($h)) {
             return false;
         }
-        if (empty($h[self::ORDER_USER_HOLD_MUTATION_KEY])) {
-            return false;
-        }
-        foreach (['fraud_hold', 'address_hold', 'payment_hold', 'operator_hold', 'shipping_method_hold'] as $key) {
-            if (! empty($h[$key])) {
-                return false;
-            }
-        }
-
-        return true;
-    }
-
-    /**
-     * True when the only active hold is {@see client_hold} with no other hold types.
-     *
-     * @param  array<string, mixed>|null  $holds
-     */
-    public function orderHoldsOnlyClientHoldActive($holds): bool
-    {
-        return $this->orderHoldsOnlyUserHoldActive($holds);
-    }
-
-    /**
-     * True when the only active hold is warehouse {@see operator_hold}.
-     *
-     * @param  array<string, mixed>|null  $holds
-     */
-    public function orderHoldsOnlyOperatorHoldActive($holds): bool
-    {
-        $h = $this->normalizeOrderHoldsForApi($holds);
-        if (! $this->orderHoldsArrayHasActive($h)) {
-            return false;
-        }
-        if (empty($h['operator_hold'])) {
+        if (empty($h[self::ORDER_USER_HOLD_MUTATION_KEY]) || ! self::orderHasUserHoldTag($tags)) {
             return false;
         }
         foreach (['fraud_hold', 'address_hold', 'payment_hold', 'client_hold', 'shipping_method_hold'] as $key) {
@@ -1770,59 +1845,84 @@ GQL;
     }
 
     /**
-     * Normalize CRM place-hold flags; CRM does not set warehouse {@see operator_hold}.
+     * @param  array<string, mixed>|null  $holds
+     * @param  list<string>|mixed|null  $tags
+     */
+    public function orderHoldsOnlyClientHoldActive($holds, $tags = null): bool
+    {
+        return $this->orderHoldsOnlyUserHoldActive($holds, $tags);
+    }
+
+    /**
+     * True when the only active hold is warehouse {@see operator_hold} without CRM tag.
+     *
+     * @param  array<string, mixed>|null  $holds
+     * @param  list<string>|mixed|null  $tags
+     */
+    public function orderHoldsOnlyOperatorHoldActive($holds, $tags = null): bool
+    {
+        $h = $this->normalizeOrderHoldsForApi($holds);
+        if (! $this->orderHoldsArrayHasActive($h)) {
+            return false;
+        }
+        if (empty($h['operator_hold']) || self::orderHasUserHoldTag($tags)) {
+            return false;
+        }
+        foreach (['fraud_hold', 'address_hold', 'payment_hold', 'client_hold', 'shipping_method_hold'] as $key) {
+            if (! empty($h[$key])) {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    /**
+     * Map CRM {@see client_hold} request flag to ShipHero {@see operator_hold}; block direct operator_hold.
      *
      * @param  array<string, bool>  $flags
      * @return array<string, bool>
      */
     public function normalizeUserHoldMutationFlags(array $flags): array
     {
-        unset($flags['operator_hold']);
+        $wantsUserHold = ! empty($flags[self::ORDER_USER_HOLD_DISPLAY_KEY])
+            || ! empty($flags['client_hold']);
+        unset($flags['operator_hold'], $flags['client_hold'], $flags[self::ORDER_USER_HOLD_DISPLAY_KEY]);
+        if ($wantsUserHold) {
+            $flags[self::ORDER_USER_HOLD_MUTATION_KEY] = true;
+        }
 
         return $flags;
     }
 
     /**
-     * Set holds to true for keys the user selected. Warehouse holds use the 3PL token; User Hold
-     * ({@see client_hold}) uses the child-account refresh token because ShipHero rejects 3PL
-     * operators setting client holds.
+     * Set holds to true for keys the user selected, merged with holds already on the order.
      *
      * @param  array<string, bool>  $flags
      */
-    public function setOrderHoldsTrue(string $orderId, string $customerAccountId, array $flags, ?string $clientRefreshToken = null): void
+    public function setOrderHoldsTrue(string $orderId, string $customerAccountId, array $flags): void
     {
+        $wantsUserHold = ! empty($flags[self::ORDER_USER_HOLD_DISPLAY_KEY])
+            || ! empty($flags['client_hold']);
         $ctx = $this->resolveOrderHeaderForMutation($orderId, $customerAccountId);
         $flags = $this->normalizeUserHoldMutationFlags($flags);
-        $wantsClient = ! empty($flags[self::ORDER_USER_HOLD_MUTATION_KEY]);
-        $warehouseFlags = [];
-        foreach (self::WAREHOUSE_HOLD_MUTATION_KEYS as $key) {
+        $allowed = array_merge(self::ORDER_CLEARABLE_HOLD_KEYS, [self::ORDER_USER_HOLD_MUTATION_KEY]);
+        $current = $ctx['holds'];
+        $userWantsAny = false;
+        foreach ($allowed as $key) {
             if (! empty($flags[$key])) {
-                $warehouseFlags[$key] = true;
+                $userWantsAny = true;
+                break;
             }
         }
-        if ($warehouseFlags === [] && ! $wantsClient) {
+        if (! $userWantsAny) {
             throw new RuntimeException('Select at least one hold type to apply.');
         }
-        if ($warehouseFlags !== []) {
-            $this->applyWarehouseHoldsTrue($ctx, $customerAccountId, $warehouseFlags);
-        }
-        if ($wantsClient) {
-            $this->mutateClientHold($ctx['relay_id'], true, $clientRefreshToken);
-        }
-    }
-
-    /**
-     * @param  array{relay_id: string, holds: array<string, bool>}  $ctx
-     * @param  array<string, bool>  $flags
-     */
-    private function applyWarehouseHoldsTrue(array $ctx, string $customerAccountId, array $flags): void
-    {
         $customer = trim($customerAccountId);
-        $current = $ctx['holds'];
         $data = [
             'order_id' => $ctx['relay_id'],
         ];
-        foreach (self::WAREHOUSE_HOLD_MUTATION_KEYS as $key) {
+        foreach ($allowed as $key) {
             $on = ! empty($current[$key]) || ! empty($flags[$key]);
             if ($on) {
                 $data[$key] = true;
@@ -1845,34 +1945,10 @@ GQL;
         $this->client->query($graphql, ['data' => $data], true, [
             ShipHeroClient::OPTION_GRAPHQL_SUCCESS_FIELD => 'order_update_holds',
         ]);
-    }
-
-    private function mutateClientHold(string $relayId, bool $value, ?string $clientRefreshToken): void
-    {
-        $refresh = trim((string) $clientRefreshToken);
-        if ($refresh === '') {
-            throw new RuntimeException(self::CLIENT_HOLD_TOKEN_MISSING_MESSAGE);
-        }
-        $data = [
-            'order_id' => $relayId,
-            self::ORDER_USER_HOLD_MUTATION_KEY => $value,
-        ];
-        $options = [
-            ShipHeroClient::OPTION_GRAPHQL_SUCCESS_FIELD => 'order_update_holds',
-            ShipHeroClient::OPTION_REFRESH_TOKEN => $refresh,
-        ];
-        $graphql = <<<'GQL'
-mutation ShipHeroOrderClientHold($data: UpdateOrderHoldsInput!) {
-  order_update_holds(data: $data) {
-    request_id
-    complexity
-  }
-}
-GQL;
-        try {
-            $this->client->query($graphql, ['data' => $data], true, $options);
-        } catch (RuntimeException $e) {
-            throw new RuntimeException(self::humanizeHoldErrorMessage($e->getMessage()), 0, $e);
+        if ($wantsUserHold) {
+            $tags = isset($ctx['tags']) && is_array($ctx['tags']) ? $ctx['tags'] : [];
+            $this->updateOrderTags($orderId, $customerAccountId, self::mergeUserHoldTag($tags));
+            $this->addOrderHistoryEntry($orderId, $customerAccountId, self::ORDER_USER_HOLD_HISTORY_MESSAGE);
         }
     }
 
@@ -2363,6 +2439,7 @@ GQL;
         $trackingPayload = OrderShipmentTracking::fromShipHeroShipments(
             is_array($node['shipments'] ?? null) ? $node['shipments'] : []
         );
+        $tags = $this->normalizeOrderTags($node['tags'] ?? null);
 
         return [
             'id' => (string) ($node['id'] ?? ''),
@@ -2375,6 +2452,8 @@ GQL;
             'hold_reason' => $this->extractHoldReason($node),
             'holds' => $holdsApi,
             'has_active_hold' => $this->orderHoldsArrayHasActive($holdsApi),
+            'tags' => $tags,
+            'is_crm_user_hold' => ! empty($holdsApi['operator_hold']) && self::orderHasUserHoldTag($tags),
             'recipient_name' => $recipient,
             'order_number' => (string) ($node['order_number'] ?? ''),
             'partner_order_id' => (string) ($node['partner_order_id'] ?? ''),
@@ -2462,6 +2541,7 @@ GQL;
         $shippingLine = $this->resolveShippingLine($node['shipping_lines'] ?? null);
 
         $holdsApi = $this->normalizeOrderHoldsForApi($node['holds'] ?? null);
+        $tags = $this->normalizeOrderTags($node['tags'] ?? null);
 
         $lineTitle = trim((string) ($shippingLine['title'] ?? ''));
         if ($lineTitle === '') {
@@ -2483,7 +2563,9 @@ GQL;
             'hold_reason' => $this->extractHoldReason($node),
             'holds' => $holdsApi,
             'has_active_hold' => $this->orderHoldsArrayHasActive($holdsApi),
-            'not_ready_subtitle' => $this->buildNotReadyToShipHoldSubtitle($holdsApi),
+            'tags' => $tags,
+            'is_crm_user_hold' => ! empty($holdsApi['operator_hold']) && self::orderHasUserHoldTag($tags),
+            'not_ready_subtitle' => $this->buildNotReadyToShipHoldSubtitle($holdsApi, $tags),
             'order_date' => $this->nullableIso($node['order_date'] ?? null),
             'required_ship_date' => $this->nullableIso($node['required_ship_date'] ?? null),
             'account' => (string) ($node['shop_name'] ?? ''),
@@ -2571,8 +2653,9 @@ GQL;
 
     /**
      * @param  array<string, bool>  $holds
+     * @param  list<string>|mixed|null  $tags
      */
-    private function buildNotReadyToShipHoldSubtitle(array $holds): string
+    private function buildNotReadyToShipHoldSubtitle(array $holds, $tags = null): string
     {
         $parts = [];
         if (! empty($holds['client_hold'])) {
@@ -2582,7 +2665,9 @@ GQL;
             $parts[] = 'Order has payment hold.';
         }
         if (! empty($holds['operator_hold'])) {
-            $parts[] = 'Order has operator hold.';
+            $parts[] = self::orderHasUserHoldTag($tags)
+                ? 'Order has user hold.'
+                : 'Order has operator hold.';
         }
         if (! empty($holds['address_hold'])) {
             $parts[] = 'Order has address hold.';
@@ -3244,7 +3329,7 @@ GQL;
      *
      * @param  mixed  $holds
      */
-    private function extractHoldReasonFromHolds($holds): ?string
+    private function extractHoldReasonFromHolds($holds, $tags = null): ?string
     {
         if (! is_array($holds)) {
             return null;
@@ -3260,7 +3345,7 @@ GQL;
             $labels[] = 'Address Hold';
         }
         if (! empty($holds['operator_hold'])) {
-            $labels[] = 'Operator Hold';
+            $labels[] = self::orderHasUserHoldTag($tags) ? 'User Hold' : 'Operator Hold';
         }
         if (! empty($holds['client_hold'])) {
             $labels[] = 'User Hold';
@@ -3316,7 +3401,8 @@ GQL;
      */
     private function extractHoldReason(array $node): ?string
     {
-        $fromHolds = $this->extractHoldReasonFromHolds($node['holds'] ?? null);
+        $tags = $this->normalizeOrderTags($node['tags'] ?? null);
+        $fromHolds = $this->extractHoldReasonFromHolds($node['holds'] ?? null, $tags);
         if (is_string($fromHolds) && $fromHolds !== '') {
             return $fromHolds;
         }

@@ -320,22 +320,30 @@ const detailHoldsNormalized = computed(() => {
   };
 });
 
+const detailIsCrmUserHold = computed(() => {
+  if (order.value?.is_crm_user_hold === true) return true;
+  const h = detailHoldsNormalized.value;
+  if (h.client_hold) return true;
+  const tags = Array.isArray(order.value?.tags) ? order.value.tags : [];
+  return !!(h.operator_hold && tags.includes("saverack:user_hold"));
+});
+
 const detailHasRemovableHolds = computed(() => {
   const h = detailHoldsNormalized.value;
   return !!(h.fraud_hold || h.address_hold || h.payment_hold);
 });
 
-/** CRM user hold (client_hold in ShipHero). */
+/** CRM User Hold (operator_hold + tag, or legacy client_hold). */
 const detailOnlyCrmUserHold = computed(() => {
   const h = detailHoldsNormalized.value;
-  if (!h.client_hold) return false;
-  return !(h.fraud_hold || h.address_hold || h.payment_hold || h.operator_hold || h.shipping_method_hold);
+  if (!detailIsCrmUserHold.value) return false;
+  return !(h.fraud_hold || h.address_hold || h.payment_hold || h.shipping_method_hold);
 });
 
 /** Warehouse operator hold only — not clearable as user hold from CRM. */
 const detailOnlyOperatorHold = computed(() => {
   const h = detailHoldsNormalized.value;
-  if (!h.operator_hold) return false;
+  if (!h.operator_hold || detailIsCrmUserHold.value) return false;
   return !(h.fraud_hold || h.address_hold || h.payment_hold || h.client_hold || h.shipping_method_hold);
 });
 
@@ -436,16 +444,14 @@ const shipheroAdminUrl = computed(() => {
   return `https://app.shiphero.com/dashboard/orders/details/${n}`;
 });
 
-const hasUserHold = computed(
-  () => !!detailHoldsNormalized.value.client_hold || !!detailHoldsNormalized.value.operator_hold,
-);
+const hasUserHold = computed(() => detailIsCrmUserHold.value);
 
 const canPlaceHold = computed(
   () => canRunShipHeroActions.value && !orderIsTerminalFulfillment.value,
 );
 
 const showRemoveUserHoldBtn = computed(
-  () => detailHoldsNormalized.value.client_hold && canRunShipHeroActions.value && detailOnlyCrmUserHold.value,
+  () => detailIsCrmUserHold.value && canRunShipHeroActions.value && detailOnlyCrmUserHold.value,
 );
 
 /** Admin sidebar hold guidance (not shown on portal order view). */

@@ -74,15 +74,6 @@ class ClientAccountUpdateRequest extends FormRequest
             }
         }
 
-        if ($this->exists('shiphero_client_refresh_token')) {
-            $raw = $this->input('shiphero_client_refresh_token');
-            if ($raw === null || $raw === '') {
-                $this->merge(['shiphero_client_refresh_token' => null]);
-            } else {
-                $this->merge(['shiphero_client_refresh_token' => trim((string) $raw)]);
-            }
-        }
-
         if ($this->exists('whatsapp_api_id')) {
             $raw = $this->input('whatsapp_api_id');
             if ($raw === null || $raw === '') {
@@ -132,7 +123,6 @@ class ClientAccountUpdateRequest extends FormRequest
             'cc_fee_percent' => ['sometimes', 'nullable', 'numeric', 'min:0', 'max:100'],
             'stripe_customer_id' => ['sometimes', 'nullable', 'string', 'max:191'],
             'shiphero_customer_account_id' => ['sometimes', 'nullable', 'string', 'max:191'],
-            'shiphero_client_refresh_token' => ['sometimes', 'nullable', 'string', 'max:2000'],
             'whatsapp_api_id' => ['sometimes', 'nullable', 'string', 'max:191'],
         ];
     }

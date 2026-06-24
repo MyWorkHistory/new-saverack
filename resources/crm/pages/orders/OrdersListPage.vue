@@ -7,6 +7,7 @@ import CrmIconRowActions from "../../components/common/CrmIconRowActions.vue";
 import CrmSearchableSelect from "../../components/common/CrmSearchableSelect.vue";
 import ConfirmModal from "../../components/common/ConfirmModal.vue";
 import OrdersRemoveHoldsModal from "../../components/orders/OrdersRemoveHoldsModal.vue";
+import OrdersPlaceHoldModal from "../../components/orders/OrdersPlaceHoldModal.vue";
 import { setCrmPageMeta } from "../../composables/useCrmPageMeta.js";
 import { useToast } from "../../composables/useToast.js";
 import { canWriteShipHeroOrders } from "../../utils/crmShipHeroOrders";
@@ -45,15 +46,9 @@ const committedOrderNumber = ref("");
 
 const selectedOrderIds = ref(new Set());
 const bulkBusy = ref(false);
-const addHoldModalOpen = ref(false);
-const addHoldFlags = reactive({
-  fraud_hold: false,
-  address_hold: false,
-  payment_hold: false,
-  client_hold: false,
-});
-const addHoldTargetIds = ref([]);
-const addHoldBusy = ref(false);
+const placeHoldModalOpen = ref(false);
+const placeHoldTargetIds = ref([]);
+const placeHoldBusy = ref(false);
 
 const confirmBulkMarkFulfilledOpen = ref(false);
 const confirmBulkCancelOpen = ref(false);
@@ -564,64 +559,56 @@ function selectedRowsList() {
   return displayedRows.value.filter((r) => want.has(String(r.id || "")));
 }
 
-function resetAddHoldFlags() {
-  addHoldFlags.fraud_hold = false;
-  addHoldFlags.address_hold = false;
-  addHoldFlags.payment_hold = false;
-  addHoldFlags.client_hold = false;
-}
-
-function openAddHoldModalForIds(ids) {
+function openPlaceHoldModalForIds(ids) {
   if (!canWriteOrders.value) {
     toast.error("You do not have permission to update orders.");
     return;
   }
   const clean = [...new Set(ids.map((x) => String(x || "").trim()).filter(Boolean))];
   if (!clean.length) return;
-  resetAddHoldFlags();
-  addHoldTargetIds.value = clean;
-  addHoldModalOpen.value = true;
+  manageOpenId.value = null;
+  placeHoldTargetIds.value = clean;
+  placeHoldModalOpen.value = true;
 }
 
-function closeAddHoldModal() {
-  if (addHoldBusy.value) return;
-  addHoldModalOpen.value = false;
-  addHoldTargetIds.value = [];
+function closePlaceHoldModal() {
+  if (placeHoldBusy.value) return;
+  placeHoldModalOpen.value = false;
+  placeHoldTargetIds.value = [];
 }
 
-async function submitAddHoldModal() {
+async function submitPlaceHoldModal(flags) {
   if (!selectedAccountId.value) {
     toast.error("Select an account first.");
     return;
   }
-  if (!addHoldTargetIds.value.length) return;
-  if (!addHoldFlags.fraud_hold && !addHoldFlags.address_hold && !addHoldFlags.payment_hold && !addHoldFlags.client_hold) {
+  if (!placeHoldTargetIds.value.length) return;
+  if (!flags?.fraud_hold && !flags?.address_hold && !flags?.payment_hold && !flags?.client_hold) {
     toast.error("Select at least one hold type.");
     return;
   }
-  addHoldBusy.value = true;
+  placeHoldBusy.value = true;
   try {
     const { data } = await api.post("/orders/bulk/set-holds", {
       client_account_id: Number(selectedAccountId.value),
-      order_ids: addHoldTargetIds.value,
-      fraud_hold: !!addHoldFlags.fraud_hold,
-      address_hold: !!addHoldFlags.address_hold,
-      payment_hold: !!addHoldFlags.payment_hold,
-      client_hold: !!addHoldFlags.client_hold,
+      order_ids: placeHoldTargetIds.value,
+      fraud_hold: !!flags.fraud_hold,
+      address_hold: !!flags.address_hold,
+      payment_hold: !!flags.payment_hold,
+      client_hold: !!flags.client_hold,
     });
     const ok = Number(data?.summary?.ok ?? 0);
     const failed = Number(data?.summary?.failed ?? 0);
     toast.success(`Holds applied: ${ok} succeeded${failed ? `, ${failed} failed` : ""}.`);
-    addHoldModalOpen.value = false;
-    addHoldTargetIds.value = [];
-    resetAddHoldFlags();
+    placeHoldModalOpen.value = false;
+    placeHoldTargetIds.value = [];
     manageOpenId.value = null;
     clearRowSelection();
     await fetchOrders(true);
   } catch (e) {
-    toast.errorFrom(e, "Could not add holds.");
+    toast.errorFrom(e, "Could not place holds.");
   } finally {
-    addHoldBusy.value = false;
+    placeHoldBusy.value = false;
   }
 }
 
@@ -820,27 +807,6 @@ async function runSingleRemoveUserHold(row) {
     await fetchOrders(true);
   } catch (e) {
     toast.errorFrom(e, "Could not remove hold.");
-  } finally {
-    bulkBusy.value = false;
-  }
-}
-
-async function runSinglePlaceUserHold(row) {
-  const accountId = effectiveClientAccountId(row);
-  if (!accountId || !row?.id) return;
-  const h = row?.holds && typeof row.holds === "object" ? row.holds : {};
-  if (h.client_hold || h.operator_hold) return;
-  manageOpenId.value = null;
-  bulkBusy.value = true;
-  try {
-    await api.post(`/orders/${encodeURIComponent(String(row.id))}/set-holds`, {
-      client_account_id: accountId,
-      operator_hold: true,
-    });
-    toast.success("User hold placed.");
-    await fetchOrders(true);
-  } catch (e) {
-    toast.errorFrom(e, "Could not place hold.");
   } finally {
     bulkBusy.value = false;
   }
@@ -1312,9 +1278,9 @@ onUnmounted(() => {
             type="button"
             class="btn btn-outline-secondary btn-sm orders-bulk-toolbar-btn orders-toolbar-outline-btn"
             :disabled="bulkMutationDisabled"
-            @click="openAddHoldModalForIds([...selectedOrderIds])"
+            @click="openPlaceHoldModalForIds([...selectedOrderIds])"
           >
-            Add Hold
+            Place Hold
           </button>
           <button
             type="button"
@@ -1551,20 +1517,12 @@ onUnmounted(() => {
         </template>
         <template v-else>
           <button
-            v-if="canWriteOrders && tabKey === 'awaiting' && !manageMenuRow?.holds?.client_hold && !manageMenuRow?.holds?.operator_hold"
-            class="staff-row-menu__item"
-            role="menuitem"
-            @click="runSinglePlaceUserHold(manageMenuRow)"
-          >
-            Place User Hold
-          </button>
-          <button
             v-if="canWriteOrders"
             class="staff-row-menu__item"
             role="menuitem"
-            @click="openAddHoldModalForIds([String(manageMenuRow.id)])"
+            @click="openPlaceHoldModalForIds([String(manageMenuRow.id)])"
           >
-            Add Hold
+            Place Hold
           </button>
           <button v-if="canWriteOrders" class="staff-row-menu__item" role="menuitem" @click="runSingleMarkFulfilled(manageMenuRow)">
             Mark As Fulfilled
@@ -1639,77 +1597,12 @@ onUnmounted(() => {
       @close="closeRemoveHoldsModal"
       @confirm="onRemoveHoldsModalConfirm"
     />
-    <Teleport to="body">
-      <Transition name="modal-backdrop">
-        <div
-          v-if="addHoldModalOpen"
-          class="crm-vx-modal-overlay"
-          aria-modal="true"
-          role="dialog"
-          aria-labelledby="orders-add-hold-modal-title"
-        >
-          <div class="crm-vx-modal-backdrop" aria-hidden="true" @click="closeAddHoldModal" />
-          <Transition name="modal-panel" appear>
-            <div class="crm-vx-modal crm-vx-modal--sm">
-              <button
-                type="button"
-                class="crm-vx-modal__close"
-                aria-label="Close"
-                :disabled="addHoldBusy"
-                @click="closeAddHoldModal"
-              >
-                <svg width="20" height="20" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.75">
-                  <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" />
-                </svg>
-              </button>
-              <header class="crm-vx-modal__head">
-                <h2 id="orders-add-hold-modal-title" class="crm-vx-modal__title">Add Hold</h2>
-              </header>
-              <div class="crm-vx-modal__body pt-0">
-                <p class="small text-secondary mb-3">
-                  Apply to <strong>{{ addHoldTargetIds.length }}</strong> order{{ addHoldTargetIds.length === 1 ? "" : "s" }}. Only checked hold types are set in ShipHero.
-                  User Hold may appear as Operator Hold in ShipHero for 3PL accounts.
-                </p>
-                <div class="form-check mb-2">
-                  <input id="orders-add-hold-fraud" v-model="addHoldFlags.fraud_hold" class="form-check-input" type="checkbox" />
-                  <label class="form-check-label" for="orders-add-hold-fraud">Fraud</label>
-                </div>
-                <div class="form-check mb-2">
-                  <input id="orders-add-hold-address" v-model="addHoldFlags.address_hold" class="form-check-input" type="checkbox" />
-                  <label class="form-check-label" for="orders-add-hold-address">Address</label>
-                </div>
-                <div class="form-check mb-2">
-                  <input id="orders-add-hold-payment" v-model="addHoldFlags.payment_hold" class="form-check-input" type="checkbox" />
-                  <label class="form-check-label" for="orders-add-hold-payment">Payment</label>
-                </div>
-                <div class="form-check mb-0">
-                  <input id="orders-add-hold-client" v-model="addHoldFlags.client_hold" class="form-check-input" type="checkbox" />
-                  <label class="form-check-label" for="orders-add-hold-client">User Hold</label>
-                </div>
-              </div>
-              <footer class="crm-vx-modal__footer">
-                <button
-                  type="button"
-                  class="crm-vx-modal-btn crm-vx-modal-btn--secondary"
-                  :disabled="addHoldBusy"
-                  @click="closeAddHoldModal"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="button"
-                  class="crm-vx-modal-btn crm-vx-modal-btn--primary"
-                  :disabled="addHoldBusy"
-                  @click="submitAddHoldModal"
-                >
-                  {{ addHoldBusy ? "Saving…" : "Save" }}
-                </button>
-              </footer>
-            </div>
-          </Transition>
-        </div>
-      </Transition>
-    </Teleport>
+    <OrdersPlaceHoldModal
+      :open="placeHoldModalOpen"
+      :busy="placeHoldBusy"
+      @close="closePlaceHoldModal"
+      @confirm="submitPlaceHoldModal"
+    />
   </div>
 </template>
 

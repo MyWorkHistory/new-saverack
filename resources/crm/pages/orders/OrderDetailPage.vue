@@ -6,6 +6,7 @@ import CrmLoadingSpinner from "../../components/common/CrmLoadingSpinner.vue";
 import CrmIconRowActions from "../../components/common/CrmIconRowActions.vue";
 import ConfirmModal from "../../components/common/ConfirmModal.vue";
 import OrdersRemoveHoldsModal from "../../components/orders/OrdersRemoveHoldsModal.vue";
+import OrdersPlaceHoldModal from "../../components/orders/OrdersPlaceHoldModal.vue";
 import AsnProductCatalogPanel from "../../components/inventory/AsnProductCatalogPanel.vue";
 import { setCrmPageMeta } from "../../composables/useCrmPageMeta.js";
 import { usePortalLastRefreshed } from "../../composables/usePortalLastRefreshed.js";
@@ -88,6 +89,8 @@ const attachmentUploadBusy = ref(false);
 
 const removeHoldsModalOpen = ref(false);
 const removeHoldsBusy = ref(false);
+const placeHoldModalOpen = ref(false);
+const placeHoldBusy = ref(false);
 const userHoldBusy = ref(false);
 const moreActionsOpen = ref(false);
 const moreActionsBtnRef = ref(null);
@@ -437,8 +440,8 @@ const hasUserHold = computed(
   () => !!detailHoldsNormalized.value.client_hold || !!detailHoldsNormalized.value.operator_hold,
 );
 
-const canPlaceUserHold = computed(
-  () => canRunShipHeroActions.value && !hasUserHold.value && !orderIsTerminalFulfillment.value,
+const canPlaceHold = computed(
+  () => canRunShipHeroActions.value && !orderIsTerminalFulfillment.value,
 );
 
 const showRemoveUserHoldBtn = computed(
@@ -1028,20 +1031,38 @@ async function onRemoveHoldsConfirm(payload) {
   }
 }
 
-async function placeUserHold() {
-  if (!order.value || !selectedAccountId.value || !orderId.value || !canPlaceUserHold.value) return;
-  userHoldBusy.value = true;
+function openPlaceHoldModal() {
+  if (!canPlaceHold.value) return;
+  placeHoldModalOpen.value = true;
+}
+
+function closePlaceHoldModal() {
+  if (placeHoldBusy.value) return;
+  placeHoldModalOpen.value = false;
+}
+
+async function submitPlaceHoldModal(flags) {
+  if (!order.value || !selectedAccountId.value || !orderId.value || !canPlaceHold.value) return;
+  if (!flags?.fraud_hold && !flags?.address_hold && !flags?.payment_hold && !flags?.client_hold) {
+    toast.error("Select at least one hold type.");
+    return;
+  }
+  placeHoldBusy.value = true;
   try {
     await api.post(`/orders/${encodeURIComponent(orderId.value)}/set-holds`, {
       client_account_id: Number(selectedAccountId.value),
-      operator_hold: true,
+      fraud_hold: !!flags.fraud_hold,
+      address_hold: !!flags.address_hold,
+      payment_hold: !!flags.payment_hold,
+      client_hold: !!flags.client_hold,
     });
-    toast.success("User hold placed.");
+    toast.success("Hold placed.");
+    placeHoldModalOpen.value = false;
     await loadOrder({ refresh: true });
   } catch (e) {
     toast.errorFrom(e, "Could not place hold.");
   } finally {
-    userHoldBusy.value = false;
+    placeHoldBusy.value = false;
   }
 }
 
@@ -2427,22 +2448,20 @@ function goToOrdersList() {
             type="button"
             class="dropdown-item"
             role="menuitem"
-            :disabled="!canPlaceUserHold || userHoldBusy"
+            :disabled="!canPlaceHold || placeHoldBusy"
             :title="
               !canRunShipHeroActions
                 ? 'You do not have permission to change this order in ShipHero.'
-                : hasUserHold
-                  ? 'Order already has a user hold.'
-                  : orderIsTerminalFulfillment
-                    ? 'Cannot place hold on a shipped or canceled order.'
-                    : 'ShipHero may show this hold as Operator Hold for 3PL accounts.'
+                : orderIsTerminalFulfillment
+                  ? 'Cannot place hold on a shipped or canceled order.'
+                  : undefined
             "
             @click="
               closeMoreActionsMenu();
-              placeUserHold();
+              openPlaceHoldModal();
             "
           >
-            {{ userHoldBusy ? "Placing Hold…" : "Place Hold" }}
+            {{ placeHoldBusy ? "Placing Hold…" : "Place Hold" }}
           </button>
         </li>
         <li>
@@ -2704,6 +2723,12 @@ function goToOrdersList() {
       :active-holds="detailHoldsNormalized"
       @close="closeRemoveHoldsModal"
       @confirm="onRemoveHoldsConfirm"
+    />
+    <OrdersPlaceHoldModal
+      :open="placeHoldModalOpen"
+      :busy="placeHoldBusy"
+      @close="closePlaceHoldModal"
+      @confirm="submitPlaceHoldModal"
     />
     <ConfirmModal
       :open="confirmFulfilledOpen"

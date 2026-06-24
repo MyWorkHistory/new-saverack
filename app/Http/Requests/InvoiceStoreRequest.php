@@ -2,6 +2,9 @@
 
 namespace App\Http\Requests;
 
+use App\Models\ClientAccount;
+use App\Support\ClientAccountBillingPreferences;
+use Carbon\Carbon;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
 
@@ -50,9 +53,6 @@ class InvoiceStoreRequest extends FormRequest
         if (! $this->has('currency') || $this->input('currency') === null || $this->input('currency') === '') {
             $this->merge(['currency' => 'USD']);
         }
-        if (! $this->has('due_at') || $this->input('due_at') === null || $this->input('due_at') === '') {
-            $this->merge(['due_at' => now()->format('Y-m-d')]);
-        }
         if (! $this->has('items') || ! is_array($this->input('items'))) {
             $this->merge(['items' => []]);
         }
@@ -80,12 +80,24 @@ class InvoiceStoreRequest extends FormRequest
     public function headerPayload(): array
     {
         $v = $this->validated();
+        $clientAccountId = (int) $v['client_account_id'];
+        $dueAt = $v['due_at'] ?? null;
+        if ($dueAt === null || $dueAt === '') {
+            $account = ClientAccount::query()->find($clientAccountId);
+            if ($account === null) {
+                throw new \InvalidArgumentException('Client account not found.');
+            }
+            $baseDate = isset($v['issued_at']) && $v['issued_at'] !== null && $v['issued_at'] !== ''
+                ? Carbon::parse($v['issued_at'])
+                : now();
+            $dueAt = ClientAccountBillingPreferences::invoiceDueDate($account, $baseDate)->toDateString();
+        }
 
         return [
-            'client_account_id' => (int) $v['client_account_id'],
+            'client_account_id' => $clientAccountId,
             'currency' => strtoupper((string) $v['currency']),
             'issued_at' => $v['issued_at'] ?? null,
-            'due_at' => $v['due_at'] ?? null,
+            'due_at' => $dueAt,
             'billing_period_start' => $v['billing_period_start'] ?? null,
             'billing_period_end' => $v['billing_period_end'] ?? null,
             'tax_rate_basis_points' => array_key_exists('tax_rate_basis_points', $v) ? $v['tax_rate_basis_points'] : null,

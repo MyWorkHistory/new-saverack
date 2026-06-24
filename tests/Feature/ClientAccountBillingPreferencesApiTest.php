@@ -31,6 +31,14 @@ class ClientAccountBillingPreferencesApiTest extends TestCase
         );
     }
 
+    private function clientsViewPermission(): Permission
+    {
+        return Permission::query()->firstOrCreate(
+            ['key' => 'clients.view'],
+            ['label' => 'View client accounts', 'module' => 'clients']
+        );
+    }
+
     private function billingViewPermission(): Permission
     {
         return Permission::query()->firstOrCreate(
@@ -162,5 +170,49 @@ class ClientAccountBillingPreferencesApiTest extends TestCase
             'client_account_packaging_option_label',
             'Customer Provides Some Packaging Materials'
         );
+    }
+
+    public function test_staff_patch_sets_payment_terms_days(): void
+    {
+        $user = User::factory()->create(['client_account_id' => null]);
+        $user->permissions()->attach($this->clientsUpdatePermission()->id);
+        Sanctum::actingAs($user);
+
+        $account = ClientAccount::create([
+            'company_name' => 'Payment Terms Co',
+            'status' => ClientAccount::STATUS_ACTIVE,
+            'email' => 'payment-terms@test.com',
+        ]);
+
+        $response = $this->patchJson('/api/client-accounts/'.$account->id, [
+            'payment_terms_days' => 5,
+        ]);
+
+        $response->assertOk();
+        $response->assertJsonPath('payment_terms_days', 5);
+
+        $account->refresh();
+        $this->assertSame(5, $account->payment_terms_days);
+    }
+
+    public function test_new_account_defaults_payment_terms_days_to_one(): void
+    {
+        $user = User::factory()->create(['client_account_id' => null]);
+        $user->permissions()->attach([
+            $this->clientsViewPermission()->id,
+            $this->clientsUpdatePermission()->id,
+        ]);
+        Sanctum::actingAs($user);
+
+        $account = ClientAccount::create([
+            'company_name' => 'Default Terms Co',
+            'status' => ClientAccount::STATUS_ACTIVE,
+            'email' => 'default-terms@test.com',
+        ]);
+
+        $response = $this->getJson('/api/client-accounts/'.$account->id);
+
+        $response->assertOk();
+        $response->assertJsonPath('payment_terms_days', 1);
     }
 }

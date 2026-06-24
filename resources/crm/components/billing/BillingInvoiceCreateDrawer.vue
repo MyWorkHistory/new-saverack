@@ -18,21 +18,11 @@ const errorMsg = ref("");
 const form = reactive({
   invoice_number: "",
   client_account_id: "",
-  due_at: "",
 });
-
-function localDateYmd() {
-  const d = new Date();
-  const y = d.getFullYear();
-  const m = String(d.getMonth() + 1).padStart(2, "0");
-  const day = String(d.getDate()).padStart(2, "0");
-  return `${y}-${m}-${day}`;
-}
 
 function reset() {
   form.invoice_number = "";
   form.client_account_id = "";
-  form.due_at = localDateYmd();
   errorMsg.value = "";
 }
 
@@ -65,7 +55,6 @@ async function submit() {
   try {
     const payload = {
       client_account_id: Number(form.client_account_id),
-      due_at: form.due_at || null,
       items: [],
     };
     const num = String(form.invoice_number || "").trim();
@@ -167,7 +156,7 @@ async function submit() {
                 />
                 <p class="small text-secondary mb-3">
                   Leave blank to use the next number (e.g. 12001). Add line items on the
-                  invoice page.
+                  invoice page. Due date is set from the account's payment terms.
                 </p>
 
                 <label class="form-label">Account</label>
@@ -184,14 +173,6 @@ async function submit() {
                   :disabled="saving"
                 />
 
-                <label class="form-label mt-3" for="inv-drawer-due">Due date</label>
-                <input
-                  id="inv-drawer-due"
-                  v-model="form.due_at"
-                  type="date"
-                  class="form-control"
-                  :disabled="saving"
-                />
               </template>
             </div>
 

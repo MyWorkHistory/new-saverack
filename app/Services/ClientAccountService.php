@@ -673,6 +673,7 @@ class ClientAccountService
             'postage_option_label' => ClientAccountBillingPreferences::postageLabel($account->postage_option),
             'packaging_option' => ClientAccountBillingPreferences::normalizePackagingKey($account->packaging_option),
             'packaging_option_label' => ClientAccountBillingPreferences::packagingLabel($account->packaging_option),
+            'payment_terms_days' => ClientAccountBillingPreferences::normalizePaymentTermsDays($account->payment_terms_days),
             'cc_fee_percent' => $account->cc_fee_percent !== null ? (float) $account->cc_fee_percent : null,
             'stripe_customer_id' => $account->stripe_customer_id,
             'shiphero_customer_account_id' => $account->shiphero_customer_account_id,

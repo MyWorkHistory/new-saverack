@@ -50,6 +50,7 @@ const form = reactive({
   default_payment_type: "",
   postage_option: DEFAULT_POSTAGE_OPTION,
   packaging_option: DEFAULT_PACKAGING_OPTION,
+  payment_terms_days: 1,
   cc_fee_percent: "3.50",
   stripe_customer_id: "",
   shiphero_customer_account_id: "",
@@ -110,9 +111,9 @@ const modalSubtitle = computed(() => {
     case "address":
       return "Street, city, and country.";
     case "billing":
-      return "Default payment type, postage, and packaging.";
+      return "Default payment type, payment terms, postage, and packaging.";
     case "payment":
-      return "Default payment type, postage, and packaging.";
+      return "Default payment type, payment terms, postage, and packaging.";
     case "settings":
       return "External API identifiers for integrations.";
     default:
@@ -169,6 +170,7 @@ async function load() {
     form.default_payment_type = data.default_payment_type || "";
     form.postage_option = data.postage_option || DEFAULT_POSTAGE_OPTION;
     form.packaging_option = data.packaging_option || DEFAULT_PACKAGING_OPTION;
+    form.payment_terms_days = Number(data.payment_terms_days) > 0 ? Number(data.payment_terms_days) : 1;
     form.cc_fee_percent =
       data.cc_fee_percent != null && data.cc_fee_percent !== ""
         ? Number(data.cc_fee_percent).toFixed(2)
@@ -228,6 +230,7 @@ function buildPatch() {
       default_payment_type: trimOrNull(form.default_payment_type),
       postage_option: form.postage_option || DEFAULT_POSTAGE_OPTION,
       packaging_option: form.packaging_option || DEFAULT_PACKAGING_OPTION,
+      payment_terms_days: Math.max(1, Number(form.payment_terms_days) || 1),
       cc_fee_percent: trimOrNull(form.cc_fee_percent),
       stripe_customer_id: trimOrNull(form.stripe_customer_id),
       shiphero_customer_account_id: trimOrNull(form.shiphero_customer_account_id),
@@ -265,6 +268,7 @@ function buildPatch() {
       default_payment_type: trimOrNull(form.default_payment_type),
       postage_option: form.postage_option || DEFAULT_POSTAGE_OPTION,
       packaging_option: form.packaging_option || DEFAULT_PACKAGING_OPTION,
+      payment_terms_days: Math.max(1, Number(form.payment_terms_days) || 1),
       cc_fee_percent: trimOrNull(form.cc_fee_percent),
     };
   }
@@ -606,6 +610,20 @@ async function onSubmit() {
                           min="0"
                           max="100"
                           step="0.01"
+                          class="form-control"
+                        />
+                      </div>
+                      <div class="col-sm-6">
+                        <label class="form-label small mb-1 text-secondary" for="cae-payment-terms-days"
+                          >Payment Terms (days)</label
+                        >
+                        <input
+                          id="cae-payment-terms-days"
+                          v-model.number="form.payment_terms_days"
+                          type="number"
+                          min="1"
+                          max="365"
+                          step="1"
                           class="form-control"
                         />
                       </div>

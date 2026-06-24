@@ -2,8 +2,15 @@
 
 namespace App\Support;
 
+use App\Models\ClientAccount;
+use Carbon\Carbon;
+
 final class ClientAccountBillingPreferences
 {
+    public const DEFAULT_PAYMENT_TERMS_DAYS = 1;
+
+    public const MAX_PAYMENT_TERMS_DAYS = 365;
+
     public const POSTAGE_SAVE_RACK_ALL = 'save_rack_all_postage';
 
     public const POSTAGE_CUSTOMER_USPS = 'customer_usps';
@@ -112,5 +119,22 @@ final class ClientAccountBillingPreferences
         }
 
         return self::defaultPackagingKey();
+    }
+
+    public static function normalizePaymentTermsDays(?int $days): int
+    {
+        if ($days === null || $days < 1) {
+            return self::DEFAULT_PAYMENT_TERMS_DAYS;
+        }
+
+        return min($days, self::MAX_PAYMENT_TERMS_DAYS);
+    }
+
+    public static function invoiceDueDate(ClientAccount $account, ?Carbon $baseDate = null): Carbon
+    {
+        $base = ($baseDate ?? now())->copy()->startOfDay();
+        $days = self::normalizePaymentTermsDays($account->payment_terms_days);
+
+        return $base->copy()->addDays($days);
     }
 }

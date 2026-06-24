@@ -65,6 +65,7 @@ class ClientAccount extends Model
         'default_payment_type',
         'postage_option',
         'packaging_option',
+        'payment_terms_days',
         'onboarding_billing_method',
         'onboarding_billing_status',
         'onboarding_preferences',
@@ -81,6 +82,7 @@ class ClientAccount extends Model
         'contract_date' => 'date',
         'cc_fee_percent' => 'decimal:2',
         'billing_available_funds_cents' => 'integer',
+        'payment_terms_days' => 'integer',
     ];
 
     protected static function booted(): void

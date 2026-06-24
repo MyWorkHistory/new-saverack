@@ -186,7 +186,6 @@ const importBusy = ref(false);
 const importForm = reactive({
   import_type: "charges",
   client_account_id: "",
-  due_at: "",
   invoice_number: "",
   file: null,
 });
@@ -457,7 +456,6 @@ async function onInvoiceDrawerCreated() {
 function openImportModal() {
   importForm.import_type = "charges";
   importForm.client_account_id = "";
-  importForm.due_at = tomorrowIsoDate();
   importForm.invoice_number = "";
   importForm.file = null;
   importModalOpen.value = true;
@@ -480,7 +478,6 @@ function onImportFileChange(event) {
   if (inferred.invoiceNumber) {
     importForm.invoice_number = inferred.invoiceNumber;
   }
-  importForm.due_at = tomorrowIsoDate();
 
   const match = findBestClientMatchBySlug(inferred.clientSlug);
   if (match) {
@@ -529,21 +526,6 @@ function parseInvoiceImportFilename(filename) {
   };
 }
 
-function addDaysIso(isoDate, days) {
-  if (!isoDate) return "";
-  const d = new Date(`${isoDate}T12:00:00`);
-  if (Number.isNaN(d.getTime())) return "";
-  d.setDate(d.getDate() + days);
-  return d.toISOString().slice(0, 10);
-}
-
-function tomorrowIsoDate() {
-  const now = new Date();
-  now.setHours(12, 0, 0, 0);
-  now.setDate(now.getDate() + 1);
-  return now.toISOString().slice(0, 10);
-}
-
 function normalizeClientKey(value) {
   return String(value || "").toLowerCase().replace(/[^a-z0-9]/g, "");
 }
@@ -589,10 +571,6 @@ async function submitImportCsv() {
     toast.error("Select a client account.");
     return;
   }
-  if (!importForm.due_at) {
-    toast.error("Select a due date.");
-    return;
-  }
   if (!importForm.file) {
     toast.error("Choose a CSV file.");
     return;
@@ -601,7 +579,6 @@ async function submitImportCsv() {
   importBusy.value = true;
   try {
     const formData = new FormData();
-    formData.append("due_at", importForm.due_at);
     formData.append("file", importForm.file);
     const invNum = String(importForm.invoice_number || "").trim();
     if (invNum) {
@@ -1781,15 +1758,6 @@ onUnmounted(() => {
                   search-placeholder="Search clients…"
                   empty-label="No client account selected"
                   button-id="billing-import-client"
-                />
-              </div>
-              <div class="mb-3">
-                <label class="form-label" for="billing-import-due">Due Date</label>
-                <input
-                  id="billing-import-due"
-                  v-model="importForm.due_at"
-                  type="date"
-                  class="form-control"
                 />
               </div>
               <div class="mb-3">

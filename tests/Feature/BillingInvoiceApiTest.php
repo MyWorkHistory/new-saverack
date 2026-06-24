@@ -13,6 +13,7 @@ use App\Models\InvoiceItem;
 use App\Models\Permission;
 use App\Models\Role;
 use App\Models\User;
+use Carbon\Carbon;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Http;
@@ -627,6 +628,71 @@ class BillingInvoiceApiTest extends TestCase
 
         $res->assertCreated();
         $res->assertJsonPath('invoice_number', 'INV-CUSTOM-001');
+    }
+
+    public function test_create_draft_without_due_at_uses_account_payment_terms(): void
+    {
+        Carbon::setTestNow(Carbon::parse('2026-06-02 12:00:00'));
+
+        $user = User::factory()->create();
+        $user->permissions()->sync([
+            $this->billingViewPermission()->id,
+            $this->billingCreatePermission()->id,
+        ]);
+        Sanctum::actingAs($user);
+
+        $client = ClientAccount::query()->create([
+            'status' => ClientAccount::STATUS_ACTIVE,
+            'company_name' => 'Terms Co',
+            'email' => 'terms@acme.test',
+            'payment_terms_days' => 5,
+        ]);
+
+        $res = $this->postJson('/api/invoices', [
+            'client_account_id' => $client->id,
+            'items' => [],
+        ]);
+
+        $res->assertCreated();
+        $this->assertStringStartsWith('2026-06-07', (string) $res->json('due_at'));
+
+        Carbon::setTestNow();
+    }
+
+    public function test_import_charge_csv_without_due_at_uses_account_payment_terms(): void
+    {
+        Carbon::setTestNow(Carbon::parse('2026-06-02 12:00:00'));
+
+        $user = User::factory()->create();
+        $user->permissions()->sync([
+            $this->billingViewPermission()->id,
+            $this->billingCreatePermission()->id,
+            $this->clientsViewPermission()->id,
+        ]);
+        Sanctum::actingAs($user);
+
+        $client = ClientAccount::query()->create([
+            'status' => ClientAccount::STATUS_ACTIVE,
+            'company_name' => 'Import Terms Co',
+            'email' => 'import-terms@acme.test',
+            'payment_terms_days' => 5,
+        ]);
+
+        $csv = "Charge Name,Charge Type,Qty,Rate,Subtotal\nShip,shipping_label_charge,1,5.00,5.00\n";
+        $file = UploadedFile::fake()->createWithContent('charges.csv', $csv);
+
+        $res = $this->post(
+            "/api/client-accounts/{$client->id}/invoice-imports/charges",
+            [
+                'file' => $file,
+            ],
+            ['Accept' => 'application/json']
+        );
+
+        $res->assertStatus(201);
+        $this->assertStringStartsWith('2026-06-07', (string) $res->json('invoice.due_at'));
+
+        Carbon::setTestNow();
     }
 
     public function test_user_with_billing_view_can_download_invoice_pdf(): void

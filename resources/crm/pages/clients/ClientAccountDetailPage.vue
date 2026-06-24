@@ -2194,6 +2194,23 @@ onUnmounted(() => {
                       class="text-secondary text-uppercase fw-semibold mb-1"
                       style="font-size: 0.65rem"
                     >
+                      Payment Terms
+                    </dt>
+                    <dd class="mb-0 fw-semibold text-body">
+                      {{
+                        account.payment_terms_days != null
+                          ? `${Number(account.payment_terms_days)} day${Number(account.payment_terms_days) === 1 ? "" : "s"}`
+                          : "1 day"
+                      }}
+                    </dd>
+                  </dl>
+                </div>
+                <div class="col-md-6">
+                  <dl class="mb-0 small">
+                    <dt
+                      class="text-secondary text-uppercase fw-semibold mb-1"
+                      style="font-size: 0.65rem"
+                    >
                       Credit card fee
                     </dt>
                     <dd class="mb-0 fw-semibold text-body">

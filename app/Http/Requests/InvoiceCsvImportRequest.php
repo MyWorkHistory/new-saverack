@@ -2,6 +2,8 @@
 
 namespace App\Http\Requests;
 
+use App\Models\ClientAccount;
+use App\Support\ClientAccountBillingPreferences;
 use Carbon\Carbon;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
@@ -16,7 +18,7 @@ class InvoiceCsvImportRequest extends FormRequest
     public function rules(): array
     {
         return [
-            'due_at' => ['required', 'date'],
+            'due_at' => ['nullable', 'date'],
             'invoice_number' => [
                 'nullable',
                 'string',
@@ -31,7 +33,6 @@ class InvoiceCsvImportRequest extends FormRequest
     public function messages(): array
     {
         return [
-            'due_at.required' => 'Due date is required.',
             'due_at.date' => 'Due date must be a valid date.',
             'invoice_number.unique' => 'This invoice number is already in use.',
             'file.required' => 'Import file is required.',
@@ -41,9 +42,14 @@ class InvoiceCsvImportRequest extends FormRequest
         ];
     }
 
-    public function dueDateString(): string
+    public function resolveDueDateString(ClientAccount $account): string
     {
-        return Carbon::parse($this->validated()['due_at'])->toDateString();
+        $dueAt = $this->validated()['due_at'] ?? null;
+        if (is_string($dueAt) && trim($dueAt) !== '') {
+            return Carbon::parse($dueAt)->toDateString();
+        }
+
+        return ClientAccountBillingPreferences::invoiceDueDate($account)->toDateString();
     }
 
     public function optionalInvoiceNumber(): ?string

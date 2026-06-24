@@ -32,7 +32,7 @@ class InvoiceImportController extends Controller
         $result = $this->imports->importChargeCsv(
             $client_account,
             $request->file('file'),
-            $request->dueDateString(),
+            $request->resolveDueDateString($client_account),
             $request->optionalInvoiceNumber(),
             $request->user(),
         );
@@ -57,7 +57,7 @@ class InvoiceImportController extends Controller
         $result = $this->imports->importStorageCsv(
             $client_account,
             $request->file('file'),
-            $request->dueDateString(),
+            $request->resolveDueDateString($client_account),
             $request->optionalInvoiceNumber(),
             $request->user(),
         );
@@ -82,7 +82,7 @@ class InvoiceImportController extends Controller
         $result = $this->imports->importDutiesTaxesCsv(
             $client_account,
             $request->file('file'),
-            $request->dueDateString(),
+            $request->resolveDueDateString($client_account),
             $request->optionalInvoiceNumber(),
             $request->user(),
         );

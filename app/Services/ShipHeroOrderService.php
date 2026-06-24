@@ -1676,7 +1676,7 @@ GQL;
         if (empty($current[self::ORDER_USER_HOLD_MUTATION_KEY])) {
             throw new RuntimeException(self::NO_MATCHING_HOLDS_MESSAGE);
         }
-        $this->mutateClientHold($ctx['relay_id'], false, $clientRefreshToken);
+        $this->mutateClientHold($ctx['relay_id'], false, $clientRefreshToken, $customerAccountId);
     }
 
     /**
@@ -1777,11 +1777,11 @@ GQL;
         if ($warehouseFlags === [] && ! $wantsClient) {
             throw new RuntimeException('Select at least one hold type to apply.');
         }
-        if ($wantsClient) {
-            $this->mutateClientHold($ctx['relay_id'], true, $clientRefreshToken);
-        }
         if ($warehouseFlags !== []) {
             $this->applyWarehouseHoldsTrue($ctx, $customerAccountId, $warehouseFlags);
+        }
+        if ($wantsClient) {
+            $this->mutateClientHold($ctx['relay_id'], true, $clientRefreshToken, $customerAccountId);
         }
     }
 
@@ -1821,16 +1821,24 @@ GQL;
         ]);
     }
 
-    private function mutateClientHold(string $relayId, bool $value, ?string $clientRefreshToken): void
+    private function mutateClientHold(string $relayId, bool $value, ?string $clientRefreshToken, string $customerAccountId): void
     {
         $refresh = trim((string) $clientRefreshToken);
-        if ($refresh === '') {
-            throw new RuntimeException(self::CLIENT_HOLD_TOKEN_MISSING_MESSAGE);
-        }
         $data = [
             'order_id' => $relayId,
             self::ORDER_USER_HOLD_MUTATION_KEY => $value,
         ];
+        $options = [
+            ShipHeroClient::OPTION_GRAPHQL_SUCCESS_FIELD => 'order_update_holds',
+        ];
+        if ($refresh !== '') {
+            $options[ShipHeroClient::OPTION_REFRESH_TOKEN] = $refresh;
+        } else {
+            $customer = trim($customerAccountId);
+            if ($customer !== '') {
+                $data['customer_account_id'] = $customer;
+            }
+        }
         $graphql = <<<'GQL'
 mutation ShipHeroOrderClientHold($data: UpdateOrderHoldsInput!) {
   order_update_holds(data: $data) {
@@ -1839,10 +1847,7 @@ mutation ShipHeroOrderClientHold($data: UpdateOrderHoldsInput!) {
   }
 }
 GQL;
-        $this->client->query($graphql, ['data' => $data], true, [
-            ShipHeroClient::OPTION_GRAPHQL_SUCCESS_FIELD => 'order_update_holds',
-            ShipHeroClient::OPTION_REFRESH_TOKEN => $refresh,
-        ]);
+        $this->client->query($graphql, ['data' => $data], true, $options);
     }
 
     /**

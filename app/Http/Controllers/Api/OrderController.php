@@ -595,7 +595,9 @@ class OrderController extends Controller
             ]);
         }
         $customerId = $this->resolveShipHeroCustomerAccountId((int) $validated['client_account_id'], $request);
-        $clientRefreshToken = $this->resolveShipHeroClientRefreshToken((int) $validated['client_account_id'], $request);
+        $clientRefreshToken = ! empty($flags['client_hold'])
+            ? $this->loadClientHoldRefreshToken((int) $validated['client_account_id'], $request)
+            : null;
         try {
             $this->orders->setOrderHoldsTrue($orderId, $customerId, $flags, $clientRefreshToken);
 
@@ -624,13 +626,18 @@ class OrderController extends Controller
             'payment_hold_reason' => ['nullable', 'string', 'max:500'],
         ]);
         $customerId = $this->resolveShipHeroCustomerAccountId((int) $validated['client_account_id'], $request);
-        $clientRefreshToken = $this->resolveShipHeroClientRefreshToken((int) $validated['client_account_id'], $request);
         try {
             $headerContext = $this->orders->resolveOrderHeaderForMutation($orderId, $customerId);
             $holds = $headerContext['holds'];
             $keysToClear = isset($validated['holds_to_clear']) && is_array($validated['holds_to_clear'])
                 ? array_values(array_unique($validated['holds_to_clear']))
                 : [];
+            $clearUserHold = $keysToClear === []
+                ? $this->orders->orderHoldsOnlyUserHoldActive($holds)
+                : $this->requestWantsClearUserHold($keysToClear);
+            $clientRefreshToken = $clearUserHold
+                ? $this->loadClientHoldRefreshToken((int) $validated['client_account_id'], $request)
+                : null;
             if ($keysToClear === []) {
                 if ($this->orders->orderHoldsOnlyUserHoldActive($holds)) {
                     $this->orders->clearUserHold($orderId, $customerId, $headerContext, $clientRefreshToken);
@@ -642,7 +649,6 @@ class OrderController extends Controller
                 return response()->json(['message' => 'Holds cleared.']);
             }
 
-            $clearUserHold = $this->requestWantsClearUserHold($keysToClear);
             $clearableKeys = array_values(array_filter(
                 $keysToClear,
                 static fn (string $k): bool => in_array($k, ShipHeroOrderService::ORDER_CLEARABLE_HOLD_KEYS, true)
@@ -1299,7 +1305,9 @@ class OrderController extends Controller
             ]);
         }
         $customerId = $this->resolveShipHeroCustomerAccountId((int) $validated['client_account_id'], $request);
-        $clientRefreshToken = $this->resolveShipHeroClientRefreshToken((int) $validated['client_account_id'], $request);
+        $clientRefreshToken = ! empty($flags['client_hold'])
+            ? $this->loadClientHoldRefreshToken((int) $validated['client_account_id'], $request)
+            : null;
         $orderIds = $this->normalizeBulkOrderIds($validated['order_ids']);
         $results = [];
         $ok = 0;
@@ -1337,7 +1345,6 @@ class OrderController extends Controller
             'payment_hold_reason' => ['nullable', 'string', 'max:500'],
         ]);
         $customerId = $this->resolveShipHeroCustomerAccountId((int) $validated['client_account_id'], $request);
-        $clientRefreshToken = $this->resolveShipHeroClientRefreshToken((int) $validated['client_account_id'], $request);
         $orderIds = $this->normalizeBulkOrderIds($validated['order_ids']);
         $keysToClear = isset($validated['holds_to_clear']) && is_array($validated['holds_to_clear'])
             ? array_values(array_unique($validated['holds_to_clear']))
@@ -1355,6 +1362,7 @@ class OrderController extends Controller
                 if ($keysToClear === []) {
                     if ($this->orders->orderHoldsOnlyUserHoldActive($holds)) {
                         $ctx = $this->orders->resolveOrderHeaderForMutation($oid, $customerId);
+                        $clientRefreshToken = $this->loadClientHoldRefreshToken((int) $validated['client_account_id'], $request);
                         $this->orders->clearUserHold($oid, $customerId, $ctx, $clientRefreshToken);
                     } else {
                         $this->orders->clearOrderHolds($oid, $customerId);
@@ -1418,7 +1426,7 @@ class OrderController extends Controller
         return trim($sid);
     }
 
-    private function resolveShipHeroClientRefreshToken(int $clientAccountId, Request $request): ?string
+    private function loadClientHoldRefreshToken(int $clientAccountId, Request $request): ?string
     {
         $account = ClientAccount::query()->find($clientAccountId);
         if ($account === null) {
@@ -1428,9 +1436,7 @@ class OrderController extends Controller
         }
         Gate::forUser($request->user())->authorize('view', $account);
 
-        $token = trim((string) ($account->shiphero_client_refresh_token ?? ''));
-
-        return $token !== '' ? $token : null;
+        return ClientAccount::shipheroClientHoldRefreshToken($account);
     }
 
     private function dateStartIso($value): ?string
@@ -1569,15 +1575,12 @@ class OrderController extends Controller
     {
         $message = $e->getMessage();
         $lower = strtolower($message);
-        $status = 502;
-        if (str_contains($lower, '3pl cannot')
-            || str_contains($lower, 'does not exist')
-            || str_contains($lower, 'not found in shiphero')
-            || $message === ShipHeroOrderService::NO_MATCHING_HOLDS_MESSAGE
-            || $message === ShipHeroOrderService::CLIENT_HOLD_3PL_MESSAGE
-            || $message === ShipHeroOrderService::OPERATOR_HOLD_ONLY_MESSAGE
-            || str_contains($lower, 'select at least one hold')) {
-            $status = 422;
+        $status = 422;
+        if (str_contains($lower, 'cloudflare')
+            || str_contains($lower, 'bad gateway')
+            || str_contains($lower, 'temporarily unavailable')
+            || preg_match('/\b50[234]\b/', $lower) === 1) {
+            $status = 502;
         }
 
         return response()->json(['message' => $message], $status);

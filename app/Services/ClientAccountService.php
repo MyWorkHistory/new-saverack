@@ -677,7 +677,7 @@ class ClientAccountService
             'cc_fee_percent' => $account->cc_fee_percent !== null ? (float) $account->cc_fee_percent : null,
             'stripe_customer_id' => $account->stripe_customer_id,
             'shiphero_customer_account_id' => $account->shiphero_customer_account_id,
-            'shiphero_client_refresh_token_configured' => trim((string) ($account->shiphero_client_refresh_token ?? '')) !== '',
+            'shiphero_client_refresh_token_configured' => ClientAccount::shipheroClientHoldRefreshTokenConfigured($account),
             'whatsapp_api_id' => $account->whatsapp_api_id,
             'account_manager' => $manager !== null
                 ? ['id' => $manager->id, 'name' => $manager->name, 'email' => $manager->email]

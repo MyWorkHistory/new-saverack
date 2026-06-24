@@ -6,6 +6,7 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Relations\HasOne;
+use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Str;
 
 class ClientAccount extends Model
@@ -82,7 +83,6 @@ class ClientAccount extends Model
 
     protected $casts = [
         'notify_email' => 'boolean',
-        'shiphero_client_refresh_token' => 'encrypted',
         'onboarding_preferences' => 'array',
         'onboarding_verifications' => 'array',
         'contract_date' => 'date',
@@ -116,6 +116,28 @@ class ClientAccount extends Model
     public function accountManager(): BelongsTo
     {
         return $this->belongsTo(User::class, 'account_manager_id');
+    }
+
+    /**
+     * ShipHero child-account refresh token for User Hold (client_hold) mutations.
+     * Reads the raw DB value so a missing migration or legacy row cannot break holds.
+     */
+    public static function shipheroClientHoldRefreshToken(?self $account): ?string
+    {
+        if ($account === null) {
+            return null;
+        }
+        if (! Schema::hasColumn($account->getTable(), 'shiphero_client_refresh_token')) {
+            return null;
+        }
+        $token = trim((string) ($account->getAttributes()['shiphero_client_refresh_token'] ?? ''));
+
+        return $token !== '' ? $token : null;
+    }
+
+    public static function shipheroClientHoldRefreshTokenConfigured(?self $account): bool
+    {
+        return self::shipheroClientHoldRefreshToken($account) !== null;
     }
 
     /** All logins for this 3PL account (primary admin + secondary users). */

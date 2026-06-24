@@ -33,4 +33,6 @@ return [
 
     'default_put_away_reason' => 'Inbound Receiving Adjustments',
 
+    'default_add_location_reason' => 'Account Setup',
+
 ];

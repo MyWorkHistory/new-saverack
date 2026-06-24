@@ -108,9 +108,19 @@ class InventoryController extends Controller
             sort($reasons);
         }
 
+        $defaultAddLocation = config('inventory.default_add_location_reason', 'Account Setup');
+        if (! is_string($defaultAddLocation) || trim($defaultAddLocation) === '') {
+            $defaultAddLocation = 'Account Setup';
+        }
+        if ($reasons !== [] && ! in_array($defaultAddLocation, $reasons, true)) {
+            $reasons[] = $defaultAddLocation;
+            sort($reasons);
+        }
+
         return response()->json([
             'reasons' => $reasons,
             'default_transfer_reason' => $defaultTransfer,
+            'default_add_location_reason' => $defaultAddLocation,
         ]);
     }
 
@@ -1302,6 +1312,14 @@ class InventoryController extends Controller
                 $validated['location'],
                 $shipheroCustomerId
             );
+            if (! is_array($resolved)) {
+                $resolved = $this->inventory->resolveProductWarehouseLocation(
+                    $validated['sku'],
+                    $validated['warehouse_id'],
+                    $validated['location'],
+                    $shipheroCustomerId
+                );
+            }
             if (! is_array($resolved)) {
                 throw ValidationException::withMessages([
                     'location' => ['Location not found in this warehouse.'],

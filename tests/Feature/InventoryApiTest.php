@@ -375,4 +375,62 @@ class InventoryApiTest extends TestCase
             'quantity' => 2,
         ])->assertOk();
     }
+
+    public function test_adjustment_reasons_includes_default_add_location_reason(): void
+    {
+        $user = User::factory()->create();
+        $user->permissions()->attach($this->inventoryViewPermission()->id);
+        Sanctum::actingAs($user);
+
+        $this->getJson('/api/inventory/adjustment-reasons')
+            ->assertOk()
+            ->assertJsonPath('default_add_location_reason', 'Account Setup');
+    }
+
+    public function test_add_location_quantity_uses_product_location_fallback_and_allows_zero_qty(): void
+    {
+        $mock = Mockery::mock(ShipHeroInventoryService::class);
+        $mock->shouldReceive('resolveWarehouseLocation')
+            ->once()
+            ->with('WH1', 'A-01', null)
+            ->andReturn(null);
+        $mock->shouldReceive('resolveProductWarehouseLocation')
+            ->once()
+            ->with('SKU-1', 'WH1', 'A-01', null)
+            ->andReturn(['id' => 'loc-1', 'name' => 'A-01']);
+        $mock->shouldReceive('replaceLocationQuantity')
+            ->once()
+            ->with('SKU-1', 'WH1', 'loc-1', 0, 'Account Setup', null)
+            ->andReturn([
+                'warehouse_id' => 'WH1',
+                'warehouse_name' => 'Main',
+                'locations' => [
+                    [
+                        'item_location_id' => 'IL1',
+                        'location_id' => 'loc-1',
+                        'location_name' => 'A-01',
+                        'quantity' => 0,
+                    ],
+                ],
+            ]);
+        $this->app->instance(ShipHeroInventoryService::class, $mock);
+
+        $user = User::factory()->create();
+        $user->permissions()->sync([
+            $this->inventoryViewPermission()->id,
+            $this->inventoryUpdatePermission()->id,
+        ]);
+        Sanctum::actingAs($user);
+
+        $this->postJson('/api/inventory/locations/add-qty', [
+            'sku' => 'SKU-1',
+            'warehouse_id' => 'WH1',
+            'location' => 'A-01',
+            'quantity' => 0,
+            'reason' => 'Account Setup',
+        ])
+            ->assertOk()
+            ->assertJsonPath('location.id', 'loc-1')
+            ->assertJsonPath('warehouse.locations.0.quantity', 0);
+    }
 }

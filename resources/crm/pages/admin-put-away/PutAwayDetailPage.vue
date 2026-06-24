@@ -1,5 +1,5 @@
 <script setup>
-import { computed, onMounted, onUnmounted, reactive, ref, watch } from "vue";
+import { computed, onMounted, onUnmounted, reactive, ref, watch, nextTick } from "vue";
 import { RouterLink, useRoute } from "vue-router";
 import api from "../../services/api";
 import CrmIconRowActions from "../../components/common/CrmIconRowActions.vue";
@@ -43,7 +43,9 @@ const deleteLocationOpen = ref(false);
 const deleteLocationTarget = ref(null);
 
 const addLocationModalOpen = ref(false);
-const addLocationForm = reactive({ location: "", quantity: "", reason: DELETE_LOCATION_REASON });
+const addLocationForm = reactive({ location: "", quantity: "", reason: "Account Setup" });
+const addLocationInputRef = ref(null);
+const defaultAddLocationReason = ref("Account Setup");
 
 const clientAccountId = computed(() => Number(route.query.client_account_id || 0));
 
@@ -439,12 +441,27 @@ async function confirmDeleteLocation() {
 function openAddLocationModal() {
   addLocationForm.location = "";
   addLocationForm.quantity = "";
+  addLocationForm.reason = defaultAddLocationReason.value;
   addLocationModalOpen.value = true;
+  nextTick(() => addLocationInputRef.value?.focus());
+}
+
+async function loadAdjustmentReasons() {
+  try {
+    const { data } = await api.get("/inventory/adjustment-reasons");
+    const addLocationReason = String(data?.default_add_location_reason || "").trim();
+    if (addLocationReason) {
+      defaultAddLocationReason.value = addLocationReason;
+    }
+  } catch {
+    /* keep fallback */
+  }
 }
 
 async function submitAddLocationQty() {
   if (!product.value) return;
-  const qty = parseInt(String(addLocationForm.quantity || ""), 10);
+  const rawQty = String(addLocationForm.quantity ?? "").trim();
+  const qty = rawQty === "" ? 0 : parseInt(rawQty, 10);
   if (!addLocationForm.location.trim()) {
     toast.error("Enter location.");
     return;
@@ -465,7 +482,7 @@ async function submitAddLocationQty() {
       warehouse_id: warehouseId,
       location: addLocationForm.location.trim(),
       quantity: qty,
-      reason: DELETE_LOCATION_REASON,
+      reason: addLocationForm.reason || defaultAddLocationReason.value,
     };
     if (clientAccountId.value > 0) {
       body.client_account_id = clientAccountId.value;
@@ -530,6 +547,7 @@ onMounted(() => {
     title: "Save Rack | Put Away Detail",
     description: "Put away product locations and transfers.",
   });
+  loadAdjustmentReasons();
   loadDetail();
   document.addEventListener("click", onDocClick);
 });
@@ -892,7 +910,13 @@ onUnmounted(() => {
         </header>
         <div class="crm-vx-modal__body">
           <label class="form-label small">Location</label>
-          <input v-model="addLocationForm.location" type="text" class="form-control mb-3" autocomplete="off" />
+          <input
+            ref="addLocationInputRef"
+            v-model="addLocationForm.location"
+            type="text"
+            class="form-control mb-3"
+            autocomplete="off"
+          />
           <label class="form-label small">QTY</label>
           <input v-model="addLocationForm.quantity" type="number" min="0" class="form-control mb-3" />
         </div>

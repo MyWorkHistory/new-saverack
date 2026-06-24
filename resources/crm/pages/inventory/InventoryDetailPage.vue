@@ -1,5 +1,5 @@
 <script setup>
-import { computed, inject, onMounted, reactive, ref, watch } from "vue";
+import { computed, inject, onMounted, reactive, ref, watch, nextTick } from "vue";
 import { RouterLink, useRoute } from "vue-router";
 import api from "../../services/api";
 import CrmIconRowActions from "../../components/common/CrmIconRowActions.vue";
@@ -54,7 +54,8 @@ const transferForm = reactive({
   quantity: "",
   reason: "Restock",
 });
-const addLocationForm = reactive({ location: "", quantity: "", reason: "Inventory Reclassification" });
+const addLocationForm = reactive({ location: "", quantity: "", reason: "Account Setup" });
+const addLocationInputRef = ref(null);
 
 const inventoryReasons = ref([
   "Account Setup",
@@ -75,6 +76,7 @@ const inventoryReasons = ref([
   "System Sync or Integration Corrections",
 ]);
 const defaultTransferReason = ref("Restock");
+const defaultAddLocationReason = ref("Account Setup");
 
 const summaryMetrics = computed(() => product.value?.metrics || {
   on_hand: 0,
@@ -327,6 +329,10 @@ async function loadAdjustmentReasons() {
     if (defaultReason) {
       defaultTransferReason.value = defaultReason;
       transferForm.reason = defaultReason;
+    }
+    const addLocationReason = String(data?.default_add_location_reason || "").trim();
+    if (addLocationReason) {
+      defaultAddLocationReason.value = addLocationReason;
     }
   } catch {
     /* keep fallback list */
@@ -716,8 +722,9 @@ function fillTransferAllQty() {
 function openAddLocationModal() {
   addLocationForm.location = "";
   addLocationForm.quantity = "";
-  addLocationForm.reason = "Inventory Reclassification";
+  addLocationForm.reason = defaultAddLocationReason.value;
   addLocationModalOpen.value = true;
+  nextTick(() => addLocationInputRef.value?.focus());
 }
 
 function activeWarehouseId() {
@@ -762,7 +769,8 @@ async function submitUpdateQty() {
 
 async function submitAddLocationQty() {
   if (!product.value) return;
-  const qty = parseInt(String(addLocationForm.quantity || ""), 10);
+  const rawQty = String(addLocationForm.quantity ?? "").trim();
+  const qty = rawQty === "" ? 0 : parseInt(rawQty, 10);
   if (!addLocationForm.location.trim()) {
     toast.error("Enter location.");
     return;
@@ -1705,7 +1713,13 @@ async function togglePickable(loc) {
             </header>
             <div class="crm-vx-modal__body">
               <label class="form-label small">Location</label>
-              <input v-model="addLocationForm.location" type="text" class="form-control mb-3" placeholder="Type location name" />
+              <input
+                ref="addLocationInputRef"
+                v-model="addLocationForm.location"
+                type="text"
+                class="form-control mb-3"
+                placeholder="Type location name"
+              />
               <label class="form-label small">QTY</label>
               <input v-model="addLocationForm.quantity" type="number" min="0" class="form-control mb-3" />
               <label class="form-label small">Reason</label>

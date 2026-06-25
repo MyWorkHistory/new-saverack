@@ -2281,9 +2281,10 @@ GQL,
             try {
                 $json = $this->client->query($candidate['graphql'], $candidate['vars']);
                 $edges = data_get($json, 'data.locations.data.edges');
-                if (! is_array($edges)) {
+                if (! is_array($edges) || $edges === []) {
                     continue;
                 }
+                $out = [];
                 foreach ($edges as $edge) {
                     if (! is_array($edge)) {
                         continue;
@@ -2292,17 +2293,20 @@ GQL,
                     if ($parsed === null) {
                         continue;
                     }
-                    $merged[$parsed['id']] = $parsed;
+                    $out[] = $parsed;
+                }
+                if ($out !== []) {
+                    return $out;
                 }
             } catch (\Throwable $e) {
                 $lastError = $e;
             }
         }
-        if ($merged === [] && $lastError instanceof \Throwable) {
+        if ($lastError instanceof \Throwable) {
             throw new RuntimeException($lastError->getMessage());
         }
 
-        return array_values($merged);
+        return [];
     }
 
     /**
@@ -2325,6 +2329,11 @@ GQL,
             return $byName;
         }
 
+        $bySingularName = $this->lookupLocationBySingularName($needle, $warehouseId);
+        if (is_array($bySingularName)) {
+            return $bySingularName;
+        }
+
         foreach ($this->candidateLocationIdsFromInput($needle) as $candidateId) {
             $byId = $this->lookupWarehouseLocationById($candidateId);
             if (is_array($byId)) {
@@ -2332,19 +2341,7 @@ GQL,
             }
         }
 
-        $found = $this->findLocationInCatalog($this->listLocations($warehouseId, null), $needle);
-        if (is_array($found)) {
-            return $found;
-        }
-
-        if (is_string($customerAccountId) && trim($customerAccountId) !== '') {
-            $found = $this->findLocationInCatalog($this->listLocations($warehouseId, $customerAccountId), $needle);
-            if (is_array($found)) {
-                return $found;
-            }
-        }
-
-        return null;
+        return $this->findLocationInCachedWarehouseCatalog($warehouseId, $needle);
     }
 
     /**
@@ -2474,18 +2471,113 @@ GQL,
                 if (! is_array($edges)) {
                     continue;
                 }
+                $firstMatch = null;
                 foreach ($edges as $edge) {
                     $parsed = $this->parseLocationNode($edge['node'] ?? null);
                     if ($parsed === null) {
                         continue;
                     }
+                    if ($firstMatch === null) {
+                        $firstMatch = $parsed;
+                    }
                     if (strcasecmp($parsed['name'], $name) === 0) {
                         return $parsed;
                     }
                 }
+                if ($firstMatch !== null) {
+                    return $firstMatch;
+                }
             } catch (\Throwable $e) {
                 // Try next query variant.
             }
+        }
+
+        return null;
+    }
+
+    /**
+     * @return array{id:string,name:string,type:?string,pickable:?bool,sellable:?bool}|null
+     */
+    private function lookupLocationBySingularName(string $name, string $warehouseId): ?array
+    {
+        $name = trim($name);
+        $warehouseId = trim($warehouseId);
+        if ($name === '') {
+            return null;
+        }
+        $queries = [
+            <<<'GQL'
+query ShipHeroLocationBySingularName($name: String!) {
+  location(name: $name) {
+    data {
+      id
+      name
+      warehouse_id
+      pickable
+      sellable
+      type {
+        name
+      }
+    }
+  }
+}
+GQL,
+            <<<'GQL'
+query ShipHeroLocationBySingularNameScalar($name: String!) {
+  location(name: $name) {
+    data {
+      id
+      name
+      warehouse_id
+      pickable
+      sellable
+      type
+    }
+  }
+}
+GQL,
+        ];
+        foreach ($queries as $graphql) {
+            try {
+                $json = $this->client->query($graphql, ['name' => $name]);
+                $node = data_get($json, 'data.location.data');
+                if (! is_array($node)) {
+                    continue;
+                }
+                if ($warehouseId !== '') {
+                    $nodeWarehouseId = trim((string) ($node['warehouse_id'] ?? ''));
+                    if ($nodeWarehouseId !== '' && strcasecmp($nodeWarehouseId, $warehouseId) !== 0) {
+                        continue;
+                    }
+                }
+                $parsed = $this->parseLocationNode($node);
+                if ($parsed !== null) {
+                    return $parsed;
+                }
+            } catch (\Throwable $e) {
+                // Try next query variant.
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * @return array{id:string,name:string,type:?string,pickable:?bool,sellable:?bool}|null
+     */
+    private function findLocationInCachedWarehouseCatalog(string $warehouseId, string $needle): ?array
+    {
+        $warehouseId = trim($warehouseId);
+        if ($warehouseId === '') {
+            return null;
+        }
+        $catalog = $this->buildWarehouseLocationPickableCatalog($warehouseId);
+        $needleLower = strtolower($needle);
+        if (isset($catalog['by_name'][$needleLower])) {
+            return $catalog['by_name'][$needleLower];
+        }
+        if (isset($catalog['by_id'][$needleLower])) {
+            return $catalog['by_id'][$needleLower];
         }
 
         return null;

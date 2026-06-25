@@ -4,6 +4,7 @@ namespace Tests\Unit;
 
 use App\Services\ShipHeroClient;
 use App\Services\ShipHeroInventoryService;
+use Illuminate\Support\Facades\Cache;
 use Mockery;
 use Tests\TestCase;
 
@@ -55,11 +56,15 @@ class ResolveWarehouseLocationTest extends TestCase
 
     public function test_resolve_warehouse_location_falls_back_to_full_warehouse_catalog(): void
     {
+        Cache::flush();
         $client = Mockery::mock(ShipHeroClient::class);
         $client->shouldReceive('query')
             ->andReturnUsing(function (string $graphql) {
                 if (strpos($graphql, 'ShipHeroLocationByWarehouseName') !== false) {
                     return ['data' => ['locations' => ['data' => ['edges' => []]]]];
+                }
+                if (strpos($graphql, 'ShipHeroLocationBySingularName') !== false) {
+                    return ['data' => ['location' => ['data' => null]]];
                 }
                 if (strpos($graphql, 'ShipHeroLocationsByWarehouseNoCustomer') !== false) {
                     return [

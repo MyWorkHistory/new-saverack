@@ -2324,6 +2324,11 @@ GQL,
             return null;
         }
 
+        $bySingularName = $this->lookupLocationBySingularName($needle, $warehouseId);
+        if (is_array($bySingularName)) {
+            return $bySingularName;
+        }
+
         $byName = $this->lookupWarehouseLocationByName($warehouseId, $needle, $customerAccountId);
         if (is_array($byName)) {
             return $byName;
@@ -2332,11 +2337,6 @@ GQL,
         $byItemLocation = $this->lookupWarehouseLocationByItemLocationName($warehouseId, $needle, $customerAccountId);
         if (is_array($byItemLocation)) {
             return $byItemLocation;
-        }
-
-        $bySingularName = $this->lookupLocationBySingularName($needle, $warehouseId);
-        if (is_array($bySingularName)) {
-            return $bySingularName;
         }
 
         if ($this->looksLikeShipHeroLocationId($needle)) {
@@ -2649,21 +2649,72 @@ GQL,
         if (! is_array($edges)) {
             return null;
         }
-        $firstMatch = null;
         foreach ($edges as $edge) {
             $parsed = $this->parseLocationNode(is_array($edge) ? ($edge['node'] ?? null) : null);
             if ($parsed === null) {
                 continue;
-            }
-            if ($firstMatch === null) {
-                $firstMatch = $parsed;
             }
             if (strcasecmp($parsed['name'], $name) === 0) {
                 return $parsed;
             }
         }
 
-        return $firstMatch;
+        return null;
+    }
+
+    /**
+     * Product account + existing location assignments for inventory mutations.
+     *
+     * @return array{customer_account_id: ?string, location_ids: list<string>}
+     */
+    public function getProductWarehouseMutationContext(
+        string $sku,
+        string $warehouseId,
+        ?string $customerAccountId = null
+    ): array {
+        $sku = trim($sku);
+        $warehouseId = trim($warehouseId);
+        $context = [
+            'customer_account_id' => null,
+            'location_ids' => [],
+        ];
+        if ($sku === '' || $warehouseId === '') {
+            return $context;
+        }
+
+        $data = $this->fetchProductBySku($sku, $customerAccountId);
+        if (! is_array($data)) {
+            return $context;
+        }
+
+        $accountId = trim((string) ($data['account_id'] ?? ''));
+        if ($accountId !== '') {
+            $context['customer_account_id'] = $accountId;
+        } elseif (is_string($customerAccountId) && trim($customerAccountId) !== '') {
+            $context['customer_account_id'] = trim($customerAccountId);
+        }
+
+        foreach (($data['warehouse_products'] ?? []) as $warehouseProduct) {
+            if (! is_array($warehouseProduct)) {
+                continue;
+            }
+            if (trim((string) ($warehouseProduct['warehouse_id'] ?? '')) !== $warehouseId) {
+                continue;
+            }
+            $edges = data_get($warehouseProduct, 'locations.edges');
+            if (! is_array($edges)) {
+                break;
+            }
+            foreach ($edges as $edge) {
+                $locationId = trim((string) data_get($edge, 'node.location_id', ''));
+                if ($locationId !== '') {
+                    $context['location_ids'][] = $locationId;
+                }
+            }
+            break;
+        }
+
+        return $context;
     }
 
     /**

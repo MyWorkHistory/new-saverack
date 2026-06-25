@@ -395,6 +395,10 @@ class InventoryApiTest extends TestCase
             ->with('WH1', 'A-01', null)
             ->andReturn(['id' => 'loc-1', 'name' => 'A-01']);
         $mock->shouldNotReceive('resolveProductWarehouseLocation');
+        $mock->shouldReceive('getProductWarehouseMutationContext')
+            ->once()
+            ->with('SKU-1', 'WH1', null)
+            ->andReturn(['customer_account_id' => null, 'location_ids' => []]);
         $mock->shouldReceive('replaceLocationQuantity')
             ->once()
             ->with('SKU-1', 'WH1', 'loc-1', 0, 'Account Setup', null)
@@ -429,5 +433,53 @@ class InventoryApiTest extends TestCase
             ->assertOk()
             ->assertJsonPath('location.id', 'loc-1')
             ->assertJsonPath('warehouse.locations.0.quantity', 0);
+    }
+
+    public function test_add_location_quantity_uses_inventory_add_for_new_assignment(): void
+    {
+        $mock = Mockery::mock(ShipHeroInventoryService::class);
+        $mock->shouldReceive('resolveWarehouseLocation')
+            ->once()
+            ->with('WH1', 'E-12-025', null)
+            ->andReturn(['id' => 'loc-e12', 'name' => 'E-12-025']);
+        $mock->shouldReceive('getProductWarehouseMutationContext')
+            ->once()
+            ->with('MHC831361', 'WH1', null)
+            ->andReturn(['customer_account_id' => '92640', 'location_ids' => []]);
+        $mock->shouldReceive('addLocationQuantity')
+            ->once()
+            ->with('MHC831361', 'WH1', 'loc-e12', 1, 'Account Setup', '92640')
+            ->andReturn([
+                'warehouse_id' => 'WH1',
+                'warehouse_name' => 'Main',
+                'locations' => [
+                    [
+                        'item_location_id' => 'IL1',
+                        'location_id' => 'loc-e12',
+                        'location_name' => 'E-12-025',
+                        'quantity' => 1,
+                    ],
+                ],
+            ]);
+        $mock->shouldNotReceive('replaceLocationQuantity');
+        $this->app->instance(ShipHeroInventoryService::class, $mock);
+
+        $user = User::factory()->create();
+        $user->permissions()->sync([
+            $this->inventoryViewPermission()->id,
+            $this->inventoryUpdatePermission()->id,
+        ]);
+        Sanctum::actingAs($user);
+
+        $this->postJson('/api/inventory/locations/add-qty', [
+            'sku' => 'MHC831361',
+            'warehouse_id' => 'WH1',
+            'location' => 'E-12-025',
+            'quantity' => 1,
+            'reason' => 'Account Setup',
+        ])
+            ->assertOk()
+            ->assertJsonPath('location.id', 'loc-e12')
+            ->assertJsonPath('warehouse.locations.0.quantity', 1);
     }
 }

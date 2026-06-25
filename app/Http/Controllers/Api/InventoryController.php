@@ -1327,14 +1327,39 @@ class InventoryController extends Controller
                 ]);
             }
             $locationId = (string) ($resolved['id'] ?? '');
-            $updated = $this->inventory->replaceLocationQuantity(
+            $qty = (int) $validated['quantity'];
+            $mutationCtx = $this->inventory->getProductWarehouseMutationContext(
                 $validated['sku'],
                 $validated['warehouse_id'],
-                $locationId,
-                (int) $validated['quantity'],
-                $reason,
                 $shipheroCustomerId
             );
+            if (
+                $shipheroCustomerId === null
+                && is_string($mutationCtx['customer_account_id'] ?? null)
+                && trim($mutationCtx['customer_account_id']) !== ''
+            ) {
+                $shipheroCustomerId = trim($mutationCtx['customer_account_id']);
+            }
+            $hasAssignment = in_array($locationId, $mutationCtx['location_ids'] ?? [], true);
+            if ($qty > 0 && ! $hasAssignment) {
+                $updated = $this->inventory->addLocationQuantity(
+                    $validated['sku'],
+                    $validated['warehouse_id'],
+                    $locationId,
+                    $qty,
+                    $reason,
+                    $shipheroCustomerId
+                );
+            } else {
+                $updated = $this->inventory->replaceLocationQuantity(
+                    $validated['sku'],
+                    $validated['warehouse_id'],
+                    $locationId,
+                    $qty,
+                    $reason,
+                    $shipheroCustomerId
+                );
+            }
             return response()->json([
                 'warehouse' => $updated,
                 'location' => $resolved,

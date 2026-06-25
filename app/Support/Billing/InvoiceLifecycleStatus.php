@@ -70,6 +70,9 @@ final class InvoiceLifecycleStatus
      */
     public static function isPastDue(Invoice $invoice): bool
     {
+        if ($invoice->status === Invoice::STATUS_PROCESSING) {
+            return false;
+        }
         if ($invoice->due_at === null) {
             return false;
         }

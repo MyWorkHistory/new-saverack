@@ -230,14 +230,12 @@ onUnmounted(() => {
         </div>
 
         <div class="col-lg-4">
-          <div class="staff-table-card staff-datatable-card staff-datatable-card--white p-4">
-            <div class="d-flex align-items-start gap-3">
+          <div class="staff-stat-card billing-inv-summary-card billing-inv-summary-card--static">
+            <p class="staff-stat-card__label">Bill Total</p>
+            <p class="staff-stat-card__value">{{ formatCents(bill.total_cents) }}</p>
+            <p class="staff-stat-card__sub">{{ billTotalSubtext }}</p>
+            <div class="staff-stat-card__icon staff-stat-card__icon--money" aria-hidden="true">
               <BillingDollarStatIcon />
-              <div>
-                <p class="small text-secondary mb-1">Bill Total</p>
-                <p class="h4 mb-0 fw-semibold text-body">{{ formatCents(bill.total_cents) }}</p>
-                <p class="small text-secondary mb-0 mt-1">{{ billTotalSubtext }}</p>
-              </div>
             </div>
           </div>
         </div>

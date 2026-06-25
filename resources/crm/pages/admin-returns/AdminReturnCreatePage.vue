@@ -341,7 +341,7 @@ onMounted(() => {
                         loading="lazy"
                       />
                       <div class="min-w-0 order-detail-page__item-copy">
-                        <div class="order-detail-page__item-name fw-semibold text-truncate">{{ row.name || "—" }}</div>
+                        <div class="order-detail-page__item-name fw-semibold" :title="row.name || undefined">{{ row.name || "—" }}</div>
                         <div class="order-detail-page__item-sku small text-secondary">{{ row.sku }}</div>
                       </div>
                     </div>
@@ -446,15 +446,65 @@ onMounted(() => {
   max-width: 100%;
 }
 .user-return-page__qty-col {
-  width: 6.5rem;
+  width: 5.5rem;
 }
 .user-return-page__reason-col {
-  min-width: 11rem;
+  width: 9rem;
+  min-width: 0;
 }
 .user-return-page__check-col {
   width: 2.75rem;
 }
 .user-return-page__address-block {
   line-height: 1.5;
+}
+
+.user-return-detail-page :deep(.table-responsive.staff-table-wrap) {
+  overflow-x: clip;
+  max-width: 100%;
+}
+
+.user-return-detail-page :deep(.staff-table-wrap .table.staff-data-table) {
+  width: 100%;
+  min-width: 0;
+  max-width: 100%;
+  table-layout: fixed;
+}
+
+.user-return-detail-page .order-detail-page__items-col {
+  width: 36%;
+  min-width: 0;
+  vertical-align: middle;
+}
+
+.user-return-detail-page .order-detail-page__item-thumb {
+  width: 40px;
+  height: 40px;
+  object-fit: cover;
+}
+
+.user-return-detail-page .order-detail-page__item-name {
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  white-space: normal;
+  line-height: 1.3;
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: inherit;
+  min-width: 0;
+  max-width: 100%;
+}
+
+.user-return-detail-page .order-detail-page__item-sku {
+  display: block;
+  min-width: 0;
+  max-width: 100%;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-size: 0.8125rem;
+  line-height: 1.3;
 }
 </style>

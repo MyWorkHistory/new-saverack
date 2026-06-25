@@ -137,9 +137,11 @@ async function toggleManageMenu(rowId, e) {
   });
 }
 
-function goToBillDetail(row) {
-  closeManageMenu();
-  router.push(`/admin/billing/return-bills/${row.id}`);
+function returnBillDetailHref(row) {
+  return router.resolve({
+    name: "billing-return-bill-detail",
+    params: { id: String(row?.id || "") },
+  }).href;
 }
 
 function goToPage(page) {
@@ -283,12 +285,14 @@ onUnmounted(() => {
                 </span>
               </td>
               <td class="fw-medium text-body">
-                <RouterLink
-                  :to="`/admin/billing/return-bills/${row.id}`"
+                <a
+                  :href="returnBillDetailHref(row)"
+                  target="_blank"
+                  rel="noopener noreferrer"
                   class="text-decoration-none text-body"
                 >
                   {{ row.bill_number }}
-                </RouterLink>
+                </a>
               </td>
               <td class="text-secondary staff-table-cell__meta">{{ row.client_account_name || "—" }}</td>
               <td class="text-secondary staff-table-cell__meta">{{ row.rma_number || "—" }}</td>
@@ -360,18 +364,27 @@ onUnmounted(() => {
         :style="{ top: `${manageMenuRect.top}px`, left: `${manageMenuRect.left}px` }"
         @click.stop
       >
-        <button type="button" class="staff-row-menu__item" role="menuitem" @click="goToBillDetail(manageMenuRow)">
-          View
-        </button>
-        <RouterLink
-          v-if="manageMenuRow.status === 'invoiced' && manageMenuRow.invoice_id"
-          :to="`/admin/billing/invoices/${manageMenuRow.invoice_id}`"
+        <a
           class="staff-row-menu__item text-decoration-none text-body"
           role="menuitem"
+          :href="returnBillDetailHref(manageMenuRow)"
+          target="_blank"
+          rel="noopener noreferrer"
+          @click="closeManageMenu"
+        >
+          View
+        </a>
+        <a
+          v-if="manageMenuRow.status === 'invoiced' && manageMenuRow.invoice_id"
+          :href="router.resolve({ name: 'billing-invoice-detail', params: { id: String(manageMenuRow.invoice_id) } }).href"
+          class="staff-row-menu__item text-decoration-none text-body"
+          role="menuitem"
+          target="_blank"
+          rel="noopener noreferrer"
           @click="closeManageMenu"
         >
           View Invoice
-        </RouterLink>
+        </a>
       </div>
     </Teleport>
   </div>

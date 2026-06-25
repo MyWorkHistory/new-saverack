@@ -1012,7 +1012,7 @@ onUnmounted(() => {
       <div :class="summaryCardColClass">
         <button
           type="button"
-          class="staff-stat-card h-100 text-start w-100 billing-inv-list-summary-btn"
+          class="staff-stat-card billing-inv-summary-card h-100 text-start w-100"
           @click="setSummaryFilterBucket('open')"
         >
           <p class="staff-stat-card__label">Open Balance Due</p>
@@ -1028,7 +1028,7 @@ onUnmounted(() => {
       <div v-if="!portalMode" class="col-12 col-sm-6 col-xl-3">
         <button
           type="button"
-          class="staff-stat-card h-100 text-start w-100 billing-inv-list-summary-btn"
+          class="staff-stat-card billing-inv-summary-card h-100 text-start w-100"
           @click="setSummaryFilterBucket('draft')"
         >
           <p class="staff-stat-card__label">Draft Invoices</p>
@@ -1051,7 +1051,7 @@ onUnmounted(() => {
       <div :class="summaryCardColClass">
         <button
           type="button"
-          class="staff-stat-card h-100 text-start w-100 billing-inv-list-summary-btn"
+          class="staff-stat-card billing-inv-summary-card h-100 text-start w-100"
           @click="setSummaryFilterBucket('paid')"
         >
           <p class="staff-stat-card__label">Paid (Month to Date)</p>
@@ -1946,25 +1946,3 @@ onUnmounted(() => {
   </div>
 </template>
 
-<style scoped>
-.billing-inv-list-summary-btn {
-  cursor: pointer;
-  font: inherit;
-  color: inherit;
-  /* Match .staff-surface / account list stat cards (button reset can flatten appearance) */
-  box-shadow: 0 2px 10px rgba(47, 43, 61, 0.06);
-  transition:
-    box-shadow 0.15s ease,
-    transform 0.15s ease;
-}
-[data-bs-theme="dark"] .billing-inv-list-summary-btn {
-  box-shadow: 0 2px 14px rgba(0, 0, 0, 0.22);
-}
-.billing-inv-list-summary-btn:hover {
-  box-shadow: 0 0.45rem 1rem rgba(47, 43, 61, 0.1);
-  transform: translateY(-1px);
-}
-[data-bs-theme="dark"] .billing-inv-list-summary-btn:hover {
-  box-shadow: 0 0.5rem 1.15rem rgba(0, 0, 0, 0.28);
-}
-</style>

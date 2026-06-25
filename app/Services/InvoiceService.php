@@ -2088,14 +2088,17 @@ class InvoiceService
 
     public function legacyStatusKey(Invoice $invoice): string
     {
+        $raw = strtolower(trim((string) $invoice->status));
+        if ($raw === Invoice::STATUS_PROCESSING) {
+            return Invoice::STATUS_PROCESSING;
+        }
+
         if (InvoiceLifecycleStatus::isPastDue($invoice)) {
             return InvoiceLifecycleStatus::PAST_DUE;
         }
 
-        $raw = strtolower(trim((string) $invoice->status));
         if ($raw === 'void') return 'void';
         if ($raw === 'paid') return 'paid';
-        if ($raw === Invoice::STATUS_PROCESSING) return Invoice::STATUS_PROCESSING;
         if ($raw === Invoice::STATUS_PAYMENT_FAILED) return Invoice::STATUS_PAYMENT_FAILED;
         if ($raw === 'collection') return 'collection';
         if ($raw === 'pending' || $raw === 'draft') return 'draft';
@@ -2221,7 +2224,7 @@ class InvoiceService
      */
     private function applyPastDueScope($query): void
     {
-        $openStatuses = [Invoice::STATUS_SENT, Invoice::STATUS_PARTIAL, Invoice::STATUS_PROCESSING, Invoice::STATUS_PAYMENT_FAILED, 'past_due', 'open', 'collection'];
+        $openStatuses = [Invoice::STATUS_SENT, Invoice::STATUS_PARTIAL, Invoice::STATUS_PAYMENT_FAILED, 'past_due', 'open', 'collection'];
         $query->whereIn('status', $openStatuses)
             ->where('balance_due_cents', '>', 0)
             ->whereNotNull('due_at')
@@ -2322,7 +2325,7 @@ class InvoiceService
             ->sum('balance_due_cents');
 
         $overdueCount = (int) (clone $base)
-            ->whereIn('status', $openStatuses)
+            ->whereIn('status', [Invoice::STATUS_SENT, Invoice::STATUS_PARTIAL, Invoice::STATUS_PAYMENT_FAILED, 'past_due', 'open', 'collection'])
             ->where('balance_due_cents', '>', 0)
             ->whereNotNull('due_at')
             ->whereDate('due_at', '<=', InvoiceLifecycleStatus::latestDueDateNotPastDue()->toDateString())

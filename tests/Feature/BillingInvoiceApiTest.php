@@ -2744,6 +2744,38 @@ class BillingInvoiceApiTest extends TestCase
         $this->assertSame(0, (int) $invoice->balance_due_cents);
     }
 
+    public function test_processing_invoice_stays_processing_when_past_due_logic_would_apply(): void
+    {
+        $user = User::factory()->create();
+        $user->permissions()->sync([$this->billingViewPermission()->id]);
+        Sanctum::actingAs($user);
+
+        $client = ClientAccount::query()->create([
+            'status' => ClientAccount::STATUS_ACTIVE,
+            'company_name' => 'Processing Past Due Co',
+            'email' => 'processing-past-due@acme.test',
+        ]);
+        $invoice = Invoice::query()->create([
+            'invoice_number' => 'INV-PROCESSING-PAST-DUE',
+            'client_account_id' => $client->id,
+            'status' => Invoice::STATUS_PROCESSING,
+            'currency' => 'USD',
+            'due_at' => now()->subDays(10)->startOfDay(),
+            'subtotal_cents' => 1000,
+            'tax_cents' => 0,
+            'total_cents' => 1000,
+            'amount_paid_cents' => 0,
+            'balance_due_cents' => 1000,
+        ]);
+
+        $this->getJson("/api/invoices/{$invoice->id}")
+            ->assertOk()
+            ->assertJsonPath('status', Invoice::STATUS_PROCESSING)
+            ->assertJsonPath('status_key', Invoice::STATUS_PROCESSING)
+            ->assertJsonPath('status_label', 'Processing')
+            ->assertJsonPath('is_overdue', false);
+    }
+
     public function test_stripe_payment_failed_webhook_sets_invoice_failed(): void
     {
         $client = ClientAccount::query()->create([

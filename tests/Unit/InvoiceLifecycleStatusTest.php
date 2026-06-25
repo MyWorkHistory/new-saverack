@@ -40,4 +40,17 @@ class InvoiceLifecycleStatusTest extends TestCase
 
         $this->assertFalse(InvoiceLifecycleStatus::isPastDue($invoice));
     }
+
+    public function test_processing_invoice_is_never_past_due_even_after_due_date(): void
+    {
+        Carbon::setTestNow(Carbon::parse('2026-06-26 12:00:00'));
+
+        $invoice = new Invoice([
+            'status' => Invoice::STATUS_PROCESSING,
+            'balance_due_cents' => 1000,
+            'due_at' => Carbon::parse('2026-06-01'),
+        ]);
+
+        $this->assertFalse(InvoiceLifecycleStatus::isPastDue($invoice));
+    }
 }

@@ -22,6 +22,7 @@ use App\Http\Controllers\Api\CrmLookupController;
 use App\Http\Controllers\Api\PortalLookupController;
 use App\Http\Controllers\Api\PortalOnboardingController;
 use App\Http\Controllers\Api\PortalProfileController;
+use App\Http\Controllers\Api\PricingFeeTemplateController;
 use App\Http\Controllers\Api\ReturnBillController;
 use App\Http\Controllers\Api\PutAwayController;
 use App\Http\Controllers\Api\UserController;

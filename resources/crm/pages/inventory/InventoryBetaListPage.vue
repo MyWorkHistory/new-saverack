@@ -358,37 +358,6 @@ const bulkEligibleRows = computed(() =>
   selectedRows.value.filter((r) => String(r?.warehouse_id || "").trim() !== ""),
 );
 
-function isSingleTokenSearch(term) {
-  const q = String(term || "").trim();
-  return q !== "" && !/\s/.test(q);
-}
-
-async function tryFastSearchToDetail() {
-  const q = searchCommitted.value.trim();
-  if (!q || !isSingleTokenSearch(q)) return false;
-  const params = { q };
-  if (accountId.value > 0) {
-    params.client_account_id = accountId.value;
-  }
-  try {
-    const { data } = await api.get("/inventory/search", { params });
-    const sku = String(data?.product?.sku || "").trim();
-    if (!sku) return false;
-    const query = {};
-    const acct = Number(accountId.value || 0);
-    if (acct > 0) query.client_account_id = String(acct);
-    await router.push({
-      name: "inventory-beta-detail",
-      params: { sku },
-      query,
-    });
-    return true;
-  } catch (e) {
-    if (e?.response?.status === 404) return false;
-    throw e;
-  }
-}
-
 async function commitSearch() {
   if (isStaffPickerMode.value) {
     crossAccountMode.value = !selectedAccountId.value;
@@ -396,12 +365,6 @@ async function commitSearch() {
   }
   searchCommitted.value = searchDraft.value.trim();
   if (!searchCommitted.value && isStaffPickerMode.value && !selectedAccountId.value) {
-    return;
-  }
-  try {
-    if (await tryFastSearchToDetail()) return;
-  } catch (e) {
-    toast.errorFrom(e, "Could not search inventory.");
     return;
   }
   loadRows(true);

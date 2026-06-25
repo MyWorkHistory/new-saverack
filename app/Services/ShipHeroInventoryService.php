@@ -174,7 +174,8 @@ GQL;
         ?int $clientAccountId = null,
         bool $backorderOnly = false,
         bool $refresh = false,
-        bool $wipeIndexOnRefresh = true
+        bool $wipeIndexOnRefresh = true,
+        bool $indexSearchOnly = false
     ): array {
         $first = max(1, min(200, $first));
         $after = is_string($after) && trim($after) !== '' ? trim($after) : null;
@@ -224,19 +225,21 @@ query ShipHeroInventoryRows($customer_account_id: String, $first: Int!, $after: 
 GQL;
 
         if ($searchQuery !== '') {
-            $direct = $this->listInventoryRowsTryDirectProductSearch(
-                $customerAccountId,
-                $kitsFilter,
-                $activeStatus,
-                $first,
-                $after,
-                $searchQuery,
-                $searchSkip,
-                $clientAccountId,
-                $backorderOnly
-            );
-            if ($direct !== null) {
-                return $direct;
+            if (! $indexSearchOnly) {
+                $direct = $this->listInventoryRowsTryDirectProductSearch(
+                    $customerAccountId,
+                    $kitsFilter,
+                    $activeStatus,
+                    $first,
+                    $after,
+                    $searchQuery,
+                    $searchSkip,
+                    $clientAccountId,
+                    $backorderOnly
+                );
+                if ($direct !== null) {
+                    return $direct;
+                }
             }
 
             $indexed = $this->inventoryListUseIndex($refresh, $backorderOnly)
@@ -501,7 +504,8 @@ GQL;
                 $clientAccountId,
                 $backorderOnly,
                 $refresh,
-                false
+                false,
+                true
             );
         } finally {
             $this->catalogSyncTrackSeen = false;

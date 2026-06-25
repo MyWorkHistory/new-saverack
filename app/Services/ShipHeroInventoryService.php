@@ -2,6 +2,8 @@
 
 namespace App\Services;
 
+use App\Models\ClientAccount;
+use App\Models\ClientAccountOnDemandProduct;
 use App\Models\ShipHeroInventoryProductDetailCache;
 use App\Models\ShipHeroInventoryProductIndex;
 use Illuminate\Support\Facades\Cache;
@@ -2671,14 +2673,117 @@ GQL,
         if ($sku === '') {
             return null;
         }
-        $customerId = ShipHeroInventoryProductIndex::query()
-            ->where('sku_search', $this->normalizeInventoryIndexSearchValue($sku))
-            ->whereNotNull('shiphero_customer_account_id')
-            ->where('shiphero_customer_account_id', '!=', '')
-            ->orderByDesc('synced_at')
-            ->value('shiphero_customer_account_id');
 
-        return is_string($customerId) && trim($customerId) !== '' ? trim($customerId) : null;
+        try {
+            $customerId = ShipHeroInventoryProductIndex::query()
+                ->where('sku_search', $this->normalizeInventoryIndexSearchValue($sku))
+                ->whereNotNull('shiphero_customer_account_id')
+                ->where('shiphero_customer_account_id', '!=', '')
+                ->orderByDesc('synced_at')
+                ->value('shiphero_customer_account_id');
+
+            if (is_string($customerId) && trim($customerId) !== '') {
+                return trim($customerId);
+            }
+        } catch (\Throwable $e) {
+            Log::warning('shiphero.inventory.customer_lookup.index_failed', [
+                'sku' => $sku,
+                'message' => $e->getMessage(),
+            ]);
+        }
+
+        try {
+            $cacheRow = ShipHeroInventoryProductDetailCache::query()
+                ->where('sku_search', $this->normalizeInventoryIndexSearchValue($sku))
+                ->orderByDesc('synced_at')
+                ->first();
+            if ($cacheRow !== null && (int) $cacheRow->client_account_id > 0) {
+                $account = ClientAccount::query()
+                    ->whereKey((int) $cacheRow->client_account_id)
+                    ->value('shiphero_customer_account_id');
+                if (is_string($account) && trim($account) !== '') {
+                    return trim($account);
+                }
+            }
+        } catch (\Throwable $e) {
+            Log::warning('shiphero.inventory.customer_lookup.cache_failed', [
+                'sku' => $sku,
+                'message' => $e->getMessage(),
+            ]);
+        }
+
+        try {
+            $onDemandAccountId = ClientAccountOnDemandProduct::query()
+                ->where('sku', ClientAccountOnDemandProduct::normalizeSku($sku))
+                ->value('client_account_id');
+            if (is_int($onDemandAccountId) && $onDemandAccountId > 0) {
+                $account = ClientAccount::query()
+                    ->whereKey($onDemandAccountId)
+                    ->value('shiphero_customer_account_id');
+                if (is_string($account) && trim($account) !== '') {
+                    return trim($account);
+                }
+            }
+        } catch (\Throwable $e) {
+            Log::warning('shiphero.inventory.customer_lookup.on_demand_failed', [
+                'sku' => $sku,
+                'message' => $e->getMessage(),
+            ]);
+        }
+
+        return null;
+    }
+
+    /**
+     * ShipHero customer_account_id for inventory mutations on admin/global SKU views.
+     */
+    public function resolveCustomerAccountIdForSkuMutation(string $sku, ?string $preferredCustomerId = null): ?string
+    {
+        if (is_string($preferredCustomerId) && trim($preferredCustomerId) !== '') {
+            return trim($preferredCustomerId);
+        }
+
+        $fromLocal = $this->lookupShipHeroCustomerAccountIdForSku($sku);
+        if ($fromLocal !== null) {
+            return $fromLocal;
+        }
+
+        return $this->fetchProductAccountIdBySku($sku);
+    }
+
+    /**
+     * Lightweight product lookup for ShipHero account_id only.
+     */
+    public function fetchProductAccountIdBySku(string $sku): ?string
+    {
+        $sku = trim($sku);
+        if ($sku === '') {
+            return null;
+        }
+
+        $graphql = <<<'GQL'
+query ShipHeroProductAccountIdBySku($sku: String!) {
+  product(sku: $sku) {
+    data {
+      account_id
+    }
+  }
+}
+GQL;
+
+        try {
+            $json = $this->client->query($graphql, ['sku' => $sku]);
+            $accountId = trim((string) data_get($json, 'data.product.data.account_id', ''));
+
+            return $accountId !== '' ? $accountId : null;
+        } catch (\Throwable $e) {
+            Log::warning('shiphero.inventory.customer_lookup.product_account_failed', [
+                'sku' => $sku,
+                'message' => $e->getMessage(),
+            ]);
+
+            return null;
+        }
     }
 
     /**
@@ -2755,14 +2860,8 @@ GQL,
     private function customerAccountIdFromProductData(array $data): ?string
     {
         $accountId = trim((string) ($data['account_id'] ?? ''));
-        if ($accountId === '') {
-            return null;
-        }
-        if (ctype_digit($accountId)) {
-            return $accountId;
-        }
 
-        return null;
+        return $accountId !== '' ? $accountId : null;
     }
 
     /**

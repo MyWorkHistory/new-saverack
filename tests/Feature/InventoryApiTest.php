@@ -395,14 +395,10 @@ class InventoryApiTest extends TestCase
             ->with('WH1', 'A-01', null)
             ->andReturn(['id' => 'loc-1', 'name' => 'A-01']);
         $mock->shouldNotReceive('resolveProductWarehouseLocation');
-        $mock->shouldReceive('lookupShipHeroCustomerAccountIdForSku')
+        $mock->shouldReceive('resolveCustomerAccountIdForSkuMutation')
             ->once()
-            ->with('SKU-1')
+            ->with('SKU-1', null)
             ->andReturn(null);
-        $mock->shouldReceive('getProductWarehouseMutationContext')
-            ->once()
-            ->with('SKU-1', 'WH1', null)
-            ->andReturn(['customer_account_id' => null, 'location_ids' => []]);
         $mock->shouldReceive('replaceLocationQuantity')
             ->once()
             ->with('SKU-1', 'WH1', 'loc-1', 0, 'Account Setup', null)
@@ -446,14 +442,10 @@ class InventoryApiTest extends TestCase
             ->once()
             ->with('WH1', 'E-12-025', '92640')
             ->andReturn(['id' => 'loc-e12', 'name' => 'E-12-025']);
-        $mock->shouldReceive('lookupShipHeroCustomerAccountIdForSku')
+        $mock->shouldReceive('resolveCustomerAccountIdForSkuMutation')
             ->once()
-            ->with('MHC831361')
+            ->with('MHC831361', null)
             ->andReturn('92640');
-        $mock->shouldReceive('getProductWarehouseMutationContext')
-            ->once()
-            ->with('MHC831361', 'WH1', '92640')
-            ->andReturn(['customer_account_id' => '92640', 'location_ids' => []]);
         $mock->shouldReceive('addLocationQuantity')
             ->once()
             ->with('MHC831361', 'WH1', 'loc-e12', 1, 'Account Setup', '92640')

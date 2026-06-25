@@ -23,6 +23,7 @@ use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Gate;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\ValidationException;
@@ -540,7 +541,7 @@ class InventoryController extends Controller
             if ($clientAccountId > 0) {
                 $shipheroCustomerId = $this->tryResolveShipHeroCustomerAccountId($clientAccountId, $request);
             } else {
-                $shipheroCustomerId = $this->inventory->lookupShipHeroCustomerAccountIdForSku($sku);
+                $shipheroCustomerId = $this->inventory->resolveCustomerAccountIdForSkuMutation($sku);
             }
             $product = $this->inventory->getProductDetailBySku($sku, $warehouseId, $shipheroCustomerId, false);
             if (! is_array($product) && $clientAccountId > 0) {
@@ -1314,13 +1315,14 @@ class InventoryController extends Controller
         );
         $clientAccountId = isset($validated['client_account_id']) ? (int) $validated['client_account_id'] : null;
         try {
-            $shipheroCustomerId = $this->resolveShipHeroCustomerAccountId(
-                $clientAccountId > 0 ? $clientAccountId : null,
-                $request,
-            );
-            if ($shipheroCustomerId === null) {
-                $shipheroCustomerId = $this->inventory->lookupShipHeroCustomerAccountIdForSku($validated['sku']);
+            $preferredCustomerId = null;
+            if ($clientAccountId > 0) {
+                $preferredCustomerId = $this->tryResolveShipHeroCustomerAccountId($clientAccountId, $request);
             }
+            $shipheroCustomerId = $this->inventory->resolveCustomerAccountIdForSkuMutation(
+                $validated['sku'],
+                $preferredCustomerId
+            );
             $resolved = $this->inventory->resolveWarehouseLocation(
                 $validated['warehouse_id'],
                 $validated['location'],
@@ -1331,22 +1333,21 @@ class InventoryController extends Controller
                     'location' => ['Location not found in this warehouse.'],
                 ]);
             }
-            $locationId = (string) ($resolved['id'] ?? '');
-            $qty = (int) $validated['quantity'];
-            $mutationCtx = $this->inventory->getProductWarehouseMutationContext(
-                $validated['sku'],
-                $validated['warehouse_id'],
-                $shipheroCustomerId
-            );
-            if (
-                $shipheroCustomerId === null
-                && is_string($mutationCtx['customer_account_id'] ?? null)
-                && trim($mutationCtx['customer_account_id']) !== ''
-            ) {
-                $shipheroCustomerId = trim($mutationCtx['customer_account_id']);
+            $locationId = trim((string) ($resolved['id'] ?? ''));
+            if ($locationId === '') {
+                throw ValidationException::withMessages([
+                    'location' => ['Location not found in this warehouse.'],
+                ]);
             }
-            $hasAssignment = in_array($locationId, $mutationCtx['location_ids'] ?? [], true);
-            if ($qty > 0 && ! $hasAssignment) {
+            $qty = (int) $validated['quantity'];
+            Log::info('shiphero.inventory.add_location.start', [
+                'sku' => $validated['sku'],
+                'warehouse_id' => $validated['warehouse_id'],
+                'location_id' => $locationId,
+                'quantity' => $qty,
+                'customer_account_id' => $shipheroCustomerId,
+            ]);
+            if ($qty > 0) {
                 $updated = $this->inventory->addLocationQuantity(
                     $validated['sku'],
                     $validated['warehouse_id'],
@@ -1360,7 +1361,7 @@ class InventoryController extends Controller
                     $validated['sku'],
                     $validated['warehouse_id'],
                     $locationId,
-                    $qty,
+                    0,
                     $reason,
                     $shipheroCustomerId
                 );

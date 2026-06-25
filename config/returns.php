@@ -17,4 +17,11 @@ return [
         'other' => 'Other',
     ],
 
+    'admin_return_reasons' => [
+        'unknown' => 'Unknown',
+        'return_to_sender' => 'Return to Sender',
+    ],
+
+    'admin_default_return_reason' => 'unknown',
+
 ];

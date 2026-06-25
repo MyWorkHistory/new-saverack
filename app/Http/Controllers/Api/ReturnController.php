@@ -7,6 +7,7 @@ use App\Models\ClientAccount;
 use App\Models\ClientAccountReturn;
 use App\Models\ClientAccountReturnLine;
 use App\Models\User;
+use App\Services\ReturnFeeService;
 use App\Support\Barcode\Code128Svg;
 use App\Support\Returns\ReturnRmaGenerator;
 use Barryvdh\DomPDF\Facade\Pdf;
@@ -16,6 +17,7 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
+use App\Support\Returns\ReturnReasonOptions;
 use Illuminate\Validation\ValidationException;
 
 class ReturnController extends Controller
@@ -97,13 +99,8 @@ class ReturnController extends Controller
     /**
      * @return array<string, mixed>
      */
-    private function serializeLine(ClientAccountReturnLine $line): array
+    private function serializeLine(ClientAccountReturnLine $line, ?string $createdSource = null): array
     {
-        $reasonKey = $line->return_reason;
-        $reasonLabel = $reasonKey !== null && $reasonKey !== ''
-            ? ($this->returnReasonOptions()[$reasonKey] ?? $reasonKey)
-            : null;
-
         return [
             'id' => $line->id,
             'shiphero_line_item_id' => $line->shiphero_line_item_id,
@@ -113,7 +110,8 @@ class ReturnController extends Controller
             'order_qty' => $line->order_qty,
             'return_qty' => $line->return_qty,
             'return_reason' => $line->return_reason,
-            'return_reason_label' => $reasonLabel,
+            'return_reason_label' => ReturnReasonOptions::labelFor($line->return_reason, $createdSource),
+            'restock' => (bool) $line->restock,
             'sort_order' => $line->sort_order,
         ];
     }
@@ -144,9 +142,12 @@ class ReturnController extends Controller
             'created_at' => optional($return->created_at)->toIso8601String(),
             'processed_at' => optional($return->processed_at)->toIso8601String(),
             'updated_at' => optional($return->updated_at)->toIso8601String(),
-            'lines' => $return->lines->map(fn (ClientAccountReturnLine $l) => $this->serializeLine($l))->values()->all(),
+            'lines' => $return->lines->map(fn (ClientAccountReturnLine $l) => $this->serializeLine($l, $return->created_source))->values()->all(),
             'return_reasons' => $this->returnReasonOptions(),
             'return_warehouse_address' => config('returns.return_warehouse_address', []),
+            'created_source' => $return->created_source,
+            'return_fees' => app(ReturnFeeService::class)->serializeReturnFees($return),
+            'return_bill_id' => $return->return_bill_id,
         ];
     }
 
@@ -254,6 +255,7 @@ class ReturnController extends Controller
             $line->order_qty = (int) $row['order_qty'];
             $line->return_qty = (int) $row['return_qty'];
             $line->return_reason = $row['return_reason'] ?? null;
+            $line->restock = array_key_exists('restock', $row) ? (bool) $row['restock'] : true;
             $line->sort_order = (int) $row['sort_order'];
             $line->save();
         }
@@ -406,11 +408,14 @@ class ReturnController extends Controller
         }
         Gate::authorize('view', ClientAccount::query()->findOrFail($clientAccountId));
 
-        $return = DB::transaction(function () use ($clientAccountId, $validated, $manual) {
+        $return = DB::transaction(function () use ($clientAccountId, $validated, $manual, $request) {
             $return = new ClientAccountReturn;
             $return->client_account_id = $clientAccountId;
             $return->rma_number = ReturnRmaGenerator::generateUniqueForAccount($clientAccountId);
             $return->status = ClientAccountReturn::STATUS_DRAFT;
+            $return->created_source = $this->isPortalUser($request)
+                ? ClientAccountReturn::SOURCE_PORTAL
+                : ClientAccountReturn::SOURCE_ADMIN;
             $return->return_type = $validated['return_type'] ?? ClientAccountReturn::TYPE_DIRECT;
             $return->shiphero_order_id = $manual
                 ? 'manual:'.(string) Str::uuid()
@@ -420,10 +425,20 @@ class ReturnController extends Controller
             $return->items_count = 0;
             $return->save();
 
+            if ($return->isAdminCreated()) {
+                app(ReturnFeeService::class)->seedReturnFees($return);
+            }
+
             return $return;
         });
 
-        return response()->json($this->serializeReturn($return->fresh(['lines', 'clientAccount'])), 201);
+        $payload = $this->serializeReturn($return->fresh(['lines', 'clientAccount']));
+        if ($return->isAdminCreated()) {
+            $payload['admin_return_reasons'] = ReturnReasonOptions::admin();
+            $payload['admin_default_return_reason'] = ReturnReasonOptions::adminDefaultKey();
+        }
+
+        return response()->json($payload, 201);
     }
 
     public function show(Request $request, ClientAccountReturn $clientAccountReturn): JsonResponse
@@ -514,6 +529,7 @@ class ReturnController extends Controller
             $clientAccountReturn->status = ClientAccountReturn::STATUS_PENDING;
             $clientAccountReturn->processed_at = null;
             $clientAccountReturn->save();
+            app(ReturnFeeService::class)->seedReturnFees($clientAccountReturn);
         });
 
         return response()->json($this->serializeReturn($clientAccountReturn->fresh(['lines', 'clientAccount'])));

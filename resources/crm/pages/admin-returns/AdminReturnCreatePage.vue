@@ -3,6 +3,7 @@ import { computed, onMounted, ref } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import api from "../../services/api";
 import CrmLoadingSpinner from "../../components/common/CrmLoadingSpinner.vue";
+import ReturnFeesCard from "../../components/admin-returns/ReturnFeesCard.vue";
 import { setCrmPageMeta } from "../../composables/useCrmPageMeta.js";
 import { useToast } from "../../composables/useToast.js";
 import { formatRmaLabel } from "../../utils/formatReturnDisplay.js";
@@ -18,6 +19,8 @@ const formLines = ref([]);
 const returnType = ref("direct");
 const warehouseNote = ref("");
 const reasonOptions = ref({});
+const returnFees = ref({});
+const defaultReason = ref("unknown");
 const selected = ref(new Set());
 
 const shipheroOrderId = computed(() => String(route.params.shipheroOrderId || ""));
@@ -125,8 +128,12 @@ async function cancelDraft() {
   router.push({ name: "user-return-create-search" });
 }
 
-async function submitReturn() {
+async function processReturn() {
   if (!ret.value?.id) return;
+  if (!hasReturnQty.value) {
+    toast.error("Enter a return quantity for at least one item.");
+    return;
+  }
   submitBusy.value = true;
   try {
     const lines = formLines.value.map((row) => ({
@@ -136,17 +143,21 @@ async function submitReturn() {
       image_url: row.image_url || null,
       order_qty: Number(row.order_qty) || 0,
       return_qty: Number(row.return_qty) || 0,
-      return_reason: Number(row.return_qty) > 0 ? row.return_reason || null : null,
+      return_reason: Number(row.return_qty) > 0 ? row.return_reason || defaultReason.value : null,
+      restock: row.restock !== false,
     }));
-    const { data } = await api.put(`/returns/${ret.value.id}/submit`, {
+    const payload = {
       return_type: returnType.value,
       warehouse_private_note: warehouseNote.value.trim() || null,
       lines,
-    });
-    toast.success("Return created.");
+    };
+    if (returnFees.value.first_item != null) payload.first_item_fee = returnFees.value.first_item;
+    if (returnFees.value.additional_item != null) payload.additional_item_fee = returnFees.value.additional_item;
+    const { data } = await api.post(`/admin/returns/${ret.value.id}/process-from-draft`, payload);
+    toast.success("Return processed.");
     router.push({ name: "admin-process-return-detail", params: { id: String(data.id) } });
   } catch (e) {
-    toast.errorFrom(e, "Could not create return.");
+    toast.errorFrom(e, "Could not process return.");
   } finally {
     submitBusy.value = false;
   }
@@ -177,7 +188,9 @@ async function init() {
       return_type: returnType.value,
     });
     ret.value = draftRes.data;
-    reasonOptions.value = draftRes.data?.return_reasons || {};
+    reasonOptions.value = draftRes.data?.admin_return_reasons || draftRes.data?.return_reasons || {};
+    defaultReason.value = draftRes.data?.admin_default_return_reason || "unknown";
+    returnFees.value = draftRes.data?.return_fees || {};
     returnType.value = draftRes.data?.return_type || "direct";
 
     const items = Array.isArray(order.items) ? order.items : [];
@@ -188,7 +201,8 @@ async function init() {
       image_url: item.image_url || null,
       order_qty: Math.max(0, Math.floor(Number(item.quantity) || 0)),
       return_qty: 0,
-      return_reason: "",
+      return_reason: defaultReason.value,
+      restock: true,
     }));
   } catch (e) {
     toast.errorFrom(e, "Could not start return.");
@@ -244,10 +258,10 @@ onMounted(() => {
             <button
               type="button"
               class="btn btn-primary staff-page-primary btn-sm fw-semibold"
-              :disabled="submitBusy"
-              @click="submitReturn"
+              :disabled="submitBusy || !hasReturnQty"
+              @click="processReturn"
             >
-              Create Return
+              {{ submitBusy ? "Processing…" : "Process" }}
             </button>
           </div>
         </div>
@@ -301,6 +315,7 @@ onMounted(() => {
                   <th class="staff-table-head__th text-center" scope="col">Order Qty</th>
                   <th class="staff-table-head__th text-center" scope="col">Return Items</th>
                   <th class="staff-table-head__th" scope="col">Reason</th>
+                  <th class="staff-table-head__th text-center" scope="col">Restock</th>
                 </tr>
               </thead>
               <tbody>
@@ -344,13 +359,21 @@ onMounted(() => {
                   </td>
                   <td class="user-return-page__reason-col">
                     <select v-model="row.return_reason" class="form-select form-select-sm" :disabled="!row.return_qty">
-                      <option value="">Select reason</option>
                       <option v-for="(label, key) in reasonOptions" :key="key" :value="key">{{ label }}</option>
                     </select>
                   </td>
+                  <td class="text-center">
+                    <input
+                      v-model="row.restock"
+                      type="checkbox"
+                      class="form-check-input m-0"
+                      :disabled="!row.return_qty"
+                      :aria-label="`Restock ${row.sku}`"
+                    />
+                  </td>
                 </tr>
                 <tr v-if="!formLines.length">
-                  <td colspan="5" class="text-center text-secondary py-4">No line items on this order.</td>
+                  <td colspan="6" class="text-center text-secondary py-4">No line items on this order.</td>
                 </tr>
               </tbody>
             </table>
@@ -386,6 +409,13 @@ onMounted(() => {
             View Shipping Label
           </button>
         </div>
+
+        <ReturnFeesCard
+          :return-id="ret.id"
+          :fees="returnFees"
+          :editable="true"
+          @update:fees="returnFees = $event"
+        />
 
         <div class="staff-table-card staff-datatable-card staff-datatable-card--white p-4">
           <h3 class="h6 fw-semibold mb-3">Private Note</h3>

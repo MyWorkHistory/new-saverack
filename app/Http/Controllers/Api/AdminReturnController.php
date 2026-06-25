@@ -7,7 +7,10 @@ use App\Models\ClientAccount;
 use App\Models\ClientAccountReturn;
 use App\Models\ClientAccountReturnLine;
 use App\Models\User;
+use App\Services\ReturnFeeService;
+use App\Services\ReturnProcessingService;
 use App\Services\ShipHeroOrderService;
+use App\Support\Returns\ReturnReasonOptions;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -21,9 +24,20 @@ class AdminReturnController extends Controller
     /** @var ShipHeroOrderService */
     private $orders;
 
-    public function __construct(ShipHeroOrderService $orders)
-    {
+    /** @var ReturnProcessingService */
+    private $processing;
+
+    /** @var ReturnFeeService */
+    private $returnFees;
+
+    public function __construct(
+        ShipHeroOrderService $orders,
+        ReturnProcessingService $processing,
+        ReturnFeeService $returnFees
+    ) {
         $this->orders = $orders;
+        $this->processing = $processing;
+        $this->returnFees = $returnFees;
     }
 
     private function assertStaff(Request $request): void
@@ -128,13 +142,8 @@ class AdminReturnController extends Controller
     /**
      * @return array<string, mixed>
      */
-    private function serializeLine(ClientAccountReturnLine $line): array
+    private function serializeLine(ClientAccountReturnLine $line, ?string $createdSource = null): array
     {
-        $reasonKey = $line->return_reason;
-        $reasonLabel = $reasonKey !== null && $reasonKey !== ''
-            ? ($this->returnReasonOptions()[$reasonKey] ?? $reasonKey)
-            : null;
-
         return [
             'id' => $line->id,
             'shiphero_line_item_id' => $line->shiphero_line_item_id,
@@ -144,7 +153,8 @@ class AdminReturnController extends Controller
             'order_qty' => $line->order_qty,
             'return_qty' => $line->return_qty,
             'return_reason' => $line->return_reason,
-            'return_reason_label' => $reasonLabel,
+            'return_reason_label' => ReturnReasonOptions::labelFor($line->return_reason, $createdSource),
+            'restock' => (bool) $line->restock,
             'sort_order' => $line->sort_order,
         ];
     }
@@ -154,12 +164,12 @@ class AdminReturnController extends Controller
      */
     private function serializeReturnDetail(ClientAccountReturn $return): array
     {
-        $return->loadMissing(['lines', 'clientAccount']);
+        $return->loadMissing(['lines', 'clientAccount', 'returnBill']);
         $companyName = $return->clientAccount !== null
             ? trim((string) $return->clientAccount->company_name)
             : '';
 
-        return [
+        $payload = [
             'id' => $return->id,
             'client_account_id' => $return->client_account_id,
             'client_account_company_name' => $companyName,
@@ -173,12 +183,19 @@ class AdminReturnController extends Controller
             'customer_name' => $return->customer_name,
             'items_count' => $return->items_count,
             'warehouse_private_note' => $return->warehouse_private_note,
+            'created_source' => $return->created_source,
             'created_at' => optional($return->created_at)->toIso8601String(),
             'processed_at' => optional($return->processed_at)->toIso8601String(),
-            'lines' => $return->lines->map(fn (ClientAccountReturnLine $l) => $this->serializeLine($l))->values()->all(),
-            'return_reasons' => $this->returnReasonOptions(),
+            'lines' => $return->lines->map(fn (ClientAccountReturnLine $l) => $this->serializeLine($l, $return->created_source))->values()->all(),
+            'return_reasons' => $return->isAdminCreated() ? ReturnReasonOptions::admin() : $this->returnReasonOptions(),
+            'admin_return_reasons' => ReturnReasonOptions::admin(),
+            'admin_default_return_reason' => ReturnReasonOptions::adminDefaultKey(),
+            'return_fees' => $this->returnFees->serializeReturnFees($return),
+            'return_bill_id' => $return->return_bill_id,
             'return_warehouse_address' => config('returns.return_warehouse_address', []),
         ];
+
+        return $payload;
     }
 
     /**
@@ -402,6 +419,74 @@ class AdminReturnController extends Controller
         ]);
     }
 
+    public function feeDefaults(Request $request): JsonResponse
+    {
+        $this->assertStaff($request);
+        $validated = $request->validate([
+            'client_account_id' => ['required', 'integer', 'exists:client_accounts,id'],
+        ]);
+        $account = ClientAccount::query()->findOrFail((int) $validated['client_account_id']);
+        Gate::authorize('view', $account);
+        $defaults = $this->returnFees->accountDefaults($account);
+
+        return response()->json([
+            'first_item' => $defaults['first_item'],
+            'additional_item' => $defaults['additional_item'],
+            'first_item_label' => 'Return Fee (1st Item)',
+            'additional_item_label' => 'Return Fee (Additional Items)',
+        ]);
+    }
+
+    public function updateFees(Request $request, ClientAccountReturn $clientAccountReturn): JsonResponse
+    {
+        $this->assertStaff($request);
+        Gate::authorize('view', $clientAccountReturn);
+        $validated = $request->validate([
+            'first_item' => ['nullable', 'numeric', 'min:0'],
+            'additional_item' => ['nullable', 'numeric', 'min:0'],
+        ]);
+        $first = array_key_exists('first_item', $validated) ? (float) $validated['first_item'] : null;
+        $additional = array_key_exists('additional_item', $validated) ? (float) $validated['additional_item'] : null;
+        $this->returnFees->updateReturnFees($clientAccountReturn, $first, $additional);
+
+        return response()->json($this->serializeReturnDetail($clientAccountReturn->fresh(['lines', 'clientAccount', 'returnBill'])));
+    }
+
+    public function processFromDraft(Request $request, ClientAccountReturn $clientAccountReturn): JsonResponse
+    {
+        $this->assertStaff($request);
+        Gate::authorize('view', $clientAccountReturn);
+
+        $validated = $request->validate([
+            'return_type' => ['sometimes', 'string', Rule::in(ClientAccountReturn::RETURN_TYPES)],
+            'warehouse_private_note' => ['nullable', 'string', 'max:20000'],
+            'first_item_fee' => ['nullable', 'numeric', 'min:0'],
+            'additional_item_fee' => ['nullable', 'numeric', 'min:0'],
+            'lines' => ['required', 'array', 'min:1'],
+            'lines.*.sku' => ['required', 'string', 'max:255'],
+            'lines.*.name' => ['required', 'string', 'max:512'],
+            'lines.*.order_qty' => ['required', 'integer', 'min:0', 'max:99999999'],
+            'lines.*.return_qty' => ['required', 'integer', 'min:0', 'max:99999999'],
+            'lines.*.shiphero_line_item_id' => ['nullable', 'string', 'max:64'],
+            'lines.*.image_url' => ['nullable', 'string', 'max:2048'],
+            'lines.*.return_reason' => ['nullable', 'string', 'max:64'],
+            'lines.*.restock' => ['nullable', 'boolean'],
+        ]);
+
+        $normalized = $this->processing->validateAndNormalizeAdminLines($validated['lines']);
+        $return = $this->processing->processFromDraft(
+            $clientAccountReturn,
+            $normalized,
+            $validated['return_type'] ?? null,
+            array_key_exists('warehouse_private_note', $validated) ? ($validated['warehouse_private_note'] ?? null) : null,
+            isset($validated['first_item_fee']) ? (float) $validated['first_item_fee'] : null,
+            isset($validated['additional_item_fee']) ? (float) $validated['additional_item_fee'] : null,
+            $request->user() instanceof User ? $request->user() : null,
+        );
+
+        return response()->json($this->serializeReturnDetail($return));
+    }
+
     public function process(Request $request, ClientAccountReturn $clientAccountReturn): JsonResponse
     {
         $this->assertStaff($request);
@@ -416,52 +501,39 @@ class AdminReturnController extends Controller
         $validated = $request->validate([
             'line_ids' => ['required', 'array', 'min:1'],
             'line_ids.*' => ['integer'],
+            'restock_by_line_id' => ['nullable', 'array'],
+            'restock_by_line_id.*' => ['boolean'],
+            'first_item_fee' => ['nullable', 'numeric', 'min:0'],
+            'additional_item_fee' => ['nullable', 'numeric', 'min:0'],
         ]);
 
         $lineIds = array_map('intval', $validated['line_ids']);
         $lineIds = array_values(array_unique(array_filter($lineIds, fn ($id) => $id > 0)));
 
-        if ($lineIds === []) {
-            throw ValidationException::withMessages([
-                'line_ids' => ['Select at least one item to process.'],
-            ]);
+        if (isset($validated['first_item_fee']) || isset($validated['additional_item_fee'])) {
+            $this->returnFees->updateReturnFees(
+                $clientAccountReturn,
+                isset($validated['first_item_fee']) ? (float) $validated['first_item_fee'] : null,
+                isset($validated['additional_item_fee']) ? (float) $validated['additional_item_fee'] : null,
+            );
+            $clientAccountReturn->refresh();
         }
 
-        $lines = ClientAccountReturnLine::query()
-            ->where('client_account_return_id', $clientAccountReturn->id)
-            ->get();
-
-        $validIds = $lines->pluck('id')->map(fn ($id) => (int) $id)->all();
-        foreach ($lineIds as $id) {
-            if (! in_array($id, $validIds, true)) {
-                throw ValidationException::withMessages([
-                    'line_ids' => ['Invalid line selected.'],
-                ]);
+        $restockMap = [];
+        if (isset($validated['restock_by_line_id']) && is_array($validated['restock_by_line_id'])) {
+            foreach ($validated['restock_by_line_id'] as $key => $value) {
+                $restockMap[(int) $key] = (bool) $value;
             }
         }
 
-        DB::transaction(function () use ($clientAccountReturn, $lines, $lineIds) {
-            foreach ($lines as $line) {
-                if (! in_array((int) $line->id, $lineIds, true)) {
-                    $line->return_qty = 0;
-                    $line->return_reason = null;
-                    $line->save();
-                }
-            }
+        $return = $this->processing->processPendingReturn(
+            $clientAccountReturn,
+            $lineIds,
+            $restockMap,
+            $request->user() instanceof User ? $request->user() : null,
+        );
 
-            $sum = (int) ClientAccountReturnLine::query()
-                ->where('client_account_return_id', $clientAccountReturn->id)
-                ->sum('return_qty');
-
-            $clientAccountReturn->items_count = $sum;
-            $clientAccountReturn->status = ClientAccountReturn::STATUS_RECEIVED;
-            if ($clientAccountReturn->processed_at === null) {
-                $clientAccountReturn->processed_at = now();
-            }
-            $clientAccountReturn->save();
-        });
-
-        return response()->json($this->serializeReturnDetail($clientAccountReturn->fresh(['lines', 'clientAccount'])));
+        return response()->json($this->serializeReturnDetail($return));
     }
 
     public function returnedOrders(Request $request): JsonResponse
@@ -598,7 +670,7 @@ class AdminReturnController extends Controller
                 $ret = $line->clientAccountReturn;
                 $reasonKey = $line->return_reason;
                 $reasonLabel = $reasonKey !== null && $reasonKey !== ''
-                    ? ($this->returnReasonOptions()[$reasonKey] ?? $reasonKey)
+                    ? ReturnReasonOptions::labelFor($reasonKey, $ret !== null ? $ret->created_source : null)
                     : null;
                 $companyName = '';
                 if ($ret !== null && $ret->clientAccount !== null) {

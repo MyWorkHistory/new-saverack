@@ -3,6 +3,7 @@ import { computed, onMounted, ref } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import api from "../../services/api";
 import CrmLoadingSpinner from "../../components/common/CrmLoadingSpinner.vue";
+import ReturnFeesCard from "../../components/admin-returns/ReturnFeesCard.vue";
 import { setCrmPageMeta } from "../../composables/useCrmPageMeta.js";
 import { useToast } from "../../composables/useToast.js";
 import { formatDateUs } from "../../utils/formatUserDates.js";
@@ -21,6 +22,8 @@ const toast = useToast();
 const loading = ref(true);
 const processing = ref(false);
 const ret = ref(null);
+const returnFees = ref({});
+const lineRestock = ref({});
 const selected = ref(new Set());
 
 const returnId = computed(() => String(route.params.id || ""));
@@ -90,6 +93,12 @@ async function load() {
   try {
     const { data } = await api.get(`/returns/${returnId.value}`);
     ret.value = data;
+    returnFees.value = data?.return_fees || {};
+    const restockMap = {};
+    for (const line of Array.isArray(data?.lines) ? data.lines : []) {
+      restockMap[line.id] = line.restock !== false;
+    }
+    lineRestock.value = restockMap;
     selected.value = new Set(
       (Array.isArray(data?.lines) ? data.lines : [])
         .filter((l) => Number(l.return_qty) > 0)
@@ -116,8 +125,16 @@ async function processReturn() {
   }
   processing.value = true;
   try {
-    const { data } = await api.post(`/admin/returns/${ret.value.id}/process`, { line_ids: lineIds });
+    const restockByLineId = {};
+    for (const lineId of lineIds) {
+      restockByLineId[lineId] = lineRestock.value[lineId] !== false;
+    }
+    const payload = { line_ids: lineIds, restock_by_line_id: restockByLineId };
+    if (returnFees.value.first_item != null) payload.first_item_fee = returnFees.value.first_item;
+    if (returnFees.value.additional_item != null) payload.additional_item_fee = returnFees.value.additional_item;
+    const { data } = await api.post(`/admin/returns/${ret.value.id}/process`, payload);
     ret.value = data;
+    returnFees.value = data?.return_fees || returnFees.value;
     toast.success("Return processed.");
   } catch (e) {
     toast.errorFrom(e, "Could not process return.");
@@ -212,6 +229,7 @@ onMounted(load);
                   <th class="staff-table-head__th text-center" scope="col">Order Qty</th>
                   <th class="staff-table-head__th text-center" scope="col">Return Qty</th>
                   <th class="staff-table-head__th" scope="col">Reason</th>
+                  <th v-if="isPending" class="staff-table-head__th text-center" scope="col">Restock</th>
                 </tr>
               </thead>
               <tbody>
@@ -245,9 +263,18 @@ onMounted(load);
                   <td class="text-center">{{ line.order_qty }}</td>
                   <td class="text-center">{{ line.return_qty }}</td>
                   <td>{{ line.return_reason_label || line.return_reason || "—" }}</td>
+                  <td v-if="isPending" class="text-center">
+                    <input
+                      v-model="lineRestock[line.id]"
+                      type="checkbox"
+                      class="form-check-input m-0"
+                      :disabled="!selected.has(line.id)"
+                      :aria-label="`Restock ${line.sku}`"
+                    />
+                  </td>
                 </tr>
                 <tr v-if="!lines.length">
-                  <td :colspan="isPending ? 5 : 4" class="text-center text-secondary py-4">No return items.</td>
+                  <td :colspan="isPending ? 6 : 4" class="text-center text-secondary py-4">No return items.</td>
                 </tr>
               </tbody>
             </table>
@@ -273,6 +300,14 @@ onMounted(load);
             <p v-for="(line, i) in warehouseLines" :key="'addr-' + i" class="mb-0 text-secondary">{{ line }}</p>
           </div>
         </div>
+
+        <ReturnFeesCard
+          :return-id="ret.id"
+          :fees="returnFees"
+          :editable="isPending"
+          :return-bill-id="ret.return_bill_id"
+          @update:fees="returnFees = $event"
+        />
 
         <div v-if="ret.warehouse_private_note" class="staff-table-card staff-datatable-card staff-datatable-card--white p-4">
           <h3 class="h6 fw-semibold mb-3">Private Note</h3>

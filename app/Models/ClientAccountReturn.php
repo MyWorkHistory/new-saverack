@@ -35,6 +35,10 @@ class ClientAccountReturn extends Model
 
     public const TYPE_NORDSTROM = 'nordstrom';
 
+    public const SOURCE_PORTAL = 'portal';
+
+    public const SOURCE_ADMIN = 'admin';
+
     public const RETURN_TYPES = [
         self::TYPE_DIRECT,
         self::TYPE_AMAZON,
@@ -45,17 +49,26 @@ class ClientAccountReturn extends Model
         'client_account_id',
         'rma_number',
         'status',
+        'created_source',
         'return_type',
         'shiphero_order_id',
         'order_number',
         'customer_name',
         'items_count',
         'warehouse_private_note',
+        'return_fee_first_item',
+        'return_fee_additional_item',
+        'fees_locked_at',
+        'return_bill_id',
         'processed_at',
+        'processed_by_user_id',
     ];
 
     protected $casts = [
         'items_count' => 'integer',
+        'return_fee_first_item' => 'decimal:4',
+        'return_fee_additional_item' => 'decimal:4',
+        'fees_locked_at' => 'datetime',
         'processed_at' => 'datetime',
     ];
 
@@ -69,5 +82,25 @@ class ClientAccountReturn extends Model
         return $this->hasMany(ClientAccountReturnLine::class, 'client_account_return_id')
             ->orderBy('sort_order')
             ->orderBy('id');
+    }
+
+    public function returnBill(): BelongsTo
+    {
+        return $this->belongsTo(ReturnBill::class, 'return_bill_id');
+    }
+
+    public function processedBy(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'processed_by_user_id');
+    }
+
+    public function feesAreLocked(): bool
+    {
+        return $this->fees_locked_at !== null;
+    }
+
+    public function isAdminCreated(): bool
+    {
+        return $this->created_source === self::SOURCE_ADMIN;
     }
 }

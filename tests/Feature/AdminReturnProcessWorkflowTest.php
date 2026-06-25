@@ -3,9 +3,11 @@
 namespace Tests\Feature;
 
 use App\Models\ClientAccount;
+use App\Models\ClientAccountFee;
 use App\Models\ClientAccountReturn;
 use App\Models\ClientAccountReturnLine;
 use App\Models\Permission;
+use App\Models\ReturnBill;
 use App\Models\User;
 use App\Services\ShipHeroOrderService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -43,6 +45,28 @@ class AdminReturnProcessWorkflowTest extends TestCase
             'company_name' => 'Return Admin Co '.$suffix,
             'status' => ClientAccount::STATUS_ACTIVE,
             'shiphero_customer_account_id' => 'sh-ret-admin-'.$suffix,
+        ]);
+    }
+
+    private function seedReturnFees(ClientAccount $account): void
+    {
+        ClientAccountFee::query()->create([
+            'client_account_id' => $account->id,
+            'fee_group' => ClientAccountFee::GROUP_RETURNS,
+            'line_code' => ClientAccountFee::LINE_RETURNS_PROCESSING,
+            'label' => 'Return Fee (1st Item)',
+            'amount' => '3.0000',
+            'currency' => 'USD',
+            'sort_order' => 0,
+        ]);
+        ClientAccountFee::query()->create([
+            'client_account_id' => $account->id,
+            'fee_group' => ClientAccountFee::GROUP_RETURNS,
+            'line_code' => ClientAccountFee::LINE_RETURNS_ADDITIONAL_ITEMS,
+            'label' => 'Return Fee (Additional Items)',
+            'amount' => '1.0000',
+            'currency' => 'USD',
+            'sort_order' => 1,
         ]);
     }
 
@@ -162,6 +186,7 @@ class AdminReturnProcessWorkflowTest extends TestCase
     public function test_process_return_sets_received_and_zeros_unselected_lines(): void
     {
         $account = $this->account();
+        $this->seedReturnFees($account);
         $return = $this->returnForAccount($account);
         $lineA = $this->lineForReturn($return, ['sku' => 'A', 'return_qty' => 2]);
         $lineB = $this->lineForReturn($return, ['sku' => 'B', 'return_qty' => 1, 'sort_order' => 1]);
@@ -169,15 +194,63 @@ class AdminReturnProcessWorkflowTest extends TestCase
 
         $this->postJson('/api/admin/returns/'.$return->id.'/process', [
             'line_ids' => [$lineA->id],
+            'restock_by_line_id' => [$lineA->id => true],
         ])
             ->assertOk()
-            ->assertJsonPath('status', ClientAccountReturn::STATUS_RECEIVED);
+            ->assertJsonPath('status', ClientAccountReturn::STATUS_RECEIVED)
+            ->assertJsonPath('return_fees.locked', true);
 
         $return->refresh();
         $this->assertSame(ClientAccountReturn::STATUS_RECEIVED, $return->status);
         $this->assertNotNull($return->processed_at);
+        $this->assertNotNull($return->fees_locked_at);
+        $this->assertNotNull($return->return_bill_id);
         $this->assertSame(2, (int) $return->items_count);
         $this->assertSame(0, (int) $lineB->fresh()->return_qty);
+        $this->assertTrue((bool) $lineA->fresh()->restock);
+        $this->assertSame(ReturnBill::STATUS_OPEN, ReturnBill::query()->find($return->return_bill_id)->status);
+    }
+
+    public function test_admin_process_from_draft_skips_pending_and_creates_bill(): void
+    {
+        $account = $this->account();
+        $this->seedReturnFees($account);
+        $return = ClientAccountReturn::query()->create([
+            'client_account_id' => $account->id,
+            'rma_number' => 'AD0001',
+            'status' => ClientAccountReturn::STATUS_DRAFT,
+            'created_source' => ClientAccountReturn::SOURCE_ADMIN,
+            'return_type' => ClientAccountReturn::TYPE_DIRECT,
+            'shiphero_order_id' => 'order-admin-1',
+            'order_number' => '90001',
+            'customer_name' => 'Admin Customer',
+            'items_count' => 0,
+            'return_fee_first_item' => 3.0,
+            'return_fee_additional_item' => 1.0,
+        ]);
+        Sanctum::actingAs($this->staffUser());
+
+        $this->postJson('/api/admin/returns/'.$return->id.'/process-from-draft', [
+            'return_type' => ClientAccountReturn::TYPE_DIRECT,
+            'lines' => [
+                [
+                    'sku' => 'SKU-X',
+                    'name' => 'Product X',
+                    'order_qty' => 2,
+                    'return_qty' => 2,
+                    'return_reason' => 'unknown',
+                    'restock' => true,
+                ],
+            ],
+        ])
+            ->assertOk()
+            ->assertJsonPath('status', ClientAccountReturn::STATUS_RECEIVED)
+            ->assertJsonPath('return_fees.locked', true);
+
+        $return->refresh();
+        $this->assertSame(ClientAccountReturn::STATUS_RECEIVED, $return->status);
+        $this->assertNotNull($return->return_bill_id);
+        $this->assertSame('unknown', $return->lines()->first()->return_reason);
     }
 
     public function test_processed_return_appears_in_returned_orders_and_items(): void

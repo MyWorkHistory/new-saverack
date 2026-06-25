@@ -131,6 +131,7 @@ function navActive(mode) {
   if (mode === "billing-summary") return p === "/admin/billing/summary";
   if (mode === "billing-invoices") return p.startsWith("/admin/billing/invoices");
   if (mode === "billing-custom-bills") return p.startsWith("/admin/billing/custom-bills");
+  if (mode === "billing-return-bills") return p.startsWith("/admin/billing/return-bills");
   return false;
 }
 
@@ -785,6 +786,16 @@ function collapseNav() {
                     @click="closeMobile"
                   >
                     Custom Bills
+                  </RouterLink>
+                </li>
+                <li>
+                  <RouterLink
+                    to="/admin/billing/return-bills"
+                    class="vx-nav-link vx-nav-sublink"
+                    :class="{ 'vx-nav-link--active': navActive('billing-return-bills') }"
+                    @click="closeMobile"
+                  >
+                    Returns Bills
                   </RouterLink>
                 </li>
               </ul>

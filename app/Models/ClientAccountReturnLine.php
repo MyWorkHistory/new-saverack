@@ -16,12 +16,14 @@ class ClientAccountReturnLine extends Model
         'order_qty',
         'return_qty',
         'return_reason',
+        'restock',
         'sort_order',
     ];
 
     protected $casts = [
         'order_qty' => 'integer',
         'return_qty' => 'integer',
+        'restock' => 'boolean',
         'sort_order' => 'integer',
     ];
 

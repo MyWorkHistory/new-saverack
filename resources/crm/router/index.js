@@ -28,7 +28,9 @@ import BillingSummaryPage from "../pages/billing/BillingSummaryPage.vue";
 import BillingInvoicesListPage from "../pages/billing/BillingInvoicesListPage.vue";
 import BillingInvoiceDetailPage from "../pages/billing/BillingInvoiceDetailPage.vue";
 import BillingCustomBillsListPage from "../pages/billing/BillingCustomBillsListPage.vue";
+import BillingReturnBillsListPage from "../pages/billing/BillingReturnBillsListPage.vue";
 import BillingCustomBillDetailPage from "../pages/billing/BillingCustomBillDetailPage.vue";
+import BillingReturnBillDetailPage from "../pages/billing/BillingReturnBillDetailPage.vue";
 import InventoryListPage from "../pages/inventory/InventoryListPage.vue";
 import InventoryDetailPage from "../pages/inventory/InventoryDetailPage.vue";
 import InventoryOnDemandPage from "../pages/inventory/InventoryOnDemandPage.vue";
@@ -116,6 +118,14 @@ const meta = {
   billingCustomBillDetail: {
     title: "Save Rack | Custom Bill",
     description: "Custom bill detail.",
+  },
+  billingReturnBills: {
+    title: "Save Rack | Returns Bills",
+    description: "Return processing bills for client accounts.",
+  },
+  billingReturnBillDetail: {
+    title: "Save Rack | Return Bill",
+    description: "Return bill detail.",
   },
   inventory: {
     title: "Save Rack | Inventory",
@@ -386,6 +396,19 @@ const routes = [
     component: BillingCustomBillDetailPage,
     props: true,
     meta: meta.billingCustomBillDetail,
+  },
+  {
+    path: "/admin/billing/return-bills",
+    name: "billing-return-bills",
+    component: BillingReturnBillsListPage,
+    meta: meta.billingReturnBills,
+  },
+  {
+    path: "/admin/billing/return-bills/:id",
+    name: "billing-return-bill-detail",
+    component: BillingReturnBillDetailPage,
+    props: true,
+    meta: meta.billingReturnBillDetail,
   },
   { path: "/admin/billing", redirect: "/admin/billing/summary" },
   {

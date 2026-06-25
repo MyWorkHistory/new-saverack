@@ -22,7 +22,7 @@ use App\Http\Controllers\Api\CrmLookupController;
 use App\Http\Controllers\Api\PortalLookupController;
 use App\Http\Controllers\Api\PortalOnboardingController;
 use App\Http\Controllers\Api\PortalProfileController;
-use App\Http\Controllers\Api\PricingFeeTemplateController;
+use App\Http\Controllers\Api\ReturnBillController;
 use App\Http\Controllers\Api\PutAwayController;
 use App\Http\Controllers\Api\UserController;
 use App\Http\Controllers\Api\WebmasterTaskController;
@@ -65,7 +65,14 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::delete('/{pricingFeeTemplate}', [PricingFeeTemplateController::class, 'destroy']);
     });
 
-    Route::prefix('custom-bills')->group(function () {
+        Route::prefix('return-bills')->group(function () {
+            Route::get('/', [ReturnBillController::class, 'index']);
+            Route::get('/{returnBill}', [ReturnBillController::class, 'show']);
+            Route::get('/{returnBill}/draft-invoices', [ReturnBillController::class, 'draftInvoices']);
+            Route::post('/{returnBill}/add-to-invoice', [ReturnBillController::class, 'addToInvoice']);
+        });
+
+        Route::prefix('custom-bills')->group(function () {
         Route::get('/', [CustomBillController::class, 'index']);
         Route::post('/', [CustomBillController::class, 'store']);
         Route::get('/{customBill}', [CustomBillController::class, 'show']);
@@ -173,6 +180,9 @@ Route::middleware('auth:sanctum')->group(function () {
     });
 
     Route::prefix('admin/returns')->group(function () {
+        Route::get('/fee-defaults', [AdminReturnController::class, 'feeDefaults'])->middleware('can:inventory.view');
+        Route::patch('/{clientAccountReturn}/fees', [AdminReturnController::class, 'updateFees'])->middleware('can:inventory.view');
+        Route::post('/{clientAccountReturn}/process-from-draft', [AdminReturnController::class, 'processFromDraft'])->middleware('can:inventory.view');
         Route::get('/pending', [AdminReturnController::class, 'pending'])->middleware('can:inventory.view');
         Route::get('/order-lookup', [AdminReturnController::class, 'orderLookup'])->middleware('can:inventory.view');
         Route::get('/rma-lookup', [AdminReturnController::class, 'rmaLookup'])->middleware('can:inventory.view');

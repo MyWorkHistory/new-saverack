@@ -9,7 +9,7 @@ use App\Models\ClientAccountOnDemandProduct;
 use App\Models\ClientStore;
 use App\Models\CustomBill;
 use App\Models\Invoice;
-use App\Models\PricingFeeTemplate;
+use App\Models\ReturnBill;
 use App\Models\Task;
 use App\Models\Ticket;
 use App\Models\User;
@@ -20,7 +20,7 @@ use App\Policies\ClientAccountPolicy;
 use App\Policies\ClientStorePolicy;
 use App\Policies\CustomBillPolicy;
 use App\Policies\InvoicePolicy;
-use App\Policies\PricingFeeTemplatePolicy;
+use App\Policies\ReturnBillPolicy;
 use App\Policies\TaskPolicy;
 use App\Policies\TicketPolicy;
 use App\Policies\UserPolicy;
@@ -43,6 +43,7 @@ class AuthServiceProvider extends ServiceProvider
         ClientStore::class => ClientStorePolicy::class,
         Invoice::class => InvoicePolicy::class,
         CustomBill::class => CustomBillPolicy::class,
+        ReturnBill::class => ReturnBillPolicy::class,
         PricingFeeTemplate::class => PricingFeeTemplatePolicy::class,
         Ticket::class => TicketPolicy::class,
         Task::class => TaskPolicy::class,

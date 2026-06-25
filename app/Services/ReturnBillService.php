@@ -194,7 +194,7 @@ class ReturnBillService
                         'return_bill_item_id' => (int) $item->id,
                         'return_bill_number' => (int) $bill->bill_number,
                         'return_id' => $bill->client_account_return_id,
-                        'rma_number' => $bill->clientAccountReturn?->rma_number,
+                        'rma_number' => $bill->clientAccountReturn !== null ? $bill->clientAccountReturn->rma_number : null,
                     ],
                 ], $actor);
                 $invoice = $invoice->fresh();
@@ -247,8 +247,8 @@ class ReturnBillService
             'client_account_id' => $bill->client_account_id,
             'client_account_name' => $bill->clientAccount ? $bill->clientAccount->company_name : '',
             'client_account_return_id' => $bill->client_account_return_id,
-            'rma_number' => $bill->clientAccountReturn?->rma_number,
-            'order_number' => $bill->clientAccountReturn?->order_number,
+            'rma_number' => $bill->clientAccountReturn !== null ? $bill->clientAccountReturn->rma_number : null,
+            'order_number' => $bill->clientAccountReturn !== null ? $bill->clientAccountReturn->order_number : null,
             'bill_date' => $bill->bill_date ? $bill->bill_date->format('Y-m-d') : null,
             'total_cents' => (int) $bill->total_cents,
             'invoice_id' => $bill->invoice_id,
@@ -279,8 +279,8 @@ class ReturnBillService
             'status_label' => $bill->isOpen() ? 'Open' : 'Invoiced',
             'client_account_id' => $bill->client_account_id,
             'client_account_name' => $bill->clientAccount ? $bill->clientAccount->company_name : '',
-            'rma_number' => $bill->clientAccountReturn?->rma_number,
-            'order_number' => $bill->clientAccountReturn?->order_number,
+            'rma_number' => $bill->clientAccountReturn !== null ? $bill->clientAccountReturn->rma_number : null,
+            'order_number' => $bill->clientAccountReturn !== null ? $bill->clientAccountReturn->order_number : null,
             'bill_date' => $bill->bill_date ? $bill->bill_date->format('Y-m-d') : null,
             'total_cents' => (int) $bill->total_cents,
             'invoice_id' => $bill->invoice_id,
@@ -349,7 +349,7 @@ class ReturnBillService
     {
         ReturnBillHistory::query()->create([
             'return_bill_id' => $bill->id,
-            'user_id' => $actor?->id,
+            'user_id' => $actor !== null ? $actor->id : null,
             'actor_name' => $actor ? trim((string) $actor->name) : null,
             'event_type' => $eventType,
             'message' => $message,

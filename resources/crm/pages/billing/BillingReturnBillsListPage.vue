@@ -1,5 +1,5 @@
 <script setup>
-import { computed, inject, onMounted, reactive, ref, watch } from "vue";
+import { computed, nextTick, onMounted, onUnmounted, reactive, ref, watch } from "vue";
 import { useRouter } from "vue-router";
 import api from "../../services/api";
 import CrmLoadingSpinner from "../../components/common/CrmLoadingSpinner.vue";
@@ -7,28 +7,18 @@ import CrmSearchableSelect from "../../components/common/CrmSearchableSelect.vue
 import CrmIconRowActions from "../../components/common/CrmIconRowActions.vue";
 import { useToast } from "../../composables/useToast.js";
 import { setCrmPageMeta } from "../../composables/useCrmPageMeta.js";
-import { crmIsAdmin } from "../../utils/crmUser.js";
 import { formatCents } from "../../utils/formatMoney.js";
 import { formatIsoDate } from "../../utils/formatUserDates.js";
 import { DEFAULT_PER_PAGE } from "../../constants/pagination.js";
 
-const crmUser = inject("crmUser", ref(null));
 const toast = useToast();
 const router = useRouter();
-
-function userHasPerm(key) {
-  const u = crmUser.value;
-  if (!u) return false;
-  if (crmIsAdmin(u) || u.is_crm_owner) return true;
-  return Array.isArray(u.permission_keys) && u.permission_keys.includes(key);
-}
-
-const canUpdate = computed(() => userHasPerm("billing.update"));
 
 const loading = ref(true);
 const rows = ref([]);
 const pagination = ref({ current_page: 1, last_page: 1, total: 0, per_page: DEFAULT_PER_PAGE });
 const clientAccounts = ref([]);
+const filterMenuOpen = ref(false);
 const manageOpenId = ref(null);
 const manageMenuRect = ref({ top: 0, left: 0 });
 const MENU_W = 160;
@@ -133,13 +123,18 @@ function closeManageMenu() {
   manageOpenId.value = null;
 }
 
-function toggleManageMenu(rowId, event) {
+async function toggleManageMenu(rowId, e) {
+  e.stopPropagation();
   if (manageOpenId.value === rowId) {
     closeManageMenu();
     return;
   }
+  const btn = e.currentTarget;
   manageOpenId.value = rowId;
-  placeManageMenu(event?.currentTarget);
+  await nextTick();
+  requestAnimationFrame(() => {
+    if (btn instanceof HTMLElement) placeManageMenu(btn);
+  });
 }
 
 function goToBillDetail(row) {
@@ -156,58 +151,102 @@ function onDocClick(e) {
   if (!e.target?.closest?.("[data-row-actions]")) {
     closeManageMenu();
   }
+  if (!e.target?.closest?.("[data-toolbar-filter]")) {
+    filterMenuOpen.value = false;
+  }
 }
 
-onMounted(() => {
+onMounted(async () => {
+  document.addEventListener("click", onDocClick);
   setCrmPageMeta({
     title: "Save Rack | Returns Bills",
     description: "Return processing bills for client accounts.",
   });
-  document.addEventListener("click", onDocClick);
-  fetchMeta();
-  fetchRows();
+  try {
+    await fetchMeta();
+  } catch {
+    /* optional */
+  }
+  await fetchRows();
+});
+
+onUnmounted(() => {
+  document.removeEventListener("click", onDocClick);
+  clearTimeout(searchDebounce);
 });
 </script>
 
 <template>
-  <div class="staff-page staff-page--wide billing-return-bills-list">
-    <div class="d-flex flex-wrap justify-content-between align-items-start gap-3 mb-4">
-      <div>
+  <div class="staff-page staff-page--wide">
+    <div class="d-flex flex-column flex-md-row align-items-start align-items-md-center gap-3 mb-4">
+      <div class="min-w-0 flex-grow-1">
         <h1 class="h4 mb-1 fw-semibold text-body">Returns Bills</h1>
         <p class="text-secondary small mb-0">Bills created when returns are processed.</p>
       </div>
     </div>
 
-    <div class="staff-table-card staff-datatable-card staff-datatable-card--white p-0 mb-4">
-      <div class="px-4 py-3 border-bottom d-flex flex-wrap gap-3 align-items-end">
-        <div class="flex-grow-1" style="min-width: 12rem">
-          <label class="form-label small text-secondary mb-1" for="rb-search">Search</label>
+    <div class="staff-table-card staff-datatable-card staff-datatable-card--white">
+      <div class="staff-table-toolbar">
+        <div class="staff-table-toolbar--row">
           <input
-            id="rb-search"
             v-model="query.search"
             type="search"
-            class="form-control form-control-sm"
-            placeholder="Bill #, account, RMA, order…"
+            class="form-control staff-toolbar-search staff-toolbar-search--inline"
+            placeholder="Search bill #, account, RMA, or order"
+            autocomplete="off"
           />
-        </div>
-        <div style="min-width: 9rem">
-          <label class="form-label small text-secondary mb-1" for="rb-status">Status</label>
-          <select id="rb-status" v-model="query.status" class="form-select form-select-sm">
-            <option value="all">All</option>
-            <option value="open">Open</option>
-            <option value="invoiced">Invoiced</option>
-          </select>
-        </div>
-        <div style="min-width: 14rem">
-          <label class="form-label small text-secondary mb-1">Account</label>
-          <CrmSearchableSelect
-            v-model="query.client_account_id"
-            :options="clientAccounts"
-            value-key="id"
-            label-key="company_name"
-            placeholder="All accounts"
-            clearable
-          />
+          <div class="position-relative flex-shrink-0" data-toolbar-filter>
+            <button
+              type="button"
+              class="btn btn-outline-secondary staff-toolbar-btn d-inline-flex align-items-center gap-2"
+              @click.stop="filterMenuOpen = !filterMenuOpen"
+            >
+              Filters
+            </button>
+            <div
+              v-if="filterMenuOpen"
+              class="dropdown-menu dropdown-menu-end show shadow border p-0 staff-toolbar-filter-dropdown"
+              @click.stop
+            >
+              <div class="staff-toolbar-filter-dropdown__head">
+                <span>Filters</span>
+                <button
+                  type="button"
+                  class="btn btn-link btn-sm text-secondary text-decoration-none p-0"
+                  @click="
+                    query.status = 'all';
+                    query.client_account_id = '';
+                    query.date_from = '';
+                    query.date_to = '';
+                    filterMenuOpen = false;
+                  "
+                >
+                  Reset
+                </button>
+              </div>
+              <div class="staff-toolbar-filter-dropdown__body">
+                <label class="form-label">Status</label>
+                <select v-model="query.status" class="form-select mb-3">
+                  <option value="all">All</option>
+                  <option value="open">Open</option>
+                  <option value="invoiced">Invoiced</option>
+                </select>
+                <label class="form-label">Account</label>
+                <CrmSearchableSelect
+                  v-model="query.client_account_id"
+                  appearance="staff"
+                  :options="clientAccounts"
+                  placeholder="All accounts"
+                  search-placeholder="Search accounts…"
+                  empty-label="All accounts"
+                />
+                <label class="form-label mt-3">Date from</label>
+                <input v-model="query.date_from" type="date" class="form-control mb-3" />
+                <label class="form-label">Date to</label>
+                <input v-model="query.date_to" type="date" class="form-control" />
+              </div>
+            </div>
+          </div>
         </div>
       </div>
 
@@ -220,8 +259,13 @@ onMounted(() => {
               <th class="staff-table-head__th" scope="col">Account</th>
               <th class="staff-table-head__th" scope="col">RMA</th>
               <th class="staff-table-head__th" scope="col">Date</th>
-              <th class="staff-table-head__th text-end" scope="col">Total</th>
-              <th class="staff-table-head__th text-center" scope="col">Actions</th>
+              <th class="staff-table-head__th text-end" scope="col">Price</th>
+              <th
+                class="staff-table-head__th staff-actions-col text-center billing-return-bills-actions-col"
+                scope="col"
+              >
+                Actions
+              </th>
             </tr>
           </thead>
           <tbody>
@@ -246,16 +290,18 @@ onMounted(() => {
                   {{ row.bill_number }}
                 </RouterLink>
               </td>
-              <td class="text-secondary">{{ row.client_account_name || "—" }}</td>
-              <td class="text-secondary">{{ row.rma_number || "—" }}</td>
-              <td class="text-nowrap">{{ formatIsoDate(row.bill_date) }}</td>
-              <td class="text-end">{{ formatCents(row.total_cents) }}</td>
-              <td class="text-center">
-                <div data-row-actions class="staff-actions-inner staff-actions-inner--single d-inline-flex">
+              <td class="text-secondary staff-table-cell__meta">{{ row.client_account_name || "—" }}</td>
+              <td class="text-secondary staff-table-cell__meta">{{ row.rma_number || "—" }}</td>
+              <td class="text-body staff-table-cell__meta text-nowrap">{{ formatIsoDate(row.bill_date) }}</td>
+              <td class="text-body staff-table-cell__meta text-end">{{ formatCents(row.total_cents) }}</td>
+              <td class="staff-actions-cell text-center billing-return-bills-actions-col">
+                <div data-row-actions class="staff-actions-inner staff-actions-inner--single">
                   <button
                     type="button"
                     class="staff-action-btn staff-action-btn--more"
                     :class="{ 'is-open': manageOpenId === row.id }"
+                    :aria-expanded="manageOpenId === row.id"
+                    aria-haspopup="true"
                     aria-label="Row actions"
                     @click="toggleManageMenu(row.id, $event)"
                   >
@@ -273,12 +319,15 @@ onMounted(() => {
 
       <div
         v-if="!loading && pagination.total > 0"
-        class="staff-table-footer card-footer d-flex flex-wrap justify-content-between gap-3"
+        class="staff-table-footer card-footer d-flex flex-column flex-sm-row align-items-stretch align-items-sm-center justify-content-between gap-3"
       >
         <span class="small text-secondary">
           Showing {{ showingFrom }}–{{ showingTo }} of {{ pagination.total }}
         </span>
-        <div v-if="pagination.last_page > 1" class="d-flex align-items-center gap-2">
+        <div
+          v-if="pagination.last_page > 1"
+          class="d-flex align-items-center justify-content-sm-end gap-2"
+        >
           <button
             type="button"
             class="btn btn-sm btn-outline-secondary"

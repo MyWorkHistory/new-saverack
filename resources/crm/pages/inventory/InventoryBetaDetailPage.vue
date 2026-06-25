@@ -143,12 +143,12 @@ function sectionActionLabel({ loading, loaded }) {
 
 function inventoryDetailTo(sku) {
   const value = String(sku || "").trim();
-  if (!value) return { name: isPortalView.value ? "user-inventory-detail" : "inventory-detail", params: {} };
+  if (!value) return { name: "inventory-beta-detail", params: {} };
   const query = {};
   const clientId = Number(route.query.client_account_id || 0);
   if (clientId > 0) query.client_account_id = clientId;
   return {
-    name: isPortalView.value ? "user-inventory-detail" : "inventory-detail",
+    name: "inventory-beta-detail",
     params: { sku: value },
     query,
   };

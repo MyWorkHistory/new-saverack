@@ -86,14 +86,11 @@ function effectiveRowAccountId(row = null) {
   return accountId.value;
 }
 
-const canLoadInventory = computed(() => {
-  if (isPortalList.value) return accountId.value > 0;
-  return (
-    accountId.value > 0 ||
-    crossAccountMode.value ||
-    Boolean(searchCommitted.value.trim())
-  );
-});
+const canLoadInventory = computed(() => (
+  accountId.value > 0 ||
+  crossAccountMode.value ||
+  Boolean(searchCommitted.value.trim())
+));
 
 const tableColspan = computed(() => (crossAccountMode.value ? 9 : 8));
 
@@ -646,7 +643,7 @@ function onDocClick(e) {
 watch(
   () => accountId.value,
   (id) => {
-    if (isPortalList.value && id) loadRows(true);
+    if (id) loadRows(true);
   },
 );
 
@@ -675,8 +672,8 @@ watch(
 
 onMounted(() => {
   setCrmPageMeta({
-    title: "Save Rack | Inventory",
-    description: isPortalList.value ? "Your account inventory." : "ShipHero inventory by account.",
+    title: "Save Rack | Inventory (Beta)",
+    description: "CRM-stored product catalog with incremental account sync.",
   });
   document.addEventListener("click", onDocClick);
   loadAccounts();

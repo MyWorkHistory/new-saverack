@@ -13,6 +13,8 @@ class InvoiceImport extends Model
 
     public const TYPE_DUTIES_TAXES_CSV = 'duties_taxes_csv';
 
+    public const TYPE_UPS_DUTIES_TAXES_CSV = 'ups_duties_taxes_csv';
+
     public const STATUS_PENDING = 'pending';
 
     public const STATUS_COMPLETED = 'completed';

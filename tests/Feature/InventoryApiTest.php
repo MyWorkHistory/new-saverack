@@ -399,7 +399,7 @@ class InventoryApiTest extends TestCase
             ->once()
             ->with('SKU-1', null)
             ->andReturn(null);
-        $mock->shouldReceive('replaceLocationQuantity')
+        $mock->shouldReceive('assignSkuToLocationQuantity')
             ->once()
             ->with('SKU-1', 'WH1', 'loc-1', 0, 'Account Setup', null)
             ->andReturn([
@@ -446,7 +446,7 @@ class InventoryApiTest extends TestCase
             ->once()
             ->with('MHC831361', null)
             ->andReturn('92640');
-        $mock->shouldReceive('addLocationQuantity')
+        $mock->shouldReceive('assignSkuToLocationQuantity')
             ->once()
             ->with('MHC831361', 'WH1', 'loc-e12', 1, 'Account Setup', '92640')
             ->andReturn([
@@ -461,6 +461,7 @@ class InventoryApiTest extends TestCase
                     ],
                 ],
             ]);
+        $mock->shouldNotReceive('addLocationQuantity');
         $mock->shouldNotReceive('replaceLocationQuantity');
         $this->app->instance(ShipHeroInventoryService::class, $mock);
 

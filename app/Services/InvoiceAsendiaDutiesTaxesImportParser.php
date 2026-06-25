@@ -7,7 +7,7 @@ namespace App\Services;
  *
  * @return array{lines: list<array<string, mixed>>, rows_processed: int, skipped: int}
  */
-final class InvoiceDutiesTaxesImportParser
+final class InvoiceAsendiaDutiesTaxesImportParser
 {
     public const CATEGORY = 'duties & taxes';
 

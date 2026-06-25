@@ -2,7 +2,7 @@
 
 namespace Tests\Unit;
 
-use App\Services\InvoiceDutiesTaxesImportParser;
+use App\Services\InvoiceAsendiaDutiesTaxesImportParser;
 use App\Support\Billing\InvoiceImportTabularFileReader;
 use Illuminate\Http\UploadedFile;
 use PHPUnit\Framework\TestCase;
@@ -29,7 +29,7 @@ class InvoiceImportTabularFileReaderTest extends TestCase
             $this->assertIsCallable($resolved['cleanup']);
 
             try {
-                $parser = new InvoiceDutiesTaxesImportParser();
+                $parser = new InvoiceAsendiaDutiesTaxesImportParser();
                 $parsed = $parser->parseFile($resolved['path']);
                 $this->assertCount(2, $parsed['lines']);
                 $this->assertSame('#20177', $parsed['lines'][0]['metadata']['order_number']);

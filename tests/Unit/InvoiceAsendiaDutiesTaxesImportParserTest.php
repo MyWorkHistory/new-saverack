@@ -2,10 +2,10 @@
 
 namespace Tests\Unit;
 
-use App\Services\InvoiceDutiesTaxesImportParser;
+use App\Services\InvoiceAsendiaDutiesTaxesImportParser;
 use PHPUnit\Framework\TestCase;
 
-class InvoiceDutiesTaxesImportParserTest extends TestCase
+class InvoiceAsendiaDutiesTaxesImportParserTest extends TestCase
 {
     public function test_parse_file_creates_duty_and_tax_lines_per_row(): void
     {
@@ -17,7 +17,7 @@ class InvoiceDutiesTaxesImportParserTest extends TestCase
         );
 
         try {
-            $parser = new InvoiceDutiesTaxesImportParser();
+            $parser = new InvoiceAsendiaDutiesTaxesImportParser();
             $parsed = $parser->parseFile($path);
             $lines = $parsed['lines'];
 
@@ -39,7 +39,7 @@ class InvoiceDutiesTaxesImportParserTest extends TestCase
         file_put_contents($path, "Product,Duty,Tax\nDuty & Taxes,10.00,5.50\n");
 
         try {
-            $parser = new InvoiceDutiesTaxesImportParser();
+            $parser = new InvoiceAsendiaDutiesTaxesImportParser();
             $this->expectException(\RuntimeException::class);
             $this->expectExceptionMessage('Order Number');
             $parser->parseFile($path);

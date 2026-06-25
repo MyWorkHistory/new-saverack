@@ -589,9 +589,11 @@ async function submitImportCsv() {
     const endpoint =
       importForm.import_type === "storage"
         ? `/client-accounts/${accountId}/invoice-imports/storage`
-        : importForm.import_type === "duties_taxes"
-          ? `/client-accounts/${accountId}/invoice-imports/duties-taxes`
-          : `/client-accounts/${accountId}/invoice-imports/charges`;
+        : importForm.import_type === "duties_taxes_asendia"
+          ? `/client-accounts/${accountId}/invoice-imports/duties-taxes-asendia`
+          : importForm.import_type === "duties_taxes_ups"
+            ? `/client-accounts/${accountId}/invoice-imports/duties-taxes-ups`
+            : `/client-accounts/${accountId}/invoice-imports/charges`;
 
     const { data } = await api.post(endpoint, formData);
     const newInvoiceId = data?.invoice?.id;
@@ -1735,7 +1737,8 @@ onUnmounted(() => {
                 <select id="billing-import-type" v-model="importForm.import_type" class="form-select">
                   <option value="charges">Charge CSV</option>
                   <option value="storage">Storage CSV</option>
-                  <option value="duties_taxes">Duties & Taxes</option>
+                  <option value="duties_taxes_asendia">Asendia Duties & Taxes</option>
+                  <option value="duties_taxes_ups">UPS Duties & Taxes</option>
                 </select>
               </div>
               <div class="mb-3">

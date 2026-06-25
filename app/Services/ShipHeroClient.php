@@ -155,6 +155,20 @@ class ShipHeroClient
 
             if ($status < 200 || $status >= 300) {
                 $preview = mb_substr($bodyRaw, 0, 500);
+                $json = json_decode($bodyRaw, true);
+                if (is_array($json) && ! empty($json['errors']) && is_array($json['errors'])) {
+                    $first = $json['errors'][0];
+                    $message = is_array($first)
+                        ? (string) ($first['message'] ?? json_encode($first))
+                        : (string) $first;
+                    Log::warning('shiphero.graphql.http_error_with_body', [
+                        'operation' => $operation,
+                        'status' => $status,
+                        'message' => mb_substr($message, 0, 400),
+                        'body_preview' => $preview,
+                    ]);
+                    throw new RuntimeException('ShipHero: '.$message);
+                }
                 $msg = 'ShipHero GraphQL request failed (HTTP '.$status.'). Body preview: '.$preview;
                 if ($status === 403 && stripos($operation, 'Attachment') !== false) {
                     $msg .= ' For order_add_attachment, ShipHero must accept the request and later fetch your file URL over the public internet: use HTTPS and a non-localhost host (set APP_URL or SHIPHERO_ATTACHMENT_PUBLIC_BASE_URL).';

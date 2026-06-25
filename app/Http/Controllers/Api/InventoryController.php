@@ -1347,25 +1347,14 @@ class InventoryController extends Controller
                 'quantity' => $qty,
                 'customer_account_id' => $shipheroCustomerId,
             ]);
-            if ($qty > 0) {
-                $updated = $this->inventory->addLocationQuantity(
-                    $validated['sku'],
-                    $validated['warehouse_id'],
-                    $locationId,
-                    $qty,
-                    $reason,
-                    $shipheroCustomerId
-                );
-            } else {
-                $updated = $this->inventory->replaceLocationQuantity(
-                    $validated['sku'],
-                    $validated['warehouse_id'],
-                    $locationId,
-                    0,
-                    $reason,
-                    $shipheroCustomerId
-                );
-            }
+            $updated = $this->inventory->assignSkuToLocationQuantity(
+                $validated['sku'],
+                $validated['warehouse_id'],
+                $locationId,
+                $qty,
+                $reason,
+                $shipheroCustomerId
+            );
             return response()->json([
                 'warehouse' => $updated,
                 'location' => $resolved,
@@ -1373,7 +1362,7 @@ class InventoryController extends Controller
         } catch (ValidationException $e) {
             throw $e;
         } catch (RuntimeException $e) {
-            return response()->json(['message' => $e->getMessage()], 502);
+            return response()->json(['message' => $e->getMessage()], $this->shipHeroRuntimeStatusCode($e));
         } catch (Throwable $e) {
             report($e);
             return response()->json([
@@ -1382,6 +1371,16 @@ class InventoryController extends Controller
                     : 'Could not reach ShipHero. Check SHIPHERO_* in .env and server logs.',
             ], 502);
         }
+    }
+
+    private function shipHeroRuntimeStatusCode(RuntimeException $e): int
+    {
+        $message = $e->getMessage();
+        if (strpos($message, 'ShipHero:') === 0 || stripos($message, 'ShipHero could not') !== false) {
+            return 422;
+        }
+
+        return 502;
     }
 
     public function onDemandProducts(Request $request): JsonResponse

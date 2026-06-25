@@ -74,12 +74,38 @@ class InvoiceImportController extends Controller
         ], 201);
     }
 
-    public function importDutiesTaxes(InvoiceCsvImportRequest $request, ClientAccount $client_account): JsonResponse
+    public function importAsendiaDutiesTaxes(InvoiceCsvImportRequest $request, ClientAccount $client_account): JsonResponse
     {
         $this->authorize('view', $client_account);
         $this->authorize('create', Invoice::class);
 
-        $result = $this->imports->importDutiesTaxesCsv(
+        $result = $this->imports->importAsendiaDutiesTaxesCsv(
+            $client_account,
+            $request->file('file'),
+            $request->resolveDueDateString($client_account),
+            $request->optionalInvoiceNumber(),
+            $request->user(),
+        );
+
+        return response()->json([
+            'invoice' => $this->invoices->toDetailArray($result['invoice']),
+            'import' => [
+                'id' => $result['import']->id,
+                'status' => $result['import']->status,
+                'import_type' => $result['import']->import_type,
+                'rows_processed' => $result['import']->rows_processed,
+            ],
+            'rows_processed' => $result['rows_processed'],
+            'skipped' => $result['skipped'],
+        ], 201);
+    }
+
+    public function importUpsDutiesTaxes(InvoiceCsvImportRequest $request, ClientAccount $client_account): JsonResponse
+    {
+        $this->authorize('view', $client_account);
+        $this->authorize('create', Invoice::class);
+
+        $result = $this->imports->importUpsDutiesTaxesCsv(
             $client_account,
             $request->file('file'),
             $request->resolveDueDateString($client_account),

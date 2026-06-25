@@ -2090,18 +2090,25 @@ GQL;
             'reason' => $reason !== '' ? $reason : 'CRM inventory add',
         ], $customerAccountId);
 
+        Log::info('shiphero.inventory.add_location.mutation', [
+            'sku' => $sku,
+            'warehouse_id' => $warehouseId,
+            'location_id' => $locationId,
+            'quantity' => $quantity,
+            'customer_account_id' => $input['customer_account_id'] ?? null,
+        ]);
+
         $graphql = <<<'GQL'
-mutation ShipHeroInventoryAdd($data: AddInventoryInput!) {
+mutation ShipHeroInventoryAdd($data: UpdateInventoryInput!) {
   inventory_add(data: $data) {
     request_id
-    complexity
     warehouse_product {
       warehouse_id
       warehouse {
         identifier
         company_name
       }
-      locations(first: 100) {
+      locations(first: 50) {
         edges {
           node {
             id
@@ -2132,6 +2139,70 @@ GQL;
             'warehouse_name' => $whName,
             'locations' => $this->normalizeLocations($wp['locations'] ?? null, $wid),
         ];
+    }
+
+    /**
+     * Add or set quantity at a warehouse location (add for new bins, replace when already assigned).
+     *
+     * @return array<string, mixed>
+     */
+    public function assignSkuToLocationQuantity(
+        string $sku,
+        string $warehouseId,
+        string $locationId,
+        int $quantity,
+        string $reason,
+        ?string $customerAccountId = null
+    ): array {
+        if ($quantity <= 0) {
+            return $this->replaceLocationQuantity(
+                $sku,
+                $warehouseId,
+                $locationId,
+                0,
+                $reason,
+                $customerAccountId
+            );
+        }
+
+        $addError = null;
+        try {
+            return $this->addLocationQuantity(
+                $sku,
+                $warehouseId,
+                $locationId,
+                $quantity,
+                $reason,
+                $customerAccountId
+            );
+        } catch (RuntimeException $e) {
+            $addError = $e;
+            Log::warning('shiphero.inventory.add_location.add_failed_trying_replace', [
+                'sku' => $sku,
+                'warehouse_id' => $warehouseId,
+                'location_id' => $locationId,
+                'quantity' => $quantity,
+                'message' => $e->getMessage(),
+            ]);
+        }
+
+        try {
+            return $this->replaceLocationQuantity(
+                $sku,
+                $warehouseId,
+                $locationId,
+                $quantity,
+                $reason,
+                $customerAccountId
+            );
+        } catch (RuntimeException $replaceError) {
+            $addMessage = $addError instanceof RuntimeException ? $addError->getMessage() : 'unknown';
+            throw new RuntimeException(
+                'ShipHero could not add inventory at this location. '
+                .'Add failed: '.$addMessage
+                .' Replace failed: '.$replaceError->getMessage()
+            );
+        }
     }
 
     /**

@@ -147,8 +147,22 @@ class InventoryBetaController extends Controller
                 }
             }
 
+            $account = ClientAccount::query()->find($clientAccountId);
+            $companyName = $account !== null ? (string) $account->company_name : '';
+            $rows = array_map(static function ($row) use ($clientAccountId, $companyName) {
+                if (! is_array($row)) {
+                    return $row;
+                }
+                $row['client_account_id'] = $clientAccountId;
+                if (trim((string) ($row['client_account_company_name'] ?? '')) === '') {
+                    $row['client_account_company_name'] = $companyName;
+                }
+
+                return $row;
+            }, $payload['rows'] ?? []);
+
             return response()->json([
-                'rows' => $payload['rows'],
+                'rows' => array_values($rows),
                 'page_info' => $payload['page_info'],
                 'catalog_sync' => $this->inventory->catalogSyncMetaForAccount($clientAccountId),
             ]);

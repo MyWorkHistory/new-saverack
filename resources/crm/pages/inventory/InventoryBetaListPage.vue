@@ -44,8 +44,12 @@ const searchCommitted = ref("");
 const searchSkipNext = ref(0);
 let searchRunSeq = 0;
 let refreshRunSeq = 0;
+let accountLoadSeq = 0;
 
 const REFRESH_MAX_PAGES = 500;
+
+/** Auto-refresh catalog from ShipHero every 30 minutes for the selected account. */
+const AUTO_SYNC_INTERVAL_MS = 30 * 60 * 1000;
 
 /** ShipHero inventory list page size */
 const LIST_PAGE_SIZE = 50;
@@ -93,7 +97,7 @@ const canLoadInventory = computed(() => (
   Boolean(searchDraft.value.trim())
 ));
 
-const tableColspan = computed(() => (crossAccountMode.value ? 9 : 8));
+const tableColspan = computed(() => 9);
 
 const accountOptions = computed(() =>
   (accounts.value || [])
@@ -411,6 +415,7 @@ async function syncAccountRows(syncMode = "incremental") {
         ? "Catalog rebuilt from ShipHero."
         : "Account catalog synced from ShipHero.",
     );
+    startAutoSyncTimer();
   } catch (e) {
     rows.value = previousRows;
     toast.errorFrom(e, "Could not sync inventory catalog.");
@@ -515,6 +520,33 @@ async function bulkSetActive(active) {
   }
 }
 
+const accountNameById = computed(() => {
+  const map = new Map();
+  for (const a of accounts.value || []) {
+    const id = Number(a?.id || 0);
+    if (id > 0) {
+      map.set(id, a.company_name || `Account #${id}`);
+    }
+  }
+  return map;
+});
+
+function rowAccountLabel(row) {
+  const fromRow = String(row?.client_account_company_name || "").trim();
+  if (fromRow) return fromRow;
+  const id = effectiveRowAccountId(row);
+  if (id > 0) {
+    return accountNameById.value.get(id) || `Account #${id}`;
+  }
+  return "—";
+}
+
+function clientAccountHref(row) {
+  const id = effectiveRowAccountId(row);
+  if (id <= 0) return "";
+  return router.resolve({ name: "client-account-detail", params: { id: String(id) } }).href;
+}
+
 function inventoryDetailTo(row) {
   const sku = String(row?.sku || "").trim();
   if (!sku) {
@@ -608,10 +640,60 @@ watch(
   },
 );
 
+let autoSyncTimer = null;
+
+function catalogSyncIsStale() {
+  const raw = catalogSync.value?.inventory_catalog_synced_at;
+  if (!raw) return true;
+  const syncedAt = new Date(raw).getTime();
+  if (Number.isNaN(syncedAt)) return true;
+  return Date.now() - syncedAt >= AUTO_SYNC_INTERVAL_MS;
+}
+
+function stopAutoSyncTimer() {
+  if (autoSyncTimer !== null) {
+    clearInterval(autoSyncTimer);
+    autoSyncTimer = null;
+  }
+}
+
+function startAutoSyncTimer() {
+  stopAutoSyncTimer();
+  if (!selectedAccountId.value || crossAccountMode.value) return;
+  autoSyncTimer = setInterval(() => {
+    if (document.visibilityState !== "visible") return;
+    if (loading.value || refreshing.value || loadingMore.value) return;
+    syncAccountRows("incremental");
+  }, AUTO_SYNC_INTERVAL_MS);
+}
+
+function onPageVisibilityChange() {
+  if (document.visibilityState !== "visible") return;
+  if (!selectedAccountId.value || crossAccountMode.value) return;
+  if (!catalogSyncIsStale()) return;
+  if (loading.value || refreshing.value || loadingMore.value) return;
+  syncAccountRows("incremental");
+}
+
+async function ensureAccountCatalogSynced(loadId) {
+  if (loadId !== accountLoadSeq) return;
+  if (!selectedAccountId.value || crossAccountMode.value) return;
+  if (!catalogSyncIsStale()) {
+    startAutoSyncTimer();
+    return;
+  }
+  if (loading.value || refreshing.value) return;
+  await syncAccountRows("incremental");
+  if (loadId === accountLoadSeq) {
+    startAutoSyncTimer();
+  }
+}
+
 watch(
   () => selectedAccountId.value,
-  (accountIdVal, prev) => {
+  async (accountIdVal, prev) => {
     if (!isStaffPickerMode.value) return;
+    const loadId = ++accountLoadSeq;
     crossAccountMode.value = false;
     crossAccountScanTruncated.value = false;
     if (prev && accountIdVal !== prev) {
@@ -621,13 +703,15 @@ watch(
     selectedKeys.value = [];
     searchSkipNext.value = 0;
     if (!accountIdVal) {
+      stopAutoSyncTimer();
       rows.value = [];
       pageInfo.value = { has_next_page: false, end_cursor: null };
       hasSearched.value = false;
       return;
     }
     hasSearched.value = true;
-    loadRows(true);
+    await loadRows(true);
+    await ensureAccountCatalogSynced(loadId);
   },
 );
 
@@ -637,11 +721,14 @@ onMounted(() => {
     description: "CRM-stored product catalog with incremental account sync.",
   });
   document.addEventListener("click", onDocClick);
+  document.addEventListener("visibilitychange", onPageVisibilityChange);
   loadAccounts();
 });
 
 onUnmounted(() => {
   document.removeEventListener("click", onDocClick);
+  document.removeEventListener("visibilitychange", onPageVisibilityChange);
+  stopAutoSyncTimer();
 });
 </script>
 
@@ -654,7 +741,7 @@ onUnmounted(() => {
         <h1 class="h4 mb-1 fw-bold text-body">Inventory (Beta)</h1>
         <p class="text-secondary small mb-0 user-inv-load-hint">
           Search by SKU, barcode, or product name. Account filter is optional — press Enter or Search to find products
-          across all accounts, or select an account to narrow results. Quantities reflect the last catalog sync; use Sync Account to refresh the catalog.
+          across all accounts, or select an account to narrow results. Quantities reflect the last catalog sync. The selected account auto-syncs from ShipHero every 30 minutes.
         </p>
       </div>
       <div class="d-flex align-items-center gap-2 flex-shrink-0 ms-md-auto flex-wrap justify-content-md-end">
@@ -942,13 +1029,6 @@ onUnmounted(() => {
               </th>
               <th class="staff-table-head__th text-center user-inv-table__image-col" scope="col">Image</th>
               <th
-                v-if="crossAccountMode"
-                class="staff-table-head__th user-inv-table__text-col"
-                scope="col"
-              >
-                Account
-              </th>
-              <th
                 class="staff-table-head__th staff-table-head__th--sort user-inv-table__text-col"
                 scope="col"
                 :aria-sort="thAriaSort('sku')"
@@ -967,6 +1047,9 @@ onUnmounted(() => {
                   Name
                   <span v-if="sortIndicator('name')" class="staff-sort-ind">{{ sortIndicator("name") }}</span>
                 </button>
+              </th>
+              <th class="staff-table-head__th user-inv-table__text-col" scope="col">
+                Account
               </th>
               <th
                 class="staff-table-head__th staff-table-head__th--sort text-center user-inv-table__num-col"
@@ -1052,9 +1135,6 @@ onUnmounted(() => {
                   <div v-else class="user-inventory-thumb user-inventory-thumb--empty" />
                 </a>
               </td>
-              <td v-if="crossAccountMode" class="small text-secondary">
-                {{ row.client_account_company_name || "—" }}
-              </td>
               <td class="user-inv-table__sku-col">
                 <a
                   :href="inventoryDetailHref(row)"
@@ -1074,6 +1154,18 @@ onUnmounted(() => {
                 >
                   <span class="user-inv-table__name-text">{{ row.name || "—" }}</span>
                 </a>
+              </td>
+              <td class="user-inv-table__text-col">
+                <a
+                  v-if="clientAccountHref(row)"
+                  :href="clientAccountHref(row)"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  class="user-inv-table__sku-link"
+                >
+                  {{ rowAccountLabel(row) }}
+                </a>
+                <span v-else class="text-secondary">{{ rowAccountLabel(row) }}</span>
               </td>
               <td class="text-center user-inv-table__num-col">{{ (row.kit || row.kit_build) ? "Yes" : "No" }}</td>
               <td class="text-center user-inv-table__num-col">{{ Number(row.on_hand || 0) }}</td>

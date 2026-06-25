@@ -36,6 +36,8 @@ import InventoryDetailPage from "../pages/inventory/InventoryDetailPage.vue";
 import InventoryOnDemandPage from "../pages/inventory/InventoryOnDemandPage.vue";
 import InventoryRestockPage from "../pages/inventory/InventoryRestockPage.vue";
 import InventoryRestockBetaPage from "../pages/inventory/InventoryRestockBetaPage.vue";
+import InventoryBetaListPage from "../pages/inventory/InventoryBetaListPage.vue";
+import InventoryBetaDetailPage from "../pages/inventory/InventoryBetaDetailPage.vue";
 import OrdersListPage from "../pages/orders/OrdersListPage.vue";
 import OrderDetailPage from "../pages/orders/OrderDetailPage.vue";
 import OrderDetailIframePage from "../pages/orders/OrderDetailIframePage.vue";
@@ -146,6 +148,14 @@ const meta = {
   inventoryRestockBeta: {
     title: "Save Rack | Inventory | Restock (Beta)",
     description: "Upload a restock CSV and review SKUs that need replenishment.",
+  },
+  inventoryBeta: {
+    title: "Save Rack | Inventory (Beta)",
+    description: "CRM-stored product catalog with incremental account sync.",
+  },
+  inventoryBetaDetail: {
+    title: "Save Rack | Inventory (Beta) Detail",
+    description: "Catalog product detail with live ShipHero qty and locations.",
   },
   ordersSearch: {
     title: "Save Rack | Orders | Search",
@@ -487,6 +497,19 @@ const routes = [
     name: "inventory-restock-beta",
     component: InventoryRestockBetaPage,
     meta: meta.inventoryRestockBeta,
+  },
+  {
+    path: "/admin/inventory-beta",
+    name: "inventory-beta",
+    component: InventoryBetaListPage,
+    meta: meta.inventoryBeta,
+  },
+  {
+    path: "/admin/inventory-beta/:sku",
+    name: "inventory-beta-detail",
+    component: InventoryBetaDetailPage,
+    props: true,
+    meta: meta.inventoryBetaDetail,
   },
   {
     path: "/admin/inventory/on-demand",
@@ -1035,6 +1058,8 @@ async function ensureInventoryRouteAccess(path) {
   if (
     path === "/admin/inventory" ||
     path.startsWith("/admin/inventory/") ||
+    path === "/admin/inventory-beta" ||
+    path.startsWith("/admin/inventory-beta/") ||
     path.startsWith("/admin/receiving/") ||
     path.startsWith("/admin/returns/") ||
     path === "/users/inventory" ||

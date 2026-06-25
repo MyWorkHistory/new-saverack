@@ -29,7 +29,6 @@ const { markRefreshed, lastRefreshedLabel } = usePortalLastRefreshed();
 
 const loading = ref(true);
 const refreshing = ref(false);
-const syncingSku = ref(false);
 const barcodePdfLoading = ref(false);
 const imageUploadBusy = ref(false);
 const imageInputRef = ref(null);
@@ -662,32 +661,8 @@ async function refreshDetail() {
   refreshing.value = true;
   const ok = await loadProduct({ refresh: true });
   refreshing.value = false;
-  if (ok) {
-    if (isPortalView.value) {
-      markRefreshed();
-    }
-    toast.success("Live inventory data refreshed.");
-  }
-}
-
-async function syncCatalogSku() {
-  const sku = String(route.params.sku || "").trim();
-  const clientAccountId = detailClientAccountId.value;
-  if (!sku || clientAccountId <= 0 || syncingSku.value) return;
-  syncingSku.value = true;
-  try {
-    await api.post(`/inventory/products/${encodeURIComponent(sku)}/sync`, {
-      client_account_id: clientAccountId,
-    });
-    toast.success("SKU catalog synced from ShipHero.");
-    await loadProduct({ refresh: true });
-    if (isPortalView.value) {
-      markRefreshed();
-    }
-  } catch (e) {
-    toast.errorFrom(e, "Could not sync SKU catalog.");
-  } finally {
-    syncingSku.value = false;
+  if (ok && isPortalView.value) {
+    markRefreshed();
   }
 }
 
@@ -945,25 +920,16 @@ async function togglePickable(loc) {
             View in ShipHero
           </a>
           <div v-else class="me-auto" />
-          <div class="d-flex align-items-center gap-2 flex-shrink-0 flex-wrap justify-content-end">
+          <div class="d-flex align-items-center gap-2 flex-shrink-0">
             <p v-if="lastRefreshedLabel" class="small text-secondary mb-0">
-              Live data refreshed: {{ lastRefreshedLabel }}
+              Last refreshed: {{ lastRefreshedLabel }}
             </p>
-            <button
-              v-if="detailClientAccountId > 0"
-              type="button"
-              class="btn btn-outline-secondary btn-sm orders-toolbar-outline-btn"
-              :disabled="loading || syncingSku || refreshing"
-              @click="syncCatalogSku"
-            >
-              {{ syncingSku ? "Syncing…" : "Sync SKU" }}
-            </button>
             <button
               type="button"
               class="btn btn-outline-secondary btn-sm orders-toolbar-outline-btn d-inline-flex align-items-center gap-2"
-              :disabled="loading || refreshing || syncingSku"
-              title="Refresh Live Data"
-              aria-label="Refresh live product data from ShipHero"
+              :disabled="loading || refreshing"
+              title="Refresh"
+              aria-label="Refresh product from ShipHero"
               @click="refreshDetail"
             >
               <svg
@@ -981,7 +947,7 @@ async function togglePickable(loc) {
                   d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"
                 />
               </svg>
-              {{ refreshing ? "Refreshing…" : "Refresh Live Data" }}
+              {{ refreshing ? "Refreshing…" : "Refresh" }}
             </button>
           </div>
         </div>

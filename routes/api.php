@@ -17,6 +17,7 @@ use App\Http\Controllers\Api\TicketController;
 use App\Http\Controllers\Api\InvoiceController;
 use App\Http\Controllers\Api\InvoiceImportController;
 use App\Http\Controllers\Api\InventoryController;
+use App\Http\Controllers\Api\InventoryBetaController;
 use App\Http\Controllers\Api\OrderController;
 use App\Http\Controllers\Api\CrmLookupController;
 use App\Http\Controllers\Api\PortalLookupController;
@@ -122,8 +123,6 @@ Route::middleware('auth:sanctum')->group(function () {
             ->middleware('can:inventory.view');
         Route::get('/products/{sku}', [InventoryController::class, 'productDetail'])
             ->middleware('can:inventory.view');
-        Route::post('/products/{sku}/sync', [InventoryController::class, 'syncCatalogProduct'])
-            ->middleware('can:inventory.view');
         Route::get('/products/{sku}/parent-kits', [InventoryController::class, 'productParentKits'])
             ->middleware('can:inventory.view');
         Route::get('/products/{sku}/kit-components', [InventoryController::class, 'productKitComponents'])
@@ -152,6 +151,13 @@ Route::middleware('auth:sanctum')->group(function () {
             ->middleware('can:inventory.update');
         Route::delete('/on-demand-products/{onDemandProduct}', [InventoryController::class, 'destroyOnDemandProduct'])
             ->middleware('can:inventory.update');
+    });
+
+    Route::prefix('inventory-beta')->group(function () {
+        Route::get('/list', [InventoryBetaController::class, 'list'])
+            ->middleware('can:inventory.view');
+        Route::post('/products/{sku}/sync', [InventoryBetaController::class, 'syncCatalogProduct'])
+            ->middleware('can:inventory.view');
     });
 
     Route::get('/crm/lookup', [CrmLookupController::class, 'lookup']);

@@ -87,7 +87,7 @@ class ShipHeroInventoryRefreshTest extends TestCase
             ]);
 
         $service = new ShipHeroInventoryService($client);
-        $payload = $service->listInventoryRows(
+        $payload = $service->listCatalogInventoryRows(
             'sh-refresh-1',
             50,
             null,
@@ -181,7 +181,7 @@ class ShipHeroInventoryRefreshTest extends TestCase
             ]);
 
         $service = new ShipHeroInventoryService($client);
-        $service->listInventoryRows(
+        $service->listCatalogInventoryRows(
             'sh-inc-1',
             50,
             null,

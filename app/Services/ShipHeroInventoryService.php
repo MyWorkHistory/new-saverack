@@ -16,11 +16,11 @@ class ShipHeroInventoryService
 
     public const CATALOG_SYNC_FULL = 'full';
 
-    /** @var bool */
-    private $catalogSyncTrackSeen = false;
-
     /** @var ShipHeroClient */
     protected $client;
+
+    /** @var bool */
+    private $catalogSyncTrackSeen = false;
 
     public function __construct(ShipHeroClient $client)
     {
@@ -174,7 +174,7 @@ GQL;
         ?int $clientAccountId = null,
         bool $backorderOnly = false,
         bool $refresh = false,
-        string $syncMode = self::CATALOG_SYNC_INCREMENTAL
+        bool $wipeIndexOnRefresh = true
     ): array {
         $first = max(1, min(200, $first));
         $after = is_string($after) && trim($after) !== '' ? trim($after) : null;
@@ -182,51 +182,11 @@ GQL;
         $activeStatus = in_array($activeStatus, ['active', 'inactive', 'all'], true) ? $activeStatus : 'active';
         $searchQuery = is_string($searchQuery) ? trim($searchQuery) : '';
         $searchSkip = max(0, $searchSkip);
-        $syncMode = $this->normalizeCatalogSyncMode($syncMode);
 
-        $this->catalogSyncTrackSeen = $refresh;
-        try {
-            if ($refresh && $after === null && $clientAccountId !== null && $clientAccountId > 0) {
-                if ($syncMode === self::CATALOG_SYNC_FULL) {
-                    $this->clearInventoryIndexForAccount($clientAccountId, $customerAccountId);
-                }
-                $this->beginCatalogSync($clientAccountId);
-            }
-
-            return $this->listInventoryRowsInner(
-                $customerAccountId,
-                $first,
-                $after,
-                $kitsFilter,
-                $activeStatus,
-                $searchQuery,
-                $searchSkip,
-                $clientAccountId,
-                $backorderOnly,
-                $refresh
-            );
-        } finally {
-            $this->catalogSyncTrackSeen = false;
+        if ($refresh && $after === null && $wipeIndexOnRefresh) {
+            $this->clearInventoryIndexForAccount($clientAccountId, $customerAccountId);
         }
-    }
 
-    /**
-     * @param  'all'|'yes'|'no'  $kitsFilter
-     * @param  'active'|'inactive'|'all'  $activeStatus
-     * @return array{rows: list<array<string,mixed>>, page_info: array{has_next_page: bool, end_cursor: string|null, next_search_skip?: int}}
-     */
-    private function listInventoryRowsInner(
-        ?string $customerAccountId,
-        int $first,
-        ?string $after,
-        string $kitsFilter,
-        string $activeStatus,
-        string $searchQuery,
-        int $searchSkip,
-        ?int $clientAccountId,
-        bool $backorderOnly,
-        bool $refresh
-    ): array {
         $graphql = <<<'GQL'
 query ShipHeroInventoryRows($customer_account_id: String, $first: Int!, $after: String) {
   products(customer_account_id: $customer_account_id) {
@@ -468,22 +428,22 @@ GQL;
             }
 
             $payload = [
-                    'shiphero_product_id' => trim((string) ($row['product_id'] ?? '')) ?: null,
-                    'sku_search' => $this->normalizeInventoryIndexSearchValue($sku),
-                    'name' => isset($row['name']) ? (string) $row['name'] : '',
-                    'name_search' => $this->normalizeInventoryIndexSearchValue($row['name'] ?? ''),
-                    'barcode' => trim((string) ($row['barcode'] ?? '')) ?: null,
-                    'barcode_search' => $this->normalizeInventoryIndexSearchValue($row['barcode'] ?? ''),
-                    'image_url' => trim((string) ($row['image_url'] ?? '')) ?: null,
-                    'product_active' => (bool) ($row['product_active'] ?? true),
-                    'kit' => (bool) ($row['kit'] ?? false),
-                    'kit_build' => (bool) ($row['kit_build'] ?? false),
-                    'warehouse_active' => (bool) ($row['warehouse_active'] ?? true),
-                    'on_hand' => (float) ($row['on_hand'] ?? 0),
-                    'allocated' => (float) ($row['allocated'] ?? 0),
-                    'backorder' => (float) ($row['backorder'] ?? 0),
-                    'synced_at' => now(),
-                ];
+                'shiphero_product_id' => trim((string) ($row['product_id'] ?? '')) ?: null,
+                'sku_search' => $this->normalizeInventoryIndexSearchValue($sku),
+                'name' => isset($row['name']) ? (string) $row['name'] : '',
+                'name_search' => $this->normalizeInventoryIndexSearchValue($row['name'] ?? ''),
+                'barcode' => trim((string) ($row['barcode'] ?? '')) ?: null,
+                'barcode_search' => $this->normalizeInventoryIndexSearchValue($row['barcode'] ?? ''),
+                'image_url' => trim((string) ($row['image_url'] ?? '')) ?: null,
+                'product_active' => (bool) ($row['product_active'] ?? true),
+                'kit' => (bool) ($row['kit'] ?? false),
+                'kit_build' => (bool) ($row['kit_build'] ?? false),
+                'warehouse_active' => (bool) ($row['warehouse_active'] ?? true),
+                'on_hand' => (float) ($row['on_hand'] ?? 0),
+                'allocated' => (float) ($row['allocated'] ?? 0),
+                'backorder' => (float) ($row['backorder'] ?? 0),
+                'synced_at' => now(),
+            ];
             if ($this->catalogSyncTrackSeen) {
                 $payload['last_seen_at'] = now();
             }
@@ -497,6 +457,54 @@ GQL;
                 ],
                 $payload
             );
+        }
+    }
+
+    /**
+     * Beta catalog sync list: incremental refresh keeps existing index rows; full rebuild clears first.
+     *
+     * @param  'all'|'yes'|'no'  $kitsFilter
+     * @param  'active'|'inactive'|'all'  $activeStatus
+     * @return array{rows: list<array<string,mixed>>, page_info: array{has_next_page: bool, end_cursor: string|null, next_search_skip?: int}}
+     */
+    public function listCatalogInventoryRows(
+        ?string $customerAccountId = null,
+        int $first = 100,
+        ?string $after = null,
+        string $kitsFilter = 'all',
+        string $activeStatus = 'active',
+        ?string $searchQuery = null,
+        int $searchSkip = 0,
+        ?int $clientAccountId = null,
+        bool $backorderOnly = false,
+        bool $refresh = false,
+        string $syncMode = self::CATALOG_SYNC_INCREMENTAL
+    ): array {
+        $syncMode = $this->normalizeCatalogSyncMode($syncMode);
+        $this->catalogSyncTrackSeen = $refresh;
+        try {
+            if ($refresh && $after === null && $clientAccountId !== null && $clientAccountId > 0) {
+                if ($syncMode === self::CATALOG_SYNC_FULL) {
+                    $this->clearInventoryIndexForAccount($clientAccountId, $customerAccountId);
+                }
+                $this->beginCatalogSync($clientAccountId);
+            }
+
+            return $this->listInventoryRows(
+                $customerAccountId,
+                $first,
+                $after,
+                $kitsFilter,
+                $activeStatus,
+                $searchQuery,
+                $searchSkip,
+                $clientAccountId,
+                $backorderOnly,
+                $refresh,
+                false
+            );
+        } finally {
+            $this->catalogSyncTrackSeen = false;
         }
     }
 
@@ -602,8 +610,10 @@ GQL;
             ];
         }
 
+        $syncedAt = $account->inventory_catalog_synced_at;
+
         return [
-            'inventory_catalog_synced_at' => $account->inventory_catalog_synced_at?->toIso8601String(),
+            'inventory_catalog_synced_at' => $syncedAt !== null ? $syncedAt->toIso8601String() : null,
             'inventory_catalog_sync_status' => (string) ($account->inventory_catalog_sync_status ?? 'idle'),
             'inventory_catalog_product_count' => (int) ($account->inventory_catalog_product_count ?? 0),
         ];
@@ -2295,25 +2305,18 @@ GQL;
             'reason' => $reason !== '' ? $reason : 'CRM inventory add',
         ], $customerAccountId);
 
-        Log::info('shiphero.inventory.add_location.mutation', [
-            'sku' => $sku,
-            'warehouse_id' => $warehouseId,
-            'location_id' => $locationId,
-            'quantity' => $quantity,
-            'customer_account_id' => $input['customer_account_id'] ?? null,
-        ]);
-
         $graphql = <<<'GQL'
-mutation ShipHeroInventoryAdd($data: UpdateInventoryInput!) {
+mutation ShipHeroInventoryAdd($data: AddInventoryInput!) {
   inventory_add(data: $data) {
     request_id
+    complexity
     warehouse_product {
       warehouse_id
       warehouse {
         identifier
         company_name
       }
-      locations(first: 50) {
+      locations(first: 100) {
         edges {
           node {
             id
@@ -2344,70 +2347,6 @@ GQL;
             'warehouse_name' => $whName,
             'locations' => $this->normalizeLocations($wp['locations'] ?? null, $wid),
         ];
-    }
-
-    /**
-     * Add or set quantity at a warehouse location (add for new bins, replace when already assigned).
-     *
-     * @return array<string, mixed>
-     */
-    public function assignSkuToLocationQuantity(
-        string $sku,
-        string $warehouseId,
-        string $locationId,
-        int $quantity,
-        string $reason,
-        ?string $customerAccountId = null
-    ): array {
-        if ($quantity <= 0) {
-            return $this->replaceLocationQuantity(
-                $sku,
-                $warehouseId,
-                $locationId,
-                0,
-                $reason,
-                $customerAccountId
-            );
-        }
-
-        $addError = null;
-        try {
-            return $this->addLocationQuantity(
-                $sku,
-                $warehouseId,
-                $locationId,
-                $quantity,
-                $reason,
-                $customerAccountId
-            );
-        } catch (RuntimeException $e) {
-            $addError = $e;
-            Log::warning('shiphero.inventory.add_location.add_failed_trying_replace', [
-                'sku' => $sku,
-                'warehouse_id' => $warehouseId,
-                'location_id' => $locationId,
-                'quantity' => $quantity,
-                'message' => $e->getMessage(),
-            ]);
-        }
-
-        try {
-            return $this->replaceLocationQuantity(
-                $sku,
-                $warehouseId,
-                $locationId,
-                $quantity,
-                $reason,
-                $customerAccountId
-            );
-        } catch (RuntimeException $replaceError) {
-            $addMessage = $addError instanceof RuntimeException ? $addError->getMessage() : 'unknown';
-            throw new RuntimeException(
-                'ShipHero could not add inventory at this location. '
-                .'Add failed: '.$addMessage
-                .' Replace failed: '.$replaceError->getMessage()
-            );
-        }
     }
 
     /**

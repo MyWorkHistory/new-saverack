@@ -7,7 +7,6 @@ import { setCrmPageMeta } from "../../composables/useCrmPageMeta.js";
 import { usePortalLastRefreshed } from "../../composables/usePortalLastRefreshed.js";
 import { useToast } from "../../composables/useToast.js";
 import { exportPortalInventoryCsv } from "../../utils/portalInventoryExport.js";
-import { formatDateTimeUs } from "../../utils/formatUserDates.js";
 
 const toast = useToast();
 const route = useRoute();
@@ -29,12 +28,6 @@ const loading = ref(false);
 const loadingMore = ref(false);
 const searchAutoLoading = ref(false);
 const refreshing = ref(false);
-const currentSyncMode = ref("incremental");
-const catalogSync = ref({
-  inventory_catalog_synced_at: null,
-  inventory_catalog_sync_status: "idle",
-  inventory_catalog_product_count: 0,
-});
 const bulkBusy = ref(false);
 const rows = ref([]);
 const pageInfo = ref({ has_next_page: false, end_cursor: null });
@@ -70,16 +63,6 @@ const accountId = computed(() => {
   if (isStaffPickerMode.value) return Number(selectedAccountId.value || 0);
   return Number(crmUser.value?.client_account_id || 0);
 });
-
-const catalogSyncedLabel = computed(() => {
-  const raw = catalogSync.value?.inventory_catalog_synced_at;
-  if (!raw) return "";
-  return formatDateTimeUs(raw);
-});
-
-const showQtySnapshotHint = computed(
-  () => !crossAccountMode.value && accountId.value > 0 && Boolean(catalogSyncedLabel.value),
-);
 
 function effectiveRowAccountId(row = null) {
   const fromRow = Number(row?.client_account_id || 0);
@@ -126,7 +109,7 @@ function normalizeRows(list) {
   return Array.isArray(list) ? list : [];
 }
 
-async function fetchPage(append, forceRefresh = false, syncMode = "incremental") {
+async function fetchPage(append, forceRefresh = false) {
   if (isStaffPickerMode.value && !selectedAccountId.value) {
     crossAccountMode.value = true;
   }
@@ -149,13 +132,8 @@ async function fetchPage(append, forceRefresh = false, syncMode = "incremental")
   }
   if (forceRefresh) {
     params.refresh = 1;
-    params.sync_mode = syncMode;
-    currentSyncMode.value = syncMode;
   }
   const { data } = await api.get("/inventory/list", { params });
-  if (data?.catalog_sync && typeof data.catalog_sync === "object") {
-    catalogSync.value = { ...catalogSync.value, ...data.catalog_sync };
-  }
   const chunk = normalizeRows(data?.rows);
   if (Boolean(data?.meta?.cross_account)) {
     crossAccountMode.value = true;
@@ -236,7 +214,7 @@ async function continueRefreshSync(refreshId) {
   let guard = 0;
   while (refreshId === refreshRunSeq && pageInfo.value.has_next_page && guard < REFRESH_MAX_PAGES) {
     guard += 1;
-    await fetchPage(true, true, currentSyncMode.value);
+    await fetchPage(true, true);
     await nextTick();
   }
 }
@@ -423,10 +401,10 @@ function clearSearch() {
   loadRows(true);
 }
 
-async function syncAccountRows(syncMode = "incremental") {
+async function refreshRows() {
   if (!canLoadInventory.value || loading.value || loadingMore.value || refreshing.value) return;
   if (crossAccountMode.value) {
-    toast.error("Select an account to sync a single catalog.");
+    toast.error("Select an account to refresh a single catalog.");
     return;
   }
   const previousRows = rows.value;
@@ -441,7 +419,7 @@ async function syncAccountRows(syncMode = "incremental") {
     rows.value = [];
     selectedKeys.value = [];
     searchSkipNext.value = 0;
-    await fetchPage(false, true, syncMode);
+    await fetchPage(false, true);
     await continueRefreshSync(refreshId);
     if (refreshId !== refreshRunSeq) return;
     pageInfo.value = { has_next_page: false, end_cursor: null };
@@ -449,34 +427,15 @@ async function syncAccountRows(syncMode = "incremental") {
     searchSkipNext.value = 0;
     await fetchPage(false, false);
     markRefreshed();
-    toast.success(
-      syncMode === "full"
-        ? "Catalog rebuilt from ShipHero."
-        : "Account catalog synced from ShipHero.",
-    );
+    toast.success("Inventory refreshed from ShipHero.");
   } catch (e) {
     rows.value = previousRows;
-    toast.errorFrom(e, "Could not sync inventory catalog.");
+    toast.errorFrom(e, "Could not refresh inventory.");
   } finally {
     if (refreshId === refreshRunSeq) {
       refreshing.value = false;
     }
   }
-}
-
-async function refreshRows() {
-  await syncAccountRows("incremental");
-}
-
-async function rebuildCatalogRows() {
-  if (
-    !window.confirm(
-      "Rebuild the full catalog from ShipHero? This clears cached catalog data for this account.",
-    )
-  ) {
-    return;
-  }
-  await syncAccountRows("full");
 }
 
 function applyFilters() {
@@ -709,28 +668,16 @@ onUnmounted(() => {
           </template>
         </p>
       </div>
-      <div class="d-flex align-items-center gap-2 flex-shrink-0 ms-md-auto flex-wrap justify-content-md-end">
-        <p v-if="catalogSyncedLabel && accountId > 0 && !crossAccountMode" class="small text-secondary mb-0">
-          Catalog synced: {{ catalogSyncedLabel }}
-        </p>
-        <p v-else-if="lastRefreshedLabel" class="small text-secondary mb-0">
+      <div class="d-flex align-items-center gap-2 flex-shrink-0 ms-md-auto">
+        <p v-if="lastRefreshedLabel" class="small text-secondary mb-0">
           Last refreshed: {{ lastRefreshedLabel }}
         </p>
-        <button
-          v-if="accountId > 0 && !crossAccountMode"
-          type="button"
-          class="btn btn-outline-secondary btn-sm orders-toolbar-outline-btn"
-          :disabled="loading || loadingMore || refreshing"
-          @click="rebuildCatalogRows"
-        >
-          Rebuild Catalog
-        </button>
         <button
         type="button"
         class="btn btn-outline-secondary btn-sm orders-toolbar-outline-btn d-inline-flex align-items-center gap-2"
         :disabled="loading || loadingMore || refreshing || (isStaffPickerMode && !canLoadInventory)"
-        title="Sync Account"
-        aria-label="Sync account catalog from ShipHero"
+        title="Refresh"
+        aria-label="Refresh inventory from ShipHero"
         @click="refreshRows"
       >
         <svg
@@ -748,7 +695,7 @@ onUnmounted(() => {
             d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"
           />
         </svg>
-        {{ refreshing ? "Syncing…" : "Sync Account" }}
+        {{ refreshing ? "Refreshing…" : "Refresh" }}
       </button>
       </div>
     </div>
@@ -970,14 +917,8 @@ onUnmounted(() => {
           role="status"
           aria-live="polite"
         >
-          Syncing inventory catalog from ShipHero…
+          Syncing inventory from ShipHero…
         </div>
-        <p
-          v-if="showQtySnapshotHint"
-          class="small text-secondary px-3 pt-2 mb-0"
-        >
-          On Hand, Allocated, and Backorder are snapshots from the last account sync. Open a product for live quantities.
-        </p>
         <div class="table-responsive staff-table-wrap" :class="{ 'user-inv-table--syncing': refreshing }">
         <table class="table table-hover align-middle mb-0 staff-data-table user-inv-table">
           <thead class="table-light staff-table-head">

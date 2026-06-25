@@ -83,7 +83,7 @@ class InventoryCatalogSyncApiTest extends TestCase
 
         $this->app->instance(ShipHeroClient::class, $client);
 
-        $this->postJson('/api/inventory/products/ABC-1/sync', [
+        $this->postJson('/api/inventory-beta/products/ABC-1/sync', [
             'client_account_id' => $account->id,
         ])->assertOk()
             ->assertJsonPath('rows.0.sku', 'ABC-1');

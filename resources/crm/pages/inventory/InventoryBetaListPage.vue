@@ -808,7 +808,7 @@ onUnmounted(() => {
 
 <template>
   <div class="staff-page staff-page--wide">
-        <div
+    <div
       class="d-flex flex-column flex-md-row align-items-start align-items-md-center gap-3 mb-4"
     >
       <div class="d-flex align-items-center gap-2 flex-shrink-0 ms-md-auto flex-wrap justify-content-md-end w-100 w-md-auto">
@@ -849,7 +849,8 @@ onUnmounted(() => {
         </svg>
         {{ refreshing || catalogSyncRunning ? "Syncing…" : "Refresh Inventory" }}
       </button>
-
+      </div>
+    </div>
 
     <div
       v-if="crossAccountMode && crossAccountScanTruncated && hasSearched && displayRows.length > 0"

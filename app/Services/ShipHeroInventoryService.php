@@ -390,6 +390,7 @@ GQL;
     private function inventoryIndexRowToListRow(ShipHeroInventoryProductIndex $row): array
     {
         return [
+            'client_account_id' => (int) $row->client_account_id,
             'product_id' => $row->shiphero_product_id,
             'sku' => $row->sku,
             'name' => $row->name ?? '',
@@ -757,6 +758,116 @@ GQL;
                 'has_next_page' => $next < $total,
                 'end_cursor' => $term === '' ? ($next < $total ? 'idx:'.$next : null) : null,
                 'next_search_skip' => $term !== '' ? $next : null,
+            ],
+        ];
+    }
+
+    /**
+     * Search synced catalog rows across multiple CRM accounts (local index only).
+     *
+     * @param  list<int>  $clientAccountIds
+     * @return array{rows: list<array<string,mixed>>, page_info: array{has_next_page: bool, end_cursor: null, next_search_skip: int}}
+     */
+    public function searchCatalogIndexForAccounts(
+        array $clientAccountIds,
+        string $searchQuery,
+        int $first = 50,
+        int $searchSkip = 0,
+        string $kitsFilter = 'all',
+        string $activeStatus = 'active',
+        bool $backorderOnly = false
+    ): array {
+        $clientAccountIds = array_values(array_unique(array_filter(array_map('intval', $clientAccountIds), static function ($id) {
+            return $id > 0;
+        })));
+        if ($clientAccountIds === []) {
+            return [
+                'rows' => [],
+                'page_info' => [
+                    'has_next_page' => false,
+                    'end_cursor' => null,
+                    'next_search_skip' => 0,
+                ],
+            ];
+        }
+
+        $term = $this->normalizeInventoryIndexSearchValue($searchQuery);
+        if ($term === '') {
+            return [
+                'rows' => [],
+                'page_info' => [
+                    'has_next_page' => false,
+                    'end_cursor' => null,
+                    'next_search_skip' => 0,
+                ],
+            ];
+        }
+
+        $query = ShipHeroInventoryProductIndex::query()
+            ->whereIn('client_account_id', $clientAccountIds);
+
+        if ($activeStatus === 'active') {
+            $query->where('product_active', true);
+        } elseif ($activeStatus === 'inactive') {
+            $query->where('product_active', false);
+        }
+        if ($kitsFilter === 'yes') {
+            $query->where(function ($q) {
+                $q->where('kit', true)->orWhere('kit_build', true);
+            });
+        } elseif ($kitsFilter === 'no') {
+            $query->where('kit', false)->where('kit_build', false);
+        }
+        if ($backorderOnly) {
+            $query->where('backorder', '>', 0);
+        }
+
+        $like = '%'.$term.'%';
+        $query->where(function ($q) use ($like) {
+            $q->where('sku_search', 'like', $like)
+                ->orWhere('name_search', 'like', $like)
+                ->orWhere('barcode_search', 'like', $like);
+        });
+        $query->orderByRaw(
+            'CASE WHEN sku_search = ? THEN 0 WHEN barcode_search = ? THEN 1 WHEN sku_search LIKE ? THEN 2 WHEN name_search LIKE ? THEN 3 ELSE 4 END',
+            [$term, $term, $term.'%', $term.'%']
+        );
+
+        $first = max(1, min(200, $first));
+        $offset = max(0, $searchSkip);
+        $total = (clone $query)->count();
+        if ($total === 0) {
+            return [
+                'rows' => [],
+                'page_info' => [
+                    'has_next_page' => false,
+                    'end_cursor' => null,
+                    'next_search_skip' => 0,
+                ],
+            ];
+        }
+
+        $items = $query
+            ->orderByDesc('on_hand')
+            ->orderBy('sku')
+            ->orderBy('warehouse_id')
+            ->skip($offset)
+            ->take($first)
+            ->get();
+        $rows = $items->map(function (ShipHeroInventoryProductIndex $row) {
+            return $this->inventoryIndexRowToListRow($row);
+        })->values()->all();
+        if ($backorderOnly) {
+            $rows = $this->filterOversoldInventoryRows($rows);
+        }
+        $next = $offset + count($rows);
+
+        return [
+            'rows' => $rows,
+            'page_info' => [
+                'has_next_page' => $next < $total,
+                'end_cursor' => null,
+                'next_search_skip' => $next,
             ],
         ];
     }

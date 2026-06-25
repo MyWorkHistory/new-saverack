@@ -89,7 +89,8 @@ function effectiveRowAccountId(row = null) {
 const canLoadInventory = computed(() => (
   accountId.value > 0 ||
   crossAccountMode.value ||
-  Boolean(searchCommitted.value.trim())
+  Boolean(searchCommitted.value.trim()) ||
+  Boolean(searchDraft.value.trim())
 ));
 
 const tableColspan = computed(() => (crossAccountMode.value ? 9 : 8));
@@ -158,10 +159,12 @@ async function fetchPage(append, forceRefresh = false, syncMode = "incremental")
   }
   crossAccountScanTruncated.value = Boolean(data?.meta?.scan_truncated);
   pageInfo.value = {
-    has_next_page: crossAccountMode.value
-      ? false
-      : Boolean(data?.page_info?.has_next_page),
-    end_cursor: crossAccountMode.value ? null : data?.page_info?.end_cursor ?? null,
+    has_next_page: q
+      ? Boolean(data?.page_info?.has_next_page)
+      : crossAccountMode.value
+        ? false
+        : Boolean(data?.page_info?.has_next_page),
+    end_cursor: q || crossAccountMode.value ? null : data?.page_info?.end_cursor ?? null,
   };
   if (q && typeof data?.page_info?.next_search_skip === "number") {
     searchSkipNext.value = Number(data.page_info.next_search_skip);
@@ -218,12 +221,7 @@ async function loadRows(reset, forceRefresh = false) {
     loadingMore.value = false;
     refreshing.value = false;
   }
-  if (
-    reset &&
-    searchCommitted.value.trim() &&
-    pageInfo.value.has_next_page &&
-    !crossAccountMode.value
-  ) {
+  if (reset && searchCommitted.value.trim() && pageInfo.value.has_next_page) {
     continueSearchInBackground(runId);
   }
 }
@@ -1087,7 +1085,7 @@ onUnmounted(() => {
         </div>
       </div>
       <div
-        v-if="pageInfo.has_next_page && !crossAccountMode && accountId > 0"
+        v-if="pageInfo.has_next_page && (accountId > 0 || crossAccountMode)"
         class="p-3 border-top text-center"
       >
         <div v-if="searchAutoLoading" class="small text-secondary py-1" aria-live="polite">

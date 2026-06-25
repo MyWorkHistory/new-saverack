@@ -128,6 +128,77 @@ class CrossAccountInventoryListService
     }
 
     /**
+     * Beta catalog search across accounts the user may view (local index, substring match).
+     *
+     * @param  array<string, mixed>  $filters
+     * @return array{rows: list<array<string, mixed>>, page_info: array<string, mixed>, meta: array<string, mixed>}
+     */
+    public function listCatalog(User $user, array $filters): array
+    {
+        $accounts = $this->eligibleAccounts($user);
+        $accountsTotal = $accounts->count();
+        $searchQuery = isset($filters['query']) && is_string($filters['query']) ? trim($filters['query']) : '';
+        $first = isset($filters['first']) ? (int) $filters['first'] : 50;
+        $searchSkip = isset($filters['search_skip']) ? (int) $filters['search_skip'] : 0;
+        $kits = isset($filters['kits']) && is_string($filters['kits']) ? $filters['kits'] : 'all';
+        $activeStatus = isset($filters['active_status']) && is_string($filters['active_status'])
+            ? $filters['active_status']
+            : 'active';
+        $backorderOnly = (bool) ($filters['backorder_only'] ?? false);
+
+        if ($searchQuery === '') {
+            return [
+                'rows' => [],
+                'page_info' => [
+                    'has_next_page' => false,
+                    'end_cursor' => null,
+                ],
+                'meta' => [
+                    'cross_account' => true,
+                    'accounts_queried' => 0,
+                    'accounts_total' => $accountsTotal,
+                    'scan_truncated' => false,
+                ],
+            ];
+        }
+
+        $accountsById = $accounts->keyBy('id');
+        $payload = $this->inventory->searchCatalogIndexForAccounts(
+            $accountsById->keys()->all(),
+            $searchQuery,
+            $first,
+            $searchSkip,
+            $kits,
+            $activeStatus,
+            $backorderOnly
+        );
+
+        $rows = [];
+        foreach ($payload['rows'] as $row) {
+            if (! is_array($row)) {
+                continue;
+            }
+            $accountId = (int) ($row['client_account_id'] ?? 0);
+            $account = $accountsById->get($accountId);
+            if ($account === null) {
+                continue;
+            }
+            $rows[] = $this->annotateRow($row, $account);
+        }
+
+        return [
+            'rows' => array_values($rows),
+            'page_info' => $payload['page_info'],
+            'meta' => [
+                'cross_account' => true,
+                'accounts_queried' => $accountsTotal,
+                'accounts_total' => $accountsTotal,
+                'scan_truncated' => false,
+            ],
+        ];
+    }
+
+    /**
      * @return Collection<int, ClientAccount>
      */
     private function eligibleAccounts(User $user): Collection

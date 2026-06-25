@@ -20,7 +20,7 @@ class ShipHeroInventoryRefreshTest extends TestCase
         parent::tearDown();
     }
 
-    public function test_refresh_clears_inventory_index_before_fetching_live_rows(): void
+    public function test_full_sync_clears_inventory_index_before_fetching_live_rows(): void
     {
         $account = ClientAccount::query()->create([
             'company_name' => 'Refresh Index Co',
@@ -97,7 +97,8 @@ class ShipHeroInventoryRefreshTest extends TestCase
             0,
             $account->id,
             false,
-            true
+            true,
+            ShipHeroInventoryService::CATALOG_SYNC_FULL
         );
 
         $this->assertSame('NEW-SKU', $payload['rows'][0]['sku'] ?? null);
@@ -109,6 +110,107 @@ class ShipHeroInventoryRefreshTest extends TestCase
             'client_account_id' => $account->id,
             'sku' => 'NEW-SKU',
             'on_hand' => 6,
+        ]);
+    }
+
+    public function test_incremental_sync_preserves_existing_rows_until_finalize(): void
+    {
+        $account = ClientAccount::query()->create([
+            'company_name' => 'Incremental Sync Co',
+            'status' => ClientAccount::STATUS_ACTIVE,
+            'shiphero_customer_account_id' => 'sh-inc-1',
+        ]);
+
+        ShipHeroInventoryProductIndex::query()->create([
+            'client_account_id' => $account->id,
+            'shiphero_customer_account_id' => 'sh-inc-1',
+            'sku' => 'OLD-SKU',
+            'sku_search' => 'old-sku',
+            'name' => 'Old product',
+            'name_search' => 'old product',
+            'product_active' => true,
+            'kit' => false,
+            'kit_build' => false,
+            'warehouse_id' => 'WH1',
+            'warehouse_active' => true,
+            'on_hand' => 99,
+            'allocated' => 0,
+            'backorder' => 0,
+            'synced_at' => now()->subDay(),
+            'last_seen_at' => now()->subDay(),
+        ]);
+
+        $client = Mockery::mock(ShipHeroClient::class);
+        $client->shouldReceive('query')
+            ->once()
+            ->andReturn([
+                'data' => [
+                    'products' => [
+                        'data' => [
+                            'pageInfo' => [
+                                'hasNextPage' => false,
+                                'endCursor' => null,
+                            ],
+                            'edges' => [
+                                [
+                                    'node' => [
+                                        'id' => 'prod-new',
+                                        'sku' => 'NEW-SKU',
+                                        'name' => 'New product',
+                                        'barcode' => null,
+                                        'active' => true,
+                                        'kit' => false,
+                                        'kit_build' => false,
+                                        'images' => [],
+                                        'warehouse_products' => [
+                                            [
+                                                'warehouse_id' => 'WH1',
+                                                'on_hand' => 6,
+                                                'allocated' => 0,
+                                                'available' => 6,
+                                                'backorder' => 0,
+                                                'active' => true,
+                                            ],
+                                        ],
+                                    ],
+                                ],
+                            ],
+                        ],
+                    ],
+                ],
+            ]);
+
+        $service = new ShipHeroInventoryService($client);
+        $service->listInventoryRows(
+            'sh-inc-1',
+            50,
+            null,
+            'all',
+            'active',
+            null,
+            0,
+            $account->id,
+            false,
+            true,
+            ShipHeroInventoryService::CATALOG_SYNC_INCREMENTAL
+        );
+
+        $this->assertDatabaseHas('shiphero_inventory_product_index', [
+            'client_account_id' => $account->id,
+            'sku' => 'OLD-SKU',
+            'product_active' => true,
+        ]);
+        $this->assertDatabaseHas('shiphero_inventory_product_index', [
+            'client_account_id' => $account->id,
+            'sku' => 'NEW-SKU',
+        ]);
+
+        $service->finalizeIncrementalCatalogSync($account->id);
+
+        $this->assertDatabaseHas('shiphero_inventory_product_index', [
+            'client_account_id' => $account->id,
+            'sku' => 'OLD-SKU',
+            'product_active' => false,
         ]);
     }
 

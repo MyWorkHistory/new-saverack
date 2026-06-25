@@ -122,6 +122,8 @@ Route::middleware('auth:sanctum')->group(function () {
             ->middleware('can:inventory.view');
         Route::get('/products/{sku}', [InventoryController::class, 'productDetail'])
             ->middleware('can:inventory.view');
+        Route::post('/products/{sku}/sync', [InventoryController::class, 'syncCatalogProduct'])
+            ->middleware('can:inventory.view');
         Route::get('/products/{sku}/parent-kits', [InventoryController::class, 'productParentKits'])
             ->middleware('can:inventory.view');
         Route::get('/products/{sku}/kit-components', [InventoryController::class, 'productKitComponents'])

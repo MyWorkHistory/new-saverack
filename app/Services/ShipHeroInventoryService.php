@@ -12,6 +12,13 @@ use RuntimeException;
 
 class ShipHeroInventoryService
 {
+    public const CATALOG_SYNC_INCREMENTAL = 'incremental';
+
+    public const CATALOG_SYNC_FULL = 'full';
+
+    /** @var bool */
+    private $catalogSyncTrackSeen = false;
+
     /** @var ShipHeroClient */
     protected $client;
 
@@ -166,7 +173,8 @@ GQL;
         int $searchSkip = 0,
         ?int $clientAccountId = null,
         bool $backorderOnly = false,
-        bool $refresh = false
+        bool $refresh = false,
+        string $syncMode = self::CATALOG_SYNC_INCREMENTAL
     ): array {
         $first = max(1, min(200, $first));
         $after = is_string($after) && trim($after) !== '' ? trim($after) : null;
@@ -174,11 +182,51 @@ GQL;
         $activeStatus = in_array($activeStatus, ['active', 'inactive', 'all'], true) ? $activeStatus : 'active';
         $searchQuery = is_string($searchQuery) ? trim($searchQuery) : '';
         $searchSkip = max(0, $searchSkip);
+        $syncMode = $this->normalizeCatalogSyncMode($syncMode);
 
-        if ($refresh && $after === null) {
-            $this->clearInventoryIndexForAccount($clientAccountId, $customerAccountId);
+        $this->catalogSyncTrackSeen = $refresh;
+        try {
+            if ($refresh && $after === null && $clientAccountId !== null && $clientAccountId > 0) {
+                if ($syncMode === self::CATALOG_SYNC_FULL) {
+                    $this->clearInventoryIndexForAccount($clientAccountId, $customerAccountId);
+                }
+                $this->beginCatalogSync($clientAccountId);
+            }
+
+            return $this->listInventoryRowsInner(
+                $customerAccountId,
+                $first,
+                $after,
+                $kitsFilter,
+                $activeStatus,
+                $searchQuery,
+                $searchSkip,
+                $clientAccountId,
+                $backorderOnly,
+                $refresh
+            );
+        } finally {
+            $this->catalogSyncTrackSeen = false;
         }
+    }
 
+    /**
+     * @param  'all'|'yes'|'no'  $kitsFilter
+     * @param  'active'|'inactive'|'all'  $activeStatus
+     * @return array{rows: list<array<string,mixed>>, page_info: array{has_next_page: bool, end_cursor: string|null, next_search_skip?: int}}
+     */
+    private function listInventoryRowsInner(
+        ?string $customerAccountId,
+        int $first,
+        ?string $after,
+        string $kitsFilter,
+        string $activeStatus,
+        string $searchQuery,
+        int $searchSkip,
+        ?int $clientAccountId,
+        bool $backorderOnly,
+        bool $refresh
+    ): array {
         $graphql = <<<'GQL'
 query ShipHeroInventoryRows($customer_account_id: String, $first: Int!, $after: String) {
   products(customer_account_id: $customer_account_id) {
@@ -419,14 +467,7 @@ GQL;
                 $warehouseId = null;
             }
 
-            ShipHeroInventoryProductIndex::query()->updateOrCreate(
-                [
-                    'client_account_id' => $clientAccountId,
-                    'shiphero_customer_account_id' => trim((string) $customerAccountId) ?: null,
-                    'sku' => $sku,
-                    'warehouse_id' => $warehouseId,
-                ],
-                [
+            $payload = [
                     'shiphero_product_id' => trim((string) ($row['product_id'] ?? '')) ?: null,
                     'sku_search' => $this->normalizeInventoryIndexSearchValue($sku),
                     'name' => isset($row['name']) ? (string) $row['name'] : '',
@@ -442,9 +483,173 @@ GQL;
                     'allocated' => (float) ($row['allocated'] ?? 0),
                     'backorder' => (float) ($row['backorder'] ?? 0),
                     'synced_at' => now(),
-                ]
+                ];
+            if ($this->catalogSyncTrackSeen) {
+                $payload['last_seen_at'] = now();
+            }
+
+            ShipHeroInventoryProductIndex::query()->updateOrCreate(
+                [
+                    'client_account_id' => $clientAccountId,
+                    'shiphero_customer_account_id' => trim((string) $customerAccountId) ?: null,
+                    'sku' => $sku,
+                    'warehouse_id' => $warehouseId,
+                ],
+                $payload
             );
         }
+    }
+
+    public function normalizeCatalogSyncMode(string $syncMode): string
+    {
+        $mode = strtolower(trim($syncMode));
+
+        return $mode === self::CATALOG_SYNC_FULL ? self::CATALOG_SYNC_FULL : self::CATALOG_SYNC_INCREMENTAL;
+    }
+
+    public function beginCatalogSync(int $clientAccountId): void
+    {
+        if ($clientAccountId <= 0) {
+            return;
+        }
+
+        ClientAccount::query()
+            ->where('id', $clientAccountId)
+            ->update([
+                'inventory_catalog_sync_status' => 'running',
+                'inventory_catalog_sync_started_at' => now(),
+            ]);
+    }
+
+    public function finalizeIncrementalCatalogSync(int $clientAccountId): void
+    {
+        if ($clientAccountId <= 0) {
+            return;
+        }
+
+        $account = ClientAccount::query()->find($clientAccountId);
+        if ($account === null) {
+            return;
+        }
+
+        $startedAt = $account->inventory_catalog_sync_started_at;
+        if ($startedAt !== null) {
+            ShipHeroInventoryProductIndex::query()
+                ->where('client_account_id', $clientAccountId)
+                ->where(function ($query) use ($startedAt) {
+                    $query->whereNull('last_seen_at')
+                        ->orWhere('last_seen_at', '<', $startedAt);
+                })
+                ->update(['product_active' => false]);
+        }
+
+        $this->markCatalogSyncCompleted($clientAccountId);
+    }
+
+    public function markCatalogSyncCompleted(int $clientAccountId): void
+    {
+        if ($clientAccountId <= 0) {
+            return;
+        }
+
+        $productCount = (int) ShipHeroInventoryProductIndex::query()
+            ->where('client_account_id', $clientAccountId)
+            ->where('product_active', true)
+            ->distinct()
+            ->count('sku');
+
+        ClientAccount::query()
+            ->where('id', $clientAccountId)
+            ->update([
+                'inventory_catalog_sync_status' => 'idle',
+                'inventory_catalog_synced_at' => now(),
+                'inventory_catalog_product_count' => $productCount,
+            ]);
+    }
+
+    public function markCatalogSyncFailed(int $clientAccountId): void
+    {
+        if ($clientAccountId <= 0) {
+            return;
+        }
+
+        ClientAccount::query()
+            ->where('id', $clientAccountId)
+            ->update([
+                'inventory_catalog_sync_status' => 'failed',
+            ]);
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    public function catalogSyncMetaForAccount(int $clientAccountId): array
+    {
+        if ($clientAccountId <= 0) {
+            return [
+                'inventory_catalog_synced_at' => null,
+                'inventory_catalog_sync_status' => 'idle',
+                'inventory_catalog_product_count' => 0,
+            ];
+        }
+
+        $account = ClientAccount::query()->find($clientAccountId);
+        if ($account === null) {
+            return [
+                'inventory_catalog_synced_at' => null,
+                'inventory_catalog_sync_status' => 'idle',
+                'inventory_catalog_product_count' => 0,
+            ];
+        }
+
+        return [
+            'inventory_catalog_synced_at' => $account->inventory_catalog_synced_at?->toIso8601String(),
+            'inventory_catalog_sync_status' => (string) ($account->inventory_catalog_sync_status ?? 'idle'),
+            'inventory_catalog_product_count' => (int) ($account->inventory_catalog_product_count ?? 0),
+        ];
+    }
+
+    /**
+     * Fetch one product from ShipHero and upsert catalog index rows.
+     *
+     * @return list<array<string, mixed>>
+     */
+    public function syncCatalogProductBySku(
+        int $clientAccountId,
+        ?string $customerAccountId,
+        string $sku
+    ): array {
+        $sku = trim($sku);
+        if ($sku === '' || $clientAccountId <= 0) {
+            throw new RuntimeException('SKU and client account are required.');
+        }
+
+        $data = $this->fetchProductBySku($sku, $customerAccountId);
+        if ($data === null) {
+            try {
+                $data = $this->fetchProductByBarcode($sku, $customerAccountId);
+            } catch (\Throwable $e) {
+                $data = null;
+            }
+        }
+        if ($data === null || $data === []) {
+            throw new RuntimeException('Product not found in ShipHero.');
+        }
+
+        $edges = [['node' => $data]];
+        $rows = $this->expandInventoryProductEdgesToRows($edges, 'all', 'all');
+        if ($rows === []) {
+            throw new RuntimeException('Product not found in ShipHero.');
+        }
+
+        $this->catalogSyncTrackSeen = true;
+        try {
+            $this->upsertInventoryIndexRows($clientAccountId, $customerAccountId, $rows);
+        } finally {
+            $this->catalogSyncTrackSeen = false;
+        }
+
+        return $rows;
     }
 
     /**

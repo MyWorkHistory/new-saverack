@@ -24,6 +24,21 @@ class InventoryProductDetailCacheService
             ->delete();
     }
 
+    public function clearForSku(int $clientAccountId, string $sku): void
+    {
+        if ($clientAccountId <= 0) {
+            return;
+        }
+        $normalized = $this->normalizeSku($sku);
+        if ($normalized === '') {
+            return;
+        }
+        ShipHeroInventoryProductDetailCache::query()
+            ->where('client_account_id', $clientAccountId)
+            ->where('sku_search', $normalized)
+            ->delete();
+    }
+
     /**
      * @return array<string, mixed>|null
      */

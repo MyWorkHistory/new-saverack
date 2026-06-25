@@ -61,6 +61,11 @@ class ClientAccount extends Model
         'contract_date',
         'stripe_customer_id',
         'shiphero_customer_account_id',
+        'shiphero_client_refresh_token',
+        'inventory_catalog_synced_at',
+        'inventory_catalog_sync_started_at',
+        'inventory_catalog_sync_status',
+        'inventory_catalog_product_count',
         'whatsapp_api_id',
         'default_payment_type',
         'postage_option',
@@ -83,6 +88,9 @@ class ClientAccount extends Model
         'cc_fee_percent' => 'decimal:2',
         'billing_available_funds_cents' => 'integer',
         'payment_terms_days' => 'integer',
+        'inventory_catalog_synced_at' => 'datetime',
+        'inventory_catalog_sync_started_at' => 'datetime',
+        'inventory_catalog_product_count' => 'integer',
     ];
 
     protected static function booted(): void

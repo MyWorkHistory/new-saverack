@@ -881,6 +881,7 @@ class InventoryController extends Controller
             'search_skip' => ['nullable', 'integer', 'min:0', 'max:500000'],
             'backorder_only' => ['nullable', 'boolean'],
             'refresh' => ['nullable', 'boolean'],
+            'sync_mode' => ['nullable', 'string', Rule::in(['incremental', 'full'])],
         ]);
 
         $user = $request->user();
@@ -938,6 +939,9 @@ class InventoryController extends Controller
         $searchSkip = isset($validated['search_skip']) ? (int) $validated['search_skip'] : 0;
         $backorderOnly = (bool) ($validated['backorder_only'] ?? false);
         $refresh = (bool) ($validated['refresh'] ?? false);
+        $syncMode = isset($validated['sync_mode']) && is_string($validated['sync_mode'])
+            ? $validated['sync_mode']
+            : ShipHeroInventoryService::CATALOG_SYNC_INCREMENTAL;
         try {
             $shipheroCustomerId = $this->resolveShipHeroCustomerAccountId($clientAccountId, $request);
             $payload = $this->inventory->listInventoryRows(
@@ -950,23 +954,71 @@ class InventoryController extends Controller
                 $searchSkip,
                 $clientAccountId,
                 $backorderOnly,
-                $refresh
+                $refresh,
+                $syncMode
             );
+
+            $hasNextPage = (bool) ($payload['page_info']['has_next_page'] ?? false);
+            if ($refresh && ! $hasNextPage) {
+                if ($syncMode === ShipHeroInventoryService::CATALOG_SYNC_FULL) {
+                    $this->inventory->markCatalogSyncCompleted($clientAccountId);
+                } else {
+                    $this->inventory->finalizeIncrementalCatalogSync($clientAccountId);
+                }
+            }
 
             return response()->json([
                 'rows' => $payload['rows'],
                 'page_info' => $payload['page_info'],
+                'catalog_sync' => $this->inventory->catalogSyncMetaForAccount($clientAccountId),
             ]);
         } catch (ValidationException $e) {
             throw $e;
         } catch (RuntimeException $e) {
+            if ($refresh) {
+                $this->inventory->markCatalogSyncFailed($clientAccountId);
+            }
             return response()->json(['message' => $e->getMessage()], 502);
         } catch (Throwable $e) {
+            if ($refresh) {
+                $this->inventory->markCatalogSyncFailed($clientAccountId);
+            }
             report($e);
             return response()->json([
                 'message' => config('app.debug')
                     ? $e->getMessage()
                     : 'Could not reach ShipHero. Check SHIPHERO_* in .env and server logs.',
+            ], 502);
+        }
+    }
+
+    public function syncCatalogProduct(Request $request, string $sku): JsonResponse
+    {
+        $validated = $request->validate([
+            'client_account_id' => ['required', 'integer', 'exists:client_accounts,id'],
+        ]);
+
+        $clientAccountId = (int) $validated['client_account_id'];
+        try {
+            $shipheroCustomerId = $this->resolveShipHeroCustomerAccountId($clientAccountId, $request);
+            $rows = $this->inventory->syncCatalogProductBySku($clientAccountId, $shipheroCustomerId, $sku);
+            $this->detailCache->clearForSku($clientAccountId, $sku);
+
+            return response()->json([
+                'rows' => $rows,
+                'catalog_sync' => $this->inventory->catalogSyncMetaForAccount($clientAccountId),
+            ]);
+        } catch (ValidationException $e) {
+            throw $e;
+        } catch (RuntimeException $e) {
+            return response()->json(['message' => $e->getMessage()], 422);
+        } catch (Throwable $e) {
+            report($e);
+
+            return response()->json([
+                'message' => config('app.debug')
+                    ? $e->getMessage()
+                    : 'Could not sync product from ShipHero.',
             ], 502);
         }
     }

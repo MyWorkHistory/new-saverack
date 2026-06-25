@@ -28,6 +28,7 @@ class ShipHeroInventoryProductIndex extends Model
         'allocated',
         'backorder',
         'synced_at',
+        'last_seen_at',
     ];
 
     protected $casts = [
@@ -40,5 +41,6 @@ class ShipHeroInventoryProductIndex extends Model
         'allocated' => 'float',
         'backorder' => 'float',
         'synced_at' => 'datetime',
+        'last_seen_at' => 'datetime',
     ];
 }

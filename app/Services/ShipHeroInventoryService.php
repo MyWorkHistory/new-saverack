@@ -2003,17 +2003,14 @@ GQL;
             throw new RuntimeException('quantity must be zero or greater.');
         }
 
-        $input = [
+        $input = $this->applyCustomerAccountToMutationInput([
             'sku' => $sku,
             'warehouse_id' => $warehouseId,
             'location_id' => $locationId,
             'quantity' => $quantity,
             'reason' => $reason !== '' ? $reason : 'CRM inventory replace',
             'includes_non_sellable' => false,
-        ];
-        if (is_string($customerAccountId) && trim($customerAccountId) !== '') {
-            $input['customer_account_id'] = trim($customerAccountId);
-        }
+        ], $customerAccountId);
 
         $graphql = <<<'GQL'
 mutation ShipHeroInventoryReplace($data: ReplaceInventoryInput!) {
@@ -2085,16 +2082,13 @@ GQL;
             throw new RuntimeException('quantity must be greater than zero.');
         }
 
-        $input = [
+        $input = $this->applyCustomerAccountToMutationInput([
             'sku' => $sku,
             'warehouse_id' => $warehouseId,
             'location_id' => $locationId,
             'quantity' => $quantity,
             'reason' => $reason !== '' ? $reason : 'CRM inventory add',
-        ];
-        if (is_string($customerAccountId) && trim($customerAccountId) !== '') {
-            $input['customer_account_id'] = trim($customerAccountId);
-        }
+        ], $customerAccountId);
 
         $graphql = <<<'GQL'
 mutation ShipHeroInventoryAdd($data: AddInventoryInput!) {
@@ -2740,12 +2734,12 @@ GQL,
     public function resolveCustomerAccountIdForSkuMutation(string $sku, ?string $preferredCustomerId = null): ?string
     {
         if (is_string($preferredCustomerId) && trim($preferredCustomerId) !== '') {
-            return trim($preferredCustomerId);
+            return $this->normalizeShipHeroCustomerAccountId($preferredCustomerId);
         }
 
         $fromLocal = $this->lookupShipHeroCustomerAccountIdForSku($sku);
         if ($fromLocal !== null) {
-            return $fromLocal;
+            return $this->normalizeShipHeroCustomerAccountId($fromLocal);
         }
 
         return $this->fetchProductAccountIdBySku($sku);
@@ -2775,7 +2769,7 @@ GQL;
             $json = $this->client->query($graphql, ['sku' => $sku]);
             $accountId = trim((string) data_get($json, 'data.product.data.account_id', ''));
 
-            return $accountId !== '' ? $accountId : null;
+            return $this->normalizeShipHeroCustomerAccountId($accountId !== '' ? $accountId : null);
         } catch (\Throwable $e) {
             Log::warning('shiphero.inventory.customer_lookup.product_account_failed', [
                 'sku' => $sku,
@@ -2861,7 +2855,50 @@ GQL;
     {
         $accountId = trim((string) ($data['account_id'] ?? ''));
 
-        return $accountId !== '' ? $accountId : null;
+        return $this->normalizeShipHeroCustomerAccountId($accountId !== '' ? $accountId : null);
+    }
+
+    /**
+     * ShipHero inventory mutations expect the legacy numeric customer account id,
+     * not the GraphQL global id (e.g. Account:97302 base64-encoded).
+     */
+    public function normalizeShipHeroCustomerAccountId(?string $customerAccountId): ?string
+    {
+        if ($customerAccountId === null) {
+            return null;
+        }
+        $value = trim($customerAccountId);
+        if ($value === '') {
+            return null;
+        }
+        if (ctype_digit($value)) {
+            return $value;
+        }
+        if (preg_match('/^Account:(\d+)$/i', $value, $matches) === 1) {
+            return $matches[1];
+        }
+        $decoded = base64_decode($value, true);
+        if (is_string($decoded) && $decoded !== '') {
+            if (preg_match('/^Account:(\d+)$/i', trim($decoded), $matches) === 1) {
+                return $matches[1];
+            }
+        }
+
+        return $value;
+    }
+
+    /**
+     * @param  array<string, mixed>  $input
+     * @return array<string, mixed>
+     */
+    private function applyCustomerAccountToMutationInput(array $input, ?string $customerAccountId): array
+    {
+        $normalized = $this->normalizeShipHeroCustomerAccountId($customerAccountId);
+        if ($normalized !== null) {
+            $input['customer_account_id'] = $normalized;
+        }
+
+        return $input;
     }
 
     /**
@@ -3125,7 +3162,10 @@ GQL,
             $input['sellable'] = $sellable;
         }
         if (is_string($customerAccountId) && trim($customerAccountId) !== '') {
-            $input['customer_account_id'] = trim($customerAccountId);
+            $normalizedCustomer = $this->normalizeShipHeroCustomerAccountId($customerAccountId);
+            if ($normalizedCustomer !== null) {
+                $input['customer_account_id'] = $normalizedCustomer;
+            }
         }
         $attemptInputs = [];
         // Try a few payload shapes because accounts can differ on accepted fields.
@@ -3134,11 +3174,14 @@ GQL,
             $attemptInputs[] = ['location_id' => $locationId, 'pickable' => $pickable, 'sellable' => $sellable];
         }
         if (is_string($customerAccountId) && trim($customerAccountId) !== '') {
-            $withCustomer = ['location_id' => $locationId, 'pickable' => $pickable, 'customer_account_id' => trim($customerAccountId)];
-            $attemptInputs[] = $withCustomer;
-            if ($sellable !== null) {
-                $withCustomer['sellable'] = $sellable;
+            $normalizedCustomer = $this->normalizeShipHeroCustomerAccountId($customerAccountId);
+            if ($normalizedCustomer !== null) {
+                $withCustomer = ['location_id' => $locationId, 'pickable' => $pickable, 'customer_account_id' => $normalizedCustomer];
                 $attemptInputs[] = $withCustomer;
+                if ($sellable !== null) {
+                    $withCustomer['sellable'] = $sellable;
+                    $attemptInputs[] = $withCustomer;
+                }
             }
         }
         $json = null;
@@ -4805,9 +4848,7 @@ GQL,
      */
     private function customerAccountVariables(?string $customerAccountId): array
     {
-        $id = is_string($customerAccountId) && trim($customerAccountId) !== ''
-            ? trim($customerAccountId)
-            : null;
+        $id = $this->normalizeShipHeroCustomerAccountId($customerAccountId);
 
         if ($id === null) {
             return [];

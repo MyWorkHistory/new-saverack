@@ -539,6 +539,8 @@ class InventoryController extends Controller
             $shipheroCustomerId = null;
             if ($clientAccountId > 0) {
                 $shipheroCustomerId = $this->tryResolveShipHeroCustomerAccountId($clientAccountId, $request);
+            } else {
+                $shipheroCustomerId = $this->inventory->lookupShipHeroCustomerAccountIdForSku($sku);
             }
             $product = $this->inventory->getProductDetailBySku($sku, $warehouseId, $shipheroCustomerId, false);
             if (! is_array($product) && $clientAccountId > 0) {
@@ -1316,6 +1318,9 @@ class InventoryController extends Controller
                 $clientAccountId > 0 ? $clientAccountId : null,
                 $request,
             );
+            if ($shipheroCustomerId === null) {
+                $shipheroCustomerId = $this->inventory->lookupShipHeroCustomerAccountIdForSku($validated['sku']);
+            }
             $resolved = $this->inventory->resolveWarehouseLocation(
                 $validated['warehouse_id'],
                 $validated['location'],

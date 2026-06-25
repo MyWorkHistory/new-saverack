@@ -2663,6 +2663,25 @@ GQL,
     }
 
     /**
+     * Resolve ShipHero customer_account_id for a SKU (3PL) from the local inventory index.
+     */
+    public function lookupShipHeroCustomerAccountIdForSku(string $sku): ?string
+    {
+        $sku = trim($sku);
+        if ($sku === '') {
+            return null;
+        }
+        $customerId = ShipHeroInventoryProductIndex::query()
+            ->where('sku_search', $this->normalizeInventoryIndexSearchValue($sku))
+            ->whereNotNull('shiphero_customer_account_id')
+            ->where('shiphero_customer_account_id', '!=', '')
+            ->orderByDesc('synced_at')
+            ->value('shiphero_customer_account_id');
+
+        return is_string($customerId) && trim($customerId) !== '' ? trim($customerId) : null;
+    }
+
+    /**
      * Product account + existing location assignments for inventory mutations.
      *
      * @return array{customer_account_id: ?string, location_ids: list<string>}
@@ -2682,16 +2701,27 @@ GQL,
             return $context;
         }
 
-        $data = $this->fetchProductBySku($sku, $customerAccountId);
+        $customer = is_string($customerAccountId) && trim($customerAccountId) !== ''
+            ? trim($customerAccountId)
+            : null;
+        if ($customer === null) {
+            $customer = $this->lookupShipHeroCustomerAccountIdForSku($sku);
+        }
+
+        $data = $this->fetchProductBySku($sku, $customer);
         if (! is_array($data)) {
             return $context;
         }
 
-        $accountId = trim((string) ($data['account_id'] ?? ''));
-        if ($accountId !== '') {
-            $context['customer_account_id'] = $accountId;
-        } elseif (is_string($customerAccountId) && trim($customerAccountId) !== '') {
-            $context['customer_account_id'] = trim($customerAccountId);
+        if ($customer === null) {
+            $customer = $this->customerAccountIdFromProductData($data);
+        }
+        if ($customer !== null) {
+            $context['customer_account_id'] = $customer;
+            $scoped = $this->fetchProductBySku($sku, $customer);
+            if (is_array($scoped)) {
+                $data = $scoped;
+            }
         }
 
         foreach (($data['warehouse_products'] ?? []) as $warehouseProduct) {
@@ -2706,15 +2736,33 @@ GQL,
                 break;
             }
             foreach ($edges as $edge) {
-                $locationId = trim((string) data_get($edge, 'node.location_id', ''));
-                if ($locationId !== '') {
-                    $context['location_ids'][] = $locationId;
+                foreach (['node.location_id', 'node.id'] as $path) {
+                    $locationId = trim((string) data_get($edge, $path, ''));
+                    if ($locationId !== '') {
+                        $context['location_ids'][] = $locationId;
+                    }
                 }
             }
             break;
         }
 
         return $context;
+    }
+
+    /**
+     * @param  array<string, mixed>  $data
+     */
+    private function customerAccountIdFromProductData(array $data): ?string
+    {
+        $accountId = trim((string) ($data['account_id'] ?? ''));
+        if ($accountId === '') {
+            return null;
+        }
+        if (ctype_digit($accountId)) {
+            return $accountId;
+        }
+
+        return null;
     }
 
     /**
@@ -4222,8 +4270,17 @@ GQL;
         if ($id === '') {
             return $this->normalizeProduct($base, $warehouseId);
         }
+        $customerForById = is_string($customerAccountId) && trim($customerAccountId) !== ''
+            ? trim($customerAccountId)
+            : null;
+        if ($customerForById === null) {
+            $customerForById = $this->customerAccountIdFromProductData($base);
+        }
+        if ($customerForById === null) {
+            $customerForById = $this->lookupShipHeroCustomerAccountIdForSku($sku);
+        }
         try {
-            $full = $this->fetchProductById($id, $customerAccountId);
+            $full = $this->fetchProductById($id, $customerForById);
             if (is_array($full)) {
                 $merged = array_merge($base, $full);
                 // ShipHero can return 0 for customs_value on product(id) while SKU/barcode
@@ -4518,28 +4575,6 @@ GQL;
             if ($wid === '') {
                 continue;
             }
-            $catalogById = [];
-            $catalogByName = [];
-            try {
-                // Keep product detail location enrichment global to warehouse.
-                // Passing customer_account_id here is not reliable across ShipHero accounts.
-                foreach ($this->listLocations($wid, null) as $locationMeta) {
-                    $idKey = strtolower(trim((string) ($locationMeta['id'] ?? '')));
-                    if ($idKey !== '') {
-                        $catalogById[$idKey] = $locationMeta;
-                    }
-                    $nameKey = strtolower(trim((string) ($locationMeta['name'] ?? '')));
-                    if ($nameKey !== '') {
-                        $catalogByName[$nameKey] = $locationMeta;
-                    }
-                }
-            } catch (\Throwable $e) {
-                Log::warning('shiphero.inventory.locations_meta_lookup_failed', [
-                    'warehouse_id' => $wid,
-                    'customer_account_id' => null,
-                    'message' => $e->getMessage(),
-                ]);
-            }
             $locations = $warehouse['locations'] ?? null;
             if (! is_array($locations)) {
                 continue;
@@ -4548,22 +4583,13 @@ GQL;
                 if (! is_array($location)) {
                     continue;
                 }
-                $locationId = strtolower(trim((string) ($location['location_id'] ?? '')));
-                $locationName = strtolower(trim((string) ($location['location_name'] ?? '')));
                 $meta = null;
-                if ($locationId !== '' && isset($catalogById[$locationId])) {
-                    $meta = $catalogById[$locationId];
-                } elseif ($locationName !== '' && isset($catalogByName[$locationName])) {
-                    $meta = $catalogByName[$locationName];
-                }
-                if (! is_array($meta) && $locationId !== '') {
-                    $directLookupId = trim((string) ($location['location_id'] ?? ''));
-                    if ($directLookupId !== '') {
-                        if (! array_key_exists($directLookupId, $locationMetaCache)) {
-                            $locationMetaCache[$directLookupId] = $this->fetchLocationMetaById($directLookupId);
-                        }
-                        $meta = $locationMetaCache[$directLookupId];
+                $directLookupId = trim((string) ($location['location_id'] ?? ''));
+                if ($directLookupId !== '') {
+                    if (! array_key_exists($directLookupId, $locationMetaCache)) {
+                        $locationMetaCache[$directLookupId] = $this->fetchLocationMetaById($directLookupId);
                     }
+                    $meta = $locationMetaCache[$directLookupId];
                 }
                 if (! is_array($meta)) {
                     continue;
@@ -4683,6 +4709,10 @@ GQL,
         $id = is_string($customerAccountId) && trim($customerAccountId) !== ''
             ? trim($customerAccountId)
             : null;
+
+        if ($id === null) {
+            return [];
+        }
 
         return ['customer_account_id' => $id];
     }

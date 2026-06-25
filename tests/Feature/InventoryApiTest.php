@@ -395,6 +395,10 @@ class InventoryApiTest extends TestCase
             ->with('WH1', 'A-01', null)
             ->andReturn(['id' => 'loc-1', 'name' => 'A-01']);
         $mock->shouldNotReceive('resolveProductWarehouseLocation');
+        $mock->shouldReceive('lookupShipHeroCustomerAccountIdForSku')
+            ->once()
+            ->with('SKU-1')
+            ->andReturn(null);
         $mock->shouldReceive('getProductWarehouseMutationContext')
             ->once()
             ->with('SKU-1', 'WH1', null)
@@ -440,11 +444,15 @@ class InventoryApiTest extends TestCase
         $mock = Mockery::mock(ShipHeroInventoryService::class);
         $mock->shouldReceive('resolveWarehouseLocation')
             ->once()
-            ->with('WH1', 'E-12-025', null)
+            ->with('WH1', 'E-12-025', '92640')
             ->andReturn(['id' => 'loc-e12', 'name' => 'E-12-025']);
+        $mock->shouldReceive('lookupShipHeroCustomerAccountIdForSku')
+            ->once()
+            ->with('MHC831361')
+            ->andReturn('92640');
         $mock->shouldReceive('getProductWarehouseMutationContext')
             ->once()
-            ->with('MHC831361', 'WH1', null)
+            ->with('MHC831361', 'WH1', '92640')
             ->andReturn(['customer_account_id' => '92640', 'location_ids' => []]);
         $mock->shouldReceive('addLocationQuantity')
             ->once()

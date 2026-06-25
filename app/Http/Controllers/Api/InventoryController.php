@@ -1327,26 +1327,14 @@ class InventoryController extends Controller
                 ]);
             }
             $locationId = (string) ($resolved['id'] ?? '');
-            $qty = (int) $validated['quantity'];
-            if ($qty > 0) {
-                $updated = $this->inventory->addLocationQuantity(
-                    $validated['sku'],
-                    $validated['warehouse_id'],
-                    $locationId,
-                    $qty,
-                    $reason,
-                    $shipheroCustomerId
-                );
-            } else {
-                $updated = $this->inventory->replaceLocationQuantity(
-                    $validated['sku'],
-                    $validated['warehouse_id'],
-                    $locationId,
-                    0,
-                    $reason,
-                    $shipheroCustomerId
-                );
-            }
+            $updated = $this->inventory->replaceLocationQuantity(
+                $validated['sku'],
+                $validated['warehouse_id'],
+                $locationId,
+                (int) $validated['quantity'],
+                $reason,
+                $shipheroCustomerId
+            );
             return response()->json([
                 'warehouse' => $updated,
                 'location' => $resolved,

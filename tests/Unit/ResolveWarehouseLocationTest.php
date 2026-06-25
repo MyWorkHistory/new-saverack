@@ -4,7 +4,6 @@ namespace Tests\Unit;
 
 use App\Services\ShipHeroClient;
 use App\Services\ShipHeroInventoryService;
-use Illuminate\Support\Facades\Cache;
 use Mockery;
 use Tests\TestCase;
 
@@ -54,47 +53,47 @@ class ResolveWarehouseLocationTest extends TestCase
         $this->assertSame('A-01', $resolved['name']);
     }
 
-    public function test_resolve_warehouse_location_falls_back_to_full_warehouse_catalog(): void
+    public function test_resolve_warehouse_location_does_not_scan_entire_warehouse_catalog(): void
     {
-        Cache::flush();
         $client = Mockery::mock(ShipHeroClient::class);
         $client->shouldReceive('query')
             ->andReturnUsing(function (string $graphql) {
                 if (strpos($graphql, 'ShipHeroLocationByWarehouseName') !== false) {
                     return ['data' => ['locations' => ['data' => ['edges' => []]]]];
                 }
+                if (strpos($graphql, 'ShipHeroItemLocationByName') !== false) {
+                    return ['data' => ['item_locations' => ['data' => ['edges' => []]]]];
+                }
                 if (strpos($graphql, 'ShipHeroLocationBySingularName') !== false) {
                     return ['data' => ['location' => ['data' => null]]];
                 }
-                if (strpos($graphql, 'ShipHeroLocationsByWarehouseNoCustomer') !== false) {
-                    return [
-                        'data' => [
-                            'locations' => [
-                                'data' => [
-                                    'edges' => [
-                                        [
-                                            'node' => [
-                                                'id' => 'loc-backstock',
-                                                'name' => 'BACK-01',
-                                                'pickable' => false,
-                                                'sellable' => true,
-                                                'type' => ['name' => 'Overstock'],
-                                            ],
-                                        ],
-                                    ],
-                                ],
-                            ],
-                        ],
-                    ];
+                if (strpos($graphql, 'ShipHeroLocationsByWarehouse') !== false) {
+                    $this->fail('Should not load the full warehouse location catalog during resolve.');
+                }
+
+                return ['data' => []];
+            });
+
+        $service = new ShipHeroInventoryService($client);
+        $resolved = $service->resolveWarehouseLocation('WH1', 'E-12-025', 'customer-99');
+
+        $this->assertNull($resolved);
+    }
+
+    public function test_resolve_warehouse_location_skips_invalid_id_lookup_for_bin_names(): void
+    {
+        $client = Mockery::mock(ShipHeroClient::class);
+        $client->shouldReceive('query')
+            ->andReturnUsing(function (string $graphql) {
+                if (strpos($graphql, 'ShipHeroLocationRecordById') !== false) {
+                    $this->fail('Bin-style names should not trigger location(id) lookups.');
                 }
 
                 return ['data' => ['locations' => ['data' => ['edges' => []]]]];
             });
 
         $service = new ShipHeroInventoryService($client);
-        $resolved = $service->resolveWarehouseLocation('WH1', 'BACK-01', 'customer-99');
-
-        $this->assertNotNull($resolved);
-        $this->assertSame('loc-backstock', $resolved['id']);
+        $service->resolveWarehouseLocation('WH1', 'E-12-025', null);
+        $this->assertTrue(true);
     }
 }

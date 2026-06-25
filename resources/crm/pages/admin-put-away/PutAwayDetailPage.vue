@@ -491,8 +491,6 @@ async function submitAddLocationQty() {
     applyWarehouseSliceToProduct(data?.warehouse);
     toast.success("Location quantity updated.");
     addLocationModalOpen.value = false;
-    await reloadProductData({ refresh: true });
-    applyWarehouseSliceToProduct(data?.warehouse);
   } catch (e) {
     toast.errorFrom(e, "Location not found or quantity update failed.");
   } finally {

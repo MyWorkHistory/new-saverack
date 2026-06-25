@@ -2324,9 +2324,14 @@ GQL,
             return null;
         }
 
-        $byName = $this->lookupWarehouseLocationByName($warehouseId, $needle);
+        $byName = $this->lookupWarehouseLocationByName($warehouseId, $needle, $customerAccountId);
         if (is_array($byName)) {
             return $byName;
+        }
+
+        $byItemLocation = $this->lookupWarehouseLocationByItemLocationName($warehouseId, $needle, $customerAccountId);
+        if (is_array($byItemLocation)) {
+            return $byItemLocation;
         }
 
         $bySingularName = $this->lookupLocationBySingularName($needle, $warehouseId);
@@ -2334,14 +2339,16 @@ GQL,
             return $bySingularName;
         }
 
-        foreach ($this->candidateLocationIdsFromInput($needle) as $candidateId) {
-            $byId = $this->lookupWarehouseLocationById($candidateId);
-            if (is_array($byId)) {
-                return $byId;
+        if ($this->looksLikeShipHeroLocationId($needle)) {
+            foreach ($this->candidateLocationIdsFromInput($needle) as $candidateId) {
+                $byId = $this->lookupWarehouseLocationById($candidateId);
+                if (is_array($byId)) {
+                    return $byId;
+                }
             }
         }
 
-        return $this->findLocationInCachedWarehouseCatalog($warehouseId, $needle);
+        return null;
     }
 
     /**
@@ -2411,12 +2418,23 @@ GQL,
     /**
      * @return array{id:string,name:string,type:?string,pickable:?bool,sellable:?bool}|null
      */
-    private function lookupWarehouseLocationByName(string $warehouseId, string $name): ?array
+    private function lookupWarehouseLocationByName(string $warehouseId, string $name, ?string $customerAccountId = null): ?array
     {
         $warehouseId = trim($warehouseId);
         $name = trim($name);
         if ($warehouseId === '' || $name === '') {
             return null;
+        }
+        $variableSets = [
+            ['warehouse_id' => $warehouseId, 'name' => $name],
+        ];
+        $customer = is_string($customerAccountId) ? trim($customerAccountId) : '';
+        if ($customer !== '') {
+            $variableSets[] = [
+                'warehouse_id' => $warehouseId,
+                'name' => $name,
+                'customer_account_id' => $customer,
+            ];
         }
         $queries = [
             [
@@ -2440,7 +2458,30 @@ query ShipHeroLocationByWarehouseName($warehouse_id: String!, $name: String!) {
   }
 }
 GQL,
-                'vars' => ['warehouse_id' => $warehouseId, 'name' => $name],
+                'with_customer' => false,
+            ],
+            [
+                'graphql' => <<<'GQL'
+query ShipHeroLocationByWarehouseNameCustomer($warehouse_id: String!, $name: String!, $customer_account_id: String!) {
+  locations(warehouse_id: $warehouse_id, name: $name, customer_account_id: $customer_account_id) {
+    data {
+      edges {
+        node {
+          id
+          name
+          zone
+          type {
+            name
+          }
+          pickable
+          sellable
+        }
+      }
+    }
+  }
+}
+GQL,
+                'with_customer' => true,
             ],
             [
                 'graphql' => <<<'GQL'
@@ -2461,38 +2502,168 @@ query ShipHeroLocationByWarehouseNameScalarType($warehouse_id: String!, $name: S
   }
 }
 GQL,
-                'vars' => ['warehouse_id' => $warehouseId, 'name' => $name],
+                'with_customer' => false,
             ],
         ];
-        foreach ($queries as $candidate) {
-            try {
-                $json = $this->client->query($candidate['graphql'], $candidate['vars']);
-                $edges = data_get($json, 'data.locations.data.edges');
-                if (! is_array($edges)) {
+        foreach ($variableSets as $vars) {
+            foreach ($queries as $candidate) {
+                if (($candidate['with_customer'] ?? false) && ! isset($vars['customer_account_id'])) {
                     continue;
                 }
-                $firstMatch = null;
-                foreach ($edges as $edge) {
-                    $parsed = $this->parseLocationNode($edge['node'] ?? null);
-                    if ($parsed === null) {
-                        continue;
-                    }
-                    if ($firstMatch === null) {
-                        $firstMatch = $parsed;
-                    }
-                    if (strcasecmp($parsed['name'], $name) === 0) {
-                        return $parsed;
-                    }
+                if (! ($candidate['with_customer'] ?? false) && isset($vars['customer_account_id'])) {
+                    continue;
                 }
-                if ($firstMatch !== null) {
-                    return $firstMatch;
+                try {
+                    $json = $this->client->query($candidate['graphql'], $vars);
+                    $match = $this->firstLocationMatchFromEdges(
+                        data_get($json, 'data.locations.data.edges'),
+                        $name
+                    );
+                    if (is_array($match)) {
+                        return $match;
+                    }
+                } catch (\Throwable $e) {
+                    // Try next query variant.
                 }
-            } catch (\Throwable $e) {
-                // Try next query variant.
             }
         }
 
         return null;
+    }
+
+    /**
+     * @return array{id:string,name:string,type:?string,pickable:?bool,sellable:?bool}|null
+     */
+    private function lookupWarehouseLocationByItemLocationName(
+        string $warehouseId,
+        string $name,
+        ?string $customerAccountId = null
+    ): ?array {
+        $warehouseId = trim($warehouseId);
+        $name = trim($name);
+        if ($warehouseId === '' || $name === '') {
+            return null;
+        }
+        $variableSets = [
+            ['warehouse_id' => $warehouseId, 'location_name' => $name],
+        ];
+        $customer = is_string($customerAccountId) ? trim($customerAccountId) : '';
+        if ($customer !== '') {
+            $variableSets[] = [
+                'warehouse_id' => $warehouseId,
+                'location_name' => $name,
+                'customer_account_id' => $customer,
+            ];
+        }
+        $queries = [
+            [
+                'graphql' => <<<'GQL'
+query ShipHeroItemLocationByName($warehouse_id: String!, $location_name: String!) {
+  item_locations(warehouse_id: $warehouse_id, location_name: $location_name) {
+    data(first: 5) {
+      edges {
+        node {
+          location {
+            id
+            name
+            pickable
+            sellable
+            type {
+              name
+            }
+          }
+        }
+      }
+    }
+  }
+}
+GQL,
+                'with_customer' => false,
+            ],
+            [
+                'graphql' => <<<'GQL'
+query ShipHeroItemLocationByNameCustomer($warehouse_id: String!, $location_name: String!, $customer_account_id: String!) {
+  item_locations(warehouse_id: $warehouse_id, location_name: $location_name, customer_account_id: $customer_account_id) {
+    data(first: 5) {
+      edges {
+        node {
+          location {
+            id
+            name
+            pickable
+            sellable
+            type {
+              name
+            }
+          }
+        }
+      }
+    }
+  }
+}
+GQL,
+                'with_customer' => true,
+            ],
+        ];
+        foreach ($variableSets as $vars) {
+            foreach ($queries as $candidate) {
+                if (($candidate['with_customer'] ?? false) && ! isset($vars['customer_account_id'])) {
+                    continue;
+                }
+                if (! ($candidate['with_customer'] ?? false) && isset($vars['customer_account_id'])) {
+                    continue;
+                }
+                try {
+                    $json = $this->client->query($candidate['graphql'], $vars);
+                    $edges = data_get($json, 'data.item_locations.data.edges');
+                    if (! is_array($edges)) {
+                        continue;
+                    }
+                    foreach ($edges as $edge) {
+                        if (! is_array($edge)) {
+                            continue;
+                        }
+                        $parsed = $this->parseLocationNode(data_get($edge, 'node.location'));
+                        if ($parsed === null) {
+                            continue;
+                        }
+                        if (strcasecmp($parsed['name'], $name) === 0) {
+                            return $parsed;
+                        }
+                    }
+                } catch (\Throwable $e) {
+                    // Try next query variant.
+                }
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * @param  mixed  $edges
+     * @return array{id:string,name:string,type:?string,pickable:?bool,sellable:?bool}|null
+     */
+    private function firstLocationMatchFromEdges($edges, string $name): ?array
+    {
+        if (! is_array($edges)) {
+            return null;
+        }
+        $firstMatch = null;
+        foreach ($edges as $edge) {
+            $parsed = $this->parseLocationNode(is_array($edge) ? ($edge['node'] ?? null) : null);
+            if ($parsed === null) {
+                continue;
+            }
+            if ($firstMatch === null) {
+                $firstMatch = $parsed;
+            }
+            if (strcasecmp($parsed['name'], $name) === 0) {
+                return $parsed;
+            }
+        }
+
+        return $firstMatch;
     }
 
     /**
@@ -2565,27 +2736,6 @@ GQL,
     /**
      * @return array{id:string,name:string,type:?string,pickable:?bool,sellable:?bool}|null
      */
-    private function findLocationInCachedWarehouseCatalog(string $warehouseId, string $needle): ?array
-    {
-        $warehouseId = trim($warehouseId);
-        if ($warehouseId === '') {
-            return null;
-        }
-        $catalog = $this->buildWarehouseLocationPickableCatalog($warehouseId);
-        $needleLower = strtolower($needle);
-        if (isset($catalog['by_name'][$needleLower])) {
-            return $catalog['by_name'][$needleLower];
-        }
-        if (isset($catalog['by_id'][$needleLower])) {
-            return $catalog['by_id'][$needleLower];
-        }
-
-        return null;
-    }
-
-    /**
-     * @return array{id:string,name:string,type:?string,pickable:?bool,sellable:?bool}|null
-     */
     private function lookupWarehouseLocationById(string $locationId): ?array
     {
         $locationId = trim($locationId);
@@ -2643,9 +2793,32 @@ GQL,
         if ($needle === '') {
             return '';
         }
+        $needle = str_replace(["\u{2010}", "\u{2011}", "\u{2012}", "\u{2013}", "\u{2014}", "\u{2212}"], '-', $needle);
         $collapsed = preg_replace('/\s+/u', ' ', $needle);
 
         return is_string($collapsed) ? trim($collapsed) : $needle;
+    }
+
+    private function looksLikeShipHeroLocationId(string $needle): bool
+    {
+        $needle = trim($needle);
+        if ($needle === '') {
+            return false;
+        }
+        if (ctype_digit($needle)) {
+            return true;
+        }
+        if (! preg_match('/^[A-Za-z0-9+\/]+=*$/', $needle)) {
+            return false;
+        }
+        $decoded = base64_decode($needle, true);
+        if (! is_string($decoded) || $decoded === '') {
+            return false;
+        }
+
+        return strpos($decoded, 'Bin:') === 0
+            || strpos($decoded, 'Warehouse:') === 0
+            || strpos($decoded, 'Location:') === 0;
     }
 
     /**
@@ -2653,20 +2826,18 @@ GQL,
      */
     private function candidateLocationIdsFromInput(string $needle): array
     {
-        $candidates = [trim($needle)];
+        $needle = trim($needle);
+        if ($needle === '') {
+            return [];
+        }
         if (ctype_digit($needle)) {
-            $candidates[] = base64_encode('Bin:'.$needle);
+            return [base64_encode('Bin:'.$needle)];
+        }
+        if ($this->looksLikeShipHeroLocationId($needle)) {
+            return [$needle];
         }
 
-        $unique = [];
-        foreach ($candidates as $candidate) {
-            $candidate = trim($candidate);
-            if ($candidate !== '') {
-                $unique[$candidate] = $candidate;
-            }
-        }
-
-        return array_values($unique);
+        return [];
     }
 
     /**

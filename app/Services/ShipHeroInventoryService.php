@@ -520,6 +520,61 @@ GQL;
         return $mode === self::CATALOG_SYNC_FULL ? self::CATALOG_SYNC_FULL : self::CATALOG_SYNC_INCREMENTAL;
     }
 
+    public function catalogSyncStallMinutes(): int
+    {
+        return max(5, (int) config('services.shiphero.catalog_sync_stall_minutes', 30));
+    }
+
+    public function resolveStaleRunningCatalogSync(int $clientAccountId): void
+    {
+        if ($clientAccountId <= 0) {
+            return;
+        }
+
+        $account = ClientAccount::query()->find($clientAccountId);
+        if ($account === null || (string) ($account->inventory_catalog_sync_status ?? 'idle') !== 'running') {
+            return;
+        }
+
+        $startedAt = $account->inventory_catalog_sync_started_at;
+        if ($startedAt === null) {
+            $this->markCatalogSyncFailed($clientAccountId);
+
+            return;
+        }
+
+        if ($startedAt->diffInMinutes(now()) >= $this->catalogSyncStallMinutes()) {
+            $this->markCatalogSyncFailed($clientAccountId);
+        }
+    }
+
+    public function isCatalogSyncInProgress(int $clientAccountId): bool
+    {
+        if ($clientAccountId <= 0) {
+            return false;
+        }
+
+        $this->resolveStaleRunningCatalogSync($clientAccountId);
+        $account = ClientAccount::query()->find($clientAccountId);
+        if ($account === null) {
+            return false;
+        }
+
+        return (string) ($account->inventory_catalog_sync_status ?? 'idle') === 'running';
+    }
+
+    public function assertCanBeginCatalogSync(int $clientAccountId): void
+    {
+        if ($clientAccountId <= 0) {
+            return;
+        }
+
+        $this->resolveStaleRunningCatalogSync($clientAccountId);
+        if ($this->isCatalogSyncInProgress($clientAccountId)) {
+            throw new RuntimeException('Catalog sync is already in progress.');
+        }
+    }
+
     public function beginCatalogSync(int $clientAccountId): void
     {
         if ($clientAccountId <= 0) {

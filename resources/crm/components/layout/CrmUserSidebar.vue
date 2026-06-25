@@ -12,7 +12,9 @@ const route = useRoute();
 const ordersGroupOpen = ref(route.path.startsWith("/users/orders"));
 const returnsGroupOpen = ref(route.path.startsWith("/users/returns"));
 const inventoryGroupOpen = ref(
-  route.path.startsWith("/users/inventory") || route.path.startsWith("/users/asn"),
+  route.path.startsWith("/users/inventory") ||
+    route.path.startsWith("/users/inventory-beta") ||
+    route.path.startsWith("/users/asn"),
 );
 
 watch(
@@ -20,7 +22,9 @@ watch(
   (p) => {
     if (p.startsWith("/users/orders")) ordersGroupOpen.value = true;
     if (p.startsWith("/users/returns")) returnsGroupOpen.value = true;
-    if (p.startsWith("/users/inventory") || p.startsWith("/users/asn")) inventoryGroupOpen.value = true;
+    if (p.startsWith("/users/inventory") || p.startsWith("/users/inventory-beta") || p.startsWith("/users/asn")) {
+      inventoryGroupOpen.value = true;
+    }
   },
 );
 
@@ -37,11 +41,19 @@ function navActive(mode) {
   if (mode === "orders-backorder") return p.startsWith("/users/orders/backorder");
   if (mode === "orders-shipped") return p.startsWith("/users/orders/shipped");
   if (mode === "inventory" || mode === "products") {
-    return p.startsWith("/users/inventory") || p.startsWith("/users/asn");
+    return (
+      p.startsWith("/users/inventory") ||
+      p.startsWith("/users/inventory-beta") ||
+      p.startsWith("/users/asn")
+    );
   }
   if (mode === "inventory-products" || mode === "products-inventory") {
     if (p === "/users/inventory/out-of-stock") return false;
+    if (p === "/users/inventory-beta" || p.startsWith("/users/inventory-beta/")) return false;
     return p === "/users/inventory" || (p.startsWith("/users/inventory/") && !p.startsWith("/users/inventory/out-of-stock"));
+  }
+  if (mode === "inventory-beta" || mode === "products-inventory-beta") {
+    return p === "/users/inventory-beta" || p.startsWith("/users/inventory-beta/");
   }
   if (mode === "inventory-out-of-stock" || mode === "products-out-of-stock") {
     return p === "/users/inventory/out-of-stock";
@@ -310,6 +322,16 @@ function collapseNav() {
                   @click="closeMobile"
                 >
                   Products
+                </RouterLink>
+              </li>
+              <li>
+                <RouterLink
+                  to="/users/inventory-beta"
+                  class="vx-nav-link vx-nav-sublink"
+                  :class="{ 'vx-nav-link--active': navActive('inventory-beta') }"
+                  @click="closeMobile"
+                >
+                  Inventory (Beta)
                 </RouterLink>
               </li>
               <li>

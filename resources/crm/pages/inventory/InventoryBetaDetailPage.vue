@@ -5,7 +5,6 @@ import api from "../../services/api";
 import CrmIconRowActions from "../../components/common/CrmIconRowActions.vue";
 import CrmLoadingSpinner from "../../components/common/CrmLoadingSpinner.vue";
 import { setCrmPageMeta } from "../../composables/useCrmPageMeta.js";
-import { usePortalLastRefreshed } from "../../composables/usePortalLastRefreshed.js";
 import { useToast } from "../../composables/useToast.js";
 import { formatDateTimeUs, formatDateUs } from "../../utils/formatUserDates.js";
 import { openApiPdfBlob } from "../../utils/openApiPdfBlob.js";
@@ -15,13 +14,15 @@ const route = useRoute();
 const toast = useToast();
 const crmUser = inject("crmUser", ref(null));
 
-const isPortalView = computed(() => false);
-const usePortalDetailLayout = computed(() => route.name === "inventory-beta-detail");
-const inventoryListRoute = computed(() => "/admin/inventory-beta");
+const isPortalView = computed(() => route.meta?.userPortal === true);
+const usePortalDetailLayout = computed(() =>
+  route.name === "inventory-beta-detail" || route.name === "user-inventory-beta-detail",
+);
+const inventoryListRoute = computed(() =>
+  isPortalView.value ? "/users/inventory-beta" : "/admin/inventory-beta",
+);
 const inventoryListBreadcrumbLabel = computed(() => "Inventory (Beta)");
 const canManageInventoryLocations = computed(() => true);
-
-const { markRefreshed, lastRefreshedLabel } = usePortalLastRefreshed();
 
 const loading = ref(true);
 const refreshing = ref(false);
@@ -143,12 +144,17 @@ function sectionActionLabel({ loading, loaded }) {
 
 function inventoryDetailTo(sku) {
   const value = String(sku || "").trim();
-  if (!value) return { name: "inventory-beta-detail", params: {} };
+  if (!value) {
+    return {
+      name: isPortalView.value ? "user-inventory-beta-detail" : "inventory-beta-detail",
+      params: {},
+    };
+  }
   const query = {};
   const clientId = Number(route.query.client_account_id || 0);
   if (clientId > 0) query.client_account_id = clientId;
   return {
-    name: "inventory-beta-detail",
+    name: isPortalView.value ? "user-inventory-beta-detail" : "inventory-beta-detail",
     params: { sku: value },
     query,
   };
@@ -659,9 +665,6 @@ async function refreshDetail() {
   const ok = await loadProduct({ refresh: true });
   refreshing.value = false;
   if (ok) {
-    if (isPortalView.value) {
-      markRefreshed();
-    }
     toast.success("Live inventory data refreshed.");
   }
 }
@@ -677,9 +680,6 @@ async function syncCatalogSku() {
     });
     toast.success("SKU catalog synced from ShipHero.");
     await loadProduct({ refresh: true });
-    if (isPortalView.value) {
-      markRefreshed();
-    }
   } catch (e) {
     toast.errorFrom(e, "Could not sync SKU catalog.");
   } finally {
@@ -942,9 +942,6 @@ async function togglePickable(loc) {
           </a>
           <div v-else class="me-auto" />
           <div class="d-flex align-items-center gap-2 flex-shrink-0 flex-wrap justify-content-end">
-            <p v-if="lastRefreshedLabel" class="small text-secondary mb-0">
-              Live data refreshed: {{ lastRefreshedLabel }}
-            </p>
             <button
               v-if="detailClientAccountId > 0"
               type="button"
@@ -952,14 +949,14 @@ async function togglePickable(loc) {
               :disabled="loading || syncingSku || refreshing"
               @click="syncCatalogSku"
             >
-              {{ syncingSku ? "Syncing…" : "Sync SKU" }}
+              {{ syncingSku ? "Syncing…" : "Sync Product" }}
             </button>
             <button
               type="button"
               class="btn btn-outline-secondary btn-sm orders-toolbar-outline-btn d-inline-flex align-items-center gap-2"
               :disabled="loading || refreshing || syncingSku"
-              title="Refresh Live Data"
-              aria-label="Refresh live product data from ShipHero"
+              title="Refresh Inventory"
+              aria-label="Refresh inventory from ShipHero"
               @click="refreshDetail"
             >
               <svg
@@ -977,7 +974,7 @@ async function togglePickable(loc) {
                   d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"
                 />
               </svg>
-              {{ refreshing ? "Refreshing…" : "Refresh Live Data" }}
+              {{ refreshing ? "Refreshing…" : "Refresh Inventory" }}
             </button>
           </div>
         </div>

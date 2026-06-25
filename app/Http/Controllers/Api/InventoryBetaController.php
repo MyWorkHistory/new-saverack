@@ -122,6 +122,21 @@ class InventoryBetaController extends Controller
             ? $validated['sync_mode']
             : ShipHeroInventoryService::CATALOG_SYNC_INCREMENTAL;
 
+        if ($refresh) {
+            try {
+                $this->inventory->assertCanBeginCatalogSync($clientAccountId);
+            } catch (RuntimeException $e) {
+                if ($e->getMessage() === 'Catalog sync is already in progress.') {
+                    return response()->json([
+                        'message' => $e->getMessage(),
+                        'catalog_sync' => $this->inventory->catalogSyncMetaForAccount($clientAccountId),
+                    ], 409);
+                }
+
+                throw $e;
+            }
+        }
+
         try {
             $shipheroCustomerId = $this->resolveShipHeroCustomerAccountId($clientAccountId, $request);
             $payload = $this->inventory->listCatalogInventoryRows(

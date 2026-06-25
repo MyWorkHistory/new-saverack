@@ -4,7 +4,6 @@ import { useRoute, useRouter } from "vue-router";
 import api from "../../services/api";
 import CrmSearchableSelect from "../../components/common/CrmSearchableSelect.vue";
 import { setCrmPageMeta } from "../../composables/useCrmPageMeta.js";
-import { usePortalLastRefreshed } from "../../composables/usePortalLastRefreshed.js";
 import { useToast } from "../../composables/useToast.js";
 import { exportPortalInventoryCsv } from "../../utils/portalInventoryExport.js";
 import { formatDateTimeUs } from "../../utils/formatUserDates.js";
@@ -14,7 +13,8 @@ const route = useRoute();
 const router = useRouter();
 const crmUser = inject("crmUser", ref(null));
 
-const isStaffPickerMode = computed(() => true);
+const isPortalList = computed(() => route.meta?.userPortal === true);
+const isStaffPickerMode = computed(() => !isPortalList.value);
 
 const selectedAccountId = ref("");
 const crossAccountMode = ref(false);
@@ -22,7 +22,6 @@ const crossAccountScanTruncated = ref(false);
 const accountsLoading = ref(false);
 const accounts = ref([]);
 const hasSearched = ref(false);
-const { markRefreshed, lastRefreshedLabel } = usePortalLastRefreshed();
 
 const loading = ref(false);
 const loadingMore = ref(false);
@@ -80,6 +79,10 @@ const catalogSyncedLabel = computed(() => {
   return formatDateTimeUs(raw);
 });
 
+const catalogSyncRunning = computed(
+  () => catalogSync.value?.inventory_catalog_sync_status === "running",
+);
+
 const showQtySnapshotHint = computed(
   () => !crossAccountMode.value && accountId.value > 0 && Boolean(catalogSyncedLabel.value),
 );
@@ -90,14 +93,17 @@ function effectiveRowAccountId(row = null) {
   return accountId.value;
 }
 
-const canLoadInventory = computed(() => (
-  accountId.value > 0 ||
-  crossAccountMode.value ||
-  Boolean(searchCommitted.value.trim()) ||
-  Boolean(searchDraft.value.trim())
-));
+const canLoadInventory = computed(() => {
+  if (isPortalList.value) return accountId.value > 0;
+  return (
+    accountId.value > 0 ||
+    crossAccountMode.value ||
+    Boolean(searchCommitted.value.trim()) ||
+    Boolean(searchDraft.value.trim())
+  );
+});
 
-const tableColspan = computed(() => 9);
+const tableColspan = computed(() => (crossAccountMode.value ? 9 : 8));
 
 const accountOptions = computed(() =>
   (accounts.value || [])
@@ -212,9 +218,6 @@ async function loadRows(reset, forceRefresh = false) {
   }
   try {
     await fetchPage(!reset, forceRefresh);
-    if (reset) {
-      markRefreshed();
-    }
   } catch (e) {
     if (forceRefresh) {
       rows.value = previousRows;
@@ -386,6 +389,7 @@ function clearSearch() {
 
 async function syncAccountRows(syncMode = "incremental") {
   if (!canLoadInventory.value || loading.value || loadingMore.value || refreshing.value) return;
+  if (catalogSyncRunning.value) return;
   if (crossAccountMode.value) {
     toast.error("Select an account to sync a single catalog.");
     return;
@@ -409,14 +413,20 @@ async function syncAccountRows(syncMode = "incremental") {
     rows.value = [];
     searchSkipNext.value = 0;
     await fetchPage(false, false);
-    markRefreshed();
     toast.success(
       syncMode === "full"
-        ? "Catalog rebuilt from ShipHero."
-        : "Account catalog synced from ShipHero.",
+        ? "Products synced from ShipHero."
+        : "Inventory refreshed from ShipHero.",
     );
     startAutoSyncTimer();
   } catch (e) {
+    if (e.response?.status === 409) {
+      if (e.response?.data?.catalog_sync) {
+        catalogSync.value = { ...catalogSync.value, ...e.response.data.catalog_sync };
+      }
+      startCatalogSyncPoll();
+      return;
+    }
     rows.value = previousRows;
     toast.errorFrom(e, "Could not sync inventory catalog.");
   } finally {
@@ -433,7 +443,7 @@ async function refreshRows() {
 async function rebuildCatalogRows() {
   if (
     !window.confirm(
-      "Rebuild the full catalog from ShipHero? This clears cached catalog data for this account.",
+      "Sync all products from ShipHero? This clears cached catalog data for this account.",
     )
   ) {
     return;
@@ -550,12 +560,12 @@ function clientAccountHref(row) {
 function inventoryDetailTo(row) {
   const sku = String(row?.sku || "").trim();
   if (!sku) {
-    return { name: "inventory-beta" };
+    return { name: isPortalList.value ? "user-inventory-beta" : "inventory-beta" };
   }
   const rowAccountId = effectiveRowAccountId(row);
   const query = rowAccountId > 0 ? { client_account_id: String(rowAccountId) } : {};
   return {
-    name: "inventory-beta-detail",
+    name: isPortalList.value ? "user-inventory-beta-detail" : "inventory-beta-detail",
     params: { sku },
     query,
   };
@@ -640,6 +650,50 @@ watch(
   },
 );
 
+
+let catalogSyncPollTimer = null;
+
+function stopCatalogSyncPoll() {
+  if (catalogSyncPollTimer !== null) {
+    clearInterval(catalogSyncPollTimer);
+    catalogSyncPollTimer = null;
+  }
+}
+
+async function pollCatalogSyncStatus() {
+  if (accountId.value <= 0 || crossAccountMode.value) {
+    stopCatalogSyncPoll();
+    return;
+  }
+  try {
+    const { data } = await api.get("/inventory-beta/list", {
+      params: {
+        client_account_id: accountId.value,
+        first: 1,
+        kits: filters.kits,
+        active_status: filters.activeStatus,
+      },
+    });
+    if (data?.catalog_sync && typeof data.catalog_sync === "object") {
+      catalogSync.value = { ...catalogSync.value, ...data.catalog_sync };
+    }
+    if (catalogSync.value?.inventory_catalog_sync_status !== "running") {
+      stopCatalogSyncPoll();
+      refreshing.value = false;
+      await loadRows(true);
+    }
+  } catch {
+    // ignore transient poll errors
+  }
+}
+
+function startCatalogSyncPoll() {
+  stopCatalogSyncPoll();
+  refreshing.value = true;
+  catalogSyncPollTimer = setInterval(pollCatalogSyncStatus, 3000);
+  pollCatalogSyncStatus();
+}
+
 let autoSyncTimer = null;
 
 function catalogSyncIsStale() {
@@ -655,29 +709,30 @@ function stopAutoSyncTimer() {
     clearInterval(autoSyncTimer);
     autoSyncTimer = null;
   }
+  stopCatalogSyncPoll();
 }
 
 function startAutoSyncTimer() {
   stopAutoSyncTimer();
-  if (!selectedAccountId.value || crossAccountMode.value) return;
+  if (accountId.value <= 0 || crossAccountMode.value) return;
   autoSyncTimer = setInterval(() => {
     if (document.visibilityState !== "visible") return;
-    if (loading.value || refreshing.value || loadingMore.value) return;
+    if (loading.value || refreshing.value || loadingMore.value || catalogSyncRunning.value) return;
     syncAccountRows("incremental");
   }, AUTO_SYNC_INTERVAL_MS);
 }
 
 function onPageVisibilityChange() {
   if (document.visibilityState !== "visible") return;
-  if (!selectedAccountId.value || crossAccountMode.value) return;
+  if (accountId.value <= 0 || crossAccountMode.value) return;
   if (!catalogSyncIsStale()) return;
-  if (loading.value || refreshing.value || loadingMore.value) return;
+  if (loading.value || refreshing.value || loadingMore.value || catalogSyncRunning.value) return;
   syncAccountRows("incremental");
 }
 
 async function ensureAccountCatalogSynced(loadId) {
   if (loadId !== accountLoadSeq) return;
-  if (!selectedAccountId.value || crossAccountMode.value) return;
+  if (accountId.value <= 0 || crossAccountMode.value) return;
   if (!catalogSyncIsStale()) {
     startAutoSyncTimer();
     return;
@@ -688,6 +743,17 @@ async function ensureAccountCatalogSynced(loadId) {
     startAutoSyncTimer();
   }
 }
+
+watch(
+  () => accountId.value,
+  async (id) => {
+    if (!isPortalList.value || !id) return;
+    const loadId = ++accountLoadSeq;
+    hasSearched.value = true;
+    await loadRows(true);
+    await ensureAccountCatalogSynced(loadId);
+  },
+);
 
 watch(
   () => selectedAccountId.value,
@@ -718,11 +784,19 @@ watch(
 onMounted(() => {
   setCrmPageMeta({
     title: "Save Rack | Inventory (Beta)",
-    description: "CRM-stored product catalog with incremental account sync.",
+    description: isPortalList.value
+      ? "Your account product catalog."
+      : "CRM-stored product catalog with incremental account sync.",
   });
   document.addEventListener("click", onDocClick);
   document.addEventListener("visibilitychange", onPageVisibilityChange);
-  loadAccounts();
+  if (isStaffPickerMode.value) {
+    loadAccounts();
+  } else {
+    const loadId = ++accountLoadSeq;
+    hasSearched.value = true;
+    loadRows(true).then(() => ensureAccountCatalogSynced(loadId));
+  }
 });
 
 onUnmounted(() => {
@@ -734,38 +808,28 @@ onUnmounted(() => {
 
 <template>
   <div class="staff-page staff-page--wide">
-    <div
+        <div
       class="d-flex flex-column flex-md-row align-items-start align-items-md-center gap-3 mb-4"
     >
-      <div class="min-w-0 flex-grow-1">
-        <h1 class="h4 mb-1 fw-bold text-body">Inventory (Beta)</h1>
-        <p class="text-secondary small mb-0 user-inv-load-hint">
-          Search by SKU, barcode, or product name. Account filter is optional — press Enter or Search to find products
-          across all accounts, or select an account to narrow results. Quantities reflect the last catalog sync. The selected account auto-syncs from ShipHero every 30 minutes.
-        </p>
-      </div>
-      <div class="d-flex align-items-center gap-2 flex-shrink-0 ms-md-auto flex-wrap justify-content-md-end">
+      <div class="d-flex align-items-center gap-2 flex-shrink-0 ms-md-auto flex-wrap justify-content-md-end w-100 w-md-auto">
         <p v-if="catalogSyncedLabel && accountId > 0 && !crossAccountMode" class="small text-secondary mb-0">
           Catalog synced: {{ catalogSyncedLabel }}
-        </p>
-        <p v-else-if="lastRefreshedLabel" class="small text-secondary mb-0">
-          Last refreshed: {{ lastRefreshedLabel }}
         </p>
         <button
           v-if="accountId > 0 && !crossAccountMode"
           type="button"
           class="btn btn-outline-secondary btn-sm orders-toolbar-outline-btn"
-          :disabled="loading || loadingMore || refreshing"
+          :disabled="loading || loadingMore || refreshing || catalogSyncRunning"
           @click="rebuildCatalogRows"
         >
-          Rebuild Catalog
+          Sync Products
         </button>
         <button
         type="button"
         class="btn btn-outline-secondary btn-sm orders-toolbar-outline-btn d-inline-flex align-items-center gap-2"
-        :disabled="loading || loadingMore || refreshing || (isStaffPickerMode && !canLoadInventory)"
-        title="Sync Account"
-        aria-label="Sync account catalog from ShipHero"
+        :disabled="loading || loadingMore || refreshing || catalogSyncRunning || (isStaffPickerMode && !canLoadInventory)"
+        title="Refresh Inventory"
+        aria-label="Refresh inventory catalog from ShipHero"
         @click="refreshRows"
       >
         <svg
@@ -783,10 +847,9 @@ onUnmounted(() => {
             d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"
           />
         </svg>
-        {{ refreshing ? "Syncing…" : "Sync Account" }}
+        {{ refreshing || catalogSyncRunning ? "Syncing…" : "Refresh Inventory" }}
       </button>
-      </div>
-    </div>
+
 
     <div
       v-if="crossAccountMode && crossAccountScanTruncated && hasSearched && displayRows.length > 0"
@@ -918,7 +981,7 @@ onUnmounted(() => {
       </div>
 
       <div
-        v-if="selectedRows.length > 0"
+        v-if="isStaffPickerMode && selectedRows.length > 0"
         class="staff-bulk-selection-bar d-flex flex-wrap align-items-center gap-2 gap-md-3 px-3 px-md-4 py-3"
       >
         <span class="small staff-bulk-selection-bar__count me-md-1">{{ selectedRows.length }} selected</span>
@@ -1048,7 +1111,7 @@ onUnmounted(() => {
                   <span v-if="sortIndicator('name')" class="staff-sort-ind">{{ sortIndicator("name") }}</span>
                 </button>
               </th>
-              <th class="staff-table-head__th user-inv-table__text-col" scope="col">
+              <th v-if="crossAccountMode" class="staff-table-head__th user-inv-table__text-col" scope="col">
                 Account
               </th>
               <th
@@ -1155,7 +1218,7 @@ onUnmounted(() => {
                   <span class="user-inv-table__name-text">{{ row.name || "—" }}</span>
                 </a>
               </td>
-              <td class="user-inv-table__text-col">
+              <td v-if="crossAccountMode" class="user-inv-table__text-col">
                 <a
                   v-if="clientAccountHref(row)"
                   :href="clientAccountHref(row)"

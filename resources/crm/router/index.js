@@ -198,6 +198,14 @@ const meta = {
     title: "Save Rack | Inventory | Product Detail",
     description: "ShipHero product inventory detail.",
   },
+  userPortalInventoryBeta: {
+    title: "Save Rack | Inventory (Beta)",
+    description: "CRM-stored product catalog with incremental account sync.",
+  },
+  userPortalInventoryBetaDetail: {
+    title: "Save Rack | Inventory (Beta) | Product Detail",
+    description: "Catalog product detail with live ShipHero qty and locations.",
+  },
   userAsnList: {
     title: "Save Rack | ASN",
     description: "Advance shipping notices for your account.",
@@ -658,6 +666,8 @@ const routes = [
   { path: "/users/inventory/out-of-stock", name: "user-inventory-out-of-stock", component: () => import("../pages/user-inventory/UserInventoryOutOfStockPage.vue"), meta: { ...meta.userPortalInventoryOutOfStock, userPortal: true } },
   { path: "/users/inventory", name: "user-inventory", component: InventoryListPage, meta: { ...meta.userPortalInventory, userPortal: true } },
   { path: "/users/inventory/:sku", name: "user-inventory-detail", component: () => import("../pages/user-inventory/UserInventoryDetailPage.vue"), props: true, meta: { ...meta.userPortalInventoryDetail, userPortal: true } },
+  { path: "/users/inventory-beta", name: "user-inventory-beta", component: InventoryBetaListPage, meta: { ...meta.userPortalInventoryBeta, userPortal: true } },
+  { path: "/users/inventory-beta/:sku", name: "user-inventory-beta-detail", component: InventoryBetaDetailPage, props: true, meta: { ...meta.userPortalInventoryBetaDetail, userPortal: true } },
   { path: "/users/asn", name: "user-asn-list", component: () => import("../pages/user-asn/UserAsnListPage.vue"), meta: { ...meta.userAsnList, userPortal: true } },
   { path: "/users/asn/:id", name: "user-asn-detail", component: () => import("../pages/user-asn/UserAsnDetailPage.vue"), props: true, meta: { ...meta.userAsnDetail, userPortal: true } },
   { path: "/users/asn/:id/print-shipping-label", name: "user-asn-print-shipping-label", component: () => import("../pages/user-asn/UserAsnPrintShippingLabelPage.vue"), props: true, meta: { title: "Save Rack | Print Shipping Label", description: "4x6 shipping label.", userPortal: true, bareLayout: true } },
@@ -1064,6 +1074,8 @@ async function ensureInventoryRouteAccess(path) {
     path.startsWith("/admin/returns/") ||
     path === "/users/inventory" ||
     path.startsWith("/users/inventory/") ||
+    path === "/users/inventory-beta" ||
+    path.startsWith("/users/inventory-beta/") ||
     path === "/users/asn" ||
     path.startsWith("/users/asn/") ||
     path === "/users/dashboard" ||
@@ -1227,6 +1239,7 @@ router.beforeEach(async (to) => {
     to.path.startsWith("/admin/receiving") ||
     to.path.startsWith("/admin/returns") ||
     to.path.startsWith("/users/inventory") ||
+    to.path.startsWith("/users/inventory-beta") ||
     to.path.startsWith("/users/asn")
   ) {
     const ok = await ensureInventoryRouteAccess(to.path);

@@ -2209,29 +2209,6 @@ GQL;
         $queries = [
             [
                 'graphql' => <<<'GQL'
-query ShipHeroLocationsByWarehouse($warehouse_id: String!, $customer_account_id: String) {
-  locations(warehouse_id: $warehouse_id, customer_account_id: $customer_account_id) {
-    data {
-      edges {
-        node {
-          id
-          name
-          zone
-          type {
-            name
-          }
-          pickable
-          sellable
-        }
-      }
-    }
-  }
-}
-GQL,
-                'vars' => array_merge(['warehouse_id' => $warehouseId], $this->customerAccountVariables($customerAccountId)),
-            ],
-            [
-                'graphql' => <<<'GQL'
 query ShipHeroLocationsByWarehouseNoCustomer($warehouse_id: String!) {
   locations(warehouse_id: $warehouse_id) {
     data {
@@ -2274,67 +2251,58 @@ query ShipHeroLocationsByWarehouseScalarType($warehouse_id: String!) {
 GQL,
                 'vars' => ['warehouse_id' => $warehouseId],
             ],
+            [
+                'graphql' => <<<'GQL'
+query ShipHeroLocationsByWarehouse($warehouse_id: String!, $customer_account_id: String) {
+  locations(warehouse_id: $warehouse_id, customer_account_id: $customer_account_id) {
+    data {
+      edges {
+        node {
+          id
+          name
+          zone
+          type {
+            name
+          }
+          pickable
+          sellable
+        }
+      }
+    }
+  }
+}
+GQL,
+                'vars' => array_merge(['warehouse_id' => $warehouseId], $this->customerAccountVariables($customerAccountId)),
+            ],
         ];
-        $json = null;
+        $merged = [];
         $lastError = null;
         foreach ($queries as $candidate) {
             try {
                 $json = $this->client->query($candidate['graphql'], $candidate['vars']);
-                break;
+                $edges = data_get($json, 'data.locations.data.edges');
+                if (! is_array($edges)) {
+                    continue;
+                }
+                foreach ($edges as $edge) {
+                    if (! is_array($edge)) {
+                        continue;
+                    }
+                    $parsed = $this->parseLocationNode($edge['node'] ?? null);
+                    if ($parsed === null) {
+                        continue;
+                    }
+                    $merged[$parsed['id']] = $parsed;
+                }
             } catch (\Throwable $e) {
                 $lastError = $e;
             }
         }
-        if (! is_array($json)) {
-            throw new RuntimeException($lastError instanceof \Throwable ? $lastError->getMessage() : 'Could not load locations.');
+        if ($merged === [] && $lastError instanceof \Throwable) {
+            throw new RuntimeException($lastError->getMessage());
         }
-        $edges = data_get($json, 'data.locations.data.edges');
-        if (! is_array($edges)) {
-            return [];
-        }
-        $out = [];
-        foreach ($edges as $edge) {
-            if (! is_array($edge)) {
-                continue;
-            }
-            $node = $edge['node'] ?? null;
-            if (! is_array($node)) {
-                continue;
-            }
-            $id = trim((string) ($node['id'] ?? ''));
-            if ($id === '') {
-                continue;
-            }
-            $name = trim((string) ($node['name'] ?? ''));
-            $typeName = trim((string) data_get($node, 'type.name', ''));
-            if ($typeName === '') {
-                $typeName = trim((string) ($node['type'] ?? ''));
-            }
-            $pickableRaw = array_key_exists('pickable', $node)
-                ? $node['pickable']
-                : (array_key_exists('is_pickable', $node) ? $node['is_pickable'] : null);
-            $pickable = null;
-            if (is_bool($pickableRaw)) {
-                $pickable = $pickableRaw;
-            } elseif (is_int($pickableRaw) || is_float($pickableRaw)) {
-                $pickable = ((int) $pickableRaw) === 1;
-            } elseif (is_string($pickableRaw)) {
-                $normalizedPickable = strtolower(trim($pickableRaw));
-                if (in_array($normalizedPickable, ['1', 'true', 'yes'], true)) {
-                    $pickable = true;
-                } elseif (in_array($normalizedPickable, ['0', 'false', 'no'], true)) {
-                    $pickable = false;
-                }
-            }
-            $out[] = [
-                'id' => $id,
-                'name' => $name,
-                'type' => $typeName !== '' ? $typeName : null,
-                'pickable' => $pickable,
-                'sellable' => array_key_exists('sellable', $node) ? (bool) $node['sellable'] : null,
-            ];
-        }
-        return $out;
+
+        return array_values($merged);
     }
 
     /**
@@ -2343,25 +2311,270 @@ GQL,
      */
     public function resolveWarehouseLocation(string $warehouseId, string $locationInput, ?string $customerAccountId = null): ?array
     {
-        $needle = trim($locationInput);
+        $needle = $this->normalizeLocationSearchTerm($locationInput);
         if ($needle === '') {
             return null;
         }
-        $locations = $this->listLocations($warehouseId, $customerAccountId);
-        if ($locations === []) {
+        $warehouseId = trim($warehouseId);
+        if ($warehouseId === '') {
             return null;
         }
-        foreach ($locations as $loc) {
-            if (strcasecmp($loc['id'], $needle) === 0) {
-                return $loc;
+
+        $byName = $this->lookupWarehouseLocationByName($warehouseId, $needle);
+        if (is_array($byName)) {
+            return $byName;
+        }
+
+        foreach ($this->candidateLocationIdsFromInput($needle) as $candidateId) {
+            $byId = $this->lookupWarehouseLocationById($candidateId);
+            if (is_array($byId)) {
+                return $byId;
             }
         }
-        foreach ($locations as $loc) {
-            if (strcasecmp($loc['name'], $needle) === 0) {
-                return $loc;
+
+        $found = $this->findLocationInCatalog($this->listLocations($warehouseId, null), $needle);
+        if (is_array($found)) {
+            return $found;
+        }
+
+        if (is_string($customerAccountId) && trim($customerAccountId) !== '') {
+            $found = $this->findLocationInCatalog($this->listLocations($warehouseId, $customerAccountId), $needle);
+            if (is_array($found)) {
+                return $found;
             }
         }
+
         return null;
+    }
+
+    /**
+     * @param  array<string, mixed>|null  $node
+     * @return array{id:string,name:string,type:?string,pickable:?bool,sellable:?bool}|null
+     */
+    private function parseLocationNode($node): ?array
+    {
+        if (! is_array($node)) {
+            return null;
+        }
+        $id = trim((string) ($node['id'] ?? ''));
+        if ($id === '') {
+            return null;
+        }
+        $name = trim((string) ($node['name'] ?? ''));
+        $typeName = trim((string) data_get($node, 'type.name', ''));
+        if ($typeName === '') {
+            $typeName = trim((string) ($node['type'] ?? ''));
+        }
+        $pickableRaw = array_key_exists('pickable', $node)
+            ? $node['pickable']
+            : (array_key_exists('is_pickable', $node) ? $node['is_pickable'] : null);
+        $pickable = null;
+        if (is_bool($pickableRaw)) {
+            $pickable = $pickableRaw;
+        } elseif (is_int($pickableRaw) || is_float($pickableRaw)) {
+            $pickable = ((int) $pickableRaw) === 1;
+        } elseif (is_string($pickableRaw)) {
+            $normalizedPickable = strtolower(trim($pickableRaw));
+            if (in_array($normalizedPickable, ['1', 'true', 'yes'], true)) {
+                $pickable = true;
+            } elseif (in_array($normalizedPickable, ['0', 'false', 'no'], true)) {
+                $pickable = false;
+            }
+        }
+
+        return [
+            'id' => $id,
+            'name' => $name,
+            'type' => $typeName !== '' ? $typeName : null,
+            'pickable' => $pickable,
+            'sellable' => array_key_exists('sellable', $node) ? (bool) $node['sellable'] : null,
+        ];
+    }
+
+    /**
+     * @param  list<array{id:string,name:string,type:?string,pickable:?bool,sellable:?bool}>  $locations
+     * @return array{id:string,name:string,type:?string,pickable:?bool,sellable:?bool}|null
+     */
+    private function findLocationInCatalog(array $locations, string $needle): ?array
+    {
+        foreach ($locations as $loc) {
+            if (strcasecmp((string) ($loc['id'] ?? ''), $needle) === 0) {
+                return $loc;
+            }
+        }
+        foreach ($locations as $loc) {
+            if (strcasecmp((string) ($loc['name'] ?? ''), $needle) === 0) {
+                return $loc;
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * @return array{id:string,name:string,type:?string,pickable:?bool,sellable:?bool}|null
+     */
+    private function lookupWarehouseLocationByName(string $warehouseId, string $name): ?array
+    {
+        $warehouseId = trim($warehouseId);
+        $name = trim($name);
+        if ($warehouseId === '' || $name === '') {
+            return null;
+        }
+        $queries = [
+            [
+                'graphql' => <<<'GQL'
+query ShipHeroLocationByWarehouseName($warehouse_id: String!, $name: String!) {
+  locations(warehouse_id: $warehouse_id, name: $name) {
+    data {
+      edges {
+        node {
+          id
+          name
+          zone
+          type {
+            name
+          }
+          pickable
+          sellable
+        }
+      }
+    }
+  }
+}
+GQL,
+                'vars' => ['warehouse_id' => $warehouseId, 'name' => $name],
+            ],
+            [
+                'graphql' => <<<'GQL'
+query ShipHeroLocationByWarehouseNameScalarType($warehouse_id: String!, $name: String!) {
+  locations(warehouse_id: $warehouse_id, name: $name) {
+    data {
+      edges {
+        node {
+          id
+          name
+          zone
+          type
+          pickable
+          sellable
+        }
+      }
+    }
+  }
+}
+GQL,
+                'vars' => ['warehouse_id' => $warehouseId, 'name' => $name],
+            ],
+        ];
+        foreach ($queries as $candidate) {
+            try {
+                $json = $this->client->query($candidate['graphql'], $candidate['vars']);
+                $edges = data_get($json, 'data.locations.data.edges');
+                if (! is_array($edges)) {
+                    continue;
+                }
+                foreach ($edges as $edge) {
+                    $parsed = $this->parseLocationNode($edge['node'] ?? null);
+                    if ($parsed === null) {
+                        continue;
+                    }
+                    if (strcasecmp($parsed['name'], $name) === 0) {
+                        return $parsed;
+                    }
+                }
+            } catch (\Throwable $e) {
+                // Try next query variant.
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * @return array{id:string,name:string,type:?string,pickable:?bool,sellable:?bool}|null
+     */
+    private function lookupWarehouseLocationById(string $locationId): ?array
+    {
+        $locationId = trim($locationId);
+        if ($locationId === '') {
+            return null;
+        }
+        $queries = [
+            <<<'GQL'
+query ShipHeroLocationRecordById($id: String!) {
+  location(id: $id) {
+    data {
+      id
+      name
+      pickable
+      sellable
+      type {
+        name
+      }
+    }
+  }
+}
+GQL,
+            <<<'GQL'
+query ShipHeroLocationRecordByIdScalar($id: String!) {
+  location(id: $id) {
+    data {
+      id
+      name
+      pickable
+      sellable
+      type
+    }
+  }
+}
+GQL,
+        ];
+        foreach ($queries as $graphql) {
+            try {
+                $json = $this->client->query($graphql, ['id' => $locationId]);
+                $parsed = $this->parseLocationNode(data_get($json, 'data.location.data'));
+                if ($parsed !== null) {
+                    return $parsed;
+                }
+            } catch (\Throwable $e) {
+                // Try next query variant.
+            }
+        }
+
+        return null;
+    }
+
+    private function normalizeLocationSearchTerm(string $locationInput): string
+    {
+        $needle = trim($locationInput);
+        if ($needle === '') {
+            return '';
+        }
+        $collapsed = preg_replace('/\s+/u', ' ', $needle);
+
+        return is_string($collapsed) ? trim($collapsed) : $needle;
+    }
+
+    /**
+     * @return list<string>
+     */
+    private function candidateLocationIdsFromInput(string $needle): array
+    {
+        $candidates = [trim($needle)];
+        if (ctype_digit($needle)) {
+            $candidates[] = base64_encode('Bin:'.$needle);
+        }
+
+        $unique = [];
+        foreach ($candidates as $candidate) {
+            $candidate = trim($candidate);
+            if ($candidate !== '') {
+                $unique[$candidate] = $candidate;
+            }
+        }
+
+        return array_values($unique);
     }
 
     /**

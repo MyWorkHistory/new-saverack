@@ -393,11 +393,8 @@ class InventoryApiTest extends TestCase
         $mock->shouldReceive('resolveWarehouseLocation')
             ->once()
             ->with('WH1', 'A-01', null)
-            ->andReturn(null);
-        $mock->shouldReceive('resolveProductWarehouseLocation')
-            ->once()
-            ->with('SKU-1', 'WH1', 'A-01', null)
             ->andReturn(['id' => 'loc-1', 'name' => 'A-01']);
+        $mock->shouldNotReceive('resolveProductWarehouseLocation');
         $mock->shouldReceive('replaceLocationQuantity')
             ->once()
             ->with('SKU-1', 'WH1', 'loc-1', 0, 'Account Setup', null)

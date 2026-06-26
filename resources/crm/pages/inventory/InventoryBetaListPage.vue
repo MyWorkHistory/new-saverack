@@ -103,7 +103,9 @@ const canLoadInventory = computed(() => {
   );
 });
 
-const tableColspan = computed(() => (crossAccountMode.value ? 9 : 8));
+const showAccountColumn = computed(() => isStaffPickerMode.value);
+
+const tableColspan = computed(() => (showAccountColumn.value ? 9 : 8));
 
 const accountOptions = computed(() =>
   (accounts.value || [])
@@ -322,7 +324,7 @@ function thAriaSort(col) {
 
 function sortIndicator(col) {
   if (sortKey.value !== col) return "";
-  return sortDir.value === "asc" ? "Γåæ" : "Γåô";
+  return sortDir.value === "asc" ? "↑" : "↓";
 }
 
 function onSelectAllCheckboxChange(ev) {
@@ -560,12 +562,12 @@ function clientAccountHref(row) {
 function inventoryDetailTo(row) {
   const sku = String(row?.sku || "").trim();
   if (!sku) {
-    return { name: isPortalList.value ? "user-inventory-beta" : "inventory-beta" };
+    return { name: isPortalList.value ? "user-inventory" : "inventory" };
   }
   const rowAccountId = effectiveRowAccountId(row);
   const query = rowAccountId > 0 ? { client_account_id: String(rowAccountId) } : {};
   return {
-    name: isPortalList.value ? "user-inventory-beta-detail" : "inventory-beta-detail",
+    name: isPortalList.value ? "user-inventory-detail" : "inventory-detail",
     params: { sku },
     query,
   };
@@ -783,7 +785,7 @@ watch(
 
 onMounted(() => {
   setCrmPageMeta({
-    title: "Save Rack | Inventory (Beta)",
+    title: isPortalList.value ? "Save Rack | Inventory | Products" : "Save Rack | Products",
     description: isPortalList.value
       ? "Your account product catalog."
       : "CRM-stored product catalog with incremental account sync.",
@@ -1112,7 +1114,7 @@ onUnmounted(() => {
                   <span v-if="sortIndicator('name')" class="staff-sort-ind">{{ sortIndicator("name") }}</span>
                 </button>
               </th>
-              <th v-if="crossAccountMode" class="staff-table-head__th user-inv-table__text-col" scope="col">
+              <th v-if="showAccountColumn" class="staff-table-head__th user-inv-table__text-col" scope="col">
                 Account
               </th>
               <th
@@ -1219,7 +1221,7 @@ onUnmounted(() => {
                   <span class="user-inv-table__name-text">{{ row.name || "—" }}</span>
                 </a>
               </td>
-              <td v-if="crossAccountMode" class="user-inv-table__text-col">
+              <td v-if="showAccountColumn" class="user-inv-table__text-col">
                 <a
                   v-if="clientAccountHref(row)"
                   :href="clientAccountHref(row)"

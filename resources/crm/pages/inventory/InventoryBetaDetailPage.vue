@@ -16,12 +16,12 @@ const crmUser = inject("crmUser", ref(null));
 
 const isPortalView = computed(() => route.meta?.userPortal === true);
 const usePortalDetailLayout = computed(() =>
-  route.name === "inventory-beta-detail" || route.name === "user-inventory-beta-detail",
+  route.name === "inventory-detail" || route.name === "user-inventory-detail",
 );
 const inventoryListRoute = computed(() =>
-  isPortalView.value ? "/users/inventory-beta" : "/admin/inventory-beta",
+  isPortalView.value ? "/users/inventory" : "/admin/inventory",
 );
-const inventoryListBreadcrumbLabel = computed(() => "Inventory (Beta)");
+const inventoryListBreadcrumbLabel = computed(() => "Products");
 const canManageInventoryLocations = computed(() => true);
 
 const loading = ref(true);
@@ -146,7 +146,7 @@ function inventoryDetailTo(sku) {
   const value = String(sku || "").trim();
   if (!value) {
     return {
-      name: isPortalView.value ? "user-inventory-beta-detail" : "inventory-beta-detail",
+      name: isPortalView.value ? "user-inventory-detail" : "inventory-detail",
       params: {},
     };
   }
@@ -154,7 +154,7 @@ function inventoryDetailTo(sku) {
   const clientId = Number(route.query.client_account_id || 0);
   if (clientId > 0) query.client_account_id = clientId;
   return {
-    name: isPortalView.value ? "user-inventory-beta-detail" : "inventory-beta-detail",
+    name: isPortalView.value ? "user-inventory-detail" : "inventory-detail",
     params: { sku: value },
     query,
   };

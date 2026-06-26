@@ -67,9 +67,7 @@ const clientsGroupOpen = ref(route.path.startsWith("/admin/clients"));
 const settingsGroupOpen = ref(route.path.startsWith("/admin/settings"));
 const billingGroupOpen = ref(route.path.startsWith("/admin/billing"));
 const ordersGroupOpen = ref(route.path.startsWith("/admin/orders"));
-const inventoryGroupOpen = ref(
-  route.path.startsWith("/admin/inventory") || route.path.startsWith("/admin/inventory-beta"),
-);
+const inventoryGroupOpen = ref(route.path.startsWith("/admin/inventory"));
 const receivingGroupOpen = ref(route.path.startsWith("/admin/receiving"));
 const returnsGroupOpen = ref(route.path.startsWith("/admin/returns"));
 watch(
@@ -87,7 +85,7 @@ watch(
     if (p.startsWith("/admin/orders")) {
       ordersGroupOpen.value = true;
     }
-    if (p.startsWith("/admin/inventory") || p.startsWith("/admin/inventory-beta")) {
+    if (p.startsWith("/admin/inventory")) {
       inventoryGroupOpen.value = true;
     }
     if (p.startsWith("/admin/receiving")) {
@@ -126,12 +124,11 @@ function navActive(mode) {
   if (mode === "returns-orders") return p === "/admin/returns/orders";
   if (mode === "returns-items") return p === "/admin/returns/items";
   if (mode === "inventory") {
-    return p.startsWith("/admin/inventory") && !p.startsWith("/admin/inventory-beta");
+    return p.startsWith("/admin/inventory");
   }
   if (mode === "inventory-search" || mode === "inventory-products") return p === "/admin/inventory";
   if (mode === "inventory-restock") return p === "/admin/inventory/restock";
   if (mode === "inventory-restock-beta") return p.startsWith("/admin/inventory/restock-beta");
-  if (mode === "inventory-beta") return p.startsWith("/admin/inventory-beta");
   if (mode === "inventory-on-demand") return p.startsWith("/admin/inventory/on-demand");
   if (mode === "billing-summary") return p === "/admin/billing/summary";
   if (mode === "billing-invoices") return p.startsWith("/admin/billing/invoices");
@@ -603,16 +600,6 @@ function collapseNav() {
                     @click="closeMobile"
                   >
                     Restock (Beta)
-                  </RouterLink>
-                </li>
-                <li v-if="!isPortal">
-                  <RouterLink
-                    to="/admin/inventory-beta"
-                    class="vx-nav-link vx-nav-sublink"
-                    :class="{ 'vx-nav-link--active': navActive('inventory-beta') }"
-                    @click="closeMobile"
-                  >
-                    Inventory (Beta)
                   </RouterLink>
                 </li>
                 <li v-if="!isPortal">

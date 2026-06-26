@@ -31,8 +31,6 @@ import BillingCustomBillsListPage from "../pages/billing/BillingCustomBillsListP
 import BillingReturnBillsListPage from "../pages/billing/BillingReturnBillsListPage.vue";
 import BillingCustomBillDetailPage from "../pages/billing/BillingCustomBillDetailPage.vue";
 import BillingReturnBillDetailPage from "../pages/billing/BillingReturnBillDetailPage.vue";
-import InventoryListPage from "../pages/inventory/InventoryListPage.vue";
-import InventoryDetailPage from "../pages/inventory/InventoryDetailPage.vue";
 import InventoryOnDemandPage from "../pages/inventory/InventoryOnDemandPage.vue";
 import InventoryRestockPage from "../pages/inventory/InventoryRestockPage.vue";
 import InventoryRestockBetaPage from "../pages/inventory/InventoryRestockBetaPage.vue";
@@ -130,12 +128,12 @@ const meta = {
     description: "Return bill detail.",
   },
   inventory: {
-    title: "Save Rack | Inventory",
-    description: "ShipHero live inventory.",
+    title: "Save Rack | Products",
+    description: "CRM-stored product catalog with incremental account sync.",
   },
   inventoryDetail: {
-    title: "Save Rack | Inventory Detail",
-    description: "ShipHero product inventory detail.",
+    title: "Save Rack | Product Detail",
+    description: "Catalog product detail with live ShipHero qty and locations.",
   },
   inventoryOnDemand: {
     title: "Save Rack | On-Demand Inventory",
@@ -188,7 +186,7 @@ const meta = {
   },
   userPortalInventory: {
     title: "Save Rack | Inventory | Products",
-    description: "ShipHero live inventory for your account.",
+    description: "CRM-stored product catalog with incremental account sync.",
   },
   userPortalInventoryOutOfStock: {
     title: "Save Rack | Inventory | Out of Stock",
@@ -196,7 +194,7 @@ const meta = {
   },
   userPortalInventoryDetail: {
     title: "Save Rack | Inventory | Product Detail",
-    description: "ShipHero product inventory detail.",
+    description: "Catalog product detail with live ShipHero qty and locations.",
   },
   userPortalInventoryBeta: {
     title: "Save Rack | Inventory (Beta)",
@@ -491,7 +489,7 @@ const routes = [
   {
     path: "/admin/inventory",
     name: "inventory",
-    component: InventoryListPage,
+    component: InventoryBetaListPage,
     meta: meta.inventory,
   },
   {
@@ -506,18 +504,13 @@ const routes = [
     component: InventoryRestockBetaPage,
     meta: meta.inventoryRestockBeta,
   },
-  {
-    path: "/admin/inventory-beta",
-    name: "inventory-beta",
-    component: InventoryBetaListPage,
-    meta: meta.inventoryBeta,
-  },
+  { path: "/admin/inventory-beta", redirect: "/admin/inventory" },
   {
     path: "/admin/inventory-beta/:sku",
-    name: "inventory-beta-detail",
-    component: InventoryBetaDetailPage,
-    props: true,
-    meta: meta.inventoryBetaDetail,
+    redirect: (to) => ({
+      path: `/admin/inventory/${encodeURIComponent(String(to.params.sku || ""))}`,
+      query: to.query,
+    }),
   },
   {
     path: "/admin/inventory/on-demand",
@@ -528,7 +521,7 @@ const routes = [
   {
     path: "/admin/inventory/:sku",
     name: "inventory-detail",
-    component: InventoryDetailPage,
+    component: InventoryBetaDetailPage,
     props: true,
     meta: meta.inventoryDetail,
   },
@@ -664,10 +657,16 @@ const routes = [
   { path: "/users/orders/shipped", name: "user-orders-shipped", component: OrdersListPage, meta: { ...meta.ordersShipped, orderTab: "shipped", userPortal: true } },
   { path: "/users/orders/:shipheroOrderId", name: "user-order-detail", component: () => import("../pages/user-orders/UserOrderDetailPage.vue"), props: true, meta: { ...meta.orderDetail, userPortal: true } },
   { path: "/users/inventory/out-of-stock", name: "user-inventory-out-of-stock", component: () => import("../pages/user-inventory/UserInventoryOutOfStockPage.vue"), meta: { ...meta.userPortalInventoryOutOfStock, userPortal: true } },
-  { path: "/users/inventory", name: "user-inventory", component: InventoryListPage, meta: { ...meta.userPortalInventory, userPortal: true } },
-  { path: "/users/inventory/:sku", name: "user-inventory-detail", component: () => import("../pages/user-inventory/UserInventoryDetailPage.vue"), props: true, meta: { ...meta.userPortalInventoryDetail, userPortal: true } },
-  { path: "/users/inventory-beta", name: "user-inventory-beta", component: InventoryBetaListPage, meta: { ...meta.userPortalInventoryBeta, userPortal: true } },
-  { path: "/users/inventory-beta/:sku", name: "user-inventory-beta-detail", component: InventoryBetaDetailPage, props: true, meta: { ...meta.userPortalInventoryBetaDetail, userPortal: true } },
+  { path: "/users/inventory", name: "user-inventory", component: InventoryBetaListPage, meta: { ...meta.userPortalInventory, userPortal: true } },
+  { path: "/users/inventory/:sku", name: "user-inventory-detail", component: InventoryBetaDetailPage, props: true, meta: { ...meta.userPortalInventoryDetail, userPortal: true } },
+  { path: "/users/inventory-beta", redirect: "/users/inventory" },
+  {
+    path: "/users/inventory-beta/:sku",
+    redirect: (to) => ({
+      path: `/users/inventory/${encodeURIComponent(String(to.params.sku || ""))}`,
+      query: to.query,
+    }),
+  },
   { path: "/users/asn", name: "user-asn-list", component: () => import("../pages/user-asn/UserAsnListPage.vue"), meta: { ...meta.userAsnList, userPortal: true } },
   { path: "/users/asn/:id", name: "user-asn-detail", component: () => import("../pages/user-asn/UserAsnDetailPage.vue"), props: true, meta: { ...meta.userAsnDetail, userPortal: true } },
   { path: "/users/asn/:id/print-shipping-label", name: "user-asn-print-shipping-label", component: () => import("../pages/user-asn/UserAsnPrintShippingLabelPage.vue"), props: true, meta: { title: "Save Rack | Print Shipping Label", description: "4x6 shipping label.", userPortal: true, bareLayout: true } },

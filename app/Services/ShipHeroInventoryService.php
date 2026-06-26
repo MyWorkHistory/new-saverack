@@ -391,6 +391,7 @@ GQL;
     {
         return [
             'client_account_id' => (int) $row->client_account_id,
+            'client_account_company_name' => (string) ($row->clientAccount?->company_name ?? ''),
             'product_id' => $row->shiphero_product_id,
             'sku' => $row->sku,
             'name' => $row->name ?? '',
@@ -793,6 +794,7 @@ GQL;
         }
 
         $items = $query
+            ->with('clientAccount:id,company_name')
             ->orderByDesc('on_hand')
             ->orderBy('sku')
             ->orderBy('warehouse_id')
@@ -903,6 +905,7 @@ GQL;
         }
 
         $items = $query
+            ->with('clientAccount:id,company_name')
             ->orderByDesc('on_hand')
             ->orderBy('sku')
             ->orderBy('warehouse_id')

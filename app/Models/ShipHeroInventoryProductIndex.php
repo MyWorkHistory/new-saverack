@@ -3,6 +3,7 @@
 namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 class ShipHeroInventoryProductIndex extends Model
 {
@@ -43,4 +44,9 @@ class ShipHeroInventoryProductIndex extends Model
         'synced_at' => 'datetime',
         'last_seen_at' => 'datetime',
     ];
+
+    public function clientAccount(): BelongsTo
+    {
+        return $this->belongsTo(ClientAccount::class, 'client_account_id');
+    }
 }

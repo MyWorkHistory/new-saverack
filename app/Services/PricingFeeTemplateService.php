@@ -236,6 +236,9 @@ class PricingFeeTemplateService
             'Additional Picks' => ClientAccountFee::LINE_ADDITIONAL_PICKS,
             'Returns Processing' => ClientAccountFee::LINE_RETURNS_PROCESSING,
             'Returns Additional Items' => ClientAccountFee::LINE_RETURNS_ADDITIONAL_ITEMS,
+            'Returns Assembly' => ClientAccountFee::LINE_RETURNS_ASSEMBLY,
+            'Returns Re-Packaging' => ClientAccountFee::LINE_RETURNS_REPACKAGING,
+            'Returns Disposal' => ClientAccountFee::LINE_RETURNS_DISPOSAL,
         ];
 
         return $map[$template->name] ?? null;

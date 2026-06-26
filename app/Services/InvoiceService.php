@@ -301,6 +301,92 @@ class InvoiceService
         });
     }
 
+    /**
+     * Add or merge a returns-category line on a draft invoice (combines by display name).
+     *
+     * @param  array<string, mixed>  $item
+     */
+    public function addOrMergeReturnLine(Invoice $invoice, array $item, ?User $actor): Invoice
+    {
+        if ($invoice->isVoid()) {
+            throw new \RuntimeException('Cannot add items to a void invoice.');
+        }
+        if ($invoice->status !== Invoice::STATUS_DRAFT) {
+            throw new \RuntimeException('Return bill lines can only be added to draft invoices.');
+        }
+
+        return DB::transaction(function () use ($invoice, $item, $actor) {
+            $invoice->refresh();
+            $item = $this->normalizeCreditItemMoney($item);
+            $displayName = trim((string) ($item['display_name'] ?? $item['description'] ?? ''));
+            if ($displayName === '') {
+                $displayName = 'Returns';
+            }
+            $item['display_name'] = $displayName;
+            $item['description'] = (string) ($item['description'] ?? $displayName);
+            $item['category'] = InvoiceLineCategory::RETURNS;
+
+            $incomingQty = (float) ($item['quantity'] ?? 1);
+            $incomingTotal = (int) ($item['line_total_cents'] ?? 0);
+            $incomingUnit = (int) ($item['unit_price_cents'] ?? 0);
+            $incomingMeta = is_array($item['metadata'] ?? null) ? $item['metadata'] : [];
+            $breakdownEntry = array_merge($incomingMeta, [
+                'quantity' => $incomingQty,
+                'line_total_cents' => $incomingTotal,
+                'unit_price_cents' => $incomingUnit,
+            ]);
+
+            $existing = $invoice->items()
+                ->where('category', InvoiceLineCategory::RETURNS)
+                ->get()
+                ->first(function ($row) use ($displayName) {
+                    $rowName = trim((string) ($row->display_name ?: $row->description ?: ''));
+
+                    return strcasecmp($rowName, $displayName) === 0;
+                });
+
+            if ($existing !== null) {
+                $meta = is_array($existing->metadata) ? $existing->metadata : [];
+                $breakdown = is_array($meta['breakdown'] ?? null) ? $meta['breakdown'] : [];
+                $breakdown[] = $breakdownEntry;
+                $newQty = (float) $existing->quantity + $incomingQty;
+                $newTotal = (int) $existing->line_total_cents + $incomingTotal;
+                $newUnit = $newQty != 0.0 ? (int) round($newTotal / $newQty) : (int) $existing->unit_price_cents;
+                $meta['breakdown'] = $breakdown;
+                $meta['source'] = 'return_bill';
+
+                $existing->fill([
+                    'quantity' => $newQty,
+                    'unit_price_cents' => $newUnit,
+                    'line_total_cents' => $newTotal,
+                    'metadata' => $meta,
+                    'group_key' => $item['group_key'] ?? $existing->group_key,
+                    'subtype' => $item['subtype'] ?? $existing->subtype,
+                ]);
+                $existing->save();
+            } else {
+                $item['metadata'] = array_merge($incomingMeta, [
+                    'breakdown' => [$breakdownEntry],
+                ]);
+                if (! isset($item['group_key']) || trim((string) $item['group_key']) === '') {
+                    $item['group_key'] = 'returns:'.strtolower(preg_replace('/[^a-z0-9]+/i', '_', $displayName) ?: 'line');
+                }
+                $order = (int) $invoice->items()->max('sort_order') + 1;
+                $this->insertInvoiceItemRow($invoice, $order, $item);
+            }
+
+            $from = $invoice->status;
+            $this->recalculateTotals($invoice->refresh());
+            $invoice->save();
+            $this->logHistory($invoice, $actor, 'item_added', $from, $invoice->status, [
+                'event_type' => InvoiceHistoryEventType::LINE_ADD,
+                'history_message' => 'Added return bill line item.',
+            ]);
+
+            return $invoice->fresh(['items', 'clientAccount']);
+        });
+    }
+
     public function addCcFee(Invoice $invoice, string $label, ?User $actor): Invoice
     {
         $invoice->loadMissing('items', 'clientAccount');

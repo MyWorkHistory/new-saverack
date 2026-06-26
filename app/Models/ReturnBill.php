@@ -19,6 +19,12 @@ class ReturnBill extends Model
 
     public const LINE_ADDITIONAL_ITEMS = 'additional_items';
 
+    public const LINE_ASSEMBLY = 'assembly';
+
+    public const LINE_REPACKAGING = 'repackaging';
+
+    public const LINE_DISPOSAL = 'disposal';
+
     protected $fillable = [
         'bill_number',
         'status',

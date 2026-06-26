@@ -717,7 +717,12 @@ class AsnController extends Controller
             $line->image_url = null;
         }
         $line->expected_qty = (int) $validated['expected_qty'];
-        $line->accepted_qty = $portal ? 0 : (int) ($validated['accepted_qty'] ?? 0);
+        if (! $portal && isset($validated['accepted_qty']) && (int) $validated['accepted_qty'] > 0) {
+            throw ValidationException::withMessages([
+                'accepted_qty' => ['Use ASN receiving save to update received quantity.'],
+            ]);
+        }
+        $line->accepted_qty = 0;
         $line->rejected_qty = $portal ? 0 : (int) ($validated['rejected_qty'] ?? 0);
         $line->sort_order = $maxSort + 1;
 
@@ -745,16 +750,19 @@ class AsnController extends Controller
             'name' => ['sometimes', 'string', 'max:512'],
         ]);
         $portal = $this->isPortalUser($request);
+        if (! $portal && array_key_exists('accepted_qty', $validated)) {
+            throw ValidationException::withMessages([
+                'accepted_qty' => ['Use ASN receiving save to update received quantity.'],
+            ]);
+        }
         foreach (['expected_qty', 'sku', 'name'] as $k) {
             if (array_key_exists($k, $validated)) {
                 $line->{$k} = $validated[$k];
             }
         }
         if (! $portal) {
-            foreach (['accepted_qty', 'rejected_qty'] as $k) {
-                if (array_key_exists($k, $validated)) {
-                    $line->{$k} = $validated[$k];
-                }
+            if (array_key_exists('rejected_qty', $validated)) {
+                $line->rejected_qty = $validated['rejected_qty'];
             }
         }
         $line->save();

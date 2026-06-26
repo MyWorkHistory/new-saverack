@@ -8,8 +8,10 @@ use App\Models\ClientAccountReturn;
 use App\Models\ClientAccountReturnLine;
 use App\Models\Invoice;
 use App\Models\Permission;
+use App\Models\InvoiceItem;
 use App\Models\ReturnBill;
 use App\Models\User;
+use App\Support\Billing\ReturnBillChargeCatalog;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Laravel\Sanctum\Sanctum;
 use Tests\TestCase;
@@ -34,6 +36,14 @@ class ReturnBillApiTest extends TestCase
         );
     }
 
+    private function billingDeletePermission(): Permission
+    {
+        return Permission::query()->firstOrCreate(
+            ['key' => 'billing.delete'],
+            ['label' => 'Delete billing', 'module' => 'billing']
+        );
+    }
+
     private function staffUser(): User
     {
         $user = User::factory()->create(['client_account_id' => null]);
@@ -46,13 +56,17 @@ class ReturnBillApiTest extends TestCase
         return $user;
     }
 
-    private function billingUser(): User
+    private function billingUser(array $extra = []): User
     {
-        $user = User::factory()->create();
-        $user->permissions()->sync([
+        $perms = [
             $this->billingViewPermission()->id,
             $this->billingUpdatePermission()->id,
-        ]);
+        ];
+        if (in_array('billing.delete', $extra, true)) {
+            $perms[] = $this->billingDeletePermission()->id;
+        }
+        $user = User::factory()->create();
+        $user->permissions()->sync($perms);
         Sanctum::actingAs($user);
 
         return $user;
@@ -89,12 +103,13 @@ class ReturnBillApiTest extends TestCase
         ]);
     }
 
-    private function processedReturnWithBill(ClientAccount $account, int $totalUnits = 5): array
+    private function processedReturnWithBill(ClientAccount $account, int $totalUnits = 5, string $rma = 'RB1001'): array
     {
         $this->seedReturnFees($account);
+        $staff = $this->staffUser();
         $return = ClientAccountReturn::query()->create([
             'client_account_id' => $account->id,
-            'rma_number' => 'RB1001',
+            'rma_number' => $rma,
             'status' => ClientAccountReturn::STATUS_PENDING,
             'return_type' => ClientAccountReturn::TYPE_DIRECT,
             'shiphero_order_id' => 'order-1',
@@ -115,7 +130,7 @@ class ReturnBillApiTest extends TestCase
             'sort_order' => 0,
         ]);
 
-        Sanctum::actingAs($this->staffUser());
+        Sanctum::actingAs($staff);
         $this->postJson('/api/admin/returns/'.$return->id.'/process', [
             'line_ids' => [$return->lines()->first()->id],
             'restock_by_line_id' => [$return->lines()->first()->id => false],
@@ -124,7 +139,7 @@ class ReturnBillApiTest extends TestCase
         $return->refresh();
         $bill = ReturnBill::query()->findOrFail($return->return_bill_id);
 
-        return [$return, $bill];
+        return [$return, $bill, $staff];
     }
 
     public function test_process_creates_return_bill_with_correct_quantities_for_five_units(): void
@@ -141,6 +156,8 @@ class ReturnBillApiTest extends TestCase
 
         $this->assertNotNull($first);
         $this->assertNotNull($additional);
+        $this->assertSame(ReturnBillChargeCatalog::FIRST_ITEM_NAME, $first->name);
+        $this->assertSame(ReturnBillChargeCatalog::ADDITIONAL_ITEMS_NAME, $additional->name);
         $this->assertSame(1.0, (float) $first->quantity);
         $this->assertSame(4.0, (float) $additional->quantity);
         $this->assertSame(500, (int) $first->unit_price_cents);
@@ -167,7 +184,8 @@ class ReturnBillApiTest extends TestCase
         $this->getJson('/api/return-bills')
             ->assertOk()
             ->assertJsonPath('data.0.id', $bill->id)
-            ->assertJsonPath('data.0.status', ReturnBill::STATUS_OPEN);
+            ->assertJsonPath('data.0.status', ReturnBill::STATUS_OPEN)
+            ->assertJsonPath('data.0.items_count', 2);
 
         $invoice = Invoice::query()->create([
             'invoice_number' => 'INV-RB-001',
@@ -187,5 +205,191 @@ class ReturnBillApiTest extends TestCase
             ->assertOk()
             ->assertJsonPath('status', ReturnBill::STATUS_INVOICED)
             ->assertJsonPath('invoice_id', $invoice->id);
+    }
+
+    public function test_detail_includes_created_by_name_and_history_event_labels(): void
+    {
+        $account = $this->account();
+        [, $bill, $staff] = $this->processedReturnWithBill($account, 2);
+        $this->billingUser();
+
+        $this->getJson('/api/return-bills/'.$bill->id)
+            ->assertOk()
+            ->assertJsonPath('created_by_name', $staff->name)
+            ->assertJsonPath('histories.0.event_type', 'created')
+            ->assertJsonPath('histories.0.event_label', 'Created')
+            ->assertJsonPath('items.0.name', ReturnBillChargeCatalog::FIRST_ITEM_NAME);
+    }
+
+    public function test_history_includes_invoice_id_on_invoiced(): void
+    {
+        $account = $this->account();
+        [, $bill] = $this->processedReturnWithBill($account, 2);
+        $this->billingUser();
+
+        $invoice = Invoice::query()->create([
+            'invoice_number' => 'INV-RB-HIST',
+            'client_account_id' => $account->id,
+            'status' => Invoice::STATUS_DRAFT,
+            'currency' => 'USD',
+            'subtotal_cents' => 0,
+            'tax_cents' => 0,
+            'total_cents' => 0,
+            'amount_paid_cents' => 0,
+            'balance_due_cents' => 0,
+        ]);
+
+        $this->postJson('/api/return-bills/'.$bill->id.'/add-to-invoice', [
+            'invoice_id' => $invoice->id,
+        ])->assertOk();
+
+        $detail = $this->getJson('/api/return-bills/'.$bill->id)
+            ->assertOk()
+            ->json();
+
+        $invoicedHistory = collect($detail['histories'] ?? [])
+            ->firstWhere('event_type', 'invoiced');
+
+        $this->assertNotNull($invoicedHistory);
+        $this->assertSame('Added to Invoice', $invoicedHistory['event_label']);
+        $this->assertSame($invoice->id, (int) $invoicedHistory['invoice_id']);
+    }
+
+    public function test_delete_open_bill_and_reject_invoiced(): void
+    {
+        $account = $this->account();
+        [, $bill] = $this->processedReturnWithBill($account, 2);
+        $this->billingUser(['billing.delete']);
+
+        $returnId = ClientAccountReturn::query()->where('return_bill_id', $bill->id)->value('id');
+
+        $this->deleteJson('/api/return-bills/'.$bill->id)
+            ->assertOk();
+
+        $this->assertNull(ReturnBill::query()->find($bill->id));
+        $this->assertNull(ClientAccountReturn::query()->find($returnId)->return_bill_id);
+
+        [, $invoicedBill] = $this->processedReturnWithBill($account, 2, 'RB2002');
+        $this->billingUser(['billing.delete']);
+        $invoice = Invoice::query()->create([
+            'invoice_number' => 'INV-RB-DEL',
+            'client_account_id' => $account->id,
+            'status' => Invoice::STATUS_DRAFT,
+            'currency' => 'USD',
+            'subtotal_cents' => 0,
+            'tax_cents' => 0,
+            'total_cents' => 0,
+            'amount_paid_cents' => 0,
+            'balance_due_cents' => 0,
+        ]);
+        $this->postJson('/api/return-bills/'.$invoicedBill->id.'/add-to-invoice', [
+            'invoice_id' => $invoice->id,
+        ])->assertOk();
+
+        $this->deleteJson('/api/return-bills/'.$invoicedBill->id)
+            ->assertForbidden();
+    }
+
+    public function test_line_crud_recalculates_total_and_logs_history(): void
+    {
+        $account = $this->account();
+        [, $bill] = $this->processedReturnWithBill($account, 2);
+        $this->billingUser();
+
+        $this->postJson('/api/return-bills/'.$bill->id.'/items', [
+            'line_type' => ReturnBill::LINE_ASSEMBLY,
+            'quantity' => 2,
+            'unit_price' => 12.50,
+        ])
+            ->assertOk()
+            ->assertJsonPath('total_cents', 700 + 2500);
+
+        $detail = $this->getJson('/api/return-bills/'.$bill->id)->assertOk()->json();
+        $assembly = collect($detail['items'])->firstWhere('line_type', ReturnBill::LINE_ASSEMBLY);
+        $this->assertNotNull($assembly);
+        $this->assertSame(ReturnBillChargeCatalog::ASSEMBLY_NAME, $assembly['name']);
+
+        $itemId = (int) $assembly['id'];
+
+        $this->putJson('/api/return-bills/'.$bill->id.'/items/'.$itemId, [
+            'line_type' => ReturnBill::LINE_ASSEMBLY,
+            'quantity' => 1,
+            'unit_price' => 20.00,
+        ])
+            ->assertOk()
+            ->assertJsonPath('total_cents', 700 + 2000);
+
+        $this->deleteJson('/api/return-bills/'.$bill->id.'/items/'.$itemId)
+            ->assertOk()
+            ->assertJsonPath('total_cents', 700);
+
+        $editedHistory = collect($this->getJson('/api/return-bills/'.$bill->id)->json('histories'))
+            ->firstWhere('event_type', 'line_add');
+        $this->assertNotNull($editedHistory);
+        $this->assertSame('Edited', $editedHistory['event_label']);
+    }
+
+    public function test_add_two_bills_to_same_draft_merges_invoice_lines_by_display_name(): void
+    {
+        $account = $this->account();
+        [, $billOne] = $this->processedReturnWithBill($account, 5, 'RB3001');
+        [, $billTwo] = $this->processedReturnWithBill($account, 5, 'RB3002');
+        $this->billingUser();
+
+        $invoice = Invoice::query()->create([
+            'invoice_number' => 'INV-RB-MERGE',
+            'client_account_id' => $account->id,
+            'status' => Invoice::STATUS_DRAFT,
+            'currency' => 'USD',
+            'subtotal_cents' => 0,
+            'tax_cents' => 0,
+            'total_cents' => 0,
+            'amount_paid_cents' => 0,
+            'balance_due_cents' => 0,
+        ]);
+
+        $this->postJson('/api/return-bills/'.$billOne->id.'/add-to-invoice', [
+            'invoice_id' => $invoice->id,
+        ])->assertOk();
+
+        $this->postJson('/api/return-bills/'.$billTwo->id.'/add-to-invoice', [
+            'invoice_id' => $invoice->id,
+        ])->assertOk();
+
+        $items = InvoiceItem::query()
+            ->where('invoice_id', $invoice->id)
+            ->orderBy('sort_order')
+            ->get();
+
+        $this->assertCount(2, $items);
+
+        $first = $items->first(fn ($row) => $row->display_name === ReturnBillChargeCatalog::FIRST_ITEM_NAME);
+        $additional = $items->first(fn ($row) => $row->display_name === ReturnBillChargeCatalog::ADDITIONAL_ITEMS_NAME);
+
+        $this->assertNotNull($first);
+        $this->assertNotNull($additional);
+        $this->assertSame(2.0, (float) $first->quantity);
+        $this->assertSame(1000, (int) $first->line_total_cents);
+        $this->assertSame(8.0, (float) $additional->quantity);
+        $this->assertSame(1600, (int) $additional->line_total_cents);
+
+        $breakdown = is_array($first->metadata['breakdown'] ?? null) ? $first->metadata['breakdown'] : [];
+        $this->assertCount(2, $breakdown);
+    }
+
+    public function test_charge_options_returns_five_types_with_defaults(): void
+    {
+        $account = $this->account();
+        $this->seedReturnFees($account);
+        $this->billingUser();
+
+        $res = $this->getJson('/api/return-bills/charge-options?client_account_id='.$account->id)
+            ->assertOk()
+            ->json();
+
+        $this->assertCount(5, $res['options'] ?? []);
+        $first = collect($res['options'])->firstWhere('line_type', ReturnBill::LINE_FIRST_ITEM);
+        $this->assertSame(ReturnBillChargeCatalog::FIRST_ITEM_NAME, $first['display_name']);
+        $this->assertSame(500, (int) $first['default_unit_price_cents']);
     }
 }

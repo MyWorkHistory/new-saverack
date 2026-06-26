@@ -10,6 +10,7 @@ use App\Models\Permission;
 use App\Models\ReturnBill;
 use App\Models\User;
 use App\Services\ShipHeroOrderService;
+use App\Support\Billing\ReturnBillChargeCatalog;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Laravel\Sanctum\Sanctum;
 use Mockery;
@@ -209,6 +210,11 @@ class AdminReturnProcessWorkflowTest extends TestCase
         $this->assertSame(0, (int) $lineB->fresh()->return_qty);
         $this->assertTrue((bool) $lineA->fresh()->restock);
         $this->assertSame(ReturnBill::STATUS_OPEN, ReturnBill::query()->find($return->return_bill_id)->status);
+
+        $bill = ReturnBill::query()->with('items')->find($return->return_bill_id);
+        $first = $bill->items->firstWhere('line_type', ReturnBill::LINE_FIRST_ITEM);
+        $this->assertNotNull($first);
+        $this->assertSame(ReturnBillChargeCatalog::FIRST_ITEM_NAME, $first->name);
     }
 
     public function test_admin_process_from_draft_skips_pending_and_creates_bill(): void

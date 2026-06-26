@@ -69,9 +69,15 @@ Route::middleware('auth:sanctum')->group(function () {
 
         Route::prefix('return-bills')->group(function () {
             Route::get('/', [ReturnBillController::class, 'index']);
+            Route::get('/charge-options', [ReturnBillController::class, 'chargeOptions']);
             Route::get('/{returnBill}', [ReturnBillController::class, 'show']);
+            Route::patch('/{returnBill}', [ReturnBillController::class, 'update']);
+            Route::delete('/{returnBill}', [ReturnBillController::class, 'destroy']);
             Route::get('/{returnBill}/draft-invoices', [ReturnBillController::class, 'draftInvoices']);
             Route::post('/{returnBill}/add-to-invoice', [ReturnBillController::class, 'addToInvoice']);
+            Route::post('/{returnBill}/items', [ReturnBillController::class, 'storeItem']);
+            Route::put('/{returnBill}/items/{item}', [ReturnBillController::class, 'updateItem']);
+            Route::delete('/{returnBill}/items/{item}', [ReturnBillController::class, 'destroyItem']);
         });
 
         Route::prefix('custom-bills')->group(function () {

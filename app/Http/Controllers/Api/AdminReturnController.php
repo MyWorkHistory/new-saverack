@@ -432,8 +432,8 @@ class AdminReturnController extends Controller
         return response()->json([
             'first_item' => $defaults['first_item'],
             'additional_item' => $defaults['additional_item'],
-            'first_item_label' => 'Return Fee (1st Item)',
-            'additional_item_label' => 'Return Fee (Additional Items)',
+            'first_item_label' => 'Returns (First Item)',
+            'additional_item_label' => 'Returns (Additional Items)',
         ]);
     }
 

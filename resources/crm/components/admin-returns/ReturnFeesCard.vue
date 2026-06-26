@@ -31,12 +31,12 @@ watch(
 const feeRows = computed(() => [
   {
     key: "first_item",
-    name: localFees.value.first_item_label || "Return Fee (1st Item)",
+    name: localFees.value.first_item_label || "Returns (First Item)",
     amount: localFees.value.first_item,
   },
   {
     key: "additional_item",
-    name: localFees.value.additional_item_label || "Return Fee (Additional Items)",
+    name: localFees.value.additional_item_label || "Returns (Additional Items)",
     amount: localFees.value.additional_item,
   },
 ]);

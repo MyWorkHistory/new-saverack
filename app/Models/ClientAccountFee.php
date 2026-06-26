@@ -34,6 +34,12 @@ class ClientAccountFee extends Model
 
     public const LINE_RETURNS_ADDITIONAL_ITEMS = 'additional_items';
 
+    public const LINE_RETURNS_ASSEMBLY = 'assembly';
+
+    public const LINE_RETURNS_REPACKAGING = 'repackaging';
+
+    public const LINE_RETURNS_DISPOSAL = 'disposal';
+
     protected $fillable = [
         'client_account_id',
         'pricing_template_id',

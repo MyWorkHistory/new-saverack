@@ -2,6 +2,7 @@
 
 namespace App\Services;
 
+use App\Models\ClientAccount;
 use App\Models\ClientAccountReturn;
 use App\Models\Invoice;
 use App\Models\ReturnBill;
@@ -9,6 +10,7 @@ use App\Models\ReturnBillHistory;
 use App\Models\ReturnBillItem;
 use App\Models\User;
 use App\Support\Billing\InvoiceLineCategory;
+use App\Support\Billing\ReturnBillChargeCatalog;
 use Illuminate\Contracts\Pagination\LengthAwarePaginator;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Facades\DB;
@@ -16,10 +18,6 @@ use Illuminate\Validation\ValidationException;
 
 class ReturnBillService
 {
-    public const FIRST_ITEM_NAME = 'Return Fee (1st Item)';
-
-    public const ADDITIONAL_ITEMS_NAME = 'Return Fee (Additional Items)';
-
     /** @var InvoiceService */
     private $invoices;
 
@@ -41,7 +39,8 @@ class ReturnBillService
         $sortDir = strtolower((string) ($filters['sort_dir'] ?? 'desc')) === 'asc' ? 'asc' : 'desc';
 
         $query = ReturnBill::query()
-            ->with(['clientAccount', 'clientAccountReturn']);
+            ->with(['clientAccount', 'clientAccountReturn'])
+            ->withCount('items');
 
         if (! empty($filters['status']) && $filters['status'] !== 'all') {
             $query->where('status', (string) $filters['status']);
@@ -94,6 +93,21 @@ class ReturnBillService
         ];
     }
 
+    /**
+     * @return list<array{line_type: string, display_name: string, group_key: string, subtype: string, default_unit_price_cents: int}>
+     */
+    public function chargeOptionsForAccount(int $clientAccountId): array
+    {
+        $account = ClientAccount::query()->find($clientAccountId);
+        if ($account === null) {
+            throw ValidationException::withMessages([
+                'client_account_id' => ['Client account not found.'],
+            ]);
+        }
+
+        return ReturnBillChargeCatalog::optionsForAccount($account);
+    }
+
     public function createFromProcessedReturn(ClientAccountReturn $return, ?User $actor): ReturnBill
     {
         if ($return->return_bill_id !== null) {
@@ -125,14 +139,14 @@ class ReturnBillService
             $order = 0;
             if ($firstQty > 0 && $firstCents !== 0) {
                 $order++;
-                $this->insertItem($bill, $order, ReturnBill::LINE_FIRST_ITEM, self::FIRST_ITEM_NAME, $firstQty, $firstCents, [
+                $this->insertItem($bill, $order, ReturnBill::LINE_FIRST_ITEM, ReturnBillChargeCatalog::displayName(ReturnBill::LINE_FIRST_ITEM), $firstQty, $firstCents, [
                     'return_id' => $return->id,
                     'rma_number' => $return->rma_number,
                 ]);
             }
             if ($additionalQty > 0 && $additionalCents !== 0) {
                 $order++;
-                $this->insertItem($bill, $order, ReturnBill::LINE_ADDITIONAL_ITEMS, self::ADDITIONAL_ITEMS_NAME, (float) $additionalQty, $additionalCents, [
+                $this->insertItem($bill, $order, ReturnBill::LINE_ADDITIONAL_ITEMS, ReturnBillChargeCatalog::displayName(ReturnBill::LINE_ADDITIONAL_ITEMS), (float) $additionalQty, $additionalCents, [
                     'return_id' => $return->id,
                     'rma_number' => $return->rma_number,
                 ]);
@@ -144,18 +158,130 @@ class ReturnBillService
             $return->return_bill_id = $bill->id;
             $return->saveQuietly();
 
-            return $bill->fresh(['items', 'clientAccount', 'clientAccountReturn', 'histories.user']);
+            return $bill->fresh(['items', 'clientAccount', 'clientAccountReturn', 'histories.user', 'createdBy']);
         });
     }
 
-    public function addToInvoice(ReturnBill $bill, int $invoiceId, ?User $actor): ReturnBill
+    public function updateHeader(ReturnBill $bill, array $data, ?User $actor): ReturnBill
     {
         $this->assertOpen($bill);
-        $bill->loadMissing('items', 'clientAccountReturn');
 
-        if ($bill->items->isEmpty()) {
+        return DB::transaction(function () use ($bill, $data, $actor) {
+            if (isset($data['bill_date'])) {
+                $bill->bill_date = $data['bill_date'];
+            }
+            $bill->save();
+            $this->logHistory($bill, $actor, 'updated', 'Bill details updated.');
+
+            return $bill->fresh(['items', 'clientAccount', 'clientAccountReturn', 'histories.user', 'createdBy', 'invoice']);
+        });
+    }
+
+    public function delete(ReturnBill $bill, ?User $actor): void
+    {
+        $this->assertOpen($bill);
+
+        DB::transaction(function () use ($bill) {
+            ClientAccountReturn::query()
+                ->where('return_bill_id', $bill->id)
+                ->update(['return_bill_id' => null]);
+            $bill->items()->delete();
+            $bill->histories()->delete();
+            $bill->delete();
+        });
+    }
+
+    /**
+     * @param  array<string, mixed>  $row
+     */
+    public function addItem(ReturnBill $bill, array $row, ?User $actor): ReturnBill
+    {
+        $this->assertOpen($bill);
+        $normalized = $this->normalizeItemRow($bill, $row);
+
+        return DB::transaction(function () use ($bill, $normalized, $actor) {
+            $order = (int) $bill->items()->max('sort_order') + 1;
+            $this->insertItem(
+                $bill,
+                $order,
+                $normalized['line_type'],
+                $normalized['name'],
+                $normalized['quantity'],
+                $normalized['unit_price_cents'],
+                $normalized['metadata']
+            );
+            $this->recalculateTotal($bill);
+            $this->logHistory($bill, $actor, 'line_add', 'Added bill line item.');
+
+            return $bill->fresh(['items', 'clientAccount', 'clientAccountReturn', 'histories.user', 'createdBy', 'invoice']);
+        });
+    }
+
+    /**
+     * @param  array<string, mixed>  $row
+     */
+    public function updateItem(ReturnBill $bill, ReturnBillItem $item, array $row, ?User $actor): ReturnBill
+    {
+        $this->assertOpen($bill);
+        if ((int) $item->return_bill_id !== (int) $bill->id) {
+            throw new \InvalidArgumentException('Line item does not belong to this bill.');
+        }
+        $normalized = $this->normalizeItemRow($bill, $row, $item);
+
+        return DB::transaction(function () use ($bill, $item, $normalized, $actor) {
+            $qty = $normalized['quantity'];
+            $unitCents = $normalized['unit_price_cents'];
+            $item->fill([
+                'line_type' => $normalized['line_type'],
+                'name' => $normalized['name'],
+                'quantity' => $qty,
+                'unit_price_cents' => $unitCents,
+                'line_total_cents' => (int) round($qty * $unitCents),
+                'metadata' => $normalized['metadata'],
+            ]);
+            $item->save();
+            $this->recalculateTotal($bill);
+            $this->logHistory($bill, $actor, 'line_edit', 'Updated bill line item.');
+
+            return $bill->fresh(['items', 'clientAccount', 'clientAccountReturn', 'histories.user', 'createdBy', 'invoice']);
+        });
+    }
+
+    public function deleteItem(ReturnBill $bill, ReturnBillItem $item, ?User $actor): ReturnBill
+    {
+        $this->assertOpen($bill);
+        if ((int) $item->return_bill_id !== (int) $bill->id) {
+            throw new \InvalidArgumentException('Line item does not belong to this bill.');
+        }
+
+        return DB::transaction(function () use ($bill, $item, $actor) {
+            $item->delete();
+            $this->recalculateTotal($bill);
+            $this->logHistory($bill, $actor, 'line_delete', 'Removed bill line item.');
+
+            return $bill->fresh(['items', 'clientAccount', 'clientAccountReturn', 'histories.user', 'createdBy', 'invoice']);
+        });
+    }
+
+    /**
+     * @param  list<string>|null  $lineTypes
+     */
+    public function addToInvoice(ReturnBill $bill, int $invoiceId, ?User $actor, ?array $lineTypes = null): ReturnBill
+    {
+        $this->assertOpen($bill);
+        $bill->loadMissing('items', 'clientAccountReturn', 'clientAccount');
+
+        $items = $bill->items;
+        if ($lineTypes !== null && $lineTypes !== []) {
+            $allowed = array_flip($lineTypes);
+            $items = $items->filter(function (ReturnBillItem $item) use ($allowed) {
+                return isset($allowed[$item->line_type]);
+            })->values();
+        }
+
+        if ($items->isEmpty()) {
             throw ValidationException::withMessages([
-                'invoice_id' => 'This return bill has no billable lines.',
+                'invoice_id' => 'This return bill has no billable lines for the selected charge types.',
             ]);
         }
 
@@ -170,16 +296,20 @@ class ReturnBillService
             throw ValidationException::withMessages(['invoice_id' => 'Invoice must belong to the same account as this bill.']);
         }
 
-        return DB::transaction(function () use ($bill, $invoice, $actor) {
-            foreach ($bill->items as $item) {
-                $subtype = $item->line_type === ReturnBill::LINE_ADDITIONAL_ITEMS ? 'additional' : 'first';
-                $groupKey = $subtype === 'additional' ? 'returns:additional' : 'returns:first';
+        return DB::transaction(function () use ($bill, $invoice, $actor, $items) {
+            foreach ($items as $item) {
+                $lineType = (string) $item->line_type;
+                $subtype = ReturnBillChargeCatalog::subtype($lineType);
+                $groupKey = ReturnBillChargeCatalog::groupKey($lineType);
                 $qty = (float) $item->quantity;
                 $unitCents = (int) $item->unit_price_cents;
                 $lineTotal = (int) $item->line_total_cents;
                 $name = trim((string) $item->name);
+                if ($name === '') {
+                    $name = ReturnBillChargeCatalog::displayName($lineType);
+                }
 
-                $this->invoices->addInvoiceItem($invoice, [
+                $this->invoices->addOrMergeReturnLine($invoice, [
                     'description' => $name,
                     'display_name' => $name,
                     'category' => InvoiceLineCategory::RETURNS,
@@ -208,7 +338,7 @@ class ReturnBillService
                 'invoice_id' => $invoice->id,
             ]);
 
-            return $bill->fresh(['items', 'clientAccount', 'clientAccountReturn', 'histories.user', 'invoice']);
+            return $bill->fresh(['items', 'clientAccount', 'clientAccountReturn', 'histories.user', 'createdBy', 'invoice']);
         });
     }
 
@@ -237,7 +367,10 @@ class ReturnBillService
 
     public function toDetailArray(ReturnBill $bill): array
     {
-        $bill->loadMissing(['items', 'clientAccount', 'clientAccountReturn', 'histories.user', 'invoice']);
+        $bill->loadMissing(['items', 'clientAccount', 'clientAccountReturn', 'histories.user', 'invoice', 'createdBy']);
+        $chargeOptions = $bill->clientAccount
+            ? ReturnBillChargeCatalog::optionsForAccount($bill->clientAccount)
+            : [];
 
         return [
             'id' => $bill->id,
@@ -253,16 +386,22 @@ class ReturnBillService
             'total_cents' => (int) $bill->total_cents,
             'invoice_id' => $bill->invoice_id,
             'invoice_number' => $bill->invoice ? $bill->invoice->invoice_number : null,
+            'created_by_name' => $bill->createdBy ? $bill->createdBy->name : null,
             'items' => $bill->items->map(fn (ReturnBillItem $item) => $this->itemToArray($item))->values()->all(),
             'histories' => $bill->histories->map(function (ReturnBillHistory $h) {
+                $meta = is_array($h->meta) ? $h->meta : [];
+
                 return [
                     'id' => $h->id,
                     'event_type' => $h->event_type,
+                    'event_label' => $this->historyEventLabel((string) $h->event_type),
                     'message' => $h->message,
                     'actor_name' => $h->actor_name ?: ($h->user ? $h->user->name : 'System'),
+                    'invoice_id' => isset($meta['invoice_id']) ? (int) $meta['invoice_id'] : null,
                     'created_at' => $h->created_at ? $h->created_at->toIso8601String() : null,
                 ];
             })->values()->all(),
+            'charge_options' => $chargeOptions,
             'created_at' => $bill->created_at ? $bill->created_at->toIso8601String() : null,
             'updated_at' => $bill->updated_at ? $bill->updated_at->toIso8601String() : null,
         ];
@@ -284,7 +423,54 @@ class ReturnBillService
             'bill_date' => $bill->bill_date ? $bill->bill_date->format('Y-m-d') : null,
             'total_cents' => (int) $bill->total_cents,
             'invoice_id' => $bill->invoice_id,
+            'items_count' => (int) ($bill->items_count ?? 0),
             'created_at' => $bill->created_at ? $bill->created_at->toIso8601String() : null,
+        ];
+    }
+
+    /**
+     * @param  array<string, mixed>  $row
+     * @return array{line_type: string, name: string, quantity: float, unit_price_cents: int, metadata: array<string, mixed>}
+     */
+    private function normalizeItemRow(ReturnBill $bill, array $row, ?ReturnBillItem $existing = null): array
+    {
+        $lineType = isset($row['line_type']) ? (string) $row['line_type'] : ($existing ? (string) $existing->line_type : '');
+        ReturnBillChargeCatalog::assertValidLineType($lineType);
+
+        $name = isset($row['name']) ? trim((string) $row['name']) : '';
+        if ($name === '') {
+            $name = ReturnBillChargeCatalog::displayName($lineType);
+        }
+
+        $qty = isset($row['quantity']) ? (float) $row['quantity'] : ($existing ? (float) $existing->quantity : 1.0);
+        if ($qty <= 0) {
+            throw ValidationException::withMessages(['quantity' => ['Quantity must be greater than zero.']]);
+        }
+
+        if (isset($row['unit_price_cents'])) {
+            $unitCents = (int) $row['unit_price_cents'];
+        } elseif (isset($row['unit_price'])) {
+            $unitCents = (int) round(((float) $row['unit_price']) * 100);
+        } elseif ($existing !== null) {
+            $unitCents = (int) $existing->unit_price_cents;
+        } else {
+            $bill->loadMissing('clientAccount');
+            $unitCents = $bill->clientAccount
+                ? ReturnBillChargeCatalog::defaultUnitPriceCents($bill->clientAccount, $lineType)
+                : 0;
+        }
+
+        $metadata = is_array($row['metadata'] ?? null) ? $row['metadata'] : [];
+        if ($existing !== null && is_array($existing->metadata)) {
+            $metadata = array_merge($existing->metadata, $metadata);
+        }
+
+        return [
+            'line_type' => $lineType,
+            'name' => $name,
+            'quantity' => $qty,
+            'unit_price_cents' => $unitCents,
+            'metadata' => $metadata,
         ];
     }
 
@@ -339,6 +525,23 @@ class ReturnBillService
             throw ValidationException::withMessages([
                 'status' => ['Only open return bills can be modified.'],
             ]);
+        }
+    }
+
+    private function historyEventLabel(string $eventType): string
+    {
+        switch ($eventType) {
+            case 'created':
+                return 'Created';
+            case 'invoiced':
+                return 'Added to Invoice';
+            case 'updated':
+            case 'line_add':
+            case 'line_edit':
+            case 'line_delete':
+                return 'Edited';
+            default:
+                return 'Activity';
         }
     }
 

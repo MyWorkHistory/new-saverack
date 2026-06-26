@@ -241,40 +241,15 @@ class AsnReceivingService
      */
     public function resolveReceivingLocation(ClientAccount $account, string $sku): array
     {
-        $customerId = trim((string) $account->shiphero_customer_account_id);
-        $product = $this->inventory->getProductDetailBySku($sku, null, $customerId !== '' ? $customerId : null);
+        $customer = $this->mutationCustomerForAccountSku($account, $sku);
+        $product = $this->inventory->getProductDetailBySku($sku, null, $customer);
         if (! is_array($product)) {
             throw ValidationException::withMessages([
                 'sku' => ['Product not found in ShipHero for this account.'],
             ]);
         }
-        $warehouseId = '';
-        foreach ($product['warehouses'] ?? [] as $wh) {
-            if (is_array($wh) && ! empty($wh['warehouse_id'])) {
-                $warehouseId = (string) $wh['warehouse_id'];
-                break;
-            }
-        }
-        if ($warehouseId === '') {
-            throw ValidationException::withMessages([
-                'sku' => ['No warehouse found for this SKU.'],
-            ]);
-        }
-        $resolved = $this->inventory->ensureWarehouseLocation(
-            $warehouseId,
-            self::RECEIVING_LOCATION_NAME,
-            $customerId !== '' ? $customerId : null
-        );
-        if (! is_array($resolved) || empty($resolved['id'])) {
-            throw ValidationException::withMessages([
-                'location' => ['Receiving location not found in ShipHero for this warehouse.'],
-            ]);
-        }
 
-        return [
-            'warehouse_id' => $warehouseId,
-            'location_id' => (string) $resolved['id'],
-        ];
+        return $this->resolveReceivingLocationFromProduct($product, $customer);
     }
 
     public function incrementReceivingInventory(
@@ -291,12 +266,16 @@ class AsnReceivingService
                 'delta' => ['Quantity increment must be zero or greater.'],
             ]);
         }
-        $customerId = trim((string) $account->shiphero_customer_account_id);
-        $product = $this->inventory->getProductDetailBySku($sku, null, $customerId !== '' ? $customerId : null);
-        $resolved = $this->resolveReceivingLocation($account, $sku);
-        $customer = $customerId !== '' ? $customerId : null;
+        $customer = $this->mutationCustomerForAccountSku($account, $sku);
+        $product = $this->inventory->getProductDetailBySku($sku, null, $customer);
+        if (! is_array($product)) {
+            throw ValidationException::withMessages([
+                'sku' => ['Product not found in ShipHero for this account.'],
+            ]);
+        }
+        $resolved = $this->resolveReceivingLocationFromProduct($product, $customer);
 
-        if (is_array($product) && ! $this->skuHasLocationNamed($product, self::RECEIVING_LOCATION_NAME)) {
+        if (! $this->skuHasLocationNamed($product, self::RECEIVING_LOCATION_NAME)) {
             $this->inventory->addLocationQuantity(
                 $sku,
                 $resolved['warehouse_id'],
@@ -309,9 +288,7 @@ class AsnReceivingService
             return;
         }
 
-        $current = is_array($product)
-            ? $this->quantityAtLocationName($product, self::RECEIVING_LOCATION_NAME)
-            : $this->receivingOnHandForSku($account, $sku);
+        $current = $this->quantityAtLocationName($product, self::RECEIVING_LOCATION_NAME);
         $this->inventory->replaceLocationQuantity(
             $sku,
             $resolved['warehouse_id'],
@@ -333,16 +310,16 @@ class AsnReceivingService
                 'quantity' => ['Quantity must be zero or greater.'],
             ]);
         }
-        $customerId = trim((string) $account->shiphero_customer_account_id);
-        $product = $this->inventory->getProductDetailBySku($sku, null, $customerId !== '' ? $customerId : null);
-        $resolved = $this->resolveReceivingLocation($account, $sku);
-        $customer = $customerId !== '' ? $customerId : null;
+        $customer = $this->mutationCustomerForAccountSku($account, $sku);
+        $product = $this->inventory->getProductDetailBySku($sku, null, $customer);
+        if (! is_array($product)) {
+            throw ValidationException::withMessages([
+                'sku' => ['Product not found in ShipHero for this account.'],
+            ]);
+        }
+        $resolved = $this->resolveReceivingLocationFromProduct($product, $customer);
 
-        if (
-            $quantity > 0
-            && is_array($product)
-            && ! $this->skuHasLocationNamed($product, self::RECEIVING_LOCATION_NAME)
-        ) {
+        if ($quantity > 0 && ! $this->skuHasLocationNamed($product, self::RECEIVING_LOCATION_NAME)) {
             $this->inventory->addLocationQuantity(
                 $sku,
                 $resolved['warehouse_id'],
@@ -363,6 +340,92 @@ class AsnReceivingService
             $reason,
             $customer
         );
+    }
+
+    private function mutationCustomerForAccountSku(ClientAccount $account, string $sku): ?string
+    {
+        $preferred = trim((string) $account->shiphero_customer_account_id);
+
+        return $this->inventory->resolveCustomerAccountIdForSkuMutation(
+            $sku,
+            $preferred !== '' ? $preferred : null
+        );
+    }
+
+    /**
+     * @param  array<string, mixed>  $product
+     * @return array{warehouse_id: string, location_id: string}
+     */
+    private function resolveReceivingLocationFromProduct(array $product, ?string $customer): array
+    {
+        $warehouseId = '';
+        foreach ($product['warehouses'] ?? [] as $wh) {
+            if (is_array($wh) && ! empty($wh['warehouse_id'])) {
+                $warehouseId = (string) $wh['warehouse_id'];
+                break;
+            }
+        }
+        if ($warehouseId === '') {
+            throw ValidationException::withMessages([
+                'sku' => ['No warehouse found for this SKU.'],
+            ]);
+        }
+
+        $assignmentLocationId = $this->locationIdFromProductSlice(
+            $product,
+            $warehouseId,
+            self::RECEIVING_LOCATION_NAME
+        );
+        if ($assignmentLocationId !== null) {
+            return [
+                'warehouse_id' => $warehouseId,
+                'location_id' => $assignmentLocationId,
+            ];
+        }
+
+        $resolved = $this->inventory->ensureWarehouseLocation(
+            $warehouseId,
+            self::RECEIVING_LOCATION_NAME,
+            $customer
+        );
+        if (! is_array($resolved) || empty($resolved['id'])) {
+            throw ValidationException::withMessages([
+                'location' => ['Receiving location not found in ShipHero for this warehouse.'],
+            ]);
+        }
+
+        return [
+            'warehouse_id' => $warehouseId,
+            'location_id' => (string) $resolved['id'],
+        ];
+    }
+
+    /**
+     * @param  array<string, mixed>  $product
+     */
+    private function locationIdFromProductSlice(array $product, string $warehouseId, string $locationName): ?string
+    {
+        $needle = strtolower(trim($locationName));
+        foreach ($product['warehouses'] ?? [] as $wh) {
+            if (! is_array($wh) || (string) ($wh['warehouse_id'] ?? '') !== $warehouseId) {
+                continue;
+            }
+            foreach ($wh['locations'] ?? [] as $loc) {
+                if (! is_array($loc)) {
+                    continue;
+                }
+                $name = strtolower(trim((string) ($loc['location_name'] ?? '')));
+                if ($name !== $needle) {
+                    continue;
+                }
+                $locId = trim((string) ($loc['location_id'] ?? ''));
+                if ($locId !== '') {
+                    return $locId;
+                }
+            }
+        }
+
+        return null;
     }
 
     public function receiveIncrement(

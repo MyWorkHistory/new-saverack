@@ -61,8 +61,8 @@ class ReturnFeeService
             'first_item' => $return->return_fee_first_item !== null ? (float) $return->return_fee_first_item : null,
             'additional_item' => $return->return_fee_additional_item !== null ? (float) $return->return_fee_additional_item : null,
             'locked' => $return->feesAreLocked(),
-            'first_item_label' => 'Return Fee (1st Item)',
-            'additional_item_label' => 'Return Fee (Additional Items)',
+            'first_item_label' => 'Returns (First Item)',
+            'additional_item_label' => 'Returns (Additional Items)',
         ];
     }
 

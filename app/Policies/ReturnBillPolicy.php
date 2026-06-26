@@ -26,4 +26,13 @@ class ReturnBillPolicy
     {
         return $this->canManageBilling($user) || $user->hasPermission('billing.update');
     }
+
+    public function delete(User $user, ReturnBill $returnBill): bool
+    {
+        if (! $returnBill->isOpen()) {
+            return false;
+        }
+
+        return $this->canManageBilling($user) || $user->hasPermission('billing.delete');
+    }
 }

@@ -1406,6 +1406,7 @@ onUnmounted(() => {
                         class="form-control form-control-sm asn-line-qty-input text-end ms-auto"
                         placeholder="0"
                       />
+                      <div class="small text-secondary mt-1">{{ Number(line.accepted_qty ?? 0).toLocaleString() }} saved</div>
                     </template>
                     <span v-else>{{ Number(line.accepted_qty ?? 0).toLocaleString() }}</span>
                   </td>
@@ -1418,6 +1419,7 @@ onUnmounted(() => {
                         class="form-control form-control-sm asn-line-qty-input text-end ms-auto"
                         placeholder="0"
                       />
+                      <div class="small text-secondary mt-1">{{ Number(line.rejected_qty ?? 0).toLocaleString() }} saved</div>
                     </template>
                     <span v-else>{{ Number(line.rejected_qty ?? 0).toLocaleString() }}</span>
                   </td>

@@ -1,4 +1,4 @@
-﻿<script setup>
+<script setup>
 import { Transition, computed, nextTick, onMounted, onUnmounted, ref, watch } from "vue";
 import { RouterLink, useRoute, useRouter } from "vue-router";
 import api from "../../services/api";
@@ -44,16 +44,15 @@ const scanOpen = ref(false);
 const scanText = ref("");
 const scanBusy = ref(false);
 
-const editReceivedOpen = ref(false);
-const editReceivedLine = ref(null);
-const editReceivedQty = ref(0);
-const editReceivedOnHand = ref(0);
-const editReceivedBusy = ref(false);
+const subtractReceivedOpen = ref(false);
+const subtractReceivedLine = ref(null);
+const subtractReceivedAmount = ref("");
+const subtractReceivedBusy = ref(false);
 
-const editRejectedOpen = ref(false);
-const editRejectedLine = ref(null);
-const editRejectedQty = ref(0);
-const editRejectedBusy = ref(false);
+const subtractRejectedOpen = ref(false);
+const subtractRejectedLine = ref(null);
+const subtractRejectedAmount = ref("");
+const subtractRejectedBusy = ref(false);
 
 const editItemOpen = ref(false);
 const editItemLine = ref(null);
@@ -103,6 +102,9 @@ const receivingFees = computed(() => {
   const rows = asn.value?.receiving_fees;
   return Array.isArray(rows) ? rows : [];
 });
+
+const asnAcceptedQty = computed(() => Number(asn.value?.accepted_qty ?? 0));
+const asnRejectedQty = computed(() => Number(asn.value?.rejected_qty ?? 0));
 
 function formatReceivingFeeAmount(amount) {
   const n = Number(amount);
@@ -365,6 +367,14 @@ function barcodeLineLabel(barcode) {
   return hasBarcodeValue(barcode) ? `Barcode: ${barcode}` : "Barcode: Add barcode";
 }
 
+function productMetaLineLabel(line) {
+  return `${barcodeLineLabel(line.barcode)}   |   ${weightDimensionsLineLabel(line)}`;
+}
+
+function hasProductMeta(line) {
+  return hasBarcodeValue(line.barcode) || hasWeightOrDimensions(line);
+}
+
 function syncDraftsFromAsn() {
   if (!asn.value) return;
   trackingDraft.value =
@@ -496,63 +506,73 @@ async function saveReceive(line) {
   }
 }
 
-async function openEditReceived(line) {
-  editReceivedLine.value = line;
-  editReceivedQty.value = line.accepted_qty;
-  editReceivedBusy.value = true;
-  editReceivedOpen.value = true;
-  try {
-    const { data } = await api.get(
-      `/admin/asns/${asnId.value}/lines/${line.id}/receiving-on-hand`,
-    );
-    editReceivedOnHand.value = data.receiving_on_hand ?? 0;
-    editReceivedQty.value = data.accepted_qty ?? line.accepted_qty;
-  } catch (e) {
-    toast.errorFrom(e, "Could not load Receiving on-hand.");
-  } finally {
-    editReceivedBusy.value = false;
-  }
+function openSubtractReceived(line) {
+  subtractReceivedLine.value = line;
+  subtractReceivedAmount.value = "";
+  subtractReceivedOpen.value = true;
 }
 
-async function confirmEditReceived() {
-  if (!editReceivedLine.value) return;
-  editReceivedBusy.value = true;
+async function confirmSubtractReceived() {
+  const line = subtractReceivedLine.value;
+  if (!line) return;
+  const subtract = Number(subtractReceivedAmount.value);
+  const current = Number(line.accepted_qty ?? 0);
+  if (!Number.isFinite(subtract) || subtract <= 0) {
+    toast.error("Enter a quantity greater than zero to subtract.");
+    return;
+  }
+  if (subtract > current) {
+    toast.error("Cannot subtract more than the saved received quantity.");
+    return;
+  }
+  subtractReceivedBusy.value = true;
   try {
     const { data } = await api.post(
-      `/admin/asns/${asnId.value}/lines/${editReceivedLine.value.id}/receive-override`,
-      { accepted_qty: Number(editReceivedQty.value) || 0 },
+      `/admin/asns/${asnId.value}/lines/${line.id}/receive-override`,
+      { accepted_qty: current - subtract },
     );
     asn.value = data.asn;
-    editReceivedOpen.value = false;
+    subtractReceivedOpen.value = false;
     toast.success("Received quantity updated.");
   } catch (e) {
-    toast.errorFrom(e, "Could not update received quantity.");
+    toast.errorFrom(e, "Could not subtract received quantity.");
   } finally {
-    editReceivedBusy.value = false;
+    subtractReceivedBusy.value = false;
   }
 }
 
-function openEditRejected(line) {
-  editRejectedLine.value = line;
-  editRejectedQty.value = line.rejected_qty;
-  editRejectedOpen.value = true;
+function openSubtractRejected(line) {
+  subtractRejectedLine.value = line;
+  subtractRejectedAmount.value = "";
+  subtractRejectedOpen.value = true;
 }
 
-async function confirmEditRejected() {
-  if (!editRejectedLine.value) return;
-  editRejectedBusy.value = true;
+async function confirmSubtractRejected() {
+  const line = subtractRejectedLine.value;
+  if (!line) return;
+  const subtract = Number(subtractRejectedAmount.value);
+  const current = Number(line.rejected_qty ?? 0);
+  if (!Number.isFinite(subtract) || subtract <= 0) {
+    toast.error("Enter a quantity greater than zero to subtract.");
+    return;
+  }
+  if (subtract > current) {
+    toast.error("Cannot subtract more than the saved rejected quantity.");
+    return;
+  }
+  subtractRejectedBusy.value = true;
   try {
     const { data } = await api.post(
-      `/admin/asns/${asnId.value}/lines/${editRejectedLine.value.id}/reject-override`,
-      { rejected_qty: Number(editRejectedQty.value) || 0 },
+      `/admin/asns/${asnId.value}/lines/${line.id}/reject-override`,
+      { rejected_qty: current - subtract },
     );
     asn.value = data.asn;
-    editRejectedOpen.value = false;
+    subtractRejectedOpen.value = false;
     toast.success("Rejected quantity updated.");
   } catch (e) {
-    toast.errorFrom(e, "Could not update rejected quantity.");
+    toast.errorFrom(e, "Could not subtract rejected quantity.");
   } finally {
-    editRejectedBusy.value = false;
+    subtractRejectedBusy.value = false;
   }
 }
 
@@ -589,8 +609,21 @@ async function confirmEditItem() {
 
 async function openPdf(path, fallbackMessage) {
   try {
-    const { data } = await api.get(path, { responseType: "blob" });
-    const blob = new Blob([data], { type: "application/pdf" });
+    const response = await api.get(path, { responseType: "blob" });
+    const contentType = String(response.headers?.["content-type"] || response.data?.type || "");
+    if (response.status >= 400 || contentType.includes("application/json")) {
+      let message = fallbackMessage;
+      try {
+        const text = await response.data.text();
+        const json = JSON.parse(text);
+        if (json?.message) message = String(json.message);
+      } catch {
+        // keep fallback
+      }
+      toast.error(message);
+      return;
+    }
+    const blob = new Blob([response.data], { type: "application/pdf" });
     const url = window.URL.createObjectURL(blob);
     window.open(url, "_blank", "noopener");
     setTimeout(() => window.URL.revokeObjectURL(url), 30000);
@@ -1352,24 +1385,13 @@ onUnmounted(() => {
                         </div>
                         <div class="order-detail-page__item-name-sub" :title="line.name">{{ line.name || "—" }}</div>
                         <div class="order-detail-page__item-meta">
-                          <div>
-                            <button
-                              type="button"
-                              :class="specEditButtonClass(hasBarcodeValue(line.barcode))"
-                              @click="openEditItem(line)"
-                            >
-                              {{ barcodeLineLabel(line.barcode) }}
-                            </button>
-                          </div>
-                          <div>
-                            <button
-                              type="button"
-                              :class="specEditButtonClass(hasWeightOrDimensions(line))"
-                              @click="openEditItem(line)"
-                            >
-                              {{ weightDimensionsLineLabel(line) }}
-                            </button>
-                          </div>
+                          <button
+                            type="button"
+                            :class="specEditButtonClass(hasProductMeta(line))"
+                            @click="openEditItem(line)"
+                          >
+                            {{ productMetaLineLabel(line) }}
+                          </button>
                         </div>
                       </div>
                     </div>
@@ -1384,7 +1406,6 @@ onUnmounted(() => {
                         class="form-control form-control-sm asn-line-qty-input text-end ms-auto"
                         placeholder="0"
                       />
-                      <div class="small text-secondary mt-1">{{ line.accepted_qty }} saved</div>
                     </template>
                     <span v-else>{{ Number(line.accepted_qty ?? 0).toLocaleString() }}</span>
                   </td>
@@ -1397,7 +1418,6 @@ onUnmounted(() => {
                         class="form-control form-control-sm asn-line-qty-input text-end ms-auto"
                         placeholder="0"
                       />
-                      <div class="small text-secondary mt-1">{{ line.rejected_qty }} saved</div>
                     </template>
                     <span v-else>{{ Number(line.rejected_qty ?? 0).toLocaleString() }}</span>
                   </td>
@@ -1487,8 +1507,18 @@ onUnmounted(() => {
             <dd class="col-7 mb-2">{{ formatDateUs(asn.created_at) || "—" }}</dd>
             <dt class="col-5 text-secondary fw-normal">Processed Date</dt>
             <dd class="col-7 mb-2">{{ formatDateUs(asn.processed_at) || "—" }}</dd>
-            <dt class="col-5 text-secondary fw-normal mb-0">Processed By</dt>
-            <dd class="col-7 mb-0">{{ asn.processed_by_name || "—" }}</dd>
+            <dt class="col-5 text-secondary fw-normal">Processed By</dt>
+            <dd class="col-7 mb-2">{{ asn.processed_by_name || "—" }}</dd>
+            <dt class="col-5 text-secondary fw-normal mb-0">Received / Rejected</dt>
+            <dd class="col-7 mb-0 small">
+              <span :class="asnAcceptedQty > 0 ? 'text-success fw-semibold' : 'text-secondary'">
+                {{ asnAcceptedQty.toLocaleString() }} Received
+              </span>
+              <span class="text-secondary">, and </span>
+              <span :class="asnRejectedQty > 0 ? 'text-danger fw-semibold' : 'text-secondary'">
+                {{ asnRejectedQty.toLocaleString() }} Rejected
+              </span>
+            </dd>
           </dl>
         </div>
 
@@ -1666,10 +1696,10 @@ onUnmounted(() => {
               role="menuitem"
               @click="
                 closeLineMenu();
-                openEditReceived(lineMenuRow);
+                openSubtractReceived(lineMenuRow);
               "
             >
-              Edit Received
+              Subtract Received
             </button>
             <button
               type="button"
@@ -1677,10 +1707,10 @@ onUnmounted(() => {
               role="menuitem"
               @click="
                 closeLineMenu();
-                openEditRejected(lineMenuRow);
+                openSubtractRejected(lineMenuRow);
               "
             >
-              Edit Rejected
+              Subtract Rejected
             </button>
             <button
               type="button"
@@ -1720,32 +1750,51 @@ onUnmounted(() => {
     </ConfirmModal>
 
     <ConfirmModal
-      :open="editReceivedOpen"
-      title="Edit Received"
-      confirm-label="Save"
+      :open="subtractReceivedOpen"
+      title="Subtract QTY from Received"
+      confirm-label="Subtract"
       :danger="false"
-      :busy="editReceivedBusy"
-      @close="editReceivedOpen = false"
-      @confirm="confirmEditReceived"
+      :busy="subtractReceivedBusy"
+      form
+      @close="subtractReceivedOpen = false"
+      @confirm="confirmSubtractReceived"
     >
-      <p class="small text-secondary">
-        On-hand in Receiving: <strong>{{ editReceivedOnHand }}</strong>
+      <p v-if="subtractReceivedLine" class="small text-secondary mb-3">
+        Current saved received:
+        <strong>{{ Number(subtractReceivedLine.accepted_qty ?? 0).toLocaleString() }}</strong>
       </p>
-      <label class="form-label">New QTY</label>
-      <input v-model.number="editReceivedQty" type="number" min="0" class="form-control" />
+      <label class="form-label">Quantity to subtract</label>
+      <input
+        v-model.number="subtractReceivedAmount"
+        type="number"
+        min="1"
+        class="form-control"
+        placeholder="0"
+      />
     </ConfirmModal>
 
     <ConfirmModal
-      :open="editRejectedOpen"
-      title="Edit Rejected"
-      confirm-label="Save"
+      :open="subtractRejectedOpen"
+      title="Subtract QTY from Rejected"
+      confirm-label="Subtract"
       :danger="false"
-      :busy="editRejectedBusy"
-      @close="editRejectedOpen = false"
-      @confirm="confirmEditRejected"
+      :busy="subtractRejectedBusy"
+      form
+      @close="subtractRejectedOpen = false"
+      @confirm="confirmSubtractRejected"
     >
-      <label class="form-label">Rejected QTY</label>
-      <input v-model.number="editRejectedQty" type="number" min="0" class="form-control" />
+      <p v-if="subtractRejectedLine" class="small text-secondary mb-3">
+        Current saved rejected:
+        <strong>{{ Number(subtractRejectedLine.rejected_qty ?? 0).toLocaleString() }}</strong>
+      </p>
+      <label class="form-label">Quantity to subtract</label>
+      <input
+        v-model.number="subtractRejectedAmount"
+        type="number"
+        min="1"
+        class="form-control"
+        placeholder="0"
+      />
     </ConfirmModal>
 
     <ConfirmModal
@@ -1960,8 +2009,8 @@ onUnmounted(() => {
 }
 
 .admin-asn-detail-page .order-detail-page__item-sku-title {
-  font-size: 1rem;
-  font-weight: 600;
+  font-size: 1.25rem;
+  font-weight: 700;
   line-height: 1.35;
   color: var(--bs-body-color);
   word-break: break-word;
@@ -1978,12 +2027,15 @@ onUnmounted(() => {
 }
 
 .admin-asn-detail-page .order-detail-page__item-meta {
-  display: flex;
-  flex-direction: column;
-  gap: 0.125rem;
   font-size: 0.8125rem;
   line-height: 1.4;
   color: var(--bs-secondary-color);
+}
+
+.admin-asn-detail-page .order-detail-page__item-meta .asn-line-meta-link {
+  white-space: normal;
+  word-break: break-word;
+  text-align: left;
 }
 
 .admin-asn-detail-page .order-detail-page__item-sku {

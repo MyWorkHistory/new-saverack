@@ -518,14 +518,17 @@ class AsnController extends Controller
         }
         $asn->loadMissing('clientAccount');
         $customerId = $asn->clientAccount !== null ? trim((string) $asn->clientAccount->shiphero_customer_account_id) : '';
-        $product = $this->inventory->getProductDetailBySku(
-            (string) $line->sku,
-            null,
-            $customerId !== '' ? $customerId : null
-        );
-        $barcode = is_array($product) && isset($product['barcode']) ? trim((string) $product['barcode']) : '';
+        $barcode = trim((string) ($line->barcode ?? ''));
         if ($barcode === '') {
-            return response()->json(['message' => 'No barcode on file for this SKU in ShipHero.'], 422);
+            $product = $this->inventory->getProductDetailBySku(
+                (string) $line->sku,
+                null,
+                $customerId !== '' ? $customerId : null
+            );
+            $barcode = is_array($product) && isset($product['barcode']) ? trim((string) $product['barcode']) : '';
+        }
+        if ($barcode === '') {
+            return response()->json(['message' => 'No barcode on file for this SKU. Add a barcode on the line or in ShipHero.'], 422);
         }
 
         $pdf = Pdf::loadView('pdf.asn.barcode', [

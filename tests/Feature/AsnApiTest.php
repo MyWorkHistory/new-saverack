@@ -422,4 +422,40 @@ class AsnApiTest extends TestCase
             ->assertOk()
             ->assertJsonPath('client_account_id', $account->id);
     }
+
+    public function test_barcode_pdf_uses_line_barcode_without_shiphero_lookup(): void
+    {
+        $account = $this->account();
+        $user = User::factory()->create(['client_account_id' => null]);
+        $user->permissions()->attach($this->inventoryViewPermission()->id);
+        Sanctum::actingAs($user);
+
+        $asn = ClientAccountAsn::create([
+            'client_account_id' => $account->id,
+            'asn_number' => '0099',
+            'status' => ClientAccountAsn::STATUS_IN_PROGRESS,
+            'total_boxes' => 1,
+            'expected_qty' => 1,
+            'accepted_qty' => 0,
+            'rejected_qty' => 0,
+        ]);
+        $line = ClientAccountAsnLine::create([
+            'client_account_asn_id' => $asn->id,
+            'sku' => 'BC-SKU',
+            'name' => 'Barcode SKU',
+            'barcode' => '810084756300',
+            'expected_qty' => 1,
+            'accepted_qty' => 0,
+            'rejected_qty' => 0,
+            'sort_order' => 0,
+        ]);
+
+        $mock = Mockery::mock(ShipHeroInventoryService::class);
+        $mock->shouldNotReceive('getProductDetailBySku');
+        $this->app->instance(ShipHeroInventoryService::class, $mock);
+
+        $response = $this->get("/api/asns/{$asn->id}/lines/{$line->id}/barcode.pdf");
+        $response->assertOk();
+        $this->assertStringContainsString('application/pdf', (string) $response->headers->get('content-type'));
+    }
 }

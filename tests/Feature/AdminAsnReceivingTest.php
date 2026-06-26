@@ -705,6 +705,69 @@ class AdminAsnReceivingTest extends TestCase
         $this->assertSame(3, $asn->rejected_qty);
     }
 
+    public function test_receive_override_lowering_qty_updates_shiphero_receiving(): void
+    {
+        $account = $this->account('lower-recv');
+        $staff = $this->staffUser();
+        Sanctum::actingAs($staff);
+
+        $asn = ClientAccountAsn::create([
+            'client_account_id' => $account->id,
+            'asn_number' => '0056',
+            'status' => ClientAccountAsn::STATUS_IN_PROGRESS,
+            'total_boxes' => 1,
+            'expected_qty' => 10,
+            'accepted_qty' => 10,
+            'rejected_qty' => 0,
+        ]);
+        $line = ClientAccountAsnLine::create([
+            'client_account_asn_id' => $asn->id,
+            'sku' => 'LOWER-SKU',
+            'name' => 'Lower SKU',
+            'expected_qty' => 10,
+            'accepted_qty' => 10,
+            'rejected_qty' => 0,
+            'line_status' => ClientAccountAsnLine::LINE_STATUS_COMPLETED,
+            'sort_order' => 0,
+        ]);
+
+        $mock = $this->mockInventoryForReceiving('sh-asn-admin-lower-recv', [
+            'warehouses' => [
+                [
+                    'warehouse_id' => 'wh-1',
+                    'locations' => [
+                        [
+                            'location_name' => 'Receiving',
+                            'location_id' => 'whloc-recv-lower',
+                            'quantity' => 10,
+                        ],
+                    ],
+                ],
+            ],
+        ]);
+        $mock->shouldReceive('replaceLocationQuantity')->once()->with(
+            'LOWER-SKU',
+            'wh-1',
+            'whloc-recv-lower',
+            6,
+            Mockery::type('string'),
+            'sh-asn-admin-lower-recv'
+        )->andReturn($this->receivingWarehouseSlice(6, 'whloc-recv-lower'));
+        $mock->shouldNotReceive('addLocationQuantity');
+        $this->app->instance(ShipHeroInventoryService::class, $mock);
+        $this->app->forgetInstance(\App\Services\AsnReceivingService::class);
+
+        $this->postJson("/api/admin/asns/{$asn->id}/lines/{$line->id}/receive-override", [
+            'accepted_qty' => 6,
+        ])
+            ->assertOk()
+            ->assertJsonPath('line.accepted_qty', 6)
+            ->assertJsonPath('asn.accepted_qty', 6);
+
+        $line->refresh();
+        $this->assertSame(6, $line->accepted_qty);
+    }
+
     public function test_portal_user_forbidden_on_admin_asn_routes(): void
     {
         $account = $this->account();

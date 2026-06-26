@@ -468,61 +468,6 @@ onUnmounted(() => {
         </div>
       </div>
 
-      <div class="staff-surface p-3 p-md-4 mb-3">
-        <dl class="billing-custom-bill-info small mb-0">
-          <div class="billing-custom-bill-info__row">
-            <dt class="text-secondary">Created by</dt>
-            <dd class="mb-0 text-body">{{ bill.created_by_name || "—" }}</dd>
-          </div>
-          <div class="billing-custom-bill-info__row">
-            <dt class="text-secondary">Account</dt>
-            <dd class="mb-0 text-body">{{ bill.client_account_name || "—" }}</dd>
-          </div>
-          <div class="billing-custom-bill-info__row">
-            <dt class="text-secondary">Date</dt>
-            <dd class="mb-0 text-body">{{ formatIsoDate(bill.bill_date) }}</dd>
-          </div>
-          <div v-if="bill.rma_number" class="billing-custom-bill-info__row">
-            <dt class="text-secondary">RMA</dt>
-            <dd class="mb-0 text-body">
-              {{ bill.rma_number }}
-              <span v-if="bill.order_number"> · Order #{{ bill.order_number }}</span>
-              <RouterLink
-                v-if="bill.client_account_return_id"
-                :to="{ name: 'admin-process-return-detail', params: { id: String(bill.client_account_return_id) } }"
-                class="ms-2 text-decoration-none"
-              >
-                View Return
-              </RouterLink>
-            </dd>
-          </div>
-        </dl>
-      </div>
-
-      <div class="staff-surface p-3 p-md-4 mb-4">
-        <h2 class="h6 fw-semibold mb-3">History</h2>
-        <ul v-if="bill.histories?.length" class="list-unstyled mb-0 small billing-custom-bill-history">
-          <li v-for="h in bill.histories" :key="h.id" class="billing-custom-bill-history__item">
-            <div class="fw-semibold text-body">
-              {{ h.event_label || h.event_type }}
-              <span v-if="h.message && h.event_type !== 'created'" class="fw-normal text-secondary">
-                — {{ h.message }}
-              </span>
-            </div>
-            <div v-if="h.event_type === 'created' && h.message" class="text-secondary">{{ h.message }}</div>
-            <div v-if="h.event_type === 'invoiced' && h.invoice_id" class="text-secondary">
-              <RouterLink :to="`/admin/billing/invoices/${h.invoice_id}`" class="text-decoration-none">
-                View Invoice
-              </RouterLink>
-            </div>
-            <div class="text-secondary">
-              {{ h.actor_name || "System" }} · {{ formatHistoryTimestamp(h.created_at) }}
-            </div>
-          </li>
-        </ul>
-        <p v-else class="text-secondary small mb-0">No history yet.</p>
-      </div>
-
       <div class="row g-4">
         <div class="col-lg-8">
           <div class="staff-table-card staff-datatable-card staff-datatable-card--white p-0 mb-4">
@@ -570,13 +515,68 @@ onUnmounted(() => {
         </div>
 
         <div class="col-lg-4">
-          <div class="staff-stat-card billing-inv-summary-card billing-inv-summary-card--static">
+          <div class="staff-stat-card mb-4 billing-inv-summary-card billing-inv-summary-card--static">
             <p class="staff-stat-card__label">Bill Total</p>
             <p class="staff-stat-card__value">{{ formatCents(bill.total_cents) }}</p>
             <p class="staff-stat-card__sub">{{ billTotalSubtext }}</p>
             <div class="staff-stat-card__icon staff-stat-card__icon--money" aria-hidden="true">
               <BillingDollarStatIcon />
             </div>
+          </div>
+
+          <div class="staff-surface p-3 p-md-4 mb-4">
+            <dl class="billing-custom-bill-info small mb-0">
+              <div class="billing-custom-bill-info__row">
+                <dt class="text-secondary">Created by</dt>
+                <dd class="mb-0 text-body">{{ bill.created_by_name || "—" }}</dd>
+              </div>
+              <div class="billing-custom-bill-info__row">
+                <dt class="text-secondary">Account</dt>
+                <dd class="mb-0 text-body">{{ bill.client_account_name || "—" }}</dd>
+              </div>
+              <div class="billing-custom-bill-info__row">
+                <dt class="text-secondary">Date</dt>
+                <dd class="mb-0 text-body">{{ formatIsoDate(bill.bill_date) }}</dd>
+              </div>
+              <div v-if="bill.rma_number" class="billing-custom-bill-info__row">
+                <dt class="text-secondary">RMA</dt>
+                <dd class="mb-0 text-body">
+                  {{ bill.rma_number }}
+                  <span v-if="bill.order_number"> · Order #{{ bill.order_number }}</span>
+                  <RouterLink
+                    v-if="bill.client_account_return_id"
+                    :to="{ name: 'admin-process-return-detail', params: { id: String(bill.client_account_return_id) } }"
+                    class="ms-2 text-decoration-none"
+                  >
+                    View Return
+                  </RouterLink>
+                </dd>
+              </div>
+            </dl>
+          </div>
+
+          <div class="staff-surface p-3 p-md-4">
+            <h2 class="h6 fw-semibold mb-3">History</h2>
+            <ul v-if="bill.histories?.length" class="list-unstyled mb-0 small billing-custom-bill-history">
+              <li v-for="h in bill.histories" :key="h.id" class="billing-custom-bill-history__item">
+                <div class="fw-semibold text-body">
+                  {{ h.event_label || h.event_type }}
+                  <span v-if="h.message && h.event_type !== 'created'" class="fw-normal text-secondary">
+                    — {{ h.message }}
+                  </span>
+                </div>
+                <div v-if="h.event_type === 'created' && h.message" class="text-secondary">{{ h.message }}</div>
+                <div v-if="h.event_type === 'invoiced' && h.invoice_id" class="text-secondary">
+                  <RouterLink :to="`/admin/billing/invoices/${h.invoice_id}`" class="text-decoration-none">
+                    View Invoice
+                  </RouterLink>
+                </div>
+                <div class="text-secondary">
+                  {{ h.actor_name || "System" }} · {{ formatHistoryTimestamp(h.created_at) }}
+                </div>
+              </li>
+            </ul>
+            <p v-else class="text-secondary small mb-0">No history yet.</p>
           </div>
         </div>
       </div>

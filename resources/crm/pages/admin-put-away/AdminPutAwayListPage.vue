@@ -41,7 +41,25 @@ const accountOptions = computed(() =>
 );
 
 const accountId = computed(() => Number(selectedAccountId.value || 0));
-const canLoad = computed(() => accountId.value > 0);
+const hasAccountFilter = computed(() => accountId.value > 0);
+
+const accountNameById = computed(() => {
+  const map = new Map();
+  for (const account of accounts.value || []) {
+    map.set(account.id, account.company_name || `Account #${account.id}`);
+  }
+  return map;
+});
+
+function accountLabelForRow(row) {
+  const id = Number(row?.client_account_id || 0);
+  if (id <= 0) return "—";
+  return accountNameById.value.get(id) || `Account #${id}`;
+}
+
+const showStaleHint = computed(
+  () => Boolean(meta.value?.stale) || meta.value?.source === "inventory_list",
+);
 
 const lastUpdatedLabel = computed(() => {
   const raw = meta.value?.computed_at;
@@ -52,8 +70,8 @@ const lastUpdatedLabel = computed(() => {
 });
 
 const emptyTableMessage = computed(() => {
-  if (!canLoad.value) return "Select an account.";
-  return "No products found.";
+  if (hasAccountFilter.value) return "No products in Receiving for this account.";
+  return "No products in Receiving.";
 });
 
 function applyListPayload(data, append = false) {
@@ -108,15 +126,15 @@ async function loadAccounts() {
 }
 
 async function fetchPage(append) {
-  if (!canLoad.value) return;
   const params = {
-    client_account_id: accountId.value,
     first: LIST_PAGE_SIZE,
   };
+  if (hasAccountFilter.value) {
+    params.client_account_id = accountId.value;
+  }
   const q = searchCommitted.value.trim();
   if (q) {
     params.query = q;
-    params.search_skip = searchSkipNext.value;
   } else if (append && pageInfo.value?.end_cursor) {
     params.after = pageInfo.value.end_cursor;
   }
@@ -125,10 +143,6 @@ async function fetchPage(append) {
 }
 
 async function loadRows(reset = false) {
-  if (!canLoad.value) {
-    rows.value = [];
-    return;
-  }
   if (reset) {
     loading.value = true;
     pageInfo.value = { has_next_page: false, end_cursor: null };
@@ -152,19 +166,11 @@ async function loadMore() {
 }
 
 async function refreshRows() {
-  if (!canLoad.value) {
-    toast.error("Select a client account first.");
-    return;
-  }
   refreshing.value = true;
   try {
-    const { data } = await api.post(
-      "/admin/put-away/refresh",
-      { client_account_id: accountId.value },
-      { timeout: 600000 },
-    );
+    await api.post("/admin/put-away/refresh", {}, { timeout: 600000 });
     searchCommitted.value = searchDraft.value.trim();
-    applyListPayload(data);
+    await loadRows(true);
     toast.success("Put away list refreshed.");
   } catch (e) {
     toast.errorFrom(e, "Could not refresh put away list.");
@@ -222,6 +228,7 @@ onMounted(async () => {
     description: "Move inventory from Receiving to warehouse locations.",
   });
   await loadAccounts();
+  await loadRows(true);
   document.addEventListener("click", onDocClick);
 });
 
@@ -236,8 +243,8 @@ onUnmounted(() => {
       <div class="min-w-0 flex-grow-1">
         <h1 class="h4 mb-1 fw-bold text-body">Put Away</h1>
         <p class="text-secondary small mb-0">
-          Search by name, SKU, or barcode. Select a client account to load products.
-          <span v-if="meta.source === 'inventory_list'"> Click Refresh for full receiving and pickable counts.</span>
+          Shows products with quantity in Receiving across the warehouse. Optionally filter by account.
+          <span v-if="showStaleHint"> Click Refresh for full Receiving counts.</span>
         </p>
       </div>
       <div class="d-flex align-items-center gap-2 flex-shrink-0 ms-md-auto">
@@ -247,7 +254,7 @@ onUnmounted(() => {
         <button
           type="button"
           class="btn btn-outline-secondary btn-sm orders-toolbar-outline-btn d-inline-flex align-items-center gap-2"
-          :disabled="loading || loadingMore || refreshing || !canLoad"
+          :disabled="loading || loadingMore || refreshing"
           title="Refresh"
           aria-label="Refresh put away list from ShipHero"
           @click="refreshRows"
@@ -268,9 +275,9 @@ onUnmounted(() => {
               aria-label="Client account"
               :options="accountOptions"
               :disabled="accountsLoading"
-              placeholder="Select account"
+              placeholder="All accounts"
               search-placeholder="Search accounts…"
-              :allow-empty="false"
+              :allow-empty="true"
               button-id="put-away-list-account-trigger"
               @update:model-value="onAccountChange"
             />
@@ -285,13 +292,13 @@ onUnmounted(() => {
                 autocomplete="off"
                 enterkeyhint="search"
                 aria-label="Search by name, SKU, or barcode"
-                :disabled="loading || !canLoad"
+                :disabled="loading"
                 @keydown.enter.prevent="commitSearch"
               />
               <button
                 type="button"
                 class="btn btn-primary staff-page-primary orders-toolbar-search-btn"
-                :disabled="loading || !canLoad"
+                :disabled="loading"
                 @click="commitSearch"
               >
                 Search
@@ -301,11 +308,7 @@ onUnmounted(() => {
         </div>
       </div>
 
-      <div v-if="!canLoad && !accountsLoading" class="text-center text-secondary py-5 px-3">
-        Select a client account to load the put away list.
-      </div>
-
-      <div v-else-if="loading && !rows.length" class="text-center py-5">
+      <div v-if="loading && !rows.length" class="text-center py-5">
         <CrmLoadingSpinner label="Loading put away list…" />
       </div>
 
@@ -319,6 +322,7 @@ onUnmounted(() => {
               <th class="staff-table-head__th user-inv-table__image-col" scope="col">Image</th>
               <th class="staff-table-head__th user-inv-table__sku-col" scope="col">SKU</th>
               <th class="staff-table-head__th user-inv-table__name-col" scope="col">Name</th>
+              <th class="staff-table-head__th user-inv-table__text-col" scope="col">Account</th>
               <th class="staff-table-head__th user-inv-table__text-col" scope="col">Barcode</th>
               <th class="staff-table-head__th user-inv-table__num-col" scope="col">Receiving</th>
               <th class="staff-table-head__th user-inv-table__num-col" scope="col">Pickable</th>
@@ -330,7 +334,7 @@ onUnmounted(() => {
           </thead>
           <tbody>
             <tr v-if="!rows.length">
-              <td colspan="10" class="text-center text-secondary py-4">
+              <td colspan="11" class="text-center text-secondary py-4">
                 {{ emptyTableMessage }}
               </td>
             </tr>
@@ -376,6 +380,7 @@ onUnmounted(() => {
                   <span class="user-inv-table__name-text" :title="row.name || undefined">{{ row.name || "—" }}</span>
                 </a>
               </td>
+              <td class="user-inv-table__text-col small">{{ accountLabelForRow(row) }}</td>
               <td class="user-inv-table__text-col small">{{ row.barcode || "—" }}</td>
               <td class="user-inv-table__num-col text-center">{{ Number(row.receiving_qty ?? 0).toLocaleString() }}</td>
               <td class="user-inv-table__num-col text-center">{{ Number(row.pickable_qty ?? 0).toLocaleString() }}</td>

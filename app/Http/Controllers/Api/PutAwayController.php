@@ -15,23 +15,32 @@ class PutAwayController extends Controller
     public function index(Request $request, PutAwayInventoryService $putAway): JsonResponse
     {
         $validated = $request->validate([
-            'client_account_id' => ['required', 'integer', 'exists:client_accounts,id'],
+            'client_account_id' => ['nullable', 'integer', 'exists:client_accounts,id'],
             'query' => ['nullable', 'string', 'max:255'],
             'first' => ['sometimes', 'integer', 'min:1', 'max:200'],
             'after' => ['nullable', 'string', 'max:500'],
-            'search_skip' => ['nullable', 'integer', 'min:0', 'max:500000'],
+            'receiving_only' => ['sometimes', 'boolean'],
             'refresh' => ['sometimes', 'boolean'],
         ]);
 
-        $clientAccountId = (int) $validated['client_account_id'];
+        $clientAccountId = isset($validated['client_account_id'])
+            ? (int) $validated['client_account_id']
+            : null;
         $first = (int) ($validated['first'] ?? PutAwayInventoryService::LIST_PAGE_SIZE);
         $after = isset($validated['after']) ? (string) $validated['after'] : null;
         $query = isset($validated['query']) ? (string) $validated['query'] : null;
-        $searchSkip = isset($validated['search_skip']) ? (int) $validated['search_skip'] : 0;
+        $receivingOnly = filter_var($validated['receiving_only'] ?? true, FILTER_VALIDATE_BOOLEAN);
         $refresh = filter_var($validated['refresh'] ?? false, FILTER_VALIDATE_BOOLEAN);
 
         try {
-            return response()->json($putAway->list($clientAccountId, $query, $first, $after, $refresh, $searchSkip));
+            return response()->json($putAway->listReceiving(
+                $clientAccountId,
+                $query,
+                $first,
+                $after,
+                $refresh,
+                $receivingOnly
+            ));
         } catch (ValidationException $e) {
             throw $e;
         } catch (RuntimeException $e) {
@@ -78,12 +87,12 @@ class PutAwayController extends Controller
 
     public function refresh(Request $request, PutAwayInventoryService $putAway): JsonResponse
     {
-        $validated = $request->validate([
-            'client_account_id' => ['required', 'integer', 'exists:client_accounts,id'],
+        $request->validate([
+            'client_account_id' => ['nullable', 'integer', 'exists:client_accounts,id'],
         ]);
 
         try {
-            return response()->json($putAway->refresh((int) $validated['client_account_id']));
+            return response()->json($putAway->refreshReceiving());
         } catch (RuntimeException $e) {
             return response()->json(['message' => $e->getMessage()], 422);
         } catch (Throwable $e) {

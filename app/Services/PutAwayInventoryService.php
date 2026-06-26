@@ -3,6 +3,8 @@
 namespace App\Services;
 
 use App\Models\ClientAccount;
+use App\Models\PutAwayReceivingSnapshot;
+use App\Models\PutAwayReceivingSnapshotRow;
 use App\Models\PutAwaySnapshot;
 use App\Models\PutAwaySnapshotRow;
 use App\Models\ShipHeroInventoryProductIndex;
@@ -98,6 +100,73 @@ class PutAwayInventoryService
         $snapshot = $this->rebuildSnapshot($clientAccountId, $account, $customerId);
 
         return $this->paginateSnapshotRows($snapshot, null, self::LIST_PAGE_SIZE, null);
+    }
+
+    /**
+     * Warehouse-wide Receiving inventory list (cached snapshot).
+     *
+     * @return array{rows: list<array<string, mixed>>, page_info: array{has_next_page: bool, end_cursor: string|null}, meta: array<string, mixed>}
+     */
+    public function listReceiving(
+        ?int $clientAccountId,
+        ?string $query,
+        int $first,
+        ?string $after,
+        bool $refresh = false,
+        bool $receivingOnly = true
+    ): array {
+        $warehouseId = $this->resolveWarehouseId();
+
+        if ($refresh) {
+            $snapshot = $this->rebuildReceivingSnapshot($warehouseId);
+
+            return $this->paginateReceivingSnapshotRows($snapshot, $clientAccountId, $query, $first, $after, $receivingOnly);
+        }
+
+        $snapshot = PutAwayReceivingSnapshot::query()->where('warehouse_id', $warehouseId)->first();
+        if (
+            $snapshot !== null
+            && $snapshot->status === PutAwayReceivingSnapshot::STATUS_OK
+            && (int) $snapshot->row_count > 0
+        ) {
+            return $this->paginateReceivingSnapshotRows($snapshot, $clientAccountId, $query, $first, $after, $receivingOnly);
+        }
+
+        return [
+            'rows' => [],
+            'page_info' => [
+                'has_next_page' => false,
+                'end_cursor' => null,
+            ],
+            'meta' => [
+                'computed_at' => $snapshot !== null && $snapshot->computed_at !== null
+                    ? $snapshot->computed_at->toIso8601String()
+                    : null,
+                'stale' => true,
+                'row_count' => 0,
+                'filtered_count' => 0,
+                'status' => $snapshot !== null ? $snapshot->status : 'missing',
+                'error_message' => $snapshot !== null ? $snapshot->error_message : null,
+                'duration_ms' => $snapshot !== null ? $snapshot->duration_ms : null,
+                'source' => 'snapshot',
+                'skipped_unresolved_account' => $snapshot !== null
+                    ? (int) $snapshot->skipped_unresolved_account
+                    : 0,
+            ],
+        ];
+    }
+
+    /**
+     * Rebuild warehouse Receiving snapshot and return first page.
+     *
+     * @return array{rows: list<array<string, mixed>>, page_info: array{has_next_page: bool, end_cursor: string|null}, meta: array<string, mixed>}
+     */
+    public function refreshReceiving(): array
+    {
+        $warehouseId = $this->resolveWarehouseId();
+        $snapshot = $this->rebuildReceivingSnapshot($warehouseId);
+
+        return $this->paginateReceivingSnapshotRows($snapshot, null, null, self::LIST_PAGE_SIZE, null, true);
     }
 
     /**
@@ -715,5 +784,275 @@ class PutAwayInventoryService
         }
 
         return $this->restockReports->resolveWarehouseIdForApi(null);
+    }
+
+    private function isReceivingFresh(PutAwayReceivingSnapshot $snapshot): bool
+    {
+        if ($snapshot->status !== PutAwayReceivingSnapshot::STATUS_OK) {
+            return false;
+        }
+        if ($snapshot->computed_at === null) {
+            return false;
+        }
+
+        return $snapshot->computed_at->gte(now()->subMinutes(self::CACHE_TTL_MINUTES));
+    }
+
+    private function rebuildReceivingSnapshot(string $warehouseId): PutAwayReceivingSnapshot
+    {
+        if (function_exists('set_time_limit')) {
+            @set_time_limit(0);
+        }
+
+        $started = microtime(true);
+
+        $snapshot = PutAwayReceivingSnapshot::query()->firstOrNew(['warehouse_id' => $warehouseId]);
+        $snapshot->status = PutAwayReceivingSnapshot::STATUS_RUNNING;
+        $snapshot->error_message = null;
+        $snapshot->save();
+
+        try {
+            PutAwayReceivingSnapshotRow::query()
+                ->where('put_away_receiving_snapshot_id', $snapshot->id)
+                ->delete();
+
+            $catalog = $this->inventory->buildWarehouseLocationPickableCatalog($warehouseId);
+            $catalogById = is_array($catalog['by_id'] ?? null) ? $catalog['by_id'] : [];
+            $catalogByName = is_array($catalog['by_name'] ?? null) ? $catalog['by_name'] : [];
+
+            $builtRows = [];
+            $skippedUnresolved = 0;
+            $after = null;
+            do {
+                $pageResult = $this->inventory->paginateWarehouseProductsForRestock($warehouseId, $after);
+                $edges = is_array($pageResult['edges'] ?? null) ? $pageResult['edges'] : [];
+                foreach ($edges as $edge) {
+                    $wp = is_array($edge['node'] ?? null) ? $edge['node'] : null;
+                    if ($wp === null || ($wp['active'] ?? null) === false) {
+                        continue;
+                    }
+                    $product = is_array($wp['product'] ?? null) ? $wp['product'] : null;
+                    if ($product === null || ($product['active'] ?? null) === false) {
+                        continue;
+                    }
+                    if (($product['kit'] ?? false) === true || ($product['kit_build'] ?? false) === true) {
+                        continue;
+                    }
+                    $sku = trim((string) ($product['sku'] ?? ''));
+                    if ($sku === '') {
+                        continue;
+                    }
+
+                    $locations = $this->inventory->enrichedLocationsForWarehouseProduct(
+                        $wp,
+                        $warehouseId,
+                        $catalogById,
+                        $catalogByName,
+                        false
+                    );
+                    $onHand = (int) round((float) ($wp['on_hand'] ?? 0));
+                    $backorder = (int) round((float) ($product['backorder'] ?? 0));
+
+                    $row = PutAwayRowBuilder::buildRow(
+                        $sku,
+                        (string) ($product['name'] ?? $sku),
+                        isset($product['barcode']) ? (string) $product['barcode'] : null,
+                        isset($product['thumbnail']) ? (string) $product['thumbnail'] : (
+                            isset($product['image_url']) ? (string) $product['image_url'] : null
+                        ),
+                        $locations,
+                        $onHand,
+                        $backorder
+                    );
+
+                    if ((int) ($row['receiving_qty'] ?? 0) <= 0) {
+                        continue;
+                    }
+
+                    $clientAccountId = $this->resolveClientAccountIdForSku($sku);
+                    if ($clientAccountId === null) {
+                        $skippedUnresolved++;
+
+                        continue;
+                    }
+
+                    $row['client_account_id'] = $clientAccountId;
+                    $builtRows[] = $row;
+                }
+
+                $pageInfo = is_array($pageResult['page_info'] ?? null) ? $pageResult['page_info'] : [];
+                $hasNext = (bool) ($pageInfo['has_next_page'] ?? false);
+                $after = isset($pageInfo['end_cursor']) && is_string($pageInfo['end_cursor']) && $pageInfo['end_cursor'] !== ''
+                    ? $pageInfo['end_cursor']
+                    : null;
+            } while ($hasNext && $after !== null);
+
+            $now = now();
+            foreach (array_chunk($builtRows, 200) as $chunk) {
+                $insert = [];
+                foreach ($chunk as $row) {
+                    $insert[] = [
+                        'put_away_receiving_snapshot_id' => $snapshot->id,
+                        'client_account_id' => $row['client_account_id'],
+                        'sku' => $row['sku'],
+                        'name' => $row['name'],
+                        'barcode' => $row['barcode'],
+                        'image_url' => $row['image_url'],
+                        'receiving_qty' => $row['receiving_qty'],
+                        'pickable_qty' => $row['pickable_qty'],
+                        'non_pickable_qty' => $row['non_pickable_qty'],
+                        'on_hand' => $row['on_hand'],
+                        'backorder' => $row['backorder'],
+                        'created_at' => $now,
+                        'updated_at' => $now,
+                    ];
+                }
+                if ($insert !== []) {
+                    PutAwayReceivingSnapshotRow::query()->insert($insert);
+                }
+            }
+
+            $snapshot->computed_at = now();
+            $snapshot->row_count = count($builtRows);
+            $snapshot->skipped_unresolved_account = $skippedUnresolved;
+            $snapshot->status = PutAwayReceivingSnapshot::STATUS_OK;
+            $snapshot->duration_ms = (int) round((microtime(true) - $started) * 1000);
+            $snapshot->error_message = null;
+            $snapshot->save();
+
+            return $snapshot->fresh();
+        } catch (Throwable $e) {
+            $snapshot->status = PutAwayReceivingSnapshot::STATUS_FAILED;
+            $snapshot->error_message = $e->getMessage();
+            $snapshot->duration_ms = (int) round((microtime(true) - $started) * 1000);
+            $snapshot->save();
+            throw $e;
+        }
+    }
+
+    private function resolveClientAccountIdForSku(string $sku): ?int
+    {
+        $skuSearch = mb_strtolower(trim($sku));
+        if ($skuSearch === '') {
+            return null;
+        }
+
+        $indexRow = ShipHeroInventoryProductIndex::query()
+            ->where('sku_search', $skuSearch)
+            ->orderByDesc('synced_at')
+            ->first();
+
+        if ($indexRow === null) {
+            $indexRow = ShipHeroInventoryProductIndex::query()
+                ->whereRaw('LOWER(sku) = ?', [$skuSearch])
+                ->orderByDesc('synced_at')
+                ->first();
+        }
+
+        if ($indexRow !== null) {
+            return (int) $indexRow->client_account_id;
+        }
+
+        $customerId = $this->inventory->lookupShipHeroCustomerAccountIdForSku($sku);
+        if ($customerId !== null) {
+            $accountId = ClientAccount::query()
+                ->where('shiphero_customer_account_id', $customerId)
+                ->value('id');
+            if ($accountId !== null) {
+                return (int) $accountId;
+            }
+        }
+
+        $customerId = $this->inventory->fetchProductAccountIdBySku($sku);
+        if ($customerId !== null) {
+            $accountId = ClientAccount::query()
+                ->where('shiphero_customer_account_id', $customerId)
+                ->value('id');
+            if ($accountId !== null) {
+                return (int) $accountId;
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * @return array{rows: list<array<string, mixed>>, page_info: array{has_next_page: bool, end_cursor: string|null}, meta: array<string, mixed>}
+     */
+    private function paginateReceivingSnapshotRows(
+        PutAwayReceivingSnapshot $snapshot,
+        ?int $clientAccountId,
+        ?string $query,
+        int $first,
+        ?string $after,
+        bool $receivingOnly = true
+    ): array {
+        $first = max(1, min(200, $first));
+        $offset = 0;
+        if (is_string($after) && $after !== '' && ctype_digit($after)) {
+            $offset = max(0, (int) $after);
+        }
+
+        $q = is_string($query) ? trim($query) : '';
+        $base = PutAwayReceivingSnapshotRow::query()
+            ->where('put_away_receiving_snapshot_id', $snapshot->id);
+        if ($receivingOnly) {
+            $base->where('receiving_qty', '>', 0);
+        }
+        if ($clientAccountId !== null && $clientAccountId > 0) {
+            $base->where('client_account_id', $clientAccountId);
+        }
+        if ($q !== '') {
+            $like = '%'.mb_strtolower($q).'%';
+            $base->where(function ($builder) use ($like) {
+                $builder
+                    ->whereRaw('LOWER(sku) LIKE ?', [$like])
+                    ->orWhereRaw('LOWER(name) LIKE ?', [$like])
+                    ->orWhereRaw('LOWER(COALESCE(barcode, \'\')) LIKE ?', [$like]);
+            });
+        }
+
+        $total = (clone $base)->count();
+        $items = $base->orderBy('sku')->offset($offset)->limit($first + 1)->get();
+        $hasNext = $items->count() > $first;
+        if ($hasNext) {
+            $items = $items->slice(0, $first);
+        }
+
+        $rows = $items->map(static function (PutAwayReceivingSnapshotRow $row) {
+            return [
+                'sku' => $row->sku,
+                'name' => $row->name,
+                'barcode' => $row->barcode,
+                'image_url' => $row->image_url,
+                'receiving_qty' => (int) $row->receiving_qty,
+                'pickable_qty' => (int) $row->pickable_qty,
+                'non_pickable_qty' => (int) $row->non_pickable_qty,
+                'on_hand' => (int) $row->on_hand,
+                'backorder' => (int) $row->backorder,
+                'client_account_id' => $row->client_account_id !== null ? (int) $row->client_account_id : null,
+            ];
+        })->values()->all();
+
+        $nextOffset = $offset + $first;
+
+        return [
+            'rows' => $rows,
+            'page_info' => [
+                'has_next_page' => $hasNext,
+                'end_cursor' => $hasNext ? (string) $nextOffset : null,
+            ],
+            'meta' => [
+                'computed_at' => optional($snapshot->computed_at)->toIso8601String(),
+                'stale' => ! $this->isReceivingFresh($snapshot),
+                'row_count' => (int) $snapshot->row_count,
+                'filtered_count' => $total,
+                'status' => $snapshot->status,
+                'error_message' => $snapshot->error_message,
+                'duration_ms' => $snapshot->duration_ms,
+                'source' => 'snapshot',
+                'skipped_unresolved_account' => (int) $snapshot->skipped_unresolved_account,
+            ],
+        ];
     }
 }

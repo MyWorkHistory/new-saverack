@@ -66,7 +66,7 @@ const ncPallets = ref(0);
 const ncFee = ref("");
 const ncTrackings = ref([{ carrier: "", tracking_number: "" }]);
 
-const tableColspan = 9;
+const tableColspan = 10;
 
 const accountOptions = computed(() =>
   (accounts.value || [])
@@ -634,6 +634,12 @@ onUnmounted(() => {
                 </button>
               </th>
               <th class="staff-table-head__th staff-table-head__th--sort text-center" scope="col">
+                <button type="button" class="staff-sort-btn" @click="toggleSort('rejected_qty')">
+                  Rejected QTY
+                  <span v-if="sortIndicator('rejected_qty')" class="staff-sort-ind">{{ sortIndicator("rejected_qty") }}</span>
+                </button>
+              </th>
+              <th class="staff-table-head__th staff-table-head__th--sort text-center" scope="col">
                 <button type="button" class="staff-sort-btn" @click="toggleSort('total_boxes')">
                   Total Boxes
                   <span v-if="sortIndicator('total_boxes')" class="staff-sort-ind">{{ sortIndicator("total_boxes") }}</span>
@@ -672,6 +678,7 @@ onUnmounted(() => {
                 <td class="text-center small text-secondary">{{ row.client_account_company_name || "—" }}</td>
                 <td class="text-center">{{ Number(row.expected_qty ?? 0).toLocaleString() }}</td>
                 <td class="text-center">{{ Number(row.accepted_qty ?? 0).toLocaleString() }}</td>
+                <td class="text-center">{{ Number(row.rejected_qty ?? 0).toLocaleString() }}</td>
                 <td class="text-center">{{ Number(row.total_boxes ?? 0).toLocaleString() }}</td>
                 <td class="text-center small text-secondary admin-asn-list-tracking-col" @click.stop>
                   <a

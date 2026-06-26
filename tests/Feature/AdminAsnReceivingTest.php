@@ -666,6 +666,45 @@ class AdminAsnReceivingTest extends TestCase
         $this->assertSame(0.3, (float) $line->weight);
     }
 
+    public function test_reject_override_updates_line_and_asn_total(): void
+    {
+        $account = $this->account('reject');
+        $staff = $this->staffUser();
+        Sanctum::actingAs($staff);
+
+        $asn = ClientAccountAsn::create([
+            'client_account_id' => $account->id,
+            'asn_number' => '0055',
+            'status' => ClientAccountAsn::STATUS_IN_PROGRESS,
+            'total_boxes' => 1,
+            'expected_qty' => 10,
+            'accepted_qty' => 4,
+            'rejected_qty' => 1,
+        ]);
+        $line = ClientAccountAsnLine::create([
+            'client_account_asn_id' => $asn->id,
+            'sku' => 'REJ-SKU',
+            'name' => 'Reject SKU',
+            'expected_qty' => 10,
+            'accepted_qty' => 4,
+            'rejected_qty' => 1,
+            'line_status' => ClientAccountAsnLine::LINE_STATUS_PARTIAL,
+            'sort_order' => 0,
+        ]);
+
+        $this->postJson("/api/admin/asns/{$asn->id}/lines/{$line->id}/reject-override", [
+            'rejected_qty' => 3,
+        ])
+            ->assertOk()
+            ->assertJsonPath('line.rejected_qty', 3)
+            ->assertJsonPath('asn.rejected_qty', 3);
+
+        $line->refresh();
+        $asn->refresh();
+        $this->assertSame(3, $line->rejected_qty);
+        $this->assertSame(3, $asn->rejected_qty);
+    }
+
     public function test_portal_user_forbidden_on_admin_asn_routes(): void
     {
         $account = $this->account();

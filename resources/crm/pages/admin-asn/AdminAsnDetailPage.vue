@@ -451,19 +451,46 @@ async function enrichSpecs(force = false) {
 }
 
 async function saveReceive(line) {
-  const delta = Number(receiveDraft.value[line.id]);
-  if (!Number.isFinite(delta) || delta <= 0) {
-    toast.error("Enter a received quantity to add.");
+  const receiveDelta = Number(receiveDraft.value[line.id]);
+  const rejectDelta = Number(rejectDraft.value[line.id]);
+  const hasReceive = Number.isFinite(receiveDelta) && receiveDelta > 0;
+  const hasReject = Number.isFinite(rejectDelta) && rejectDelta > 0;
+
+  if (!hasReceive && !hasReject) {
+    toast.error("Enter a received or rejected quantity to save.");
     return;
   }
+
   lineSaveBusy.value = { ...lineSaveBusy.value, [line.id]: true };
   try {
-    const { data } = await api.post(`/admin/asns/${asnId.value}/lines/${line.id}/receive`, { delta });
-    asn.value = data.asn;
-    receiveDraft.value = { ...receiveDraft.value, [line.id]: "" };
-    toast.success("Received quantity saved.");
+    let nextAsn = asn.value;
+    if (hasReceive) {
+      const { data } = await api.post(`/admin/asns/${asnId.value}/lines/${line.id}/receive`, {
+        delta: receiveDelta,
+      });
+      nextAsn = data.asn;
+      receiveDraft.value = { ...receiveDraft.value, [line.id]: "" };
+    }
+    if (hasReject) {
+      const currentLine = (nextAsn?.lines || []).find((l) => l.id === line.id) || line;
+      const nextRejected = Number(currentLine.rejected_qty ?? 0) + rejectDelta;
+      const { data } = await api.post(
+        `/admin/asns/${asnId.value}/lines/${line.id}/reject-override`,
+        { rejected_qty: nextRejected },
+      );
+      nextAsn = data.asn;
+      rejectDraft.value = { ...rejectDraft.value, [line.id]: "" };
+    }
+    asn.value = nextAsn;
+    if (hasReceive && hasReject) {
+      toast.success("Received and rejected quantities saved.");
+    } else if (hasReceive) {
+      toast.success("Received quantity saved.");
+    } else {
+      toast.success("Rejected quantity saved.");
+    }
   } catch (e) {
-    toast.errorFrom(e, "Could not save received quantity.");
+    toast.errorFrom(e, "Could not save quantities.");
   } finally {
     lineSaveBusy.value = { ...lineSaveBusy.value, [line.id]: false };
   }
@@ -1368,6 +1395,7 @@ onUnmounted(() => {
                         type="number"
                         min="0"
                         class="form-control form-control-sm asn-line-qty-input text-end ms-auto"
+                        placeholder="0"
                       />
                       <div class="small text-secondary mt-1">{{ line.rejected_qty }} saved</div>
                     </template>

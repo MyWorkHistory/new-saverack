@@ -183,6 +183,7 @@ class AdminAsnController extends Controller
                 'created_at',
                 'expected_qty',
                 'accepted_qty',
+                'rejected_qty',
                 'total_boxes',
             ])],
             'sort_dir' => ['nullable', 'string', Rule::in(['asc', 'desc'])],

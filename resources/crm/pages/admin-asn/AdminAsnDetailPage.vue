@@ -1116,7 +1116,7 @@ onUnmounted(() => {
               <thead class="table-light staff-table-head">
                 <tr>
                   <th class="staff-table-head__th order-detail-page__items-col">Product</th>
-                  <th class="staff-table-head__th text-end" style="width: 9rem">Expected QTY</th>
+                  <th class="staff-table-head__th text-end text-nowrap" style="width: 9rem">Expected QTY</th>
                   <th class="staff-table-head__th text-center admin-asn-detail-lines-actions-col">Actions</th>
                 </tr>
               </thead>
@@ -1325,9 +1325,9 @@ onUnmounted(() => {
               <thead class="table-light staff-table-head">
                 <tr>
                   <th class="staff-table-head__th order-detail-page__items-col">Product</th>
-                  <th class="staff-table-head__th text-end" style="width: 6.5rem">Expected QTY</th>
-                  <th class="staff-table-head__th text-end" style="width: 7.5rem">Received QTY</th>
-                  <th class="staff-table-head__th text-end" style="width: 7.5rem">Rejected QTY</th>
+                  <th class="staff-table-head__th text-end text-nowrap" style="width: 7.5rem">Expected QTY</th>
+                  <th class="staff-table-head__th text-end text-nowrap" style="width: 7.5rem">Received QTY</th>
+                  <th class="staff-table-head__th text-end text-nowrap" style="width: 7.5rem">Rejected QTY</th>
                   <th
                     class="staff-table-head__th text-center admin-asn-detail-lines-actions-col"
                     style="width: 7rem"
@@ -1406,7 +1406,12 @@ onUnmounted(() => {
                         class="form-control form-control-sm asn-line-qty-input text-end ms-auto"
                         placeholder="0"
                       />
-                      <div class="small text-secondary mt-1">{{ Number(line.accepted_qty ?? 0).toLocaleString() }} saved</div>
+                      <div
+                        class="small mt-1"
+                        :class="Number(line.accepted_qty ?? 0) > 0 ? 'text-success fw-semibold' : 'text-secondary'"
+                      >
+                        {{ Number(line.accepted_qty ?? 0).toLocaleString() }} saved
+                      </div>
                     </template>
                     <span v-else>{{ Number(line.accepted_qty ?? 0).toLocaleString() }}</span>
                   </td>
@@ -1419,7 +1424,12 @@ onUnmounted(() => {
                         class="form-control form-control-sm asn-line-qty-input text-end ms-auto"
                         placeholder="0"
                       />
-                      <div class="small text-secondary mt-1">{{ Number(line.rejected_qty ?? 0).toLocaleString() }} saved</div>
+                      <div
+                        class="small mt-1"
+                        :class="Number(line.rejected_qty ?? 0) > 0 ? 'text-danger fw-semibold' : 'text-secondary'"
+                      >
+                        {{ Number(line.rejected_qty ?? 0).toLocaleString() }} saved
+                      </div>
                     </template>
                     <span v-else>{{ Number(line.rejected_qty ?? 0).toLocaleString() }}</span>
                   </td>

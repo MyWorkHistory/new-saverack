@@ -317,7 +317,7 @@ function toggleSort(col) {
 
 function thAriaSort(col) {
   if (sortKey.value !== col) return "none";
-  return sortDir.value === "asc" ? "ascending" : "descending";
+  return sortDir.value === "asc" ? "↑" : "↓";
 }
 
 function sortIndicator(col) {

@@ -391,7 +391,11 @@ GQL;
     {
         return [
             'client_account_id' => (int) $row->client_account_id,
-            'client_account_company_name' => (string) ($row->clientAccount?->company_name ?? ''),
+            'client_account_company_name' => (string) (
+                $row->relationLoaded('clientAccount') && $row->clientAccount !== null
+                    ? ($row->clientAccount->company_name ?? '')
+                    : ''
+            ),
             'product_id' => $row->shiphero_product_id,
             'sku' => $row->sku,
             'name' => $row->name ?? '',

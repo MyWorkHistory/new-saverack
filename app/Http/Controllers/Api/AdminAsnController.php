@@ -337,7 +337,9 @@ class AdminAsnController extends Controller
             'height' => ['nullable', 'numeric', 'min:0'],
         ]);
 
-        $updated = $this->receiving->updateLineSpecs($line, $validated);
+        $asn->loadMissing('clientAccount');
+
+        $updated = $this->receiving->updateLineSpecs($asn->clientAccount, $line, $validated);
 
         return response()->json($this->receiving->serializeLine($updated));
     }

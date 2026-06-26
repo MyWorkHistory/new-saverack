@@ -94,7 +94,7 @@ class PutAwayApiTest extends TestCase
             ->assertJsonPath('rows.0.sku', 'GRPH-US12')
             ->assertJsonPath('rows.0.receiving_qty', 10)
             ->assertJsonCount(1, 'rows')
-            ->assertJsonPath('meta.source', 'snapshot');
+            ->assertJsonPath('meta.source', 'local');
     }
 
     public function test_list_returns_snapshot_rows_with_search(): void
@@ -210,14 +210,40 @@ class PutAwayApiTest extends TestCase
             ->assertJsonPath('page_info.end_cursor', '1');
     }
 
-    public function test_list_without_snapshot_returns_empty_with_stale_meta(): void
+    public function test_list_without_snapshot_returns_empty_local_meta(): void
     {
         Sanctum::actingAs($this->staffUser());
 
         $this->getJson('/api/admin/put-away')
             ->assertOk()
             ->assertJsonCount(0, 'rows')
-            ->assertJsonPath('meta.stale', true)
-            ->assertJsonPath('meta.status', 'missing');
+            ->assertJsonPath('meta.stale', false)
+            ->assertJsonPath('meta.status', PutAwayReceivingSnapshot::STATUS_OK)
+            ->assertJsonPath('meta.source', 'local');
+    }
+
+    public function test_refresh_returns_local_meta_without_scanning(): void
+    {
+        $account = $this->account();
+        Sanctum::actingAs($this->staffUser());
+
+        $snapshot = $this->receivingSnapshot();
+        PutAwayReceivingSnapshotRow::create([
+            'put_away_receiving_snapshot_id' => $snapshot->id,
+            'client_account_id' => $account->id,
+            'sku' => 'LOCAL-SKU',
+            'name' => 'Local SKU',
+            'receiving_qty' => 2,
+            'pickable_qty' => 0,
+            'non_pickable_qty' => 0,
+            'on_hand' => 2,
+            'backorder' => 0,
+        ]);
+
+        $this->postJson('/api/admin/put-away/refresh')
+            ->assertOk()
+            ->assertJsonPath('status', PutAwayReceivingSnapshot::STATUS_OK)
+            ->assertJsonPath('source', 'local')
+            ->assertJsonPath('row_count', 1);
     }
 }

@@ -1395,6 +1395,84 @@ GQL;
     }
 
     /**
+     * Update product barcode and dimensions in ShipHero (product_update).
+     *
+     * @param  array{barcode?: string|null, weight?: float|int|string|null, length?: float|int|string|null, width?: float|int|string|null, height?: float|int|string|null}  $specs
+     *
+     * @throws RuntimeException
+     */
+    public function updateProductSpecs(string $customerAccountId, string $sku, array $specs): void
+    {
+        $customerAccountId = trim($customerAccountId);
+        $sku = trim($sku);
+        if ($customerAccountId === '' || $sku === '') {
+            throw new RuntimeException('Customer account and SKU are required to update product specs in ShipHero.');
+        }
+
+        $data = [
+            'customer_account_id' => $customerAccountId,
+            'sku' => $sku,
+        ];
+
+        if (array_key_exists('barcode', $specs)) {
+            $barcode = trim((string) ($specs['barcode'] ?? ''));
+            $data['barcode'] = $barcode !== '' ? $barcode : null;
+        }
+
+        $dimensionKeys = ['weight', 'length', 'width', 'height'];
+        $hasDimension = false;
+        $dimensions = [];
+        foreach ($dimensionKeys as $key) {
+            if (! array_key_exists($key, $specs)) {
+                continue;
+            }
+            $hasDimension = true;
+            $normalized = $this->normalizeNumericDisplay($specs[$key]);
+            $dimensions[$key] = $normalized !== null && $normalized !== '' ? $normalized : null;
+        }
+        if ($hasDimension) {
+            $data['dimensions'] = $dimensions;
+        }
+
+        if (count($data) <= 2) {
+            return;
+        }
+
+        $graphql = <<<'GQL'
+mutation ShipHeroProductUpdateSpecs($data: UpdateProductInput!) {
+  product_update(data: $data) {
+    request_id
+    complexity
+    product {
+      id
+      sku
+      barcode
+      dimensions {
+        weight
+        height
+        width
+        length
+      }
+    }
+  }
+}
+GQL;
+
+        $json = $this->client->query($graphql, ['data' => $data], true, [
+            ShipHeroClient::OPTION_GRAPHQL_SUCCESS_FIELD => 'product_update',
+        ]);
+        $product = data_get($json, 'data.product_update.product');
+        if (! is_array($product)) {
+            $errs = $json['errors'] ?? [];
+            $msg = is_array($errs) && isset($errs[0]['message'])
+                ? (string) $errs[0]['message']
+                : 'ShipHero did not return a product after specs update.';
+
+            throw new RuntimeException($msg);
+        }
+    }
+
+    /**
      * @param  array<string, mixed>  $product
      */
     private function resolveProductImageUrlFromNode(array $product): ?string
@@ -2483,7 +2561,7 @@ GQL;
         ], $customerAccountId);
 
         $graphql = <<<'GQL'
-mutation ShipHeroInventoryAdd($data: AddInventoryInput!) {
+mutation ShipHeroInventoryAdd($data: UpdateInventoryInput!) {
   inventory_add(data: $data) {
     request_id
     complexity

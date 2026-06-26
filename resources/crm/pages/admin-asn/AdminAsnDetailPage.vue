@@ -342,15 +342,23 @@ function skuLineLabel(sku) {
   return val ? `SKU: ${val}` : "SKU: —";
 }
 
-function weightLineLabel(val) {
-  return hasSpecValue(val) ? `Weight: ${val} Lbs` : "Weight:";
-}
-
-function dimensionsLineLabel(line) {
+function weightDimensionsLineLabel(line) {
+  const weight = hasSpecValue(line.weight) ? `${line.weight} Lbs` : "";
   const l = hasSpecValue(line.length) ? line.length : "";
   const w = hasSpecValue(line.width) ? line.width : "";
   const h = hasSpecValue(line.height) ? line.height : "";
-  return `L: ${l}  W: ${w}  H: ${h}`;
+  const dims = `L: ${l} W: ${w} H: ${h}`;
+  if (weight) {
+    return `Weight: ${weight}   |   ${dims}`;
+  }
+  return `Weight:   |   ${dims}`;
+}
+
+function hasWeightOrDimensions(line) {
+  return hasSpecValue(line.weight)
+    || hasSpecValue(line.length)
+    || hasSpecValue(line.width)
+    || hasSpecValue(line.height);
 }
 
 function barcodeLineLabel(barcode) {
@@ -1256,7 +1264,6 @@ onUnmounted(() => {
             <table class="table table-hover align-middle mb-0 staff-data-table">
               <thead class="table-light staff-table-head">
                 <tr>
-                  <th class="staff-table-head__th text-center" style="width: 6rem">Status</th>
                   <th class="staff-table-head__th order-detail-page__items-col">Product</th>
                   <th class="staff-table-head__th text-end" style="width: 6.5rem">Expected QTY</th>
                   <th class="staff-table-head__th text-end" style="width: 7.5rem">Received QTY</th>
@@ -1271,50 +1278,53 @@ onUnmounted(() => {
               </thead>
               <tbody>
                 <tr v-if="filteredLines.length === 0">
-                  <td colspan="6" class="text-center text-secondary py-4">No products.</td>
+                  <td colspan="5" class="text-center text-secondary py-4">No products.</td>
                 </tr>
                 <tr v-for="line in filteredLines" :key="line.id">
-                  <td class="text-center align-middle">
-                    <span class="badge rounded-pill fw-medium" :class="lineStatusBadgeClass(line.line_status)">
-                      {{ statusLabel(line.line_status) }}
-                    </span>
-                  </td>
                   <td class="order-detail-page__items-col">
                     <div class="order-detail-page__item-cell">
-                      <a
-                        v-if="inventoryDetailHref(line.sku)"
-                        :href="inventoryDetailHref(line.sku)"
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        class="asn-line-thumb-link text-decoration-none"
-                        :aria-label="line.sku ? `View inventory for SKU ${line.sku} in new tab` : undefined"
-                        @click="openInventoryInNewTab(line, $event)"
-                      >
-                        <img
-                          v-if="line.image_url"
-                          :src="line.image_url"
-                          alt=""
-                          class="asn-line-thumb"
-                          loading="lazy"
-                        />
-                        <div v-else class="asn-line-thumb asn-line-thumb--empty" aria-hidden="true" />
-                      </a>
-                      <template v-else>
-                        <img
-                          v-if="line.image_url"
-                          :src="line.image_url"
-                          alt=""
-                          class="asn-line-thumb"
-                          loading="lazy"
-                        />
-                        <div v-else class="asn-line-thumb asn-line-thumb--empty" aria-hidden="true" />
-                      </template>
+                      <div class="asn-line-media">
+                        <a
+                          v-if="inventoryDetailHref(line.sku)"
+                          :href="inventoryDetailHref(line.sku)"
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          class="asn-line-thumb-link text-decoration-none"
+                          :aria-label="line.sku ? `View inventory for SKU ${line.sku} in new tab` : undefined"
+                          @click="openInventoryInNewTab(line, $event)"
+                        >
+                          <img
+                            v-if="line.image_url"
+                            :src="line.image_url"
+                            alt=""
+                            class="asn-line-thumb asn-line-thumb--lg"
+                            loading="lazy"
+                          />
+                          <div v-else class="asn-line-thumb asn-line-thumb--lg asn-line-thumb--empty" aria-hidden="true" />
+                        </a>
+                        <template v-else>
+                          <img
+                            v-if="line.image_url"
+                            :src="line.image_url"
+                            alt=""
+                            class="asn-line-thumb asn-line-thumb--lg"
+                            loading="lazy"
+                          />
+                          <div v-else class="asn-line-thumb asn-line-thumb--lg asn-line-thumb--empty" aria-hidden="true" />
+                        </template>
+                        <span
+                          class="badge rounded-pill fw-medium asn-line-status-badge"
+                          :class="lineStatusBadgeClass(line.line_status)"
+                        >
+                          {{ statusLabel(line.line_status) }}
+                        </span>
+                      </div>
                       <div class="order-detail-page__item-copy">
-                        <div class="order-detail-page__item-name" :title="line.name">{{ line.name || "—" }}</div>
+                        <div class="order-detail-page__item-sku-title" :title="line.sku || undefined">
+                          {{ line.sku || "—" }}
+                        </div>
+                        <div class="order-detail-page__item-name-sub" :title="line.name">{{ line.name || "—" }}</div>
                         <div class="order-detail-page__item-meta">
-                          <div class="order-detail-page__item-sku" :title="line.sku ? `SKU: ${line.sku}` : undefined">
-                            {{ skuLineLabel(line.sku) }}
-                          </div>
                           <div>
                             <button
                               type="button"
@@ -1327,21 +1337,10 @@ onUnmounted(() => {
                           <div>
                             <button
                               type="button"
-                              :class="specEditButtonClass(hasSpecValue(line.weight))"
+                              :class="specEditButtonClass(hasWeightOrDimensions(line))"
                               @click="openEditItem(line)"
                             >
-                              {{ weightLineLabel(line.weight) }}
-                            </button>
-                          </div>
-                          <div>
-                            <button
-                              type="button"
-                              :class="specEditButtonClass(
-                                hasSpecValue(line.length) || hasSpecValue(line.width) || hasSpecValue(line.height),
-                              )"
-                              @click="openEditItem(line)"
-                            >
-                              {{ dimensionsLineLabel(line) }}
+                              {{ weightDimensionsLineLabel(line) }}
                             </button>
                           </div>
                         </div>
@@ -1888,6 +1887,25 @@ onUnmounted(() => {
   flex-shrink: 0;
 }
 
+.admin-asn-detail-page .asn-line-thumb--lg {
+  width: 96px;
+  height: 96px;
+}
+
+.admin-asn-detail-page .asn-line-media {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  flex-shrink: 0;
+}
+
+.admin-asn-detail-page .asn-line-status-badge {
+  font-size: 0.6875rem;
+  white-space: nowrap;
+}
+
 .admin-asn-detail-page .asn-line-thumb--empty {
   display: block;
   background: rgba(0, 0, 0, 0.05);
@@ -1895,7 +1913,7 @@ onUnmounted(() => {
 
 .admin-asn-detail-page .order-detail-page__item-cell {
   display: flex;
-  align-items: flex-start;
+  align-items: center;
   gap: 0.75rem;
   min-width: 0;
 }
@@ -1910,6 +1928,24 @@ onUnmounted(() => {
   white-space: normal;
   word-break: break-word;
   line-height: 1.35;
+  margin-bottom: 0.35rem;
+}
+
+.admin-asn-detail-page .order-detail-page__item-sku-title {
+  font-size: 1rem;
+  font-weight: 600;
+  line-height: 1.35;
+  color: var(--bs-body-color);
+  word-break: break-word;
+  user-select: text;
+  margin-bottom: 0.2rem;
+}
+
+.admin-asn-detail-page .order-detail-page__item-name-sub {
+  font-size: 0.8125rem;
+  line-height: 1.4;
+  color: var(--bs-secondary-color);
+  word-break: break-word;
   margin-bottom: 0.35rem;
 }
 

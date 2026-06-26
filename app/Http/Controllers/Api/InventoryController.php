@@ -14,6 +14,7 @@ use App\Services\InventoryRestockBetaService;
 use App\Services\InventoryRestockReportService;
 use App\Models\User;
 use App\Services\CrossAccountInventoryListService;
+use App\Services\PutAwayInventoryService;
 use App\Services\ShipHeroInventoryService;
 use App\Services\ShipHeroOrderService;
 use App\Support\Barcode\Code128Svg;
@@ -42,19 +43,23 @@ class InventoryController extends Controller
     protected $detailCache;
     /** @var CrossAccountInventoryListService */
     protected $crossAccountInventory;
+    /** @var PutAwayInventoryService */
+    protected $putAway;
 
     public function __construct(
         ShipHeroInventoryService $inventory,
         ShipHeroClient $shipHeroClient,
         ShipHeroOrderService $orders,
         InventoryProductDetailCacheService $detailCache,
-        CrossAccountInventoryListService $crossAccountInventory
+        CrossAccountInventoryListService $crossAccountInventory,
+        PutAwayInventoryService $putAway
     ) {
         $this->inventory = $inventory;
         $this->shipHeroClient = $shipHeroClient;
         $this->orders = $orders;
         $this->detailCache = $detailCache;
         $this->crossAccountInventory = $crossAccountInventory;
+        $this->putAway = $putAway;
     }
 
     public function clientAccountOptions(): JsonResponse
@@ -1161,6 +1166,17 @@ class InventoryController extends Controller
                 $shipheroCustomerId,
             );
 
+            if ($clientAccountId !== null && $clientAccountId > 0) {
+                $this->putAway->syncLocalReceivingAfterReplace(
+                    $clientAccountId,
+                    $validated['sku'],
+                    $validated['warehouse_id'],
+                    $validated['location_id'],
+                    $updated,
+                    $shipheroCustomerId
+                );
+            }
+
             return response()->json([
                 'warehouse' => $updated,
             ]);
@@ -1243,6 +1259,17 @@ class InventoryController extends Controller
                 $reason,
                 $shipheroCustomerId
             );
+
+            if ($clientAccountId !== null && $clientAccountId > 0) {
+                $this->putAway->syncLocalReceivingAfterTransferFrom(
+                    $clientAccountId,
+                    $validated['sku'],
+                    $validated['warehouse_id'],
+                    $validated['from_location_id'],
+                    (int) $validated['quantity'],
+                    $shipheroCustomerId
+                );
+            }
 
             return response()->json([
                 'warehouse' => $updated,

@@ -117,56 +117,28 @@ class PutAwayInventoryService
         bool $receivingOnly = true
     ): array {
         $warehouseId = $this->resolveWarehouseId();
+        $snapshot = $this->ensureLocalReceivingSnapshot($warehouseId);
 
-        if ($refresh) {
-            $this->beginReceivingRefresh($warehouseId);
-        }
-
-        $snapshot = PutAwayReceivingSnapshot::query()->where('warehouse_id', $warehouseId)->first();
-        if ($snapshot !== null) {
-            $snapshot = $this->resolveStaleRunningReceivingSnapshot($snapshot);
-        }
-
-        if ($snapshot !== null && $snapshot->status === PutAwayReceivingSnapshot::STATUS_RUNNING) {
-            return $this->emptyReceivingListResponse($snapshot, true);
-        }
-
-        if ($snapshot !== null && $snapshot->status === PutAwayReceivingSnapshot::STATUS_OK) {
-            return $this->paginateReceivingSnapshotRows($snapshot, $clientAccountId, $query, $first, $after, $receivingOnly);
-        }
-
-        return $this->emptyReceivingListResponse($snapshot, true);
+        return $this->paginateReceivingSnapshotRows($snapshot, $clientAccountId, $query, $first, $after, $receivingOnly);
     }
 
     /**
-     * Start async warehouse Receiving refresh (returns immediately).
+     * Returns current local Receiving index meta (no ShipHero warehouse scan).
      *
      * @return array<string, mixed>
      */
     public function refreshReceiving(): array
     {
         $warehouseId = $this->resolveWarehouseId();
+        $snapshot = $this->ensureLocalReceivingSnapshot($warehouseId);
+        $this->refreshLocalReceivingRowCount($snapshot);
 
-        if ($this->isReceivingRefreshInProgress($warehouseId)) {
-            return $this->receivingRefreshMeta($warehouseId);
-        }
-
-        $this->beginReceivingRefresh($warehouseId);
-
-        return $this->receivingRefreshMeta($warehouseId);
+        return $this->localReceivingMeta($snapshot);
     }
 
     public function isReceivingRefreshInProgress(?string $warehouseId = null): bool
     {
-        $warehouseId = $warehouseId ?? $this->resolveWarehouseId();
-        $snapshot = PutAwayReceivingSnapshot::query()->where('warehouse_id', $warehouseId)->first();
-        if ($snapshot === null || $snapshot->status !== PutAwayReceivingSnapshot::STATUS_RUNNING) {
-            return false;
-        }
-
-        $snapshot = $this->resolveStaleRunningReceivingSnapshot($snapshot);
-
-        return $snapshot->status === PutAwayReceivingSnapshot::STATUS_RUNNING;
+        return false;
     }
 
     public function beginReceivingRefresh(?string $warehouseId = null): void
@@ -295,6 +267,205 @@ class PutAwayInventoryService
             'refresh_started_at' => $snapshot !== null && $snapshot->refresh_started_at !== null
                 ? $snapshot->refresh_started_at->toIso8601String()
                 : null,
+        ];
+    }
+
+    public function ensureLocalReceivingSnapshot(?string $warehouseId = null): PutAwayReceivingSnapshot
+    {
+        $warehouseId = $warehouseId ?? $this->resolveWarehouseId();
+        $snapshot = PutAwayReceivingSnapshot::query()->firstOrNew(['warehouse_id' => $warehouseId]);
+        if (! $snapshot->exists || $snapshot->status !== PutAwayReceivingSnapshot::STATUS_OK) {
+            $snapshot->status = PutAwayReceivingSnapshot::STATUS_OK;
+            $snapshot->error_message = null;
+            $snapshot->refresh_started_at = null;
+            if ($snapshot->computed_at === null) {
+                $snapshot->computed_at = now();
+            }
+            $snapshot->save();
+        }
+
+        return $snapshot;
+    }
+
+    /**
+     * @param  array<string, mixed>  $warehouseSlice
+     */
+    public function syncLocalReceivingFromWarehouseSlice(
+        int $clientAccountId,
+        string $sku,
+        array $warehouseSlice,
+        ?string $name = null,
+        ?string $barcode = null,
+        ?string $imageUrl = null
+    ): void {
+        $qty = $this->quantityAtLocationNameFromSlice($warehouseSlice, 'Receiving');
+        $warehouseId = isset($warehouseSlice['warehouse_id']) && is_string($warehouseSlice['warehouse_id'])
+            ? trim($warehouseSlice['warehouse_id'])
+            : null;
+        $this->upsertLocalReceivingRow(
+            $clientAccountId,
+            $sku,
+            $qty,
+            $name,
+            $barcode,
+            $imageUrl,
+            $warehouseId !== '' ? $warehouseId : null
+        );
+    }
+
+    public function syncLocalReceivingAfterReplace(
+        int $clientAccountId,
+        string $sku,
+        string $warehouseId,
+        string $locationId,
+        array $warehouseSlice,
+        ?string $customerAccountId = null
+    ): void {
+        if ($clientAccountId <= 0 || ! $this->isReceivingLocationId($warehouseId, $locationId, $customerAccountId)) {
+            return;
+        }
+        $qty = $this->quantityAtLocationNameFromSlice($warehouseSlice, 'Receiving');
+        $this->upsertLocalReceivingRow($clientAccountId, $sku, $qty, null, null, null, $warehouseId);
+    }
+
+    public function syncLocalReceivingAfterTransferFrom(
+        int $clientAccountId,
+        string $sku,
+        string $warehouseId,
+        string $fromLocationId,
+        int $quantity,
+        ?string $customerAccountId = null
+    ): void {
+        if ($clientAccountId <= 0 || $quantity <= 0) {
+            return;
+        }
+        if (! $this->isReceivingLocationId($warehouseId, $fromLocationId, $customerAccountId)) {
+            return;
+        }
+        $warehouseId = trim($warehouseId);
+        $snapshot = $this->ensureLocalReceivingSnapshot($warehouseId);
+        $row = PutAwayReceivingSnapshotRow::query()
+            ->where('put_away_receiving_snapshot_id', $snapshot->id)
+            ->where('client_account_id', $clientAccountId)
+            ->where('sku', trim($sku))
+            ->first();
+        if ($row === null) {
+            return;
+        }
+        $next = max(0, (int) $row->receiving_qty - $quantity);
+        $this->upsertLocalReceivingRow($clientAccountId, $sku, $next, $row->name, $row->barcode, $row->image_url, $warehouseId);
+    }
+
+    public function upsertLocalReceivingRow(
+        int $clientAccountId,
+        string $sku,
+        int $receivingQty,
+        ?string $name = null,
+        ?string $barcode = null,
+        ?string $imageUrl = null,
+        ?string $warehouseId = null
+    ): void {
+        $sku = trim($sku);
+        if ($sku === '' || $clientAccountId <= 0) {
+            return;
+        }
+
+        $snapshot = $this->ensureLocalReceivingSnapshot($warehouseId);
+
+        if ($receivingQty <= 0) {
+            PutAwayReceivingSnapshotRow::query()
+                ->where('put_away_receiving_snapshot_id', $snapshot->id)
+                ->where('client_account_id', $clientAccountId)
+                ->where('sku', $sku)
+                ->delete();
+            $this->refreshLocalReceivingRowCount($snapshot);
+
+            return;
+        }
+
+        $row = PutAwayReceivingSnapshotRow::query()->firstOrNew([
+            'put_away_receiving_snapshot_id' => $snapshot->id,
+            'client_account_id' => $clientAccountId,
+            'sku' => $sku,
+        ]);
+        $row->receiving_qty = $receivingQty;
+        if ($name !== null && trim($name) !== '') {
+            $row->name = trim($name);
+        } elseif ($row->name === null || trim((string) $row->name) === '') {
+            $row->name = $sku;
+        }
+        if ($barcode !== null) {
+            $row->barcode = trim($barcode) !== '' ? trim($barcode) : null;
+        }
+        if ($imageUrl !== null && trim($imageUrl) !== '') {
+            $row->image_url = trim($imageUrl);
+        }
+        $row->save();
+        $this->refreshLocalReceivingRowCount($snapshot);
+    }
+
+    /**
+     * @param  array<string, mixed>  $warehouseSlice
+     */
+    public function quantityAtLocationNameFromSlice(array $warehouseSlice, string $locationName): int
+    {
+        $needle = strtolower(trim($locationName));
+        foreach ($warehouseSlice['locations'] ?? [] as $loc) {
+            if (! is_array($loc)) {
+                continue;
+            }
+            $name = strtolower(trim((string) ($loc['location_name'] ?? '')));
+            if ($name === $needle) {
+                return max(0, (int) ($loc['quantity'] ?? 0));
+            }
+        }
+
+        return 0;
+    }
+
+    private function isReceivingLocationId(string $warehouseId, string $locationId, ?string $customerAccountId): bool
+    {
+        $locationId = trim($locationId);
+        if ($locationId === '') {
+            return false;
+        }
+        $resolved = $this->inventory->resolveWarehouseLocation($warehouseId, 'Receiving', $customerAccountId);
+        if (! is_array($resolved)) {
+            return false;
+        }
+
+        return trim((string) ($resolved['id'] ?? '')) === $locationId;
+    }
+
+    private function refreshLocalReceivingRowCount(PutAwayReceivingSnapshot $snapshot): void
+    {
+        $count = PutAwayReceivingSnapshotRow::query()
+            ->where('put_away_receiving_snapshot_id', $snapshot->id)
+            ->where('receiving_qty', '>', 0)
+            ->count();
+        $snapshot->row_count = $count;
+        $snapshot->computed_at = now();
+        $snapshot->status = PutAwayReceivingSnapshot::STATUS_OK;
+        $snapshot->save();
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function localReceivingMeta(PutAwayReceivingSnapshot $snapshot): array
+    {
+        return [
+            'warehouse_id' => $snapshot->warehouse_id,
+            'status' => PutAwayReceivingSnapshot::STATUS_OK,
+            'computed_at' => $snapshot->computed_at !== null
+                ? $snapshot->computed_at->toIso8601String()
+                : null,
+            'row_count' => (int) $snapshot->row_count,
+            'error_message' => null,
+            'duration_ms' => null,
+            'skipped_unresolved_account' => (int) $snapshot->skipped_unresolved_account,
+            'refresh_started_at' => null,
+            'source' => 'local',
         ];
     }
 
@@ -1220,13 +1391,13 @@ class PutAwayInventoryService
             ],
             'meta' => [
                 'computed_at' => optional($snapshot->computed_at)->toIso8601String(),
-                'stale' => ! $this->isReceivingFresh($snapshot),
+                'stale' => false,
                 'row_count' => (int) $snapshot->row_count,
                 'filtered_count' => $total,
                 'status' => $snapshot->status,
                 'error_message' => $snapshot->error_message,
                 'duration_ms' => $snapshot->duration_ms,
-                'source' => 'snapshot',
+                'source' => 'local',
                 'skipped_unresolved_account' => (int) $snapshot->skipped_unresolved_account,
             ],
         ];

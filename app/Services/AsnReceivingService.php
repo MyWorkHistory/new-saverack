@@ -18,9 +18,13 @@ class AsnReceivingService
     /** @var ShipHeroInventoryService */
     private $inventory;
 
-    public function __construct(ShipHeroInventoryService $inventory)
+    /** @var PutAwayInventoryService */
+    private $putAway;
+
+    public function __construct(ShipHeroInventoryService $inventory, PutAwayInventoryService $putAway)
     {
         $this->inventory = $inventory;
+        $this->putAway = $putAway;
     }
 
     public static function nextAsnNumber(): string
@@ -252,14 +256,17 @@ class AsnReceivingService
         return $this->resolveReceivingLocationFromProduct($product, $customer);
     }
 
+    /**
+     * @return array<string, mixed> ShipHero warehouse slice after mutation
+     */
     public function incrementReceivingInventory(
         ClientAccount $account,
         string $sku,
         int $delta,
         string $reason = 'ASN receiving increment'
-    ): void {
+    ): array {
         if ($delta === 0) {
-            return;
+            return [];
         }
         if ($delta < 0) {
             throw ValidationException::withMessages([
@@ -276,7 +283,7 @@ class AsnReceivingService
         $resolved = $this->resolveReceivingLocationFromProduct($product, $customer);
 
         if (! $this->skuHasLocationNamed($product, self::RECEIVING_LOCATION_NAME)) {
-            $this->inventory->addLocationQuantity(
+            return $this->inventory->addLocationQuantity(
                 $sku,
                 $resolved['warehouse_id'],
                 $resolved['location_id'],
@@ -284,12 +291,11 @@ class AsnReceivingService
                 $reason,
                 $customer
             );
-
-            return;
         }
 
         $current = $this->quantityAtLocationName($product, self::RECEIVING_LOCATION_NAME);
-        $this->inventory->replaceLocationQuantity(
+
+        return $this->inventory->replaceLocationQuantity(
             $sku,
             $resolved['warehouse_id'],
             $resolved['location_id'],
@@ -299,12 +305,15 @@ class AsnReceivingService
         );
     }
 
+    /**
+     * @return array<string, mixed> ShipHero warehouse slice after mutation
+     */
     public function setReceivingInventoryAbsolute(
         ClientAccount $account,
         string $sku,
         int $quantity,
         string $reason = 'ASN receiving override'
-    ): void {
+    ): array {
         if ($quantity < 0) {
             throw ValidationException::withMessages([
                 'quantity' => ['Quantity must be zero or greater.'],
@@ -320,7 +329,7 @@ class AsnReceivingService
         $resolved = $this->resolveReceivingLocationFromProduct($product, $customer);
 
         if ($quantity > 0 && ! $this->skuHasLocationNamed($product, self::RECEIVING_LOCATION_NAME)) {
-            $this->inventory->addLocationQuantity(
+            return $this->inventory->addLocationQuantity(
                 $sku,
                 $resolved['warehouse_id'],
                 $resolved['location_id'],
@@ -328,17 +337,36 @@ class AsnReceivingService
                 $reason,
                 $customer
             );
-
-            return;
         }
 
-        $this->inventory->replaceLocationQuantity(
+        return $this->inventory->replaceLocationQuantity(
             $sku,
             $resolved['warehouse_id'],
             $resolved['location_id'],
             $quantity,
             $reason,
             $customer
+        );
+    }
+
+    /**
+     * @param  array<string, mixed>  $warehouseSlice
+     */
+    private function syncPutAwayReceivingRow(
+        ClientAccount $account,
+        ClientAccountAsnLine $line,
+        array $warehouseSlice
+    ): void {
+        if ($warehouseSlice === []) {
+            return;
+        }
+        $this->putAway->syncLocalReceivingFromWarehouseSlice(
+            (int) $account->id,
+            (string) $line->sku,
+            $warehouseSlice,
+            (string) ($line->name ?? ''),
+            $line->barcode !== null ? (string) $line->barcode : null,
+            $line->image_url !== null ? (string) $line->image_url : null
         );
     }
 
@@ -442,7 +470,8 @@ class AsnReceivingService
 
         return DB::transaction(function () use ($asn, $line, $delta, $actor) {
             $account = $asn->clientAccount ?? ClientAccount::query()->findOrFail($asn->client_account_id);
-            $this->incrementReceivingInventory($account, (string) $line->sku, $delta);
+            $slice = $this->incrementReceivingInventory($account, (string) $line->sku, $delta);
+            $this->syncPutAwayReceivingRow($account, $line, $slice);
             $line->accepted_qty = (int) $line->accepted_qty + $delta;
             $line->save();
             $this->syncLineStatus($line);
@@ -469,7 +498,8 @@ class AsnReceivingService
 
         return DB::transaction(function () use ($asn, $line, $newAcceptedQty, $actor) {
             $account = $asn->clientAccount ?? ClientAccount::query()->findOrFail($asn->client_account_id);
-            $this->setReceivingInventoryAbsolute($account, (string) $line->sku, $newAcceptedQty);
+            $slice = $this->setReceivingInventoryAbsolute($account, (string) $line->sku, $newAcceptedQty);
+            $this->syncPutAwayReceivingRow($account, $line, $slice);
             $line->accepted_qty = $newAcceptedQty;
             $line->save();
             $this->syncLineStatus($line);
@@ -622,8 +652,27 @@ class AsnReceivingService
     /**
      * @param  array<string, mixed>  $specs
      */
-    public function updateLineSpecs(ClientAccountAsnLine $line, array $specs): ClientAccountAsnLine
+    public function updateLineSpecs(ClientAccount $account, ClientAccountAsnLine $line, array $specs): ClientAccountAsnLine
     {
+        $sku = trim((string) $line->sku);
+        if ($sku !== '') {
+            $customer = $this->mutationCustomerForAccountSku($account, $sku);
+            if ($customer !== null && $customer !== '') {
+                $shipheroSpecs = [];
+                if (array_key_exists('barcode', $specs)) {
+                    $shipheroSpecs['barcode'] = $specs['barcode'];
+                }
+                foreach (['weight', 'length', 'width', 'height'] as $k) {
+                    if (array_key_exists($k, $specs)) {
+                        $shipheroSpecs[$k] = $specs[$k];
+                    }
+                }
+                if ($shipheroSpecs !== []) {
+                    $this->inventory->updateProductSpecs($customer, $sku, $shipheroSpecs);
+                }
+            }
+        }
+
         if (array_key_exists('barcode', $specs)) {
             $line->barcode = trim((string) ($specs['barcode'] ?? '')) ?: null;
         }

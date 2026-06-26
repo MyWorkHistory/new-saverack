@@ -10,7 +10,6 @@ import { useToast } from "../../composables/useToast.js";
 import { formatDateTimeUs } from "../../utils/formatUserDates.js";
 
 const LIST_PAGE_SIZE = 20;
-const POLL_MS = 4000;
 
 const toast = useToast();
 const router = useRouter();
@@ -18,7 +17,6 @@ const router = useRouter();
 const rows = ref([]);
 const loading = ref(false);
 const loadingMore = ref(false);
-const refreshing = ref(false);
 const accountsLoading = ref(false);
 const accounts = ref([]);
 const selectedAccountId = ref("");
@@ -26,15 +24,11 @@ const searchDraft = ref("");
 const searchCommitted = ref("");
 const searchSkipNext = ref(0);
 const pageInfo = ref({ has_next_page: false, end_cursor: null });
-const meta = ref({ computed_at: null, stale: false, row_count: 0, source: null, status: null });
-
-let pollTimer = null;
-const pollingActive = ref(false);
+const meta = ref({ computed_at: null, row_count: 0, source: null, status: null });
 
 const lineMenuOpenSku = ref(null);
 const lineMenuRect = ref({ top: 0, left: 0 });
 const LINE_MENU_W = 180;
-const LINE_MENU_H = 56;
 
 const accountOptions = computed(() =>
   (accounts.value || []).map((a) => ({
@@ -61,14 +55,6 @@ function accountLabelForRow(row) {
   return accountNameById.value.get(id) || `Account #${id}`;
 }
 
-const showStaleHint = computed(
-  () =>
-    (Boolean(meta.value?.stale) || meta.value?.source === "inventory_list")
-    && meta.value?.status !== "running",
-);
-
-const showRunningBanner = computed(() => meta.value?.status === "running" || refreshing.value);
-
 const lastUpdatedLabel = computed(() => {
   const raw = meta.value?.computed_at;
   if (!raw) return null;
@@ -78,68 +64,11 @@ const lastUpdatedLabel = computed(() => {
 });
 
 const emptyTableMessage = computed(() => {
-  if (meta.value?.status === "running") {
-    return "Scanning Receiving inventory from ShipHero…";
+  if (hasAccountFilter.value) {
+    return "No products in Receiving for this account. Receive inventory on an ASN to add SKUs here.";
   }
-  if (meta.value?.status === "failed") {
-    return meta.value?.error_message || "Receiving scan failed. Click Refresh to try again.";
-  }
-  if (
-    meta.value?.status === "missing"
-    || (!meta.value?.computed_at && meta.value?.stale)
-  ) {
-    return "Click Refresh to scan Receiving inventory from ShipHero.";
-  }
-  if (hasAccountFilter.value) return "No products in Receiving for this account.";
-  return "No products in Receiving.";
+  return "No products in Receiving. Receive inventory on an ASN to add SKUs here.";
 });
-
-function stopPolling() {
-  pollingActive.value = false;
-  if (pollTimer !== null) {
-    clearInterval(pollTimer);
-    pollTimer = null;
-  }
-}
-
-function finishRefreshUi(successMessage) {
-  refreshing.value = false;
-  stopPolling();
-  if (successMessage) {
-    toast.success(successMessage);
-  }
-}
-
-async function pollRefreshOnce() {
-  try {
-    const { data } = await api.get("/admin/put-away", { params: { first: 1 } });
-    meta.value = data?.meta || meta.value;
-    if (data?.meta?.status === "ok") {
-      searchCommitted.value = searchDraft.value.trim();
-      await loadRows(true);
-      const count = Number(data?.meta?.row_count || 0);
-      finishRefreshUi(`Put away list ready (${count.toLocaleString()} SKUs in Receiving).`);
-      return;
-    }
-    if (data?.meta?.status === "failed") {
-      refreshing.value = false;
-      stopPolling();
-      toast.error(data?.meta?.error_message || "Put away refresh failed.");
-    }
-  } catch (e) {
-    refreshing.value = false;
-    stopPolling();
-    toast.errorFrom(e, "Could not load put away list.");
-  }
-}
-
-function startPolling() {
-  stopPolling();
-  pollingActive.value = true;
-  pollTimer = setInterval(() => {
-    pollRefreshOnce();
-  }, POLL_MS);
-}
 
 function applyListPayload(data, append = false) {
   const nextRows = Array.isArray(data?.rows) ? data.rows : [];
@@ -219,12 +148,6 @@ async function loadRows(reset = false) {
   }
   try {
     await fetchPage(!reset);
-    if (meta.value?.status === "running") {
-      refreshing.value = true;
-      startPolling();
-    } else if (!pollingActive.value) {
-      refreshing.value = false;
-    }
   } catch (e) {
     toast.errorFrom(e, "Could not load put away list.");
   } finally {
@@ -236,48 +159,6 @@ async function loadRows(reset = false) {
 async function loadMore() {
   if (!pageInfo.value?.has_next_page || loadingMore.value || loading.value) return;
   await loadRows(false);
-}
-
-async function refreshRows() {
-  if (refreshing.value && pollingActive.value) return;
-  refreshing.value = true;
-  rows.value = [];
-  try {
-    const response = await api.post("/admin/put-away/refresh", {}, { timeout: 60000 });
-    const { data } = response;
-    if (data?.status) {
-      meta.value = {
-        ...meta.value,
-        status: data.status,
-        computed_at: data.computed_at ?? null,
-        row_count: data.row_count ?? 0,
-        error_message: data.error_message ?? null,
-        stale: data.status !== "ok",
-      };
-    }
-    if (response.status === 202 || data?.status === "running") {
-      startPolling();
-      await pollRefreshOnce();
-      return;
-    }
-    if (data?.status === "ok") {
-      searchCommitted.value = searchDraft.value.trim();
-      await loadRows(true);
-      finishRefreshUi(`Put away list ready (${Number(data?.row_count || 0).toLocaleString()} SKUs in Receiving).`);
-      return;
-    }
-    if (data?.status === "failed") {
-      finishRefreshUi(null);
-      toast.error(data?.error_message || "Put away refresh failed.");
-      return;
-    }
-    await loadRows(true);
-    finishRefreshUi("Put away list refreshed.");
-  } catch (e) {
-    refreshing.value = false;
-    stopPolling();
-    toast.errorFrom(e, "Could not refresh put away list.");
-  }
 }
 
 function commitSearch() {
@@ -334,7 +215,6 @@ onMounted(async () => {
 });
 
 onUnmounted(() => {
-  stopPolling();
   document.removeEventListener("click", onDocClick);
 });
 </script>
@@ -345,27 +225,13 @@ onUnmounted(() => {
       <div class="min-w-0 flex-grow-1">
         <h1 class="h4 mb-1 fw-bold text-body">Put Away</h1>
         <p class="text-secondary small mb-0">
-          Shows products with quantity in Receiving across the warehouse. Optionally filter by account.
-          <span v-if="showStaleHint"> Click Refresh for full Receiving counts.</span>
-        </p>
-        <p v-if="showRunningBanner" class="text-primary small mb-0 mt-1">
-          Scanning Receiving inventory from ShipHero. This may take several minutes…
+          Products received into Receiving via ASN appear here. Optionally filter by account.
         </p>
       </div>
       <div class="d-flex align-items-center gap-2 flex-shrink-0 ms-md-auto">
         <p v-if="lastUpdatedLabel" class="small text-secondary mb-0">
           Last Updated: {{ lastUpdatedLabel }}
         </p>
-        <button
-          type="button"
-          class="btn btn-outline-secondary btn-sm orders-toolbar-outline-btn d-inline-flex align-items-center gap-2"
-          :disabled="loading || loadingMore || (refreshing && pollingActive)"
-          title="Refresh"
-          aria-label="Refresh put away list from ShipHero"
-          @click="refreshRows"
-        >
-          {{ refreshing ? "Scanning…" : "Refresh" }}
-        </button>
       </div>
     </div>
 
@@ -413,8 +279,8 @@ onUnmounted(() => {
         </div>
       </div>
 
-      <div v-if="(loading || showRunningBanner) && !rows.length" class="text-center py-5">
-        <CrmLoadingSpinner :label="showRunningBanner ? 'Scanning Receiving inventory…' : 'Loading put away list…'" />
+      <div v-if="loading && !rows.length" class="text-center py-5">
+        <CrmLoadingSpinner label="Loading put away list…" />
       </div>
 
       <div v-else class="table-responsive staff-table-wrap">

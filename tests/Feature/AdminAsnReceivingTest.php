@@ -20,6 +20,12 @@ class AdminAsnReceivingTest extends TestCase
 {
     use RefreshDatabase;
 
+    protected function setUp(): void
+    {
+        parent::setUp();
+        config(['services.shiphero.put_away_warehouse_id' => 'wh-1']);
+    }
+
     private function inventoryViewPermission(): Permission
     {
         return Permission::query()->firstOrCreate(
@@ -71,6 +77,24 @@ class AdminAsnReceivingTest extends TestCase
         $mock->shouldReceive('getProductDetailBySku')->andReturn($productDetail);
 
         return $mock;
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function receivingWarehouseSlice(int $receivingQty, string $locationId = 'whloc-recv-99'): array
+    {
+        return [
+            'warehouse_id' => 'wh-1',
+            'warehouse_name' => 'Warehouse',
+            'locations' => [
+                [
+                    'location_name' => 'Receiving',
+                    'location_id' => $locationId,
+                    'quantity' => $receivingQty,
+                ],
+            ],
+        ];
     }
 
     public function test_global_asn_numbers_increment_across_accounts(): void
@@ -262,7 +286,7 @@ class AdminAsnReceivingTest extends TestCase
             15,
             Mockery::type('string'),
             'sh-asn-admin-1'
-        );
+        )->andReturn($this->receivingWarehouseSlice(15));
         $mock->shouldNotReceive('addLocationQuantity');
         $mock->shouldNotReceive('ensureWarehouseLocation');
         $this->app->instance(ShipHeroInventoryService::class, $mock);
@@ -329,7 +353,9 @@ class AdminAsnReceivingTest extends TestCase
             }),
             Mockery::type('string'),
             'sh-asn-admin-scan'
-        );
+        )->andReturnUsing(function ($sku, $wh, $loc, $qty) {
+            return $this->receivingWarehouseSlice((int) $qty, 'whloc-recv-scan');
+        });
         $mock->shouldNotReceive('addLocationQuantity');
         $mock->shouldNotReceive('ensureWarehouseLocation');
         $this->app->instance(ShipHeroInventoryService::class, $mock);
@@ -387,7 +413,7 @@ class AdminAsnReceivingTest extends TestCase
             3,
             Mockery::type('string'),
             'sh-asn-admin-new-loc'
-        );
+        )->andReturn($this->receivingWarehouseSlice(3, 'loc-catalog-recv'));
         $mock->shouldNotReceive('replaceLocationQuantity');
         $this->app->instance(ShipHeroInventoryService::class, $mock);
         $this->app->forgetInstance(AsnReceivingService::class);
@@ -447,7 +473,7 @@ class AdminAsnReceivingTest extends TestCase
             6,
             Mockery::type('string'),
             'sh-asn-admin-override'
-        );
+        )->andReturn($this->receivingWarehouseSlice(6, 'whloc-recv-override'));
         $mock->shouldNotReceive('addLocationQuantity');
         $mock->shouldNotReceive('ensureWarehouseLocation');
         $this->app->instance(ShipHeroInventoryService::class, $mock);
@@ -522,6 +548,122 @@ class AdminAsnReceivingTest extends TestCase
         ])
             ->assertStatus(422)
             ->assertJsonValidationErrors(['accepted_qty']);
+    }
+
+    public function test_receive_increment_upserts_put_away_receiving_row(): void
+    {
+        $account = $this->account('put-away');
+        $staff = $this->staffUser();
+        Sanctum::actingAs($staff);
+
+        $asn = ClientAccountAsn::create([
+            'client_account_id' => $account->id,
+            'asn_number' => '0060',
+            'status' => ClientAccountAsn::STATUS_PENDING,
+            'total_boxes' => 1,
+            'expected_qty' => 4,
+            'accepted_qty' => 0,
+            'rejected_qty' => 0,
+        ]);
+        $line = ClientAccountAsnLine::create([
+            'client_account_asn_id' => $asn->id,
+            'sku' => 'PUT-SKU',
+            'name' => 'Put Away SKU',
+            'barcode' => '12345',
+            'expected_qty' => 4,
+            'accepted_qty' => 0,
+            'rejected_qty' => 0,
+            'line_status' => ClientAccountAsnLine::LINE_STATUS_PENDING,
+            'sort_order' => 0,
+        ]);
+
+        $mock = $this->mockInventoryForReceiving('sh-asn-admin-put-away', [
+            'warehouses' => [
+                [
+                    'warehouse_id' => 'wh-1',
+                    'locations' => [
+                        [
+                            'location_name' => 'Receiving',
+                            'location_id' => 'whloc-recv-put',
+                            'quantity' => 0,
+                        ],
+                    ],
+                ],
+            ],
+        ]);
+        $mock->shouldReceive('replaceLocationQuantity')->once()->andReturn(
+            $this->receivingWarehouseSlice(4, 'whloc-recv-put')
+        );
+        $this->app->instance(ShipHeroInventoryService::class, $mock);
+        $this->app->forgetInstance(AsnReceivingService::class);
+
+        $this->postJson("/api/admin/asns/{$asn->id}/lines/{$line->id}/receive", ['delta' => 4])
+            ->assertOk();
+
+        $this->getJson('/api/admin/put-away?client_account_id='.$account->id)
+            ->assertOk()
+            ->assertJsonCount(1, 'rows')
+            ->assertJsonPath('rows.0.sku', 'PUT-SKU')
+            ->assertJsonPath('rows.0.receiving_qty', 4)
+            ->assertJsonPath('meta.source', 'local');
+    }
+
+    public function test_update_line_specs_syncs_to_shiphero(): void
+    {
+        $account = $this->account('specs');
+        $staff = $this->staffUser();
+        Sanctum::actingAs($staff);
+
+        $asn = ClientAccountAsn::create([
+            'client_account_id' => $account->id,
+            'asn_number' => '0070',
+            'status' => ClientAccountAsn::STATUS_IN_PROGRESS,
+            'total_boxes' => 1,
+            'expected_qty' => 1,
+            'accepted_qty' => 0,
+            'rejected_qty' => 0,
+        ]);
+        $line = ClientAccountAsnLine::create([
+            'client_account_asn_id' => $asn->id,
+            'sku' => 'SPEC-SKU',
+            'name' => 'Specs SKU',
+            'expected_qty' => 1,
+            'accepted_qty' => 0,
+            'rejected_qty' => 0,
+            'sort_order' => 0,
+        ]);
+
+        $mock = Mockery::mock(ShipHeroInventoryService::class);
+        $mock->shouldReceive('resolveCustomerAccountIdForSkuMutation')
+            ->andReturn('sh-asn-admin-specs');
+        $mock->shouldReceive('updateProductSpecs')->once()->with(
+            'sh-asn-admin-specs',
+            'SPEC-SKU',
+            Mockery::on(static function (array $specs) {
+                return ($specs['barcode'] ?? null) === '998877'
+                    && (float) ($specs['weight'] ?? 0) === 0.3
+                    && (float) ($specs['length'] ?? 0) === 5.0
+                    && (float) ($specs['width'] ?? 0) === 3.0
+                    && (float) ($specs['height'] ?? 0) === 5.0;
+            })
+        );
+        $this->app->instance(ShipHeroInventoryService::class, $mock);
+        $this->app->forgetInstance(AsnReceivingService::class);
+
+        $this->patchJson("/api/admin/asns/{$asn->id}/lines/{$line->id}/specs", [
+            'barcode' => '998877',
+            'weight' => 0.3,
+            'length' => 5,
+            'width' => 3,
+            'height' => 5,
+        ])
+            ->assertOk()
+            ->assertJsonPath('barcode', '998877')
+            ->assertJsonPath('weight', 0.3);
+
+        $line->refresh();
+        $this->assertSame('998877', $line->barcode);
+        $this->assertSame(0.3, (float) $line->weight);
     }
 
     public function test_portal_user_forbidden_on_admin_asn_routes(): void

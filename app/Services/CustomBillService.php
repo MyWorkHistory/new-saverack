@@ -37,7 +37,8 @@ class CustomBillService
         $sortDir = strtolower((string) ($filters['sort_dir'] ?? 'desc')) === 'asc' ? 'asc' : 'desc';
 
         $query = CustomBill::query()
-            ->with(['clientAccount:id,company_name']);
+            ->with(['clientAccount:id,company_name'])
+            ->withCount('items');
 
         if (! empty($filters['status']) && $filters['status'] !== 'all') {
             $query->where('status', (string) $filters['status']);
@@ -308,7 +309,7 @@ class CustomBillService
 
     public function toDetailArray(CustomBill $bill): array
     {
-        $bill->loadMissing(['items', 'clientAccount', 'histories.user', 'invoice']);
+        $bill->loadMissing(['items', 'clientAccount', 'createdBy', 'histories.user', 'invoice']);
 
         return [
             'id' => $bill->id,
@@ -321,15 +322,20 @@ class CustomBillService
             'total_cents' => (int) $bill->total_cents,
             'invoice_id' => $bill->invoice_id,
             'invoice_number' => $bill->invoice ? $bill->invoice->invoice_number : null,
+            'created_by_name' => $bill->createdBy ? $bill->createdBy->name : null,
             'items' => $bill->items->map(function (CustomBillItem $item) {
                 return $this->itemToArray($item);
             })->values()->all(),
             'histories' => $bill->histories->map(function (CustomBillHistory $h) {
+                $meta = is_array($h->meta) ? $h->meta : [];
+
                 return [
                     'id' => $h->id,
                     'event_type' => $h->event_type,
+                    'event_label' => $this->historyEventLabel((string) $h->event_type),
                     'message' => $h->message,
                     'actor_name' => $h->actor_name ?: ($h->user ? $h->user->name : 'System'),
+                    'invoice_id' => isset($meta['invoice_id']) ? (int) $meta['invoice_id'] : null,
                     'created_at' => $h->created_at ? $h->created_at->toIso8601String() : null,
                 ];
             })->values()->all(),
@@ -355,7 +361,27 @@ class CustomBillService
             'bill_date' => $bill->bill_date ? $bill->bill_date->format('Y-m-d') : null,
             'total_cents' => (int) $bill->total_cents,
             'invoice_id' => $bill->invoice_id,
+            'items_count' => (int) ($bill->items_count ?? 0),
         ];
+    }
+
+    private function historyEventLabel(string $eventType): string
+    {
+        switch ($eventType) {
+            case 'created':
+                return 'Created';
+            case 'invoiced':
+                return 'Added to Invoice';
+            case 'status':
+                return 'Status Changed';
+            case 'updated':
+            case 'line_add':
+            case 'line_edit':
+            case 'line_delete':
+                return 'Edited';
+            default:
+                return 'Activity';
+        }
     }
 
     /**

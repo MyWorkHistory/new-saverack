@@ -11,7 +11,7 @@ import { useToast } from "../../composables/useToast.js";
 import { setCrmPageMeta } from "../../composables/useCrmPageMeta.js";
 import { crmIsAdmin } from "../../utils/crmUser.js";
 import { formatCents } from "../../utils/formatMoney.js";
-import { formatIsoDate } from "../../utils/formatUserDates.js";
+import { formatIsoDate, formatDateTimeUs } from "../../utils/formatUserDates.js";
 import {
   DEFAULT_INVOICE_CATEGORY,
   INVOICE_CATEGORY_OPTIONS,
@@ -411,7 +411,7 @@ function onDocClick(e) {
 function formatHistoryTimestamp(iso) {
   if (!iso) return "—";
   try {
-    return new Date(iso).toLocaleString();
+    return formatDateTimeUs(new Date(iso));
   } catch {
     return iso;
   }
@@ -474,6 +474,20 @@ onUnmounted(() => {
               #{{ bill.invoice_number }}
             </RouterLink>
           </p>
+          <dl class="billing-custom-bill-info small mb-0 mt-3">
+            <div class="billing-custom-bill-info__row">
+              <dt class="text-secondary">Created by</dt>
+              <dd class="mb-0 text-body">{{ bill.created_by_name || "—" }}</dd>
+            </div>
+            <div class="billing-custom-bill-info__row">
+              <dt class="text-secondary">Account</dt>
+              <dd class="mb-0 text-body">{{ bill.client_account_name || "—" }}</dd>
+            </div>
+            <div class="billing-custom-bill-info__row">
+              <dt class="text-secondary">Date</dt>
+              <dd class="mb-0 text-body">{{ formatIsoDate(bill.bill_date) }}</dd>
+            </div>
+          </dl>
         </div>
         <div class="ms-md-auto position-relative" data-cb-manage>
           <button
@@ -637,28 +651,42 @@ onUnmounted(() => {
         </div>
 
         <div class="col-lg-4">
-          <div class="staff-surface p-4 mb-4">
-            <div class="staff-stat-card h-100 text-start p-0 border-0 shadow-none">
-              <p class="staff-stat-card__label">Bill Total</p>
-              <p class="staff-stat-card__value">
-                {{ formatCents(bill.total_cents) }}
-              </p>
-              <p class="staff-stat-card__sub">{{ billTotalSubtext }}</p>
-              <div class="staff-stat-card__icon staff-stat-card__icon--money" aria-hidden="true">
-                <BillingDollarStatIcon />
-              </div>
+          <div class="staff-stat-card mb-4 billing-custom-bill-total-card">
+            <p class="staff-stat-card__label">Bill Total</p>
+            <p class="staff-stat-card__value">
+              {{ formatCents(bill.total_cents) }}
+            </p>
+            <p class="staff-stat-card__sub">{{ billTotalSubtext }}</p>
+            <div class="staff-stat-card__icon staff-stat-card__icon--money" aria-hidden="true">
+              <BillingDollarStatIcon />
             </div>
           </div>
 
           <div class="staff-surface p-3 p-md-4">
             <h2 class="h6 fw-semibold mb-3">History</h2>
-            <ul v-if="bill.histories?.length" class="list-unstyled mb-0 small">
+            <ul v-if="bill.histories?.length" class="list-unstyled mb-0 small billing-custom-bill-history">
               <li
                 v-for="h in bill.histories"
                 :key="h.id"
-                class="border-bottom py-2 last:border-0"
+                class="billing-custom-bill-history__item"
               >
-                <div class="fw-medium">{{ h.message }}</div>
+                <div class="fw-semibold text-body">
+                  {{ h.event_label || h.event_type }}
+                  <span v-if="h.message && h.event_type !== 'created'" class="fw-normal text-secondary">
+                    — {{ h.message }}
+                  </span>
+                </div>
+                <div v-if="h.event_type === 'created' && h.message" class="text-secondary">
+                  {{ h.message }}
+                </div>
+                <div v-if="h.event_type === 'invoiced' && h.invoice_id" class="text-secondary">
+                  <RouterLink
+                    :to="`/admin/billing/invoices/${h.invoice_id}`"
+                    class="text-decoration-none"
+                  >
+                    View Invoice
+                  </RouterLink>
+                </div>
                 <div class="text-secondary">
                   {{ h.actor_name || "System" }} · {{ formatHistoryTimestamp(h.created_at) }}
                 </div>
@@ -900,6 +928,47 @@ onUnmounted(() => {
   width: 7rem;
   min-width: 7rem;
   max-width: 7rem;
+}
+
+.billing-custom-bill-info {
+  display: grid;
+  gap: 0.35rem;
+  max-width: 20rem;
+}
+
+.billing-custom-bill-info__row {
+  display: grid;
+  grid-template-columns: 6.5rem 1fr;
+  gap: 0.75rem;
+  align-items: baseline;
+}
+
+.billing-custom-bill-info__row dt {
+  margin: 0;
+  font-weight: 500;
+}
+
+.billing-custom-bill-info__row dd {
+  margin: 0;
+}
+
+.billing-custom-bill-total-card {
+  min-height: 7.5rem;
+}
+
+.billing-custom-bill-total-card .staff-stat-card__icon {
+  top: 50%;
+  transform: translateY(-50%);
+}
+
+.billing-custom-bill-history__item {
+  padding: 0.65rem 0;
+  border-bottom: 1px solid var(--vx-nav-border, rgba(0, 0, 0, 0.08));
+}
+
+.billing-custom-bill-history__item:last-child {
+  border-bottom: 0;
+  padding-bottom: 0;
 }
 
 .crm-vx-confirm-enter-active,

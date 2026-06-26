@@ -94,7 +94,7 @@ class CustomBillApiTest extends TestCase
 
     public function test_first_bill_number_is_1001(): void
     {
-        $this->actingWithBilling(['billing.view', 'billing.create']);
+        $user = $this->actingWithBilling(['billing.view', 'billing.create']);
         $client = $this->clientAccount();
 
         $res = $this->postJson('/api/custom-bills', [
@@ -113,7 +113,86 @@ class CustomBillApiTest extends TestCase
         $res->assertCreated()
             ->assertJsonPath('bill_number', 1001)
             ->assertJsonPath('status', CustomBill::STATUS_OPEN)
-            ->assertJsonPath('total_cents', 2500);
+            ->assertJsonPath('total_cents', 2500)
+            ->assertJsonPath('created_by_name', $user->name);
+
+        $billId = (int) $res->json('id');
+        $this->getJson("/api/custom-bills/{$billId}")
+            ->assertOk()
+            ->assertJsonPath('created_by_name', $user->name)
+            ->assertJsonPath('histories.0.event_type', 'created')
+            ->assertJsonPath('histories.0.event_label', 'Created');
+    }
+
+    public function test_list_includes_items_count(): void
+    {
+        $this->actingWithBilling(['billing.view', 'billing.create']);
+        $client = $this->clientAccount();
+
+        $this->postJson('/api/custom-bills', [
+            'client_account_id' => $client->id,
+            'bill_date' => now()->toDateString(),
+            'items' => [
+                [
+                    'line_type' => InvoiceLineCategory::AD_HOC,
+                    'name' => 'Fee',
+                    'quantity' => 1,
+                    'unit_price' => 10.00,
+                ],
+            ],
+        ])->assertCreated();
+
+        $this->getJson('/api/custom-bills')
+            ->assertOk()
+            ->assertJsonPath('data.0.items_count', 1);
+    }
+
+    public function test_history_includes_event_label_and_invoice_id_on_invoiced(): void
+    {
+        $this->actingWithBilling(['billing.view', 'billing.create', 'billing.update']);
+        $client = $this->clientAccount();
+
+        $invoice = Invoice::query()->create([
+            'invoice_number' => 'INV-CB-HIST',
+            'client_account_id' => $client->id,
+            'status' => Invoice::STATUS_DRAFT,
+            'currency' => 'USD',
+            'subtotal_cents' => 0,
+            'tax_cents' => 0,
+            'total_cents' => 0,
+            'amount_paid_cents' => 0,
+            'balance_due_cents' => 0,
+        ]);
+
+        $billRes = $this->postJson('/api/custom-bills', [
+            'client_account_id' => $client->id,
+            'bill_date' => now()->toDateString(),
+            'items' => [
+                [
+                    'line_type' => InvoiceLineCategory::AD_HOC,
+                    'name' => 'Fee',
+                    'quantity' => 1,
+                    'unit_price' => 5.00,
+                ],
+            ],
+        ])->assertCreated();
+
+        $billId = (int) $billRes->json('id');
+
+        $this->postJson("/api/custom-bills/{$billId}/add-to-invoice", [
+            'invoice_id' => $invoice->id,
+        ])->assertOk();
+
+        $detail = $this->getJson("/api/custom-bills/{$billId}")
+            ->assertOk()
+            ->json();
+
+        $invoicedHistory = collect($detail['histories'] ?? [])
+            ->firstWhere('event_type', 'invoiced');
+
+        $this->assertNotNull($invoicedHistory);
+        $this->assertSame('Added to Invoice', $invoicedHistory['event_label']);
+        $this->assertSame($invoice->id, (int) $invoicedHistory['invoice_id']);
     }
 
     public function test_line_crud_recalculates_total_cents(): void

@@ -28,6 +28,7 @@ function userHasPerm(key) {
 const canCreate = computed(() => userHasPerm("billing.create"));
 const canUpdate = computed(() => userHasPerm("billing.update"));
 const canDelete = computed(() => userHasPerm("billing.delete"));
+const showCheckboxColumn = computed(() => canDelete.value || canUpdate.value);
 
 const loading = ref(true);
 const rows = ref([]);
@@ -38,7 +39,13 @@ const filterMenuOpen = ref(false);
 const manageOpenId = ref(null);
 const manageMenuRect = ref({ top: 0, left: 0 });
 const MENU_W = 160;
-const MENU_H = 132;
+const MENU_H = 48;
+
+const selectedIds = ref([]);
+const bulkMenuOpen = ref(false);
+const bulkDeleteOpen = ref(false);
+const bulkAddOpen = ref(false);
+const bulkBusy = ref(false);
 
 const manageMenuRow = computed(
   () => rows.value.find((r) => r.id === manageOpenId.value) ?? null,
@@ -52,14 +59,10 @@ const showingFrom = computed(() => {
 const showingTo = computed(() =>
   Math.min(pagination.value.current_page * pagination.value.per_page, pagination.value.total),
 );
+
 const deleteTarget = ref(null);
 const deleteModalOpen = ref(false);
 const deleteBusy = ref(false);
-
-const editDateModalOpen = ref(false);
-const editDateTarget = ref(null);
-const editDateValue = ref("");
-const editDateBusy = ref(false);
 
 const query = reactive({
   search: "",
@@ -73,6 +76,26 @@ const query = reactive({
   sort_dir: "desc",
 });
 
+const isAllPageSelected = computed(
+  () => rows.value.length > 0 && rows.value.every((r) => selectedIds.value.includes(r.id)),
+);
+
+const selectedRows = computed(() => {
+  const idSet = new Set(selectedIds.value);
+  return rows.value.filter((r) => idSet.has(r.id));
+});
+
+const selectedOpenCount = computed(
+  () => selectedRows.value.filter((r) => r.status === "open").length,
+);
+
+const selectedOpenWithLinesCount = computed(
+  () =>
+    selectedRows.value.filter(
+      (r) => r.status === "open" && Number(r.items_count ?? 0) > 0,
+    ).length,
+);
+
 let searchDebounce = null;
 watch(
   () => query.search,
@@ -80,6 +103,7 @@ watch(
     clearTimeout(searchDebounce);
     searchDebounce = setTimeout(() => {
       query.page = 1;
+      selectedIds.value = [];
       fetchRows();
     }, 280);
   },
@@ -89,9 +113,34 @@ watch(
   () => [query.status, query.client_account_id, query.date_from, query.date_to],
   () => {
     query.page = 1;
+    selectedIds.value = [];
     fetchRows();
   },
 );
+
+function toggleRowSelect(id) {
+  const i = selectedIds.value.indexOf(id);
+  if (i === -1) {
+    selectedIds.value = [...selectedIds.value, id];
+  } else {
+    selectedIds.value = selectedIds.value.filter((x) => x !== id);
+  }
+}
+
+function toggleSelectAllPage() {
+  if (isAllPageSelected.value) {
+    const pageIds = new Set(rows.value.map((r) => r.id));
+    selectedIds.value = selectedIds.value.filter((id) => !pageIds.has(id));
+  } else {
+    const next = new Set(selectedIds.value);
+    rows.value.forEach((r) => next.add(r.id));
+    selectedIds.value = [...next];
+  }
+}
+
+function clearSelection() {
+  selectedIds.value = [];
+}
 
 async function fetchMeta() {
   const { data } = await api.get("/invoices/meta");
@@ -170,41 +219,8 @@ function onDocClick(e) {
   if (!e.target?.closest?.("[data-toolbar-filter]")) {
     filterMenuOpen.value = false;
   }
-}
-
-function goToBillDetail(row) {
-  closeManageMenu();
-  router.push(`/admin/billing/custom-bills/${row.id}`);
-}
-
-function openEditDateModal(row) {
-  closeManageMenu();
-  editDateTarget.value = row;
-  editDateValue.value = row.bill_date || "";
-  editDateModalOpen.value = true;
-}
-
-function closeEditDateModal() {
-  if (editDateBusy.value) return;
-  editDateModalOpen.value = false;
-  editDateTarget.value = null;
-}
-
-async function saveBillDate() {
-  if (!editDateTarget.value) return;
-  editDateBusy.value = true;
-  try {
-    await api.patch(`/custom-bills/${editDateTarget.value.id}`, {
-      bill_date: editDateValue.value,
-    });
-    toast.success("Bill date updated.");
-    editDateModalOpen.value = false;
-    editDateTarget.value = null;
-    await fetchRows();
-  } catch (e) {
-    toast.errorFrom(e, "Could not update bill date.");
-  } finally {
-    editDateBusy.value = false;
+  if (!e.target?.closest?.("[data-toolbar-bulk]")) {
+    bulkMenuOpen.value = false;
   }
 }
 
@@ -216,17 +232,115 @@ function openDeleteModal(row) {
 
 async function confirmDelete() {
   if (!deleteTarget.value) return;
+  const deletedId = deleteTarget.value.id;
   deleteBusy.value = true;
   try {
-    await api.delete(`/custom-bills/${deleteTarget.value.id}`);
+    await api.delete(`/custom-bills/${deletedId}`);
     toast.success("Custom bill deleted.");
     deleteModalOpen.value = false;
     deleteTarget.value = null;
+    selectedIds.value = selectedIds.value.filter((id) => id !== deletedId);
     await fetchRows();
   } catch (e) {
     toast.errorFrom(e, "Could not delete custom bill.");
   } finally {
     deleteBusy.value = false;
+  }
+}
+
+const bulkDeleteMessage = computed(() => {
+  const total = selectedIds.value.length;
+  const open = selectedOpenCount.value;
+  if (open === total) {
+    return `Delete ${open} selected custom bill${open === 1 ? "" : "s"}? This cannot be undone.`;
+  }
+  return `Delete ${open} open bill${open === 1 ? "" : "s"} from ${total} selected? Invoiced bills will be skipped.`;
+});
+
+const bulkAddMessage = computed(() => {
+  const total = selectedIds.value.length;
+  const eligible = selectedOpenWithLinesCount.value;
+  return `Add ${eligible} open bill${eligible === 1 ? "" : "s"} to each account's newest draft invoice? Bills are processed one by one; line items are not combined. ${total - eligible > 0 ? `${total - eligible} selected bill${total - eligible === 1 ? "" : "s"} will be skipped (invoiced or no lines).` : ""}`;
+});
+
+async function confirmBulkDelete() {
+  const ids = [...selectedIds.value];
+  if (!ids.length || bulkBusy.value) return;
+  bulkBusy.value = true;
+  let deleted = 0;
+  let skipped = 0;
+  try {
+    for (const id of ids) {
+      const row = rows.value.find((r) => r.id === id);
+      if (!row || row.status !== "open") {
+        skipped++;
+        continue;
+      }
+      try {
+        await api.delete(`/custom-bills/${id}`);
+        deleted++;
+      } catch {
+        skipped++;
+      }
+    }
+    bulkDeleteOpen.value = false;
+    clearSelection();
+    await fetchRows();
+    if (deleted > 0) {
+      const parts = [`Deleted ${deleted} bill${deleted === 1 ? "" : "s"}`];
+      if (skipped > 0) parts.push(`${skipped} skipped`);
+      toast.success(`${parts.join("; ")}.`);
+    } else {
+      toast.error("No bills were deleted.");
+    }
+  } finally {
+    bulkBusy.value = false;
+  }
+}
+
+async function confirmBulkAddToInvoices() {
+  const ids = [...selectedIds.value];
+  if (!ids.length || bulkBusy.value) return;
+  bulkBusy.value = true;
+  let added = 0;
+  let skipped = 0;
+  let failed = 0;
+  try {
+    for (const id of ids) {
+      const row = rows.value.find((r) => r.id === id);
+      if (!row || row.status !== "open" || Number(row.items_count ?? 0) <= 0) {
+        skipped++;
+        continue;
+      }
+      try {
+        const { data: draftData } = await api.get(`/custom-bills/${id}/draft-invoices`);
+        const drafts = Array.isArray(draftData?.invoices) ? draftData.invoices : [];
+        if (!drafts.length) {
+          failed++;
+          continue;
+        }
+        await api.post(`/custom-bills/${id}/add-to-invoice`, {
+          invoice_id: Number(drafts[0].id),
+        });
+        added++;
+      } catch {
+        failed++;
+      }
+    }
+    bulkAddOpen.value = false;
+    clearSelection();
+    await fetchRows();
+    const parts = [];
+    if (added > 0) parts.push(`${added} added to invoice${added === 1 ? "" : "s"}`);
+    if (skipped > 0) parts.push(`${skipped} skipped`);
+    if (failed > 0) parts.push(`${failed} failed (no draft invoice)`);
+    if (added > 0) {
+      toast.success(parts.join("; ") + ".");
+    } else {
+      toast.error(parts.length ? parts.join("; ") + "." : "No bills were added to invoices.");
+    }
+  } finally {
+    bulkBusy.value = false;
   }
 }
 
@@ -241,6 +355,7 @@ function onCreated(data) {
 
 function goToPage(page) {
   query.page = page;
+  selectedIds.value = [];
   fetchRows();
 }
 
@@ -348,6 +463,88 @@ onUnmounted(() => {
               </div>
             </div>
           </div>
+          <div
+            v-if="showCheckboxColumn && selectedIds.length"
+            class="staff-toolbar-row-actions d-flex flex-wrap align-items-center gap-2 gap-md-3 ms-md-auto flex-shrink-0"
+          >
+            <div class="d-none d-md-flex align-items-center gap-2 flex-shrink-0">
+              <button
+                v-if="canUpdate"
+                type="button"
+                class="btn btn-outline-secondary staff-toolbar-btn"
+                :disabled="!selectedOpenWithLinesCount || loading || bulkBusy"
+                @click="bulkAddOpen = true"
+              >
+                Add to Invoices
+              </button>
+              <button
+                v-if="canDelete"
+                type="button"
+                class="btn btn-outline-danger staff-toolbar-btn"
+                :disabled="!selectedOpenCount || loading || bulkBusy"
+                @click="bulkDeleteOpen = true"
+              >
+                Bulk Delete
+              </button>
+            </div>
+            <div
+              v-if="canUpdate || canDelete"
+              class="d-md-none position-relative flex-shrink-0"
+              data-toolbar-bulk
+            >
+              <button
+                type="button"
+                class="btn btn-outline-secondary staff-toolbar-btn d-inline-flex align-items-center gap-1"
+                :aria-expanded="bulkMenuOpen"
+                aria-haspopup="true"
+                :disabled="loading || bulkBusy"
+                @click.stop="
+                  filterMenuOpen = false;
+                  bulkMenuOpen = !bulkMenuOpen;
+                "
+              >
+                Bulk Actions
+              </button>
+              <div
+                v-if="bulkMenuOpen"
+                class="dropdown-menu show shadow border px-0 py-1 mt-1 staff-toolbar-bulk-dropdown"
+                @click.stop
+              >
+                <button
+                  v-if="canUpdate"
+                  type="button"
+                  class="dropdown-item"
+                  :disabled="!selectedOpenWithLinesCount || loading || bulkBusy"
+                  @click="
+                    bulkMenuOpen = false;
+                    bulkAddOpen = true;
+                  "
+                >
+                  Add to Invoices
+                </button>
+                <button
+                  v-if="canDelete"
+                  type="button"
+                  class="dropdown-item text-danger"
+                  :disabled="!selectedOpenCount || loading || bulkBusy"
+                  @click="
+                    bulkMenuOpen = false;
+                    bulkDeleteOpen = true;
+                  "
+                >
+                  Bulk Delete
+                </button>
+              </div>
+            </div>
+            <button
+              type="button"
+              class="btn btn-link btn-sm text-secondary text-decoration-none p-0"
+              :disabled="bulkBusy"
+              @click="clearSelection"
+            >
+              Clear
+            </button>
+          </div>
         </div>
       </div>
 
@@ -355,12 +552,27 @@ onUnmounted(() => {
         <table class="table table-hover align-middle mb-0 staff-data-table">
           <thead class="table-light staff-table-head">
             <tr>
+              <th
+                v-if="showCheckboxColumn"
+                class="staff-table-head__th staff-checkbox-col"
+                scope="col"
+              >
+                <input
+                  type="checkbox"
+                  class="form-check-input"
+                  :checked="isAllPageSelected"
+                  :disabled="loading || !rows.length"
+                  aria-label="Select all on page"
+                  @change="toggleSelectAllPage"
+                />
+              </th>
               <th class="staff-table-head__th" scope="col">Status</th>
               <th class="staff-table-head__th" scope="col">Bill #</th>
               <th class="staff-table-head__th" scope="col">Account</th>
               <th class="staff-table-head__th" scope="col">Date</th>
               <th class="staff-table-head__th text-end" scope="col">Price</th>
               <th
+                v-if="canDelete"
                 class="staff-table-head__th staff-actions-col text-center billing-custom-bills-actions-col"
                 scope="col"
               >
@@ -370,13 +582,22 @@ onUnmounted(() => {
           </thead>
           <tbody>
             <tr v-if="loading">
-              <td colspan="6" class="py-5">
+              <td :colspan="showCheckboxColumn ? (canDelete ? 7 : 6) : (canDelete ? 6 : 5)" class="py-5">
                 <div class="d-flex justify-content-center py-3">
                   <CrmLoadingSpinner message="Loading custom bills…" />
                 </div>
               </td>
             </tr>
             <tr v-for="row in rows" v-else :key="row.id" class="align-middle">
+              <td v-if="showCheckboxColumn" class="staff-checkbox-col">
+                <input
+                  type="checkbox"
+                  class="form-check-input"
+                  :checked="selectedIds.includes(row.id)"
+                  :aria-label="`Select bill #${row.bill_number}`"
+                  @change="toggleRowSelect(row.id)"
+                />
+              </td>
               <td>
                 <span class="badge rounded-pill fw-medium" :class="statusBadgeClass(row.status)">
                   {{ row.status_label }}
@@ -399,8 +620,12 @@ onUnmounted(() => {
               <td class="text-body staff-table-cell__meta text-end">
                 {{ formatCents(row.total_cents) }}
               </td>
-              <td class="staff-actions-cell text-center billing-custom-bills-actions-col">
+              <td
+                v-if="canDelete"
+                class="staff-actions-cell text-center billing-custom-bills-actions-col"
+              >
                 <div
+                  v-if="row.status === 'open'"
                   data-row-actions
                   class="staff-actions-inner staff-actions-inner--single"
                 >
@@ -419,7 +644,10 @@ onUnmounted(() => {
               </td>
             </tr>
             <tr v-if="!loading && !rows.length">
-              <td colspan="6" class="px-4 py-5 text-center text-secondary">
+              <td
+                :colspan="showCheckboxColumn ? (canDelete ? 7 : 6) : (canDelete ? 6 : 5)"
+                class="px-4 py-5 text-center text-secondary"
+              >
                 No custom bills found.
               </td>
             </tr>
@@ -438,14 +666,14 @@ onUnmounted(() => {
           v-if="pagination.last_page > 1"
           class="d-flex align-items-center justify-content-sm-end gap-2"
         >
-        <button
-          type="button"
-          class="btn btn-sm btn-outline-secondary"
-          :disabled="pagination.current_page <= 1"
-          @click="goToPage(pagination.current_page - 1)"
-        >
-          Previous
-        </button>
+          <button
+            type="button"
+            class="btn btn-sm btn-outline-secondary"
+            :disabled="pagination.current_page <= 1"
+            @click="goToPage(pagination.current_page - 1)"
+          >
+            Previous
+          </button>
           <span class="small text-secondary">
             Page {{ pagination.current_page }} of {{ pagination.last_page }}
           </span>
@@ -474,23 +702,6 @@ onUnmounted(() => {
         @click.stop
       >
         <button
-          type="button"
-          class="staff-row-menu__item"
-          role="menuitem"
-          @click="goToBillDetail(manageMenuRow)"
-        >
-          View
-        </button>
-        <button
-          v-if="canUpdate && manageMenuRow.status === 'open'"
-          type="button"
-          class="staff-row-menu__item"
-          role="menuitem"
-          @click="openEditDateModal(manageMenuRow)"
-        >
-          Edit
-        </button>
-        <button
           v-if="canDelete && manageMenuRow.status === 'open'"
           type="button"
           class="staff-row-menu__item staff-row-menu__item--danger"
@@ -499,15 +710,6 @@ onUnmounted(() => {
         >
           Delete
         </button>
-        <RouterLink
-          v-if="manageMenuRow.status === 'invoiced' && manageMenuRow.invoice_id"
-          :to="`/admin/billing/invoices/${manageMenuRow.invoice_id}`"
-          class="staff-row-menu__item text-decoration-none text-body"
-          role="menuitem"
-          @click="closeManageMenu"
-        >
-          View Invoice
-        </RouterLink>
       </div>
     </Teleport>
 
@@ -527,76 +729,26 @@ onUnmounted(() => {
       @confirm="confirmDelete"
     />
 
-    <Teleport to="body">
-      <Transition name="crm-vx-confirm">
-        <div
-          v-if="editDateModalOpen"
-          class="crm-vx-modal-overlay"
-          role="dialog"
-          aria-modal="true"
-          @click.self="closeEditDateModal"
-        >
-          <div class="crm-vx-modal crm-vx-modal--sm" @click.stop>
-            <button
-              type="button"
-              class="crm-vx-modal__close"
-              aria-label="Close"
-              :disabled="editDateBusy"
-              @click="closeEditDateModal"
-            >
-              <svg
-                width="20"
-                height="20"
-                fill="none"
-                viewBox="0 0 24 24"
-                stroke="currentColor"
-                stroke-width="1.75"
-                aria-hidden="true"
-              >
-                <path
-                  stroke-linecap="round"
-                  stroke-linejoin="round"
-                  d="M6 18L18 6M6 6l12 12"
-                />
-              </svg>
-            </button>
-            <header class="crm-vx-modal__head">
-              <h2 class="crm-vx-modal__title">Edit Bill Date</h2>
-            </header>
-            <div class="crm-vx-modal__body">
-              <form id="cb-list-edit-date-form" @submit.prevent="saveBillDate">
-                <label class="form-label" for="cb-list-edit-date">Bill Date</label>
-                <input
-                  id="cb-list-edit-date"
-                  v-model="editDateValue"
-                  type="date"
-                  class="form-control mb-0"
-                  :disabled="editDateBusy"
-                  required
-                />
-              </form>
-            </div>
-            <footer class="crm-vx-modal__footer d-flex gap-2 justify-content-end">
-              <button
-                type="button"
-                class="crm-vx-modal-btn crm-vx-modal-btn--secondary"
-                :disabled="editDateBusy"
-                @click="closeEditDateModal"
-              >
-                Cancel
-              </button>
-              <button
-                type="submit"
-                form="cb-list-edit-date-form"
-                class="crm-vx-modal-btn crm-vx-modal-btn--primary"
-                :disabled="editDateBusy"
-              >
-                {{ editDateBusy ? "Saving…" : "Save" }}
-              </button>
-            </footer>
-          </div>
-        </div>
-      </Transition>
-    </Teleport>
+    <ConfirmModal
+      :open="bulkDeleteOpen"
+      title="Bulk Delete"
+      :message="bulkDeleteMessage"
+      confirm-label="Delete"
+      variant="danger"
+      :busy="bulkBusy"
+      @update:open="(v) => { if (!bulkBusy) bulkDeleteOpen = v; }"
+      @confirm="confirmBulkDelete"
+    />
+
+    <ConfirmModal
+      :open="bulkAddOpen"
+      title="Add to Invoices"
+      :message="bulkAddMessage"
+      confirm-label="Add to Invoices"
+      variant="primary"
+      :busy="bulkBusy"
+      @update:open="(v) => { if (!bulkBusy) bulkAddOpen = v; }"
+      @confirm="confirmBulkAddToInvoices"
+    />
   </div>
 </template>

@@ -16,6 +16,7 @@ class PutAwayReceivingSnapshot extends Model
     protected $fillable = [
         'warehouse_id',
         'computed_at',
+        'refresh_started_at',
         'row_count',
         'status',
         'error_message',
@@ -25,6 +26,7 @@ class PutAwayReceivingSnapshot extends Model
 
     protected $casts = [
         'computed_at' => 'datetime',
+        'refresh_started_at' => 'datetime',
         'row_count' => 'integer',
         'duration_ms' => 'integer',
         'skipped_unresolved_account' => 'integer',

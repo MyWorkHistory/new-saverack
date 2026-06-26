@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use App\Models\PutAwayReceivingSnapshot;
 use App\Services\PutAwayInventoryService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -92,9 +93,12 @@ class PutAwayController extends Controller
         ]);
 
         try {
-            return response()->json($putAway->refreshReceiving());
+            $meta = $putAway->refreshReceiving();
+            $statusCode = ($meta['status'] ?? null) === PutAwayReceivingSnapshot::STATUS_OK ? 200 : 202;
+
+            return response()->json($meta, $statusCode);
         } catch (RuntimeException $e) {
-            return response()->json(['message' => $e->getMessage()], 422);
+            return response()->json(['message' => $e->getMessage()], 503);
         } catch (Throwable $e) {
             report($e);
 

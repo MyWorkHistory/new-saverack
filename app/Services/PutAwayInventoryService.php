@@ -8,6 +8,7 @@ use App\Models\PutAwayReceivingSnapshotRow;
 use App\Models\PutAwaySnapshot;
 use App\Models\PutAwaySnapshotRow;
 use App\Models\ShipHeroInventoryProductIndex;
+use App\Jobs\RefreshPutAwayReceivingSnapshotJob;
 use App\Support\PutAwayRowBuilder;
 use RuntimeException;
 use Throwable;
@@ -118,55 +119,183 @@ class PutAwayInventoryService
         $warehouseId = $this->resolveWarehouseId();
 
         if ($refresh) {
-            $snapshot = $this->rebuildReceivingSnapshot($warehouseId);
-
-            return $this->paginateReceivingSnapshotRows($snapshot, $clientAccountId, $query, $first, $after, $receivingOnly);
+            $this->beginReceivingRefresh($warehouseId);
         }
 
         $snapshot = PutAwayReceivingSnapshot::query()->where('warehouse_id', $warehouseId)->first();
-        if (
-            $snapshot !== null
-            && $snapshot->status === PutAwayReceivingSnapshot::STATUS_OK
-            && (int) $snapshot->row_count > 0
-        ) {
+        if ($snapshot !== null) {
+            $snapshot = $this->resolveStaleRunningReceivingSnapshot($snapshot);
+        }
+
+        if ($snapshot !== null && $snapshot->status === PutAwayReceivingSnapshot::STATUS_RUNNING) {
+            return $this->emptyReceivingListResponse($snapshot, true);
+        }
+
+        if ($snapshot !== null && $snapshot->status === PutAwayReceivingSnapshot::STATUS_OK) {
             return $this->paginateReceivingSnapshotRows($snapshot, $clientAccountId, $query, $first, $after, $receivingOnly);
         }
 
-        return [
-            'rows' => [],
-            'page_info' => [
-                'has_next_page' => false,
-                'end_cursor' => null,
-            ],
-            'meta' => [
-                'computed_at' => $snapshot !== null && $snapshot->computed_at !== null
-                    ? $snapshot->computed_at->toIso8601String()
-                    : null,
-                'stale' => true,
-                'row_count' => 0,
-                'filtered_count' => 0,
-                'status' => $snapshot !== null ? $snapshot->status : 'missing',
-                'error_message' => $snapshot !== null ? $snapshot->error_message : null,
-                'duration_ms' => $snapshot !== null ? $snapshot->duration_ms : null,
-                'source' => 'snapshot',
-                'skipped_unresolved_account' => $snapshot !== null
-                    ? (int) $snapshot->skipped_unresolved_account
-                    : 0,
-            ],
-        ];
+        return $this->emptyReceivingListResponse($snapshot, true);
     }
 
     /**
-     * Rebuild warehouse Receiving snapshot and return first page.
+     * Start async warehouse Receiving refresh (returns immediately).
      *
-     * @return array{rows: list<array<string, mixed>>, page_info: array{has_next_page: bool, end_cursor: string|null}, meta: array<string, mixed>}
+     * @return array<string, mixed>
      */
     public function refreshReceiving(): array
     {
         $warehouseId = $this->resolveWarehouseId();
-        $snapshot = $this->rebuildReceivingSnapshot($warehouseId);
 
-        return $this->paginateReceivingSnapshotRows($snapshot, null, null, self::LIST_PAGE_SIZE, null, true);
+        if ($this->isReceivingRefreshInProgress($warehouseId)) {
+            return $this->receivingRefreshMeta($warehouseId);
+        }
+
+        $this->beginReceivingRefresh($warehouseId);
+
+        return $this->receivingRefreshMeta($warehouseId);
+    }
+
+    public function isReceivingRefreshInProgress(?string $warehouseId = null): bool
+    {
+        $warehouseId = $warehouseId ?? $this->resolveWarehouseId();
+        $snapshot = PutAwayReceivingSnapshot::query()->where('warehouse_id', $warehouseId)->first();
+        if ($snapshot === null || $snapshot->status !== PutAwayReceivingSnapshot::STATUS_RUNNING) {
+            return false;
+        }
+
+        $snapshot = $this->resolveStaleRunningReceivingSnapshot($snapshot);
+
+        return $snapshot->status === PutAwayReceivingSnapshot::STATUS_RUNNING;
+    }
+
+    public function beginReceivingRefresh(?string $warehouseId = null): void
+    {
+        $warehouseId = $warehouseId ?? $this->resolveWarehouseId();
+        if ($this->isReceivingRefreshInProgress($warehouseId)) {
+            return;
+        }
+
+        $this->markReceivingRefreshRunning($warehouseId);
+        try {
+            $this->dispatchReceivingRefreshJob($warehouseId);
+        } catch (Throwable $e) {
+            $this->markReceivingRefreshFailed(
+                $warehouseId,
+                $e->getMessage() !== '' ? $e->getMessage() : 'Put away receiving refresh failed.'
+            );
+            throw $e;
+        }
+    }
+
+    public function markReceivingRefreshRunning(string $warehouseId): PutAwayReceivingSnapshot
+    {
+        $snapshot = PutAwayReceivingSnapshot::query()->firstOrNew(['warehouse_id' => $warehouseId]);
+        $snapshot->status = PutAwayReceivingSnapshot::STATUS_RUNNING;
+        $snapshot->error_message = null;
+        $snapshot->refresh_started_at = now();
+        $snapshot->computed_at = null;
+        $snapshot->duration_ms = null;
+        $snapshot->save();
+
+        if ($snapshot->id !== null) {
+            PutAwayReceivingSnapshotRow::query()
+                ->where('put_away_receiving_snapshot_id', $snapshot->id)
+                ->delete();
+        }
+
+        return $snapshot;
+    }
+
+    public function markReceivingRefreshFailed(string $warehouseId, string $message): void
+    {
+        $snapshot = PutAwayReceivingSnapshot::query()->where('warehouse_id', $warehouseId)->first();
+        if ($snapshot === null) {
+            return;
+        }
+
+        $snapshot->status = PutAwayReceivingSnapshot::STATUS_FAILED;
+        $snapshot->error_message = $message !== '' ? $message : 'Put away receiving refresh failed.';
+        $snapshot->refresh_started_at = null;
+        $snapshot->save();
+    }
+
+    public function runReceivingRefresh(string $warehouseId): void
+    {
+        if (function_exists('set_time_limit')) {
+            @set_time_limit(0);
+        }
+
+        $this->executeReceivingSnapshotRebuild($warehouseId);
+    }
+
+    public function dispatchReceivingRefreshJob(string $warehouseId): void
+    {
+        $mode = strtolower(trim((string) config('services.shiphero.restock_dispatch_mode', 'after_response')));
+
+        if ($mode === 'queue') {
+            $job = new RefreshPutAwayReceivingSnapshotJob($warehouseId);
+            $default = (string) config('queue.default', 'sync');
+            if ($default === 'sync') {
+                $async = $this->restockReports->restockQueueConnection();
+                if ($async === null) {
+                    throw new RuntimeException(
+                        'Put away refresh requires a background queue. Set QUEUE_CONNECTION=database or redis and run: php artisan queue:work database-long --timeout=3700 --tries=1'
+                    );
+                }
+                dispatch($job)->onConnection($async);
+            } else {
+                dispatch($job);
+            }
+
+            return;
+        }
+
+        $wid = $warehouseId;
+        app()->terminating(function () use ($wid) {
+            if (function_exists('fastcgi_finish_request')) {
+                @fastcgi_finish_request();
+            }
+
+            try {
+                $this->runReceivingRefresh($wid);
+            } catch (Throwable $e) {
+                report($e);
+                $this->markReceivingRefreshFailed(
+                    $wid,
+                    $e->getMessage() !== '' ? $e->getMessage() : 'Put away receiving refresh failed.'
+                );
+            }
+        });
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    public function receivingRefreshMeta(?string $warehouseId = null): array
+    {
+        $warehouseId = $warehouseId ?? $this->resolveWarehouseId();
+        $snapshot = PutAwayReceivingSnapshot::query()->where('warehouse_id', $warehouseId)->first();
+        if ($snapshot !== null) {
+            $snapshot = $this->resolveStaleRunningReceivingSnapshot($snapshot);
+        }
+
+        return [
+            'warehouse_id' => $warehouseId,
+            'status' => $snapshot !== null ? $snapshot->status : 'missing',
+            'computed_at' => $snapshot !== null && $snapshot->computed_at !== null
+                ? $snapshot->computed_at->toIso8601String()
+                : null,
+            'row_count' => $snapshot !== null ? (int) $snapshot->row_count : 0,
+            'error_message' => $snapshot !== null ? $snapshot->error_message : null,
+            'duration_ms' => $snapshot !== null ? $snapshot->duration_ms : null,
+            'skipped_unresolved_account' => $snapshot !== null
+                ? (int) $snapshot->skipped_unresolved_account
+                : 0,
+            'refresh_started_at' => $snapshot !== null && $snapshot->refresh_started_at !== null
+                ? $snapshot->refresh_started_at->toIso8601String()
+                : null,
+        ];
     }
 
     /**
@@ -798,18 +927,63 @@ class PutAwayInventoryService
         return $snapshot->computed_at->gte(now()->subMinutes(self::CACHE_TTL_MINUTES));
     }
 
-    private function rebuildReceivingSnapshot(string $warehouseId): PutAwayReceivingSnapshot
+    private function resolveStaleRunningReceivingSnapshot(PutAwayReceivingSnapshot $snapshot): PutAwayReceivingSnapshot
     {
-        if (function_exists('set_time_limit')) {
-            @set_time_limit(0);
+        if ($snapshot->status !== PutAwayReceivingSnapshot::STATUS_RUNNING) {
+            return $snapshot;
         }
 
+        $lastTouch = $snapshot->updated_at ?? $snapshot->refresh_started_at;
+        $stallMinutes = max(3, (int) config('services.shiphero.restock_stall_minutes', 10));
+        if ($lastTouch !== null && $lastTouch->lessThan(now()->subMinutes($stallMinutes))) {
+            $snapshot->status = PutAwayReceivingSnapshot::STATUS_FAILED;
+            $snapshot->error_message = 'Refresh stalled (no progress). Click Refresh to retry. If this keeps happening, set SHIPHERO_RESTOCK_DISPATCH_MODE=queue and run a queue worker.';
+            $snapshot->refresh_started_at = null;
+            $snapshot->save();
+        }
+
+        return $snapshot;
+    }
+
+    /**
+     * @return array{rows: list<array<string, mixed>>, page_info: array{has_next_page: bool, end_cursor: string|null}, meta: array<string, mixed>}
+     */
+    private function emptyReceivingListResponse(?PutAwayReceivingSnapshot $snapshot, bool $stale): array
+    {
+        $status = $snapshot !== null ? $snapshot->status : 'missing';
+
+        return [
+            'rows' => [],
+            'page_info' => [
+                'has_next_page' => false,
+                'end_cursor' => null,
+            ],
+            'meta' => [
+                'computed_at' => $snapshot !== null && $snapshot->computed_at !== null
+                    ? $snapshot->computed_at->toIso8601String()
+                    : null,
+                'stale' => $stale || $status === PutAwayReceivingSnapshot::STATUS_RUNNING,
+                'row_count' => $snapshot !== null ? (int) $snapshot->row_count : 0,
+                'filtered_count' => 0,
+                'status' => $status,
+                'error_message' => $snapshot !== null ? $snapshot->error_message : null,
+                'duration_ms' => $snapshot !== null ? $snapshot->duration_ms : null,
+                'source' => 'snapshot',
+                'skipped_unresolved_account' => $snapshot !== null
+                    ? (int) $snapshot->skipped_unresolved_account
+                    : 0,
+            ],
+        ];
+    }
+
+    private function executeReceivingSnapshotRebuild(string $warehouseId): PutAwayReceivingSnapshot
+    {
         $started = microtime(true);
 
-        $snapshot = PutAwayReceivingSnapshot::query()->firstOrNew(['warehouse_id' => $warehouseId]);
-        $snapshot->status = PutAwayReceivingSnapshot::STATUS_RUNNING;
-        $snapshot->error_message = null;
-        $snapshot->save();
+        $snapshot = PutAwayReceivingSnapshot::query()->where('warehouse_id', $warehouseId)->first();
+        if ($snapshot === null) {
+            $snapshot = $this->markReceivingRefreshRunning($warehouseId);
+        }
 
         try {
             PutAwayReceivingSnapshotRow::query()
@@ -918,6 +1092,7 @@ class PutAwayInventoryService
             $snapshot->status = PutAwayReceivingSnapshot::STATUS_OK;
             $snapshot->duration_ms = (int) round((microtime(true) - $started) * 1000);
             $snapshot->error_message = null;
+            $snapshot->refresh_started_at = null;
             $snapshot->save();
 
             return $snapshot->fresh();
@@ -925,6 +1100,7 @@ class PutAwayInventoryService
             $snapshot->status = PutAwayReceivingSnapshot::STATUS_FAILED;
             $snapshot->error_message = $e->getMessage();
             $snapshot->duration_ms = (int) round((microtime(true) - $started) * 1000);
+            $snapshot->refresh_started_at = null;
             $snapshot->save();
             throw $e;
         }

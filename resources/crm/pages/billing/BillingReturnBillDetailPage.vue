@@ -33,7 +33,7 @@ const canDelete = computed(() => userHasPerm("billing.delete"));
 
 const loading = ref(true);
 const bill = ref(null);
-const actionMenuOpen = ref(false);
+const manageMenuOpen = ref(false);
 const lineMenuOpenId = ref(null);
 const lineMenuPos = ref({ top: 0, left: 0 });
 
@@ -130,8 +130,8 @@ function statusBadgeClass(status) {
 }
 
 function onDocClick(e) {
-  if (!e.target?.closest?.("[data-rb-action]")) actionMenuOpen.value = false;
-  if (!e.target?.closest?.("[data-rb-line-menu]")) lineMenuOpenId.value = null;
+  if (!e.target?.closest?.("[data-rb-manage]")) manageMenuOpen.value = false;
+  if (!e.target?.closest?.("[data-row-actions]")) lineMenuOpenId.value = null;
 }
 
 function placeOverlayMenu(anchorEl, setPos) {
@@ -279,7 +279,7 @@ async function confirmDeleteLine() {
 }
 
 function openEditDateModal() {
-  actionMenuOpen.value = false;
+  manageMenuOpen.value = false;
   editDateValue.value = bill.value?.bill_date || "";
   editDateModalOpen.value = true;
 }
@@ -336,6 +336,7 @@ function closeAddToInvoiceModal() {
 }
 
 async function openAddToInvoiceModal() {
+  manageMenuOpen.value = false;
   selectedInvoiceId.value = "";
   draftInvoices.value = [];
   initAddToInvoiceSelections();
@@ -423,47 +424,58 @@ onUnmounted(() => {
             </RouterLink>
           </p>
         </div>
-        <div
-          v-if="isOpen && canUpdate"
-          class="ms-md-auto d-flex flex-wrap align-items-center gap-2"
-        >
-          <button type="button" class="btn btn-primary btn-sm" @click="openAddToInvoiceModal">
-            Add To Invoice
+        <div class="ms-md-auto position-relative" data-rb-manage>
+          <button
+            type="button"
+            class="btn btn-outline-secondary btn-sm d-inline-flex align-items-center gap-2"
+            @click.stop="manageMenuOpen = !manageMenuOpen"
+          >
+            Manage
+            <svg
+              class="flex-shrink-0"
+              width="14"
+              height="14"
+              fill="none"
+              viewBox="0 0 24 24"
+              stroke="currentColor"
+              stroke-width="2"
+              aria-hidden="true"
+            >
+              <path stroke-linecap="round" stroke-linejoin="round" d="M19 9l-7 7-7-7" />
+            </svg>
           </button>
-          <div class="position-relative" data-rb-action>
-            <button
-              type="button"
-              class="btn btn-outline-secondary btn-sm d-inline-flex align-items-center gap-2"
-              @click.stop="actionMenuOpen = !actionMenuOpen"
-            >
-              Action
-              <svg class="flex-shrink-0" width="14" height="14" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" aria-hidden="true">
-                <path stroke-linecap="round" stroke-linejoin="round" d="M19 9l-7 7-7-7" />
-              </svg>
-            </button>
-            <div
-              v-if="actionMenuOpen"
-              class="staff-row-menu staff-toolbar-bulk-dropdown dropdown-menu show shadow position-absolute end-0 mt-1 p-0 overflow-hidden"
-              style="min-width: 12rem"
-            >
-              <button type="button" class="dropdown-item" @click="openEditDateModal">Edit Bill</button>
-              <button
-                v-if="canDelete"
-                type="button"
-                class="dropdown-item text-danger"
-                @click="actionMenuOpen = false; deleteBillModalOpen = true"
-              >
-                Delete
+          <div
+            v-if="manageMenuOpen"
+            class="staff-row-menu staff-toolbar-bulk-dropdown dropdown-menu show shadow position-absolute end-0 mt-1 p-0 overflow-hidden"
+            style="min-width: 12rem"
+          >
+            <template v-if="isOpen && canUpdate">
+              <button type="button" class="dropdown-item" @click="openEditDateModal">
+                Edit Bill Date
               </button>
-              <RouterLink
-                v-if="bill.invoice_id"
-                :to="`/admin/billing/invoices/${bill.invoice_id}`"
-                class="dropdown-item text-decoration-none"
-                @click="actionMenuOpen = false"
-              >
-                View Invoice
-              </RouterLink>
-            </div>
+              <button type="button" class="dropdown-item" @click="openAddToInvoiceModal">
+                Add To Invoice
+              </button>
+            </template>
+            <RouterLink
+              v-if="bill.invoice_id"
+              :to="`/admin/billing/invoices/${bill.invoice_id}`"
+              class="dropdown-item text-decoration-none"
+              @click="manageMenuOpen = false"
+            >
+              View Invoice
+            </RouterLink>
+            <button
+              v-if="isOpen && canDelete"
+              type="button"
+              class="dropdown-item text-danger"
+              @click="
+                manageMenuOpen = false;
+                deleteBillModalOpen = true;
+              "
+            >
+              Delete Bill
+            </button>
           </div>
         </div>
       </div>
@@ -476,10 +488,10 @@ onUnmounted(() => {
               <button
                 v-if="isOpen && canUpdate"
                 type="button"
-                class="btn btn-outline-secondary btn-sm"
+                class="btn btn-sm btn-primary staff-page-primary"
                 @click="openAddLineModal"
               >
-                Add Line
+                Add To Bill
               </button>
             </div>
             <div class="table-responsive staff-table-wrap">
@@ -490,7 +502,12 @@ onUnmounted(() => {
                     <th class="staff-table-head__th text-end">Qty</th>
                     <th class="staff-table-head__th text-end">Price</th>
                     <th class="staff-table-head__th text-end">Total</th>
-                    <th v-if="isOpen && canUpdate" class="staff-table-head__th text-end" style="width: 3rem" />
+                    <th
+                      v-if="isOpen && canUpdate"
+                      class="staff-table-head__th text-center billing-return-bill-lines-actions-col"
+                    >
+                      Action
+                    </th>
                   </tr>
                 </thead>
                 <tbody>
@@ -504,8 +521,49 @@ onUnmounted(() => {
                     <td class="text-end text-nowrap">{{ item.quantity }}</td>
                     <td class="text-end">{{ formatCents(item.unit_price_cents) }}</td>
                     <td class="text-end fw-semibold">{{ formatCents(item.line_total_cents) }}</td>
-                    <td v-if="isOpen && canUpdate" class="text-end">
-                      <CrmIconRowActions data-rb-line-menu @click="toggleLineMenu(item.id, $event)" />
+                    <td
+                      v-if="isOpen && canUpdate"
+                      class="text-center align-middle billing-return-bill-lines-actions-cell"
+                      @click.stop
+                    >
+                      <div data-row-actions class="position-relative d-inline-block">
+                        <button
+                          type="button"
+                          class="staff-action-btn staff-action-btn--more"
+                          :class="{ 'is-open': lineMenuOpenId === item.id }"
+                          :aria-expanded="lineMenuOpenId === item.id ? 'true' : 'false'"
+                          aria-haspopup="true"
+                          aria-label="Line item actions"
+                          @click.stop="toggleLineMenu(item.id, $event)"
+                        >
+                          <CrmIconRowActions variant="horizontal" />
+                        </button>
+                        <div
+                          v-if="lineMenuOpenId === item.id"
+                          data-row-actions
+                          class="staff-row-menu overflow-hidden"
+                          role="menu"
+                          :style="lineMenuStyle"
+                          @click.stop
+                        >
+                          <button
+                            type="button"
+                            class="staff-row-menu__item"
+                            role="menuitem"
+                            @click="openLineEditFromMenu(item)"
+                          >
+                            Edit
+                          </button>
+                          <button
+                            type="button"
+                            class="staff-row-menu__item staff-row-menu__item--danger"
+                            role="menuitem"
+                            @click="openLineDeleteFromMenu(item)"
+                          >
+                            Delete
+                          </button>
+                        </div>
+                      </div>
                     </td>
                   </tr>
                 </tbody>
@@ -582,33 +640,13 @@ onUnmounted(() => {
       </div>
     </template>
 
-    <Teleport to="body">
-      <div
-        v-if="lineMenuOpenId"
-        data-rb-line-menu
-        class="staff-row-menu staff-toolbar-bulk-dropdown dropdown-menu show shadow p-0 overflow-hidden"
-        :style="lineMenuStyle"
-      >
-        <button type="button" class="dropdown-item" @click="openLineEditFromMenu(bill.items.find((i) => i.id === lineMenuOpenId))">
-          Edit
-        </button>
-        <button
-          type="button"
-          class="dropdown-item text-danger"
-          @click="openLineDeleteFromMenu(bill.items.find((i) => i.id === lineMenuOpenId))"
-        >
-          Delete
-        </button>
-      </div>
-    </Teleport>
-
     <BillingReturnBillLineModal
       v-model:open="addLineModalOpen"
       v-model:line-type="addLineForm.line_type"
       v-model:name="addLineForm.name"
       v-model:quantity="addLineForm.quantity"
       v-model:unit-price="addLineForm.unit_price"
-      title="Add Line"
+      title="Add To Bill"
       submit-label="Add Line"
       :charge-options="chargeOptions"
       :busy="addLineBusy"
@@ -661,7 +699,7 @@ onUnmounted(() => {
         >
           <div class="crm-vx-modal crm-vx-modal--sm" @click.stop>
             <header class="crm-vx-modal__head">
-              <h2 class="crm-vx-modal__title">Edit Bill</h2>
+              <h2 class="crm-vx-modal__title">Edit Bill Date</h2>
             </header>
             <div class="crm-vx-modal__body">
               <label class="form-label" for="rb-edit-date">Bill date</label>
@@ -758,6 +796,25 @@ onUnmounted(() => {
 </template>
 
 <style scoped>
+.billing-return-bill-detail :deep(.table-responsive.staff-table-wrap) {
+  overflow-x: clip;
+  max-width: 100%;
+}
+
+.billing-return-bill-detail :deep(.staff-table-wrap .table.staff-data-table) {
+  width: 100%;
+  min-width: 0;
+  table-layout: fixed;
+}
+
+.billing-return-bill-detail :deep(.table.staff-data-table > thead > tr > th.billing-return-bill-lines-actions-col),
+.billing-return-bill-detail :deep(.table.staff-data-table > tbody > tr > td.billing-return-bill-lines-actions-cell) {
+  text-align: center !important;
+  width: 7rem;
+  min-width: 7rem;
+  max-width: 7rem;
+}
+
 .billing-custom-bill-info {
   display: grid;
   gap: 0.5rem 1rem;

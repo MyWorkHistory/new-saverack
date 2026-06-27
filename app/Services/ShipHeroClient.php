@@ -16,19 +16,20 @@ class ShipHeroClient
     /** Option key for {@see ShipHeroClient::query()}: use this ShipHero refresh token instead of {@see SHIPHERO_REFRESH_TOKEN}. */
     public const OPTION_REFRESH_TOKEN = 'refresh_token';
 
+    /** @var ShipHeroCredentialResolver */
+    private $credentials;
+
+    public function __construct(ShipHeroCredentialResolver $credentials)
+    {
+        $this->credentials = $credentials;
+    }
+
     /**
      * Exchange refresh token for a bearer access token (cached ~20 days).
      */
     public function accessToken(): string
     {
-        $refresh = config('services.shiphero.refresh_token');
-        if (! is_string($refresh) || $refresh === '') {
-            throw new RuntimeException('ShipHero is not configured: set SHIPHERO_REFRESH_TOKEN in .env.');
-        }
-
-        return Cache::remember('shiphero.access_token', now()->addDays(20), function () use ($refresh) {
-            return $this->refreshAccessToken($refresh);
-        });
+        return $this->accessTokenForRefreshToken($this->credentials->resolveRefreshToken());
     }
 
     /**
@@ -89,9 +90,14 @@ class ShipHeroClient
         $refreshOverride = isset($options[self::OPTION_REFRESH_TOKEN])
             ? trim((string) $options[self::OPTION_REFRESH_TOKEN])
             : '';
-        $token = $refreshOverride !== ''
-            ? $this->accessTokenForRefreshToken($refreshOverride)
-            : $this->accessToken();
+        if ($refreshOverride !== '') {
+            $token = $this->accessTokenForRefreshToken($refreshOverride);
+            $credentialSource = 'override';
+        } else {
+            $refresh = $this->credentials->resolveRefreshToken();
+            $credentialSource = $this->credentials->credentialSource();
+            $token = $this->accessTokenForRefreshToken($refresh);
+        }
         $operation = $this->extractOperationName($graphql);
 
         $payload = ['query' => $graphql];
@@ -106,6 +112,7 @@ class ShipHeroClient
                 'operation' => $operation,
                 'attempt' => $attempt,
                 'allow_token_retry' => $allowTokenRetry,
+                'credential_source' => $credentialSource,
             ]);
             try {
                 $response = $this->http()->post($url, [
@@ -142,7 +149,7 @@ class ShipHeroClient
             if ($status === 401 && $allowTokenRetry) {
                 $cacheKey = $refreshOverride !== ''
                     ? 'shiphero.access_token.'.hash('sha256', $refreshOverride)
-                    : 'shiphero.access_token';
+                    : 'shiphero.access_token.'.hash('sha256', $this->credentials->resolveRefreshToken());
                 Cache::forget($cacheKey);
 
                 return $this->query($graphql, $variables, false, $options);

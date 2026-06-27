@@ -156,17 +156,20 @@ class User extends Authenticatable
         'client_account_id',
         'account_user_role',
         'is_account_primary',
+        'shiphero_refresh_token',
     ];
 
     protected $hidden = [
         'password',
         'remember_token',
+        'shiphero_refresh_token',
     ];
 
     protected $casts = [
         'email_verified_at' => 'datetime',
         'last_login_at' => 'datetime',
         'is_account_primary' => 'boolean',
+        'shiphero_refresh_token' => 'encrypted',
     ];
 
     public function roles(): BelongsToMany
@@ -308,6 +311,18 @@ class User extends Authenticatable
         }
 
         return strcasecmp((string) $this->email, (string) $owner) === 0;
+    }
+
+    public function isCrmStaffUser(): bool
+    {
+        return $this->client_account_id === null;
+    }
+
+    public function shipheroRefreshToken(): ?string
+    {
+        $token = trim((string) ($this->shiphero_refresh_token ?? ''));
+
+        return $token !== '' ? $token : null;
     }
 
     /**

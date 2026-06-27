@@ -33,7 +33,8 @@ const canDelete = computed(() => userHasPerm("billing.delete"));
 
 const loading = ref(true);
 const bill = ref(null);
-const manageMenuOpen = ref(false);
+const actionMenuOpen = ref(false);
+const actionMenuRect = ref({ top: 0, left: 0 });
 const lineMenuOpenId = ref(null);
 const lineMenuPos = ref({ top: 0, left: 0 });
 
@@ -84,6 +85,8 @@ const billTotalSubtext = computed(() => {
 
 const MENU_W = 128;
 const MENU_H = 96;
+const ACTION_MENU_W = 168;
+const ACTION_MENU_H = 120;
 
 const lineMenuStyle = computed(() => ({
   top: `${lineMenuPos.value.top}px`,
@@ -130,8 +133,34 @@ function statusBadgeClass(status) {
 }
 
 function onDocClick(e) {
-  if (!e.target?.closest?.("[data-rb-manage]")) manageMenuOpen.value = false;
+  if (!e.target?.closest?.("[data-rb-action]")) actionMenuOpen.value = false;
   if (!e.target?.closest?.("[data-row-actions]")) lineMenuOpenId.value = null;
+}
+
+function placeActionMenu(anchorEl, rectRef, width, height) {
+  if (!(anchorEl instanceof HTMLElement)) return;
+  const rect = anchorEl.getBoundingClientRect();
+  let top = rect.bottom + 4;
+  let left = rect.right - width;
+  left = Math.max(8, Math.min(left, window.innerWidth - width - 8));
+  if (top + height > window.innerHeight - 8) {
+    top = Math.max(8, rect.top - height - 4);
+  }
+  rectRef.value = { top, left };
+}
+
+async function toggleActionMenu(event) {
+  event?.stopPropagation?.();
+  if (actionMenuOpen.value) {
+    actionMenuOpen.value = false;
+    return;
+  }
+  const btn = event?.currentTarget;
+  actionMenuOpen.value = true;
+  await nextTick();
+  requestAnimationFrame(() => {
+    placeActionMenu(btn, actionMenuRect, ACTION_MENU_W, ACTION_MENU_H);
+  });
 }
 
 function placeOverlayMenu(anchorEl, setPos) {
@@ -279,7 +308,7 @@ async function confirmDeleteLine() {
 }
 
 function openEditDateModal() {
-  manageMenuOpen.value = false;
+  actionMenuOpen.value = false;
   editDateValue.value = bill.value?.bill_date || "";
   editDateModalOpen.value = true;
 }
@@ -336,7 +365,6 @@ function closeAddToInvoiceModal() {
 }
 
 async function openAddToInvoiceModal() {
-  manageMenuOpen.value = false;
   selectedInvoiceId.value = "";
   draftInvoices.value = [];
   initAddToInvoiceSelections();
@@ -424,57 +452,39 @@ onUnmounted(() => {
             </RouterLink>
           </p>
         </div>
-        <div class="ms-md-auto position-relative" data-rb-manage>
+        <div
+          v-if="isOpen && canUpdate"
+          class="ms-md-auto d-flex flex-wrap align-items-center gap-2"
+        >
           <button
             type="button"
-            class="btn btn-outline-secondary btn-sm d-inline-flex align-items-center gap-2"
-            @click.stop="manageMenuOpen = !manageMenuOpen"
+            class="btn btn-primary btn-sm staff-page-primary fw-semibold"
+            @click="openAddToInvoiceModal"
           >
-            Manage
-            <svg
-              class="flex-shrink-0"
-              width="14"
-              height="14"
-              fill="none"
-              viewBox="0 0 24 24"
-              stroke="currentColor"
-              stroke-width="2"
-              aria-hidden="true"
-            >
-              <path stroke-linecap="round" stroke-linejoin="round" d="M19 9l-7 7-7-7" />
-            </svg>
+            Add To Invoice
           </button>
-          <div
-            v-if="manageMenuOpen"
-            class="staff-row-menu staff-toolbar-bulk-dropdown dropdown-menu show shadow position-absolute end-0 mt-1 p-0 overflow-hidden"
-            style="min-width: 12rem"
-          >
-            <template v-if="isOpen && canUpdate">
-              <button type="button" class="dropdown-item" @click="openEditDateModal">
-                Edit Bill Date
-              </button>
-              <button type="button" class="dropdown-item" @click="openAddToInvoiceModal">
-                Add To Invoice
-              </button>
-            </template>
-            <RouterLink
-              v-if="bill.invoice_id"
-              :to="`/admin/billing/invoices/${bill.invoice_id}`"
-              class="dropdown-item text-decoration-none"
-              @click="manageMenuOpen = false"
-            >
-              View Invoice
-            </RouterLink>
+          <div data-rb-action class="position-relative">
             <button
-              v-if="isOpen && canDelete"
               type="button"
-              class="dropdown-item text-danger"
-              @click="
-                manageMenuOpen = false;
-                deleteBillModalOpen = true;
-              "
+              class="btn btn-outline-secondary btn-sm fw-semibold d-inline-flex align-items-center gap-2"
+              :class="{ 'is-open': actionMenuOpen }"
+              aria-haspopup="true"
+              :aria-expanded="actionMenuOpen ? 'true' : 'false'"
+              @click.stop="toggleActionMenu"
             >
-              Delete Bill
+              Action
+              <svg
+                class="flex-shrink-0"
+                width="14"
+                height="14"
+                fill="none"
+                viewBox="0 0 24 24"
+                stroke="currentColor"
+                stroke-width="2"
+                aria-hidden="true"
+              >
+                <path stroke-linecap="round" stroke-linejoin="round" d="M19 9l-7 7-7-7" />
+              </svg>
             </button>
           </div>
         </div>
@@ -639,6 +649,42 @@ onUnmounted(() => {
         </div>
       </div>
     </template>
+
+    <Teleport to="body">
+      <div
+        v-if="actionMenuOpen"
+        data-rb-action
+        class="staff-row-menu fixed z-[300] overflow-hidden"
+        role="menu"
+        :style="{ top: `${actionMenuRect.top}px`, left: `${actionMenuRect.left}px` }"
+        @click.stop
+      >
+        <button type="button" class="staff-row-menu__item" role="menuitem" @click="openEditDateModal">
+          Edit Bill Date
+        </button>
+        <RouterLink
+          v-if="bill?.invoice_id"
+          :to="`/admin/billing/invoices/${bill.invoice_id}`"
+          class="staff-row-menu__item text-decoration-none text-body"
+          role="menuitem"
+          @click="actionMenuOpen = false"
+        >
+          View Invoice
+        </RouterLink>
+        <button
+          v-if="canDelete"
+          type="button"
+          class="staff-row-menu__item staff-row-menu__item--danger"
+          role="menuitem"
+          @click="
+            actionMenuOpen = false;
+            deleteBillModalOpen = true;
+          "
+        >
+          Delete Bill
+        </button>
+      </div>
+    </Teleport>
 
     <BillingReturnBillLineModal
       v-model:open="addLineModalOpen"

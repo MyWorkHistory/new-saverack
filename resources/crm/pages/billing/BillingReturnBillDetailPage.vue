@@ -466,7 +466,7 @@ onUnmounted(() => {
           <div data-rb-action class="position-relative">
             <button
               type="button"
-              class="btn btn-outline-secondary btn-sm fw-semibold d-inline-flex align-items-center gap-2"
+              class="btn btn-outline-secondary btn-sm orders-toolbar-outline-btn fw-semibold d-inline-flex align-items-center gap-2"
               :class="{ 'is-open': actionMenuOpen }"
               aria-haspopup="true"
               :aria-expanded="actionMenuOpen ? 'true' : 'false'"

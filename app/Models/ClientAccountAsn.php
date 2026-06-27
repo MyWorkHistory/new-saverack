@@ -92,4 +92,9 @@ class ClientAccountAsn extends Model
     {
         return $this->belongsTo(CustomBill::class, 'custom_bill_id');
     }
+
+    public function asnBill(): BelongsTo
+    {
+        return $this->belongsTo(AsnBill::class, 'asn_bill_id');
+    }
 }

@@ -387,6 +387,87 @@ class InvoiceService
         });
     }
 
+    public function addOrMergeReceivingLine(Invoice $invoice, array $item, ?User $actor): Invoice
+    {
+        if ($invoice->isVoid()) {
+            throw new \RuntimeException('Cannot add items to a void invoice.');
+        }
+        if ($invoice->status !== Invoice::STATUS_DRAFT) {
+            throw new \RuntimeException('ASN bill lines can only be added to draft invoices.');
+        }
+
+        return DB::transaction(function () use ($invoice, $item, $actor) {
+            $invoice->refresh();
+            $item = $this->normalizeCreditItemMoney($item);
+            $displayName = trim((string) ($item['display_name'] ?? $item['description'] ?? ''));
+            if ($displayName === '') {
+                $displayName = 'Receiving';
+            }
+            $item['display_name'] = $displayName;
+            $item['description'] = (string) ($item['description'] ?? $displayName);
+            $item['category'] = InvoiceLineCategory::RECEIVING;
+
+            $incomingQty = (float) ($item['quantity'] ?? 1);
+            $incomingTotal = (int) ($item['line_total_cents'] ?? 0);
+            $incomingUnit = (int) ($item['unit_price_cents'] ?? 0);
+            $incomingMeta = is_array($item['metadata'] ?? null) ? $item['metadata'] : [];
+            $breakdownEntry = array_merge($incomingMeta, [
+                'quantity' => $incomingQty,
+                'line_total_cents' => $incomingTotal,
+                'unit_price_cents' => $incomingUnit,
+            ]);
+
+            $existing = $invoice->items()
+                ->where('category', InvoiceLineCategory::RECEIVING)
+                ->get()
+                ->first(function ($row) use ($displayName) {
+                    $rowName = trim((string) ($row->display_name ?: $row->description ?: ''));
+
+                    return strcasecmp($rowName, $displayName) === 0;
+                });
+
+            if ($existing !== null) {
+                $meta = is_array($existing->metadata) ? $existing->metadata : [];
+                $breakdown = is_array($meta['breakdown'] ?? null) ? $meta['breakdown'] : [];
+                $breakdown[] = $breakdownEntry;
+                $newQty = (float) $existing->quantity + $incomingQty;
+                $newTotal = (int) $existing->line_total_cents + $incomingTotal;
+                $newUnit = $newQty != 0.0 ? (int) round($newTotal / $newQty) : (int) $existing->unit_price_cents;
+                $meta['breakdown'] = $breakdown;
+                $meta['source'] = 'asn_bill';
+
+                $existing->fill([
+                    'quantity' => $newQty,
+                    'unit_price_cents' => $newUnit,
+                    'line_total_cents' => $newTotal,
+                    'metadata' => $meta,
+                    'group_key' => $item['group_key'] ?? $existing->group_key,
+                    'subtype' => $item['subtype'] ?? $existing->subtype,
+                ]);
+                $existing->save();
+            } else {
+                $item['metadata'] = array_merge($incomingMeta, [
+                    'breakdown' => [$breakdownEntry],
+                ]);
+                if (! isset($item['group_key']) || trim((string) $item['group_key']) === '') {
+                    $item['group_key'] = 'receiving:'.strtolower(preg_replace('/[^a-z0-9]+/i', '_', $displayName) ?: 'line');
+                }
+                $order = (int) $invoice->items()->max('sort_order') + 1;
+                $this->insertInvoiceItemRow($invoice, $order, $item);
+            }
+
+            $from = $invoice->status;
+            $this->recalculateTotals($invoice->refresh());
+            $invoice->save();
+            $this->logHistory($invoice, $actor, 'item_added', $from, $invoice->status, [
+                'event_type' => InvoiceHistoryEventType::LINE_ADD,
+                'history_message' => 'Added ASN bill line item.',
+            ]);
+
+            return $invoice->fresh(['items', 'clientAccount']);
+        });
+    }
+
     public function addCcFee(Invoice $invoice, string $label, ?User $actor): Invoice
     {
         $invoice->loadMissing('items', 'clientAccount');
@@ -1452,7 +1533,14 @@ class InvoiceService
                 if ($unitRate === 0 && $qty != 0.0 && $total !== 0) {
                     $unitRate = (int) round($total / $qty);
                 }
-                $receiving[$key]['items'][] = $this->detailLeafRow($item, 'Receiving', $rawName, $unitRate, $total);
+                $breakdownLeaves = $this->detailLeafRowsFromMetadataBreakdown($item, 'Receiving', $rawName);
+                if ($breakdownLeaves !== []) {
+                    foreach ($breakdownLeaves as $leaf) {
+                        $receiving[$key]['items'][] = $leaf;
+                    }
+                } else {
+                    $receiving[$key]['items'][] = $this->detailLeafRow($item, 'Receiving', $rawName, $unitRate, $total);
+                }
                 $receiving[$key]['qty'] += $qty;
                 $receiving[$key]['total'] += $total;
             } elseif ($category === InvoiceLineCategory::AD_HOC || $category === 'ad hoc') {
@@ -1829,6 +1917,12 @@ class InvoiceService
         );
 
         $orderNumber = $this->extractOrderNumber($item->metadata);
+        if (($orderNumber === null || $orderNumber === '') && is_array($item->metadata)) {
+            $asnNum = trim((string) ($item->metadata['asn_number'] ?? ''));
+            if ($asnNum !== '') {
+                $orderNumber = $asnNum;
+            }
+        }
         if (($orderNumber === null || $orderNumber === '') && $isStorage) {
             $orderNumber = $this->extractStorageLocationId($item->description)
                 ?? $this->extractStorageLocationId($item->display_name);
@@ -1896,6 +1990,58 @@ class InvoiceService
         $value = trim($value);
 
         return $value !== '' ? $value : null;
+    }
+
+    /**
+     * Expand merged invoice line metadata breakdown into staff detail rows (ASN bills, etc.).
+     *
+     * @return list<array<string, mixed>>
+     */
+    private function detailLeafRowsFromMetadataBreakdown(InvoiceItem $item, string $type, string $name): array
+    {
+        $meta = is_array($item->metadata) ? $item->metadata : [];
+        $breakdown = is_array($meta['breakdown'] ?? null) ? $meta['breakdown'] : [];
+        if ($breakdown === []) {
+            return [];
+        }
+
+        $leaves = [];
+        foreach ($breakdown as $idx => $entry) {
+            if (! is_array($entry)) {
+                continue;
+            }
+            $qty = (float) ($entry['quantity'] ?? 0);
+            $total = (int) ($entry['line_total_cents'] ?? 0);
+            $unitRate = (int) ($entry['unit_price_cents'] ?? 0);
+            if ($unitRate === 0 && $qty != 0.0 && $total !== 0) {
+                $unitRate = (int) round($total / $qty);
+            }
+            $orderNumber = $this->extractOrderNumber($entry);
+            if (($orderNumber === null || $orderNumber === '') && ! empty($entry['asn_number'])) {
+                $orderNumber = trim((string) $entry['asn_number']);
+            }
+
+            $leaves[] = [
+                'id' => $item->id.'-bd-'.$idx,
+                'name' => $name,
+                'type' => $type,
+                'qty' => $qty,
+                'price_cents' => $unitRate,
+                'total_cents' => $total,
+                'display_name' => $item->display_name,
+                'description' => $item->description,
+                'sku' => $item->sku,
+                'service_code' => $item->service_code,
+                'group_key' => $item->group_key,
+                'category' => $item->category,
+                'subtype' => $item->subtype,
+                'unit' => $item->unit,
+                'metadata' => $entry,
+                'order_number' => $orderNumber,
+            ];
+        }
+
+        return $leaves;
     }
 
     private function extractStorageLocationId(?string $text): ?string

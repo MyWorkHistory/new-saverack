@@ -25,6 +25,7 @@ use App\Http\Controllers\Api\PortalOnboardingController;
 use App\Http\Controllers\Api\PortalProfileController;
 use App\Http\Controllers\Api\PricingFeeTemplateController;
 use App\Http\Controllers\Api\ReturnBillController;
+use App\Http\Controllers\Api\AsnBillController;
 use App\Http\Controllers\Api\PutAwayController;
 use App\Http\Controllers\Api\UserController;
 use App\Http\Controllers\Api\WebmasterTaskController;
@@ -78,6 +79,18 @@ Route::middleware('auth:sanctum')->group(function () {
             Route::post('/{returnBill}/items', [ReturnBillController::class, 'storeItem']);
             Route::put('/{returnBill}/items/{item}', [ReturnBillController::class, 'updateItem']);
             Route::delete('/{returnBill}/items/{item}', [ReturnBillController::class, 'destroyItem']);
+        });
+
+        Route::prefix('asn-bills')->group(function () {
+            Route::get('/lines', [AsnBillController::class, 'lines']);
+            Route::get('/{asnBill}', [AsnBillController::class, 'show']);
+            Route::patch('/{asnBill}', [AsnBillController::class, 'update']);
+            Route::delete('/{asnBill}', [AsnBillController::class, 'destroy']);
+            Route::get('/{asnBill}/draft-invoices', [AsnBillController::class, 'draftInvoices']);
+            Route::post('/{asnBill}/add-to-invoice', [AsnBillController::class, 'addToInvoice']);
+            Route::post('/{asnBill}/items', [AsnBillController::class, 'storeItem']);
+            Route::put('/{asnBill}/items/{item}', [AsnBillController::class, 'updateItem']);
+            Route::delete('/{asnBill}/items/{item}', [AsnBillController::class, 'destroyItem']);
         });
 
         Route::prefix('custom-bills')->group(function () {
@@ -222,6 +235,9 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::post('/{asn}/lines/{line}/receive-override', [AdminAsnController::class, 'receiveOverride'])->middleware('can:inventory.view');
         Route::post('/{asn}/lines/{line}/reject-override', [AdminAsnController::class, 'rejectOverride'])->middleware('can:inventory.view');
         Route::patch('/{asn}/lines/{line}/specs', [AdminAsnController::class, 'updateLineSpecs'])->middleware('can:inventory.view');
+        Route::post('/{asn}/bill-items', [AdminAsnController::class, 'storeBillItem'])->middleware('can:inventory.view');
+        Route::put('/{asn}/bill-items/{item}', [AdminAsnController::class, 'updateBillItem'])->middleware('can:inventory.view');
+        Route::delete('/{asn}/bill-items/{item}', [AdminAsnController::class, 'destroyBillItem'])->middleware('can:inventory.view');
     });
 
     Route::prefix('admin/put-away')->group(function () {

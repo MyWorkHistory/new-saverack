@@ -7,11 +7,12 @@ use App\Models\ClientAccount;
 use App\Models\ClientAccountAsn;
 use App\Models\ClientAccountAsnLine;
 use App\Models\ClientAccountAsnTracking;
-use App\Models\CustomBill;
-use App\Models\PricingFeeTemplate;
+use App\Models\AsnBill;
+use App\Models\AsnBillItem;
 use App\Models\User;
+use App\Services\AsnBillService;
 use App\Services\AsnReceivingService;
-use App\Services\CustomBillService;
+use App\Support\Billing\AsnBillChargeCatalog;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -24,13 +25,13 @@ class AdminAsnController extends Controller
     /** @var AsnReceivingService */
     private $receiving;
 
-    /** @var CustomBillService */
-    private $customBills;
+    /** @var AsnBillService */
+    private $asnBills;
 
-    public function __construct(AsnReceivingService $receiving, CustomBillService $customBills)
+    public function __construct(AsnReceivingService $receiving, AsnBillService $asnBills)
     {
         $this->receiving = $receiving;
-        $this->customBills = $customBills;
+        $this->asnBills = $asnBills;
     }
 
     private function assertStaff(Request $request): void
@@ -113,7 +114,11 @@ class AdminAsnController extends Controller
             'warehouse_notes' => $asn->warehouse_notes,
             'non_compliant_fee' => $asn->non_compliant_fee,
             'custom_bill_id' => $asn->custom_bill_id,
-            'receiving_fees' => $this->receivingFeeRows(),
+            'asn_bill_id' => $asn->asn_bill_id,
+            'asn_bill_lines' => $this->asnBills->linesForAsn($asn),
+            'asn_bill_charge_options' => $asn->clientAccount
+                ? AsnBillChargeCatalog::optionsForAccount($asn->clientAccount)
+                : [],
             'created_at' => optional($asn->created_at)->toIso8601String(),
             'updated_at' => optional($asn->updated_at)->toIso8601String(),
             'lines' => $asn->lines->map(fn (ClientAccountAsnLine $l) => $this->receiving->serializeLine($l))->values()->all(),
@@ -129,28 +134,6 @@ class AdminAsnController extends Controller
                 'sort_order' => $v->sort_order,
             ])->values()->all(),
         ];
-    }
-
-    /**
-     * @return list<array<string, mixed>>
-     */
-    private function receivingFeeRows(): array
-    {
-        return PricingFeeTemplate::query()
-            ->where('category', PricingFeeTemplate::CATEGORY_RECEIVING)
-            ->orderBy('sort_order')
-            ->orderBy('id')
-            ->get()
-            ->map(function (PricingFeeTemplate $template) {
-                return [
-                    'id' => $template->id,
-                    'name' => $template->name,
-                    'description' => $template->description,
-                    'amount' => 0.0,
-                ];
-            })
-            ->values()
-            ->all();
     }
 
     public function summary(Request $request): JsonResponse
@@ -434,32 +417,96 @@ class AdminAsnController extends Controller
             }
 
             if ($fee > 0) {
-                Gate::authorize('create', CustomBill::class);
+                Gate::authorize('create', AsnBill::class);
+                $asn->refresh();
                 $feeCents = (int) round($fee * 100);
-                $bill = $this->customBills->create(
-                    [
-                        'client_account_id' => $clientAccountId,
-                        'bill_date' => now()->toDateString(),
-                    ],
-                    [
-                        [
-                            'line_type' => AsnReceivingService::receivingBillLineType(),
-                            'name' => AsnReceivingService::nonCompliantBillItemName($asn),
-                            'quantity' => 1,
-                            'unit_price_cents' => $feeCents,
-                            'sku' => null,
-                        ],
-                    ],
-                    $request->user()
-                );
-                $asn->custom_bill_id = $bill->id;
-                $asn->save();
+                $bill = $this->asnBills->findOrCreateOpenBillForAsn($asn, $request->user());
+                $this->asnBills->addItem($bill, [
+                    'line_type' => AsnBill::LINE_NON_COMPLIANT,
+                    'name' => AsnReceivingService::nonCompliantBillItemName($asn),
+                    'quantity' => 1,
+                    'unit_price_cents' => $feeCents,
+                ], $request->user());
             }
 
             return $asn->fresh(['lines', 'trackings', 'vendorLines', 'clientAccount']);
         });
 
         return response()->json($this->serializeAsn($asn), 201);
+    }
+
+    public function storeBillItem(Request $request, ClientAccountAsn $asn): JsonResponse
+    {
+        $this->assertStaff($request);
+        $this->authorizeAsn($request, $asn);
+        Gate::authorize('create', AsnBill::class);
+
+        $validated = $request->validate([
+            'line_type' => ['required', 'string', Rule::in([
+                AsnBill::LINE_RECEIVING_PER_BOX,
+                AsnBill::LINE_RECEIVING_PER_PALLET,
+                AsnBill::LINE_RECEIVING_PER_ITEM,
+                AsnBill::LINE_CUSTOM_HOURLY_WORK,
+                AsnBill::LINE_NON_COMPLIANT,
+            ])],
+            'name' => ['nullable', 'string', 'max:255'],
+            'quantity' => ['required', 'numeric', 'min:0.0001'],
+            'unit_price_cents' => ['nullable', 'integer', 'min:0'],
+            'unit_price' => ['nullable', 'numeric', 'min:0'],
+        ]);
+
+        $this->asnBills->addItemForAsn($asn, $validated, $request->user());
+
+        return response()->json($this->serializeAsn($asn->fresh(['lines', 'trackings', 'vendorLines', 'clientAccount'])));
+    }
+
+    public function updateBillItem(Request $request, ClientAccountAsn $asn, AsnBillItem $item): JsonResponse
+    {
+        $this->assertStaff($request);
+        $this->authorizeAsn($request, $asn);
+        $this->assertBillItemBelongs($asn, $item);
+
+        $bill = AsnBill::query()->findOrFail($asn->asn_bill_id);
+        Gate::authorize('update', $bill);
+
+        $validated = $request->validate([
+            'line_type' => ['required', 'string', Rule::in([
+                AsnBill::LINE_RECEIVING_PER_BOX,
+                AsnBill::LINE_RECEIVING_PER_PALLET,
+                AsnBill::LINE_RECEIVING_PER_ITEM,
+                AsnBill::LINE_CUSTOM_HOURLY_WORK,
+                AsnBill::LINE_NON_COMPLIANT,
+            ])],
+            'name' => ['nullable', 'string', 'max:255'],
+            'quantity' => ['required', 'numeric', 'min:0.0001'],
+            'unit_price_cents' => ['nullable', 'integer', 'min:0'],
+            'unit_price' => ['nullable', 'numeric', 'min:0'],
+        ]);
+
+        $this->asnBills->updateItem($bill, $item, $validated, $request->user());
+
+        return response()->json($this->serializeAsn($asn->fresh(['lines', 'trackings', 'vendorLines', 'clientAccount'])));
+    }
+
+    public function destroyBillItem(Request $request, ClientAccountAsn $asn, AsnBillItem $item): JsonResponse
+    {
+        $this->assertStaff($request);
+        $this->authorizeAsn($request, $asn);
+        $this->assertBillItemBelongs($asn, $item);
+
+        $bill = AsnBill::query()->findOrFail($asn->asn_bill_id);
+        Gate::authorize('update', $bill);
+
+        $this->asnBills->deleteItem($bill, $item, $request->user());
+
+        return response()->json($this->serializeAsn($asn->fresh(['lines', 'trackings', 'vendorLines', 'clientAccount'])));
+    }
+
+    private function assertBillItemBelongs(ClientAccountAsn $asn, AsnBillItem $item): void
+    {
+        if ($asn->asn_bill_id === null || (int) $item->asn_bill_id !== (int) $asn->asn_bill_id) {
+            abort(404);
+        }
     }
 
     private function assertLineBelongs(ClientAccountAsn $asn, ClientAccountAsnLine $line): void

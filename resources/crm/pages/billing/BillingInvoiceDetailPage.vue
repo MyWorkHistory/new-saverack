@@ -427,6 +427,12 @@ const clientAccountDetailHref = computed(() => {
   return `/admin/clients/accounts/${encodeURIComponent(String(id))}`;
 });
 
+function breakdownReferenceValue(row) {
+  const asn = String(row?.metadata?.asn_number || "").trim();
+  if (asn) return asn;
+  return String(row?.order_number || "").trim() || "—";
+}
+
 function formatQtyDisplay(v) {
   const n = Number(v);
   if (!Number.isFinite(n)) return "0.000";
@@ -515,12 +521,30 @@ const selectedTableRow = computed(() => {
 });
 
 const selectedTableRowDetails = computed(() => selectedTableRow.value?.details || []);
-const selectedBreakdownOrderColumnLabel = computed(() =>
-  String(selectedTableRow.value?.type || "").toLowerCase() === "storage" ? "Location ID" : "Order #",
-);
-const groupEditOrderColumnLabel = computed(() =>
-  String(groupEditTarget.value?.type || "").toLowerCase() === "storage" ? "Location ID" : "Order #",
-);
+const selectedBreakdownOrderColumnLabel = computed(() => {
+  const type = String(selectedTableRow.value?.type || "").toLowerCase();
+  if (type === "storage") return "Location ID";
+  const details = selectedTableRowDetails.value;
+  if (
+    type === "receiving" &&
+    details.some((d) => String(d?.metadata?.source || "") === "asn_bill" || String(d?.metadata?.asn_number || "").trim())
+  ) {
+    return "ASN #";
+  }
+  return "Order #";
+});
+const groupEditOrderColumnLabel = computed(() => {
+  const type = String(groupEditTarget.value?.type || "").toLowerCase();
+  if (type === "storage") return "Location ID";
+  const details = Array.isArray(groupEditTarget.value?.details) ? groupEditTarget.value.details : [];
+  if (
+    type === "receiving" &&
+    details.some((d) => String(d?.metadata?.source || "") === "asn_bill" || String(d?.metadata?.asn_number || "").trim())
+  ) {
+    return "ASN #";
+  }
+  return "Order #";
+});
 const lineMenuStyle = computed(() => ({
   position: "fixed",
   top: `${lineMenuPos.value.top}px`,
@@ -2755,7 +2779,7 @@ function onDocKeydown(e) {
                           {{ row.name }}
                         </td>
                         <td>{{ row.type }}</td>
-                        <td class="text-end text-nowrap">{{ row.order_number || "—" }}</td>
+                        <td class="text-end text-nowrap">{{ breakdownReferenceValue(row) }}</td>
                         <td class="text-end text-nowrap">{{ formatQtyDisplay(row.qty) }}</td>
                         <td class="text-end">{{ formatCents(row.price_cents, invoice.currency) }}</td>
                         <td class="text-end">{{ formatCents(row.total_cents, invoice.currency) }}</td>

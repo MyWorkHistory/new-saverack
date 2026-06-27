@@ -29,8 +29,10 @@ import BillingInvoicesListPage from "../pages/billing/BillingInvoicesListPage.vu
 import BillingInvoiceDetailPage from "../pages/billing/BillingInvoiceDetailPage.vue";
 import BillingCustomBillsListPage from "../pages/billing/BillingCustomBillsListPage.vue";
 import BillingReturnBillsListPage from "../pages/billing/BillingReturnBillsListPage.vue";
+import BillingAsnBillsListPage from "../pages/billing/BillingAsnBillsListPage.vue";
 import BillingCustomBillDetailPage from "../pages/billing/BillingCustomBillDetailPage.vue";
 import BillingReturnBillDetailPage from "../pages/billing/BillingReturnBillDetailPage.vue";
+import BillingAsnBillDetailPage from "../pages/billing/BillingAsnBillDetailPage.vue";
 import InventoryOnDemandPage from "../pages/inventory/InventoryOnDemandPage.vue";
 import InventoryRestockPage from "../pages/inventory/InventoryRestockPage.vue";
 import InventoryRestockBetaPage from "../pages/inventory/InventoryRestockBetaPage.vue";
@@ -126,6 +128,14 @@ const meta = {
   billingReturnBillDetail: {
     title: "Save Rack | Return Bill",
     description: "Return bill detail.",
+  },
+  billingAsnBills: {
+    title: "Save Rack | ASN Bills",
+    description: "Receiving fee lines for ASNs with billable charges.",
+  },
+  billingAsnBillDetail: {
+    title: "Save Rack | ASN Bill",
+    description: "ASN bill detail.",
   },
   inventory: {
     title: "Save Rack | Products",
@@ -425,6 +435,19 @@ const routes = [
     component: BillingReturnBillDetailPage,
     props: true,
     meta: meta.billingReturnBillDetail,
+  },
+  {
+    path: "/admin/billing/asn-bills",
+    name: "billing-asn-bills",
+    component: BillingAsnBillsListPage,
+    meta: meta.billingAsnBills,
+  },
+  {
+    path: "/admin/billing/asn-bills/:id",
+    name: "billing-asn-bill-detail",
+    component: BillingAsnBillDetailPage,
+    props: true,
+    meta: meta.billingAsnBillDetail,
   },
   { path: "/admin/billing", redirect: "/admin/billing/summary" },
   {

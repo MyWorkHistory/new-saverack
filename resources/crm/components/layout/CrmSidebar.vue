@@ -134,6 +134,7 @@ function navActive(mode) {
   if (mode === "billing-invoices") return p.startsWith("/admin/billing/invoices");
   if (mode === "billing-custom-bills") return p.startsWith("/admin/billing/custom-bills");
   if (mode === "billing-return-bills") return p.startsWith("/admin/billing/return-bills");
+  if (mode === "billing-asn-bills") return p.startsWith("/admin/billing/asn-bills");
   return false;
 }
 
@@ -788,6 +789,16 @@ function collapseNav() {
                     @click="closeMobile"
                   >
                     Custom Bills
+                  </RouterLink>
+                </li>
+                <li>
+                  <RouterLink
+                    to="/admin/billing/asn-bills"
+                    class="vx-nav-link vx-nav-sublink"
+                    :class="{ 'vx-nav-link--active': navActive('billing-asn-bills') }"
+                    @click="closeMobile"
+                  >
+                    ASN Bills
                   </RouterLink>
                 </li>
                 <li>

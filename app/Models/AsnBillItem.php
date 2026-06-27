@@ -1,0 +1,32 @@
+<?php
+
+namespace App\Models;
+
+use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\BelongsTo;
+
+class AsnBillItem extends Model
+{
+    protected $fillable = [
+        'asn_bill_id',
+        'line_type',
+        'name',
+        'quantity',
+        'unit_price_cents',
+        'line_total_cents',
+        'metadata',
+        'sort_order',
+    ];
+
+    protected $casts = [
+        'quantity' => 'float',
+        'unit_price_cents' => 'integer',
+        'line_total_cents' => 'integer',
+        'metadata' => 'array',
+    ];
+
+    public function asnBill(): BelongsTo
+    {
+        return $this->belongsTo(AsnBill::class);
+    }
+}

@@ -6,6 +6,7 @@ use App\Models\ClientAccount;
 use App\Models\ClientAccountAsn;
 use App\Models\ClientAccountAsnLine;
 use App\Models\ClientAccountAsnTracking;
+use App\Models\AsnBill;
 use App\Models\CustomBill;
 use App\Models\Permission;
 use App\Models\User;
@@ -178,11 +179,13 @@ class AdminAsnReceivingTest extends TestCase
             'id' => $id,
             'status' => ClientAccountAsn::STATUS_NON_COMPLIANT,
             'custom_bill_id' => null,
+            'asn_bill_id' => null,
         ]);
         $this->assertSame(0, CustomBill::query()->count());
+        $this->assertSame(0, AsnBill::query()->count());
     }
 
-    public function test_non_compliant_asn_with_fee_creates_custom_bill(): void
+    public function test_non_compliant_asn_with_fee_creates_asn_bill(): void
     {
         $account = $this->account();
         $staff = $this->staffUser(['billing.create']);
@@ -198,13 +201,17 @@ class AdminAsnReceivingTest extends TestCase
         ])->assertCreated();
 
         $asnId = (int) $response->json('id');
-        $billId = (int) $response->json('custom_bill_id');
+        $billId = (int) $response->json('asn_bill_id');
         $this->assertGreaterThan(0, $billId);
         $this->assertDatabaseHas('client_account_asns', [
             'id' => $asnId,
-            'custom_bill_id' => $billId,
+            'asn_bill_id' => $billId,
         ]);
-        $this->assertDatabaseHas('custom_bills', ['id' => $billId]);
+        $this->assertDatabaseHas('asn_bills', ['id' => $billId]);
+        $this->assertDatabaseHas('asn_bill_items', [
+            'asn_bill_id' => $billId,
+            'line_type' => AsnBill::LINE_NON_COMPLIANT,
+        ]);
     }
 
     public function test_staff_can_add_line_to_non_compliant_asn(): void

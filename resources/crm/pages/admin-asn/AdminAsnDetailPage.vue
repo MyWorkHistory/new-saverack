@@ -1,8 +1,8 @@
 <script setup>
-import { Transition, computed, inject, nextTick, onMounted, onUnmounted, reactive, ref, watch } from "vue";
+import { Transition, computed, inject, nextTick, onMounted, onUnmounted, ref, watch } from "vue";
 import { RouterLink, useRoute, useRouter } from "vue-router";
 import api from "../../services/api";
-import BillingAsnBillLineModal from "../../components/billing/BillingAsnBillLineModal.vue";
+import AdminAsnReceivingFeesModal from "../../components/admin-asn/AdminAsnReceivingFeesModal.vue";
 import CrmIconRowActions from "../../components/common/CrmIconRowActions.vue";
 import CrmLoadingSpinner from "../../components/common/CrmLoadingSpinner.vue";
 import ConfirmModal from "../../components/common/ConfirmModal.vue";
@@ -112,174 +112,111 @@ const asnBillChargeOptions = computed(() => {
   return Array.isArray(rows) ? rows : [];
 });
 
-function userHasPerm(key) {
+const canManageReceivingFees = computed(() => {
   const u = crmUser.value;
   if (!u) return false;
+  if (Number(u.client_account_id ?? 0) > 0) return false;
   if (crmIsAdmin(u) || u.is_crm_owner) return true;
-  return Array.isArray(u.permission_keys) && u.permission_keys.includes(key);
-}
+  return Array.isArray(u.permission_keys) && u.permission_keys.includes("inventory.view");
+});
 
-const canManageBillFees = computed(() => userHasPerm("billing.update"));
+const feesModalOpen = ref(false);
+const feesModalBusy = ref(false);
+const feesModalError = ref("");
+const feesEditLine = ref(null);
 
-const feeLineMenuOpenId = ref(null);
-const feeLineMenuRect = ref({ top: 0, left: 0 });
-const FEE_MENU_W = 140;
-const FEE_MENU_H = 88;
-
-const addFeeModalOpen = ref(false);
-const addFeeBusy = ref(false);
-const addFeeError = ref("");
-const feeEditModalOpen = ref(false);
-const feeEditBusy = ref(false);
-const feeEditError = ref("");
-const feeEditTarget = ref(null);
-const feeDeleteModalOpen = ref(false);
-const feeDeleteBusy = ref(false);
-const feeDeleteTarget = ref(null);
-
-function emptyFeeForm() {
-  return { line_type: "", name: "", quantity: "1", unit_price: "0.00" };
-}
-
-const addFeeForm = reactive(emptyFeeForm());
-const feeEditForm = reactive(emptyFeeForm());
-
-function unitPriceFromCents(cents) {
-  return ((Number(cents) || 0) / 100).toFixed(2);
-}
-
-function feePayloadFromForm(form) {
-  return {
-    line_type: form.line_type,
-    name: String(form.name || "").trim(),
-    quantity: Number(form.quantity),
-    unit_price: Number(form.unit_price),
-  };
-}
+const completeWithoutFeesOpen = ref(false);
+const completeWithoutFeesBusy = ref(false);
 
 function applyAsnPayload(data) {
   asn.value = normalizeAsnPayload(data);
 }
 
-function openAddFeeModal() {
-  Object.assign(addFeeForm, emptyFeeForm());
-  const first = asnBillChargeOptions.value[0];
-  if (first) {
-    addFeeForm.line_type = first.line_type;
-    addFeeForm.name = first.display_name;
-    addFeeForm.unit_price = unitPriceFromCents(first.default_unit_price_cents);
-  }
-  addFeeError.value = "";
-  addFeeModalOpen.value = true;
+function openAddFeesModal() {
+  feesEditLine.value = null;
+  feesModalError.value = "";
+  feesModalOpen.value = true;
 }
 
 function openFeeEdit(line) {
-  feeLineMenuOpenId.value = null;
-  feeEditTarget.value = line;
-  feeEditForm.line_type = line.line_type;
-  feeEditForm.name = line.name;
-  feeEditForm.quantity = String(line.quantity);
-  feeEditForm.unit_price = unitPriceFromCents(line.unit_price_cents);
-  feeEditError.value = "";
-  feeEditModalOpen.value = true;
+  if (!canManageReceivingFees.value) return;
+  feesEditLine.value = line;
+  feesModalError.value = "";
+  feesModalOpen.value = true;
 }
 
-function openFeeDelete(line) {
-  feeLineMenuOpenId.value = null;
-  feeDeleteTarget.value = line;
-  feeDeleteModalOpen.value = true;
-}
-
-async function submitAddFee() {
-  const payload = feePayloadFromForm(addFeeForm);
-  if (!payload.line_type || !payload.name || !Number.isFinite(payload.quantity) || payload.quantity <= 0) {
-    addFeeError.value = "Complete all required fields.";
+async function submitFeesModal(payloads) {
+  if (!Array.isArray(payloads) || !payloads.length) {
+    feesModalError.value = "Enter a quantity for at least one fee.";
     return;
   }
-  addFeeError.value = "";
-  addFeeBusy.value = true;
+  feesModalError.value = "";
+  feesModalBusy.value = true;
   try {
-    const { data } = await api.post(`/admin/asns/${asnNumericId.value}/bill-items`, payload);
-    applyAsnPayload(data);
-    addFeeModalOpen.value = false;
-    toast.success("Fee line added.");
-  } catch (e) {
-    addFeeError.value = errorMessage(e);
-    toast.error(addFeeError.value || "Could not add fee line.");
-  } finally {
-    addFeeBusy.value = false;
-  }
-}
-
-async function submitEditFee() {
-  if (!feeEditTarget.value) return;
-  const payload = feePayloadFromForm(feeEditForm);
-  if (!payload.line_type || !payload.name || !Number.isFinite(payload.quantity) || payload.quantity <= 0) {
-    feeEditError.value = "Complete all required fields.";
-    return;
-  }
-  feeEditError.value = "";
-  feeEditBusy.value = true;
-  try {
-    const { data } = await api.put(
-      `/admin/asns/${asnNumericId.value}/bill-items/${feeEditTarget.value.id}`,
-      payload,
-    );
-    applyAsnPayload(data);
-    feeEditModalOpen.value = false;
-    feeEditTarget.value = null;
-    toast.success("Fee line updated.");
-  } catch (e) {
-    feeEditError.value = errorMessage(e);
-    toast.error(feeEditError.value || "Could not update fee line.");
-  } finally {
-    feeEditBusy.value = false;
-  }
-}
-
-async function confirmDeleteFee() {
-  if (!feeDeleteTarget.value) return;
-  feeDeleteBusy.value = true;
-  try {
-    const { data } = await api.delete(
-      `/admin/asns/${asnNumericId.value}/bill-items/${feeDeleteTarget.value.id}`,
-    );
-    applyAsnPayload(data);
-    feeDeleteModalOpen.value = false;
-    feeDeleteTarget.value = null;
-    toast.success("Fee line removed.");
-  } catch (e) {
-    toast.error(errorMessage(e) || "Could not remove fee line.");
-  } finally {
-    feeDeleteBusy.value = false;
-  }
-}
-
-async function toggleFeeLineMenu(lineId, e) {
-  e?.stopPropagation?.();
-  if (feeLineMenuOpenId.value === lineId) {
-    feeLineMenuOpenId.value = null;
-    return;
-  }
-  const btn = e?.currentTarget;
-  feeLineMenuOpenId.value = lineId;
-  await nextTick();
-  requestAnimationFrame(() => {
-    if (!(btn instanceof HTMLElement)) return;
-    const r = btn.getBoundingClientRect();
-    let top = r.bottom + 4;
-    let left = r.right - FEE_MENU_W;
-    left = Math.max(8, Math.min(left, window.innerWidth - FEE_MENU_W - 8));
-    if (top + FEE_MENU_H > window.innerHeight - 8) {
-      top = Math.max(8, r.top - FEE_MENU_H - 4);
+    let latest = asn.value;
+    for (const item of payloads) {
+      if (item.action === "delete" && item.item_id) {
+        const { data } = await api.delete(
+          `/admin/asns/${asnNumericId.value}/bill-items/${item.item_id}`,
+        );
+        latest = data;
+        continue;
+      }
+      const body = {
+        line_type: item.line_type,
+        name: item.name,
+        quantity: item.quantity,
+        unit_price: item.unit_price,
+      };
+      if (item.action === "update" && item.item_id) {
+        const { data } = await api.put(
+          `/admin/asns/${asnNumericId.value}/bill-items/${item.item_id}`,
+          body,
+        );
+        latest = data;
+      } else if (item.action === "create") {
+        const { data } = await api.post(`/admin/asns/${asnNumericId.value}/bill-items`, body);
+        latest = data;
+      }
     }
-    feeLineMenuRect.value = { top, left };
-  });
+    applyAsnPayload(latest);
+    feesModalOpen.value = false;
+    feesEditLine.value = null;
+    toast.success("Receiving fees saved.");
+  } catch (e) {
+    feesModalError.value = errorMessage(e);
+    toast.error(feesModalError.value || "Could not save receiving fees.");
+  } finally {
+    feesModalBusy.value = false;
+  }
 }
 
-const feeLineMenuRow = computed(
-  () => receivingFees.value.find((l) => l.id === feeLineMenuOpenId.value) ?? null,
-);
+async function deleteFeeFromModal(line) {
+  if (!line?.id) return;
+  feesModalBusy.value = true;
+  try {
+    const { data } = await api.delete(`/admin/asns/${asnNumericId.value}/bill-items/${line.id}`);
+    applyAsnPayload(data);
+    feesModalOpen.value = false;
+    feesEditLine.value = null;
+    toast.success("Fee removed.");
+  } catch (e) {
+    feesModalError.value = errorMessage(e);
+    toast.error(feesModalError.value || "Could not remove fee.");
+  } finally {
+    feesModalBusy.value = false;
+  }
+}
+
+async function confirmCompleteWithoutFees() {
+  completeWithoutFeesBusy.value = true;
+  try {
+    await setAsnStatus("completed");
+    completeWithoutFeesOpen.value = false;
+  } finally {
+    completeWithoutFeesBusy.value = false;
+  }
+}
 
 const asnAcceptedQty = computed(() => Number(asn.value?.accepted_qty ?? 0));
 const asnRejectedQty = computed(() => Number(asn.value?.rejected_qty ?? 0));
@@ -407,6 +344,10 @@ async function reopenForEditFromMenu() {
 
 async function setAsnStatusFromMenu(status) {
   closeAllHeaderMenus();
+  if (status === "completed" && receivingFees.value.length === 0) {
+    completeWithoutFeesOpen.value = true;
+    return;
+  }
   await setAsnStatus(status);
 }
 
@@ -1168,7 +1109,6 @@ function closeLineMenu() {
 function onDocClickMenus(e) {
   if (!e.target?.closest?.("[data-row-actions]")) {
     lineMenuOpenId.value = null;
-    feeLineMenuOpenId.value = null;
   }
   if (!e.target?.closest?.("[data-asn-header-actions]")) {
     closeAllHeaderMenus();
@@ -1180,7 +1120,6 @@ function onDocClickMenus(e) {
 
 function onWindowCloseMenus() {
   lineMenuOpenId.value = null;
-  feeLineMenuOpenId.value = null;
   closeAllHeaderMenus();
   filterMenuOpen.value = false;
 }
@@ -1732,18 +1671,8 @@ onUnmounted(() => {
         </div>
 
         <div class="staff-table-card staff-datatable-card staff-datatable-card--white p-4">
-          <div class="d-flex flex-wrap align-items-center justify-content-between gap-2 mb-3">
-            <h3 class="h6 fw-semibold mb-0">Receiving Fees</h3>
-            <button
-              v-if="canManageBillFees"
-              type="button"
-              class="btn btn-sm btn-primary staff-page-primary"
-              @click="openAddFeeModal"
-            >
-              Add Fee
-            </button>
-          </div>
-          <div v-if="receivingFees.length" class="table-responsive">
+          <h3 class="h6 fw-semibold mb-3">Receiving Fees</h3>
+          <div v-if="receivingFees.length" class="table-responsive mb-3">
             <table class="table table-sm align-middle mb-0">
               <thead>
                 <tr>
@@ -1751,31 +1680,43 @@ onUnmounted(() => {
                   <th class="text-end">QTY</th>
                   <th class="text-end">Price</th>
                   <th class="text-end">Total</th>
-                  <th v-if="canManageBillFees" class="text-end" style="width: 3.5rem">Action</th>
                 </tr>
               </thead>
               <tbody>
-                <tr v-for="fee in receivingFees" :key="fee.id">
+                <tr
+                  v-for="fee in receivingFees"
+                  :key="fee.id"
+                  :class="{ 'admin-asn-fee-row--editable': canManageReceivingFees }"
+                  @click="openFeeEdit(fee)"
+                >
                   <td>{{ fee.name }}</td>
                   <td class="text-end">{{ fee.quantity }}</td>
                   <td class="text-end">{{ formatCents(fee.unit_price_cents) }}</td>
                   <td class="text-end fw-semibold">{{ formatCents(fee.line_total_cents) }}</td>
-                  <td v-if="canManageBillFees" class="text-end">
-                    <button
-                      type="button"
-                      class="staff-action-btn staff-action-btn--more"
-                      :class="{ 'is-open': feeLineMenuOpenId === fee.id }"
-                      aria-label="Fee line actions"
-                      @click="toggleFeeLineMenu(fee.id, $event)"
-                    >
-                      <CrmIconRowActions variant="horizontal" />
-                    </button>
-                  </td>
                 </tr>
               </tbody>
             </table>
           </div>
-          <p v-else class="mb-0 small text-secondary">No receiving fees on this ASN yet.</p>
+          <template v-else>
+            <p class="mb-3 small text-secondary">No fees have been added for this ASN.</p>
+            <button
+              v-if="canManageReceivingFees"
+              type="button"
+              class="btn btn-sm btn-primary staff-page-primary"
+              @click="openAddFeesModal"
+            >
+              Add Fees
+            </button>
+          </template>
+          <div v-if="receivingFees.length && canManageReceivingFees" class="mt-2">
+            <button
+              type="button"
+              class="btn btn-sm btn-outline-secondary"
+              @click="openAddFeesModal"
+            >
+              Add Fees
+            </button>
+          </div>
           <RouterLink
             v-if="asn.asn_bill_id"
             :to="{ name: 'billing-asn-bill-detail', params: { id: String(asn.asn_bill_id) } }"
@@ -2172,69 +2113,40 @@ onUnmounted(() => {
       </div>
     </div>
 
-    <Teleport to="body">
-      <div
-        v-if="feeLineMenuRow"
-        data-row-actions
-        class="staff-row-menu fixed z-[300] overflow-hidden"
-        role="menu"
-        :style="{ top: `${feeLineMenuRect.top}px`, left: `${feeLineMenuRect.left}px` }"
-        @click.stop
-      >
-        <button type="button" class="staff-row-menu__item w-100 text-start border-0 bg-transparent" @click="openFeeEdit(feeLineMenuRow)">
-          Edit
-        </button>
-        <button
-          type="button"
-          class="staff-row-menu__item text-danger w-100 text-start border-0 bg-transparent"
-          @click="openFeeDelete(feeLineMenuRow)"
-        >
-          Delete
-        </button>
-      </div>
-    </Teleport>
-
-    <BillingAsnBillLineModal
-      v-model:open="addFeeModalOpen"
-      v-model:line-type="addFeeForm.line_type"
-      v-model:name="addFeeForm.name"
-      v-model:quantity="addFeeForm.quantity"
-      v-model:unit-price="addFeeForm.unit_price"
-      title="Add Fee"
-      submit-label="Add Fee"
-      :busy="addFeeBusy"
-      :error-msg="addFeeError"
+    <AdminAsnReceivingFeesModal
+      v-model:open="feesModalOpen"
+      :busy="feesModalBusy"
+      :error-msg="feesModalError"
       :charge-options="asnBillChargeOptions"
-      @submit="submitAddFee"
-    />
-
-    <BillingAsnBillLineModal
-      v-model:open="feeEditModalOpen"
-      v-model:line-type="feeEditForm.line_type"
-      v-model:name="feeEditForm.name"
-      v-model:quantity="feeEditForm.quantity"
-      v-model:unit-price="feeEditForm.unit_price"
-      title="Edit Fee"
-      submit-label="Save"
-      :busy="feeEditBusy"
-      :error-msg="feeEditError"
-      :charge-options="asnBillChargeOptions"
-      @submit="submitEditFee"
+      :existing-lines="receivingFees"
+      :edit-line="feesEditLine"
+      @submit="submitFeesModal"
+      @delete="deleteFeeFromModal"
     />
 
     <ConfirmModal
-      v-model:open="feeDeleteModalOpen"
-      title="Delete Fee"
-      :message="feeDeleteTarget ? `Remove “${feeDeleteTarget.name}” from this ASN bill?` : ''"
-      confirm-label="Delete"
-      variant="danger"
-      :busy="feeDeleteBusy"
-      @confirm="confirmDeleteFee"
+      :open="completeWithoutFeesOpen"
+      title="Receiving Fees"
+      message="No receiving fees have been added for this ASN. Are you sure you want to complete this ASN?"
+      confirm-label="Complete ASN"
+      cancel-label="Cancel"
+      :danger="false"
+      :busy="completeWithoutFeesBusy"
+      @close="completeWithoutFeesOpen = false"
+      @confirm="confirmCompleteWithoutFees"
     />
   </div>
 </template>
 
 <style scoped>
+.admin-asn-detail-page .admin-asn-fee-row--editable {
+  cursor: pointer;
+}
+
+.admin-asn-detail-page .admin-asn-fee-row--editable:hover td {
+  background-color: rgba(0, 0, 0, 0.03);
+}
+
 .admin-asn-detail-page .asn-line-thumb {
   width: 64px;
   height: 64px;

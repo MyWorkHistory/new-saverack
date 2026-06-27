@@ -439,7 +439,6 @@ class AdminAsnController extends Controller
     {
         $this->assertStaff($request);
         $this->authorizeAsn($request, $asn);
-        Gate::authorize('create', AsnBill::class);
 
         $validated = $request->validate([
             'line_type' => ['required', 'string', Rule::in([
@@ -467,7 +466,6 @@ class AdminAsnController extends Controller
         $this->assertBillItemBelongs($asn, $item);
 
         $bill = AsnBill::query()->findOrFail($asn->asn_bill_id);
-        Gate::authorize('update', $bill);
 
         $validated = $request->validate([
             'line_type' => ['required', 'string', Rule::in([
@@ -495,7 +493,6 @@ class AdminAsnController extends Controller
         $this->assertBillItemBelongs($asn, $item);
 
         $bill = AsnBill::query()->findOrFail($asn->asn_bill_id);
-        Gate::authorize('update', $bill);
 
         $this->asnBills->deleteItem($bill, $item, $request->user());
 

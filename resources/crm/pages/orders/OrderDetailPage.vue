@@ -2427,19 +2427,6 @@ function goToOrdersList() {
             type="button"
             class="dropdown-item"
             role="menuitem"
-            @click="
-              closeMoreActionsMenu();
-              refreshOrderDetail();
-            "
-          >
-            Refresh
-          </button>
-        </li>
-        <li>
-          <button
-            type="button"
-            class="dropdown-item"
-            role="menuitem"
             :disabled="!canPlaceHold || placeHoldBusy"
             :title="
               !canRunShipHeroActions

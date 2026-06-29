@@ -2814,6 +2814,112 @@ GQL,
             }
         }
 
+        return $this->lookupWarehouseLocationInPaginatedCatalog($warehouseId, $needle);
+    }
+
+    /**
+     * Last-resort scan of warehouse locations when targeted name filters return nothing.
+     *
+     * @return array{id:string,name:string,type:?string,pickable:?bool,sellable:?bool}|null
+     */
+    private function lookupWarehouseLocationInPaginatedCatalog(string $warehouseId, string $name): ?array
+    {
+        $warehouseId = trim($warehouseId);
+        $name = trim($name);
+        if ($warehouseId === '' || $name === '') {
+            return null;
+        }
+
+        $maxPages = (int) config('services.shiphero.location_resolve_max_catalog_pages', 10);
+        $maxPages = max(1, min(50, $maxPages));
+        $pageSize = 100;
+
+        $queries = [
+            <<<'GQL'
+query ShipHeroLocationCatalogResolvePage($warehouse_id: String!, $first: Int!, $after: String) {
+  locations(warehouse_id: $warehouse_id) {
+    data(first: $first, after: $after) {
+      pageInfo {
+        hasNextPage
+        endCursor
+      }
+      edges {
+        node {
+          id
+          name
+          zone
+          type {
+            name
+          }
+          pickable
+          sellable
+        }
+      }
+    }
+  }
+}
+GQL,
+            <<<'GQL'
+query ShipHeroLocationCatalogResolvePageScalar($warehouse_id: String!, $first: Int!, $after: String) {
+  locations(warehouse_id: $warehouse_id) {
+    data(first: $first, after: $after) {
+      pageInfo {
+        hasNextPage
+        endCursor
+      }
+      edges {
+        node {
+          id
+          name
+          zone
+          type
+          pickable
+          sellable
+        }
+      }
+    }
+  }
+}
+GQL,
+        ];
+
+        foreach ($queries as $graphql) {
+            $after = null;
+            for ($page = 0; $page < $maxPages; $page++) {
+                $vars = [
+                    'warehouse_id' => $warehouseId,
+                    'first' => $pageSize,
+                ];
+                if ($after !== null) {
+                    $vars['after'] = $after;
+                }
+
+                try {
+                    $json = $this->client->query($graphql, $vars);
+                } catch (\Throwable $e) {
+                    break;
+                }
+
+                $match = $this->firstLocationMatchFromEdges(
+                    data_get($json, 'data.locations.data.edges'),
+                    $name
+                );
+                if (is_array($match)) {
+                    return $match;
+                }
+
+                $pageInfo = data_get($json, 'data.locations.data.pageInfo');
+                $hasNext = is_array($pageInfo) && (($pageInfo['hasNextPage'] ?? false) === true);
+                $endCursor = is_array($pageInfo) && isset($pageInfo['endCursor']) && is_string($pageInfo['endCursor'])
+                    ? trim($pageInfo['endCursor'])
+                    : '';
+                if (! $hasNext || $endCursor === '') {
+                    break;
+                }
+                $after = $endCursor;
+            }
+        }
+
         return null;
     }
 

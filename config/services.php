@@ -70,6 +70,8 @@ return [
             env('SHIPHERO_RESTOCK_SKIP_LOCATION_CATALOG', false),
             FILTER_VALIDATE_BOOLEAN
         ),
+        /** Max paginated warehouse location catalog pages when targeted name lookups miss (inventory add/transfer). */
+        'location_resolve_max_catalog_pages' => (int) env('SHIPHERO_LOCATION_RESOLVE_MAX_CATALOG_PAGES', 10),
         'restock_max_pickable_qty' => (int) env('SHIPHERO_RESTOCK_MAX_PICKABLE_QTY', 2),
         /** after_response (default, no queue worker) or queue (requires queue:work / Horizon). */
         'restock_dispatch_mode' => env('SHIPHERO_RESTOCK_DISPATCH_MODE', 'after_response'),

@@ -12,6 +12,7 @@ use App\Services\ShipHeroClient;
 use App\Services\InventoryProductDetailCacheService;
 use App\Services\InventoryRestockBetaService;
 use App\Services\InventoryRestockReportService;
+use App\Services\ShipHeroCredentialResolver;
 use App\Models\User;
 use App\Services\CrossAccountInventoryListService;
 use App\Services\PutAwayInventoryService;
@@ -1229,20 +1230,19 @@ class InventoryController extends Controller
                 $toLocationInput = isset($validated['to_location']) && is_string($validated['to_location'])
                     ? trim($validated['to_location'])
                     : '';
-                $resolved = $this->inventory->resolveWarehouseLocation(
+                $resolved = $this->resolveInventoryLocation(
+                    $validated['sku'],
                     $validated['warehouse_id'],
                     $toLocationInput,
                     $shipheroCustomerId
                 );
                 if (! is_array($resolved)) {
-                    $resolved = $this->inventory->resolveProductWarehouseLocation(
+                    $this->logInventoryLocationResolveFailed(
                         $validated['sku'],
                         $validated['warehouse_id'],
                         $toLocationInput,
                         $shipheroCustomerId
                     );
-                }
-                if (! is_array($resolved)) {
                     throw ValidationException::withMessages([
                         'to_location' => ['Location not found in this warehouse.'],
                     ]);
@@ -1350,12 +1350,19 @@ class InventoryController extends Controller
                 $validated['sku'],
                 $preferredCustomerId
             );
-            $resolved = $this->inventory->resolveWarehouseLocation(
+            $resolved = $this->resolveInventoryLocation(
+                $validated['sku'],
                 $validated['warehouse_id'],
                 $validated['location'],
                 $shipheroCustomerId
             );
             if (! is_array($resolved)) {
+                $this->logInventoryLocationResolveFailed(
+                    $validated['sku'],
+                    $validated['warehouse_id'],
+                    $validated['location'],
+                    $shipheroCustomerId
+                );
                 throw ValidationException::withMessages([
                     'location' => ['Location not found in this warehouse.'],
                 ]);
@@ -1691,6 +1698,64 @@ class InventoryController extends Controller
 
             throw $e;
         }
+    }
+
+    /**
+     * Resolve a warehouse location for inventory add/transfer mutations.
+     *
+     * @return array{id:string,name:string,type:?string,pickable:?bool,sellable:?bool}|null
+     */
+    private function resolveInventoryLocation(
+        string $sku,
+        string $warehouseId,
+        string $locationInput,
+        ?string $customerAccountId
+    ): ?array {
+        $resolved = $this->inventory->resolveWarehouseLocation($warehouseId, $locationInput, $customerAccountId);
+        if (is_array($resolved)) {
+            return $resolved;
+        }
+
+        $resolved = $this->inventory->resolveProductWarehouseLocation(
+            $sku,
+            $warehouseId,
+            $locationInput,
+            $customerAccountId
+        );
+        if (is_array($resolved)) {
+            return $resolved;
+        }
+
+        if (is_string($customerAccountId) && trim($customerAccountId) !== '') {
+            $resolved = $this->inventory->resolveWarehouseLocation($warehouseId, $locationInput, null);
+            if (is_array($resolved)) {
+                return $resolved;
+            }
+        }
+
+        return null;
+    }
+
+    private function logInventoryLocationResolveFailed(
+        string $sku,
+        string $warehouseId,
+        string $locationInput,
+        ?string $customerAccountId
+    ): void {
+        $credentialSource = 'unknown';
+        try {
+            $credentialSource = app(ShipHeroCredentialResolver::class)->credentialSource();
+        } catch (Throwable $e) {
+            // Best-effort diagnostic only.
+        }
+
+        Log::warning('shiphero.inventory.location_resolve.failed', [
+            'sku' => trim($sku),
+            'warehouse_id' => trim($warehouseId),
+            'location' => trim($locationInput),
+            'customer_account_id' => is_string($customerAccountId) ? trim($customerAccountId) : null,
+            'credential_source' => $credentialSource,
+        ]);
     }
 
     /**

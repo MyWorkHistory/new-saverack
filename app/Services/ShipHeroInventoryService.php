@@ -2785,7 +2785,7 @@ GQL,
                             ];
                         }
                     }
-                } catch (\Throwable) {
+                } catch (\Throwable $e) {
                     continue;
                 }
             }

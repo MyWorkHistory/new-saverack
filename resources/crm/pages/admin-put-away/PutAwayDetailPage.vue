@@ -30,14 +30,18 @@ const locationPickableFilter = ref("");
 const actionMenuLocationId = ref(null);
 const actionMenuRect = ref({ top: 0, left: 0 });
 
-const transferAllOpen = ref(false);
-const transferAllLocation = ref("");
-const transferAllFromRow = ref(false);
-const transferAllConfirmOpen = ref(false);
-
-const partialTransferOpen = ref(false);
-const partialTransferQty = ref("");
-const partialTransferLocation = ref("");
+const transferModalOpen = ref(false);
+const activeLocation = ref(null);
+const updateModalOpen = ref(false);
+const updateForm = reactive({ quantity: "", reason: "Client-Requested Adjustments" });
+const transferForm = reactive({
+  transfer_type: "new",
+  to_location_id: "",
+  to_location: "",
+  quantity: "",
+  reason: PUT_AWAY_REASON,
+});
+const defaultTransferReason = ref(PUT_AWAY_REASON);
 
 const deleteLocationOpen = ref(false);
 const deleteLocationTarget = ref(null);
@@ -45,9 +49,44 @@ const deleteLocationTarget = ref(null);
 const addLocationModalOpen = ref(false);
 const addLocationForm = reactive({ location: "", quantity: "", reason: "Account Setup" });
 const addLocationInputRef = ref(null);
+const inventoryReasons = ref([
+  "Account Setup",
+  "Amazon Return",
+  "Client-Requested Adjustments",
+  "Cycle Counts / Physical Counts",
+  "Damaged Inventory",
+  "Expiration or Obsolescence",
+  "Inbound Receiving Adjustments",
+  "Inventory Reclassification",
+  "Kitting / Bundling",
+  "Lost or Missing Units",
+  "Order Fulfilment",
+  "Quality Control Holds",
+  "Restock",
+  "Returns Processing",
+  "Shipped via Shipstation",
+  "System Sync or Integration Corrections",
+]);
 const defaultAddLocationReason = ref("Account Setup");
 
 const clientAccountId = computed(() => Number(route.query.client_account_id || 0));
+
+function isReceivingLocation(loc) {
+  return String(loc?.location_name || "").trim().toLowerCase() === RECEIVING_LOCATION_NAME.toLowerCase();
+}
+
+function receivingQtyFromProduct(p) {
+  if (!p?.warehouses) return 0;
+  let total = 0;
+  p.warehouses.forEach((wh) => {
+    (wh.locations || []).forEach((loc) => {
+      if (isReceivingLocation(loc)) {
+        total += Number(loc?.quantity || 0);
+      }
+    });
+  });
+  return total;
+}
 
 const allLocations = computed(() => {
   const out = [];
@@ -55,9 +94,9 @@ const allLocations = computed(() => {
   if (!p?.warehouses) return out;
   p.warehouses.forEach((wh) => {
     (wh.locations || []).forEach((loc) => {
-      if (Number(loc?.quantity || 0) <= 0) return;
       out.push({
         ...loc,
+        quantity: Number(loc?.quantity || 0),
         warehouse_id: wh.warehouse_id,
         warehouse_name: wh.warehouse_name,
       });
@@ -65,14 +104,6 @@ const allLocations = computed(() => {
   });
   return out;
 });
-
-function isReceivingLocation(loc) {
-  return String(loc?.location_name || "").trim().toLowerCase() === RECEIVING_LOCATION_NAME.toLowerCase();
-}
-
-const receivingLocation = computed(
-  () => allLocations.value.find((loc) => isReceivingLocation(loc)) ?? null,
-);
 
 // Same backend source as the put-away list (PutAwayRowBuilder via /admin/put-away/products/{sku}).
 const putAwayMetrics = computed(() => ({
@@ -83,7 +114,71 @@ const putAwayMetrics = computed(() => ({
   backorder: Number(putAwayRow.value?.backorder ?? 0),
 }));
 
-const receivingQty = computed(() => Number(putAwayMetrics.value.receiving ?? 0));
+const receivingQty = computed(() =>
+  Math.max(Number(putAwayMetrics.value.receiving ?? 0), receivingQtyFromProduct(product.value)),
+);
+
+const receivingLocation = computed(() => {
+  const rowLoc = putAwayRow.value?.receiving_location;
+  if (rowLoc?.location_id && rowLoc?.warehouse_id) {
+    return {
+      location_id: String(rowLoc.location_id),
+      location_name: String(rowLoc.location_name || RECEIVING_LOCATION_NAME),
+      warehouse_id: String(rowLoc.warehouse_id),
+      quantity: receivingQty.value,
+    };
+  }
+
+  const whId = activeWarehouseId();
+  const p = product.value;
+  if (!p?.warehouses) return null;
+  for (const wh of p.warehouses) {
+    if (whId && String(wh.warehouse_id || "") !== whId) continue;
+    for (const loc of wh.locations || []) {
+      if (!isReceivingLocation(loc)) continue;
+      const locId = String(loc.location_id || "").trim();
+      if (!locId) continue;
+      return {
+        ...loc,
+        warehouse_id: wh.warehouse_id,
+        warehouse_name: wh.warehouse_name,
+        quantity: receivingQty.value,
+      };
+    }
+  }
+  for (const wh of p.warehouses) {
+    for (const loc of wh.locations || []) {
+      if (!isReceivingLocation(loc)) continue;
+      const locId = String(loc.location_id || "").trim();
+      if (!locId) continue;
+      return {
+        ...loc,
+        warehouse_id: wh.warehouse_id,
+        warehouse_name: wh.warehouse_name,
+        quantity: receivingQty.value,
+      };
+    }
+  }
+
+  return null;
+});
+
+const transferDestinationOptions = computed(() => {
+  const source = activeLocation.value;
+  if (!source) return [];
+  const whId = String(source.warehouse_id || "");
+  const fromId = String(source.location_id || "");
+  return allLocations.value.filter(
+    (loc) => String(loc.warehouse_id || "") === whId && String(loc.location_id || "") !== fromId,
+  );
+});
+
+const transferSourceMaxQty = computed(() => {
+  const loc = activeLocation.value;
+  if (!loc) return 0;
+  if (isReceivingLocation(loc)) return receivingQty.value;
+  return Number(loc.quantity || 0);
+});
 
 function metricsAllZero() {
   const m = putAwayMetrics.value;
@@ -130,7 +225,10 @@ const metricCards = computed(() =>
     },
   ].map((item) => ({
     ...item,
-    value: Number(putAwayMetrics.value[item.key] ?? 0),
+    value:
+      item.key === "receiving"
+        ? receivingQty.value
+        : Number(putAwayMetrics.value[item.key] ?? 0),
   })),
 );
 
@@ -162,7 +260,7 @@ const filteredLocations = computed(() => {
   return rows;
 });
 
-const canTransfer = computed(() => receivingQty.value > 0 && Boolean(receivingLocation.value));
+const canTransfer = computed(() => receivingQty.value > 0 && Boolean(receivingLocation.value?.location_id));
 
 function displayVal(v) {
   if (v === null || v === undefined) return "—";
@@ -314,14 +412,46 @@ function currentMenuLocation() {
   return filteredLocations.value.find((loc) => String(loc.location_id) === String(actionMenuLocationId.value)) || null;
 }
 
-function openTransferAllModal(fromRow = false) {
+function locationQty(loc) {
+  if (!loc) return 0;
+  if (isReceivingLocation(loc)) return receivingQty.value;
+  return Number(loc.quantity || 0);
+}
+
+function openUpdateQtyModal() {
+  const loc = currentMenuLocation();
+  if (!loc) return;
+  activeLocation.value = loc;
+  updateForm.quantity = String(locationQty(loc));
+  updateModalOpen.value = true;
+  actionMenuLocationId.value = null;
+}
+
+function openTransferQtyModal() {
+  const loc = currentMenuLocation();
+  if (!loc) return;
+  activeLocation.value = loc;
+  transferForm.transfer_type = "current";
+  transferForm.to_location_id = "";
+  transferForm.to_location = "";
+  transferForm.quantity = "";
+  transferForm.reason = defaultTransferReason.value;
+  transferModalOpen.value = true;
+  actionMenuLocationId.value = null;
+}
+
+function openTransferAllModal() {
   if (!canTransfer.value) {
     toast.error("No quantity in Receiving to transfer.");
     return;
   }
-  transferAllFromRow.value = fromRow;
-  transferAllLocation.value = "";
-  transferAllOpen.value = true;
+  activeLocation.value = receivingLocation.value;
+  transferForm.transfer_type = "new";
+  transferForm.to_location_id = "";
+  transferForm.to_location = "";
+  transferForm.quantity = String(receivingQty.value);
+  transferForm.reason = defaultTransferReason.value;
+  transferModalOpen.value = true;
   actionMenuLocationId.value = null;
 }
 
@@ -330,70 +460,94 @@ function openPartialTransferModal() {
     toast.error("No quantity in Receiving to transfer.");
     return;
   }
-  partialTransferQty.value = "";
-  partialTransferLocation.value = "";
-  partialTransferOpen.value = true;
+  activeLocation.value = receivingLocation.value;
+  transferForm.transfer_type = "new";
+  transferForm.to_location_id = "";
+  transferForm.to_location = "";
+  transferForm.quantity = "";
+  transferForm.reason = defaultTransferReason.value;
+  transferModalOpen.value = true;
   actionMenuLocationId.value = null;
 }
 
-function openPartialTransferFromMenu() {
-  openPartialTransferModal();
+function fillTransferAllQty() {
+  transferForm.quantity = String(transferSourceMaxQty.value);
 }
 
-function submitTransferAllLocation() {
-  if (!transferAllLocation.value.trim()) {
-    toast.error("Enter a location.");
-    return;
-  }
-  transferAllOpen.value = false;
-  if (transferAllFromRow.value) {
-    transferAllConfirmOpen.value = true;
-  } else {
-    executeTransfer(receivingQty.value, transferAllLocation.value.trim());
-  }
-}
-
-async function confirmTransferAll() {
-  transferAllConfirmOpen.value = false;
-  await executeTransfer(receivingQty.value, transferAllLocation.value.trim());
-}
-
-async function submitPartialTransfer() {
-  const qty = parseInt(String(partialTransferQty.value || ""), 10);
-  if (Number.isNaN(qty) || qty <= 0) {
+async function submitUpdateQty() {
+  if (!activeLocation.value || !product.value) return;
+  const qty = parseInt(String(updateForm.quantity || ""), 10);
+  if (Number.isNaN(qty) || qty < 0) {
     toast.error("Enter a valid quantity.");
     return;
   }
-  if (qty > receivingQty.value) {
-    toast.error(`Quantity cannot exceed Receiving qty (${receivingQty.value}).`);
-    return;
-  }
-  if (!partialTransferLocation.value.trim()) {
-    toast.error("Enter a location.");
-    return;
-  }
-  partialTransferOpen.value = false;
-  await executeTransfer(qty, partialTransferLocation.value.trim());
-}
-
-async function executeTransfer(quantity, toLocation) {
-  if (!product.value || !receivingLocation.value) return;
   saving.value = true;
   try {
     const body = {
       sku: product.value.sku,
-      warehouse_id: receivingLocation.value.warehouse_id,
-      from_location_id: receivingLocation.value.location_id,
-      to_location: toLocation,
-      quantity,
-      reason: PUT_AWAY_REASON,
+      warehouse_id: activeLocation.value.warehouse_id,
+      location_id: activeLocation.value.location_id,
+      quantity: qty,
+      reason: updateForm.reason,
     };
+    if (clientAccountId.value > 0) {
+      body.client_account_id = clientAccountId.value;
+    }
+    const { data } = await api.post("/inventory/replace", body);
+    applyWarehouseSliceToProduct(data?.warehouse);
+    toast.success("Quantity updated.");
+    updateModalOpen.value = false;
+    await reloadProductData({ refresh: true });
+    applyWarehouseSliceToProduct(data?.warehouse);
+  } catch (e) {
+    toast.errorFrom(e, "Could not update quantity.");
+  } finally {
+    saving.value = false;
+  }
+}
+
+async function submitTransferQty() {
+  if (!product.value || !activeLocation.value) return;
+  const maxQty = transferSourceMaxQty.value;
+  const qty = parseInt(String(transferForm.quantity || ""), 10);
+  if (Number.isNaN(qty) || qty <= 0) {
+    toast.error("Enter a valid transfer quantity.");
+    return;
+  }
+  if (qty > maxQty) {
+    toast.error(`Quantity cannot exceed available qty (${maxQty}).`);
+    return;
+  }
+  if (transferForm.transfer_type === "current") {
+    if (!String(transferForm.to_location_id || "").trim()) {
+      toast.error("Select a destination location.");
+      return;
+    }
+  } else if (!transferForm.to_location.trim()) {
+    toast.error("Enter destination location.");
+    return;
+  }
+  saving.value = true;
+  try {
+    const body = {
+      sku: product.value.sku,
+      warehouse_id: activeLocation.value.warehouse_id,
+      from_location_id: activeLocation.value.location_id,
+      quantity: qty,
+      reason: transferForm.reason,
+    };
+    if (transferForm.transfer_type === "current") {
+      body.to_location_id = String(transferForm.to_location_id).trim();
+    } else {
+      body.to_location = transferForm.to_location.trim();
+    }
     if (clientAccountId.value > 0) {
       body.client_account_id = clientAccountId.value;
     }
     const { data } = await api.post("/inventory/transfer", body);
     applyWarehouseSliceToProduct(data?.warehouse);
     toast.success("Quantity transferred.");
+    transferModalOpen.value = false;
     await reloadProductData({ refresh: true });
     applyWarehouseSliceToProduct(data?.warehouse);
   } catch (e) {
@@ -449,12 +603,26 @@ function openAddLocationModal() {
 async function loadAdjustmentReasons() {
   try {
     const { data } = await api.get("/inventory/adjustment-reasons");
+    const reasons = Array.isArray(data?.reasons) ? data.reasons.filter(Boolean) : [];
+    if (reasons.length) {
+      inventoryReasons.value = reasons;
+    }
+    const defaultReason = String(data?.default_transfer_reason || "").trim();
+    if (defaultReason) {
+      defaultTransferReason.value = defaultReason;
+    }
     const addLocationReason = String(data?.default_add_location_reason || "").trim();
     if (addLocationReason) {
       defaultAddLocationReason.value = addLocationReason;
     }
+    if (inventoryReasons.value.includes(PUT_AWAY_REASON)) {
+      transferForm.reason = PUT_AWAY_REASON;
+      defaultTransferReason.value = PUT_AWAY_REASON;
+    } else {
+      transferForm.reason = defaultTransferReason.value;
+    }
   } catch {
-    /* keep fallback */
+    /* keep fallback list */
   }
 }
 
@@ -482,7 +650,7 @@ async function submitAddLocationQty() {
       warehouse_id: warehouseId,
       location: addLocationForm.location.trim(),
       quantity: qty,
-      reason: addLocationForm.reason || defaultAddLocationReason.value,
+      reason: addLocationForm.reason,
     };
     if (clientAccountId.value > 0) {
       body.client_account_id = clientAccountId.value;
@@ -642,15 +810,15 @@ onUnmounted(() => {
                 <button
                   type="button"
                   class="btn btn-primary staff-page-primary fw-semibold"
-                  :disabled="!canTransfer || saving"
-                  @click="openTransferAllModal(false)"
+                  :disabled="saving"
+                  @click="openTransferAllModal"
                 >
                   Transfer All
                 </button>
                 <button
                   type="button"
                   class="btn btn-outline-primary fw-semibold"
-                  :disabled="!canTransfer || saving"
+                  :disabled="saving"
                   @click="openPartialTransferModal"
                 >
                   Partial Transfer
@@ -744,30 +912,10 @@ onUnmounted(() => {
                           </span>
                         </button>
                       </td>
-                      <td>{{ loc.quantity }}</td>
+                      <td>{{ locationQty(loc) }}</td>
                       <td>{{ loc.type || "—" }}</td>
                       <td class="text-center">
-                        <div v-if="isReceivingLocation(loc)" class="d-flex align-items-center justify-content-center gap-1">
-                          <button
-                            type="button"
-                            class="btn btn-sm btn-primary staff-page-primary"
-                            :disabled="!canTransfer || saving"
-                            @click="openTransferAllModal(true)"
-                          >
-                            Transfer All
-                          </button>
-                          <div data-row-actions class="d-inline-flex">
-                            <button
-                              type="button"
-                              class="staff-action-btn staff-action-btn--more"
-                              :aria-expanded="actionMenuLocationId === String(loc.location_id)"
-                              @click="openActionMenu(loc, $event)"
-                            >
-                              <CrmIconRowActions variant="horizontal" />
-                            </button>
-                          </div>
-                        </div>
-                        <div v-else data-row-actions class="d-inline-flex">
+                        <div data-row-actions class="d-inline-flex">
                           <button
                             type="button"
                             class="staff-action-btn staff-action-btn--more"
@@ -797,21 +945,20 @@ onUnmounted(() => {
         :style="{ top: `${actionMenuRect.top}px`, left: `${actionMenuRect.left}px` }"
         @click.stop
       >
-        <template v-if="isReceivingLocation(currentMenuLocation())">
-          <button type="button" class="staff-row-menu__item" role="menuitem" @click="openPartialTransferFromMenu">
-            Partial Transfer
-          </button>
-          <button
-            type="button"
-            class="staff-row-menu__item staff-row-menu__item--danger"
-            role="menuitem"
-            @click="openDeleteLocationModal(currentMenuLocation())"
-          >
-            Delete Location
-          </button>
-        </template>
+        <button type="button" class="staff-row-menu__item" role="menuitem" @click="openUpdateQtyModal">
+          Update QTY
+        </button>
         <button
-          v-else
+          v-if="locationQty(currentMenuLocation()) > 0"
+          type="button"
+          class="staff-row-menu__item"
+          role="menuitem"
+          @click="openTransferQtyModal"
+        >
+          Transfer To
+        </button>
+        <button
+          v-if="locationQty(currentMenuLocation()) === 0"
           type="button"
           class="staff-row-menu__item staff-row-menu__item--danger"
           role="menuitem"
@@ -822,72 +969,131 @@ onUnmounted(() => {
       </div>
     </Teleport>
 
-    <div v-if="transferAllOpen" class="crm-vx-modal-overlay" @click.self="transferAllOpen = false">
-      <div class="crm-vx-modal crm-vx-modal--sm">
-        <header class="crm-vx-modal__head">
-          <h2 class="crm-vx-modal__title">Transfer All</h2>
-        </header>
-        <div class="crm-vx-modal__body">
-          <p class="small text-secondary mb-3">
-            Transfer all {{ receivingQty }} unit(s) from Receiving to the location below.
-          </p>
-          <label class="form-label small">Location</label>
-          <input v-model="transferAllLocation" type="text" class="form-control mb-3" autocomplete="off" />
+    <Teleport to="body">
+      <div v-if="transferModalOpen" class="crm-vx-modal-overlay" @click.self="transferModalOpen = false">
+        <div class="crm-vx-modal crm-vx-modal--sm">
+          <header class="crm-vx-modal__head">
+            <h2 class="crm-vx-modal__title">Transfer QTY</h2>
+          </header>
+          <div class="crm-vx-modal__body">
+            <p class="small text-secondary mb-1">
+              Transfer From: {{ activeLocation?.location_name || activeLocation?.location_id || "—" }}
+            </p>
+            <p class="small text-secondary mb-3">QTY: {{ transferSourceMaxQty }}</p>
+            <label class="form-label small" for="put-away-transfer-type">Transfer Type</label>
+            <select id="put-away-transfer-type" v-model="transferForm.transfer_type" class="form-select mb-3">
+              <option value="current">Current Locations</option>
+              <option value="new">Transfer New</option>
+            </select>
+            <label class="form-label small" for="put-away-transfer-to">Transfer To</label>
+            <select
+              v-if="transferForm.transfer_type === 'current'"
+              id="put-away-transfer-to"
+              v-model="transferForm.to_location_id"
+              class="form-select mb-3"
+            >
+              <option value="">Select location</option>
+              <option
+                v-for="dest in transferDestinationOptions"
+                :key="`${dest.warehouse_id}-${dest.location_id}`"
+                :value="dest.location_id"
+              >
+                {{ dest.location_name || dest.location_id }}
+              </option>
+            </select>
+            <input
+              v-else
+              id="put-away-transfer-to"
+              v-model="transferForm.to_location"
+              type="text"
+              class="form-control mb-3"
+              placeholder="Type location name"
+            />
+            <div class="row g-2 align-items-end mb-3">
+              <div class="col-6">
+                <label class="form-label small" for="put-away-transfer-qty">QTY</label>
+                <input
+                  id="put-away-transfer-qty"
+                  v-model="transferForm.quantity"
+                  type="number"
+                  min="1"
+                  :max="transferSourceMaxQty"
+                  class="form-control"
+                />
+              </div>
+              <div class="col-6">
+                <button
+                  type="button"
+                  class="btn inventory-detail__transfer-all-btn w-100"
+                  @click="fillTransferAllQty"
+                >
+                  Transfer All
+                </button>
+              </div>
+            </div>
+            <label class="form-label small">Reason</label>
+            <select v-model="transferForm.reason" class="form-select">
+              <option v-for="reason in inventoryReasons" :key="reason" :value="reason">{{ reason }}</option>
+            </select>
+          </div>
+          <footer class="crm-vx-modal__footer">
+            <button
+              type="button"
+              class="crm-vx-modal-btn crm-vx-modal-btn--secondary"
+              :disabled="saving"
+              @click="transferModalOpen = false"
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              class="crm-vx-modal-btn crm-vx-modal-btn--primary"
+              :disabled="saving"
+              @click="submitTransferQty"
+            >
+              {{ saving ? "Please wait..." : "Transfer" }}
+            </button>
+          </footer>
         </div>
-        <footer class="crm-vx-modal__foot">
-          <button type="button" class="crm-vx-modal-btn crm-vx-modal-btn--secondary" @click="transferAllOpen = false">
-            Cancel
-          </button>
-          <button
-            type="button"
-            class="crm-vx-modal-btn crm-vx-modal-btn--primary"
-            :disabled="saving"
-            @click="submitTransferAllLocation"
-          >
-            Save
-          </button>
-        </footer>
       </div>
-    </div>
+    </Teleport>
 
-    <ConfirmModal
-      :open="transferAllConfirmOpen"
-      title="Confirm Transfer All"
-      :message="`All items from Receiving will be transferred to location: ${transferAllLocation.trim() || '—'}.`"
-      confirm-label="Confirm"
-      cancel-label="Cancel"
-      :busy="saving"
-      :danger="false"
-      @close="transferAllConfirmOpen = false"
-      @confirm="confirmTransferAll"
-    />
-
-    <div v-if="partialTransferOpen" class="crm-vx-modal-overlay" @click.self="partialTransferOpen = false">
-      <div class="crm-vx-modal crm-vx-modal--sm">
-        <header class="crm-vx-modal__head">
-          <h2 class="crm-vx-modal__title">Partial Transfer</h2>
-        </header>
-        <div class="crm-vx-modal__body">
-          <label class="form-label small">QTY</label>
-          <input v-model="partialTransferQty" type="number" min="1" class="form-control mb-3" />
-          <label class="form-label small">Location</label>
-          <input v-model="partialTransferLocation" type="text" class="form-control mb-3" autocomplete="off" />
+    <Teleport to="body">
+      <div v-if="updateModalOpen" class="crm-vx-modal-overlay" @click.self="updateModalOpen = false">
+        <div class="crm-vx-modal crm-vx-modal--sm">
+          <header class="crm-vx-modal__head">
+            <h2 class="crm-vx-modal__title">Update QTY</h2>
+          </header>
+          <div class="crm-vx-modal__body">
+            <p class="small text-secondary">Current QTY: {{ locationQty(activeLocation) }}</p>
+            <label class="form-label small">New QTY</label>
+            <input v-model="updateForm.quantity" type="number" min="0" class="form-control mb-3" />
+            <label class="form-label small">Reason</label>
+            <select v-model="updateForm.reason" class="form-select">
+              <option v-for="reason in inventoryReasons" :key="reason" :value="reason">{{ reason }}</option>
+            </select>
+          </div>
+          <footer class="crm-vx-modal__footer">
+            <button
+              type="button"
+              class="crm-vx-modal-btn crm-vx-modal-btn--secondary"
+              :disabled="saving"
+              @click="updateModalOpen = false"
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              class="crm-vx-modal-btn crm-vx-modal-btn--primary"
+              :disabled="saving"
+              @click="submitUpdateQty"
+            >
+              {{ saving ? "Please wait..." : "Update" }}
+            </button>
+          </footer>
         </div>
-        <footer class="crm-vx-modal__foot">
-          <button type="button" class="crm-vx-modal-btn crm-vx-modal-btn--secondary" @click="partialTransferOpen = false">
-            Cancel
-          </button>
-          <button
-            type="button"
-            class="crm-vx-modal-btn crm-vx-modal-btn--primary"
-            :disabled="saving"
-            @click="submitPartialTransfer"
-          >
-            Save
-          </button>
-        </footer>
       </div>
-    </div>
+    </Teleport>
 
     <ConfirmModal
       :open="deleteLocationOpen"
@@ -901,38 +1107,49 @@ onUnmounted(() => {
       @confirm="confirmDeleteLocation"
     />
 
-    <div v-if="addLocationModalOpen" class="crm-vx-modal-overlay" @click.self="addLocationModalOpen = false">
-      <div class="crm-vx-modal crm-vx-modal--sm">
-        <header class="crm-vx-modal__head">
-          <h2 class="crm-vx-modal__title">Add Location</h2>
-        </header>
-        <div class="crm-vx-modal__body">
-          <label class="form-label small">Location</label>
-          <input
-            ref="addLocationInputRef"
-            v-model="addLocationForm.location"
-            type="text"
-            class="form-control mb-3"
-            autocomplete="off"
-          />
-          <label class="form-label small">QTY</label>
-          <input v-model="addLocationForm.quantity" type="number" min="0" class="form-control mb-3" />
+    <Teleport to="body">
+      <div v-if="addLocationModalOpen" class="crm-vx-modal-overlay" @click.self="addLocationModalOpen = false">
+        <div class="crm-vx-modal crm-vx-modal--sm">
+          <header class="crm-vx-modal__head">
+            <h2 class="crm-vx-modal__title">Add Location</h2>
+          </header>
+          <div class="crm-vx-modal__body">
+            <label class="form-label small">Location</label>
+            <input
+              ref="addLocationInputRef"
+              v-model="addLocationForm.location"
+              type="text"
+              class="form-control mb-3"
+              placeholder="Type location name"
+            />
+            <label class="form-label small">QTY</label>
+            <input v-model="addLocationForm.quantity" type="number" min="0" class="form-control mb-3" />
+            <label class="form-label small">Reason</label>
+            <select v-model="addLocationForm.reason" class="form-select">
+              <option v-for="reason in inventoryReasons" :key="reason" :value="reason">{{ reason }}</option>
+            </select>
+          </div>
+          <footer class="crm-vx-modal__footer">
+            <button
+              type="button"
+              class="crm-vx-modal-btn crm-vx-modal-btn--secondary"
+              :disabled="saving"
+              @click="addLocationModalOpen = false"
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              class="crm-vx-modal-btn crm-vx-modal-btn--primary"
+              :disabled="saving"
+              @click="submitAddLocationQty"
+            >
+              {{ saving ? "Please wait..." : "Update" }}
+            </button>
+          </footer>
         </div>
-        <footer class="crm-vx-modal__foot">
-          <button type="button" class="crm-vx-modal-btn crm-vx-modal-btn--secondary" @click="addLocationModalOpen = false">
-            Cancel
-          </button>
-          <button
-            type="button"
-            class="crm-vx-modal-btn crm-vx-modal-btn--primary"
-            :disabled="saving"
-            @click="submitAddLocationQty"
-          >
-            Save
-          </button>
-        </footer>
       </div>
-    </div>
+    </Teleport>
   </div>
 </template>
 
@@ -1036,5 +1253,17 @@ onUnmounted(() => {
 }
 .inventory-detail__toggle--off .inventory-detail__toggle-track {
   background: #ef4444;
+}
+.inventory-detail__transfer-all-btn {
+  border: 1px solid var(--bs-primary);
+  color: var(--bs-primary);
+  background: transparent;
+  font-weight: 600;
+}
+.inventory-detail__transfer-all-btn:hover,
+.inventory-detail__transfer-all-btn:focus-visible {
+  background: var(--bs-primary);
+  border-color: var(--bs-primary);
+  color: #fff;
 }
 </style>

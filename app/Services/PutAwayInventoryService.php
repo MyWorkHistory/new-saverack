@@ -489,7 +489,13 @@ class PutAwayInventoryService
 
         $snapRow = $this->findSnapshotRow($clientAccountId, $sku);
         if ($snapRow !== null && $this->snapshotRowHasUsableMetrics($snapRow)) {
-            return $this->snapshotRowToPayload($snapRow, $clientAccountId);
+            $payload = $this->snapshotRowToPayload($snapRow, $clientAccountId);
+            $product = $refreshProduct
+                ? $this->inventory->getProductDetailBySku($sku, null, $customerId, false)
+                : $this->resolveProductDetailForPutAway($clientAccountId, $customerId, $sku);
+            $index = $this->indexFieldsForSku($clientAccountId, $sku);
+
+            return $this->reconcilePutAwayRowWithProduct($payload, $product, $index, $customerId);
         }
 
         $index = $this->indexFieldsForSku($clientAccountId, $sku);
@@ -502,7 +508,7 @@ class PutAwayInventoryService
             $product = $this->resolveProductDetailForPutAway($clientAccountId, $customerId, $sku);
         }
 
-        return $this->buildPutAwayRowPayload($clientAccountId, $sku, $product, $index);
+        return $this->buildPutAwayRowPayload($clientAccountId, $sku, $product, $index, $customerId);
     }
 
     private function isFresh(PutAwaySnapshot $snapshot): bool
@@ -707,8 +713,13 @@ class PutAwayInventoryService
      * @param  array{name: string, barcode: ?string, image_url: ?string, on_hand: int, backorder: int}  $index
      * @return array<string, mixed>
      */
-    private function buildPutAwayRowPayload(int $clientAccountId, string $sku, ?array $product, array $index): array
-    {
+    private function buildPutAwayRowPayload(
+        int $clientAccountId,
+        string $sku,
+        ?array $product,
+        array $index,
+        string $customerId
+    ): array {
         $locations = PutAwayRowBuilder::locationsFromProductDetail($product);
         $metrics = is_array($product['metrics'] ?? null) ? $product['metrics'] : [];
 
@@ -732,7 +743,159 @@ class PutAwayInventoryService
         );
         $built['client_account_id'] = $clientAccountId;
 
-        return $built;
+        return $this->reconcilePutAwayRowWithProduct($built, $product, $index, $customerId);
+    }
+
+    /**
+     * Merge snapshot/index metrics with live product location metrics (take max per field).
+     *
+     * @param  array<string, mixed>  $payload
+     * @param  array<string, mixed>|null  $product
+     * @param  array{name: string, barcode: ?string, image_url: ?string, on_hand: int, backorder: int}  $index
+     * @return array<string, mixed>
+     */
+    private function reconcilePutAwayRowWithProduct(
+        array $payload,
+        ?array $product,
+        array $index,
+        string $customerId
+    ): array {
+        if (is_array($product)) {
+            $locations = PutAwayRowBuilder::locationsFromProductDetail($product);
+            $metrics = is_array($product['metrics'] ?? null) ? $product['metrics'] : [];
+            $onHand = (int) round((float) ($metrics['on_hand'] ?? 0));
+            if ($onHand <= 0) {
+                $onHand = (int) ($index['on_hand'] ?? 0);
+            }
+            $backorder = (int) round((float) ($metrics['backorder'] ?? 0));
+            if ($backorder <= 0) {
+                $backorder = (int) ($index['backorder'] ?? 0);
+            }
+
+            $fromProduct = PutAwayRowBuilder::buildRow(
+                (string) ($payload['sku'] ?? ''),
+                (string) (($payload['name'] ?? '') !== '' ? $payload['name'] : ($product['name'] ?? '')),
+                isset($payload['barcode']) ? (string) $payload['barcode'] : null,
+                isset($payload['image_url']) ? (string) $payload['image_url'] : null,
+                $locations,
+                $onHand,
+                $backorder
+            );
+
+            foreach (['receiving_qty', 'pickable_qty', 'non_pickable_qty', 'on_hand', 'backorder'] as $key) {
+                $payload[$key] = max((int) ($payload[$key] ?? 0), (int) ($fromProduct[$key] ?? 0));
+            }
+        }
+
+        $payload['receiving_location'] = $this->receivingLocationMetaForRow(
+            $customerId,
+            $product,
+            (int) ($payload['receiving_qty'] ?? 0)
+        );
+
+        return $payload;
+    }
+
+    /**
+     * @param  array<string, mixed>|null  $product
+     * @return array{warehouse_id:string,location_id:string,location_name:string}|null
+     */
+    private function receivingLocationMetaForRow(
+        string $customerId,
+        ?array $product,
+        int $receivingQty
+    ): ?array {
+        $fromProduct = $this->receivingLocationFromProduct($product);
+        if ($fromProduct !== null) {
+            return $fromProduct;
+        }
+
+        if ($receivingQty <= 0) {
+            return null;
+        }
+
+        $warehouseId = $this->warehouseIdForReceivingResolve($product);
+        if ($warehouseId === '') {
+            return null;
+        }
+
+        $resolved = $this->inventory->resolveWarehouseLocation(
+            $warehouseId,
+            AsnReceivingService::RECEIVING_LOCATION_NAME,
+            $customerId !== '' ? $customerId : null
+        );
+        if (! is_array($resolved) || trim((string) ($resolved['id'] ?? '')) === '') {
+            return null;
+        }
+
+        return [
+            'warehouse_id' => $warehouseId,
+            'location_id' => (string) $resolved['id'],
+            'location_name' => trim((string) ($resolved['name'] ?? AsnReceivingService::RECEIVING_LOCATION_NAME)),
+        ];
+    }
+
+    /**
+     * @param  array<string, mixed>|null  $product
+     * @return array{warehouse_id:string,location_id:string,location_name:string}|null
+     */
+    private function receivingLocationFromProduct(?array $product): ?array
+    {
+        if (! is_array($product)) {
+            return null;
+        }
+
+        $receivingName = strtolower(AsnReceivingService::RECEIVING_LOCATION_NAME);
+        foreach ($product['warehouses'] ?? [] as $wh) {
+            if (! is_array($wh)) {
+                continue;
+            }
+            foreach ($wh['locations'] ?? [] as $loc) {
+                if (! is_array($loc)) {
+                    continue;
+                }
+                if (strtolower(trim((string) ($loc['location_name'] ?? ''))) !== $receivingName) {
+                    continue;
+                }
+                $locId = trim((string) ($loc['location_id'] ?? ''));
+                if ($locId === '') {
+                    continue;
+                }
+
+                return [
+                    'warehouse_id' => trim((string) ($wh['warehouse_id'] ?? '')),
+                    'location_id' => $locId,
+                    'location_name' => trim((string) ($loc['location_name'] ?? AsnReceivingService::RECEIVING_LOCATION_NAME)),
+                ];
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * @param  array<string, mixed>|null  $product
+     */
+    private function warehouseIdForReceivingResolve(?array $product): string
+    {
+        if (is_array($product)) {
+            foreach ($product['warehouses'] ?? [] as $wh) {
+                if (! is_array($wh)) {
+                    continue;
+                }
+                $wid = trim((string) ($wh['warehouse_id'] ?? ''));
+                if ($wid !== '') {
+                    return $wid;
+                }
+            }
+        }
+
+        $env = config('services.shiphero.put_away_warehouse_id');
+        if (! is_string($env) || trim($env) === '') {
+            $env = config('services.shiphero.restock_warehouse_id');
+        }
+
+        return is_string($env) ? trim($env) : '';
     }
 
     /**

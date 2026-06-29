@@ -47,8 +47,8 @@ const deleteLocationOpen = ref(false);
 const deleteLocationTarget = ref(null);
 
 const addLocationModalOpen = ref(false);
-const addLocationForm = reactive({ location: "", quantity: "", reason: "Account Setup" });
-const addLocationInputRef = ref(null);
+const addLocationForm = reactive({ location: "", quantity: "0", reason: "Account Setup" });
+const addLocationQtyInputRef = ref(null);
 const inventoryReasons = ref([
   "Account Setup",
   "Amazon Return",
@@ -592,12 +592,22 @@ async function confirmDeleteLocation() {
   }
 }
 
+function focusAddLocationQtyInput() {
+  nextTick(() => {
+    const el = addLocationQtyInputRef.value;
+    if (el instanceof HTMLInputElement) {
+      el.focus();
+      el.select();
+    }
+  });
+}
+
 function openAddLocationModal() {
   addLocationForm.location = "";
-  addLocationForm.quantity = "";
+  addLocationForm.quantity = "0";
   addLocationForm.reason = defaultAddLocationReason.value;
   addLocationModalOpen.value = true;
-  nextTick(() => addLocationInputRef.value?.focus());
+  focusAddLocationQtyInput();
 }
 
 async function loadAdjustmentReasons() {
@@ -1116,14 +1126,19 @@ onUnmounted(() => {
           <div class="crm-vx-modal__body">
             <label class="form-label small">Location</label>
             <input
-              ref="addLocationInputRef"
               v-model="addLocationForm.location"
               type="text"
               class="form-control mb-3"
               placeholder="Type location name"
             />
             <label class="form-label small">QTY</label>
-            <input v-model="addLocationForm.quantity" type="number" min="0" class="form-control mb-3" />
+            <input
+              ref="addLocationQtyInputRef"
+              v-model="addLocationForm.quantity"
+              type="number"
+              min="0"
+              class="form-control mb-3"
+            />
             <label class="form-label small">Reason</label>
             <select v-model="addLocationForm.reason" class="form-select">
               <option v-for="reason in inventoryReasons" :key="reason" :value="reason">{{ reason }}</option>

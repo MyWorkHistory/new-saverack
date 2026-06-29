@@ -229,8 +229,11 @@ function removeLine() {
                     <td class="fw-medium text-body">
                       <div>{{ row.service }}</div>
                       <div class="small text-secondary">{{ row.qtyLabel }}</div>
+                      <div class="small text-secondary admin-asn-fees-modal__account-default">
+                        {{ defaultPriceLabel(row.line_type) }}
+                      </div>
                     </td>
-                    <td class="text-end">
+                    <td class="text-end align-middle">
                       <input
                         v-model="rows[idx].quantity"
                         type="number"
@@ -242,7 +245,7 @@ function removeLine() {
                         :aria-label="`${row.service} ${row.qtyLabel}`"
                       />
                     </td>
-                    <td class="text-end">
+                    <td class="text-end align-middle">
                       <div class="input-group input-group-sm flex-nowrap justify-content-end admin-asn-fees-modal__price-group">
                         <span class="input-group-text">$</span>
                         <input
@@ -254,9 +257,6 @@ function removeLine() {
                           :disabled="busy"
                           :aria-label="`${row.service} price`"
                         />
-                      </div>
-                      <div class="small text-secondary mt-1 admin-asn-fees-modal__default-price">
-                        {{ defaultPriceLabel(row.line_type) }}
                       </div>
                     </td>
                   </tr>
@@ -332,7 +332,8 @@ function removeLine() {
   width: 5.5rem;
 }
 
-.admin-asn-fees-modal__default-price {
-  line-height: 1.2;
+.admin-asn-fees-modal__account-default {
+  line-height: 1.3;
+  margin-top: 0.15rem;
 }
 </style>

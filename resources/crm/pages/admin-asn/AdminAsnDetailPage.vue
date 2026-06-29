@@ -285,17 +285,46 @@ function openInventoryInNewTab(line, event) {
   window.open(href, "_blank", "noopener,noreferrer");
 }
 
-function shipheroProductUrl(line) {
-  const legacyId = Number(line?.shiphero_legacy_id || 0);
-  if (legacyId <= 0) return null;
-  return `https://app.shiphero.com/dashboard/products/details/${legacyId}`;
+async function resolveShipheroLegacyId(line) {
+  const fromLine = Number(line?.shiphero_legacy_id || 0);
+  if (fromLine > 0) return fromLine;
+  const sku = String(line?.sku || "").trim();
+  if (!sku) return 0;
+  try {
+    const params = clientAccountId.value > 0 ? { client_account_id: clientAccountId.value } : {};
+    const { data } = await api.get(`/inventory/products/${encodeURIComponent(sku)}`, { params });
+    const legacyId = Number(data?.product?.shiphero_legacy_id || 0);
+    if (legacyId > 0 && line?.id) {
+      const lines = (asn.value?.lines || []).map((row) =>
+        row.id === line.id ? { ...row, shiphero_legacy_id: legacyId } : row,
+      );
+      if (asn.value) {
+        asn.value = { ...asn.value, lines };
+      }
+    }
+    return legacyId;
+  } catch {
+    return 0;
+  }
 }
 
-function openShipHeroProduct(line, event) {
+async function openShipHeroProduct(line, event) {
   event?.preventDefault?.();
-  const url = shipheroProductUrl(line);
-  if (!url) return;
-  window.open(url, "_blank", "noopener,noreferrer");
+  const legacyId = await resolveShipheroLegacyId(line);
+  if (legacyId <= 0) {
+    toast.error("Could not find this product in ShipHero.");
+    return;
+  }
+  window.open(
+    `https://app.shiphero.com/dashboard/products/details/${legacyId}`,
+    "_blank",
+    "noopener,noreferrer",
+  );
+}
+
+async function viewShipHeroFromLineMenu(line) {
+  closeLineMenu();
+  await openShipHeroProduct(line);
 }
 
 function closeAllHeaderMenus() {
@@ -713,16 +742,11 @@ function openEditItem(line) {
   };
   editItemOpen.value = true;
   if (!(Number(line.shiphero_legacy_id) > 0) && line.sku) {
-    const params = clientAccountId.value > 0 ? { client_account_id: clientAccountId.value } : {};
-    api
-      .get(`/inventory/products/${encodeURIComponent(line.sku)}`, { params })
-      .then(({ data }) => {
-        const legacyId = Number(data?.product?.shiphero_legacy_id || 0);
-        if (legacyId > 0 && editItemLine.value?.id === line.id) {
-          editItemLine.value = { ...editItemLine.value, shiphero_legacy_id: legacyId };
-        }
-      })
-      .catch(() => {});
+    resolveShipheroLegacyId(line).then((legacyId) => {
+      if (legacyId > 0 && editItemLine.value?.id === line.id) {
+        editItemLine.value = { ...editItemLine.value, shiphero_legacy_id: legacyId };
+      }
+    });
   }
 }
 
@@ -1864,11 +1888,11 @@ onUnmounted(() => {
           <template v-if="isDraft">
             <button
               type="button"
-              class="staff-row-menu__item staff-row-menu__item--danger"
+              class="staff-row-menu__item"
               role="menuitem"
-              @click="askDeleteLineFromMenu(lineMenuRow)"
+              @click="viewShipHeroFromLineMenu(lineMenuRow)"
             >
-              Delete
+              View in ShipHero
             </button>
             <button
               type="button"
@@ -1878,8 +1902,24 @@ onUnmounted(() => {
             >
               Print Barcode
             </button>
+            <button
+              type="button"
+              class="staff-row-menu__item staff-row-menu__item--danger"
+              role="menuitem"
+              @click="askDeleteLineFromMenu(lineMenuRow)"
+            >
+              Delete
+            </button>
           </template>
           <template v-else>
+            <button
+              type="button"
+              class="staff-row-menu__item"
+              role="menuitem"
+              @click="viewShipHeroFromLineMenu(lineMenuRow)"
+            >
+              View in ShipHero
+            </button>
             <button
               type="button"
               class="staff-row-menu__item"
@@ -1890,18 +1930,6 @@ onUnmounted(() => {
               "
             >
               Subtract Received
-            </button>
-            <button
-              v-if="shipheroProductUrl(lineMenuRow)"
-              type="button"
-              class="staff-row-menu__item"
-              role="menuitem"
-              @click="
-                closeLineMenu();
-                openShipHeroProduct(lineMenuRow);
-              "
-            >
-              View in ShipHero
             </button>
             <button
               type="button"
@@ -2013,16 +2041,13 @@ onUnmounted(() => {
           <div class="fw-semibold">{{ editItemLine.name }}</div>
           <div class="small text-secondary">{{ editItemLine.sku }}</div>
         </div>
-        <a
-          v-if="shipheroProductUrl(editItemLine)"
-          :href="shipheroProductUrl(editItemLine)"
-          target="_blank"
-          rel="noopener noreferrer"
+        <button
+          type="button"
           class="btn btn-sm btn-outline-secondary flex-shrink-0"
           @click="openShipHeroProduct(editItemLine, $event)"
         >
           View in ShipHero
-        </a>
+        </button>
       </div>
       <p class="small fw-semibold text-secondary">Information</p>
       <label class="form-label">Barcode</label>

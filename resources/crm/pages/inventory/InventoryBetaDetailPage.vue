@@ -250,16 +250,9 @@ function applyWarehouseSliceToProduct(warehouseSlice) {
   if (!product.value || !warehouseSlice?.warehouse_id) return;
   const whId = String(warehouseSlice.warehouse_id);
   const incomingLocs = Array.isArray(warehouseSlice.locations) ? warehouseSlice.locations : [];
-  if (incomingLocs.length === 0) return;
-
-  const qtyByLocId = new Map();
-  incomingLocs.forEach((loc) => {
-    const id = String(loc.location_id || "").trim();
-    if (id) qtyByLocId.set(id, Number(loc.quantity ?? 0));
-  });
 
   const warehouses = Array.isArray(product.value.warehouses) ? [...product.value.warehouses] : [];
-  let whIndex = warehouses.findIndex((wh) => String(wh.warehouse_id || "") === whId);
+  const whIndex = warehouses.findIndex((wh) => String(wh.warehouse_id || "") === whId);
   if (whIndex < 0) {
     warehouses.push({
       warehouse_id: whId,
@@ -267,20 +260,11 @@ function applyWarehouseSliceToProduct(warehouseSlice) {
       locations: incomingLocs.map((loc) => ({ ...loc })),
     });
   } else {
-    const wh = { ...warehouses[whIndex] };
-    const locations = Array.isArray(wh.locations) ? [...wh.locations] : [];
-    const nextLocations = locations.map((loc) => {
-      const id = String(loc.location_id || "");
-      if (!qtyByLocId.has(id)) return { ...loc };
-      return { ...loc, quantity: qtyByLocId.get(id) };
-    });
-    incomingLocs.forEach((inc) => {
-      const id = String(inc.location_id || "");
-      if (!id || nextLocations.some((row) => String(row.location_id) === id)) return;
-      nextLocations.push({ ...inc });
-    });
-    wh.locations = nextLocations;
-    warehouses[whIndex] = wh;
+    warehouses[whIndex] = {
+      ...warehouses[whIndex],
+      warehouse_name: warehouseSlice.warehouse_name || warehouses[whIndex].warehouse_name || "",
+      locations: incomingLocs.map((loc) => ({ ...loc })),
+    };
   }
 
   product.value = {

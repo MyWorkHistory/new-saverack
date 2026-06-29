@@ -2527,6 +2527,289 @@ GQL;
     }
 
     /**
+     * Remove a SKU assignment from a warehouse location (ShipHero item_location_delete).
+     *
+     * @return array<string, mixed> Normalized single-warehouse slice
+     */
+    public function deleteItemLocation(
+        string $sku,
+        string $warehouseId,
+        string $locationId,
+        ?string $itemLocationId,
+        ?string $customerAccountId = null
+    ): array {
+        $sku = trim($sku);
+        $warehouseId = trim($warehouseId);
+        $locationId = trim($locationId);
+        if ($sku === '' || $warehouseId === '' || $locationId === '') {
+            throw new RuntimeException('sku, warehouse_id, and location_id are required.');
+        }
+
+        $resolvedItemLocationId = $this->resolveDeletableItemLocationId(
+            $sku,
+            $warehouseId,
+            $locationId,
+            $itemLocationId,
+            $customerAccountId
+        );
+
+        $existingQty = $this->itemLocationQuantity(
+            $sku,
+            $warehouseId,
+            $locationId,
+            $resolvedItemLocationId,
+            $customerAccountId
+        );
+        if ($existingQty > 0) {
+            $this->replaceLocationQuantity(
+                $sku,
+                $warehouseId,
+                $locationId,
+                0,
+                'CRM inventory clear before location delete',
+                $customerAccountId
+            );
+        }
+
+        $graphql = <<<'GQL'
+mutation ShipHeroItemLocationDelete($data: DeleteItemLocationInput!) {
+  item_location_delete(data: $data) {
+    request_id
+    ok
+    deleted_ids
+  }
+}
+GQL;
+
+        $json = $this->client->query($graphql, [
+            'data' => [
+                'ids' => [$resolvedItemLocationId],
+            ],
+        ]);
+        $ok = data_get($json, 'data.item_location_delete.ok');
+        if ($ok !== true) {
+            throw new RuntimeException('ShipHero could not delete item location.');
+        }
+
+        return $this->warehouseSliceForSku($sku, $warehouseId, $customerAccountId);
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function warehouseSliceForSku(string $sku, string $warehouseId, ?string $customerAccountId): array
+    {
+        $detail = $this->getProductDetailBySku($sku, $warehouseId, $customerAccountId, false);
+        if (! is_array($detail)) {
+            return [
+                'warehouse_id' => $warehouseId,
+                'warehouse_name' => '',
+                'locations' => [],
+            ];
+        }
+
+        foreach ($detail['warehouses'] ?? [] as $warehouse) {
+            if (! is_array($warehouse)) {
+                continue;
+            }
+            if (trim((string) ($warehouse['warehouse_id'] ?? '')) === $warehouseId) {
+                return $warehouse;
+            }
+        }
+
+        return [
+            'warehouse_id' => $warehouseId,
+            'warehouse_name' => '',
+            'locations' => [],
+        ];
+    }
+
+    private function resolveDeletableItemLocationId(
+        string $sku,
+        string $warehouseId,
+        string $locationId,
+        ?string $itemLocationId,
+        ?string $customerAccountId
+    ): string {
+        $itemLocationId = trim((string) $itemLocationId);
+        if ($this->isShipHeroGraphQlId($itemLocationId)) {
+            return $itemLocationId;
+        }
+
+        $resolved = $this->lookupItemLocationIdForSku($sku, $warehouseId, $locationId, $customerAccountId);
+        if ($resolved === null || $resolved === '') {
+            throw new RuntimeException('Could not resolve item location for deletion.');
+        }
+
+        return $resolved;
+    }
+
+    private function isShipHeroGraphQlId(string $id): bool
+    {
+        if ($id === '') {
+            return false;
+        }
+        if (str_starts_with($id, 'item:') || str_starts_with($id, 'fallback:')) {
+            return false;
+        }
+
+        return preg_match('/^[A-Za-z0-9+\/=_-]+$/', $id) === 1;
+    }
+
+    private function itemLocationQuantity(
+        string $sku,
+        string $warehouseId,
+        string $locationId,
+        string $itemLocationId,
+        ?string $customerAccountId
+    ): int {
+        $itemLocation = $this->lookupItemLocationForSku(
+            $sku,
+            $warehouseId,
+            $locationId,
+            $customerAccountId,
+            $itemLocationId
+        );
+        if (! is_array($itemLocation)) {
+            return 0;
+        }
+
+        return max(0, (int) ($itemLocation['quantity'] ?? 0));
+    }
+
+    /**
+     * @return array{id:string,location_id:string,quantity:int}|null
+     */
+    private function lookupItemLocationForSku(
+        string $sku,
+        string $warehouseId,
+        string $locationId,
+        ?string $customerAccountId,
+        ?string $itemLocationId = null
+    ): ?array {
+        $sku = trim($sku);
+        $warehouseId = trim($warehouseId);
+        $locationId = trim($locationId);
+        $itemLocationId = trim((string) $itemLocationId);
+        if ($sku === '' || $warehouseId === '') {
+            return null;
+        }
+
+        $variableSets = [
+            ['warehouse_id' => $warehouseId, 'sku' => [$sku]],
+        ];
+        $customer = is_string($customerAccountId) ? trim($customerAccountId) : '';
+        if ($customer !== '') {
+            $variableSets[] = [
+                'warehouse_id' => $warehouseId,
+                'sku' => [$sku],
+                'customer_account_id' => $customer,
+            ];
+        }
+
+        $queries = [
+            [
+                'graphql' => <<<'GQL'
+query ShipHeroItemLocationsForSku($warehouse_id: String!, $sku: [String!]!) {
+  item_locations(warehouse_id: $warehouse_id, sku: $sku) {
+    data(first: 100) {
+      edges {
+        node {
+          id
+          location_id
+          quantity
+        }
+      }
+    }
+  }
+}
+GQL,
+                'with_customer' => false,
+            ],
+            [
+                'graphql' => <<<'GQL'
+query ShipHeroItemLocationsForSkuCustomer($warehouse_id: String!, $sku: [String!]!, $customer_account_id: String!) {
+  item_locations(warehouse_id: $warehouse_id, sku: $sku, customer_account_id: $customer_account_id) {
+    data(first: 100) {
+      edges {
+        node {
+          id
+          location_id
+          quantity
+        }
+      }
+    }
+  }
+}
+GQL,
+                'with_customer' => true,
+            ],
+        ];
+
+        foreach ($variableSets as $vars) {
+            foreach ($queries as $candidate) {
+                if (($candidate['with_customer'] ?? false) && ! isset($vars['customer_account_id'])) {
+                    continue;
+                }
+                if (! ($candidate['with_customer'] ?? false) && isset($vars['customer_account_id'])) {
+                    continue;
+                }
+                try {
+                    $json = $this->client->query($candidate['graphql'], $vars);
+                    $edges = data_get($json, 'data.item_locations.data.edges');
+                    if (! is_array($edges)) {
+                        continue;
+                    }
+                    foreach ($edges as $edge) {
+                        if (! is_array($edge)) {
+                            continue;
+                        }
+                        $node = $edge['node'] ?? null;
+                        if (! is_array($node)) {
+                            continue;
+                        }
+                        $nodeId = trim((string) ($node['id'] ?? ''));
+                        $nodeLocationId = trim((string) ($node['location_id'] ?? ''));
+                        if ($itemLocationId !== '' && $nodeId === $itemLocationId) {
+                            return [
+                                'id' => $nodeId,
+                                'location_id' => $nodeLocationId,
+                                'quantity' => max(0, (int) ($node['quantity'] ?? 0)),
+                            ];
+                        }
+                        if ($locationId !== '' && $nodeLocationId === $locationId) {
+                            return [
+                                'id' => $nodeId,
+                                'location_id' => $nodeLocationId,
+                                'quantity' => max(0, (int) ($node['quantity'] ?? 0)),
+                            ];
+                        }
+                    }
+                } catch (\Throwable) {
+                    continue;
+                }
+            }
+        }
+
+        return null;
+    }
+
+    private function lookupItemLocationIdForSku(
+        string $sku,
+        string $warehouseId,
+        string $locationId,
+        ?string $customerAccountId
+    ): ?string {
+        $itemLocation = $this->lookupItemLocationForSku($sku, $warehouseId, $locationId, $customerAccountId);
+        if (! is_array($itemLocation)) {
+            return null;
+        }
+        $id = trim((string) ($itemLocation['id'] ?? ''));
+
+        return $id !== '' ? $id : null;
+    }
+
+    /**
      * Add quantity at a location (creates SKU location assignment when missing).
      *
      * @return array<string, mixed> Normalized single-warehouse slice

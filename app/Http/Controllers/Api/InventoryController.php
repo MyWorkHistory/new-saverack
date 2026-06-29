@@ -1196,6 +1196,67 @@ class InventoryController extends Controller
         }
     }
 
+    public function deleteLocation(Request $request): JsonResponse
+    {
+        $validated = $request->validate([
+            'sku' => ['required', 'string', 'max:255'],
+            'warehouse_id' => ['required', 'string', 'max:255'],
+            'location_id' => ['required', 'string', 'max:255'],
+            'item_location_id' => ['nullable', 'string', 'max:255'],
+            'client_account_id' => ['nullable', 'integer', 'exists:client_accounts,id'],
+        ]);
+
+        $clientAccountId = isset($validated['client_account_id'])
+            ? (int) $validated['client_account_id']
+            : null;
+
+        try {
+            $shipheroCustomerId = $this->resolveShipHeroCustomerAccountId(
+                $clientAccountId > 0 ? $clientAccountId : null,
+                $request,
+            );
+
+            $itemLocationId = isset($validated['item_location_id']) && is_string($validated['item_location_id'])
+                ? $validated['item_location_id']
+                : null;
+
+            $updated = $this->inventory->deleteItemLocation(
+                $validated['sku'],
+                $validated['warehouse_id'],
+                $validated['location_id'],
+                $itemLocationId,
+                $shipheroCustomerId,
+            );
+
+            if ($clientAccountId !== null && $clientAccountId > 0) {
+                $this->putAway->syncLocalReceivingAfterReplace(
+                    $clientAccountId,
+                    $validated['sku'],
+                    $validated['warehouse_id'],
+                    $validated['location_id'],
+                    $updated,
+                    $shipheroCustomerId
+                );
+            }
+
+            return response()->json([
+                'warehouse' => $updated,
+            ]);
+        } catch (ValidationException $e) {
+            throw $e;
+        } catch (RuntimeException $e) {
+            return response()->json(['message' => $e->getMessage()], 502);
+        } catch (Throwable $e) {
+            report($e);
+
+            return response()->json([
+                'message' => config('app.debug')
+                    ? $e->getMessage()
+                    : 'Could not reach ShipHero. Check SHIPHERO_* in .env and server logs.',
+            ], 502);
+        }
+    }
+
     public function transferQuantity(Request $request): JsonResponse
     {
         $validated = $request->validate([

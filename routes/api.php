@@ -162,6 +162,8 @@ Route::middleware('auth:sanctum')->group(function () {
             ->middleware('can:inventory.update');
         Route::post('/locations/add-qty', [InventoryController::class, 'addLocationQuantity'])
             ->middleware('can:inventory.update');
+        Route::post('/locations/delete', [InventoryController::class, 'deleteLocation'])
+            ->middleware('can:inventory.update');
         Route::get('/on-demand-products', [InventoryController::class, 'onDemandProducts'])
             ->middleware('can:inventory.view');
         Route::post('/on-demand-products', [InventoryController::class, 'storeOnDemandProduct'])

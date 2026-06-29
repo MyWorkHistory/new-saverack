@@ -11,8 +11,6 @@ import { errorMessage as apiErrorMessage } from "../../utils/apiError.js";
 
 const RECEIVING_LOCATION_NAME = "Receiving";
 const PUT_AWAY_REASON = "Inbound Receiving Adjustments";
-const DELETE_LOCATION_REASON = "Inventory Reclassification";
-
 const route = useRoute();
 const toast = useToast();
 
@@ -280,16 +278,9 @@ function applyWarehouseSliceToProduct(warehouseSlice) {
   if (!product.value || !warehouseSlice?.warehouse_id) return;
   const whId = String(warehouseSlice.warehouse_id);
   const incomingLocs = Array.isArray(warehouseSlice.locations) ? warehouseSlice.locations : [];
-  if (incomingLocs.length === 0) return;
-
-  const qtyByLocId = new Map();
-  incomingLocs.forEach((loc) => {
-    const id = String(loc.location_id || "").trim();
-    if (id) qtyByLocId.set(id, Number(loc.quantity ?? 0));
-  });
 
   const warehouses = Array.isArray(product.value.warehouses) ? [...product.value.warehouses] : [];
-  let whIndex = warehouses.findIndex((wh) => String(wh.warehouse_id || "") === whId);
+  const whIndex = warehouses.findIndex((wh) => String(wh.warehouse_id || "") === whId);
   if (whIndex < 0) {
     warehouses.push({
       warehouse_id: whId,
@@ -297,20 +288,11 @@ function applyWarehouseSliceToProduct(warehouseSlice) {
       locations: incomingLocs.map((loc) => ({ ...loc })),
     });
   } else {
-    const wh = { ...warehouses[whIndex] };
-    const locations = Array.isArray(wh.locations) ? [...wh.locations] : [];
-    const nextLocations = locations.map((loc) => {
-      const id = String(loc.location_id || "");
-      if (!qtyByLocId.has(id)) return { ...loc };
-      return { ...loc, quantity: qtyByLocId.get(id) };
-    });
-    incomingLocs.forEach((inc) => {
-      const id = String(inc.location_id || "");
-      if (!id || nextLocations.some((row) => String(row.location_id) === id)) return;
-      nextLocations.push({ ...inc });
-    });
-    wh.locations = nextLocations;
-    warehouses[whIndex] = wh;
+    warehouses[whIndex] = {
+      ...warehouses[whIndex],
+      warehouse_name: warehouseSlice.warehouse_name || warehouses[whIndex].warehouse_name || "",
+      locations: incomingLocs.map((loc) => ({ ...loc })),
+    };
   }
 
   product.value = { ...product.value, warehouses };
@@ -572,15 +554,14 @@ async function confirmDeleteLocation() {
       sku: product.value.sku,
       warehouse_id: loc.warehouse_id,
       location_id: loc.location_id,
-      quantity: 0,
-      reason: DELETE_LOCATION_REASON,
+      item_location_id: loc.item_location_id,
     };
     if (clientAccountId.value > 0) {
       body.client_account_id = clientAccountId.value;
     }
-    const { data } = await api.post("/inventory/replace", body);
+    const { data } = await api.post("/inventory/locations/delete", body);
     applyWarehouseSliceToProduct(data?.warehouse);
-    toast.success("Location cleared.");
+    toast.success("Location removed.");
     deleteLocationOpen.value = false;
     deleteLocationTarget.value = null;
     await reloadProductData({ refresh: true });
@@ -1108,7 +1089,7 @@ onUnmounted(() => {
     <ConfirmModal
       :open="deleteLocationOpen"
       title="Delete Location"
-      :message="`Clear all quantity at location ${deleteLocationTarget?.location_name || deleteLocationTarget?.location_id || '—'}?`"
+      :message="`Remove location ${deleteLocationTarget?.location_name || deleteLocationTarget?.location_id || '—'} from this product?`"
       confirm-label="Delete Location"
       cancel-label="Cancel"
       :busy="saving"

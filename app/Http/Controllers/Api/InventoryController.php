@@ -18,7 +18,7 @@ use App\Services\CrossAccountInventoryListService;
 use App\Services\PutAwayInventoryService;
 use App\Services\ShipHeroInventoryService;
 use App\Services\ShipHeroOrderService;
-use App\Support\Barcode\Code128Svg;
+use App\Support\InventoryAdjustmentActor;
 use Barryvdh\DomPDF\Facade\Pdf;
 use GuzzleHttp\Client;
 use Illuminate\Http\JsonResponse;
@@ -1220,12 +1220,15 @@ class InventoryController extends Controller
                 ? $validated['item_location_id']
                 : null;
 
+            $clearReason = $this->inventoryReasonWithActor('CRM location delete', $request);
+
             $updated = $this->inventory->deleteItemLocation(
                 $validated['sku'],
                 $validated['warehouse_id'],
                 $validated['location_id'],
                 $itemLocationId,
                 $shipheroCustomerId,
+                $clearReason
             );
 
             if ($clientAccountId !== null && $clientAccountId > 0) {
@@ -1971,38 +1974,11 @@ class InventoryController extends Controller
 
     private function inventoryReasonWithActor(string $reason, Request $request): string
     {
-        $base = trim($reason);
-        if ($base === '') {
-            return $base;
-        }
-        $actor = $this->inventoryAdjustmentActorLabel($request);
-        if ($actor === null || $actor === '') {
-            return $base;
-        }
-        $suffix = ' ('.$actor.')';
-        if (str_ends_with($base, $suffix)) {
-            return $base;
-        }
-        $maxLen = 500;
-        if (strlen($base) + strlen($suffix) > $maxLen) {
-            $base = rtrim(substr($base, 0, max(0, $maxLen - strlen($suffix))));
-        }
-
-        return $base.$suffix;
-    }
-
-    private function inventoryAdjustmentActorLabel(Request $request): ?string
-    {
         $user = $request->user();
-        if (! $user instanceof User) {
-            return null;
-        }
-        $name = trim((string) $user->name);
-        if ($name !== '') {
-            return $name;
-        }
-        $email = trim((string) $user->email);
 
-        return $email !== '' ? $email : null;
+        return InventoryAdjustmentActor::reasonWithActor(
+            $reason,
+            $user instanceof User ? $user : null
+        );
     }
 }

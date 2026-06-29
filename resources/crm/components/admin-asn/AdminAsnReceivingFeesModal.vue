@@ -40,9 +40,21 @@ const visibleDefs = computed(() => {
   return FEE_ROW_DEFS.filter((d) => d.lineType === lt);
 });
 
-function defaultPriceForLineType(lineType) {
+function defaultPriceCentsForLineType(lineType) {
   const opt = props.chargeOptions.find((o) => o.line_type === lineType);
-  return ((Number(opt?.default_unit_price_cents) || 0) / 100).toFixed(2);
+  return Number(opt?.default_unit_price_cents) || 0;
+}
+
+function defaultPriceForLineType(lineType) {
+  return (defaultPriceCentsForLineType(lineType) / 100).toFixed(2);
+}
+
+function defaultPriceLabel(lineType) {
+  const cents = defaultPriceCentsForLineType(lineType);
+  if (cents > 0) {
+    return `Account default: $${(cents / 100).toFixed(2)}`;
+  }
+  return "No account price configured";
 }
 
 function displayNameForLineType(lineType) {
@@ -178,7 +190,7 @@ function removeLine() {
         aria-labelledby="asn-receiving-fees-title"
         @click.self="close"
       >
-        <div class="crm-vx-modal crm-vx-modal--md" @click.stop>
+        <div class="crm-vx-modal crm-vx-modal--lg admin-asn-fees-modal" @click.stop>
           <button
             type="button"
             class="crm-vx-modal__close"
@@ -203,44 +215,48 @@ function removeLine() {
               {{ errorMsg || localError }}
             </p>
 
-            <div class="table-responsive">
+            <div class="table-responsive admin-asn-fees-modal__table-wrap">
               <table class="table table-sm align-middle mb-0 admin-asn-fees-modal-table">
                 <thead>
                   <tr>
                     <th scope="col">Service</th>
-                    <th scope="col" class="text-end" style="width: 8rem">Qty</th>
-                    <th scope="col" class="text-end" style="width: 8rem">Price</th>
+                    <th scope="col" class="text-end admin-asn-fees-modal__qty-col">Qty</th>
+                    <th scope="col" class="text-end admin-asn-fees-modal__price-col">Price</th>
                   </tr>
                 </thead>
                 <tbody>
                   <tr v-for="(row, idx) in rows" :key="row.line_type">
-                    <td class="fw-medium text-body">{{ row.service }}</td>
+                    <td class="fw-medium text-body">
+                      <div>{{ row.service }}</div>
+                      <div class="small text-secondary">{{ row.qtyLabel }}</div>
+                    </td>
                     <td class="text-end">
-                      <label class="form-label small text-secondary mb-1">{{ row.qtyLabel }}</label>
                       <input
                         v-model="rows[idx].quantity"
                         type="number"
                         min="0"
                         step="any"
-                        class="form-control form-control-sm text-end"
-                        :placeholder="row.qtyLabel"
+                        class="form-control form-control-sm text-end admin-asn-fees-modal__qty-input"
+                        placeholder="0"
                         :disabled="busy"
                         :aria-label="`${row.service} ${row.qtyLabel}`"
                       />
                     </td>
                     <td class="text-end">
-                      <div class="input-group input-group-sm flex-nowrap justify-content-end">
+                      <div class="input-group input-group-sm flex-nowrap justify-content-end admin-asn-fees-modal__price-group">
                         <span class="input-group-text">$</span>
                         <input
                           v-model="rows[idx].unit_price"
                           type="number"
                           min="0"
                           step="0.01"
-                          class="form-control form-control-sm text-end"
-                          style="max-width: 6rem"
+                          class="form-control form-control-sm text-end admin-asn-fees-modal__price-input"
                           :disabled="busy"
                           :aria-label="`${row.service} price`"
                         />
+                      </div>
+                      <div class="small text-secondary mt-1 admin-asn-fees-modal__default-price">
+                        {{ defaultPriceLabel(row.line_type) }}
                       </div>
                     </td>
                   </tr>
@@ -291,5 +307,32 @@ function removeLine() {
   text-transform: uppercase;
   letter-spacing: 0.02em;
   color: var(--bs-secondary-color);
+  white-space: nowrap;
+}
+
+.admin-asn-fees-modal__table-wrap {
+  max-height: min(60vh, 28rem);
+  overflow: auto;
+}
+
+.admin-asn-fees-modal__qty-col {
+  width: 7rem;
+}
+
+.admin-asn-fees-modal__price-col {
+  width: 10rem;
+}
+
+.admin-asn-fees-modal__qty-input {
+  width: 5.5rem;
+  margin-left: auto;
+}
+
+.admin-asn-fees-modal__price-input {
+  width: 5.5rem;
+}
+
+.admin-asn-fees-modal__default-price {
+  line-height: 1.2;
 }
 </style>

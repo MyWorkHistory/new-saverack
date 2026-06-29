@@ -554,10 +554,27 @@ class InventoryApiTest extends TestCase
 
     public function test_delete_location_calls_service_with_expected_args(): void
     {
+        $user = User::factory()->create();
+        $user->permissions()->sync([
+            $this->inventoryViewPermission()->id,
+            $this->inventoryUpdatePermission()->id,
+        ]);
+
         $mock = Mockery::mock(ShipHeroInventoryService::class);
         $mock->shouldReceive('deleteItemLocation')
             ->once()
-            ->with('SKU-1', 'WH1', 'LOC1', 'IL1', null)
+            ->with(
+                'SKU-1',
+                'WH1',
+                'LOC1',
+                'IL1',
+                null,
+                Mockery::on(function ($reason) use ($user) {
+                    return is_string($reason)
+                        && strpos($reason, 'CRM location delete') !== false
+                        && strpos($reason, '('.$user->name.')') !== false;
+                })
+            )
             ->andReturn([
                 'warehouse_id' => 'WH1',
                 'warehouse_name' => 'Main',
@@ -565,11 +582,6 @@ class InventoryApiTest extends TestCase
             ]);
         $this->app->instance(ShipHeroInventoryService::class, $mock);
 
-        $user = User::factory()->create();
-        $user->permissions()->sync([
-            $this->inventoryViewPermission()->id,
-            $this->inventoryUpdatePermission()->id,
-        ]);
         Sanctum::actingAs($user);
 
         $this->postJson('/api/inventory/locations/delete', [

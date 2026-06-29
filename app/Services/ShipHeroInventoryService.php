@@ -2536,7 +2536,8 @@ GQL;
         string $warehouseId,
         string $locationId,
         ?string $itemLocationId,
-        ?string $customerAccountId = null
+        ?string $customerAccountId = null,
+        ?string $clearReason = null
     ): array {
         $sku = trim($sku);
         $warehouseId = trim($warehouseId);
@@ -2561,12 +2562,16 @@ GQL;
             $customerAccountId
         );
         if ($existingQty > 0) {
+            $reason = trim((string) $clearReason);
+            if ($reason === '') {
+                $reason = 'CRM inventory clear before location delete';
+            }
             $this->replaceLocationQuantity(
                 $sku,
                 $warehouseId,
                 $locationId,
                 0,
-                'CRM inventory clear before location delete',
+                $reason,
                 $customerAccountId
             );
         }

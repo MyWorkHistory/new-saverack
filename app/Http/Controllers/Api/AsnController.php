@@ -693,6 +693,7 @@ class AsnController extends Controller
 
         $validated = validator($payload, [
             'shiphero_product_id' => ['nullable', 'string', 'max:191'],
+            'shiphero_legacy_id' => ['nullable', 'integer', 'min:1'],
             'sku' => ['required', 'string', 'max:255'],
             'name' => ['required', 'string', 'max:512'],
             'image_url' => ['nullable', 'string', 'max:2048'],
@@ -712,6 +713,9 @@ class AsnController extends Controller
             : null;
         if ($line->shiphero_product_id === '') {
             $line->shiphero_product_id = null;
+        }
+        if (isset($validated['shiphero_legacy_id']) && (int) $validated['shiphero_legacy_id'] > 0) {
+            $line->shiphero_legacy_id = (int) $validated['shiphero_legacy_id'];
         }
         $line->sku = $validated['sku'];
         $line->name = $validated['name'];
@@ -847,6 +851,7 @@ class AsnController extends Controller
         try {
             $created = $this->inventory->createProduct($customerId, (string) $line->sku, (string) $line->name);
             $line->shiphero_product_id = $created['id'];
+            $this->applyShipheroLegacyIdFromProduct($line, $created);
             if ($line->image_url === null && ! empty($created['image_url'])) {
                 $line->image_url = $created['image_url'];
             }
@@ -857,6 +862,7 @@ class AsnController extends Controller
             $existing = $this->inventory->getProductDetailBySku((string) $line->sku, null, $customerId, false);
             if (is_array($existing) && ! empty($existing['id'])) {
                 $line->shiphero_product_id = (string) $existing['id'];
+                $this->applyShipheroLegacyIdFromProduct($line, $existing);
                 if ($line->image_url === null && ! empty($existing['image_url'])) {
                     $line->image_url = (string) $existing['image_url'];
                 }
@@ -873,6 +879,22 @@ class AsnController extends Controller
             throw ValidationException::withMessages([
                 'sku' => ['Could not create this product in ShipHero: '.$e->getMessage()],
             ]);
+        }
+    }
+
+    /**
+     * @param  array<string, mixed>  $product
+     */
+    private function applyShipheroLegacyIdFromProduct(ClientAccountAsnLine $line, array $product): void
+    {
+        $legacyRaw = $product['shiphero_legacy_id'] ?? null;
+        if (is_int($legacyRaw) && $legacyRaw > 0) {
+            $line->shiphero_legacy_id = $legacyRaw;
+
+            return;
+        }
+        if (is_numeric($legacyRaw) && (int) $legacyRaw > 0) {
+            $line->shiphero_legacy_id = (int) $legacyRaw;
         }
     }
 

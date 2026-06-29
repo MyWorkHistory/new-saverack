@@ -22,6 +22,7 @@ class ClientAccountAsnLine extends Model
     protected $fillable = [
         'client_account_asn_id',
         'shiphero_product_id',
+        'shiphero_legacy_id',
         'sku',
         'name',
         'image_url',
@@ -47,6 +48,7 @@ class ClientAccountAsnLine extends Model
         'length' => 'decimal:4',
         'width' => 'decimal:4',
         'height' => 'decimal:4',
+        'shiphero_legacy_id' => 'integer',
         'specs_cached_at' => 'datetime',
     ];
 

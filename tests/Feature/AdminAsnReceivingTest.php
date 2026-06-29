@@ -291,7 +291,11 @@ class AdminAsnReceivingTest extends TestCase
             'wh-1',
             'whloc-recv-99',
             15,
-            Mockery::type('string'),
+            Mockery::on(function ($reason) use ($staff) {
+                return is_string($reason)
+                    && strpos($reason, 'Received from ASN #0020') !== false
+                    && strpos($reason, '('.$staff->name.')') !== false;
+            }),
             'sh-asn-admin-1'
         )->andReturn($this->receivingWarehouseSlice(15));
         $mock->shouldNotReceive('addLocationQuantity');
@@ -757,7 +761,11 @@ class AdminAsnReceivingTest extends TestCase
             'wh-1',
             'whloc-recv-lower',
             6,
-            Mockery::type('string'),
+            Mockery::on(function ($reason) use ($staff) {
+                return is_string($reason)
+                    && strpos($reason, 'Received correction adjustment from ASN #0056') !== false
+                    && strpos($reason, '('.$staff->name.')') !== false;
+            }),
             'sh-asn-admin-lower-recv'
         )->andReturn($this->receivingWarehouseSlice(6, 'whloc-recv-lower'));
         $mock->shouldNotReceive('addLocationQuantity');

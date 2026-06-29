@@ -285,6 +285,19 @@ function openInventoryInNewTab(line, event) {
   window.open(href, "_blank", "noopener,noreferrer");
 }
 
+function shipheroProductUrl(line) {
+  const legacyId = Number(line?.shiphero_legacy_id || 0);
+  if (legacyId <= 0) return null;
+  return `https://app.shiphero.com/dashboard/products/details/${legacyId}`;
+}
+
+function openShipHeroProduct(line, event) {
+  event?.preventDefault?.();
+  const url = shipheroProductUrl(line);
+  if (!url) return;
+  window.open(url, "_blank", "noopener,noreferrer");
+}
+
 function closeAllHeaderMenus() {
   statusMenuOpen.value = false;
   headerMenuOpen.value = false;
@@ -646,7 +659,7 @@ async function confirmSubtractReceived() {
     );
     asn.value = data.asn;
     subtractReceivedOpen.value = false;
-    toast.success("Received quantity updated.");
+    toast.success("Received quantity corrected.");
   } catch (e) {
     toast.errorFrom(e, "Could not subtract received quantity.");
   } finally {
@@ -699,6 +712,18 @@ function openEditItem(line) {
     height: line.height || "",
   };
   editItemOpen.value = true;
+  if (!(Number(line.shiphero_legacy_id) > 0) && line.sku) {
+    const params = clientAccountId.value > 0 ? { client_account_id: clientAccountId.value } : {};
+    api
+      .get(`/inventory/products/${encodeURIComponent(line.sku)}`, { params })
+      .then(({ data }) => {
+        const legacyId = Number(data?.product?.shiphero_legacy_id || 0);
+        if (legacyId > 0 && editItemLine.value?.id === line.id) {
+          editItemLine.value = { ...editItemLine.value, shiphero_legacy_id: legacyId };
+        }
+      })
+      .catch(() => {});
+  }
 }
 
 async function confirmEditItem() {
@@ -876,6 +901,8 @@ function buildAsnLinePayload(product, quantity) {
     rawId !== null && rawId !== undefined && String(rawId).trim() !== ""
       ? String(rawId).trim()
       : null;
+  const legacyRaw = p.shiphero_legacy_id ?? null;
+  const shipheroLegacyId = Number(legacyRaw) > 0 ? Number(legacyRaw) : null;
   let imageUrl = p.image_url != null ? String(p.image_url).trim() : null;
   if (imageUrl === "") {
     imageUrl = null;
@@ -884,6 +911,7 @@ function buildAsnLinePayload(product, quantity) {
   }
   return {
     shiphero_product_id: shipheroProductId,
+    shiphero_legacy_id: shipheroLegacyId,
     sku,
     name,
     image_url: imageUrl,
@@ -1864,6 +1892,18 @@ onUnmounted(() => {
               Subtract Received
             </button>
             <button
+              v-if="shipheroProductUrl(lineMenuRow)"
+              type="button"
+              class="staff-row-menu__item"
+              role="menuitem"
+              @click="
+                closeLineMenu();
+                openShipHeroProduct(lineMenuRow);
+              "
+            >
+              View in ShipHero
+            </button>
+            <button
               type="button"
               class="staff-row-menu__item"
               role="menuitem"
@@ -1968,9 +2008,21 @@ onUnmounted(() => {
       @close="editItemOpen = false"
       @confirm="confirmEditItem"
     >
-      <div v-if="editItemLine" class="mb-3">
-        <div class="fw-semibold">{{ editItemLine.name }}</div>
-        <div class="small text-secondary">{{ editItemLine.sku }}</div>
+      <div v-if="editItemLine" class="mb-3 d-flex justify-content-between align-items-start gap-2">
+        <div>
+          <div class="fw-semibold">{{ editItemLine.name }}</div>
+          <div class="small text-secondary">{{ editItemLine.sku }}</div>
+        </div>
+        <a
+          v-if="shipheroProductUrl(editItemLine)"
+          :href="shipheroProductUrl(editItemLine)"
+          target="_blank"
+          rel="noopener noreferrer"
+          class="btn btn-sm btn-outline-secondary flex-shrink-0"
+          @click="openShipHeroProduct(editItemLine, $event)"
+        >
+          View in ShipHero
+        </a>
       </div>
       <p class="small fw-semibold text-secondary">Information</p>
       <label class="form-label">Barcode</label>

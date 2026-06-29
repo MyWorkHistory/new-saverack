@@ -6,8 +6,11 @@ use App\Models\ClientAccount;
 use App\Models\ClientAccountAsn;
 use App\Models\ClientAccountAsnLine;
 use App\Models\User;
+use App\Support\AsnDisplay;
 use App\Support\Billing\InvoiceLineCategory;
+use App\Support\InventoryAdjustmentActor;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Validation\ValidationException;
 use RuntimeException;
 
@@ -57,6 +60,7 @@ class AsnReceivingService
         return [
             'id' => $line->id,
             'shiphero_product_id' => $line->shiphero_product_id,
+            'shiphero_legacy_id' => $line->shiphero_legacy_id,
             'sku' => $line->sku,
             'name' => $line->name,
             'image_url' => $line->image_url,
@@ -456,6 +460,16 @@ class AsnReceivingService
         return null;
     }
 
+    public function receivingInventoryReason(ClientAccountAsn $asn, ?User $actor, bool $isCorrection): string
+    {
+        $asnLabel = AsnDisplay::label((string) $asn->asn_number);
+        $prefix = $isCorrection
+            ? 'Received correction adjustment from '.$asnLabel
+            : 'Received from '.$asnLabel;
+
+        return InventoryAdjustmentActor::reasonWithActor($prefix, $actor);
+    }
+
     public function receiveIncrement(
         ClientAccountAsn $asn,
         ClientAccountAsnLine $line,
@@ -470,7 +484,8 @@ class AsnReceivingService
 
         return DB::transaction(function () use ($asn, $line, $delta, $actor) {
             $account = $asn->clientAccount ?? ClientAccount::query()->findOrFail($asn->client_account_id);
-            $slice = $this->incrementReceivingInventory($account, (string) $line->sku, $delta);
+            $reason = $this->receivingInventoryReason($asn, $actor, false);
+            $slice = $this->incrementReceivingInventory($account, (string) $line->sku, $delta, $reason);
             $this->syncPutAwayReceivingRow($account, $line, $slice);
             $line->accepted_qty = (int) $line->accepted_qty + $delta;
             $line->save();
@@ -498,7 +513,25 @@ class AsnReceivingService
 
         return DB::transaction(function () use ($asn, $line, $newAcceptedQty, $actor) {
             $account = $asn->clientAccount ?? ClientAccount::query()->findOrFail($asn->client_account_id);
-            $slice = $this->setReceivingInventoryAbsolute($account, (string) $line->sku, $newAcceptedQty);
+            $previousAcceptedQty = (int) $line->accepted_qty;
+            $isCorrection = $newAcceptedQty < $previousAcceptedQty;
+            $reason = $this->receivingInventoryReason($asn, $actor, $isCorrection);
+
+            if ($isCorrection) {
+                $shipheroQty = $this->receivingOnHandForSku($account, (string) $line->sku);
+                if ($shipheroQty !== $previousAcceptedQty) {
+                    Log::info('asn.receiving.override_qty_drift', [
+                        'asn_id' => $asn->id,
+                        'line_id' => $line->id,
+                        'sku' => $line->sku,
+                        'line_accepted_qty' => $previousAcceptedQty,
+                        'shiphero_receiving_qty' => $shipheroQty,
+                        'new_accepted_qty' => $newAcceptedQty,
+                    ]);
+                }
+            }
+
+            $slice = $this->setReceivingInventoryAbsolute($account, (string) $line->sku, $newAcceptedQty, $reason);
             $this->syncPutAwayReceivingRow($account, $line, $slice);
             $line->accepted_qty = $newAcceptedQty;
             $line->save();
@@ -623,6 +656,12 @@ class AsnReceivingService
             }
             if (isset($product['id']) && is_string($product['id']) && trim($product['id']) !== '') {
                 $line->shiphero_product_id = trim($product['id']);
+            }
+            $legacyRaw = $product['shiphero_legacy_id'] ?? null;
+            if (is_int($legacyRaw) && $legacyRaw > 0) {
+                $line->shiphero_legacy_id = $legacyRaw;
+            } elseif (is_numeric($legacyRaw) && (int) $legacyRaw > 0) {
+                $line->shiphero_legacy_id = (int) $legacyRaw;
             }
             $line->specs_cached_at = now();
             $line->save();

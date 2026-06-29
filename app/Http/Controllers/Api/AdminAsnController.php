@@ -88,7 +88,7 @@ class AdminAsnController extends Controller
      */
     private function serializeAsn(ClientAccountAsn $asn): array
     {
-        $asn->loadMissing(['lines', 'trackings', 'vendorLines', 'clientAccount', 'processedBy']);
+        $asn->loadMissing(['lines', 'trackings', 'vendorLines', 'clientAccount.feeItems', 'processedBy']);
 
         $companyName = $asn->clientAccount !== null
             ? trim((string) $asn->clientAccount->company_name)

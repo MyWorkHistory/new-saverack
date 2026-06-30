@@ -41,6 +41,7 @@ const lineMenuRect = ref({ top: 0, left: 0 });
 
 const transferModalOpen = ref(false);
 const transferBusy = ref(false);
+const transferLoading = ref(false);
 const transferRow = ref(null);
 const transferProduct = ref(null);
 const transferFromLocation = ref(null);
@@ -341,6 +342,11 @@ function onDocClickMenus(e) {
   }
 }
 
+function onRowMenuClick(sku, e) {
+  e?.stopPropagation?.();
+  toggleLineMenu(sku, e);
+}
+
 async function removeRowFromMenu(row) {
   if (!row?.sku) return;
   closeLineMenu();
@@ -370,7 +376,8 @@ async function openTransferFromMenu(row) {
   transferForm.quantity = "";
   transferForm.reason = "Restock";
   transferModalOpen.value = true;
-  transferBusy.value = true;
+  transferLoading.value = true;
+  transferBusy.value = false;
   try {
     const { data } = await api.get(`/inventory/products/${encodeURIComponent(row.sku)}`, {
       params: { client_account_id: accountId },
@@ -387,7 +394,7 @@ async function openTransferFromMenu(row) {
     transferModalOpen.value = false;
     toast.errorFrom(e, "Could not load product for transfer.");
   } finally {
-    transferBusy.value = false;
+    transferLoading.value = false;
   }
 }
 
@@ -453,8 +460,8 @@ async function loadAdjustmentReasons() {
 
 onMounted(() => {
   setCrmPageMeta({
-    title: "Save Rack | Inventory | Restock",
-    description: "Upload a restock CSV and review SKUs that need replenishment.",
+    title: "Save Rack | Inventory | Restocks",
+    description: "Inventory needing replenishment.",
   });
   loadAccounts();
   loadSnapshot();
@@ -472,10 +479,8 @@ onUnmounted(() => {
   <div class="staff-page staff-page--wide">
     <div class="d-flex flex-column flex-md-row align-items-start align-items-md-center gap-3 mb-4">
       <div class="min-w-0 flex-grow-1">
-        <h1 class="h4 fw-semibold text-body mb-1">Restock</h1>
-        <p class="text-secondary small mb-0">
-          Upload a restock CSV to review SKUs with backstock and replenishment needs.
-        </p>
+        <h1 class="h4 fw-semibold text-body mb-1">Restocks</h1>
+        <p class="text-secondary small mb-0">Inventory Needing Replenishment</p>
         <p v-if="uploadedAtLabel" class="text-secondary small mb-0 mt-1">
           Last upload: {{ uploadedAtLabel }}
           <span v-if="meta.original_filename"> ({{ meta.original_filename }})</span>
@@ -620,13 +625,23 @@ onUnmounted(() => {
                 </template>
                 <span v-else class="text-secondary">—</span>
               </td>
-              <td class="text-center" @click.stop>
-                <CrmIconRowActions
-                  :class="{ 'is-open': lineMenuSku === row.sku }"
-                  :aria-expanded="lineMenuSku === row.sku ? 'true' : 'false'"
-                  aria-label="Row actions"
-                  @click="toggleLineMenu(row.sku, $event)"
-                />
+              <td class="text-center staff-actions-cell restock-actions-cell" @click.stop>
+                <div
+                  data-restock-row-actions
+                  class="staff-actions-inner staff-actions-inner--single d-inline-block"
+                >
+                  <button
+                    type="button"
+                    class="staff-action-btn staff-action-btn--more"
+                    :class="{ 'is-open': lineMenuSku === row.sku }"
+                    aria-haspopup="true"
+                    :aria-expanded="lineMenuSku === row.sku ? 'true' : 'false'"
+                    aria-label="Row actions"
+                    @click.stop="onRowMenuClick(row.sku, $event)"
+                  >
+                    <CrmIconRowActions variant="horizontal" />
+                  </button>
+                </div>
               </td>
             </tr>
           </tbody>
@@ -675,6 +690,7 @@ onUnmounted(() => {
     <InventoryTransferQtyModal
       :open="transferModalOpen"
       :busy="transferBusy"
+      :loading="transferLoading"
       :from-location="transferFromLocation"
       v-model:transfer-type="transferForm.transfer_type"
       v-model:to-location-id="transferForm.to_location_id"
@@ -742,26 +758,47 @@ onUnmounted(() => {
   max-width: 16rem;
 }
 
+.restock-product {
+  max-width: min(16rem, 28vw);
+}
+
 .restock-product__sku {
   display: block;
   font-size: 1rem;
   font-weight: 600;
   line-height: 1.35;
   margin-bottom: 0.15rem;
+  word-break: break-word;
 }
 
 .restock-product__name {
-  white-space: normal;
-  word-break: break-word;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow: hidden;
   line-height: 1.35;
+  word-break: break-word;
 }
 
 .restock-locations-col {
   min-width: 10rem;
-  max-width: min(18rem, 28vw);
+  max-width: min(14rem, 22vw);
 }
 
 .restock-loc-row + .restock-loc-row {
   margin-top: 0.25rem;
+}
+
+.restock-actions-cell {
+  width: 3.5rem;
+  min-width: 3.5rem;
+}
+
+:deep(.user-inv-table__text-col) {
+  max-width: min(16rem, 28vw);
+}
+
+:deep(.table-responsive.staff-table-wrap) {
+  overflow-x: auto;
 }
 </style>

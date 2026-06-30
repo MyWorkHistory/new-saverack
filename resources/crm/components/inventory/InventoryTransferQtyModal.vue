@@ -1,9 +1,11 @@
 <script setup>
 import { computed } from "vue";
+import CrmLoadingSpinner from "../common/CrmLoadingSpinner.vue";
 
 const props = defineProps({
   open: { type: Boolean, default: false },
   busy: { type: Boolean, default: false },
+  loading: { type: Boolean, default: false },
   fromLocation: { type: Object, default: null },
   transferType: { type: String, default: "current" },
   toLocationId: { type: String, default: "" },
@@ -32,6 +34,7 @@ const fromLabel = computed(() => {
 });
 
 const fromQty = computed(() => Number(props.fromLocation?.quantity ?? 0));
+const showForm = computed(() => !props.loading && props.fromLocation);
 </script>
 
 <template>
@@ -42,80 +45,85 @@ const fromQty = computed(() => Number(props.fromLocation?.quantity ?? 0));
           <h2 class="crm-vx-modal__title">Transfer QTY</h2>
         </header>
         <div class="crm-vx-modal__body">
-          <p class="small text-secondary mb-1">Transfer From: {{ fromLabel }}</p>
-          <p class="small text-secondary mb-3">QTY: {{ fromQty.toLocaleString() }}</p>
-          <label class="form-label small" for="restock-transfer-type">Transfer Type</label>
-          <select
-            id="restock-transfer-type"
-            :value="transferType"
-            class="form-select mb-3"
-            :disabled="busy"
-            @change="emit('update:transferType', $event.target.value)"
-          >
-            <option value="current">Current Locations</option>
-            <option value="new">Transfer New</option>
-          </select>
-          <label class="form-label small" for="restock-transfer-to">Transfer To</label>
-          <select
-            v-if="transferType === 'current'"
-            id="restock-transfer-to"
-            :value="toLocationId"
-            class="form-select mb-3"
-            :disabled="busy"
-            @change="emit('update:toLocationId', $event.target.value)"
-          >
-            <option value="">Select location</option>
-            <option
-              v-for="dest in destinationOptions"
-              :key="`${dest.warehouse_id}-${dest.location_id}`"
-              :value="dest.location_id"
-            >
-              {{ dest.location_name || dest.location_id }}
-            </option>
-          </select>
-          <input
-            v-else
-            id="restock-transfer-to"
-            :value="toLocation"
-            type="text"
-            class="form-control mb-3"
-            placeholder="Type location name"
-            :disabled="busy"
-            @input="emit('update:toLocation', $event.target.value)"
-          />
-          <div class="row g-2 align-items-end mb-3">
-            <div class="col-6">
-              <label class="form-label small" for="restock-transfer-qty">QTY</label>
-              <input
-                id="restock-transfer-qty"
-                :value="quantity"
-                type="number"
-                min="1"
-                class="form-control"
-                :disabled="busy"
-                @input="emit('update:quantity', $event.target.value)"
-              />
-            </div>
-            <div class="col-6">
-              <button
-                type="button"
-                class="btn inventory-detail__transfer-all-btn w-100"
-                :disabled="busy"
-                @click="emit('transfer-all')"
-              >
-                Transfer All
-              </button>
-            </div>
+          <div v-if="loading" class="py-4">
+            <CrmLoadingSpinner message="Loading locations…" :center="true" />
           </div>
-          <label class="form-label small">Reason</label>
-          <select
-            :value="reason"
-            class="form-select"
-            :disabled="busy"
-            @change="emit('update:reason', $event.target.value)"
-          >
-            <option v-for="item in reasonOptions" :key="item" :value="item">{{ item }}</option>
-          </select>
+          <template v-else-if="showForm">
+            <p class="small text-secondary mb-1">Transfer From: {{ fromLabel }}</p>
+            <p class="small text-secondary mb-3">QTY: {{ fromQty.toLocaleString() }}</p>
+            <label class="form-label small" for="restock-transfer-type">Transfer Type</label>
+            <select
+              id="restock-transfer-type"
+              :value="transferType"
+              class="form-select mb-3"
+              :disabled="busy"
+              @change="emit('update:transferType', $event.target.value)"
+            >
+              <option value="current">Current Locations</option>
+              <option value="new">Transfer New</option>
+            </select>
+            <label class="form-label small" for="restock-transfer-to">Transfer To</label>
+            <select
+              v-if="transferType === 'current'"
+              id="restock-transfer-to"
+              :value="toLocationId"
+              class="form-select mb-3"
+              :disabled="busy"
+              @change="emit('update:toLocationId', $event.target.value)"
+            >
+              <option value="">Select location</option>
+              <option
+                v-for="dest in destinationOptions"
+                :key="`${dest.warehouse_id}-${dest.location_id}`"
+                :value="dest.location_id"
+              >
+                {{ dest.location_name || dest.location_id }}
+              </option>
+            </select>
+            <input
+              v-else
+              id="restock-transfer-to"
+              :value="toLocation"
+              type="text"
+              class="form-control mb-3"
+              placeholder="Type location name"
+              :disabled="busy"
+              @input="emit('update:toLocation', $event.target.value)"
+            />
+            <div class="row g-2 align-items-end mb-3">
+              <div class="col-6">
+                <label class="form-label small" for="restock-transfer-qty">QTY</label>
+                <input
+                  id="restock-transfer-qty"
+                  :value="quantity"
+                  type="number"
+                  min="1"
+                  class="form-control"
+                  :disabled="busy"
+                  @input="emit('update:quantity', $event.target.value)"
+                />
+              </div>
+              <div class="col-6">
+                <button
+                  type="button"
+                  class="btn inventory-transfer-modal__transfer-all-btn w-100"
+                  :disabled="busy"
+                  @click="emit('transfer-all')"
+                >
+                  Transfer All
+                </button>
+              </div>
+            </div>
+            <label class="form-label small">Reason</label>
+            <select
+              :value="reason"
+              class="form-select"
+              :disabled="busy"
+              @change="emit('update:reason', $event.target.value)"
+            >
+              <option v-for="item in reasonOptions" :key="item" :value="item">{{ item }}</option>
+            </select>
+          </template>
         </div>
         <footer class="crm-vx-modal__footer">
           <button
@@ -129,7 +137,7 @@ const fromQty = computed(() => Number(props.fromLocation?.quantity ?? 0));
           <button
             type="button"
             class="crm-vx-modal-btn crm-vx-modal-btn--primary"
-            :disabled="busy"
+            :disabled="busy || loading || !showForm"
             @click="emit('submit')"
           >
             {{ busy ? "Please wait…" : "Transfer" }}
@@ -139,3 +147,19 @@ const fromQty = computed(() => Number(props.fromLocation?.quantity ?? 0));
     </div>
   </Teleport>
 </template>
+
+<style scoped>
+.inventory-transfer-modal__transfer-all-btn {
+  border: 1px solid rgba(15, 23, 42, 0.12);
+  background: #fff;
+  color: #334155;
+  font-weight: 600;
+}
+
+.inventory-transfer-modal__transfer-all-btn:hover:not(:disabled),
+.inventory-transfer-modal__transfer-all-btn:focus-visible {
+  background: #f8fafc;
+  border-color: rgba(15, 23, 42, 0.2);
+  color: #0f172a;
+}
+</style>

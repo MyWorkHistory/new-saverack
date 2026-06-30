@@ -149,8 +149,8 @@ const meta = {
     description: "Account On-Demand SKU catalog.",
   },
   inventoryRestock: {
-    title: "Save Rack | Inventory | Restock",
-    description: "Upload a restock CSV and review SKUs that need replenishment.",
+    title: "Save Rack | Inventory | Restocks",
+    description: "Inventory needing replenishment.",
   },
   inventoryBeta: {
     title: "Save Rack | Inventory (Beta)",

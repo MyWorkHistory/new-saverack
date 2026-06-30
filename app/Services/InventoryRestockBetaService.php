@@ -105,7 +105,41 @@ final class InventoryRestockBetaService
             return null;
         }
 
+        if ($this->snapshotNeedsReenrichment($snapshot)) {
+            $snapshot->enrichment_status = self::ENRICHMENT_PENDING;
+            $snapshot->enrichment_error = null;
+            $snapshot->save();
+            $this->dispatchEnrichment($snapshot);
+        }
+
         return $this->toArray($snapshot);
+    }
+
+    private function snapshotNeedsReenrichment(InventoryRestockBetaSnapshot $snapshot): bool
+    {
+        $status = (string) ($snapshot->enrichment_status ?? '');
+        if ($status === self::ENRICHMENT_PENDING || $status === self::ENRICHMENT_RUNNING) {
+            return false;
+        }
+        if ($status === self::ENRICHMENT_FAILED) {
+            return true;
+        }
+
+        $rows = is_array($snapshot->rows) ? $snapshot->rows : [];
+        foreach ($rows as $row) {
+            if (! is_array($row)) {
+                continue;
+            }
+            $sku = trim((string) ($row['sku'] ?? ''));
+            if ($sku === '') {
+                continue;
+            }
+            if (! array_key_exists('image_url', $row) || ! array_key_exists('warehouse_id', $row)) {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     /**

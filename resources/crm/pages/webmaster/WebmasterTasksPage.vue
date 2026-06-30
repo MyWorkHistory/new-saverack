@@ -45,7 +45,54 @@ const showCheckboxColumn = computed(() => canUpdateTasks.value || canDeleteTasks
 
 const TASK_SORT_KEYS = ["title", "status", "priority", "due_date", "created_at"];
 
+const STAT_CARDS = [
+  {
+    key: "pending",
+    status: "pending",
+    label: "Pending",
+    sub: "Total Pending tasks",
+    iconClass: "bg-secondary-subtle text-secondary",
+    iconPath:
+      "M6 2v6h.01L6 8.01 10 11l4-3-4-3-1.99 2.01V2H6zm6 20v-6h-.01l-1.99 2.01L6 13l-4 3 4 3 1.99-2.01V22h6z",
+  },
+  {
+    key: "in_progress",
+    status: "in_progress",
+    label: "Need Fix",
+    sub: "Tasks with errors needing fixing",
+    iconClass: "bg-warning-subtle text-warning",
+    iconPath:
+      "M22.7 19l-9.1-9.1c.9-2.3.4-5-1.5-6.9-2-2-5-2.4-7.4-1.3L9 6 6 9 1.6 4.7C.4 7.1.9 10.1 2.9 12.1c1.9 1.9 4.6 2.4 6.9 1.5l9.1 9.1c.4.4 1 .4 1.4 0l2.3-2.3c.5-.4.5-1.1.1-1.4z",
+  },
+  {
+    key: "review",
+    status: "review",
+    label: "Review",
+    sub: "Review tasks",
+    iconClass: "bg-primary-subtle text-primary",
+    iconPath:
+      "M3 13h2v-2H3v2zm0 4h2v-2H3v2zm0-8h2V7H3v2zm4 4h14v-2H7v2zm0 4h14v-2H7v2zM7 7v2h14V7H7z",
+  },
+  {
+    key: "completed",
+    status: "completed",
+    label: "Completed",
+    sub: "Completed tasks",
+    iconClass: "bg-success-subtle text-success",
+    iconPath: "M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z",
+  },
+];
+
+const nf = new Intl.NumberFormat();
+
 const loading = ref(true);
+const summaryLoading = ref(true);
+const summary = ref({
+  pending: 0,
+  in_progress: 0,
+  review: 0,
+  completed: 0,
+});
 const rows = ref([]);
 const pagination = ref({ current_page: 1, last_page: 1, total: 0 });
 const users = ref([]);
@@ -202,7 +249,7 @@ function statusBadgeClass(status) {
   const x = String(status || "").toLowerCase();
   const map = {
     pending: "text-secondary-emphasis bg-secondary-subtle",
-    in_progress: "text-primary-emphasis bg-primary-subtle",
+    in_progress: "text-warning-emphasis bg-warning-subtle",
     review: "text-warning-emphasis bg-warning-subtle",
     completed: "text-success-emphasis bg-success-subtle",
   };
@@ -244,6 +291,28 @@ function thAriaSort(column) {
       ? "ascending"
       : "descending"
     : "none";
+}
+
+async function fetchSummary() {
+  summaryLoading.value = true;
+  try {
+    const { data } = await api.get("/webmaster/tasks/summary");
+    summary.value = {
+      pending: Number(data.pending || 0),
+      in_progress: Number(data.in_progress || 0),
+      review: Number(data.review || 0),
+      completed: Number(data.completed || 0),
+    };
+  } catch {
+    summary.value = { pending: 0, in_progress: 0, review: 0, completed: 0 };
+  } finally {
+    summaryLoading.value = false;
+  }
+}
+
+function setSummaryFilter(status) {
+  query.status = query.status === status ? "" : status;
+  applySearch();
 }
 
 async function fetchMeta() {
@@ -297,6 +366,7 @@ const fetchTasks = async () => {
     };
   } finally {
     loading.value = false;
+    void fetchSummary();
   }
 };
 
@@ -580,8 +650,7 @@ onMounted(async () => {
   document.addEventListener("click", onDocClick);
   window.addEventListener("scroll", onWindowScrollOrResize, true);
   window.addEventListener("resize", onWindowScrollOrResize);
-  await fetchMeta();
-  await fetchUsers();
+  await Promise.all([fetchMeta(), fetchUsers()]);
   await fetchTasks();
 });
 
@@ -662,6 +731,29 @@ onUnmounted(() => {
             />
           </svg>
           Refresh
+        </button>
+      </div>
+    </div>
+
+    <div v-if="summaryLoading" class="d-flex justify-content-center py-4 mb-4">
+      <CrmLoadingSpinner message="Loading summary…" />
+    </div>
+    <div v-else class="row g-4 mb-4">
+      <div v-for="card in STAT_CARDS" :key="card.key" class="col-12 col-sm-6 col-xl-3">
+        <button
+          type="button"
+          class="staff-stat-card billing-inv-summary-card h-100 text-start w-100"
+          :class="{ 'webmaster-summary-card--active': query.status === card.status }"
+          @click="setSummaryFilter(card.status)"
+        >
+          <p class="staff-stat-card__label">{{ card.label }}</p>
+          <p class="staff-stat-card__value">{{ nf.format(summary[card.key] ?? 0) }}</p>
+          <p class="staff-stat-card__sub">{{ card.sub }}</p>
+          <div class="staff-stat-card__icon" :class="card.iconClass" aria-hidden="true">
+            <svg width="22" height="22" fill="currentColor" viewBox="0 0 24 24">
+              <path :d="card.iconPath" />
+            </svg>
+          </div>
         </button>
       </div>
     </div>
@@ -1235,3 +1327,19 @@ onUnmounted(() => {
     </Teleport>
   </div>
 </template>
+
+<style scoped>
+.webmaster-summary-card--active {
+  border-color: rgba(115, 103, 240, 0.35) !important;
+  box-shadow:
+    0 0 0 2px rgba(115, 103, 240, 0.2),
+    0 0.45rem 1rem rgba(47, 43, 61, 0.12);
+}
+
+[data-bs-theme="dark"] .webmaster-summary-card--active {
+  border-color: rgba(186, 175, 255, 0.35) !important;
+  box-shadow:
+    0 0 0 2px rgba(186, 175, 255, 0.2),
+    0 0.5rem 1.15rem rgba(0, 0, 0, 0.28);
+}
+</style>

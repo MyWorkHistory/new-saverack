@@ -381,6 +381,7 @@ Route::middleware('auth:sanctum')->group(function () {
 
     Route::prefix('webmaster')->group(function () {
         Route::get('/tasks/meta', [WebmasterTaskController::class, 'meta']);
+        Route::get('/tasks/summary', [WebmasterTaskController::class, 'summary']);
         Route::patch('/tasks/bulk', [WebmasterTaskController::class, 'bulkUpdate']);
         Route::delete('/tasks/bulk', [WebmasterTaskController::class, 'bulkDestroy']);
         Route::post('/tasks/{task}/comments', [WebmasterTaskController::class, 'storeComment']);

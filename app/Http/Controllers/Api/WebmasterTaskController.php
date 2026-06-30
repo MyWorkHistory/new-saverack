@@ -33,7 +33,7 @@ class WebmasterTaskController extends Controller
         return response()->json([
             'statuses' => [
                 ['value' => 'pending', 'label' => 'Pending'],
-                ['value' => 'in_progress', 'label' => 'In progress'],
+                ['value' => 'in_progress', 'label' => 'Need Fix'],
                 ['value' => 'review', 'label' => 'Review'],
                 ['value' => 'completed', 'label' => 'Completed'],
             ],
@@ -44,6 +44,13 @@ class WebmasterTaskController extends Controller
                 ['value' => 'urgent', 'label' => 'Urgent'],
             ],
         ]);
+    }
+
+    public function summary(Request $request): JsonResponse
+    {
+        $this->authorize('viewAny', Task::class);
+
+        return response()->json($this->taskService->statusSummary());
     }
 
     public function index(Request $request): JsonResponse

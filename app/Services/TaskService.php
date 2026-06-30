@@ -64,4 +64,22 @@ class TaskService
 
         return $query->paginate($perPage, ['*'], 'page', $page);
     }
+
+    /**
+     * @return array{pending: int, in_progress: int, review: int, completed: int}
+     */
+    public function statusSummary(): array
+    {
+        $rows = Task::query()
+            ->selectRaw('status, count(*) as aggregate')
+            ->groupBy('status')
+            ->pluck('aggregate', 'status');
+
+        return [
+            'pending' => (int) ($rows['pending'] ?? 0),
+            'in_progress' => (int) ($rows['in_progress'] ?? 0),
+            'review' => (int) ($rows['review'] ?? 0),
+            'completed' => (int) ($rows['completed'] ?? 0),
+        ];
+    }
 }

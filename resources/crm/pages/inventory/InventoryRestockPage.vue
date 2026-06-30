@@ -552,7 +552,9 @@ onUnmounted(() => {
               <th class="staff-table-head__th text-center" scope="col">Backstock</th>
               <th class="staff-table-head__th text-center" scope="col">Restock Needed</th>
               <th class="staff-table-head__th" scope="col">Backstock Locations</th>
-              <th class="staff-table-head__th text-center" scope="col">Actions</th>
+              <th class="staff-table-head__th staff-actions-col text-center restock-actions-col" scope="col">
+                Actions
+              </th>
             </tr>
           </thead>
           <tbody>
@@ -625,10 +627,10 @@ onUnmounted(() => {
                 </template>
                 <span v-else class="text-secondary">—</span>
               </td>
-              <td class="text-center staff-actions-cell restock-actions-cell" @click.stop>
+              <td class="staff-actions-cell text-center restock-actions-cell" @click.stop>
                 <div
                   data-restock-row-actions
-                  class="staff-actions-inner staff-actions-inner--single d-inline-block"
+                  class="staff-actions-inner staff-actions-inner--single restock-actions-inner justify-content-center"
                 >
                   <button
                     type="button"
@@ -789,9 +791,14 @@ onUnmounted(() => {
   margin-top: 0.25rem;
 }
 
-.restock-actions-cell {
-  width: 3.5rem;
-  min-width: 3.5rem;
+:deep(.table.staff-data-table > thead > tr > th.restock-actions-col),
+:deep(.table.staff-data-table > tbody > tr > td.restock-actions-cell) {
+  text-align: center !important;
+}
+
+:deep(.restock-actions-inner) {
+  justify-content: center !important;
+  width: 100%;
 }
 
 :deep(.user-inv-table__text-col) {

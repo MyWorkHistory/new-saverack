@@ -67,34 +67,69 @@ function onBackdrop() {
             </p>
           </header>
 
-          <div class="crm-vx-modal__body pt-0" :class="{ 'crm-vx-modal__body--form': form }">
-            <slot v-if="$slots.default" />
-            <p v-else-if="message" class="mb-0 text-center small text-secondary">
-              {{ message }}
-            </p>
-          </div>
+          <form
+            v-if="form"
+            class="crm-vx-modal__form"
+            @submit.prevent="$emit('confirm')"
+          >
+            <div class="crm-vx-modal__body pt-0 crm-vx-modal__body--form">
+              <slot v-if="$slots.default" />
+              <p v-else-if="message" class="mb-0 text-center small text-secondary">
+                {{ message }}
+              </p>
+            </div>
 
-          <footer class="crm-vx-modal__footer">
-            <button
-              type="button"
-              class="crm-vx-modal-btn crm-vx-modal-btn--secondary"
-              :disabled="busy"
-              @click="$emit('close')"
-            >
-              {{ cancelLabel }}
-            </button>
-            <button
-              type="button"
-              class="crm-vx-modal-btn"
-              :class="
-                danger ? 'crm-vx-modal-btn--danger' : 'crm-vx-modal-btn--primary'
-              "
-              :disabled="busy"
-              @click="$emit('confirm')"
-            >
-              {{ busy ? "Please wait…" : confirmLabel }}
-            </button>
-          </footer>
+            <footer class="crm-vx-modal__footer">
+              <button
+                type="button"
+                class="crm-vx-modal-btn crm-vx-modal-btn--secondary"
+                :disabled="busy"
+                @click="$emit('close')"
+              >
+                {{ cancelLabel }}
+              </button>
+              <button
+                type="submit"
+                class="crm-vx-modal-btn"
+                :class="
+                  danger ? 'crm-vx-modal-btn--danger' : 'crm-vx-modal-btn--primary'
+                "
+                :disabled="busy"
+              >
+                {{ busy ? "Please wait…" : confirmLabel }}
+              </button>
+            </footer>
+          </form>
+          <template v-else>
+            <div class="crm-vx-modal__body pt-0">
+              <slot v-if="$slots.default" />
+              <p v-else-if="message" class="mb-0 text-center small text-secondary">
+                {{ message }}
+              </p>
+            </div>
+
+            <footer class="crm-vx-modal__footer">
+              <button
+                type="button"
+                class="crm-vx-modal-btn crm-vx-modal-btn--secondary"
+                :disabled="busy"
+                @click="$emit('close')"
+              >
+                {{ cancelLabel }}
+              </button>
+              <button
+                type="button"
+                class="crm-vx-modal-btn"
+                :class="
+                  danger ? 'crm-vx-modal-btn--danger' : 'crm-vx-modal-btn--primary'
+                "
+                :disabled="busy"
+                @click="$emit('confirm')"
+              >
+                {{ busy ? "Please wait…" : confirmLabel }}
+              </button>
+            </footer>
+          </template>
         </div>
       </div>
     </Transition>

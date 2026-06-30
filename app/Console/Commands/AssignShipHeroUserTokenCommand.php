@@ -12,7 +12,7 @@ class AssignShipHeroUserTokenCommand extends Command
                             {--token= : ShipHero refresh token}
                             {--from-env : Copy SHIPHERO_REFRESH_TOKEN from config onto this user}';
 
-    protected $description = 'Assign an encrypted ShipHero refresh token to a CRM user';
+    protected $description = 'Assign an encrypted ShipHero refresh token to a CRM user (stored only; API calls use SHIPHERO_REFRESH_TOKEN from .env)';
 
     public function handle(): int
     {

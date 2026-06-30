@@ -52,11 +52,13 @@ const subtractReceivedOpen = ref(false);
 const subtractReceivedLine = ref(null);
 const subtractReceivedAmount = ref("");
 const subtractReceivedBusy = ref(false);
+const subtractReceivedError = ref("");
 
 const subtractRejectedOpen = ref(false);
 const subtractRejectedLine = ref(null);
 const subtractRejectedAmount = ref("");
 const subtractRejectedBusy = ref(false);
+const subtractRejectedError = ref("");
 
 const editItemOpen = ref(false);
 const editItemLine = ref(null);
@@ -308,23 +310,53 @@ async function resolveShipheroLegacyId(line) {
   }
 }
 
+function shipHeroProductUrl(legacyId) {
+  return `https://app.shiphero.com/dashboard/products/details/${legacyId}`;
+}
+
 async function openShipHeroProduct(line, event) {
   event?.preventDefault?.();
+  const fromLine = Number(line?.shiphero_legacy_id || 0);
+  if (fromLine > 0) {
+    window.open(shipHeroProductUrl(fromLine), "_blank", "noopener,noreferrer");
+    return;
+  }
+  const popup = window.open("about:blank", "_blank", "noopener,noreferrer");
+  if (!popup) {
+    toast.error("Pop-up blocked. Allow pop-ups for this site and try again.");
+    return;
+  }
   const legacyId = await resolveShipheroLegacyId(line);
   if (legacyId <= 0) {
+    popup.close();
     toast.error("Could not find this product in ShipHero.");
     return;
   }
-  window.open(
-    `https://app.shiphero.com/dashboard/products/details/${legacyId}`,
-    "_blank",
-    "noopener,noreferrer",
-  );
+  popup.location.href = shipHeroProductUrl(legacyId);
 }
 
 async function viewShipHeroFromLineMenu(line) {
+  if (!line) return;
   closeLineMenu();
   await openShipHeroProduct(line);
+}
+
+function openSubtractReceivedFromMenu(line) {
+  if (!line) return;
+  closeLineMenu();
+  openSubtractReceived(line);
+}
+
+function openSubtractRejectedFromMenu(line) {
+  if (!line) return;
+  closeLineMenu();
+  openSubtractRejected(line);
+}
+
+function printBarcodeFromReceivingMenu(line) {
+  if (!line) return;
+  closeLineMenu();
+  printBarcode(line);
 }
 
 function closeAllHeaderMenus() {
@@ -661,23 +693,37 @@ async function saveReceive(line) {
   }
 }
 
+function parseSubtractQty(raw) {
+  const n = Number(String(raw ?? "").trim());
+  return Number.isFinite(n) ? n : NaN;
+}
+
 function openSubtractReceived(line) {
   subtractReceivedLine.value = line;
   subtractReceivedAmount.value = "";
+  subtractReceivedError.value = "";
   subtractReceivedOpen.value = true;
 }
 
 async function confirmSubtractReceived() {
+  subtractReceivedError.value = "";
   const line = subtractReceivedLine.value;
-  if (!line) return;
-  const subtract = Number(subtractReceivedAmount.value);
+  if (!line) {
+    subtractReceivedError.value = "Could not find the line to update. Close and try again.";
+    return;
+  }
+  const subtract = parseSubtractQty(subtractReceivedAmount.value);
   const current = Number(line.accepted_qty ?? 0);
   if (!Number.isFinite(subtract) || subtract <= 0) {
-    toast.error("Enter a quantity greater than zero to subtract.");
+    subtractReceivedError.value = "Enter a quantity greater than zero to subtract.";
+    return;
+  }
+  if (current <= 0) {
+    subtractReceivedError.value = "No saved received quantity to subtract. Save received qty on the line first.";
     return;
   }
   if (subtract > current) {
-    toast.error("Cannot subtract more than the saved received quantity.");
+    subtractReceivedError.value = `Cannot subtract more than the saved received quantity (${current.toLocaleString()}).`;
     return;
   }
   subtractReceivedBusy.value = true;
@@ -690,6 +736,7 @@ async function confirmSubtractReceived() {
     subtractReceivedOpen.value = false;
     toast.success("Received quantity corrected.");
   } catch (e) {
+    subtractReceivedError.value = errorMessage(e, "Could not subtract received quantity.");
     toast.errorFrom(e, "Could not subtract received quantity.");
   } finally {
     subtractReceivedBusy.value = false;
@@ -699,20 +746,29 @@ async function confirmSubtractReceived() {
 function openSubtractRejected(line) {
   subtractRejectedLine.value = line;
   subtractRejectedAmount.value = "";
+  subtractRejectedError.value = "";
   subtractRejectedOpen.value = true;
 }
 
 async function confirmSubtractRejected() {
+  subtractRejectedError.value = "";
   const line = subtractRejectedLine.value;
-  if (!line) return;
-  const subtract = Number(subtractRejectedAmount.value);
+  if (!line) {
+    subtractRejectedError.value = "Could not find the line to update. Close and try again.";
+    return;
+  }
+  const subtract = parseSubtractQty(subtractRejectedAmount.value);
   const current = Number(line.rejected_qty ?? 0);
   if (!Number.isFinite(subtract) || subtract <= 0) {
-    toast.error("Enter a quantity greater than zero to subtract.");
+    subtractRejectedError.value = "Enter a quantity greater than zero to subtract.";
+    return;
+  }
+  if (current <= 0) {
+    subtractRejectedError.value = "No saved rejected quantity to subtract. Save rejected qty on the line first.";
     return;
   }
   if (subtract > current) {
-    toast.error("Cannot subtract more than the saved rejected quantity.");
+    subtractRejectedError.value = `Cannot subtract more than the saved rejected quantity (${current.toLocaleString()}).`;
     return;
   }
   subtractRejectedBusy.value = true;
@@ -725,6 +781,7 @@ async function confirmSubtractRejected() {
     subtractRejectedOpen.value = false;
     toast.success("Rejected quantity updated.");
   } catch (e) {
+    subtractRejectedError.value = errorMessage(e, "Could not subtract rejected quantity.");
     toast.errorFrom(e, "Could not subtract rejected quantity.");
   } finally {
     subtractRejectedBusy.value = false;
@@ -1924,10 +1981,7 @@ onUnmounted(() => {
               type="button"
               class="staff-row-menu__item"
               role="menuitem"
-              @click="
-                closeLineMenu();
-                openSubtractReceived(lineMenuRow);
-              "
+              @click="openSubtractReceivedFromMenu(lineMenuRow)"
             >
               Subtract Received
             </button>
@@ -1935,10 +1989,7 @@ onUnmounted(() => {
               type="button"
               class="staff-row-menu__item"
               role="menuitem"
-              @click="
-                closeLineMenu();
-                openSubtractRejected(lineMenuRow);
-              "
+              @click="openSubtractRejectedFromMenu(lineMenuRow)"
             >
               Subtract Rejected
             </button>
@@ -1946,10 +1997,7 @@ onUnmounted(() => {
               type="button"
               class="staff-row-menu__item"
               role="menuitem"
-              @click="
-                closeLineMenu();
-                printBarcode(lineMenuRow);
-              "
+              @click="printBarcodeFromReceivingMenu(lineMenuRow)"
             >
               Print Barcode
             </button>
@@ -1995,12 +2043,17 @@ onUnmounted(() => {
       </p>
       <label class="form-label">Quantity to subtract</label>
       <input
-        v-model.number="subtractReceivedAmount"
+        v-model="subtractReceivedAmount"
         type="number"
         min="1"
         class="form-control"
         placeholder="0"
+        :disabled="subtractReceivedBusy"
+        @input="subtractReceivedError = ''"
       />
+      <p v-if="subtractReceivedError" class="small text-danger mb-0 mt-2">
+        {{ subtractReceivedError }}
+      </p>
     </ConfirmModal>
 
     <ConfirmModal
@@ -2019,12 +2072,17 @@ onUnmounted(() => {
       </p>
       <label class="form-label">Quantity to subtract</label>
       <input
-        v-model.number="subtractRejectedAmount"
+        v-model="subtractRejectedAmount"
         type="number"
         min="1"
         class="form-control"
         placeholder="0"
+        :disabled="subtractRejectedBusy"
+        @input="subtractRejectedError = ''"
       />
+      <p v-if="subtractRejectedError" class="small text-danger mb-0 mt-2">
+        {{ subtractRejectedError }}
+      </p>
     </ConfirmModal>
 
     <ConfirmModal

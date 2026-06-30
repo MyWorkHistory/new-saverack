@@ -88,6 +88,13 @@ $vx-modal-primary: #2563eb;
   overflow: visible;
 }
 
+.crm-vx-modal__form {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-height: 0;
+}
+
 .crm-vx-modal-overlay .crm-searchable-select__panel--teleport {
   z-index: 1210;
 }

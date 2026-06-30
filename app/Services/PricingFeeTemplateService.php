@@ -239,6 +239,11 @@ class PricingFeeTemplateService
             'Returns Assembly' => ClientAccountFee::LINE_RETURNS_ASSEMBLY,
             'Returns Re-Packaging' => ClientAccountFee::LINE_RETURNS_REPACKAGING,
             'Returns Disposal' => ClientAccountFee::LINE_RETURNS_DISPOSAL,
+            'Receiving (Per Box)' => 'per_box',
+            'Receiving (Per Pallet)' => 'per_pallet',
+            'Receiving (Per Item)' => 'per_item',
+            'Custom Hourly Work' => 'hourly',
+            'Non-Compliant' => 'non_compliant',
         ];
 
         return $map[$template->name] ?? null;

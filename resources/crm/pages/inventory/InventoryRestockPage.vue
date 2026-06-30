@@ -509,7 +509,7 @@ onUnmounted(() => {
         role="status"
         aria-live="polite"
       >
-        Matching products to accounts…
+        Refreshing product details…
       </div>
 
       <div class="staff-table-toolbar">
@@ -543,7 +543,6 @@ onUnmounted(() => {
         <table class="table table-hover align-middle mb-0 staff-data-table user-inv-table">
           <thead class="table-light staff-table-head">
             <tr>
-              <th class="staff-table-head__th text-center user-inv-table__image-col" scope="col">Image</th>
               <th class="staff-table-head__th user-inv-table__text-col" scope="col">Product</th>
               <th class="staff-table-head__th" scope="col">Account</th>
               <th class="staff-table-head__th text-center" scope="col">On Hand</th>
@@ -559,44 +558,44 @@ onUnmounted(() => {
           </thead>
           <tbody>
             <tr v-if="loading">
-              <td colspan="10" class="py-5 text-center text-secondary">Loading restock data…</td>
+              <td colspan="9" class="py-5 text-center text-secondary">Loading restock data…</td>
             </tr>
             <tr v-else-if="!rows.length">
-              <td colspan="10" class="py-5 text-center text-secondary">Upload a restock CSV to get started.</td>
+              <td colspan="9" class="py-5 text-center text-secondary">Upload a restock CSV to get started.</td>
             </tr>
             <tr v-else-if="!filteredRows.length">
-              <td colspan="10" class="py-5 text-center text-secondary">No rows match your search.</td>
+              <td colspan="9" class="py-5 text-center text-secondary">No rows match your search.</td>
             </tr>
             <tr v-for="row in filteredRows" :key="row.sku" class="align-middle">
-              <td class="text-center user-inv-table__image-col">
-                <a
-                  :href="inventoryDetailHref(row)"
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  class="user-inv-table__image-link"
-                  :aria-label="`View ${row.sku || 'product'}`"
-                >
-                  <img
-                    v-if="row.image_url"
-                    :src="row.image_url"
-                    alt=""
-                    class="user-inventory-thumb"
-                    loading="lazy"
-                  />
-                  <div v-else class="user-inventory-thumb user-inventory-thumb--empty" />
-                </a>
-              </td>
               <td class="user-inv-table__text-col">
                 <div class="restock-product">
                   <a
                     :href="inventoryDetailHref(row)"
                     target="_blank"
                     rel="noopener noreferrer"
-                    class="restock-product__sku user-inv-table__sku-link"
+                    class="restock-product__thumb-link user-inv-table__image-link"
+                    :aria-label="`View ${row.sku || 'product'}`"
                   >
-                    {{ row.sku || "—" }}
+                    <img
+                      v-if="row.image_url"
+                      :src="row.image_url"
+                      alt=""
+                      class="user-inventory-thumb"
+                      loading="lazy"
+                    />
+                    <div v-else class="user-inventory-thumb user-inventory-thumb--empty" />
                   </a>
-                  <div class="restock-product__name text-secondary small">{{ row.name || "—" }}</div>
+                  <div class="restock-product__text min-w-0">
+                    <a
+                      :href="inventoryDetailHref(row)"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      class="restock-product__sku user-inv-table__sku-link"
+                    >
+                      {{ row.sku || "—" }}
+                    </a>
+                    <div class="restock-product__name text-secondary small">{{ row.name || "—" }}</div>
+                  </div>
                 </div>
               </td>
               <td>
@@ -607,7 +606,6 @@ onUnmounted(() => {
                 >
                   {{ row.account_name }}
                 </RouterLink>
-                <span v-else-if="isEnriching && !row.account_name" class="text-secondary small">Matching…</span>
                 <span v-else class="text-secondary">—</span>
               </td>
               <td class="text-center">{{ formatQty(row.on_hand) }}</td>
@@ -761,7 +759,33 @@ onUnmounted(() => {
 }
 
 .restock-product {
-  max-width: min(16rem, 28vw);
+  display: flex;
+  align-items: flex-start;
+  gap: 0.75rem;
+  max-width: min(20rem, 32vw);
+}
+
+.restock-product__thumb-link {
+  flex-shrink: 0;
+}
+
+.restock-product__text {
+  flex: 1;
+  min-width: 0;
+}
+
+.user-inventory-thumb {
+  width: 52px;
+  height: 52px;
+  border-radius: 0.4rem;
+  object-fit: cover;
+  border: 1px solid rgba(0, 0, 0, 0.08);
+  background: #fff;
+}
+
+.user-inventory-thumb--empty {
+  display: inline-block;
+  background: rgba(0, 0, 0, 0.05);
 }
 
 .restock-product__sku {

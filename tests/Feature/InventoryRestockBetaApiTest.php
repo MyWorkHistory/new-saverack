@@ -38,10 +38,35 @@ ABC-123,Widget Alpha,100,10,50,2,523,42,"test 3 (QTY: 523), test 2 (QTY: 42)"
 CSV;
     }
 
-    public function test_post_import_returns_rows_immediately_with_pending_enrichment(): void
+    public function test_post_import_returns_rows_immediately_with_completed_enrichment(): void
     {
         Config::set('services.shiphero.restock_dispatch_mode', 'after_response');
         Sanctum::actingAs($this->staffWithInventoryView());
+
+        $account = ClientAccount::query()->create([
+            'company_name' => 'Import Co',
+            'status' => ClientAccount::STATUS_ACTIVE,
+            'shiphero_customer_account_id' => 'sh-import-1',
+        ]);
+
+        ShipHeroInventoryProductIndex::query()->create([
+            'client_account_id' => $account->id,
+            'shiphero_customer_account_id' => 'sh-import-1',
+            'sku' => 'ABC-123',
+            'sku_search' => 'abc-123',
+            'name' => 'Widget Alpha',
+            'name_search' => 'widget alpha',
+            'image_url' => 'https://cdn.example.com/widget.jpg',
+            'product_active' => true,
+            'kit' => false,
+            'kit_build' => false,
+            'warehouse_id' => 'WH1',
+            'warehouse_active' => true,
+            'on_hand' => 100,
+            'allocated' => 10,
+            'backorder' => 0,
+            'synced_at' => now(),
+        ]);
 
         $file = UploadedFile::fake()->createWithContent('restock.csv', $this->sampleCsv());
 
@@ -56,9 +81,68 @@ CSV;
         $response->assertJsonPath('original_filename', 'restock.csv');
         $response->assertJsonPath('rows.0.sku', 'ABC-123');
         $response->assertJsonPath('rows.0.restock_needed', 42);
-        $response->assertJsonPath('enrichment_status', InventoryRestockBetaService::ENRICHMENT_PENDING);
+        $response->assertJsonPath('rows.0.account_name', 'Import Co');
+        $response->assertJsonPath('rows.0.image_url', 'https://cdn.example.com/widget.jpg');
+        $response->assertJsonPath('enrichment_status', InventoryRestockBetaService::ENRICHMENT_COMPLETED);
 
         $this->assertDatabaseCount('inventory_restock_beta_snapshots', 1);
+    }
+
+    public function test_get_inline_enriches_pending_snapshot(): void
+    {
+        Sanctum::actingAs($this->staffWithInventoryView());
+
+        $account = ClientAccount::query()->create([
+            'company_name' => 'Pending Co',
+            'status' => ClientAccount::STATUS_ACTIVE,
+            'shiphero_customer_account_id' => 'sh-pending-1',
+        ]);
+
+        ShipHeroInventoryProductIndex::query()->create([
+            'client_account_id' => $account->id,
+            'shiphero_customer_account_id' => 'sh-pending-1',
+            'sku' => 'SAVE-1',
+            'sku_search' => 'save-1',
+            'name' => 'Saved Row',
+            'name_search' => 'saved row',
+            'image_url' => 'https://cdn.example.com/saved.jpg',
+            'product_active' => true,
+            'kit' => false,
+            'kit_build' => false,
+            'warehouse_id' => 'WH2',
+            'warehouse_active' => true,
+            'on_hand' => 5,
+            'allocated' => 1,
+            'backorder' => 0,
+            'synced_at' => now(),
+        ]);
+
+        InventoryRestockBetaSnapshot::query()->create([
+            'original_filename' => 'saved.csv',
+            'row_count' => 1,
+            'rows' => [
+                [
+                    'sku' => 'SAVE-1',
+                    'name' => 'Saved Row',
+                    'on_hand' => 5,
+                    'allocated' => 1,
+                    'pickable_qty' => 0,
+                    'backstock_qty' => 10,
+                    'restock_needed' => 3,
+                    'backstock_locations' => 'bin-a',
+                ],
+            ],
+            'completed_skus' => [],
+            'enrichment_status' => InventoryRestockBetaService::ENRICHMENT_PENDING,
+            'uploaded_at' => now(),
+        ]);
+
+        $response = $this->getJson('/api/inventory/restock-beta');
+
+        $response->assertOk();
+        $response->assertJsonPath('rows.0.account_name', 'Pending Co');
+        $response->assertJsonPath('rows.0.image_url', 'https://cdn.example.com/saved.jpg');
+        $response->assertJsonPath('enrichment_status', InventoryRestockBetaService::ENRICHMENT_COMPLETED);
     }
 
     public function test_get_returns_latest_snapshot(): void

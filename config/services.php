@@ -73,8 +73,8 @@ return [
         /** Max paginated warehouse location catalog pages when targeted name lookups miss (inventory add/transfer). */
         'location_resolve_max_catalog_pages' => (int) env('SHIPHERO_LOCATION_RESOLVE_MAX_CATALOG_PAGES', 10),
         'restock_max_pickable_qty' => (int) env('SHIPHERO_RESTOCK_MAX_PICKABLE_QTY', 2),
-        /** after_response (default, no queue worker) or queue (requires queue:work / Horizon). */
-        'restock_dispatch_mode' => env('SHIPHERO_RESTOCK_DISPATCH_MODE', 'after_response'),
+        /** sync (default): enrich during import/GET. after_response or queue for optional async fallback. */
+        'restock_dispatch_mode' => env('SHIPHERO_RESTOCK_DISPATCH_MODE', 'sync'),
         /** Max restock rows returned in a single full=1 API response (avoids origin OOM / 502). */
         'restock_api_max_rows' => (int) env('SHIPHERO_RESTOCK_API_MAX_ROWS', 5000),
         /** GraphQL mutation for customer account update (from shiphero:probe-customer-mutations). */

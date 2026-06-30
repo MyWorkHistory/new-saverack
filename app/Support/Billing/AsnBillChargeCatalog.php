@@ -48,6 +48,15 @@ class AsnBillChargeCatalog
         ],
     ];
 
+    /** @var array<string, list<string>> */
+    private const SUBTYPE_LABEL_KEYWORDS = [
+        'per_box' => ['perbox', 'per box', 'box'],
+        'per_pallet' => ['perpallet', 'per pallet', 'pallet'],
+        'per_item' => ['peritem', 'per item', 'item'],
+        'hourly' => ['hourly', 'custom hourly', 'custom work'],
+        'non_compliant' => ['noncompliant', 'non compliant', 'non-compliant'],
+    ];
+
     /** @return list<string> */
     public static function lineTypes(): array
     {
@@ -93,7 +102,7 @@ class AsnBillChargeCatalog
     {
         self::assertValidLineType($lineType);
         $def = self::DEFINITIONS[$lineType];
-        $account->loadMissing('feeItems');
+        $account->loadMissing(['feeItems.pricingTemplate']);
         foreach ($account->feeItems as $fee) {
             if (! $fee instanceof ClientAccountFee) {
                 continue;
@@ -101,12 +110,67 @@ class AsnBillChargeCatalog
             if ($fee->fee_group !== $def['fee_group']) {
                 continue;
             }
-            if ($fee->line_code === $def['fee_line_code']) {
+            if (self::feeMatchesLineType($fee, $def)) {
                 return (int) round(((float) ($fee->amount ?? 0)) * 100);
             }
         }
 
         return 0;
+    }
+
+    /**
+     * @param  array{display_name: string, group_key: string, subtype: string, fee_group: string, fee_line_code: string}  $def
+     */
+    private static function feeMatchesLineType(ClientAccountFee $fee, array $def): bool
+    {
+        if ($fee->line_code === $def['fee_line_code']) {
+            return true;
+        }
+
+        $label = self::normalizeFeeKey((string) ($fee->label ?? ''));
+        if ($label !== '' && $label === self::normalizeFeeKey($def['display_name'])) {
+            return true;
+        }
+
+        if ($fee->relationLoaded('pricingTemplate') && $fee->pricingTemplate !== null) {
+            $templateName = self::normalizeFeeKey((string) ($fee->pricingTemplate->name ?? ''));
+            if ($templateName !== '' && $templateName === self::normalizeFeeKey($def['display_name'])) {
+                return true;
+            }
+            if ($templateName !== '' && self::labelMatchesSubtype($templateName, $def['subtype'])) {
+                return true;
+            }
+        }
+
+        if ($label !== '' && self::labelMatchesSubtype($label, $def['subtype'])) {
+            return true;
+        }
+
+        return false;
+    }
+
+    private static function labelMatchesSubtype(string $normalizedLabel, string $subtype): bool
+    {
+        $keywords = self::SUBTYPE_LABEL_KEYWORDS[$subtype] ?? [];
+        foreach ($keywords as $keyword) {
+            if (str_contains($normalizedLabel, self::normalizeFeeKey($keyword))) {
+                if ($subtype === 'per_box' && str_contains($normalizedLabel, 'noncompliant')) {
+                    continue;
+                }
+
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private static function normalizeFeeKey(string $value): string
+    {
+        $value = mb_strtolower(trim($value));
+        $value = preg_replace('/[^a-z0-9]+/u', '', $value) ?? '';
+
+        return $value;
     }
 
     /**

@@ -81,18 +81,21 @@ function resetRows() {
         quantity: String(props.editLine.quantity ?? ""),
         unit_price: ((Number(props.editLine.unit_price_cents) || 0) / 100).toFixed(2),
         item_id: props.editLine.id ?? null,
+        selected: true,
       });
     } else {
+      const quantity = existing ? String(existing.quantity ?? "") : "";
       rows.push({
         line_type: def.lineType,
         name: displayNameForLineType(def.lineType),
         qtyLabel: def.qtyLabel,
         service: def.service,
-        quantity: existing ? String(existing.quantity ?? "") : "",
+        quantity,
         unit_price: existing
           ? ((Number(existing.unit_price_cents) || 0) / 100).toFixed(2)
           : defaultPriceForLineType(def.lineType),
         item_id: existing?.id ?? null,
+        selected: Boolean(existing && String(existing.quantity ?? "").trim() !== ""),
       });
     }
   }
@@ -129,6 +132,9 @@ function submit() {
   localError.value = "";
   const payloads = [];
   for (const row of rows) {
+    if (!isSingleEdit.value && !row.selected) {
+      continue;
+    }
     const qty = parseQty(row.quantity);
     if (qty === null) {
       if (row.item_id != null) {
@@ -162,7 +168,7 @@ function submit() {
   if (!isSingleEdit.value) {
     const hasCreateOrUpdate = payloads.some((p) => p.action === "create" || p.action === "update");
     if (!hasCreateOrUpdate) {
-      localError.value = "Enter a quantity for at least one fee.";
+      localError.value = "Select at least one fee and enter a quantity.";
       return;
     }
   } else if (!payloads.some((p) => p.action === "update" || p.action === "delete")) {
@@ -206,7 +212,7 @@ function removeLine() {
           <header class="crm-vx-modal__head">
             <h2 id="asn-receiving-fees-title" class="crm-vx-modal__title">{{ modalTitle }}</h2>
             <p v-if="!isSingleEdit" class="crm-vx-modal__subtitle small text-secondary mb-0">
-              Enter a quantity only for fees to add. Prices default from the account.
+              Check the fees to add, then enter quantity and price. Prices default from the account.
             </p>
           </header>
 
@@ -220,6 +226,7 @@ function removeLine() {
                 <thead>
                   <tr>
                     <th scope="col">Service</th>
+                    <th v-if="!isSingleEdit" scope="col" class="text-center admin-asn-fees-modal__add-col">Add</th>
                     <th scope="col" class="text-end admin-asn-fees-modal__qty-col">Qty</th>
                     <th scope="col" class="text-end admin-asn-fees-modal__price-col">Price</th>
                   </tr>
@@ -232,6 +239,15 @@ function removeLine() {
                       <div class="small text-secondary admin-asn-fees-modal__account-default">
                         {{ defaultPriceLabel(row.line_type) }}
                       </div>
+                    </td>
+                    <td v-if="!isSingleEdit" class="text-center align-middle admin-asn-fees-modal__add-col">
+                      <input
+                        v-model="rows[idx].selected"
+                        type="checkbox"
+                        class="form-check-input admin-asn-fees-modal__check"
+                        :disabled="busy"
+                        :aria-label="`Add ${row.service}`"
+                      />
                     </td>
                     <td class="text-end align-middle">
                       <input
@@ -313,6 +329,15 @@ function removeLine() {
 .admin-asn-fees-modal__table-wrap {
   max-height: min(60vh, 28rem);
   overflow: auto;
+}
+
+.admin-asn-fees-modal__add-col {
+  width: 3.5rem;
+}
+
+.admin-asn-fees-modal__check {
+  cursor: pointer;
+  margin: 0;
 }
 
 .admin-asn-fees-modal__qty-col {

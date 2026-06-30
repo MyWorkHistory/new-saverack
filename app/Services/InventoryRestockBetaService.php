@@ -40,21 +40,20 @@ final class InventoryRestockBetaService
 
         $rows = $this->parser->parseFile($path);
         $uploadedAt = now();
+        $enrichedRows = $this->enrichRowsWithAccounts($rows);
 
         InventoryRestockBetaSnapshot::query()->delete();
 
         $snapshot = InventoryRestockBetaSnapshot::query()->create([
             'uploaded_by_user_id' => $actor !== null ? $actor->id : null,
             'original_filename' => $file->getClientOriginalName(),
-            'row_count' => count($rows),
-            'rows' => $rows,
+            'row_count' => count($enrichedRows),
+            'rows' => $enrichedRows,
             'completed_skus' => [],
-            'enrichment_status' => self::ENRICHMENT_PENDING,
+            'enrichment_status' => self::ENRICHMENT_COMPLETED,
             'enrichment_error' => null,
             'uploaded_at' => $uploadedAt,
         ]);
-
-        $this->dispatchEnrichment($snapshot);
 
         return $this->toArray($snapshot);
     }
@@ -105,23 +104,27 @@ final class InventoryRestockBetaService
             return null;
         }
 
-        if ($this->snapshotNeedsReenrichment($snapshot)) {
-            $snapshot->enrichment_status = self::ENRICHMENT_PENDING;
-            $snapshot->enrichment_error = null;
-            $snapshot->save();
-            $this->dispatchEnrichment($snapshot);
+        if ($this->snapshotNeedsInlineEnrichment($snapshot)) {
+            if ($snapshot->enrichment_status === self::ENRICHMENT_COMPLETED) {
+                $snapshot->enrichment_status = self::ENRICHMENT_PENDING;
+                $snapshot->enrichment_error = null;
+                $snapshot->save();
+            }
+            try {
+                $this->runEnrichmentForSnapshot((int) $snapshot->id);
+            } catch (\Throwable $e) {
+                // Status and error are persisted by runEnrichmentForSnapshot.
+            }
+            $snapshot->refresh();
         }
 
         return $this->toArray($snapshot);
     }
 
-    private function snapshotNeedsReenrichment(InventoryRestockBetaSnapshot $snapshot): bool
+    private function snapshotNeedsInlineEnrichment(InventoryRestockBetaSnapshot $snapshot): bool
     {
         $status = (string) ($snapshot->enrichment_status ?? '');
-        if ($status === self::ENRICHMENT_PENDING || $status === self::ENRICHMENT_RUNNING) {
-            return false;
-        }
-        if ($status === self::ENRICHMENT_FAILED) {
+        if (in_array($status, [self::ENRICHMENT_PENDING, self::ENRICHMENT_RUNNING, self::ENRICHMENT_FAILED], true)) {
             return true;
         }
 
@@ -257,6 +260,7 @@ final class InventoryRestockBetaService
         $matches = ShipHeroInventoryProductIndex::query()
             ->join('client_accounts', 'client_accounts.id', '=', 'shiphero_inventory_product_index.client_account_id')
             ->whereIn('shiphero_inventory_product_index.sku_search', $skuKeys)
+            ->orderByDesc('shiphero_inventory_product_index.synced_at')
             ->orderBy('client_accounts.company_name')
             ->get([
                 'shiphero_inventory_product_index.sku_search',

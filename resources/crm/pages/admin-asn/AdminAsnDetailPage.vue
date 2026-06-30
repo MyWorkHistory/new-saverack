@@ -314,31 +314,47 @@ function shipHeroProductUrl(legacyId) {
   return `https://app.shiphero.com/dashboard/products/details/${legacyId}`;
 }
 
-async function openShipHeroProduct(line, event) {
-  event?.preventDefault?.();
-  const fromLine = Number(line?.shiphero_legacy_id || 0);
-  if (fromLine > 0) {
-    window.open(shipHeroProductUrl(fromLine), "_blank", "noopener,noreferrer");
-    return;
-  }
-  const popup = window.open("about:blank", "_blank", "noopener,noreferrer");
-  if (!popup) {
-    toast.error("Pop-up blocked. Allow pop-ups for this site and try again.");
-    return;
-  }
+function shipHeroHrefForLine(line) {
+  const legacyId = Number(line?.shiphero_legacy_id || 0);
+  if (legacyId > 0) return shipHeroProductUrl(legacyId);
+  return null;
+}
+
+function prefetchShipheroLegacyId(line) {
+  if (!line?.sku) return;
+  if (Number(line?.shiphero_legacy_id || 0) > 0) return;
+  void resolveShipheroLegacyId(line);
+}
+
+function openShipHeroUrl(url) {
+  const a = document.createElement("a");
+  a.href = url;
+  a.target = "_blank";
+  a.rel = "noopener noreferrer";
+  a.style.display = "none";
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+}
+
+async function resolveAndOpenShipHero(line) {
   const legacyId = await resolveShipheroLegacyId(line);
   if (legacyId <= 0) {
-    popup.close();
     toast.error("Could not find this product in ShipHero.");
     return;
   }
-  popup.location.href = shipHeroProductUrl(legacyId);
+  openShipHeroUrl(shipHeroProductUrl(legacyId));
 }
 
-async function viewShipHeroFromLineMenu(line) {
-  if (!line) return;
+function onShipHeroMenuClick(event, line) {
+  if (!line) {
+    event.preventDefault();
+    return;
+  }
   closeLineMenu();
-  await openShipHeroProduct(line);
+  if (shipHeroHrefForLine(line)) return;
+  event.preventDefault();
+  void resolveAndOpenShipHero(line);
 }
 
 function openSubtractReceivedFromMenu(line) {
@@ -1205,6 +1221,8 @@ async function toggleLineMenu(lineId, e) {
   }
   const btn = e?.currentTarget;
   lineMenuOpenId.value = lineId;
+  const line = (asn.value?.lines || []).find((l) => l.id === lineId);
+  prefetchShipheroLegacyId(line);
   await nextTick();
   requestAnimationFrame(() => {
     if (btn instanceof HTMLElement) placeLineMenu(btn);
@@ -1943,14 +1961,16 @@ onUnmounted(() => {
           @click.stop
         >
           <template v-if="isDraft">
-            <button
-              type="button"
-              class="staff-row-menu__item"
+            <a
+              :href="shipHeroHrefForLine(lineMenuRow) || '#'"
+              target="_blank"
+              rel="noopener noreferrer"
+              class="staff-row-menu__item text-decoration-none text-body"
               role="menuitem"
-              @click="viewShipHeroFromLineMenu(lineMenuRow)"
+              @click="onShipHeroMenuClick($event, lineMenuRow)"
             >
               View in ShipHero
-            </button>
+            </a>
             <button
               type="button"
               class="staff-row-menu__item"
@@ -1969,14 +1989,16 @@ onUnmounted(() => {
             </button>
           </template>
           <template v-else>
-            <button
-              type="button"
-              class="staff-row-menu__item"
+            <a
+              :href="shipHeroHrefForLine(lineMenuRow) || '#'"
+              target="_blank"
+              rel="noopener noreferrer"
+              class="staff-row-menu__item text-decoration-none text-body"
               role="menuitem"
-              @click="viewShipHeroFromLineMenu(lineMenuRow)"
+              @click="onShipHeroMenuClick($event, lineMenuRow)"
             >
               View in ShipHero
-            </button>
+            </a>
             <button
               type="button"
               class="staff-row-menu__item"
@@ -2099,10 +2121,20 @@ onUnmounted(() => {
           <div class="fw-semibold">{{ editItemLine.name }}</div>
           <div class="small text-secondary">{{ editItemLine.sku }}</div>
         </div>
+        <a
+          v-if="shipHeroHrefForLine(editItemLine)"
+          :href="shipHeroHrefForLine(editItemLine)"
+          target="_blank"
+          rel="noopener noreferrer"
+          class="btn btn-sm btn-outline-secondary flex-shrink-0"
+        >
+          View in ShipHero
+        </a>
         <button
+          v-else
           type="button"
           class="btn btn-sm btn-outline-secondary flex-shrink-0"
-          @click="openShipHeroProduct(editItemLine, $event)"
+          @click="resolveAndOpenShipHero(editItemLine)"
         >
           View in ShipHero
         </button>

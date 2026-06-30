@@ -127,8 +127,9 @@ function navActive(mode) {
     return p.startsWith("/admin/inventory");
   }
   if (mode === "inventory-search" || mode === "inventory-products") return p === "/admin/inventory";
-  if (mode === "inventory-restock") return p === "/admin/inventory/restock";
-  if (mode === "inventory-restock-beta") return p.startsWith("/admin/inventory/restock-beta");
+  if (mode === "inventory-restock") {
+    return p === "/admin/inventory/restock" || p.startsWith("/admin/inventory/restock/");
+  }
   if (mode === "inventory-on-demand") return p.startsWith("/admin/inventory/on-demand");
   if (mode === "billing-summary") return p === "/admin/billing/summary";
   if (mode === "billing-invoices") return p.startsWith("/admin/billing/invoices");
@@ -591,16 +592,6 @@ function collapseNav() {
                     @click="closeMobile"
                   >
                     Restock
-                  </RouterLink>
-                </li>
-                <li v-if="!isPortal">
-                  <RouterLink
-                    to="/admin/inventory/restock-beta"
-                    class="vx-nav-link vx-nav-sublink"
-                    :class="{ 'vx-nav-link--active': navActive('inventory-restock-beta') }"
-                    @click="closeMobile"
-                  >
-                    Restock (Beta)
                   </RouterLink>
                 </li>
                 <li v-if="!isPortal">

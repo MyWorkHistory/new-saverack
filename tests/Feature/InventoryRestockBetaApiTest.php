@@ -7,8 +7,10 @@ use App\Models\InventoryRestockBetaSnapshot;
 use App\Models\Permission;
 use App\Models\ShipHeroInventoryProductIndex;
 use App\Models\User;
+use App\Services\InventoryRestockBetaService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\UploadedFile;
+use Illuminate\Support\Facades\Config;
 use Laravel\Sanctum\Sanctum;
 use Tests\TestCase;
 
@@ -36,8 +38,9 @@ ABC-123,Widget Alpha,100,10,50,2,523,42,"test 3 (QTY: 523), test 2 (QTY: 42)"
 CSV;
     }
 
-    public function test_post_import_returns_rows_and_persists_snapshot(): void
+    public function test_post_import_returns_rows_immediately_with_pending_enrichment(): void
     {
+        Config::set('services.shiphero.restock_dispatch_mode', 'after_response');
         Sanctum::actingAs($this->staffWithInventoryView());
 
         $file = UploadedFile::fake()->createWithContent('restock.csv', $this->sampleCsv());
@@ -53,6 +56,7 @@ CSV;
         $response->assertJsonPath('original_filename', 'restock.csv');
         $response->assertJsonPath('rows.0.sku', 'ABC-123');
         $response->assertJsonPath('rows.0.restock_needed', 42);
+        $response->assertJsonPath('enrichment_status', InventoryRestockBetaService::ENRICHMENT_PENDING);
 
         $this->assertDatabaseCount('inventory_restock_beta_snapshots', 1);
     }
@@ -77,6 +81,7 @@ CSV;
                 ],
             ],
             'completed_skus' => [],
+            'enrichment_status' => InventoryRestockBetaService::ENRICHMENT_COMPLETED,
             'uploaded_at' => now(),
         ]);
 
@@ -88,6 +93,7 @@ CSV;
         $response->assertJsonPath('active_row_count', 1);
         $response->assertJsonPath('restock_needed_total', 3);
         $response->assertJsonPath('rows.0.sku', 'SAVE-1');
+        $response->assertJsonPath('enrichment_status', InventoryRestockBetaService::ENRICHMENT_COMPLETED);
     }
 
     public function test_get_without_snapshot_returns_empty_payload(): void
@@ -100,6 +106,7 @@ CSV;
         $response->assertJsonPath('row_count', 0);
         $response->assertJsonPath('active_row_count', 0);
         $response->assertJsonPath('restock_needed_total', 0);
+        $response->assertJsonPath('enrichment_status', InventoryRestockBetaService::ENRICHMENT_COMPLETED);
         $response->assertJsonPath('rows', []);
     }
 
@@ -119,6 +126,7 @@ CSV;
 
     public function test_import_replaces_previous_snapshot(): void
     {
+        Config::set('services.shiphero.restock_dispatch_mode', 'sync');
         Sanctum::actingAs($this->staffWithInventoryView());
 
         InventoryRestockBetaSnapshot::query()->create([
@@ -126,6 +134,7 @@ CSV;
             'row_count' => 1,
             'rows' => [['sku' => 'OLD-1', 'name' => 'Old']],
             'completed_skus' => ['OLD-1'],
+            'enrichment_status' => InventoryRestockBetaService::ENRICHMENT_COMPLETED,
             'uploaded_at' => now()->subDay(),
         ]);
 
@@ -134,7 +143,8 @@ CSV;
         $this->postJson('/api/inventory/restock-beta/import', ['file' => $file])
             ->assertCreated()
             ->assertJsonPath('rows.0.sku', 'ABC-123')
-            ->assertJsonPath('active_row_count', 1);
+            ->assertJsonPath('active_row_count', 1)
+            ->assertJsonPath('enrichment_status', InventoryRestockBetaService::ENRICHMENT_COMPLETED);
 
         $this->assertDatabaseCount('inventory_restock_beta_snapshots', 1);
         $this->assertDatabaseHas('inventory_restock_beta_snapshots', [
@@ -162,6 +172,7 @@ CSV;
                 ],
             ],
             'completed_skus' => [],
+            'enrichment_status' => InventoryRestockBetaService::ENRICHMENT_COMPLETED,
             'uploaded_at' => now(),
         ]);
 
@@ -177,8 +188,9 @@ CSV;
             ->assertJsonPath('rows.0.sku', 'KEEP-1');
     }
 
-    public function test_import_enriches_account_from_inventory_index(): void
+    public function test_import_enriches_account_from_inventory_index_when_sync(): void
     {
+        Config::set('services.shiphero.restock_dispatch_mode', 'sync');
         Sanctum::actingAs($this->staffWithInventoryView());
 
         $account = ClientAccount::query()->create([
@@ -194,6 +206,7 @@ CSV;
             'sku_search' => 'abc-123',
             'name' => 'Widget Alpha',
             'name_search' => 'widget alpha',
+            'image_url' => 'https://cdn.example.com/widget.jpg',
             'product_active' => true,
             'kit' => false,
             'kit_build' => false,
@@ -210,6 +223,9 @@ CSV;
         $this->postJson('/api/inventory/restock-beta/import', ['file' => $file])
             ->assertCreated()
             ->assertJsonPath('rows.0.client_account_id', $account->id)
-            ->assertJsonPath('rows.0.account_name', 'Acme Shoes');
+            ->assertJsonPath('rows.0.account_name', 'Acme Shoes')
+            ->assertJsonPath('rows.0.image_url', 'https://cdn.example.com/widget.jpg')
+            ->assertJsonPath('rows.0.warehouse_id', 'WH1')
+            ->assertJsonPath('enrichment_status', InventoryRestockBetaService::ENRICHMENT_COMPLETED);
     }
 }

@@ -324,6 +324,8 @@ class InventoryController extends Controller
                 'active_row_count' => 0,
                 'restock_needed_total' => 0,
                 'uploaded_at' => null,
+                'enrichment_status' => InventoryRestockBetaService::ENRICHMENT_COMPLETED,
+                'enrichment_error' => null,
                 'rows' => [],
             ]);
         }

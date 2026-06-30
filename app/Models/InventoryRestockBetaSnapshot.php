@@ -13,6 +13,8 @@ class InventoryRestockBetaSnapshot extends Model
         'row_count',
         'rows',
         'completed_skus',
+        'enrichment_status',
+        'enrichment_error',
         'uploaded_at',
     ];
 

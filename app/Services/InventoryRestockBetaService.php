@@ -2,6 +2,7 @@
 
 namespace App\Services;
 
+use App\Jobs\EnrichInventoryRestockSnapshotJob;
 use App\Models\InventoryRestockBetaSnapshot;
 use App\Models\ShipHeroInventoryProductIndex;
 use App\Models\User;
@@ -11,6 +12,14 @@ use RuntimeException;
 
 final class InventoryRestockBetaService
 {
+    public const ENRICHMENT_PENDING = 'pending';
+
+    public const ENRICHMENT_RUNNING = 'running';
+
+    public const ENRICHMENT_COMPLETED = 'completed';
+
+    public const ENRICHMENT_FAILED = 'failed';
+
     /** @var RestockBetaCsvParser */
     private $parser;
 
@@ -29,7 +38,7 @@ final class InventoryRestockBetaService
             throw new RuntimeException('Could not read uploaded file.');
         }
 
-        $rows = $this->enrichRowsWithAccounts($this->parser->parseFile($path));
+        $rows = $this->parser->parseFile($path);
         $uploadedAt = now();
 
         InventoryRestockBetaSnapshot::query()->delete();
@@ -40,10 +49,46 @@ final class InventoryRestockBetaService
             'row_count' => count($rows),
             'rows' => $rows,
             'completed_skus' => [],
+            'enrichment_status' => self::ENRICHMENT_PENDING,
+            'enrichment_error' => null,
             'uploaded_at' => $uploadedAt,
         ]);
 
+        $this->dispatchEnrichment($snapshot);
+
         return $this->toArray($snapshot);
+    }
+
+    public function runEnrichmentForSnapshot(int $snapshotId): void
+    {
+        $snapshot = InventoryRestockBetaSnapshot::query()->find($snapshotId);
+        if ($snapshot === null) {
+            return;
+        }
+
+        if ($snapshot->enrichment_status === self::ENRICHMENT_COMPLETED) {
+            return;
+        }
+
+        $snapshot->enrichment_status = self::ENRICHMENT_RUNNING;
+        $snapshot->enrichment_error = null;
+        $snapshot->save();
+
+        try {
+            $rows = is_array($snapshot->rows) ? $snapshot->rows : [];
+            $snapshot->rows = $this->enrichRowsWithAccounts($rows);
+            $snapshot->enrichment_status = self::ENRICHMENT_COMPLETED;
+            $snapshot->enrichment_error = null;
+            $snapshot->save();
+        } catch (\Throwable $e) {
+            $snapshot->enrichment_status = self::ENRICHMENT_FAILED;
+            $snapshot->enrichment_error = $e->getMessage() !== ''
+                ? $e->getMessage()
+                : 'Restock enrichment failed.';
+            $snapshot->save();
+
+            throw $e;
+        }
     }
 
     /**
@@ -101,6 +146,34 @@ final class InventoryRestockBetaService
         return $this->toArray($snapshot);
     }
 
+    public function restockQueueConnection(): ?string
+    {
+        $connection = trim((string) config('services.shiphero.restock_queue_connection', ''));
+        if ($connection === '') {
+            return null;
+        }
+
+        return $connection;
+    }
+
+    private function dispatchEnrichment(InventoryRestockBetaSnapshot $snapshot): void
+    {
+        $mode = strtolower(trim((string) config('services.shiphero.restock_dispatch_mode', 'after_response')));
+        if ($mode === 'queue') {
+            EnrichInventoryRestockSnapshotJob::dispatch($snapshot->id);
+
+            return;
+        }
+
+        if ($mode === 'sync') {
+            $this->runEnrichmentForSnapshot((int) $snapshot->id);
+
+            return;
+        }
+
+        EnrichInventoryRestockSnapshotJob::dispatchAfterResponse($snapshot->id);
+    }
+
     /**
      * @param  list<array<string, mixed>>  $rows
      * @return list<array<string, mixed>>
@@ -130,6 +203,8 @@ final class InventoryRestockBetaService
             $match = $accountsBySku[$key] ?? null;
             $rows[$index]['client_account_id'] = $match !== null ? (int) $match['client_account_id'] : null;
             $rows[$index]['account_name'] = $match !== null ? (string) $match['account_name'] : '';
+            $rows[$index]['image_url'] = $match !== null ? ($match['image_url'] ?? null) : null;
+            $rows[$index]['warehouse_id'] = $match !== null ? ($match['warehouse_id'] ?? null) : null;
         }
 
         return $rows;
@@ -137,7 +212,7 @@ final class InventoryRestockBetaService
 
     /**
      * @param  list<string>  $skuKeys
-     * @return array<string, array{client_account_id: int, account_name: string}>
+     * @return array<string, array{client_account_id: int, account_name: string, image_url: string|null, warehouse_id: string|null}>
      */
     private function lookupAccountsBySku(array $skuKeys): array
     {
@@ -152,6 +227,8 @@ final class InventoryRestockBetaService
             ->get([
                 'shiphero_inventory_product_index.sku_search',
                 'shiphero_inventory_product_index.client_account_id',
+                'shiphero_inventory_product_index.image_url',
+                'shiphero_inventory_product_index.warehouse_id',
                 'client_accounts.company_name',
             ]);
 
@@ -164,6 +241,12 @@ final class InventoryRestockBetaService
             $map[$key] = [
                 'client_account_id' => (int) $match->client_account_id,
                 'account_name' => (string) $match->company_name,
+                'image_url' => is_string($match->image_url) && $match->image_url !== ''
+                    ? $match->image_url
+                    : null,
+                'warehouse_id' => is_string($match->warehouse_id) && $match->warehouse_id !== ''
+                    ? $match->warehouse_id
+                    : null,
             ];
         }
 
@@ -190,6 +273,8 @@ final class InventoryRestockBetaService
             'active_row_count' => count($activeRows),
             'restock_needed_total' => $restockNeededTotal,
             'uploaded_at' => $uploadedAt !== null ? $uploadedAt->toIso8601String() : null,
+            'enrichment_status' => (string) ($snapshot->enrichment_status ?? self::ENRICHMENT_COMPLETED),
+            'enrichment_error' => $snapshot->enrichment_error,
             'rows' => $activeRows,
         ];
     }

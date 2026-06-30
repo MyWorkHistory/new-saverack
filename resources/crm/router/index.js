@@ -35,7 +35,6 @@ import BillingReturnBillDetailPage from "../pages/billing/BillingReturnBillDetai
 import BillingAsnBillDetailPage from "../pages/billing/BillingAsnBillDetailPage.vue";
 import InventoryOnDemandPage from "../pages/inventory/InventoryOnDemandPage.vue";
 import InventoryRestockPage from "../pages/inventory/InventoryRestockPage.vue";
-import InventoryRestockBetaPage from "../pages/inventory/InventoryRestockBetaPage.vue";
 import InventoryBetaListPage from "../pages/inventory/InventoryBetaListPage.vue";
 import InventoryBetaDetailPage from "../pages/inventory/InventoryBetaDetailPage.vue";
 import OrdersListPage from "../pages/orders/OrdersListPage.vue";
@@ -151,10 +150,6 @@ const meta = {
   },
   inventoryRestock: {
     title: "Save Rack | Inventory | Restock",
-    description: "Warehouse restock report for low pickable inventory with backstock.",
-  },
-  inventoryRestockBeta: {
-    title: "Save Rack | Inventory | Restock (Beta)",
     description: "Upload a restock CSV and review SKUs that need replenishment.",
   },
   inventoryBeta: {
@@ -521,12 +516,7 @@ const routes = [
     component: InventoryRestockPage,
     meta: meta.inventoryRestock,
   },
-  {
-    path: "/admin/inventory/restock-beta",
-    name: "inventory-restock-beta",
-    component: InventoryRestockBetaPage,
-    meta: meta.inventoryRestockBeta,
-  },
+  { path: "/admin/inventory/restock-beta", redirect: "/admin/inventory/restock" },
   { path: "/admin/inventory-beta", redirect: "/admin/inventory" },
   {
     path: "/admin/inventory-beta/:sku",

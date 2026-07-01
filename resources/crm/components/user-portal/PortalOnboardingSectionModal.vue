@@ -234,6 +234,8 @@ async function save() {
 
 const isCommunicationSection = computed(() => props.sectionId === "communication_preferences");
 
+const isBrandingSection = computed(() => props.sectionId === "branding_information");
+
 function setCommunicationMethod(value) {
   form.communication_method = value;
   if (value === "email" && String(form.contact_email || "").trim() === "") {
@@ -397,6 +399,12 @@ function setCommunicationMethod(value) {
                     class="portal-onboard-logo-preview"
                   />
                 </div>
+                <p
+                  v-else-if="isBrandingSection"
+                  class="small text-secondary mb-2 portal-onboard-logo-empty"
+                >
+                  No logo uploaded yet.
+                </p>
                 <input
                   :id="`onboard-${field.key}`"
                   type="file"
@@ -467,6 +475,15 @@ function setCommunicationMethod(value) {
   object-fit: contain;
   border-radius: 0.375rem;
   border: 1px solid var(--bs-border-color);
+  background: #fff;
+  padding: 0.25rem;
+}
+
+.portal-onboard-logo-empty {
+  border: 1px dashed var(--bs-border-color);
+  border-radius: 0.375rem;
+  padding: 0.75rem 1rem;
+  background: var(--bs-light, #f8f9fa);
 }
 
 .portal-billing-option {

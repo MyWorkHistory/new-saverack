@@ -323,6 +323,7 @@ onUnmounted(() => {
     />
     <PortalOnboardingBillingModal
       v-model:open="billingModalOpen"
+      :profile="profile"
       :manual-instructions="manualInstructions"
       @saved="onBillingSaved"
     />

@@ -103,6 +103,17 @@ $staff-detail-primary: #2563eb;
   border-radius: 0.5rem;
 }
 
+.staff-user-profile__avatar--brand-logo {
+  width: auto;
+  height: auto;
+  max-width: 100%;
+  max-height: 200px;
+  object-fit: contain;
+  border-radius: 0.5rem;
+  background: #fff;
+  padding: 0.25rem;
+}
+
 .staff-user-profile__name {
   font-size: 1.125rem;
   font-weight: 600;

@@ -7,6 +7,7 @@ import { useToast } from "../../composables/useToast";
 
 const props = defineProps({
   open: { type: Boolean, default: false },
+  profile: { type: Object, default: null },
   manualInstructions: { type: Object, default: null },
   clientAccountId: { type: [String, Number], default: null },
   adminMode: { type: Boolean, default: false },
@@ -46,6 +47,38 @@ const manual = computed(() => {
   return m;
 });
 
+const BILLING_METHOD_LABELS = {
+  credit_card: "Credit Card (3.5% Processing Fee)",
+  ach: "ACH / Bank Transfer (No Fee)",
+  manual: "Manual Payments",
+};
+
+const BILLING_STATUS_LABELS = {
+  completed: "Completed",
+  processing: "Processing",
+  not_started: "Not started",
+  failed: "Failed",
+};
+
+const savedBillingMethod = computed(() => {
+  const raw = String(props.profile?.onboarding_billing_method || "").trim();
+  return raw in BILLING_METHOD_LABELS ? raw : "";
+});
+
+const savedBillingMethodLabel = computed(() =>
+  savedBillingMethod.value ? BILLING_METHOD_LABELS[savedBillingMethod.value] : "",
+);
+
+const savedBillingStatusLabel = computed(() => {
+  const raw = String(props.profile?.onboarding_billing_status || "").trim();
+  return BILLING_STATUS_LABELS[raw] || "";
+});
+
+function fillFromProfile() {
+  const saved = String(props.profile?.onboarding_billing_method || "").trim();
+  method.value = saved in BILLING_METHOD_LABELS ? saved : "";
+}
+
 function close() {
   emit("update:open", false);
 }
@@ -59,7 +92,7 @@ watch(
   (open) => {
     if (open) {
       document.addEventListener("keydown", onEsc);
-      method.value = "";
+      fillFromProfile();
       errorMsg.value = "";
     } else {
       document.removeEventListener("keydown", onEsc);
@@ -149,6 +182,18 @@ async function saveAdminBilling() {
     </header>
     <div class="crm-vx-modal__body portal-onboard-modal__body">
             <p v-if="errorMsg" class="text-danger small">{{ errorMsg }}</p>
+
+            <div
+              v-if="savedBillingMethodLabel"
+              class="portal-billing-current border rounded p-3 mb-4 bg-light"
+            >
+              <div class="small text-secondary text-uppercase fw-semibold mb-1">Current Selection</div>
+              <div class="fw-semibold text-body">{{ savedBillingMethodLabel }}</div>
+              <div v-if="savedBillingStatusLabel" class="small text-secondary mt-1">
+                Status: {{ savedBillingStatusLabel }}
+              </div>
+            </div>
+
             <p class="text-secondary mb-4">
               Choose how you would like to pay your fulfillment invoices:
             </p>

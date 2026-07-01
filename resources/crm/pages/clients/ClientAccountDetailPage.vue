@@ -63,6 +63,9 @@ const accountStatusModalOpen = ref(false);
 const accountStatusForm = ref("pending");
 const accountStatusSaving = ref(false);
 
+const brandLogoInput = ref(null);
+const brandLogoUploadBusy = ref(false);
+
 const historyItems = ref([]);
 
 const addStoreOpen = ref(false);
@@ -584,6 +587,37 @@ const accountBrandLogoUrl = computed(() => {
 
   return resolvePublicUrl(raw) || raw;
 });
+
+function openBrandLogoPicker() {
+  if (!canUpdateAccount.value || brandLogoUploadBusy.value) return;
+  brandLogoInput.value?.click();
+}
+
+async function onBrandLogoChange(e) {
+  const input = e.target;
+  const file = input.files?.[0];
+  input.value = "";
+  if (!file || !canUpdateAccount.value || !account.value) return;
+
+  brandLogoUploadBusy.value = true;
+  try {
+    const fd = new FormData();
+    fd.append("logo", file);
+    const { data } = await api.post(
+      `/client-accounts/${props.id}/onboarding/branding/logo`,
+      fd,
+    );
+    const nextUrl = data?.brand_logo_url || data?.onboarding?.brand_logo_url;
+    if (nextUrl) {
+      onOnboardingAccountUpdated({ brand_logo_url: nextUrl });
+    }
+    toast.success("Brand logo updated.");
+  } catch (err) {
+    toast.errorFrom(err, "Could not upload brand logo.");
+  } finally {
+    brandLogoUploadBusy.value = false;
+  }
+}
 
 function openAccountStatusModal() {
   if (!account.value || !canUpdateAccount.value) return;
@@ -1166,20 +1200,51 @@ onUnmounted(() => {
       <div class="row g-3">
         <div class="col-12 col-xl-4">
           <aside class="staff-user-profile">
+            <input
+              ref="brandLogoInput"
+              type="file"
+              accept="image/jpeg,image/png,image/jpg,image/webp,.jpg,.jpeg,.png,.webp"
+              class="d-none"
+              @change="onBrandLogoChange"
+            />
             <div class="staff-user-profile__avatar-wrap">
-              <img
-                v-if="accountBrandLogoUrl"
-                :src="accountBrandLogoUrl"
-                alt=""
-                class="staff-user-profile__avatar staff-user-profile__avatar--brand-logo"
-              />
-              <span
-                v-else
-                class="staff-user-profile__avatar staff-user-profile__avatar--initials"
-                :class="avatarClassForEmail(account.email)"
+              <button
+                v-if="canUpdateAccount"
+                type="button"
+                class="staff-user-profile__avatar-btn rounded focus-ring"
+                :title="accountBrandLogoUrl ? 'Change brand logo' : 'Upload brand logo'"
+                :disabled="brandLogoUploadBusy"
+                @click="openBrandLogoPicker"
               >
-                {{ initials(account.company_name) }}
-              </span>
+                <img
+                  v-if="accountBrandLogoUrl"
+                  :src="accountBrandLogoUrl"
+                  alt=""
+                  class="staff-user-profile__avatar staff-user-profile__avatar--brand-logo"
+                />
+                <span
+                  v-else
+                  class="staff-user-profile__avatar staff-user-profile__avatar--initials"
+                  :class="avatarClassForEmail(account.email)"
+                >
+                  {{ initials(account.company_name) }}
+                </span>
+              </button>
+              <template v-else>
+                <img
+                  v-if="accountBrandLogoUrl"
+                  :src="accountBrandLogoUrl"
+                  alt=""
+                  class="staff-user-profile__avatar staff-user-profile__avatar--brand-logo"
+                />
+                <span
+                  v-else
+                  class="staff-user-profile__avatar staff-user-profile__avatar--initials"
+                  :class="avatarClassForEmail(account.email)"
+                >
+                  {{ initials(account.company_name) }}
+                </span>
+              </template>
             </div>
             <h2 class="staff-user-profile__name">
               {{ account.company_name }}
@@ -2330,17 +2395,6 @@ onUnmounted(() => {
 </template>
 
 <style scoped>
-.staff-user-profile__avatar--brand-logo {
-  max-height: 200px;
-  max-width: 100%;
-  width: auto;
-  height: auto;
-  object-fit: contain;
-  border-radius: 0.5rem;
-  background: #fff;
-  padding: 0.25rem;
-}
-
 .account-note-avatar {
   width: 2.25rem;
   height: 2.25rem;

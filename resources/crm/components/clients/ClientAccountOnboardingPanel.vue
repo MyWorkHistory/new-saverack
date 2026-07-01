@@ -48,6 +48,19 @@ function completionLabel(status) {
   return "Not Completed";
 }
 
+const BILLING_METHOD_LABELS = {
+  credit_card: "Credit Card (3.5% Processing Fee)",
+  ach: "ACH / Bank Transfer (No Fee)",
+  manual: "Manual Payments",
+};
+
+function billingMethodSummary(task) {
+  if (task?.id !== "billing_information") return "";
+  const raw = String(profile.value?.onboarding_billing_method || "").trim();
+  const label = BILLING_METHOD_LABELS[raw];
+  return label ? `Selected: ${label}` : "";
+}
+
 function completionClass(status) {
   if (status === "completed") return "portal-onboard-status--completed";
   if (status === "processing") return "portal-onboard-status--processing";
@@ -191,6 +204,9 @@ loadOnboarding();
               <div class="min-w-0">
                 <h2 class="h6 fw-semibold mb-1">{{ task.title }}</h2>
                 <p class="small text-secondary mb-0">{{ task.description }}</p>
+                <p v-if="billingMethodSummary(task)" class="small text-body mb-0 mt-1">
+                  {{ billingMethodSummary(task) }}
+                </p>
               </div>
             </div>
             <div class="portal-onboard-task__status-col">
@@ -228,6 +244,7 @@ loadOnboarding();
     />
     <PortalOnboardingBillingModal
       v-model:open="billingModalOpen"
+      :profile="profile"
       :manual-instructions="manualInstructions"
       :client-account-id="clientAccountId"
       admin-mode

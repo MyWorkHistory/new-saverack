@@ -51,6 +51,28 @@ class OrderDraftApiTest extends TestCase
         return $user;
     }
 
+    private function staffWithOrdersView(): User
+    {
+        $user = User::factory()->create(['client_account_id' => null, 'name' => 'Staff Viewer']);
+        $user->permissions()->sync([$this->ordersViewPermission()->id]);
+        Sanctum::actingAs($user);
+
+        return $user;
+    }
+
+    private function makeDraftForAccount(ClientAccount $account, string $orderNumber = 'LIST-DRAFT-1'): OrderDraft
+    {
+        return OrderDraft::query()->create([
+            'client_account_id' => $account->id,
+            'order_number' => $orderNumber,
+            'status' => OrderDraft::STATUS_DRAFT,
+            'shipping_address' => $this->validDraftPayload($account->id, $orderNumber)['shipping_address'],
+            'line_items' => [],
+            'tags' => [],
+            'created_by_user_id' => User::factory()->create()->id,
+        ]);
+    }
+
     /**
      * @return array<string, mixed>
      */
@@ -303,5 +325,64 @@ class OrderDraftApiTest extends TestCase
             'client_account_id' => $account->id,
         ])
             ->assertStatus(422);
+    }
+
+    public function test_guest_cannot_list_drafts(): void
+    {
+        $this->getJson('/api/order-drafts')->assertUnauthorized();
+    }
+
+    public function test_staff_can_list_drafts(): void
+    {
+        $this->staffWithOrdersView();
+        $account = $this->makeAccount('sh-list-1');
+        $draft = $this->makeDraftForAccount($account, 'LIST-DRAFT-1');
+
+        $this->getJson('/api/order-drafts')
+            ->assertOk()
+            ->assertJsonPath('data.0.order_number', 'LIST-DRAFT-1')
+            ->assertJsonPath('data.0.id', $draft->id)
+            ->assertJsonStructure([
+                'data' => [[
+                    'id',
+                    'draft_route_id',
+                    'order_number',
+                    'client_account_id',
+                    'client_account_company_name',
+                    'recipient_name',
+                    'line_items_count',
+                    'created_at',
+                ]],
+            ]);
+    }
+
+    public function test_staff_can_filter_drafts_by_account(): void
+    {
+        $this->staffWithOrdersView();
+        $accountA = $this->makeAccount('sh-list-a');
+        $accountB = $this->makeAccount('sh-list-b');
+        $this->makeDraftForAccount($accountA, 'LIST-A-1');
+        $this->makeDraftForAccount($accountB, 'LIST-B-1');
+
+        $this->getJson('/api/order-drafts?client_account_id='.$accountA->id)
+            ->assertOk()
+            ->assertJsonCount(1, 'data')
+            ->assertJsonPath('data.0.order_number', 'LIST-A-1');
+    }
+
+    public function test_portal_user_lists_only_own_account_drafts(): void
+    {
+        $own = $this->makeAccount('sh-portal-list-own');
+        $other = $this->makeAccount('sh-portal-list-other');
+        $this->makeDraftForAccount($own, 'PORTAL-LIST-OWN');
+        $this->makeDraftForAccount($other, 'PORTAL-LIST-OTHER');
+
+        $user = User::factory()->create(['client_account_id' => $own->id]);
+        Sanctum::actingAs($user);
+
+        $this->getJson('/api/order-drafts')
+            ->assertOk()
+            ->assertJsonCount(1, 'data')
+            ->assertJsonPath('data.0.order_number', 'PORTAL-LIST-OWN');
     }
 }

@@ -555,8 +555,8 @@ const routes = [
     name: "orders-create",
     component: () => import("../pages/orders/OrderCreatePage.vue"),
     meta: {
-      title: "Save Rack | Orders | Create Order",
-      description: "Create a new ShipHero order for a client account.",
+      title: "Save Rack | Orders | Draft Orders",
+      description: "Local order drafts not yet sent to ShipHero.",
       requiresOrdersUpdate: true,
     },
   },
@@ -681,8 +681,8 @@ const routes = [
     name: "user-orders-create",
     component: () => import("../pages/orders/OrderCreatePage.vue"),
     meta: {
-      title: "Save Rack | Orders | Create Order",
-      description: "Create a new order draft.",
+      title: "Save Rack | Orders | Draft Orders",
+      description: "Local order drafts not yet sent to ShipHero.",
       userPortal: true,
     },
   },

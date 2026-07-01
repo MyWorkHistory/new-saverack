@@ -30,6 +30,42 @@ class OrderDraftController extends Controller
         $this->orders = $orders;
     }
 
+    public function index(Request $request): JsonResponse
+    {
+        Gate::authorize('orders.view');
+
+        $user = $request->user();
+        if (! $user instanceof User) {
+            abort(401);
+        }
+
+        $validated = $request->validate([
+            'client_account_id' => ['nullable', 'integer', 'exists:client_accounts,id'],
+            'per_page' => ['nullable', 'integer', 'min:1', 'max:100'],
+            'page' => ['nullable', 'integer', 'min:1'],
+        ]);
+
+        $clientAccountId = isset($validated['client_account_id'])
+            ? (int) $validated['client_account_id']
+            : 0;
+        if ($clientAccountId > 0) {
+            $this->assertClientAccountAccess($clientAccountId, $user);
+        }
+
+        $perPage = (int) ($validated['per_page'] ?? 25);
+        $paginator = $this->drafts->listDraftsForUser(
+            $user,
+            $clientAccountId > 0 ? $clientAccountId : null,
+            $perPage
+        );
+
+        $paginator->getCollection()->transform(function (OrderDraft $draft) {
+            return $this->drafts->toListRow($draft);
+        });
+
+        return response()->json($paginator);
+    }
+
     public function store(OrderDraftStoreRequest $request): JsonResponse
     {
         Gate::authorize('shiphero.orders.write');

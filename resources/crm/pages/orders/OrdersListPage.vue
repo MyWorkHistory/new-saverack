@@ -8,9 +8,11 @@ import CrmSearchableSelect from "../../components/common/CrmSearchableSelect.vue
 import ConfirmModal from "../../components/common/ConfirmModal.vue";
 import OrdersRemoveHoldsModal from "../../components/orders/OrdersRemoveHoldsModal.vue";
 import OrdersPlaceHoldModal from "../../components/orders/OrdersPlaceHoldModal.vue";
+import OrderCreateDraftModal from "../../components/orders/OrderCreateDraftModal.vue";
 import { setCrmPageMeta } from "../../composables/useCrmPageMeta.js";
 import { useToast } from "../../composables/useToast.js";
 import { canWriteShipHeroOrders } from "../../utils/crmShipHeroOrders";
+import { crmIsPortalUser } from "../../utils/crmUser";
 import {
   formatCarrierTrackingLine,
   formatCurrentShippingMethod,
@@ -67,6 +69,8 @@ const removeHoldsModalActiveHolds = ref({
 });
 const removeHoldsSingleOrderId = ref("");
 
+const createOrderModalOpen = ref(false);
+
 const query = reactive({
   datePreset: "today",
   from: "",
@@ -122,6 +126,20 @@ function effectiveClientAccountId(row = null) {
 }
 
 const canWriteOrders = computed(() => canWriteShipHeroOrders(crmUser.value));
+
+const showCreateOrderButton = computed(() => {
+  if (isEmbeddedOrders.value || !canWriteOrders.value) return false;
+  if (isPortalOrderList.value) return true;
+  return isAdminOrdersList.value && isOrdersSearchPage.value;
+});
+
+const isPortalModeForCreate = computed(
+  () => isPortalOrderList.value || crmIsPortalUser(crmUser.value),
+);
+
+const createOrderDetailRouteName = computed(() =>
+  isPortalModeForCreate.value ? "user-order-detail" : "order-detail",
+);
 
 const isShippedTab = computed(() => tabKey.value === "shipped");
 
@@ -559,6 +577,22 @@ function isRowSelected(row) {
 function selectedRowsList() {
   const want = selectedOrderIds.value;
   return displayedRows.value.filter((r) => want.has(String(r.id || "")));
+}
+
+async function onDraftOrderCreated(data) {
+  createOrderModalOpen.value = false;
+  const draftRouteId = String(data?.draft_route_id || "");
+  const clientAccountId = Number(data?.client_account_id || 0);
+  if (!draftRouteId || clientAccountId <= 0) {
+    toast.error("Draft was created but the response was incomplete.");
+    return;
+  }
+  toast.success("Order draft created.");
+  await router.push({
+    name: createOrderDetailRouteName.value,
+    params: { shipheroOrderId: draftRouteId },
+    query: { client_account_id: String(clientAccountId) },
+  });
 }
 
 function openPlaceHoldModalForIds(ids) {
@@ -1073,6 +1107,15 @@ onUnmounted(() => {
             </div>
           </div>
 
+          <button
+            v-if="showCreateOrderButton"
+            type="button"
+            class="btn btn-outline-primary btn-sm orders-toolbar-outline-btn fw-semibold flex-shrink-0"
+            @click="createOrderModalOpen = true"
+          >
+            Create Order
+          </button>
+
           <template v-if="showManageFilters">
             <div class="position-relative flex-shrink-0" data-toolbar-filter>
               <button
@@ -1557,6 +1600,17 @@ onUnmounted(() => {
       :busy="placeHoldBusy"
       @close="closePlaceHoldModal"
       @confirm="submitPlaceHoldModal"
+    />
+    <OrderCreateDraftModal
+      v-if="showCreateOrderButton"
+      :open="createOrderModalOpen"
+      :portal-mode="isPortalModeForCreate"
+      :portal-account-id="portalClientAccountId"
+      :accounts="accounts"
+      :accounts-loading="accountsLoading"
+      :initial-account-id="String(selectedAccountId || route.query.client_account_id || '')"
+      @close="createOrderModalOpen = false"
+      @created="onDraftOrderCreated"
     />
   </div>
 </template>

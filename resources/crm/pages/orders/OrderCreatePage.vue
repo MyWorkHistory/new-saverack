@@ -1,39 +1,66 @@
 <script setup>
-import { computed, inject, onMounted, ref } from "vue";
-import { RouterLink, useRoute, useRouter } from "vue-router";
+import { computed, inject, onMounted, ref, watch } from "vue";
+import { RouterLink, useRoute } from "vue-router";
 import api from "../../services/api";
-import OrderCreateDraftModal from "../../components/orders/OrderCreateDraftModal.vue";
+import CrmLoadingSpinner from "../../components/common/CrmLoadingSpinner.vue";
+import CrmSearchableSelect from "../../components/common/CrmSearchableSelect.vue";
 import { setCrmPageMeta } from "../../composables/useCrmPageMeta.js";
 import { useToast } from "../../composables/useToast.js";
 import { crmIsPortalUser } from "../../utils/crmUser";
 
 const route = useRoute();
-const router = useRouter();
 const toast = useToast();
 const crmUser = inject("crmUser", ref(null));
 
+const loading = ref(false);
 const accountsLoading = ref(false);
 const accounts = ref([]);
-const modalOpen = ref(false);
+const rows = ref([]);
+const selectedAccountId = ref(String(route.query.client_account_id || ""));
 
 const isPortalMode = computed(
   () => route.meta?.userPortal === true || crmIsPortalUser(crmUser.value),
 );
 const portalAccountId = computed(() => Number(crmUser.value?.client_account_id || 0));
 
+const detailRouteName = computed(() =>
+  isPortalMode.value ? "user-order-detail" : "order-detail",
+);
+
 const ordersListTo = computed(() => {
   if (isPortalMode.value) {
     return { name: "user-orders" };
   }
-  const q = {};
-  const accountId = route.query.client_account_id;
-  if (accountId) q.client_account_id = String(accountId);
-  return { path: "/admin/orders/search", query: q };
+  return { path: "/admin/orders/search" };
 });
 
-const detailRouteName = computed(() =>
-  isPortalMode.value ? "user-order-detail" : "order-detail",
+const accountOptions = computed(() =>
+  accounts.value
+    .filter((a) => a.has_shiphero_customer)
+    .map((a) => ({
+      id: a.id,
+      name: a.company_name || `Account #${a.id}`,
+      email: a.email ? String(a.email) : "",
+    })),
 );
+
+function formatDate(iso) {
+  if (!iso) return "—";
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return "—";
+  return d.toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" });
+}
+
+function draftDetailRoute(row) {
+  const accountId = Number(row?.client_account_id || 0);
+  const routeId = String(row?.draft_route_id || "");
+  if (!routeId || accountId <= 0) return null;
+  return {
+    name: detailRouteName.value,
+    params: { shipheroOrderId: routeId },
+    query: { client_account_id: String(accountId) },
+  };
+}
 
 async function loadAccounts() {
   if (isPortalMode.value) return;
@@ -48,36 +75,38 @@ async function loadAccounts() {
   }
 }
 
-function openModal() {
-  if (isPortalMode.value && portalAccountId.value <= 0) {
-    toast.error("Your account is not linked to a client account yet.");
-    return;
+async function loadDrafts() {
+  loading.value = true;
+  try {
+    const params = { per_page: 50 };
+    if (!isPortalMode.value && selectedAccountId.value) {
+      params.client_account_id = Number(selectedAccountId.value);
+    }
+    const { data } = await api.get("/order-drafts", { params });
+    rows.value = Array.isArray(data?.data) ? data.data : [];
+  } catch (e) {
+    rows.value = [];
+    toast.errorFrom(e, "Could not load draft orders.");
+  } finally {
+    loading.value = false;
   }
-  modalOpen.value = true;
 }
 
-async function onDraftCreated(data) {
-  modalOpen.value = false;
-  const draftRouteId = String(data?.draft_route_id || "");
-  const clientAccountId = Number(data?.client_account_id || 0);
-  if (!draftRouteId || clientAccountId <= 0) {
-    toast.error("Draft was created but the response was incomplete.");
-    return;
+watch(selectedAccountId, () => {
+  if (!isPortalMode.value) {
+    loadDrafts();
   }
-  toast.success("Order draft created.");
-  await router.push({
-    name: detailRouteName.value,
-    params: { shipheroOrderId: draftRouteId },
-    query: { client_account_id: String(clientAccountId) },
-  });
-}
+});
 
 onMounted(() => {
   setCrmPageMeta({
-    title: "Save Rack | Orders | Create Order",
-    description: "Create a new order draft with shipping details, then add items before sending to ShipHero.",
+    title: isPortalMode.value
+      ? "Save Rack | Orders | Drafts"
+      : "Save Rack | Orders | Draft Orders",
+    description: "Local order drafts not yet sent to ShipHero.",
   });
   loadAccounts();
+  loadDrafts();
 });
 </script>
 
@@ -85,10 +114,9 @@ onMounted(() => {
   <div class="staff-page staff-page--wide">
     <div class="d-flex flex-wrap align-items-end justify-content-between gap-3 mb-4">
       <div>
-        <h1 class="h4 mb-1 fw-semibold text-body">Create Order</h1>
+        <h1 class="h4 mb-1 fw-semibold text-body">Orders - Drafts</h1>
         <p class="text-secondary small mb-0">
-          Start with the order number and shipping address. Add line items and shipping method on the order detail
-          page, then mark the order Ready to Ship when you are done.
+          Open a draft to add line items and shipping, then mark it Ready to Ship when you are done.
         </p>
       </div>
       <RouterLink
@@ -99,25 +127,90 @@ onMounted(() => {
       </RouterLink>
     </div>
 
-    <div class="staff-table-card staff-datatable-card staff-datatable-card--white p-4 p-md-5 text-center">
-      <p class="text-secondary mb-4 mx-auto" style="max-width: 36rem">
-        Create a local draft first. You will be taken to the order detail page to add items, choose carrier and method,
-        and send the order to ShipHero when it is ready.
-      </p>
-      <button type="button" class="btn btn-primary staff-page-primary" @click="openModal">
-        Create Order
-      </button>
-    </div>
+    <div class="staff-table-card staff-datatable-card staff-datatable-card--white w-100">
+      <div class="staff-table-toolbar">
+        <div class="staff-table-toolbar--row d-flex flex-wrap align-items-center gap-2">
+          <div v-if="!isPortalMode" class="orders-draft-toolbar-account flex-shrink-0">
+            <CrmSearchableSelect
+              v-model="selectedAccountId"
+              class="staff-toolbar-search staff-toolbar-search--inline"
+              appearance="staff"
+              aria-label="Client account"
+              :options="accountOptions"
+              :disabled="accountsLoading || loading"
+              placeholder="All accounts"
+              search-placeholder="Search accounts…"
+              :allow-empty="true"
+              empty-label="All accounts"
+              button-id="order-drafts-account-trigger"
+            />
+          </div>
+          <button
+            type="button"
+            class="btn btn-outline-secondary btn-sm orders-toolbar-outline-btn ms-auto"
+            :disabled="loading"
+            @click="loadDrafts"
+          >
+            Refresh
+          </button>
+        </div>
+      </div>
 
-    <OrderCreateDraftModal
-      :open="modalOpen"
-      :portal-mode="isPortalMode"
-      :portal-account-id="portalAccountId"
-      :accounts="accounts"
-      :accounts-loading="accountsLoading"
-      :initial-account-id="String(route.query.client_account_id || '')"
-      @close="modalOpen = false"
-      @created="onDraftCreated"
-    />
+      <div v-if="loading" class="p-5 text-center">
+        <CrmLoadingSpinner message="Loading drafts…" />
+      </div>
+
+      <div v-else class="table-responsive">
+        <table class="table table-hover align-middle mb-0 staff-datatable">
+          <thead>
+            <tr>
+              <th scope="col">Status</th>
+              <th scope="col">Order #</th>
+              <th scope="col">Recipient</th>
+              <th scope="col">Date</th>
+              <th v-if="!isPortalMode" scope="col">Account</th>
+              <th scope="col">Country</th>
+              <th scope="col" class="text-end">Items</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr v-if="!rows.length">
+              <td :colspan="isPortalMode ? 6 : 7" class="text-center text-secondary py-5">
+                No draft orders yet. Use Create Order on the orders list to start one.
+              </td>
+            </tr>
+            <tr v-for="row in rows" :key="row.id">
+              <td>
+                <span class="badge rounded-pill bg-secondary-subtle text-secondary-emphasis fw-medium">
+                  Draft
+                </span>
+              </td>
+              <td class="fw-semibold">
+                <RouterLink
+                  v-if="draftDetailRoute(row)"
+                  :to="draftDetailRoute(row)"
+                  class="text-decoration-none"
+                >
+                  {{ row.order_number || "—" }}
+                </RouterLink>
+                <span v-else>{{ row.order_number || "—" }}</span>
+              </td>
+              <td>{{ row.recipient_name || "—" }}</td>
+              <td>{{ formatDate(row.created_at) }}</td>
+              <td v-if="!isPortalMode">{{ row.client_account_company_name || "—" }}</td>
+              <td>{{ row.country || "—" }}</td>
+              <td class="text-end">{{ row.line_items_count ?? 0 }}</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
   </div>
 </template>
+
+<style scoped>
+.orders-draft-toolbar-account {
+  flex: 0 0 auto;
+  width: min(280px, 100%);
+}
+</style>

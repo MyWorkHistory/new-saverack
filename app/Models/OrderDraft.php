@@ -28,16 +28,13 @@ class OrderDraft extends Model
         'created_by_user_id',
     ];
 
-    protected function casts(): array
-    {
-        return [
-            'shipping_address' => 'array',
-            'line_items' => 'array',
-            'tags' => 'array',
-            'allow_partial' => 'boolean',
-            'require_signature' => 'boolean',
-        ];
-    }
+    protected $casts = [
+        'shipping_address' => 'array',
+        'line_items' => 'array',
+        'tags' => 'array',
+        'allow_partial' => 'boolean',
+        'require_signature' => 'boolean',
+    ];
 
     public function clientAccount(): BelongsTo
     {

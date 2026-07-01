@@ -5,6 +5,7 @@ namespace App\Services;
 use App\Models\ClientAccount;
 use App\Models\OrderDraft;
 use App\Models\User;
+use Illuminate\Contracts\Pagination\LengthAwarePaginator;
 use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
 use RuntimeException;
@@ -25,7 +26,7 @@ class OrderDraftService
             return null;
         }
         $decoded = base64_decode($raw, true);
-        if (! is_string($decoded) || ! str_starts_with($decoded, self::ROUTE_PREFIX)) {
+        if (! is_string($decoded) || ! Str::startsWith($decoded, self::ROUTE_PREFIX)) {
             return null;
         }
         $id = (int) substr($decoded, strlen(self::ROUTE_PREFIX));
@@ -137,7 +138,7 @@ class OrderDraftService
             'tags' => $tags,
             'is_crm_user_hold' => false,
             'not_ready_subtitle' => $draft->isDraft() ? 'Draft order — not yet sent to ShipHero.' : '',
-            'order_date' => $draft->created_at?->toIso8601String(),
+            'order_date' => $draft->created_at !== null ? $draft->created_at->toIso8601String() : null,
             'required_ship_date' => null,
             'account' => $account ? (string) ($account->company_name ?? '') : '',
             'email' => (string) ($ship['email'] ?? ''),
@@ -495,5 +496,57 @@ class OrderDraftService
         if ($portalAccountId > 0 && $portalAccountId !== (int) $draft->client_account_id) {
             abort(403);
         }
+    }
+
+    public function listDraftsForUser(User $user, ?int $clientAccountId, int $perPage): LengthAwarePaginator
+    {
+        $query = OrderDraft::query()
+            ->where('status', OrderDraft::STATUS_DRAFT)
+            ->with([
+                'clientAccount:id,company_name',
+                'createdBy:id,name',
+            ]);
+
+        $portalAccountId = (int) ($user->client_account_id ?? 0);
+        if ($portalAccountId > 0) {
+            $query->where('client_account_id', $portalAccountId);
+        } elseif ($clientAccountId !== null && $clientAccountId > 0) {
+            $query->where('client_account_id', $clientAccountId);
+        }
+
+        $perPage = max(1, min(100, $perPage));
+
+        return $query->orderByDesc('created_at')->paginate($perPage);
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    public function toListRow(OrderDraft $draft): array
+    {
+        $ship = $this->normalizeShippingAddress(
+            is_array($draft->shipping_address) ? $draft->shipping_address : []
+        );
+        $first = trim((string) ($ship['first_name'] ?? ''));
+        $last = trim((string) ($ship['last_name'] ?? ''));
+        $recipient = trim($first.' '.$last);
+        $items = is_array($draft->line_items) ? $draft->line_items : [];
+        $account = $draft->clientAccount;
+        $creator = $draft->createdBy;
+
+        return [
+            'id' => (int) $draft->id,
+            'draft_route_id' => $this->encodeRouteId((int) $draft->id),
+            'order_number' => (string) $draft->order_number,
+            'client_account_id' => (int) $draft->client_account_id,
+            'client_account_company_name' => $account ? (string) ($account->company_name ?? '') : '',
+            'recipient_name' => $recipient,
+            'city' => (string) ($ship['city'] ?? ''),
+            'state' => (string) ($ship['state'] ?? ''),
+            'country' => (string) ($ship['country'] ?? ''),
+            'line_items_count' => count($items),
+            'created_at' => $draft->created_at !== null ? $draft->created_at->toIso8601String() : null,
+            'created_by_name' => $creator ? (string) ($creator->name ?? '') : '',
+        ];
     }
 }

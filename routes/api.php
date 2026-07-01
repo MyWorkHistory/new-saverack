@@ -272,6 +272,8 @@ Route::middleware('auth:sanctum')->group(function () {
     });
 
     Route::prefix('order-drafts')->group(function () {
+        Route::get('/', [OrderDraftController::class, 'index'])
+            ->middleware('can:orders.view');
         Route::post('/', [OrderDraftController::class, 'store'])
             ->middleware('can:shiphero.orders.write');
         Route::post('/{orderDraft}/ready-to-ship', [OrderDraftController::class, 'readyToShip'])

@@ -11,13 +11,46 @@ const accountIdNum = computed(() => Number(props.accountId || 0));
 
 const { counts, loading, loadCounts } = usePortalDashboardCounts(() => accountIdNum.value);
 
-const nf = new Intl.NumberFormat(undefined, { maximumFractionDigits: 0 });
+const DASHBOARD_ICON = {
+  readyBox:
+    "M5 22q-.825 0-1.412-.587T3 20V8.725q-.45-.275-.725-.712T2 7V4q0-.825.588-1.412T4 2h16q.825 0 1.413.588T22 4v3q0 .575-.275 1.013T21 8.724V20q0 .825-.587 1.413T19 22zM4 7h16V4H4zm5 7h6v-2H9z",
+  readyCheck: "M10.6 16.6l7.05-7.05l-1.4-1.4l-5.65 5.65l-2.85-2.85l-1.4 1.4z",
+  hourglass:
+    "M8 20h8v-3q0-1.65-1.175-2.825T12 13t-2.825 1.175T8 17zm6.825-10.175Q16 8.65 16 7V4H8v3q0 1.65 1.175 2.825T12 11t2.825-1.175M4 22v-2h2v-3q0-1.525.713-2.863T8.7 12q-1.275-.8-1.987-2.137T6 7V4H4V2h16v2h-2v3q0 1.525-.712 2.863T15.3 12q1.275.8 1.988 2.138T18 17v3h2v2z",
+  shelves: "M3 23V1h2v2h14V1h2v22h-2v-2H5v2zm2-12h2V7h6v4h6V5H5zm0 8h6v-4h6v4h2v-6H5z",
+  truck:
+    "M3.875 19.125Q3 18.25 3 17H1V6q0-.825.588-1.412T3 4h14v4h3l3 4v5h-2q0 1.25-.875 2.125T18 20t-2.125-.875T15 17H9q0 1.25-.875 2.125T6 20t-2.125-.875m2.838-1.412Q7 17.425 7 17t-.288-.712T6 16t-.712.288T5 17t.288.713T6 18t.713-.288m12 0Q19 17.426 19 17t-.288-.712T18 16t-.712.288T17 17t.288.713T18 18t.713-.288M17 13h4.25L19 10h-2z",
+};
 
 const statCards = computed(() => [
-  { key: "ready_to_ship", label: "Ready To Ship", value: counts.value.ready_to_ship },
-  { key: "on_hold", label: "On-Hold", value: counts.value.on_hold },
-  { key: "backorder", label: "Backorder", value: counts.value.backorder },
-  { key: "shipped", label: "Shipped", value: counts.value.shipped },
+  {
+    key: "ready_to_ship",
+    label: "Ready To Ship",
+    sub: "Orders awaiting shipment",
+    value: counts.value.ready_to_ship,
+    iconStyle: { background: "#dbeafe", color: "#1e3a8a" },
+  },
+  {
+    key: "on_hold",
+    label: "On-Hold",
+    sub: "On-hold orders needing attention",
+    value: counts.value.on_hold,
+    iconStyle: { background: "#fef3c7", color: "#b45309" },
+  },
+  {
+    key: "backorder",
+    label: "Backorder",
+    sub: "Orders with items out of stock",
+    value: counts.value.backorder,
+    iconStyle: { background: "#ffe4e6", color: "#be123c" },
+  },
+  {
+    key: "shipped",
+    label: "Shipped",
+    sub: "Orders shipped today",
+    value: counts.value.shipped,
+    iconStyle: { background: "#dcfce7", color: "#166534" },
+  },
 ]);
 
 loadCounts();
@@ -25,17 +58,82 @@ loadCounts();
 
 <template>
   <div>
-    <div class="row g-3 mb-4">
-      <div v-for="c in statCards" :key="c.key" class="col-6 col-xl-3">
-        <div class="staff-stat-card h-100">
+    <div class="row g-3 mb-4 client-account-orders-summary">
+      <div v-for="c in statCards" :key="c.key" class="col-12 col-sm-6 col-xl-3">
+        <div class="staff-stat-card billing-inv-summary-card billing-inv-summary-card--static h-100 text-start w-100">
           <p class="staff-stat-card__label">{{ c.label }}</p>
           <p class="staff-stat-card__value">
             <span v-if="loading" class="text-secondary">…</span>
-            <span v-else>{{ nf.format(c.value) }}</span>
+            <span v-else>{{ Number(c.value || 0).toLocaleString() }}</span>
           </p>
+          <p class="staff-stat-card__sub">{{ c.sub }}</p>
+          <div
+            class="staff-stat-card__icon client-account-orders-summary__icon"
+            :style="c.iconStyle"
+            aria-hidden="true"
+          >
+            <svg
+              v-if="c.key === 'ready_to_ship'"
+              class="client-account-orders-summary__svg"
+              fill="currentColor"
+              viewBox="0 0 24 24"
+            >
+              <path :d="DASHBOARD_ICON.readyBox" />
+              <path
+                transform="translate(10.25 9.25) scale(0.48)"
+                :d="DASHBOARD_ICON.readyCheck"
+              />
+            </svg>
+            <svg
+              v-else-if="c.key === 'on_hold'"
+              class="client-account-orders-summary__svg"
+              fill="currentColor"
+              viewBox="0 0 24 24"
+            >
+              <path :d="DASHBOARD_ICON.hourglass" />
+            </svg>
+            <svg
+              v-else-if="c.key === 'backorder'"
+              class="client-account-orders-summary__svg"
+              fill="currentColor"
+              viewBox="0 0 24 24"
+            >
+              <path :d="DASHBOARD_ICON.shelves" />
+            </svg>
+            <svg
+              v-else-if="c.key === 'shipped'"
+              class="client-account-orders-summary__svg"
+              fill="currentColor"
+              viewBox="0 0 24 24"
+            >
+              <path :d="DASHBOARD_ICON.truck" />
+            </svg>
+          </div>
         </div>
       </div>
     </div>
     <OrdersListPage :fixed-client-account-id="accountId" embedded />
   </div>
 </template>
+
+<style scoped>
+.client-account-orders-summary :deep(.billing-inv-summary-card .staff-stat-card__icon) {
+  top: 50%;
+  right: 1.125rem;
+  transform: translateY(-50%);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 2.875rem;
+  height: 2.875rem;
+  border-radius: 0.4375rem;
+}
+
+.client-account-orders-summary__svg {
+  width: 1.4375rem;
+  height: 1.4375rem;
+  flex-shrink: 0;
+  display: block;
+  overflow: visible;
+}
+</style>

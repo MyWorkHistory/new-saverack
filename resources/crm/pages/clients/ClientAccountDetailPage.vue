@@ -1141,7 +1141,7 @@ onUnmounted(() => {
 
     <div
       v-else-if="account"
-      class="staff-user-view__header-row d-flex flex-wrap align-items-start justify-content-between gap-3 mb-3"
+      class="staff-user-view__header-row d-flex flex-wrap align-items-center justify-content-between gap-2 mb-1"
     >
       <div class="min-w-0">
         <h1 class="staff-user-view__title mb-0">{{ account.company_name }}</h1>

@@ -10,7 +10,7 @@ $staff-detail-primary: #2563eb;
 
 .staff-user-view__breadcrumb {
   font-size: 0.875rem;
-  margin-bottom: 0.75rem;
+  margin-bottom: 0.35rem;
 }
 
 .staff-user-view__breadcrumb a {
@@ -27,12 +27,14 @@ $staff-detail-primary: #2563eb;
 }
 
 .staff-user-view__header-row {
-  margin-bottom: 0.75rem;
+  margin-bottom: 0.35rem;
+  align-items: center !important;
 }
 
 .staff-user-tabs--header {
   margin-bottom: 0;
   justify-content: flex-end;
+  flex-wrap: wrap;
 }
 
 .staff-user-profile__stat-link:hover .staff-user-profile__stat-val {

@@ -1562,6 +1562,10 @@ onUnmounted(() => {
 </template>
 
 <style scoped>
+.orders-list--embedded.staff-page {
+  padding-top: 0;
+}
+
 .staff-toolbar-filter-dropdown {
   position: absolute;
   top: calc(100% + 0.375rem);

@@ -125,11 +125,11 @@ watch(() => props.accountId, load);
     </div>
 
     <template v-else>
-      <div class="row g-3 mb-4">
-        <div class="col-12 col-md-4">
+      <div class="row g-4 mb-4 client-account-billing-summary">
+        <div class="col-12 col-sm-6 col-xl-4">
           <button
             type="button"
-            class="staff-stat-card h-100 text-start w-100 border-0 billing-summary-stat-btn"
+            class="staff-stat-card billing-inv-summary-card h-100 text-start w-100"
             @click="openInvoicesBucket('open')"
           >
             <p class="staff-stat-card__label">Open Balance Due</p>
@@ -142,10 +142,10 @@ watch(() => props.accountId, load);
             </div>
           </button>
         </div>
-        <div class="col-12 col-md-4">
+        <div class="col-12 col-sm-6 col-xl-4">
           <button
             type="button"
-            class="staff-stat-card h-100 text-start w-100 border-0 billing-summary-stat-btn"
+            class="staff-stat-card billing-inv-summary-card h-100 text-start w-100"
             @click="openInvoicesBucket('draft')"
           >
             <p class="staff-stat-card__label">Draft Invoices</p>
@@ -163,10 +163,10 @@ watch(() => props.accountId, load);
             </div>
           </button>
         </div>
-        <div class="col-12 col-md-4">
+        <div class="col-12 col-sm-6 col-xl-4">
           <button
             type="button"
-            class="staff-stat-card h-100 text-start w-100 border-0 billing-summary-stat-btn"
+            class="staff-stat-card billing-inv-summary-card h-100 text-start w-100"
             @click="openInvoicesBucket('paid')"
           >
             <p class="staff-stat-card__label">Paid (Month to Date)</p>
@@ -328,16 +328,30 @@ watch(() => props.accountId, load);
 </template>
 
 <style scoped>
-.billing-summary-stat-btn {
-  cursor: pointer;
-  font: inherit;
-  color: inherit;
-  transition:
-    box-shadow 0.15s ease,
-    transform 0.15s ease;
+.client-account-billing-summary :deep(.billing-inv-summary-card .staff-stat-card__icon) {
+  top: 50%;
+  right: 1.125rem;
+  transform: translateY(-50%);
+  width: 3rem;
+  height: 3rem;
 }
-.billing-summary-stat-btn:hover {
-  box-shadow: 0 0.45rem 1rem rgba(47, 43, 61, 0.1);
-  transform: translateY(-1px);
+
+.client-account-billing-summary :deep(.billing-inv-summary-card .staff-stat-card__icon svg) {
+  width: 1.5rem;
+  height: 1.5rem;
+}
+
+.client-account-billing-summary :deep(.billing-inv-summary-card .staff-stat-card__icon--money) {
+  width: 3rem;
+  height: 3rem;
+}
+
+.client-account-billing-summary :deep(.billing-inv-summary-card .staff-stat-card__icon--money svg) {
+  width: 1.35rem;
+  height: 1.35rem;
+}
+
+.client-account-billing-summary :deep(button.billing-inv-summary-card:hover:not(:disabled) .staff-stat-card__icon) {
+  transform: translateY(-50%);
 }
 </style>

@@ -1,4 +1,4 @@
-import { nextTick, ref, unref } from "vue";
+import { nextTick, ref, toValue } from "vue";
 import { useRoute } from "vue-router";
 import api from "../services/api";
 import { useToast } from "./useToast";
@@ -76,17 +76,17 @@ export function useAsnProductCatalog(
   let catalogSearchRunSeq = 0;
 
   function resolvedAccountId() {
-    const id = Number(unref(clientAccountIdSource) || 0);
+    const id = Number(toValue(clientAccountIdSource) || 0);
 
     return id > 0 ? id : 0;
   }
 
   function allowImplicitClientAccount() {
-    return Boolean(unref(useSessionClientAccountSource));
+    return Boolean(toValue(useSessionClientAccountSource));
   }
 
   function resolvedAsnId() {
-    let id = Number(unref(asnIdSource) || 0);
+    let id = Number(toValue(asnIdSource) || 0);
     if (id > 0) return id;
     id = Number(route.params?.id || 0);
     if (id > 0) return id;

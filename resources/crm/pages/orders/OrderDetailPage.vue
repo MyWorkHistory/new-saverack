@@ -181,6 +181,13 @@ function accountIdFromSessionSnapshot() {
   return 0;
 }
 
+function normalizeAccountId(raw) {
+  if (raw == null || raw === "") return 0;
+  const s = Array.isArray(raw) ? String(raw[0] ?? "") : String(raw);
+  const id = Number(s.trim());
+  return Number.isFinite(id) && id > 0 ? id : 0;
+}
+
 function resolveClientAccountIdForOrderContext() {
   const sources = [
     route.query.client_account_id,
@@ -192,7 +199,7 @@ function resolveClientAccountIdForOrderContext() {
     sources.push(accountIdFromSessionSnapshot());
   }
   for (const raw of sources) {
-    const id = Number(raw || 0);
+    const id = normalizeAccountId(raw);
     if (id > 0) return id;
   }
   return 0;
@@ -978,10 +985,11 @@ watch(
   () => [route.query.client_account_id, portalClientAccountId.value, isPortalUser.value],
   () => {
     const q = route.query.client_account_id;
-    if (q != null && String(q) !== "") {
-      const next = String(q);
-    if (next !== selectedAccountId.value) {
-      selectedAccountId.value = next;
+    const fromQuery = normalizeAccountId(q);
+    if (fromQuery > 0) {
+      const next = String(fromQuery);
+      if (next !== selectedAccountId.value) {
+        selectedAccountId.value = next;
       }
       return;
     }

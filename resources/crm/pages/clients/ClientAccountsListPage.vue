@@ -16,7 +16,7 @@ import ClientAccountChannelIcons from "../../components/clients/ClientAccountCha
 import ClientAccountCreateDrawer from "../../components/clients/ClientAccountCreateDrawer.vue";
 import ClientAccountShippingStatusIcon from "../../components/clients/ClientAccountShippingStatusIcon.vue";
 import ClientAccountEditModal from "../../components/clients/ClientAccountEditModal.vue";
-import ClientAccountsBulkEditModal from "../../components/clients/ClientAccountsBulkEditModal.vue";
+import CrmStatusUpdateModal from "../../components/common/CrmStatusUpdateModal.vue";
 import CrmLoadingSpinner from "../../components/common/CrmLoadingSpinner.vue";
 import CrmSearchableSelect from "../../components/common/CrmSearchableSelect.vue";
 import CrmIconRowActions from "../../components/common/CrmIconRowActions.vue";
@@ -43,13 +43,15 @@ function userHasPerm(key) {
 }
 
 const canCreate = computed(() => userHasPerm("clients.create"));
+const isAdmin = computed(() => crmIsAdmin(crmUser.value) || !!crmUser.value?.is_crm_owner);
 
 /** Root SPA signup URL (not /tickets-app/); override with VITE_PUBLIC_SIGNUP_URL. */
 const publicCreateAccountUrl = computed(() => getPublicSignupUrl());
 const canUpdate = computed(() => userHasPerm("clients.update"));
 const canDelete = computed(() => userHasPerm("clients.delete"));
+const canBulkDelete = computed(() => isAdmin.value);
 const showRowActions = computed(() => canUpdate.value || canDelete.value);
-const showCheckboxCol = computed(() => canUpdate.value || canDelete.value);
+const showCheckboxCol = computed(() => canBulkDelete.value);
 
 const tableColspan = computed(() => {
   let n = 8;
@@ -72,16 +74,50 @@ const directoryStats = ref({
   inactive: 0,
 });
 
-const pausedAndInactiveTotal = computed(
-  () => directoryStats.value.paused + directoryStats.value.inactive,
-);
+const DIRECTORY_STAT_CARDS = [
+  {
+    key: "active",
+    status: "active",
+    label: "Active",
+    sub: "Accounts marked active",
+    iconClass: "bg-success-subtle text-success",
+    iconPath:
+      "M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z",
+  },
+  {
+    key: "pending",
+    status: "pending",
+    label: "Pending",
+    sub: "Awaiting activation",
+    iconClass: "bg-warning-subtle text-warning-emphasis",
+    iconPath:
+      "M15.5 14h-.79l-.28-.27A6.471 6.471 0 0016 9.5 6.5 6.5 0 109.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C7.01 9.5 5 7.49 5 5c0-2.59 2.01-4.5 4.5-4.5S14 2.41 14 5c0 2.49-2.01 4.5-4.5 4.5z",
+  },
+  {
+    key: "paused",
+    status: "paused",
+    label: "Paused",
+    sub: "Temporarily paused accounts",
+    iconClass: "bg-info-subtle text-info-emphasis",
+    iconPath:
+      "M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z",
+  },
+  {
+    key: "inactive",
+    status: "inactive",
+    label: "Inactive",
+    sub: "Inactive accounts",
+    iconClass: "bg-secondary-subtle text-secondary",
+    iconPath:
+      "M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z",
+  },
+];
 
 const deleteTarget = ref(null);
 const deleteBusy = ref(false);
 const deleteError = ref("");
 
 const manageOpenId = ref(null);
-const manageMenuSubMode = ref("main");
 const manageMenuRect = ref({ top: 0, left: 0 });
 
 const manageMenuRow = computed(
@@ -93,13 +129,15 @@ const filterMenuOpen = ref(false);
 const exportOpen = ref(false);
 const bulkMenuOpen = ref(false);
 const exportBusy = ref(false);
-const bulkEditOpen = ref(false);
-const bulkEditBusy = ref(false);
 const bulkDeleteOpen = ref(false);
 const bulkDeleteBusy = ref(false);
 const selectedIds = ref([]);
 const editModalOpen = ref(false);
 const editAccountId = ref("");
+const statusModalOpen = ref(false);
+const statusModalRow = ref(null);
+const statusForm = ref("active");
+const statusPickerBusy = ref(false);
 
 const query = reactive({
   search: "",
@@ -139,6 +177,13 @@ async function copyPublicCreateLink() {
     toast.error("Could not copy link.");
   }
 }
+
+const statusModalSubtitle = computed(() => {
+  const name = String(statusModalRow.value?.company_name || "").trim();
+  return name ? `Update status for “${name}”.` : "Choose a new status.";
+});
+
+const accountStatusOptions = computed(() => statuses.value);
 
 const deleteModalOpen = computed(() => deleteTarget.value !== null);
 const deleteMessage = computed(() => {
@@ -438,30 +483,46 @@ function onPerPageChange(e) {
   fetchRows();
 }
 
-function openBulkEdit() {
-  if (!selectedIds.value.length) {
-    toast.error("Select one or more rows.");
-    return;
-  }
-  bulkEditOpen.value = true;
+function setDirectoryStatFilter(status) {
+  const next = query.status === status ? "all" : status;
+  if (query.status === next) return;
+  query.status = next;
 }
 
-async function onBulkApply(payload) {
-  bulkEditBusy.value = true;
+function openStatusModal(row) {
+  if (!canUpdate.value) return;
+  statusModalRow.value = row;
+  statusForm.value = String(row.status || "pending");
+  statusModalOpen.value = true;
+}
+
+function closeStatusModal() {
+  if (statusPickerBusy.value) return;
+  statusModalOpen.value = false;
+  statusModalRow.value = null;
+}
+
+async function saveStatusFromModal() {
+  const row = statusModalRow.value;
+  const status = String(statusForm.value || "").trim();
+  if (!row || statusPickerBusy.value) return;
+  if (String(row.status || "") === status) {
+    closeStatusModal();
+    return;
+  }
+  statusPickerBusy.value = true;
   try {
-    const { data } = await api.patch("/client-accounts/bulk", {
-      client_account_ids: selectedIds.value,
-      ...payload,
-    });
-    toast.success("Accounts updated.");
+    const { data } = await api.patch(`/client-accounts/${row.id}`, { status });
+    row.status = status;
+    toast.success("Status updated.");
     warnIfShipheroSyncFailed(data, toast);
-    bulkEditOpen.value = false;
-    selectedIds.value = [];
+    statusModalOpen.value = false;
+    statusModalRow.value = null;
     await refreshList();
   } catch (e) {
-    toast.errorFrom(e, "Could not update accounts.");
+    toast.errorFrom(e, "Could not update status.");
   } finally {
-    bulkEditBusy.value = false;
+    statusPickerBusy.value = false;
   }
 }
 
@@ -536,13 +597,12 @@ async function confirmDelete() {
 }
 
 const MENU_W = 200;
-const MENU_H_MAIN = 180;
-const MENU_H_STATUS = 220;
+const MENU_H_MAIN = 140;
 
 function placeManageMenu(anchorEl) {
   if (!(anchorEl instanceof HTMLElement)) return;
   const r = anchorEl.getBoundingClientRect();
-  const h = manageMenuSubMode.value === "status" ? MENU_H_STATUS : MENU_H_MAIN;
+  const h = MENU_H_MAIN;
   let top = r.bottom + 4;
   let left = r.right - MENU_W;
   left = Math.max(8, Math.min(left, window.innerWidth - MENU_W - 8));
@@ -554,7 +614,6 @@ function placeManageMenu(anchorEl) {
 
 function closeManageMenu() {
   manageOpenId.value = null;
-  manageMenuSubMode.value = "main";
 }
 
 async function toggleManageMenu(rowId, e) {
@@ -563,7 +622,6 @@ async function toggleManageMenu(rowId, e) {
     closeManageMenu();
     return;
   }
-  manageMenuSubMode.value = "main";
   const btn = e.currentTarget;
   manageOpenId.value = rowId;
   await nextTick();
@@ -573,35 +631,6 @@ async function toggleManageMenu(rowId, e) {
       if (btn instanceof HTMLElement) placeManageMenu(btn);
     });
   });
-}
-
-function openStatusSubmenu() {
-  manageMenuSubMode.value = "status";
-  const trigger = document.querySelector(
-    `[aria-row-actions="${manageOpenId.value}"]`,
-  );
-  if (trigger instanceof HTMLElement) placeManageMenu(trigger);
-}
-
-function backToMainMenu() {
-  manageMenuSubMode.value = "main";
-  const trigger = document.querySelector(
-    `[aria-row-actions="${manageOpenId.value}"]`,
-  );
-  if (trigger instanceof HTMLElement) placeManageMenu(trigger);
-}
-
-async function setRowStatus(row, status) {
-  if (!canUpdate.value) return;
-  try {
-    const { data } = await api.patch(`/client-accounts/${row.id}`, { status });
-    toast.success("Status updated.");
-    warnIfShipheroSyncFailed(data, toast);
-    closeManageMenu();
-    await refreshList();
-  } catch (e) {
-    toast.errorFrom(e, "Could not update status.");
-  }
 }
 
 function openEditModal(row) {
@@ -651,14 +680,12 @@ function onDocClick(e) {
   }
   if (!e.target.closest("[data-row-actions]")) {
     manageOpenId.value = null;
-    manageMenuSubMode.value = "main";
   }
 }
 
 function onWindowScrollOrResize() {
   if (manageOpenId.value !== null) {
     manageOpenId.value = null;
-    manageMenuSubMode.value = "main";
   }
 }
 
@@ -702,12 +729,15 @@ onUnmounted(() => {
       :account-managers="accountManagers"
       @saved="refreshList"
     />
-    <ClientAccountsBulkEditModal
-      v-model:open="bulkEditOpen"
-      :selected-count="selectedIds.length"
-      :busy="bulkEditBusy"
-      :statuses="statuses"
-      @apply="onBulkApply"
+
+    <CrmStatusUpdateModal
+      v-model:open="statusModalOpen"
+      v-model:status="statusForm"
+      title="Account Status"
+      :subtitle="statusModalSubtitle"
+      :statuses="accountStatusOptions"
+      :busy="statusPickerBusy"
+      @save="saveStatusFromModal"
     />
 
     <ConfirmModal
@@ -762,82 +792,28 @@ onUnmounted(() => {
     </div>
 
     <div class="row g-4 mb-2">
-      <div class="col-12 col-sm-6 col-xl-3">
-        <div class="staff-stat-card h-100">
-          <p class="staff-stat-card__label">Total accounts</p>
+      <div
+        v-for="card in DIRECTORY_STAT_CARDS"
+        :key="card.key"
+        class="col-12 col-sm-6 col-xl-3"
+      >
+        <button
+          type="button"
+          class="staff-stat-card billing-inv-summary-card h-100 text-start w-100"
+          :class="{ 'client-accounts-stat-card--active': query.status === card.status }"
+          @click="setDirectoryStatFilter(card.status)"
+        >
+          <p class="staff-stat-card__label">{{ card.label }}</p>
           <p class="staff-stat-card__value">
-            {{ nf.format(directoryStats.total) }}
+            {{ nf.format(directoryStats[card.key] ?? 0) }}
           </p>
-          <p class="staff-stat-card__sub">All companies in the directory</p>
-          <div
-            class="staff-stat-card__icon text-white"
-            style="background: #2563eb"
-            aria-hidden="true"
-          >
+          <p class="staff-stat-card__sub">{{ card.sub }}</p>
+          <div class="staff-stat-card__icon" :class="card.iconClass" aria-hidden="true">
             <svg width="22" height="22" fill="currentColor" viewBox="0 0 24 24">
-              <path
-                d="M12 7V3H2v18h20V7H12zM6 19H4v-2h2v2zm0-4H4v-2h2v2zm0-4H4V9h2v2zm0-4H4V5h2v2zm4 12H8v-2h2v2zm0-4H8v-2h2v2zm0-4H8V9h2v2zm0-4H8V5h2v2zm10 12h-8v-2h2v-2h-2v-2h2v-2h-2V9h8v10zm-2-8h-2v2h2v-2zm0 4h-2v2h2v-2z"
-              />
+              <path :d="card.iconPath" />
             </svg>
           </div>
-        </div>
-      </div>
-      <div class="col-12 col-sm-6 col-xl-3">
-        <div class="staff-stat-card h-100">
-          <p class="staff-stat-card__label">Active</p>
-          <p class="staff-stat-card__value">
-            {{ nf.format(directoryStats.active) }}
-          </p>
-          <p class="staff-stat-card__sub">Accounts marked active</p>
-          <div
-            class="staff-stat-card__icon bg-success-subtle text-success"
-            aria-hidden="true"
-          >
-            <svg width="22" height="22" fill="currentColor" viewBox="0 0 24 24">
-              <path
-                d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z"
-              />
-            </svg>
-          </div>
-        </div>
-      </div>
-      <div class="col-12 col-sm-6 col-xl-3">
-        <div class="staff-stat-card h-100">
-          <p class="staff-stat-card__label">Pending</p>
-          <p class="staff-stat-card__value">
-            {{ nf.format(directoryStats.pending) }}
-          </p>
-          <p class="staff-stat-card__sub">Awaiting activation</p>
-          <div
-            class="staff-stat-card__icon bg-warning-subtle text-warning-emphasis"
-            aria-hidden="true"
-          >
-            <svg width="22" height="22" fill="currentColor" viewBox="0 0 24 24">
-              <path
-                d="M15.5 14h-.79l-.28-.27A6.471 6.471 0 0016 9.5 6.5 6.5 0 109.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C7.01 9.5 5 7.49 5 5c0-2.59 2.01-4.5 4.5-4.5S14 2.41 14 5c0 2.49-2.01 4.5-4.5 4.5z"
-              />
-            </svg>
-          </div>
-        </div>
-      </div>
-      <div class="col-12 col-sm-6 col-xl-3">
-        <div class="staff-stat-card h-100">
-          <p class="staff-stat-card__label">Paused &amp; inactive</p>
-          <p class="staff-stat-card__value">
-            {{ nf.format(pausedAndInactiveTotal) }}
-          </p>
-          <p class="staff-stat-card__sub">Not in active onboarding</p>
-          <div
-            class="staff-stat-card__icon bg-secondary-subtle text-secondary"
-            aria-hidden="true"
-          >
-            <svg width="22" height="22" fill="currentColor" viewBox="0 0 24 24">
-              <path
-                d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z"
-              />
-            </svg>
-          </div>
-        </div>
+        </button>
       </div>
     </div>
 
@@ -1013,20 +989,10 @@ onUnmounted(() => {
               </svg>
             </button>
             <div
-              v-if="canUpdate || canDelete"
+              v-if="canBulkDelete"
               class="d-none d-md-flex align-items-center gap-2 flex-shrink-0"
             >
               <button
-                v-if="canUpdate"
-                type="button"
-                class="btn btn-outline-secondary staff-toolbar-btn"
-                :disabled="!selectedIds.length || loading"
-                @click="openBulkEdit"
-              >
-                Bulk Edit
-              </button>
-              <button
-                v-if="canDelete"
                 type="button"
                 class="btn btn-outline-danger staff-toolbar-btn"
                 :disabled="!selectedIds.length || loading"
@@ -1035,80 +1001,8 @@ onUnmounted(() => {
                 Bulk Delete
               </button>
             </div>
-            <div
-              v-if="canUpdate && canDelete"
-              class="d-md-none position-relative flex-shrink-0"
-              data-toolbar-bulk
-            >
-              <button
-                type="button"
-                class="btn btn-outline-secondary staff-toolbar-btn d-inline-flex align-items-center gap-1"
-                :aria-expanded="bulkMenuOpen"
-                aria-haspopup="true"
-                :disabled="loading"
-                @click.stop="
-                  exportOpen = false;
-                  filterMenuOpen = false;
-                  bulkMenuOpen = !bulkMenuOpen;
-                "
-              >
-                Bulk Actions
-                <svg
-                  width="14"
-                  height="14"
-                  fill="currentColor"
-                  viewBox="0 0 24 24"
-                  class="text-secondary"
-                  aria-hidden="true"
-                >
-                  <path d="M7 10l5 5 5-5H7z" />
-                </svg>
-              </button>
-              <div
-                v-if="bulkMenuOpen"
-                class="dropdown-menu show shadow border px-0 py-1 mt-1 staff-toolbar-bulk-dropdown"
-                style="right: 0; left: auto"
-                role="menu"
-                aria-label="Bulk actions"
-                @click.stop
-              >
-                <button
-                  type="button"
-                  class="dropdown-item small"
-                  role="menuitem"
-                  :disabled="!selectedIds.length || loading"
-                  @click="
-                    bulkMenuOpen = false;
-                    openBulkEdit();
-                  "
-                >
-                  Bulk Edit
-                </button>
-                <button
-                  type="button"
-                  class="dropdown-item small text-danger"
-                  role="menuitem"
-                  :disabled="!selectedIds.length || loading"
-                  @click="
-                    bulkMenuOpen = false;
-                    openBulkDelete();
-                  "
-                >
-                  Bulk Delete
-                </button>
-              </div>
-            </div>
             <button
-              v-if="canUpdate && !canDelete"
-              type="button"
-              class="btn btn-outline-secondary staff-toolbar-btn d-md-none flex-shrink-0"
-              :disabled="!selectedIds.length || loading"
-              @click="openBulkEdit"
-            >
-              Bulk Edit
-            </button>
-            <button
-              v-if="canDelete && !canUpdate"
+              v-if="canBulkDelete"
               type="button"
               class="btn btn-outline-danger staff-toolbar-btn d-md-none flex-shrink-0"
               :disabled="!selectedIds.length || loading"
@@ -1305,7 +1199,18 @@ onUnmounted(() => {
                 </div>
               </td>
               <td>
+                <button
+                  v-if="canUpdate"
+                  type="button"
+                  class="staff-status-badge text-capitalize"
+                  :class="statusBadgeClass(row.status)"
+                  title="Change account status"
+                  @click.stop="openStatusModal(row)"
+                >
+                  {{ row.status }}
+                </button>
                 <span
+                  v-else
                   class="badge rounded-pill text-capitalize fw-medium"
                   :class="statusBadgeClass(row.status)"
                 >
@@ -1560,79 +1465,51 @@ onUnmounted(() => {
           }"
           @click.stop
         >
-          <template v-if="manageMenuSubMode === 'main'">
-            <button
-              type="button"
-              class="staff-row-menu__item"
-              role="menuitem"
-              @click="goViewAccount(manageMenuRow)"
-            >
-              View
-            </button>
-            <hr
-              v-if="canUpdate || canDelete"
-              class="staff-row-menu__divider"
-            />
-            <button
-              v-if="canUpdate"
-              type="button"
-              class="staff-row-menu__item"
-              role="menuitem"
-              @click="openStatusSubmenu"
-            >
-              Status
-            </button>
-            <hr
-              v-if="canUpdate"
-              class="staff-row-menu__divider"
-            />
-            <button
-              v-if="canUpdate"
-              type="button"
-              class="staff-row-menu__item"
-              role="menuitem"
-              @click="openEditModal(manageMenuRow)"
-            >
-              Edit
-            </button>
-            <hr
-              v-if="canUpdate && canDelete"
-              class="staff-row-menu__divider"
-            />
-            <button
-              v-if="canDelete"
-              type="button"
-              class="staff-row-menu__item staff-row-menu__item--danger"
-              role="menuitem"
-              @click="openDeleteModal(manageMenuRow)"
-            >
-              Delete
-            </button>
-          </template>
-          <template v-else>
-            <button
-              type="button"
-              class="staff-row-menu__item"
-              role="menuitem"
-              @click="backToMainMenu"
-            >
-              ← Back
-            </button>
-            <hr class="staff-row-menu__divider" />
-            <button
-              v-for="s in statuses"
-              :key="s"
-              type="button"
-              class="staff-row-menu__item text-capitalize"
-              role="menuitem"
-              :disabled="manageMenuRow.status === s"
-              @click="setRowStatus(manageMenuRow, s)"
-            >
-              {{ s }}
-            </button>
-          </template>
+          <button
+            type="button"
+            class="staff-row-menu__item"
+            role="menuitem"
+            @click="goViewAccount(manageMenuRow)"
+          >
+            View
+          </button>
+          <hr
+            v-if="canUpdate || canDelete"
+            class="staff-row-menu__divider"
+          />
+          <button
+            v-if="canUpdate"
+            type="button"
+            class="staff-row-menu__item"
+            role="menuitem"
+            @click="openEditModal(manageMenuRow)"
+          >
+            Edit
+          </button>
+          <hr
+            v-if="canUpdate && canDelete"
+            class="staff-row-menu__divider"
+          />
+          <button
+            v-if="canDelete"
+            type="button"
+            class="staff-row-menu__item staff-row-menu__item--danger"
+            role="menuitem"
+            @click="openDeleteModal(manageMenuRow)"
+          >
+            Delete
+          </button>
         </div>
       </Transition>
     </Teleport>
   </div>
 </template>
+
+<style scoped>
+.client-accounts-stat-card--active {
+  border-color: rgba(115, 103, 240, 0.35) !important;
+  box-shadow:
+    0 0 0 2px rgba(115, 103, 240, 0.2),
+    0 0.45rem 1rem rgba(47, 43, 61, 0.12);
+}
+</style>

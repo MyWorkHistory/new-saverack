@@ -22,6 +22,7 @@ import WebmasterTaskDetailPage from "../pages/webmaster/WebmasterTaskDetailPage.
 import SettingsPricingPage from "../pages/settings/SettingsPricingPage.vue";
 import ClientAccountsListPage from "../pages/clients/ClientAccountsListPage.vue";
 import ClientAccountDetailPage from "../pages/clients/ClientAccountDetailPage.vue";
+import ClientAccountHistoryPage from "../pages/clients/ClientAccountHistoryPage.vue";
 import ClientAccountUsersListPage from "../pages/clients/ClientAccountUsersListPage.vue";
 import ClientAccountUserDetailPage from "../pages/clients/ClientAccountUserDetailPage.vue";
 import BillingSummaryPage from "../pages/billing/BillingSummaryPage.vue";
@@ -369,6 +370,13 @@ const routes = [
     path: "/admin/clients/accounts/:id",
     name: "client-account-detail",
     component: ClientAccountDetailPage,
+    props: true,
+    meta: meta.clientAccountDetail,
+  },
+  {
+    path: "/admin/clients/accounts/:id/history",
+    name: "client-account-history",
+    component: ClientAccountHistoryPage,
     props: true,
     meta: meta.clientAccountDetail,
   },

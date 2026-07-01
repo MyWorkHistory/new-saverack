@@ -2,7 +2,9 @@
 
 namespace App\Services;
 
+use App\Models\ClientAccount;
 use App\Models\Invoice;
+use App\Services\StripeInvoicePaymentService;
 use App\Models\User;
 use App\Services\PortalOnboardingStripeService;
 use Illuminate\Support\Str;
@@ -30,12 +32,25 @@ class StripeInvoicePaymentService
             throw new \RuntimeException('Stripe Customer ID is missing for this account.');
         }
 
+        return $this->listPaymentMethodsForAccount($account);
+    }
+
+    /**
+     * @return list<array<string, mixed>>
+     */
+    public function listPaymentMethodsForAccount(ClientAccount $account): array
+    {
+        $customerId = trim((string) ($account->stripe_customer_id ?? ''));
+        if ($customerId === '') {
+            return [];
+        }
+
         $stripe = $this->client();
         try {
             $customer = $stripe->customers->retrieve($customerId, []);
             $customerArr = is_array($customer) ? $customer : $customer->toArray();
-            if (!empty($customerArr['deleted'])) {
-                throw new \RuntimeException('Stripe customer not found.');
+            if (! empty($customerArr['deleted'])) {
+                return [];
             }
             $defaultPm = trim((string) (($customerArr['invoice_settings']['default_payment_method'] ?? '')));
 
@@ -69,6 +84,7 @@ class StripeInvoicePaymentService
             usort($rows, static function (array $a, array $b): int {
                 return (int) ($b['is_default'] ?? false) <=> (int) ($a['is_default'] ?? false);
             });
+
             return $rows;
         } catch (ApiErrorException $e) {
             throw new \RuntimeException($e->getMessage());

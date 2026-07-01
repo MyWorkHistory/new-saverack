@@ -8,13 +8,19 @@ import { useToast } from "../../composables/useToast.js";
 import { exportPortalInventoryCsv } from "../../utils/portalInventoryExport.js";
 import { formatDateTimeUs } from "../../utils/formatUserDates.js";
 
+const props = defineProps({
+  fixedClientAccountId: { type: [Number, String], default: null },
+  embedded: { type: Boolean, default: false },
+});
+
 const toast = useToast();
 const route = useRoute();
 const router = useRouter();
 const crmUser = inject("crmUser", ref(null));
 
 const isPortalList = computed(() => route.meta?.userPortal === true);
-const isStaffPickerMode = computed(() => !isPortalList.value);
+const isEmbeddedInventory = computed(() => props.embedded || Number(props.fixedClientAccountId || 0) > 0);
+const isStaffPickerMode = computed(() => !isPortalList.value && !isEmbeddedInventory.value);
 
 const selectedAccountId = ref("");
 const crossAccountMode = ref(false);
@@ -69,6 +75,8 @@ const selectedKeys = ref([]);
 const selectAllCheckboxRef = ref(null);
 
 const accountId = computed(() => {
+  const fixed = Number(props.fixedClientAccountId || 0);
+  if (fixed > 0) return fixed;
   if (isStaffPickerMode.value) return Number(selectedAccountId.value || 0);
   return Number(crmUser.value?.client_account_id || 0);
 });
@@ -784,14 +792,24 @@ watch(
 );
 
 onMounted(() => {
-  setCrmPageMeta({
-    title: isPortalList.value ? "Save Rack | Inventory | Products" : "Save Rack | Products",
-    description: isPortalList.value
-      ? "Your account product catalog."
-      : "CRM-stored product catalog with incremental account sync.",
-  });
+  if (!isEmbeddedInventory.value) {
+    setCrmPageMeta({
+      title: isPortalList.value ? "Save Rack | Inventory | Products" : "Save Rack | Products",
+      description: isPortalList.value
+        ? "Your account product catalog."
+        : "CRM-stored product catalog with incremental account sync.",
+    });
+  }
   document.addEventListener("click", onDocClick);
   document.addEventListener("visibilitychange", onPageVisibilityChange);
+  const fixedId = Number(props.fixedClientAccountId || 0);
+  if (fixedId > 0) {
+    selectedAccountId.value = String(fixedId);
+    const loadId = ++accountLoadSeq;
+    hasSearched.value = true;
+    loadRows(true).then(() => ensureAccountCatalogSynced(loadId));
+    return;
+  }
   if (isStaffPickerMode.value) {
     loadAccounts();
   } else {
@@ -809,9 +827,10 @@ onUnmounted(() => {
 </script>
 
 <template>
-  <div class="staff-page staff-page--wide">
+  <div class="staff-page staff-page--wide" :class="{ 'inventory-list--embedded': isEmbeddedInventory }">
     <div
-      class="d-flex flex-column flex-md-row align-items-start align-items-md-center gap-3 mb-4"
+      class="d-flex flex-column flex-md-row align-items-start align-items-md-center gap-3"
+      :class="isEmbeddedInventory ? 'mb-3' : 'mb-4'"
     >
       <div class="d-flex align-items-center gap-2 flex-shrink-0 ms-md-auto flex-wrap justify-content-md-end w-100 w-md-auto">
         <p v-if="catalogSyncedLabel && accountId > 0 && !crossAccountMode" class="small text-secondary mb-0">

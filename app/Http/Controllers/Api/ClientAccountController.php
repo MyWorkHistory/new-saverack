@@ -17,6 +17,7 @@ use App\Models\ClientAccountComment;
 use App\Models\ClientAccountFee;
 use App\Services\ActivityLogService;
 use App\Services\ClientAccountService;
+use App\Services\StripeInvoicePaymentService;
 use App\Support\CsvExporter;
 use App\Support\CrmActivityPresenter;
 use Illuminate\Http\JsonResponse;
@@ -34,10 +35,17 @@ class ClientAccountController extends Controller
     /** @var ActivityLogService */
     protected $activityLog;
 
-    public function __construct(ClientAccountService $clientAccounts, ActivityLogService $activityLog)
-    {
+    /** @var StripeInvoicePaymentService */
+    protected $stripePayments;
+
+    public function __construct(
+        ClientAccountService $clientAccounts,
+        ActivityLogService $activityLog,
+        StripeInvoicePaymentService $stripePayments
+    ) {
         $this->clientAccounts = $clientAccounts;
         $this->activityLog = $activityLog;
+        $this->stripePayments = $stripePayments;
         $this->authorizeResource(ClientAccount::class, 'client_account');
     }
 
@@ -176,6 +184,22 @@ class ClientAccountController extends Controller
             ->all();
 
         return response()->json(['items' => $items]);
+    }
+
+    public function stripePaymentMethods(ClientAccount $client_account): JsonResponse
+    {
+        $this->authorize('view', $client_account);
+
+        try {
+            $methods = $this->stripePayments->listPaymentMethodsForAccount($client_account);
+        } catch (\Throwable $e) {
+            return response()->json([
+                'methods' => [],
+                'error' => $e->getMessage() !== '' ? $e->getMessage() : 'Could not load payment methods.',
+            ]);
+        }
+
+        return response()->json(['methods' => $methods]);
     }
 
     public function storeComment(ClientAccountCommentStoreRequest $request, ClientAccount $client_account): JsonResponse

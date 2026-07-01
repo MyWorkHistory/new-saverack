@@ -12,12 +12,12 @@ import ClientStoreEditModal from "../../components/clients/ClientStoreEditModal.
 import ClientStoresBulkEditModal from "../../components/clients/ClientStoresBulkEditModal.vue";
 import ClientAccountFeesPanel from "../../components/clients/ClientAccountFeesPanel.vue";
 import ClientAccountOnboardingPanel from "../../components/clients/ClientAccountOnboardingPanel.vue";
+import ClientAccountBillingPanel from "../../components/clients/ClientAccountBillingPanel.vue";
+import ClientAccountOrdersPanel from "../../components/clients/ClientAccountOrdersPanel.vue";
+import ClientAccountInventoryPanel from "../../components/clients/ClientAccountInventoryPanel.vue";
+import ClientAccountAsnPanel from "../../components/clients/ClientAccountAsnPanel.vue";
 import CrmIconRowActions from "../../components/common/CrmIconRowActions.vue";
 import { DEFAULT_PER_PAGE } from "../../constants/pagination";
-import {
-  inHouseSlackDisplayLabel,
-  inHouseSlackHref,
-} from "../../utils/slackChannel.js";
 import { crmIsAdmin } from "../../utils/crmUser";
 import { setCrmPageMeta } from "../../composables/useCrmPageMeta.js";
 import { useToast } from "../../composables/useToast";
@@ -93,7 +93,11 @@ const TAB_ACCOUNT_INFO = "account-info";
 const TAB_STORES = "stores";
 const TAB_FEES = "fees";
 const TAB_BILLING = "billing";
+const TAB_ORDERS = "orders";
+const TAB_INVENTORY = "inventory";
+const TAB_ASN = "asn";
 const TAB_ONBOARDING = "onboarding";
+const TAB_HISTORY = "history";
 const TAB_SETTINGS = "settings";
 
 const accountTabList = computed(() => {
@@ -104,7 +108,11 @@ const accountTabList = computed(() => {
   tabs.push(
     { id: TAB_FEES, label: "Fees" },
     { id: TAB_BILLING, label: "Billing" },
+    { id: TAB_ORDERS, label: "Orders" },
+    { id: TAB_INVENTORY, label: "Inventory" },
+    { id: TAB_ASN, label: "ASN" },
     { id: TAB_ONBOARDING, label: "Onboarding" },
+    { id: TAB_HISTORY, label: "History" },
     { id: TAB_SETTINGS, label: "Settings" },
   );
   return tabs;
@@ -116,7 +124,11 @@ function tabFromRouteQuery(tab) {
   const t = String(tab || "").toLowerCase();
   if (t === TAB_FEES) return TAB_FEES;
   if (t === TAB_BILLING) return TAB_BILLING;
+  if (t === TAB_ORDERS) return TAB_ORDERS;
+  if (t === TAB_INVENTORY) return TAB_INVENTORY;
+  if (t === TAB_ASN) return TAB_ASN;
   if (t === TAB_ONBOARDING) return TAB_ONBOARDING;
+  if (t === TAB_HISTORY) return TAB_HISTORY;
   if (t === TAB_SETTINGS) return TAB_SETTINGS;
   if (t === TAB_STORES || t === "stores") return TAB_STORES;
   if (t === TAB_ACCOUNT_INFO || t === "overview") return TAB_ACCOUNT_INFO;
@@ -333,15 +345,28 @@ function isImageMime(mime) {
 
 const timelinePreview = computed(() => historyItems.value.slice(0, 5));
 
-const primaryAccountUserId = computed(
-  () => account.value?.primary_account_user_id ?? null,
-);
-
-function accountUserDetailRoute(userId) {
+function usersListRoute() {
   return {
-    name: "client-account-user-detail",
-    params: { accountId: String(props.id), userId: String(userId) },
+    name: "client-users",
+    query: { client_account_id: String(props.id) },
   };
+}
+
+function accountHistoryRoute() {
+  return `/admin/clients/accounts/${props.id}/history`;
+}
+
+function historyItemBody(row) {
+  if (row?.body) return row.body;
+  if (row?.line) return row.line;
+  const changes = row?.changes;
+  if (Array.isArray(changes) && changes.length) {
+    const labels = changes.map((c) => c?.label || c?.field).filter(Boolean);
+    if (labels.length) {
+      return `Updated ${labels.join(", ")}`;
+    }
+  }
+  return "";
 }
 
 function timelineActorAvatarUrl(row) {
@@ -1029,12 +1054,6 @@ onUnmounted(() => {
       }}</span>
     </nav>
 
-    <div class="staff-user-view__title-row d-flex flex-wrap align-items-start gap-2">
-      <div class="min-w-0">
-        <h1 class="staff-user-view__title">Account Profile</h1>
-      </div>
-    </div>
-
     <ClientAccountEditModal
       v-if="canUpdateAccount"
       v-model:open="editAccountOpen"
@@ -1120,7 +1139,30 @@ onUnmounted(() => {
       >
     </template>
 
-    <template v-else-if="account">
+    <div
+      v-else-if="account"
+      class="staff-user-view__header-row d-flex flex-wrap align-items-start justify-content-between gap-3 mb-3"
+    >
+      <div class="min-w-0">
+        <h1 class="staff-user-view__title mb-0">{{ account.company_name }}</h1>
+      </div>
+      <div class="staff-user-tabs staff-user-tabs--header ms-xl-auto" role="tablist">
+        <button
+          v-for="t in accountTabList"
+          :key="t.id"
+          type="button"
+          class="staff-user-tab"
+          :class="{ 'staff-user-tab--active': activeTab === t.id }"
+          role="tab"
+          :aria-selected="activeTab === t.id"
+          @click="setActiveTab(t.id)"
+        >
+          {{ t.label }}
+        </button>
+      </div>
+    </div>
+
+    <template v-if="!loading && !errorMsg && account">
       <div class="row g-3">
         <div class="col-12 col-xl-4">
           <aside class="staff-user-profile">
@@ -1181,39 +1223,19 @@ onUnmounted(() => {
                     />
                   </svg>
                 </div>
-                <div class="staff-user-profile__stat-val">
-                  {{ nf.format(usersCountDisplay) }}
-                </div>
-                <div class="staff-user-profile__stat-lbl">Users</div>
+                <RouterLink
+                  :to="usersListRoute()"
+                  class="staff-user-profile__stat-link text-decoration-none text-body"
+                >
+                  <div class="staff-user-profile__stat-val">
+                    {{ nf.format(usersCountDisplay) }}
+                  </div>
+                  <div class="staff-user-profile__stat-lbl">Users</div>
+                </RouterLink>
               </div>
             </div>
 
-            <div
-              class="d-flex flex-wrap align-items-center justify-content-between gap-2 mb-2"
-            >
-              <h3 class="staff-user-profile__details-title mb-0">Details</h3>
-              <button
-                v-if="canUpdateAccount"
-                type="button"
-                class="btn btn-sm btn-primary staff-page-primary"
-                @click="openAccountEdit('left')"
-              >
-                Edit
-              </button>
-            </div>
-            <dl class="staff-user-profile__dl">
-              <div>
-                <dt class="staff-user-profile__dt">Email</dt>
-                <dd class="staff-user-profile__dd text-break">
-                  {{ display(account.email) }}
-                </dd>
-              </div>
-              <div>
-                <dt class="staff-user-profile__dt">Phone</dt>
-                <dd class="staff-user-profile__dd">
-                  {{ display(account.phone) }}
-                </dd>
-              </div>
+            <dl class="staff-user-profile__dl mb-4">
               <div>
                 <dt class="staff-user-profile__dt">Account manager</dt>
                 <dd class="staff-user-profile__dd">
@@ -1235,49 +1257,64 @@ onUnmounted(() => {
                   </div>
                 </dd>
               </div>
-              <div>
-                <dt class="staff-user-profile__dt">In-House Slack</dt>
-                <dd class="staff-user-profile__dd text-break">
-                  <template v-if="inHouseSlackHref(account.in_house_slack)">
-                    <a
-                      :href="inHouseSlackHref(account.in_house_slack)"
-                      class="link-primary text-decoration-none text-break"
-                      :aria-label="`${inHouseSlackDisplayLabel(account.in_house_slack)} in Slack (opens in new tab)`"
-                      target="_blank"
-                      rel="noopener noreferrer"
-                    >
-                      {{ inHouseSlackDisplayLabel(account.in_house_slack) }}
-                    </a>
-                  </template>
-                  <template v-else-if="account.in_house_slack">
-                    <span class="text-body text-break">{{
-                      inHouseSlackDisplayLabel(account.in_house_slack) ||
-                      display(account.in_house_slack)
-                    }}</span>
-                  </template>
-                  <template v-else>{{ display(account.in_house_slack) }}</template>
-                </dd>
-              </div>
             </dl>
+
+            <section class="staff-user-profile__activity" aria-labelledby="sidebar-activity-heading">
+              <div class="d-flex flex-wrap align-items-center justify-content-between gap-2 mb-2">
+                <h3 id="sidebar-activity-heading" class="staff-user-profile__details-title mb-0">
+                  Account activity
+                </h3>
+                <RouterLink
+                  :to="accountHistoryRoute()"
+                  class="small link-primary text-decoration-none"
+                >
+                  View All
+                </RouterLink>
+              </div>
+              <div v-if="timelinePreview.length" class="staff-user-timeline staff-user-timeline--sidebar">
+                <div
+                  v-for="row in timelinePreview"
+                  :key="row.id"
+                  class="staff-user-timeline__item"
+                >
+                  <img
+                    v-if="timelineActorAvatarUrl(row)"
+                    :src="timelineActorAvatarUrl(row)"
+                    alt=""
+                    class="staff-user-timeline__avatar-img rounded-circle flex-shrink-0 object-fit-cover"
+                    width="28"
+                    height="28"
+                  />
+                  <span
+                    v-else
+                    class="staff-user-timeline__avatar-img rounded-circle flex-shrink-0 d-inline-flex align-items-center justify-content-center small fw-semibold"
+                    style="width: 28px; height: 28px; font-size: 0.625rem"
+                    :class="avatarClassForTimelineActor(row.actor_name)"
+                    aria-hidden="true"
+                  >{{ row.actor_initials || "?" }}</span>
+                  <div class="staff-user-timeline__content min-w-0 flex-grow-1">
+                    <div class="staff-user-timeline__row">
+                      <h4 class="staff-user-timeline__heading small mb-0">
+                        {{ row.actor_name || "System" }}
+                      </h4>
+                      <time class="staff-user-timeline__time" :datetime="row.created_at">{{
+                        formatDateTimeUs(row.created_at)
+                      }}</time>
+                    </div>
+                    <p class="staff-user-timeline__body small mb-0">
+                      {{ historyItemBody(row) }}
+                    </p>
+                  </div>
+                </div>
+              </div>
+              <p v-else class="staff-user-timeline__empty small mb-0">
+                No activity logged yet.
+              </p>
+            </section>
           </aside>
         </div>
 
         <div class="col-12 col-xl-8">
-        <div class="staff-user-tabs" role="tablist">
-          <button
-            v-for="t in accountTabList"
-            :key="t.id"
-            type="button"
-            class="staff-user-tab"
-            :class="{ 'staff-user-tab--active': activeTab === t.id }"
-            role="tab"
-            :aria-selected="activeTab === t.id"
-            @click="setActiveTab(t.id)"
-          >
-            {{ t.label }}
-          </button>
-        </div>
-
         <div
           class="staff-user-tab-panel"
           role="tabpanel"
@@ -1351,45 +1388,6 @@ onUnmounted(() => {
                     </dd>
                   </dl>
                 </div>
-                <div class="col-md-6">
-                  <dl class="mb-0 small">
-                    <dt
-                      class="text-secondary text-uppercase fw-semibold mb-1"
-                      style="font-size: 0.65rem"
-                    >
-                      Account status
-                    </dt>
-                    <dd class="mb-0">
-                      <button
-                        v-if="canUpdateAccount"
-                        type="button"
-                        class="staff-status-badge text-capitalize"
-                        :class="accountStatusBadgeClass(account.status)"
-                        title="Change account status"
-                        @click="openAccountStatusModal"
-                      >
-                        {{ account.status }}
-                      </button>
-                      <span
-                        v-else
-                        class="fw-semibold text-body text-capitalize"
-                        :class="accountStatusBadgeClass(account.status)"
-                        >{{ account.status }}</span
-                      >
-                    </dd>
-                  </dl>
-                </div>
-              </div>
-              <div
-                class="mt-3 pt-3 border-top d-flex flex-wrap align-items-center gap-2"
-              >
-                <RouterLink
-                  v-if="primaryAccountUserId"
-                  class="btn btn-sm btn-outline-primary"
-                  :to="accountUserDetailRoute(primaryAccountUserId)"
-                >
-                  View primary portal user
-                </RouterLink>
               </div>
             </div>
 
@@ -2160,96 +2158,24 @@ onUnmounted(() => {
           </template>
 
           <template v-else-if="activeTab === TAB_BILLING">
-            <div class="staff-surface p-3 p-md-4">
-              <div
-                class="d-flex flex-wrap align-items-start justify-content-between gap-2 mb-3"
-              >
-                <h3 class="staff-user-section-title mb-0">Billing</h3>
-                <button
-                  v-if="canUpdateAccount"
-                  type="button"
-                  class="btn btn-sm btn-primary staff-page-primary"
-                  @click="openAccountEdit('billing')"
-                >
-                  Edit
-                </button>
-              </div>
-              <div class="row g-3">
-                <div class="col-md-6">
-                  <dl class="mb-0 small">
-                    <dt
-                      class="text-secondary text-uppercase fw-semibold mb-1"
-                      style="font-size: 0.65rem"
-                    >
-                      Default payment type
-                    </dt>
-                    <dd class="mb-0 fw-semibold text-body">
-                      {{ display(account.default_payment_type) }}
-                    </dd>
-                  </dl>
-                </div>
-                <div class="col-md-6">
-                  <dl class="mb-0 small">
-                    <dt
-                      class="text-secondary text-uppercase fw-semibold mb-1"
-                      style="font-size: 0.65rem"
-                    >
-                      Payment Terms
-                    </dt>
-                    <dd class="mb-0 fw-semibold text-body">
-                      {{
-                        account.payment_terms_days != null
-                          ? `${Number(account.payment_terms_days)} day${Number(account.payment_terms_days) === 1 ? "" : "s"}`
-                          : "1 day"
-                      }}
-                    </dd>
-                  </dl>
-                </div>
-                <div class="col-md-6">
-                  <dl class="mb-0 small">
-                    <dt
-                      class="text-secondary text-uppercase fw-semibold mb-1"
-                      style="font-size: 0.65rem"
-                    >
-                      Credit card fee
-                    </dt>
-                    <dd class="mb-0 fw-semibold text-body">
-                      {{
-                        account.cc_fee_percent != null
-                          ? `${Number(account.cc_fee_percent).toFixed(2)}%`
-                          : "—"
-                      }}
-                    </dd>
-                  </dl>
-                </div>
-                <div class="col-md-6">
-                  <dl class="mb-0 small">
-                    <dt
-                      class="text-secondary text-uppercase fw-semibold mb-1"
-                      style="font-size: 0.65rem"
-                    >
-                      Postage
-                    </dt>
-                    <dd class="mb-0 fw-semibold text-body">
-                      {{ display(account.postage_option_label) }}
-                    </dd>
-                  </dl>
-                </div>
-                <div class="col-md-6">
-                  <dl class="mb-0 small">
-                    <dt
-                      class="text-secondary text-uppercase fw-semibold mb-1"
-                      style="font-size: 0.65rem"
-                    >
-                      Packaging
-                    </dt>
-                    <dd class="mb-0 fw-semibold text-body">
-                      {{ display(account.packaging_option_label) }}
-                    </dd>
-                  </dl>
-                </div>
-              </div>
-            </div>
+            <ClientAccountBillingPanel
+              :account="account"
+              :account-id="id"
+              :can-edit="canUpdateAccount"
+              @edit="openAccountEdit('billing')"
+            />
+          </template>
+
+          <template v-else-if="activeTab === TAB_ORDERS">
+            <ClientAccountOrdersPanel :account-id="id" />
+          </template>
+
+          <template v-else-if="activeTab === TAB_INVENTORY">
+            <ClientAccountInventoryPanel :account-id="id" />
+          </template>
+
+          <template v-else-if="activeTab === TAB_ASN">
+            <ClientAccountAsnPanel :account-id="id" />
           </template>
 
           <template v-else-if="activeTab === TAB_ONBOARDING">
@@ -2260,6 +2186,52 @@ onUnmounted(() => {
                 :can-edit="canUpdateAccount"
                 @account-updated="onOnboardingAccountUpdated"
               />
+            </div>
+          </template>
+
+          <template v-else-if="activeTab === TAB_HISTORY">
+            <div v-if="historyItems.length" class="staff-user-timeline staff-user-timeline--flat">
+              <div
+                v-for="row in historyItems"
+                :key="row.id"
+                class="staff-user-timeline__item"
+              >
+                <img
+                  v-if="timelineActorAvatarUrl(row)"
+                  :src="timelineActorAvatarUrl(row)"
+                  alt=""
+                  class="staff-user-timeline__avatar-img rounded-circle flex-shrink-0 object-fit-cover"
+                  width="36"
+                  height="36"
+                />
+                <span
+                  v-else
+                  class="staff-user-timeline__avatar-img rounded-circle flex-shrink-0 d-inline-flex align-items-center justify-content-center small fw-semibold"
+                  style="width: 36px; height: 36px; font-size: 0.6875rem"
+                  :class="avatarClassForTimelineActor(row.actor_name)"
+                  aria-hidden="true"
+                >{{ row.actor_initials || "?" }}</span>
+                <div class="staff-user-timeline__content min-w-0 flex-grow-1">
+                  <div class="staff-user-timeline__row">
+                    <h3 class="staff-user-timeline__heading">
+                      {{ row.actor_name || "System" }}
+                    </h3>
+                    <time class="staff-user-timeline__time" :datetime="row.created_at">{{
+                      formatDateTimeUs(row.created_at)
+                    }}</time>
+                  </div>
+                  <p class="staff-user-timeline__body">{{ historyItemBody(row) }}</p>
+                </div>
+              </div>
+            </div>
+            <p v-else class="staff-user-timeline__empty mb-0">No activity logged yet.</p>
+            <div class="mt-3 pt-3 border-top">
+              <RouterLink
+                :to="accountHistoryRoute()"
+                class="btn btn-sm btn-outline-primary"
+              >
+                View Full History
+              </RouterLink>
             </div>
           </template>
 
@@ -2298,19 +2270,6 @@ onUnmounted(() => {
                       class="text-secondary text-uppercase fw-semibold mb-1"
                       style="font-size: 0.65rem"
                     >
-                      Stripe customer ID
-                    </dt>
-                    <dd class="mb-0 fw-semibold text-body text-break">
-                      {{ display(account.stripe_customer_id) }}
-                    </dd>
-                  </dl>
-                </div>
-                <div class="col-md-6">
-                  <dl class="mb-0 small">
-                    <dt
-                      class="text-secondary text-uppercase fw-semibold mb-1"
-                      style="font-size: 0.65rem"
-                    >
                       ShipHero customer account ID
                     </dt>
                     <dd class="mb-0 fw-semibold text-body text-break">
@@ -2324,61 +2283,6 @@ onUnmounted(() => {
         </div>
         </div>
       </div>
-
-      <section
-        class="staff-user-timeline-card mt-3"
-        aria-labelledby="client-account-activity-heading"
-      >
-        <h2
-          id="client-account-activity-heading"
-          class="staff-user-timeline-card__title mb-3"
-        >
-          Account activity
-        </h2>
-        <div v-if="timelinePreview.length" class="staff-user-timeline">
-          <div
-            v-for="(row, idx) in timelinePreview"
-            :key="row.id"
-            class="staff-user-timeline__item"
-          >
-            <img
-              v-if="timelineActorAvatarUrl(row)"
-              :src="timelineActorAvatarUrl(row)"
-              alt=""
-              class="staff-user-timeline__avatar-img rounded-circle flex-shrink-0 object-fit-cover"
-              width="36"
-              height="36"
-            />
-            <span
-              v-else
-              class="staff-user-timeline__avatar-img rounded-circle flex-shrink-0 d-inline-flex align-items-center justify-content-center small fw-semibold"
-              style="width: 36px; height: 36px; font-size: 0.6875rem"
-              :class="avatarClassForTimelineActor(row.actor_name)"
-              :title="row.actor_name || 'User'"
-              aria-hidden="true"
-              >{{ row.actor_initials || "?" }}</span
-            >
-            <div class="staff-user-timeline__content min-w-0 flex-grow-1">
-              <div class="staff-user-timeline__row">
-                <h3 class="staff-user-timeline__heading">
-                  {{ row.actor_name || "System" }}
-                </h3>
-                <time
-                  class="staff-user-timeline__time"
-                  :datetime="row.created_at"
-                  >{{ formatDateTimeUs(row.created_at) }}</time
-                >
-              </div>
-              <p class="staff-user-timeline__body">
-                {{ row.body || row.line }}
-              </p>
-            </div>
-          </div>
-        </div>
-        <p v-else class="staff-user-timeline__empty">
-          No activity logged yet.
-        </p>
-      </section>
 
       <Teleport to="body">
         <Transition
@@ -2447,5 +2351,14 @@ onUnmounted(() => {
 }
 .object-fit-cover {
   object-fit: cover;
+}
+
+.staff-user-profile__stat-link {
+  display: block;
+  text-align: center;
+}
+
+.staff-user-profile__stat-link:hover .staff-user-profile__stat-lbl {
+  color: #2563eb;
 }
 </style>

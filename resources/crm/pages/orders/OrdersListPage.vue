@@ -20,6 +20,10 @@ import {
 const props = defineProps({
   /** When true, hide account picker and link orders to portal detail route. */
   portalOrderList: { type: Boolean, default: false },
+  /** Lock list to one account (embedded in account detail). */
+  fixedClientAccountId: { type: [Number, String], default: null },
+  /** Hide page heading when embedded in account detail. */
+  embedded: { type: Boolean, default: false },
 });
 
 const toast = useToast();
@@ -79,6 +83,8 @@ const tabKey = computed(() => String(route.meta?.orderTab || "manage"));
 /** Portal user routes set `meta.userPortal`; staff may pass `portal-order-list` explicitly. */
 const isPortalOrderList = computed(() => props.portalOrderList === true || route.meta?.userPortal === true);
 
+const isEmbeddedOrders = computed(() => props.embedded || Number(props.fixedClientAccountId || 0) > 0);
+
 const isOrdersSearchPage = computed(() => tabKey.value === "search");
 
 const tabTitle = computed(() => {
@@ -105,11 +111,13 @@ const manageMenuRow = computed(
 const isPortalUser = computed(() => Number(crmUser.value?.client_account_id || 0) > 0);
 const portalClientAccountId = computed(() => Number(crmUser.value?.client_account_id || 0));
 
-const isAdminOrdersList = computed(() => !isPortalOrderList.value);
+const isAdminOrdersList = computed(() => !isPortalOrderList.value && !isEmbeddedOrders.value);
 
 function effectiveClientAccountId(row = null) {
   const fromRow = Number(row?.client_account_id || 0);
   if (fromRow > 0) return fromRow;
+  const fixed = Number(props.fixedClientAccountId || 0);
+  if (fixed > 0) return fixed;
   return Number(selectedAccountId.value || 0);
 }
 
@@ -965,12 +973,19 @@ watch(selectedAccountId, (id) => {
 
 onMounted(async () => {
   document.addEventListener("click", onDocClick);
-  setCrmPageMeta({
-    title: `Save Rack | Orders | ${tabTitle.value}`,
-    description: route.meta?.userPortal ? "Your account orders." : "ShipHero customer orders.",
-  });
+  if (!isEmbeddedOrders.value) {
+    setCrmPageMeta({
+      title: `Save Rack | Orders | ${tabTitle.value}`,
+      description: route.meta?.userPortal ? "Your account orders." : "ShipHero customer orders.",
+    });
+  }
   await loadAccounts();
-  if (isPortalUser.value && portalClientAccountId.value > 0) {
+  const fixedId = Number(props.fixedClientAccountId || 0);
+  if (fixedId > 0) {
+    selectedAccountId.value = String(fixedId);
+    crossAccountMode.value = false;
+    await runListSearch();
+  } else if (isPortalUser.value && portalClientAccountId.value > 0) {
     selectedAccountId.value = String(portalClientAccountId.value);
   }
 });
@@ -981,8 +996,8 @@ onUnmounted(() => {
 </script>
 
 <template>
-  <div class="staff-page staff-page--wide">
-    <div class="mb-4">
+  <div class="staff-page staff-page--wide" :class="{ 'orders-list--embedded': isEmbeddedOrders }">
+    <div v-if="!isEmbeddedOrders" class="mb-4">
       <h1 class="h4 mb-1 fw-semibold text-body">
         <span>Orders - {{ tabTitle }}</span>
         <span
@@ -1015,7 +1030,7 @@ onUnmounted(() => {
       <div class="staff-table-toolbar">
         <div class="staff-table-toolbar--row orders-toolbar-row">
           <div
-            v-if="!isPortalOrderList"
+            v-if="isAdminOrdersList"
             class="orders-toolbar-account flex-shrink-0"
           >
             <CrmSearchableSelect

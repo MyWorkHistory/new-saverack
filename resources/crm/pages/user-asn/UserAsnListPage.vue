@@ -10,6 +10,12 @@ import { useToast } from "../../composables/useToast.js";
 import { formatAsnDisplay } from "../../utils/formatAsnDisplay.js";
 import { formatDateUs } from "../../utils/formatUserDates.js";
 
+const props = defineProps({
+  fixedClientAccountId: { type: [Number, String], default: null },
+  embedded: { type: Boolean, default: false },
+  detailRouteName: { type: String, default: "user-asn-detail" },
+});
+
 const toast = useToast();
 const router = useRouter();
 const crmUser = inject("crmUser", ref(null));
@@ -37,7 +43,11 @@ const rowDeleteOpen = ref(false);
 const rowDeleteTarget = ref(null);
 const rowDeleteBusy = ref(false);
 
-const clientAccountId = computed(() => Number(crmUser.value?.client_account_id || 0));
+const clientAccountId = computed(() => {
+  const fixed = Number(props.fixedClientAccountId || 0);
+  if (fixed > 0) return fixed;
+  return Number(crmUser.value?.client_account_id || 0);
+});
 
 const tableColspan = 10;
 
@@ -157,7 +167,7 @@ async function createAsn() {
     const { data } = await api.post("/asns", { client_account_id: clientAccountId.value });
     toast.success("ASN created.");
     const href = router.resolve({
-      name: "user-asn-detail",
+      name: props.detailRouteName,
       params: { id: String(data.id) },
     }).href;
     window.open(href, "_blank", "noopener,noreferrer");
@@ -195,7 +205,7 @@ async function confirmBulkDelete() {
 }
 
 function openRow(r) {
-  router.push({ name: "user-asn-detail", params: { id: String(r.id) } });
+  router.push({ name: props.detailRouteName, params: { id: String(r.id) } });
 }
 
 function placeManageMenu(anchorEl) {
@@ -254,9 +264,9 @@ async function goEditAsnFromMenu() {
     }
   }
   router.push({
-    name: "user-asn-detail",
+    name: props.detailRouteName,
     params: { id: String(row.id) },
-    hash: "#user-asn-items",
+    hash: props.detailRouteName === "user-asn-detail" ? "#user-asn-items" : undefined,
   });
 }
 
@@ -298,10 +308,12 @@ async function confirmRowDelete() {
 }
 
 onMounted(() => {
-  setCrmPageMeta({
-    title: "Save Rack | Advanced Shipment Notice",
-    description: "Advanced shipment notices for your account.",
-  });
+  if (!props.embedded) {
+    setCrmPageMeta({
+      title: "Save Rack | Advanced Shipment Notice",
+      description: "Advanced shipment notices for your account.",
+    });
+  }
   document.addEventListener("click", onDocClickManage);
   window.addEventListener("scroll", onWindowCloseManageMenu, true);
   window.addEventListener("resize", onWindowCloseManageMenu);
@@ -316,8 +328,8 @@ onUnmounted(() => {
 </script>
 
 <template>
-  <div class="staff-page staff-page--wide">
-    <div class="d-flex flex-wrap align-items-end justify-content-between gap-3 mb-4">
+  <div class="staff-page staff-page--wide" :class="{ 'user-asn-list--embedded': embedded }">
+    <div v-if="!embedded" class="d-flex flex-wrap align-items-end justify-content-between gap-3 mb-4">
       <div>
         <h1 class="h4 mb-1 fw-semibold text-body">Advanced Shipment Notice</h1>
         <p class="staff-page__intro user-asn-list__subtitle mb-0">Search by ASN # or tracking #.</p>

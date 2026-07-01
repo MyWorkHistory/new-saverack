@@ -24,7 +24,10 @@ final class CrmActivityPresenter
         }
 
         if ($action === 'client_account.updated') {
-            return "{$actorName} updated account details";
+            $fields = isset($meta['fields']) && is_array($meta['fields']) ? $meta['fields'] : [];
+            $summary = ClientAccountHistory::summarizeFields($fields);
+
+            return "{$actorName} updated {$summary}";
         }
 
         if ($action === 'client_account.comment') {
@@ -86,6 +89,32 @@ final class CrmActivityPresenter
             'actor_avatar_url' => $actorAvatarUrl,
             'line' => self::formatLogLine($log),
             'body' => self::formatLogBody($log),
+            'changes' => self::historyChanges($log),
         ];
+    }
+
+    /**
+     * @return list<array{field: string, label: string}>
+     */
+    private static function historyChanges(ActivityLog $log): array
+    {
+        if ((string) $log->action !== 'client_account.updated') {
+            return [];
+        }
+        $meta = is_array($log->metadata) ? $log->metadata : [];
+        $fields = isset($meta['fields']) && is_array($meta['fields']) ? $meta['fields'] : [];
+        $out = [];
+        foreach ($fields as $field) {
+            $key = (string) $field;
+            if ($key === '') {
+                continue;
+            }
+            $out[] = [
+                'field' => $key,
+                'label' => ClientAccountHistory::FIELD_LABELS[$key] ?? ucfirst(str_replace('_', ' ', $key)),
+            ];
+        }
+
+        return $out;
     }
 }

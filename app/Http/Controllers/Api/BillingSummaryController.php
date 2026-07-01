@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use App\Models\ClientAccount;
 use App\Models\Invoice;
 use App\Models\User;
 use App\Services\InvoiceService;
@@ -35,17 +36,22 @@ class BillingSummaryController extends Controller
         }
 
         $portalId = (int) ($user->client_account_id ?? 0);
-        if ($portalId <= 0) {
-            return null;
-        }
 
         if ($request->has('client_account_id')) {
             $requested = (int) $request->input('client_account_id');
-            if ($requested > 0 && $requested !== $portalId) {
-                abort(403);
+            if ($requested > 0) {
+                if ($portalId > 0 && $requested !== $portalId) {
+                    abort(403);
+                }
+                if ($portalId <= 0) {
+                    $account = ClientAccount::query()->findOrFail($requested);
+                    $this->authorize('view', $account);
+
+                    return $requested;
+                }
             }
         }
 
-        return $portalId;
+        return $portalId > 0 ? $portalId : null;
     }
 }

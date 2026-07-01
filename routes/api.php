@@ -423,6 +423,8 @@ Route::middleware('auth:sanctum')->group(function () {
         ->name('client-accounts.export-csv');
     Route::get('client-accounts/{client_account}/history', [ClientAccountController::class, 'history'])
         ->name('client-accounts.history');
+    Route::get('client-accounts/{client_account}/stripe-payment-methods', [ClientAccountController::class, 'stripePaymentMethods'])
+        ->name('client-accounts.stripe-payment-methods');
     Route::get('client-accounts/{client_account}/onboarding', [ClientAccountOnboardingController::class, 'show'])
         ->name('client-accounts.onboarding.show');
     Route::patch('client-accounts/{client_account}/onboarding/profile', [ClientAccountOnboardingController::class, 'updateProfile'])

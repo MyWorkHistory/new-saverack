@@ -9,7 +9,7 @@ import {
   ref,
   watch,
 } from "vue";
-import { RouterLink, useRouter } from "vue-router";
+import { RouterLink, useRoute, useRouter } from "vue-router";
 import api from "../../services/api";
 import ConfirmModal from "../../components/common/ConfirmModal.vue";
 import CrmLoadingSpinner from "../../components/common/CrmLoadingSpinner.vue";
@@ -32,6 +32,7 @@ import { resolvePublicUrl } from "../../utils/resolvePublicUrl.js";
 const crmUser = inject("crmUser", ref(null));
 const toast = useToast();
 const router = useRouter();
+const route = useRoute();
 
 function userHasPerm(key) {
   const u = crmUser.value;
@@ -683,6 +684,10 @@ onMounted(async () => {
     title: "Save Rack | Client users",
     description: "Portal logins for client accounts.",
   });
+  const fromRoute = route.query.client_account_id;
+  if (fromRoute != null && String(fromRoute).trim() !== "") {
+    query.client_account_id = String(fromRoute);
+  }
   await loadAccountOptions();
   await refreshList();
 });

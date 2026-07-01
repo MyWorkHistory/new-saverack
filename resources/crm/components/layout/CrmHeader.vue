@@ -272,7 +272,7 @@ onUnmounted(() => {
 
           <RouterLink
             v-if="!isPortalUser"
-            to="/admin/dashboard"
+            to="/admin/home"
             class="d-none d-sm-flex d-lg-none align-items-center gap-2 text-decoration-none text-body flex-shrink-0"
           >
             <img

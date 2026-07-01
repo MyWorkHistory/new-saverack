@@ -72,15 +72,31 @@ class HomeDashboardApiTest extends TestCase
         $this->actingAsAdmin();
 
         $response = $this->postJson('/api/home-dashboard/refresh', [
-            'section' => OrderDashboardSection::KEY_ASN_PENDING,
+            'section' => OrderDashboardSection::KEY_READY_TO_SHIP,
         ]);
 
         $response->assertOk()
             ->assertJsonPath('refresh_enqueued', true)
-            ->assertJsonPath('section', OrderDashboardSection::KEY_ASN_PENDING);
+            ->assertJsonPath('section', OrderDashboardSection::KEY_READY_TO_SHIP);
 
         Queue::assertPushed(RefreshOrderDashboardSectionJob::class, function ($job) {
-            return $job->sectionKey === OrderDashboardSection::KEY_ASN_PENDING;
+            return $job->sectionKey === OrderDashboardSection::KEY_READY_TO_SHIP;
         });
+    }
+
+    public function test_home_dashboard_refresh_asn_runs_sync(): void
+    {
+        Queue::fake();
+        $this->actingAsAdmin();
+
+        $response = $this->postJson('/api/home-dashboard/refresh', [
+            'section' => OrderDashboardSection::KEY_ASN_PENDING,
+        ]);
+
+        $response->assertOk()
+            ->assertJsonPath('refresh_synced', true)
+            ->assertJsonPath('section', OrderDashboardSection::KEY_ASN_PENDING);
+
+        Queue::assertNothingPushed();
     }
 }

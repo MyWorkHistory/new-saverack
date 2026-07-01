@@ -101,7 +101,7 @@ const markSrc = computed(() => BRAND_MARK_SRC());
 
 function navActive(mode) {
   const p = route.path;
-  if (mode === "dashboard") return p.startsWith("/admin/dashboard");
+  if (mode === "dashboard") return p.startsWith("/admin/home");
   if (mode === "users") return p.startsWith("/admin/staff");
   if (mode === "settings") return p.startsWith("/admin/settings");
   if (mode === "settings-pricing") return p.startsWith("/admin/settings/pricing");
@@ -151,7 +151,7 @@ function collapseNav() {
     <div class="vx-sidebar__header">
       <RouterLink
         v-if="isExpanded"
-        to="/admin/dashboard"
+        to="/admin/home"
         class="vx-sidebar__brand-link"
         @click="closeMobile"
       >
@@ -166,7 +166,7 @@ function collapseNav() {
       </RouterLink>
       <RouterLink
         v-else
-        to="/admin/dashboard"
+        to="/admin/home"
         class="vx-sidebar__brand-link justify-content-center w-100"
         @click="closeMobile"
       >
@@ -212,7 +212,7 @@ function collapseNav() {
       <ul class="list-unstyled mb-0 pb-2">
         <li v-if="!isPortal">
           <RouterLink
-            to="/admin/dashboard"
+            to="/admin/home"
             class="vx-nav-link"
             :title="!isExpanded ? 'Home' : undefined"
             @click="closeMobile"

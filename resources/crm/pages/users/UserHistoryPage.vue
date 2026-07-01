@@ -78,7 +78,7 @@ load();
   <div class="w-full">
     <nav class="mb-4 flex flex-wrap items-center gap-1.5 text-sm">
       <RouterLink
-        to="/admin/dashboard"
+        to="/admin/home"
         class="font-medium text-gray-500 transition hover:text-[#2563eb] dark:text-gray-400 dark:hover:text-blue-400"
       >
         Home

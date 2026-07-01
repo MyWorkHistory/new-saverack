@@ -17,7 +17,7 @@ const { isMobileOpen, toggleMobileSidebar, mainWrapClass } = useCrmSidebar();
 /** Full-width main column with demo-like gutters (no 1440px cap). */
 const useWideCrmContent = computed(
   () =>
-    route.path === "/admin/dashboard" ||
+    route.path === "/admin/home" ||
     route.path.startsWith("/admin/staff") ||
     route.path.startsWith("/admin/clients") ||
     route.path.startsWith("/admin/settings") ||

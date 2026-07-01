@@ -2,6 +2,7 @@
 
 namespace App\Services;
 
+use App\Jobs\RefreshOrderDashboardSectionJob;
 use App\Models\ClientAccount;
 use App\Models\ClientAccountAsn;
 use App\Models\OrderDashboardSection;
@@ -27,6 +28,38 @@ class OrderDashboardSnapshotService
     /**
      * @return array<string, mixed>
      */
+    public function bootstrapIfNeeded(): void
+    {
+        $this->ensureSectionRows();
+
+        $rows = OrderDashboardSection::query()
+            ->whereIn('section_key', OrderDashboardSection::ALL_KEYS)
+            ->get()
+            ->keyBy('section_key');
+
+        $asn = $rows->get(OrderDashboardSection::KEY_ASN_PENDING);
+        if (! $asn instanceof OrderDashboardSection || $asn->refreshed_at === null) {
+            try {
+                $this->refreshSection(OrderDashboardSection::KEY_ASN_PENDING);
+            } catch (Throwable $e) {
+                Log::warning('order_dashboard.asn_bootstrap_failed', [
+                    'message' => $e->getMessage(),
+                ]);
+            }
+        }
+
+        foreach (OrderDashboardSection::SHIPHERO_KEYS as $key) {
+            $row = $rows->get($key);
+            if (! $row instanceof OrderDashboardSection) {
+                continue;
+            }
+            if ($row->refreshed_at !== null || $row->status === OrderDashboardSection::STATUS_RUNNING) {
+                continue;
+            }
+            RefreshOrderDashboardSectionJob::dispatch($key);
+        }
+    }
+
     public function getDashboardPayload(): array
     {
         $this->ensureSectionRows();

@@ -49,13 +49,14 @@ export function useAdminHomeDashboard({ onError } = {}) {
     }
   }
 
-  async function refreshSection(section = "all") {
+  async function refreshSection(section = "all", { sync = section !== "all" } = {}) {
     if (refreshing.value) return;
     refreshing.value = true;
     try {
-      const { data } = await api.post("/home-dashboard/refresh", { section });
+      const { data } = await api.post("/home-dashboard/refresh", { section, sync });
       applyPayload(data);
       syncPolling();
+      return data;
     } catch (e) {
       onError?.(e);
       throw e;

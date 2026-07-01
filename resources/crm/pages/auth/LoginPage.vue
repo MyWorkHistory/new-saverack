@@ -50,7 +50,7 @@ const submit = async () => {
       prefetchPortalDashboardCounts(data.user?.client_account_id);
     }
     const r = route.query.redirect;
-    let dest = isPortal ? crmPortalPostAuthPath(data.user) : "/admin/dashboard";
+    let dest = isPortal ? crmPortalPostAuthPath(data.user) : "/admin/home";
     if (typeof r === "string" && r.startsWith("/")) {
       if (!isPortal || r.startsWith("/users/")) {
         dest = r;

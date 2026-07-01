@@ -53,7 +53,7 @@ async function onSubmit() {
       />
       <div class="flex shrink-0 flex-wrap gap-x-4 gap-y-2">
         <CrmBackLink to="/admin/staff" label="Back To Staff" />
-        <CrmBackLink to="/admin/dashboard" label="Back To Dashboard" />
+        <CrmBackLink to="/admin/home" label="Back To Dashboard" />
       </div>
     </div>
 

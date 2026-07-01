@@ -53,6 +53,18 @@ class OrderDashboardSection extends Model
         self::KEY_HOLD_BACKORDER,
     ];
 
+    /** @var list<string> */
+    public const SHIPHERO_KEYS = [
+        self::KEY_READY_TO_SHIP,
+        self::KEY_SHIPPED,
+        self::KEY_HOLD_OPERATOR,
+        self::KEY_HOLD_ADDRESS,
+        self::KEY_HOLD_FRAUD,
+        self::KEY_HOLD_PAYMENT,
+        self::KEY_HOLD_USER,
+        self::KEY_HOLD_BACKORDER,
+    ];
+
     protected $primaryKey = 'section_key';
 
     public $incrementing = false;

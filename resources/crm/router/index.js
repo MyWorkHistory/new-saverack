@@ -311,13 +311,14 @@ const routes = [
   },
   { path: "/", redirect: "/login" },
   {
-    path: "/admin/dashboard",
+    path: "/admin/home",
     name: "dashboard",
     component: DashboardPage,
     meta: meta.dashboard,
   },
+  { path: "/admin/dashboard", redirect: "/admin/home" },
   { path: "/admin/staff", name: "staff", component: UsersListPage, meta: meta.staff },
-  { path: "/admin", redirect: "/admin/dashboard" },
+  { path: "/admin", redirect: "/admin/home" },
   {
     path: "/admin/staff/create",
     name: "staff-create",
@@ -712,9 +713,9 @@ const routes = [
   { path: "/users/returns/:id", name: "user-return-detail", component: () => import("../pages/user-returns/UserReturnDetailPage.vue"), props: true, meta: { ...meta.userReturnDetail, userPortal: true } },
   { path: "/users/returns/:id/print-packing-slip", name: "user-return-print-packing-slip", component: () => import("../pages/user-returns/UserReturnPrintPackingSlipPage.vue"), props: true, meta: { title: "Save Rack | Return Packing Slip", description: "Return packing slip.", userPortal: true, bareLayout: true } },
   { path: "/users/returns/:id/print-shipping-label", name: "user-return-print-shipping-label", component: () => import("../pages/user-returns/UserReturnPrintShippingLabelPage.vue"), props: true, meta: { title: "Save Rack | Shipping Label", description: "4x6 return shipping label.", userPortal: true, bareLayout: true } },
-  { path: "/tickets/board", redirect: "/admin/dashboard" },
-  { path: "/tickets/:id", redirect: "/admin/dashboard" },
-  { path: "/tickets", redirect: "/admin/dashboard" },
+  { path: "/tickets/board", redirect: "/admin/home" },
+  { path: "/tickets/:id", redirect: "/admin/home" },
+  { path: "/tickets", redirect: "/admin/home" },
 ];
 
 const router = createRouter({
@@ -1160,7 +1161,7 @@ router.beforeEach(async (to) => {
     if (token && to.name === "login") {
       try {
         const me = await ensureAuthUser();
-        return { path: crmIsPortalUser(me) ? crmPortalPostAuthPath(me) : "/admin/dashboard" };
+        return { path: crmIsPortalUser(me) ? crmPortalPostAuthPath(me) : "/admin/home" };
       } catch {
         localStorage.removeItem("auth_token");
         clearCrmOwnerCache();
@@ -1201,7 +1202,7 @@ router.beforeEach(async (to) => {
       return { path: "/users/dashboard" };
     }
   } else if (to.path.startsWith("/users/")) {
-    return { path: "/admin/dashboard" };
+    return { path: "/admin/home" };
   }
 
   if (to.path.startsWith("/admin/settings")) {
@@ -1210,7 +1211,7 @@ router.beforeEach(async (to) => {
       if (!localStorage.getItem("auth_token")) {
         return { name: "login", query: { redirect: to.fullPath } };
       }
-      return { path: "/admin/dashboard" };
+      return { path: "/admin/home" };
     }
   }
 
@@ -1220,7 +1221,7 @@ router.beforeEach(async (to) => {
       if (!localStorage.getItem("auth_token")) {
         return { name: "login", query: { redirect: to.fullPath } };
       }
-      return { path: "/admin/dashboard" };
+      return { path: "/admin/home" };
     }
   }
 
@@ -1230,7 +1231,7 @@ router.beforeEach(async (to) => {
       if (!localStorage.getItem("auth_token")) {
         return { name: "login", query: { redirect: to.fullPath } };
       }
-      return { path: "/admin/dashboard" };
+      return { path: "/admin/home" };
     }
   }
 
@@ -1240,7 +1241,7 @@ router.beforeEach(async (to) => {
       if (!localStorage.getItem("auth_token")) {
         return { name: "login", query: { redirect: to.fullPath } };
       }
-      return { path: "/admin/dashboard" };
+      return { path: "/admin/home" };
     }
   }
 
@@ -1250,7 +1251,7 @@ router.beforeEach(async (to) => {
       if (!localStorage.getItem("auth_token")) {
         return { name: "login", query: { redirect: to.fullPath } };
       }
-      return { path: "/admin/dashboard" };
+      return { path: "/admin/home" };
     }
   }
 
@@ -1260,7 +1261,7 @@ router.beforeEach(async (to) => {
       if (!localStorage.getItem("auth_token")) {
         return { name: "login", query: { redirect: to.fullPath } };
       }
-      return { path: "/admin/dashboard" };
+      return { path: "/admin/home" };
     }
   }
 
@@ -1277,7 +1278,7 @@ router.beforeEach(async (to) => {
       if (!localStorage.getItem("auth_token")) {
         return { name: "login", query: { redirect: to.fullPath } };
       }
-      return { path: crmIsPortalUser(me) ? "/users/dashboard" : "/admin/dashboard" };
+      return { path: crmIsPortalUser(me) ? "/users/dashboard" : "/admin/home" };
     }
   }
 
@@ -1291,7 +1292,7 @@ router.beforeEach(async (to) => {
       if (!localStorage.getItem("auth_token")) {
         return { name: "login", query: { redirect: to.fullPath } };
       }
-      return { path: crmIsPortalUser(me) ? "/users/dashboard" : "/admin/dashboard" };
+      return { path: crmIsPortalUser(me) ? "/users/dashboard" : "/admin/home" };
     }
   }
 

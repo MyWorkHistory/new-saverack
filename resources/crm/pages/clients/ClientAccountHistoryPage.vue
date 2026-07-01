@@ -93,7 +93,7 @@ load();
       class="staff-user-view__breadcrumb d-flex flex-wrap align-items-center gap-1"
       aria-label="Breadcrumb"
     >
-      <RouterLink to="/admin/dashboard">Home</RouterLink>
+      <RouterLink to="/admin/home">Home</RouterLink>
       <span class="text-secondary" aria-hidden="true">/</span>
       <RouterLink to="/admin/clients/accounts">Accounts</RouterLink>
       <span class="text-secondary" aria-hidden="true">/</span>

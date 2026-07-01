@@ -39,6 +39,8 @@ const ordersListTo = computed(() => {
   return { path: "/admin/orders/search" };
 });
 
+const tableColspan = computed(() => (isPortalMode.value ? 6 : 7));
+
 const accountOptions = computed(() =>
   accounts.value
     .filter((a) => a.has_shiphero_customer)
@@ -158,10 +160,10 @@ onMounted(() => {
       </div>
     </div>
 
-    <div class="staff-table-card staff-datatable-card staff-datatable-card--white w-100">
+    <div class="staff-table-card staff-datatable-card staff-datatable-card--white w-100 orders-page-toolbar">
       <div class="staff-table-toolbar">
-        <div class="staff-table-toolbar--row d-flex flex-wrap align-items-center gap-2">
-          <div v-if="!isPortalMode" class="orders-draft-toolbar-account flex-shrink-0">
+        <div class="staff-table-toolbar--row orders-toolbar-row">
+          <div v-if="!isPortalMode" class="orders-toolbar-account flex-shrink-0">
             <CrmSearchableSelect
               v-model="selectedAccountId"
               class="staff-toolbar-search staff-toolbar-search--inline"
@@ -176,41 +178,68 @@ onMounted(() => {
               button-id="order-drafts-account-trigger"
             />
           </div>
-          <button
-            type="button"
-            class="btn btn-outline-secondary btn-sm orders-toolbar-outline-btn ms-auto"
-            :disabled="loading"
-            @click="loadDrafts"
+          <div
+            class="staff-toolbar-row-actions d-flex flex-wrap align-items-center gap-2 gap-md-3 ms-md-auto flex-shrink-0"
           >
-            Refresh
-          </button>
+            <button
+              type="button"
+              class="btn btn-outline-secondary staff-toolbar-btn orders-toolbar-outline-btn d-inline-flex align-items-center gap-2"
+              :disabled="loading"
+              title="Refresh"
+              aria-label="Refresh drafts"
+              @click="loadDrafts"
+            >
+              <svg
+                width="18"
+                height="18"
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+                aria-hidden="true"
+              >
+                <path
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                  stroke-width="2"
+                  d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"
+                />
+              </svg>
+              Refresh
+            </button>
+          </div>
         </div>
+        <p v-if="!isPortalMode" class="small text-secondary mb-0 mt-2 px-1">
+          Only accounts with a ShipHero customer ID appear here.
+        </p>
       </div>
 
-      <div v-if="loading" class="p-5 text-center">
-        <CrmLoadingSpinner message="Loading drafts…" />
-      </div>
-
-      <div v-else class="table-responsive">
-        <table class="table table-hover align-middle mb-0 staff-datatable">
-          <thead>
+      <div class="table-responsive staff-table-wrap">
+        <table class="table table-hover align-middle mb-0 staff-data-table">
+          <thead class="table-light staff-table-head">
             <tr>
-              <th scope="col">Status</th>
-              <th scope="col">Order #</th>
-              <th scope="col">Recipient</th>
-              <th scope="col">Date</th>
-              <th v-if="!isPortalMode" scope="col">Account</th>
-              <th scope="col">Country</th>
-              <th scope="col" class="text-end">Items</th>
+              <th class="staff-table-head__th" scope="col">Status</th>
+              <th class="staff-table-head__th" scope="col">Order #</th>
+              <th class="staff-table-head__th" scope="col">Recipient</th>
+              <th class="staff-table-head__th" scope="col">Date</th>
+              <th v-if="!isPortalMode" class="staff-table-head__th" scope="col">Account</th>
+              <th class="staff-table-head__th" scope="col">Country</th>
+              <th class="staff-table-head__th text-end" scope="col">Items</th>
             </tr>
           </thead>
           <tbody>
-            <tr v-if="!rows.length">
-              <td :colspan="isPortalMode ? 6 : 7" class="text-center text-secondary py-5">
+            <tr v-if="loading">
+              <td :colspan="tableColspan" class="py-5">
+                <div class="d-flex justify-content-center py-3">
+                  <CrmLoadingSpinner message="Loading drafts…" />
+                </div>
+              </td>
+            </tr>
+            <tr v-else-if="!rows.length">
+              <td :colspan="tableColspan" class="text-center text-secondary py-5">
                 No draft orders yet. Click Create Order above to start one.
               </td>
             </tr>
-            <tr v-for="row in rows" :key="row.id">
+            <tr v-for="row in rows" v-else :key="row.id">
               <td>
                 <span class="badge rounded-pill bg-secondary-subtle text-secondary-emphasis fw-medium">
                   Draft
@@ -252,7 +281,20 @@ onMounted(() => {
 </template>
 
 <style scoped>
-.orders-draft-toolbar-account {
+.orders-page-toolbar .staff-table-toolbar--row.orders-toolbar-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+@media (max-width: 767.98px) {
+  .orders-page-toolbar .staff-table-toolbar--row.orders-toolbar-row {
+    display: flex;
+  }
+}
+
+.orders-toolbar-account {
   flex: 0 0 auto;
   width: min(280px, 100%);
 }

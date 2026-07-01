@@ -39,6 +39,7 @@ function navActive(mode) {
   if (mode === "orders-on-hold") return p.startsWith("/users/orders/on-hold");
   if (mode === "orders-backorder") return p.startsWith("/users/orders/backorder");
   if (mode === "orders-shipped") return p.startsWith("/users/orders/shipped");
+  if (mode === "orders-create") return p === "/users/orders/create";
   if (mode === "inventory" || mode === "products") {
     return (
       p.startsWith("/users/inventory") ||
@@ -170,6 +171,16 @@ function collapseNav() {
               <li><RouterLink to="/users/orders/on-hold" class="vx-nav-link vx-nav-sublink" :class="{ 'vx-nav-link--active': navActive('orders-on-hold') }" @click="closeMobile">On-Hold</RouterLink></li>
               <li><RouterLink to="/users/orders/backorder" class="vx-nav-link vx-nav-sublink" :class="{ 'vx-nav-link--active': navActive('orders-backorder') }" @click="closeMobile">Backorder</RouterLink></li>
               <li><RouterLink to="/users/orders/shipped" class="vx-nav-link vx-nav-sublink" :class="{ 'vx-nav-link--active': navActive('orders-shipped') }" @click="closeMobile">Shipped</RouterLink></li>
+              <li>
+                <RouterLink
+                  to="/users/orders/create"
+                  class="vx-nav-link vx-nav-sublink"
+                  :class="{ 'vx-nav-link--active': navActive('orders-create') }"
+                  @click="closeMobile"
+                >
+                  Create Order
+                </RouterLink>
+              </li>
             </ul>
           </div>
           <RouterLink

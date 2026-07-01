@@ -19,6 +19,7 @@ use App\Http\Controllers\Api\InvoiceImportController;
 use App\Http\Controllers\Api\InventoryController;
 use App\Http\Controllers\Api\InventoryBetaController;
 use App\Http\Controllers\Api\OrderController;
+use App\Http\Controllers\Api\OrderDraftController;
 use App\Http\Controllers\Api\CrmLookupController;
 use App\Http\Controllers\Api\PortalLookupController;
 use App\Http\Controllers\Api\PortalOnboardingController;
@@ -268,6 +269,13 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::delete('/{asn}/lines/{line}', [AsnController::class, 'destroyLine'])->middleware('can:inventory.view');
         Route::put('/{asn}/trackings', [AsnController::class, 'syncTrackings'])->middleware('can:inventory.view');
         Route::put('/{asn}/vendor-lines', [AsnController::class, 'syncVendorLines'])->middleware('can:inventory.view');
+    });
+
+    Route::prefix('order-drafts')->group(function () {
+        Route::post('/', [OrderDraftController::class, 'store'])
+            ->middleware('can:shiphero.orders.write');
+        Route::post('/{orderDraft}/ready-to-ship', [OrderDraftController::class, 'readyToShip'])
+            ->middleware('can:shiphero.orders.write');
     });
 
     Route::prefix('orders')->group(function () {

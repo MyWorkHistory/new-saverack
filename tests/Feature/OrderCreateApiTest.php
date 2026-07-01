@@ -4,9 +4,7 @@ namespace Tests\Feature;
 
 use App\Models\ClientAccount;
 use App\Models\Permission;
-use App\Models\Role;
 use App\Models\User;
-use App\Services\ShipHeroOrderService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Laravel\Sanctum\Sanctum;
 use Tests\TestCase;
@@ -32,7 +30,12 @@ class OrderCreateApiTest extends TestCase
         return $user;
     }
 
-    private function validPayload(int $clientAccountId): array
+    /**
+     * Legacy immediate-create payload (UI now uses POST /api/order-drafts).
+     *
+     * @return array<string, mixed>
+     */
+    private function legacyImmediatePayload(int $clientAccountId): array
     {
         return [
             'client_account_id' => $clientAccountId,
@@ -74,42 +77,16 @@ class OrderCreateApiTest extends TestCase
             'shiphero_customer_account_id' => 'sh-noperm-1',
         ]);
 
-        $this->postJson('/api/orders', $this->validPayload($account->id))
+        $this->postJson('/api/orders', $this->legacyImmediatePayload($account->id))
             ->assertForbidden();
     }
 
-    public function test_create_order_validation_errors(): void
+    public function test_legacy_create_order_validation_errors(): void
     {
         $this->staffWithOrdersUpdate();
 
         $this->postJson('/api/orders', [])
             ->assertUnprocessable()
             ->assertJsonValidationErrors(['client_account_id', 'order_number', 'shop_name', 'shipping_address', 'line_items']);
-    }
-
-    public function test_staff_can_create_order(): void
-    {
-        $this->staffWithOrdersUpdate();
-
-        $account = ClientAccount::query()->create([
-            'status' => ClientAccount::STATUS_ACTIVE,
-            'company_name' => 'Create Client',
-            'shiphero_customer_account_id' => 'sh-create-1',
-        ]);
-
-        $this->mock(ShipHeroOrderService::class, function ($mock) {
-            $mock->shouldReceive('createOrder')
-                ->once()
-                ->with('sh-create-1', \Mockery::type('array'))
-                ->andReturn([
-                    'shiphero_order_id' => 'order-new-99',
-                    'order_number' => 'CRM-TEST-1001',
-                ]);
-        });
-
-        $this->postJson('/api/orders', $this->validPayload($account->id))
-            ->assertCreated()
-            ->assertJsonPath('shiphero_order_id', 'order-new-99')
-            ->assertJsonPath('client_account_id', $account->id);
     }
 }

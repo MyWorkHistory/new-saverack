@@ -676,6 +676,16 @@ const routes = [
   { path: "/users/orders/on-hold", name: "user-orders-on-hold", component: OrdersListPage, meta: { ...meta.ordersOnHold, orderTab: "on_hold", userPortal: true } },
   { path: "/users/orders/backorder", name: "user-orders-backorder", component: OrdersListPage, meta: { title: "Save Rack | Orders | Backorder", description: "ShipHero backorder orders.", orderTab: "backorder", userPortal: true } },
   { path: "/users/orders/shipped", name: "user-orders-shipped", component: OrdersListPage, meta: { ...meta.ordersShipped, orderTab: "shipped", userPortal: true } },
+  {
+    path: "/users/orders/create",
+    name: "user-orders-create",
+    component: () => import("../pages/orders/OrderCreatePage.vue"),
+    meta: {
+      title: "Save Rack | Orders | Create Order",
+      description: "Create a new order draft.",
+      userPortal: true,
+    },
+  },
   { path: "/users/orders/:shipheroOrderId", name: "user-order-detail", component: () => import("../pages/user-orders/UserOrderDetailPage.vue"), props: true, meta: { ...meta.orderDetail, userPortal: true } },
   { path: "/users/inventory/out-of-stock", name: "user-inventory-out-of-stock", component: () => import("../pages/user-inventory/UserInventoryOutOfStockPage.vue"), meta: { ...meta.userPortalInventoryOutOfStock, userPortal: true } },
   { path: "/users/inventory", name: "user-inventory", component: InventoryBetaListPage, meta: { ...meta.userPortalInventory, userPortal: true } },

@@ -48,6 +48,7 @@ const itemSortDir = ref("asc");
 const confirmFulfilledOpen = ref(false);
 const confirmCancelOpen = ref(false);
 const actionBusy = ref(false);
+const readyToShipBusy = ref(false);
 
 const shippingModalOpen = ref(false);
 const shippingSaveBusy = ref(false);
@@ -153,6 +154,9 @@ function resolveCarrierPreset(carrier) {
 }
 
 const orderId = computed(() => String(route.params.shipheroOrderId || ""));
+
+const isDraftOrder = computed(() => order.value?.is_draft === true);
+const draftId = computed(() => Number(order.value?.draft_id || 0));
 
 const isPortalUser = computed(() => crmIsPortalUser(crmUser.value));
 const portalClientAccountId = computed(() => Number(crmUser.value?.client_account_id || 0));
@@ -304,7 +308,9 @@ function orderHasActiveHold(o) {
   return false;
 }
 
-const showNotReadyToShipBanner = computed(() => order.value && orderHasActiveHold(order.value));
+const showNotReadyToShipBanner = computed(
+  () => order.value && !isDraftOrder.value && orderHasActiveHold(order.value),
+);
 
 const detailHoldsNormalized = computed(() => {
   const h = order.value?.holds;
@@ -376,7 +382,7 @@ const orderIsShipped = computed(() => {
 
 const orderIsReadyToShip = computed(() => {
   const o = order.value;
-  if (!o || showNotReadyToShipBanner.value || showBackorderHeaderBadge.value || orderIsShipped.value) {
+  if (!o || isDraftOrder.value || showNotReadyToShipBanner.value || showBackorderHeaderBadge.value || orderIsShipped.value) {
     return false;
   }
   const s = String(o.status || o.raw_fulfillment_status || "")
@@ -396,6 +402,7 @@ const orderIsReadyToShip = computed(() => {
 });
 
 const orderHeaderBadgeLabel = computed(() => {
+  if (isDraftOrder.value) return "Draft";
   if (showNotReadyToShipBanner.value) return "On Hold";
   if (showBackorderHeaderBadge.value) return "Backorder";
   if (orderIsShipped.value) return "Shipped";
@@ -406,6 +413,9 @@ const orderHeaderBadgeLabel = computed(() => {
 const showOrderHeaderBadge = computed(() => orderHeaderBadgeLabel.value !== "");
 
 const orderHeaderBadgeClass = computed(() => {
+  if (isDraftOrder.value) {
+    return "badge rounded-pill fw-medium text-warning-emphasis bg-warning-subtle";
+  }
   if (showNotReadyToShipBanner.value) {
     return "badge rounded-pill fw-medium text-danger-emphasis bg-danger-subtle";
   }
@@ -927,6 +937,41 @@ async function loadOrder({ refresh = false } = {}) {
 async function refreshOrderDetail() {
   if (loading.value || refreshing.value) return;
   await loadOrder({ refresh: true });
+}
+
+async function submitReadyToShip() {
+  if (!isDraftOrder.value || !canRunShipHeroActions.value || readyToShipBusy.value) return;
+  const method = String(methodField.value || "").trim();
+  if (!method || method.toLowerCase() === "select") {
+    toast.error("Select a shipping method before marking this order Ready to Ship.");
+    return;
+  }
+  const draft = draftId.value;
+  if (draft <= 0) {
+    toast.error("This draft order could not be identified.");
+    return;
+  }
+  readyToShipBusy.value = true;
+  try {
+    const { data } = await api.post(`/order-drafts/${draft}/ready-to-ship`);
+    const shipheroOrderId = String(data?.shiphero_order_id || "");
+    const clientAccountId = Number(data?.client_account_id || resolveClientAccountIdForOrderContext());
+    if (!shipheroOrderId) {
+      toast.error("Order was submitted but ShipHero did not return an order id.");
+      return;
+    }
+    toast.success("Order sent to ShipHero.");
+    const detailName = isPortalUser.value || isUserPortalRoute.value ? "user-order-detail" : "order-detail";
+    await router.replace({
+      name: detailName,
+      params: { shipheroOrderId },
+      query: clientAccountId > 0 ? { client_account_id: String(clientAccountId) } : {},
+    });
+  } catch (e) {
+    toast.errorFrom(e, "Could not send order to ShipHero.");
+  } finally {
+    readyToShipBusy.value = false;
+  }
 }
 
 watch(
@@ -1686,7 +1731,7 @@ function goToOrdersList() {
               <div class="d-flex align-items-center flex-wrap gap-2">
                 <h1 class="h4 mb-0 fw-bold text-body">Order {{ headingOrderNumber }}</h1>
                 <a
-                  v-if="shipheroAdminUrl"
+                  v-if="shipheroAdminUrl && !isDraftOrder"
                   :href="shipheroAdminUrl"
                   target="_blank"
                   rel="noopener noreferrer"
@@ -1714,6 +1759,16 @@ function goToOrdersList() {
               v-if="canUseStaffOrderHeaderActions"
               class="d-flex flex-wrap gap-2 align-items-center flex-shrink-0"
             >
+              <button
+                v-if="isDraftOrder && canRunShipHeroActions"
+                type="button"
+                class="btn btn-primary staff-page-primary"
+                :disabled="readyToShipBusy || loading"
+                @click="submitReadyToShip"
+              >
+                {{ readyToShipBusy ? "Sending…" : "Ready to Ship" }}
+              </button>
+              <template v-if="!isDraftOrder">
               <template v-if="isPortalUser">
                 <p v-if="lastRefreshedLabel" class="small text-secondary mb-0">
                   Last refreshed: {{ lastRefreshedLabel }}
@@ -1767,6 +1822,7 @@ function goToOrdersList() {
               >
                 {{ removeHoldsBusy ? "Removing…" : "Remove Hold" }}
               </button>
+              </template>
     </div>
     </div>
     </div>
@@ -2085,7 +2141,7 @@ function goToOrdersList() {
               <dd>{{ fmtCreationDate(order.order_date) }}</dd>
               <dt class="text-secondary">Store</dt>
               <dd class="text-break">{{ order.account || "—" }}</dd>
-              <template v-if="shipheroAdminUrl">
+              <template v-if="shipheroAdminUrl && !isDraftOrder">
                 <dt class="text-secondary mt-2">ShipHero</dt>
                 <dd>
                   <a
@@ -2415,7 +2471,7 @@ function goToOrdersList() {
 
     <Teleport to="body">
       <ul
-        v-show="moreActionsOpen"
+        v-show="moreActionsOpen && !isDraftOrder"
         ref="moreActionsMenuRef"
         class="dropdown-menu dropdown-menu-end show shadow-sm border bg-body order-detail-page__more-actions-menu"
         :style="moreActionsMenuStyle"

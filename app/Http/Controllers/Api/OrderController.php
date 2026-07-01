@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers\Api;
 
+use App\Http\Controllers\Api\Concerns\HandlesOrderDrafts;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\OrderCreateRequest;
 use App\Models\ClientAccount;
@@ -26,6 +27,8 @@ use Throwable;
 
 class OrderController extends Controller
 {
+    use HandlesOrderDrafts;
+
     /** @var ShipHeroOrderService */
     protected $orders;
 
@@ -415,6 +418,31 @@ class OrderController extends Controller
             'debug_variant' => ['nullable', 'string', 'in:minimal,core,pricing,addresses'],
         ]);
         $clientAccountId = (int) $validated['client_account_id'];
+
+        $draft = $this->orderDrafts()->findDraftForRoute($orderId);
+        if ($draft !== null) {
+            if ((int) $draft->client_account_id !== $clientAccountId) {
+                abort(403);
+            }
+            $this->authorizeDraft($draft, $request);
+            if (! $draft->isDraft()) {
+                return response()->json([
+                    'message' => 'This order draft was already submitted to ShipHero.',
+                    'shiphero_order_id' => $draft->shiphero_order_id,
+                ], 410);
+            }
+
+            return response()->json([
+                'order' => $this->enrichOrderDetailForResponse(
+                    $clientAccountId,
+                    $this->orderDrafts()->toOrderDetailPayload($draft)
+                ),
+                'client_account_id' => $clientAccountId,
+                'cached' => false,
+                'is_draft' => true,
+            ]);
+        }
+
         $refresh = (bool) ($validated['refresh'] ?? false);
         $customerId = $this->resolveShipHeroCustomerAccountId($clientAccountId, $request);
 
@@ -522,6 +550,12 @@ class OrderController extends Controller
             'client_account_id' => ['required', 'integer', 'exists:client_accounts,id'],
             'reason' => ['nullable', 'string', 'max:500'],
         ]);
+        $draft = $this->findEditableDraft($orderId);
+        if ($draft !== null) {
+            $this->authorizeDraft($draft, $request);
+
+            return $this->draftUnavailableResponse('Mark fulfilled');
+        }
         $customerId = $this->resolveShipHeroCustomerAccountId((int) $validated['client_account_id'], $request);
         try {
             $this->orders->markOrderFulfilled(
@@ -551,6 +585,12 @@ class OrderController extends Controller
             'void_on_platform' => ['nullable', 'boolean'],
             'force' => ['nullable', 'boolean'],
         ]);
+        $draft = $this->findEditableDraft($orderId);
+        if ($draft !== null) {
+            $this->authorizeDraft($draft, $request);
+
+            return $this->draftUnavailableResponse('Cancel order');
+        }
         $customerId = $this->resolveShipHeroCustomerAccountId((int) $validated['client_account_id'], $request);
         try {
             $this->orders->cancelOrderInShipHero(
@@ -594,6 +634,12 @@ class OrderController extends Controller
                 'fraud_hold' => ['Select at least one hold type.'],
             ]);
         }
+        $draft = $this->findEditableDraft($orderId);
+        if ($draft !== null) {
+            $this->authorizeDraft($draft, $request);
+
+            return $this->draftUnavailableResponse('Apply holds');
+        }
         $customerId = $this->resolveShipHeroCustomerAccountId((int) $validated['client_account_id'], $request);
         $historyActor = $this->userHoldHistoryActorName($request);
         try {
@@ -623,6 +669,12 @@ class OrderController extends Controller
             ))],
             'payment_hold_reason' => ['nullable', 'string', 'max:500'],
         ]);
+        $draft = $this->findEditableDraft($orderId);
+        if ($draft !== null) {
+            $this->authorizeDraft($draft, $request);
+
+            return $this->draftUnavailableResponse('Remove holds');
+        }
         $customerId = $this->resolveShipHeroCustomerAccountId((int) $validated['client_account_id'], $request);
         $historyActor = $this->userHoldHistoryActorName($request);
         try {
@@ -684,6 +736,17 @@ class OrderController extends Controller
             'require_signature' => ['required', 'boolean'],
             'gift_note' => ['nullable', 'string', 'max:2000'],
         ]);
+        $draft = $this->findEditableDraft($orderId);
+        if ($draft !== null) {
+            $this->authorizeDraft($draft, $request);
+            $this->orderDrafts()->updateSignatureGiftNote(
+                $draft,
+                (bool) $validated['require_signature'],
+                isset($validated['gift_note']) ? (string) $validated['gift_note'] : null
+            );
+
+            return response()->json(['message' => 'Options updated.']);
+        }
         $customerId = $this->resolveShipHeroCustomerAccountId((int) $validated['client_account_id'], $request);
         try {
             $this->orders->updateRequireSignatureAndGiftNote(
@@ -723,6 +786,13 @@ class OrderController extends Controller
             'phone' => ['nullable', 'string', 'max:80'],
             'skip_address_validation' => ['nullable', 'boolean'],
         ]);
+        $draft = $this->findEditableDraft($orderId);
+        if ($draft !== null) {
+            $this->authorizeDraft($draft, $request);
+            $this->orderDrafts()->updateShippingAddress($draft, $validated);
+
+            return response()->json(['message' => 'Shipping address updated.']);
+        }
         $customerId = $this->resolveShipHeroCustomerAccountId((int) $validated['client_account_id'], $request);
         try {
             $this->orders->updateOrderShippingAddress(
@@ -764,6 +834,17 @@ class OrderController extends Controller
             'carrier' => ['nullable', 'string', 'max:200'],
             'method' => ['nullable', 'string', 'max:200'],
         ]);
+        $draft = $this->findEditableDraft($orderId);
+        if ($draft !== null) {
+            $this->authorizeDraft($draft, $request);
+            $this->orderDrafts()->updateShippingLines(
+                $draft,
+                (string) ($validated['carrier'] ?? ''),
+                (string) ($validated['method'] ?? '')
+            );
+
+            return response()->json(['message' => 'Shipping carrier and method updated.']);
+        }
         $customerId = $this->resolveShipHeroCustomerAccountId((int) $validated['client_account_id'], $request);
         try {
             $this->orders->updateOrderShippingLines(
@@ -792,6 +873,13 @@ class OrderController extends Controller
             'client_account_id' => ['required', 'integer', 'exists:client_accounts,id'],
             'allow_partial' => ['required', 'boolean'],
         ]);
+        $draft = $this->findEditableDraft($orderId);
+        if ($draft !== null) {
+            $this->authorizeDraft($draft, $request);
+            $this->orderDrafts()->updateAllowPartial($draft, (bool) $validated['allow_partial']);
+
+            return response()->json(['message' => 'Allow partial updated.']);
+        }
         $customerId = $this->resolveShipHeroCustomerAccountId((int) $validated['client_account_id'], $request);
         try {
             $this->orders->updateOrderAllowPartial(
@@ -820,6 +908,13 @@ class OrderController extends Controller
             'tags' => ['required', 'array', 'max:200'],
             'tags.*' => ['string', 'max:120'],
         ]);
+        $draft = $this->findEditableDraft($orderId);
+        if ($draft !== null) {
+            $this->authorizeDraft($draft, $request);
+            $this->orderDrafts()->updateTags($draft, array_values($validated['tags']));
+
+            return response()->json(['message' => 'Order tags updated.']);
+        }
         $customerId = $this->resolveShipHeroCustomerAccountId((int) $validated['client_account_id'], $request);
         try {
             $this->orders->updateOrderTags(
@@ -850,6 +945,21 @@ class OrderController extends Controller
             'line_items.*.quantity' => ['required', 'integer', 'min:1', 'max:99999'],
             'line_items.*.product_name' => ['nullable', 'string', 'max:500'],
         ]);
+        $draft = $this->findEditableDraft($orderId);
+        if ($draft !== null) {
+            $this->authorizeDraft($draft, $request);
+            $rows = [];
+            foreach ($validated['line_items'] as $row) {
+                $rows[] = [
+                    'sku' => (string) $row['sku'],
+                    'quantity' => (int) $row['quantity'],
+                    'product_name' => isset($row['product_name']) ? (string) $row['product_name'] : null,
+                ];
+            }
+            $this->orderDrafts()->addLineItems($draft, $rows);
+
+            return response()->json(['message' => 'Line items added.']);
+        }
         $customerId = $this->resolveShipHeroCustomerAccountId((int) $validated['client_account_id'], $request);
         try {
             $rows = [];
@@ -882,6 +992,21 @@ class OrderController extends Controller
             'line_item_id' => ['required', 'string', 'max:255'],
             'quantity_pending_fulfillment' => ['required', 'numeric', 'min:0', 'max:999999'],
         ]);
+        $draft = $this->findEditableDraft($orderId);
+        if ($draft !== null) {
+            $this->authorizeDraft($draft, $request);
+            try {
+                $this->orderDrafts()->updateLineItemPending(
+                    $draft,
+                    (string) $validated['line_item_id'],
+                    (float) $validated['quantity_pending_fulfillment']
+                );
+            } catch (RuntimeException $e) {
+                return response()->json(['message' => $e->getMessage()], 422);
+            }
+
+            return response()->json(['message' => 'Quantity to ship updated.']);
+        }
         $customerId = $this->resolveShipHeroCustomerAccountId((int) $validated['client_account_id'], $request);
         try {
             $this->orders->updateOrderLineItemPendingFulfillment(
@@ -910,6 +1035,17 @@ class OrderController extends Controller
             'client_account_id' => ['required', 'integer', 'exists:client_accounts,id'],
             'line_item_id' => ['required', 'string', 'max:255'],
         ]);
+        $draft = $this->findEditableDraft($orderId);
+        if ($draft !== null) {
+            $this->authorizeDraft($draft, $request);
+            try {
+                $this->orderDrafts()->removeLineItem($draft, (string) $validated['line_item_id']);
+            } catch (RuntimeException $e) {
+                return response()->json(['message' => $e->getMessage()], 422);
+            }
+
+            return response()->json(['message' => 'Line item removed.']);
+        }
         $customerId = $this->resolveShipHeroCustomerAccountId((int) $validated['client_account_id'], $request);
         try {
             $this->orders->removeOrderLineItem(
@@ -937,6 +1073,13 @@ class OrderController extends Controller
             'client_account_id' => ['required', 'integer', 'exists:client_accounts,id'],
             'packing_note' => ['nullable', 'string', 'max:5000'],
         ]);
+        $draft = $this->findEditableDraft($orderId);
+        if ($draft !== null) {
+            $this->authorizeDraft($draft, $request);
+            $this->orderDrafts()->updatePackingNote($draft, (string) ($validated['packing_note'] ?? ''));
+
+            return response()->json(['message' => 'Warehouse note updated.']);
+        }
         $customerId = $this->resolveShipHeroCustomerAccountId((int) $validated['client_account_id'], $request);
         try {
             $this->orders->updateOrderPackingNote(
@@ -964,6 +1107,12 @@ class OrderController extends Controller
             'client_account_id' => ['required', 'integer', 'exists:client_accounts,id'],
             'file' => ['required', 'file', 'max:10240', 'mimes:jpg,jpeg,png,gif,webp,pdf,txt,csv,doc,docx,xlsx'],
         ]);
+        $draft = $this->findEditableDraft($orderId);
+        if ($draft !== null) {
+            $this->authorizeDraft($draft, $request);
+
+            return $this->draftUnavailableResponse('Upload attachments');
+        }
         $customerId = $this->resolveShipHeroCustomerAccountId((int) $validated['client_account_id'], $request);
         $file = $request->file('file');
         if ($file === null) {

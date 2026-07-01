@@ -24,6 +24,7 @@ import { useToast } from "../../composables/useToast";
 import { errorMessage } from "../../utils/apiError";
 import { formatDateTimeUs } from "../../utils/formatUserDates";
 import { resolvePublicUrl } from "../../utils/resolvePublicUrl.js";
+import { inHouseSlackDisplayLabel, inHouseSlackHref } from "../../utils/slackChannel.js";
 import { warnIfShipheroSyncFailed } from "../../utils/clientAccountShipheroSync.js";
 
 const props = defineProps({
@@ -1175,18 +1176,25 @@ onUnmounted(() => {
 
     <div
       v-else-if="account"
-      class="staff-user-view__header-row d-flex flex-wrap align-items-center justify-content-between gap-2 mb-1"
+      class="d-flex flex-column flex-lg-row flex-wrap align-items-stretch align-items-lg-center gap-3 mb-4"
     >
       <div class="min-w-0">
         <h1 class="staff-user-view__title mb-0">{{ account.company_name }}</h1>
       </div>
-      <div class="staff-user-tabs staff-user-tabs--header ms-xl-auto" role="tablist">
+      <div
+        class="d-flex flex-wrap align-items-center gap-2 ms-lg-auto account-detail-tab-bar"
+        role="tablist"
+      >
         <button
           v-for="t in accountTabList"
           :key="t.id"
           type="button"
-          class="staff-user-tab"
-          :class="{ 'staff-user-tab--active': activeTab === t.id }"
+          class="btn btn-sm"
+          :class="
+            activeTab === t.id
+              ? 'btn-primary staff-page-primary'
+              : 'btn-outline-primary'
+          "
           role="tab"
           :aria-selected="activeTab === t.id"
           @click="setActiveTab(t.id)"
@@ -1300,6 +1308,20 @@ onUnmounted(() => {
               </div>
             </div>
 
+            <div
+              class="d-flex flex-wrap align-items-center justify-content-between gap-2 mb-2"
+            >
+              <h3 class="staff-user-profile__details-title mb-0">Details</h3>
+              <button
+                v-if="canUpdateAccount"
+                type="button"
+                class="btn btn-sm btn-primary staff-page-primary"
+                @click="openAccountEdit('left')"
+              >
+                Edit
+              </button>
+            </div>
+
             <dl class="staff-user-profile__dl mb-4">
               <div>
                 <dt class="staff-user-profile__dt">Account manager</dt>
@@ -1320,6 +1342,29 @@ onUnmounted(() => {
                       :in-house-slack="account.in_house_slack || ''"
                     />
                   </div>
+                </dd>
+              </div>
+              <div>
+                <dt class="staff-user-profile__dt">In-House Slack</dt>
+                <dd class="staff-user-profile__dd text-break client-account-in-house-slack-dd">
+                  <template v-if="inHouseSlackHref(account.in_house_slack)">
+                    <a
+                      :href="inHouseSlackHref(account.in_house_slack)"
+                      class="link-primary text-decoration-none text-break"
+                      :aria-label="`${inHouseSlackDisplayLabel(account.in_house_slack)} in Slack (opens in new tab)`"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                    >
+                      {{ inHouseSlackDisplayLabel(account.in_house_slack) }}
+                    </a>
+                  </template>
+                  <template v-else-if="account.in_house_slack">
+                    <span class="text-body text-break">{{
+                      inHouseSlackDisplayLabel(account.in_house_slack) ||
+                      display(account.in_house_slack)
+                    }}</span>
+                  </template>
+                  <template v-else>{{ display(account.in_house_slack) }}</template>
                 </dd>
               </div>
             </dl>
@@ -2399,6 +2444,9 @@ onUnmounted(() => {
   width: 2.25rem;
   height: 2.25rem;
   font-size: 0.6875rem;
+}
+.client-account-in-house-slack-dd {
+  text-align: left !important;
 }
 .notes-pre-wrap {
   white-space: pre-wrap;

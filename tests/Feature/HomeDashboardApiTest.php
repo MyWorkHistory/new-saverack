@@ -82,6 +82,13 @@ class HomeDashboardApiTest extends TestCase
         Queue::assertPushed(RefreshOrderDashboardSectionJob::class, function ($job) {
             return $job->sectionKey === OrderDashboardSection::KEY_READY_TO_SHIP;
         });
+
+        $this->assertSame(
+            OrderDashboardSection::STATUS_RUNNING,
+            OrderDashboardSection::query()
+                ->where('section_key', OrderDashboardSection::KEY_READY_TO_SHIP)
+                ->value('status')
+        );
     }
 
     public function test_home_dashboard_refresh_asn_runs_sync(): void

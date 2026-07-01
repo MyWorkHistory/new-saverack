@@ -11,7 +11,7 @@ class RefreshHomeDashboardCommand extends Command
 {
     protected $signature = 'orders:refresh-home-dashboard {--section=all : Section key or all} {--sync : Run inline instead of queueing}';
 
-    protected $description = 'Refresh admin Home dashboard order/ASN snapshot sections';
+    protected $description = 'Refresh admin Home dashboard order/ASN snapshot sections (run with --sync after deploy to warm snapshots)';
 
     public function handle(OrderDashboardSnapshotService $snapshots): int
     {

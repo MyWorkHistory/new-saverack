@@ -3,7 +3,6 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
-use App\Jobs\RefreshOrderDashboardSectionJob;
 use App\Models\OrderDashboardSection;
 use App\Services\OrderDashboardSnapshotService;
 use Illuminate\Http\JsonResponse;
@@ -51,7 +50,7 @@ class HomeDashboardController extends Controller
         } elseif ($sync || $section === OrderDashboardSection::KEY_ASN_PENDING) {
             $this->snapshots->refreshSection($section);
         } else {
-            RefreshOrderDashboardSectionJob::dispatch($section);
+            $this->snapshots->dispatchSectionRefresh($section);
         }
 
         return response()->json(array_merge(
@@ -81,7 +80,7 @@ class HomeDashboardController extends Controller
         }
 
         foreach (OrderDashboardSection::SHIPHERO_KEYS as $key) {
-            RefreshOrderDashboardSectionJob::dispatch($key);
+            $this->snapshots->dispatchSectionRefresh($key);
         }
     }
 

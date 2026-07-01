@@ -3,6 +3,23 @@ import api from "../services/api";
 
 const POLL_MS = 3000;
 
+const SHIPHERO_SECTION_KEYS = [
+  "ready_to_ship",
+  "shipped",
+  "hold_operator",
+  "hold_address",
+  "hold_fraud",
+  "hold_payment",
+  "hold_user",
+  "hold_backorder",
+];
+
+function sectionNeedsPolling(section) {
+  if (!section || typeof section !== "object") return false;
+  if (section.status === "running") return true;
+  return section.refreshed_at == null || section.refreshed_at === "";
+}
+
 /**
  * Admin Home dashboard — reads precomputed order/ASN snapshots from the API.
  */
@@ -21,6 +38,10 @@ export function useAdminHomeDashboard({ onError } = {}) {
 
   const anySectionRunning = computed(() =>
     Object.values(sections.value || {}).some((s) => s?.status === "running"),
+  );
+
+  const anySectionPending = computed(() =>
+    SHIPHERO_SECTION_KEYS.some((key) => sectionNeedsPolling(sections.value?.[key])),
   );
 
   function applyPayload(data) {
@@ -65,15 +86,19 @@ export function useAdminHomeDashboard({ onError } = {}) {
     }
   }
 
+  function shouldPoll() {
+    return anySectionRunning.value || anySectionPending.value;
+  }
+
   function syncPolling() {
     stopPolling();
-    if (!anySectionRunning.value) return;
+    if (!shouldPoll()) return;
     pollTimer = window.setInterval(() => {
       void api
         .get("/home-dashboard")
         .then(({ data }) => {
           applyPayload(data);
-          if (!anySectionRunning.value) {
+          if (!shouldPoll()) {
             stopPolling();
           }
         })
@@ -98,6 +123,7 @@ export function useAdminHomeDashboard({ onError } = {}) {
     totals,
     sections,
     anySectionRunning,
+    anySectionPending,
     load,
     refreshSection,
     stopPolling,

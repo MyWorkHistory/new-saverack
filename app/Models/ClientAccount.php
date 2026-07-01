@@ -66,6 +66,9 @@ class ClientAccount extends Model
         'inventory_catalog_sync_started_at',
         'inventory_catalog_sync_status',
         'inventory_catalog_product_count',
+        'order_queue_synced_at',
+        'order_queue_sync_started_at',
+        'order_queue_sync_status',
         'whatsapp_api_id',
         'default_payment_type',
         'postage_option',
@@ -91,6 +94,8 @@ class ClientAccount extends Model
         'inventory_catalog_synced_at' => 'datetime',
         'inventory_catalog_sync_started_at' => 'datetime',
         'inventory_catalog_product_count' => 'integer',
+        'order_queue_synced_at' => 'datetime',
+        'order_queue_sync_started_at' => 'datetime',
     ];
 
     protected static function booted(): void

@@ -3,6 +3,7 @@ import { Transition, computed, inject, nextTick, onMounted, onUnmounted, reactiv
 import { useRoute, useRouter } from "vue-router";
 import api from "../../services/api";
 import CrmLoadingSpinner from "../../components/common/CrmLoadingSpinner.vue";
+import CrmRefreshToolbarButton from "../../components/common/CrmRefreshToolbarButton.vue";
 import CrmIconRowActions from "../../components/common/CrmIconRowActions.vue";
 import CrmSearchableSelect from "../../components/common/CrmSearchableSelect.vue";
 import ConfirmModal from "../../components/common/ConfirmModal.vue";
@@ -18,6 +19,9 @@ import {
   formatCurrentShippingMethod,
   formatShipmentCarrier,
 } from "../../utils/orderShippingDisplay.js";
+import { formatDateTimeUs } from "../../utils/formatUserDates.js";
+
+const ORDER_QUEUE_TABS = new Set(["awaiting", "on_hold", "backorder", "shipped"]);
 
 const props = defineProps({
   /** When true, hide account picker and link orders to portal detail route. */
@@ -44,6 +48,11 @@ const crossAccountScanTruncated = ref(false);
 const hasSearched = ref(false);
 const nextCursor = ref(null);
 const hasNextPage = ref(false);
+const orderQueueSyncedAt = ref("");
+const orderQueueRefreshing = ref(false);
+
+const AUTO_SYNC_INTERVAL_MS = 30 * 60 * 1000;
+let autoSyncTimer = null;
 
 const manageOpenId = ref(null);
 const manageMenuRect = ref({ top: 0, left: 0 });
@@ -101,6 +110,13 @@ const tabTitle = computed(() => {
 });
 
 const showManageFilters = computed(() => !isOrdersSearchPage.value);
+const showOrderQueueRefresh = computed(
+  () => ORDER_QUEUE_TABS.has(tabKey.value) && Boolean(selectedAccountId.value) && !crossAccountMode.value,
+);
+const orderQueueSyncedLabel = computed(() => {
+  if (!orderQueueSyncedAt.value) return "";
+  return formatDateTimeUs(orderQueueSyncedAt.value);
+});
 const isCustomDate = computed(() => query.datePreset === "custom");
 
 const tableColspan = computed(() => (isShippedTab.value ? 10 : 9));
@@ -427,7 +443,7 @@ async function loadAccounts() {
   }
 }
 
-async function fetchOrders(reset = true) {
+async function fetchOrders(reset = true, options = {}) {
   if (isAdminOrdersList.value && isOrdersSearchPage.value && !selectedAccountId.value) {
     crossAccountMode.value = true;
   } else if (!isOrdersSearchPage.value) {
@@ -454,8 +470,12 @@ async function fetchOrders(reset = true) {
     clearRowSelection();
   }
   try {
+    const params = buildParams(!reset);
+    if (options.refresh) {
+      params.refresh = 1;
+    }
     const { data } = await api.get("/orders", {
-      params: buildParams(!reset),
+      params,
     });
     const incoming = Array.isArray(data?.rows) ? data.rows : [];
     rows.value = reset ? incoming : [...rows.value, ...incoming];
@@ -479,12 +499,49 @@ async function fetchOrders(reset = true) {
     }
     hasNextPage.value = crossAccount ? false : Boolean(data?.pagination?.has_next_page);
     nextCursor.value = crossAccount ? null : data?.pagination?.end_cursor || null;
+    if (data?.meta?.order_queue_synced_at) {
+      orderQueueSyncedAt.value = data.meta.order_queue_synced_at;
+    }
   } catch (e) {
     toast.errorFrom(e, "Could not load orders.");
   } finally {
     loading.value = false;
     /** Always set after an attempt so the table never sits in a blank state (no row matched v-if / v-for). */
     hasSearched.value = true;
+  }
+}
+
+function stopAutoSyncTimer() {
+  if (autoSyncTimer !== null) {
+    window.clearInterval(autoSyncTimer);
+    autoSyncTimer = null;
+  }
+}
+
+function startAutoSyncTimer() {
+  stopAutoSyncTimer();
+  if (!showOrderQueueRefresh.value) {
+    return;
+  }
+  autoSyncTimer = window.setInterval(() => {
+    if (!loading.value && !orderQueueRefreshing.value && selectedAccountId.value) {
+      void fetchOrders(true, { refresh: true });
+    }
+  }, AUTO_SYNC_INTERVAL_MS);
+}
+
+async function refreshOrderQueue() {
+  if (!showOrderQueueRefresh.value) {
+    return;
+  }
+  orderQueueRefreshing.value = true;
+  try {
+    await fetchOrders(true, { refresh: true });
+    toast.success("Order queue refreshed.");
+  } catch {
+    /* toast handled in fetchOrders */
+  } finally {
+    orderQueueRefreshing.value = false;
   }
 }
 
@@ -1026,10 +1083,16 @@ onMounted(async () => {
   } else if (isPortalUser.value && portalClientAccountId.value > 0) {
     selectedAccountId.value = String(portalClientAccountId.value);
   }
+  startAutoSyncTimer();
+});
+
+watch(showOrderQueueRefresh, () => {
+  startAutoSyncTimer();
 });
 
 onUnmounted(() => {
   document.removeEventListener("click", onDocClick);
+  stopAutoSyncTimer();
 });
 </script>
 
@@ -1259,6 +1322,21 @@ onUnmounted(() => {
                 </div>
               </div>
           </template>
+
+          <div
+            v-if="showOrderQueueRefresh"
+            class="d-flex align-items-center gap-2 ms-auto flex-shrink-0"
+          >
+            <p v-if="orderQueueSyncedLabel" class="small text-secondary mb-0 d-none d-md-block">
+              Synced: {{ orderQueueSyncedLabel }}
+            </p>
+            <CrmRefreshToolbarButton
+              :disabled="loading || orderQueueRefreshing || !selectedAccountId"
+              :loading="orderQueueRefreshing"
+              title="Refresh order queue from ShipHero"
+              @click="refreshOrderQueue"
+            />
+          </div>
         </div>
         <p v-if="!isPortalOrderList" class="small text-secondary mb-0 mt-2 px-1">Only accounts with a ShipHero customer ID appear here.</p>
       </div>

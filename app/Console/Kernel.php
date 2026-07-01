@@ -25,7 +25,10 @@ class Kernel extends ConsoleKernel
         $schedule->command('inventory:refresh-restock-report')
             ->dailyAt('14:30')
             ->timezone('America/New_York');
-        $schedule->command('orders:refresh-home-dashboard')
+        $schedule->command('orders:refresh-home-dashboard --sync')
+            ->cron('0,30 7-17 * * *')
+            ->timezone('America/New_York');
+        $schedule->command('orders:sync-queue-index --sync')
             ->cron('0,30 7-17 * * *')
             ->timezone('America/New_York');
     }

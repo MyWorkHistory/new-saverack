@@ -6,6 +6,7 @@ use App\Jobs\RefreshOrderDashboardSectionJob;
 use App\Models\ClientAccount;
 use App\Models\ClientAccountAsn;
 use App\Models\OrderDashboardSection;
+use App\Models\ShipHeroOrderQueueIndex;
 use Carbon\Carbon;
 use Illuminate\Support\Facades\Log;
 use RuntimeException;
@@ -13,21 +14,27 @@ use Throwable;
 
 class OrderDashboardSnapshotService
 {
+    private const ZOMBIE_MINUTES = 15;
+
     /** @var PortalQueueCountsService */
     private $queueCounts;
 
     /** @var ShipHeroOrderService */
     private $orders;
 
-    public function __construct(PortalQueueCountsService $queueCounts, ShipHeroOrderService $orders)
-    {
+    /** @var ShipHeroOrderQueueIndexService */
+    private $orderIndex;
+
+    public function __construct(
+        PortalQueueCountsService $queueCounts,
+        ShipHeroOrderService $orders,
+        ShipHeroOrderQueueIndexService $orderIndex
+    ) {
         $this->queueCounts = $queueCounts;
         $this->orders = $orders;
+        $this->orderIndex = $orderIndex;
     }
 
-    /**
-     * @return array<string, mixed>
-     */
     public function bootstrapIfNeeded(): void
     {
         $this->ensureSectionRows();
@@ -48,16 +55,52 @@ class OrderDashboardSnapshotService
             }
         }
 
+        $rows = OrderDashboardSection::query()
+            ->whereIn('section_key', OrderDashboardSection::SHIPHERO_KEYS)
+            ->get()
+            ->keyBy('section_key');
+
         foreach (OrderDashboardSection::SHIPHERO_KEYS as $key) {
             $row = $rows->get($key);
             if (! $row instanceof OrderDashboardSection) {
                 continue;
             }
+            $row = $this->recoverZombieSection($row);
             if ($row->refreshed_at !== null || $row->status === OrderDashboardSection::STATUS_RUNNING) {
                 continue;
             }
-            RefreshOrderDashboardSectionJob::dispatch($key);
+            $this->dispatchSectionRefresh($key);
         }
+    }
+
+    public function dispatchSectionRefresh(string $sectionKey): void
+    {
+        $this->validateSectionKey($sectionKey);
+        $this->markSectionRunning($sectionKey);
+        RefreshOrderDashboardSectionJob::dispatch($sectionKey);
+    }
+
+    public function recoverZombieSection(OrderDashboardSection $row): OrderDashboardSection
+    {
+        if ($row->status !== OrderDashboardSection::STATUS_RUNNING) {
+            return $row;
+        }
+
+        $startedAt = $row->refresh_started_at ?? $row->updated_at;
+        if ($startedAt === null) {
+            return $row;
+        }
+
+        if ($startedAt->greaterThan(now()->subMinutes(self::ZOMBIE_MINUTES))) {
+            return $row;
+        }
+
+        $this->markSectionFailed(
+            $row->section_key,
+            'Refresh did not finish in time. Retrying.'
+        );
+
+        return $row->fresh() ?? $row;
     }
 
     public function getDashboardPayload(): array
@@ -110,6 +153,7 @@ class OrderDashboardSnapshotService
 
         OrderDashboardSection::query()->where('section_key', $sectionKey)->update([
             'status' => OrderDashboardSection::STATUS_FAILED,
+            'refresh_started_at' => null,
             'error_message' => $message !== '' ? $message : 'Refresh failed.',
         ]);
     }
@@ -144,7 +188,12 @@ class OrderDashboardSnapshotService
             if ($sectionKey === OrderDashboardSection::KEY_ASN_PENDING) {
                 $result = $this->buildAsnPendingPayload();
             } else {
-                $result = $this->buildShipHeroSectionPayload($sectionKey);
+                $this->syncIndexForDashboardSection($sectionKey);
+                if ($this->orderIndex->indexHasAnyRows()) {
+                    $result = $this->orderIndex->aggregateDashboardSection($sectionKey);
+                } else {
+                    $result = $this->buildShipHeroSectionPayload($sectionKey);
+                }
             }
 
             $durationMs = (int) round((microtime(true) - $startedAt) * 1000);
@@ -241,6 +290,10 @@ class OrderDashboardSnapshotService
      */
     private function buildShipHeroSectionPayload(string $sectionKey): array
     {
+        if ($this->orderIndex->indexHasAnyRows()) {
+            return $this->orderIndex->aggregateDashboardSection($sectionKey);
+        }
+
         $accounts = $this->shipHeroLinkedAccounts();
         if ($accounts === []) {
             return [
@@ -508,6 +561,46 @@ class OrderDashboardSnapshotService
             return Carbon::parse($iso)->toDateString();
         } catch (Throwable $e) {
             return null;
+        }
+    }
+
+    private function syncIndexForDashboardSection(string $sectionKey): void
+    {
+        $tab = $this->queueTabForDashboardSection($sectionKey);
+        if ($tab === null) {
+            return;
+        }
+
+        foreach ($this->shipHeroLinkedAccounts() as $account) {
+            try {
+                $this->orderIndex->syncAccountQueue((int) $account->id, $tab, true);
+            } catch (Throwable $e) {
+                Log::warning('order_dashboard.index_sync_failed', [
+                    'section_key' => $sectionKey,
+                    'client_account_id' => (int) $account->id,
+                    'message' => $e->getMessage(),
+                ]);
+            }
+        }
+    }
+
+    private function queueTabForDashboardSection(string $sectionKey): ?string
+    {
+        switch ($sectionKey) {
+            case OrderDashboardSection::KEY_READY_TO_SHIP:
+                return ShipHeroOrderQueueIndex::KIND_AWAITING;
+            case OrderDashboardSection::KEY_SHIPPED:
+                return ShipHeroOrderQueueIndex::KIND_SHIPPED;
+            case OrderDashboardSection::KEY_HOLD_BACKORDER:
+                return ShipHeroOrderQueueIndex::KIND_BACKORDER;
+            case OrderDashboardSection::KEY_HOLD_OPERATOR:
+            case OrderDashboardSection::KEY_HOLD_ADDRESS:
+            case OrderDashboardSection::KEY_HOLD_FRAUD:
+            case OrderDashboardSection::KEY_HOLD_PAYMENT:
+            case OrderDashboardSection::KEY_HOLD_USER:
+                return ShipHeroOrderQueueIndex::KIND_ON_HOLD;
+            default:
+                return null;
         }
     }
 }

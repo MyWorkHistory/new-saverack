@@ -11,6 +11,7 @@ use App\Services\CrossAccountOrderListService;
 use App\Services\ShipHeroOrderDetailCacheService;
 use App\Services\ShopifyOrderAdminLinkService;
 use App\Services\PortalQueueCountsService;
+use App\Services\ShipHeroOrderQueueIndexService;
 use App\Services\ShipHeroOrderService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -44,18 +45,23 @@ class OrderController extends Controller
     /** @var CrossAccountOrderListService */
     protected $crossAccountOrders;
 
+    /** @var ShipHeroOrderQueueIndexService */
+    protected $orderQueueIndex;
+
     public function __construct(
         ShipHeroOrderService $orders,
         ShopifyOrderAdminLinkService $shopifyOrderLinks,
         ShipHeroOrderDetailCacheService $orderDetailCache,
         PortalQueueCountsService $portalQueueCounts,
-        CrossAccountOrderListService $crossAccountOrders
+        CrossAccountOrderListService $crossAccountOrders,
+        ShipHeroOrderQueueIndexService $orderQueueIndex
     ) {
         $this->orders = $orders;
         $this->shopifyOrderLinks = $shopifyOrderLinks;
         $this->orderDetailCache = $orderDetailCache;
         $this->portalQueueCounts = $portalQueueCounts;
         $this->crossAccountOrders = $crossAccountOrders;
+        $this->orderQueueIndex = $orderQueueIndex;
     }
 
     public function index(Request $request): JsonResponse
@@ -71,6 +77,7 @@ class OrderController extends Controller
             'order_number' => ['nullable', 'string', 'max:128'],
             'after' => ['nullable', 'string', 'max:255'],
             'first' => ['nullable', 'integer', 'min:1', 'max:100'],
+            'refresh' => ['sometimes', 'boolean'],
         ]);
 
         $user = $request->user();
@@ -116,6 +123,30 @@ class OrderController extends Controller
 
         try {
             $tab = (string) ($validated['tab'] ?? 'manage');
+            $refresh = $request->boolean('refresh');
+            $indexFilters = array_merge($validated, [
+                'client_account_id' => $clientAccountId,
+                'tab' => $tab,
+            ]);
+
+            if ($this->orderQueueIndex->isQueueTab($tab)) {
+                if ($refresh) {
+                    $this->orderQueueIndex->syncAccountQueue($clientAccountId, $tab, true);
+                }
+                if ($this->orderQueueIndex->shouldUseIndex($tab, false, $indexFilters) || $refresh) {
+                    if ($this->orderQueueIndex->indexHasRows($clientAccountId, $tab)) {
+                        $payload = $this->orderQueueIndex->listFromIndex($indexFilters);
+                        $customerId = $this->resolveShipHeroCustomerAccountId($clientAccountId, $request);
+                        $payload['meta'] = array_merge($payload['meta'] ?? [], [
+                            'client_account_id' => $clientAccountId,
+                            'shiphero_customer_account_id' => $customerId,
+                        ]);
+
+                        return response()->json($payload);
+                    }
+                }
+            }
+
             if (
                 $tab === 'shipped'
                 && ! empty($validated['order_date_from'])
@@ -172,6 +203,10 @@ class OrderController extends Controller
                 'client_account_id' => $clientAccountId,
                 'shiphero_customer_account_id' => $customerId,
             ];
+
+            if ($this->orderQueueIndex->isQueueTab($tab) && ! empty($payload['rows'])) {
+                $this->orderQueueIndex->upsertRows($clientAccountId, $tab, $payload['rows']);
+            }
 
             return response()->json($payload);
         } catch (ValidationException $e) {
@@ -563,6 +598,7 @@ class OrderController extends Controller
                 $customerId,
                 isset($validated['reason']) ? (string) $validated['reason'] : null
             );
+            $this->invalidateOrderIndex((int) $validated['client_account_id'], $orderId);
 
             return response()->json(['message' => 'Order marked fulfilled.']);
         } catch (RuntimeException $e) {
@@ -600,6 +636,7 @@ class OrderController extends Controller
                 (bool) ($validated['void_on_platform'] ?? false),
                 (bool) ($validated['force'] ?? false)
             );
+            $this->invalidateOrderIndex((int) $validated['client_account_id'], $orderId);
 
             return response()->json(['message' => 'Order canceled.']);
         } catch (RuntimeException $e) {
@@ -644,6 +681,7 @@ class OrderController extends Controller
         $historyActor = $this->userHoldHistoryActorName($request);
         try {
             $this->orders->setOrderHoldsTrue($orderId, $customerId, $flags, $historyActor);
+            $this->invalidateOrderIndex((int) $validated['client_account_id'], $orderId);
 
             return response()->json(['message' => 'Holds applied.']);
         } catch (RuntimeException $e) {
@@ -690,10 +728,12 @@ class OrderController extends Controller
             if ($keysToClear === []) {
                 if ($this->orders->orderHoldsOnlyUserHoldActive($holds, $tags)) {
                     $this->orders->clearUserHold($orderId, $customerId, $headerContext, $historyActor);
+                    $this->invalidateOrderIndex((int) $validated['client_account_id'], $orderId);
 
                     return response()->json(['message' => 'Holds cleared.']);
                 }
                 $this->orders->clearOrderHolds($orderId, $customerId);
+                $this->invalidateOrderIndex((int) $validated['client_account_id'], $orderId);
 
                 return response()->json(['message' => 'Holds cleared.']);
             }
@@ -715,6 +755,8 @@ class OrderController extends Controller
                     : null;
                 $this->orders->clearOrderHoldsSelective($orderId, $customerId, $clearableKeys, $paymentReason, $holds);
             }
+
+            $this->invalidateOrderIndex((int) $validated['client_account_id'], $orderId);
 
             return response()->json(['message' => 'Holds cleared.']);
         } catch (RuntimeException $e) {
@@ -1330,6 +1372,7 @@ class OrderController extends Controller
         foreach ($orderIds as $oid) {
             try {
                 $this->orders->markOrderFulfilled($oid, $customerId, $reason);
+                $this->invalidateOrderIndex((int) $validated['client_account_id'], $oid);
                 $results[] = ['order_id' => $oid, 'ok' => true];
                 $ok++;
             } catch (RuntimeException $e) {
@@ -1373,6 +1416,7 @@ class OrderController extends Controller
                     (bool) ($validated['void_on_platform'] ?? false),
                     (bool) ($validated['force'] ?? false)
                 );
+                $this->invalidateOrderIndex((int) $validated['client_account_id'], $oid);
                 $results[] = ['order_id' => $oid, 'ok' => true];
                 $ok++;
             } catch (RuntimeException $e) {
@@ -1459,6 +1503,7 @@ class OrderController extends Controller
         foreach ($orderIds as $oid) {
             try {
                 $this->orders->setOrderHoldsTrue($oid, $customerId, $flags, $historyActor);
+                $this->invalidateOrderIndex((int) $validated['client_account_id'], $oid);
                 $results[] = ['order_id' => $oid, 'ok' => true];
                 $ok++;
             } catch (RuntimeException $e) {
@@ -1519,6 +1564,7 @@ class OrderController extends Controller
                     } else {
                         $this->orders->clearOrderHolds($oid, $customerId);
                     }
+                    $this->invalidateOrderIndex((int) $validated['client_account_id'], $oid);
                     $results[] = ['order_id' => $oid, 'ok' => true];
                     $ok++;
 
@@ -1540,6 +1586,7 @@ class OrderController extends Controller
                         $this->orders->clearOrderHoldsSelective($oid, $customerId, $clearableKeys, $paymentReason, $holds);
                     }
 
+                    $this->invalidateOrderIndex((int) $validated['client_account_id'], $oid);
                     $results[] = ['order_id' => $oid, 'ok' => true];
                     $ok++;
                 } catch (RuntimeException $e) {
@@ -1752,6 +1799,11 @@ class OrderController extends Controller
         }
 
         return response()->json(['message' => $message], $status);
+    }
+
+    private function invalidateOrderIndex(int $clientAccountId, string $orderId): void
+    {
+        $this->orderQueueIndex->invalidateOrder($clientAccountId, $orderId);
     }
 }
 

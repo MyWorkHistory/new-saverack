@@ -2,11 +2,14 @@
 
 namespace Tests\Unit;
 
+use App\Jobs\RefreshOrderDashboardSectionJob;
 use App\Models\OrderDashboardSection;
 use App\Services\OrderDashboardSnapshotService;
 use App\Services\PortalQueueCountsService;
+use App\Services\ShipHeroOrderQueueIndexService;
 use App\Services\ShipHeroOrderService;
 use Illuminate\Database\Schema\Blueprint;
+use Illuminate\Support\Facades\Queue;
 use Illuminate\Support\Facades\Schema;
 use Mockery;
 use Tests\TestCase;
@@ -66,7 +69,8 @@ class OrderDashboardSnapshotServiceTest extends TestCase
 
         $service = new OrderDashboardSnapshotService(
             Mockery::mock(PortalQueueCountsService::class),
-            Mockery::mock(ShipHeroOrderService::class)
+            Mockery::mock(ShipHeroOrderService::class),
+            Mockery::mock(ShipHeroOrderQueueIndexService::class)
         );
 
         $payload = $service->getDashboardPayload();
@@ -75,5 +79,39 @@ class OrderDashboardSnapshotServiceTest extends TestCase
         $this->assertSame(5, $payload['totals']['shipped']);
         $this->assertSame(7, $payload['totals']['asn_pending']);
         $this->assertSame(11, $payload['totals']['on_hold']);
+    }
+
+    public function test_bootstrap_dispatches_shiphero_sections_and_marks_running(): void
+    {
+        Queue::fake();
+        $now = now();
+        foreach (OrderDashboardSection::ALL_KEYS as $key) {
+            OrderDashboardSection::query()->insert([
+                'section_key' => $key,
+                'payload' => json_encode(['accounts' => [], 'truncated' => false]),
+                'total_count' => 0,
+                'status' => OrderDashboardSection::STATUS_IDLE,
+                'refreshed_at' => $key === OrderDashboardSection::KEY_ASN_PENDING ? $now : null,
+                'created_at' => $now,
+                'updated_at' => $now,
+            ]);
+        }
+
+        $service = new OrderDashboardSnapshotService(
+            Mockery::mock(PortalQueueCountsService::class),
+            Mockery::mock(ShipHeroOrderService::class),
+            Mockery::mock(ShipHeroOrderQueueIndexService::class)
+        );
+
+        $service->bootstrapIfNeeded();
+
+        Queue::assertPushed(RefreshOrderDashboardSectionJob::class, count(OrderDashboardSection::SHIPHERO_KEYS));
+
+        $running = OrderDashboardSection::query()
+            ->whereIn('section_key', OrderDashboardSection::SHIPHERO_KEYS)
+            ->where('status', OrderDashboardSection::STATUS_RUNNING)
+            ->count();
+
+        $this->assertSame(count(OrderDashboardSection::SHIPHERO_KEYS), $running);
     }
 }

@@ -9,13 +9,29 @@ use ReflectionMethod;
 
 final class ShipHeroOrderServiceFulfillmentStatusTest extends TestCase
 {
+    /** @var ShipHeroOrderService */
+    private $svc;
+
+    protected function setUp(): void
+    {
+        parent::setUp();
+        $this->svc = new ShipHeroOrderService($this->createMock(ShipHeroClient::class));
+    }
+
     private function normalizeFulfillmentStatus(array $node): string
     {
-        $svc = new ShipHeroOrderService($this->createMock(ShipHeroClient::class));
         $method = new ReflectionMethod(ShipHeroOrderService::class, 'normalizeFulfillmentStatus');
         $method->setAccessible(true);
 
-        return (string) $method->invoke($svc, $node);
+        return (string) $method->invoke($this->svc, $node);
+    }
+
+    private function resolveOrderListDisplayStatus(array $node, array $holdsApi, array $tags = []): string
+    {
+        $method = new ReflectionMethod(ShipHeroOrderService::class, 'resolveOrderListDisplayStatus');
+        $method->setAccessible(true);
+
+        return (string) $method->invoke($this->svc, $node, $holdsApi, $tags);
     }
 
     public function test_accepts_common_fulfillment_status_values(): void
@@ -37,5 +53,107 @@ final class ShipHeroOrderServiceFulfillmentStatusTest extends TestCase
     {
         $this->assertSame('', $this->normalizeFulfillmentStatus(['fulfillment_status' => 'shopify']));
         $this->assertSame('', $this->normalizeFulfillmentStatus(['fulfillment_status' => 'Antonia']));
+    }
+
+    public function test_display_status_backorder_when_has_backorder_flag(): void
+    {
+        $node = [
+            'has_backorder' => true,
+            'status' => 'Large Items',
+            'fulfillment_status' => 'pending',
+            'holds' => [],
+            'shipping_lines' => [['method' => 'Ground', 'carrier' => 'ups']],
+        ];
+        $holds = [
+            'fraud_hold' => false,
+            'address_hold' => false,
+            'shipping_method_hold' => false,
+            'operator_hold' => false,
+            'payment_hold' => false,
+            'client_hold' => false,
+        ];
+
+        $this->assertSame('Backorder', $this->resolveOrderListDisplayStatus($node, $holds));
+    }
+
+    public function test_display_status_backorder_when_line_has_backorder_quantity(): void
+    {
+        $node = [
+            'status' => 'Large Items',
+            'fulfillment_status' => 'pending',
+            'line_items' => [
+                'edges' => [
+                    ['node' => ['sku' => 'SKU-1', 'backorder_quantity' => 2]],
+                ],
+            ],
+            'shipping_lines' => [['method' => 'Ground', 'carrier' => 'ups']],
+        ];
+        $holds = [
+            'fraud_hold' => false,
+            'address_hold' => false,
+            'shipping_method_hold' => false,
+            'operator_hold' => false,
+            'payment_hold' => false,
+            'client_hold' => false,
+        ];
+
+        $this->assertSame('Backorder', $this->resolveOrderListDisplayStatus($node, $holds));
+    }
+
+    public function test_display_status_hold_when_active_hold_present(): void
+    {
+        $node = [
+            'fulfillment_status' => 'pending',
+            'holds' => ['fraud_hold' => true],
+            'shipping_lines' => [['method' => 'Ground', 'carrier' => 'ups']],
+        ];
+        $holds = [
+            'fraud_hold' => true,
+            'address_hold' => false,
+            'shipping_method_hold' => false,
+            'operator_hold' => false,
+            'payment_hold' => false,
+            'client_hold' => false,
+        ];
+
+        $this->assertSame('Fraud Hold', $this->resolveOrderListDisplayStatus($node, $holds));
+    }
+
+    public function test_display_status_pending_from_fulfillment_status(): void
+    {
+        $node = [
+            'fulfillment_status' => 'pending',
+            'holds' => [],
+            'shipping_lines' => [],
+        ];
+        $holds = [
+            'fraud_hold' => false,
+            'address_hold' => false,
+            'shipping_method_hold' => false,
+            'operator_hold' => false,
+            'payment_hold' => false,
+            'client_hold' => false,
+        ];
+
+        $this->assertSame('Pending', $this->resolveOrderListDisplayStatus($node, $holds));
+    }
+
+    public function test_display_status_ready_to_ship_when_eligible(): void
+    {
+        $node = [
+            'fulfillment_status' => 'pending',
+            'holds' => [],
+            'shipping_lines' => [['method' => 'Ground', 'carrier' => 'ups', 'title' => 'Ground']],
+        ];
+        $holds = [
+            'fraud_hold' => false,
+            'address_hold' => false,
+            'shipping_method_hold' => false,
+            'operator_hold' => false,
+            'payment_hold' => false,
+            'client_hold' => false,
+        ];
+
+        $this->assertSame('Ready To Ship', $this->resolveOrderListDisplayStatus($node, $holds));
     }
 }

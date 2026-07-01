@@ -404,6 +404,7 @@ query ShipHeroOrders(
 GQL
             .$statusField
             .<<<'GQL'
+          has_backorder
           order_date
           updated_at
           required_ship_date
@@ -428,10 +429,11 @@ GQL
             carrier
             method
           }
-          line_items(first: 1) {
+          line_items(first: 25) {
             edges {
               node {
                 sku
+                backorder_quantity
               }
             }
           }
@@ -869,6 +871,8 @@ query ShipHeroOrdersByIds($ids: [String], $customer_account_id: String!, $first:
           partner_order_id
           shop_name
           fulfillment_status
+          status
+          has_backorder
           order_date
           updated_at
           required_ship_date
@@ -898,10 +902,11 @@ query ShipHeroOrdersByIds($ids: [String], $customer_account_id: String!, $first:
             carrier
             method
           }
-          line_items(first: 1) {
+          line_items(first: 25) {
             edges {
               node {
                 sku
+                backorder_quantity
               }
             }
           }
@@ -913,6 +918,7 @@ query ShipHeroOrdersByIds($ids: [String], $customer_account_id: String!, $first:
             payment_hold
             client_hold
           }
+          tags
         }
       }
     }
@@ -2483,12 +2489,15 @@ GQL;
             is_array($node['shipments'] ?? null) ? $node['shipments'] : []
         );
         $tags = $this->normalizeOrderTags($node['tags'] ?? null);
+        $hasBackorder = $this->nodeHasBackorderQuantity($node);
 
         return [
             'id' => (string) ($node['id'] ?? ''),
             'legacy_id' => is_numeric($node['legacy_id'] ?? null) ? (int) $node['legacy_id'] : null,
             'cursor' => is_string($cursor) ? $cursor : null,
             'status' => $this->normalizeFulfillmentStatus($node),
+            'display_status' => $this->resolveOrderListDisplayStatus($node, $holdsApi, $tags),
+            'has_backorder' => $hasBackorder,
             'raw_fulfillment_status' => (string) ($node['fulfillment_status'] ?? ''),
             'raw_status' => (string) ($node['status'] ?? ''),
             'raw_profile' => (string) ($node['profile'] ?? ''),
@@ -2902,6 +2911,106 @@ GQL;
     private function isAssoc(array $value): bool
     {
         return array_keys($value) !== range(0, count($value) - 1);
+    }
+
+    /**
+     * @param  array<string, mixed>  $node
+     */
+    private function nodeHasBackorderQuantity(array $node): bool
+    {
+        if (! empty($node['has_backorder'])) {
+            return true;
+        }
+
+        $edges = data_get($node, 'line_items.edges');
+        if (! is_array($edges)) {
+            return false;
+        }
+
+        foreach ($edges as $edge) {
+            if (! is_array($edge)) {
+                continue;
+            }
+            $line = $edge['node'] ?? null;
+            if (! is_array($line)) {
+                continue;
+            }
+            if ((float) ($line['backorder_quantity'] ?? 0) > 0) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /**
+     * @param  array<string, mixed>  $node
+     * @param  array<string, bool>  $holdsApi
+     * @param  list<string>  $tags
+     */
+    private function resolveOrderListDisplayStatus(array $node, array $holdsApi, array $tags): string
+    {
+        if ($this->nodeHasBackorderQuantity($node)) {
+            return 'Backorder';
+        }
+
+        if ($this->orderHoldsArrayHasActive($holdsApi)) {
+            $reason = $this->extractHoldReason($node);
+            if (is_string($reason) && trim($reason) !== '') {
+                return $reason;
+            }
+
+            return 'Hold';
+        }
+
+        if ($this->orderListNodeIsReadyToShip($node, $holdsApi)) {
+            return 'Ready To Ship';
+        }
+
+        $fulfillment = $this->normalizeFulfillmentStatus($node);
+        if ($fulfillment !== '') {
+            return $this->titleCaseStatusToken($fulfillment);
+        }
+
+        return '—';
+    }
+
+    /**
+     * @param  array<string, mixed>  $node
+     * @param  array<string, bool>  $holdsApi
+     */
+    private function orderListNodeIsReadyToShip(array $node, array $holdsApi): bool
+    {
+        if ($this->orderHoldsArrayHasActive($holdsApi)) {
+            return false;
+        }
+
+        $pseudoRow = [
+            'status' => $this->normalizeFulfillmentStatus($node),
+            'raw_fulfillment_status' => (string) ($node['fulfillment_status'] ?? ''),
+            'raw_status' => (string) ($node['status'] ?? ''),
+        ];
+        if ($this->orderRowIsFulfilledOrShipped($pseudoRow)) {
+            return false;
+        }
+
+        $shippingLine = $this->resolveShippingLine($node['shipping_lines'] ?? null);
+        $method = trim((string) ($shippingLine['method'] ?? ''));
+        if ($method === '' || strcasecmp($method, 'select') === 0) {
+            return false;
+        }
+
+        return true;
+    }
+
+    private function titleCaseStatusToken(string $token): string
+    {
+        $t = strtolower(trim($token));
+        if ($t === '') {
+            return '—';
+        }
+
+        return ucfirst($t);
     }
 
     /**

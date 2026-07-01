@@ -245,6 +245,9 @@ function openOrderViewNewTab(row) {
 function statusClass(status) {
   const s = String(status || "").toLowerCase();
   if (s.includes("hold")) return "bg-danger-subtle text-danger-emphasis";
+  if (s.includes("backorder") || s.includes("back order")) {
+    return "bg-danger-subtle text-danger-emphasis";
+  }
   if (s.includes("unfulfilled")) return "bg-secondary-subtle text-secondary-emphasis";
   if (s.includes("incomplete")) return "bg-secondary-subtle text-secondary-emphasis";
   if (s.includes("fulfilled") || s === "complete" || s.includes("complete")) {
@@ -301,8 +304,12 @@ function firstHoldReasonLabel(row) {
   return String(raw.split(",")[0] || "").trim();
 }
 
-/** On-hold tab displays a single hold reason only. */
+/** Prefer API display_status; tab overrides remain for legacy rows without it. */
 function displayOrderStatus(row) {
+  const fromApi = String(row?.display_status || "").trim();
+  if (fromApi && fromApi !== "—") {
+    return fromApi;
+  }
   if (tabKey.value === "awaiting") {
     return "Ready To Ship";
   }
@@ -314,12 +321,8 @@ function displayOrderStatus(row) {
   if (tabKey.value === "backorder") {
     return "Backorder";
   }
-  const raw =
-    row.status ||
-    row.raw_fulfillment_status ||
-    row.raw_status ||
-    "";
-  return String(raw).trim() !== "" ? String(raw).trim() : "—";
+  const legacy = String(row?.status || row?.raw_fulfillment_status || "").trim();
+  return legacy !== "" ? legacy : "—";
 }
 
 function statusClassForRow(row) {
@@ -426,12 +429,14 @@ async function loadAccounts() {
 }
 
 async function fetchOrders(reset = true) {
-  if (isAdminOrdersList.value && !selectedAccountId.value) {
+  if (isAdminOrdersList.value && isOrdersSearchPage.value && !selectedAccountId.value) {
     crossAccountMode.value = true;
+  } else if (!isOrdersSearchPage.value) {
+    crossAccountMode.value = false;
   }
   const canLoad = isOrdersSearchPage.value
     ? Boolean(committedOrderNumber.value)
-    : selectedAccountId.value || isAdminOrdersList.value;
+    : Boolean(selectedAccountId.value);
   if (!canLoad) {
     if (reset) {
       rows.value = [];
@@ -1380,16 +1385,17 @@ onUnmounted(() => {
             </tr>
             <tr v-else-if="isOrdersSearchPage && !hasSearched">
               <td :colspan="tableColspan" class="text-center text-secondary py-5">
-                Enter an order number and click Search.
+                <template v-if="isAdminOrdersList && !selectedAccountId">
+                  Enter an order number and click Search to look up across all accounts, or select an account to
+                  filter.
+                </template>
+                <template v-else>Enter an order number and click Search.</template>
               </td>
             </tr>
-            <tr v-else-if="!hasSearched && isAdminOrdersList && !selectedAccountId">
+            <tr v-else-if="!isOrdersSearchPage && !selectedAccountId">
               <td :colspan="tableColspan" class="text-center text-secondary py-5">
-                Click Search to load orders across all accounts, or select an account to filter.
+                Select an account to load orders.
               </td>
-            </tr>
-            <tr v-else-if="!selectedAccountId && !crossAccountMode">
-              <td :colspan="tableColspan" class="text-center text-secondary py-5">Select an account to load orders.</td>
             </tr>
             <tr v-else-if="hasSearched && displayedRows.length === 0">
               <td :colspan="tableColspan" class="text-center text-secondary py-5">No orders found.</td>

@@ -297,7 +297,11 @@ async function onSubmit() {
   saving.value = true;
   errorMsg.value = "";
   try {
-    await api.patch(`/client-accounts/${props.accountId}`, buildPatch());
+    const patch = buildPatch();
+    if (props.section) {
+      patch.history_section = props.section;
+    }
+    await api.patch(`/client-accounts/${props.accountId}`, patch);
     toast.success("Account updated.");
     emit("saved");
     close();

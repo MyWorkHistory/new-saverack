@@ -153,6 +153,9 @@ class ClientAccountService
      */
     public function update(ClientAccount $account, array $data, ?User $actor = null): array
     {
+        $historySection = isset($data['history_section']) ? (string) $data['history_section'] : null;
+        unset($data['history_section']);
+
         $oldStatus = (string) $account->status;
         $statusChanging = array_key_exists('status', $data)
             && strtolower(trim((string) $data['status'])) !== strtolower(trim($oldStatus));
@@ -166,6 +169,7 @@ class ClientAccountService
         if ($actor !== null && $data !== []) {
             $this->activityLog->log($actor, 'client_account.updated', $account, null, [
                 'fields' => array_keys($data),
+                'history_section' => $historySection !== '' ? $historySection : null,
             ]);
         }
 

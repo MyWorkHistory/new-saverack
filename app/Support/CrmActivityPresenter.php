@@ -25,7 +25,8 @@ final class CrmActivityPresenter
 
         if ($action === 'client_account.updated') {
             $fields = isset($meta['fields']) && is_array($meta['fields']) ? $meta['fields'] : [];
-            $summary = ClientAccountHistory::summarizeFields($fields);
+            $section = isset($meta['history_section']) ? (string) $meta['history_section'] : null;
+            $summary = ClientAccountHistory::summarizeUpdate($fields, $section);
 
             return "{$actorName} updated {$summary}";
         }
@@ -55,6 +56,16 @@ final class CrmActivityPresenter
 
     public static function formatLogBody(ActivityLog $log): string
     {
+        $action = (string) $log->action;
+        if ($action === 'client_account.updated') {
+            $meta = is_array($log->metadata) ? $log->metadata : [];
+            $fields = isset($meta['fields']) && is_array($meta['fields']) ? $meta['fields'] : [];
+            $section = isset($meta['history_section']) ? (string) $meta['history_section'] : null;
+            $summary = ClientAccountHistory::summarizeUpdate($fields, $section);
+
+            return 'Updated '.$summary;
+        }
+
         $actorName = $log->relationLoaded('user') && $log->user
             ? (string) $log->user->name
             : 'System';

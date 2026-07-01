@@ -124,6 +124,14 @@ class ClientAccountUpdateRequest extends FormRequest
             'stripe_customer_id' => ['sometimes', 'nullable', 'string', 'max:191'],
             'shiphero_customer_account_id' => ['sometimes', 'nullable', 'string', 'max:191'],
             'whatsapp_api_id' => ['sometimes', 'nullable', 'string', 'max:191'],
+            'history_section' => ['sometimes', 'nullable', 'string', Rule::in([
+                'account',
+                'address',
+                'left',
+                'settings',
+                'billing',
+                'payment',
+            ])],
         ];
     }
 

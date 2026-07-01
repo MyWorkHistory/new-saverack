@@ -129,8 +129,7 @@ const canWriteOrders = computed(() => canWriteShipHeroOrders(crmUser.value));
 
 const showCreateOrderButton = computed(() => {
   if (isEmbeddedOrders.value || !canWriteOrders.value) return false;
-  if (isPortalOrderList.value) return true;
-  return isAdminOrdersList.value && isOrdersSearchPage.value;
+  return true;
 });
 
 const isPortalModeForCreate = computed(
@@ -1036,24 +1035,34 @@ onUnmounted(() => {
 
 <template>
   <div class="staff-page staff-page--wide" :class="{ 'orders-list--embedded': isEmbeddedOrders }">
-    <div v-if="!isEmbeddedOrders" class="mb-4">
-      <h1 class="h4 mb-1 fw-semibold text-body">
-        <span>Orders - {{ tabTitle }}</span>
-        <span
-          v-if="(selectedAccountId || crossAccountMode) && hasSearched"
-          class="small text-secondary fw-normal ms-1"
-        >
-          ({{ displayedRows.length }} {{ displayedRows.length === 1 ? "order" : "orders" }})
-        </span>
-      </h1>
-      <p v-if="isOrdersSearchPage" class="text-secondary small mb-0">
-        Optionally select an account, enter an order number, and click Search. Results appear only after you
-        search. ShipHero also matches storefront IDs on partner order ID when applicable.
-      </p>
-      <p v-else-if="!isPortalOrderList" class="text-secondary small mb-0">
-        Search across all accounts, or pick an account to filter. Leave order # blank and click Search to load
-        recent orders (up to 100, may be partial).
-      </p>
+    <div v-if="!isEmbeddedOrders" class="d-flex flex-wrap align-items-start justify-content-between gap-3 mb-4">
+      <div class="min-w-0">
+        <h1 class="h4 mb-1 fw-semibold text-body">
+          <span>Orders - {{ tabTitle }}</span>
+          <span
+            v-if="(selectedAccountId || crossAccountMode) && hasSearched"
+            class="small text-secondary fw-normal ms-1"
+          >
+            ({{ displayedRows.length }} {{ displayedRows.length === 1 ? "order" : "orders" }})
+          </span>
+        </h1>
+        <p v-if="isOrdersSearchPage" class="text-secondary small mb-0">
+          Optionally select an account, enter an order number, and click Search. Results appear only after you
+          search. ShipHero also matches storefront IDs on partner order ID when applicable.
+        </p>
+        <p v-else-if="!isPortalOrderList" class="text-secondary small mb-0">
+          Select an account to load orders. Leave order # blank and click Search to load recent orders (up to
+          100, may be partial).
+        </p>
+      </div>
+      <button
+        v-if="showCreateOrderButton"
+        type="button"
+        class="btn btn-primary btn-sm staff-page-primary flex-shrink-0 align-self-start"
+        @click="createOrderModalOpen = true"
+      >
+        Create Order
+      </button>
     </div>
 
     <div
@@ -1111,15 +1120,6 @@ onUnmounted(() => {
               </button>
             </div>
           </div>
-
-          <button
-            v-if="showCreateOrderButton"
-            type="button"
-            class="btn btn-outline-primary btn-sm orders-toolbar-outline-btn fw-semibold flex-shrink-0"
-            @click="createOrderModalOpen = true"
-          >
-            Create Order
-          </button>
 
           <template v-if="showManageFilters">
             <div class="position-relative flex-shrink-0" data-toolbar-filter>

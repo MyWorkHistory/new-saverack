@@ -404,7 +404,6 @@ query ShipHeroOrders(
 GQL
             .$statusField
             .<<<'GQL'
-          has_backorder
           order_date
           updated_at
           required_ship_date
@@ -872,7 +871,6 @@ query ShipHeroOrdersByIds($ids: [String], $customer_account_id: String!, $first:
           shop_name
           fulfillment_status
           status
-          has_backorder
           order_date
           updated_at
           required_ship_date

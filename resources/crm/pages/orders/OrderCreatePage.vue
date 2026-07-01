@@ -1,14 +1,17 @@
 <script setup>
 import { computed, inject, onMounted, ref, watch } from "vue";
-import { RouterLink, useRoute } from "vue-router";
+import { RouterLink, useRoute, useRouter } from "vue-router";
 import api from "../../services/api";
 import CrmLoadingSpinner from "../../components/common/CrmLoadingSpinner.vue";
 import CrmSearchableSelect from "../../components/common/CrmSearchableSelect.vue";
+import OrderCreateDraftModal from "../../components/orders/OrderCreateDraftModal.vue";
 import { setCrmPageMeta } from "../../composables/useCrmPageMeta.js";
 import { useToast } from "../../composables/useToast.js";
+import { canWriteShipHeroOrders } from "../../utils/crmShipHeroOrders";
 import { crmIsPortalUser } from "../../utils/crmUser";
 
 const route = useRoute();
+const router = useRouter();
 const toast = useToast();
 const crmUser = inject("crmUser", ref(null));
 
@@ -17,11 +20,13 @@ const accountsLoading = ref(false);
 const accounts = ref([]);
 const rows = ref([]);
 const selectedAccountId = ref(String(route.query.client_account_id || ""));
+const createOrderModalOpen = ref(false);
 
 const isPortalMode = computed(
   () => route.meta?.userPortal === true || crmIsPortalUser(crmUser.value),
 );
 const portalAccountId = computed(() => Number(crmUser.value?.client_account_id || 0));
+const canWriteOrders = computed(() => canWriteShipHeroOrders(crmUser.value));
 
 const detailRouteName = computed(() =>
   isPortalMode.value ? "user-order-detail" : "order-detail",
@@ -92,6 +97,22 @@ async function loadDrafts() {
   }
 }
 
+async function onDraftOrderCreated(data) {
+  createOrderModalOpen.value = false;
+  const draftRouteId = String(data?.draft_route_id || "");
+  const clientAccountId = Number(data?.client_account_id || 0);
+  if (!draftRouteId || clientAccountId <= 0) {
+    toast.error("Draft was created but the response was incomplete.");
+    return;
+  }
+  toast.success("Order draft created.");
+  await router.push({
+    name: detailRouteName.value,
+    params: { shipheroOrderId: draftRouteId },
+    query: { client_account_id: String(clientAccountId) },
+  });
+}
+
 watch(selectedAccountId, () => {
   if (!isPortalMode.value) {
     loadDrafts();
@@ -112,19 +133,29 @@ onMounted(() => {
 
 <template>
   <div class="staff-page staff-page--wide">
-    <div class="d-flex flex-wrap align-items-end justify-content-between gap-3 mb-4">
-      <div>
+    <div class="d-flex flex-wrap align-items-start justify-content-between gap-3 mb-4">
+      <div class="min-w-0">
         <h1 class="h4 mb-1 fw-semibold text-body">Orders - Drafts</h1>
         <p class="text-secondary small mb-0">
           Open a draft to add line items and shipping, then mark it Ready to Ship when you are done.
         </p>
       </div>
-      <RouterLink
-        :to="ordersListTo"
-        class="btn btn-outline-secondary btn-sm orders-toolbar-outline-btn fw-semibold"
-      >
-        Back To Orders
-      </RouterLink>
+      <div class="d-flex flex-wrap align-items-center gap-2 flex-shrink-0 align-self-start">
+        <button
+          v-if="canWriteOrders"
+          type="button"
+          class="btn btn-primary btn-sm staff-page-primary"
+          @click="createOrderModalOpen = true"
+        >
+          Create Order
+        </button>
+        <RouterLink
+          :to="ordersListTo"
+          class="btn btn-outline-secondary btn-sm orders-toolbar-outline-btn fw-semibold"
+        >
+          Back To Orders
+        </RouterLink>
+      </div>
     </div>
 
     <div class="staff-table-card staff-datatable-card staff-datatable-card--white w-100">
@@ -176,7 +207,7 @@ onMounted(() => {
           <tbody>
             <tr v-if="!rows.length">
               <td :colspan="isPortalMode ? 6 : 7" class="text-center text-secondary py-5">
-                No draft orders yet. Use Create Order on the orders list to start one.
+                No draft orders yet. Click Create Order above to start one.
               </td>
             </tr>
             <tr v-for="row in rows" :key="row.id">
@@ -205,6 +236,18 @@ onMounted(() => {
         </table>
       </div>
     </div>
+
+    <OrderCreateDraftModal
+      v-if="canWriteOrders"
+      :open="createOrderModalOpen"
+      :portal-mode="isPortalMode"
+      :portal-account-id="portalAccountId"
+      :accounts="accounts"
+      :accounts-loading="accountsLoading"
+      :initial-account-id="String(selectedAccountId || route.query.client_account_id || '')"
+      @close="createOrderModalOpen = false"
+      @created="onDraftOrderCreated"
+    />
   </div>
 </template>
 

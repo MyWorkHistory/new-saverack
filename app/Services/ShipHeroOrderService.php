@@ -521,6 +521,33 @@ GQL;
     }
 
     /**
+     * Count on-hold orders for a hold-reason filter (portal/admin dashboard snapshots).
+     *
+     * @return array{count: int, truncated: bool}
+     */
+    public function countHoldOrdersForAccount(
+        string $customerAccountId,
+        string $holdReason,
+        ?string $orderDateFrom,
+        ?string $orderDateTo,
+        int $maxPages = 50
+    ): array {
+        $needle = strtolower(trim($holdReason));
+        if ($needle === '') {
+            throw new RuntimeException('holdReason is required.');
+        }
+
+        return $this->countOrders([
+            'customer_account_id' => $customerAccountId,
+            'tab' => 'on_hold',
+            'hold_reason' => $needle,
+            'order_date_from' => $orderDateFrom,
+            'order_date_to' => $orderDateTo,
+            'max_pages' => max(1, min(200, $maxPages)),
+        ]);
+    }
+
+    /**
      * Shipped-today total via ShipHero {@see shipments} (same source as the ShipHero shipments report).
      *
      * @param  array<string, mixed>  $filters  customer_account_id, date_from, date_to, max_pages?, count_deadline?, first?

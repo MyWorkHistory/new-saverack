@@ -62,8 +62,8 @@ const meta = {
     description: "Create Your Save Rack 3PL Client Account.",
   },
   dashboard: {
-    title: "Save Rack | Dashboard",
-    description: "CRM Dashboard — Activity, Metrics, And Recent Staff.",
+    title: "Save Rack | Home",
+    description: "Operations overview — ready to ship, holds, shipped, and ASN.",
   },
   staff: {
     title: "Save Rack | Staff",

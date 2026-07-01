@@ -12,6 +12,7 @@ use App\Http\Controllers\Api\ClientAccountOnboardingController;
 use App\Http\Controllers\Api\ClientAccountUserController;
 use App\Http\Controllers\Api\ClientStoreController;
 use App\Http\Controllers\Api\DashboardController;
+use App\Http\Controllers\Api\HomeDashboardController;
 use App\Http\Controllers\Api\RoleController;
 use App\Http\Controllers\Api\TicketController;
 use App\Http\Controllers\Api\InvoiceController;
@@ -57,6 +58,9 @@ Route::middleware('auth:sanctum')->group(function () {
 
     Route::get('/dashboard/summary', [DashboardController::class, 'summary'])
         ->middleware('can:view-dashboard');
+
+    Route::get('/home-dashboard', [HomeDashboardController::class, 'show']);
+    Route::post('/home-dashboard/refresh', [HomeDashboardController::class, 'refresh']);
 
     Route::get('/billing/summary', BillingSummaryController::class)
         ->name('billing.summary');

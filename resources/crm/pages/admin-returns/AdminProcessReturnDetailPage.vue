@@ -72,8 +72,8 @@ function toggleOne(lineId) {
 }
 
 async function copyOrderNumber() {
-  const num = String(ret.value?.order_number || "").trim();
-  if (!num) return;
+  const num = displayOrderNumber.value;
+  if (!num || num === "—") return;
   try {
     await navigator.clipboard.writeText(num);
     toast.success("Order number copied.");
@@ -113,6 +113,15 @@ function printLineBarcode(line) {
 }
 
 const tableColspan = computed(() => (isPending.value ? 7 : 6));
+
+function stripOrderNumberHash(value) {
+  return String(value || "").trim().replace(/^#+/, "");
+}
+
+const displayOrderNumber = computed(() => {
+  const raw = String(ret.value?.order_number || "").trim();
+  return raw ? stripOrderNumberHash(raw) : "—";
+});
 
 async function load() {
   loading.value = true;
@@ -193,14 +202,6 @@ onMounted(load);
                 {{ statusLabel }}
               </span>
             </div>
-            <p class="small text-secondary mb-1 mt-2">
-              Order # {{ ret.order_number || "—" }}
-            </p>
-            <p class="small text-secondary mb-0">
-              <strong>{{ ret.client_account_company_name || "—" }}</strong>
-              · {{ ret.customer_name || "—" }}
-              · {{ Number(ret.items_count ?? 0).toLocaleString() }} items
-            </p>
             <button
               type="button"
               class="btn btn-link btn-sm text-secondary px-0 py-0 mt-2 text-decoration-none"
@@ -340,7 +341,7 @@ onMounted(load);
               Copy
             </button>
           </div>
-          <div class="user-return-page__rma-display">{{ ret.order_number || "—" }}</div>
+          <div class="user-return-page__rma-display">{{ displayOrderNumber }}</div>
         </div>
 
         <ReturnFeesCard

@@ -2359,7 +2359,7 @@ class BillingInvoiceApiTest extends TestCase
             ->assertJsonPath('items.0.line_total_cents', -1100);
     }
 
-    public function test_add_item_accepts_staff_ui_category_amazon_prep(): void
+    public function test_add_item_accepts_staff_ui_category_wholesale(): void
     {
         $user = User::factory()->create();
         $user->permissions()->sync([
@@ -2370,12 +2370,12 @@ class BillingInvoiceApiTest extends TestCase
 
         $client = ClientAccount::query()->create([
             'status' => ClientAccount::STATUS_ACTIVE,
-            'company_name' => 'Amazon Prep Co',
-            'email' => 'amazon@acme.test',
+            'company_name' => 'Wholesale Co',
+            'email' => 'wholesale@acme.test',
         ]);
 
         $invoice = Invoice::query()->create([
-            'invoice_number' => 'INV-AMZ-001',
+            'invoice_number' => 'INV-WHL-001',
             'client_account_id' => $client->id,
             'status' => Invoice::STATUS_DRAFT,
             'currency' => 'USD',
@@ -2387,9 +2387,9 @@ class BillingInvoiceApiTest extends TestCase
         ]);
 
         $this->postJson("/api/invoices/{$invoice->id}/add-item", [
-            'description' => 'Amazon prep labor',
-            'display_name' => 'Amazon prep labor',
-            'category' => 'amazon prep',
+            'description' => 'Wholesale labor',
+            'display_name' => 'Wholesale labor',
+            'category' => 'wholesale',
             'quantity' => 1,
             'unit_price_cents' => 2500,
         ])
@@ -2398,7 +2398,7 @@ class BillingInvoiceApiTest extends TestCase
 
         $this->assertDatabaseHas('invoice_items', [
             'invoice_id' => $invoice->id,
-            'category' => 'amazon prep',
+            'category' => 'wholesale',
         ]);
     }
 

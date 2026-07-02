@@ -1,7 +1,7 @@
 /** Invoice line categories — same options as invoice add/edit item modals. */
 export const INVOICE_CATEGORY_OPTIONS = [
   { value: "fulfillment", label: "Fulfillment" },
-  { value: "amazon prep", label: "Amazon Prep" },
+  { value: "wholesale", label: "Wholesale" },
   { value: "postage", label: "Postage" },
   { value: "packaging", label: "Packaging" },
   { value: "returns", label: "Returns" },
@@ -20,6 +20,7 @@ export const DEFAULT_INVOICE_CATEGORY =
 
 export function invoiceCategoryLabel(value) {
   const key = String(value ?? "");
+  if (key === "amazon prep") return "Wholesale";
   const found = INVOICE_CATEGORY_OPTIONS.find((o) => o.value === key);
   return found?.label ?? key;
 }

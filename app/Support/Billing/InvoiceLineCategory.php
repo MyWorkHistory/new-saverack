@@ -25,6 +25,8 @@ final class InvoiceLineCategory
 
     public const RECEIVING = 'receiving';
 
+    public const WHOLESALE = 'wholesale';
+
     public const CREDITS = 'credits';
 
     public const OTHER = 'other';
@@ -60,7 +62,7 @@ final class InvoiceLineCategory
     {
         return [
             self::FULFILLMENT,
-            'amazon prep',
+            self::WHOLESALE,
             self::POSTAGE,
             self::PACKAGING,
             self::RETURNS,

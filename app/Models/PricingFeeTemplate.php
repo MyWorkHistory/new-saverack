@@ -17,6 +17,8 @@ class PricingFeeTemplate extends Model
 
     public const CATEGORY_CUSTOM_WORK = 'custom_work';
 
+    public const CATEGORY_WHOLESALE = 'wholesale';
+
     /** @var list<string> */
     public const CATEGORIES = [
         self::CATEGORY_FULFILLMENT,
@@ -24,6 +26,7 @@ class PricingFeeTemplate extends Model
         self::CATEGORY_STORAGE,
         self::CATEGORY_RECEIVING,
         self::CATEGORY_CUSTOM_WORK,
+        self::CATEGORY_WHOLESALE,
     ];
 
     /** @var array<string, string> */
@@ -33,6 +36,7 @@ class PricingFeeTemplate extends Model
         self::CATEGORY_STORAGE => 'Storage',
         self::CATEGORY_RECEIVING => 'Receiving',
         self::CATEGORY_CUSTOM_WORK => 'Custom Work',
+        self::CATEGORY_WHOLESALE => 'Wholesale',
     ];
 
     protected $fillable = [

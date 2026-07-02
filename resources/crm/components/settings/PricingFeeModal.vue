@@ -14,6 +14,7 @@ const CATEGORIES = [
   { value: "storage", label: "Storage" },
   { value: "receiving", label: "Receiving" },
   { value: "custom_work", label: "Custom Work" },
+  { value: "wholesale", label: "Wholesale" },
 ];
 
 const FORM_ID = "pricing-fee-form";

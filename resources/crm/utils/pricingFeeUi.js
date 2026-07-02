@@ -5,6 +5,7 @@ export const PRICING_CATEGORY_OPTIONS = [
   { value: "storage", label: "Storage" },
   { value: "receiving", label: "Receiving" },
   { value: "custom_work", label: "Custom Work" },
+  { value: "wholesale", label: "Wholesale" },
 ];
 
 export function formatPrice(amount) {
@@ -30,6 +31,7 @@ export function categoryBadgeClass(category) {
   if (c === "storage") return "settings-pricing-badge settings-pricing-badge--storage";
   if (c === "receiving") return "settings-pricing-badge settings-pricing-badge--receiving";
   if (c === "custom_work") return "settings-pricing-badge settings-pricing-badge--custom";
+  if (c === "wholesale") return "settings-pricing-badge settings-pricing-badge--wholesale";
   return "settings-pricing-badge";
 }
 

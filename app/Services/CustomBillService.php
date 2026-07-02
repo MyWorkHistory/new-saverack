@@ -493,8 +493,9 @@ class CustomBillService
         switch ($value) {
             case InvoiceLineCategory::FULFILLMENT:
                 return 'Fulfillment';
+            case InvoiceLineCategory::WHOLESALE:
             case 'amazon prep':
-                return 'Amazon Prep';
+                return 'Wholesale';
             case InvoiceLineCategory::POSTAGE:
                 return 'Postage';
             case InvoiceLineCategory::PACKAGING:

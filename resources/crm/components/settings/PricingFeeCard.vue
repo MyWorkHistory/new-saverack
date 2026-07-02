@@ -173,4 +173,10 @@ defineProps({
   background: #f3e8ff;
   border-color: #e9d5ff;
 }
+
+.settings-pricing-badge--wholesale {
+  color: #1e3a8a;
+  background: #dbeafe;
+  border-color: #93c5fd;
+}
 </style>

@@ -611,16 +611,16 @@ final class InvoiceChargeImportParser
         if ($this->isExplicitInsertLikeText($hay)) {
             return $this->buildItem(InvoiceLineCategory::PACKAGING, 'Inserts', 'Inserts', $qty, $rateCents, $lineTotalCents, null, 'packaging:inserts', $chargeTypeRaw, $this->trimmedSkuOrNull($skuFromColumn));
         }
-        if (preg_match('/\b(amazon prep|amazon_prep)\b/i', $hay)) {
+        if (preg_match('/\b(amazon[\s_]*prep|amazon_prep|wholesale)\b/i', $hay)) {
             return $this->buildItem(
-                InvoiceLineCategory::FULFILLMENT,
-                'Amazon Prep',
-                $chargeName !== '' ? $chargeName : 'Amazon Prep',
+                InvoiceLineCategory::WHOLESALE,
+                'Wholesale',
+                $chargeName !== '' ? $chargeName : 'Wholesale',
                 $qty,
                 $rateCents,
                 $lineTotalCents,
                 null,
-                'fulfillment:amazon-prep',
+                'wholesale:default',
                 $chargeTypeRaw,
                 $this->trimmedSkuOrNull($skuFromColumn)
             );
@@ -729,7 +729,7 @@ final class InvoiceChargeImportParser
             if ($val === 'ad hoc' || $val === 'ad_hoc' || strpos($val, 'ad_hoc') !== false || strpos($val, 'ad hoc') !== false) return 'Ad Hoc';
             if ($val === 'bank fee' || $val === 'bank_fee' || str_replace([' ', '_'], '', $val) === 'bankfee') return 'Bank Fee';
             if (in_array($val, ['duties & taxes', 'duties and taxes', 'duties_taxes'], true) || str_replace([' ', '_'], '', $val) === 'duties&taxes') return 'Duties & Taxes';
-            if (strpos($val, 'amazon prep') !== false || strpos($val, 'amazon_prep') !== false) return 'Fulfillment';
+            if (strpos($val, 'amazon prep') !== false || strpos($val, 'amazon_prep') !== false || strpos($val, 'wholesale') !== false) return 'Wholesale';
             if (strpos($val, 'photo') !== false) return 'Ad Hoc';
             if (strpos($val, 'scion cbd') !== false || strpos($val, 'scion cbo') !== false || strpos($val, 'cbd oil') !== false) return 'Product (On-Demand)';
             return null;
@@ -748,7 +748,7 @@ final class InvoiceChargeImportParser
         $blob = $get('billing_category') !== '' ? $get('billing_category') : $get('fee');
         if ($blob !== '') {
             $norm = $this->normalizeBillingCategoryFromCsv($blob);
-            if (in_array($norm, ['Fulfillment', 'Postage', 'Packaging', 'Returns', 'Bank Fee', 'Duties & Taxes', 'Ad Hoc', 'Product (On-Demand)', 'Receiving'], true)) {
+            if (in_array($norm, ['Fulfillment', 'Wholesale', 'Postage', 'Packaging', 'Returns', 'Bank Fee', 'Duties & Taxes', 'Ad Hoc', 'Product (On-Demand)', 'Receiving'], true)) {
                 return $norm;
             }
         }
@@ -782,14 +782,14 @@ final class InvoiceChargeImportParser
             if ($this->isExplicitInsertLikeText($rowBlob)) {
                 return 'Inserts';
             }
-            if (strpos($rowBlob, 'amazon prep') !== false || strpos($rowBlob, 'amazon_prep') !== false) {
-                return 'Fulfillment';
+            if (strpos($rowBlob, 'amazon prep') !== false || strpos($rowBlob, 'amazon_prep') !== false || strpos($rowBlob, 'wholesale') !== false) {
+                return 'Wholesale';
             }
         }
         if (strpos($ct, 'first_return_charge') !== false || strpos($ct, 'return_remainder_charge') !== false) return 'Returns';
         if (strpos($ct, 'first') !== false || strpos($ct, 'remainder') !== false || strpos($ct, 'additional') !== false || $ct === 'first_pick_charge' || $ct === 'pick_remainder_charge') return 'Fulfillment';
         if (strpos($ct, 'ad_hoc') !== false || strpos($ct, 'ad hoc') !== false) return 'Ad Hoc';
-        if (strpos($ct, 'amazon prep') !== false || strpos($ct, 'amazon_prep') !== false) return 'Fulfillment';
+        if (strpos($ct, 'amazon prep') !== false || strpos($ct, 'amazon_prep') !== false || strpos($ct, 'wholesale') !== false) return 'Wholesale';
         if ($ct === 'bank fee' || $ct === 'bank_fee' || strpos($ct, 'bank fee') !== false) return 'Bank Fee';
         if (strpos($ct, 'duties') !== false && (strpos($ct, 'tax') !== false || strpos($ct, 'taxes') !== false)) return 'Duties & Taxes';
         if (
@@ -824,8 +824,8 @@ final class InvoiceChargeImportParser
         if ($this->isPackagingMaterialText($rowBlob)) {
             return 'Packaging';
         }
-        if (preg_match('/\b(amazon prep|amazon_prep)\b/i', $rowBlob) === 1) {
-            return 'Fulfillment';
+        if (preg_match('/\b(amazon[\s_]*prep|amazon_prep|wholesale)\b/i', $rowBlob) === 1) {
+            return 'Wholesale';
         }
         if (preg_match('/\b(photo|photos)\b/i', $rowBlob) === 1) {
             return 'Ad Hoc';
@@ -870,9 +870,9 @@ final class InvoiceChargeImportParser
         $labelNorm = strtolower(trim((string) $this->cell($row, $index['label_charge'] ?? -1)));
         $categoryNorm = strtolower(trim((string) $this->cell($row, $index['billing_category'] ?? -1)));
         $nameNorm = strtolower(trim((string) $this->cell($row, $index['ad_hoc_name'] ?? -1)));
-        $amazonPrepBlob = trim((string) preg_replace('/\s+/', ' ', $feeNorm.' '.$labelNorm.' '.$categoryNorm.' '.$nameNorm.' '.$chargeTypeNorm));
-        $isAmazonPrepFee = preg_match('/\bamazon[\s_]*prep\b/i', $feeNorm) === 1;
-        $isAmazonPrepRow = preg_match('/\bamazon[\s_]*prep\b/i', $amazonPrepBlob) === 1;
+        $wholesaleBlob = trim((string) preg_replace('/\s+/', ' ', $feeNorm.' '.$labelNorm.' '.$categoryNorm.' '.$nameNorm.' '.$chargeTypeNorm));
+        $isWholesaleFee = preg_match('/\b(amazon[\s_]*prep|wholesale)\b/i', $feeNorm) === 1;
+        $isWholesaleRow = preg_match('/\b(amazon[\s_]*prep|wholesale)\b/i', $wholesaleBlob) === 1;
         $isAdditionalPick = $chargeTypeNorm !== '' && (
             strpos($chargeTypeNorm, 'remainder') !== false
             || strpos($chargeTypeNorm, 'additional') !== false
@@ -891,12 +891,12 @@ final class InvoiceChargeImportParser
             && strpos($chargeTypeNorm, 'remainder') === false
             && strpos($chargeTypeNorm, 'additional') === false
         );
-        if ($isAmazonPrepFee) {
+        if ($isWholesaleFee) {
             $chargeTypeVal = '';
-            $chargeTypeName = 'Amazon Prep';
-        } elseif ($isAmazonPrepRow && ! $isAdditionalPick && ! $isFirstPick) {
+            $chargeTypeName = 'Wholesale';
+        } elseif ($isWholesaleRow && ! $isAdditionalPick && ! $isFirstPick) {
             $chargeTypeVal = '';
-            $chargeTypeName = 'Amazon Prep';
+            $chargeTypeName = 'Wholesale';
         } elseif ($isGenericFulfillmentFee) {
             $chargeTypeVal = '';
             $chargeTypeName = 'Fulfillment Fee';
@@ -1279,8 +1279,9 @@ final class InvoiceChargeImportParser
             'receiving' => 'Receiving',
             'purchase_receiving' => 'Receiving',
             'purchase receiving' => 'Receiving',
-            'amazon prep' => 'Fulfillment',
-            'amazon_prep' => 'Fulfillment',
+            'amazon prep' => 'Wholesale',
+            'amazon_prep' => 'Wholesale',
+            'wholesale' => 'Wholesale',
             'skincare' => 'Product (On-Demand)',
             'skin care' => 'Product (On-Demand)',
             'scion cbo' => 'Product (On-Demand)',
@@ -1304,7 +1305,7 @@ final class InvoiceChargeImportParser
         ];
         if (isset($exact[$t])) return $exact[$t];
         if (strpos($t, 'fulfill') !== false) return 'Fulfillment';
-        if (strpos($t, 'amazon prep') !== false || strpos($t, 'amazon_prep') !== false) return 'Fulfillment';
+        if (strpos($t, 'amazon prep') !== false || strpos($t, 'amazon_prep') !== false || strpos($t, 'wholesale') !== false) return 'Wholesale';
         if (strpos($t, 'photo') !== false) return 'Ad Hoc';
         if (strpos($t, 'shipping label') !== false || strpos($t, 'shipping label charge') !== false) return 'Postage';
         if (strpos($t, 'box charge') !== false) return 'Packaging';

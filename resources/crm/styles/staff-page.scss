@@ -1652,6 +1652,109 @@ button.staff-status-badge:focus-visible {
   background: var(--vx-nav-border);
 }
 
+/* Detail page tab-style toolbar buttons (account view, invoice view, etc.) */
+.staff-detail-tab-bar-wrap {
+  min-width: 0;
+  overflow-x: auto;
+  overflow-y: visible;
+  -webkit-overflow-scrolling: touch;
+}
+
+.staff-detail-tab-bar {
+  display: flex;
+  align-items: stretch;
+  justify-content: flex-end;
+  gap: 0.625rem;
+  min-width: min-content;
+  padding: 0.125rem 0;
+}
+
+.staff-detail-tab-btn {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  min-width: 6.75rem;
+  padding: 0.875rem 1rem 0.75rem;
+  border: 1.5px solid var(--bs-border-color);
+  border-radius: 0.625rem;
+  background: #fff;
+  color: var(--bs-body-color);
+  font-size: 0.8125rem;
+  font-weight: 500;
+  line-height: 1.2;
+  white-space: nowrap;
+  cursor: pointer;
+  outline: none;
+  box-shadow: none;
+  transition:
+    border-color 0.15s ease,
+    border-width 0.15s ease,
+    box-shadow 0.15s ease,
+    color 0.15s ease;
+}
+
+.staff-detail-tab-btn:hover:not(.staff-detail-tab-btn--disabled):not(:disabled),
+.staff-detail-tab-btn--active {
+  border: 2px solid #7367f0;
+  color: #7367f0;
+  box-shadow: none;
+}
+
+.staff-detail-tab-btn:hover:not(.staff-detail-tab-btn--disabled):not(:disabled) .staff-detail-tab-btn__icon,
+.staff-detail-tab-btn:hover:not(.staff-detail-tab-btn--disabled):not(:disabled) .staff-detail-tab-btn__label,
+.staff-detail-tab-btn--active .staff-detail-tab-btn__icon,
+.staff-detail-tab-btn--active .staff-detail-tab-btn__label {
+  color: #7367f0;
+}
+
+.staff-detail-tab-btn:focus,
+.staff-detail-tab-btn:focus-visible {
+  outline: none;
+  box-shadow: none;
+}
+
+.staff-detail-tab-btn--active:focus,
+.staff-detail-tab-btn--active:focus-visible {
+  outline: none;
+  box-shadow: none;
+}
+
+.staff-detail-tab-btn--disabled,
+.staff-detail-tab-btn:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.staff-detail-tab-btn__icon {
+  flex-shrink: 0;
+  color: var(--bs-secondary-color);
+  transition: color 0.15s ease;
+}
+
+.staff-detail-tab-btn__label {
+  text-align: center;
+  transition: color 0.15s ease;
+}
+
+[data-bs-theme="dark"] .staff-detail-tab-btn {
+  background: var(--bs-body-bg);
+}
+
+[data-bs-theme="dark"] .staff-detail-tab-btn:hover:not(.staff-detail-tab-btn--disabled):not(:disabled),
+[data-bs-theme="dark"] .staff-detail-tab-btn--active {
+  border-color: #a59bff;
+  color: #a59bff;
+}
+
+[data-bs-theme="dark"] .staff-detail-tab-btn:hover:not(.staff-detail-tab-btn--disabled):not(:disabled) .staff-detail-tab-btn__icon,
+[data-bs-theme="dark"] .staff-detail-tab-btn:hover:not(.staff-detail-tab-btn--disabled):not(:disabled) .staff-detail-tab-btn__label,
+[data-bs-theme="dark"] .staff-detail-tab-btn--active .staff-detail-tab-btn__icon,
+[data-bs-theme="dark"] .staff-detail-tab-btn--active .staff-detail-tab-btn__label {
+  color: #a59bff;
+}
+
 /*
  * Mobile: full data grid scrolls horizontally (standard CRM pattern — no row modal).
  * `scroll` keeps a gutter on more desktop browsers; iOS still overlays — use `.staff-table-mobile-scroll-cue` in markup.

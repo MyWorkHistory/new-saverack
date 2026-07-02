@@ -209,7 +209,7 @@ body button:not(.btn):not(.btn-close):not(.staff-page-pager-tile):not(
     .page-link
   ):not(.crm-vx-modal-btn):not(.staff-stat-card):not(.account-detail-tab-btn):not(
     .billing-inv-tab-btn
-  ) {
+  ):not(.staff-detail-tab-btn) {
   border: 0 solid transparent;
   box-shadow: none;
   -webkit-appearance: none;
@@ -220,9 +220,19 @@ body button:not(.btn):not(.btn-close):not(.staff-page-pager-tile):not(
     .page-link
   ):not(.crm-vx-modal-btn):not(.staff-stat-card):not(.account-detail-tab-btn):not(
     .billing-inv-tab-btn
-  )::-moz-focus-inner {
+  ):not(.staff-detail-tab-btn)::-moz-focus-inner {
   border: 0;
   padding: 0;
+}
+
+/* Tab-style toolbar buttons keep visible borders */
+body button.staff-detail-tab-btn,
+body button.account-detail-tab-btn,
+body button.billing-inv-tab-btn {
+  -webkit-appearance: none;
+  appearance: none;
+  border-width: 1.5px;
+  border-style: solid;
 }
 
 /* Vuexy modal actions are plain buttons with intentional 1px borders */

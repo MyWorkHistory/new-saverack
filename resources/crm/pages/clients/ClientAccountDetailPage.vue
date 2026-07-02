@@ -1138,20 +1138,20 @@ onUnmounted(() => {
         <h1 class="staff-user-view__title mb-0 min-w-0 flex-shrink-0">
           {{ account.company_name }}
         </h1>
-        <div class="account-detail-tab-bar-wrap ms-lg-auto flex-grow-1">
-          <div class="account-detail-tab-bar" role="tablist">
+        <div class="staff-detail-tab-bar-wrap ms-lg-auto flex-grow-1">
+          <div class="staff-detail-tab-bar" role="tablist">
             <button
               v-for="t in accountTabList"
               :key="t.id"
               type="button"
-              class="account-detail-tab-btn"
-              :class="{ 'account-detail-tab-btn--active': activeTab === t.id }"
+              class="staff-detail-tab-btn"
+              :class="{ 'staff-detail-tab-btn--active': activeTab === t.id }"
               role="tab"
               :aria-selected="activeTab === t.id"
               @click="setActiveTab(t.id)"
             >
               <svg
-                class="account-detail-tab-btn__icon"
+                class="staff-detail-tab-btn__icon"
                 width="26"
                 height="26"
                 fill="none"
@@ -1166,7 +1166,7 @@ onUnmounted(() => {
                   :d="accountTabIconPath(t.id)"
                 />
               </svg>
-              <span class="account-detail-tab-btn__label">{{ t.label }}</span>
+              <span class="staff-detail-tab-btn__label">{{ t.label }}</span>
             </button>
           </div>
         </div>
@@ -2513,97 +2513,5 @@ onUnmounted(() => {
 .account-detail-header {
   min-width: 0;
   margin-top: 0;
-}
-
-.account-detail-tab-bar-wrap {
-  min-width: 0;
-  overflow-x: auto;
-  -webkit-overflow-scrolling: touch;
-}
-
-.account-detail-tab-bar {
-  display: flex;
-  align-items: stretch;
-  justify-content: flex-end;
-  gap: 0.625rem;
-  min-width: min-content;
-  padding: 0.125rem 0;
-}
-
-.account-detail-tab-btn {
-  display: inline-flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 0.5rem;
-  min-width: 6.75rem;
-  padding: 0.875rem 1rem 0.75rem;
-  border: 1.5px solid var(--bs-border-color);
-  border-radius: 0.625rem;
-  background: #fff;
-  color: var(--bs-body-color);
-  font-size: 0.8125rem;
-  font-weight: 500;
-  line-height: 1.2;
-  white-space: nowrap;
-  cursor: pointer;
-  outline: none;
-  box-shadow: none;
-  transition:
-    border-color 0.15s ease,
-    box-shadow 0.15s ease,
-    color 0.15s ease;
-}
-
-.account-detail-tab-btn:hover:not(.account-detail-tab-btn--active) {
-  border-color: rgba(115, 103, 240, 0.35);
-  box-shadow: 0 0.125rem 0.375rem rgba(47, 43, 61, 0.06);
-}
-
-.account-detail-tab-btn:focus,
-.account-detail-tab-btn:focus-visible {
-  outline: none;
-  box-shadow: none;
-}
-
-.account-detail-tab-btn--active {
-  border: 1.5px solid #7367f0;
-  color: #7367f0;
-  box-shadow: none;
-  outline: none;
-}
-
-.account-detail-tab-btn--active:focus,
-.account-detail-tab-btn--active:focus-visible {
-  outline: none;
-  box-shadow: none;
-}
-
-.account-detail-tab-btn--active .account-detail-tab-btn__icon,
-.account-detail-tab-btn--active .account-detail-tab-btn__label {
-  color: #7367f0;
-}
-
-.account-detail-tab-btn__icon {
-  flex-shrink: 0;
-  color: var(--bs-secondary-color);
-}
-
-.account-detail-tab-btn__label {
-  text-align: center;
-}
-
-[data-bs-theme="dark"] .account-detail-tab-btn {
-  background: var(--bs-body-bg);
-}
-
-[data-bs-theme="dark"] .account-detail-tab-btn--active {
-  border: 1.5px solid #a59bff;
-  color: #a59bff;
-}
-
-[data-bs-theme="dark"] .account-detail-tab-btn--active .account-detail-tab-btn__icon,
-[data-bs-theme="dark"] .account-detail-tab-btn--active .account-detail-tab-btn__label {
-  color: #a59bff;
 }
 </style>

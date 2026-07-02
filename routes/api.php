@@ -230,6 +230,7 @@ Route::middleware('auth:sanctum')->group(function () {
 
     Route::prefix('admin/asns')->group(function () {
         Route::get('/summary', [AdminAsnController::class, 'summary'])->middleware('can:receiving.view');
+        Route::get('/charge-options', [AdminAsnController::class, 'chargeOptions'])->middleware('can:receiving.view');
         Route::get('/', [AdminAsnController::class, 'index'])->middleware('can:receiving.view');
         Route::post('/non-compliant', [AdminAsnController::class, 'storeNonCompliant'])->middleware('can:receiving.update');
         Route::get('/{asn}/product-catalog', [AsnController::class, 'productCatalog'])->middleware('can:receiving.view');

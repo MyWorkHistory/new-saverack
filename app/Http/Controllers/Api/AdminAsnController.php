@@ -149,6 +149,23 @@ class AdminAsnController extends Controller
         return response()->json($this->receiving->statusSummary($accountId));
     }
 
+    public function chargeOptions(Request $request): JsonResponse
+    {
+        $this->assertStaff($request);
+        Gate::authorize('viewAny', ClientAccountAsn::class);
+
+        $validated = $request->validate([
+            'client_account_id' => ['required', 'integer', 'exists:client_accounts,id'],
+        ]);
+        $account = ClientAccount::query()->findOrFail((int) $validated['client_account_id']);
+        Gate::authorize('view', $account);
+        $account->loadMissing(['feeItems.pricingTemplate']);
+
+        return response()->json([
+            'charge_options' => AsnBillChargeCatalog::optionsForAccount($account),
+        ]);
+    }
+
     public function index(Request $request): JsonResponse
     {
         $this->assertStaff($request);
@@ -375,11 +392,19 @@ class AdminAsnController extends Controller
             'trackings.*.carrier' => ['nullable', 'string', 'max:128'],
             'trackings.*.tracking_number' => ['required', 'string', 'max:255'],
             'fee' => ['nullable', 'numeric', 'min:0'],
+            'lines' => ['sometimes', 'array'],
+            'lines.*.shiphero_product_id' => ['nullable', 'string', 'max:191'],
+            'lines.*.shiphero_legacy_id' => ['nullable', 'integer', 'min:1'],
+            'lines.*.sku' => ['required', 'string', 'max:255'],
+            'lines.*.name' => ['required', 'string', 'max:512'],
+            'lines.*.image_url' => ['nullable', 'string', 'max:2048'],
+            'lines.*.expected_qty' => ['required', 'integer', 'min:1', 'max:99999999'],
         ]);
 
         $clientAccountId = (int) $validated['client_account_id'];
         $account = ClientAccount::query()->findOrFail($clientAccountId);
         Gate::authorize('view', $account);
+        $account->loadMissing(['feeItems.pricingTemplate']);
 
         $boxes = (int) ($validated['total_boxes'] ?? 0);
         $pallets = (int) ($validated['total_pallets'] ?? 0);
@@ -389,7 +414,12 @@ class AdminAsnController extends Controller
             ]);
         }
 
-        $fee = isset($validated['fee']) ? round((float) $validated['fee'], 2) : 0.0;
+        if (array_key_exists('fee', $validated)) {
+            $fee = round((float) $validated['fee'], 2);
+        } else {
+            $defaultFeeCents = AsnBillChargeCatalog::defaultUnitPriceCents($account, AsnBill::LINE_NON_COMPLIANT);
+            $fee = round($defaultFeeCents / 100, 2);
+        }
 
         $asn = DB::transaction(function () use ($request, $account, $clientAccountId, $boxes, $pallets, $validated, $fee) {
             $asn = new ClientAccountAsn;
@@ -416,6 +446,17 @@ class AdminAsnController extends Controller
                 $t->save();
             }
 
+            $lineOrder = 0;
+            foreach ($validated['lines'] ?? [] as $row) {
+                if (! is_array($row)) {
+                    continue;
+                }
+                $this->createNonCompliantLine($asn, $row, $lineOrder++);
+            }
+            if ($lineOrder > 0) {
+                $this->receiving->recalcAsnAggregates($asn->fresh());
+            }
+
             if ($fee > 0) {
                 Gate::authorize('create', AsnBill::class);
                 $asn->refresh();
@@ -433,6 +474,41 @@ class AdminAsnController extends Controller
         });
 
         return response()->json($this->serializeAsn($asn), 201);
+    }
+
+    /**
+     * @param  array<string, mixed>  $row
+     */
+    private function createNonCompliantLine(ClientAccountAsn $asn, array $row, int $sortOrder): void
+    {
+        $sku = trim((string) ($row['sku'] ?? ''));
+        $name = trim((string) ($row['name'] ?? ''));
+        if ($name === '' && $sku !== '') {
+            $name = $sku;
+        }
+
+        $line = new ClientAccountAsnLine;
+        $line->client_account_asn_id = $asn->id;
+        $line->shiphero_product_id = isset($row['shiphero_product_id'])
+            ? trim((string) $row['shiphero_product_id'])
+            : null;
+        if ($line->shiphero_product_id === '') {
+            $line->shiphero_product_id = null;
+        }
+        if (isset($row['shiphero_legacy_id']) && (int) $row['shiphero_legacy_id'] > 0) {
+            $line->shiphero_legacy_id = (int) $row['shiphero_legacy_id'];
+        }
+        $line->sku = $sku;
+        $line->name = $name;
+        $line->image_url = isset($row['image_url']) ? trim((string) $row['image_url']) : null;
+        if ($line->image_url === '') {
+            $line->image_url = null;
+        }
+        $line->expected_qty = (int) ($row['expected_qty'] ?? 1);
+        $line->accepted_qty = 0;
+        $line->rejected_qty = 0;
+        $line->sort_order = $sortOrder;
+        $line->save();
     }
 
     public function storeBillItem(Request $request, ClientAccountAsn $asn): JsonResponse

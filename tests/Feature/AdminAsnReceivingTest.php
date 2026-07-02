@@ -6,6 +6,7 @@ use App\Models\ClientAccount;
 use App\Models\ClientAccountAsn;
 use App\Models\ClientAccountAsnLine;
 use App\Models\ClientAccountAsnTracking;
+use App\Models\ClientAccountFee;
 use App\Models\AsnBill;
 use App\Models\CustomBill;
 use App\Models\Permission;

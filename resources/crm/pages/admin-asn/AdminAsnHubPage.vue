@@ -5,9 +5,9 @@ import api from "../../services/api";
 import CrmIconRowActions from "../../components/common/CrmIconRowActions.vue";
 import CrmLoadingSpinner from "../../components/common/CrmLoadingSpinner.vue";
 import CrmSearchableSelect from "../../components/common/CrmSearchableSelect.vue";
+import ConfirmModal from "../../components/common/ConfirmModal.vue";
 import AdminAsnCreateDrawer from "../../components/admin-asn/AdminAsnCreateDrawer.vue";
 import AdminAsnNonCompliantDrawer from "../../components/admin-asn/AdminAsnNonCompliantDrawer.vue";
-import AdminAsnScanDrawer from "../../components/admin-asn/AdminAsnScanDrawer.vue";
 import { setCrmPageMeta } from "../../composables/useCrmPageMeta.js";
 import { useToast } from "../../composables/useToast.js";
 import { asnTrackingUrl } from "../../utils/asnTrackingUrl.js";
@@ -32,7 +32,8 @@ const meta = ref({ current_page: 1, last_page: 1, per_page: 25, total: 0 });
 const accounts = ref([]);
 const accountsLoading = ref(false);
 const accountFilter = ref("");
-const statusFilter = ref("");
+const statusFilter = ref("pending");
+const filterMenuOpen = ref(false);
 const search = ref("");
 const searchDebounced = ref("");
 let searchTimer = null;
@@ -43,17 +44,14 @@ const sortDir = ref("desc");
 const manageOpenId = ref(null);
 const manageMenuRect = ref({ top: 0, left: 0 });
 const MENU_W = 200;
-const MENU_H = 120;
+const MENU_H = 160;
 
-const actionMenuOpen = ref(false);
-const actionMenuRect = ref({ top: 0, left: 0 });
-const ACTION_MENU_W = 200;
-const ACTION_MENU_H = 56;
-
-const scanOpen = ref(false);
-const scanAsnNumber = ref("");
-const scanText = ref("");
-const scanBusy = ref(false);
+const selected = ref(new Set());
+const bulkDeleteOpen = ref(false);
+const bulkDeleteBusy = ref(false);
+const rowDeleteOpen = ref(false);
+const rowDeleteTarget = ref(null);
+const rowDeleteBusy = ref(false);
 
 const createModalOpen = ref(false);
 const createAccountId = ref("");
@@ -65,9 +63,12 @@ const ncAccountId = ref("");
 const ncBoxes = ref(0);
 const ncPallets = ref(0);
 const ncFee = ref("");
+const ncFeeDefaultLabel = ref("");
 const ncTrackings = ref([{ carrier: "", tracking_number: "" }]);
+const ncPendingLines = ref([]);
+let ncLineKey = 0;
 
-const tableColspan = 10;
+const tableColspan = 11;
 
 const accountOptions = computed(() =>
   (accounts.value || [])
@@ -81,13 +82,35 @@ const accountOptions = computed(() =>
 
 const manageMenuRow = computed(() => rows.value.find((r) => r.id === manageOpenId.value) ?? null);
 
+const allSelected = computed(() => {
+  if (rows.value.length === 0) return false;
+  return rows.value.every((r) => selected.value.has(r.id));
+});
+
+const selectedCount = computed(() => selected.value.size);
+
+function canDeleteRow(row) {
+  const s = String(row?.status || "").toLowerCase();
+  return s === "draft" || s === "pending";
+}
+
+const selectedDeletableIds = computed(() =>
+  rows.value.filter((r) => selected.value.has(r.id) && canDeleteRow(r)).map((r) => r.id),
+);
+
+const bulkDeleteDisabled = computed(
+  () => selectedDeletableIds.value.length === 0 || selectedDeletableIds.value.length !== selectedCount.value,
+);
+
+const manageMenuRowCanDelete = computed(() => manageMenuRow.value && canDeleteRow(manageMenuRow.value));
+
 const STAT_CARDS = [
   {
     key: "pending",
     label: "Pending",
     sub: "Pending ASNs",
     status: "pending",
-    iconStyle: { background: "#dbeafe", color: "#1e3a8a" },
+    iconClass: "bg-primary-subtle text-primary",
     iconPath:
       "M3.875 19.125Q3 18.25 3 17H1V6q0-.825.588-1.412T3 4h14v4h3l3 4v5h-2q0 1.25-.875 2.125T18 20t-2.125-.875T15 17H9q0 1.25-.875 2.125T6 20t-2.125-.875m2.838-1.412Q7 17.425 7 17t-.288-.712T6 16t-.712.288T5 17t.288.713T6 18t.713-.288m12 0Q19 17.426 19 17t-.288-.712T18 16t-.712.288T17 17t.288.713T18 18t.713-.288M17 13h4.25L19 10h-2z",
   },
@@ -96,7 +119,7 @@ const STAT_CARDS = [
     label: "In-Progress",
     sub: "Processing ASNs",
     status: "in_progress",
-    iconStyle: { background: "#fef3c7", color: "#b45309" },
+    iconClass: "bg-warning-subtle text-warning-emphasis",
     iconPath:
       "M8 20h8v-3q0-1.65-1.175-2.825T12 13t-2.825 1.175T8 17zm6.825-10.175Q16 8.65 16 7V4H8v3q0 1.65 1.175 2.825T12 11t2.825-1.175M4 22v-2h2v-3q0-1.525.713-2.863T8.7 12q-1.275-.8-1.987-2.137T6 7V4H4V2h16v2h-2v3q0 1.525-.712 2.863T15.3 12q1.275.8 1.988 2.138T18 17v3h2v2z",
   },
@@ -105,7 +128,7 @@ const STAT_CARDS = [
     label: "Completed",
     sub: "Completed ASNs",
     status: "completed",
-    iconStyle: { background: "#dcfce7", color: "#166534" },
+    iconClass: "bg-success-subtle text-success",
     iconPath: "M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z",
   },
   {
@@ -113,10 +136,12 @@ const STAT_CARDS = [
     label: "Non-Compliant",
     sub: "Non-Compliant ASNs",
     status: "non_compliant",
-    iconStyle: { background: "#fee2e2", color: "#b91c1c" },
+    iconClass: "bg-danger-subtle text-danger",
     iconPath: "M6.4 19L5 17.6l5.6-5.6L5 6.4 6.4 5l5.6 5.6L17.6 5 19 6.4 13.4 12l5.6 5.6L17.6 19l-5.6-5.6z",
   },
 ];
+
+const nf = new Intl.NumberFormat(undefined, { maximumFractionDigits: 0 });
 
 watch(search, (v) => {
   clearTimeout(searchTimer);
@@ -187,7 +212,7 @@ function listParams() {
   if (accountFilter.value) {
     p.client_account_id = accountFilter.value;
   }
-  if (statusFilter.value) {
+  if (statusFilter.value && statusFilter.value !== "all") {
     p.status = statusFilter.value;
   }
   if (searchDebounced.value) {
@@ -219,6 +244,7 @@ async function loadList() {
     const { data } = await api.get("/admin/asns", { params: listParams() });
     rows.value = data.data || [];
     meta.value = { ...meta.value, ...(data.meta || {}) };
+    selected.value = new Set();
   } catch (e) {
     toast.errorFrom(e, "Could not load ASNs.");
   } finally {
@@ -240,7 +266,82 @@ async function loadAccounts() {
 }
 
 function setStatusCard(status) {
-  statusFilter.value = statusFilter.value === status ? "" : status;
+  statusFilter.value = statusFilter.value === status ? "all" : status;
+}
+
+function resetStatusFilter() {
+  statusFilter.value = "pending";
+  filterMenuOpen.value = false;
+}
+
+function clearSelection() {
+  selected.value = new Set();
+}
+
+function toggleAll() {
+  if (allSelected.value) {
+    selected.value = new Set();
+  } else {
+    selected.value = new Set(rows.value.map((r) => r.id));
+  }
+}
+
+function toggleOne(id) {
+  const next = new Set(selected.value);
+  if (next.has(id)) next.delete(id);
+  else next.add(id);
+  selected.value = next;
+}
+
+async function confirmBulkDelete() {
+  if (selectedDeletableIds.value.length === 0) return;
+  bulkDeleteBusy.value = true;
+  try {
+    const byAccount = new Map();
+    for (const row of rows.value) {
+      if (!selectedDeletableIds.value.includes(row.id)) continue;
+      const accountId = Number(row.client_account_id || 0);
+      if (!byAccount.has(accountId)) byAccount.set(accountId, []);
+      byAccount.get(accountId).push(row.id);
+    }
+    for (const [accountId, ids] of byAccount.entries()) {
+      await api.post("/asns/bulk-delete", {
+        client_account_id: accountId,
+        ids,
+      });
+    }
+    toast.success("Deleted selected ASNs.");
+    bulkDeleteOpen.value = false;
+    clearSelection();
+    await Promise.all([loadSummary(), loadList()]);
+  } catch (e) {
+    toast.errorFrom(e, "Bulk delete failed.");
+  } finally {
+    bulkDeleteBusy.value = false;
+  }
+}
+
+function openRowDeleteFromMenu() {
+  if (!manageMenuRow.value || !canDeleteRow(manageMenuRow.value)) return;
+  rowDeleteTarget.value = manageMenuRow.value;
+  manageOpenId.value = null;
+  rowDeleteOpen.value = true;
+}
+
+async function confirmRowDelete() {
+  if (!rowDeleteTarget.value?.id) return;
+  rowDeleteBusy.value = true;
+  try {
+    await api.delete(`/asns/${rowDeleteTarget.value.id}`);
+    toast.success("ASN removed.");
+    rowDeleteOpen.value = false;
+    rowDeleteTarget.value = null;
+    await Promise.all([loadSummary(), loadList()]);
+  } catch (e) {
+    toast.errorFrom(e, "Could not delete ASN.");
+  } finally {
+    rowDeleteBusy.value = false;
+  }
 }
 
 function openCreateModal() {
@@ -278,9 +379,86 @@ function openNonCompliant() {
   ncBoxes.value = 0;
   ncPallets.value = 0;
   ncFee.value = "";
+  ncFeeDefaultLabel.value = "";
   ncTrackings.value = [{ carrier: "", tracking_number: "" }];
+  ncPendingLines.value = [];
   nonCompliantOpen.value = true;
+  if (ncAccountId.value) {
+    loadNcChargeOptions(ncAccountId.value);
+  }
 }
+
+function buildNcLinePayload(product, quantity) {
+  const p = product || {};
+  const sku = String(p.sku || "").trim();
+  const name = String(p.name || p.product_name || sku).trim();
+  const shipheroProductId = p.shiphero_product_id != null ? String(p.shiphero_product_id).trim() : null;
+  const legacyRaw = p.shiphero_legacy_id ?? null;
+  const shipheroLegacyId = Number(legacyRaw) > 0 ? Number(legacyRaw) : null;
+  let imageUrl = p.image_url != null ? String(p.image_url).trim() : null;
+  if (imageUrl === "") {
+    imageUrl = null;
+  } else if (imageUrl && imageUrl.length > 2048) {
+    imageUrl = imageUrl.slice(0, 2048);
+  }
+  return {
+    _key: `nc-line-${++ncLineKey}`,
+    shiphero_product_id: shipheroProductId,
+    shiphero_legacy_id: shipheroLegacyId,
+    sku,
+    name,
+    image_url: imageUrl,
+    expected_qty: Math.max(1, Math.floor(Number(quantity) || 0)),
+  };
+}
+
+function addNcLine({ product, quantity }) {
+  const payload = buildNcLinePayload(product, quantity);
+  if (!payload.sku) {
+    toast.error("This product has no SKU.");
+    return;
+  }
+  ncPendingLines.value = [...ncPendingLines.value, payload];
+}
+
+function removeNcLine(index) {
+  ncPendingLines.value = ncPendingLines.value.filter((_, i) => i !== index);
+}
+
+async function loadNcChargeOptions(accountId) {
+  const id = Number(accountId || 0);
+  if (!id) {
+    ncFee.value = "";
+    ncFeeDefaultLabel.value = "";
+    return;
+  }
+  try {
+    const { data } = await api.get("/admin/asns/charge-options", {
+      params: { client_account_id: id },
+    });
+    const options = Array.isArray(data?.charge_options) ? data.charge_options : [];
+    const ncOpt = options.find((o) => o.line_type === "non_compliant");
+    const cents = Number(ncOpt?.default_unit_price_cents) || 0;
+    if (cents > 0) {
+      ncFee.value = (cents / 100).toFixed(2);
+      ncFeeDefaultLabel.value = `Account default: $${(cents / 100).toFixed(2)}`;
+    } else {
+      ncFee.value = "";
+      ncFeeDefaultLabel.value = "No account price configured";
+    }
+  } catch (e) {
+    ncFee.value = "";
+    ncFeeDefaultLabel.value = "";
+    toast.errorFrom(e, "Could not load account fee.");
+  }
+}
+
+watch(ncAccountId, (id) => {
+  if (nonCompliantOpen.value) {
+    ncPendingLines.value = [];
+    loadNcChargeOptions(id);
+  }
+});
 
 function addNcTracking() {
   ncTrackings.value = [...ncTrackings.value, { carrier: "", tracking_number: "" }];
@@ -305,12 +483,21 @@ async function submitNonCompliant() {
   nonCompliantBusy.value = true;
   try {
     const fee = ncFee.value === "" ? 0 : Number(ncFee.value);
+    const lines = ncPendingLines.value.map((line) => ({
+      shiphero_product_id: line.shiphero_product_id || undefined,
+      shiphero_legacy_id: line.shiphero_legacy_id || undefined,
+      sku: line.sku,
+      name: line.name,
+      image_url: line.image_url || undefined,
+      expected_qty: line.expected_qty,
+    }));
     const { data } = await api.post("/admin/asns/non-compliant", {
       client_account_id: id,
       total_boxes: Number(ncBoxes.value) || 0,
       total_pallets: Number(ncPallets.value) || 0,
       trackings,
       fee: Number.isFinite(fee) ? fee : 0,
+      lines: lines.length ? lines : undefined,
     });
     nonCompliantOpen.value = false;
     toast.success("Non-compliant ASN created.");
@@ -374,119 +561,20 @@ function viewAsnFromMenu() {
   manageOpenId.value = null;
 }
 
-function placeActionMenu(anchorEl) {
-  if (!(anchorEl instanceof HTMLElement)) return;
-  const r = anchorEl.getBoundingClientRect();
-  let top = r.bottom + 4;
-  let left = r.right - ACTION_MENU_W;
-  left = Math.max(8, Math.min(left, window.innerWidth - ACTION_MENU_W - 8));
-  if (top + ACTION_MENU_H > window.innerHeight - 8) {
-    top = Math.max(8, r.top - ACTION_MENU_H - 4);
-  }
-  actionMenuRect.value = { top, left };
-}
-
-async function toggleActionMenu(e) {
-  e?.stopPropagation?.();
-  if (actionMenuOpen.value) {
-    actionMenuOpen.value = false;
-    return;
-  }
-  const btn = e?.currentTarget;
-  actionMenuOpen.value = true;
-  await nextTick();
-  requestAnimationFrame(() => {
-    if (btn instanceof HTMLElement) placeActionMenu(btn);
-  });
-}
-
-async function openScanFromAction() {
-  actionMenuOpen.value = false;
-  scanAsnNumber.value = "";
-  scanText.value = "";
-  scanOpen.value = true;
-  await nextTick();
-  document.getElementById("admin-asn-scan-asn-number")?.focus();
-}
-
-function normalizeAsnNumberInput(raw) {
-  return formatAsnDisplay(String(raw ?? "").trim());
-}
-
-async function resolveAsnIdByNumber(asnNumber) {
-  const needle = normalizeAsnNumberInput(asnNumber);
-  if (!needle) {
-    return null;
-  }
-  const params = { q: needle, per_page: 25 };
-  if (accountFilter.value) {
-    params.client_account_id = accountFilter.value;
-  }
-  const { data } = await api.get("/admin/asns", { params });
-  const list = data.data || [];
-  const matches = list.filter((row) => normalizeAsnNumberInput(row.asn_number) === needle);
-  if (matches.length === 1) {
-    return matches[0].id;
-  }
-  if (matches.length > 1) {
-    throw new Error("Multiple ASNs match that number. Narrow by account filter.");
-  }
-  return null;
-}
-
-async function submitScan() {
-  const asnNum = normalizeAsnNumberInput(scanAsnNumber.value);
-  if (!asnNum) {
-    toast.error("Enter an ASN #.");
-    return;
-  }
-  if (!String(scanText.value || "").trim()) {
-    toast.error("Enter at least one barcode.");
-    return;
-  }
-  scanBusy.value = true;
-  try {
-    const asnId = await resolveAsnIdByNumber(asnNum);
-    if (!asnId) {
-      toast.error("No ASN found for that number.");
-      return;
-    }
-    const { data } = await api.post(`/admin/asns/${asnId}/scan-barcodes`, {
-      barcodes: scanText.value,
-    });
-    const unmatched = data.unmatched || [];
-    if (unmatched.length) {
-      toast.error(`No match for: ${unmatched.slice(0, 3).join(", ")}${unmatched.length > 3 ? "…" : ""}`);
-    } else {
-      toast.success(`Processed ${data.matched || 0} item(s).`);
-    }
-    scanOpen.value = false;
-    scanAsnNumber.value = "";
-    scanText.value = "";
-    await Promise.all([loadSummary(), loadList()]);
-  } catch (e) {
-    const msg = e instanceof Error && e.message ? e.message : null;
-    toast.errorFrom(e, msg || "Could not process barcodes.");
-  } finally {
-    scanBusy.value = false;
-  }
-}
-
 function onDocClick(e) {
   if (!e.target?.closest?.("[data-row-actions]")) {
     manageOpenId.value = null;
   }
-  if (!e.target?.closest?.("[data-asn-hub-actions]")) {
-    actionMenuOpen.value = false;
+  if (!e.target?.closest?.("[data-toolbar-filter]")) {
+    filterMenuOpen.value = false;
   }
 }
 
 function onWindowCloseManageMenu() {
   manageOpenId.value = null;
-  actionMenuOpen.value = false;
 }
 
-const statCardValue = (key) => summary.value[key] ?? 0;
+const statCardValue = (key) => nf.format(summary.value[key] ?? 0);
 
 onMounted(async () => {
   setCrmPageMeta({
@@ -495,6 +583,8 @@ onMounted(async () => {
   });
   if (route.query.status) {
     statusFilter.value = String(route.query.status);
+  } else {
+    statusFilter.value = "pending";
   }
   document.addEventListener("click", onDocClick);
   window.addEventListener("scroll", onWindowCloseManageMenu, true);
@@ -528,36 +618,24 @@ onUnmounted(() => {
         >
           Non-Compliant ASN
         </button>
-        <div data-asn-hub-actions class="position-relative">
-          <button
-            type="button"
-            class="btn btn-outline-secondary orders-toolbar-outline-btn fw-semibold"
-            :class="{ 'is-open': actionMenuOpen }"
-            aria-haspopup="true"
-            :aria-expanded="actionMenuOpen ? 'true' : 'false'"
-            @click="toggleActionMenu"
-          >
-            Action
-          </button>
-        </div>
       </div>
     </div>
 
-    <div v-if="summaryLoading" class="d-flex justify-content-center py-4 mb-4">
+    <div v-if="summaryLoading" class="d-flex justify-content-center py-4 mb-2">
       <CrmLoadingSpinner message="Loading summary…" />
     </div>
-    <div v-else class="row g-3 mb-4">
+    <div v-else class="row g-4 mb-4">
       <div v-for="card in STAT_CARDS" :key="card.key" class="col-12 col-sm-6 col-xl-3">
         <button
           type="button"
-          class="staff-stat-card admin-asn-summary-btn h-100 text-start w-100"
-          :class="{ 'admin-asn-summary-btn--active': statusFilter === card.status }"
+          class="staff-stat-card billing-inv-summary-card h-100 text-start w-100"
+          :class="{ 'admin-asn-summary-card--active': statusFilter === card.status }"
           @click="setStatusCard(card.status)"
         >
           <p class="staff-stat-card__label">{{ card.label }}</p>
           <p class="staff-stat-card__value">{{ statCardValue(card.key) }}</p>
           <p class="staff-stat-card__sub">{{ card.sub }}</p>
-          <div class="staff-stat-card__icon" :style="card.iconStyle" aria-hidden="true">
+          <div class="staff-stat-card__icon" :class="card.iconClass" aria-hidden="true">
             <svg width="22" height="22" fill="currentColor" viewBox="0 0 24 24">
               <path :d="card.iconPath" />
             </svg>
@@ -596,13 +674,104 @@ onUnmounted(() => {
               @keydown.enter.prevent="loadList"
             />
           </div>
+          <div class="position-relative flex-shrink-0" data-toolbar-filter>
+            <button
+              type="button"
+              class="btn btn-outline-secondary staff-toolbar-btn d-inline-flex align-items-center gap-2"
+              :aria-expanded="filterMenuOpen"
+              @click.stop="filterMenuOpen = !filterMenuOpen"
+            >
+              <svg
+                width="18"
+                height="18"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+                viewBox="0 0 24 24"
+                aria-hidden="true"
+              >
+                <path
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                  d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2.586a1 1 0 01-.293.707l-6.414 6.414a1 1 0 00-.293.707V17l-4 4v-6.586a1 1 0 00-.293-.707L3.293 7.293A1 1 0 013 6.586V4z"
+                />
+              </svg>
+              <span class="staff-toolbar-filter-text">Filters</span>
+            </button>
+            <div
+              v-if="filterMenuOpen"
+              class="dropdown-menu dropdown-menu-end show shadow border p-0 staff-toolbar-filter-dropdown"
+              role="dialog"
+              aria-label="ASN filters"
+              @click.stop
+            >
+              <div class="staff-toolbar-filter-dropdown__head">
+                <span>Filters</span>
+                <button
+                  type="button"
+                  class="btn btn-link btn-sm text-secondary text-decoration-none p-0"
+                  @click="resetStatusFilter"
+                >
+                  Reset
+                </button>
+              </div>
+              <div class="staff-toolbar-filter-dropdown__body">
+                <label class="form-label" for="admin-asn-filter-status">Status</label>
+                <select
+                  id="admin-asn-filter-status"
+                  v-model="statusFilter"
+                  class="form-select staff-datatable-filters__select"
+                >
+                  <option value="all">All</option>
+                  <option value="draft">Draft</option>
+                  <option value="pending">Pending</option>
+                  <option value="in_progress">In Progress</option>
+                  <option value="completed">Completed</option>
+                  <option value="non_compliant">Non-Compliant</option>
+                </select>
+              </div>
+            </div>
+          </div>
         </div>
+      </div>
+
+      <div
+        v-if="selectedCount > 0"
+        class="staff-bulk-selection-bar d-flex flex-wrap align-items-center gap-2 gap-md-3 px-3 px-md-4 py-3"
+      >
+        <span class="small staff-bulk-selection-bar__count me-md-1">{{ selectedCount }} selected</span>
+        <button
+          type="button"
+          class="btn btn-outline-danger btn-sm orders-bulk-toolbar-btn orders-toolbar-outline-btn orders-toolbar-outline-btn--danger"
+          :disabled="bulkDeleteDisabled || loading"
+          @click="bulkDeleteOpen = true"
+        >
+          Delete Selected
+        </button>
+        <button
+          type="button"
+          class="btn btn-link btn-sm staff-bulk-clear-link text-decoration-none px-1"
+          @click="clearSelection"
+        >
+          Clear
+        </button>
       </div>
 
       <div class="table-responsive staff-table-wrap">
         <table class="table table-hover align-middle mb-0 staff-data-table">
           <thead class="table-light staff-table-head">
             <tr>
+              <th class="staff-table-head__th staff-table-head__th--select text-center" scope="col">
+                <input
+                  type="checkbox"
+                  class="form-check-input staff-table-head__check"
+                  :checked="allSelected"
+                  :disabled="loading || rows.length === 0"
+                  aria-label="Select all ASNs on this page"
+                  @click.stop
+                  @change="toggleAll"
+                />
+              </th>
               <th class="staff-table-head__th staff-table-head__th--sort text-center" scope="col">
                 <button type="button" class="staff-sort-btn" @click="toggleSort('status')">
                   Status
@@ -667,6 +836,16 @@ onUnmounted(() => {
                 class="align-middle cursor-pointer"
                 @click="openRow(row)"
               >
+                <td class="staff-table-cell--tight-check text-center" @click.stop>
+                  <input
+                    type="checkbox"
+                    class="form-check-input staff-table-head__check"
+                    :checked="selected.has(row.id)"
+                    :aria-label="`Select ASN ${formatAsnDisplay(row.asn_number)}`"
+                    @click.stop
+                    @change="toggleOne(row.id)"
+                  />
+                </td>
                 <td class="text-center">
                   <span class="badge rounded-pill fw-medium" :class="statusBadgeClass(row.status)">
                     {{ statusLabel(row.status) }}
@@ -766,30 +945,6 @@ onUnmounted(() => {
         leave-to-class="opacity-0"
       >
         <div
-          v-if="actionMenuOpen"
-          data-asn-hub-actions
-          class="staff-row-menu fixed z-[300] overflow-hidden"
-          role="menu"
-          :style="{
-            top: `${actionMenuRect.top}px`,
-            left: `${actionMenuRect.left}px`,
-          }"
-          @click.stop
-        >
-          <button type="button" class="staff-row-menu__item" role="menuitem" @click="openScanFromAction">
-            Scan Items
-          </button>
-        </div>
-      </Transition>
-      <Transition
-        enter-active-class="transition ease-out duration-100"
-        enter-from-class="opacity-0"
-        enter-to-class="opacity-100"
-        leave-active-class="transition ease-in duration-75"
-        leave-from-class="opacity-100"
-        leave-to-class="opacity-0"
-      >
-        <div
           v-if="manageMenuRow"
           data-row-actions
           class="staff-row-menu fixed z-[300] overflow-hidden"
@@ -803,17 +958,18 @@ onUnmounted(() => {
           <button type="button" class="staff-row-menu__item" role="menuitem" @click="viewAsnFromMenu">
             View ASN
           </button>
+          <button
+            v-if="manageMenuRowCanDelete"
+            type="button"
+            class="staff-row-menu__item text-danger"
+            role="menuitem"
+            @click="openRowDeleteFromMenu"
+          >
+            Delete
+          </button>
         </div>
       </Transition>
     </Teleport>
-
-    <AdminAsnScanDrawer
-      v-model:open="scanOpen"
-      v-model:asn-number="scanAsnNumber"
-      v-model:scan-text="scanText"
-      :busy="scanBusy"
-      @submit="submitScan"
-    />
 
     <AdminAsnCreateDrawer
       v-model:open="createModalOpen"
@@ -831,9 +987,44 @@ onUnmounted(() => {
       v-model:fee="ncFee"
       v-model:trackings="ncTrackings"
       :account-options="accountOptions"
+      :pending-lines="ncPendingLines"
+      :fee-default-label="ncFeeDefaultLabel"
       :busy="nonCompliantBusy"
       @add-tracking="addNcTracking"
+      @add-line="addNcLine"
+      @remove-line="removeNcLine"
       @submit="submitNonCompliant"
+    />
+
+    <ConfirmModal
+      :open="bulkDeleteOpen"
+      title="Delete ASNs"
+      message="Remove the selected ASNs? Only draft or pending ASNs can be deleted. This cannot be undone."
+      confirm-label="Delete"
+      cancel-label="Cancel"
+      :busy="bulkDeleteBusy"
+      danger
+      @close="bulkDeleteOpen = false"
+      @confirm="confirmBulkDelete"
+    />
+
+    <ConfirmModal
+      :open="rowDeleteOpen"
+      title="Remove ASN"
+      :message="
+        rowDeleteTarget
+          ? `Remove ${formatAsnDisplay(rowDeleteTarget.asn_number)}? Only draft or pending ASNs can be deleted. This cannot be undone.`
+          : ''
+      "
+      confirm-label="Delete"
+      cancel-label="Cancel"
+      :busy="rowDeleteBusy"
+      danger
+      @close="
+        rowDeleteOpen = false;
+        rowDeleteTarget = null;
+      "
+      @confirm="confirmRowDelete"
     />
   </div>
 </template>
@@ -843,37 +1034,14 @@ onUnmounted(() => {
   cursor: pointer;
 }
 
-.admin-asn-summary-btn {
-  cursor: pointer;
-  font: inherit;
-  color: inherit;
-  border: 0;
-  box-shadow: 0 2px 10px rgba(47, 43, 61, 0.06);
-  transition:
-    box-shadow 0.15s ease,
-    transform 0.15s ease;
+button.billing-inv-summary-card.admin-asn-summary-card--active {
+  border-color: rgba(115, 103, 240, 0.45) !important;
+  box-shadow: 0 0.45rem 1rem rgba(47, 43, 61, 0.12);
 }
 
-[data-bs-theme="dark"] .admin-asn-summary-btn {
-  box-shadow: 0 2px 14px rgba(0, 0, 0, 0.22);
-}
-
-.admin-asn-summary-btn:hover {
-  box-shadow: 0 0.45rem 1rem rgba(47, 43, 61, 0.1);
-  transform: translateY(-1px);
-}
-
-.admin-asn-summary-btn--active {
-  box-shadow:
-    0 0 0 2px rgba(115, 103, 240, 0.35),
-    0 0.45rem 1rem rgba(47, 43, 61, 0.1);
-}
-
-[data-bs-theme="dark"] .admin-asn-summary-btn:hover,
-[data-bs-theme="dark"] .admin-asn-summary-btn--active {
-  box-shadow:
-    0 0 0 2px rgba(186, 175, 255, 0.35),
-    0 0.5rem 1.15rem rgba(0, 0, 0, 0.28);
+[data-bs-theme="dark"] button.billing-inv-summary-card.admin-asn-summary-card--active {
+  border-color: rgba(186, 175, 255, 0.45) !important;
+  box-shadow: 0 0.5rem 1.15rem rgba(0, 0, 0, 0.28);
 }
 
 .admin-asn-list :deep(.staff-table-head__th--sort .staff-sort-btn) {

@@ -2535,10 +2535,10 @@ function onDocKeydown(e) {
                     </h1>
                   </div>
                   <div class="small billing-inv-meta-list">
-                    <div v-if="canEditInvoiceDates" class="mb-2 text-lg-end">
-                      <div class="text-secondary mb-1">Invoice Date (service period)</div>
+                    <div v-if="canEditInvoiceDates" class="mb-2 billing-inv-meta-field text-lg-end">
+                      <div class="billing-inv-section-label billing-inv-meta-field__label">Invoice Date (service period)</div>
                       <div
-                        class="d-inline-flex flex-wrap align-items-center justify-content-lg-end billing-inv-date-range"
+                        class="d-inline-flex align-items-center billing-inv-date-range"
                       >
                         <input
                           v-model="editBillingPeriodStart"
@@ -4107,8 +4107,21 @@ function onDocKeydown(e) {
   margin-bottom: 0.35rem;
 }
 .billing-inv-meta-list .text-secondary {
-  min-width: 5.5rem;
   display: inline-block;
+}
+.billing-inv-meta-field {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.35rem;
+}
+@media (min-width: 992px) {
+  .billing-inv-meta-field.text-lg-end {
+    align-items: flex-end;
+  }
+}
+.billing-inv-meta-field__label {
+  margin-bottom: 0;
 }
 @media (min-width: 768px) {
   .billing-inv-meta-list .text-secondary {

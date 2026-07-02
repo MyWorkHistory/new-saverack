@@ -53,4 +53,26 @@ class ClientAccountPaymentTermsTest extends TestCase
 
         $this->assertSame('2026-01-13', $due->toDateString());
     }
+
+    public function test_payment_terms_label_uses_net_format(): void
+    {
+        $this->assertSame('Net 1', ClientAccountBillingPreferences::paymentTermsLabel(1));
+        $this->assertSame('Net 5', ClientAccountBillingPreferences::paymentTermsLabel(5));
+    }
+
+    public function test_effective_payment_terms_prefers_invoice_override(): void
+    {
+        $account = new ClientAccount(['payment_terms_days' => 5]);
+
+        $this->assertSame(
+            'Net 30',
+            ClientAccountBillingPreferences::effectivePaymentTerms('Net 30', $account)
+        );
+        $this->assertSame(
+            'Net 5',
+            ClientAccountBillingPreferences::effectivePaymentTerms(null, $account)
+        );
+        $this->assertTrue(ClientAccountBillingPreferences::invoicePaymentTermsOverridden('Net 30'));
+        $this->assertFalse(ClientAccountBillingPreferences::invoicePaymentTermsOverridden(null));
+    }
 }

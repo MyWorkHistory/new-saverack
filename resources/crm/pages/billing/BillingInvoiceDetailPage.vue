@@ -834,7 +834,10 @@ async function saveClientPaymentType() {
 function syncEditFromInvoice() {
   const inv = invoice.value;
   editPaymentType.value = String(inv?.client_account_default_payment_type || "").trim();
-  editPaymentTerms.value = String(inv?.payment_terms || "").trim();
+  const accountTermsLabel = String(inv?.client_account_payment_terms_label || "").trim();
+  const invoiceTermsOverride = String(inv?.payment_terms || "").trim();
+  editPaymentTerms.value =
+    invoiceTermsOverride !== "" ? invoiceTermsOverride : accountTermsLabel;
   if (!inv) {
     editDueAt.value = "";
     editBillingPeriodStart.value = "";
@@ -995,11 +998,17 @@ async function saveInvoiceDates() {
   if (!invoice.value || !canEditInvoiceDates.value || invoiceDatesSaving.value) return;
   invoiceDatesSaving.value = true;
   try {
+    const accountLabel = String(invoice.value?.client_account_payment_terms_label || "").trim();
+    const trimmedTerms = String(editPaymentTerms.value || "").trim();
+    const paymentTermsPayload =
+      trimmedTerms === "" || (accountLabel !== "" && trimmedTerms === accountLabel)
+        ? null
+        : trimmedTerms;
     const { data } = await api.patch(`/invoices/${invoice.value.id}/dates`, {
       due_at: editDueAt.value || null,
       billing_period_start: editBillingPeriodStart.value || null,
       billing_period_end: editBillingPeriodEnd.value || null,
-      payment_terms: String(editPaymentTerms.value || "").trim() || null,
+      payment_terms: paymentTermsPayload,
     });
     invoice.value = data;
     syncEditFromInvoice();
@@ -2224,7 +2233,7 @@ function onDocKeydown(e) {
 
     <template v-else-if="invoice">
       <div
-        class="d-flex flex-column flex-lg-row flex-wrap align-items-stretch align-items-lg-center gap-3 mb-4"
+        class="d-flex flex-column flex-lg-row flex-wrap align-items-stretch align-items-lg-center justify-content-lg-between gap-3 mb-4"
       >
         <button
           type="button"
@@ -2332,21 +2341,22 @@ function onDocKeydown(e) {
             </svg>
             <span>Credit Charge</span>
           </button>
-          <div class="billing-inv-toolbar-actions" data-right-actions>
-            <button
-              type="button"
-              class="btn btn-outline-primary btn-sm billing-inv-icon-action"
-              :aria-expanded="rightActionsMenuOpen"
-              aria-label="Actions"
-              @click="toggleRightActionsMenu"
-            >
-              <svg width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" aria-hidden="true">
-                <path stroke-linecap="round" stroke-linejoin="round" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
-                <path stroke-linecap="round" stroke-linejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-              </svg>
-              <span>Actions</span>
-            </button>
-            <div v-if="rightActionsMenuOpen" class="staff-row-menu billing-inv-right-menu">
+        </div>
+        <div class="billing-inv-toolbar-actions" data-right-actions>
+          <button
+            type="button"
+            class="btn btn-outline-primary btn-sm billing-inv-icon-action"
+            :aria-expanded="rightActionsMenuOpen"
+            aria-label="Actions"
+            @click="toggleRightActionsMenu"
+          >
+            <svg width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" aria-hidden="true">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
+              <path stroke-linecap="round" stroke-linejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+            </svg>
+            <span>Actions</span>
+          </button>
+          <div v-if="rightActionsMenuOpen" class="staff-row-menu billing-inv-right-menu">
             <button
               v-if="canCreate"
               type="button"
@@ -2434,7 +2444,6 @@ function onDocKeydown(e) {
             >
               Add CC Fee
             </button>
-          </div>
           </div>
         </div>
       </div>
@@ -2578,14 +2587,23 @@ function onDocKeydown(e) {
                           v-model="editPaymentTerms"
                           type="text"
                           class="form-control form-control-sm billing-inv-payment-terms-input d-inline-block mt-1 mt-lg-0 ms-lg-1"
-                          placeholder="Net 1"
+                          :placeholder="invoice.client_account_payment_terms_label || 'Net 1'"
                           maxlength="64"
                           :disabled="invoiceDatesSaving"
                         />
+                        <p class="small text-secondary mb-0 mt-1">
+                          From account billing preferences unless changed here (this invoice only).
+                        </p>
                       </template>
-                      <span v-else class="fw-medium ms-1">{{ invoice.payment_terms || "—" }}</span>
+                      <template v-else>
+                        <span class="fw-medium ms-1">{{ invoice.effective_payment_terms || "—" }}</span>
+                        <span
+                          v-if="invoice.payment_terms_overridden"
+                          class="small text-secondary ms-1"
+                        >(custom)</span>
+                      </template>
                     </div>
-                    <div v-if="canEditInvoiceDates" class="mt-2">
+                    <div v-if="canEditInvoiceDates" class="mt-2 d-flex justify-content-lg-end">
                       <button
                         type="button"
                         class="btn btn-sm btn-primary"
@@ -4153,6 +4171,7 @@ function onDocKeydown(e) {
   position: relative;
   align-items: center;
   flex-shrink: 0;
+  margin-left: auto;
 }
 .billing-inv-date-range {
   gap: 0.25rem;

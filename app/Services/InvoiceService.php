@@ -927,18 +927,16 @@ class InvoiceService
             ->where('status', Invoice::STATUS_DRAFT)
             ->sum('balance_due_cents');
 
-        $open = 0;
+        $openBalanceQuery = Invoice::query()
+            ->where('client_account_id', $invoice->client_account_id);
+        $this->applyOpenBalanceScope($openBalanceQuery);
+        $open = (int) $openBalanceQuery->sum('balance_due_cents');
+
         $rows = [];
         foreach ($payable as $row) {
             $balance = (int) $row->balance_due_cents;
             $legacyKey = $this->legacyStatusKey($row);
             $legacyLabel = $this->legacyStatusLabel($row);
-            if ($row->status !== Invoice::STATUS_DRAFT) {
-                $isPastDue = $this->isOverdue($row);
-                $open += $balance;
-            } else {
-                $isPastDue = false;
-            }
 
             $rows[] = [
                 'id' => (int) $row->id,
@@ -1329,6 +1327,19 @@ class InvoiceService
             'invoice_date_to' => $date['invoice_date_to'],
             'invoice_date_label' => $date['invoice_date_label'],
             'payment_terms' => $invoice->payment_terms,
+            'client_account_payment_terms_days' => $account !== null
+                ? ClientAccountBillingPreferences::normalizePaymentTermsDays($account->payment_terms_days)
+                : null,
+            'client_account_payment_terms_label' => $account !== null
+                ? ClientAccountBillingPreferences::paymentTermsLabelForAccount($account)
+                : null,
+            'effective_payment_terms' => ClientAccountBillingPreferences::effectivePaymentTerms(
+                $invoice->payment_terms,
+                $account
+            ),
+            'payment_terms_overridden' => ClientAccountBillingPreferences::invoicePaymentTermsOverridden(
+                $invoice->payment_terms
+            ),
             'po_number' => $invoice->po_number,
             'customer_notes' => $invoice->customer_notes,
             'internal_notes' => $invoice->internal_notes,
@@ -2453,6 +2464,41 @@ class InvoiceService
     }
 
     /**
+     * Stored statuses counted as open balance (excludes processing and past due).
+     *
+     * @return list<string>
+     */
+    private function openBalanceStoredStatuses(): array
+    {
+        return [
+            Invoice::STATUS_SENT,
+            Invoice::STATUS_PARTIAL,
+            Invoice::STATUS_PAYMENT_FAILED,
+            InvoiceLifecycleStatus::OPEN,
+            InvoiceLifecycleStatus::COLLECTION,
+        ];
+    }
+
+    /**
+     * Open balance: unpaid sent/partial invoices that are not processing or past due.
+     *
+     * @param  \Illuminate\Database\Eloquent\Builder<Invoice>  $query
+     */
+    private function applyOpenBalanceScope($query): void
+    {
+        $query->whereIn('status', $this->openBalanceStoredStatuses())
+            ->where('balance_due_cents', '>', 0)
+            ->where(function ($dueQuery) {
+                $dueQuery->whereNull('due_at')
+                    ->orWhereDate(
+                        'due_at',
+                        '>',
+                        InvoiceLifecycleStatus::latestDueDateNotPastDue()->toDateString()
+                    );
+            });
+    }
+
+    /**
      * @param  \Illuminate\Database\Eloquent\Builder<Invoice>  $query
      */
     private function applyPastDueScope($query): void
@@ -2475,8 +2521,7 @@ class InvoiceService
         if (! empty($filters['status']) && $filters['status'] !== 'all') {
             $statusFilter = strtolower((string) $filters['status']);
             if ($statusFilter === 'open') {
-                $q->whereIn('status', [Invoice::STATUS_SENT, Invoice::STATUS_PARTIAL, Invoice::STATUS_PROCESSING, Invoice::STATUS_PAYMENT_FAILED, 'past_due', 'open', 'collection'])
-                    ->where('balance_due_cents', '>', 0);
+                $this->applyOpenBalanceScope($q);
             } elseif ($statusFilter === 'past_due' || $statusFilter === 'overdue') {
                 $this->applyPastDueScope($q);
             } elseif ($statusFilter === 'draft') {
@@ -2544,7 +2589,6 @@ class InvoiceService
      */
     public function summary(?int $clientAccountId = null, bool $portalView = false): array
     {
-        $openStatuses = [Invoice::STATUS_SENT, Invoice::STATUS_PARTIAL, Invoice::STATUS_PROCESSING, Invoice::STATUS_PAYMENT_FAILED, 'past_due', 'open'];
         $base = Invoice::query();
         if ($clientAccountId !== null && $clientAccountId > 0) {
             $base->where('client_account_id', $clientAccountId);
@@ -2553,9 +2597,9 @@ class InvoiceService
             $base->whereNotIn('status', [Invoice::STATUS_DRAFT, 'pending']);
         }
 
-        $openBalance = (int) (clone $base)
-            ->whereIn('status', $openStatuses)
-            ->sum('balance_due_cents');
+        $openBalanceQuery = (clone $base);
+        $this->applyOpenBalanceScope($openBalanceQuery);
+        $openBalance = (int) $openBalanceQuery->sum('balance_due_cents');
 
         $overdueCount = (int) (clone $base)
             ->whereIn('status', [Invoice::STATUS_SENT, Invoice::STATUS_PARTIAL, Invoice::STATUS_PAYMENT_FAILED, 'past_due', 'open', 'collection'])
@@ -2566,7 +2610,7 @@ class InvoiceService
 
         $processingTotalCents = (int) (clone $base)
             ->where('status', Invoice::STATUS_PROCESSING)
-            ->sum('total_cents');
+            ->sum('balance_due_cents');
 
         $pastDueQuery = (clone $base);
         $this->applyPastDueScope($pastDueQuery);
@@ -2665,7 +2709,10 @@ class InvoiceService
             'invoice_date_from' => $date['invoice_date_from'],
             'invoice_date_to' => $date['invoice_date_to'],
             'invoice_date_label' => $date['invoice_date_label'],
-            'payment_terms' => $invoice->payment_terms,
+            'payment_terms' => ClientAccountBillingPreferences::effectivePaymentTerms(
+                $invoice->payment_terms,
+                $invoice->clientAccount
+            ),
             'po_number' => $invoice->po_number,
             'items' => $items,
             'grouped_items' => $groupedItems,

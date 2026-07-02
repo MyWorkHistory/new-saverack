@@ -137,4 +137,32 @@ final class ClientAccountBillingPreferences
 
         return $base->copy()->addDays($days);
     }
+
+    public static function paymentTermsLabel(?int $days): string
+    {
+        return 'Net '.self::normalizePaymentTermsDays($days);
+    }
+
+    public static function paymentTermsLabelForAccount(ClientAccount $account): string
+    {
+        return self::paymentTermsLabel($account->payment_terms_days);
+    }
+
+    public static function effectivePaymentTerms(?string $invoiceTerms, ?ClientAccount $account): string
+    {
+        $trimmed = is_string($invoiceTerms) ? trim($invoiceTerms) : '';
+        if ($trimmed !== '') {
+            return $trimmed;
+        }
+        if ($account !== null) {
+            return self::paymentTermsLabelForAccount($account);
+        }
+
+        return self::paymentTermsLabel(self::DEFAULT_PAYMENT_TERMS_DAYS);
+    }
+
+    public static function invoicePaymentTermsOverridden(?string $invoiceTerms): bool
+    {
+        return is_string($invoiceTerms) && trim($invoiceTerms) !== '';
+    }
 }

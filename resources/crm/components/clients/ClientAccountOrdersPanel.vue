@@ -11,9 +11,8 @@ const props = defineProps({
 const router = useRouter();
 const accountIdNum = computed(() => Number(props.accountId || 0));
 
-const { counts, loading, loadCounts, refreshCounts, lastRefreshedLabel } = usePortalDashboardCounts(
-  () => accountIdNum.value,
-);
+const { counts, loading, refreshing, countsReady, loadCounts, markRefreshed, lastRefreshedLabel } =
+  usePortalDashboardCounts(() => accountIdNum.value);
 
 const activeQueueTab = ref("awaiting");
 
@@ -95,8 +94,8 @@ function viewAllOrdersHref() {
   }).href;
 }
 
-function onOrdersQueueRefreshed() {
-  void refreshCounts();
+function onOrdersQueueRefreshed(syncedAt) {
+  markRefreshed(syncedAt);
 }
 
 loadCounts();
@@ -116,8 +115,22 @@ loadCounts();
         >
           <p class="staff-stat-card__label">{{ c.label }}</p>
           <p class="staff-stat-card__value">
-            <span v-if="loading" class="text-secondary">…</span>
-            <span v-else>{{ Number(c.value || 0).toLocaleString() }}</span>
+            <span
+              v-if="!countsReady && loading"
+              class="client-account-orders-summary__dots text-secondary"
+              aria-label="Loading counts"
+            >
+              <span class="client-account-orders-summary__dot" />
+              <span class="client-account-orders-summary__dot" />
+              <span class="client-account-orders-summary__dot" />
+            </span>
+            <span
+              v-else
+              class="client-account-orders-summary__value"
+              :class="{ 'client-account-orders-summary__value--refreshing': refreshing }"
+            >
+              {{ Number(c.value || 0).toLocaleString() }}
+            </span>
           </p>
           <p class="staff-stat-card__sub">{{ c.sub }}</p>
           <div
@@ -221,5 +234,46 @@ button.billing-inv-summary-card.client-account-orders-summary-card--active {
 [data-bs-theme="dark"] button.billing-inv-summary-card.client-account-orders-summary-card--active {
   border-color: var(--bs-primary);
   box-shadow: 0 0 0 1px var(--bs-primary);
+}
+
+.client-account-orders-summary__dots {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.2rem;
+  min-height: 1.5rem;
+}
+
+.client-account-orders-summary__dot {
+  width: 0.35rem;
+  height: 0.35rem;
+  border-radius: 50%;
+  background: currentColor;
+  opacity: 0.35;
+  animation: client-account-orders-summary-dot 1.1s ease-in-out infinite;
+}
+
+.client-account-orders-summary__dot:nth-child(2) {
+  animation-delay: 0.15s;
+}
+
+.client-account-orders-summary__dot:nth-child(3) {
+  animation-delay: 0.3s;
+}
+
+@keyframes client-account-orders-summary-dot {
+  0%,
+  80%,
+  100% {
+    opacity: 0.35;
+    transform: translateY(0);
+  }
+  40% {
+    opacity: 1;
+    transform: translateY(-0.12rem);
+  }
+}
+
+.client-account-orders-summary__value--refreshing {
+  opacity: 0.72;
 }
 </style>

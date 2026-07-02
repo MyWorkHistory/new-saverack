@@ -88,6 +88,8 @@ export function prefetchPortalDashboardCounts(clientAccountId, shipheroReady = t
 export function usePortalDashboardCounts(getClientAccountId, options = {}) {
   const loading = ref(true);
   const refreshing = ref(false);
+  /** True once we have shown counts from cache or API (keeps numbers visible during background refresh). */
+  const countsReady = ref(false);
   const counts = ref(parsePortalQueueCounts(null));
   const { markRefreshed, lastRefreshedLabel } = usePortalLastRefreshed();
   let fetchGeneration = 0;
@@ -100,8 +102,12 @@ export function usePortalDashboardCounts(getClientAccountId, options = {}) {
     return true;
   }
 
-  function applyCounts(next, { markFresh = false } = {}) {
+  function applyCounts(next, { markFresh = false, markReady = true } = {}) {
     counts.value = next;
+    if (markReady) {
+      countsReady.value = true;
+      loading.value = false;
+    }
     const id = Number(getClientAccountId() || 0);
     if (id) {
       writeCache(id, next);
@@ -175,20 +181,20 @@ export function usePortalDashboardCounts(getClientAccountId, options = {}) {
           message: "ShipHero is not configured for this account yet.",
         }),
       );
-      loading.value = false;
       refreshing.value = false;
       return;
     }
 
-    if (background) {
+    const isBackgroundRefresh = background || countsReady.value;
+    if (isBackgroundRefresh) {
       refreshing.value = true;
+      loading.value = false;
     } else if (!readCache(clientAccountId)) {
       loading.value = true;
     } else {
       loading.value = false;
     }
 
-    refreshing.value = true;
     await fetchAllQueues({ bustCache });
   }
 
@@ -202,7 +208,6 @@ export function usePortalDashboardCounts(getClientAccountId, options = {}) {
     const cached = readCache(clientAccountId);
     if (cached) {
       applyCounts(cached);
-      loading.value = false;
       await fetchCounts({ background: true, shipheroReady: shipheroReadyFlag() });
       return;
     }
@@ -213,10 +218,8 @@ export function usePortalDashboardCounts(getClientAccountId, options = {}) {
         timeout: 10000,
       });
       applyCounts(parsePortalQueueCounts(data));
-      loading.value = false;
     } catch {
-      // continue with zeros
-      loading.value = false;
+      applyCounts(parsePortalQueueCounts(null));
     }
 
     await fetchCounts({ background: true, shipheroReady: shipheroReadyFlag() });
@@ -226,6 +229,7 @@ export function usePortalDashboardCounts(getClientAccountId, options = {}) {
     const clientAccountId = Number(getClientAccountId() || 0);
     if (!clientAccountId) {
       loading.value = false;
+      refreshing.value = false;
       return;
     }
     fetchGeneration += 1;
@@ -234,9 +238,8 @@ export function usePortalDashboardCounts(getClientAccountId, options = {}) {
     } catch {
       // no-op
     }
-    refreshing.value = true;
     await fetchCounts({
-      background: false,
+      background: true,
       bustCache: true,
       shipheroReady: shipheroReadyFlag(),
     });
@@ -246,5 +249,14 @@ export function usePortalDashboardCounts(getClientAccountId, options = {}) {
     fetchGeneration += 1;
   });
 
-  return { counts, loading, refreshing, loadCounts, refreshCounts, lastRefreshedLabel };
+  return {
+    counts,
+    loading,
+    refreshing,
+    countsReady,
+    loadCounts,
+    refreshCounts,
+    markRefreshed,
+    lastRefreshedLabel,
+  };
 }

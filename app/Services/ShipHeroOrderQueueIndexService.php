@@ -319,50 +319,27 @@ class ShipHeroOrderQueueIndexService
             throw new RuntimeException('Unsupported dashboard section for index aggregate: '.$sectionKey);
         }
 
-        $query = ShipHeroOrderQueueIndex::query()
-            ->selectRaw('client_account_id, COUNT(*) as orders_count')
-            ->where('queue_kind', $mapping['queue_kind']);
-
-        if ($mapping['hold_reason'] !== null) {
-            $query->where('hold_reason', $mapping['hold_reason']);
-        }
-
-        $counts = $query
-            ->groupBy('client_account_id')
-            ->pluck('orders_count', 'client_account_id');
-
-        if ($counts->isEmpty()) {
-            return [
-                'payload' => ['accounts' => [], 'truncated' => false],
-                'total_count' => 0,
-            ];
-        }
-
-        $accountIds = $counts->keys()->map(static function ($id) {
-            return (int) $id;
-        })->all();
-
         $accounts = ClientAccount::query()
-            ->whereIn('id', $accountIds)
-            ->get(['id', 'company_name', 'status'])
-            ->keyBy('id');
+            ->whereNotNull('shiphero_customer_account_id')
+            ->where('shiphero_customer_account_id', '!=', '')
+            ->orderBy('company_name')
+            ->get(['id', 'company_name', 'status']);
 
         $rows = [];
         $total = 0;
-        foreach ($counts as $accountId => $count) {
-            $id = (int) $accountId;
-            $c = (int) $count;
-            if ($c <= 0) {
+        foreach ($accounts as $account) {
+            $context = $this->queueCounts->contextForDashboardSection($account, $sectionKey);
+            $count = $this->countForDashboardSection((int) $account->id, $sectionKey, $context);
+            if ($count <= 0) {
                 continue;
             }
-            $account = $accounts->get($id);
             $rows[] = [
-                'account_id' => $id,
-                'account_name' => $account ? (string) $account->company_name : 'Account #'.$id,
-                'account_status' => $account ? (string) $account->status : '',
-                'orders_count' => $c,
+                'account_id' => (int) $account->id,
+                'account_name' => (string) $account->company_name,
+                'account_status' => (string) $account->status,
+                'orders_count' => $count,
             ];
-            $total += $c;
+            $total += $count;
         }
 
         usort($rows, static function (array $a, array $b) {
@@ -375,9 +352,50 @@ class ShipHeroOrderQueueIndexService
         ];
     }
 
+    public function indexHasRowsForSection(string $sectionKey): bool
+    {
+        $mapping = $this->sectionIndexMapping($sectionKey);
+        if ($mapping === null) {
+            return false;
+        }
+
+        $query = ShipHeroOrderQueueIndex::query()
+            ->where('queue_kind', $mapping['queue_kind']);
+
+        if ($mapping['hold_reason'] !== null) {
+            $query->where('hold_reason', $mapping['hold_reason']);
+        }
+
+        return $query->exists();
+    }
+
     public function indexHasAnyRows(): bool
     {
         return ShipHeroOrderQueueIndex::query()->exists();
+    }
+
+    /**
+     * @param  array<string, mixed>  $context  PortalQueueCountsService::contextForDashboardSection payload
+     */
+    public function countForDashboardSection(int $clientAccountId, string $sectionKey, array $context): int
+    {
+        $mapping = $this->sectionIndexMapping($sectionKey);
+        if ($mapping === null || $clientAccountId <= 0) {
+            return 0;
+        }
+
+        $tab = $mapping['queue_kind'];
+        $query = ShipHeroOrderQueueIndex::query()
+            ->where('client_account_id', $clientAccountId)
+            ->where('queue_kind', $tab);
+
+        if ($mapping['hold_reason'] !== null) {
+            $query->where('hold_reason', $mapping['hold_reason']);
+        }
+
+        $this->applyDateWindowToQuery($query, $tab, $context, []);
+
+        return (int) $query->count();
     }
 
     /**

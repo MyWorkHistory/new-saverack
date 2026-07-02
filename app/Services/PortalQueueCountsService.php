@@ -3,6 +3,7 @@
 namespace App\Services;
 
 use App\Models\ClientAccount;
+use App\Models\OrderDashboardSection;
 use App\Models\ShipHeroOrderQueueIndex;
 use Carbon\Carbon;
 use Illuminate\Support\Facades\Cache;
@@ -90,6 +91,25 @@ class PortalQueueCountsService
             'shipped_from' => $shippedFrom,
             'shipped_to' => $shippedTo,
         ];
+    }
+
+    /**
+     * Queue count context for admin Home dashboard sections (matches Orders list date presets).
+     *
+     * @return array<string, mixed>
+     */
+    public function contextForDashboardSection(ClientAccount $account, string $sectionKey): array
+    {
+        $context = $this->contextForAccount($account);
+
+        if ($sectionKey === OrderDashboardSection::KEY_SHIPPED) {
+            $timezone = (string) ($context['timezone'] ?? self::DEFAULT_ACCOUNT_TIMEZONE);
+            $today = Carbon::now($timezone)->toDateString();
+            $context['shipped_from'] = $this->dateStartIso($today, $timezone);
+            $context['shipped_to'] = $this->dateEndIso($today, $timezone);
+        }
+
+        return $context;
     }
 
     /**

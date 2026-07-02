@@ -114,4 +114,72 @@ class OrderDashboardSnapshotServiceTest extends TestCase
 
         $this->assertSame(count(OrderDashboardSection::SHIPHERO_KEYS), $running);
     }
+
+    public function test_refresh_section_uses_section_specific_index_gate(): void
+    {
+        $now = now();
+        foreach (OrderDashboardSection::ALL_KEYS as $key) {
+            OrderDashboardSection::query()->insert([
+                'section_key' => $key,
+                'payload' => json_encode(['accounts' => [], 'truncated' => false]),
+                'total_count' => 0,
+                'status' => OrderDashboardSection::STATUS_IDLE,
+                'refreshed_at' => $now,
+                'created_at' => $now,
+                'updated_at' => $now,
+            ]);
+        }
+
+        $orderIndex = Mockery::mock(ShipHeroOrderQueueIndexService::class);
+        $orderIndex->shouldReceive('syncAccountQueue')->andReturnNull();
+        $orderIndex->shouldReceive('indexHasRowsForSection')
+            ->with(OrderDashboardSection::KEY_SHIPPED)
+            ->once()
+            ->andReturn(false);
+
+        $orders = Mockery::mock(ShipHeroOrderService::class);
+        $orders->shouldReceive('countShipments')
+            ->once()
+            ->andReturn(['count' => 0, 'truncated' => false]);
+
+        $queueCounts = Mockery::mock(PortalQueueCountsService::class);
+        $queueCounts->shouldReceive('contextForDashboardSection')
+            ->andReturn([
+                'customer_id' => 'sh-1',
+                'timezone' => PortalQueueCountsService::DEFAULT_ACCOUNT_TIMEZONE,
+                'shipped_from' => $now->copy()->startOfDay()->toIso8601String(),
+                'shipped_to' => $now->endOfDay()->toIso8601String(),
+                'open_from' => $now->copy()->subDays(29)->toIso8601String(),
+                'open_to' => $now->endOfDay()->toIso8601String(),
+            ]);
+
+        Schema::dropIfExists('client_accounts');
+        Schema::create('client_accounts', function (Blueprint $table) {
+            $table->id();
+            $table->string('status')->default('active');
+            $table->string('company_name')->nullable();
+            $table->string('shiphero_customer_account_id')->nullable();
+            $table->timestamps();
+        });
+        \App\Models\ClientAccount::query()->create([
+            'status' => 'active',
+            'company_name' => 'Gate Test Co',
+            'shiphero_customer_account_id' => 'sh-1',
+        ]);
+
+        $service = new OrderDashboardSnapshotService(
+            $queueCounts,
+            $orders,
+            $orderIndex
+        );
+
+        $service->refreshSection(OrderDashboardSection::KEY_SHIPPED);
+
+        $this->assertSame(
+            OrderDashboardSection::STATUS_IDLE,
+            OrderDashboardSection::query()
+                ->where('section_key', OrderDashboardSection::KEY_SHIPPED)
+                ->value('status')
+        );
+    }
 }

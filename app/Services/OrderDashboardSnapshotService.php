@@ -189,7 +189,7 @@ class OrderDashboardSnapshotService
                 $result = $this->buildAsnPendingPayload();
             } else {
                 $this->syncIndexForDashboardSection($sectionKey);
-                if ($this->orderIndex->indexHasAnyRows()) {
+                if ($this->orderIndex->indexHasRowsForSection($sectionKey)) {
                     $result = $this->orderIndex->aggregateDashboardSection($sectionKey);
                 } else {
                     $result = $this->buildShipHeroSectionPayload($sectionKey);
@@ -290,7 +290,7 @@ class OrderDashboardSnapshotService
      */
     private function buildShipHeroSectionPayload(string $sectionKey): array
     {
-        if ($this->orderIndex->indexHasAnyRows()) {
+        if ($this->orderIndex->indexHasRowsForSection($sectionKey)) {
             return $this->orderIndex->aggregateDashboardSection($sectionKey);
         }
 
@@ -311,7 +311,7 @@ class OrderDashboardSnapshotService
         $truncated = false;
 
         foreach ($accounts as $account) {
-            $context = $this->queueCounts->contextForAccount($account);
+            $context = $this->queueCounts->contextForDashboardSection($account, $sectionKey);
             $countResult = $this->countForSection($sectionKey, $context);
             $count = (int) ($countResult['count'] ?? 0);
             $truncated = $truncated || (bool) ($countResult['truncated'] ?? false);
@@ -367,48 +367,43 @@ class OrderDashboardSnapshotService
             ];
         }
 
-        $sample = $mapped[0];
-        $summary = $this->orders->readyToShipSummaryForAccounts(
-            array_map(static function (array $row) {
-                return [
-                    'id' => (int) $row['id'],
-                    'name' => (string) $row['name'],
-                    'customer_account_id' => (string) $row['customer_account_id'],
-                ];
-            }, $mapped),
-            $this->isoDateOnly($sample['awaiting_from'] ?? null),
-            $this->isoDateOnly($sample['awaiting_to'] ?? null)
-        );
-
-        $statusById = [];
-        foreach ($mapped as $row) {
-            $statusById[(int) $row['id']] = (string) ($row['account_status'] ?? '');
-        }
-
         $accountsOut = [];
-        foreach ($summary['ready_to_ship_by_account'] ?? [] as $row) {
-            if (! is_array($row)) {
-                continue;
-            }
-            $id = (int) ($row['account_id'] ?? 0);
-            $count = (int) ($row['orders_count'] ?? 0);
-            if ($id <= 0 || $count <= 0) {
+        $total = 0;
+        foreach ($mapped as $row) {
+            $summary = $this->orders->readyToShipSummaryForAccounts(
+                [
+                    [
+                        'id' => (int) $row['id'],
+                        'name' => (string) $row['name'],
+                        'customer_account_id' => (string) $row['customer_account_id'],
+                    ],
+                ],
+                $this->isoDateOnly($row['awaiting_from'] ?? null),
+                $this->isoDateOnly($row['awaiting_to'] ?? null)
+            );
+            $count = (int) ($summary['ready_to_ship_total'] ?? 0);
+            if ($count <= 0) {
                 continue;
             }
             $accountsOut[] = [
-                'account_id' => $id,
-                'account_name' => (string) ($row['account_name'] ?? 'Account'),
-                'account_status' => $statusById[$id] ?? '',
+                'account_id' => (int) $row['id'],
+                'account_name' => (string) $row['name'],
+                'account_status' => (string) ($row['account_status'] ?? ''),
                 'orders_count' => $count,
             ];
+            $total += $count;
         }
+
+        usort($accountsOut, static function (array $a, array $b) {
+            return ($b['orders_count'] ?? 0) <=> ($a['orders_count'] ?? 0);
+        });
 
         return [
             'payload' => [
                 'accounts' => $accountsOut,
                 'truncated' => false,
             ],
-            'total_count' => (int) ($summary['ready_to_ship_total'] ?? 0),
+            'total_count' => $total,
         ];
     }
 

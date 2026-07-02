@@ -1373,50 +1373,38 @@ onUnmounted(() => {
               <div>
                 <dt class="staff-user-profile__dt">Channels</dt>
                 <dd class="staff-user-profile__dd text-end">
-                  <div class="d-flex justify-content-end align-items-center flex-wrap gap-2">
+                  <div class="d-flex justify-content-end flex-wrap gap-1">
                     <ClientAccountChannelIcons
-                      v-if="
-                        account.notify_email ||
-                        account.notification_email ||
-                        account.telegram_handle ||
-                        account.whatsapp_e164 ||
-                        account.slack_channel
-                      "
                       :notify-email="!!account.notify_email"
                       :notification-email="account.notification_email || ''"
                       :telegram-handle="account.telegram_handle || ''"
                       :whatsapp-e164="account.whatsapp_e164 || ''"
                       :slack-channel="account.slack_channel || ''"
                     />
-                    <template v-if="account.in_house_slack">
-                      <a
-                        v-if="inHouseSlackHref(account.in_house_slack)"
-                        :href="inHouseSlackHref(account.in_house_slack)"
-                        class="link-primary text-decoration-none text-break small"
-                        :aria-label="`${inHouseSlackDisplayLabel(account.in_house_slack)} in Slack (opens in new tab)`"
-                        target="_blank"
-                        rel="noopener noreferrer"
-                      >
-                        {{ inHouseSlackDisplayLabel(account.in_house_slack) }}
-                      </a>
-                      <span v-else class="text-body text-break small">{{
-                        inHouseSlackDisplayLabel(account.in_house_slack) ||
-                        display(account.in_house_slack)
-                      }}</span>
-                    </template>
-                    <span
-                      v-if="
-                        !account.in_house_slack &&
-                        !account.notify_email &&
-                        !account.notification_email &&
-                        !account.telegram_handle &&
-                        !account.whatsapp_e164 &&
-                        !account.slack_channel
-                      "
-                      class="text-secondary"
-                      >—</span
-                    >
                   </div>
+                </dd>
+              </div>
+              <div>
+                <dt class="staff-user-profile__dt">In-House Slack</dt>
+                <dd class="staff-user-profile__dd text-end text-break">
+                  <template v-if="inHouseSlackHref(account.in_house_slack)">
+                    <a
+                      :href="inHouseSlackHref(account.in_house_slack)"
+                      class="link-primary text-decoration-none text-break"
+                      :aria-label="`${inHouseSlackDisplayLabel(account.in_house_slack)} in Slack (opens in new tab)`"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                    >
+                      {{ inHouseSlackDisplayLabel(account.in_house_slack) }}
+                    </a>
+                  </template>
+                  <template v-else-if="account.in_house_slack">
+                    <span class="text-body text-break">{{
+                      inHouseSlackDisplayLabel(account.in_house_slack) ||
+                      display(account.in_house_slack)
+                    }}</span>
+                  </template>
+                  <template v-else>{{ display(account.in_house_slack) }}</template>
                 </dd>
               </div>
             </dl>

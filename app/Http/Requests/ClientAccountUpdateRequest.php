@@ -3,6 +3,7 @@
 namespace App\Http\Requests;
 
 use App\Models\ClientAccount;
+use App\Services\PortalOnboardingService;
 use App\Support\ClientAccountBillingPreferences;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
@@ -148,6 +149,13 @@ class ClientAccountUpdateRequest extends FormRequest
             $newStatus = (string) $this->input('status');
             if ($newStatus !== ClientAccount::STATUS_ACTIVE) {
                 return;
+            }
+            $onboarding = app(PortalOnboardingService::class);
+            if (! $onboarding->isOnboardingReadyForActivation($account)) {
+                $v->errors()->add(
+                    'status',
+                    PortalOnboardingService::ACTIVATION_BLOCKED_MESSAGE
+                );
             }
             $sid = $this->input('shiphero_customer_account_id');
             if ($sid === null || $sid === '') {

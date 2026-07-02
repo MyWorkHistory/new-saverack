@@ -314,6 +314,47 @@ class ShipHeroOrderQueueIndexServiceTest extends TestCase
         $this->assertSame(1, $payment['total_count']);
     }
 
+    public function test_hold_section_matches_secondary_hold_in_payload(): void
+    {
+        $now = now();
+        $account = $this->createLinkedAccount();
+        $accountId = (int) $account->id;
+
+        $queueCounts = Mockery::mock(PortalQueueCountsService::class);
+        $queueCounts->shouldReceive('contextForDashboardSection')
+            ->andReturn($this->dashboardContext());
+
+        ShipHeroOrderQueueIndex::query()->insert([
+            'client_account_id' => $accountId,
+            'shiphero_order_id' => 'hold-multi',
+            'queue_kind' => ShipHeroOrderQueueIndex::KIND_ON_HOLD,
+            'hold_reason' => 'fraud',
+            'order_date' => $now,
+            'list_payload' => json_encode([
+                'id' => 'hold-multi',
+                'holds' => [
+                    'fraud_hold' => true,
+                    'payment_hold' => true,
+                ],
+            ]),
+            'indexed_at' => $now,
+            'last_seen_at' => $now,
+            'created_at' => $now,
+            'updated_at' => $now,
+        ]);
+
+        $service = new ShipHeroOrderQueueIndexService(
+            Mockery::mock(ShipHeroOrderService::class),
+            $queueCounts
+        );
+
+        $payment = $service->aggregateDashboardSection('hold_payment');
+        $fraud = $service->aggregateDashboardSection('hold_fraud');
+
+        $this->assertSame(1, $payment['total_count']);
+        $this->assertSame(1, $fraud['total_count']);
+    }
+
     public function test_count_for_account_tab_respects_open_queue_window(): void
     {
         $now = now();

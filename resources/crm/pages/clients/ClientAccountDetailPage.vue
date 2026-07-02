@@ -24,6 +24,10 @@ import { useToast } from "../../composables/useToast";
 import { errorMessage } from "../../utils/apiError";
 import { formatDateTimeUs } from "../../utils/formatUserDates";
 import { resolvePublicUrl } from "../../utils/resolvePublicUrl.js";
+import {
+  ONBOARDING_ACTIVATION_BLOCKED_MESSAGE,
+  checkOnboardingReadyForActivation,
+} from "../../utils/clientAccountOnboardingActivation.js";
 import { inHouseSlackDisplayLabel, inHouseSlackHref } from "../../utils/slackChannel.js";
 import { warnIfShipheroSyncFailed } from "../../utils/clientAccountShipheroSync.js";
 
@@ -660,6 +664,13 @@ async function saveAccountStatusFromModal() {
   if (next === account.value.status) {
     accountStatusModalOpen.value = false;
     return;
+  }
+  if (next === "active") {
+    const ready = await checkOnboardingReadyForActivation(api, props.id);
+    if (!ready) {
+      toast.error(ONBOARDING_ACTIVATION_BLOCKED_MESSAGE);
+      return;
+    }
   }
   accountStatusSaving.value = true;
   try {

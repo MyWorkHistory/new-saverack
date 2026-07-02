@@ -24,6 +24,8 @@ class PortalOnboardingService
 
     public const BILLING_STATUS_FAILED = 'failed';
 
+    public const ACTIVATION_BLOCKED_MESSAGE = 'Please complete onboarding to active account.';
+
     /** @var ClientBrandLogoService */
     protected $brandLogos;
 
@@ -507,6 +509,40 @@ class PortalOnboardingService
         }
 
         throw new \RuntimeException('This account has no portal user to attach onboarding data.');
+    }
+
+    /**
+     * @return list<array<string, mixed>>
+     */
+    public function adminOnboardingTasks(ClientAccount $account): array
+    {
+        $user = $this->resolvePrimaryPortalUser($account);
+
+        return $this->attachVerificationToTasks($this->buildTasks($user, $account), $account);
+    }
+
+    public function isOnboardingReadyForActivation(ClientAccount $account): bool
+    {
+        try {
+            $tasks = $this->adminOnboardingTasks($account);
+        } catch (\Throwable $e) {
+            return false;
+        }
+
+        if ($tasks === []) {
+            return false;
+        }
+
+        foreach ($tasks as $task) {
+            if (($task['status'] ?? '') !== 'completed') {
+                return false;
+            }
+            if (empty($task['verified'])) {
+                return false;
+            }
+        }
+
+        return true;
     }
 
     public function isValidTaskId(string $taskId): bool

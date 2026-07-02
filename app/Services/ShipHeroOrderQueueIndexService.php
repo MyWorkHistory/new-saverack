@@ -144,7 +144,7 @@ class ShipHeroOrderQueueIndexService
 
         $holdReason = strtolower(trim((string) ($filters['hold_reason'] ?? '')));
         if ($tab === ShipHeroOrderQueueIndex::KIND_ON_HOLD && $holdReason !== '') {
-            $query->where('hold_reason', $holdReason);
+            $this->applyHoldReasonFilterToQuery($query, $holdReason);
         }
 
         $orderNumber = ltrim(trim((string) ($filters['order_number'] ?? '')), '#');
@@ -408,7 +408,7 @@ class ShipHeroOrderQueueIndexService
             ->where('queue_kind', $mapping['queue_kind']);
 
         if ($mapping['hold_reason'] !== null) {
-            $query->where('hold_reason', $mapping['hold_reason']);
+            $this->applyHoldReasonFilterToQuery($query, $mapping['hold_reason']);
         }
 
         return $query->exists();
@@ -435,7 +435,7 @@ class ShipHeroOrderQueueIndexService
             ->where('queue_kind', $tab);
 
         if ($mapping['hold_reason'] !== null) {
-            $query->where('hold_reason', $mapping['hold_reason']);
+            $this->applyHoldReasonFilterToQuery($query, $mapping['hold_reason']);
         }
 
         $this->applyDateWindowToQuery($query, $tab, $context, []);
@@ -484,6 +484,55 @@ class ShipHeroOrderQueueIndexService
                 return ['queue_kind' => ShipHeroOrderQueueIndex::KIND_ON_HOLD, 'hold_reason' => 'payment'];
             case OrderDashboardSection::KEY_HOLD_USER:
                 return ['queue_kind' => ShipHeroOrderQueueIndex::KIND_ON_HOLD, 'hold_reason' => 'user'];
+            default:
+                return null;
+        }
+    }
+
+    /**
+     * Match dashboard / ShipHero hold filters — orders can have multiple active holds.
+     *
+     * @param  \Illuminate\Database\Eloquent\Builder  $query
+     */
+    private function applyHoldReasonFilterToQuery($query, string $holdReason): void
+    {
+        $holdReason = strtolower(trim($holdReason));
+        if ($holdReason === '') {
+            return;
+        }
+
+        $holdField = $this->holdReasonToPayloadField($holdReason);
+
+        $query->where(function ($q) use ($holdReason, $holdField) {
+            $q->where('hold_reason', $holdReason);
+
+            if ($holdField !== null) {
+                $q->orWhereRaw(
+                    "COALESCE(JSON_UNQUOTE(JSON_EXTRACT(list_payload, '$.holds.{$holdField}')), 'false') IN ('true', '1')"
+                );
+            }
+
+            if ($holdReason === 'user') {
+                $q->orWhereRaw(
+                    "COALESCE(JSON_UNQUOTE(JSON_EXTRACT(list_payload, '$.holds.client_hold')), 'false') IN ('true', '1')"
+                )->orWhereRaw(
+                    "COALESCE(JSON_UNQUOTE(JSON_EXTRACT(list_payload, '$.is_crm_user_hold')), 'false') IN ('true', '1')"
+                );
+            }
+        });
+    }
+
+    private function holdReasonToPayloadField(string $holdReason): ?string
+    {
+        switch ($holdReason) {
+            case 'fraud':
+                return 'fraud_hold';
+            case 'payment':
+                return 'payment_hold';
+            case 'address':
+                return 'address_hold';
+            case 'operator':
+                return 'operator_hold';
             default:
                 return null;
         }

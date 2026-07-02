@@ -41,11 +41,40 @@ const route = useRoute();
 const router = useRouter();
 const crmUser = inject("crmUser", ref(null));
 
+const ROUTE_HOLD_REASONS = new Set(["fraud", "address", "operator", "payment", "user"]);
+
+function normalizeRouteHoldReason(value) {
+  const raw = String(value || "").trim().toLowerCase();
+  return ROUTE_HOLD_REASONS.has(raw) ? raw : "";
+}
+
+function normalizeRouteAccountId(value) {
+  const id = Number(value || 0);
+  return id > 0 ? String(id) : "";
+}
+
+function applyOrdersRouteQuery() {
+  if (!isEmbeddedOrders.value && !isPortalUser.value) {
+    const accountFromRoute = normalizeRouteAccountId(route.query.client_account_id);
+    if (accountFromRoute) {
+      selectedAccountId.value = accountFromRoute;
+    }
+  }
+  if (tabKey.value === "on_hold") {
+    const holdFromRoute = normalizeRouteHoldReason(route.query.hold_reason);
+    if (holdFromRoute) {
+      query.holdReason = holdFromRoute;
+    }
+  }
+}
+
 const rows = ref([]);
 const loading = ref(false);
 const accountsLoading = ref(false);
 const accounts = ref([]);
-const selectedAccountId = ref("");
+const selectedAccountId = ref(
+  normalizeRouteAccountId(props.fixedClientAccountId || route.query.client_account_id),
+);
 /** Admin staff: last search ran without a specific account (all accounts / order # lookup). */
 const crossAccountMode = ref(false);
 const crossAccountScanTruncated = ref(false);
@@ -90,7 +119,7 @@ const query = reactive({
   to: "",
   fulfillmentStatus: "",
   readyToShip: "",
-  holdReason: "",
+  holdReason: normalizeRouteHoldReason(route.query.hold_reason),
   /** Manage tab only: passed to ShipHero `order_number` filter. */
   orderNumber: "",
 });
@@ -1066,7 +1095,7 @@ watch(
 
 watch(
   tabKey,
-  () => {
+  (_newTab, oldTab) => {
     clearRowSelection();
     /** Ready to Ship tab defaults to last 7 days of order date; other tabs default to today (bounded window; ShipHero was often empty with no dates). */
     query.datePreset = defaultDatePresetForCurrentTab();
@@ -1074,7 +1103,11 @@ watch(
     query.to = "";
     query.fulfillmentStatus = "";
     query.readyToShip = "";
-    query.holdReason = "";
+    if (oldTab !== undefined) {
+      query.holdReason = "";
+    } else if (tabKey.value === "on_hold") {
+      applyOrdersRouteQuery();
+    }
     query.orderNumber = "";
     committedOrderNumber.value = "";
     crossAccountMode.value = false;
@@ -1120,6 +1153,15 @@ watch(
   },
 );
 
+watch(
+  () => [route.query.client_account_id, route.query.hold_reason],
+  () => {
+    applyOrdersRouteQuery();
+    if (!selectedAccountId.value || tabKey.value === "search") return;
+    fetchOrders(true);
+  },
+);
+
 watch(selectedAccountId, (id) => {
   if (id) {
     crossAccountMode.value = false;
@@ -1135,6 +1177,7 @@ onMounted(async () => {
     });
   }
   await loadAccounts();
+  applyOrdersRouteQuery();
   const fixedId = Number(props.fixedClientAccountId || 0);
   if (fixedId > 0) {
     selectedAccountId.value = String(fixedId);

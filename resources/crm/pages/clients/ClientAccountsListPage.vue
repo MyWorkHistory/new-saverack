@@ -29,6 +29,10 @@ import { getPublicSignupUrl } from "../../utils/publicSignupUrl.js";
 import { downloadListCsv } from "../../utils/downloadListCsv.js";
 import { resolvePublicUrl } from "../../utils/resolvePublicUrl.js";
 import { warnIfShipheroSyncFailed } from "../../utils/clientAccountShipheroSync.js";
+import {
+  ONBOARDING_ACTIVATION_BLOCKED_MESSAGE,
+  checkOnboardingReadyForActivation,
+} from "../../utils/clientAccountOnboardingActivation.js";
 
 const crmUser = inject("crmUser", ref(null));
 const toast = useToast();
@@ -509,6 +513,13 @@ async function saveStatusFromModal() {
   if (String(row.status || "") === status) {
     closeStatusModal();
     return;
+  }
+  if (status === "active") {
+    const ready = await checkOnboardingReadyForActivation(api, row.id);
+    if (!ready) {
+      toast.error(ONBOARDING_ACTIVATION_BLOCKED_MESSAGE);
+      return;
+    }
   }
   statusPickerBusy.value = true;
   try {

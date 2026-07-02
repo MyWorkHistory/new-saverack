@@ -115,4 +115,38 @@ class PortalOnboardingVerificationTest extends TestCase
         $this->assertNotContains('Add Account Information', $titles);
         $this->assertNotContains('Add Billing Information', $titles);
     }
+
+    public function test_is_onboarding_ready_for_activation_requires_completed_and_verified_tasks(): void
+    {
+        $account = ClientAccount::create([
+            'company_name' => 'Activation Gate Co',
+            'status' => ClientAccount::STATUS_PENDING,
+            'email' => 'gate@test.com',
+            'phone' => '5551234567',
+            'street' => '1 Main',
+            'city' => 'Town',
+            'state' => 'FL',
+            'zip' => '33801',
+            'country' => 'US',
+            'onboarding_billing_status' => PortalOnboardingService::BILLING_STATUS_COMPLETED,
+            'onboarding_billing_method' => PortalOnboardingService::BILLING_METHOD_MANUAL,
+            'default_payment_type' => 'Manual',
+        ]);
+        User::factory()->create([
+            'client_account_id' => $account->id,
+            'is_account_primary' => true,
+            'name' => 'Jane Doe',
+            'email' => 'jane@gate.test',
+        ]);
+
+        $service = new PortalOnboardingService(Mockery::mock(ClientBrandLogoService::class));
+        $this->assertFalse($service->isOnboardingReadyForActivation($account->fresh()));
+
+        foreach (PortalOnboardingService::ONBOARDING_TASK_IDS as $taskId) {
+            $service->setTaskVerified($account->fresh(), $taskId, true, 1);
+        }
+        $account->refresh();
+
+        $this->assertFalse($service->isOnboardingReadyForActivation($account));
+    }
 }

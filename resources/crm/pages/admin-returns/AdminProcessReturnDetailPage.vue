@@ -44,12 +44,6 @@ const allSelected = computed(() => {
   return lines.value.every((line) => selected.value.has(line.id));
 });
 
-const accountName = computed(() => String(ret.value?.client_account_company_name || "").trim() || "Save Rack");
-const warehouseLines = computed(() => {
-  const addr = ret.value?.return_warehouse_address || {};
-  return [addr.line1, addr.line2].filter((l) => String(l || "").trim() !== "");
-});
-
 const statusBadgeClass = computed(() => {
   if (isProcessed.value) return processDisplayStatusBadgeClass("returned");
   if (isPending.value) return processDisplayStatusBadgeClass("pending");
@@ -292,15 +286,6 @@ onMounted(load);
           <p class="small text-secondary mb-0 mt-2">{{ formatRmaLabel(ret.rma_number) }}</p>
         </div>
 
-        <div class="staff-table-card staff-datatable-card staff-datatable-card--white p-4">
-          <h3 class="h6 fw-semibold mb-3">Return Address</h3>
-          <div class="user-return-page__address-block small">
-            <p class="mb-1 fw-semibold text-body">{{ accountName }}</p>
-            <p class="mb-1 fw-semibold text-body">{{ formatRmaLabel(ret.rma_number) }}</p>
-            <p v-for="(line, i) in warehouseLines" :key="'addr-' + i" class="mb-0 text-secondary">{{ line }}</p>
-          </div>
-        </div>
-
         <ReturnFeesCard
           :return-id="ret.id"
           :fees="returnFees"
@@ -332,8 +317,5 @@ onMounted(load);
 }
 .user-return-page__check-col {
   width: 2.75rem;
-}
-.user-return-page__address-block {
-  line-height: 1.5;
 }
 </style>

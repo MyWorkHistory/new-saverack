@@ -26,12 +26,6 @@ const selected = ref(new Set());
 const shipheroOrderId = computed(() => String(route.params.shipheroOrderId || ""));
 const clientAccountId = computed(() => Number(route.query.client_account_id || 0));
 
-const accountName = computed(() => String(ret.value?.client_account_company_name || "").trim() || "Save Rack");
-const warehouseLines = computed(() => {
-  const addr = ret.value?.return_warehouse_address || {};
-  return [addr.line1, addr.line2].filter((l) => String(l || "").trim() !== "");
-});
-
 const selectedCount = computed(() => selected.value.size);
 const allSelected = computed(() => {
   if (!formLines.value.length) return false;
@@ -103,11 +97,6 @@ async function openPdf(path, msg) {
   } catch (e) {
     toast.errorFrom(e, msg);
   }
-}
-
-function openShippingLabel() {
-  if (!ret.value?.id) return;
-  openPdf(`/returns/${ret.value.id}/shipping-label.pdf`, "Could not open shipping label.");
 }
 
 function openPackingSlip() {
@@ -394,22 +383,6 @@ onMounted(() => {
           <p class="small text-secondary mb-0 mt-2">{{ formatRmaLabel(ret.rma_number) }}</p>
         </div>
 
-        <div class="staff-table-card staff-datatable-card staff-datatable-card--white p-4">
-          <h3 class="h6 fw-semibold mb-3">Return Address</h3>
-          <div class="user-return-page__address-block small">
-            <p class="mb-1 fw-semibold text-body">{{ accountName }}</p>
-            <p class="mb-1 fw-semibold text-body">{{ formatRmaLabel(ret.rma_number) }}</p>
-            <p v-for="(line, i) in warehouseLines" :key="'addr-' + i" class="mb-0 text-secondary">{{ line }}</p>
-          </div>
-          <button
-            type="button"
-            class="btn btn-outline-secondary btn-sm fw-semibold orders-toolbar-outline-btn mt-3 w-100"
-            @click="openShippingLabel"
-          >
-            View Shipping Label
-          </button>
-        </div>
-
         <ReturnFeesCard
           :return-id="ret.id"
           :fees="returnFees"
@@ -454,9 +427,6 @@ onMounted(() => {
 }
 .user-return-page__check-col {
   width: 2.75rem;
-}
-.user-return-page__address-block {
-  line-height: 1.5;
 }
 
 .user-return-detail-page :deep(.table-responsive.staff-table-wrap) {

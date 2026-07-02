@@ -1104,18 +1104,74 @@ onUnmounted(() => {
 
 <template>
   <div class="staff-user-view staff-page--wide">
-    <nav
-      class="staff-user-view__breadcrumb d-flex flex-wrap align-items-center gap-1"
-      aria-label="Breadcrumb"
-    >
-      <RouterLink to="/admin/home">Home</RouterLink>
-      <span class="text-secondary" aria-hidden="true">/</span>
-      <RouterLink to="/admin/clients/accounts">Accounts</RouterLink>
-      <span class="text-secondary" aria-hidden="true">/</span>
-      <span class="text-body-secondary">{{
-        account?.company_name || "Account"
-      }}</span>
-    </nav>
+    <div class="account-detail-page-head">
+      <nav
+        class="staff-user-view__breadcrumb account-detail-page-head__breadcrumb d-flex flex-wrap align-items-center gap-1"
+        aria-label="Breadcrumb"
+      >
+        <RouterLink to="/admin/home">Home</RouterLink>
+        <span class="text-secondary" aria-hidden="true">/</span>
+        <RouterLink to="/admin/clients/accounts">Accounts</RouterLink>
+        <span class="text-secondary" aria-hidden="true">/</span>
+        <span class="text-body-secondary">{{
+          account?.company_name || "Account"
+        }}</span>
+      </nav>
+
+      <div v-if="loading" class="d-flex justify-content-center py-4">
+        <CrmLoadingSpinner message="Loading account…" />
+      </div>
+
+      <template v-else-if="errorMsg">
+        <p class="text-danger small mb-2">
+          {{ errorMsg }}
+        </p>
+        <RouterLink to="/admin/clients/accounts" class="small"
+          >Back to accounts</RouterLink
+        >
+      </template>
+
+      <div
+        v-else-if="account"
+        class="account-detail-header d-flex flex-row align-items-center gap-3"
+      >
+        <h1 class="staff-user-view__title mb-0 min-w-0 flex-shrink-0">
+          {{ account.company_name }}
+        </h1>
+        <div class="account-detail-tab-bar-wrap ms-lg-auto flex-grow-1">
+          <div class="account-detail-tab-bar" role="tablist">
+            <button
+              v-for="t in accountTabList"
+              :key="t.id"
+              type="button"
+              class="account-detail-tab-btn"
+              :class="{ 'account-detail-tab-btn--active': activeTab === t.id }"
+              role="tab"
+              :aria-selected="activeTab === t.id"
+              @click="setActiveTab(t.id)"
+            >
+              <svg
+                class="account-detail-tab-btn__icon"
+                width="26"
+                height="26"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="1.75"
+                viewBox="0 0 24 24"
+                aria-hidden="true"
+              >
+                <path
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                  :d="accountTabIconPath(t.id)"
+                />
+              </svg>
+              <span class="account-detail-tab-btn__label">{{ t.label }}</span>
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
 
     <ClientAccountEditModal
       v-if="canUpdateAccount"
@@ -1188,58 +1244,6 @@ onUnmounted(() => {
       @close="closeNoteDelete"
       @confirm="confirmDeleteNote"
     />
-
-    <div v-if="loading" class="d-flex justify-content-center py-5">
-      <CrmLoadingSpinner message="Loading account…" />
-    </div>
-
-    <template v-else-if="errorMsg">
-      <p class="text-danger small mb-2">
-        {{ errorMsg }}
-      </p>
-      <RouterLink to="/admin/clients/accounts" class="small"
-        >Back to accounts</RouterLink
-      >
-    </template>
-
-    <div
-      v-else-if="account"
-      class="account-detail-header d-flex flex-row align-items-center gap-3 mb-4"
-    >
-      <h1 class="staff-user-view__title mb-0 min-w-0 flex-shrink-0">{{ account.company_name }}</h1>
-      <div class="account-detail-tab-bar-wrap ms-lg-auto flex-grow-1">
-        <div class="account-detail-tab-bar" role="tablist">
-          <button
-            v-for="t in accountTabList"
-            :key="t.id"
-            type="button"
-            class="account-detail-tab-btn"
-            :class="{ 'account-detail-tab-btn--active': activeTab === t.id }"
-            role="tab"
-            :aria-selected="activeTab === t.id"
-            @click="setActiveTab(t.id)"
-          >
-            <svg
-              class="account-detail-tab-btn__icon"
-              width="26"
-              height="26"
-              fill="none"
-              stroke="currentColor"
-              stroke-width="1.75"
-              viewBox="0 0 24 24"
-              aria-hidden="true"
-            >
-              <path
-                stroke-linecap="round"
-                stroke-linejoin="round"
-                :d="accountTabIconPath(t.id)"
-              />
-            </svg>
-            <span class="account-detail-tab-btn__label">{{ t.label }}</span>
-          </button>
-        </div>
-      </div>
-    </div>
 
     <template v-if="!loading && !errorMsg && account">
       <div class="row g-3">
@@ -2501,8 +2505,17 @@ onUnmounted(() => {
   color: #2563eb;
 }
 
+.account-detail-page-head {
+  margin-bottom: 1rem;
+}
+
+.account-detail-page-head__breadcrumb {
+  margin-bottom: 0.125rem;
+}
+
 .account-detail-header {
   min-width: 0;
+  margin-top: 0;
 }
 
 .account-detail-tab-bar-wrap {
@@ -2537,6 +2550,8 @@ onUnmounted(() => {
   line-height: 1.2;
   white-space: nowrap;
   cursor: pointer;
+  outline: none;
+  box-shadow: none;
   transition:
     border-color 0.15s ease,
     box-shadow 0.15s ease,
@@ -2548,13 +2563,27 @@ onUnmounted(() => {
   box-shadow: 0 0.125rem 0.375rem rgba(47, 43, 61, 0.06);
 }
 
-.account-detail-tab-btn--active {
-  border-color: #7367f0;
-  color: var(--bs-body-color);
+.account-detail-tab-btn:focus,
+.account-detail-tab-btn:focus-visible {
+  outline: none;
   box-shadow: none;
 }
 
-.account-detail-tab-btn--active .account-detail-tab-btn__icon {
+.account-detail-tab-btn--active {
+  border: 1.5px solid #7367f0;
+  color: #7367f0;
+  box-shadow: none;
+  outline: none;
+}
+
+.account-detail-tab-btn--active:focus,
+.account-detail-tab-btn--active:focus-visible {
+  outline: none;
+  box-shadow: none;
+}
+
+.account-detail-tab-btn--active .account-detail-tab-btn__icon,
+.account-detail-tab-btn--active .account-detail-tab-btn__label {
   color: #7367f0;
 }
 
@@ -2572,10 +2601,12 @@ onUnmounted(() => {
 }
 
 [data-bs-theme="dark"] .account-detail-tab-btn--active {
-  border-color: #a59bff;
+  border: 1.5px solid #a59bff;
+  color: #a59bff;
 }
 
-[data-bs-theme="dark"] .account-detail-tab-btn--active .account-detail-tab-btn__icon {
+[data-bs-theme="dark"] .account-detail-tab-btn--active .account-detail-tab-btn__icon,
+[data-bs-theme="dark"] .account-detail-tab-btn--active .account-detail-tab-btn__label {
   color: #a59bff;
 }
 </style>

@@ -7,6 +7,8 @@ import CrmSearchableSelect from "../common/CrmSearchableSelect.vue";
 const props = defineProps({
   open: { type: Boolean, default: false },
   clientAccounts: { type: Array, default: () => [] },
+  /** Pre-select account when opening (e.g. from invoice detail). */
+  initialClientAccountId: { type: [Number, String], default: "" },
 });
 
 const emit = defineEmits(["update:open", "created", "refresh-meta"]);
@@ -31,6 +33,10 @@ watch(
   (isOpen) => {
     if (isOpen) {
       reset();
+      const accountId = Number(props.initialClientAccountId || 0);
+      if (accountId > 0) {
+        form.client_account_id = String(accountId);
+      }
       emit("refresh-meta");
     }
   },

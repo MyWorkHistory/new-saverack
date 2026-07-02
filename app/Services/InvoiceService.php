@@ -107,7 +107,7 @@ class InvoiceService
     }
 
     /**
-     * @param  array{due_at?: string|null, billing_period_start?: string|null, billing_period_end?: string|null}  $dates
+     * @param  array{due_at?: string|null, billing_period_start?: string|null, billing_period_end?: string|null, payment_terms?: string|null}  $dates
      */
     public function updateInvoiceDates(Invoice $invoice, array $dates, ?User $actor): Invoice
     {
@@ -122,10 +122,11 @@ class InvoiceService
 
             $this->logHistory($invoice, $actor, 'updated', $fromStatus, $invoice->status, [
                 'event_type' => InvoiceHistoryEventType::HEADER_EDIT,
-                'history_message' => 'Updated invoice dates.',
+                'history_message' => 'Updated invoice header.',
                 'due_at' => $dates['due_at'] ?? null,
                 'billing_period_start' => $dates['billing_period_start'] ?? null,
                 'billing_period_end' => $dates['billing_period_end'] ?? null,
+                'payment_terms' => $dates['payment_terms'] ?? null,
             ]);
 
             return $invoice->fresh(['items', 'clientAccount']);

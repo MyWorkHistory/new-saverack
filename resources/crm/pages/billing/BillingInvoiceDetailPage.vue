@@ -3,9 +3,9 @@ import { computed, inject, nextTick, onMounted, onUnmounted, ref, watch } from "
 
 import { useRouter } from "vue-router";
 import api from "../../services/api";
-import { BRAND_MARK_SRC } from "../../utils/brandAssets.js";
 import BillingDollarStatIcon from "../../components/billing/BillingDollarStatIcon.vue";
 import BillingInvoiceAddLineDrawer from "../../components/billing/BillingInvoiceAddLineDrawer.vue";
+import BillingInvoiceCreateDrawer from "../../components/billing/BillingInvoiceCreateDrawer.vue";
 import ConfirmModal from "../../components/common/ConfirmModal.vue";
 import InvoiceReviewSlackModal from "../../components/billing/InvoiceReviewSlackModal.vue";
 import CrmIconRowActions from "../../components/common/CrmIconRowActions.vue";
@@ -46,6 +46,7 @@ const CLIENT_PAYMENT_TYPE_OPTIONS = [
 ];
 
 const canUpdate = computed(() => userHasPerm("billing.update"));
+const canCreate = computed(() => userHasPerm("billing.create"));
 const canUpdateClientAccount = computed(() => userHasPerm("clients.update"));
 const canDelete = computed(() => userHasPerm("billing.delete"));
 const canHardDeleteInvoices = computed(() => {
@@ -106,7 +107,10 @@ const editBillingPeriodStart = ref("");
 const editBillingPeriodEnd = ref("");
 const invoiceDatesSaving = ref(false);
 const editPaymentType = ref("");
+const editPaymentTerms = ref("");
 const paymentTypeSaving = ref(false);
+const createDrawerOpen = ref(false);
+const clientAccountsMeta = ref([]);
 const whatsappCaptureModalOpen = ref(false);
 const whatsappCaptureApiId = ref("");
 const whatsappCaptureBusy = ref(false);
@@ -178,7 +182,6 @@ const availableBalanceModalOpen = ref(false);
 const availableBalanceSaving = ref(false);
 const availableBalanceAmount = ref("");
 
-const invoiceLogoSrc = computed(() => BRAND_MARK_SRC());
 const activityCardRef = ref(null);
 
 function invoiceStatusKey(inv) {
@@ -831,6 +834,7 @@ async function saveClientPaymentType() {
 function syncEditFromInvoice() {
   const inv = invoice.value;
   editPaymentType.value = String(inv?.client_account_default_payment_type || "").trim();
+  editPaymentTerms.value = String(inv?.payment_terms || "").trim();
   if (!inv) {
     editDueAt.value = "";
     editBillingPeriodStart.value = "";
@@ -995,10 +999,11 @@ async function saveInvoiceDates() {
       due_at: editDueAt.value || null,
       billing_period_start: editBillingPeriodStart.value || null,
       billing_period_end: editBillingPeriodEnd.value || null,
+      payment_terms: String(editPaymentTerms.value || "").trim() || null,
     });
     invoice.value = data;
     syncEditFromInvoice();
-    toast.success("Invoice dates updated.");
+    toast.success("Invoice updated.");
     await loadAccountBalanceSummary();
   } catch (e) {
     toast.errorFrom(e, "Could not update invoice dates.");
@@ -1798,6 +1803,28 @@ function openRightMenuEditNumber() {
   openEditNumberModal();
 }
 
+async function fetchInvoiceMeta() {
+  try {
+    const { data } = await api.get("/invoices/meta");
+    clientAccountsMeta.value = Array.isArray(data?.client_accounts) ? data.client_accounts : [];
+  } catch {
+    clientAccountsMeta.value = [];
+  }
+}
+
+function openCreateInvoiceDrawer() {
+  createDrawerOpen.value = true;
+}
+
+function openRightMenuCreateInvoice() {
+  closeRightActionsMenu();
+  openCreateInvoiceDrawer();
+}
+
+function onInvoiceDrawerCreated() {
+  toast.success("Invoice created.");
+}
+
 function openEditNumberModal() {
   if (!invoice.value || !canUpdate.value) return;
   editNumberValue.value = String(invoice.value.invoice_number || "");
@@ -2199,93 +2226,137 @@ function onDocKeydown(e) {
       <div
         class="d-flex flex-column flex-lg-row flex-wrap align-items-stretch align-items-lg-center gap-3 mb-4"
       >
-        <div class="d-flex flex-wrap align-items-center gap-2">
+        <button
+          type="button"
+          class="btn btn-outline-secondary btn-sm flex-shrink-0"
+          @click="router.push({ name: 'billing-invoices' })"
+        >
+          ← Invoices
+        </button>
+        <div class="billing-inv-icon-actions d-flex flex-wrap align-items-center gap-2 flex-grow-1">
           <button
             type="button"
-            class="btn btn-outline-secondary btn-sm"
-            @click="router.push({ name: 'billing-invoices' })"
-          >
-            ← Invoices
-          </button>
-          <button
-            type="button"
-            class="btn btn-outline-primary btn-sm"
+            class="btn btn-outline-primary btn-sm billing-inv-icon-action"
             :disabled="pdfDownloading"
+            title="Download PDF"
+            aria-label="Download PDF"
             @click="downloadInvoicePdf"
           >
-            {{ pdfDownloading ? "Downloading…" : "Download PDF" }}
+            <svg width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" aria-hidden="true">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+            </svg>
+            <span>{{ pdfDownloading ? "Downloading…" : "Download PDF" }}</span>
           </button>
           <button
             v-if="currentStatusKey !== 'void'"
             type="button"
-            class="btn btn-outline-primary btn-sm"
+            class="btn btn-outline-primary btn-sm billing-inv-icon-action"
             :disabled="copyLinkBusy"
+            title="Copy Customer Link"
+            aria-label="Copy Customer Link"
             @click="copyCustomerLink"
           >
-            {{ copyLinkBusy ? "Working…" : "Copy Customer Link" }}
+            <svg width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" aria-hidden="true">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1" />
+            </svg>
+            <span>{{ copyLinkBusy ? "Working…" : "Copy Customer Link" }}</span>
           </button>
           <button
             v-if="canSendInvoiceFromDraft"
             type="button"
-            class="btn btn-outline-primary btn-sm"
+            class="btn btn-outline-primary btn-sm billing-inv-icon-action"
+            title="Send Invoice"
+            aria-label="Send Invoice"
             @click="sendInvoice"
           >
-            Send Invoice
+            <svg width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" aria-hidden="true">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
+            </svg>
+            <span>Send Invoice</span>
           </button>
           <button
             v-if="payInvoiceVisible"
             type="button"
-            class="btn btn-outline-primary btn-sm"
+            class="btn btn-outline-primary btn-sm billing-inv-icon-action"
             :disabled="!payInvoiceEnabled"
-            :title="payInvoiceDisabledTitle || undefined"
+            :title="payInvoiceDisabledTitle || 'Pay Invoice'"
+            aria-label="Pay Invoice"
             @click="openPayModal"
           >
-            Pay Invoice
+            <svg width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" aria-hidden="true">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M17 9V7a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2m2 4h10a2 2 0 002-2v-6a2 2 0 00-2-2H9a2 2 0 00-2 2v6a2 2 0 002 2zm7-5a2 2 0 11-4 0 2 2 0 014 0z" />
+            </svg>
+            <span>Pay Invoice</span>
           </button>
           <button
             v-if="canShowMessagingActions"
             type="button"
-            class="btn btn-sm"
+            class="btn btn-sm billing-inv-icon-action"
             :class="messagingActionsDisabled ? 'btn-outline-secondary' : 'btn-outline-primary'"
             :disabled="messagingActionsDisabled"
-            :title="messagingActionsDisabledTitle || undefined"
+            :title="messagingActionsDisabledTitle || 'Email Invoice'"
+            aria-label="Email Invoice"
             @click="openSendEmailModal"
           >
-            Email Invoice
+            <svg width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" aria-hidden="true">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M16 12a4 4 0 10-8 0 4 4 0 008 0zm0 0v1.5a2.5 2.5 0 005 0V12a9 9 0 10-9 9m4.5-1.206a8.959 8.959 0 01-4.5 1.207" />
+            </svg>
+            <span>Email Invoice</span>
           </button>
           <button
             v-if="canShowMessagingActions"
             type="button"
-            class="btn btn-sm"
+            class="btn btn-sm billing-inv-icon-action"
             :class="messagingActionsDisabled ? 'btn-outline-secondary' : 'btn-outline-primary'"
             :disabled="messagingActionsDisabled"
-            :title="messagingActionsDisabledTitle || undefined"
+            :title="messagingActionsDisabledTitle || 'Send To Whatsapp'"
+            aria-label="Send To Whatsapp"
             @click="openSendWhatsappModal"
           >
-            Send To Whatsapp
+            <svg width="18" height="18" fill="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.435 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413z" />
+            </svg>
+            <span>Send To Whatsapp</span>
           </button>
           <button
             v-if="invoice && currentStatusKey !== 'paid' && currentStatusKey !== 'void'"
             type="button"
-            class="btn btn-outline-primary btn-sm"
+            class="btn btn-outline-primary btn-sm billing-inv-icon-action"
             :disabled="!canStripeCharge"
-            :title="creditChargeDisabledTitle"
+            :title="creditChargeDisabledTitle || 'Credit Charge'"
+            aria-label="Credit Charge"
             @click="openStripeModal"
           >
-            Credit Charge
+            <svg width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" aria-hidden="true">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M3 10h18M7 15h1m4 0h1m-7 4h12a3 3 0 003-3V8a3 3 0 00-3-3H6a3 3 0 00-3 3v8a3 3 0 003 3z" />
+            </svg>
+            <span>Credit Charge</span>
           </button>
         </div>
         <div class="billing-inv-toolbar-actions ms-lg-auto" data-right-actions>
           <button
             type="button"
-            class="staff-action-btn staff-action-btn--more"
+            class="btn btn-outline-secondary btn-sm billing-inv-actions-gear d-inline-flex align-items-center gap-2"
             :aria-expanded="rightActionsMenuOpen"
-            aria-label="Invoice options"
+            aria-label="Actions"
             @click="toggleRightActionsMenu"
           >
-            <CrmIconRowActions variant="horizontal" />
+            <svg width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" aria-hidden="true">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
+              <path stroke-linecap="round" stroke-linejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+            </svg>
+            <span>Actions</span>
           </button>
           <div v-if="rightActionsMenuOpen" class="staff-row-menu billing-inv-right-menu">
+            <button
+              v-if="canCreate"
+              type="button"
+              class="staff-row-menu__item"
+              role="menuitem"
+              @click="openRightMenuCreateInvoice"
+            >
+              Create Invoice
+            </button>
             <button
               v-if="canUpdate && invoice"
               type="button"
@@ -2375,15 +2446,8 @@ function onDocKeydown(e) {
           >
             <div class="billing-inv-preview-head border-bottom pb-4 mb-4">
               <div class="row g-4 align-items-start">
-                <div class="col-lg-6 d-flex gap-3 align-items-start min-w-0">
-                  <img
-                    :src="invoiceLogoSrc"
-                    alt=""
-                    class="billing-inv-logo flex-shrink-0 rounded-1"
-                    width="44"
-                    height="44"
-                  />
-                  <div class="min-w-0 billing-inv-invoice-to-block">
+                <div class="col-lg-6 min-w-0">
+                  <div class="billing-inv-invoice-to-block">
                     <div class="billing-inv-section-label">Invoice to</div>
                     <div class="fw-bold text-body fs-5 mb-1">
                       <a
@@ -2418,24 +2482,61 @@ function onDocKeydown(e) {
                         >{{ invoice.client_account_email }}</a>
                       </div>
                     </div>
+                    <div class="mt-4">
+                      <div class="billing-inv-section-label">Payment type</div>
+                      <div v-if="canUpdateClientAccount && invoice.client_account_id" class="d-flex flex-wrap align-items-center gap-2">
+                        <select v-model="editPaymentType" class="form-select form-select-sm billing-inv-payment-select">
+                          <option value="">—</option>
+                          <option v-for="opt in CLIENT_PAYMENT_TYPE_OPTIONS" :key="opt" :value="opt">{{ opt }}</option>
+                        </select>
+                        <button
+                          type="button"
+                          class="btn btn-sm btn-primary"
+                          :disabled="paymentTypeSaving"
+                          @click="saveClientPaymentType"
+                        >
+                          {{ paymentTypeSaving ? "Saving…" : "Save" }}
+                        </button>
+                      </div>
+                      <div v-else class="fw-medium text-body">
+                        {{ invoicePaymentTypeDisplay || "—" }}
+                      </div>
+                      <div class="billing-inv-section-label mt-3 mb-1">Total due</div>
+                      <div class="fw-semibold text-body fs-5">
+                        {{ formatCents(invoice.balance_due_cents, invoice.currency) }}
+                      </div>
+                    </div>
                   </div>
                 </div>
                 <div class="col-lg-6 text-lg-end min-w-0">
                   <div class="text-secondary small text-uppercase fw-semibold billing-inv-invoice-label">
                     Invoice
                   </div>
-                  <h1 class="h3 fw-bold text-body mb-3">
-                    {{ invoice.invoice_number }}
-                  </h1>
+                  <div class="d-flex flex-wrap align-items-center justify-content-lg-end gap-2 mb-3 billing-inv-number-row">
+                    <h1 class="h3 fw-bold text-body mb-0">
+                      {{ invoice.invoice_number }}
+                    </h1>
+                    <button
+                      v-if="canUpdateInvoiceStatus"
+                      type="button"
+                      class="staff-status-badge text-capitalize"
+                      :class="statusBadgeClass(statusDisplayText)"
+                      title="Change invoice status"
+                      @click="openStatusModal"
+                    >
+                      {{ statusDisplayText }}
+                    </button>
+                    <span
+                      v-else
+                      class="staff-status-badge text-capitalize"
+                      :class="statusBadgeClass(statusDisplayText)"
+                    >
+                      {{ statusDisplayText }}
+                    </span>
+                  </div>
                   <div class="small billing-inv-meta-list">
                     <div v-if="canEditInvoiceDates" class="mb-2 text-lg-end">
                       <div class="text-secondary mb-1">Invoice Date (service period)</div>
-                      <div
-                        v-if="invoiceDateRangeLabel && invoiceDateRangeLabel !== '—'"
-                        class="small text-body mb-2 billing-inv-service-period-readonly"
-                      >
-                        {{ invoiceDateRangeLabel }}
-                      </div>
                       <div
                         class="d-inline-flex flex-wrap align-items-center justify-content-lg-end billing-inv-date-range"
                       >
@@ -2470,6 +2571,20 @@ function onDocKeydown(e) {
                       </template>
                       <span v-else class="fw-medium ms-1">{{ formatInvoiceShortDate(invoice.due_at) }}</span>
                     </div>
+                    <div class="mb-1">
+                      <span class="text-secondary d-lg-block">Payment terms</span>
+                      <template v-if="canEditInvoiceDates">
+                        <input
+                          v-model="editPaymentTerms"
+                          type="text"
+                          class="form-control form-control-sm billing-inv-payment-terms-input d-inline-block mt-1 mt-lg-0 ms-lg-1"
+                          placeholder="Net 1"
+                          maxlength="64"
+                          :disabled="invoiceDatesSaving"
+                        />
+                      </template>
+                      <span v-else class="fw-medium ms-1">{{ invoice.payment_terms || "—" }}</span>
+                    </div>
                     <div v-if="canEditInvoiceDates" class="mt-2">
                       <button
                         type="button"
@@ -2477,12 +2592,8 @@ function onDocKeydown(e) {
                         :disabled="invoiceDatesSaving"
                         @click="saveInvoiceDates"
                       >
-                        {{ invoiceDatesSaving ? "Saving…" : "Save Dates" }}
+                        {{ invoiceDatesSaving ? "Saving…" : "Save" }}
                       </button>
-                    </div>
-                    <div v-if="invoice.payment_terms" class="mb-1">
-                      <span class="text-secondary">Terms</span>
-                      <span class="fw-medium ms-1">{{ invoice.payment_terms }}</span>
                     </div>
                     <div v-if="invoice.po_number" class="mb-1">
                       <span class="text-secondary">PO number</span>
@@ -2491,56 +2602,6 @@ function onDocKeydown(e) {
                   </div>
                 </div>
               </div>
-            </div>
-
-            <div class="row g-4 mb-4">
-              <div class="col-md-6">
-                <div class="billing-inv-section-label">Payment type</div>
-                <div v-if="canUpdateClientAccount && invoice.client_account_id" class="d-flex flex-wrap align-items-center gap-2">
-                  <select v-model="editPaymentType" class="form-select form-select-sm billing-inv-payment-select">
-                    <option value="">—</option>
-                    <option v-for="opt in CLIENT_PAYMENT_TYPE_OPTIONS" :key="opt" :value="opt">{{ opt }}</option>
-                  </select>
-                  <button
-                    type="button"
-                    class="btn btn-sm btn-primary"
-                    :disabled="paymentTypeSaving"
-                    @click="saveClientPaymentType"
-                  >
-                    {{ paymentTypeSaving ? "Saving…" : "Save" }}
-                  </button>
-                </div>
-                <div v-else class="fw-medium text-body">
-                  {{ invoicePaymentTypeDisplay || "—" }}
-                </div>
-              </div>
-              <div class="col-md-6 text-md-end">
-                <div class="billing-inv-section-label">Bill to</div>
-                <div class="fw-semibold text-body fs-5">
-                  Total due:
-                  {{ formatCents(invoice.balance_due_cents, invoice.currency) }}
-                </div>
-              </div>
-            </div>
-
-            <div class="d-flex flex-wrap align-items-center gap-2 mb-2">
-              <button
-                v-if="canUpdateInvoiceStatus"
-                type="button"
-                class="staff-status-badge text-capitalize"
-                :class="statusBadgeClass(statusDisplayText)"
-                title="Change invoice status"
-                @click="openStatusModal"
-              >
-                {{ statusDisplayText }}
-              </button>
-              <span
-                v-else
-                class="staff-status-badge text-capitalize"
-                :class="statusBadgeClass(statusDisplayText)"
-              >
-                {{ statusDisplayText }}
-              </span>
             </div>
 
             <div class="d-flex flex-wrap align-items-center justify-content-between gap-2 mb-3">
@@ -3987,6 +4048,13 @@ function onDocKeydown(e) {
         </div>
       </Transition>
     </Teleport>
+    <BillingInvoiceCreateDrawer
+      v-model:open="createDrawerOpen"
+      :client-accounts="clientAccountsMeta"
+      :initial-client-account-id="invoice?.client_account_id || ''"
+      @created="onInvoiceDrawerCreated"
+      @refresh-meta="fetchInvoiceMeta"
+    />
     <CrmStatusUpdateModal
       v-model:open="statusModalOpen"
       v-model:status="statusForm"
@@ -4007,8 +4075,23 @@ function onDocKeydown(e) {
 .billing-inv-vuexy {
   border: 1px solid rgba(47, 43, 61, 0.08);
 }
-.billing-inv-logo {
-  object-fit: contain;
+.billing-inv-icon-actions {
+  min-width: 0;
+}
+.billing-inv-icon-action {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  white-space: nowrap;
+}
+.billing-inv-icon-action svg {
+  flex-shrink: 0;
+}
+.billing-inv-number-row .staff-status-badge {
+  font-size: 0.8125rem;
+}
+.billing-inv-payment-terms-input {
+  max-width: 10rem;
 }
 .billing-inv-invoice-label {
   letter-spacing: 0.06em;
@@ -4057,6 +4140,9 @@ function onDocKeydown(e) {
   position: relative;
   align-items: center;
   flex-shrink: 0;
+}
+.billing-inv-actions-gear {
+  white-space: nowrap;
 }
 .billing-inv-right-menu {
   position: absolute;

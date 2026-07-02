@@ -65,8 +65,6 @@ const ncPallets = ref(0);
 const ncFee = ref("");
 const ncFeeDefaultLabel = ref("");
 const ncTrackings = ref([{ carrier: "", tracking_number: "" }]);
-const ncPendingLines = ref([]);
-let ncLineKey = 0;
 
 const tableColspan = 11;
 
@@ -374,48 +372,10 @@ function openNonCompliant() {
   ncFee.value = "";
   ncFeeDefaultLabel.value = "";
   ncTrackings.value = [{ carrier: "", tracking_number: "" }];
-  ncPendingLines.value = [];
   nonCompliantOpen.value = true;
   if (ncAccountId.value) {
     loadNcChargeOptions(ncAccountId.value);
   }
-}
-
-function buildNcLinePayload(product, quantity) {
-  const p = product || {};
-  const sku = String(p.sku || "").trim();
-  const name = String(p.name || p.product_name || sku).trim();
-  const shipheroProductId = p.shiphero_product_id != null ? String(p.shiphero_product_id).trim() : null;
-  const legacyRaw = p.shiphero_legacy_id ?? null;
-  const shipheroLegacyId = Number(legacyRaw) > 0 ? Number(legacyRaw) : null;
-  let imageUrl = p.image_url != null ? String(p.image_url).trim() : null;
-  if (imageUrl === "") {
-    imageUrl = null;
-  } else if (imageUrl && imageUrl.length > 2048) {
-    imageUrl = imageUrl.slice(0, 2048);
-  }
-  return {
-    _key: `nc-line-${++ncLineKey}`,
-    shiphero_product_id: shipheroProductId,
-    shiphero_legacy_id: shipheroLegacyId,
-    sku,
-    name,
-    image_url: imageUrl,
-    expected_qty: Math.max(1, Math.floor(Number(quantity) || 0)),
-  };
-}
-
-function addNcLine({ product, quantity }) {
-  const payload = buildNcLinePayload(product, quantity);
-  if (!payload.sku) {
-    toast.error("This product has no SKU.");
-    return;
-  }
-  ncPendingLines.value = [...ncPendingLines.value, payload];
-}
-
-function removeNcLine(index) {
-  ncPendingLines.value = ncPendingLines.value.filter((_, i) => i !== index);
 }
 
 async function loadNcChargeOptions(accountId) {
@@ -448,7 +408,6 @@ async function loadNcChargeOptions(accountId) {
 
 watch(ncAccountId, (id) => {
   if (nonCompliantOpen.value) {
-    ncPendingLines.value = [];
     loadNcChargeOptions(id);
   }
 });
@@ -476,21 +435,12 @@ async function submitNonCompliant() {
   nonCompliantBusy.value = true;
   try {
     const fee = ncFee.value === "" ? 0 : Number(ncFee.value);
-    const lines = ncPendingLines.value.map((line) => ({
-      shiphero_product_id: line.shiphero_product_id || undefined,
-      shiphero_legacy_id: line.shiphero_legacy_id || undefined,
-      sku: line.sku,
-      name: line.name,
-      image_url: line.image_url || undefined,
-      expected_qty: line.expected_qty,
-    }));
     const { data } = await api.post("/admin/asns/non-compliant", {
       client_account_id: id,
       total_boxes: Number(ncBoxes.value) || 0,
       total_pallets: Number(ncPallets.value) || 0,
       trackings,
       fee: Number.isFinite(fee) ? fee : 0,
-      lines: lines.length ? lines : undefined,
     });
     nonCompliantOpen.value = false;
     toast.success("Non-compliant ASN created.");
@@ -980,12 +930,9 @@ onUnmounted(() => {
       v-model:fee="ncFee"
       v-model:trackings="ncTrackings"
       :account-options="accountOptions"
-      :pending-lines="ncPendingLines"
       :fee-default-label="ncFeeDefaultLabel"
       :busy="nonCompliantBusy"
       @add-tracking="addNcTracking"
-      @add-line="addNcLine"
-      @remove-line="removeNcLine"
       @submit="submitNonCompliant"
     />
 

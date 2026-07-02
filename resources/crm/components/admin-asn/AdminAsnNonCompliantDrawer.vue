@@ -1,8 +1,6 @@
 <script setup>
-import { computed } from "vue";
 import CrmRightDrawer from "../common/CrmRightDrawer.vue";
 import CrmSearchableSelect from "../common/CrmSearchableSelect.vue";
-import AsnProductCatalogPanel from "../inventory/AsnProductCatalogPanel.vue";
 import {
   CRM_BTN_PRIMARY,
   CRM_BTN_SECONDARY,
@@ -19,7 +17,6 @@ const props = defineProps({
   fee: { type: [String, Number], default: "" },
   feeDefaultLabel: { type: String, default: "" },
   trackings: { type: Array, default: () => [] },
-  pendingLines: { type: Array, default: () => [] },
   busy: { type: Boolean, default: false },
 });
 
@@ -31,13 +28,8 @@ const emit = defineEmits([
   "update:fee",
   "update:trackings",
   "add-tracking",
-  "add-line",
-  "remove-line",
   "submit",
 ]);
-
-const resolvedAccountId = computed(() => Number(props.accountId || 0));
-const catalogActive = computed(() => props.open && resolvedAccountId.value > 0);
 
 function close() {
   if (props.busy) return;
@@ -130,49 +122,6 @@ function updateTracking(index, field, value) {
           </div>
         </div>
       </div>
-      <div v-if="resolvedAccountId > 0" class="col-12">
-        <label class="form-label">Items</label>
-        <div class="border rounded admin-asn-nc-drawer__catalog">
-          <AsnProductCatalogPanel
-            :client-account-id="resolvedAccountId"
-            :active="catalogActive"
-            :busy="busy"
-            show-add-new-sku
-            qty-label="Expected QTY"
-            search-input-id="admin-asn-nc-catalog-search"
-            @add="emit('add-line', $event)"
-          />
-        </div>
-        <div v-if="pendingLines.length" class="table-responsive mt-3">
-          <table class="table table-sm align-middle mb-0 admin-asn-nc-drawer__lines-table">
-            <thead>
-              <tr>
-                <th scope="col">SKU</th>
-                <th scope="col">Product</th>
-                <th scope="col" class="text-center">Expected QTY</th>
-                <th scope="col" class="text-end">Actions</th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr v-for="(line, index) in pendingLines" :key="line._key || `${line.sku}-${index}`">
-                <td class="small fw-semibold">{{ line.sku }}</td>
-                <td class="small text-secondary">{{ line.name }}</td>
-                <td class="text-center small">{{ line.expected_qty }}</td>
-                <td class="text-end">
-                  <button
-                    type="button"
-                    class="btn btn-link btn-sm text-danger p-0"
-                    :disabled="busy"
-                    @click="emit('remove-line', index)"
-                  >
-                    Remove
-                  </button>
-                </td>
-              </tr>
-            </tbody>
-          </table>
-        </div>
-      </div>
       <div class="col-12">
         <label class="form-label">Non-Compliant Fee</label>
         <input
@@ -187,6 +136,7 @@ function updateTracking(index, field, value) {
         />
         <p v-if="feeDefaultLabel" class="form-text mb-0">{{ feeDefaultLabel }}</p>
         <p v-else class="form-text mb-0">If greater than zero, a receiving bill line is created automatically.</p>
+        <p class="form-text mb-0">Add items on the ASN detail page after creation.</p>
       </div>
     </div>
 
@@ -207,17 +157,3 @@ function updateTracking(index, field, value) {
     </template>
   </CrmRightDrawer>
 </template>
-
-<style scoped>
-.admin-asn-nc-drawer__catalog {
-  overflow: hidden;
-  background: var(--bs-body-bg);
-}
-
-.admin-asn-nc-drawer__lines-table thead th {
-  font-size: 0.75rem;
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-  color: var(--bs-secondary-color);
-}
-</style>

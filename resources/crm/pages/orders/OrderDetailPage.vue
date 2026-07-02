@@ -987,8 +987,8 @@ watch(
     const fromQuery = normalizeAccountId(q);
     if (fromQuery > 0) {
       const next = String(fromQuery);
-      if (next !== selectedAccountId.value) {
-        selectedAccountId.value = next;
+    if (next !== selectedAccountId.value) {
+      selectedAccountId.value = next;
       }
       return;
     }

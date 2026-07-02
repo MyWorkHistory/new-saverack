@@ -2231,130 +2231,210 @@ function onDocKeydown(e) {
 
     <template v-else-if="invoice">
       <div
-        class="d-flex flex-column flex-lg-row flex-wrap align-items-stretch align-items-lg-center justify-content-lg-between gap-3 mb-4"
+        class="billing-inv-toolbar d-flex flex-column flex-lg-row flex-wrap align-items-stretch align-items-lg-center gap-3 mb-4"
       >
-        <button
-          type="button"
-          class="btn btn-outline-secondary btn-sm flex-shrink-0"
-          @click="router.push({ name: 'billing-invoices' })"
-        >
-          ← Invoices
-        </button>
-        <div class="billing-inv-icon-actions d-flex flex-wrap align-items-center gap-2 flex-grow-1">
+        <div class="d-flex flex-wrap align-items-center gap-3 min-w-0 flex-shrink-0">
           <button
             type="button"
-            class="btn btn-outline-primary btn-sm billing-inv-icon-action"
-            :disabled="pdfDownloading"
-            title="Download PDF"
-            aria-label="Download PDF"
-            @click="downloadInvoicePdf"
+            class="btn btn-outline-secondary btn-sm flex-shrink-0"
+            @click="router.push({ name: 'billing-invoices' })"
           >
-            <svg width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" aria-hidden="true">
-              <path stroke-linecap="round" stroke-linejoin="round" d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-            </svg>
-            <span>{{ pdfDownloading ? "Downloading…" : "Download PDF" }}</span>
+            ← Invoices
           </button>
-          <button
-            v-if="currentStatusKey !== 'void'"
-            type="button"
-            class="btn btn-outline-primary btn-sm billing-inv-icon-action"
-            :disabled="copyLinkBusy"
-            title="Copy Customer Link"
-            aria-label="Copy Customer Link"
-            @click="copyCustomerLink"
-          >
-            <svg width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" aria-hidden="true">
-              <path stroke-linecap="round" stroke-linejoin="round" d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1" />
-            </svg>
-            <span>{{ copyLinkBusy ? "Working…" : "Copy Customer Link" }}</span>
-          </button>
-          <button
-            v-if="canSendInvoiceFromDraft"
-            type="button"
-            class="btn btn-outline-primary btn-sm billing-inv-icon-action"
-            title="Send Invoice"
-            aria-label="Send Invoice"
-            @click="sendInvoice"
-          >
-            <svg width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" aria-hidden="true">
-              <path stroke-linecap="round" stroke-linejoin="round" d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
-            </svg>
-            <span>Send Invoice</span>
-          </button>
-          <button
-            v-if="payInvoiceVisible"
-            type="button"
-            class="btn btn-outline-primary btn-sm billing-inv-icon-action"
-            :disabled="!payInvoiceEnabled"
-            :title="payInvoiceDisabledTitle || 'Pay Invoice'"
-            aria-label="Pay Invoice"
-            @click="openPayModal"
-          >
-            <svg width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" aria-hidden="true">
-              <path stroke-linecap="round" stroke-linejoin="round" d="M17 9V7a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2m2 4h10a2 2 0 002-2v-6a2 2 0 00-2-2H9a2 2 0 00-2 2v6a2 2 0 002 2zm7-5a2 2 0 11-4 0 2 2 0 014 0z" />
-            </svg>
-            <span>Pay Invoice</span>
-          </button>
-          <button
-            v-if="canShowMessagingActions"
-            type="button"
-            class="btn btn-sm billing-inv-icon-action"
-            :class="messagingActionsDisabled ? 'btn-outline-secondary' : 'btn-outline-primary'"
-            :disabled="messagingActionsDisabled"
-            :title="messagingActionsDisabledTitle || 'Email Invoice'"
-            aria-label="Email Invoice"
-            @click="openSendEmailModal"
-          >
-            <svg width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" aria-hidden="true">
-              <path stroke-linecap="round" stroke-linejoin="round" d="M16 12a4 4 0 10-8 0 4 4 0 008 0zm0 0v1.5a2.5 2.5 0 005 0V12a9 9 0 10-9 9m4.5-1.206a8.959 8.959 0 01-4.5 1.207" />
-            </svg>
-            <span>Email Invoice</span>
-          </button>
-          <button
-            v-if="canShowMessagingActions"
-            type="button"
-            class="btn btn-sm billing-inv-icon-action"
-            :class="messagingActionsDisabled ? 'btn-outline-secondary' : 'btn-outline-primary'"
-            :disabled="messagingActionsDisabled"
-            :title="messagingActionsDisabledTitle || 'Send To Whatsapp'"
-            aria-label="Send To Whatsapp"
-            @click="openSendWhatsappModal"
-          >
-            <svg width="18" height="18" fill="currentColor" viewBox="0 0 24 24" aria-hidden="true">
-              <path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.435 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413z" />
-            </svg>
-            <span>Send To Whatsapp</span>
-          </button>
-          <button
-            v-if="invoice && currentStatusKey !== 'paid' && currentStatusKey !== 'void'"
-            type="button"
-            class="btn btn-outline-primary btn-sm billing-inv-icon-action"
-            :disabled="!canStripeCharge"
-            :title="creditChargeDisabledTitle || 'Credit Charge'"
-            aria-label="Credit Charge"
-            @click="openStripeModal"
-          >
-            <svg width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" aria-hidden="true">
-              <path stroke-linecap="round" stroke-linejoin="round" d="M3 10h18M7 15h1m4 0h1m-7 4h12a3 3 0 003-3V8a3 3 0 00-3-3H6a3 3 0 00-3 3v8a3 3 0 003 3z" />
-            </svg>
-            <span>Credit Charge</span>
-          </button>
+          <h1 class="staff-user-view__title billing-inv-toolbar__title mb-0 min-w-0">
+            Invoice #{{ invoice.invoice_number }}
+          </h1>
         </div>
-        <div class="billing-inv-toolbar-actions" data-right-actions>
-          <button
-            type="button"
-            class="btn btn-outline-primary btn-sm billing-inv-icon-action"
-            :aria-expanded="rightActionsMenuOpen"
-            aria-label="Actions"
-            @click="toggleRightActionsMenu"
-          >
-            <svg width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" aria-hidden="true">
-              <path stroke-linecap="round" stroke-linejoin="round" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
-              <path stroke-linecap="round" stroke-linejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-            </svg>
-            <span>Actions</span>
-          </button>
-          <div v-if="rightActionsMenuOpen" class="staff-row-menu billing-inv-right-menu">
+        <div class="billing-inv-tab-bar-wrap ms-lg-auto flex-grow-1">
+          <div class="billing-inv-tab-bar">
+            <button
+              type="button"
+              class="billing-inv-tab-btn"
+              :class="{ 'billing-inv-tab-btn--disabled': pdfDownloading }"
+              :disabled="pdfDownloading"
+              title="Download PDF"
+              aria-label="Download PDF"
+              @click="downloadInvoicePdf"
+            >
+              <svg
+                class="billing-inv-tab-btn__icon"
+                width="26"
+                height="26"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="1.75"
+                viewBox="0 0 24 24"
+                aria-hidden="true"
+              >
+                <path stroke-linecap="round" stroke-linejoin="round" d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+              </svg>
+              <span class="billing-inv-tab-btn__label">{{ pdfDownloading ? "Downloading…" : "Download PDF" }}</span>
+            </button>
+            <button
+              v-if="currentStatusKey !== 'void'"
+              type="button"
+              class="billing-inv-tab-btn"
+              :class="{ 'billing-inv-tab-btn--disabled': copyLinkBusy }"
+              :disabled="copyLinkBusy"
+              title="Copy Customer Link"
+              aria-label="Copy Customer Link"
+              @click="copyCustomerLink"
+            >
+              <svg
+                class="billing-inv-tab-btn__icon"
+                width="26"
+                height="26"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="1.75"
+                viewBox="0 0 24 24"
+                aria-hidden="true"
+              >
+                <path stroke-linecap="round" stroke-linejoin="round" d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1" />
+              </svg>
+              <span class="billing-inv-tab-btn__label">{{ copyLinkBusy ? "Working…" : "Copy Link" }}</span>
+            </button>
+            <button
+              v-if="canSendInvoiceFromDraft"
+              type="button"
+              class="billing-inv-tab-btn"
+              title="Send Invoice"
+              aria-label="Send Invoice"
+              @click="sendInvoice"
+            >
+              <svg
+                class="billing-inv-tab-btn__icon"
+                width="26"
+                height="26"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="1.75"
+                viewBox="0 0 24 24"
+                aria-hidden="true"
+              >
+                <path stroke-linecap="round" stroke-linejoin="round" d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
+              </svg>
+              <span class="billing-inv-tab-btn__label">Send Invoice</span>
+            </button>
+            <button
+              v-if="payInvoiceVisible"
+              type="button"
+              class="billing-inv-tab-btn"
+              :class="{ 'billing-inv-tab-btn--disabled': !payInvoiceEnabled }"
+              :disabled="!payInvoiceEnabled"
+              :title="payInvoiceDisabledTitle || 'Pay Invoice'"
+              aria-label="Pay Invoice"
+              @click="openPayModal"
+            >
+              <svg
+                class="billing-inv-tab-btn__icon"
+                width="26"
+                height="26"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="1.75"
+                viewBox="0 0 24 24"
+                aria-hidden="true"
+              >
+                <path stroke-linecap="round" stroke-linejoin="round" d="M17 9V7a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2m2 4h10a2 2 0 002-2v-6a2 2 0 00-2-2H9a2 2 0 00-2 2v6a2 2 0 002 2zm7-5a2 2 0 11-4 0 2 2 0 014 0z" />
+              </svg>
+              <span class="billing-inv-tab-btn__label">Pay Invoice</span>
+            </button>
+            <button
+              v-if="canShowMessagingActions"
+              type="button"
+              class="billing-inv-tab-btn"
+              :class="{ 'billing-inv-tab-btn--disabled': messagingActionsDisabled }"
+              :disabled="messagingActionsDisabled"
+              :title="messagingActionsDisabledTitle || 'Email Invoice'"
+              aria-label="Email Invoice"
+              @click="openSendEmailModal"
+            >
+              <svg
+                class="billing-inv-tab-btn__icon"
+                width="26"
+                height="26"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="1.75"
+                viewBox="0 0 24 24"
+                aria-hidden="true"
+              >
+                <path stroke-linecap="round" stroke-linejoin="round" d="M16 12a4 4 0 10-8 0 4 4 0 008 0zm0 0v1.5a2.5 2.5 0 005 0V12a9 9 0 10-9 9m4.5-1.206a8.959 8.959 0 01-4.5 1.207" />
+              </svg>
+              <span class="billing-inv-tab-btn__label">Email Invoice</span>
+            </button>
+            <button
+              v-if="canShowMessagingActions"
+              type="button"
+              class="billing-inv-tab-btn"
+              :class="{ 'billing-inv-tab-btn--disabled': messagingActionsDisabled }"
+              :disabled="messagingActionsDisabled"
+              :title="messagingActionsDisabledTitle || 'Send To Whatsapp'"
+              aria-label="Send To Whatsapp"
+              @click="openSendWhatsappModal"
+            >
+              <svg
+                class="billing-inv-tab-btn__icon"
+                width="26"
+                height="26"
+                fill="currentColor"
+                viewBox="0 0 24 24"
+                aria-hidden="true"
+              >
+                <path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.435 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413z" />
+              </svg>
+              <span class="billing-inv-tab-btn__label">Whatsapp</span>
+            </button>
+            <button
+              v-if="invoice && currentStatusKey !== 'paid' && currentStatusKey !== 'void'"
+              type="button"
+              class="billing-inv-tab-btn"
+              :class="{ 'billing-inv-tab-btn--disabled': !canStripeCharge }"
+              :disabled="!canStripeCharge"
+              :title="creditChargeDisabledTitle || 'Credit Charge'"
+              aria-label="Credit Charge"
+              @click="openStripeModal"
+            >
+              <svg
+                class="billing-inv-tab-btn__icon"
+                width="26"
+                height="26"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="1.75"
+                viewBox="0 0 24 24"
+                aria-hidden="true"
+              >
+                <path stroke-linecap="round" stroke-linejoin="round" d="M3 10h18M7 15h1m4 0h1m-7 4h12a3 3 0 003-3V8a3 3 0 00-3-3H6a3 3 0 00-3 3v8a3 3 0 003 3z" />
+              </svg>
+              <span class="billing-inv-tab-btn__label">Credit Charge</span>
+            </button>
+            <div class="billing-inv-tab-bar-actions" data-right-actions>
+              <button
+                type="button"
+                class="billing-inv-tab-btn"
+                :class="{ 'billing-inv-tab-btn--active': rightActionsMenuOpen }"
+                :aria-expanded="rightActionsMenuOpen"
+                aria-label="Actions"
+                @click="toggleRightActionsMenu"
+              >
+                <svg
+                  class="billing-inv-tab-btn__icon"
+                  width="26"
+                  height="26"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="1.75"
+                  viewBox="0 0 24 24"
+                  aria-hidden="true"
+                >
+                  <path stroke-linecap="round" stroke-linejoin="round" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
+                  <path stroke-linecap="round" stroke-linejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                </svg>
+                <span class="billing-inv-tab-btn__label">Actions</span>
+              </button>
+              <div v-if="rightActionsMenuOpen" class="staff-row-menu billing-inv-right-menu">
             <button
               v-if="canCreate"
               type="button"
@@ -2442,6 +2522,8 @@ function onDocKeydown(e) {
             >
               Add CC Fee
             </button>
+              </div>
+            </div>
           </div>
         </div>
       </div>
@@ -4091,17 +4173,78 @@ function onDocKeydown(e) {
 .billing-inv-vuexy {
   border: 1px solid rgba(47, 43, 61, 0.08);
 }
-.billing-inv-icon-actions {
+.billing-inv-toolbar__title {
+  font-size: 1.375rem;
+}
+.billing-inv-tab-bar-wrap {
   min-width: 0;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
 }
-.billing-inv-icon-action {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.4rem;
-  white-space: nowrap;
+.billing-inv-tab-bar {
+  display: flex;
+  align-items: stretch;
+  justify-content: flex-end;
+  gap: 0.625rem;
+  min-width: min-content;
+  padding: 0.125rem 0;
 }
-.billing-inv-icon-action svg {
+.billing-inv-tab-bar-actions {
+  position: relative;
   flex-shrink: 0;
+}
+.billing-inv-tab-btn {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  min-width: 5.75rem;
+  padding: 0.875rem 0.75rem 0.75rem;
+  border: 1.5px solid var(--bs-border-color);
+  border-radius: 0.625rem;
+  background: #fff;
+  color: var(--bs-body-color);
+  font-size: 0.75rem;
+  font-weight: 500;
+  line-height: 1.2;
+  white-space: nowrap;
+  cursor: pointer;
+  outline: none;
+  box-shadow: none;
+  transition:
+    border-color 0.15s ease,
+    box-shadow 0.15s ease,
+    color 0.15s ease;
+}
+.billing-inv-tab-btn:hover:not(.billing-inv-tab-btn--active):not(.billing-inv-tab-btn--disabled):not(:disabled) {
+  border-color: rgba(115, 103, 240, 0.35);
+  box-shadow: 0 0.125rem 0.375rem rgba(47, 43, 61, 0.06);
+}
+.billing-inv-tab-btn:focus,
+.billing-inv-tab-btn:focus-visible {
+  outline: none;
+  box-shadow: none;
+}
+.billing-inv-tab-btn--active {
+  border: 1.5px solid #7367f0;
+  color: #7367f0;
+}
+.billing-inv-tab-btn--active .billing-inv-tab-btn__icon,
+.billing-inv-tab-btn--active .billing-inv-tab-btn__label {
+  color: #7367f0;
+}
+.billing-inv-tab-btn--disabled,
+.billing-inv-tab-btn:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+.billing-inv-tab-btn__icon {
+  flex-shrink: 0;
+  color: var(--bs-secondary-color);
+}
+.billing-inv-tab-btn__label {
+  text-align: center;
 }
 .billing-inv-number-row .staff-status-badge {
   font-size: 0.8125rem;
@@ -4162,14 +4305,6 @@ function onDocKeydown(e) {
 }
 .billing-inv-totals {
   max-width: 15rem;
-}
-.billing-inv-toolbar-actions {
-  display: flex;
-  justify-content: flex-end;
-  position: relative;
-  align-items: center;
-  flex-shrink: 0;
-  margin-left: auto;
 }
 .billing-inv-date-range {
   gap: 0.25rem;

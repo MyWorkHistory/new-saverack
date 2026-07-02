@@ -381,6 +381,25 @@ class ShipHeroOrderQueueIndexService
     }
 
     /**
+     * @param  array<string, mixed>  $context  PortalQueueCountsService::contextForAccount payload
+     */
+    public function countForAccountTab(int $clientAccountId, string $tab, array $context): int
+    {
+        $tab = strtolower(trim($tab));
+        if ($clientAccountId <= 0 || ! $this->isQueueTab($tab)) {
+            return 0;
+        }
+
+        $query = ShipHeroOrderQueueIndex::query()
+            ->where('client_account_id', $clientAccountId)
+            ->where('queue_kind', $tab);
+
+        $this->applyDateWindowToQuery($query, $tab, $context, []);
+
+        return (int) $query->count();
+    }
+
+    /**
      * @return array{queue_kind: string, hold_reason: string|null}|null
      */
     private function sectionIndexMapping(string $sectionKey): ?array

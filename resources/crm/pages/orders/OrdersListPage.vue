@@ -595,7 +595,13 @@ watch([allPageSelected, somePageSelected, displayedRows], () => {
 });
 
 function defaultDatePresetForCurrentTab() {
-  return tabKey.value === "awaiting" ? "last_7" : "today";
+  if (tabKey.value === "awaiting") {
+    return "last_7";
+  }
+  if (tabKey.value === "on_hold" || tabKey.value === "backorder") {
+    return "last_30";
+  }
+  return "today";
 }
 
 function resetToolbarFiltersFromMenu() {

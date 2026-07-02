@@ -83,7 +83,7 @@ const cards = computed(() => [
   {
     key: "on_hold",
     label: "On-Hold",
-    sub: "On-Hold Orders needing your attention!",
+    sub: "On-hold orders in the last 30 days",
     value: counts.value.on_hold,
     to: "/users/orders/on-hold",
     iconStyle: { background: "#fef3c7", color: "#b45309" },
@@ -91,7 +91,7 @@ const cards = computed(() => [
   {
     key: "backorder",
     label: "Backorder",
-    sub: "Orders with items out of stock.",
+    sub: "Backorders in the last 30 days",
     value: counts.value.backorder,
     to: "/users/orders/backorder",
     iconStyle: OOS_PANEL_ICON_STYLE,

@@ -116,4 +116,47 @@ class ShipHeroOrderQueueIndexServiceTest extends TestCase
         $this->assertSame(5, $result['payload']['accounts'][0]['account_id']);
         $this->assertSame(2, $result['payload']['accounts'][0]['orders_count']);
     }
+
+    public function test_count_for_account_tab_respects_open_queue_window(): void
+    {
+        $now = now();
+        $context = [
+            'awaiting_from' => $now->copy()->subDays(6)->toIso8601String(),
+            'awaiting_to' => $now->toIso8601String(),
+            'open_from' => $now->copy()->subDays(29)->startOfDay()->toIso8601String(),
+            'open_to' => $now->endOfDay()->toIso8601String(),
+            'shipped_from' => $now->copy()->startOfDay()->toIso8601String(),
+            'shipped_to' => $now->endOfDay()->toIso8601String(),
+        ];
+
+        ShipHeroOrderQueueIndex::query()->insert([
+            'client_account_id' => 9,
+            'shiphero_order_id' => 'old-bo',
+            'queue_kind' => ShipHeroOrderQueueIndex::KIND_BACKORDER,
+            'order_date' => $now->copy()->subDays(40),
+            'list_payload' => json_encode(['id' => 'old-bo']),
+            'indexed_at' => $now,
+            'last_seen_at' => $now,
+            'created_at' => $now,
+            'updated_at' => $now,
+        ]);
+        ShipHeroOrderQueueIndex::query()->insert([
+            'client_account_id' => 9,
+            'shiphero_order_id' => 'recent-bo',
+            'queue_kind' => ShipHeroOrderQueueIndex::KIND_BACKORDER,
+            'order_date' => $now->copy()->subDays(10),
+            'list_payload' => json_encode(['id' => 'recent-bo']),
+            'indexed_at' => $now,
+            'last_seen_at' => $now,
+            'created_at' => $now,
+            'updated_at' => $now,
+        ]);
+
+        $service = new ShipHeroOrderQueueIndexService(
+            Mockery::mock(ShipHeroOrderService::class),
+            Mockery::mock(PortalQueueCountsService::class)
+        );
+
+        $this->assertSame(1, $service->countForAccountTab(9, ShipHeroOrderQueueIndex::KIND_BACKORDER, $context));
+    }
 }

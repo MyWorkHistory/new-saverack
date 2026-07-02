@@ -36,12 +36,19 @@ class PortalQueueCountsService
     /** Background refresh (no HTTP deadline) can scan more pages. */
     private const SHIPPED_MAX_PAGES_BACKGROUND = 200;
 
+    /** On-hold and backorder dashboard totals include orders placed in this window. */
+    public const OPEN_QUEUE_LOOKBACK_DAYS = 29;
+
     /** @var ShipHeroOrderService */
     private $orders;
 
-    public function __construct(ShipHeroOrderService $orders)
+    /** @var ShipHeroOrderQueueIndexService */
+    private $orderIndex;
+
+    public function __construct(ShipHeroOrderService $orders, ShipHeroOrderQueueIndexService $orderIndex)
     {
         $this->orders = $orders;
+        $this->orderIndex = $orderIndex;
     }
 
     /**
@@ -57,7 +64,10 @@ class PortalQueueCountsService
         $now = Carbon::now($timezone);
         $awaitingFrom = $this->dateStartIso($now->copy()->subDays(6)->toDateString(), $timezone);
         $awaitingTo = $this->dateEndIso($now->copy()->toDateString(), $timezone);
-        $openFrom = $this->dateStartIso($now->copy()->toDateString(), $timezone);
+        $openFrom = $this->dateStartIso(
+            $now->copy()->subDays(self::OPEN_QUEUE_LOOKBACK_DAYS)->toDateString(),
+            $timezone
+        );
         $openTo = $this->dateEndIso($now->copy()->toDateString(), $timezone);
 
         $shippedFromInput = $validated['order_date_from'] ?? null;
@@ -142,7 +152,7 @@ class PortalQueueCountsService
         }
 
         try {
-            $result = $this->countTab($context, $tab);
+            $result = $this->countTab($context, $tab, false, $forceRefresh);
             $stored = [
                 'count' => $result['count'],
                 'truncated' => $result['truncated'],
@@ -196,8 +206,15 @@ class PortalQueueCountsService
      * @param  array<string, mixed>  $context
      * @return array{count: int, truncated: bool}
      */
-    private function countTab(array $context, string $tab, bool $background = false): array
+    private function countTab(array $context, string $tab, bool $background = false, bool $forceRefresh = false): array
     {
+        if (! $forceRefresh) {
+            $fromIndex = $this->countTabFromIndex($context, $tab);
+            if ($fromIndex !== null) {
+                return $fromIndex;
+            }
+        }
+
         $from = $context['open_from'];
         $to = $context['open_to'];
         $maxPages = self::MAX_PAGES_PER_TAB;
@@ -233,11 +250,43 @@ class PortalQueueCountsService
 
     /**
      * @param  array<string, mixed>  $context
+     * @return array{count: int, truncated: bool}|null
+     */
+    private function countTabFromIndex(array $context, string $tab): ?array
+    {
+        $accountId = (int) ($context['client_account_id'] ?? 0);
+        if ($accountId <= 0 || ! in_array($tab, self::QUEUES, true)) {
+            return null;
+        }
+
+        if ($tab === 'shipped') {
+            if (! $this->orderIndex->indexHasRows($accountId, 'shipped')) {
+                return null;
+            }
+
+            return [
+                'count' => $this->orderIndex->countForAccountTab($accountId, 'shipped', $context),
+                'truncated' => false,
+            ];
+        }
+
+        if (! $this->orderIndex->indexHasRows($accountId, $tab)) {
+            return null;
+        }
+
+        return [
+            'count' => $this->orderIndex->countForAccountTab($accountId, $tab, $context),
+            'truncated' => false,
+        ];
+    }
+
+    /**
+     * @param  array<string, mixed>  $context
      */
     private function queueCacheKey(array $context, string $tab): string
     {
         return sprintf(
-            'orders:queue_counts:v10:%d:%s:%s',
+            'orders:queue_counts:v11:%d:%s:%s',
             (int) $context['client_account_id'],
             $tab,
             md5(implode('|', [

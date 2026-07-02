@@ -158,120 +158,120 @@ async function submit() {
         <h3 class="h6 fw-semibold text-body mb-2">Shipping Address</h3>
       </div>
       <div class="col-6 col-md-4">
-        <label class="form-label small" for="draft-ship-first">First Name</label>
+        <label class="form-label small text-secondary" for="draft-ship-first">First Name</label>
         <input
           id="draft-ship-first"
           v-model.trim="form.shipping_address.first_name"
           type="text"
-          class="form-control form-control-sm"
+          class="form-control"
           required
           :disabled="saving"
         />
       </div>
       <div class="col-6 col-md-4">
-        <label class="form-label small" for="draft-ship-last">Last Name</label>
+        <label class="form-label small text-secondary" for="draft-ship-last">Last Name</label>
         <input
           id="draft-ship-last"
           v-model.trim="form.shipping_address.last_name"
           type="text"
-          class="form-control form-control-sm"
+          class="form-control"
           required
           :disabled="saving"
         />
       </div>
       <div class="col-12 col-md-4">
-        <label class="form-label small" for="draft-ship-company">Company</label>
+        <label class="form-label small text-secondary" for="draft-ship-company">Company</label>
         <input
           id="draft-ship-company"
           v-model.trim="form.shipping_address.company"
           type="text"
-          class="form-control form-control-sm"
+          class="form-control"
           :disabled="saving"
         />
       </div>
       <div class="col-12 col-md-8">
-        <label class="form-label small" for="draft-ship-address1">Address</label>
+        <label class="form-label small text-secondary" for="draft-ship-address1">Address</label>
         <input
           id="draft-ship-address1"
           v-model.trim="form.shipping_address.address1"
           type="text"
-          class="form-control form-control-sm"
+          class="form-control"
           required
           :disabled="saving"
         />
       </div>
       <div class="col-12 col-md-4">
-        <label class="form-label small" for="draft-ship-address2">Address 2</label>
+        <label class="form-label small text-secondary" for="draft-ship-address2">Address 2</label>
         <input
           id="draft-ship-address2"
           v-model.trim="form.shipping_address.address2"
           type="text"
-          class="form-control form-control-sm"
+          class="form-control"
           :disabled="saving"
         />
       </div>
       <div class="col-6 col-md-3">
-        <label class="form-label small" for="draft-ship-city">City</label>
+        <label class="form-label small text-secondary" for="draft-ship-city">City</label>
         <input
           id="draft-ship-city"
           v-model.trim="form.shipping_address.city"
           type="text"
-          class="form-control form-control-sm"
+          class="form-control"
           required
           :disabled="saving"
         />
       </div>
       <div class="col-6 col-md-3">
-        <label class="form-label small" for="draft-ship-state">State</label>
+        <label class="form-label small text-secondary" for="draft-ship-state">State</label>
         <input
           id="draft-ship-state"
           v-model.trim="form.shipping_address.state"
           type="text"
-          class="form-control form-control-sm"
+          class="form-control"
           required
           :disabled="saving"
         />
       </div>
       <div class="col-6 col-md-3">
-        <label class="form-label small" for="draft-ship-zip">ZIP</label>
+        <label class="form-label small text-secondary" for="draft-ship-zip">ZIP</label>
         <input
           id="draft-ship-zip"
           v-model.trim="form.shipping_address.zip"
           type="text"
-          class="form-control form-control-sm"
+          class="form-control"
           required
           :disabled="saving"
         />
       </div>
       <div class="col-6 col-md-3">
-        <label class="form-label small" for="draft-ship-country">Country</label>
+        <label class="form-label small text-secondary" for="draft-ship-country">Country</label>
         <input
           id="draft-ship-country"
           v-model.trim="form.shipping_address.country"
           type="text"
-          class="form-control form-control-sm"
+          class="form-control"
           required
           maxlength="8"
           :disabled="saving"
         />
       </div>
       <div class="col-12 col-md-6">
-        <label class="form-label small" for="draft-ship-email">Email</label>
+        <label class="form-label small text-secondary" for="draft-ship-email">Email</label>
         <input
           id="draft-ship-email"
           v-model.trim="form.shipping_address.email"
           type="email"
-          class="form-control form-control-sm"
+          class="form-control"
           :disabled="saving"
         />
       </div>
       <div class="col-12 col-md-6">
-        <label class="form-label small" for="draft-ship-phone">Phone</label>
+        <label class="form-label small text-secondary" for="draft-ship-phone">Phone</label>
         <input
           id="draft-ship-phone"
           v-model.trim="form.shipping_address.phone"
           type="text"
-          class="form-control form-control-sm"
+          class="form-control"
           :disabled="saving"
         />
       </div>

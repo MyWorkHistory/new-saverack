@@ -21,6 +21,9 @@ const loading = ref(true);
 const errorMsg = ref("");
 const summary = ref({
   open_balance_due_cents: 0,
+  processing_total_cents: 0,
+  past_due_balance_cents: 0,
+  overdue_invoice_count: 0,
   draft_invoice_count: 0,
   paid_mtd_cents: 0,
 });
@@ -108,6 +111,9 @@ async function loadSummary() {
   });
   summary.value = {
     open_balance_due_cents: data?.open_balance_due_cents ?? 0,
+    processing_total_cents: data?.processing_total_cents ?? 0,
+    past_due_balance_cents: data?.past_due_balance_cents ?? 0,
+    overdue_invoice_count: data?.overdue_invoice_count ?? 0,
     draft_invoice_count: data?.draft_invoice_count ?? 0,
     paid_mtd_cents: data?.paid_mtd_cents ?? 0,
   };
@@ -281,16 +287,18 @@ watch(() => props.accountId, load);
           <div
             class="staff-stat-card billing-inv-summary-card billing-inv-summary-card--static h-100 text-start w-100 client-account-billing-summary-card"
           >
-            <p class="staff-stat-card__label">Draft Invoices</p>
-            <p class="staff-stat-card__value">{{ nf.format(summary.draft_invoice_count) }}</p>
-            <p class="staff-stat-card__sub">Not yet sent</p>
+            <p class="staff-stat-card__label">Processing</p>
+            <p class="staff-stat-card__value">
+              {{ formatCents(summary.processing_total_cents) }}
+            </p>
+            <p class="staff-stat-card__sub">Payments in progress</p>
             <div
-              class="staff-stat-card__icon bg-secondary-subtle text-secondary"
+              class="staff-stat-card__icon bg-warning-subtle text-warning-emphasis"
               aria-hidden="true"
             >
               <svg width="22" height="22" fill="currentColor" viewBox="0 0 24 24">
                 <path
-                  d="M14 2H6c-1.1 0-1.99.9-1.99 2L4 20c0 1.1.89 2 1.99 2H18c1.1 0 2-.9 2-2V8l-6-6zm2 16H8v-2h8v2zm0-4H8v-2h8v2zm-3-5V3.5L18.5 9H13z"
+                  d="M12 4V1L8 5l4 4V6c3.31 0 6 2.69 6 6 0 1.01-.25 1.97-.7 2.8l1.46 1.46A7.93 7.93 0 0 0 20 12c0-4.42-3.58-8-8-8m0 14c-3.31 0-6-2.69-6-6 0-1.01.25-1.97.7-2.8L5.24 7.74A7.93 7.93 0 0 0 4 12c0 4.42 3.58 8 8 8v3l4-4-4-4z"
                 />
               </svg>
             </div>
@@ -298,9 +306,9 @@ watch(() => props.accountId, load);
               <button
                 type="button"
                 class="btn btn-link btn-sm client-account-billing-summary-card__link p-0"
-                @click="openInvoicesInNewTab('draft')"
+                @click="openInvoicesInNewTab('processing')"
               >
-                View drafts &gt;
+                View processing &gt;
               </button>
             </div>
           </div>
@@ -309,24 +317,31 @@ watch(() => props.accountId, load);
           <div
             class="staff-stat-card billing-inv-summary-card billing-inv-summary-card--static h-100 text-start w-100 client-account-billing-summary-card"
           >
-            <p class="staff-stat-card__label">Paid (Month to Date)</p>
-            <p class="staff-stat-card__value">{{ formatCents(summary.paid_mtd_cents) }}</p>
-            <p class="staff-stat-card__sub">Recorded payments this month</p>
+            <p class="staff-stat-card__label">Past Due</p>
+            <p class="staff-stat-card__value">
+              {{ formatCents(summary.past_due_balance_cents) }}
+            </p>
+            <p class="staff-stat-card__sub">
+              {{ nf.format(summary.overdue_invoice_count) }}
+              {{ summary.overdue_invoice_count === 1 ? "invoice" : "invoices" }} past due
+            </p>
             <div
-              class="staff-stat-card__icon bg-success-subtle text-success"
+              class="staff-stat-card__icon bg-danger-subtle text-danger"
               aria-hidden="true"
             >
               <svg width="22" height="22" fill="currentColor" viewBox="0 0 24 24">
-                <path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z" />
+                <path
+                  d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2m1 15h-2v-2h2zm0-4h-2V7h2z"
+                />
               </svg>
             </div>
             <div class="client-account-billing-summary-card__footer">
               <button
                 type="button"
                 class="btn btn-link btn-sm client-account-billing-summary-card__link p-0"
-                @click="openInvoicesInNewTab('paid')"
+                @click="openInvoicesInNewTab('past_due')"
               >
-                View payments &gt;
+                View past due &gt;
               </button>
             </div>
           </div>
@@ -481,34 +496,34 @@ watch(() => props.accountId, load);
         </div>
 
         <div class="col-12 col-lg-7">
-          <div class="staff-surface p-3 p-md-4 h-100 d-flex flex-column">
-            <div class="d-flex flex-wrap align-items-center justify-content-between gap-2 mb-3">
-              <h3 class="staff-user-section-title mb-0">Recent invoices</h3>
-              <RouterLink
-                :to="invoicesUrl('all')"
-                class="btn btn-sm btn-outline-primary"
-                target="_blank"
-                rel="noopener noreferrer"
-              >
-                View All
-              </RouterLink>
-            </div>
-            <div class="table-responsive flex-grow-1">
-              <table class="table table-sm staff-data-table mb-0 align-middle">
-                <thead>
+          <div class="d-flex flex-wrap align-items-center justify-content-between gap-2 mb-3">
+            <h3 class="staff-user-section-title mb-0">Recent invoices</h3>
+            <RouterLink
+              :to="invoicesUrl('all')"
+              class="btn btn-sm btn-outline-primary"
+              target="_blank"
+              rel="noopener noreferrer"
+            >
+              View All
+            </RouterLink>
+          </div>
+          <div class="staff-table-card staff-datatable-card staff-datatable-card--white p-0 h-100 d-flex flex-column">
+            <div class="table-responsive staff-table-wrap flex-grow-1">
+              <table class="table table-hover align-middle mb-0 staff-data-table">
+                <thead class="table-light staff-table-head">
                   <tr>
-                    <th scope="col">Invoice</th>
-                    <th scope="col">Status</th>
-                    <th scope="col">Date</th>
-                    <th scope="col" class="text-end">Amount</th>
+                    <th class="staff-table-head__th" scope="col">Invoice</th>
+                    <th class="staff-table-head__th" scope="col">Status</th>
+                    <th class="staff-table-head__th" scope="col">Date</th>
+                    <th class="staff-table-head__th text-end" scope="col">Amount</th>
                   </tr>
                 </thead>
                 <tbody>
-                  <tr v-for="inv in invoices" :key="inv.id">
-                    <td class="fw-medium">
+                  <tr v-for="inv in invoices" :key="inv.id" class="align-middle">
+                    <td class="fw-medium text-body">
                       <RouterLink
                         :to="`/admin/billing/invoices/${inv.id}`"
-                        class="text-decoration-none text-body"
+                        class="text-decoration-none text-body billing-inv-row-link"
                         target="_blank"
                         rel="noopener noreferrer"
                       >
@@ -523,20 +538,20 @@ watch(() => props.accountId, load);
                         {{ displayStatusText(inv) }}
                       </span>
                     </td>
-                    <td class="text-secondary small text-nowrap">
+                    <td class="staff-table-cell__meta text-nowrap">
                       {{ formatIsoDate(inv.invoice_date) }}
                     </td>
                     <td class="text-end fw-medium">{{ formatCents(inv.total_cents) }}</td>
                   </tr>
                   <tr v-if="!invoices.length">
-                    <td colspan="4" class="text-secondary small py-4 text-center">
+                    <td colspan="4" class="text-center text-secondary py-5">
                       No invoices yet.
                     </td>
                   </tr>
                 </tbody>
               </table>
             </div>
-            <div class="text-center mt-3 pt-2">
+            <div class="text-center py-3 border-top">
               <RouterLink
                 :to="invoicesUrl('all')"
                 class="client-account-billing-history-link small text-decoration-none"
@@ -745,6 +760,10 @@ watch(() => props.accountId, load);
 }
 
 .client-account-billing-history-link:hover {
+  text-decoration: underline !important;
+}
+
+.billing-inv-row-link:hover {
   text-decoration: underline !important;
 }
 </style>

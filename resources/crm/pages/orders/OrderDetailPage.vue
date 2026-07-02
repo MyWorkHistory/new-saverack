@@ -2191,7 +2191,7 @@ function goToOrdersList() {
             <textarea
               id="order-gift-note"
               v-model="giftNoteLocal"
-              class="form-control form-control-sm mb-3"
+              class="form-control mb-3"
               rows="3"
               :disabled="!canRunShipHeroActions || optionsSaveBusy"
             ></textarea>
@@ -2212,7 +2212,7 @@ function goToOrdersList() {
               id="order-tags-input"
               v-model="tagInputValue"
               type="text"
-              class="form-control form-control-sm mb-2"
+              class="form-control mb-2"
               placeholder="Press enter or comma to add a tag."
               autocomplete="off"
               :disabled="!canRunShipHeroActions"
@@ -2341,7 +2341,7 @@ function goToOrdersList() {
                       id="ship-fn"
                       v-model="shippingForm.first_name"
                       type="text"
-                      class="form-control form-control-sm"
+                      class="form-control"
                       :readonly="!canRunShipHeroActions"
                     />
                   </div>
@@ -2351,7 +2351,7 @@ function goToOrdersList() {
                       id="ship-ln"
                       v-model="shippingForm.last_name"
                       type="text"
-                      class="form-control form-control-sm"
+                      class="form-control"
                       :readonly="!canRunShipHeroActions"
                     />
                   </div>
@@ -2361,7 +2361,7 @@ function goToOrdersList() {
                       id="ship-co"
                       v-model="shippingForm.company"
                       type="text"
-                      class="form-control form-control-sm"
+                      class="form-control"
                       :readonly="!canRunShipHeroActions"
                     />
                   </div>
@@ -2371,7 +2371,7 @@ function goToOrdersList() {
                       id="ship-a1"
                       v-model="shippingForm.address1"
                       type="text"
-                      class="form-control form-control-sm"
+                      class="form-control"
                       :readonly="!canRunShipHeroActions"
                     />
                   </div>
@@ -2381,7 +2381,7 @@ function goToOrdersList() {
                       id="ship-a2"
                       v-model="shippingForm.address2"
                       type="text"
-                      class="form-control form-control-sm"
+                      class="form-control"
                       :readonly="!canRunShipHeroActions"
                     />
                   </div>
@@ -2391,7 +2391,7 @@ function goToOrdersList() {
                       id="ship-ph"
                       v-model="shippingForm.phone"
                       type="text"
-                      class="form-control form-control-sm"
+                      class="form-control"
                       :readonly="!canRunShipHeroActions"
                     />
                   </div>
@@ -2401,7 +2401,7 @@ function goToOrdersList() {
                       id="ship-city"
                       v-model="shippingForm.city"
                       type="text"
-                      class="form-control form-control-sm"
+                      class="form-control"
                       :readonly="!canRunShipHeroActions"
                     />
                   </div>
@@ -2411,7 +2411,7 @@ function goToOrdersList() {
                       id="ship-st"
                       v-model="shippingForm.state"
                       type="text"
-                      class="form-control form-control-sm"
+                      class="form-control"
                       :readonly="!canRunShipHeroActions"
                     />
                   </div>
@@ -2421,7 +2421,7 @@ function goToOrdersList() {
                       id="ship-ct"
                       v-model="shippingForm.country"
                       type="text"
-                      class="form-control form-control-sm"
+                      class="form-control"
                       :readonly="!canRunShipHeroActions"
                     />
                   </div>
@@ -2431,7 +2431,7 @@ function goToOrdersList() {
                       id="ship-zip"
                       v-model="shippingForm.zip"
                       type="text"
-                      class="form-control form-control-sm"
+                      class="form-control"
                       :readonly="!canRunShipHeroActions"
                     />
                   </div>
@@ -2441,7 +2441,7 @@ function goToOrdersList() {
                       id="ship-em"
                       v-model="shippingForm.email"
                       type="email"
-                      class="form-control form-control-sm"
+                      class="form-control"
                       :readonly="!canRunShipHeroActions"
                     />
                   </div>
@@ -2655,7 +2655,7 @@ function goToOrdersList() {
                 id="order-new-sku-name"
                 v-model="addNewSkuName"
                 type="text"
-                class="form-control form-control-sm mb-3"
+                class="form-control mb-3"
                 :disabled="addNewSkuBusy"
               />
               <label class="form-label small mb-1" for="order-new-sku-code">SKU</label>
@@ -2663,7 +2663,7 @@ function goToOrdersList() {
                 id="order-new-sku-code"
                 v-model="addNewSkuSku"
                 type="text"
-                class="form-control form-control-sm"
+                class="form-control"
                 :disabled="addNewSkuBusy"
               />
             </div>
@@ -2729,7 +2729,7 @@ function goToOrdersList() {
                   min="0"
                   :max="editQtyPendingMax"
                   step="1"
-                  class="form-control form-control-sm"
+                  class="form-control"
                   :disabled="editLineBusy"
                 />
                 <p class="small text-secondary mb-0 mt-2">Ordered quantity: {{ editQtyPendingMax }} (maximum to ship).</p>

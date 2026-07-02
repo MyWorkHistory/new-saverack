@@ -8,6 +8,7 @@ import ConfirmModal from "../../components/common/ConfirmModal.vue";
 import { setCrmPageMeta } from "../../composables/useCrmPageMeta.js";
 import { useToast } from "../../composables/useToast.js";
 import { errorMessage as apiErrorMessage } from "../../utils/apiError.js";
+import { formatDateTimeUs } from "../../utils/formatUserDates.js";
 
 const RECEIVING_LOCATION_NAME = "Receiving";
 const PUT_AWAY_REASON = "Inbound Receiving Adjustments";
@@ -19,6 +20,7 @@ const refreshing = ref(false);
 const saving = ref(false);
 const product = ref(null);
 const putAwayRow = ref(null);
+const lastRefreshedAt = ref(null);
 const productLoadError = ref("");
 
 const locationSearch = ref("");
@@ -260,6 +262,11 @@ const filteredLocations = computed(() => {
 
 const canTransfer = computed(() => receivingQty.value > 0 && Boolean(receivingLocation.value?.location_id));
 
+const lastRefreshedLabel = computed(() => {
+  if (!lastRefreshedAt.value) return null;
+  return formatDateTimeUs(lastRefreshedAt.value);
+});
+
 function displayVal(v) {
   if (v === null || v === undefined) return "—";
   if (typeof v === "string" && v.trim() === "") return "—";
@@ -304,6 +311,62 @@ function activeWarehouseId() {
   return String(product.value?.warehouses?.[0]?.warehouse_id || receivingLocation.value?.warehouse_id || "").trim();
 }
 
+function applyServerRefreshTimestamp(meta) {
+  const raw = meta?.computed_at;
+  if (!raw) return;
+  const parsed = new Date(raw);
+  if (!Number.isNaN(parsed.getTime())) {
+    lastRefreshedAt.value = parsed;
+  }
+}
+
+function defaultTransferDestinationId(source) {
+  if (!source) return "";
+  const whId = String(source.warehouse_id || "");
+  const fromId = String(source.location_id || "");
+  const candidates = allLocations.value.filter(
+    (loc) =>
+      String(loc.warehouse_id || "") === whId
+      && String(loc.location_id || "") !== fromId
+      && !isReceivingLocation(loc),
+  );
+  if (!candidates.length) return "";
+
+  const pickableWithStock = candidates
+    .filter((loc) => loc.pickable === true && Number(loc.quantity || 0) > 0)
+    .sort((a, b) => Number(b.quantity || 0) - Number(a.quantity || 0));
+  if (pickableWithStock.length > 0) {
+    return String(pickableWithStock[0].location_id || "");
+  }
+
+  const pickable = candidates
+    .filter((loc) => loc.pickable === true)
+    .sort((a, b) =>
+      String(a.location_name || a.location_id || "").localeCompare(
+        String(b.location_name || b.location_id || ""),
+      ),
+    );
+  if (pickable.length > 0) {
+    return String(pickable[0].location_id || "");
+  }
+
+  const sorted = [...candidates].sort((a, b) => Number(b.quantity || 0) - Number(a.quantity || 0));
+  return String(sorted[0].location_id || "");
+}
+
+function applyDefaultTransferDestination() {
+  const destId = defaultTransferDestinationId(activeLocation.value);
+  if (destId) {
+    transferForm.transfer_type = "current";
+    transferForm.to_location_id = destId;
+    transferForm.to_location = "";
+    return;
+  }
+  transferForm.transfer_type = "new";
+  transferForm.to_location_id = "";
+  transferForm.to_location = "";
+}
+
 async function loadProduct({ refresh = false } = {}) {
   productLoadError.value = "";
   try {
@@ -331,6 +394,9 @@ async function loadPutAwayRow({ refresh = false } = {}) {
     if (refresh) params.refresh = 1;
     const { data } = await api.get(`/admin/put-away/products/${encodeURIComponent(sku)}`, { params });
     putAwayRow.value = data?.row ?? null;
+    if (!refresh) {
+      applyServerRefreshTimestamp(data?.meta);
+    }
     return true;
   } catch {
     putAwayRow.value = null;
@@ -344,9 +410,13 @@ async function reloadProductData({ refresh = false } = {}) {
 
 async function loadDetail() {
   loading.value = true;
+  lastRefreshedAt.value = null;
   await reloadProductData({ refresh: false });
   if (product.value && metricsAllZero()) {
     await reloadProductData({ refresh: true });
+    lastRefreshedAt.value = new Date();
+  } else if (!lastRefreshedAt.value && product.value) {
+    lastRefreshedAt.value = new Date();
   }
   loading.value = false;
 }
@@ -355,6 +425,7 @@ async function refreshDetail() {
   if (loading.value || refreshing.value) return;
   refreshing.value = true;
   await reloadProductData({ refresh: true });
+  lastRefreshedAt.value = new Date();
   refreshing.value = false;
 }
 
@@ -428,9 +499,7 @@ function openTransferAllModal() {
     return;
   }
   activeLocation.value = receivingLocation.value;
-  transferForm.transfer_type = "new";
-  transferForm.to_location_id = "";
-  transferForm.to_location = "";
+  applyDefaultTransferDestination();
   transferForm.quantity = String(receivingQty.value);
   transferForm.reason = defaultTransferReason.value;
   transferModalOpen.value = true;
@@ -733,14 +802,36 @@ onUnmounted(() => {
 
         <div class="staff-user-view__title-row inventory-portal-detail__title-row d-flex flex-wrap align-items-center gap-2 mb-3">
           <div class="me-auto" />
-          <button
-            type="button"
-            class="btn btn-outline-secondary btn-sm orders-toolbar-outline-btn"
-            :disabled="loading || refreshing"
-            @click="refreshDetail"
-          >
-            {{ refreshing ? "Refreshing…" : "Refresh" }}
-          </button>
+          <div class="d-flex align-items-center gap-2 flex-shrink-0">
+            <p v-if="lastRefreshedLabel" class="small text-secondary mb-0">
+              Last refreshed: {{ lastRefreshedLabel }}
+            </p>
+            <button
+              type="button"
+              class="btn btn-outline-secondary btn-sm orders-toolbar-outline-btn d-inline-flex align-items-center gap-2"
+              :disabled="loading || refreshing"
+              title="Refresh"
+              aria-label="Refresh product from ShipHero"
+              @click="refreshDetail"
+            >
+              <svg
+                width="18"
+                height="18"
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+                aria-hidden="true"
+              >
+                <path
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                  stroke-width="2"
+                  d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"
+                />
+              </svg>
+              {{ refreshing ? "Refreshing…" : "Refresh" }}
+            </button>
+          </div>
         </div>
 
         <div class="row g-2 inventory-portal-detail__metrics">

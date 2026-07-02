@@ -72,7 +72,10 @@ class PutAwayController extends Controller
                 return response()->json(['message' => 'Product not found.'], 404);
             }
 
-            return response()->json(['row' => $row]);
+            return response()->json([
+                'row' => $row,
+                'meta' => $putAway->receivingRefreshMeta(),
+            ]);
         } catch (RuntimeException $e) {
             return response()->json(['message' => $e->getMessage()], 422);
         } catch (Throwable $e) {

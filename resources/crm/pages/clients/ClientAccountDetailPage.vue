@@ -1202,9 +1202,12 @@ onUnmounted(() => {
       >
     </template>
 
-    <div v-else-if="account" class="mb-4">
-      <h1 class="staff-user-view__title mb-3">{{ account.company_name }}</h1>
-      <div class="account-detail-tab-bar-wrap">
+    <div
+      v-else-if="account"
+      class="account-detail-header d-flex flex-row align-items-center gap-3 mb-4"
+    >
+      <h1 class="staff-user-view__title mb-0 min-w-0 flex-shrink-0">{{ account.company_name }}</h1>
+      <div class="account-detail-tab-bar-wrap ms-lg-auto flex-grow-1">
         <div class="account-detail-tab-bar" role="tablist">
           <button
             v-for="t in accountTabList"
@@ -1218,8 +1221,8 @@ onUnmounted(() => {
           >
             <svg
               class="account-detail-tab-btn__icon"
-              width="22"
-              height="22"
+              width="26"
+              height="26"
               fill="none"
               stroke="currentColor"
               stroke-width="1.75"
@@ -2498,8 +2501,12 @@ onUnmounted(() => {
   color: #2563eb;
 }
 
+.account-detail-header {
+  min-width: 0;
+}
+
 .account-detail-tab-bar-wrap {
-  margin: 0 -0.25rem;
+  min-width: 0;
   overflow-x: auto;
   -webkit-overflow-scrolling: touch;
 }
@@ -2507,9 +2514,10 @@ onUnmounted(() => {
 .account-detail-tab-bar {
   display: flex;
   align-items: stretch;
-  gap: 0.5rem;
+  justify-content: flex-end;
+  gap: 0.625rem;
   min-width: min-content;
-  padding: 0 0.25rem 0.125rem;
+  padding: 0.125rem 0;
 }
 
 .account-detail-tab-btn {
@@ -2517,14 +2525,14 @@ onUnmounted(() => {
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 0.35rem;
-  min-width: 5.5rem;
-  padding: 0.65rem 0.75rem 0.55rem;
-  border: 1px solid var(--bs-border-color);
-  border-radius: 0.5rem;
-  background: var(--bs-body-bg, #fff);
+  gap: 0.5rem;
+  min-width: 6.75rem;
+  padding: 0.875rem 1rem 0.75rem;
+  border: 1.5px solid var(--bs-border-color);
+  border-radius: 0.625rem;
+  background: #fff;
   color: var(--bs-body-color);
-  font-size: 0.75rem;
+  font-size: 0.8125rem;
   font-weight: 500;
   line-height: 1.2;
   white-space: nowrap;
@@ -2541,9 +2549,9 @@ onUnmounted(() => {
 }
 
 .account-detail-tab-btn--active {
-  border-color: rgba(115, 103, 240, 0.45);
-  color: #7367f0;
-  box-shadow: inset 0 -3px 0 #7367f0;
+  border-color: #7367f0;
+  color: var(--bs-body-color);
+  box-shadow: none;
 }
 
 .account-detail-tab-btn--active .account-detail-tab-btn__icon {
@@ -2564,9 +2572,7 @@ onUnmounted(() => {
 }
 
 [data-bs-theme="dark"] .account-detail-tab-btn--active {
-  color: #a59bff;
-  border-color: rgba(165, 155, 255, 0.45);
-  box-shadow: inset 0 -3px 0 #a59bff;
+  border-color: #a59bff;
 }
 
 [data-bs-theme="dark"] .account-detail-tab-btn--active .account-detail-tab-btn__icon {

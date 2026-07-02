@@ -113,6 +113,73 @@ class AsnBillService
         ];
     }
 
+    /**
+     * @param  array<string, mixed>  $filters
+     * @return array{data: list<array<string, mixed>>, current_page: int, last_page: int, per_page: int, total: int}
+     */
+    public function paginate(array $filters): array
+    {
+        $perPage = max(1, min(100, (int) ($filters['per_page'] ?? 25)));
+        $sortBy = in_array($filters['sort_by'] ?? '', ['bill_number', 'bill_date', 'total_cents', 'status', 'id'], true)
+            ? (string) $filters['sort_by']
+            : 'id';
+        $sortDir = strtolower((string) ($filters['sort_dir'] ?? 'desc')) === 'asc' ? 'asc' : 'desc';
+
+        $query = AsnBill::query()
+            ->with(['clientAccount:id,company_name', 'clientAccountAsn:id,asn_number'])
+            ->withCount('items');
+
+        if (! empty($filters['status']) && $filters['status'] !== 'all') {
+            $query->where('status', (string) $filters['status']);
+        }
+        if (! empty($filters['client_account_id'])) {
+            $query->where('client_account_id', (int) $filters['client_account_id']);
+        }
+        if (! empty($filters['bill_number'])) {
+            $query->where('bill_number', (int) $filters['bill_number']);
+        }
+        if (! empty($filters['date_from'])) {
+            $query->whereDate('bill_date', '>=', (string) $filters['date_from']);
+        }
+        if (! empty($filters['date_to'])) {
+            $query->whereDate('bill_date', '<=', (string) $filters['date_to']);
+        }
+
+        $search = trim((string) ($filters['search'] ?? ''));
+        if ($search !== '') {
+            $query->where(function (Builder $q) use ($search) {
+                if (ctype_digit($search)) {
+                    $q->orWhere('bill_number', (int) $search);
+                }
+                $q->orWhereHas('clientAccount', function (Builder $cq) use ($search) {
+                    $cq->where('company_name', 'like', '%'.$search.'%');
+                });
+                $q->orWhereHas('clientAccountAsn', function (Builder $aq) use ($search) {
+                    $aq->where('asn_number', 'like', '%'.$search.'%');
+                });
+            });
+        }
+
+        if ($sortBy === 'bill_date') {
+            $query->orderBy('bill_date', $sortDir)->orderByDesc('id');
+        } else {
+            $query->orderBy($sortBy, $sortDir);
+        }
+
+        /** @var LengthAwarePaginator $page */
+        $page = $query->paginate($perPage);
+
+        return [
+            'data' => collect($page->items())->map(function (AsnBill $bill) {
+                return $this->toListArray($bill);
+            })->values()->all(),
+            'current_page' => $page->currentPage(),
+            'last_page' => $page->lastPage(),
+            'per_page' => $page->perPage(),
+            'total' => $page->total(),
+        ];
+    }
+
     public function findOrCreateOpenBillForAsn(ClientAccountAsn $asn, ?User $actor): AsnBill
     {
         $asn->loadMissing('asnBill');
@@ -548,6 +615,26 @@ class AsnBillService
             default:
                 return 'Activity';
         }
+    }
+
+    private function toListArray(AsnBill $bill): array
+    {
+        $bill->loadMissing(['clientAccount', 'clientAccountAsn']);
+
+        return [
+            'id' => $bill->id,
+            'bill_number' => $bill->bill_number,
+            'status' => $bill->status,
+            'status_label' => $bill->isOpen() ? 'Open' : 'Invoiced',
+            'client_account_id' => $bill->client_account_id,
+            'client_account_name' => $bill->clientAccount ? $bill->clientAccount->company_name : '',
+            'asn_number' => $bill->clientAccountAsn !== null ? $bill->clientAccountAsn->asn_number : null,
+            'client_account_asn_id' => $bill->client_account_asn_id,
+            'bill_date' => $bill->bill_date ? $bill->bill_date->format('Y-m-d') : null,
+            'total_cents' => (int) $bill->total_cents,
+            'invoice_id' => $bill->invoice_id,
+            'items_count' => (int) ($bill->items_count ?? 0),
+        ];
     }
 
     /**

@@ -135,6 +135,53 @@ class AsnBillApiTest extends TestCase
         $this->assertSame('ASN-A', $res['data'][0]['asn_number']);
     }
 
+    public function test_index_lists_bills_with_status_and_account(): void
+    {
+        $account = $this->account();
+        [, $billWithLine] = $this->asnWithOpenBill($account, 'ASN-A');
+        AsnBillItem::query()->create([
+            'asn_bill_id' => $billWithLine->id,
+            'line_type' => AsnBill::LINE_RECEIVING_PER_BOX,
+            'name' => AsnBillChargeCatalog::displayName(AsnBill::LINE_RECEIVING_PER_BOX),
+            'quantity' => 2,
+            'unit_price_cents' => 500,
+            'line_total_cents' => 1000,
+            'sort_order' => 0,
+        ]);
+        $billWithLine->update(['total_cents' => 1000]);
+
+        $asnEmpty = ClientAccountAsn::query()->create([
+            'client_account_id' => $account->id,
+            'asn_number' => 'ASN-B',
+            'status' => ClientAccountAsn::STATUS_PENDING,
+            'total_boxes' => 1,
+            'expected_qty' => 0,
+            'accepted_qty' => 0,
+            'rejected_qty' => 0,
+        ]);
+        AsnBill::query()->create([
+            'bill_number' => AsnBill::FIRST_BILL_NUMBER + 1,
+            'status' => AsnBill::STATUS_OPEN,
+            'client_account_id' => $account->id,
+            'client_account_asn_id' => $asnEmpty->id,
+            'bill_date' => now()->toDateString(),
+            'total_cents' => 0,
+        ]);
+
+        $this->billingUser();
+
+        $res = $this->getJson('/api/asn-bills')->assertOk()->json();
+        $this->assertCount(2, $res['data'] ?? []);
+
+        $row = collect($res['data'])->firstWhere('asn_number', 'ASN-A');
+        $this->assertNotNull($row);
+        $this->assertSame('open', $row['status']);
+        $this->assertSame('Open', $row['status_label']);
+        $this->assertSame('ASN Bill Co', $row['client_account_name']);
+        $this->assertSame(1, $row['items_count']);
+        $this->assertSame(1000, $row['total_cents']);
+    }
+
     public function test_crud_lines_on_open_bill(): void
     {
         $account = $this->account();

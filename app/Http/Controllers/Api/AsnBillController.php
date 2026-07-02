@@ -39,6 +39,26 @@ class AsnBillController extends Controller
         return response()->json($data);
     }
 
+    public function index(Request $request): JsonResponse
+    {
+        $this->authorize('viewAny', AsnBill::class);
+
+        $data = $this->asnBills->paginate($request->only([
+            'search',
+            'status',
+            'client_account_id',
+            'bill_number',
+            'date_from',
+            'date_to',
+            'sort_by',
+            'sort_dir',
+            'per_page',
+            'page',
+        ]));
+
+        return response()->json($data);
+    }
+
     public function show(AsnBill $asnBill): JsonResponse
     {
         $this->authorize('view', $asnBill);

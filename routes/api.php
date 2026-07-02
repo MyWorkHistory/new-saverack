@@ -87,6 +87,7 @@ Route::middleware('auth:sanctum')->group(function () {
         });
 
         Route::prefix('asn-bills')->group(function () {
+            Route::get('/', [AsnBillController::class, 'index']);
             Route::get('/lines', [AsnBillController::class, 'lines']);
             Route::get('/{asnBill}', [AsnBillController::class, 'show']);
             Route::patch('/{asnBill}', [AsnBillController::class, 'update']);

@@ -208,6 +208,10 @@ export function useUserForm() {
       if (profileOnly) {
         delete payload.status;
         delete payload.role_ids;
+        delete payload.employee_type;
+        delete payload.job_position;
+        delete payload.hire_date;
+        delete payload.terminate_date;
       }
       if (isEdit && userId) {
         if (form.password.trim()) {

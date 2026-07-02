@@ -9,7 +9,6 @@ const SELF_EDIT_SECTIONS = [
   "identity",
   "contact",
   "address",
-  "employment",
   "bio",
 ];
 

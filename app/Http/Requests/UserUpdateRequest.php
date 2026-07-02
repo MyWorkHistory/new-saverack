@@ -61,6 +61,10 @@ class UserUpdateRequest extends FormRequest
         if ($this->isSelfServiceUpdate() && ! $this->isPrivilegedEditor()) {
             $rules['role_ids'] = ['prohibited'];
             $rules['status'] = ['prohibited'];
+            $rules['employee_type'] = ['prohibited'];
+            $rules['job_position'] = ['prohibited'];
+            $rules['hire_date'] = ['prohibited'];
+            $rules['terminate_date'] = ['prohibited'];
         }
 
         return $rules;

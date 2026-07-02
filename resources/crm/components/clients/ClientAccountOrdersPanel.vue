@@ -1,5 +1,6 @@
 <script setup>
-import { computed } from "vue";
+import { computed, ref } from "vue";
+import { useRouter } from "vue-router";
 import OrdersListPage from "../../pages/orders/OrdersListPage.vue";
 import { usePortalDashboardCounts } from "../../composables/usePortalDashboardCounts.js";
 
@@ -7,9 +8,36 @@ const props = defineProps({
   accountId: { type: [String, Number], required: true },
 });
 
+const router = useRouter();
 const accountIdNum = computed(() => Number(props.accountId || 0));
 
-const { counts, loading, loadCounts } = usePortalDashboardCounts(() => accountIdNum.value);
+const { counts, loading, loadCounts, refreshCounts, lastRefreshedLabel } = usePortalDashboardCounts(
+  () => accountIdNum.value,
+);
+
+const activeQueueTab = ref("awaiting");
+
+const QUEUE_TAB_BY_CARD = {
+  ready_to_ship: "awaiting",
+  on_hold: "on_hold",
+  backorder: "backorder",
+  shipped: "shipped",
+};
+
+const QUEUE_ROUTE_BY_TAB = {
+  awaiting: "orders-awaiting",
+  on_hold: "orders-on-hold",
+  backorder: "orders-out-of-stock",
+  shipped: "orders-shipped",
+};
+
+const activeTabTitle = computed(() => {
+  if (activeQueueTab.value === "awaiting") return "Ready to Ship";
+  if (activeQueueTab.value === "on_hold") return "On-Hold";
+  if (activeQueueTab.value === "backorder") return "Backorder";
+  if (activeQueueTab.value === "shipped") return "Shipped";
+  return "Orders";
+});
 
 const DASHBOARD_ICON = {
   readyBox:
@@ -53,6 +81,24 @@ const statCards = computed(() => [
   },
 ]);
 
+function setQueueTabFromCard(cardKey) {
+  const tab = QUEUE_TAB_BY_CARD[cardKey];
+  if (!tab) return;
+  activeQueueTab.value = tab;
+}
+
+function viewAllOrdersHref() {
+  const routeName = QUEUE_ROUTE_BY_TAB[activeQueueTab.value] || "orders-awaiting";
+  return router.resolve({
+    name: routeName,
+    query: { client_account_id: String(accountIdNum.value) },
+  }).href;
+}
+
+function onOrdersQueueRefreshed() {
+  void refreshCounts();
+}
+
 loadCounts();
 </script>
 
@@ -60,7 +106,14 @@ loadCounts();
   <div>
     <div class="row g-3 mb-4 client-account-orders-summary">
       <div v-for="c in statCards" :key="c.key" class="col-12 col-sm-6 col-xl-3">
-        <div class="staff-stat-card billing-inv-summary-card billing-inv-summary-card--static h-100 text-start w-100">
+        <button
+          type="button"
+          class="staff-stat-card billing-inv-summary-card h-100 text-start w-100"
+          :class="{
+            'client-account-orders-summary-card--active': activeQueueTab === QUEUE_TAB_BY_CARD[c.key],
+          }"
+          @click="setQueueTabFromCard(c.key)"
+        >
           <p class="staff-stat-card__label">{{ c.label }}</p>
           <p class="staff-stat-card__value">
             <span v-if="loading" class="text-secondary">…</span>
@@ -109,10 +162,33 @@ loadCounts();
               <path :d="DASHBOARD_ICON.truck" />
             </svg>
           </div>
-        </div>
+        </button>
       </div>
     </div>
-    <OrdersListPage :fixed-client-account-id="accountId" embedded />
+
+    <div class="d-flex flex-wrap align-items-center justify-content-between gap-2 mb-3">
+      <h3 class="staff-user-section-title mb-0">{{ activeTabTitle }}</h3>
+      <div class="d-flex flex-wrap align-items-center gap-2 gap-md-3">
+        <p v-if="lastRefreshedLabel" class="small text-secondary mb-0">
+          Last updated: {{ lastRefreshedLabel }}
+        </p>
+        <a
+          :href="viewAllOrdersHref()"
+          class="btn btn-sm btn-outline-primary"
+          target="_blank"
+          rel="noopener noreferrer"
+        >
+          View All
+        </a>
+      </div>
+    </div>
+
+    <OrdersListPage
+      :fixed-client-account-id="accountId"
+      :embedded-queue-tab="activeQueueTab"
+      embedded
+      @queue-refreshed="onOrdersQueueRefreshed"
+    />
   </div>
 </template>
 
@@ -135,5 +211,15 @@ loadCounts();
   flex-shrink: 0;
   display: block;
   overflow: visible;
+}
+
+button.billing-inv-summary-card.client-account-orders-summary-card--active {
+  border-color: var(--bs-primary);
+  box-shadow: 0 0 0 1px var(--bs-primary);
+}
+
+[data-bs-theme="dark"] button.billing-inv-summary-card.client-account-orders-summary-card--active {
+  border-color: var(--bs-primary);
+  box-shadow: 0 0 0 1px var(--bs-primary);
 }
 </style>

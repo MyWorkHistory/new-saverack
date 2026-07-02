@@ -30,7 +30,11 @@ const props = defineProps({
   fixedClientAccountId: { type: [Number, String], default: null },
   /** Hide page heading when embedded in account detail. */
   embedded: { type: Boolean, default: false },
+  /** Queue tab when embedded on account detail (awaiting, on_hold, backorder, shipped). */
+  embeddedQueueTab: { type: String, default: "awaiting" },
 });
+
+const emit = defineEmits(["queue-refreshed"]);
 
 const toast = useToast();
 const route = useRoute();
@@ -91,7 +95,13 @@ const query = reactive({
   orderNumber: "",
 });
 
-const tabKey = computed(() => String(route.meta?.orderTab || "manage"));
+const tabKey = computed(() => {
+  if (props.embedded) {
+    const embeddedTab = String(props.embeddedQueueTab || "awaiting").trim();
+    return ORDER_QUEUE_TABS.has(embeddedTab) ? embeddedTab : "awaiting";
+  }
+  return String(route.meta?.orderTab || "manage");
+});
 
 /** Portal user routes set `meta.userPortal`; staff may pass `portal-order-list` explicitly. */
 const isPortalOrderList = computed(() => props.portalOrderList === true || route.meta?.userPortal === true);
@@ -119,7 +129,11 @@ const orderQueueSyncedLabel = computed(() => {
 });
 const isCustomDate = computed(() => query.datePreset === "custom");
 
-const tableColspan = computed(() => (isShippedTab.value ? 10 : 9));
+const showAccountColumn = computed(() => !isEmbeddedOrders.value);
+const tableColspan = computed(() => {
+  const cols = isShippedTab.value ? 10 : 9;
+  return showAccountColumn.value ? cols : cols - 1;
+});
 
 const displayedRows = computed(() => {
   return rows.value;
@@ -223,10 +237,31 @@ function orderDetailShouldRefreshFromList(rowId, row = null) {
 function orderDetailQuery(row) {
   const accountId = effectiveClientAccountId(row);
   const query = { client_account_id: String(accountId) };
-  if (row?.id && orderDetailShouldRefreshFromListForRow(row)) {
+  if (row?.id && orderDetailShouldRefreshFromListForRow(row) && isPortalOrderList.value) {
     query.refresh = "1";
   }
   return query;
+}
+
+function cacheOrderSnapshotForDetail(row) {
+  const accountId = effectiveClientAccountId(row);
+  if (!row?.id || !accountId) return;
+  const key = `orders.snapshot.${accountId}.${String(row.id)}`;
+  try {
+    sessionStorage.setItem(key, JSON.stringify(row));
+  } catch (_) {
+    // Best-effort cache for detail fallback.
+  }
+}
+
+function onOrderNumberClick(event, row) {
+  const accountId = effectiveClientAccountId(row);
+  if (!row?.id || !accountId) {
+    event.preventDefault();
+    toast.error("This order has no account context.");
+    return;
+  }
+  cacheOrderSnapshotForDetail(row);
 }
 
 function orderDetailHref(row) {
@@ -246,12 +281,7 @@ function openOrderViewNewTab(row) {
     toast.error("This order has no account context.");
     return;
   }
-  const key = `orders.snapshot.${accountId}.${String(row.id)}`;
-  try {
-    sessionStorage.setItem(key, JSON.stringify(row));
-  } catch (_) {
-    // Best-effort cache for detail fallback.
-  }
+  cacheOrderSnapshotForDetail(row);
   const url = orderDetailHref(row);
   window.open(url, "_blank", "noopener,noreferrer");
   manageOpenId.value = null;
@@ -501,6 +531,9 @@ async function fetchOrders(reset = true, options = {}) {
     nextCursor.value = crossAccount ? null : data?.pagination?.end_cursor || null;
     if (data?.meta?.order_queue_synced_at) {
       orderQueueSyncedAt.value = data.meta.order_queue_synced_at;
+      if (props.embedded) {
+        emit("queue-refreshed", data.meta.order_queue_synced_at);
+      }
     }
   } catch (e) {
     toast.errorFrom(e, "Could not load orders.");
@@ -732,7 +765,7 @@ function exportRowsToCsv(rowList) {
     "Order #",
     "Name",
     orderDateColumnLabel.value,
-    "Account",
+    ...(showAccountColumn.value ? ["Account"] : []),
     "Country",
     "Current Shipping Method",
     "Email",
@@ -746,7 +779,8 @@ function exportRowsToCsv(rowList) {
         csvEscapeCell(row.order_number || ""),
         csvEscapeCell(row.recipient_name || "—"),
         csvEscapeCell(rowDisplayDate(row)),
-        csvEscapeCell(row.account || ""),
+        ...(showAccountColumn.value ? [csvEscapeCell(row.account || "")] : []),
+        csvEscapeCell(row.country || "—"),
         csvEscapeCell(row.country || ""),
         csvEscapeCell(
           formatCurrentShippingMethod(row.shipping_carrier, row.method, row.shipping_method_title),
@@ -1449,7 +1483,7 @@ onUnmounted(() => {
               <th class="staff-table-head__th">Order #</th>
               <th class="staff-table-head__th">Name</th>
               <th class="staff-table-head__th">{{ orderDateColumnLabel }}</th>
-              <th class="staff-table-head__th">Account</th>
+              <th v-if="showAccountColumn" class="staff-table-head__th">Account</th>
               <th class="staff-table-head__th">Country</th>
               <template v-if="isShippedTab">
                 <th class="staff-table-head__th">Carrier</th>
@@ -1507,6 +1541,7 @@ onUnmounted(() => {
                   target="_blank"
                   rel="noopener noreferrer"
                   class="text-decoration-none"
+                  @click="onOrderNumberClick($event, row)"
                 >
                   {{ row.order_number || "—" }}
                 </a>
@@ -1514,7 +1549,7 @@ onUnmounted(() => {
               </td>
               <td>{{ row.recipient_name || "—" }}</td>
               <td>{{ rowDisplayDate(row) }}</td>
-              <td>{{ row.client_account_company_name || row.account || "—" }}</td>
+              <td v-if="showAccountColumn">{{ row.client_account_company_name || row.account || "—" }}</td>
               <td>{{ row.country || "—" }}</td>
               <template v-if="isShippedTab">
                 <td>

@@ -194,10 +194,8 @@ function resolveClientAccountIdForOrderContext() {
     selectedAccountId.value,
     lastOrderAccountId.value,
     crmUser.value?.client_account_id,
+    accountIdFromSessionSnapshot(),
   ];
-  if (isUserPortalRoute.value || isPortalUser.value) {
-    sources.push(accountIdFromSessionSnapshot());
-  }
   for (const raw of sources) {
     const id = normalizeAccountId(raw);
     if (id > 0) return id;
@@ -778,8 +776,9 @@ function extractErrorMessage(e) {
 }
 
 function fallbackOrderSnapshot() {
-  if (!selectedAccountId.value || !orderId.value) return null;
-  const key = `orders.snapshot.${selectedAccountId.value}.${orderId.value}`;
+  const accountId = resolveClientAccountIdForOrderContext();
+  if (accountId <= 0 || !orderId.value) return null;
+  const key = `orders.snapshot.${accountId}.${orderId.value}`;
   try {
     const raw = sessionStorage.getItem(key);
     if (!raw) return null;

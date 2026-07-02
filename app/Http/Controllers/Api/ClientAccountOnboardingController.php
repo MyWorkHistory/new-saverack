@@ -126,6 +126,7 @@ class ClientAccountOnboardingController extends Controller
                 PortalOnboardingService::BILLING_METHOD_MANUAL,
             ])],
             'use_stripe_checkout' => ['sometimes', 'boolean'],
+            'return_context' => ['sometimes', 'string', Rule::in(['account_billing'])],
         ]);
 
         $method = (string) $validated['method'];
@@ -133,8 +134,20 @@ class ClientAccountOnboardingController extends Controller
 
         if ($useStripe && $method !== PortalOnboardingService::BILLING_METHOD_MANUAL) {
             $user = $this->onboarding->resolvePrimaryPortalUser($client_account);
+            $successUrl = null;
+            $cancelUrl = null;
+            if (($validated['return_context'] ?? '') === 'account_billing') {
+                $successUrl = $this->onboarding->accountBillingReturnUrl($client_account->id, 'success');
+                $cancelUrl = $this->onboarding->accountBillingReturnUrl($client_account->id, 'cancel');
+            }
             try {
-                $checkoutUrl = $this->stripeOnboarding->createCheckoutSession($client_account, $user, $method);
+                $checkoutUrl = $this->stripeOnboarding->createCheckoutSession(
+                    $client_account,
+                    $user,
+                    $method,
+                    $successUrl,
+                    $cancelUrl
+                );
                 $client_account = $this->onboarding->markBillingStripeCheckoutStarted($client_account, $method);
             } catch (RuntimeException $e) {
                 return response()->json(['message' => $e->getMessage()], 502);

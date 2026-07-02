@@ -380,6 +380,11 @@ class PortalOnboardingService
         return $base.'?billing='.$queryFlag;
     }
 
+    public function accountBillingReturnUrl(int $clientAccountId, string $queryFlag): string
+    {
+        return CrmUrls::clientAccountStaffUrl($clientAccountId).'?tab=billing&billing='.$queryFlag;
+    }
+
     /**
      * @return array<string, mixed>
      */

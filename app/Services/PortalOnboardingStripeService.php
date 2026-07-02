@@ -23,8 +23,13 @@ class PortalOnboardingStripeService
         $this->onboarding = $onboarding;
     }
 
-    public function createCheckoutSession(ClientAccount $account, User $user, string $method): string
-    {
+    public function createCheckoutSession(
+        ClientAccount $account,
+        User $user,
+        string $method,
+        ?string $successUrl = null,
+        ?string $cancelUrl = null
+    ): string {
         $method = $method === PortalOnboardingService::BILLING_METHOD_ACH
             ? PortalOnboardingService::BILLING_METHOD_ACH
             : PortalOnboardingService::BILLING_METHOD_CREDIT_CARD;
@@ -43,8 +48,14 @@ class PortalOnboardingStripeService
         $stripe = $this->client();
         $customerId = $this->ensureStripeCustomer($stripe, $account, $user);
 
-        $successUrl = $this->onboarding->welcomeBillingReturnUrl('success');
-        $cancelUrl = $this->onboarding->welcomeBillingReturnUrl('cancel');
+        $successUrl = trim((string) ($successUrl ?? ''));
+        $cancelUrl = trim((string) ($cancelUrl ?? ''));
+        if ($successUrl === '') {
+            $successUrl = $this->onboarding->welcomeBillingReturnUrl('success');
+        }
+        if ($cancelUrl === '') {
+            $cancelUrl = $this->onboarding->welcomeBillingReturnUrl('cancel');
+        }
 
         $lineItems = $priceId !== ''
             ? [['price' => $priceId, 'quantity' => 1]]

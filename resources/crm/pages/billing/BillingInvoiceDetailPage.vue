@@ -5,6 +5,7 @@ import { useRouter } from "vue-router";
 import api from "../../services/api";
 import { BRAND_MARK_SRC } from "../../utils/brandAssets.js";
 import BillingDollarStatIcon from "../../components/billing/BillingDollarStatIcon.vue";
+import BillingInvoiceAddLineDrawer from "../../components/billing/BillingInvoiceAddLineDrawer.vue";
 import ConfirmModal from "../../components/common/ConfirmModal.vue";
 import InvoiceReviewSlackModal from "../../components/billing/InvoiceReviewSlackModal.vue";
 import CrmIconRowActions from "../../components/common/CrmIconRowActions.vue";
@@ -3591,58 +3592,13 @@ function onDocKeydown(e) {
       </Transition>
     </Teleport>
 
-    <Teleport to="body">
-      <Transition name="crm-vx-confirm">
-        <div
-          v-if="addItemModalOpen"
-          class="crm-vx-modal-overlay"
-          role="dialog"
-          aria-modal="true"
-          @click.self="closeAddItemModal"
-        >
-          <div class="crm-vx-modal crm-vx-modal--sm" @click.stop>
-            <header class="crm-vx-modal__head">
-              <h2 class="crm-vx-modal__title">Add To Invoice</h2>
-            </header>
-            <div class="crm-vx-modal__body">
-              <label class="form-label">Service</label>
-              <input v-model="addItemForm.display_name" type="text" class="form-control mb-2" />
-              <label class="form-label">Category</label>
-              <select v-model="addItemForm.category" class="form-select mb-2">
-                <option value="">Select category</option>
-                <option
-                  v-for="category in invoiceCategoryOptions"
-                  :key="`add-category-${category.value}`"
-                  :value="category.value"
-                >
-                  {{ category.label }}
-                </option>
-              </select>
-              <label class="form-label">Order # (optional)</label>
-              <input v-model="addItemForm.order_number" type="text" class="form-control mb-2" />
-              <div class="row g-2">
-                <div class="col-6">
-                  <label class="form-label">Qty</label>
-                  <input v-model="addItemForm.quantity" type="text" class="form-control text-end" />
-                </div>
-                <div class="col-6">
-                  <label class="form-label">Price</label>
-                  <input v-model="addItemForm.unit_price" type="text" class="form-control text-end" />
-                </div>
-              </div>
-            </div>
-            <footer class="crm-vx-modal__footer d-flex gap-2 justify-content-end">
-              <button type="button" class="crm-vx-modal-btn crm-vx-modal-btn--secondary" :disabled="addItemBusy" @click="closeAddItemModal">
-                Cancel
-              </button>
-              <button type="button" class="crm-vx-modal-btn crm-vx-modal-btn--primary" :disabled="addItemBusy" @click="confirmAddItem">
-                {{ addItemBusy ? "Saving…" : "Add" }}
-              </button>
-            </footer>
-          </div>
-        </div>
-      </Transition>
-    </Teleport>
+    <BillingInvoiceAddLineDrawer
+      v-model:open="addItemModalOpen"
+      :form="addItemForm"
+      :category-options="invoiceCategoryOptions"
+      :busy="addItemBusy"
+      @submit="confirmAddItem"
+    />
 
     <Teleport to="body">
       <Transition name="crm-vx-confirm">

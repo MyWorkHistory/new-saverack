@@ -3,6 +3,7 @@ import { computed, inject, nextTick, onMounted, onUnmounted, reactive, ref, watc
 import { useRouter } from "vue-router";
 import api from "../../services/api";
 import BillingCustomBillLineModal from "../../components/billing/BillingCustomBillLineModal.vue";
+import BillingBillAddToInvoiceDrawer from "../../components/billing/BillingBillAddToInvoiceDrawer.vue";
 import BillingDollarStatIcon from "../../components/billing/BillingDollarStatIcon.vue";
 import ConfirmModal from "../../components/common/ConfirmModal.vue";
 import CrmIconRowActions from "../../components/common/CrmIconRowActions.vue";
@@ -803,90 +804,16 @@ onUnmounted(() => {
     </Transition>
   </Teleport>
 
-  <!-- Add to invoice -->
-  <Teleport to="body">
-    <Transition name="crm-vx-confirm">
-      <div
-        v-if="addToInvoiceModalOpen && bill"
-        class="crm-vx-modal-overlay"
-        role="dialog"
-        aria-modal="true"
-        @click.self="closeAddToInvoiceModal"
-      >
-        <div class="crm-vx-modal crm-vx-modal--sm" @click.stop>
-          <button
-            type="button"
-            class="crm-vx-modal__close"
-            aria-label="Close"
-            :disabled="addToInvoiceBusy"
-            @click="closeAddToInvoiceModal"
-          >
-            <svg
-              width="20"
-              height="20"
-              fill="none"
-              viewBox="0 0 24 24"
-              stroke="currentColor"
-              stroke-width="1.75"
-              aria-hidden="true"
-            >
-              <path
-                stroke-linecap="round"
-                stroke-linejoin="round"
-                d="M6 18L18 6M6 6l12 12"
-              />
-            </svg>
-          </button>
-          <header class="crm-vx-modal__head">
-            <h2 class="crm-vx-modal__title">Add To Invoice</h2>
-            <p class="crm-vx-modal__subtitle mb-0">
-              Select a draft invoice for {{ bill.client_account_name }}.
-            </p>
-          </header>
-          <div class="crm-vx-modal__body">
-            <p v-if="!draftInvoices.length" class="text-secondary small mb-0">
-              No draft invoices for this account. Create a draft invoice first.
-            </p>
-            <div v-else class="list-group list-group-flush border rounded">
-              <label
-                v-for="inv in draftInvoices"
-                :key="inv.id"
-                class="list-group-item list-group-item-action d-flex align-items-center gap-2 mb-0 cursor-pointer"
-              >
-                <input
-                  v-model="selectedInvoiceId"
-                  type="radio"
-                  class="form-check-input mt-0"
-                  :value="String(inv.id)"
-                  :disabled="addToInvoiceBusy"
-                />
-                <span class="fw-semibold">Invoice #{{ inv.invoice_number }}</span>
-                <span class="ms-auto text-secondary">{{ formatCents(inv.total_cents) }}</span>
-              </label>
-            </div>
-          </div>
-          <footer class="crm-vx-modal__footer d-flex gap-2 justify-content-end">
-            <button
-              type="button"
-              class="crm-vx-modal-btn crm-vx-modal-btn--secondary"
-              :disabled="addToInvoiceBusy"
-              @click="closeAddToInvoiceModal"
-            >
-              Cancel
-            </button>
-            <button
-              type="button"
-              class="crm-vx-modal-btn crm-vx-modal-btn--primary"
-              :disabled="addToInvoiceBusy || !draftInvoices.length"
-              @click="submitAddToInvoice"
-            >
-              {{ addToInvoiceBusy ? "Processing…" : "Process" }}
-            </button>
-          </footer>
-        </div>
-      </div>
-    </Transition>
-  </Teleport>
+  <BillingBillAddToInvoiceDrawer
+    v-if="bill"
+    v-model:open="addToInvoiceModalOpen"
+    v-model:selected-invoice-id="selectedInvoiceId"
+    :draft-invoices="draftInvoices"
+    :client-account-name="bill.client_account_name || ''"
+    :busy="addToInvoiceBusy"
+    submit-label="Process"
+    @submit="submitAddToInvoice"
+  />
 
     <ConfirmModal
       v-model:open="deleteBillModalOpen"

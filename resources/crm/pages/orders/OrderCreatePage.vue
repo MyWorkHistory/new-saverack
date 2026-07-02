@@ -4,7 +4,7 @@ import { RouterLink, useRoute, useRouter } from "vue-router";
 import api from "../../services/api";
 import CrmLoadingSpinner from "../../components/common/CrmLoadingSpinner.vue";
 import CrmSearchableSelect from "../../components/common/CrmSearchableSelect.vue";
-import OrderCreateDraftModal from "../../components/orders/OrderCreateDraftModal.vue";
+import OrderCreateDrawer from "../../components/orders/OrderCreateDrawer.vue";
 import { setCrmPageMeta } from "../../composables/useCrmPageMeta.js";
 import { useToast } from "../../composables/useToast.js";
 import { canWriteShipHeroOrders } from "../../utils/crmShipHeroOrders";
@@ -266,15 +266,14 @@ onMounted(() => {
       </div>
     </div>
 
-    <OrderCreateDraftModal
+    <OrderCreateDrawer
       v-if="canWriteOrders"
-      :open="createOrderModalOpen"
+      v-model:open="createOrderModalOpen"
       :portal-mode="isPortalMode"
       :portal-account-id="portalAccountId"
       :accounts="accounts"
       :accounts-loading="accountsLoading"
       :initial-account-id="String(selectedAccountId || route.query.client_account_id || '')"
-      @close="createOrderModalOpen = false"
       @created="onDraftOrderCreated"
     />
   </div>

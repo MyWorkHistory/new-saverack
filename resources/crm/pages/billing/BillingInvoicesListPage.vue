@@ -17,6 +17,7 @@ import CrmSearchableSelect from "../../components/common/CrmSearchableSelect.vue
 import CrmIconRowActions from "../../components/common/CrmIconRowActions.vue";
 import BillingDollarStatIcon from "../../components/billing/BillingDollarStatIcon.vue";
 import BillingInvoiceCreateDrawer from "../../components/billing/BillingInvoiceCreateDrawer.vue";
+import BillingInvoiceImportCsvDrawer from "../../components/billing/BillingInvoiceImportCsvDrawer.vue";
 import ClientAccountShippingStatusIcon from "../../components/clients/ClientAccountShippingStatusIcon.vue";
 import { useToast } from "../../composables/useToast";
 import { crmIsAdmin } from "../../utils/crmUser";
@@ -1718,84 +1719,14 @@ onUnmounted(() => {
       @refresh-meta="fetchMeta"
     />
 
-    <Teleport to="body">
-      <Transition name="crm-vx-confirm">
-        <div
-          v-if="importModalOpen"
-          class="crm-vx-modal-overlay"
-          role="dialog"
-          aria-modal="true"
-          @click.self="closeImportModal"
-        >
-          <div class="crm-vx-modal crm-vx-modal--sm" @click.stop>
-            <header class="crm-vx-modal__head border-bottom">
-              <h2 class="crm-vx-modal__title mb-0">Import Invoice CSV</h2>
-            </header>
-            <div class="crm-vx-modal__body">
-              <div class="mb-3">
-                <label class="form-label" for="billing-import-type">Import Type</label>
-                <select id="billing-import-type" v-model="importForm.import_type" class="form-select">
-                  <option value="charges">Charge CSV</option>
-                  <option value="storage">Storage CSV</option>
-                  <option value="duties_taxes_asendia">Asendia Duties & Taxes</option>
-                  <option value="duties_taxes_ups">UPS Duties & Taxes</option>
-                </select>
-              </div>
-              <div class="mb-3">
-                <label class="form-label" for="billing-import-file">Import File</label>
-                <input
-                  id="billing-import-file"
-                  type="file"
-                  class="form-control"
-                  accept=".csv,.txt,.xlsx,text/csv,text/plain,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-                  @change="onImportFileChange"
-                />
-              </div>
-              <div class="mb-3">
-                <label class="form-label" for="billing-import-client">Client Account</label>
-                <CrmSearchableSelect
-                  v-model="importForm.client_account_id"
-                  appearance="staff"
-                  :options="meta.client_accounts"
-                  placeholder="Select client account"
-                  search-placeholder="Search clients…"
-                  empty-label="No client account selected"
-                  button-id="billing-import-client"
-                />
-              </div>
-              <div class="mb-3">
-                <label class="form-label" for="billing-import-number">Invoice # (Optional)</label>
-                <input
-                  id="billing-import-number"
-                  v-model="importForm.invoice_number"
-                  type="text"
-                  class="form-control"
-                  placeholder="12001"
-                />
-              </div>
-            </div>
-            <footer class="crm-vx-modal__footer d-flex gap-2 justify-content-end">
-              <button
-                type="button"
-                class="crm-vx-modal-btn crm-vx-modal-btn--secondary"
-                :disabled="importBusy"
-                @click="closeImportModal"
-              >
-                Cancel
-              </button>
-              <button
-                type="button"
-                class="crm-vx-modal-btn crm-vx-modal-btn--primary"
-                :disabled="importBusy"
-                @click="submitImportCsv"
-              >
-                {{ importBusy ? "Importing…" : "Import CSV" }}
-              </button>
-            </footer>
-          </div>
-        </div>
-      </Transition>
-    </Teleport>
+    <BillingInvoiceImportCsvDrawer
+      v-model:open="importModalOpen"
+      :form="importForm"
+      :client-accounts="meta.client_accounts"
+      :busy="importBusy"
+      @file-change="onImportFileChange"
+      @submit="submitImportCsv"
+    />
 
     <Teleport to="body">
       <Transition name="crm-vx-confirm">

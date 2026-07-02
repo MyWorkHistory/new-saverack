@@ -5,10 +5,11 @@ import api from "../../services/api";
 import CrmIconRowActions from "../../components/common/CrmIconRowActions.vue";
 import CrmLoadingSpinner from "../../components/common/CrmLoadingSpinner.vue";
 import CrmSearchableSelect from "../../components/common/CrmSearchableSelect.vue";
-import ConfirmModal from "../../components/common/ConfirmModal.vue";
+import AdminAsnCreateDrawer from "../../components/admin-asn/AdminAsnCreateDrawer.vue";
+import AdminAsnNonCompliantDrawer from "../../components/admin-asn/AdminAsnNonCompliantDrawer.vue";
+import AdminAsnScanDrawer from "../../components/admin-asn/AdminAsnScanDrawer.vue";
 import { setCrmPageMeta } from "../../composables/useCrmPageMeta.js";
 import { useToast } from "../../composables/useToast.js";
-import { ASN_CARRIER_OPTIONS } from "../../utils/asnCarrierOptions.js";
 import { asnTrackingUrl } from "../../utils/asnTrackingUrl.js";
 import { formatAsnDisplay } from "../../utils/formatAsnDisplay.js";
 import { formatDateUs } from "../../utils/formatUserDates.js";
@@ -806,116 +807,34 @@ onUnmounted(() => {
       </Transition>
     </Teleport>
 
-    <ConfirmModal
-      :open="scanOpen"
-      title="Scan Items"
-      confirm-label="Save"
-      form
-      :danger="false"
+    <AdminAsnScanDrawer
+      v-model:open="scanOpen"
+      v-model:asn-number="scanAsnNumber"
+      v-model:scan-text="scanText"
       :busy="scanBusy"
-      @close="scanOpen = false"
-      @confirm="submitScan"
-    >
-      <label class="form-label" for="admin-asn-scan-asn-number">ASN #</label>
-      <input
-        id="admin-asn-scan-asn-number"
-        v-model="scanAsnNumber"
-        type="text"
-        class="form-control mb-3"
-        placeholder="e.g. 0010"
-        autocomplete="off"
-      />
-      <label class="form-label" for="admin-asn-scan-barcodes">Enter barcodes line by line</label>
-      <textarea
-        id="admin-asn-scan-barcodes"
-        v-model="scanText"
-        class="form-control font-monospace"
-        rows="10"
-      />
-    </ConfirmModal>
+      @submit="submitScan"
+    />
 
-    <ConfirmModal
-      :open="createModalOpen"
-      title="Create ASN"
-      confirm-label="Continue"
-      form
-      :danger="false"
+    <AdminAsnCreateDrawer
+      v-model:open="createModalOpen"
+      v-model:account-id="createAccountId"
+      :account-options="accountOptions"
       :busy="createBusy"
-      @close="createModalOpen = false"
-      @confirm="confirmCreate"
-    >
-      <label class="form-label">Account</label>
-      <CrmSearchableSelect
-        v-model="createAccountId"
-        appearance="staff"
-        teleport-panel
-        :options="accountOptions"
-        placeholder="Select account…"
-        :allow-empty="false"
-        search-placeholder="Search accounts…"
-      />
-    </ConfirmModal>
+      @submit="confirmCreate"
+    />
 
-    <ConfirmModal
-      :open="nonCompliantOpen"
-      title="Non-Compliant ASN"
-      confirm-label="Create"
-      form
-      :danger="false"
+    <AdminAsnNonCompliantDrawer
+      v-model:open="nonCompliantOpen"
+      v-model:account-id="ncAccountId"
+      v-model:boxes="ncBoxes"
+      v-model:pallets="ncPallets"
+      v-model:fee="ncFee"
+      v-model:trackings="ncTrackings"
+      :account-options="accountOptions"
       :busy="nonCompliantBusy"
-      @close="nonCompliantOpen = false"
-      @confirm="submitNonCompliant"
-    >
-      <div class="row g-3">
-        <div class="col-12">
-          <label class="form-label">Account</label>
-          <CrmSearchableSelect
-            v-model="ncAccountId"
-            appearance="staff"
-            teleport-panel
-            :options="accountOptions"
-            placeholder="Select account…"
-            :allow-empty="false"
-            search-placeholder="Search accounts…"
-          />
-        </div>
-        <div class="col-6">
-          <label class="form-label">Boxes</label>
-          <input v-model.number="ncBoxes" type="number" min="0" class="form-control" />
-        </div>
-        <div class="col-6">
-          <label class="form-label">Pallets</label>
-          <input v-model.number="ncPallets" type="number" min="0" class="form-control" />
-        </div>
-        <div class="col-12">
-          <div class="d-flex justify-content-between align-items-center mb-2">
-            <label class="form-label mb-0">Tracking</label>
-            <button type="button" class="btn btn-link btn-sm p-0" @click="addNcTracking">Add Row</button>
-          </div>
-          <div v-for="(t, i) in ncTrackings" :key="i" class="row g-2 mb-2">
-            <div class="col-5">
-              <select v-model="t.carrier" class="form-select form-select-sm">
-                <option value="">Carrier</option>
-                <option v-for="c in ASN_CARRIER_OPTIONS" :key="c" :value="c">{{ c }}</option>
-              </select>
-            </div>
-            <div class="col-7">
-              <input
-                v-model="t.tracking_number"
-                type="text"
-                class="form-control form-control-sm"
-                placeholder="Tracking #"
-              />
-            </div>
-          </div>
-        </div>
-        <div class="col-12">
-          <label class="form-label">Non-Compliant Fee</label>
-          <input v-model="ncFee" type="number" min="0" step="0.01" class="form-control" placeholder="0.00" />
-          <p class="form-text mb-0">If greater than zero, a custom bill line is created automatically.</p>
-        </div>
-      </div>
-    </ConfirmModal>
+      @add-tracking="addNcTracking"
+      @submit="submitNonCompliant"
+    />
   </div>
 </template>
 

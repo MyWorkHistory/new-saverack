@@ -1,6 +1,12 @@
 <script setup>
 import { computed, ref, watch } from "vue";
+import CrmRightDrawer from "../common/CrmRightDrawer.vue";
 import { resolvePublicUrl } from "../../utils/resolvePublicUrl.js";
+import {
+  CRM_BTN_PRIMARY,
+  CRM_BTN_SECONDARY,
+  CRM_DIALOG_FOOTER_CLASS_DRAWER,
+} from "../../constants/dialogFooter.js";
 
 const CATEGORIES = [
   { value: "fulfillment", label: "Fulfillment" },
@@ -18,7 +24,7 @@ const props = defineProps({
   saving: { type: Boolean, default: false },
 });
 
-const emit = defineEmits(["close", "save"]);
+const emit = defineEmits(["close", "save", "update:open"]);
 
 const name = ref("");
 const description = ref("");
@@ -92,15 +98,121 @@ function submit() {
   });
 }
 
-function onBackdrop() {
-  if (!props.saving) {
-    emit("close");
-  }
+function close() {
+  if (props.saving) return;
+  emit("update:open", false);
+  emit("close");
 }
 </script>
 
 <template>
-  <Teleport to="body">
+  <CrmRightDrawer
+    v-if="!isEdit"
+    :open="open"
+    :title="title"
+    :busy="saving"
+    :form-id="FORM_ID"
+    @update:open="(v) => { if (!v) close(); else emit('update:open', v); }"
+    @submit="submit"
+  >
+    <div class="mb-3">
+      <label class="form-label" for="pricing-fee-name">Name</label>
+      <input
+        id="pricing-fee-name"
+        v-model="name"
+        type="text"
+        class="form-control"
+        required
+        maxlength="255"
+        :disabled="saving"
+      />
+    </div>
+    <div class="mb-3">
+      <label class="form-label" for="pricing-fee-description">Description</label>
+      <textarea
+        id="pricing-fee-description"
+        v-model="description"
+        class="form-control"
+        rows="3"
+        :disabled="saving"
+      />
+    </div>
+    <div class="mb-3">
+      <label class="form-label" for="pricing-fee-category">Category</label>
+      <select
+        id="pricing-fee-category"
+        v-model="category"
+        class="form-select"
+        :disabled="saving"
+      >
+        <option v-for="c in CATEGORIES" :key="c.value" :value="c.value">
+          {{ c.label }}
+        </option>
+      </select>
+    </div>
+    <div class="mb-3">
+      <label class="form-label" for="pricing-fee-amount">Price</label>
+      <div class="input-group">
+        <span class="input-group-text">$</span>
+        <input
+          id="pricing-fee-amount"
+          v-model="amount"
+          type="number"
+          step="0.0001"
+          min="0"
+          class="form-control"
+          required
+          :disabled="saving"
+        />
+      </div>
+    </div>
+    <div class="mb-0">
+      <label class="form-label" for="pricing-fee-icon">Icon</label>
+      <input
+        id="pricing-fee-icon"
+        type="file"
+        class="form-control"
+        accept="image/jpeg,image/png,image/webp"
+        :disabled="saving"
+        @change="onIconChange"
+      />
+      <p class="small text-secondary mt-1 mb-2">Optional. JPG, PNG, or WebP.</p>
+      <div v-if="iconPreview" class="d-flex align-items-center gap-3">
+        <img
+          :src="iconPreview"
+          alt=""
+          class="rounded border"
+          style="width: 48px; height: 48px; object-fit: contain"
+        />
+        <button
+          type="button"
+          class="btn btn-sm btn-outline-secondary"
+          :disabled="saving"
+          @click="clearIcon"
+        >
+          Remove Icon
+        </button>
+      </div>
+    </div>
+
+    <template #footer>
+      <footer :class="CRM_DIALOG_FOOTER_CLASS_DRAWER">
+        <button type="button" :class="CRM_BTN_SECONDARY" :disabled="saving" @click="close">
+          Cancel
+        </button>
+        <button
+          type="submit"
+          :form="FORM_ID"
+          :class="CRM_BTN_PRIMARY"
+          :disabled="saving || !canSubmit"
+        >
+          {{ saving ? "Saving…" : "Create Fee" }}
+        </button>
+      </footer>
+    </template>
+  </CrmRightDrawer>
+
+  <Teleport v-else to="body">
     <Transition name="crm-vx-confirm">
       <div
         v-if="open"
@@ -108,7 +220,7 @@ function onBackdrop() {
         role="dialog"
         aria-modal="true"
         aria-labelledby="pricing-fee-modal-title"
-        @click.self="onBackdrop"
+        @click.self="close"
       >
         <div class="crm-vx-modal crm-vx-modal--pricing-fee" @click.stop>
           <button
@@ -116,7 +228,7 @@ function onBackdrop() {
             class="crm-vx-modal__close"
             aria-label="Close"
             :disabled="saving"
-            @click="$emit('close')"
+            @click="close"
           >
             <svg
               width="20"
@@ -140,9 +252,9 @@ function onBackdrop() {
           <div class="crm-vx-modal__body text-start">
             <form :id="FORM_ID" @submit.prevent="submit">
               <div class="mb-3">
-                <label class="form-label" for="pricing-fee-name">Name</label>
+                <label class="form-label" for="pricing-fee-name-edit">Name</label>
                 <input
-                  id="pricing-fee-name"
+                  id="pricing-fee-name-edit"
                   v-model="name"
                   type="text"
                   class="form-control"
@@ -152,9 +264,9 @@ function onBackdrop() {
                 />
               </div>
               <div class="mb-3">
-                <label class="form-label" for="pricing-fee-description">Description</label>
+                <label class="form-label" for="pricing-fee-description-edit">Description</label>
                 <textarea
-                  id="pricing-fee-description"
+                  id="pricing-fee-description-edit"
                   v-model="description"
                   class="form-control"
                   rows="3"
@@ -162,9 +274,9 @@ function onBackdrop() {
                 />
               </div>
               <div class="mb-3">
-                <label class="form-label" for="pricing-fee-category">Category</label>
+                <label class="form-label" for="pricing-fee-category-edit">Category</label>
                 <select
-                  id="pricing-fee-category"
+                  id="pricing-fee-category-edit"
                   v-model="category"
                   class="form-select"
                   :disabled="saving"
@@ -175,11 +287,11 @@ function onBackdrop() {
                 </select>
               </div>
               <div class="mb-3">
-                <label class="form-label" for="pricing-fee-amount">Price</label>
+                <label class="form-label" for="pricing-fee-amount-edit">Price</label>
                 <div class="input-group">
                   <span class="input-group-text">$</span>
                   <input
-                    id="pricing-fee-amount"
+                    id="pricing-fee-amount-edit"
                     v-model="amount"
                     type="number"
                     step="0.0001"
@@ -191,9 +303,9 @@ function onBackdrop() {
                 </div>
               </div>
               <div class="mb-0">
-                <label class="form-label" for="pricing-fee-icon">Icon</label>
+                <label class="form-label" for="pricing-fee-icon-edit">Icon</label>
                 <input
-                  id="pricing-fee-icon"
+                  id="pricing-fee-icon-edit"
                   type="file"
                   class="form-control"
                   accept="image/jpeg,image/png,image/webp"
@@ -226,7 +338,7 @@ function onBackdrop() {
               type="button"
               class="crm-vx-modal-btn crm-vx-modal-btn--secondary"
               :disabled="saving"
-              @click="$emit('close')"
+              @click="close"
             >
               Cancel
             </button>
@@ -236,7 +348,7 @@ function onBackdrop() {
               class="crm-vx-modal-btn crm-vx-modal-btn--primary"
               :disabled="saving || !canSubmit"
             >
-              {{ saving ? "Saving…" : isEdit ? "Save Fee" : "Create Fee" }}
+              {{ saving ? "Saving…" : "Save Fee" }}
             </button>
           </footer>
         </div>

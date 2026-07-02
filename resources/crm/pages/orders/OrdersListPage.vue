@@ -9,7 +9,7 @@ import CrmSearchableSelect from "../../components/common/CrmSearchableSelect.vue
 import ConfirmModal from "../../components/common/ConfirmModal.vue";
 import OrdersRemoveHoldsModal from "../../components/orders/OrdersRemoveHoldsModal.vue";
 import OrdersPlaceHoldModal from "../../components/orders/OrdersPlaceHoldModal.vue";
-import OrderCreateDraftModal from "../../components/orders/OrderCreateDraftModal.vue";
+import OrderCreateDrawer from "../../components/orders/OrderCreateDrawer.vue";
 import { setCrmPageMeta } from "../../composables/useCrmPageMeta.js";
 import { useToast } from "../../composables/useToast.js";
 import { canWriteShipHeroOrders } from "../../utils/crmShipHeroOrders";
@@ -1691,15 +1691,14 @@ onUnmounted(() => {
       @close="closePlaceHoldModal"
       @confirm="submitPlaceHoldModal"
     />
-    <OrderCreateDraftModal
+    <OrderCreateDrawer
       v-if="showCreateOrderButton"
-      :open="createOrderModalOpen"
+      v-model:open="createOrderModalOpen"
       :portal-mode="isPortalModeForCreate"
       :portal-account-id="portalClientAccountId"
       :accounts="accounts"
       :accounts-loading="accountsLoading"
       :initial-account-id="String(selectedAccountId || route.query.client_account_id || '')"
-      @close="createOrderModalOpen = false"
       @created="onDraftOrderCreated"
     />
   </div>

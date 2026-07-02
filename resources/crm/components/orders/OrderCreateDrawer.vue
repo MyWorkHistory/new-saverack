@@ -1,8 +1,13 @@
 <script setup>
 import { computed, reactive, ref, watch } from "vue";
 import api from "../../services/api";
-import ConfirmModal from "../common/ConfirmModal.vue";
+import CrmRightDrawer from "../common/CrmRightDrawer.vue";
 import CrmSearchableSelect from "../common/CrmSearchableSelect.vue";
+import {
+  CRM_BTN_PRIMARY,
+  CRM_BTN_SECONDARY,
+  CRM_DIALOG_FOOTER_CLASS_DRAWER,
+} from "../../constants/dialogFooter.js";
 import { useToast } from "../../composables/useToast.js";
 
 const props = defineProps({
@@ -14,7 +19,7 @@ const props = defineProps({
   initialAccountId: { type: String, default: "" },
 });
 
-const emit = defineEmits(["close", "created"]);
+const emit = defineEmits(["close", "created", "update:open"]);
 
 const toast = useToast();
 const saving = ref(false);
@@ -83,6 +88,7 @@ watch(
 
 function close() {
   if (saving.value) return;
+  emit("update:open", false);
   emit("close");
 }
 
@@ -112,17 +118,14 @@ async function submit() {
 </script>
 
 <template>
-  <ConfirmModal
+  <CrmRightDrawer
     :open="open"
     title="Create Order"
     subtitle="Enter the order number and shipping address. You can add line items on the next screen."
-    confirm-label="Create Order"
-    cancel-label="Cancel"
-    :danger="false"
     :busy="saving"
-    form
-    @close="close"
-    @confirm="submit"
+    form-id="order-create-form"
+    @update:open="(v) => { emit('update:open', v); if (!v) emit('close'); }"
+    @submit="submit"
   >
     <div class="row g-3">
       <div v-if="showAccountPicker" class="col-12">
@@ -130,6 +133,7 @@ async function submit() {
         <CrmSearchableSelect
           v-model="selectedAccountId"
           appearance="staff"
+          teleport-panel
           aria-label="Client account"
           :options="accountOptions"
           :disabled="accountsLoading || saving"
@@ -272,5 +276,26 @@ async function submit() {
         />
       </div>
     </div>
-  </ConfirmModal>
+
+    <template #footer>
+      <footer :class="CRM_DIALOG_FOOTER_CLASS_DRAWER">
+        <button
+          type="button"
+          :class="CRM_BTN_SECONDARY"
+          :disabled="saving"
+          @click="close"
+        >
+          Cancel
+        </button>
+        <button
+          type="submit"
+          form="order-create-form"
+          :class="CRM_BTN_PRIMARY"
+          :disabled="saving"
+        >
+          {{ saving ? "Creating…" : "Create Order" }}
+        </button>
+      </footer>
+    </template>
+  </CrmRightDrawer>
 </template>

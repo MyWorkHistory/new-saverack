@@ -4,6 +4,7 @@ import { useRouter } from "vue-router";
 import api from "../../services/api";
 import BillingDollarStatIcon from "../../components/billing/BillingDollarStatIcon.vue";
 import BillingReturnBillLineModal from "../../components/billing/BillingReturnBillLineModal.vue";
+import BillingBillAddToInvoiceDrawer from "../../components/billing/BillingBillAddToInvoiceDrawer.vue";
 import ConfirmModal from "../../components/common/ConfirmModal.vue";
 import CrmIconRowActions from "../../components/common/CrmIconRowActions.vue";
 import CrmLoadingSpinner from "../../components/common/CrmLoadingSpinner.vue";
@@ -764,80 +765,16 @@ onUnmounted(() => {
       </Transition>
     </Teleport>
 
-    <Teleport to="body">
-      <Transition name="crm-vx-confirm">
-        <div
-          v-if="addToInvoiceModalOpen"
-          class="crm-vx-modal-overlay"
-          role="dialog"
-          aria-modal="true"
-          @click.self="closeAddToInvoiceModal"
-        >
-          <div class="crm-vx-modal crm-vx-modal--md" @click.stop>
-            <header class="crm-vx-modal__head">
-              <h2 class="crm-vx-modal__title">Add To Invoice</h2>
-              <p class="crm-vx-modal__subtitle mb-0">
-                Select a draft invoice and charge types for {{ bill?.client_account_name }}.
-              </p>
-            </header>
-            <div class="crm-vx-modal__body text-start">
-              <p v-if="!draftInvoices.length" class="small text-secondary mb-3">
-                No draft invoices for this account.
-              </p>
-              <div v-else class="list-group list-group-flush border rounded mb-4">
-                <label
-                  v-for="inv in draftInvoices"
-                  :key="inv.id"
-                  class="list-group-item list-group-item-action d-flex align-items-center gap-2 mb-0 cursor-pointer"
-                >
-                  <input
-                    v-model="selectedInvoiceId"
-                    type="radio"
-                    class="form-check-input mt-0"
-                    :value="String(inv.id)"
-                    :disabled="addToInvoiceBusy"
-                  />
-                  <span class="fw-semibold">Invoice #{{ inv.invoice_number }}</span>
-                  <span class="ms-auto text-secondary">{{ formatCents(inv.total_cents) }}</span>
-                </label>
-              </div>
-
-              <p class="small fw-semibold mb-2">Charge types</p>
-              <div class="d-flex flex-column gap-2">
-                <label
-                  v-for="opt in chargeOptions"
-                  :key="opt.line_type"
-                  class="d-flex align-items-center gap-2 mb-0 small"
-                >
-                  <input
-                    type="checkbox"
-                    class="form-check-input mt-0"
-                    :checked="selectedLineTypes.includes(opt.line_type)"
-                    :disabled="addToInvoiceBusy"
-                    @change="toggleLineTypeSelection(opt.line_type)"
-                  />
-                  <span>{{ opt.display_name }}</span>
-                  <span class="ms-auto text-secondary">{{ formatCents(opt.default_unit_price_cents) }} default</span>
-                </label>
-              </div>
-            </div>
-            <footer class="crm-vx-modal__footer d-flex gap-2 justify-content-end">
-              <button type="button" class="crm-vx-modal-btn crm-vx-modal-btn--secondary" :disabled="addToInvoiceBusy" @click="closeAddToInvoiceModal">
-                Cancel
-              </button>
-              <button
-                type="button"
-                class="crm-vx-modal-btn crm-vx-modal-btn--primary"
-                :disabled="addToInvoiceBusy || !draftInvoices.length || !selectedInvoiceId || !selectedLineTypes.length"
-                @click="submitAddToInvoice"
-              >
-                {{ addToInvoiceBusy ? "Processing…" : "Add To Invoice" }}
-              </button>
-            </footer>
-          </div>
-        </div>
-      </Transition>
-    </Teleport>
+    <BillingBillAddToInvoiceDrawer
+      v-model:open="addToInvoiceModalOpen"
+      v-model:selected-invoice-id="selectedInvoiceId"
+      v-model:selected-line-types="selectedLineTypes"
+      :draft-invoices="draftInvoices"
+      :client-account-name="bill?.client_account_name || ''"
+      :charge-options="chargeOptions"
+      :busy="addToInvoiceBusy"
+      @submit="submitAddToInvoice"
+    />
   </div>
 </template>
 

@@ -47,8 +47,12 @@ class AsnController extends Controller
     }
 
 
-    private function assertDeletableStatus(ClientAccountAsn $asn): void
+    private function assertDeletableStatus(Request $request, ClientAccountAsn $asn): void
     {
+        if (! $this->isPortalUser($request)) {
+            return;
+        }
+
         if (! in_array($asn->status, ClientAccountAsn::DELETABLE_STATUSES, true)) {
             throw ValidationException::withMessages([
                 'status' => ['Only draft or pending ASNs can be deleted.'],
@@ -383,7 +387,7 @@ class AsnController extends Controller
     {
         $this->authorizeAsn($request, $asn);
         try {
-            $this->assertDeletableStatus($asn);
+            $this->assertDeletableStatus($request, $asn);
         } catch (ValidationException $e) {
             return response()->json(['message' => 'Only draft or pending ASNs can be deleted.'], 422);
         }
@@ -409,7 +413,7 @@ class AsnController extends Controller
         foreach ($asns as $asn) {
             Gate::authorize('delete', $asn);
             try {
-                $this->assertDeletableStatus($asn);
+                $this->assertDeletableStatus($request, $asn);
             } catch (ValidationException $e) {
                 return response()->json(['message' => 'Only draft or pending ASNs can be deleted.'], 422);
             }

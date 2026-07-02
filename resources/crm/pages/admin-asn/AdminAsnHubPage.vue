@@ -89,20 +89,13 @@ const allSelected = computed(() => {
 
 const selectedCount = computed(() => selected.value.size);
 
-function canDeleteRow(row) {
-  const s = String(row?.status || "").toLowerCase();
-  return s === "draft" || s === "pending";
-}
-
 const selectedDeletableIds = computed(() =>
-  rows.value.filter((r) => selected.value.has(r.id) && canDeleteRow(r)).map((r) => r.id),
+  rows.value.filter((r) => selected.value.has(r.id)).map((r) => r.id),
 );
 
-const bulkDeleteDisabled = computed(
-  () => selectedDeletableIds.value.length === 0 || selectedDeletableIds.value.length !== selectedCount.value,
-);
+const bulkDeleteDisabled = computed(() => selectedCount.value === 0);
 
-const manageMenuRowCanDelete = computed(() => manageMenuRow.value && canDeleteRow(manageMenuRow.value));
+const manageMenuRowCanDelete = computed(() => Boolean(manageMenuRow.value));
 
 const STAT_CARDS = [
   {
@@ -322,7 +315,7 @@ async function confirmBulkDelete() {
 }
 
 function openRowDeleteFromMenu() {
-  if (!manageMenuRow.value || !canDeleteRow(manageMenuRow.value)) return;
+  if (!manageMenuRow.value) return;
   rowDeleteTarget.value = manageMenuRow.value;
   manageOpenId.value = null;
   rowDeleteOpen.value = true;
@@ -999,7 +992,7 @@ onUnmounted(() => {
     <ConfirmModal
       :open="bulkDeleteOpen"
       title="Delete ASNs"
-      message="Remove the selected ASNs? Only draft or pending ASNs can be deleted. This cannot be undone."
+      message="Remove the selected ASNs? This cannot be undone."
       confirm-label="Delete"
       cancel-label="Cancel"
       :busy="bulkDeleteBusy"
@@ -1013,7 +1006,7 @@ onUnmounted(() => {
       title="Remove ASN"
       :message="
         rowDeleteTarget
-          ? `Remove ${formatAsnDisplay(rowDeleteTarget.asn_number)}? Only draft or pending ASNs can be deleted. This cannot be undone.`
+          ? `Remove ${formatAsnDisplay(rowDeleteTarget.asn_number)}? This cannot be undone.`
           : ''
       "
       confirm-label="Delete"

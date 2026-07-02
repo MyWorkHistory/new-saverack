@@ -159,6 +159,29 @@ class AdminAsnReceivingTest extends TestCase
             ->assertJsonCount(0, 'data');
     }
 
+    public function test_staff_can_delete_asn_in_any_status(): void
+    {
+        $account = $this->account();
+        $staff = $this->staffUser();
+        Sanctum::actingAs($staff);
+
+        $asn = ClientAccountAsn::create([
+            'client_account_id' => $account->id,
+            'asn_number' => '0099',
+            'status' => ClientAccountAsn::STATUS_COMPLETED,
+            'total_boxes' => 1,
+            'expected_qty' => 0,
+            'accepted_qty' => 0,
+            'rejected_qty' => 0,
+        ]);
+
+        $this->deleteJson('/api/asns/'.$asn->id)
+            ->assertOk()
+            ->assertJsonPath('ok', true);
+
+        $this->assertDatabaseMissing('client_account_asns', ['id' => $asn->id]);
+    }
+
     public function test_non_compliant_asn_without_fee_skips_custom_bill(): void
     {
         $account = $this->account();

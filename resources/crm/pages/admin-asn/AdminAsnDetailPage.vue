@@ -244,10 +244,7 @@ const clientAccountId = computed(() => {
   return Number(route.query.client_account_id ?? 0);
 });
 const asnNumericId = computed(() => asnRouteId.value || Number(asn.value?.id ?? 0));
-const canDeleteAsn = computed(() => {
-  const s = String(asn.value?.status || "").toLowerCase();
-  return s === "draft" || s === "pending";
-});
+const canDeleteAsn = computed(() => Boolean(asn.value?.id));
 
 const lineMenuRow = computed(
   () => (asn.value?.lines || []).find((l) => l.id === lineMenuOpenId.value) ?? null,
@@ -1149,10 +1146,7 @@ function askDeleteLineFromMenu(line) {
 
 function openDeleteAsnFromMenu() {
   closeAllHeaderMenus();
-  if (!canDeleteAsn.value) {
-    toast.error("Only draft or pending ASNs can be removed.");
-    return;
-  }
+  if (!asn.value?.id) return;
   deleteAsnOpen.value = true;
 }
 

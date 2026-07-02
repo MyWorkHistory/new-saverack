@@ -25,6 +25,8 @@ const rows = ref([]);
 const meta = ref({ current_page: 1, last_page: 1, per_page: 25, total: 0 });
 const search = ref("");
 const searchDebounced = ref("");
+const statusFilter = ref("all");
+const filterMenuOpen = ref(false);
 let searchTimer = null;
 
 const sortBy = ref("created_at");
@@ -49,7 +51,7 @@ const clientAccountId = computed(() => {
   return Number(crmUser.value?.client_account_id || 0);
 });
 
-const tableColspan = 10;
+const tableColspan = computed(() => (props.embedded ? 8 : 10));
 
 const allSelected = computed(() => {
   if (rows.value.length === 0) return false;
@@ -80,6 +82,11 @@ watch(search, (v) => {
   }, 300);
 });
 
+watch(statusFilter, () => {
+  meta.value.current_page = 1;
+  load();
+});
+
 function sortIndicator(column) {
   if (sortBy.value !== column) return "";
   return sortDir.value === "asc" ? "↑" : "↓";
@@ -101,6 +108,7 @@ function statusLabel(s) {
   if (s === "in_progress") return "In Progress";
   if (s === "completed") return "Completed";
   if (s === "pending") return "Pending";
+  if (s === "non_compliant") return "Non-Compliant";
   return "Pending";
 }
 
@@ -110,6 +118,7 @@ function statusBadgeClass(status) {
   if (s === "pending") return "bg-secondary-subtle text-secondary-emphasis";
   if (s === "in_progress") return "bg-primary-subtle text-primary-emphasis";
   if (s === "completed") return "bg-success-subtle text-success-emphasis";
+  if (s === "non_compliant") return "bg-danger-subtle text-danger-emphasis";
   return "bg-body-secondary text-body-secondary";
 }
 
@@ -128,6 +137,7 @@ async function load() {
       params: {
         client_account_id: clientAccountId.value,
         q: searchDebounced.value || undefined,
+        status: statusFilter.value !== "all" ? statusFilter.value : undefined,
         page: meta.value.current_page,
         per_page: meta.value.per_page,
         sort_by: sortBy.value,
@@ -205,7 +215,15 @@ async function confirmBulkDelete() {
 }
 
 function openRow(r) {
-  router.push({ name: props.detailRouteName, params: { id: String(r.id) } });
+  const query =
+    props.embedded && props.detailRouteName === "admin-asn-detail" && clientAccountId.value > 0
+      ? { client_account_id: String(clientAccountId.value) }
+      : undefined;
+  router.push({
+    name: props.detailRouteName,
+    params: { id: String(r.id) },
+    query,
+  });
 }
 
 function placeManageMenu(anchorEl) {
@@ -243,6 +261,9 @@ const manageMenuRow = computed(() => rows.value.find((r) => r.id == manageOpenId
 function onDocClickManage(e) {
   if (!e.target?.closest?.("[data-row-actions]")) {
     manageOpenId.value = null;
+  }
+  if (!e.target?.closest?.("[data-toolbar-filter]")) {
+    filterMenuOpen.value = false;
   }
 }
 
@@ -350,6 +371,75 @@ onUnmounted(() => {
             aria-label="Search ASN"
             @keydown.enter.prevent="load"
           />
+          <div v-if="embedded" class="position-relative flex-shrink-0" data-toolbar-filter>
+            <button
+              type="button"
+              class="btn btn-outline-secondary staff-toolbar-btn d-inline-flex align-items-center gap-2"
+              :aria-expanded="filterMenuOpen"
+              @click.stop="filterMenuOpen = !filterMenuOpen"
+            >
+              <svg
+                width="18"
+                height="18"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+                viewBox="0 0 24 24"
+                aria-hidden="true"
+              >
+                <path
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                  d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2.586a1 1 0 01-.293.707l-6.414 6.414a1 1 0 00-.293.707V17l-4 4v-6.586a1 1 0 00-.293-.707L3.293 7.293A1 1 0 013 6.586V4z"
+                />
+              </svg>
+              <span class="staff-toolbar-filter-text">Filters</span>
+            </button>
+            <div
+              v-if="filterMenuOpen"
+              class="dropdown-menu dropdown-menu-end show shadow border p-0 staff-toolbar-filter-dropdown"
+              role="dialog"
+              aria-label="ASN filters"
+              @click.stop
+            >
+              <div class="staff-toolbar-filter-dropdown__head">
+                <span>Filters</span>
+                <button
+                  type="button"
+                  class="btn btn-link btn-sm text-secondary text-decoration-none p-0"
+                  @click="
+                    statusFilter = 'all';
+                    filterMenuOpen = false;
+                  "
+                >
+                  Reset
+                </button>
+              </div>
+              <div class="staff-toolbar-filter-dropdown__body">
+                <label class="form-label" for="asn-account-filter-status">Status</label>
+                <select
+                  id="asn-account-filter-status"
+                  v-model="statusFilter"
+                  class="form-select staff-datatable-filters__select"
+                >
+                  <option value="all">All</option>
+                  <option value="draft">Draft</option>
+                  <option value="pending">Pending</option>
+                  <option value="in_progress">In Progress</option>
+                  <option value="completed">Completed</option>
+                  <option value="non_compliant">Non-Compliant</option>
+                </select>
+              </div>
+            </div>
+          </div>
+          <button
+            v-if="embedded"
+            type="button"
+            class="btn btn-primary staff-toolbar-btn ms-md-auto flex-shrink-0"
+            @click="createAsn"
+          >
+            Create ASN
+          </button>
         </div>
       </div>
 
@@ -413,13 +503,21 @@ onUnmounted(() => {
                   <span v-if="sortIndicator('expected_qty')" class="staff-sort-ind">{{ sortIndicator("expected_qty") }}</span>
                 </button>
               </th>
-              <th class="staff-table-head__th staff-table-head__th--sort text-center" scope="col">
+              <th
+                v-if="!embedded"
+                class="staff-table-head__th staff-table-head__th--sort text-center"
+                scope="col"
+              >
                 <button type="button" class="staff-sort-btn" @click="toggleSort('accepted_qty')">
                   Accepted QTY
                   <span v-if="sortIndicator('accepted_qty')" class="staff-sort-ind">{{ sortIndicator("accepted_qty") }}</span>
                 </button>
               </th>
-              <th class="staff-table-head__th staff-table-head__th--sort text-center" scope="col">
+              <th
+                v-if="!embedded"
+                class="staff-table-head__th staff-table-head__th--sort text-center"
+                scope="col"
+              >
                 <button type="button" class="staff-sort-btn" @click="toggleSort('rejected_qty')">
                   Rejected QTY
                   <span v-if="sortIndicator('rejected_qty')" class="staff-sort-ind">{{ sortIndicator("rejected_qty") }}</span>
@@ -464,8 +562,8 @@ onUnmounted(() => {
                 <td class="text-center fw-semibold user-asn-list-asn-col">{{ formatAsnDisplay(r.asn_number) }}</td>
                 <td class="text-center small text-secondary">{{ formatDateUs(r.created_at) }}</td>
                 <td class="text-center">{{ Number(r.expected_qty ?? 0).toLocaleString() }}</td>
-                <td class="text-center">{{ Number(r.accepted_qty ?? 0).toLocaleString() }}</td>
-                <td class="text-center">{{ Number(r.rejected_qty ?? 0).toLocaleString() }}</td>
+                <td v-if="!embedded" class="text-center">{{ Number(r.accepted_qty ?? 0).toLocaleString() }}</td>
+                <td v-if="!embedded" class="text-center">{{ Number(r.rejected_qty ?? 0).toLocaleString() }}</td>
                 <td class="text-center">{{ Number(r.total_boxes ?? 0).toLocaleString() }}</td>
                 <td class="text-center small text-secondary user-asn-list-tracking-col">
                   <span class="user-asn-list-tracking-text">{{ r.tracking_display || "—" }}</span>

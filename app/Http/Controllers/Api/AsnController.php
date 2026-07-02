@@ -240,6 +240,7 @@ class AsnController extends Controller
         $validated = $request->validate([
             'client_account_id' => ['required', 'integer', 'exists:client_accounts,id'],
             'q' => ['nullable', 'string', 'max:255'],
+            'status' => ['nullable', 'string', Rule::in(ClientAccountAsn::STATUSES)],
             'page' => ['nullable', 'integer', 'min:1'],
             'per_page' => ['nullable', 'integer', 'min:1', 'max:100'],
             'sort_by' => ['nullable', 'string', Rule::in([
@@ -263,6 +264,9 @@ class AsnController extends Controller
         $query = ClientAccountAsn::query()
             ->where('client_account_id', $clientAccountId)
             ->with('trackings');
+        if (! empty($validated['status'])) {
+            $query->where('status', (string) $validated['status']);
+        }
         if ($q !== '') {
             $like = '%'.$q.'%';
             $query->where(function ($w) use ($like) {

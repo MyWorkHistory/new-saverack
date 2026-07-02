@@ -163,6 +163,8 @@ class AsnReceivingService
             $asn->status = ClientAccountAsn::STATUS_IN_PROGRESS;
         }
         $asn->saveQuietly();
+
+        app(OrderDashboardSnapshotService::class)->patchAccountAsnPending((int) $asn->client_account_id);
     }
 
     public function markProcessedIfNeeded(ClientAccountAsn $asn, ?User $actor = null): void

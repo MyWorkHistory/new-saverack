@@ -10,6 +10,7 @@ use App\Models\ClientAccountAsnTracking;
 use App\Models\ClientAccountAsnVendorLine;
 use App\Models\User;
 use App\Services\AsnReceivingService;
+use App\Services\OrderDashboardSnapshotService;
 use App\Services\ShipHeroInventoryService;
 use App\Support\Barcode\Code128Svg;
 use Barryvdh\DomPDF\Facade\Pdf;
@@ -30,10 +31,17 @@ class AsnController extends Controller
     /** @var AsnReceivingService */
     private $receiving;
 
-    public function __construct(ShipHeroInventoryService $inventory, AsnReceivingService $receiving)
-    {
+    /** @var OrderDashboardSnapshotService */
+    private $orderDashboardSnapshots;
+
+    public function __construct(
+        ShipHeroInventoryService $inventory,
+        AsnReceivingService $receiving,
+        OrderDashboardSnapshotService $orderDashboardSnapshots
+    ) {
         $this->inventory = $inventory;
         $this->receiving = $receiving;
+        $this->orderDashboardSnapshots = $orderDashboardSnapshots;
     }
 
     private function isPortalUser(Request $request): bool
@@ -368,6 +376,10 @@ class AsnController extends Controller
         }
         $asn->save();
 
+        if (isset($validated['status'])) {
+            $this->orderDashboardSnapshots->patchAccountAsnPending((int) $asn->client_account_id);
+        }
+
         return response()->json($this->serializeAsn($asn->fresh(['lines', 'trackings', 'vendorLines'])));
     }
 
@@ -391,7 +403,9 @@ class AsnController extends Controller
         } catch (ValidationException $e) {
             return response()->json(['message' => 'Only draft or pending ASNs can be deleted.'], 422);
         }
+        $clientAccountId = (int) $asn->client_account_id;
         $asn->delete();
+        $this->orderDashboardSnapshots->patchAccountAsnPending($clientAccountId);
 
         return response()->json(['ok' => true]);
     }
@@ -422,6 +436,8 @@ class AsnController extends Controller
             ->where('client_account_id', $clientAccountId)
             ->whereIn('id', $ids)
             ->delete();
+
+        $this->orderDashboardSnapshots->patchAccountAsnPending($clientAccountId);
 
         return response()->json(['ok' => true, 'deleted' => count($ids)]);
     }
@@ -476,6 +492,8 @@ class AsnController extends Controller
         $asn->status = ClientAccountAsn::STATUS_PENDING;
         $asn->save();
 
+        $this->orderDashboardSnapshots->patchAccountAsnPending((int) $asn->client_account_id);
+
         return response()->json($this->serializeAsn($asn->fresh(['lines', 'trackings', 'vendorLines', 'clientAccount'])));
     }
 
@@ -487,6 +505,8 @@ class AsnController extends Controller
         }
         $asn->status = ClientAccountAsn::STATUS_DRAFT;
         $asn->save();
+
+        $this->orderDashboardSnapshots->patchAccountAsnPending((int) $asn->client_account_id);
 
         return response()->json($this->serializeAsn($asn->fresh(['lines', 'trackings', 'vendorLines', 'clientAccount'])));
     }

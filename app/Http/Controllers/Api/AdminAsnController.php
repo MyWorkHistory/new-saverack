@@ -12,6 +12,7 @@ use App\Models\AsnBillItem;
 use App\Models\User;
 use App\Services\AsnBillService;
 use App\Services\AsnReceivingService;
+use App\Services\OrderDashboardSnapshotService;
 use App\Support\Billing\AsnBillChargeCatalog;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -28,10 +29,17 @@ class AdminAsnController extends Controller
     /** @var AsnBillService */
     private $asnBills;
 
-    public function __construct(AsnReceivingService $receiving, AsnBillService $asnBills)
-    {
+    /** @var OrderDashboardSnapshotService */
+    private $orderDashboardSnapshots;
+
+    public function __construct(
+        AsnReceivingService $receiving,
+        AsnBillService $asnBills,
+        OrderDashboardSnapshotService $orderDashboardSnapshots
+    ) {
         $this->receiving = $receiving;
         $this->asnBills = $asnBills;
+        $this->orderDashboardSnapshots = $orderDashboardSnapshots;
     }
 
     private function assertStaff(Request $request): void
@@ -246,6 +254,8 @@ class AdminAsnController extends Controller
         ]);
         $asn->status = $validated['status'];
         $asn->save();
+
+        $this->orderDashboardSnapshots->patchAccountAsnPending((int) $asn->client_account_id);
 
         return response()->json($this->serializeAsn($asn->fresh(['lines', 'trackings', 'vendorLines', 'clientAccount'])));
     }

@@ -230,6 +230,133 @@ class OrderDashboardSnapshotService
         }
     }
 
+    public function patchAccountFromQueueTab(int $clientAccountId, string $queueTab): void
+    {
+        if ($clientAccountId <= 0) {
+            return;
+        }
+
+        $account = ClientAccount::query()->find($clientAccountId);
+        if ($account === null) {
+            return;
+        }
+
+        $customerId = trim((string) $account->shiphero_customer_account_id);
+        if ($customerId === '') {
+            return;
+        }
+
+        foreach ($this->sectionKeysForQueueTab($queueTab) as $sectionKey) {
+            $context = $this->queueCounts->contextForDashboardSection($account, $sectionKey);
+            $count = $this->orderIndex->countForDashboardSection($clientAccountId, $sectionKey, $context);
+            $this->mergeAccountIntoSection($sectionKey, $account, $count);
+        }
+    }
+
+    public function patchAccountAsnPending(int $clientAccountId): void
+    {
+        if ($clientAccountId <= 0) {
+            return;
+        }
+
+        $account = ClientAccount::query()->find($clientAccountId);
+        if ($account === null) {
+            return;
+        }
+
+        $count = (int) ClientAccountAsn::query()
+            ->where('client_account_id', $clientAccountId)
+            ->where('status', ClientAccountAsn::STATUS_PENDING)
+            ->count();
+
+        $this->mergeAccountIntoSection(OrderDashboardSection::KEY_ASN_PENDING, $account, $count);
+    }
+
+    private function mergeAccountIntoSection(string $sectionKey, ClientAccount $account, int $count): void
+    {
+        $this->validateSectionKey($sectionKey);
+        $this->ensureSectionRows();
+
+        $row = OrderDashboardSection::query()->where('section_key', $sectionKey)->first();
+        if (! $row instanceof OrderDashboardSection) {
+            return;
+        }
+
+        if ($row->status === OrderDashboardSection::STATUS_RUNNING) {
+            return;
+        }
+
+        $payload = is_array($row->payload) ? $row->payload : [];
+        $accounts = isset($payload['accounts']) && is_array($payload['accounts']) ? $payload['accounts'] : [];
+        $accountId = (int) $account->id;
+
+        $accounts = array_values(array_filter($accounts, static function ($entry) use ($accountId) {
+            return is_array($entry) && (int) ($entry['account_id'] ?? 0) !== $accountId;
+        }));
+
+        if ($count > 0) {
+            $accounts[] = [
+                'account_id' => $accountId,
+                'account_name' => (string) $account->company_name,
+                'account_status' => (string) $account->status,
+                'orders_count' => $count,
+            ];
+        }
+
+        usort($accounts, static function (array $a, array $b) {
+            return ($b['orders_count'] ?? 0) <=> ($a['orders_count'] ?? 0);
+        });
+
+        $total = 0;
+        foreach ($accounts as $entry) {
+            if (! is_array($entry)) {
+                continue;
+            }
+            $total += (int) ($entry['orders_count'] ?? 0);
+        }
+
+        $payload['accounts'] = $accounts;
+
+        OrderDashboardSection::query()->where('section_key', $sectionKey)->update([
+            'payload' => $payload,
+            'total_count' => max(0, $total),
+            'status' => OrderDashboardSection::STATUS_IDLE,
+            'refreshed_at' => now(),
+            'error_message' => null,
+        ]);
+    }
+
+    /**
+     * @return list<string>
+     */
+    private function sectionKeysForQueueTab(string $queueTab): array
+    {
+        $tab = strtolower(trim($queueTab));
+
+        switch ($tab) {
+            case ShipHeroOrderQueueIndex::KIND_AWAITING:
+            case 'awaiting':
+                return [OrderDashboardSection::KEY_READY_TO_SHIP];
+            case ShipHeroOrderQueueIndex::KIND_SHIPPED:
+            case 'shipped':
+                return [OrderDashboardSection::KEY_SHIPPED];
+            case ShipHeroOrderQueueIndex::KIND_BACKORDER:
+            case 'backorder':
+                return [OrderDashboardSection::KEY_HOLD_BACKORDER];
+            case ShipHeroOrderQueueIndex::KIND_ON_HOLD:
+            case 'on_hold':
+                return [
+                    OrderDashboardSection::KEY_HOLD_OPERATOR,
+                    OrderDashboardSection::KEY_HOLD_ADDRESS,
+                    OrderDashboardSection::KEY_HOLD_FRAUD,
+                    OrderDashboardSection::KEY_HOLD_PAYMENT,
+                    OrderDashboardSection::KEY_HOLD_USER,
+                ];
+            default:
+                return [];
+        }
+    }
+
     /**
      * @return array{payload: array<string, mixed>, total_count: int}
      */

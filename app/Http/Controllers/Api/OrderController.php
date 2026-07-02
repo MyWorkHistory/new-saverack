@@ -8,6 +8,7 @@ use App\Http\Requests\OrderCreateRequest;
 use App\Models\ClientAccount;
 use App\Models\User;
 use App\Services\CrossAccountOrderListService;
+use App\Services\OrderDashboardSnapshotService;
 use App\Services\ShipHeroOrderDetailCacheService;
 use App\Services\ShopifyOrderAdminLinkService;
 use App\Services\PortalQueueCountsService;
@@ -48,13 +49,17 @@ class OrderController extends Controller
     /** @var ShipHeroOrderQueueIndexService */
     protected $orderQueueIndex;
 
+    /** @var OrderDashboardSnapshotService */
+    protected $orderDashboardSnapshots;
+
     public function __construct(
         ShipHeroOrderService $orders,
         ShopifyOrderAdminLinkService $shopifyOrderLinks,
         ShipHeroOrderDetailCacheService $orderDetailCache,
         PortalQueueCountsService $portalQueueCounts,
         CrossAccountOrderListService $crossAccountOrders,
-        ShipHeroOrderQueueIndexService $orderQueueIndex
+        ShipHeroOrderQueueIndexService $orderQueueIndex,
+        OrderDashboardSnapshotService $orderDashboardSnapshots
     ) {
         $this->orders = $orders;
         $this->shopifyOrderLinks = $shopifyOrderLinks;
@@ -62,6 +67,7 @@ class OrderController extends Controller
         $this->portalQueueCounts = $portalQueueCounts;
         $this->crossAccountOrders = $crossAccountOrders;
         $this->orderQueueIndex = $orderQueueIndex;
+        $this->orderDashboardSnapshots = $orderDashboardSnapshots;
     }
 
     public function index(Request $request): JsonResponse
@@ -132,6 +138,7 @@ class OrderController extends Controller
             if ($this->orderQueueIndex->isQueueTab($tab)) {
                 if ($refresh) {
                     $this->orderQueueIndex->syncAccountQueue($clientAccountId, $tab, true);
+                    $this->orderDashboardSnapshots->patchAccountFromQueueTab($clientAccountId, $tab);
                 }
                 if ($this->orderQueueIndex->shouldUseIndex($tab, false, $indexFilters) || $refresh) {
                     if ($this->orderQueueIndex->indexHasRows($clientAccountId, $tab)) {

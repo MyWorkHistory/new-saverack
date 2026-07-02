@@ -2,6 +2,7 @@
 
 namespace App\Services;
 
+use App\Jobs\PatchHomeDashboardAccountJob;
 use App\Models\ClientAccount;
 use App\Models\OrderDashboardSection;
 use App\Models\ShipHeroOrderQueueIndex;
@@ -178,6 +179,13 @@ class PortalQueueCountsService
             ];
             Cache::put($cacheKey, $stored, now()->addMinutes(self::CACHE_TTL_MINUTES));
             $this->touchAggregateLastGood($context, $tab, $stored);
+
+            if ($forceRefresh) {
+                $accountId = (int) ($context['client_account_id'] ?? 0);
+                if ($accountId > 0) {
+                    PatchHomeDashboardAccountJob::dispatch($accountId, $tab);
+                }
+            }
 
             return $this->formatQueueResponse($context, $tab, $stored);
         } catch (Throwable $e) {

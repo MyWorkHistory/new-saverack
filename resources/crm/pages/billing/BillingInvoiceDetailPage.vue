@@ -176,6 +176,9 @@ const groupEditLines = ref([]);
 const groupBulkQty = ref("");
 const groupBulkPrice = ref("");
 const rightActionsMenuOpen = ref(false);
+const rightActionsMenuRect = ref({ top: 0, left: 0 });
+const RIGHT_ACTIONS_MENU_W = 220;
+const RIGHT_ACTIONS_MENU_H = 360;
 const invoiceReviewSlackModalOpen = ref(false);
 const accountBalanceLoading = ref(false);
 const availableBalanceModalOpen = ref(false);
@@ -1759,9 +1762,30 @@ async function loadAccountBalanceSummary() {
   }
 }
 
-function toggleRightActionsMenu(event) {
+function placeRightActionsMenu(anchorEl) {
+  if (!(anchorEl instanceof HTMLElement)) return;
+  const rect = anchorEl.getBoundingClientRect();
+  let top = rect.bottom + 4;
+  let left = rect.right - RIGHT_ACTIONS_MENU_W;
+  left = Math.max(8, Math.min(left, window.innerWidth - RIGHT_ACTIONS_MENU_W - 8));
+  if (top + RIGHT_ACTIONS_MENU_H > window.innerHeight - 8) {
+    top = Math.max(8, rect.top - RIGHT_ACTIONS_MENU_H - 4);
+  }
+  rightActionsMenuRect.value = { top, left };
+}
+
+async function toggleRightActionsMenu(event) {
   event?.stopPropagation?.();
-  rightActionsMenuOpen.value = !rightActionsMenuOpen.value;
+  if (rightActionsMenuOpen.value) {
+    rightActionsMenuOpen.value = false;
+    return;
+  }
+  const btn = event?.currentTarget;
+  rightActionsMenuOpen.value = true;
+  await nextTick();
+  requestAnimationFrame(() => {
+    placeRightActionsMenu(btn);
+  });
 }
 
 function closeRightActionsMenu() {
@@ -2434,95 +2458,6 @@ function onDocKeydown(e) {
                 </svg>
                 <span class="billing-inv-tab-btn__label">Actions</span>
               </button>
-              <div v-if="rightActionsMenuOpen" class="staff-row-menu billing-inv-right-menu">
-            <button
-              v-if="canCreate"
-              type="button"
-              class="staff-row-menu__item"
-              role="menuitem"
-              @click="openRightMenuCreateInvoice"
-            >
-              Create Invoice
-            </button>
-            <button
-              v-if="canUpdate && invoice"
-              type="button"
-              class="staff-row-menu__item"
-              role="menuitem"
-              @click="openRightMenuInvoiceReview"
-            >
-              Invoice Review
-            </button>
-            <button
-              v-if="canVoidInvoice"
-              type="button"
-              class="staff-row-menu__item staff-row-menu__item--danger"
-              role="menuitem"
-              @click="openRightMenuVoid"
-            >
-              Void Invoice
-            </button>
-            <button
-              v-if="canRestoreDraft"
-              type="button"
-              class="staff-row-menu__item"
-              role="menuitem"
-              @click="openRightMenuRestoreDraft"
-            >
-              Make Draft
-            </button>
-            <button
-              v-if="canUpdate"
-              type="button"
-              class="staff-row-menu__item"
-              role="menuitem"
-              @click="openRightMenuEditNumber"
-            >
-              Edit Invoice Number
-            </button>
-            <button
-              v-if="canDelete && (currentStatusKey === 'draft' || canHardDeleteInvoices)"
-              type="button"
-              class="staff-row-menu__item staff-row-menu__item--danger"
-              role="menuitem"
-              @click="openRightMenuDelete"
-            >
-              {{
-                canHardDeleteInvoices && currentStatusKey !== "draft"
-                  ? "Delete Invoice"
-                  : "Delete Draft"
-              }}
-            </button>
-            <button
-              v-if="canShareInvoice"
-              type="button"
-              class="staff-row-menu__item"
-              role="menuitem"
-              :disabled="pdfDownloading"
-              @click="openRightMenuDownloadPdf"
-            >
-              {{ pdfDownloading ? "Downloading..." : "Download PDF" }}
-            </button>
-            <button
-              v-if="canUpdateInvoiceStatus && currentStatusKey !== 'open'"
-              type="button"
-              class="staff-row-menu__item"
-              role="menuitem"
-              :disabled="openInvoiceTabBusy"
-              @click="openRightMenuOpenInvoice"
-            >
-              {{ openInvoiceTabBusy ? "Updating..." : "Open Invoice" }}
-            </button>
-            <button
-              v-if="canAddCcFee"
-              type="button"
-              class="staff-row-menu__item"
-              role="menuitem"
-              @click="openRightMenuCcFee"
-            >
-              Add CC Fee
-            </button>
-              </div>
             </div>
           </div>
         </div>
@@ -4146,6 +4081,107 @@ function onDocKeydown(e) {
         </div>
       </Transition>
     </Teleport>
+    <Teleport to="body">
+      <div
+        v-if="rightActionsMenuOpen"
+        data-right-actions
+        class="staff-row-menu fixed z-[300] overflow-hidden"
+        role="menu"
+        :style="{
+          top: `${rightActionsMenuRect.top}px`,
+          left: `${rightActionsMenuRect.left}px`,
+        }"
+        @click.stop
+      >
+        <button
+          v-if="canCreate"
+          type="button"
+          class="staff-row-menu__item"
+          role="menuitem"
+          @click="openRightMenuCreateInvoice"
+        >
+          Create Invoice
+        </button>
+        <button
+          v-if="canUpdate && invoice"
+          type="button"
+          class="staff-row-menu__item"
+          role="menuitem"
+          @click="openRightMenuInvoiceReview"
+        >
+          Invoice Review
+        </button>
+        <button
+          v-if="canVoidInvoice"
+          type="button"
+          class="staff-row-menu__item staff-row-menu__item--danger"
+          role="menuitem"
+          @click="openRightMenuVoid"
+        >
+          Void Invoice
+        </button>
+        <button
+          v-if="canRestoreDraft"
+          type="button"
+          class="staff-row-menu__item"
+          role="menuitem"
+          @click="openRightMenuRestoreDraft"
+        >
+          Make Draft
+        </button>
+        <button
+          v-if="canUpdate"
+          type="button"
+          class="staff-row-menu__item"
+          role="menuitem"
+          @click="openRightMenuEditNumber"
+        >
+          Edit Invoice Number
+        </button>
+        <button
+          v-if="canDelete && (currentStatusKey === 'draft' || canHardDeleteInvoices)"
+          type="button"
+          class="staff-row-menu__item staff-row-menu__item--danger"
+          role="menuitem"
+          @click="openRightMenuDelete"
+        >
+          {{
+            canHardDeleteInvoices && currentStatusKey !== "draft"
+              ? "Delete Invoice"
+              : "Delete Draft"
+          }}
+        </button>
+        <button
+          v-if="canShareInvoice"
+          type="button"
+          class="staff-row-menu__item"
+          role="menuitem"
+          :disabled="pdfDownloading"
+          @click="openRightMenuDownloadPdf"
+        >
+          {{ pdfDownloading ? "Downloading..." : "Download PDF" }}
+        </button>
+        <button
+          v-if="canUpdateInvoiceStatus && currentStatusKey !== 'open'"
+          type="button"
+          class="staff-row-menu__item"
+          role="menuitem"
+          :disabled="openInvoiceTabBusy"
+          @click="openRightMenuOpenInvoice"
+        >
+          {{ openInvoiceTabBusy ? "Updating..." : "Open Invoice" }}
+        </button>
+        <button
+          v-if="canAddCcFee"
+          type="button"
+          class="staff-row-menu__item"
+          role="menuitem"
+          @click="openRightMenuCcFee"
+        >
+          Add CC Fee
+        </button>
+      </div>
+    </Teleport>
     <BillingInvoiceCreateDrawer
       v-model:open="createDrawerOpen"
       :client-accounts="clientAccountsMeta"
@@ -4179,6 +4215,7 @@ function onDocKeydown(e) {
 .billing-inv-tab-bar-wrap {
   min-width: 0;
   overflow-x: auto;
+  overflow-y: visible;
   -webkit-overflow-scrolling: touch;
 }
 .billing-inv-tab-bar {
@@ -4190,7 +4227,6 @@ function onDocKeydown(e) {
   padding: 0.125rem 0;
 }
 .billing-inv-tab-bar-actions {
-  position: relative;
   flex-shrink: 0;
 }
 .billing-inv-tab-btn {
@@ -4199,13 +4235,13 @@ function onDocKeydown(e) {
   align-items: center;
   justify-content: center;
   gap: 0.5rem;
-  min-width: 5.75rem;
-  padding: 0.875rem 0.75rem 0.75rem;
+  min-width: 6.75rem;
+  padding: 0.875rem 1rem 0.75rem;
   border: 1.5px solid var(--bs-border-color);
   border-radius: 0.625rem;
   background: #fff;
   color: var(--bs-body-color);
-  font-size: 0.75rem;
+  font-size: 0.8125rem;
   font-weight: 500;
   line-height: 1.2;
   white-space: nowrap;
@@ -4217,9 +4253,14 @@ function onDocKeydown(e) {
     box-shadow 0.15s ease,
     color 0.15s ease;
 }
-.billing-inv-tab-btn:hover:not(.billing-inv-tab-btn--active):not(.billing-inv-tab-btn--disabled):not(:disabled) {
-  border-color: rgba(115, 103, 240, 0.35);
-  box-shadow: 0 0.125rem 0.375rem rgba(47, 43, 61, 0.06);
+.billing-inv-tab-btn:hover:not(.billing-inv-tab-btn--disabled):not(:disabled) {
+  border-color: #7367f0;
+  color: #7367f0;
+  box-shadow: none;
+}
+.billing-inv-tab-btn:hover:not(.billing-inv-tab-btn--disabled):not(:disabled) .billing-inv-tab-btn__icon,
+.billing-inv-tab-btn:hover:not(.billing-inv-tab-btn--disabled):not(:disabled) .billing-inv-tab-btn__label {
+  color: #7367f0;
 }
 .billing-inv-tab-btn:focus,
 .billing-inv-tab-btn:focus-visible {
@@ -4229,10 +4270,17 @@ function onDocKeydown(e) {
 .billing-inv-tab-btn--active {
   border: 1.5px solid #7367f0;
   color: #7367f0;
+  box-shadow: none;
+  outline: none;
 }
 .billing-inv-tab-btn--active .billing-inv-tab-btn__icon,
 .billing-inv-tab-btn--active .billing-inv-tab-btn__label {
   color: #7367f0;
+}
+.billing-inv-tab-btn--active:focus,
+.billing-inv-tab-btn--active:focus-visible {
+  outline: none;
+  box-shadow: none;
 }
 .billing-inv-tab-btn--disabled,
 .billing-inv-tab-btn:disabled {
@@ -4245,6 +4293,20 @@ function onDocKeydown(e) {
 }
 .billing-inv-tab-btn__label {
   text-align: center;
+}
+[data-bs-theme="dark"] .billing-inv-tab-btn {
+  background: var(--bs-body-bg);
+}
+[data-bs-theme="dark"] .billing-inv-tab-btn:hover:not(.billing-inv-tab-btn--disabled):not(:disabled),
+[data-bs-theme="dark"] .billing-inv-tab-btn--active {
+  border-color: #a59bff;
+  color: #a59bff;
+}
+[data-bs-theme="dark"] .billing-inv-tab-btn:hover:not(.billing-inv-tab-btn--disabled):not(:disabled) .billing-inv-tab-btn__icon,
+[data-bs-theme="dark"] .billing-inv-tab-btn:hover:not(.billing-inv-tab-btn--disabled):not(:disabled) .billing-inv-tab-btn__label,
+[data-bs-theme="dark"] .billing-inv-tab-btn--active .billing-inv-tab-btn__icon,
+[data-bs-theme="dark"] .billing-inv-tab-btn--active .billing-inv-tab-btn__label {
+  color: #a59bff;
 }
 .billing-inv-number-row .staff-status-badge {
   font-size: 0.8125rem;
@@ -4325,13 +4387,6 @@ function onDocKeydown(e) {
   flex: 0 0 auto;
   line-height: 1;
   padding: 0 0.1rem;
-}
-.billing-inv-right-menu {
-  position: absolute;
-  top: calc(100% + 0.35rem);
-  right: 0;
-  z-index: 20;
-  min-width: 12rem;
 }
 .billing-inv-totals-check-card .billing-inv-totals-check-rows {
   display: flex;

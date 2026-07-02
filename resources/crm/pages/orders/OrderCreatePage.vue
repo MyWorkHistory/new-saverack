@@ -39,7 +39,7 @@ const ordersListTo = computed(() => {
   return { path: "/admin/orders/search" };
 });
 
-const tableColspan = computed(() => (isPortalMode.value ? 6 : 7));
+const tableColspan = computed(() => (isPortalMode.value ? 7 : 8));
 
 const accountOptions = computed(() =>
   accounts.value
@@ -160,7 +160,7 @@ onMounted(() => {
       </div>
     </div>
 
-    <div class="staff-table-card staff-datatable-card staff-datatable-card--white w-100 orders-page-toolbar">
+    <div class="staff-table-card staff-datatable-card staff-datatable-card--white w-100 orders-page-toolbar order-drafts-table">
       <div class="staff-table-toolbar">
         <div class="staff-table-toolbar--row orders-toolbar-row">
           <div v-if="!isPortalMode" class="orders-toolbar-account flex-shrink-0">
@@ -208,9 +208,6 @@ onMounted(() => {
             </button>
           </div>
         </div>
-        <p v-if="!isPortalMode" class="small text-secondary mb-0 mt-2 px-1">
-          Only accounts with a ShipHero customer ID appear here.
-        </p>
       </div>
 
       <div class="table-responsive staff-table-wrap">
@@ -224,6 +221,7 @@ onMounted(() => {
               <th v-if="!isPortalMode" class="staff-table-head__th" scope="col">Account</th>
               <th class="staff-table-head__th" scope="col">Country</th>
               <th class="staff-table-head__th text-end" scope="col">Items</th>
+              <th class="staff-table-head__th text-center staff-actions-col" scope="col">Action</th>
             </tr>
           </thead>
           <tbody>
@@ -260,6 +258,39 @@ onMounted(() => {
               <td v-if="!isPortalMode">{{ row.client_account_company_name || "—" }}</td>
               <td>{{ row.country || "—" }}</td>
               <td class="text-end">{{ row.line_items_count ?? 0 }}</td>
+              <td class="text-center staff-actions-cell">
+                <div class="staff-actions-inner staff-actions-inner--single justify-content-center">
+                  <RouterLink
+                    v-if="draftDetailRoute(row)"
+                    :to="draftDetailRoute(row)"
+                    class="staff-action-btn"
+                    title="Open draft"
+                    aria-label="Open draft"
+                  >
+                    <svg
+                      width="20"
+                      height="20"
+                      fill="none"
+                      stroke="currentColor"
+                      viewBox="0 0 24 24"
+                      aria-hidden="true"
+                    >
+                      <path
+                        stroke-linecap="round"
+                        stroke-linejoin="round"
+                        stroke-width="2"
+                        d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"
+                      />
+                      <path
+                        stroke-linecap="round"
+                        stroke-linejoin="round"
+                        stroke-width="2"
+                        d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"
+                      />
+                    </svg>
+                  </RouterLink>
+                </div>
+              </td>
             </tr>
           </tbody>
         </table>
@@ -296,5 +327,14 @@ onMounted(() => {
 .orders-toolbar-account {
   flex: 0 0 auto;
   width: min(280px, 100%);
+}
+
+.order-drafts-table :deep(a.staff-action-btn) {
+  text-decoration: none;
+  color: #8592a3;
+}
+
+.order-drafts-table :deep(a.staff-action-btn:hover) {
+  color: #5d596c;
 }
 </style>

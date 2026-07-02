@@ -332,32 +332,40 @@ button.billing-inv-summary-card:hover:not(:disabled) .staff-stat-card__icon {
   box-shadow: none;
 }
 
-/* Orders list + draft create pages: match standard staff datatable row height. */
-.staff-table-card.orders-page-toolbar .table.staff-data-table > tbody > tr > td {
+/* Order drafts table — same row rhythm as orders list (action column sets cell height). */
+.staff-table-card.order-drafts-table .table.staff-data-table > tbody > tr > td {
   padding: 1rem 0.875rem !important;
   font-size: 1rem !important;
   line-height: 1.45 !important;
   vertical-align: middle !important;
 }
 
-.staff-table-card.orders-page-toolbar .table.staff-data-table > thead > tr > th.staff-table-head__th {
+.staff-table-card.order-drafts-table .table.staff-data-table > thead > tr > th.staff-table-head__th {
   padding: 1.25rem 0.875rem !important;
 }
 
+.staff-table-card.order-drafts-table .table.staff-data-table > tbody > tr > td.staff-actions-cell {
+  padding: 1rem 0.5rem !important;
+}
+
 @media (min-width: 768px) {
-  .staff-table-card.orders-page-toolbar .table.staff-data-table > thead > tr > th.staff-table-head__th {
+  .staff-table-card.order-drafts-table .table.staff-data-table > thead > tr > th.staff-table-head__th {
     padding: 1.375rem 0.875rem !important;
+  }
+
+  .staff-table-card.order-drafts-table .table.staff-data-table > tbody > tr > td.staff-actions-cell {
+    padding: 1.125rem 0.5rem !important;
   }
 }
 
 @media (max-width: 575.98px) {
-  .staff-table-card.orders-page-toolbar .table.staff-data-table > tbody > tr > td {
+  .staff-table-card.order-drafts-table .table.staff-data-table > tbody > tr > td {
     padding: 0.75rem 0.5625rem !important;
     font-size: 0.9375rem !important;
     line-height: 1.4 !important;
   }
 
-  .staff-table-card.orders-page-toolbar .table.staff-data-table > thead > tr > th.staff-table-head__th {
+  .staff-table-card.order-drafts-table .table.staff-data-table > thead > tr > th.staff-table-head__th {
     padding: 0.875rem 0.5625rem !important;
     font-size: 0.75rem !important;
   }

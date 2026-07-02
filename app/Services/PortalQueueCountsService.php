@@ -166,20 +166,7 @@ class PortalQueueCountsService
         if ($forceRefresh) {
             Cache::forget($cacheKey);
             if ($accountId > 0) {
-                PatchHomeDashboardAccountJob::dispatch($accountId, $tab);
-            }
-            $fromIndex = $this->countTabFromIndex($context, $tab);
-            if ($fromIndex !== null) {
-                $stored = [
-                    'count' => $fromIndex['count'],
-                    'truncated' => $fromIndex['truncated'],
-                    'cached_at' => now()->toIso8601String(),
-                    'refresh_pending' => true,
-                ];
-                Cache::put($cacheKey, $stored, now()->addMinutes(self::CACHE_TTL_MINUTES));
-                $this->touchAggregateLastGood($context, $tab, $stored);
-
-                return $this->formatQueueResponse($context, $tab, $stored);
+                $this->dispatchIndexSyncJob($accountId, $tab);
             }
         }
 
@@ -189,11 +176,12 @@ class PortalQueueCountsService
         }
 
         try {
-            $result = $this->countTab($context, $tab, false, $forceRefresh);
+            $result = $this->countTab($context, $tab, false);
             $stored = [
                 'count' => $result['count'],
                 'truncated' => $result['truncated'],
                 'cached_at' => now()->toIso8601String(),
+                'refresh_pending' => $forceRefresh,
             ];
             Cache::put($cacheKey, $stored, now()->addMinutes(self::CACHE_TTL_MINUTES));
             $this->touchAggregateLastGood($context, $tab, $stored);
@@ -243,12 +231,19 @@ class PortalQueueCountsService
      * @param  array<string, mixed>  $context
      * @return array{count: int, truncated: bool}
      */
-    private function countTab(array $context, string $tab, bool $background = false, bool $forceRefresh = false): array
+    private function countTab(array $context, string $tab, bool $background = false): array
     {
-        if (! $forceRefresh) {
-            $fromIndex = $this->countTabFromIndex($context, $tab);
-            if ($fromIndex !== null) {
-                return $fromIndex;
+        $fromIndex = $this->countTabFromIndex($context, $tab);
+        if ($fromIndex !== null) {
+            return $fromIndex;
+        }
+
+        if (! $background && $this->queueIndexTableAvailable()) {
+            $accountId = (int) ($context['client_account_id'] ?? 0);
+            if ($accountId > 0 && in_array($tab, self::QUEUES, true)) {
+                $this->dispatchIndexSyncJob($accountId, $tab);
+
+                return ['count' => 0, 'truncated' => false];
             }
         }
 
@@ -388,7 +383,9 @@ class PortalQueueCountsService
             'stale' => $stale,
             'refresh_pending' => (bool) ($stored['refresh_pending'] ?? false),
             'shiphero_ready' => true,
-            'message' => $stale ? 'Showing last saved count for this queue.' : '',
+            'message' => $stale
+                ? 'Showing last saved count for this queue.'
+                : (($stored['refresh_pending'] ?? false) ? 'Syncing latest counts from ShipHero.' : ''),
             'ready_to_ship' => $tab === 'awaiting' ? $count : 0,
             'on_hold' => $tab === 'on_hold' ? $count : 0,
             'backorder' => $tab === 'backorder' ? $count : 0,
@@ -483,6 +480,30 @@ class PortalQueueCountsService
         }
 
         return self::DEFAULT_ACCOUNT_TIMEZONE;
+    }
+
+    private function queueIndexTableAvailable(): bool
+    {
+        try {
+            return Schema::hasTable('shiphero_order_queue_index');
+        } catch (Throwable $e) {
+            return false;
+        }
+    }
+
+    private function dispatchIndexSyncJob(int $accountId, string $tab): void
+    {
+        if ($accountId <= 0 || ! in_array($tab, self::QUEUES, true)) {
+            return;
+        }
+
+        $lockKey = sprintf('order_queue_sync_dispatch:%d:%s', $accountId, $tab);
+        if (Cache::has($lockKey)) {
+            return;
+        }
+
+        Cache::put($lockKey, 1, now()->addMinutes(2));
+        PatchHomeDashboardAccountJob::dispatchAfterHttp($accountId, $tab);
     }
 
     private function dateStartIso(?string $value, string $timezone): string

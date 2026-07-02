@@ -31,6 +31,17 @@ class PatchHomeDashboardAccountJob implements ShouldQueue
         $this->queueTab = trim($queueTab);
     }
 
+    /** Queue sync after the HTTP response so web requests never block on ShipHero. */
+    public static function dispatchAfterHttp(int $clientAccountId, string $queueTab): void
+    {
+        $queueTab = trim($queueTab);
+        if ($clientAccountId <= 0 || $queueTab === '') {
+            return;
+        }
+
+        static::dispatch($clientAccountId, $queueTab)->afterResponse();
+    }
+
     public function handle(
         ShipHeroOrderQueueIndexService $index,
         OrderDashboardSnapshotService $snapshots

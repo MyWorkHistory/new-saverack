@@ -2,10 +2,12 @@
 
 namespace App\Services;
 
+use App\Jobs\PatchHomeDashboardAccountJob;
 use App\Models\ClientAccount;
 use App\Models\OrderDashboardSection;
 use App\Models\ShipHeroOrderQueueIndex;
 use Carbon\Carbon;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Log;
 use RuntimeException;
 use Throwable;
@@ -64,6 +66,47 @@ class ShipHeroOrderQueueIndexService
             ->where('client_account_id', $clientAccountId)
             ->where('queue_kind', strtolower(trim($tab)))
             ->exists();
+    }
+
+    public function dispatchAccountQueueSync(int $clientAccountId, string $tab): void
+    {
+        $tab = strtolower(trim($tab));
+        if ($clientAccountId <= 0 || ! $this->isQueueTab($tab)) {
+            return;
+        }
+
+        $lockKey = sprintf('order_queue_sync_dispatch:%d:%s', $clientAccountId, $tab);
+        if (Cache::has($lockKey)) {
+            return;
+        }
+
+        Cache::put($lockKey, 1, now()->addMinutes(2));
+        PatchHomeDashboardAccountJob::dispatchAfterHttp($clientAccountId, $tab);
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    public function emptyListPayload(ClientAccount $account, int $clientAccountId, bool $refreshPending = false): array
+    {
+        return [
+            'rows' => [],
+            'pagination' => [
+                'has_next_page' => false,
+                'end_cursor' => null,
+            ],
+            'meta' => [
+                'client_account_id' => $clientAccountId,
+                'from_index' => true,
+                'refresh_pending' => $refreshPending,
+                'order_queue_synced_at' => $account->order_queue_synced_at !== null
+                    ? $account->order_queue_synced_at->toIso8601String()
+                    : null,
+                'message' => $refreshPending
+                    ? 'Order index is syncing from ShipHero. Refresh again shortly.'
+                    : '',
+            ],
+        ];
     }
 
     /**

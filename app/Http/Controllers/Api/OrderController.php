@@ -4,7 +4,6 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Api\Concerns\HandlesOrderDrafts;
 use App\Http\Controllers\Controller;
-use App\Jobs\PatchHomeDashboardAccountJob;
 use App\Http\Requests\OrderCreateRequest;
 use App\Models\ClientAccount;
 use App\Models\User;
@@ -137,22 +136,34 @@ class OrderController extends Controller
             ]);
 
             if ($this->orderQueueIndex->isQueueTab($tab)) {
-                if ($refresh) {
-                    PatchHomeDashboardAccountJob::dispatch($clientAccountId, $tab);
+                if ($refresh || ! $this->orderQueueIndex->indexHasRows($clientAccountId, $tab)) {
+                    $this->orderQueueIndex->dispatchAccountQueueSync($clientAccountId, $tab);
                 }
-                if ($this->orderQueueIndex->shouldUseIndex($tab, false, $indexFilters) || $refresh) {
-                    if ($this->orderQueueIndex->indexHasRows($clientAccountId, $tab)) {
-                        $payload = $this->orderQueueIndex->listFromIndex($indexFilters);
-                        $customerId = $this->resolveShipHeroCustomerAccountId($clientAccountId, $request);
-                        $payload['meta'] = array_merge($payload['meta'] ?? [], [
-                            'client_account_id' => $clientAccountId,
-                            'shiphero_customer_account_id' => $customerId,
-                            'refresh_pending' => $refresh,
-                        ]);
 
-                        return response()->json($payload);
-                    }
+                $customerId = $this->resolveShipHeroCustomerAccountId($clientAccountId, $request);
+
+                if ($this->orderQueueIndex->indexHasRows($clientAccountId, $tab)) {
+                    $payload = $this->orderQueueIndex->listFromIndex($indexFilters);
+                    $payload['meta'] = array_merge($payload['meta'] ?? [], [
+                        'client_account_id' => $clientAccountId,
+                        'shiphero_customer_account_id' => $customerId,
+                        'refresh_pending' => $refresh,
+                    ]);
+
+                    return response()->json($payload);
                 }
+
+                $account = ClientAccount::query()->find($clientAccountId);
+                if ($account === null) {
+                    throw ValidationException::withMessages([
+                        'client_account_id' => ['Client account not found.'],
+                    ]);
+                }
+
+                $payload = $this->orderQueueIndex->emptyListPayload($account, $clientAccountId, true);
+                $payload['meta']['shiphero_customer_account_id'] = $customerId;
+
+                return response()->json($payload);
             }
 
             if (

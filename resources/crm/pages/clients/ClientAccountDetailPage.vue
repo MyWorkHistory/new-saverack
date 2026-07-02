@@ -122,6 +122,34 @@ const accountTabList = computed(() => {
   return tabs;
 });
 
+/** Stroke icon paths (24×24) for account detail tab buttons. */
+function accountTabIconPath(tabId) {
+  switch (tabId) {
+    case TAB_ACCOUNT_INFO:
+      return "M3 7.5A2.25 2.25 0 015.25 5.25h13.5A2.25 2.25 0 0121 7.5v9A2.25 2.25 0 0118.75 18.75H5.25A2.25 2.25 0 013 16.5v-9zM8.25 9.75h7.5M8.25 12.75h4.5";
+    case TAB_STORES:
+      return "M3 9.75L12 4.5l9 5.25M4.5 10.5v8.25A1.5 1.5 0 006 20.25h3.75M4.5 10.5h15M19.5 10.5v8.25a1.5 1.5 0 01-1.5 1.5H15M9 20.25h6M9 14.25h.008v.008H9v-.008zm3 0h.008v.008H12v-.008zm3 0h.008v.008H15v-.008z";
+    case TAB_FEES:
+      return "M12 6v12m-3-2.818.879.659c1.171.879 3.07.879 4.242 0 1.172-.879 1.172-2.303 0-3.182C13.536 12.219 12.768 12 12 12c-.725 0-1.45-.22-2.003-.659-1.106-.879-1.106-2.303 0-3.182s2.9-.879 4.006 0l.415.33M21 12a9 9 0 11-18 0 9 9 0 0118 0z";
+    case TAB_BILLING:
+      return "M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z";
+    case TAB_ORDERS:
+      return "M15.75 10.5V6a3.75 3.75 0 10-7.5 0v4.5m11.356-1.993l1.263 12c.07.665-.45 1.243-1.119 1.243H4.25a1.125 1.125 0 01-1.12-1.243l1.264-12A1.125 1.125 0 015.513 7.5h12.974c.576 0 1.059.435 1.119 1.007zM8.625 10.5a.375.375 0 11-.75 0 .375.375 0 01.75 0zm7.5 0a.375.375 0 11-.75 0 .375.375 0 01.75 0z";
+    case TAB_INVENTORY:
+      return "M20.25 7.5l-.625 10.632a2.25 2.25 0 01-2.247 2.118H6.622a2.25 2.25 0 01-2.247-2.118L3.75 7.5M10 11.25h4M3.375 7.5h17.25c.621 0 1.125-.504 1.125-1.125v-1.5c0-.621-.504-1.125-1.125-1.125H3.375c-.621 0-1.125.504-1.125 1.125v1.5c0 .621.504 1.125 1.125 1.125z";
+    case TAB_ASN:
+      return "M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5M16.5 12L12 16.5m0 0L7.5 12m4.5 4.5V3.75";
+    case TAB_ONBOARDING:
+      return "M9 12.75L11.25 15 15 9.75M21 12a9 9 0 11-18 0 9 9 0 0118 0z";
+    case TAB_HISTORY:
+      return "M12 6v6h4.5m4.5 0a9 9 0 11-18 0 9 9 0 0118 0z";
+    case TAB_SETTINGS:
+      return "M9.594 3.94c.09-.542.56-.94 1.11-.94h2.593c.55 0 1.02.398 1.11.94l.213 1.281c.063.374.313.686.645.87.074.04.147.083.22.127.325.196.72.257 1.075.124l1.217-.456a1.125 1.125 0 011.37.49l1.296 2.247a1.125 1.125 0 01-.26 1.431l-1.003.827c-.293.241-.438.613-.43.992a7.723 7.723 0 010 .255c-.008.378.137.75.43.991l1.004.827c.424.35.534.955.26 1.43l-1.298 2.247a1.125 1.125 0 01-1.369.491l-1.217-.456c-.355-.133-.75-.072-1.076.124a6.47 6.47 0 01-.22.128c-.331.183-.581.495-.644.869l-.213 1.281c-.09.543-.56.94-1.11.94h-2.594c-.55 0-1.019-.398-1.11-.94l-.213-1.281c-.062-.374-.312-.686-.644-.87a6.52 6.52 0 01-.22-.127c-.325-.196-.72-.257-1.076-.124l-1.217.456a1.125 1.125 0 01-1.369-.49l-1.297-2.247a1.125 1.125 0 01.26-1.431l1.004-.827c.292-.24.437-.613.43-.991a6.932 6.932 0 010-.255c.007-.378-.138-.75-.43-.992l-1.004-.827a1.125 1.125 0 01-.26-1.43l1.297-2.247a1.125 1.125 0 011.37-.491l1.216.456c.356.133.751.072 1.076-.124.072-.044.146-.086.22-.128.332-.183.582-.495.644-.869l.214-1.28z M15 12a3 3 0 11-6 0 3 3 0 016 0z";
+    default:
+      return "M4.5 6.75h15M4.5 12h15m-15 5.25h15";
+  }
+}
+
 const activeTab = ref(TAB_ACCOUNT_INFO);
 
 function tabFromRouteQuery(tab) {
@@ -1189,7 +1217,7 @@ onUnmounted(() => {
           v-for="t in accountTabList"
           :key="t.id"
           type="button"
-          class="btn btn-sm"
+          class="btn btn-sm account-detail-tab-btn"
           :class="
             activeTab === t.id
               ? 'btn-primary staff-page-primary'
@@ -1199,7 +1227,23 @@ onUnmounted(() => {
           :aria-selected="activeTab === t.id"
           @click="setActiveTab(t.id)"
         >
-          {{ t.label }}
+          <svg
+            class="account-detail-tab-btn__icon"
+            width="18"
+            height="18"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="1.75"
+            viewBox="0 0 24 24"
+            aria-hidden="true"
+          >
+            <path
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              :d="accountTabIconPath(t.id)"
+            />
+          </svg>
+          <span>{{ t.label }}</span>
         </button>
       </div>
     </div>
@@ -2462,5 +2506,16 @@ onUnmounted(() => {
 
 .staff-user-profile__stat-link:hover .staff-user-profile__stat-lbl {
   color: #2563eb;
+}
+
+.account-detail-tab-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  white-space: nowrap;
+}
+
+.account-detail-tab-btn__icon {
+  flex-shrink: 0;
 }
 </style>

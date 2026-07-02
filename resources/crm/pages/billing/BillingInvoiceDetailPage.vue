@@ -2332,22 +2332,21 @@ function onDocKeydown(e) {
             </svg>
             <span>Credit Charge</span>
           </button>
-        </div>
-        <div class="billing-inv-toolbar-actions ms-lg-auto" data-right-actions>
-          <button
-            type="button"
-            class="btn btn-outline-secondary btn-sm billing-inv-actions-gear d-inline-flex align-items-center gap-2"
-            :aria-expanded="rightActionsMenuOpen"
-            aria-label="Actions"
-            @click="toggleRightActionsMenu"
-          >
-            <svg width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" aria-hidden="true">
-              <path stroke-linecap="round" stroke-linejoin="round" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
-              <path stroke-linecap="round" stroke-linejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-            </svg>
-            <span>Actions</span>
-          </button>
-          <div v-if="rightActionsMenuOpen" class="staff-row-menu billing-inv-right-menu">
+          <div class="billing-inv-toolbar-actions" data-right-actions>
+            <button
+              type="button"
+              class="btn btn-outline-primary btn-sm billing-inv-icon-action"
+              :aria-expanded="rightActionsMenuOpen"
+              aria-label="Actions"
+              @click="toggleRightActionsMenu"
+            >
+              <svg width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" aria-hidden="true">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
+                <path stroke-linecap="round" stroke-linejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+              </svg>
+              <span>Actions</span>
+            </button>
+            <div v-if="rightActionsMenuOpen" class="staff-row-menu billing-inv-right-menu">
             <button
               v-if="canCreate"
               type="button"
@@ -2436,6 +2435,7 @@ function onDocKeydown(e) {
               Add CC Fee
             </button>
           </div>
+          </div>
         </div>
       </div>
 
@@ -2513,9 +2513,6 @@ function onDocKeydown(e) {
                     Invoice
                   </div>
                   <div class="d-flex flex-wrap align-items-center justify-content-lg-end gap-2 mb-3 billing-inv-number-row">
-                    <h1 class="h3 fw-bold text-body mb-0">
-                      {{ invoice.invoice_number }}
-                    </h1>
                     <button
                       v-if="canUpdateInvoiceStatus"
                       type="button"
@@ -2533,6 +2530,9 @@ function onDocKeydown(e) {
                     >
                       {{ statusDisplayText }}
                     </span>
+                    <h1 class="h3 fw-bold text-body mb-0">
+                      {{ invoice.invoice_number }}
+                    </h1>
                   </div>
                   <div class="small billing-inv-meta-list">
                     <div v-if="canEditInvoiceDates" class="mb-2 text-lg-end">
@@ -2543,14 +2543,14 @@ function onDocKeydown(e) {
                         <input
                           v-model="editBillingPeriodStart"
                           type="date"
-                          class="form-control form-control-sm billing-inv-date-input"
+                          class="form-control form-control-sm billing-inv-date-input billing-inv-date-input--compact"
                           :disabled="invoiceDatesSaving"
                         />
                         <span class="text-secondary billing-inv-date-sep" aria-hidden="true">–</span>
                         <input
                           v-model="editBillingPeriodEnd"
                           type="date"
-                          class="form-control form-control-sm billing-inv-date-input"
+                          class="form-control form-control-sm billing-inv-date-input billing-inv-date-input--compact"
                           :disabled="invoiceDatesSaving"
                         />
                       </div>
@@ -4141,8 +4141,25 @@ function onDocKeydown(e) {
   align-items: center;
   flex-shrink: 0;
 }
-.billing-inv-actions-gear {
-  white-space: nowrap;
+.billing-inv-date-range {
+  gap: 0.25rem;
+  max-width: 100%;
+  flex-wrap: nowrap;
+}
+.billing-inv-date-input {
+  flex: 0 0 auto;
+  width: 10.25rem;
+  min-width: 0;
+  max-width: 100%;
+}
+.billing-inv-date-input--compact {
+  width: 7.75rem;
+  max-width: calc(50% - 0.5rem);
+}
+.billing-inv-date-sep {
+  flex: 0 0 auto;
+  line-height: 1;
+  padding: 0 0.1rem;
 }
 .billing-inv-right-menu {
   position: absolute;
@@ -4475,21 +4492,6 @@ function onDocKeydown(e) {
 }
 .billing-inv-client-link:hover {
   text-decoration: underline !important;
-}
-.billing-inv-date-range {
-  gap: 0.35rem;
-  max-width: 100%;
-}
-.billing-inv-date-input {
-  flex: 0 0 auto;
-  width: 10.25rem;
-  min-width: 0;
-  max-width: 100%;
-}
-.billing-inv-date-sep {
-  flex: 0 0 auto;
-  line-height: 1;
-  padding: 0 0.1rem;
 }
 .billing-inv-service-period-readonly {
   opacity: 0.92;

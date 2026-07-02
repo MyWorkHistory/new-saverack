@@ -74,6 +74,8 @@ class RolePermissionSeeder extends Seeder
             ['key' => 'billing.delete', 'label' => 'Delete draft invoices', 'module' => 'billing'],
             ['key' => 'inventory.view', 'label' => 'View inventory', 'module' => 'inventory'],
             ['key' => 'inventory.update', 'label' => 'Update inventory quantities', 'module' => 'inventory'],
+            ['key' => 'receiving.view', 'label' => 'View receiving', 'module' => 'receiving'],
+            ['key' => 'receiving.update', 'label' => 'Update receiving', 'module' => 'receiving'],
             ['key' => 'orders.view', 'label' => 'View orders', 'module' => 'orders'],
             ['key' => 'orders.update', 'label' => 'Update orders', 'module' => 'orders'],
             ['key' => 'settings.view', 'label' => 'View settings', 'module' => 'settings'],
@@ -106,17 +108,13 @@ class RolePermissionSeeder extends Seeder
         $client->permissions()->sync([]);
 
         $admin->permissions()->sync($permissions->pluck('id'));
-        // Staff: dashboard + clients + view stores; other module access via direct user permissions.
+        // Staff: dashboard + clients + view stores; orders/inventory/receiving via direct user permissions.
         $staff->permissions()->sync(
             $permissions->whereIn('key', [
                 'dashboard.view',
                 'clients.view',
                 'client_users.view',
                 'stores.view',
-                'inventory.view',
-                'inventory.update',
-                'orders.view',
-                'orders.update',
             ])->pluck('id')
         );
 

@@ -111,28 +111,63 @@ class AuthServiceProvider extends ServiceProvider
             return in_array('orders.update', $user->allPermissionKeys(), true);
         });
 
+        Gate::define('receiving.view', function ($user) {
+            if (! $user) {
+                return false;
+            }
+            if ($user->isAdministrator() || $user->isCrmOwner()) {
+                return true;
+            }
+
+            return in_array('receiving.view', $user->allPermissionKeys(), true);
+        });
+
+        Gate::define('receiving.update', function ($user) {
+            if (! $user) {
+                return false;
+            }
+            if ($user->isAdministrator() || $user->isCrmOwner()) {
+                return true;
+            }
+
+            return in_array('receiving.update', $user->allPermissionKeys(), true);
+        });
+
+        Gate::define('crm.client-account-options', function ($user) {
+            if (! $user) {
+                return false;
+            }
+            if ($user->isAdministrator() || $user->isCrmOwner()) {
+                return true;
+            }
+            if ((int) ($user->client_account_id ?? 0) > 0) {
+                return true;
+            }
+
+            $keys = $user->allPermissionKeys();
+            foreach (['inventory.view', 'orders.view', 'receiving.view', 'clients.view', 'billing.view'] as $perm) {
+                if (in_array($perm, $keys, true)) {
+                    return true;
+                }
+            }
+
+            return false;
+        });
+
         /**
-         * ShipHero order mutations: gated by explicit orders.update for CRM users.
-         * Keep inventory.update as temporary fallback for backwards compatibility.
+         * ShipHero order mutations: requires explicit orders.update for CRM staff.
          */
         Gate::define('shiphero.orders.write', function ($user) {
             if (! $user) {
                 return false;
             }
 
-            if (Gate::forUser($user)->allows('orders.update')
-                || Gate::forUser($user)->allows('inventory.update')) {
+            if (Gate::forUser($user)->allows('orders.update')) {
                 return true;
             }
 
             // Portal users: manage orders for their client account (controllers enforce scope).
-            if ((int) ($user->client_account_id ?? 0) > 0) {
-                return true;
-            }
-
-            // Staff CRM users with orders.view may mutate orders in admin UI.
-            return $user->client_account_id === null
-                && Gate::forUser($user)->allows('orders.view');
+            return (int) ($user->client_account_id ?? 0) > 0;
         });
     }
 }

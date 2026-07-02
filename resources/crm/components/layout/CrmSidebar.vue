@@ -48,6 +48,14 @@ const canViewInventory = computed(() => {
   return k.includes("inventory.view");
 });
 
+const canViewReceiving = computed(() => {
+  if (isPortal.value) return false;
+  if (crmIsAdmin(props.user) || props.user?.is_crm_owner) return true;
+  const k = props.user?.permission_keys;
+  if (!Array.isArray(k)) return false;
+  return k.includes("receiving.view");
+});
+
 const canViewOrders = computed(() => {
   if (isPortal.value) return true;
   if (crmIsAdmin(props.user) || props.user?.is_crm_owner) return true;
@@ -353,7 +361,7 @@ function collapseNav() {
             </svg>
           </RouterLink>
         </li>
-        <li v-if="!isPortal && canViewInventory">
+        <li v-if="!isPortal && canViewReceiving">
           <template v-if="isExpanded">
             <div>
               <button

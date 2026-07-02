@@ -119,7 +119,7 @@ const canManageReceivingFees = computed(() => {
   if (!u) return false;
   if (Number(u.client_account_id ?? 0) > 0) return false;
   if (crmIsAdmin(u) || u.is_crm_owner) return true;
-  return Array.isArray(u.permission_keys) && u.permission_keys.includes("inventory.view");
+  return Array.isArray(u.permission_keys) && u.permission_keys.includes("receiving.update");
 });
 
 const feesModalOpen = ref(false);

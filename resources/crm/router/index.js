@@ -743,6 +743,9 @@ let ordersNavCache = null;
 /** Inventory (ShipHero): permissions from /auth/me (see setInventoryNavFromUser). */
 let inventoryNavCache = null;
 
+/** Receiving (ASN / put-away): permissions from /auth/me (see setReceivingNavFromUser). */
+let receivingNavCache = null;
+
 /** True when the signed-in CRM user is an administrator (`crmIsAdmin`); used for permissions routes only. */
 let usersMeIsAdmin = false;
 let authUserCache = null;
@@ -755,6 +758,7 @@ export function clearCrmOwnerCache() {
   billingNavCache = null;
   ordersNavCache = null;
   inventoryNavCache = null;
+  receivingNavCache = null;
   usersMeIsAdmin = false;
   authUserCache = null;
 }
@@ -887,6 +891,26 @@ export function setInventoryNavFromUser(user) {
   };
 }
 
+export function setReceivingNavFromUser(user) {
+  if (!user) {
+    receivingNavCache = null;
+    return;
+  }
+  if (crmIsAdmin(user) || user.is_crm_owner) {
+    receivingNavCache = { view: true, update: true };
+    return;
+  }
+  if (crmIsPortalUser(user)) {
+    receivingNavCache = { view: false, update: false };
+    return;
+  }
+  const k = Array.isArray(user.permission_keys) ? user.permission_keys : [];
+  receivingNavCache = {
+    view: k.includes("receiving.view"),
+    update: k.includes("receiving.update"),
+  };
+}
+
 async function ensureAuthUser() {
   if (authUserCache) return authUserCache;
   const { data } = await api.get("/auth/me");
@@ -898,6 +922,7 @@ async function ensureAuthUser() {
   setBillingNavFromUser(data);
   setOrdersNavFromUser(data);
   setInventoryNavFromUser(data);
+  setReceivingNavFromUser(data);
   return data;
 }
 
@@ -912,6 +937,7 @@ async function ensureClientsRouteAccess(path) {
       setBillingNavFromUser(data);
       setOrdersNavFromUser(data);
       setInventoryNavFromUser(data);
+      setReceivingNavFromUser(data);
     } catch (e) {
       if (e.response?.status === 401) {
         localStorage.removeItem("auth_token");
@@ -940,6 +966,7 @@ async function ensureUsersRouteAccess(path) {
       setBillingNavFromUser(data);
       setOrdersNavFromUser(data);
       setInventoryNavFromUser(data);
+      setReceivingNavFromUser(data);
     } catch (e) {
       if (e.response?.status === 401) {
         localStorage.removeItem("auth_token");
@@ -1010,6 +1037,7 @@ async function ensureSettingsRouteAccess() {
     setBillingNavFromUser(data);
     setOrdersNavFromUser(data);
     setInventoryNavFromUser(data);
+    setReceivingNavFromUser(data);
     const ok = userCanSettings(data);
     settingsNavCache = ok;
     return ok;
@@ -1036,6 +1064,7 @@ async function ensureWebmasterRouteAccess() {
     setBillingNavFromUser(data);
     setOrdersNavFromUser(data);
     setInventoryNavFromUser(data);
+    setReceivingNavFromUser(data);
     const ok = userCanWebmaster(data);
     webmasterNavCache = ok;
     return ok;
@@ -1061,6 +1090,7 @@ async function ensureBillingRouteAccess(path) {
       setBillingNavFromUser(data);
       setOrdersNavFromUser(data);
       setInventoryNavFromUser(data);
+      setReceivingNavFromUser(data);
     } catch (e) {
       if (e.response?.status === 401) {
         localStorage.removeItem("auth_token");
@@ -1087,6 +1117,7 @@ async function ensureInventoryRouteAccess(path) {
       setBillingNavFromUser(data);
       setOrdersNavFromUser(data);
       setInventoryNavFromUser(data);
+      setReceivingNavFromUser(data);
     } catch (e) {
       if (e.response?.status === 401) {
         localStorage.removeItem("auth_token");
@@ -1101,7 +1132,6 @@ async function ensureInventoryRouteAccess(path) {
     path.startsWith("/admin/inventory/") ||
     path === "/admin/inventory-beta" ||
     path.startsWith("/admin/inventory-beta/") ||
-    path.startsWith("/admin/receiving/") ||
     path.startsWith("/admin/returns/") ||
     path === "/users/inventory" ||
     path.startsWith("/users/inventory/") ||
@@ -1110,11 +1140,35 @@ async function ensureInventoryRouteAccess(path) {
     path === "/users/asn" ||
     path.startsWith("/users/asn/") ||
     path === "/users/dashboard" ||
-    path.startsWith("/users/dashboard/") ||
-    path === "/users/orders" ||
-    path.startsWith("/users/orders/")
+    path.startsWith("/users/dashboard/")
   ) {
     return inventoryNavCache.view === true;
+  }
+  return true;
+}
+
+async function ensureReceivingRouteAccess(path) {
+  if (receivingNavCache === null) {
+    try {
+      const { data } = await api.get("/auth/me");
+      setUsersNavFromUser(data);
+      setClientsNavFromUser(data);
+      setWebmasterNavFromUser(data);
+      setSettingsNavFromUser(data);
+      setBillingNavFromUser(data);
+      setOrdersNavFromUser(data);
+      setInventoryNavFromUser(data);
+      setReceivingNavFromUser(data);
+    } catch (e) {
+      if (e.response?.status === 401) {
+        localStorage.removeItem("auth_token");
+        receivingNavCache = null;
+      }
+      return false;
+    }
+  }
+  if (path.startsWith("/admin/receiving")) {
+    return receivingNavCache.view === true;
   }
   return true;
 }
@@ -1130,6 +1184,7 @@ async function ensureOrdersRouteAccess(path) {
       setBillingNavFromUser(data);
       setOrdersNavFromUser(data);
       setInventoryNavFromUser(data);
+      setReceivingNavFromUser(data);
     } catch (e) {
       if (e.response?.status === 401) {
         localStorage.removeItem("auth_token");
@@ -1141,7 +1196,7 @@ async function ensureOrdersRouteAccess(path) {
   if (path === "/admin/orders/create") {
     return ordersNavCache.update === true;
   }
-  if (path.startsWith("/admin/orders")) {
+  if (path.startsWith("/admin/orders") || path.startsWith("/users/orders")) {
     return ordersNavCache.view === true;
   }
   return true;
@@ -1255,8 +1310,18 @@ router.beforeEach(async (to) => {
     }
   }
 
-  if (to.path.startsWith("/admin/orders")) {
+  if (to.path.startsWith("/admin/orders") || to.path.startsWith("/users/orders")) {
     const ok = await ensureOrdersRouteAccess(to.path);
+    if (!ok) {
+      if (!localStorage.getItem("auth_token")) {
+        return { name: "login", query: { redirect: to.fullPath } };
+      }
+      return { path: crmIsPortalUser(me) ? "/users/dashboard" : "/admin/home" };
+    }
+  }
+
+  if (to.path.startsWith("/admin/receiving")) {
+    const ok = await ensureReceivingRouteAccess(to.path);
     if (!ok) {
       if (!localStorage.getItem("auth_token")) {
         return { name: "login", query: { redirect: to.fullPath } };
@@ -1267,7 +1332,6 @@ router.beforeEach(async (to) => {
 
   if (
     to.path.startsWith("/admin/inventory") ||
-    to.path.startsWith("/admin/receiving") ||
     to.path.startsWith("/admin/returns") ||
     to.path.startsWith("/users/inventory") ||
     to.path.startsWith("/users/inventory-beta") ||
@@ -1282,17 +1346,13 @@ router.beforeEach(async (to) => {
     }
   }
 
-  if (
-    to.path.startsWith("/users/orders") ||
-    to.path === "/users/dashboard" ||
-    to.path.startsWith("/users/asn")
-  ) {
+  if (to.path === "/users/dashboard" || to.path.startsWith("/users/dashboard/")) {
     const ok = await ensureInventoryRouteAccess(to.path);
     if (!ok) {
       if (!localStorage.getItem("auth_token")) {
         return { name: "login", query: { redirect: to.fullPath } };
       }
-      return { path: crmIsPortalUser(me) ? "/users/dashboard" : "/admin/home" };
+      return { path: "/users/dashboard" };
     }
   }
 

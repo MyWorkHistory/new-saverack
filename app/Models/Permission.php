@@ -72,6 +72,8 @@ class Permission extends Model
             'billing.delete' => ['label' => 'Delete draft invoices', 'module' => 'billing'],
             'inventory.view' => ['label' => 'View inventory', 'module' => 'inventory'],
             'inventory.update' => ['label' => 'Update inventory quantities', 'module' => 'inventory'],
+            'receiving.view' => ['label' => 'View receiving', 'module' => 'receiving'],
+            'receiving.update' => ['label' => 'Update receiving', 'module' => 'receiving'],
             'orders.view' => ['label' => 'View orders', 'module' => 'orders'],
             'orders.update' => ['label' => 'Update orders', 'module' => 'orders'],
             'settings.view' => ['label' => 'View settings', 'module' => 'settings'],

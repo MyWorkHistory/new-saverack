@@ -114,7 +114,7 @@ Route::middleware('auth:sanctum')->group(function () {
 
     Route::prefix('inventory')->group(function () {
         Route::get('/client-account-options', [InventoryController::class, 'clientAccountOptions'])
-            ->middleware('can:inventory.view');
+            ->middleware('can:crm.client-account-options');
         Route::get('/adjustment-reasons', [InventoryController::class, 'adjustmentReasons'])
             ->middleware('can:inventory.view');
         Route::get('/warehouses', [InventoryController::class, 'warehouses'])
@@ -228,29 +228,29 @@ Route::middleware('auth:sanctum')->group(function () {
     });
 
     Route::prefix('admin/asns')->group(function () {
-        Route::get('/summary', [AdminAsnController::class, 'summary'])->middleware('can:inventory.view');
-        Route::get('/', [AdminAsnController::class, 'index'])->middleware('can:inventory.view');
-        Route::post('/non-compliant', [AdminAsnController::class, 'storeNonCompliant'])->middleware('can:inventory.view');
-        Route::get('/{asn}/product-catalog', [AsnController::class, 'productCatalog'])->middleware('can:inventory.view');
-        Route::post('/{asn}/catalog-products', [AsnController::class, 'storeCatalogProduct'])->middleware('can:inventory.view');
-        Route::get('/{asn}', [AdminAsnController::class, 'show'])->middleware('can:inventory.view');
-        Route::patch('/{asn}/status', [AdminAsnController::class, 'updateStatus'])->middleware('can:inventory.view');
-        Route::post('/{asn}/enrich-specs', [AdminAsnController::class, 'enrichSpecs'])->middleware('can:inventory.view');
-        Route::post('/{asn}/scan-barcodes', [AdminAsnController::class, 'scanBarcodes'])->middleware('can:inventory.view');
-        Route::get('/{asn}/lines/{line}/receiving-on-hand', [AdminAsnController::class, 'receivingOnHand'])->middleware('can:inventory.view');
-        Route::post('/{asn}/lines/{line}/receive', [AdminAsnController::class, 'receiveLine'])->middleware('can:inventory.view');
-        Route::post('/{asn}/lines/{line}/receive-override', [AdminAsnController::class, 'receiveOverride'])->middleware('can:inventory.view');
-        Route::post('/{asn}/lines/{line}/reject-override', [AdminAsnController::class, 'rejectOverride'])->middleware('can:inventory.view');
-        Route::patch('/{asn}/lines/{line}/specs', [AdminAsnController::class, 'updateLineSpecs'])->middleware('can:inventory.view');
-        Route::post('/{asn}/bill-items', [AdminAsnController::class, 'storeBillItem'])->middleware('can:inventory.view');
-        Route::put('/{asn}/bill-items/{item}', [AdminAsnController::class, 'updateBillItem'])->middleware('can:inventory.view');
-        Route::delete('/{asn}/bill-items/{item}', [AdminAsnController::class, 'destroyBillItem'])->middleware('can:inventory.view');
+        Route::get('/summary', [AdminAsnController::class, 'summary'])->middleware('can:receiving.view');
+        Route::get('/', [AdminAsnController::class, 'index'])->middleware('can:receiving.view');
+        Route::post('/non-compliant', [AdminAsnController::class, 'storeNonCompliant'])->middleware('can:receiving.update');
+        Route::get('/{asn}/product-catalog', [AsnController::class, 'productCatalog'])->middleware('can:receiving.view');
+        Route::post('/{asn}/catalog-products', [AsnController::class, 'storeCatalogProduct'])->middleware('can:receiving.update');
+        Route::get('/{asn}', [AdminAsnController::class, 'show'])->middleware('can:receiving.view');
+        Route::patch('/{asn}/status', [AdminAsnController::class, 'updateStatus'])->middleware('can:receiving.update');
+        Route::post('/{asn}/enrich-specs', [AdminAsnController::class, 'enrichSpecs'])->middleware('can:receiving.update');
+        Route::post('/{asn}/scan-barcodes', [AdminAsnController::class, 'scanBarcodes'])->middleware('can:receiving.update');
+        Route::get('/{asn}/lines/{line}/receiving-on-hand', [AdminAsnController::class, 'receivingOnHand'])->middleware('can:receiving.view');
+        Route::post('/{asn}/lines/{line}/receive', [AdminAsnController::class, 'receiveLine'])->middleware('can:receiving.update');
+        Route::post('/{asn}/lines/{line}/receive-override', [AdminAsnController::class, 'receiveOverride'])->middleware('can:receiving.update');
+        Route::post('/{asn}/lines/{line}/reject-override', [AdminAsnController::class, 'rejectOverride'])->middleware('can:receiving.update');
+        Route::patch('/{asn}/lines/{line}/specs', [AdminAsnController::class, 'updateLineSpecs'])->middleware('can:receiving.update');
+        Route::post('/{asn}/bill-items', [AdminAsnController::class, 'storeBillItem'])->middleware('can:receiving.update');
+        Route::put('/{asn}/bill-items/{item}', [AdminAsnController::class, 'updateBillItem'])->middleware('can:receiving.update');
+        Route::delete('/{asn}/bill-items/{item}', [AdminAsnController::class, 'destroyBillItem'])->middleware('can:receiving.update');
     });
 
     Route::prefix('admin/put-away')->group(function () {
-        Route::get('/', [PutAwayController::class, 'index'])->middleware('can:inventory.view');
-        Route::get('/products/{sku}', [PutAwayController::class, 'show'])->middleware('can:inventory.view');
-        Route::post('/refresh', [PutAwayController::class, 'refresh'])->middleware('can:inventory.view');
+        Route::get('/', [PutAwayController::class, 'index'])->middleware('can:receiving.view');
+        Route::get('/products/{sku}', [PutAwayController::class, 'show'])->middleware('can:receiving.view');
+        Route::post('/refresh', [PutAwayController::class, 'refresh'])->middleware('can:receiving.update');
     });
 
     Route::prefix('asns')->group(function () {

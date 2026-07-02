@@ -27,6 +27,24 @@ const PAGE_META = {
     rowLabel: "Billing",
     order: 40,
   },
+  orders: {
+    moduleKey: "orders",
+    moduleLabel: "Orders",
+    rowLabel: "Orders",
+    order: 50,
+  },
+  inventory: {
+    moduleKey: "inventory",
+    moduleLabel: "Inventory",
+    rowLabel: "Inventory",
+    order: 60,
+  },
+  receiving: {
+    moduleKey: "receiving",
+    moduleLabel: "Receiving",
+    rowLabel: "Receiving",
+    order: 65,
+  },
 };
 
 const props = defineProps({

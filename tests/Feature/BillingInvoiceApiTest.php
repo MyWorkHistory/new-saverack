@@ -91,8 +91,11 @@ class BillingInvoiceApiTest extends TestCase
             ->assertJsonStructure([
                 'counts_by_status',
                 'open_balance_due_cents',
+                'processing_total_cents',
+                'past_due_balance_cents',
                 'overdue_invoice_count',
                 'draft_invoice_count',
+                'draft_total_cents',
                 'paid_mtd_cents',
             ]);
     }

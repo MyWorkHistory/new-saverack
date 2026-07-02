@@ -90,9 +90,9 @@ const summaryCardColClass = computed(() =>
 const activeSummaryBucket = computed(() => {
   const status = String(query.status || "").toLowerCase();
   if (status === "open") return "open";
-  if (status === "past_due" || status === "overdue") return "overdue";
+  if (status === "processing") return "processing";
+  if (status === "past_due" || status === "overdue") return "past_due";
   if (status === "draft") return "draft";
-  if (status === "paid") return "paid";
   return "";
 });
 
@@ -103,8 +103,11 @@ const summaryLoading = ref(true);
 const summaryError = ref("");
 const summary = ref({
   open_balance_due_cents: 0,
+  processing_total_cents: 0,
+  past_due_balance_cents: 0,
   overdue_invoice_count: 0,
   draft_invoice_count: 0,
+  draft_total_cents: 0,
   paid_mtd_cents: 0,
   counts_by_status: {},
 });
@@ -401,8 +404,11 @@ async function loadSummary() {
     const { data } = await api.get("/billing/summary", { params });
     summary.value = {
       open_balance_due_cents: data?.open_balance_due_cents ?? 0,
+      processing_total_cents: data?.processing_total_cents ?? 0,
+      past_due_balance_cents: data?.past_due_balance_cents ?? 0,
       overdue_invoice_count: data?.overdue_invoice_count ?? 0,
       draft_invoice_count: data?.draft_invoice_count ?? 0,
+      draft_total_cents: data?.draft_total_cents ?? 0,
       paid_mtd_cents: data?.paid_mtd_cents ?? 0,
       counts_by_status: data?.counts_by_status ?? {},
     };
@@ -420,9 +426,9 @@ function setSummaryFilterBucket(bucket) {
   }
   filterMenuOpen.value = false;
   if (bucket === "open") query.status = "open";
-  else if (bucket === "overdue") query.status = "past_due";
+  else if (bucket === "processing") query.status = "processing";
+  else if (bucket === "past_due") query.status = "past_due";
   else if (bucket === "draft") query.status = "draft";
-  else if (bucket === "paid") query.status = "paid";
   else query.status = "all";
 }
 
@@ -1044,14 +1050,41 @@ onUnmounted(() => {
         <button
           type="button"
           class="staff-stat-card billing-inv-summary-card h-100 text-start w-100"
-          :class="{ 'billing-invoices-summary-card--active': activeSummaryBucket === 'overdue' }"
-          @click="setSummaryFilterBucket('overdue')"
+          :class="{ 'billing-invoices-summary-card--active': activeSummaryBucket === 'processing' }"
+          @click="setSummaryFilterBucket('processing')"
         >
-          <p class="staff-stat-card__label">Overdue Invoices</p>
+          <p class="staff-stat-card__label">Processing</p>
           <p class="staff-stat-card__value">
-            {{ nf.format(summary.overdue_invoice_count) }}
+            {{ formatCents(summary.processing_total_cents) }}
           </p>
-          <p class="staff-stat-card__sub">Past due with balance</p>
+          <p class="staff-stat-card__sub">Payments in progress</p>
+          <div
+            class="staff-stat-card__icon bg-warning-subtle text-warning-emphasis"
+            aria-hidden="true"
+          >
+            <svg width="22" height="22" fill="currentColor" viewBox="0 0 24 24">
+              <path
+                d="M12 4V1L8 5l4 4V6c3.31 0 6 2.69 6 6 0 1.01-.25 1.97-.7 2.8l1.46 1.46A7.93 7.93 0 0 0 20 12c0-4.42-3.58-8-8-8m0 14c-3.31 0-6-2.69-6-6 0-1.01.25-1.97.7-2.8L5.24 7.74A7.93 7.93 0 0 0 4 12c0 4.42 3.58 8 8 8v3l4-4-4-4z"
+              />
+            </svg>
+          </div>
+        </button>
+      </div>
+      <div :class="summaryCardColClass">
+        <button
+          type="button"
+          class="staff-stat-card billing-inv-summary-card h-100 text-start w-100"
+          :class="{ 'billing-invoices-summary-card--active': activeSummaryBucket === 'past_due' }"
+          @click="setSummaryFilterBucket('past_due')"
+        >
+          <p class="staff-stat-card__label">Past Due</p>
+          <p class="staff-stat-card__value">
+            {{ formatCents(summary.past_due_balance_cents) }}
+          </p>
+          <p class="staff-stat-card__sub">
+            {{ nf.format(summary.overdue_invoice_count) }}
+            {{ summary.overdue_invoice_count === 1 ? "invoice" : "invoices" }} past due
+          </p>
           <div
             class="staff-stat-card__icon bg-danger-subtle text-danger"
             aria-hidden="true"
@@ -1071,11 +1104,14 @@ onUnmounted(() => {
           :class="{ 'billing-invoices-summary-card--active': activeSummaryBucket === 'draft' }"
           @click="setSummaryFilterBucket('draft')"
         >
-          <p class="staff-stat-card__label">Draft Invoices</p>
+          <p class="staff-stat-card__label">Draft</p>
           <p class="staff-stat-card__value">
-            {{ nf.format(summary.draft_invoice_count) }}
+            {{ formatCents(summary.draft_total_cents) }}
           </p>
-          <p class="staff-stat-card__sub">Not yet sent</p>
+          <p class="staff-stat-card__sub">
+            {{ nf.format(summary.draft_invoice_count) }}
+            {{ summary.draft_invoice_count === 1 ? "invoice" : "invoices" }} not yet sent
+          </p>
           <div
             class="staff-stat-card__icon bg-secondary-subtle text-secondary"
             aria-hidden="true"
@@ -1084,28 +1120,6 @@ onUnmounted(() => {
               <path
                 d="M14 2H6c-1.1 0-1.99.9-1.99 2L4 20c0 1.1.89 2 1.99 2H18c1.1 0 2-.9 2-2V8l-6-6zm2 16H8v-2h8v2zm0-4H8v-2h8v2zm-3-5V3.5L18.5 9H13z"
               />
-            </svg>
-          </div>
-        </button>
-      </div>
-      <div :class="summaryCardColClass">
-        <button
-          type="button"
-          class="staff-stat-card billing-inv-summary-card h-100 text-start w-100"
-          :class="{ 'billing-invoices-summary-card--active': activeSummaryBucket === 'paid' }"
-          @click="setSummaryFilterBucket('paid')"
-        >
-          <p class="staff-stat-card__label">Paid (Month to Date)</p>
-          <p class="staff-stat-card__value">
-            {{ formatCents(summary.paid_mtd_cents) }}
-          </p>
-          <p class="staff-stat-card__sub">Recorded payments this month</p>
-          <div
-            class="staff-stat-card__icon bg-success-subtle text-success"
-            aria-hidden="true"
-          >
-            <svg width="22" height="22" fill="currentColor" viewBox="0 0 24 24">
-              <path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z" />
             </svg>
           </div>
         </button>

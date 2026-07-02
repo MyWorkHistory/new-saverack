@@ -2564,9 +2564,23 @@ class InvoiceService
             ->whereDate('due_at', '<=', InvoiceLifecycleStatus::latestDueDateNotPastDue()->toDateString())
             ->count();
 
+        $processingTotalCents = (int) (clone $base)
+            ->where('status', Invoice::STATUS_PROCESSING)
+            ->sum('total_cents');
+
+        $pastDueQuery = (clone $base);
+        $this->applyPastDueScope($pastDueQuery);
+        $pastDueBalanceCents = (int) $pastDueQuery->sum('balance_due_cents');
+
         $draftCount = $portalView
             ? 0
             : (int) (clone $base)->where('status', Invoice::STATUS_DRAFT)->count();
+
+        $draftTotalCents = $portalView
+            ? 0
+            : (int) (clone $base)
+                ->where('status', Invoice::STATUS_DRAFT)
+                ->sum('total_cents');
 
         $startMtd = now()->startOfMonth();
         $paidMtdCents = (int) (clone $base)
@@ -2586,8 +2600,11 @@ class InvoiceService
 
         return [
             'open_balance_due_cents' => $openBalance,
+            'processing_total_cents' => $processingTotalCents,
+            'past_due_balance_cents' => $pastDueBalanceCents,
             'overdue_invoice_count' => $overdueCount,
             'draft_invoice_count' => $draftCount,
+            'draft_total_cents' => $draftTotalCents,
             'paid_mtd_cents' => $paidMtdCents,
             'counts_by_status' => $countsByStatus,
         ];

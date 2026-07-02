@@ -117,6 +117,13 @@ class InvoiceService
 
         return DB::transaction(function () use ($invoice, $dates, $actor) {
             $fromStatus = $invoice->status;
+            $invoice->loadMissing('clientAccount');
+            if (array_key_exists('payment_terms', $dates)) {
+                $dates['payment_terms'] = ClientAccountBillingPreferences::invoicePaymentTermsOverride(
+                    $dates['payment_terms'],
+                    $invoice->clientAccount
+                );
+            }
             $invoice->fill($dates);
             $invoice->save();
 
@@ -1338,7 +1345,8 @@ class InvoiceService
                 $account
             ),
             'payment_terms_overridden' => ClientAccountBillingPreferences::invoicePaymentTermsOverridden(
-                $invoice->payment_terms
+                $invoice->payment_terms,
+                $account
             ),
             'po_number' => $invoice->po_number,
             'customer_notes' => $invoice->customer_notes,

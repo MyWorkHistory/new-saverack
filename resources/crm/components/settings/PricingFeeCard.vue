@@ -9,7 +9,7 @@ defineProps({
 </script>
 
 <template>
-  <article class="card h-100 staff-surface border-0 shadow-sm">
+  <article class="card h-100 settings-pricing-card border">
     <div class="card-body d-flex flex-column">
       <div class="d-flex align-items-start gap-3 mb-2">
         <div
@@ -120,6 +120,12 @@ defineProps({
 </template>
 
 <style scoped>
+.settings-pricing-card {
+  background: #fff;
+  border-color: #e8e7ed !important;
+  box-shadow: none;
+}
+
 .settings-pricing-card__icon-wrap {
   width: 48px;
   height: 48px;

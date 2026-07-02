@@ -26,7 +26,7 @@ function onKeydown(e) {
 
 <template>
   <article
-    class="pricing-fee-row staff-surface"
+    class="pricing-fee-row"
     :class="{ 'pricing-fee-row--clickable': clickable }"
     :role="clickable ? 'button' : undefined"
     :tabindex="clickable ? 0 : undefined"
@@ -148,21 +148,19 @@ function onKeydown(e) {
   align-items: flex-start;
   gap: 1rem;
   padding: 1rem 1.125rem;
-  border: 1px solid var(--bs-border-color);
+  border: 1px solid #e8e7ed;
   border-radius: 0.5rem;
-  background: var(--bs-body-bg, #fff);
+  background: #fff;
+  box-shadow: none;
 }
 
 .pricing-fee-row--clickable {
   cursor: pointer;
-  transition:
-    border-color 0.15s ease,
-    box-shadow 0.15s ease;
+  transition: border-color 0.15s ease;
 }
 
 .pricing-fee-row--clickable:hover {
-  border-color: rgba(115, 103, 240, 0.35);
-  box-shadow: 0 0.25rem 0.75rem rgba(47, 43, 61, 0.08);
+  border-color: #d8d6de;
 }
 
 .pricing-fee-row--clickable:focus-visible {

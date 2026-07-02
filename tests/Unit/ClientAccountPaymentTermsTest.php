@@ -72,7 +72,19 @@ class ClientAccountPaymentTermsTest extends TestCase
             'Net 5',
             ClientAccountBillingPreferences::effectivePaymentTerms(null, $account)
         );
-        $this->assertTrue(ClientAccountBillingPreferences::invoicePaymentTermsOverridden('Net 30'));
-        $this->assertFalse(ClientAccountBillingPreferences::invoicePaymentTermsOverridden(null));
+        $this->assertTrue(ClientAccountBillingPreferences::invoicePaymentTermsOverridden('Net 30', $account));
+        $this->assertFalse(ClientAccountBillingPreferences::invoicePaymentTermsOverridden(null, $account));
+    }
+
+    public function test_stale_net_one_on_invoice_defers_to_account_terms(): void
+    {
+        $account = new ClientAccount(['payment_terms_days' => 14]);
+
+        $this->assertSame(
+            'Net 14',
+            ClientAccountBillingPreferences::effectivePaymentTerms('Net 1', $account)
+        );
+        $this->assertFalse(ClientAccountBillingPreferences::invoicePaymentTermsOverridden('Net 1', $account));
+        $this->assertNull(ClientAccountBillingPreferences::invoicePaymentTermsOverride('Net 1', $account));
     }
 }

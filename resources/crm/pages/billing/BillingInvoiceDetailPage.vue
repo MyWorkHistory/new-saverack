@@ -835,9 +835,7 @@ function syncEditFromInvoice() {
   const inv = invoice.value;
   editPaymentType.value = String(inv?.client_account_default_payment_type || "").trim();
   const accountTermsLabel = String(inv?.client_account_payment_terms_label || "").trim();
-  const invoiceTermsOverride = String(inv?.payment_terms || "").trim();
-  editPaymentTerms.value =
-    invoiceTermsOverride !== "" ? invoiceTermsOverride : accountTermsLabel;
+  editPaymentTerms.value = String(inv?.effective_payment_terms || accountTermsLabel || "").trim();
   if (!inv) {
     editDueAt.value = "";
     editBillingPeriodStart.value = "";

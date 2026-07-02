@@ -148,11 +148,39 @@ final class ClientAccountBillingPreferences
         return self::paymentTermsLabel($account->payment_terms_days);
     }
 
-    public static function effectivePaymentTerms(?string $invoiceTerms, ?ClientAccount $account): string
+    /**
+     * Invoice-specific payment terms when set; null when the invoice should inherit account defaults.
+     */
+    public static function invoicePaymentTermsOverride(?string $invoiceTerms, ?ClientAccount $account): ?string
     {
         $trimmed = is_string($invoiceTerms) ? trim($invoiceTerms) : '';
-        if ($trimmed !== '') {
-            return $trimmed;
+        if ($trimmed === '') {
+            return null;
+        }
+
+        $accountLabel = $account !== null
+            ? self::paymentTermsLabelForAccount($account)
+            : self::paymentTermsLabel(self::DEFAULT_PAYMENT_TERMS_DAYS);
+
+        if (strcasecmp($trimmed, $accountLabel) === 0) {
+            return null;
+        }
+
+        $legacyDefault = self::paymentTermsLabel(self::DEFAULT_PAYMENT_TERMS_DAYS);
+        if ($account !== null
+            && strcasecmp($trimmed, $legacyDefault) === 0
+            && self::normalizePaymentTermsDays($account->payment_terms_days) !== self::DEFAULT_PAYMENT_TERMS_DAYS) {
+            return null;
+        }
+
+        return $trimmed;
+    }
+
+    public static function effectivePaymentTerms(?string $invoiceTerms, ?ClientAccount $account): string
+    {
+        $override = self::invoicePaymentTermsOverride($invoiceTerms, $account);
+        if ($override !== null) {
+            return $override;
         }
         if ($account !== null) {
             return self::paymentTermsLabelForAccount($account);
@@ -161,8 +189,8 @@ final class ClientAccountBillingPreferences
         return self::paymentTermsLabel(self::DEFAULT_PAYMENT_TERMS_DAYS);
     }
 
-    public static function invoicePaymentTermsOverridden(?string $invoiceTerms): bool
+    public static function invoicePaymentTermsOverridden(?string $invoiceTerms, ?ClientAccount $account = null): bool
     {
-        return is_string($invoiceTerms) && trim($invoiceTerms) !== '';
+        return self::invoicePaymentTermsOverride($invoiceTerms, $account) !== null;
     }
 }

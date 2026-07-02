@@ -84,8 +84,17 @@ const filterStatuses = computed(() => {
 });
 
 const summaryCardColClass = computed(() =>
-  props.portalMode ? "col-12 col-sm-6" : "col-12 col-sm-6 col-xl-3",
+  props.portalMode ? "col-12 col-sm-6 col-xl-4" : "col-12 col-sm-6 col-xl-3",
 );
+
+const activeSummaryBucket = computed(() => {
+  const status = String(query.status || "").toLowerCase();
+  if (status === "open") return "open";
+  if (status === "past_due" || status === "overdue") return "overdue";
+  if (status === "draft") return "draft";
+  if (status === "paid") return "paid";
+  return "";
+});
 
 const publicViewBusyId = ref(null);
 
@@ -94,6 +103,7 @@ const summaryLoading = ref(true);
 const summaryError = ref("");
 const summary = ref({
   open_balance_due_cents: 0,
+  overdue_invoice_count: 0,
   draft_invoice_count: 0,
   paid_mtd_cents: 0,
   counts_by_status: {},
@@ -391,6 +401,7 @@ async function loadSummary() {
     const { data } = await api.get("/billing/summary", { params });
     summary.value = {
       open_balance_due_cents: data?.open_balance_due_cents ?? 0,
+      overdue_invoice_count: data?.overdue_invoice_count ?? 0,
       draft_invoice_count: data?.draft_invoice_count ?? 0,
       paid_mtd_cents: data?.paid_mtd_cents ?? 0,
       counts_by_status: data?.counts_by_status ?? {},
@@ -407,7 +418,9 @@ function setSummaryFilterBucket(bucket) {
   if (bucket === "draft" && props.portalMode) {
     return;
   }
+  filterMenuOpen.value = false;
   if (bucket === "open") query.status = "open";
+  else if (bucket === "overdue") query.status = "past_due";
   else if (bucket === "draft") query.status = "draft";
   else if (bucket === "paid") query.status = "paid";
   else query.status = "all";
@@ -1014,6 +1027,7 @@ onUnmounted(() => {
         <button
           type="button"
           class="staff-stat-card billing-inv-summary-card h-100 text-start w-100"
+          :class="{ 'billing-invoices-summary-card--active': activeSummaryBucket === 'open' }"
           @click="setSummaryFilterBucket('open')"
         >
           <p class="staff-stat-card__label">Open Balance Due</p>
@@ -1026,10 +1040,35 @@ onUnmounted(() => {
           </div>
         </button>
       </div>
-      <div v-if="!portalMode" class="col-12 col-sm-6 col-xl-3">
+      <div :class="summaryCardColClass">
         <button
           type="button"
           class="staff-stat-card billing-inv-summary-card h-100 text-start w-100"
+          :class="{ 'billing-invoices-summary-card--active': activeSummaryBucket === 'overdue' }"
+          @click="setSummaryFilterBucket('overdue')"
+        >
+          <p class="staff-stat-card__label">Overdue Invoices</p>
+          <p class="staff-stat-card__value">
+            {{ nf.format(summary.overdue_invoice_count) }}
+          </p>
+          <p class="staff-stat-card__sub">Past due with balance</p>
+          <div
+            class="staff-stat-card__icon bg-danger-subtle text-danger"
+            aria-hidden="true"
+          >
+            <svg width="22" height="22" fill="currentColor" viewBox="0 0 24 24">
+              <path
+                d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2m1 15h-2v-2h2zm0-4h-2V7h2z"
+              />
+            </svg>
+          </div>
+        </button>
+      </div>
+      <div v-if="!portalMode" :class="summaryCardColClass">
+        <button
+          type="button"
+          class="staff-stat-card billing-inv-summary-card h-100 text-start w-100"
+          :class="{ 'billing-invoices-summary-card--active': activeSummaryBucket === 'draft' }"
           @click="setSummaryFilterBucket('draft')"
         >
           <p class="staff-stat-card__label">Draft Invoices</p>
@@ -1053,6 +1092,7 @@ onUnmounted(() => {
         <button
           type="button"
           class="staff-stat-card billing-inv-summary-card h-100 text-start w-100"
+          :class="{ 'billing-invoices-summary-card--active': activeSummaryBucket === 'paid' }"
           @click="setSummaryFilterBucket('paid')"
         >
           <p class="staff-stat-card__label">Paid (Month to Date)</p>
@@ -1876,4 +1916,16 @@ onUnmounted(() => {
     />
   </div>
 </template>
+
+<style scoped>
+button.billing-inv-summary-card.billing-invoices-summary-card--active {
+  border-color: var(--bs-primary);
+  box-shadow: 0 0 0 1px var(--bs-primary);
+}
+
+[data-bs-theme="dark"] button.billing-inv-summary-card.billing-invoices-summary-card--active {
+  border-color: var(--bs-primary);
+  box-shadow: 0 0 0 1px var(--bs-primary);
+}
+</style>
 

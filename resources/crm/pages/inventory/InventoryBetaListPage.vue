@@ -834,9 +834,6 @@ onUnmounted(() => {
     >
       <div class="min-w-0 flex-grow-1">
         <h1 class="h4 mb-1 fw-bold text-body">Products</h1>
-        <p class="text-secondary small mb-0">
-          Search by SKU, barcode, or product name.
-        </p>
       </div>
       <div class="d-flex align-items-center gap-2 flex-shrink-0 ms-md-auto flex-wrap justify-content-md-end w-100 w-md-auto">
         <p v-if="catalogSyncedLabel && accountId > 0 && !crossAccountMode" class="small text-secondary mb-0">

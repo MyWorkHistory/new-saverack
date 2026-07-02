@@ -89,6 +89,14 @@ class ClientAccountStoreRequest extends FormRequest
             $this->merge(['account_manager_id' => null]);
         }
 
+        if (! $this->filled('default_payment_type')) {
+            $this->merge(['default_payment_type' => 'Manual']);
+        }
+
+        if (! $this->filled('cc_fee_percent')) {
+            $this->merge(['cc_fee_percent' => 3.5]);
+        }
+
         if ($this->exists('in_house_slack')) {
             $raw = $this->input('in_house_slack');
             if ($raw === null || $raw === '') {

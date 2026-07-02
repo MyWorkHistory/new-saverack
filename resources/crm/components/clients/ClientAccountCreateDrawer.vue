@@ -18,15 +18,15 @@ const toast = useToast();
 const saving = ref(false);
 const errorMsg = ref("");
 const showPortalPassword = ref(false);
-const paymentTypeOptions = ["ACH", "Wire", "Check", "Manual", "Credit Card", "Paypal", "Varies"];
+
+const DEFAULT_PAYMENT_TYPE = "Manual";
+const DEFAULT_CC_FEE_PERCENT = "3.50";
 
 const form = reactive({
   company_name: "",
   full_name: "",
   email: "",
   phone: "",
-  default_payment_type: "",
-  cc_fee_percent: "3.50",
   password: "",
   password_confirmation: "",
 });
@@ -36,8 +36,6 @@ function reset() {
   form.full_name = "";
   form.email = "";
   form.phone = "";
-  form.default_payment_type = "";
-  form.cc_fee_percent = "3.50";
   form.password = "";
   form.password_confirmation = "";
   errorMsg.value = "";
@@ -59,6 +57,16 @@ function onBackdropClick() {
   if (!saving.value) close();
 }
 
+function generatePortalPassword() {
+  const chars = "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789!@#$%&*";
+  const bytes = new Uint8Array(14);
+  crypto.getRandomValues(bytes);
+  const password = Array.from(bytes, (b) => chars[b % chars.length]).join("");
+  form.password = password;
+  form.password_confirmation = password;
+  showPortalPassword.value = true;
+}
+
 async function onSubmit() {
   saving.value = true;
   errorMsg.value = "";
@@ -70,8 +78,8 @@ async function onSubmit() {
       email: form.email.trim(),
       phone: form.phone.trim() || null,
       notify_email: false,
-      default_payment_type: form.default_payment_type || null,
-      cc_fee_percent: form.cc_fee_percent || null,
+      default_payment_type: DEFAULT_PAYMENT_TYPE,
+      cc_fee_percent: DEFAULT_CC_FEE_PERCENT,
       password: rawPw,
       password_confirmation: (form.password_confirmation || "").trim(),
     };
@@ -207,39 +215,6 @@ async function onSubmit() {
                       class="h-10 w-full rounded-lg border border-gray-300 bg-white px-3 text-sm dark:border-gray-600 dark:bg-gray-800 dark:text-white"
                     />
                   </div>
-                  <div>
-                    <label
-                      class="mb-1 block text-xs font-medium text-gray-600 dark:text-gray-400"
-                      >Default payment type</label
-                    >
-                    <select
-                      v-model="form.default_payment_type"
-                      class="h-10 w-full rounded-lg border border-gray-300 bg-white px-3 text-sm dark:border-gray-600 dark:bg-gray-800 dark:text-white"
-                    >
-                      <option value="">No default</option>
-                      <option
-                        v-for="paymentType in paymentTypeOptions"
-                        :key="`new-account-payment-${paymentType}`"
-                        :value="paymentType"
-                      >
-                        {{ paymentType }}
-                      </option>
-                    </select>
-                  </div>
-                  <div>
-                    <label
-                      class="mb-1 block text-xs font-medium text-gray-600 dark:text-gray-400"
-                      >Credit card fee (%)</label
-                    >
-                    <input
-                      v-model="form.cc_fee_percent"
-                      type="number"
-                      min="0"
-                      max="100"
-                      step="0.01"
-                      class="h-10 w-full rounded-lg border border-gray-300 bg-white px-3 text-sm dark:border-gray-600 dark:bg-gray-800 dark:text-white"
-                    />
-                  </div>
 
                   <div
                     class="rounded-lg border border-gray-200 p-3 dark:border-gray-700"
@@ -255,10 +230,20 @@ async function onSubmit() {
                     </p>
                     <div class="space-y-3">
                       <div>
-                        <label
-                          class="mb-1 block text-xs font-medium text-gray-600 dark:text-gray-400"
-                          >Password</label
-                        >
+                        <div class="mb-1 flex items-center justify-between gap-2">
+                          <label
+                            class="block text-xs font-medium text-gray-600 dark:text-gray-400"
+                            >Password</label
+                          >
+                          <button
+                            type="button"
+                            class="text-xs font-semibold text-violet-600 hover:text-violet-700 disabled:opacity-50 dark:text-violet-400 dark:hover:text-violet-300"
+                            :disabled="saving"
+                            @click="generatePortalPassword"
+                          >
+                            Generate Password
+                          </button>
+                        </div>
                         <div class="relative isolate">
                           <input
                             v-model="form.password"

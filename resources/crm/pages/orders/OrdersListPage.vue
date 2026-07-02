@@ -343,10 +343,30 @@ function runListSearch() {
   fetchOrders(true);
 }
 
+function holdReasonLabelsForRow(row) {
+  const h = row?.holds && typeof row.holds === "object" ? row.holds : {};
+  const labels = [];
+  if (h.fraud_hold) labels.push("Fraud Hold");
+  if (h.payment_hold) labels.push("Payment Hold");
+  if (h.address_hold) labels.push("Address Hold");
+  if (h.operator_hold) labels.push(rowIsCrmUserHold(row) ? "User Hold" : "Operator Hold");
+  if (h.client_hold && !labels.includes("User Hold")) labels.push("User Hold");
+  if (h.shipping_method_hold) labels.push("Shipping Method Hold");
+
+  if (labels.length) return labels;
+
+  const raw = String(row?.hold_reason || row?.display_status || "").trim();
+  if (!raw) return [];
+
+  return raw
+    .split(",")
+    .map((part) => part.trim())
+    .filter(Boolean);
+}
+
 function firstHoldReasonLabel(row) {
-  const raw = String(row?.hold_reason || "").trim();
-  if (!raw) return "";
-  return String(raw.split(",")[0] || "").trim();
+  const labels = holdReasonLabelsForRow(row);
+  return labels[0] || "";
 }
 
 /** Prefer API display_status; tab overrides remain for legacy rows without it. */
@@ -1530,7 +1550,18 @@ onUnmounted(() => {
                 />
               </td>
               <td>
-                <span class="badge rounded-pill fw-medium" :class="statusClassForRow(row)">
+                <template v-if="tabKey === 'on_hold' && holdReasonLabelsForRow(row).length">
+                  <div
+                    v-for="(label, holdIdx) in holdReasonLabelsForRow(row)"
+                    :key="`${row.id}-hold-${holdIdx}`"
+                    class="mb-1 last:mb-0"
+                  >
+                    <span class="badge rounded-pill fw-medium" :class="statusClass(label)">
+                      {{ label }}
+                    </span>
+                  </div>
+                </template>
+                <span v-else class="badge rounded-pill fw-medium" :class="statusClassForRow(row)">
                   {{ displayOrderStatus(row) }}
                 </span>
               </td>

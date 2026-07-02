@@ -32,13 +32,6 @@ const detailRouteName = computed(() =>
   isPortalMode.value ? "user-order-detail" : "order-detail",
 );
 
-const ordersListTo = computed(() => {
-  if (isPortalMode.value) {
-    return { name: "user-orders" };
-  }
-  return { path: "/admin/orders/search" };
-});
-
 const tableColspan = computed(() => (isPortalMode.value ? 7 : 8));
 
 const accountOptions = computed(() =>
@@ -151,12 +144,6 @@ onMounted(() => {
         >
           Create Order
         </button>
-        <RouterLink
-          :to="ordersListTo"
-          class="btn btn-outline-secondary btn-sm orders-toolbar-outline-btn fw-semibold"
-        >
-          Back To Orders
-        </RouterLink>
       </div>
     </div>
 

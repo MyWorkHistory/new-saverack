@@ -453,6 +453,8 @@ Route::middleware('auth:sanctum')->group(function () {
         ->name('client-accounts.onboarding.billing');
     Route::patch('client-accounts/{client_account}/onboarding/tasks/{task}/verification', [ClientAccountOnboardingController::class, 'updateTaskVerification'])
         ->name('client-accounts.onboarding.tasks.verification');
+    Route::patch('client-accounts/{client_account}/onboarding/tasks/{task}/verification/fields/{field}', [ClientAccountOnboardingController::class, 'updateTaskFieldVerification'])
+        ->name('client-accounts.onboarding.tasks.verification.fields');
     Route::post('client-accounts/{client_account}/comments', [ClientAccountController::class, 'storeComment'])
         ->name('client-accounts.comments.store');
     Route::patch('client-accounts/{client_account}/comments/{comment}', [ClientAccountController::class, 'updateComment'])

@@ -17,6 +17,16 @@ class PortalOnboardingSectionRegistry
         'inventory_sync',
     ];
 
+    /** @var list<string> */
+    public const ADMIN_FIELD_VERIFICATION_TASK_IDS = [
+        'branding_information',
+        'order_handling_preferences',
+        'packing_slips_preferences',
+        'shipping_carrier_preferences',
+        'returns_handling_preferences',
+        'inventory_sync',
+    ];
+
     /**
      * @return list<string>
      */
@@ -124,6 +134,80 @@ class PortalOnboardingSectionRegistry
     public static function isValidSectionId(string $sectionId): bool
     {
         return in_array($sectionId, self::PREFERENCE_SECTION_IDS, true);
+    }
+
+    public static function taskUsesAdminFieldVerification(string $taskId): bool
+    {
+        return in_array($taskId, self::ADMIN_FIELD_VERIFICATION_TASK_IDS, true);
+    }
+
+    /**
+     * @return list<string>
+     */
+    public static function adminVerificationFieldKeys(string $taskId): array
+    {
+        switch ($taskId) {
+            case 'branding_information':
+                return ['brand_name'];
+            case 'order_handling_preferences':
+                return [
+                    'order_shipment_timeline',
+                    'multi_warehouse_routing',
+                    'out_of_stock_handling',
+                    'address_verification',
+                    'fraud_review_holds',
+                ];
+            case 'packing_slips_preferences':
+                return [
+                    'include_packing_slips',
+                    'include_brand_logo',
+                    'show_product_pricing',
+                    'include_support_phone',
+                    'include_note',
+                    'packing_slip_note',
+                ];
+            case 'shipping_carrier_preferences':
+                return [
+                    'domestic_carriers',
+                    'international_carriers',
+                    'international_customs_declaration',
+                ];
+            case 'returns_handling_preferences':
+                return [
+                    'returned_items',
+                    'returned_item_disposal',
+                    'photos_of_returns',
+                ];
+            case 'inventory_sync':
+                return ['real_time_inventory_sync'];
+            default:
+                return [];
+        }
+    }
+
+    /**
+     * @param  array<string, mixed>  $preferences
+     * @return list<string>
+     */
+    public static function adminVerificationFieldKeysForPreferences(string $taskId, array $preferences): array
+    {
+        $keys = self::adminVerificationFieldKeys($taskId);
+        if ($taskId !== 'packing_slips_preferences') {
+            return $keys;
+        }
+
+        $sectionData = is_array($preferences['packing_slips_preferences'] ?? null)
+            ? $preferences['packing_slips_preferences']
+            : [];
+
+        if (($sectionData['include_note'] ?? '') !== 'yes') {
+            return array_values(array_filter(
+                $keys,
+                static fn (string $key): bool => $key !== 'packing_slip_note'
+            ));
+        }
+
+        return $keys;
     }
 
     /**

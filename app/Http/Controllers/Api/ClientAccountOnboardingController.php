@@ -190,4 +190,36 @@ class ClientAccountOnboardingController extends Controller
 
         return response()->json($this->onboarding->buildAdminOnboardingPayload($client_account));
     }
+
+    public function updateTaskFieldVerification(
+        Request $request,
+        ClientAccount $client_account,
+        string $task,
+        string $field
+    ): JsonResponse {
+        Gate::authorize('update', $client_account);
+
+        $validated = $request->validate([
+            'checked' => ['required', 'boolean'],
+        ]);
+
+        $checked = (bool) $validated['checked'];
+        $adminUser = $request->user();
+
+        try {
+            $client_account = $this->onboarding->setTaskFieldVerified(
+                $client_account,
+                $task,
+                $field,
+                $checked,
+                $adminUser !== null ? (int) $adminUser->id : null
+            );
+        } catch (\InvalidArgumentException $e) {
+            throw ValidationException::withMessages([
+                'field' => [$e->getMessage()],
+            ]);
+        }
+
+        return response()->json($this->onboarding->buildAdminOnboardingPayload($client_account));
+    }
 }

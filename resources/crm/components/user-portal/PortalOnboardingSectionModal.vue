@@ -3,7 +3,14 @@ import { computed, onUnmounted, reactive, ref, watch } from "vue";
 import api from "../../services/api";
 import CrmLoadingSpinner from "../common/CrmLoadingSpinner.vue";
 import PortalOnboardingModalShell from "./PortalOnboardingModalShell.vue";
-import { getPortalOnboardingSection } from "../../constants/portalOnboardingSections.js";
+import {
+  fieldRequiresAdminVerification,
+  fieldTutorialUrl,
+  getPortalOnboardingSection,
+  sectionUsesAdminFieldVerification,
+} from "../../constants/portalOnboardingSections.js";
+import PortalOnboardingFieldVerifyToggle from "./PortalOnboardingFieldVerifyToggle.vue";
+import PortalOnboardingTutorialLink from "./PortalOnboardingTutorialLink.vue";
 import { useToast } from "../../composables/useToast";
 import { resolvePublicUrl } from "../../utils/resolvePublicUrl.js";
 
@@ -18,9 +25,12 @@ const props = defineProps({
   taskId: { type: String, default: "" },
   taskVerified: { type: Boolean, default: false },
   verifying: { type: Boolean, default: false },
+  taskVerificationFields: { type: Object, default: () => ({}) },
+  verificationFieldsComplete: { type: Boolean, default: true },
+  fieldVerifyingKey: { type: String, default: "" },
 });
 
-const emit = defineEmits(["update:open", "saved", "verify", "unverify"]);
+const emit = defineEmits(["update:open", "saved", "verify", "unverify", "toggle-field-verification"]);
 
 function adminOnboardingBase() {
   if (!props.clientAccountId) return null;
@@ -242,6 +252,30 @@ function setCommunicationMethod(value) {
     form.contact_email = String(props.profile?.email || "").trim();
   }
 }
+
+const usesFieldVerification = computed(
+  () => props.adminMode && sectionUsesAdminFieldVerification(props.sectionId),
+);
+
+const canVerifySection = computed(() => {
+  if (!usesFieldVerification.value) return true;
+  return props.verificationFieldsComplete;
+});
+
+function showAdminFieldVerification(field) {
+  return props.adminMode && fieldRequiresAdminVerification(props.sectionId, field.key);
+}
+
+function isFieldVerified(fieldKey) {
+  return !!props.taskVerificationFields?.[fieldKey];
+}
+
+function toggleFieldVerification(fieldKey, checked) {
+  emit("toggle-field-verification", {
+    fieldKey,
+    checked: typeof checked === "boolean" ? checked : !isFieldVerified(fieldKey),
+  });
+}
 </script>
 
 <template>
@@ -353,12 +387,39 @@ function setCommunicationMethod(value) {
                 :key="field.key"
                 class="mb-4"
               >
-              <label v-if="field.type !== 'file'" class="form-label fw-semibold" :for="`onboard-${field.key}`">
-                {{ field.label }}
-              </label>
-              <label v-else class="form-label fw-semibold" :for="`onboard-${field.key}`">
-                {{ field.label }}
-              </label>
+              <div
+                class="d-flex align-items-start justify-content-between gap-2 mb-1"
+                :class="{ 'portal-onboard-field-label-row--with-verify': showAdminFieldVerification(field) }"
+              >
+                <div class="d-flex align-items-center gap-2 min-w-0">
+                  <label
+                    v-if="field.type !== 'file'"
+                    class="form-label fw-semibold mb-0"
+                    :for="`onboard-${field.key}`"
+                  >
+                    {{ field.label }}
+                  </label>
+                  <label
+                    v-else
+                    class="form-label fw-semibold mb-0"
+                    :for="`onboard-${field.key}`"
+                  >
+                    {{ field.label }}
+                  </label>
+                  <PortalOnboardingTutorialLink
+                    v-if="showAdminFieldVerification(field)"
+                    :href="fieldTutorialUrl(sectionId, field.key)"
+                    :label="`Tutorial: ${field.label}`"
+                  />
+                </div>
+                <PortalOnboardingFieldVerifyToggle
+                  v-if="showAdminFieldVerification(field)"
+                  :checked="isFieldVerified(field.key)"
+                  :loading="fieldVerifyingKey === field.key"
+                  :disabled="!!fieldVerifyingKey && fieldVerifyingKey !== field.key"
+                  @toggle="(checked) => toggleFieldVerification(field.key, checked)"
+                />
+              </div>
 
               <input
                 v-if="field.type === 'text'"
@@ -421,10 +482,17 @@ function setCommunicationMethod(value) {
             </template>
       </div>
       <footer class="crm-vx-modal__footer flex-wrap gap-2">
+        <p
+          v-if="adminMode && usesFieldVerification && !verificationFieldsComplete"
+          class="small text-secondary mb-0 me-auto align-self-center"
+        >
+          Check each item before verifying this section.
+        </p>
         <button
           v-if="adminMode && taskVerified"
           type="button"
           class="crm-vx-modal-btn crm-vx-modal-btn--secondary me-auto"
+          :class="{ 'ms-auto': !(usesFieldVerification && !verificationFieldsComplete) }"
           :disabled="saving || logoUploading || verifying"
           @click="emit('unverify')"
         >
@@ -435,7 +503,8 @@ function setCommunicationMethod(value) {
           v-else-if="adminMode"
           type="button"
           class="crm-vx-modal-btn crm-vx-modal-btn--secondary me-auto"
-          :disabled="saving || logoUploading || verifying"
+          :class="{ 'ms-auto': !(usesFieldVerification && !verificationFieldsComplete) }"
+          :disabled="saving || logoUploading || verifying || !canVerifySection"
           @click="emit('verify')"
         >
           <CrmLoadingSpinner v-if="verifying" small class="me-1" />

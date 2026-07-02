@@ -6,6 +6,7 @@ use App\Models\ClientAccount;
 use App\Models\User;
 use App\Services\ClientBrandLogoService;
 use App\Services\PortalOnboardingService;
+use App\Support\PortalOnboardingSectionRegistry;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Mockery;
 use Tests\TestCase;
@@ -143,10 +144,115 @@ class PortalOnboardingVerificationTest extends TestCase
         $this->assertFalse($service->isOnboardingReadyForActivation($account->fresh()));
 
         foreach (PortalOnboardingService::ONBOARDING_TASK_IDS as $taskId) {
-            $service->setTaskVerified($account->fresh(), $taskId, true, 1);
+            $fresh = $account->fresh();
+            if (PortalOnboardingSectionRegistry::taskUsesAdminFieldVerification($taskId)) {
+                $prefs = is_array($fresh->onboarding_preferences) ? $fresh->onboarding_preferences : [];
+                foreach (PortalOnboardingSectionRegistry::adminVerificationFieldKeysForPreferences($taskId, $prefs) as $fieldKey) {
+                    $service->setTaskFieldVerified($fresh, $taskId, $fieldKey, true, 1);
+                    $fresh = $account->fresh();
+                }
+            }
+            $service->setTaskVerified($fresh, $taskId, true, 1);
         }
         $account->refresh();
 
         $this->assertFalse($service->isOnboardingReadyForActivation($account));
+    }
+
+    public function test_set_task_field_verified_persists_for_branding_brand_name_only(): void
+    {
+        $account = ClientAccount::create([
+            'company_name' => 'Field Verify Co',
+            'status' => ClientAccount::STATUS_PENDING,
+            'email' => 'field@test.com',
+        ]);
+        $service = new PortalOnboardingService(Mockery::mock(ClientBrandLogoService::class));
+
+        $service->setTaskFieldVerified($account, 'branding_information', 'brand_name', true, 42);
+        $account->refresh();
+
+        $this->assertTrue($service->getTaskFieldVerifications($account, 'branding_information')['brand_name'] ?? false);
+        $this->assertTrue($service->areTaskFieldVerificationsComplete($account, 'branding_information'));
+    }
+
+    public function test_cannot_verify_branding_until_brand_name_field_checked(): void
+    {
+        $account = ClientAccount::create([
+            'company_name' => 'Branding Gate Co',
+            'status' => ClientAccount::STATUS_PENDING,
+            'email' => 'brand-gate@test.com',
+        ]);
+        $service = new PortalOnboardingService(Mockery::mock(ClientBrandLogoService::class));
+
+        $this->expectException(\InvalidArgumentException::class);
+        $service->setTaskVerified($account, 'branding_information', true, 1);
+    }
+
+    public function test_unchecking_field_clears_section_verification(): void
+    {
+        $account = ClientAccount::create([
+            'company_name' => 'Uncheck Co',
+            'status' => ClientAccount::STATUS_PENDING,
+            'email' => 'uncheck@test.com',
+        ]);
+        $service = new PortalOnboardingService(Mockery::mock(ClientBrandLogoService::class));
+
+        $service->setTaskFieldVerified($account, 'branding_information', 'brand_name', true, 1);
+        $service->setTaskVerified($account->fresh(), 'branding_information', true, 1);
+        $this->assertTrue($service->isTaskVerified($account->fresh(), 'branding_information'));
+
+        $service->setTaskFieldVerified($account->fresh(), 'branding_information', 'brand_name', false, 1);
+        $account->refresh();
+
+        $this->assertFalse($service->isTaskVerified($account, 'branding_information'));
+    }
+
+    public function test_packing_slip_note_not_required_for_field_verification_when_include_note_no(): void
+    {
+        $account = ClientAccount::create([
+            'company_name' => 'Packing Co',
+            'status' => ClientAccount::STATUS_PENDING,
+            'email' => 'packing@test.com',
+            'onboarding_preferences' => [
+                'packing_slips_preferences' => [
+                    'include_note' => 'no',
+                ],
+            ],
+        ]);
+        $service = new PortalOnboardingService(Mockery::mock(ClientBrandLogoService::class));
+
+        $required = PortalOnboardingSectionRegistry::adminVerificationFieldKeysForPreferences(
+            'packing_slips_preferences',
+            $account->onboarding_preferences
+        );
+
+        $this->assertNotContains('packing_slip_note', $required);
+    }
+
+    public function test_admin_payload_includes_field_verification_metadata(): void
+    {
+        $account = ClientAccount::create([
+            'company_name' => 'Meta Co',
+            'status' => ClientAccount::STATUS_PENDING,
+            'email' => 'meta@test.com',
+        ]);
+        User::factory()->create([
+            'client_account_id' => $account->id,
+            'is_account_primary' => true,
+            'name' => 'Meta User',
+            'email' => 'meta-user@test.com',
+        ]);
+
+        $service = new PortalOnboardingService(Mockery::mock(ClientBrandLogoService::class));
+        $service->setTaskFieldVerified($account, 'branding_information', 'brand_name', true, 1);
+        $account->refresh();
+
+        $payload = $service->buildAdminOnboardingPayload($account);
+        $branding = collect($payload['tasks'])->firstWhere('id', 'branding_information');
+
+        $this->assertNotNull($branding);
+        $this->assertTrue($branding['uses_field_verification']);
+        $this->assertTrue($branding['verification_fields']['brand_name']);
+        $this->assertTrue($branding['verification_fields_complete']);
     }
 }

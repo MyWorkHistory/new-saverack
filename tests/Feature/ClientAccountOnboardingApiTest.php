@@ -53,6 +53,9 @@ class ClientAccountOnboardingApiTest extends TestCase
         $first = $response->json('tasks.0');
         $this->assertArrayHasKey('verified', $first);
         $this->assertArrayHasKey('verification_status', $first);
+        $this->assertArrayHasKey('uses_field_verification', $first);
+        $this->assertArrayHasKey('verification_fields', $first);
+        $this->assertArrayHasKey('verification_fields_complete', $first);
     }
 
     public function test_admin_can_verify_onboarding_task(): void
@@ -80,5 +83,57 @@ class ClientAccountOnboardingApiTest extends TestCase
         $billing = collect($response->json('tasks'))->firstWhere('id', 'billing_information');
         $this->assertNotNull($billing);
         $this->assertTrue($billing['verified']);
+    }
+
+    public function test_admin_can_toggle_field_verification(): void
+    {
+        $this->staffWithClientsUpdate();
+
+        $account = ClientAccount::create([
+            'company_name' => 'Field Toggle Co',
+            'status' => ClientAccount::STATUS_PENDING,
+            'email' => 'field-toggle@test.com',
+        ]);
+        User::factory()->create([
+            'client_account_id' => $account->id,
+            'is_account_primary' => true,
+            'name' => 'Primary',
+            'email' => 'primary@test.com',
+        ]);
+
+        $response = $this->patchJson(
+            '/api/client-accounts/'.$account->id.'/onboarding/tasks/branding_information/verification/fields/brand_name',
+            ['checked' => true]
+        );
+
+        $response->assertOk();
+        $branding = collect($response->json('tasks'))->firstWhere('id', 'branding_information');
+        $this->assertNotNull($branding);
+        $this->assertTrue($branding['verification_fields']['brand_name']);
+        $this->assertTrue($branding['verification_fields_complete']);
+    }
+
+    public function test_admin_cannot_verify_branding_until_field_checks_complete(): void
+    {
+        $this->staffWithClientsUpdate();
+
+        $account = ClientAccount::create([
+            'company_name' => 'Branding Verify Co',
+            'status' => ClientAccount::STATUS_PENDING,
+            'email' => 'branding-verify@test.com',
+        ]);
+        User::factory()->create([
+            'client_account_id' => $account->id,
+            'is_account_primary' => true,
+            'name' => 'Primary',
+            'email' => 'primary@test.com',
+        ]);
+
+        $response = $this->patchJson(
+            '/api/client-accounts/'.$account->id.'/onboarding/tasks/branding_information/verification',
+            ['verified' => true]
+        );
+
+        $response->assertStatus(422);
     }
 }

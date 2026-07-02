@@ -22,6 +22,7 @@ const emit = defineEmits(["account-updated"]);
 const toast = useToast();
 const loading = ref(true);
 const verifyingTaskId = ref("");
+const fieldVerifyingKey = ref("");
 const onboarding = ref(null);
 
 const accountModalOpen = ref(false);
@@ -37,6 +38,10 @@ const manualInstructions = computed(() => onboarding.value?.manual_payment_instr
 const activeSectionId = computed(() => activeTask.value?.id || "");
 
 const activeTaskVerified = computed(() => !!activeTask.value?.verified);
+const activeTaskVerificationFields = computed(() => activeTask.value?.verification_fields || {});
+const activeTaskVerificationFieldsComplete = computed(
+  () => activeTask.value?.verification_fields_complete !== false,
+);
 
 function adminOnboardingBase() {
   return `/client-accounts/${props.clientAccountId}/onboarding`;
@@ -169,6 +174,24 @@ async function unverifyActiveTask() {
   }
 }
 
+async function toggleFieldVerification({ fieldKey, checked }) {
+  const task = activeTask.value;
+  const key = String(fieldKey || "").trim();
+  if (!task?.id || !key || fieldVerifyingKey.value) return;
+  fieldVerifyingKey.value = key;
+  try {
+    const { data } = await api.patch(
+      `${adminOnboardingBase()}/tasks/${task.id}/verification/fields/${encodeURIComponent(key)}`,
+      { checked: !!checked },
+    );
+    applyOnboardingPayload(data);
+  } catch (e) {
+    toast.errorFrom(e, "Could not update field verification.");
+  } finally {
+    fieldVerifyingKey.value = "";
+  }
+}
+
 loadOnboarding();
 </script>
 
@@ -266,9 +289,13 @@ loadOnboarding();
       :task-id="activeSectionId"
       :task-verified="activeTaskVerified"
       :verifying="!!verifyingTaskId && verifyingTaskId === activeSectionId"
+      :task-verification-fields="activeTaskVerificationFields"
+      :verification-fields-complete="activeTaskVerificationFieldsComplete"
+      :field-verifying-key="fieldVerifyingKey"
       @saved="onSaved"
       @verify="verifyActiveTask"
       @unverify="unverifyActiveTask"
+      @toggle-field-verification="toggleFieldVerification"
     />
   </div>
 </template>

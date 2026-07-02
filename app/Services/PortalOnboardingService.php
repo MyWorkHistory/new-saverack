@@ -120,8 +120,113 @@ class PortalOnboardingService
             return false;
         }
         $verifications = $this->verificationsArray($account);
+        $taskVerification = $verifications[$taskId] ?? null;
 
-        return isset($verifications[$taskId]) && is_array($verifications[$taskId]);
+        return is_array($taskVerification) && isset($taskVerification['verified_at']);
+    }
+
+    /**
+     * @return array<string, bool>
+     */
+    public function getTaskFieldVerifications(ClientAccount $account, string $taskId): array
+    {
+        if (! $this->isValidTaskId($taskId)) {
+            return [];
+        }
+
+        $verifications = $this->verificationsArray($account);
+        $taskVerification = $verifications[$taskId] ?? null;
+        if (! is_array($taskVerification)) {
+            return [];
+        }
+
+        $fields = $taskVerification['fields'] ?? null;
+        if (! is_array($fields)) {
+            return [];
+        }
+
+        $out = [];
+        foreach ($fields as $fieldKey => $fieldData) {
+            if (is_string($fieldKey) && $fieldKey !== '' && is_array($fieldData)) {
+                $out[$fieldKey] = true;
+            }
+        }
+
+        return $out;
+    }
+
+    public function areTaskFieldVerificationsComplete(ClientAccount $account, string $taskId): bool
+    {
+        if (! PortalOnboardingSectionRegistry::taskUsesAdminFieldVerification($taskId)) {
+            return true;
+        }
+
+        $requiredKeys = PortalOnboardingSectionRegistry::adminVerificationFieldKeysForPreferences(
+            $taskId,
+            $this->preferencesArray($account)
+        );
+        if ($requiredKeys === []) {
+            return true;
+        }
+
+        $checked = $this->getTaskFieldVerifications($account, $taskId);
+        foreach ($requiredKeys as $key) {
+            if (empty($checked[$key])) {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    public function setTaskFieldVerified(
+        ClientAccount $account,
+        string $taskId,
+        string $fieldKey,
+        bool $checked,
+        ?int $verifiedByUserId = null
+    ): ClientAccount {
+        if (! $this->isValidTaskId($taskId)) {
+            throw new \InvalidArgumentException('Invalid onboarding task id.');
+        }
+
+        if (! PortalOnboardingSectionRegistry::taskUsesAdminFieldVerification($taskId)) {
+            throw new \InvalidArgumentException('This task does not support field verification.');
+        }
+
+        $allowedKeys = PortalOnboardingSectionRegistry::adminVerificationFieldKeysForPreferences(
+            $taskId,
+            $this->preferencesArray($account)
+        );
+        if (! in_array($fieldKey, $allowedKeys, true)) {
+            throw new \InvalidArgumentException('Invalid onboarding verification field.');
+        }
+
+        $verifications = $this->verificationsArray($account);
+        $taskVerification = is_array($verifications[$taskId] ?? null) ? $verifications[$taskId] : [];
+        $fields = is_array($taskVerification['fields'] ?? null) ? $taskVerification['fields'] : [];
+
+        if ($checked) {
+            $fields[$fieldKey] = [
+                'checked_at' => now()->toIso8601String(),
+                'checked_by' => $verifiedByUserId,
+            ];
+        } else {
+            unset($fields[$fieldKey]);
+            unset($taskVerification['verified_at'], $taskVerification['verified_by']);
+        }
+
+        if ($fields === []) {
+            unset($verifications[$taskId]);
+        } else {
+            $taskVerification['fields'] = $fields;
+            $verifications[$taskId] = $taskVerification;
+        }
+
+        $account->onboarding_verifications = $verifications;
+        $account->save();
+
+        return $account->fresh();
     }
 
     public function setTaskVerified(ClientAccount $account, string $taskId, bool $verified, ?int $verifiedByUserId = null): ClientAccount
@@ -130,14 +235,26 @@ class PortalOnboardingService
             throw new \InvalidArgumentException('Invalid onboarding task id.');
         }
 
+        if ($verified && ! $this->areTaskFieldVerificationsComplete($account, $taskId)) {
+            throw new \InvalidArgumentException('Complete all field verifications before verifying this section.');
+        }
+
         $verifications = $this->verificationsArray($account);
+        $existing = is_array($verifications[$taskId] ?? null) ? $verifications[$taskId] : [];
+
         if ($verified) {
-            $verifications[$taskId] = [
+            $verifications[$taskId] = array_merge($existing, [
                 'verified_at' => now()->toIso8601String(),
                 'verified_by' => $verifiedByUserId,
-            ];
+            ]);
         } else {
-            unset($verifications[$taskId]);
+            unset($existing['verified_at'], $existing['verified_by']);
+            $fields = $existing['fields'] ?? null;
+            if (is_array($fields) && $fields !== []) {
+                $verifications[$taskId] = $existing;
+            } else {
+                unset($verifications[$taskId]);
+            }
         }
 
         $account->onboarding_verifications = $verifications;
@@ -487,9 +604,19 @@ class PortalOnboardingService
                 continue;
             }
             $id = (string) ($task['id'] ?? '');
-            $verified = $id !== '' && isset($verifications[$id]) && is_array($verifications[$id]);
+            $taskVerification = is_array($verifications[$id] ?? null) ? $verifications[$id] : [];
+            $verified = $id !== '' && isset($taskVerification['verified_at']);
+            $usesFieldVerification = PortalOnboardingSectionRegistry::taskUsesAdminFieldVerification($id);
+            $verificationFields = $usesFieldVerification ? $this->getTaskFieldVerifications($account, $id) : [];
+            $verificationFieldsComplete = $usesFieldVerification
+                ? $this->areTaskFieldVerificationsComplete($account, $id)
+                : true;
+
             $task['verified'] = $verified;
             $task['verification_status'] = $verified ? 'verified' : 'not_verified';
+            $task['uses_field_verification'] = $usesFieldVerification;
+            $task['verification_fields'] = $verificationFields;
+            $task['verification_fields_complete'] = $verificationFieldsComplete;
             $out[] = $task;
         }
 

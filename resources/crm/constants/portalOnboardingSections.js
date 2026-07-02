@@ -376,6 +376,71 @@ export function getPortalOnboardingSection(sectionId) {
   return PORTAL_ONBOARDING_SECTIONS.find((s) => s.id === sectionId) || null;
 }
 
+/** Fields that require admin verification checkmarks per section (must match backend registry). */
+const ADMIN_VERIFICATION_FIELDS_BY_SECTION = {
+  branding_information: ["brand_name"],
+  order_handling_preferences: [
+    "order_shipment_timeline",
+    "multi_warehouse_routing",
+    "out_of_stock_handling",
+    "address_verification",
+    "fraud_review_holds",
+  ],
+  packing_slips_preferences: [
+    "include_packing_slips",
+    "include_brand_logo",
+    "show_product_pricing",
+    "include_support_phone",
+    "include_note",
+    "packing_slip_note",
+  ],
+  shipping_carrier_preferences: [
+    "domestic_carriers",
+    "international_carriers",
+    "international_customs_declaration",
+  ],
+  returns_handling_preferences: [
+    "returned_items",
+    "returned_item_disposal",
+    "photos_of_returns",
+  ],
+  inventory_sync: ["real_time_inventory_sync"],
+};
+
+export const PORTAL_ONBOARDING_ADMIN_FIELD_VERIFICATION_SECTION_IDS = Object.keys(
+  ADMIN_VERIFICATION_FIELDS_BY_SECTION,
+);
+
+export function sectionUsesAdminFieldVerification(sectionId) {
+  return Object.prototype.hasOwnProperty.call(ADMIN_VERIFICATION_FIELDS_BY_SECTION, sectionId);
+}
+
+export function fieldRequiresAdminVerification(sectionId, fieldKey) {
+  const keys = ADMIN_VERIFICATION_FIELDS_BY_SECTION[sectionId];
+  return Array.isArray(keys) && keys.includes(fieldKey);
+}
+
+function fieldVisibleForForm(field, form) {
+  const rule = field?.showWhen;
+  if (!rule || typeof rule !== "object") return true;
+  return String(form[rule.field] ?? "") === String(rule.value);
+}
+
+export function visibleAdminVerificationFields(sectionId, form) {
+  const section = getPortalOnboardingSection(sectionId);
+  if (!section) return [];
+
+  return (section.fields || [])
+    .filter((field) => fieldRequiresAdminVerification(sectionId, field.key))
+    .filter((field) => fieldVisibleForForm(field, form))
+    .map((field) => field.key);
+}
+
+/** Placeholder until Tutorials section URLs are available. */
+export function fieldTutorialUrl(_sectionId, _fieldKey) {
+  return "#";
+}
+
 /** Map task.icon from API to PORTAL_MATERIAL_ICON keys */
 export const PORTAL_ONBOARDING_TASK_ICON_KEYS = {
   account: "account",

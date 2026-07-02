@@ -134,7 +134,7 @@ onMounted(() => {
 </script>
 
 <template>
-  <div class="staff-page staff-page--wide order-create-page">
+  <div class="staff-page staff-page--wide">
     <div class="d-flex flex-wrap align-items-start justify-content-between gap-3 mb-4">
       <div class="min-w-0">
         <h1 class="h4 mb-1 fw-semibold text-body">Orders - Drafts</h1>
@@ -296,18 +296,5 @@ onMounted(() => {
 .orders-toolbar-account {
   flex: 0 0 auto;
   width: min(280px, 100%);
-}
-
-.order-create-page :deep(.staff-table-wrap .table.staff-data-table > tbody > tr > td),
-.order-create-page :deep(.staff-data-table > thead > tr > th.staff-table-head__th) {
-  padding-top: 1rem;
-  padding-bottom: 1rem;
-}
-
-@media (min-width: 768px) {
-  .order-create-page :deep(.staff-data-table > thead > tr > th.staff-table-head__th) {
-    padding-top: 1.375rem;
-    padding-bottom: 1.375rem;
-  }
 }
 </style>

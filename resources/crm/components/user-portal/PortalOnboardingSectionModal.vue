@@ -388,32 +388,45 @@ function toggleFieldVerification(fieldKey, checked) {
                 class="mb-4"
               >
               <div
-                class="d-flex align-items-start justify-content-between gap-2 mb-1"
-                :class="{ 'portal-onboard-field-label-row--with-verify': showAdminFieldVerification(field) }"
+                class="d-flex align-items-center gap-2 mb-1"
               >
-                <div class="d-flex align-items-center gap-2 min-w-0">
-                  <label
-                    v-if="field.type !== 'file'"
-                    class="form-label fw-semibold mb-0"
-                    :for="`onboard-${field.key}`"
-                  >
-                    {{ field.label }}
-                  </label>
-                  <label
-                    v-else
-                    class="form-label fw-semibold mb-0"
-                    :for="`onboard-${field.key}`"
-                  >
-                    {{ field.label }}
-                  </label>
-                  <PortalOnboardingTutorialLink
-                    v-if="showAdminFieldVerification(field)"
-                    :href="fieldTutorialUrl(sectionId, field.key)"
-                    :label="`Tutorial: ${field.label}`"
-                  />
-                </div>
+                <label
+                  v-if="field.type !== 'file'"
+                  class="form-label fw-semibold mb-0"
+                  :for="`onboard-${field.key}`"
+                >
+                  {{ field.label }}
+                </label>
+                <label
+                  v-else
+                  class="form-label fw-semibold mb-0"
+                  :for="`onboard-${field.key}`"
+                >
+                  {{ field.label }}
+                </label>
+                <PortalOnboardingTutorialLink
+                  v-if="showAdminFieldVerification(field)"
+                  :href="fieldTutorialUrl(sectionId, field.key)"
+                  :label="`Tutorial: ${field.label}`"
+                />
+              </div>
+
+              <div
+                v-if="field.type === 'text'"
+                class="portal-onboard-field-input-row"
+                :class="{ 'd-flex align-items-center gap-2': showAdminFieldVerification(field) }"
+              >
+                <input
+                  :id="`onboard-${field.key}`"
+                  v-model="form[field.key]"
+                  type="text"
+                  class="form-control"
+                  :class="{ 'flex-grow-1 min-w-0': showAdminFieldVerification(field) }"
+                  :required="field.required"
+                />
                 <PortalOnboardingFieldVerifyToggle
                   v-if="showAdminFieldVerification(field)"
+                  class="flex-shrink-0"
                   :checked="isFieldVerified(field.key)"
                   :loading="fieldVerifyingKey === field.key"
                   :disabled="!!fieldVerifyingKey && fieldVerifyingKey !== field.key"
@@ -421,36 +434,55 @@ function toggleFieldVerification(fieldKey, checked) {
                 />
               </div>
 
-              <input
-                v-if="field.type === 'text'"
-                :id="`onboard-${field.key}`"
-                v-model="form[field.key]"
-                type="text"
-                class="form-control"
-                :required="field.required"
-              />
-
-              <select
+              <div
                 v-else-if="field.type === 'select'"
-                :id="`onboard-${field.key}`"
-                v-model="form[field.key]"
-                class="form-select"
-                :required="field.required"
+                class="portal-onboard-field-input-row"
+                :class="{ 'd-flex align-items-center gap-2': showAdminFieldVerification(field) }"
               >
-                <option value="" disabled>Select…</option>
-                <option v-for="opt in field.options" :key="opt.value" :value="opt.value">
-                  {{ opt.label }}
-                </option>
-              </select>
+                <select
+                  :id="`onboard-${field.key}`"
+                  v-model="form[field.key]"
+                  class="form-select"
+                  :class="{ 'flex-grow-1 min-w-0': showAdminFieldVerification(field) }"
+                  :required="field.required"
+                >
+                  <option value="" disabled>Select…</option>
+                  <option v-for="opt in field.options" :key="opt.value" :value="opt.value">
+                    {{ opt.label }}
+                  </option>
+                </select>
+                <PortalOnboardingFieldVerifyToggle
+                  v-if="showAdminFieldVerification(field)"
+                  class="flex-shrink-0"
+                  :checked="isFieldVerified(field.key)"
+                  :loading="fieldVerifyingKey === field.key"
+                  :disabled="!!fieldVerifyingKey && fieldVerifyingKey !== field.key"
+                  @toggle="(checked) => toggleFieldVerification(field.key, checked)"
+                />
+              </div>
 
-              <textarea
+              <div
                 v-else-if="field.type === 'textarea'"
-                :id="`onboard-${field.key}`"
-                v-model="form[field.key]"
-                class="form-control"
-                rows="4"
-                :required="field.required"
-              />
+                class="portal-onboard-field-input-row"
+                :class="{ 'd-flex align-items-start gap-2': showAdminFieldVerification(field) }"
+              >
+                <textarea
+                  :id="`onboard-${field.key}`"
+                  v-model="form[field.key]"
+                  class="form-control"
+                  :class="{ 'flex-grow-1 min-w-0': showAdminFieldVerification(field) }"
+                  rows="4"
+                  :required="field.required"
+                />
+                <PortalOnboardingFieldVerifyToggle
+                  v-if="showAdminFieldVerification(field)"
+                  class="flex-shrink-0 mt-1"
+                  :checked="isFieldVerified(field.key)"
+                  :loading="fieldVerifyingKey === field.key"
+                  :disabled="!!fieldVerifyingKey && fieldVerifyingKey !== field.key"
+                  @toggle="(checked) => toggleFieldVerification(field.key, checked)"
+                />
+              </div>
 
               <div v-else-if="field.type === 'file'" class="portal-onboard-file-field">
                 <div v-if="logoPreviewUrl" class="mb-2">

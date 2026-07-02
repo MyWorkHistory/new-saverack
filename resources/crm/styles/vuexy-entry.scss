@@ -203,10 +203,13 @@ body {
  * border some browsers paint on plain <button>. Icon closes (X), password
  * toggles, and staff controls often omit `.btn`; teleported overlays sit under
  * `body`, so scope this globally for the CRM bundle (not just `.crm-app-shell`).
+ * Tab-style toolbar buttons keep their bordered card look via class exclusions.
  */
 body button:not(.btn):not(.btn-close):not(.staff-page-pager-tile):not(
     .page-link
-  ):not(.crm-vx-modal-btn):not(.staff-stat-card):not(.account-detail-tab-btn) {
+  ):not(.crm-vx-modal-btn):not(.staff-stat-card):not(.account-detail-tab-btn):not(
+    .billing-inv-tab-btn
+  ) {
   border: 0 solid transparent;
   box-shadow: none;
   -webkit-appearance: none;
@@ -215,7 +218,9 @@ body button:not(.btn):not(.btn-close):not(.staff-page-pager-tile):not(
 
 body button:not(.btn):not(.btn-close):not(.staff-page-pager-tile):not(
     .page-link
-  ):not(.crm-vx-modal-btn):not(.staff-stat-card):not(.account-detail-tab-btn)::-moz-focus-inner {
+  ):not(.crm-vx-modal-btn):not(.staff-stat-card):not(.account-detail-tab-btn):not(
+    .billing-inv-tab-btn
+  )::-moz-focus-inner {
   border: 0;
   padding: 0;
 }

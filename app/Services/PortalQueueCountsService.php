@@ -3,8 +3,10 @@
 namespace App\Services;
 
 use App\Models\ClientAccount;
+use App\Models\ShipHeroOrderQueueIndex;
 use Carbon\Carbon;
 use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\Schema;
 use RuntimeException;
 use Throwable;
 
@@ -42,13 +44,9 @@ class PortalQueueCountsService
     /** @var ShipHeroOrderService */
     private $orders;
 
-    /** @var ShipHeroOrderQueueIndexService */
-    private $orderIndex;
-
-    public function __construct(ShipHeroOrderService $orders, ShipHeroOrderQueueIndexService $orderIndex)
+    public function __construct(ShipHeroOrderService $orders)
     {
         $this->orders = $orders;
-        $this->orderIndex = $orderIndex;
     }
 
     /**
@@ -259,25 +257,55 @@ class PortalQueueCountsService
             return null;
         }
 
-        if ($tab === 'shipped') {
-            if (! $this->orderIndex->indexHasRows($accountId, 'shipped')) {
+        try {
+            if (! Schema::hasTable('shiphero_order_queue_index')) {
+                return null;
+            }
+
+            $query = ShipHeroOrderQueueIndex::query()
+                ->where('client_account_id', $accountId)
+                ->where('queue_kind', $tab);
+
+            if ($tab === 'awaiting') {
+                $from = $this->parseTimestamp($context['awaiting_from'] ?? null);
+                $to = $this->parseTimestamp($context['awaiting_to'] ?? null);
+                if ($from !== null) {
+                    $query->where('order_date', '>=', $from);
+                }
+                if ($to !== null) {
+                    $query->where('order_date', '<=', $to);
+                }
+            } elseif ($tab === 'shipped') {
+                $from = $this->parseTimestamp($context['shipped_from'] ?? null);
+                $to = $this->parseTimestamp($context['shipped_to'] ?? null);
+                if ($from !== null) {
+                    $query->where('ship_date', '>=', $from);
+                }
+                if ($to !== null) {
+                    $query->where('ship_date', '<=', $to);
+                }
+            } else {
+                $from = $this->parseTimestamp($context['open_from'] ?? null);
+                $to = $this->parseTimestamp($context['open_to'] ?? null);
+                if ($from !== null) {
+                    $query->where('order_date', '>=', $from);
+                }
+                if ($to !== null) {
+                    $query->where('order_date', '<=', $to);
+                }
+            }
+
+            if (! $query->exists()) {
                 return null;
             }
 
             return [
-                'count' => $this->orderIndex->countForAccountTab($accountId, 'shipped', $context),
+                'count' => (int) $query->count(),
                 'truncated' => false,
             ];
-        }
-
-        if (! $this->orderIndex->indexHasRows($accountId, $tab)) {
+        } catch (Throwable $e) {
             return null;
         }
-
-        return [
-            'count' => $this->orderIndex->countForAccountTab($accountId, $tab, $context),
-            'truncated' => false,
-        ];
     }
 
     /**
@@ -432,5 +460,17 @@ class PortalQueueCountsService
         }
 
         return Carbon::parse(trim($value), $timezone)->endOfDay()->toIso8601String();
+    }
+
+    private function parseTimestamp($value): ?Carbon
+    {
+        if (! is_string($value) || trim($value) === '') {
+            return null;
+        }
+        try {
+            return Carbon::parse($value);
+        } catch (Throwable $e) {
+            return null;
+        }
     }
 }

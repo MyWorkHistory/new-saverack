@@ -185,16 +185,7 @@ class OrderDashboardSnapshotService
         $this->markSectionRunning($sectionKey);
 
         try {
-            if ($sectionKey === OrderDashboardSection::KEY_ASN_PENDING) {
-                $result = $this->buildAsnPendingPayload();
-            } else {
-                $this->syncIndexForDashboardSection($sectionKey);
-                if ($this->orderIndex->indexHasRowsForSection($sectionKey)) {
-                    $result = $this->orderIndex->aggregateDashboardSection($sectionKey);
-                } else {
-                    $result = $this->buildShipHeroSectionPayload($sectionKey);
-                }
-            }
+            $result = $this->buildSectionPayload($sectionKey, true);
 
             $durationMs = (int) round((microtime(true) - $startedAt) * 1000);
             $this->saveSectionPayload(
@@ -218,6 +209,75 @@ class OrderDashboardSnapshotService
             );
             throw $e;
         }
+    }
+
+    /**
+     * Fast refresh for HTTP requests — reads the local index only (no ShipHero sync/API).
+     */
+    public function refreshSectionFromIndex(string $sectionKey): void
+    {
+        $this->validateSectionKey($sectionKey);
+        $startedAt = microtime(true);
+
+        try {
+            $result = $this->buildSectionPayload($sectionKey, false);
+            $needsBackgroundSync = $sectionKey !== OrderDashboardSection::KEY_ASN_PENDING
+                && ! $this->orderIndex->indexHasRowsForSection($sectionKey);
+
+            $durationMs = (int) round((microtime(true) - $startedAt) * 1000);
+            $this->saveSectionPayload(
+                $sectionKey,
+                $result['payload'],
+                (int) $result['total_count'],
+                $durationMs
+            );
+
+            if ($needsBackgroundSync) {
+                $this->dispatchSectionRefresh($sectionKey);
+            }
+
+            Log::info('order_dashboard.section_refreshed_from_index', [
+                'section_key' => $sectionKey,
+                'total_count' => (int) $result['total_count'],
+                'accounts' => count($result['payload']['accounts'] ?? []),
+                'duration_ms' => $durationMs,
+                'background_sync_queued' => $needsBackgroundSync,
+            ]);
+        } catch (Throwable $e) {
+            $this->markSectionFailed(
+                $sectionKey,
+                $e->getMessage() !== '' ? $e->getMessage() : 'Refresh failed.'
+            );
+            throw $e;
+        }
+    }
+
+    /**
+     * @return array{payload: array<string, mixed>, total_count: int}
+     */
+    private function buildSectionPayload(string $sectionKey, bool $allowRemoteFallback): array
+    {
+        if ($sectionKey === OrderDashboardSection::KEY_ASN_PENDING) {
+            return $this->buildAsnPendingPayload();
+        }
+
+        if ($this->orderIndex->indexHasRowsForSection($sectionKey)) {
+            return $this->orderIndex->aggregateDashboardSection($sectionKey);
+        }
+
+        if (! $allowRemoteFallback) {
+            return [
+                'payload' => ['accounts' => [], 'truncated' => false],
+                'total_count' => 0,
+            ];
+        }
+
+        $this->syncIndexForDashboardSection($sectionKey);
+        if ($this->orderIndex->indexHasRowsForSection($sectionKey)) {
+            return $this->orderIndex->aggregateDashboardSection($sectionKey);
+        }
+
+        return $this->buildShipHeroSectionPayload($sectionKey);
     }
 
     /**

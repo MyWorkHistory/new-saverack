@@ -138,6 +138,9 @@ function asnPendingRoute(accountId) {
 }
 
 function refreshToastMessage(data, fallbackQueued) {
+  if (data?.refresh_index_only) {
+    return "Counts updated from database. Full sync queued if index was empty.";
+  }
   if (data?.refresh_synced) {
     return "Section refreshed.";
   }

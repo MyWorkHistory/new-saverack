@@ -172,7 +172,9 @@ class ShipHeroOrderQueueIndexService
         $syncStarted = now();
 
         try {
-            $context = $this->queueCounts->contextForAccount($account);
+            $context = $tab === ShipHeroOrderQueueIndex::KIND_SHIPPED
+                ? $this->queueCounts->contextForDashboardSection($account, OrderDashboardSection::KEY_SHIPPED)
+                : $this->queueCounts->contextForAccount($account);
             $filters = $this->buildSyncFilters($tab, $customerId, $context);
             $after = null;
             $pages = 0;
@@ -509,8 +511,8 @@ class ShipHeroOrderQueueIndexService
             $filters['order_date_from'] = $this->isoDateOnly($context['awaiting_from'] ?? null);
             $filters['order_date_to'] = $this->isoDateOnly($context['awaiting_to'] ?? null);
         } elseif ($tab === ShipHeroOrderQueueIndex::KIND_SHIPPED) {
-            $filters['order_date_from'] = $context['shipped_from'] ?? null;
-            $filters['order_date_to'] = $context['shipped_to'] ?? null;
+            $filters['order_date_from'] = $this->isoDateOnly($context['shipped_from'] ?? null);
+            $filters['order_date_to'] = $this->isoDateOnly($context['shipped_to'] ?? null);
         } else {
             $filters['order_date_from'] = $this->isoDateOnly($context['open_from'] ?? null);
             $filters['order_date_to'] = $this->isoDateOnly($context['open_to'] ?? null);

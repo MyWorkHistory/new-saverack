@@ -71,16 +71,48 @@ function toggleOne(lineId) {
   selected.value = next;
 }
 
-async function copyRma() {
-  const num = String(ret.value?.rma_number || "").trim();
+async function copyOrderNumber() {
+  const num = String(ret.value?.order_number || "").trim();
   if (!num) return;
   try {
     await navigator.clipboard.writeText(num);
-    toast.success("RMA copied.");
+    toast.success("Order number copied.");
   } catch {
-    toast.error("Could not copy RMA.");
+    toast.error("Could not copy order number.");
   }
 }
+
+async function openPdf(path, params, msg) {
+  try {
+    const { data } = await api.get(path, {
+      params,
+      responseType: "blob",
+    });
+    const blob = new Blob([data], { type: "application/pdf" });
+    const url = window.URL.createObjectURL(blob);
+    window.open(url, "_blank", "noopener");
+    setTimeout(() => window.URL.revokeObjectURL(url), 30000);
+  } catch (e) {
+    toast.errorFrom(e, msg);
+  }
+}
+
+function printLineBarcode(line) {
+  const sku = String(line?.sku || "").trim();
+  if (!sku) {
+    toast.error("No SKU for this line.");
+    return;
+  }
+  const accountId = Number(ret.value?.client_account_id || 0);
+  const params = accountId > 0 ? { client_account_id: accountId } : {};
+  openPdf(
+    `/inventory/products/${encodeURIComponent(sku)}/barcode-label.pdf`,
+    params,
+    "Could not print barcode.",
+  );
+}
+
+const tableColspan = computed(() => (isPending.value ? 7 : 6));
 
 async function load() {
   loading.value = true;
@@ -223,7 +255,8 @@ onMounted(load);
                   <th class="staff-table-head__th text-center" scope="col">Order Qty</th>
                   <th class="staff-table-head__th text-center" scope="col">Return Qty</th>
                   <th class="staff-table-head__th" scope="col">Reason</th>
-                  <th v-if="isPending" class="staff-table-head__th text-center" scope="col">Restock</th>
+                  <th class="staff-table-head__th text-center" scope="col">Restock</th>
+                  <th class="staff-table-head__th text-center" scope="col">Barcode</th>
                 </tr>
               </thead>
               <tbody>
@@ -257,18 +290,41 @@ onMounted(load);
                   <td class="text-center">{{ line.order_qty }}</td>
                   <td class="text-center">{{ line.return_qty }}</td>
                   <td>{{ line.return_reason_label || line.return_reason || "—" }}</td>
-                  <td v-if="isPending" class="text-center">
+                  <td class="text-center">
                     <input
+                      v-if="isPending"
                       v-model="lineRestock[line.id]"
                       type="checkbox"
                       class="form-check-input m-0"
                       :disabled="!selected.has(line.id)"
                       :aria-label="`Restock ${line.sku}`"
                     />
+                    <svg
+                      v-else-if="line.restock"
+                      class="admin-return-restock-check"
+                      width="20"
+                      height="20"
+                      viewBox="0 0 24 24"
+                      fill="currentColor"
+                      aria-label="Restock"
+                      role="img"
+                    >
+                      <path d="M9 16.17 4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z" />
+                    </svg>
+                    <span v-else class="text-secondary">—</span>
+                  </td>
+                  <td class="text-center">
+                    <button
+                      type="button"
+                      class="btn btn-outline-secondary btn-sm fw-semibold orders-toolbar-outline-btn"
+                      @click="printLineBarcode(line)"
+                    >
+                      Print
+                    </button>
                   </td>
                 </tr>
                 <tr v-if="!lines.length">
-                  <td :colspan="isPending ? 6 : 4" class="text-center text-secondary py-4">No return items.</td>
+                  <td :colspan="tableColspan" class="text-center text-secondary py-4">No return items.</td>
                 </tr>
               </tbody>
             </table>
@@ -279,11 +335,12 @@ onMounted(load);
       <div class="col-lg-4 d-flex flex-column gap-4 user-return-page__side-column">
         <div class="staff-table-card staff-datatable-card staff-datatable-card--white p-4">
           <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-2">
-            <h3 class="h6 fw-semibold mb-0">RMA #</h3>
-            <button type="button" class="btn btn-sm btn-outline-secondary fw-semibold" @click="copyRma">Copy</button>
+            <h3 class="h6 fw-semibold mb-0">Order #</h3>
+            <button type="button" class="btn btn-sm btn-outline-secondary fw-semibold" @click="copyOrderNumber">
+              Copy
+            </button>
           </div>
-          <div class="user-return-page__rma-display">{{ ret.rma_number }}</div>
-          <p class="small text-secondary mb-0 mt-2">{{ formatRmaLabel(ret.rma_number) }}</p>
+          <div class="user-return-page__rma-display">{{ ret.order_number || "—" }}</div>
         </div>
 
         <ReturnFeesCard
@@ -317,5 +374,10 @@ onMounted(load);
 }
 .user-return-page__check-col {
   width: 2.75rem;
+}
+.admin-return-restock-check {
+  color: #28c76f;
+  display: inline-block;
+  vertical-align: middle;
 }
 </style>

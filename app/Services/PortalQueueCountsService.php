@@ -76,8 +76,9 @@ class PortalQueueCountsService
             $shippedFrom = $this->dateStartIso((string) $shippedFromInput, $timezone);
             $shippedTo = $this->dateEndIso((string) $shippedToInput, $timezone);
         } else {
-            $shippedFrom = $openFrom;
-            $shippedTo = $openTo;
+            $today = $now->toDateString();
+            $shippedFrom = $this->dateStartIso($today, $timezone);
+            $shippedTo = $this->dateEndIso($today, $timezone);
         }
 
         return [
@@ -161,8 +162,25 @@ class PortalQueueCountsService
         }
 
         $cacheKey = $this->queueCacheKey($context, $tab);
+        $accountId = (int) ($context['client_account_id'] ?? 0);
         if ($forceRefresh) {
             Cache::forget($cacheKey);
+            if ($accountId > 0) {
+                PatchHomeDashboardAccountJob::dispatch($accountId, $tab);
+            }
+            $fromIndex = $this->countTabFromIndex($context, $tab);
+            if ($fromIndex !== null) {
+                $stored = [
+                    'count' => $fromIndex['count'],
+                    'truncated' => $fromIndex['truncated'],
+                    'cached_at' => now()->toIso8601String(),
+                    'refresh_pending' => true,
+                ];
+                Cache::put($cacheKey, $stored, now()->addMinutes(self::CACHE_TTL_MINUTES));
+                $this->touchAggregateLastGood($context, $tab, $stored);
+
+                return $this->formatQueueResponse($context, $tab, $stored);
+            }
         }
 
         $cached = Cache::get($cacheKey);
@@ -179,13 +197,6 @@ class PortalQueueCountsService
             ];
             Cache::put($cacheKey, $stored, now()->addMinutes(self::CACHE_TTL_MINUTES));
             $this->touchAggregateLastGood($context, $tab, $stored);
-
-            if ($forceRefresh) {
-                $accountId = (int) ($context['client_account_id'] ?? 0);
-                if ($accountId > 0) {
-                    PatchHomeDashboardAccountJob::dispatch($accountId, $tab);
-                }
-            }
 
             return $this->formatQueueResponse($context, $tab, $stored);
         } catch (Throwable $e) {
@@ -290,9 +301,15 @@ class PortalQueueCountsService
                 return null;
             }
 
-            $query = ShipHeroOrderQueueIndex::query()
+            $baseQuery = ShipHeroOrderQueueIndex::query()
                 ->where('client_account_id', $accountId)
                 ->where('queue_kind', $tab);
+
+            if (! (clone $baseQuery)->exists()) {
+                return null;
+            }
+
+            $query = clone $baseQuery;
 
             if ($tab === 'awaiting') {
                 $from = $this->parseTimestamp($context['awaiting_from'] ?? null);
@@ -321,10 +338,6 @@ class PortalQueueCountsService
                 if ($to !== null) {
                     $query->where('order_date', '<=', $to);
                 }
-            }
-
-            if (! $query->exists()) {
-                return null;
             }
 
             return [
@@ -373,7 +386,7 @@ class PortalQueueCountsService
             'count' => $count,
             'truncated' => $truncated,
             'stale' => $stale,
-            'refresh_pending' => false,
+            'refresh_pending' => (bool) ($stored['refresh_pending'] ?? false),
             'shiphero_ready' => true,
             'message' => $stale ? 'Showing last saved count for this queue.' : '',
             'ready_to_ship' => $tab === 'awaiting' ? $count : 0,

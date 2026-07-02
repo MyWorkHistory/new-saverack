@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Api\Concerns\HandlesOrderDrafts;
 use App\Http\Controllers\Controller;
+use App\Jobs\PatchHomeDashboardAccountJob;
 use App\Http\Requests\OrderCreateRequest;
 use App\Models\ClientAccount;
 use App\Models\User;
@@ -137,8 +138,7 @@ class OrderController extends Controller
 
             if ($this->orderQueueIndex->isQueueTab($tab)) {
                 if ($refresh) {
-                    $this->orderQueueIndex->syncAccountQueue($clientAccountId, $tab, true);
-                    $this->orderDashboardSnapshots->patchAccountFromQueueTab($clientAccountId, $tab);
+                    PatchHomeDashboardAccountJob::dispatch($clientAccountId, $tab);
                 }
                 if ($this->orderQueueIndex->shouldUseIndex($tab, false, $indexFilters) || $refresh) {
                     if ($this->orderQueueIndex->indexHasRows($clientAccountId, $tab)) {
@@ -147,6 +147,7 @@ class OrderController extends Controller
                         $payload['meta'] = array_merge($payload['meta'] ?? [], [
                             'client_account_id' => $clientAccountId,
                             'shiphero_customer_account_id' => $customerId,
+                            'refresh_pending' => $refresh,
                         ]);
 
                         return response()->json($payload);

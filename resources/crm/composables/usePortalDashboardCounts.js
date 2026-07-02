@@ -2,7 +2,7 @@ import { onUnmounted, ref } from "vue";
 import api from "../services/api";
 import { usePortalLastRefreshed } from "./usePortalLastRefreshed.js";
 
-const CACHE_KEY_PREFIX = "portal:dashboard:queue-counts:v11:";
+const CACHE_KEY_PREFIX = "portal:dashboard:queue-counts:v12:";
 const QUEUE_TIMEOUT_MS = 45000;
 const SHIPPED_QUEUE_TIMEOUT_MS = 90000;
 

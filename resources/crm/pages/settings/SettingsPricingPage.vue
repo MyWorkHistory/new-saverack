@@ -3,7 +3,7 @@ import { computed, inject, onMounted, onUnmounted, ref, watch } from "vue";
 import api from "../../services/api";
 import ConfirmModal from "../../components/common/ConfirmModal.vue";
 import CrmLoadingSpinner from "../../components/common/CrmLoadingSpinner.vue";
-import PricingFeeCard from "../../components/settings/PricingFeeCard.vue";
+import PricingFeeList from "../../components/settings/PricingFeeList.vue";
 import PricingFeeModal from "../../components/settings/PricingFeeModal.vue";
 import { useToast } from "../../composables/useToast.js";
 import { setCrmPageMeta } from "../../composables/useCrmPageMeta.js";
@@ -133,6 +133,9 @@ async function onSave(payload) {
 }
 
 function confirmDelete(fee) {
+  if (!fee) return;
+  modalOpen.value = false;
+  editingFee.value = null;
   deleteTarget.value = fee;
 }
 
@@ -265,30 +268,7 @@ onUnmounted(() => {
 
       <div v-else class="staff-table-wrap">
         <div class="p-3 p-md-4">
-          <div class="settings-pricing-cards">
-            <div v-for="fee in fees" :key="fee.id">
-              <PricingFeeCard :fee="fee">
-                <template v-if="canUpdate" #actions>
-                  <div class="btn-group btn-group-sm">
-                    <button
-                      type="button"
-                      class="btn btn-outline-secondary btn-sm orders-toolbar-outline-btn"
-                      @click="openEdit(fee)"
-                    >
-                      Edit
-                    </button>
-                    <button
-                      type="button"
-                      class="btn btn-outline-danger btn-sm settings-pricing-delete-btn"
-                      @click="confirmDelete(fee)"
-                    >
-                      Delete
-                    </button>
-                  </div>
-                </template>
-              </PricingFeeCard>
-            </div>
-          </div>
+          <PricingFeeList :fees="fees" :clickable="canUpdate" @select="openEdit" />
         </div>
       </div>
     </div>
@@ -297,8 +277,10 @@ onUnmounted(() => {
       :open="modalOpen"
       :fee="editingFee"
       :saving="saving"
+      :can-delete="canUpdate"
       @close="closeModal"
       @save="onSave"
+      @delete="confirmDelete(editingFee)"
     />
 
     <ConfirmModal
@@ -312,12 +294,3 @@ onUnmounted(() => {
     />
   </div>
 </template>
-
-<style scoped>
-.settings-pricing-cards {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
-  gap: 1rem;
-  width: 100%;
-}
-</style>

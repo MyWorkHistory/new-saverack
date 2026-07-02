@@ -8,6 +8,88 @@ export const PRICING_CATEGORY_OPTIONS = [
   { value: "wholesale", label: "Wholesale" },
 ];
 
+/** @type {Record<string, { label: string, subtitle: string, accent: string, headerBg: string }>} */
+export const PRICING_CATEGORY_META = {
+  fulfillment: {
+    label: "Fulfillment",
+    subtitle: "Pick, pack, and ship orders per unit.",
+    accent: "#1d4ed8",
+    headerBg: "#dbeafe",
+  },
+  returns: {
+    label: "Returns",
+    subtitle: "Processing, labels, and restocking for returns.",
+    accent: "#b45309",
+    headerBg: "#fef3c7",
+  },
+  storage: {
+    label: "Storage",
+    subtitle: "Warehouse storage and inventory holding fees.",
+    accent: "#0f766e",
+    headerBg: "#ccfbf1",
+  },
+  receiving: {
+    label: "Receiving",
+    subtitle: "Inbound ASN and receiving labor charges.",
+    accent: "#7c2d12",
+    headerBg: "#ffedd5",
+  },
+  custom_work: {
+    label: "Custom Work",
+    subtitle: "Special projects and non-standard services.",
+    accent: "#6b21a8",
+    headerBg: "#f3e8ff",
+  },
+  wholesale: {
+    label: "Wholesale",
+    subtitle: "Wholesale order handling and processing.",
+    accent: "#1e3a8a",
+    headerBg: "#dbeafe",
+  },
+};
+
+export const PRICING_CATEGORY_ORDER = PRICING_CATEGORY_OPTIONS.filter((o) => o.value !== "all").map(
+  (o) => o.value,
+);
+
+export function categoryMeta(category) {
+  const key = String(category || "").trim().toLowerCase();
+  return (
+    PRICING_CATEGORY_META[key] ?? {
+      label: key ? key.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase()) : "Other",
+      subtitle: "",
+      accent: "#64748b",
+      headerBg: "#f1f5f9",
+    }
+  );
+}
+
+/**
+ * @param {Array<{ category?: string }>} fees
+ * @returns {Array<{ category: string, meta: ReturnType<typeof categoryMeta>, fees: typeof fees }>}
+ */
+export function groupFeesByCategory(fees) {
+  const list = Array.isArray(fees) ? fees : [];
+  const buckets = new Map();
+  for (const fee of list) {
+    const cat = String(fee?.category || "").trim().toLowerCase() || "other";
+    if (!buckets.has(cat)) buckets.set(cat, []);
+    buckets.get(cat).push(fee);
+  }
+
+  const ordered = [];
+  for (const cat of PRICING_CATEGORY_ORDER) {
+    if (buckets.has(cat)) {
+      ordered.push({ category: cat, meta: categoryMeta(cat), fees: buckets.get(cat) });
+      buckets.delete(cat);
+    }
+  }
+  for (const [cat, catFees] of buckets) {
+    ordered.push({ category: cat, meta: categoryMeta(cat), fees: catFees });
+  }
+  return ordered;
+}
+
 export function formatPrice(amount) {
   const n = Number(amount);
   if (!Number.isFinite(n)) return "$0.00";

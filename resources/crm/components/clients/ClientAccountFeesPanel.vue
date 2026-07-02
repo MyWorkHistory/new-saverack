@@ -2,7 +2,7 @@
 import { computed, onMounted, onUnmounted, ref } from "vue";
 import api from "../../services/api";
 import AccountFeeAmountModal from "./AccountFeeAmountModal.vue";
-import PricingFeeCard from "../settings/PricingFeeCard.vue";
+import PricingFeeList from "../settings/PricingFeeList.vue";
 import { useToast } from "../../composables/useToast";
 import { normalizeAccountFeeItems } from "../../utils/accountFees.js";
 import {
@@ -50,6 +50,7 @@ function onDocClick(event) {
 }
 
 function openEdit(fee) {
+  if (!props.canEdit) return;
   editingFee.value = { ...fee };
   modalOpen.value = true;
 }
@@ -94,7 +95,7 @@ onUnmounted(() => {
     <header class="mb-4">
       <h2 class="h5 mb-1 fw-semibold text-body">Account Fees</h2>
       <p class="small text-secondary mb-0">
-        Pricing for this account. Edit a fee to set an account-specific price.
+        Pricing for this account. Click a fee to set an account-specific price.
       </p>
     </header>
 
@@ -176,21 +177,11 @@ onUnmounted(() => {
 
       <div v-else class="staff-table-wrap">
         <div class="p-3 p-md-4">
-          <div class="crm-account-fees-cards">
-            <div v-for="fee in filteredFees" :key="fee.id">
-              <PricingFeeCard :fee="fee">
-                <template v-if="canEdit" #actions>
-                  <button
-                    type="button"
-                    class="btn btn-outline-secondary btn-sm orders-toolbar-outline-btn"
-                    @click="openEdit(fee)"
-                  >
-                    Edit
-                  </button>
-                </template>
-              </PricingFeeCard>
-            </div>
-          </div>
+          <PricingFeeList
+            :fees="filteredFees"
+            :clickable="canEdit"
+            @select="openEdit"
+          />
         </div>
       </div>
     </div>
@@ -204,18 +195,3 @@ onUnmounted(() => {
     />
   </div>
 </template>
-
-<style scoped>
-.crm-account-fees-cards {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 1rem;
-  width: 100%;
-}
-
-@media (max-width: 767.98px) {
-  .crm-account-fees-cards {
-    grid-template-columns: 1fr;
-  }
-}
-</style>

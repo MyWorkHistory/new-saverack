@@ -1202,49 +1202,39 @@ onUnmounted(() => {
       >
     </template>
 
-    <div
-      v-else-if="account"
-      class="d-flex flex-column flex-lg-row flex-wrap align-items-stretch align-items-lg-center gap-3 mb-4"
-    >
-      <div class="min-w-0">
-        <h1 class="staff-user-view__title mb-0">{{ account.company_name }}</h1>
-      </div>
-      <div
-        class="d-flex flex-wrap align-items-center gap-2 ms-lg-auto account-detail-tab-bar"
-        role="tablist"
-      >
-        <button
-          v-for="t in accountTabList"
-          :key="t.id"
-          type="button"
-          class="btn btn-sm account-detail-tab-btn"
-          :class="
-            activeTab === t.id
-              ? 'btn-primary staff-page-primary'
-              : 'btn-outline-primary'
-          "
-          role="tab"
-          :aria-selected="activeTab === t.id"
-          @click="setActiveTab(t.id)"
-        >
-          <svg
-            class="account-detail-tab-btn__icon"
-            width="18"
-            height="18"
-            fill="none"
-            stroke="currentColor"
-            stroke-width="1.75"
-            viewBox="0 0 24 24"
-            aria-hidden="true"
+    <div v-else-if="account" class="mb-4">
+      <h1 class="staff-user-view__title mb-3">{{ account.company_name }}</h1>
+      <div class="account-detail-tab-bar-wrap">
+        <div class="account-detail-tab-bar" role="tablist">
+          <button
+            v-for="t in accountTabList"
+            :key="t.id"
+            type="button"
+            class="account-detail-tab-btn"
+            :class="{ 'account-detail-tab-btn--active': activeTab === t.id }"
+            role="tab"
+            :aria-selected="activeTab === t.id"
+            @click="setActiveTab(t.id)"
           >
-            <path
-              stroke-linecap="round"
-              stroke-linejoin="round"
-              :d="accountTabIconPath(t.id)"
-            />
-          </svg>
-          <span>{{ t.label }}</span>
-        </button>
+            <svg
+              class="account-detail-tab-btn__icon"
+              width="22"
+              height="22"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="1.75"
+              viewBox="0 0 24 24"
+              aria-hidden="true"
+            >
+              <path
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                :d="accountTabIconPath(t.id)"
+              />
+            </svg>
+            <span class="account-detail-tab-btn__label">{{ t.label }}</span>
+          </button>
+        </div>
       </div>
     </div>
 
@@ -2508,14 +2498,78 @@ onUnmounted(() => {
   color: #2563eb;
 }
 
+.account-detail-tab-bar-wrap {
+  margin: 0 -0.25rem;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+.account-detail-tab-bar {
+  display: flex;
+  align-items: stretch;
+  gap: 0.5rem;
+  min-width: min-content;
+  padding: 0 0.25rem 0.125rem;
+}
+
 .account-detail-tab-btn {
   display: inline-flex;
+  flex-direction: column;
   align-items: center;
-  gap: 0.4rem;
+  justify-content: center;
+  gap: 0.35rem;
+  min-width: 5.5rem;
+  padding: 0.65rem 0.75rem 0.55rem;
+  border: 1px solid var(--bs-border-color);
+  border-radius: 0.5rem;
+  background: var(--bs-body-bg, #fff);
+  color: var(--bs-body-color);
+  font-size: 0.75rem;
+  font-weight: 500;
+  line-height: 1.2;
   white-space: nowrap;
+  cursor: pointer;
+  transition:
+    border-color 0.15s ease,
+    box-shadow 0.15s ease,
+    color 0.15s ease;
+}
+
+.account-detail-tab-btn:hover:not(.account-detail-tab-btn--active) {
+  border-color: rgba(115, 103, 240, 0.35);
+  box-shadow: 0 0.125rem 0.375rem rgba(47, 43, 61, 0.06);
+}
+
+.account-detail-tab-btn--active {
+  border-color: rgba(115, 103, 240, 0.45);
+  color: #7367f0;
+  box-shadow: inset 0 -3px 0 #7367f0;
+}
+
+.account-detail-tab-btn--active .account-detail-tab-btn__icon {
+  color: #7367f0;
 }
 
 .account-detail-tab-btn__icon {
   flex-shrink: 0;
+  color: var(--bs-secondary-color);
+}
+
+.account-detail-tab-btn__label {
+  text-align: center;
+}
+
+[data-bs-theme="dark"] .account-detail-tab-btn {
+  background: var(--bs-body-bg);
+}
+
+[data-bs-theme="dark"] .account-detail-tab-btn--active {
+  color: #a59bff;
+  border-color: rgba(165, 155, 255, 0.45);
+  box-shadow: inset 0 -3px 0 #a59bff;
+}
+
+[data-bs-theme="dark"] .account-detail-tab-btn--active .account-detail-tab-btn__icon {
+  color: #a59bff;
 }
 </style>

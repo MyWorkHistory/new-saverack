@@ -23,9 +23,10 @@ const props = defineProps({
   open: { type: Boolean, default: false },
   fee: { type: Object, default: null },
   saving: { type: Boolean, default: false },
+  canDelete: { type: Boolean, default: false },
 });
 
-const emit = defineEmits(["close", "save", "update:open"]);
+const emit = defineEmits(["close", "save", "delete", "update:open"]);
 
 const name = ref("");
 const description = ref("");
@@ -334,23 +335,35 @@ function close() {
             </form>
           </div>
 
-          <footer class="crm-vx-modal__footer d-flex gap-2 justify-content-end">
+          <footer class="crm-vx-modal__footer d-flex gap-2 justify-content-between align-items-center">
             <button
+              v-if="canDelete"
               type="button"
-              class="crm-vx-modal-btn crm-vx-modal-btn--secondary"
+              class="crm-vx-modal-btn crm-vx-modal-btn--secondary text-danger border-danger-subtle"
               :disabled="saving"
-              @click="close"
+              @click="emit('delete')"
             >
-              Cancel
+              Delete
             </button>
-            <button
-              type="submit"
-              :form="FORM_ID"
-              class="crm-vx-modal-btn crm-vx-modal-btn--primary"
-              :disabled="saving || !canSubmit"
-            >
-              {{ saving ? "Saving…" : "Save Fee" }}
-            </button>
+            <span v-else />
+            <div class="d-flex gap-2 ms-auto">
+              <button
+                type="button"
+                class="crm-vx-modal-btn crm-vx-modal-btn--secondary"
+                :disabled="saving"
+                @click="close"
+              >
+                Cancel
+              </button>
+              <button
+                type="submit"
+                :form="FORM_ID"
+                class="crm-vx-modal-btn crm-vx-modal-btn--primary"
+                :disabled="saving || !canSubmit"
+              >
+                {{ saving ? "Saving…" : "Save Fee" }}
+              </button>
+            </div>
           </footer>
         </div>
       </div>

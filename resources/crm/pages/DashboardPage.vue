@@ -28,15 +28,6 @@ const DASHBOARD_ICON = {
   asn: "M4 4h16v14H4zM8 8h8v2H8zm0 4h6v2H8zm-2 9v-3h12v3z",
 };
 
-const HOLD_SECTIONS = [
-  { key: "hold_operator", label: "Operator Hold", holdReason: "operator" },
-  { key: "hold_address", label: "Address Hold", holdReason: "address" },
-  { key: "hold_fraud", label: "Fraud Hold", holdReason: "fraud" },
-  { key: "hold_payment", label: "Payment Hold", holdReason: "payment" },
-  { key: "hold_user", label: "User Hold", holdReason: "user" },
-  { key: "hold_backorder", label: "Backorder", holdReason: null },
-];
-
 const statCards = computed(() => [
   {
     key: "ready_to_ship",
@@ -95,22 +86,6 @@ function isSectionRefreshing(key) {
   return s.status === "running" || refreshing.value;
 }
 
-function ordersHoldRoute(accountId, holdReason) {
-  if (holdReason === null) {
-    return {
-      name: "orders-out-of-stock",
-      query: { client_account_id: String(accountId) },
-    };
-  }
-  return {
-    name: "orders-on-hold",
-    query: {
-      client_account_id: String(accountId),
-      hold_reason: holdReason,
-    },
-  };
-}
-
 function asnPendingRoute(accountId) {
   return {
     name: "admin-asn-hub",
@@ -155,7 +130,7 @@ async function onRefreshSection(key) {
 onMounted(async () => {
   setCrmPageMeta({
     title: "Save Rack | Home",
-    description: "Operations overview — holds and ASN.",
+    description: "Operations overview and ASN.",
   });
   try {
     await load();
@@ -237,80 +212,6 @@ onMounted(async () => {
           </RouterLink>
         </div>
       </div>
-
-      <section class="mb-4">
-        <h2 class="staff-user-section-title mb-3">Holds</h2>
-        <div class="row g-3">
-          <div
-            v-for="hold in HOLD_SECTIONS"
-            :key="hold.key"
-            class="col-12 col-md-6 col-xl-4"
-          >
-            <section
-              class="staff-table-card staff-datatable-card staff-datatable-card--white w-100 h-100"
-            >
-              <div class="staff-table-toolbar">
-                <div
-                  class="staff-table-toolbar--row d-flex align-items-start justify-content-between gap-2"
-                >
-                  <div>
-                    <h3 class="h6 fw-semibold mb-1">{{ hold.label }}</h3>
-                    <p class="small text-secondary mb-0">
-                      Last updated: {{ lastUpdatedLabel(hold.key) }}
-                    </p>
-                  </div>
-                  <CrmRefreshToolbarButton
-                    :disabled="isSectionRefreshing(hold.key)"
-                    :loading="isSectionRefreshing(hold.key)"
-                    @click="onRefreshSection(hold.key)"
-                  />
-                </div>
-              </div>
-              <div class="table-responsive staff-table-wrap">
-                <table class="table table-hover align-middle mb-0 staff-data-table">
-                  <thead class="table-light staff-table-head">
-                    <tr>
-                      <th class="staff-table-head__th" scope="col">Account</th>
-                      <th class="staff-table-head__th text-end" scope="col" style="width: 5rem">
-                        Orders
-                      </th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    <tr
-                      v-for="row in sectionData(hold.key).accounts"
-                      :key="`${hold.key}-${row.account_id}`"
-                    >
-                      <td>
-                        <div class="d-flex align-items-center gap-2 min-w-0">
-                          <ClientAccountShippingStatusIcon
-                            :status="row.account_status"
-                            :size="18"
-                          />
-                          <RouterLink
-                            :to="ordersHoldRoute(row.account_id, hold.holdReason)"
-                            class="text-truncate text-decoration-none fw-semibold"
-                          >
-                            {{ row.account_name }}
-                          </RouterLink>
-                        </div>
-                      </td>
-                      <td class="text-end fw-semibold tabular-nums">
-                        {{ Number(row.orders_count || 0).toLocaleString() }}
-                      </td>
-                    </tr>
-                    <tr v-if="!sectionData(hold.key).accounts.length">
-                      <td colspan="2" class="text-secondary small py-4 text-center">
-                        No accounts with {{ hold.label.toLowerCase() }}.
-                      </td>
-                    </tr>
-                  </tbody>
-                </table>
-              </div>
-            </section>
-          </div>
-        </div>
-      </section>
 
       <section class="staff-table-card staff-datatable-card staff-datatable-card--white w-100">
         <div class="staff-table-toolbar">

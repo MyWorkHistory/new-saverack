@@ -177,6 +177,10 @@ const meta = {
   },
   ordersOnHold: {
     title: "Save Rack | Orders | On-Hold",
+    description: "On-hold orders by account and hold type.",
+  },
+  ordersOnHoldLegacy: {
+    title: "Save Rack | Orders | On-Hold",
     description: "ShipHero on-hold orders.",
   },
   ordersShipped: {
@@ -668,8 +672,14 @@ const routes = [
   {
     path: "/admin/orders/on-hold",
     name: "orders-on-hold",
+    component: () => import("../pages/orders/OrdersOnHoldOverviewPage.vue"),
+    meta: meta.ordersOnHold,
+  },
+  {
+    path: "/admin/orders/on-hold-old",
+    name: "orders-on-hold-old",
     component: OrdersListPage,
-    meta: { ...meta.ordersOnHold, orderTab: "on_hold" },
+    meta: { ...meta.ordersOnHoldLegacy, orderTab: "on_hold" },
   },
   {
     path: "/admin/orders/backorder",

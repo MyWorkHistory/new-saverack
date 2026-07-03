@@ -133,7 +133,7 @@ function navActive(mode) {
   if (mode === "orders-fulfillment") return p === "/admin/orders/fulfillment";
   if (mode === "orders-manage") return p.startsWith("/admin/orders/search");
   if (mode === "orders-awaiting") return p.startsWith("/admin/orders/awaiting");
-  if (mode === "orders-on-hold") return p.startsWith("/admin/orders/on-hold");
+  if (mode === "orders-on-hold") return p === "/admin/orders/on-hold";
   if (mode === "orders-out-of-stock") return p.startsWith("/admin/orders/backorder");
   if (mode === "orders-shipped") return p.startsWith("/admin/orders/shipped");
   if (mode === "orders-wholesale") return p.startsWith("/admin/orders/wholesale");

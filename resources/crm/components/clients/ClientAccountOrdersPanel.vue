@@ -25,7 +25,7 @@ const QUEUE_TAB_BY_CARD = {
 
 const QUEUE_ROUTE_BY_TAB = {
   awaiting: "orders-awaiting",
-  on_hold: "orders-on-hold",
+  on_hold: "orders-on-hold-old",
   backorder: "orders-out-of-stock",
   shipped: "orders-shipped",
 };

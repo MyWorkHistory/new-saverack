@@ -1,5 +1,5 @@
 <script setup>
-import { computed, inject, nextTick, onMounted, onUnmounted, reactive, ref, watch } from "vue";
+import { computed, inject, onMounted, onUnmounted, ref, watch } from "vue";
 import { RouterLink, useRoute, useRouter } from "vue-router";
 import api from "../../services/api";
 import CrmLoadingSpinner from "../../components/common/CrmLoadingSpinner.vue";
@@ -7,9 +7,6 @@ import ConfirmModal from "../../components/common/ConfirmModal.vue";
 import ClientAccountEditModal from "../../components/clients/ClientAccountEditModal.vue";
 import CrmStatusUpdateModal from "../../components/common/CrmStatusUpdateModal.vue";
 import ClientAccountChannelIcons from "../../components/clients/ClientAccountChannelIcons.vue";
-import ClientStoreCreateDrawer from "../../components/clients/ClientStoreCreateDrawer.vue";
-import ClientStoreEditModal from "../../components/clients/ClientStoreEditModal.vue";
-import ClientStoresBulkEditModal from "../../components/clients/ClientStoresBulkEditModal.vue";
 import ClientAccountFeesPanel from "../../components/clients/ClientAccountFeesPanel.vue";
 import ClientAccountOnboardingPanel from "../../components/clients/ClientAccountOnboardingPanel.vue";
 import ClientAccountBillingPanel from "../../components/clients/ClientAccountBillingPanel.vue";
@@ -17,7 +14,6 @@ import ClientAccountOrdersPanel from "../../components/clients/ClientAccountOrde
 import ClientAccountInventoryPanel from "../../components/clients/ClientAccountInventoryPanel.vue";
 import ClientAccountAsnPanel from "../../components/clients/ClientAccountAsnPanel.vue";
 import CrmIconRowActions from "../../components/common/CrmIconRowActions.vue";
-import { DEFAULT_PER_PAGE } from "../../constants/pagination";
 import { crmIsAdmin } from "../../utils/crmUser";
 import { setCrmPageMeta } from "../../composables/useCrmPageMeta.js";
 import { useToast } from "../../composables/useToast";
@@ -50,15 +46,15 @@ function userHasPerm(key) {
 
 const canUpdateAccount = computed(() => userHasPerm("clients.update"));
 const canViewStores = computed(() => userHasPerm("stores.view"));
-const canCreateStore = computed(() => userHasPerm("stores.create"));
-const canUpdateStore = computed(() => userHasPerm("stores.update"));
-const canDeleteStore = computed(() => userHasPerm("stores.delete"));
+const canImportStores = computed(() => userHasPerm("stores.create"));
 
 const loading = ref(true);
 const errorMsg = ref("");
 const account = ref(null);
 const storesLoading = ref(false);
+const storesImporting = ref(false);
 const stores = ref([]);
+const storesImportedAt = ref(null);
 
 const editAccountOpen = ref(false);
 const editAccountSection = ref("");
@@ -72,30 +68,6 @@ const brandLogoInput = ref(null);
 const brandLogoUploadBusy = ref(false);
 
 const historyItems = ref([]);
-
-const addStoreOpen = ref(false);
-const editStoreOpen = ref(false);
-const editingStore = ref(null);
-
-const storeDeleteTarget = ref(null);
-const storeDeleteBusy = ref(false);
-const storeMenuOpenId = ref(null);
-const storeMenuRect = ref({ top: 0, left: 0 });
-
-const storeSearch = ref("");
-const storeStatusFilter = ref("all");
-
-const storeListQuery = reactive({
-  page: 1,
-  per_page: DEFAULT_PER_PAGE,
-});
-const selectedStoreIds = ref([]);
-const storeBulkEditOpen = ref(false);
-const storeBulkEditBusy = ref(false);
-const storeFilterMenuOpen = ref(false);
-const storeBulkMenuOpen = ref(false);
-const storeBulkDeleteOpen = ref(false);
-const storeBulkDeleteBusy = ref(false);
 
 const TAB_ACCOUNT_INFO = "account-info";
 const TAB_STORES = "stores";
@@ -232,20 +204,8 @@ const accountComments = computed(() => {
 
 const imagePreviewUrls = ref({});
 
-const storeDeleteOpen = computed(() => storeDeleteTarget.value !== null);
-const storeDeleteMessage = computed(() => {
-  const s = storeDeleteTarget.value;
-  return s ? `Delete store “${s.name}”? This cannot be undone.` : "";
-});
-
 const noteDeleteModalOpen = computed(() => noteDeleteTarget.value !== null);
 
-const storeBulkDeleteMessage = computed(() => {
-  const n = selectedStoreIds.value.length;
-  return n
-    ? `Delete ${n} store${n === 1 ? "" : "s"}? This cannot be undone.`
-    : "";
-});
 const noteDeleteMessage = computed(() => {
   const c = noteDeleteTarget.value;
   return c ? "Remove this note? This cannot be undone." : "";
@@ -294,44 +254,21 @@ function accountStatusBadgeClass(status) {
   return "badge bg-body-secondary text-body-secondary";
 }
 
-function storeStatusBadgeClass(status) {
-  const s = String(status || "").toLowerCase();
-  if (s === "active") {
-    return "badge bg-success-subtle text-success";
-  }
-  if (s === "pending") {
-    return "badge bg-warning-subtle text-warning-emphasis";
-  }
-  if (s === "inactive") {
-    return "badge bg-secondary-subtle text-secondary";
-  }
-  return "badge bg-body-secondary text-body-secondary";
-}
+const storeCountDisplay = computed(() => stores.value.length);
 
-/** Store row website: safe href for anchor (adds https:// when missing). */
-function storeWebsiteHref(raw) {
-  if (raw == null || raw === "") return "";
-  const t = String(raw).trim();
-  if (!t) return "";
-  if (/^https?:\/\//i.test(t)) return t;
-  if (/^\/\//.test(t)) return `https:${t}`;
-  return `https://${t}`;
-}
+const hasShipheroCustomerId = computed(() => {
+  const id = account.value?.shiphero_customer_account_id;
+  return id != null && String(id).trim() !== "";
+});
 
-/** Display host/path for link text (trim scheme). */
-function storeWebsiteLinkLabel(raw) {
-  if (raw == null || raw === "") return "";
-  let t = String(raw).trim();
-  if (!t) return "";
-  t = t.replace(/^https?:\/\//i, "").replace(/^\/\//, "");
-  t = t.replace(/\/$/, "");
-  return t || String(raw).trim();
-}
-
-const storeCountDisplay = computed(() => {
-  const a = account.value;
-  if (a && a.stores_count != null) return Number(a.stores_count);
-  return stores.value.length;
+const storesEmptyMessage = computed(() => {
+  if (!hasShipheroCustomerId.value) {
+    return "Set ShipHero customer account ID on this account to import stores.";
+  }
+  if (storesImportedAt.value) {
+    return "No stores returned from ShipHero.";
+  }
+  return "No stores imported yet.";
 });
 
 const usersCountDisplay = computed(() => {
@@ -422,78 +359,9 @@ function closeNoteMenu() {
   noteMenuOpenId.value = null;
 }
 
-function closeStoreMenu() {
-  storeMenuOpenId.value = null;
-}
-
-function requestStoreDelete(row) {
-  if (!row) return;
-  storeDeleteTarget.value = row;
-  closeStoreMenu();
-}
-
-function openStoreBulkDelete() {
-  if (!selectedStoreIds.value.length) {
-    toast.error("Select one or more stores.");
-    return;
-  }
-  storeBulkDeleteOpen.value = true;
-}
-
-function closeStoreBulkDelete() {
-  if (!storeBulkDeleteBusy.value) storeBulkDeleteOpen.value = false;
-}
-
-async function confirmStoreBulkDelete() {
-  if (!selectedStoreIds.value.length) return;
-  storeBulkDeleteBusy.value = true;
-  try {
-    await api.delete("/client-stores/bulk", {
-      data: { client_store_ids: selectedStoreIds.value },
-    });
-    toast.success("Stores deleted.");
-    storeBulkDeleteOpen.value = false;
-    selectedStoreIds.value = [];
-    await refreshStoresAndAccountCounts();
-  } catch (e) {
-    toast.errorFrom(e, "Could not delete stores.");
-  } finally {
-    storeBulkDeleteBusy.value = false;
-  }
-}
-
 function toggleNoteMenu(commentId, e) {
   e.stopPropagation();
   noteMenuOpenId.value = noteMenuOpenId.value === commentId ? null : commentId;
-}
-
-function toggleStoreMenu(storeId, e) {
-  e.stopPropagation();
-  if (storeMenuOpenId.value === storeId) {
-    closeStoreMenu();
-    return;
-  }
-  const btn = e.currentTarget;
-  storeMenuOpenId.value = storeId;
-  nextTick(() => {
-    requestAnimationFrame(() => {
-      if (!(btn instanceof HTMLElement)) return;
-      placeStoreMenu(btn);
-    });
-  });
-}
-
-const STORE_MENU_W = 176;
-const STORE_MENU_H = 120;
-function placeStoreMenu(anchorEl) {
-  const r = anchorEl.getBoundingClientRect();
-  let top = r.bottom + 4;
-  let left = r.right - STORE_MENU_W;
-  left = Math.max(8, Math.min(left, window.innerWidth - STORE_MENU_W - 8));
-  if (top + STORE_MENU_H > window.innerHeight - 8) {
-    top = Math.max(8, r.top - STORE_MENU_H - 4);
-  }
-  storeMenuRect.value = { top, left };
 }
 
 function openEditNote(c) {
@@ -570,35 +438,13 @@ async function confirmDeleteNote() {
 function onDocumentClickCloseNoteMenu(e) {
   const t = e.target;
 
-  if (
-    storeFilterMenuOpen.value &&
-    t instanceof Element &&
-    !t.closest("[data-store-toolbar-filter]")
-  ) {
-    storeFilterMenuOpen.value = false;
-  }
-
-  if (
-    storeBulkMenuOpen.value &&
-    t instanceof Element &&
-    !t.closest("[data-store-toolbar-bulk]")
-  ) {
-    storeBulkMenuOpen.value = false;
-  }
-
-  if (storeMenuOpenId.value !== null) {
-    if (!(t instanceof Element) || !t.closest("[data-store-menu-anchor]")) {
-      closeStoreMenu();
-    }
-  }
-
   if (noteMenuOpenId.value === null) return;
   if (t instanceof Element && t.closest("[data-note-menu-root]")) return;
   closeNoteMenu();
 }
 
 function onWindowScrollOrResize() {
-  closeStoreMenu();
+  closeNoteMenu();
 }
 
 function openAccountEdit(section = "") {
@@ -808,177 +654,6 @@ watch(
   { deep: true },
 );
 
-const showStoreCheckboxCol = computed(() => canUpdateStore.value);
-
-const storeTableColspan = computed(() => {
-  let n = 3;
-  if (canUpdateStore.value || canDeleteStore.value) {
-    n += 1;
-  }
-  if (showStoreCheckboxCol.value) {
-    n += 1;
-  }
-  return n;
-});
-
-const filteredStores = computed(() => {
-  let list = stores.value;
-  const st = storeStatusFilter.value;
-  if (st && st !== "all") {
-    list = list.filter((r) => String(r.status).toLowerCase() === st);
-  }
-  const q = storeSearch.value.trim().toLowerCase();
-  if (!q) return list;
-  return list.filter((r) => {
-    const hay = `${r.name || ""} ${r.website || ""} ${r.marketplace || ""}`.toLowerCase();
-    return hay.includes(q);
-  });
-});
-
-const storeListTotal = computed(() => filteredStores.value.length);
-
-const storeListLastPage = computed(() => {
-  const t = storeListTotal.value;
-  const pp = storeListQuery.per_page;
-  if (t === 0) return 1;
-  return Math.max(1, Math.ceil(t / pp));
-});
-
-const paginatedStores = computed(() => {
-  const list = filteredStores.value;
-  const pp = storeListQuery.per_page;
-  const p = storeListQuery.page;
-  const start = (p - 1) * pp;
-  return list.slice(start, start + pp);
-});
-const storeMenuRow = computed(
-  () => paginatedStores.value.find((r) => r.id === storeMenuOpenId.value) ?? null,
-);
-
-const showingStoresFrom = computed(() => {
-  const t = storeListTotal.value;
-  if (t === 0) return 0;
-  return (storeListQuery.page - 1) * storeListQuery.per_page + 1;
-});
-
-const showingStoresTo = computed(() => {
-  const t = storeListTotal.value;
-  if (t === 0) return 0;
-  return Math.min(storeListQuery.page * storeListQuery.per_page, t);
-});
-
-const storePageItems = computed(() => {
-  const last = storeListLastPage.value;
-  const cur = storeListQuery.page;
-  if (last < 1) return [];
-  if (last <= 7) {
-    return Array.from({ length: last }, (_, i) => ({
-      type: "page",
-      value: i + 1,
-    }));
-  }
-  const nums = new Set([1, last, cur, cur - 1, cur + 1, cur - 2, cur + 2]);
-  const sorted = [...nums].filter((p) => p >= 1 && p <= last).sort((a, b) => a - b);
-  const out = [];
-  let prev = 0;
-  for (const p of sorted) {
-    if (prev && p - prev > 1) out.push({ type: "gap" });
-    out.push({ type: "page", value: p });
-    prev = p;
-  }
-  return out;
-});
-
-const isAllStoresPageSelected = computed(
-  () =>
-    paginatedStores.value.length > 0 &&
-    paginatedStores.value.every((r) => selectedStoreIds.value.includes(r.id)),
-);
-
-watch(storeListLastPage, (last) => {
-  if (storeListQuery.page > last) {
-    storeListQuery.page = last;
-  }
-});
-
-watch([storeSearch, storeStatusFilter], () => {
-  storeListQuery.page = 1;
-  selectedStoreIds.value = [];
-});
-
-watch(storeStatusFilter, () => {
-  storeFilterMenuOpen.value = false;
-});
-
-function toggleSelectAllStores() {
-  const pageIds = paginatedStores.value.map((r) => r.id);
-  if (!pageIds.length) return;
-  const allSelected = pageIds.every((id) => selectedStoreIds.value.includes(id));
-  if (allSelected) {
-    selectedStoreIds.value = selectedStoreIds.value.filter(
-      (id) => !pageIds.includes(id),
-    );
-  } else {
-    const set = new Set(selectedStoreIds.value);
-    pageIds.forEach((id) => set.add(id));
-    selectedStoreIds.value = [...set];
-  }
-}
-
-function toggleStoreRowSelect(id) {
-  const i = selectedStoreIds.value.indexOf(id);
-  if (i >= 0) {
-    selectedStoreIds.value = selectedStoreIds.value.filter((x) => x !== id);
-  } else {
-    selectedStoreIds.value = [...selectedStoreIds.value, id];
-  }
-}
-
-function storeGoPage(p) {
-  const last = storeListLastPage.value;
-  if (p < 1 || p > last) return;
-  storeListQuery.page = p;
-}
-
-function storeFirstPage() {
-  storeListQuery.page = 1;
-}
-
-function storeLastPageFn() {
-  storeListQuery.page = storeListLastPage.value;
-}
-
-function openStoreBulkEdit() {
-  if (!selectedStoreIds.value.length) return;
-  storeBulkEditOpen.value = true;
-}
-
-async function applyStoreBulkEdit(payload) {
-  storeBulkEditBusy.value = true;
-  try {
-    const body = {
-      client_store_ids: selectedStoreIds.value,
-      apply_status: !!payload.apply_status,
-      apply_marketplace: !!payload.apply_marketplace,
-    };
-    if (payload.apply_status) {
-      body.status = payload.status;
-    }
-    if (payload.apply_marketplace) {
-      body.marketplace = payload.marketplace ?? null;
-    }
-    await api.patch("/client-stores/bulk", body);
-    toast.success("Stores updated.");
-    storeBulkEditOpen.value = false;
-    selectedStoreIds.value = [];
-    await refreshStoresAndAccountCounts();
-  } catch (e) {
-    toast.errorFrom(e, "Could not update stores.");
-  } finally {
-    storeBulkEditBusy.value = false;
-  }
-}
-
 function normalizeAccountManagersFromMeta(payload) {
   const raw =
     payload?.account_managers ??
@@ -1035,10 +710,12 @@ async function loadStores() {
   if (!canViewStores.value || !props.id) return;
   storesLoading.value = true;
   try {
-    const { data } = await api.get(`/client-accounts/${props.id}/stores`);
-    stores.value = Array.isArray(data) ? data : [];
+    const { data } = await api.get(`/client-accounts/${props.id}/shiphero-stores`);
+    stores.value = Array.isArray(data?.stores) ? data.stores : [];
+    storesImportedAt.value = data?.imported_at ?? null;
   } catch (e) {
     stores.value = [];
+    storesImportedAt.value = null;
     if (e.response?.status !== 403) {
       toast.errorFrom(e, "Could not load stores.");
     }
@@ -1047,35 +724,23 @@ async function loadStores() {
   }
 }
 
-async function refreshStoresAndAccountCounts() {
-  await loadStores();
-  await loadAccount();
-}
-
-function openEditStore(row) {
-  closeStoreMenu();
-  editingStore.value = { ...row };
-  editStoreOpen.value = true;
-}
-
-function closeStoreDelete() {
-  if (storeDeleteBusy.value) return;
-  storeDeleteTarget.value = null;
-}
-
-async function confirmStoreDelete() {
-  const row = storeDeleteTarget.value;
-  if (!row) return;
-  storeDeleteBusy.value = true;
+async function importStores() {
+  if (!canImportStores.value || !props.id) return;
+  if (!hasShipheroCustomerId.value) {
+    toast.error("Set ShipHero customer account ID on this account first.");
+    return;
+  }
+  storesImporting.value = true;
   try {
-    await api.delete(`/client-stores/${row.id}`);
-    storeDeleteTarget.value = null;
-    toast.success("Store deleted.");
-    await refreshStoresAndAccountCounts();
+    const { data } = await api.post(`/client-accounts/${props.id}/shiphero-stores/import`);
+    stores.value = Array.isArray(data?.stores) ? data.stores : [];
+    storesImportedAt.value = data?.imported_at ?? null;
+    const count = stores.value.length;
+    toast.success(count === 1 ? "Imported 1 store." : `Imported ${count} stores.`);
   } catch (e) {
-    toast.errorFrom(e, "Could not delete store.");
+    toast.errorFrom(e, "Could not import stores from ShipHero.");
   } finally {
-    storeDeleteBusy.value = false;
+    storesImporting.value = false;
   }
 }
 
@@ -1210,45 +875,6 @@ onUnmounted(() => {
       :statuses="accountStatuses"
       :busy="accountStatusSaving"
       @save="saveAccountStatusFromModal"
-    />
-    <ClientStoreCreateDrawer
-      v-if="canCreateStore && canViewStores"
-      v-model:open="addStoreOpen"
-      :client-account-id="id"
-      @saved="refreshStoresAndAccountCounts"
-    />
-    <ClientStoreEditModal
-      v-if="canUpdateStore"
-      v-model:open="editStoreOpen"
-      :store="editingStore"
-      @saved="refreshStoresAndAccountCounts"
-    />
-    <ClientStoresBulkEditModal
-      v-if="canUpdateStore && canViewStores"
-      v-model:open="storeBulkEditOpen"
-      :selected-count="selectedStoreIds.length"
-      :busy="storeBulkEditBusy"
-      @apply="applyStoreBulkEdit"
-    />
-    <ConfirmModal
-      :open="storeDeleteOpen"
-      title="Delete store"
-      :message="storeDeleteMessage"
-      confirm-label="Delete"
-      cancel-label="Cancel"
-      :busy="storeDeleteBusy"
-      @close="closeStoreDelete"
-      @confirm="confirmStoreDelete"
-    />
-    <ConfirmModal
-      :open="storeBulkDeleteOpen"
-      title="Delete stores"
-      :message="storeBulkDeleteMessage"
-      confirm-label="Delete"
-      cancel-label="Cancel"
-      :busy="storeBulkDeleteBusy"
-      @close="closeStoreBulkDelete"
-      @confirm="confirmStoreBulkDelete"
     />
     <ConfirmModal
       :open="noteDeleteModalOpen"
@@ -1844,199 +1470,17 @@ onUnmounted(() => {
               <div class="staff-table-card staff-datatable-card">
                 <div class="staff-table-toolbar">
                   <div class="staff-table-toolbar--row">
-                    <input
-                      v-model="storeSearch"
-                      type="search"
-                      class="form-control staff-toolbar-search staff-toolbar-search--inline"
-                      placeholder="Search stores"
-                      autocomplete="off"
-                    />
                     <div
-                      class="position-relative flex-shrink-0"
-                      data-store-toolbar-filter
+                      class="staff-toolbar-row-actions d-flex flex-wrap align-items-center gap-2 gap-md-3 ms-md-auto flex-shrink-0 w-100 justify-content-end"
                     >
                       <button
+                        v-if="canImportStores"
                         type="button"
-                        class="btn btn-outline-secondary staff-toolbar-btn d-inline-flex align-items-center gap-2"
-                        :aria-expanded="storeFilterMenuOpen"
-                        aria-haspopup="true"
-                        aria-controls="store-filter-panel"
-                        :disabled="storesLoading"
-                        @click.stop="
-                          storeBulkMenuOpen = false;
-                          storeFilterMenuOpen = !storeFilterMenuOpen;
-                        "
+                        class="btn btn-primary staff-page-primary staff-toolbar-btn fw-semibold"
+                        :disabled="storesLoading || storesImporting || !hasShipheroCustomerId"
+                        @click="importStores"
                       >
-                        <svg
-                          width="18"
-                          height="18"
-                          fill="none"
-                          stroke="currentColor"
-                          stroke-width="2"
-                          viewBox="0 0 24 24"
-                          aria-hidden="true"
-                        >
-                          <path
-                            stroke-linecap="round"
-                            stroke-linejoin="round"
-                            d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2.586a1 1 0 01-.293.707l-6.414 6.414a1 1 0 00-.293.707V17l-4 4v-6.586a1 1 0 00-.293-.707L3.293 7.293A1 1 0 013 6.586V4z"
-                          />
-                        </svg>
-                        <span class="staff-toolbar-filter-text">Filters</span>
-                      </button>
-                      <div
-                        v-if="storeFilterMenuOpen"
-                        id="store-filter-panel"
-                        class="dropdown-menu dropdown-menu-end show shadow border p-0 staff-toolbar-filter-dropdown"
-                        role="dialog"
-                        aria-label="Table filters"
-                        @click.stop
-                      >
-                        <div class="staff-toolbar-filter-dropdown__head">
-                          <span>Filters</span>
-                          <button
-                            type="button"
-                            class="btn btn-link btn-sm text-secondary text-decoration-none p-0"
-                            :disabled="storesLoading"
-                            @click="
-                              storeStatusFilter = 'all';
-                              storeFilterMenuOpen = false;
-                            "
-                          >
-                            Reset
-                          </button>
-                        </div>
-                        <div class="staff-toolbar-filter-dropdown__body">
-                          <label class="form-label" for="store-filter-status"
-                            >Status</label
-                          >
-                          <select
-                            id="store-filter-status"
-                            v-model="storeStatusFilter"
-                            class="form-select staff-datatable-filters__select mb-0"
-                            :disabled="storesLoading"
-                          >
-                            <option value="all">All statuses</option>
-                            <option value="pending">Pending</option>
-                            <option value="active">Active</option>
-                            <option value="inactive">Inactive</option>
-                          </select>
-                        </div>
-                      </div>
-                    </div>
-                    <div
-                      class="staff-toolbar-row-actions d-flex flex-wrap align-items-center gap-2 gap-md-3 ms-md-auto flex-shrink-0"
-                    >
-                      <button
-                        v-if="canCreateStore"
-                        type="button"
-                        class="btn btn-primary staff-page-primary staff-toolbar-btn"
-                        @click="addStoreOpen = true"
-                      >
-                        Add Store
-                      </button>
-                      <div
-                        v-if="canUpdateStore || canDeleteStore"
-                        class="d-none d-md-flex align-items-center gap-2 flex-shrink-0"
-                      >
-                        <button
-                          v-if="canUpdateStore"
-                          type="button"
-                          class="btn btn-outline-secondary staff-toolbar-btn"
-                          :disabled="!selectedStoreIds.length || storesLoading"
-                          @click="openStoreBulkEdit"
-                        >
-                          Bulk Edit
-                        </button>
-                        <button
-                          v-if="canDeleteStore"
-                          type="button"
-                          class="btn btn-outline-danger staff-toolbar-btn"
-                          :disabled="!selectedStoreIds.length || storesLoading"
-                          @click="openStoreBulkDelete"
-                        >
-                          Bulk Delete
-                        </button>
-                      </div>
-                      <div
-                        v-if="canUpdateStore && canDeleteStore"
-                        class="d-md-none position-relative flex-shrink-0"
-                        data-store-toolbar-bulk
-                      >
-                        <button
-                          type="button"
-                          class="btn btn-outline-secondary staff-toolbar-btn d-inline-flex align-items-center gap-1"
-                          :aria-expanded="storeBulkMenuOpen"
-                          aria-haspopup="true"
-                          :disabled="storesLoading"
-                          @click.stop="
-                            storeFilterMenuOpen = false;
-                            storeBulkMenuOpen = !storeBulkMenuOpen;
-                          "
-                        >
-                          Bulk Actions
-                          <svg
-                            width="14"
-                            height="14"
-                            fill="currentColor"
-                            viewBox="0 0 24 24"
-                            class="text-secondary"
-                            aria-hidden="true"
-                          >
-                            <path d="M7 10l5 5 5-5H7z" />
-                          </svg>
-                        </button>
-                        <div
-                          v-if="storeBulkMenuOpen"
-                          class="dropdown-menu show shadow border px-0 py-1 mt-1 staff-toolbar-bulk-dropdown"
-                          style="right: 0; left: auto"
-                          role="menu"
-                          aria-label="Bulk actions"
-                          @click.stop
-                        >
-                          <button
-                            type="button"
-                            class="dropdown-item small"
-                            role="menuitem"
-                            :disabled="!selectedStoreIds.length || storesLoading"
-                            @click="
-                              storeBulkMenuOpen = false;
-                              openStoreBulkEdit();
-                            "
-                          >
-                            Bulk Edit
-                          </button>
-                          <button
-                            type="button"
-                            class="dropdown-item small text-danger"
-                            role="menuitem"
-                            :disabled="!selectedStoreIds.length || storesLoading"
-                            @click="
-                              storeBulkMenuOpen = false;
-                              openStoreBulkDelete();
-                            "
-                          >
-                            Bulk Delete
-                          </button>
-                        </div>
-                      </div>
-                      <button
-                        v-if="canUpdateStore && !canDeleteStore"
-                        type="button"
-                        class="btn btn-outline-secondary staff-toolbar-btn d-md-none flex-shrink-0"
-                        :disabled="!selectedStoreIds.length || storesLoading"
-                        @click="openStoreBulkEdit"
-                      >
-                        Bulk Edit
-                      </button>
-                      <button
-                        v-if="canDeleteStore && !canUpdateStore"
-                        type="button"
-                        class="btn btn-outline-danger staff-toolbar-btn d-md-none flex-shrink-0"
-                        :disabled="!selectedStoreIds.length || storesLoading"
-                        @click="openStoreBulkDelete"
-                      >
-                        Bulk Delete
+                        {{ storesImporting ? "Importing…" : "Import Stores" }}
                       </button>
                     </div>
                   </div>
@@ -2051,265 +1495,63 @@ onUnmounted(() => {
                   >
                     <thead class="table-light staff-table-head">
                       <tr>
+                        <th class="staff-table-head__th" scope="col">Name</th>
                         <th
-                          v-if="showStoreCheckboxCol"
-                          class="staff-table-head__th staff-table-head__th--select"
-                          scope="col"
-                        >
-                          <input
-                            type="checkbox"
-                            class="form-check-input staff-table-head__check mt-0"
-                            :checked="isAllStoresPageSelected"
-                            :disabled="storesLoading || !paginatedStores.length"
-                            aria-label="Select all stores on this page"
-                            @change="toggleSelectAllStores"
-                          />
-                        </th>
-                        <th class="staff-table-head__th" scope="col">
-                          Store name
-                        </th>
-                        <th class="staff-table-head__th" scope="col">
-                          Status
-                        </th>
-                        <th class="staff-table-head__th" scope="col">
-                          Marketplace
-                        </th>
-                        <th
-                          v-if="canUpdateStore || canDeleteStore"
                           class="staff-table-head__th staff-actions-col text-center client-account-stores-actions-col"
                           scope="col"
                         >
-                          Actions
+                          Action
                         </th>
                       </tr>
                     </thead>
                     <tbody>
-                      <tr v-if="!filteredStores.length">
-                        <td
-                          :colspan="storeTableColspan"
-                          class="px-4 py-5 text-center text-secondary"
-                        >
-                          No stores yet.
+                      <tr v-if="!stores.length">
+                        <td colspan="2" class="px-4 py-5 text-center text-secondary">
+                          {{ storesEmptyMessage }}
                         </td>
                       </tr>
                       <tr
-                        v-for="row in paginatedStores"
+                        v-for="row in stores"
                         v-else
-                        :key="row.id"
+                        :key="row.shiphero_id || row.legacy_id || row.shop_name"
                         class="align-middle"
                       >
-                        <td
-                          v-if="showStoreCheckboxCol"
-                          class="staff-table-cell--tight-check"
-                        >
-                          <input
-                            type="checkbox"
-                            class="form-check-input staff-table-head__check mt-0"
-                            :checked="selectedStoreIds.includes(row.id)"
-                            :aria-label="`Select ${row.name}`"
-                            @change="toggleStoreRowSelect(row.id)"
-                          />
-                        </td>
                         <td>
                           <div class="d-flex align-items-center gap-3 min-w-0">
                             <span
                               class="flex-shrink-0 rounded-circle d-inline-flex align-items-center justify-content-center small fw-semibold"
                               style="width: 2.25rem; height: 2.25rem"
-                              :class="avatarClassForEmail(row.name)"
+                              :class="avatarClassForEmail(row.shop_name)"
                             >
-                              {{ initials(row.name) }}
+                              {{ initials(row.shop_name) }}
                             </span>
-                            <div class="min-w-0">
-                              <span class="d-block fw-semibold text-body text-truncate">{{
-                                row.name
-                              }}</span>
-                              <a
-                                v-if="row.website && storeWebsiteHref(row.website)"
-                                class="d-block small text-primary text-truncate text-decoration-none mt-1"
-                                :href="storeWebsiteHref(row.website)"
-                                target="_blank"
-                                rel="noopener noreferrer"
-                              >
-                                {{ storeWebsiteLinkLabel(row.website) }}
-                              </a>
-                            </div>
+                            <span class="d-block fw-semibold text-body text-truncate">{{
+                              row.shop_name || "—"
+                            }}</span>
                           </div>
                         </td>
-                        <td>
-                          <span
-                            class="text-capitalize fw-medium"
-                            :class="storeStatusBadgeClass(row.status)"
+                        <td class="staff-actions-cell text-center client-account-stores-actions-cell">
+                          <a
+                            v-if="row.settings_url"
+                            class="btn btn-sm btn-outline-secondary fw-semibold"
+                            :href="row.settings_url"
+                            target="_blank"
+                            rel="noopener noreferrer"
                           >
-                            {{ row.status }}
-                          </span>
-                        </td>
-                        <td class="text-secondary staff-table-cell__meta">
-                          {{ display(row.marketplace) }}
-                        </td>
-                        <td
-                          v-if="canUpdateStore || canDeleteStore"
-                          class="staff-actions-cell text-center client-account-stores-actions-cell"
-                        >
-                          <div
-                            class="staff-actions-inner staff-actions-inner--single d-inline-flex"
-                            data-store-menu-anchor
-                          >
-                            <button
-                              type="button"
-                              class="staff-action-btn staff-action-btn--more"
-                              :class="{ 'is-open': storeMenuOpenId === row.id }"
-                              :aria-expanded="storeMenuOpenId === row.id"
-                              aria-haspopup="true"
-                              aria-label="Store actions"
-                              @click="toggleStoreMenu(row.id, $event)"
-                            >
-                              <CrmIconRowActions variant="horizontal" />
-                            </button>
-                          </div>
+                            Edit
+                          </a>
+                          <span v-else class="text-secondary">—</span>
                         </td>
                       </tr>
                     </tbody>
                   </table>
                 </div>
                 <p
-                  v-if="canViewStores"
-                  class="staff-table-mobile-scroll-cue d-md-none"
-                  aria-hidden="true"
+                  v-if="storesImportedAt && !storesLoading"
+                  class="small text-secondary px-3 px-md-4 py-3 mb-0 border-top"
                 >
-                  Scroll sideways or swipe to see all columns.
+                  Last imported {{ formatDateTimeUs(storesImportedAt) }}.
                 </p>
-                <div
-                  v-if="!storesLoading && filteredStores.length > 0"
-                  class="d-flex flex-column flex-lg-row align-items-lg-center justify-content-lg-between gap-3 border-top staff-table-footer"
-                >
-                  <p
-                    class="small text-secondary mb-0 order-2 order-lg-1 text-center text-lg-start"
-                  >
-                    Showing
-                    <span class="fw-semibold text-body">{{ showingStoresFrom }}</span>
-                    to
-                    <span class="fw-semibold text-body">{{ showingStoresTo }}</span>
-                    of
-                    <span class="fw-semibold text-body">{{ storeListTotal }}</span>
-                    entries
-                  </p>
-                  <nav
-                    class="order-1 order-lg-2 d-flex justify-content-center justify-content-lg-end ms-lg-auto flex-shrink-0"
-                    aria-label="Store list pages"
-                  >
-                    <div class="staff-page-pager staff-page-pager--cluster">
-                      <div class="staff-page-pager__start">
-                        <button
-                          type="button"
-                          class="staff-page-pager-tile staff-page-pager-tile--nav"
-                          :disabled="storesLoading || storeListQuery.page <= 1"
-                          aria-label="First page"
-                          @click="storeFirstPage"
-                        >
-                          <svg
-                            width="18"
-                            height="18"
-                            fill="currentColor"
-                            viewBox="0 0 24 24"
-                            aria-hidden="true"
-                          >
-                            <path
-                              d="M5.59 18L7 16.59 2.41 12 7 7.41 5.59 6l-6 6 6 6zm8 0L15 16.59 10.41 12 15 7.41 13.59 6l-6 6 6 6z"
-                            />
-                          </svg>
-                        </button>
-                        <button
-                          type="button"
-                          class="staff-page-pager-tile staff-page-pager-tile--nav"
-                          :disabled="storesLoading || storeListQuery.page <= 1"
-                          aria-label="Previous page"
-                          @click="storeGoPage(storeListQuery.page - 1)"
-                        >
-                          <svg
-                            width="18"
-                            height="18"
-                            fill="currentColor"
-                            viewBox="0 0 24 24"
-                            aria-hidden="true"
-                          >
-                            <path d="M15.41 7.41L14 6l-6 6 6 6 1.41-1.41L10.83 12z" />
-                          </svg>
-                        </button>
-                      </div>
-                      <div class="staff-page-pager__pages">
-                        <div class="staff-page-pager-inner d-flex align-items-center">
-                          <template
-                            v-for="(item, idx) in storePageItems"
-                            :key="'st-pi-' + idx"
-                          >
-                            <span
-                              v-if="item.type === 'gap'"
-                              class="px-1 small text-secondary user-select-none"
-                              >…</span
-                            >
-                            <button
-                              v-else
-                              type="button"
-                              class="staff-page-pager-tile"
-                              :class="{
-                                'staff-page-pager-tile--active':
-                                  item.value === storeListQuery.page,
-                              }"
-                              :disabled="storesLoading"
-                              @click="storeGoPage(item.value)"
-                            >
-                              {{ item.value }}
-                            </button>
-                          </template>
-                        </div>
-                      </div>
-                      <div class="staff-page-pager__end">
-                        <button
-                          type="button"
-                          class="staff-page-pager-tile staff-page-pager-tile--nav"
-                          :disabled="
-                            storesLoading ||
-                            storeListQuery.page >= storeListLastPage
-                          "
-                          aria-label="Next page"
-                          @click="storeGoPage(storeListQuery.page + 1)"
-                        >
-                          <svg
-                            width="18"
-                            height="18"
-                            fill="currentColor"
-                            viewBox="0 0 24 24"
-                            aria-hidden="true"
-                          >
-                            <path d="M8.59 16.59L10 18l6-6-6-6-1.41 1.41L13.17 12z" />
-                          </svg>
-                        </button>
-                        <button
-                          type="button"
-                          class="staff-page-pager-tile staff-page-pager-tile--nav"
-                          :disabled="
-                            storesLoading ||
-                            storeListQuery.page >= storeListLastPage
-                          "
-                          aria-label="Last page"
-                          @click="storeLastPageFn"
-                        >
-                          <svg
-                            width="18"
-                            height="18"
-                            fill="currentColor"
-                            viewBox="0 0 24 24"
-                            aria-hidden="true"
-                          >
-                            <path
-                              d="M6.41 6L5 7.41 9.58 12 5 16.59 6.41 18l6-6-6-6zm8 0L13 7.41 17.58 12 13 16.59 14.41 18l6-6-6-6z"
-                            />
-                          </svg>
-                        </button>
-                      </div>
-                    </div>
-                  </nav>
-                </div>
               </div>
           </template>
 
@@ -2451,47 +1693,6 @@ onUnmounted(() => {
         </div>
       </div>
 
-      <Teleport to="body">
-        <Transition
-          enter-active-class="transition ease-out duration-100"
-          enter-from-class="opacity-0"
-          enter-to-class="opacity-100"
-          leave-active-class="transition ease-in duration-75"
-          leave-from-class="opacity-100"
-          leave-to-class="opacity-0"
-        >
-          <div
-            v-if="storeMenuRow"
-            class="staff-row-menu fixed z-[300]"
-            role="menu"
-            :style="{
-              top: `${storeMenuRect.top}px`,
-              left: `${storeMenuRect.left}px`,
-              minWidth: '11rem',
-            }"
-            @click.stop
-          >
-            <button
-              v-if="canUpdateStore"
-              type="button"
-              class="staff-row-menu__item"
-              role="menuitem"
-              @click="openEditStore(storeMenuRow)"
-            >
-              Edit
-            </button>
-            <button
-              v-if="canDeleteStore"
-              type="button"
-              class="staff-row-menu__item staff-row-menu__item--danger"
-              role="menuitem"
-              @click="requestStoreDelete(storeMenuRow)"
-            >
-              Delete
-            </button>
-          </div>
-        </Transition>
-      </Teleport>
     </template>
   </div>
 </template>

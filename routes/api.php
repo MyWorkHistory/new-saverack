@@ -10,7 +10,7 @@ use App\Http\Controllers\Api\CustomBillController;
 use App\Http\Controllers\Api\ClientAccountController;
 use App\Http\Controllers\Api\ClientAccountOnboardingController;
 use App\Http\Controllers\Api\ClientAccountUserController;
-use App\Http\Controllers\Api\ClientStoreController;
+use App\Http\Controllers\Api\ClientAccountShipHeroStoreController;
 use App\Http\Controllers\Api\DashboardController;
 use App\Http\Controllers\Api\HomeDashboardController;
 use App\Http\Controllers\Api\RoleController;
@@ -501,18 +501,10 @@ Route::middleware('auth:sanctum')->group(function () {
         ->name('client-accounts.bulk-update');
     Route::delete('client-accounts/bulk', [ClientAccountController::class, 'bulkDestroy'])
         ->name('client-accounts.bulk-destroy');
-    Route::patch('client-stores/bulk', [ClientStoreController::class, 'bulkUpdate'])
-        ->name('client-stores.bulk-update');
-    Route::delete('client-stores/bulk', [ClientStoreController::class, 'bulkDestroy'])
-        ->name('client-stores.bulk-destroy');
-    Route::get('client-accounts/{client_account}/stores', [ClientStoreController::class, 'index'])
-        ->name('client-accounts.stores.index');
-    Route::post('client-accounts/{client_account}/stores', [ClientStoreController::class, 'store'])
-        ->name('client-accounts.stores.store');
-    Route::patch('client-stores/{client_store}', [ClientStoreController::class, 'update'])
-        ->name('client-stores.update');
-    Route::delete('client-stores/{client_store}', [ClientStoreController::class, 'destroy'])
-        ->name('client-stores.destroy');
+    Route::get('client-accounts/{client_account}/shiphero-stores', [ClientAccountShipHeroStoreController::class, 'index'])
+        ->name('client-accounts.shiphero-stores.index');
+    Route::post('client-accounts/{client_account}/shiphero-stores/import', [ClientAccountShipHeroStoreController::class, 'import'])
+        ->name('client-accounts.shiphero-stores.import');
     Route::apiResource('client-accounts', ClientAccountController::class);
     Route::match(['put', 'patch'], 'users/{user}/permissions', [UserController::class, 'updatePermissions'])
         ->name('users.permissions.update');

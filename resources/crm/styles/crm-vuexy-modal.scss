@@ -109,6 +109,11 @@ $vx-modal-primary: #2563eb;
   max-height: min(90dvh, 640px);
 }
 
+.crm-vx-modal--tutorial-edit {
+  max-width: 44rem;
+  max-height: min(92dvh, 900px);
+}
+
 .crm-vx-modal__close {
   position: absolute;
   top: 1rem;

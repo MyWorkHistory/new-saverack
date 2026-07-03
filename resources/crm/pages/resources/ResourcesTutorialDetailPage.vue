@@ -3,8 +3,12 @@ import { computed, inject, onMounted, onUnmounted, ref, watch } from "vue";
 import { RouterLink, useRouter } from "vue-router";
 import api from "../../services/api";
 import CrmLoadingSpinner from "../../components/common/CrmLoadingSpinner.vue";
+import ConfirmModal from "../../components/common/ConfirmModal.vue";
 import CrmLinkedText from "../../components/common/CrmLinkedText.vue";
+import PhotoLightboxModal from "../../components/resources/PhotoLightboxModal.vue";
+import PhotoUploadModal from "../../components/resources/PhotoUploadModal.vue";
 import TutorialModal from "../../components/resources/TutorialModal.vue";
+import { useToast } from "../../composables/useToast.js";
 import { crmIsAdmin } from "../../utils/crmUser.js";
 import { formatDateTimeUs, formatDateUs } from "../../utils/formatUserDates.js";
 import { setCrmPageMeta } from "../../composables/useCrmPageMeta.js";
@@ -15,6 +19,7 @@ const props = defineProps({
 
 const crmUser = inject("crmUser", ref(null));
 const router = useRouter();
+const toast = useToast();
 const loading = ref(true);
 const errorMsg = ref("");
 const tutorial = ref(null);
@@ -25,6 +30,18 @@ const commentFileInput = ref(null);
 const commentSubmitting = ref(false);
 const commentError = ref("");
 const editorOpen = ref(false);
+const deleteTutorialOpen = ref(false);
+const deleteTutorialBusy = ref(false);
+const uploadOpen = ref(false);
+const uploadBusy = ref(false);
+const uploadName = ref("");
+const uploadFile = ref(null);
+const lightboxOpen = ref(false);
+const lightboxName = ref("");
+const lightboxUrl = ref("");
+const deletePhotoTarget = ref(null);
+const deletePhotoBusy = ref(false);
+const thumbUrls = ref({});
 
 function userHasPerm(key) {
   const u = crmUser.value;
@@ -34,6 +51,14 @@ function userHasPerm(key) {
 }
 
 const canUpdate = computed(() => userHasPerm("resources.update"));
+const canDelete = computed(() => userHasPerm("resources.delete"));
+const canCreatePhoto = computed(() => userHasPerm("resources.create"));
+const canDeletePhoto = computed(() => userHasPerm("resources.delete"));
+
+const photos = computed(() => {
+  const p = tutorial.value?.photos;
+  return Array.isArray(p) ? p : [];
+});
 
 const comments = computed(() => {
   const c = tutorial.value?.comments;
@@ -79,9 +104,11 @@ async function loadTutorial() {
   loading.value = true;
   errorMsg.value = "";
   tutorial.value = null;
+  revokeThumbUrls();
   try {
     const { data } = await api.get(`/resources/tutorials/${encodeURIComponent(props.id)}`);
     tutorial.value = data;
+    await loadThumbnails();
   } catch (e) {
     const st = e.response?.status;
     if (st === 403) errorMsg.value = "You do not have access to this tutorial.";
@@ -89,6 +116,110 @@ async function loadTutorial() {
     else errorMsg.value = "Could not load tutorial.";
   } finally {
     loading.value = false;
+  }
+}
+
+function revokeThumbUrls() {
+  for (const url of Object.values(thumbUrls.value)) {
+    if (typeof url === "string") window.URL.revokeObjectURL(url);
+  }
+  thumbUrls.value = {};
+}
+
+async function loadThumbnails() {
+  const next = { ...thumbUrls.value };
+  for (const photo of photos.value) {
+    if (!photo?.id || next[photo.id]) continue;
+    try {
+      const res = await api.get(
+        `/resources/tutorials/${props.id}/photos/${photo.id}/file`,
+        { responseType: "blob" },
+      );
+      next[photo.id] = window.URL.createObjectURL(res.data);
+    } catch {
+      /* skip */
+    }
+  }
+  thumbUrls.value = next;
+}
+
+function openPhotoUpload() {
+  uploadName.value = "";
+  uploadFile.value = null;
+  uploadOpen.value = true;
+}
+
+async function submitPhotoUpload() {
+  const name = uploadName.value.trim();
+  if (!name) {
+    toast.error("Enter a name.");
+    return;
+  }
+  if (!uploadFile.value) {
+    toast.error("Select a photo.");
+    return;
+  }
+  uploadBusy.value = true;
+  try {
+    const fd = new FormData();
+    fd.append("name", name);
+    fd.append("photo", uploadFile.value);
+    await api.post(`/resources/tutorials/${props.id}/photos`, fd);
+    uploadOpen.value = false;
+    toast.success("Photo uploaded.");
+    await loadTutorial();
+  } catch (e) {
+    toast.errorFrom(e, "Could not upload photo.");
+  } finally {
+    uploadBusy.value = false;
+  }
+}
+
+function openPhotoLightbox(photo) {
+  const url = thumbUrls.value[photo.id];
+  if (!url) return;
+  lightboxName.value = photo.name || "";
+  lightboxUrl.value = url;
+  lightboxOpen.value = true;
+}
+
+function confirmDeletePhoto(photo) {
+  deletePhotoTarget.value = photo;
+}
+
+async function doDeletePhoto() {
+  const photo = deletePhotoTarget.value;
+  if (!photo?.id) return;
+  deletePhotoBusy.value = true;
+  try {
+    await api.delete(`/resources/tutorials/${props.id}/photos/${photo.id}`);
+    if (thumbUrls.value[photo.id]) {
+      window.URL.revokeObjectURL(thumbUrls.value[photo.id]);
+      const next = { ...thumbUrls.value };
+      delete next[photo.id];
+      thumbUrls.value = next;
+    }
+    deletePhotoTarget.value = null;
+    toast.success("Photo deleted.");
+    await loadTutorial();
+  } catch (e) {
+    toast.errorFrom(e, "Could not delete photo.");
+  } finally {
+    deletePhotoBusy.value = false;
+  }
+}
+
+async function deleteTutorial() {
+  deleteTutorialBusy.value = true;
+  try {
+    await api.delete(`/resources/tutorials/${props.id}`);
+    toast.success("Tutorial deleted.");
+    router.push({ name: "resources-tutorials" });
+  } catch (e) {
+    toast.errorFrom(e, "Could not delete tutorial.");
+  } finally {
+    deleteTutorialBusy.value = false;
+    deleteTutorialOpen.value = false;
   }
 }
 
@@ -165,6 +296,14 @@ async function ensureImagePreview(comment) {
 }
 
 watch(
+  () => tutorial.value?.photos,
+  () => {
+    void loadThumbnails();
+  },
+  { deep: true },
+);
+
+watch(
   () => tutorial.value?.comments,
   (list) => {
     if (!Array.isArray(list)) return;
@@ -184,6 +323,8 @@ onUnmounted(() => {
   for (const url of Object.values(imagePreviewUrls.value)) {
     if (typeof url === "string") window.URL.revokeObjectURL(url);
   }
+  revokeThumbUrls();
+  if (lightboxUrl.value) window.URL.revokeObjectURL(lightboxUrl.value);
 });
 </script>
 
@@ -214,6 +355,14 @@ onUnmounted(() => {
         >
           Edit
         </button>
+        <button
+          v-if="tutorial && canDelete"
+          type="button"
+          class="btn btn-outline-danger btn-sm"
+          @click="deleteTutorialOpen = true"
+        >
+          Delete
+        </button>
       </div>
     </div>
 
@@ -230,15 +379,66 @@ onUnmounted(() => {
       <div class="col-12 col-lg-8 d-flex flex-column gap-4">
         <div class="staff-table-card overflow-hidden">
           <div class="p-4 p-md-5 border-bottom">
-            <div class="d-flex flex-wrap align-items-start justify-content-between gap-3">
-              <h2 class="h5 fw-semibold text-body mb-0">{{ tutorial.title }}</h2>
-              <span class="badge text-bg-secondary">{{ tutorial.category_label || "—" }}</span>
-            </div>
+            <h2 class="h5 fw-semibold text-body mb-0">{{ tutorial.title }}</h2>
           </div>
           <section class="p-4 p-md-5">
             <h3 class="small fw-semibold text-secondary text-uppercase mb-2">Description</h3>
             <CrmLinkedText :text="tutorial.description" class="whitespace-pre-wrap" />
           </section>
+        </div>
+
+        <div class="staff-table-card overflow-hidden">
+          <div class="p-4 p-md-5 border-bottom d-flex flex-wrap align-items-center justify-content-between gap-2">
+            <h3 class="h6 fw-semibold text-body mb-0">Photos</h3>
+            <button
+              v-if="canCreatePhoto"
+              type="button"
+              class="btn btn-primary staff-page-primary btn-sm"
+              @click="openPhotoUpload"
+            >
+              Add Photo
+            </button>
+          </div>
+          <div class="p-4 p-md-5">
+            <p v-if="!photos.length" class="text-secondary small mb-0">No photos yet.</p>
+            <div v-else class="resources-photo-grid">
+              <div class="row g-3 g-md-4">
+                <div
+                  v-for="photo in photos"
+                  :key="photo.id"
+                  class="col-6 col-sm-4 col-md-3"
+                >
+                  <div class="resources-photo-card h-100 position-relative">
+                    <button
+                      v-if="canDeletePhoto"
+                      type="button"
+                      class="btn btn-sm btn-outline-danger resources-photo-card__delete"
+                      aria-label="Delete photo"
+                      @click.stop="confirmDeletePhoto(photo)"
+                    >
+                      ×
+                    </button>
+                    <button
+                      type="button"
+                      class="resources-photo-card__thumb-btn w-100 border-0 bg-transparent p-0"
+                      @click="openPhotoLightbox(photo)"
+                    >
+                      <img
+                        v-if="thumbUrls[photo.id]"
+                        :src="thumbUrls[photo.id]"
+                        :alt="photo.name"
+                        class="resources-photo-card__thumb rounded"
+                      />
+                      <div v-else class="resources-photo-card__placeholder rounded bg-light" />
+                    </button>
+                    <p class="small text-center mb-0 mt-2 fw-medium text-truncate px-1" :title="photo.name">
+                      {{ photo.name }}
+                    </p>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
         </div>
 
         <div class="staff-table-card overflow-hidden">
@@ -318,6 +518,10 @@ onUnmounted(() => {
           <h3 class="small fw-semibold text-secondary text-uppercase mb-3">Details</h3>
           <dl class="row small mb-0 gy-3">
             <div class="col-12">
+              <dt class="text-secondary mb-1">Category</dt>
+              <dd class="mb-0 text-body">{{ tutorial.category_label || "—" }}</dd>
+            </div>
+            <div class="col-12">
               <dt class="text-secondary mb-1">Created Date</dt>
               <dd class="mb-0 text-body">{{ formatDateUs(tutorial.created_at) || "—" }}</dd>
             </div>
@@ -337,6 +541,44 @@ onUnmounted(() => {
       :categories="categories"
       @saved="loadTutorial"
     />
+
+    <PhotoUploadModal
+      v-model:open="uploadOpen"
+      v-model:name="uploadName"
+      v-model:file="uploadFile"
+      :busy="uploadBusy"
+      @close="uploadOpen = false"
+      @submit="submitPhotoUpload"
+    />
+
+    <PhotoLightboxModal
+      :open="lightboxOpen"
+      :name="lightboxName"
+      :image-url="lightboxUrl"
+      @close="lightboxOpen = false"
+    />
+
+    <ConfirmModal
+      :open="!!deletePhotoTarget"
+      title="Delete Photo"
+      :message="deletePhotoTarget ? `Delete “${deletePhotoTarget.name}”?` : ''"
+      confirm-label="Delete"
+      confirm-variant="danger"
+      :busy="deletePhotoBusy"
+      @cancel="deletePhotoTarget = null"
+      @confirm="doDeletePhoto"
+    />
+
+    <ConfirmModal
+      :open="deleteTutorialOpen"
+      title="Delete Tutorial"
+      :message="tutorial ? `Delete “${tutorial.title}”?` : ''"
+      confirm-label="Delete"
+      confirm-variant="danger"
+      :busy="deleteTutorialBusy"
+      @cancel="deleteTutorialOpen = false"
+      @confirm="deleteTutorial"
+    />
   </div>
 </template>
 
@@ -347,5 +589,31 @@ onUnmounted(() => {
 .wm-task-detail-avatar {
   width: 2.25rem;
   height: 2.25rem;
+}
+.resources-photo-card {
+  border: 1px solid rgba(0, 0, 0, 0.08);
+  border-radius: 0.5rem;
+  padding: 0.5rem;
+}
+.resources-photo-card__delete {
+  position: absolute;
+  top: 0.35rem;
+  right: 0.35rem;
+  z-index: 2;
+  line-height: 1;
+  padding: 0.1rem 0.45rem;
+}
+.resources-photo-card__thumb {
+  width: 100%;
+  aspect-ratio: 1;
+  object-fit: cover;
+  display: block;
+}
+.resources-photo-card__placeholder {
+  width: 100%;
+  aspect-ratio: 1;
+}
+.resources-photo-card__thumb-btn {
+  cursor: pointer;
 }
 </style>

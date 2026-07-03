@@ -46,6 +46,11 @@ class Tutorial extends Model
         return $this->hasMany(TutorialComment::class)->orderBy('created_at');
     }
 
+    public function photos(): HasMany
+    {
+        return $this->hasMany(ResourcePhoto::class)->orderByDesc('sort_order')->orderByDesc('id');
+    }
+
     public static function categoryLabel(?string $category): string
     {
         $map = [

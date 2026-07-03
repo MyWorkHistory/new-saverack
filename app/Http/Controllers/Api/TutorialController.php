@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Http\Requests\TutorialCommentStoreRequest;
 use App\Http\Requests\TutorialStoreRequest;
 use App\Http\Requests\TutorialUpdateRequest;
+use App\Models\ResourcePhoto;
 use App\Models\Tutorial;
 use App\Models\TutorialComment;
 use App\Services\TutorialService;
@@ -21,7 +22,10 @@ class TutorialController extends Controller
     public function __construct(TutorialService $tutorialService)
     {
         $this->tutorialService = $tutorialService;
-        $this->authorizeResource(Tutorial::class, 'tutorial');
+        $this->authorizeResource(Tutorial::class, 'tutorial', [
+            'storeComment' => 'comment',
+            'downloadCommentAttachment' => 'view',
+        ]);
     }
 
     public function meta(Request $request): JsonResponse
@@ -66,6 +70,7 @@ class TutorialController extends Controller
     {
         $tutorial->load([
             'creator:id,name,email',
+            'photos' => fn ($q) => $q->with('creator:id,name,email')->orderByDesc('sort_order')->orderByDesc('id'),
             'comments' => fn ($q) => $q->with('user:id,name,email')->orderBy('created_at'),
         ]);
 
@@ -81,6 +86,15 @@ class TutorialController extends Controller
 
     public function destroy(Request $request, Tutorial $tutorial): JsonResponse
     {
+        $tutorial->load('photos');
+
+        foreach ($tutorial->photos as $photo) {
+            if ($photo->file_path) {
+                Storage::disk('local')->delete($photo->file_path);
+            }
+            $photo->delete();
+        }
+
         $tutorial->delete();
 
         return response()->json(['message' => 'Tutorial deleted.']);
@@ -163,6 +177,25 @@ class TutorialController extends Controller
             'comments' => $tutorial->relationLoaded('comments')
                 ? $tutorial->comments->map(fn (TutorialComment $c) => $this->transformComment($c))->values()->all()
                 : null,
+            'photos' => $tutorial->relationLoaded('photos')
+                ? $tutorial->photos->map(fn (ResourcePhoto $p) => $this->transformPhoto($p))->values()->all()
+                : null,
+        ];
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    protected function transformPhoto(ResourcePhoto $photo): array
+    {
+        return [
+            'id' => $photo->id,
+            'name' => $photo->name,
+            'mime' => $photo->mime,
+            'size' => $photo->size,
+            'created_by' => $photo->created_by,
+            'created_at' => optional($photo->created_at)->toIso8601String(),
+            'creator' => $photo->relationLoaded('creator') ? $photo->creator : null,
         ];
     }
 

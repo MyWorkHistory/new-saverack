@@ -114,7 +114,7 @@ onUnmounted(() => document.removeEventListener("keydown", onEsc));
 <template>
   <Teleport to="body">
     <div v-if="open" class="crm-vx-modal-overlay" @click.self="close">
-      <div class="crm-vx-modal crm-vx-modal--sm" @click.stop>
+      <div class="crm-vx-modal crm-vx-modal--tutorial-edit" @click.stop>
         <header class="crm-vx-modal__head">
           <h2 class="crm-vx-modal__title">Edit Tutorial</h2>
         </header>
@@ -139,8 +139,8 @@ onUnmounted(() => document.removeEventListener("keydown", onEsc));
               <textarea
                 id="tutorial-edit-desc"
                 v-model="form.description"
-                rows="6"
-                class="form-control mb-3"
+                rows="12"
+                class="form-control mb-3 tutorial-edit-desc"
                 :disabled="saving"
               />
               <label class="form-label small" for="tutorial-edit-category">Category</label>
@@ -173,3 +173,9 @@ onUnmounted(() => document.removeEventListener("keydown", onEsc));
     </div>
   </Teleport>
 </template>
+
+<style scoped>
+.tutorial-edit-desc {
+  min-height: 14rem;
+}
+</style>

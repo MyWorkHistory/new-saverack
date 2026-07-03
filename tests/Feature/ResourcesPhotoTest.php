@@ -4,6 +4,7 @@ namespace Tests\Feature;
 
 use App\Models\Permission;
 use App\Models\ResourcePhoto;
+use App\Models\Tutorial;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\UploadedFile;
@@ -124,6 +125,65 @@ class ResourcesPhotoTest extends TestCase
         $this->assertNotNull($photo);
 
         $this->deleteJson("/api/resources/photos/{$photo->id}")
+            ->assertOk();
+
+        $this->assertDatabaseMissing('resource_photos', ['id' => $photo->id]);
+    }
+
+    public function test_global_photo_index_excludes_tutorial_photos(): void
+    {
+        Storage::fake('local');
+        $user = $this->staffWithView();
+        $user->permissions()->attach($this->resourcesCreatePermission()->id);
+        Sanctum::actingAs($user);
+
+        $tutorial = Tutorial::query()->create([
+            'title' => 'Tutorial with photo',
+            'category' => 'orders',
+            'created_by' => $user->id,
+        ]);
+
+        $this->post('/api/resources/photos', [
+            'name' => 'Global shelf',
+            'photo' => UploadedFile::fake()->image('global.jpg'),
+        ])->assertCreated();
+
+        $this->post("/api/resources/tutorials/{$tutorial->id}/photos", [
+            'name' => 'Tutorial step',
+            'photo' => UploadedFile::fake()->image('tutorial.jpg'),
+        ])->assertCreated();
+
+        $this->getJson('/api/resources/photos')
+            ->assertOk()
+            ->assertJsonCount(1, 'data')
+            ->assertJsonPath('data.0.name', 'Global shelf');
+    }
+
+    public function test_user_with_delete_can_remove_tutorial_photo(): void
+    {
+        Storage::fake('local');
+        $user = $this->staffWithView();
+        $user->permissions()->attach([
+            $this->resourcesCreatePermission()->id,
+            $this->resourcesDeletePermission()->id,
+        ]);
+        Sanctum::actingAs($user);
+
+        $tutorial = Tutorial::query()->create([
+            'title' => 'Photo delete',
+            'category' => 'returns',
+            'created_by' => $user->id,
+        ]);
+
+        $this->post("/api/resources/tutorials/{$tutorial->id}/photos", [
+            'name' => 'Remove me',
+            'photo' => UploadedFile::fake()->image('remove.jpg'),
+        ])->assertCreated();
+
+        $photo = ResourcePhoto::query()->where('tutorial_id', $tutorial->id)->first();
+        $this->assertNotNull($photo);
+
+        $this->deleteJson("/api/resources/tutorials/{$tutorial->id}/photos/{$photo->id}")
             ->assertOk();
 
         $this->assertDatabaseMissing('resource_photos', ['id' => $photo->id]);

@@ -32,6 +32,7 @@ use App\Http\Controllers\Api\PutAwayController;
 use App\Http\Controllers\Api\UserController;
 use App\Http\Controllers\Api\WebmasterTaskController;
 use App\Http\Controllers\Api\TutorialController;
+use App\Http\Controllers\Api\TutorialPhotoController;
 use App\Http\Controllers\Api\ResourcePhotoController;
 use App\Http\Controllers\Api\WholesaleOrderController;
 use App\Http\Controllers\StripeWebhookController;
@@ -437,6 +438,10 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::get('/tutorials/meta', [TutorialController::class, 'meta']);
         Route::post('/tutorials/{tutorial}/comments', [TutorialController::class, 'storeComment']);
         Route::get('/tutorials/{tutorial}/comments/{comment}/attachment', [TutorialController::class, 'downloadCommentAttachment']);
+        Route::get('/tutorials/{tutorial}/photos', [TutorialPhotoController::class, 'index']);
+        Route::post('/tutorials/{tutorial}/photos', [TutorialPhotoController::class, 'store']);
+        Route::delete('/tutorials/{tutorial}/photos/{photo}', [TutorialPhotoController::class, 'destroy']);
+        Route::get('/tutorials/{tutorial}/photos/{photo}/file', [TutorialPhotoController::class, 'file']);
         Route::apiResource('tutorials', TutorialController::class);
         Route::get('/photos', [ResourcePhotoController::class, 'index']);
         Route::post('/photos', [ResourcePhotoController::class, 'store']);

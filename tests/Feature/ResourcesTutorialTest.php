@@ -3,6 +3,7 @@
 namespace Tests\Feature;
 
 use App\Models\Permission;
+use App\Models\ResourcePhoto;
 use App\Models\Tutorial;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -166,6 +167,94 @@ class ResourcesTutorialTest extends TestCase
             ->assertOk();
 
         $this->assertDatabaseMissing('tutorials', ['id' => $tutorial->id]);
+    }
+
+    public function test_user_without_delete_cannot_destroy_tutorial(): void
+    {
+        $user = $this->staffWithView();
+        $user->permissions()->attach($this->resourcesCreatePermission()->id);
+        Sanctum::actingAs($user);
+
+        $tutorial = Tutorial::query()->create([
+            'title' => 'Protected',
+            'category' => 'orders',
+            'created_by' => $user->id,
+        ]);
+
+        $this->deleteJson("/api/resources/tutorials/{$tutorial->id}")
+            ->assertForbidden();
+
+        $this->assertDatabaseHas('tutorials', ['id' => $tutorial->id]);
+    }
+
+    public function test_show_includes_photos_array(): void
+    {
+        Sanctum::actingAs($this->staffWithView());
+
+        $tutorial = Tutorial::query()->create([
+            'title' => 'With photos',
+            'category' => 'orders',
+        ]);
+
+        $this->getJson("/api/resources/tutorials/{$tutorial->id}")
+            ->assertOk()
+            ->assertJsonPath('photos', []);
+    }
+
+    public function test_user_with_create_can_upload_tutorial_photo(): void
+    {
+        Storage::fake('local');
+        $user = $this->staffWithView();
+        $user->permissions()->attach($this->resourcesCreatePermission()->id);
+        Sanctum::actingAs($user);
+
+        $tutorial = Tutorial::query()->create([
+            'title' => 'Photo tutorial',
+            'category' => 'receiving',
+            'created_by' => $user->id,
+        ]);
+
+        $this->post("/api/resources/tutorials/{$tutorial->id}/photos", [
+            'name' => 'Step 1',
+            'photo' => UploadedFile::fake()->image('step1.jpg'),
+        ])
+            ->assertCreated()
+            ->assertJsonPath('name', 'Step 1');
+
+        $this->getJson("/api/resources/tutorials/{$tutorial->id}")
+            ->assertOk()
+            ->assertJsonPath('photos.0.name', 'Step 1');
+    }
+
+    public function test_destroy_tutorial_deletes_associated_photos(): void
+    {
+        Storage::fake('local');
+        $user = $this->staffWithView();
+        $user->permissions()->attach([
+            $this->resourcesCreatePermission()->id,
+            $this->resourcesDeletePermission()->id,
+        ]);
+        Sanctum::actingAs($user);
+
+        $tutorial = Tutorial::query()->create([
+            'title' => 'Cascade delete',
+            'category' => 'inventory',
+            'created_by' => $user->id,
+        ]);
+
+        $this->post("/api/resources/tutorials/{$tutorial->id}/photos", [
+            'name' => 'Attached',
+            'photo' => UploadedFile::fake()->image('attached.jpg'),
+        ])->assertCreated();
+
+        $photoId = (int) ResourcePhoto::query()->value('id');
+        $this->assertNotNull($photoId);
+
+        $this->deleteJson("/api/resources/tutorials/{$tutorial->id}")
+            ->assertOk();
+
+        $this->assertDatabaseMissing('tutorials', ['id' => $tutorial->id]);
+        $this->assertDatabaseMissing('resource_photos', ['id' => $photoId]);
     }
 
     public function test_user_with_view_can_add_comment_with_attachment(): void

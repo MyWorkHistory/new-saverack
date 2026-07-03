@@ -4,10 +4,12 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Builder;
 
 class ResourcePhoto extends Model
 {
     protected $fillable = [
+        'tutorial_id',
         'name',
         'file_path',
         'file_original_name',
@@ -25,5 +27,19 @@ class ResourcePhoto extends Model
     public function creator(): BelongsTo
     {
         return $this->belongsTo(User::class, 'created_by');
+    }
+
+    public function tutorial(): BelongsTo
+    {
+        return $this->belongsTo(Tutorial::class);
+    }
+
+    /**
+     * @param  Builder<ResourcePhoto>  $query
+     * @return Builder<ResourcePhoto>
+     */
+    public function scopeGlobal(Builder $query): Builder
+    {
+        return $query->whereNull('tutorial_id');
     }
 }

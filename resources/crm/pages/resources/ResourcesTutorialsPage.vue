@@ -2,8 +2,11 @@
 import { computed, inject, onMounted, onUnmounted, reactive, ref, watch } from "vue";
 import { useRouter } from "vue-router";
 import api from "../../services/api";
+import ConfirmModal from "../../components/common/ConfirmModal.vue";
+import CrmIconRowActions from "../../components/common/CrmIconRowActions.vue";
 import CrmLoadingSpinner from "../../components/common/CrmLoadingSpinner.vue";
 import TutorialDrawer from "../../components/resources/TutorialDrawer.vue";
+import TutorialModal from "../../components/resources/TutorialModal.vue";
 import { setCrmPageMeta } from "../../composables/useCrmPageMeta.js";
 import { useToast } from "../../composables/useToast.js";
 import { crmIsAdmin } from "../../utils/crmUser.js";
@@ -22,6 +25,11 @@ function userHasPerm(key) {
 }
 
 const canCreate = computed(() => userHasPerm("resources.create"));
+const canUpdate = computed(() => userHasPerm("resources.update"));
+const canDelete = computed(() => userHasPerm("resources.delete"));
+const showActionsCol = computed(() => canUpdate.value || canDelete.value);
+
+const tableColspan = computed(() => (showActionsCol.value ? 5 : 4));
 
 const loading = ref(true);
 const rows = ref([]);
@@ -29,6 +37,17 @@ const categories = ref([]);
 const pagination = ref({ current_page: 1, last_page: 1, total: 0 });
 const drawerOpen = ref(false);
 const filterMenuOpen = ref(false);
+const editModalOpen = ref(false);
+const editingTutorial = ref(null);
+const deleteTarget = ref(null);
+const deleteBusy = ref(false);
+const manageOpenId = ref(null);
+const manageMenuRect = ref({ top: 0, left: 0 });
+
+const MENU_W = 160;
+const MENU_H = 88;
+
+const manageMenuRow = computed(() => rows.value.find((r) => r.id === manageOpenId.value) ?? null);
 
 const query = reactive({
   search: "",
@@ -152,6 +171,66 @@ function onPerPageChange(e) {
   load();
 }
 
+function descriptionPreview(text) {
+  const s = String(text || "").trim();
+  if (!s) return "";
+  return s.length > 120 ? `${s.slice(0, 120)}…` : s;
+}
+
+function openEdit(row) {
+  if (!row?.id || !canUpdate.value) return;
+  closeManageMenu();
+  editingTutorial.value = { ...row };
+  editModalOpen.value = true;
+}
+
+function confirmDelete(row) {
+  if (!row?.id || !canDelete.value) return;
+  closeManageMenu();
+  deleteTarget.value = row;
+}
+
+async function doDelete() {
+  const row = deleteTarget.value;
+  if (!row?.id) return;
+  deleteBusy.value = true;
+  try {
+    await api.delete(`/resources/tutorials/${row.id}`);
+    toast.success("Tutorial deleted.");
+    deleteTarget.value = null;
+    await load();
+  } catch (e) {
+    toast.errorFrom(e, "Could not delete tutorial.");
+  } finally {
+    deleteBusy.value = false;
+  }
+}
+
+function placeManageMenu(anchorEl) {
+  if (!(anchorEl instanceof HTMLElement)) return;
+  const r = anchorEl.getBoundingClientRect();
+  let top = r.bottom + 4;
+  let left = r.right - MENU_W;
+  left = Math.max(8, Math.min(left, window.innerWidth - MENU_W - 8));
+  if (top + MENU_H > window.innerHeight - 8) {
+    top = Math.max(8, r.top - MENU_H - 4);
+  }
+  manageMenuRect.value = { top, left };
+}
+
+function closeManageMenu() {
+  manageOpenId.value = null;
+}
+
+function toggleManageMenu(rowId, e) {
+  if (manageOpenId.value === rowId) {
+    closeManageMenu();
+    return;
+  }
+  manageOpenId.value = rowId;
+  placeManageMenu(e?.currentTarget);
+}
+
 function goPage(p) {
   if (p < 1 || p > pagination.value.last_page) return;
   query.page = p;
@@ -167,10 +246,17 @@ function goLastPage() {
 }
 
 function onDocClick(e) {
-  if (!filterMenuOpen.value) return;
   const t = e.target;
-  if (t instanceof Element && t.closest("[data-toolbar-filter]")) return;
-  filterMenuOpen.value = false;
+  if (filterMenuOpen.value) {
+    if (!(t instanceof Element && t.closest("[data-toolbar-filter]"))) {
+      filterMenuOpen.value = false;
+    }
+  }
+  if (manageOpenId.value) {
+    if (!(t instanceof Element && t.closest("[data-row-actions]"))) {
+      closeManageMenu();
+    }
+  }
 }
 
 watch(
@@ -203,6 +289,23 @@ onUnmounted(() => {
 <template>
   <div class="staff-page staff-page--wide resources-page">
     <TutorialDrawer v-model:open="drawerOpen" :categories="categories" @saved="load" />
+    <TutorialModal
+      v-if="editingTutorial"
+      v-model:open="editModalOpen"
+      :tutorial="editingTutorial"
+      :categories="categories"
+      @saved="load"
+    />
+    <ConfirmModal
+      :open="!!deleteTarget"
+      title="Delete Tutorial"
+      :message="deleteTarget ? `Delete “${deleteTarget.title}”?` : ''"
+      confirm-label="Delete"
+      confirm-variant="danger"
+      :busy="deleteBusy"
+      @cancel="deleteTarget = null"
+      @confirm="doDelete"
+    />
 
     <div
       class="d-flex flex-column flex-md-row align-items-center justify-content-between gap-3 mb-4"
@@ -361,18 +464,25 @@ onUnmounted(() => {
                 </button>
               </th>
               <th class="staff-table-head__th" scope="col">Created By</th>
+              <th
+                v-if="showActionsCol"
+                class="staff-table-head__th staff-actions-col text-center"
+                scope="col"
+              >
+                Actions
+              </th>
             </tr>
           </thead>
           <tbody>
             <tr v-if="loading">
-              <td colspan="4" class="py-5">
+              <td :colspan="tableColspan" class="py-5">
                 <div class="d-flex justify-content-center py-3">
                   <CrmLoadingSpinner message="Loading tutorials…" />
                 </div>
               </td>
             </tr>
             <tr v-else-if="!rows.length">
-              <td colspan="4" class="px-4 py-5 text-center text-secondary">No tutorials found.</td>
+              <td :colspan="tableColspan" class="px-4 py-5 text-center text-secondary">No tutorials found.</td>
             </tr>
             <tr
               v-for="row in rows"
@@ -388,9 +498,16 @@ onUnmounted(() => {
                 <span class="fw-semibold text-body d-block text-truncate" style="max-width: 24rem" :title="row.title">
                   {{ row.title }}
                 </span>
+                <span
+                  v-if="descriptionPreview(row.description)"
+                  class="small text-secondary d-block resources-tutorial-row__subtitle"
+                  :title="row.description"
+                >
+                  {{ descriptionPreview(row.description) }}
+                </span>
               </td>
-              <td>
-                <span class="badge text-bg-secondary">{{ row.category_label || "—" }}</span>
+              <td class="text-body staff-table-cell__meta">
+                {{ row.category_label || "—" }}
               </td>
               <td class="text-body staff-table-cell__meta text-nowrap">
                 {{ formatDateUs(row.created_at) || "—" }}
@@ -398,10 +515,67 @@ onUnmounted(() => {
               <td class="text-body staff-table-cell__meta text-truncate" style="max-width: 12rem">
                 {{ row.creator?.name || "—" }}
               </td>
+              <td v-if="showActionsCol" class="staff-actions-cell text-center" @click.stop>
+                <div data-row-actions class="staff-actions-inner staff-actions-inner--single justify-content-center">
+                  <button
+                    type="button"
+                    class="staff-action-btn staff-action-btn--more"
+                    :class="{ 'is-open': manageOpenId === row.id }"
+                    :aria-expanded="manageOpenId === row.id ? 'true' : 'false'"
+                    aria-haspopup="true"
+                    aria-label="Row actions"
+                    @click="toggleManageMenu(row.id, $event)"
+                  >
+                    <CrmIconRowActions variant="horizontal" />
+                  </button>
+                </div>
+              </td>
             </tr>
           </tbody>
         </table>
       </div>
+
+      <Teleport to="body">
+        <Transition
+          enter-active-class="transition ease-out duration-100"
+          enter-from-class="opacity-0"
+          enter-to-class="opacity-100"
+          leave-active-class="transition ease-in duration-75"
+          leave-from-class="opacity-100"
+          leave-to-class="opacity-0"
+        >
+          <div
+            v-if="manageMenuRow"
+            data-row-actions
+            class="staff-row-menu fixed z-[300] overflow-hidden"
+            role="menu"
+            :style="{
+              top: `${manageMenuRect.top}px`,
+              left: `${manageMenuRect.left}px`,
+            }"
+            @click.stop
+          >
+            <button
+              v-if="canUpdate"
+              type="button"
+              class="staff-row-menu__item"
+              role="menuitem"
+              @click="openEdit(manageMenuRow)"
+            >
+              Edit
+            </button>
+            <button
+              v-if="canDelete"
+              type="button"
+              class="staff-row-menu__item text-danger"
+              role="menuitem"
+              @click="confirmDelete(manageMenuRow)"
+            >
+              Delete
+            </button>
+          </div>
+        </Transition>
+      </Teleport>
 
       <p class="staff-table-mobile-scroll-cue d-md-none" aria-hidden="true">
         Scroll sideways or swipe to see all columns.
@@ -508,5 +682,15 @@ onUnmounted(() => {
 <style scoped>
 .resources-tutorial-row {
   cursor: pointer;
+}
+
+.resources-tutorial-row__subtitle {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow: hidden;
+  max-width: 24rem;
+  font-weight: 400;
+  margin-top: 0.15rem;
 }
 </style>

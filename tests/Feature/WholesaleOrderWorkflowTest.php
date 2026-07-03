@@ -1,0 +1,198 @@
+<?php
+
+namespace Tests\Feature;
+
+use App\Models\ClientAccount;
+use App\Models\Permission;
+use App\Models\User;
+use App\Models\WholesaleOrder;
+use App\Models\WholesaleOrderLine;
+use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Http\UploadedFile;
+use Illuminate\Support\Facades\Storage;
+use Laravel\Sanctum\Sanctum;
+use Tests\TestCase;
+
+class WholesaleOrderWorkflowTest extends TestCase
+{
+    use RefreshDatabase;
+
+    private function permission(string $key, string $module): Permission
+    {
+        return Permission::query()->firstOrCreate(
+            ['key' => $key],
+            ['label' => $key, 'module' => $module]
+        );
+    }
+
+    private function staffUser(array $extraPermissionKeys = []): User
+    {
+        $user = User::factory()->create(['client_account_id' => null]);
+        $keys = array_merge(['orders.view', 'orders.update', 'clients.view'], $extraPermissionKeys);
+        foreach ($keys as $key) {
+            $perm = $this->permission($key, explode('.', $key)[0]);
+            $user->permissions()->syncWithoutDetaching([$perm->id]);
+        }
+
+        return $user;
+    }
+
+    private function account(string $suffix = '1'): ClientAccount
+    {
+        return ClientAccount::create([
+            'company_name' => 'Wholesale Co '.$suffix,
+            'status' => ClientAccount::STATUS_ACTIVE,
+            'shiphero_customer_account_id' => 'sh-wholesale-'.$suffix,
+        ]);
+    }
+
+    public function test_create_wholesale_order_as_draft(): void
+    {
+        $account = $this->account();
+        Sanctum::actingAs($this->staffUser());
+
+        $this->postJson('/api/admin/wholesale-orders', [
+            'client_account_id' => $account->id,
+            'order_type' => 'invalid',
+            'order_number' => 'WO-100',
+        ])->assertUnprocessable();
+
+        $response = $this->postJson('/api/admin/wholesale-orders', [
+            'client_account_id' => $account->id,
+            'order_type' => WholesaleOrder::TYPE_AMAZON,
+            'order_number' => 'WO-100',
+            'instructions' => 'Pack carefully.',
+        ])
+            ->assertCreated()
+            ->assertJsonPath('status', WholesaleOrder::STATUS_DRAFT)
+            ->assertJsonPath('order_number', 'WO-100')
+            ->assertJsonPath('order_type', WholesaleOrder::TYPE_AMAZON)
+            ->assertJsonCount(0, 'lines');
+
+        $this->assertDatabaseHas('wholesale_orders', [
+            'id' => $response->json('id'),
+            'status' => WholesaleOrder::STATUS_DRAFT,
+            'instructions' => 'Pack carefully.',
+        ]);
+    }
+
+    public function test_list_filters_by_status_type_and_order_number(): void
+    {
+        $account = $this->account();
+        Sanctum::actingAs($this->staffUser());
+
+        WholesaleOrder::query()->create([
+            'client_account_id' => $account->id,
+            'order_number' => 'AMZ-001',
+            'order_type' => WholesaleOrder::TYPE_AMAZON,
+            'status' => WholesaleOrder::STATUS_PENDING,
+            'items_count' => 0,
+        ]);
+        WholesaleOrder::query()->create([
+            'client_account_id' => $account->id,
+            'order_number' => 'TT-002',
+            'order_type' => WholesaleOrder::TYPE_TIKTOK,
+            'status' => WholesaleOrder::STATUS_DRAFT,
+            'items_count' => 0,
+        ]);
+
+        $this->getJson('/api/admin/wholesale-orders?status=pending')
+            ->assertOk()
+            ->assertJsonCount(1, 'data')
+            ->assertJsonPath('data.0.order_number', 'AMZ-001');
+
+        $this->getJson('/api/admin/wholesale-orders?order_type=tiktok')
+            ->assertOk()
+            ->assertJsonCount(1, 'data')
+            ->assertJsonPath('data.0.order_number', 'TT-002');
+
+        $this->getJson('/api/admin/wholesale-orders?q=AMZ')
+            ->assertOk()
+            ->assertJsonCount(1, 'data')
+            ->assertJsonPath('data.0.order_number', 'AMZ-001');
+    }
+
+    public function test_line_crud_and_barcode_upload(): void
+    {
+        Storage::fake('local');
+        $account = $this->account();
+        Sanctum::actingAs($this->staffUser());
+
+        $create = $this->postJson('/api/admin/wholesale-orders', [
+            'client_account_id' => $account->id,
+            'order_type' => WholesaleOrder::TYPE_B2B,
+            'order_number' => 'B2B-55',
+        ])->assertCreated();
+
+        $orderId = (int) $create->json('id');
+
+        $lineResponse = $this->postJson('/api/admin/wholesale-orders/'.$orderId.'/lines', [
+            'sku' => 'SKU-A',
+            'name' => 'Product A',
+            'quantity' => 3,
+        ])
+            ->assertOk()
+            ->assertJsonPath('lines.0.sku', 'SKU-A')
+            ->assertJsonPath('items_count', 3);
+
+        $lineId = (int) $lineResponse->json('lines.0.id');
+
+        $this->patchJson('/api/admin/wholesale-orders/'.$orderId.'/lines/'.$lineId, [
+            'quantity' => 5,
+        ])
+            ->assertOk()
+            ->assertJsonPath('items_count', 5);
+
+        $file = UploadedFile::fake()->create('barcode.pdf', 100, 'application/pdf');
+        $this->post('/api/admin/wholesale-orders/'.$orderId.'/lines/'.$lineId.'/barcode', [
+            'barcode' => $file,
+        ])
+            ->assertOk()
+            ->assertJsonPath('lines.0.has_barcode', true);
+
+        $line = WholesaleOrderLine::query()->findOrFail($lineId);
+        $this->assertSame(WholesaleOrderLine::BARCODE_UPLOADED, $line->barcode_mode);
+        Storage::disk('local')->assertExists($line->barcode_path);
+
+        $this->get('/api/admin/wholesale-orders/'.$orderId.'/lines/'.$lineId.'/barcode.pdf')
+            ->assertOk();
+
+        $this->deleteJson('/api/admin/wholesale-orders/'.$orderId.'/lines/'.$lineId)
+            ->assertOk()
+            ->assertJsonCount(0, 'lines');
+    }
+
+    public function test_post_comment_with_attachment(): void
+    {
+        Storage::fake('local');
+        $account = $this->account();
+        Sanctum::actingAs($this->staffUser());
+
+        $create = $this->postJson('/api/admin/wholesale-orders', [
+            'client_account_id' => $account->id,
+            'order_type' => WholesaleOrder::TYPE_OTHER,
+            'order_number' => 'OTH-1',
+        ])->assertCreated();
+
+        $orderId = (int) $create->json('id');
+        $file = UploadedFile::fake()->create('note.pdf', 50, 'application/pdf');
+
+        $this->post('/api/admin/wholesale-orders/'.$orderId.'/comments', [
+            'body' => 'Needs labels.',
+            'attachment' => $file,
+        ])
+            ->assertCreated()
+            ->assertJsonPath('body', 'Needs labels.')
+            ->assertJsonPath('attachment.original_name', 'note.pdf');
+    }
+
+    public function test_portal_user_cannot_access_wholesale_orders(): void
+    {
+        $account = $this->account();
+        $user = User::factory()->create(['client_account_id' => $account->id]);
+        $user->permissions()->attach($this->permission('orders.view', 'orders')->id);
+        Sanctum::actingAs($user);
+
+        $this->getJson('/api/admin/wholesale-orders')->assertForbidden();
+    }
+}

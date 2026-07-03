@@ -31,6 +31,7 @@ use App\Http\Controllers\Api\AsnBillController;
 use App\Http\Controllers\Api\PutAwayController;
 use App\Http\Controllers\Api\UserController;
 use App\Http\Controllers\Api\WebmasterTaskController;
+use App\Http\Controllers\Api\WholesaleOrderController;
 use App\Http\Controllers\StripeWebhookController;
 use Illuminate\Support\Facades\Route;
 
@@ -231,6 +232,20 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::get('/items', [AdminReturnController::class, 'returnedItems'])->middleware('can:inventory.view');
         Route::post('/{clientAccountReturn}/process', [AdminReturnController::class, 'process'])->middleware('can:inventory.view');
         Route::get('/process-lookup', [AdminReturnController::class, 'processLookup'])->middleware('can:inventory.view');
+    });
+
+    Route::prefix('admin/wholesale-orders')->group(function () {
+        Route::get('/', [WholesaleOrderController::class, 'index'])->middleware('can:orders.view');
+        Route::post('/', [WholesaleOrderController::class, 'store'])->middleware('can:orders.update');
+        Route::get('/{wholesaleOrder}', [WholesaleOrderController::class, 'show'])->middleware('can:orders.view');
+        Route::patch('/{wholesaleOrder}', [WholesaleOrderController::class, 'update'])->middleware('can:orders.update');
+        Route::post('/{wholesaleOrder}/lines', [WholesaleOrderController::class, 'storeLine'])->middleware('can:orders.update');
+        Route::patch('/{wholesaleOrder}/lines/{line}', [WholesaleOrderController::class, 'updateLine'])->middleware('can:orders.update');
+        Route::delete('/{wholesaleOrder}/lines/{line}', [WholesaleOrderController::class, 'destroyLine'])->middleware('can:orders.update');
+        Route::post('/{wholesaleOrder}/lines/{line}/barcode', [WholesaleOrderController::class, 'uploadLineBarcode'])->middleware('can:orders.update');
+        Route::get('/{wholesaleOrder}/lines/{line}/barcode.pdf', [WholesaleOrderController::class, 'lineBarcodePdf'])->middleware('can:orders.view');
+        Route::post('/{wholesaleOrder}/comments', [WholesaleOrderController::class, 'storeComment'])->middleware('can:orders.view');
+        Route::get('/{wholesaleOrder}/comments/{comment}/attachment', [WholesaleOrderController::class, 'downloadCommentAttachment'])->middleware('can:orders.view');
     });
 
     Route::prefix('admin/asns')->group(function () {

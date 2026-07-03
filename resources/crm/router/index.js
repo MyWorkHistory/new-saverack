@@ -246,6 +246,14 @@ const meta = {
     title: "Save Rack | Process Return",
     description: "Process a pending return.",
   },
+  wholesaleOrdersList: {
+    title: "Save Rack | Wholesale Orders",
+    description: "Manage wholesale fulfillment orders.",
+  },
+  wholesaleOrderDetail: {
+    title: "Save Rack | Wholesale Order",
+    description: "Wholesale order detail.",
+  },
   adminReturnedOrders: {
     title: "Save Rack | Returned Orders",
     description: "Processed returns by order.",
@@ -560,6 +568,18 @@ const routes = [
       description: "Local order drafts not yet sent to ShipHero.",
       requiresOrdersUpdate: true,
     },
+  },
+  {
+    path: "/admin/orders/wholesale",
+    name: "wholesale-orders",
+    component: () => import("../pages/orders/WholesaleOrdersListPage.vue"),
+    meta: meta.wholesaleOrdersList,
+  },
+  {
+    path: "/admin/orders/wholesale/:id",
+    name: "wholesale-order-detail",
+    component: () => import("../pages/orders/WholesaleOrderDetailPage.vue"),
+    meta: meta.wholesaleOrderDetail,
   },
   {
     path: "/admin/orders/search",

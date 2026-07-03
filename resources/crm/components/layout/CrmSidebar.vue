@@ -124,6 +124,7 @@ function navActive(mode) {
   if (mode === "orders-on-hold") return p.startsWith("/admin/orders/on-hold");
   if (mode === "orders-out-of-stock") return p.startsWith("/admin/orders/backorder");
   if (mode === "orders-shipped") return p.startsWith("/admin/orders/shipped");
+  if (mode === "orders-wholesale") return p.startsWith("/admin/orders/wholesale");
   if (mode === "receiving") return p.startsWith("/admin/receiving");
   if (mode === "receiving-asn") return p.startsWith("/admin/receiving/asn");
   if (mode === "receiving-put-away") return p.startsWith("/admin/receiving/put-away");
@@ -325,6 +326,16 @@ function collapseNav() {
                     @click="closeMobile"
                   >
                     Shipped
+                  </RouterLink>
+                </li>
+                <li>
+                  <RouterLink
+                    to="/admin/orders/wholesale"
+                    class="vx-nav-link vx-nav-sublink"
+                    :class="{ 'vx-nav-link--active': navActive('orders-wholesale') }"
+                    @click="closeMobile"
+                  >
+                    Wholesale
                   </RouterLink>
                 </li>
                 <li v-if="canWriteOrders">

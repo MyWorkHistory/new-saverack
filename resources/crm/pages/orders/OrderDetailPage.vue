@@ -77,7 +77,7 @@ const tagsLocal = ref([]);
 const tagInputValue = ref("");
 const tagsSaveBusy = ref(false);
 
-const addItemsModalOpen = ref(false);
+const addPanelOpen = ref(false);
 const addItemsBusy = ref(false);
 const addItemsCatalogPanelKey = ref(0);
 const addNewSkuOpen = ref(false);
@@ -1466,7 +1466,7 @@ async function savePackingNote() {
   }
 }
 
-function openAddItemsModal() {
+function toggleAddPanel() {
   if (!canRunShipHeroActions.value) {
     toast.error("You do not have permission to add items.");
     return;
@@ -1479,7 +1479,7 @@ function openAddItemsModal() {
     toast.error(addItemsCatalogDeniedMessage.value);
     return;
   }
-  addItemsModalOpen.value = true;
+  addPanelOpen.value = !addPanelOpen.value;
 }
 
 function openAddNewSkuModal() {
@@ -1579,11 +1579,6 @@ function onMoreActionsDocumentClick(ev) {
   moreActionsOpen.value = false;
 }
 
-function closeAddItemsModal() {
-  if (addItemsBusy.value) return;
-  addItemsModalOpen.value = false;
-}
-
 async function addOrderLineFromCatalog({ product, quantity }) {
   const p = product && typeof product === "object" ? product : null;
   const sku = String(p?.sku || "").trim();
@@ -1654,13 +1649,13 @@ function modalEscHandler(e) {
   if (shippingSaveBusy.value || addItemsBusy.value || editLineBusy.value || addNewSkuBusy.value) return;
   if (addNewSkuOpen.value) addNewSkuOpen.value = false;
   if (shippingModalOpen.value) shippingModalOpen.value = false;
-  if (addItemsModalOpen.value) addItemsModalOpen.value = false;
+  if (addPanelOpen.value) addPanelOpen.value = false;
   if (editLineModalOpen.value) editLineModalOpen.value = false;
   if (moreActionsOpen.value) moreActionsOpen.value = false;
   if (itemMenuOpenId.value) itemMenuOpenId.value = null;
 }
 
-watch([shippingModalOpen, addItemsModalOpen, editLineModalOpen, addNewSkuOpen], ([s, a, e, n]) => {
+watch([shippingModalOpen, addPanelOpen, editLineModalOpen, addNewSkuOpen], ([s, a, e, n]) => {
   if (s || a || e || n) {
     document.addEventListener("keydown", modalEscHandler);
   } else {
@@ -1869,10 +1864,26 @@ function goToOrdersList() {
                 :class="addItemsBtnClass"
                 :disabled="loading || !canRunShipHeroActions"
                 :title="!canRunShipHeroActions ? 'Requires orders update permission' : undefined"
-                @click="openAddItemsModal"
+                @click="toggleAddPanel"
               >
-                Add Items
+                {{ addPanelOpen ? "Hide Add Products" : "Add Products" }}
               </button>
+            </div>
+            <div v-if="addPanelOpen && !isReturnPreviewMode" class="border-bottom">
+              <AsnProductCatalogPanel
+                :key="addItemsCatalogPanelKey"
+                :client-account-id="catalogClientAccountId"
+                :use-session-client-account="isUserPortalRoute || isPortalUser"
+                :active="addPanelOpen"
+                :busy="addItemsBusy"
+                :permission-denied-message="addItemsCatalogDeniedMessage"
+                :show-add-new-sku="canCreateCatalogSku"
+                :create-sku-route="addItemsCreateSkuRoute"
+                qty-label="Quantity"
+                search-input-id="order-add-items-catalog-search"
+                @add="addOrderLineFromCatalog"
+                @add-new-sku="openAddNewSkuModal"
+              />
             </div>
             <div class="table-responsive staff-table-wrap">
               <table class="table table-hover align-middle mb-0 staff-data-table">
@@ -2554,71 +2565,6 @@ function goToOrdersList() {
           Delete
         </button>
       </div>
-    </Teleport>
-
-    <Teleport to="body">
-      <Transition name="modal-backdrop">
-        <div
-          v-if="addItemsModalOpen"
-          class="crm-vx-modal-overlay"
-          aria-modal="true"
-          role="dialog"
-          aria-labelledby="order-add-items-modal-title"
-        >
-          <div
-            class="crm-vx-modal-backdrop"
-            aria-hidden="true"
-            @click="closeAddItemsModal"
-          />
-          <Transition name="modal-panel" appear>
-            <div class="crm-vx-modal">
-              <button
-                type="button"
-                class="crm-vx-modal__close"
-                aria-label="Close"
-                :disabled="addItemsBusy"
-                @click="closeAddItemsModal"
-              >
-                <svg width="20" height="20" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.75">
-                  <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" />
-                </svg>
-              </button>
-              <header class="crm-vx-modal__head">
-                <h2 id="order-add-items-modal-title" class="crm-vx-modal__title">Add Items</h2>
-                <p class="crm-vx-modal__subtitle small text-secondary mb-0">
-                  Search the account catalog and add SKUs to this order.
-                </p>
-              </header>
-              <div class="crm-vx-modal__body p-0">
-                <AsnProductCatalogPanel
-                  :key="addItemsCatalogPanelKey"
-                  :client-account-id="catalogClientAccountId"
-                  :use-session-client-account="isUserPortalRoute || isPortalUser"
-                  :active="addItemsModalOpen"
-                  :busy="addItemsBusy"
-                  :permission-denied-message="addItemsCatalogDeniedMessage"
-                  :show-add-new-sku="canCreateCatalogSku"
-                  :create-sku-route="addItemsCreateSkuRoute"
-                  qty-label="Quantity"
-                  search-input-id="order-add-items-catalog-search"
-                  @add="addOrderLineFromCatalog"
-                  @add-new-sku="openAddNewSkuModal"
-                />
-              </div>
-              <footer class="crm-vx-modal__footer">
-                <button
-                  type="button"
-                  class="crm-vx-modal-btn crm-vx-modal-btn--secondary"
-                  :disabled="addItemsBusy"
-                  @click="closeAddItemsModal"
-                >
-                  Close
-                </button>
-              </footer>
-            </div>
-          </Transition>
-        </div>
-      </Transition>
     </Teleport>
 
     <Teleport to="body">

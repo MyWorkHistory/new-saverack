@@ -14,6 +14,7 @@ use App\Models\AsnBill;
 use App\Models\Task;
 use App\Models\Ticket;
 use App\Models\User;
+use App\Models\WholesaleOrder;
 use App\Policies\ClientAccountAsnPolicy;
 use App\Policies\ClientAccountReturnPolicy;
 use App\Policies\ClientAccountOnDemandProductPolicy;
@@ -26,6 +27,7 @@ use App\Policies\AsnBillPolicy;
 use App\Policies\TaskPolicy;
 use App\Policies\TicketPolicy;
 use App\Policies\UserPolicy;
+use App\Policies\WholesaleOrderPolicy;
 use Illuminate\Foundation\Support\Providers\AuthServiceProvider as ServiceProvider;
 use Illuminate\Support\Facades\Gate;
 
@@ -50,6 +52,7 @@ class AuthServiceProvider extends ServiceProvider
         PricingFeeTemplate::class => PricingFeeTemplatePolicy::class,
         Ticket::class => TicketPolicy::class,
         Task::class => TaskPolicy::class,
+        WholesaleOrder::class => WholesaleOrderPolicy::class,
     ];
 
     /**

@@ -40,6 +40,13 @@ const canViewBilling = computed(() => {
   return k.includes("billing.view");
 });
 
+const canViewResources = computed(() => {
+  if (crmIsAdmin(props.user) || props.user?.is_crm_owner) return true;
+  const k = props.user?.permission_keys;
+  if (!Array.isArray(k)) return false;
+  return k.includes("resources.view");
+});
+
 const canViewInventory = computed(() => {
   if (isPortal.value) return true;
   if (crmIsAdmin(props.user) || props.user?.is_crm_owner) return true;
@@ -74,6 +81,7 @@ const canWriteOrders = computed(() => {
 const clientsGroupOpen = ref(route.path.startsWith("/admin/clients"));
 const settingsGroupOpen = ref(route.path.startsWith("/admin/settings"));
 const billingGroupOpen = ref(route.path.startsWith("/admin/billing"));
+const resourcesGroupOpen = ref(route.path.startsWith("/admin/resources"));
 const ordersGroupOpen = ref(route.path.startsWith("/admin/orders"));
 const inventoryGroupOpen = ref(route.path.startsWith("/admin/inventory"));
 const receivingGroupOpen = ref(route.path.startsWith("/admin/receiving"));
@@ -89,6 +97,9 @@ watch(
     }
     if (p.startsWith("/admin/billing")) {
       billingGroupOpen.value = true;
+    }
+    if (p.startsWith("/admin/resources")) {
+      resourcesGroupOpen.value = true;
     }
     if (p.startsWith("/admin/orders")) {
       ordersGroupOpen.value = true;
@@ -147,6 +158,8 @@ function navActive(mode) {
   if (mode === "billing-custom-bills") return p.startsWith("/admin/billing/custom-bills");
   if (mode === "billing-return-bills") return p.startsWith("/admin/billing/return-bills");
   if (mode === "billing-asn-bills") return p.startsWith("/admin/billing/asn-bills");
+  if (mode === "resources-tutorials") return p.startsWith("/admin/resources/tutorials");
+  if (mode === "resources-photos") return p.startsWith("/admin/resources/photos");
   return false;
 }
 
@@ -863,6 +876,90 @@ function collapseNav() {
                 stroke-linecap="round"
                 stroke-linejoin="round"
                 d="M19.5 14.25v-2.625a3.375 3.375 0 0 0-3.375-3.375h-1.5A1.125 1.125 0 0 1 13.5 7.125v-1.5a3.375 3.375 0 0 0-3.375-3.375H8.25m0 12.75h7.5m-7.5 3H12M10.5 2.25H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 0 0-9-9Z"
+              />
+            </svg>
+          </RouterLink>
+        </li>
+        <li v-if="!isPortal && canViewResources">
+          <template v-if="isExpanded">
+            <div>
+              <button
+                type="button"
+                class="vx-nav-link"
+                :aria-expanded="resourcesGroupOpen"
+                @click="resourcesGroupOpen = !resourcesGroupOpen"
+              >
+                <svg
+                  fill="none"
+                  viewBox="0 0 24 24"
+                  stroke="currentColor"
+                  stroke-width="1.5"
+                >
+                  <path
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                    d="M12 6.042A8.967 8.967 0 0 0 6 3.75c-1.052 0-2.062.18-3 .512v14.25A8.987 8.987 0 0 1 6 18c2.305 0 4.408.867 6 2.292m0-14.25a8.966 8.966 0 0 1 6-2.292c1.052 0 2.062.18 3 .512v14.25A8.987 8.987 0 0 0 18 18a8.967 8.967 0 0 0-6 2.292m0-14.25v14.25"
+                  />
+                </svg>
+                <span class="text-truncate">Resources</span>
+                <svg
+                  class="ms-auto flex-shrink-0 transition"
+                  :class="resourcesGroupOpen ? 'rotate-180' : ''"
+                  style="width: 1rem; height: 1rem"
+                  fill="none"
+                  viewBox="0 0 24 24"
+                  stroke="currentColor"
+                  stroke-width="1.5"
+                  aria-hidden="true"
+                >
+                  <path
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                    d="M19 9l-7 7-7-7"
+                  />
+                </svg>
+              </button>
+              <ul v-show="resourcesGroupOpen" class="list-unstyled mb-0 mt-1">
+                <li>
+                  <RouterLink
+                    to="/admin/resources/tutorials"
+                    class="vx-nav-link vx-nav-sublink"
+                    :class="{ 'vx-nav-link--active': navActive('resources-tutorials') }"
+                    @click="closeMobile"
+                  >
+                    Tutorials
+                  </RouterLink>
+                </li>
+                <li>
+                  <RouterLink
+                    to="/admin/resources/photos"
+                    class="vx-nav-link vx-nav-sublink"
+                    :class="{ 'vx-nav-link--active': navActive('resources-photos') }"
+                    @click="closeMobile"
+                  >
+                    Photos
+                  </RouterLink>
+                </li>
+              </ul>
+            </div>
+          </template>
+          <RouterLink
+            v-else
+            to="/admin/resources/tutorials"
+            class="vx-nav-link"
+            title="Resources"
+            @click="closeMobile"
+          >
+            <svg
+              fill="none"
+              viewBox="0 0 24 24"
+              stroke="currentColor"
+              stroke-width="1.5"
+            >
+              <path
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                d="M12 6.042A8.967 8.967 0 0 0 6 3.75c-1.052 0-2.062.18-3 .512v14.25A8.987 8.987 0 0 1 6 18c2.305 0 4.408.867 6 2.292m0-14.25a8.966 8.966 0 0 1 6-2.292c1.052 0 2.062.18 3 .512v14.25A8.987 8.987 0 0 0 18 18a8.967 8.967 0 0 0-6 2.292m0-14.25v14.25"
               />
             </svg>
           </RouterLink>

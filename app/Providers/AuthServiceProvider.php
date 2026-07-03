@@ -13,6 +13,8 @@ use App\Models\ReturnBill;
 use App\Models\AsnBill;
 use App\Models\Task;
 use App\Models\Ticket;
+use App\Models\Tutorial;
+use App\Models\ResourcePhoto;
 use App\Models\User;
 use App\Models\WholesaleOrder;
 use App\Policies\ClientAccountAsnPolicy;
@@ -24,8 +26,10 @@ use App\Policies\CustomBillPolicy;
 use App\Policies\InvoicePolicy;
 use App\Policies\ReturnBillPolicy;
 use App\Policies\AsnBillPolicy;
+use App\Policies\ResourcePhotoPolicy;
 use App\Policies\TaskPolicy;
 use App\Policies\TicketPolicy;
+use App\Policies\TutorialPolicy;
 use App\Policies\UserPolicy;
 use App\Policies\WholesaleOrderPolicy;
 use Illuminate\Foundation\Support\Providers\AuthServiceProvider as ServiceProvider;
@@ -52,6 +56,8 @@ class AuthServiceProvider extends ServiceProvider
         PricingFeeTemplate::class => PricingFeeTemplatePolicy::class,
         Ticket::class => TicketPolicy::class,
         Task::class => TaskPolicy::class,
+        Tutorial::class => TutorialPolicy::class,
+        ResourcePhoto::class => ResourcePhotoPolicy::class,
         WholesaleOrder::class => WholesaleOrderPolicy::class,
     ];
 

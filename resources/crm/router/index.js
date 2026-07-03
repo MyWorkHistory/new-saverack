@@ -275,6 +275,18 @@ const meta = {
     title: "Save Rack | Return Bin",
     description: "Items in a return bin.",
   },
+  resourcesTutorials: {
+    title: "Save Rack | Tutorials",
+    description: "Staff training tutorials.",
+  },
+  resourcesTutorialDetail: {
+    title: "Save Rack | Tutorial",
+    description: "Tutorial detail.",
+  },
+  resourcesPhotos: {
+    title: "Save Rack | Photos",
+    description: "Reference photos for staff training.",
+  },
   userReturnOrdersList: {
     title: "Save Rack | Return Orders",
     description: "View returned orders that are pending processing or completed.",
@@ -548,6 +560,26 @@ const routes = [
   },
   { path: "/admin/returns", redirect: "/admin/returns/process" },
   {
+    path: "/admin/resources/tutorials",
+    name: "resources-tutorials",
+    component: () => import("../pages/resources/ResourcesTutorialsPage.vue"),
+    meta: meta.resourcesTutorials,
+  },
+  {
+    path: "/admin/resources/tutorials/:id",
+    name: "resources-tutorial-detail",
+    component: () => import("../pages/resources/ResourcesTutorialDetailPage.vue"),
+    props: true,
+    meta: meta.resourcesTutorialDetail,
+  },
+  {
+    path: "/admin/resources/photos",
+    name: "resources-photos",
+    component: () => import("../pages/resources/ResourcesPhotosPage.vue"),
+    meta: meta.resourcesPhotos,
+  },
+  { path: "/admin/resources", redirect: "/admin/resources/tutorials" },
+  {
     path: "/admin/inventory",
     name: "inventory",
     component: InventoryBetaListPage,
@@ -789,6 +821,9 @@ let clientsNavCache = null;
 /** Billing module: permissions from /auth/me (see setBillingNavFromUser). */
 let billingNavCache = null;
 
+/** Resources module: permissions from /auth/me (see setResourcesNavFromUser). */
+let resourcesNavCache = null;
+
 /** Orders module: permissions from /auth/me (see setOrdersNavFromUser). */
 let ordersNavCache = null;
 
@@ -808,6 +843,7 @@ export function clearCrmOwnerCache() {
   usersNavCache = null;
   clientsNavCache = null;
   billingNavCache = null;
+  resourcesNavCache = null;
   ordersNavCache = null;
   inventoryNavCache = null;
   receivingNavCache = null;
@@ -903,6 +939,29 @@ export function setBillingNavFromUser(user) {
   };
 }
 
+export function setResourcesNavFromUser(user) {
+  if (!user) {
+    resourcesNavCache = null;
+    return;
+  }
+  if (crmIsAdmin(user) || user.is_crm_owner) {
+    resourcesNavCache = {
+      view: true,
+      create: true,
+      update: true,
+      delete: true,
+    };
+    return;
+  }
+  const k = Array.isArray(user.permission_keys) ? user.permission_keys : [];
+  resourcesNavCache = {
+    view: k.includes("resources.view"),
+    create: k.includes("resources.create"),
+    update: k.includes("resources.update"),
+    delete: k.includes("resources.delete"),
+  };
+}
+
 export function setOrdersNavFromUser(user) {
   if (!user) {
     ordersNavCache = null;
@@ -972,6 +1031,7 @@ async function ensureAuthUser() {
   setWebmasterNavFromUser(data);
   setSettingsNavFromUser(data);
   setBillingNavFromUser(data);
+  setResourcesNavFromUser(data);
   setOrdersNavFromUser(data);
   setInventoryNavFromUser(data);
   setReceivingNavFromUser(data);
@@ -987,6 +1047,7 @@ async function ensureClientsRouteAccess(path) {
       setWebmasterNavFromUser(data);
       setSettingsNavFromUser(data);
       setBillingNavFromUser(data);
+      setResourcesNavFromUser(data);
       setOrdersNavFromUser(data);
       setInventoryNavFromUser(data);
       setReceivingNavFromUser(data);
@@ -1016,6 +1077,7 @@ async function ensureUsersRouteAccess(path) {
       setWebmasterNavFromUser(data);
       setSettingsNavFromUser(data);
       setBillingNavFromUser(data);
+      setResourcesNavFromUser(data);
       setOrdersNavFromUser(data);
       setInventoryNavFromUser(data);
       setReceivingNavFromUser(data);
@@ -1087,6 +1149,7 @@ async function ensureSettingsRouteAccess() {
     setWebmasterNavFromUser(data);
     setSettingsNavFromUser(data);
     setBillingNavFromUser(data);
+    setResourcesNavFromUser(data);
     setOrdersNavFromUser(data);
     setInventoryNavFromUser(data);
     setReceivingNavFromUser(data);
@@ -1114,6 +1177,7 @@ async function ensureWebmasterRouteAccess() {
     setClientsNavFromUser(data);
     setWebmasterNavFromUser(data);
     setBillingNavFromUser(data);
+    setResourcesNavFromUser(data);
     setOrdersNavFromUser(data);
     setInventoryNavFromUser(data);
     setReceivingNavFromUser(data);
@@ -1140,6 +1204,7 @@ async function ensureBillingRouteAccess(path) {
       setWebmasterNavFromUser(data);
       setSettingsNavFromUser(data);
       setBillingNavFromUser(data);
+      setResourcesNavFromUser(data);
       setOrdersNavFromUser(data);
       setInventoryNavFromUser(data);
       setReceivingNavFromUser(data);
@@ -1147,6 +1212,7 @@ async function ensureBillingRouteAccess(path) {
       if (e.response?.status === 401) {
         localStorage.removeItem("auth_token");
         billingNavCache = null;
+        resourcesNavCache = null;
         inventoryNavCache = null;
       }
       return false;
@@ -1154,6 +1220,35 @@ async function ensureBillingRouteAccess(path) {
   }
   if (path === "/admin/billing" || path.startsWith("/admin/billing/")) {
     return billingNavCache.view === true;
+  }
+  return true;
+}
+
+async function ensureResourcesRouteAccess(path) {
+  if (resourcesNavCache === null) {
+    try {
+      const { data } = await api.get("/auth/me");
+      setUsersNavFromUser(data);
+      setClientsNavFromUser(data);
+      setWebmasterNavFromUser(data);
+      setSettingsNavFromUser(data);
+      setBillingNavFromUser(data);
+      setResourcesNavFromUser(data);
+      setOrdersNavFromUser(data);
+      setInventoryNavFromUser(data);
+      setReceivingNavFromUser(data);
+    } catch (e) {
+      if (e.response?.status === 401) {
+        localStorage.removeItem("auth_token");
+        resourcesNavCache = null;
+        billingNavCache = null;
+        inventoryNavCache = null;
+      }
+      return false;
+    }
+  }
+  if (path === "/admin/resources" || path.startsWith("/admin/resources/")) {
+    return resourcesNavCache.view === true;
   }
   return true;
 }
@@ -1167,6 +1262,7 @@ async function ensureInventoryRouteAccess(path) {
       setWebmasterNavFromUser(data);
       setSettingsNavFromUser(data);
       setBillingNavFromUser(data);
+      setResourcesNavFromUser(data);
       setOrdersNavFromUser(data);
       setInventoryNavFromUser(data);
       setReceivingNavFromUser(data);
@@ -1208,6 +1304,7 @@ async function ensureReceivingRouteAccess(path) {
       setWebmasterNavFromUser(data);
       setSettingsNavFromUser(data);
       setBillingNavFromUser(data);
+      setResourcesNavFromUser(data);
       setOrdersNavFromUser(data);
       setInventoryNavFromUser(data);
       setReceivingNavFromUser(data);
@@ -1234,6 +1331,7 @@ async function ensureOrdersRouteAccess(path) {
       setWebmasterNavFromUser(data);
       setSettingsNavFromUser(data);
       setBillingNavFromUser(data);
+      setResourcesNavFromUser(data);
       setOrdersNavFromUser(data);
       setInventoryNavFromUser(data);
       setReceivingNavFromUser(data);
@@ -1354,6 +1452,16 @@ router.beforeEach(async (to) => {
 
   if (to.path.startsWith("/admin/billing")) {
     const ok = await ensureBillingRouteAccess(to.path);
+    if (!ok) {
+      if (!localStorage.getItem("auth_token")) {
+        return { name: "login", query: { redirect: to.fullPath } };
+      }
+      return { path: "/admin/home" };
+    }
+  }
+
+  if (to.path.startsWith("/admin/resources")) {
+    const ok = await ensureResourcesRouteAccess(to.path);
     if (!ok) {
       if (!localStorage.getItem("auth_token")) {
         return { name: "login", query: { redirect: to.fullPath } };

@@ -31,6 +31,8 @@ use App\Http\Controllers\Api\AsnBillController;
 use App\Http\Controllers\Api\PutAwayController;
 use App\Http\Controllers\Api\UserController;
 use App\Http\Controllers\Api\WebmasterTaskController;
+use App\Http\Controllers\Api\TutorialController;
+use App\Http\Controllers\Api\ResourcePhotoController;
 use App\Http\Controllers\Api\WholesaleOrderController;
 use App\Http\Controllers\StripeWebhookController;
 use Illuminate\Support\Facades\Route;
@@ -429,6 +431,17 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::post('/tasks/{task}/comments', [WebmasterTaskController::class, 'storeComment']);
         Route::get('/tasks/{task}/comments/{comment}/attachment', [WebmasterTaskController::class, 'downloadCommentAttachment']);
         Route::apiResource('tasks', WebmasterTaskController::class);
+    });
+
+    Route::prefix('resources')->group(function () {
+        Route::get('/tutorials/meta', [TutorialController::class, 'meta']);
+        Route::post('/tutorials/{tutorial}/comments', [TutorialController::class, 'storeComment']);
+        Route::get('/tutorials/{tutorial}/comments/{comment}/attachment', [TutorialController::class, 'downloadCommentAttachment']);
+        Route::apiResource('tutorials', TutorialController::class);
+        Route::get('/photos', [ResourcePhotoController::class, 'index']);
+        Route::post('/photos', [ResourcePhotoController::class, 'store']);
+        Route::delete('/photos/{photo}', [ResourcePhotoController::class, 'destroy']);
+        Route::get('/photos/{photo}/file', [ResourcePhotoController::class, 'file']);
     });
 
     Route::post('users/{user}/avatar', [UserController::class, 'uploadAvatar'])

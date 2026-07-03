@@ -56,6 +56,10 @@ class RolePermissionSeeder extends Seeder
             ['key' => 'webmaster.create', 'label' => 'Create webmaster tasks', 'module' => 'webmaster'],
             ['key' => 'webmaster.update', 'label' => 'Update webmaster tasks', 'module' => 'webmaster'],
             ['key' => 'webmaster.delete', 'label' => 'Delete webmaster tasks', 'module' => 'webmaster'],
+            ['key' => 'resources.view', 'label' => 'View resources', 'module' => 'resources'],
+            ['key' => 'resources.create', 'label' => 'Create resources', 'module' => 'resources'],
+            ['key' => 'resources.update', 'label' => 'Update resources', 'module' => 'resources'],
+            ['key' => 'resources.delete', 'label' => 'Delete resources', 'module' => 'resources'],
             ['key' => 'clients.view', 'label' => 'View client accounts', 'module' => 'clients'],
             ['key' => 'clients.create', 'label' => 'Create client accounts', 'module' => 'clients'],
             ['key' => 'clients.update', 'label' => 'Update client accounts', 'module' => 'clients'],
@@ -115,6 +119,7 @@ class RolePermissionSeeder extends Seeder
                 'clients.view',
                 'client_users.view',
                 'stores.view',
+                'resources.view',
             ])->pluck('id')
         );
 

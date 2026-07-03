@@ -10,6 +10,7 @@ import {
 import { RouterLink, useRouter } from "vue-router";
 import api from "../../services/api";
 import CrmLoadingSpinner from "../../components/common/CrmLoadingSpinner.vue";
+import CrmLinkedText from "../../components/common/CrmLinkedText.vue";
 import WebmasterTaskModal from "../../components/webmaster/WebmasterTaskModal.vue";
 import { crmIsAdmin } from "../../utils/crmUser";
 import { errorMessage } from "../../utils/apiError";
@@ -329,9 +330,7 @@ onUnmounted(() => {
             <h3 class="small fw-semibold text-secondary text-uppercase mb-2">
               Description
             </h3>
-            <p class="mb-0 text-body small whitespace-pre-wrap lh-lg">
-              {{ display(task.description) }}
-            </p>
+            <CrmLinkedText :text="task.description" class="whitespace-pre-wrap" />
           </section>
         </div>
 
@@ -364,9 +363,7 @@ onUnmounted(() => {
                       formatDateTimeUs(c.created_at)
                     }}</span>
                   </div>
-                  <p class="mt-1 mb-0 small text-body whitespace-pre-wrap">
-                    {{ c.body }}
-                  </p>
+                  <CrmLinkedText :text="c.body" class="mt-1 whitespace-pre-wrap" />
                   <div
                     v-if="c.attachment"
                     class="mt-3"

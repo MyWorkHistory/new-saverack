@@ -4,6 +4,7 @@ import { useRoute, useRouter } from "vue-router";
 import api from "../../services/api";
 import CrmLoadingSpinner from "../../components/common/CrmLoadingSpinner.vue";
 import CrmIconRowActions from "../../components/common/CrmIconRowActions.vue";
+import ShopifyBrandIcon from "../../components/common/ShopifyBrandIcon.vue";
 import ConfirmModal from "../../components/common/ConfirmModal.vue";
 import OrdersRemoveHoldsModal from "../../components/orders/OrdersRemoveHoldsModal.vue";
 import OrdersPlaceHoldModal from "../../components/orders/OrdersPlaceHoldModal.vue";
@@ -94,7 +95,6 @@ const placeHoldModalOpen = ref(false);
 const placeHoldBusy = ref(false);
 const moreActionsOpen = ref(false);
 const moreActionsBtnRef = ref(null);
-const headerKebabBtnRef = ref(null);
 const moreActionsMenuRef = ref(null);
 const moreActionsMenuStyle = ref({ visibility: "hidden" });
 const moreActionsLayoutBound = ref(false);
@@ -292,9 +292,7 @@ const addItemsBtnClass = computed(
   () => "btn btn-outline-primary btn-sm order-detail-page__add-items-btn",
 );
 
-const shippingEditBtnClass = computed(() =>
-  isPortalUser.value ? portalPrimaryBtnClass : "btn btn-outline-secondary btn-sm",
-);
+const shippingEditBtnClass = computed(() => portalPrimaryBtnClass);
 
 const moreActionsBtnClass = computed(() =>
   isPortalUser.value
@@ -1582,7 +1580,7 @@ async function submitAddNewSku() {
 }
 
 function layoutMoreActionsMenu() {
-  const btn = headerKebabBtnRef.value || moreActionsBtnRef.value;
+  const btn = moreActionsBtnRef.value;
   if (!btn || !moreActionsOpen.value) return;
   const r = btn.getBoundingClientRect();
   const menuWidth = 220;
@@ -1632,11 +1630,7 @@ async function toggleMoreActionsMenu(ev) {
 function onMoreActionsDocumentClick(ev) {
   if (!moreActionsOpen.value) return;
   const t = ev.target;
-  if (
-    moreActionsBtnRef.value?.contains(t)
-    || headerKebabBtnRef.value?.contains(t)
-    || moreActionsMenuRef.value?.contains(t)
-  ) {
+  if (moreActionsBtnRef.value?.contains(t) || moreActionsMenuRef.value?.contains(t)) {
     return;
   }
   moreActionsOpen.value = false;
@@ -1887,19 +1881,6 @@ function goToOrdersList() {
                 </button>
               </div>
               <button
-                v-if="showStaffMoreActions"
-                ref="headerKebabBtnRef"
-                type="button"
-                class="staff-action-btn staff-action-btn--more order-detail-page__header-kebab"
-                :class="{ 'is-open': moreActionsOpen }"
-                aria-haspopup="true"
-                :aria-expanded="moreActionsOpen ? 'true' : 'false'"
-                aria-label="More order actions"
-                @click.stop="toggleMoreActionsMenu"
-              >
-                <CrmIconRowActions variant="vertical" />
-              </button>
-              <button
                 v-if="showRemoveHoldBtn"
                 type="button"
                 class="btn btn-danger text-white"
@@ -2035,6 +2016,14 @@ function goToOrdersList() {
                           >
                             {{ item.name || "—" }}
                           </div>
+                          <span
+                            v-if="item.fulfillment_status"
+                            class="badge rounded-pill fw-medium order-detail-page__item-line-status-badge"
+                            :class="lineItemStatusBadgeClass(item.fulfillment_status)"
+                            :title="String(item.fulfillment_status)"
+                          >
+                            {{ item.fulfillment_status }}
+                          </span>
                         </div>
                       </a>
                       <div v-else class="order-detail-page__item-cell">
@@ -2053,6 +2042,14 @@ function goToOrdersList() {
                           >
                             {{ item.name || "—" }}
                           </div>
+                          <span
+                            v-if="item.fulfillment_status"
+                            class="badge rounded-pill fw-medium order-detail-page__item-line-status-badge"
+                            :class="lineItemStatusBadgeClass(item.fulfillment_status)"
+                            :title="String(item.fulfillment_status)"
+                          >
+                            {{ item.fulfillment_status }}
+                          </span>
                         </div>
                       </div>
                     </td>
@@ -2171,7 +2168,7 @@ function goToOrdersList() {
               </div>
               <button
                 type="button"
-                class="btn btn-outline-secondary btn-sm d-inline-flex align-items-center gap-1"
+                class="btn btn-primary btn-sm staff-page-primary d-inline-flex align-items-center gap-1"
                 :disabled="!canRunShipHeroActions || packingNoteSaveBusy"
                 :title="!canRunShipHeroActions ? 'Requires orders update permission' : undefined"
                 @click="savePackingNote"
@@ -2356,17 +2353,7 @@ function goToOrdersList() {
               <div class="order-detail-page__detail-row">
                 <span class="order-detail-page__detail-label">Sales Channel</span>
                 <span class="order-detail-page__detail-value d-inline-flex align-items-center gap-2">
-                  <svg
-                    v-if="isShopifyOrder"
-                    width="16"
-                    height="16"
-                    viewBox="0 0 24 24"
-                    fill="currentColor"
-                    class="text-success"
-                    aria-hidden="true"
-                  >
-                    <path d="M15.34 3.32c-.07 0-.14.01-.2.03-.06.02-1.16.36-3.2 1.01-.3-.88-.66-1.62-1.06-2.22-.82-1.14-1.88-1.72-3.14-1.72-1.26 0-2.32.58-3.14 1.72-.4.6-.76 1.34-1.06 2.22-2.04-.65-3.14-.99-3.2-1.01a.5.5 0 00-.2-.03C.48 3.32 0 3.8 0 4.36v15.28c0 .56.48 1.04 1.04 1.04h.2c.07 0 .14-.01.2-.03.06-.02 1.16-.36 3.2-1.01.3.88.66 1.62 1.06 2.22.82 1.14 1.88 1.72 3.14 1.72 1.26 0 2.32-.58 3.14-1.72.4-.6.76-1.34 1.06-2.22 2.04.65 3.14.99 3.2 1.01.06.02.13.03.2.03h.2c.56 0 1.04-.48 1.04-1.04V4.36c0-.56-.48-1.04-1.04-1.04h-.2z" />
-                  </svg>
+                  <ShopifyBrandIcon v-if="isShopifyOrder" :size="18" />
                   {{ salesChannelLabel }}
                 </span>
               </div>
@@ -3197,10 +3184,6 @@ function goToOrdersList() {
   align-self: flex-start;
 }
 
-.order-detail-page__header-kebab {
-  flex-shrink: 0;
-}
-
 .order-detail-page__section-head {
   min-width: 0;
 }
@@ -3310,15 +3293,16 @@ function goToOrdersList() {
 }
 
 .order-detail-page__detail-row {
-  display: flex;
-  flex-direction: column;
-  gap: 0.15rem;
+  display: grid;
+  grid-template-columns: minmax(6.5rem, 38%) 1fr;
+  gap: 0.35rem 1rem;
+  align-items: baseline;
 }
 
 .order-detail-page__detail-label {
-  font-size: 0.75rem;
+  font-size: 0.8125rem;
   color: var(--bs-secondary-color);
-  line-height: 1.3;
+  line-height: 1.35;
 }
 
 .order-detail-page__detail-value {
@@ -3326,6 +3310,7 @@ function goToOrdersList() {
   color: var(--bs-body-color);
   line-height: 1.4;
   word-break: break-word;
+  text-align: start;
 }
 
 .order-detail-page__tracking-block {

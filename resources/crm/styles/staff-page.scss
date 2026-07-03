@@ -1755,6 +1755,92 @@ button.staff-status-badge:focus-visible {
   color: #a59bff;
 }
 
+/* Narrow viewports: full-width horizontal tab nav (account detail, invoice actions, etc.) */
+@media (max-width: 1199.98px) {
+  .staff-detail-tab-bar-wrap {
+    width: 100%;
+    max-width: 100%;
+    margin-inline-start: 0 !important;
+    flex: 1 1 auto;
+    min-width: 0;
+    box-shadow: inset -14px 0 16px -14px rgba(47, 43, 61, 0.1);
+    border-radius: 0.375rem;
+    scrollbar-width: none;
+  }
+
+  .staff-detail-tab-bar-wrap::-webkit-scrollbar {
+    display: none;
+  }
+
+  [data-bs-theme="dark"] .staff-detail-tab-bar-wrap {
+    box-shadow: inset -14px 0 16px -14px rgba(0, 0, 0, 0.35);
+  }
+
+  .staff-detail-tab-bar {
+    justify-content: flex-start;
+    gap: 0.5rem;
+    padding-inline: 0.125rem 0.75rem;
+  }
+
+  .staff-detail-tab-btn {
+    min-width: 5.25rem;
+    padding: 0.625rem 0.75rem 0.5rem;
+    gap: 0.375rem;
+    font-size: 0.75rem;
+  }
+
+  .staff-detail-tab-btn__icon {
+    width: 1.375rem;
+    height: 1.375rem;
+  }
+
+  .staff-detail-tab-btn__label {
+    max-width: 5.5rem;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  /* Account / user detail: many section tabs — slightly tighter */
+  .staff-detail-tab-bar--nav .staff-detail-tab-btn {
+    min-width: 4.75rem;
+    padding: 0.5625rem 0.625rem 0.4375rem;
+  }
+
+  .staff-detail-tab-bar--nav .staff-detail-tab-btn__label {
+    max-width: 4.75rem;
+    font-size: 0.6875rem;
+    line-height: 1.25;
+  }
+}
+
+@media (max-width: 575.98px) {
+  .staff-detail-tab-bar {
+    gap: 0.375rem;
+  }
+
+  .staff-detail-tab-btn {
+    min-width: 3.75rem;
+    padding: 0.5rem 0.5rem 0.4375rem;
+    border-radius: 0.5rem;
+  }
+
+  .staff-detail-tab-bar--nav .staff-detail-tab-btn {
+    min-width: 3.5rem;
+    padding: 0.4375rem 0.4375rem 0.375rem;
+  }
+
+  .staff-detail-tab-btn__icon {
+    width: 1.25rem;
+    height: 1.25rem;
+  }
+
+  .staff-detail-tab-bar--nav .staff-detail-tab-btn__label {
+    max-width: 3.75rem;
+    font-size: 0.625rem;
+  }
+}
+
 /*
  * Mobile: full data grid scrolls horizontally (standard CRM pattern — no row modal).
  * `scroll` keeps a gutter on more desktop browsers; iOS still overlays — use `.staff-table-mobile-scroll-cue` in markup.

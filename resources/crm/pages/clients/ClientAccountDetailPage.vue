@@ -819,13 +819,16 @@ onUnmounted(() => {
 
       <div
         v-else-if="account"
-        class="account-detail-header d-flex flex-row align-items-center gap-3"
+        class="account-detail-header d-flex flex-column flex-lg-row align-items-stretch align-items-lg-center gap-2 gap-lg-3"
       >
-        <h1 class="staff-user-view__title mb-0 min-w-0 flex-shrink-0">
+        <h1 class="staff-user-view__title account-detail-header__title mb-0 min-w-0">
           {{ account.company_name }}
         </h1>
-        <div class="staff-detail-tab-bar-wrap ms-lg-auto flex-grow-1">
-          <div class="staff-detail-tab-bar" role="tablist">
+        <div
+          class="staff-detail-tab-bar-wrap staff-detail-tab-bar-wrap--nav ms-lg-auto flex-grow-1 w-100"
+          role="presentation"
+        >
+          <div class="staff-detail-tab-bar staff-detail-tab-bar--nav" role="tablist">
             <button
               v-for="t in accountTabList"
               :key="t.id"

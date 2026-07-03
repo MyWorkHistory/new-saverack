@@ -66,6 +66,33 @@ $staff-detail-primary: #2563eb;
   margin: 0;
 }
 
+/* Client account detail: title + section tabs */
+.account-detail-header {
+  min-width: 0;
+}
+
+.account-detail-header__title {
+  flex-shrink: 1;
+  word-break: break-word;
+}
+
+@media (max-width: 1199.98px) {
+  .account-detail-header__title {
+    font-size: 1.125rem;
+    line-height: 1.3;
+  }
+}
+
+@media (max-width: 575.98px) {
+  .account-detail-header__title {
+    font-size: 1.0625rem;
+  }
+
+  .account-detail-page-head__breadcrumb {
+    font-size: 0.8125rem;
+  }
+}
+
 /* Left profile column */
 .staff-user-profile {
   @extend .staff-surface;
@@ -310,10 +337,44 @@ $staff-detail-primary: #2563eb;
   cursor: not-allowed;
 }
 
+@media (max-width: 767.98px) {
+  .staff-user-tabs:not(.staff-user-tabs--header) {
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    overflow-y: visible;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+    overscroll-behavior-x: contain;
+    padding-bottom: 0.25rem;
+    margin-bottom: 0.875rem;
+    box-shadow: inset -12px 0 14px -12px rgba(47, 43, 61, 0.08);
+  }
+
+  .staff-user-tabs:not(.staff-user-tabs--header)::-webkit-scrollbar {
+    display: none;
+  }
+
+  .staff-user-tab {
+    flex-shrink: 0;
+  }
+}
+
+@media (max-width: 575.98px) {
+  .staff-user-profile {
+    padding: 1.25rem 1rem;
+  }
+}
+
 .staff-user-tab-panel {
   @extend .staff-surface;
   padding: 1.25rem 1.25rem 1.5rem;
   min-height: 12rem;
+}
+
+@media (max-width: 575.98px) {
+  .staff-user-tab-panel {
+    padding: 1rem 0.875rem 1.25rem;
+  }
 }
 
 .staff-user-tab-panel__placeholder {

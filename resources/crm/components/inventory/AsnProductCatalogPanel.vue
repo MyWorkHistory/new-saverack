@@ -79,6 +79,7 @@ watch(
     resetCatalogSearchState();
     loadCatalogRows(true);
   },
+  { immediate: true },
 );
 </script>
 

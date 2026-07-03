@@ -41,6 +41,9 @@ class PutAwayRowBuilder
             }
         }
 
+        $pickLocation = self::pickLocationLabel($locations);
+        $backstockLocation = self::backstockLocationLabel($locations);
+
         return [
             'sku' => $sku,
             'name' => $name,
@@ -51,7 +54,79 @@ class PutAwayRowBuilder
             'non_pickable_qty' => $nonPickable,
             'on_hand' => max(0, $onHand),
             'backorder' => max(0, $backorder),
+            'pick_location' => $pickLocation,
+            'backstock_location' => $backstockLocation,
         ];
+    }
+
+    /**
+     * @param  list<array<string, mixed>>  $locations
+     */
+    public static function pickLocationLabel(array $locations): ?string
+    {
+        $parts = [];
+        foreach ($locations as $loc) {
+            if (! is_array($loc)) {
+                continue;
+            }
+            if (($loc['pickable'] ?? null) !== true) {
+                continue;
+            }
+            $qty = max(0, (int) ($loc['quantity'] ?? 0));
+            if ($qty <= 0) {
+                continue;
+            }
+            $name = trim((string) ($loc['location_name'] ?? ''));
+            if ($name === '') {
+                $name = trim((string) ($loc['location_id'] ?? ''));
+            }
+            if ($name === '') {
+                continue;
+            }
+            $parts[] = $name.' ('.$qty.')';
+        }
+
+        return $parts !== [] ? implode(', ', $parts) : null;
+    }
+
+    /**
+     * Lowest-qty non-pickable bin excluding Receiving.
+     *
+     * @param  list<array<string, mixed>>  $locations
+     */
+    public static function backstockLocationLabel(array $locations): ?string
+    {
+        $receivingName = strtolower(AsnReceivingService::RECEIVING_LOCATION_NAME);
+        $candidates = [];
+        foreach ($locations as $loc) {
+            if (! is_array($loc)) {
+                continue;
+            }
+            if (($loc['pickable'] ?? null) !== false) {
+                continue;
+            }
+            $qty = max(0, (int) ($loc['quantity'] ?? 0));
+            if ($qty <= 0) {
+                continue;
+            }
+            $name = trim((string) ($loc['location_name'] ?? ''));
+            if ($name === '') {
+                $name = trim((string) ($loc['location_id'] ?? ''));
+            }
+            if ($name === '' || strtolower($name) === $receivingName) {
+                continue;
+            }
+            $candidates[] = ['name' => $name, 'quantity' => $qty];
+        }
+
+        if ($candidates === []) {
+            return null;
+        }
+
+        usort($candidates, static fn (array $a, array $b): int => ($a['quantity'] <=> $b['quantity']) ?: strcmp($a['name'], $b['name']));
+        $low = $candidates[0];
+
+        return $low['name'].' ('.$low['quantity'].')';
     }
 
     /**

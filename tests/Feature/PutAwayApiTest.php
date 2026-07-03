@@ -6,6 +6,7 @@ use App\Models\ClientAccount;
 use App\Models\Permission;
 use App\Models\PutAwayReceivingSnapshot;
 use App\Models\PutAwayReceivingSnapshotRow;
+use App\Models\ShipHeroInventoryProductDetailCache;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Laravel\Sanctum\Sanctum;
@@ -29,10 +30,21 @@ class PutAwayApiTest extends TestCase
         );
     }
 
+    private function receivingViewPermission(): Permission
+    {
+        return Permission::query()->firstOrCreate(
+            ['key' => 'receiving.view'],
+            ['label' => 'View receiving', 'module' => 'receiving']
+        );
+    }
+
     private function staffUser(): User
     {
         $user = User::factory()->create(['client_account_id' => null]);
-        $user->permissions()->syncWithoutDetaching([$this->inventoryViewPermission()->id]);
+        $user->permissions()->syncWithoutDetaching([
+            $this->inventoryViewPermission()->id,
+            $this->receivingViewPermission()->id,
+        ]);
 
         return $user;
     }
@@ -245,5 +257,94 @@ class PutAwayApiTest extends TestCase
             ->assertJsonPath('status', PutAwayReceivingSnapshot::STATUS_OK)
             ->assertJsonPath('source', 'local')
             ->assertJsonPath('row_count', 1);
+    }
+
+    public function test_list_rows_include_null_location_fields_without_product_cache(): void
+    {
+        $account = $this->account('no-cache');
+        Sanctum::actingAs($this->staffUser());
+
+        $snapshot = $this->receivingSnapshot();
+        PutAwayReceivingSnapshotRow::create([
+            'put_away_receiving_snapshot_id' => $snapshot->id,
+            'client_account_id' => $account->id,
+            'sku' => 'NO-CACHE-SKU',
+            'name' => 'No Cache Product',
+            'receiving_qty' => 4,
+            'pickable_qty' => 0,
+            'non_pickable_qty' => 0,
+            'on_hand' => 4,
+            'backorder' => 0,
+        ]);
+
+        $this->getJson('/api/admin/put-away')
+            ->assertOk()
+            ->assertJsonPath('rows.0.sku', 'NO-CACHE-SKU')
+            ->assertJsonPath('rows.0.pick_location', null)
+            ->assertJsonPath('rows.0.backstock_location', null)
+            ->assertJsonPath('rows.0.receiving_location', null);
+    }
+
+    public function test_list_rows_include_location_fields_when_product_cached(): void
+    {
+        $account = $this->account('enrich');
+        Sanctum::actingAs($this->staffUser());
+
+        $snapshot = $this->receivingSnapshot();
+        PutAwayReceivingSnapshotRow::create([
+            'put_away_receiving_snapshot_id' => $snapshot->id,
+            'client_account_id' => $account->id,
+            'sku' => 'GRPH-US12',
+            'name' => 'Water Shoes Graphite 12',
+            'barcode' => '810084756300',
+            'receiving_qty' => 10,
+            'pickable_qty' => 5,
+            'non_pickable_qty' => 35,
+            'on_hand' => 40,
+            'backorder' => 0,
+        ]);
+
+        ShipHeroInventoryProductDetailCache::query()->create([
+            'client_account_id' => $account->id,
+            'sku' => 'GRPH-US12',
+            'sku_search' => 'grph-us12',
+            'product_json' => [
+                'sku' => 'GRPH-US12',
+                'warehouses' => [
+                    [
+                        'warehouse_id' => 'wh-1',
+                        'locations' => [
+                            [
+                                'location_id' => 'recv-1',
+                                'location_name' => 'Receiving',
+                                'quantity' => 10,
+                                'pickable' => false,
+                            ],
+                            [
+                                'location_id' => 'pick-1',
+                                'location_name' => 'A-01',
+                                'quantity' => 5,
+                                'pickable' => true,
+                            ],
+                            [
+                                'location_id' => 'back-1',
+                                'location_name' => 'OS-1',
+                                'quantity' => 25,
+                                'pickable' => false,
+                            ],
+                        ],
+                    ],
+                ],
+            ],
+            'product_synced_at' => now(),
+        ]);
+
+        $this->getJson('/api/admin/put-away')
+            ->assertOk()
+            ->assertJsonPath('rows.0.pick_location', 'A-01 (5)')
+            ->assertJsonPath('rows.0.backstock_location', 'OS-1 (25)')
+            ->assertJsonPath('rows.0.receiving_location.location_name', 'Receiving')
+            ->assertJsonPath('rows.0.receiving_location.warehouse_id', 'wh-1')
+            ->assertJsonPath('rows.0.receiving_location.location_id', 'recv-1');
     }
 }

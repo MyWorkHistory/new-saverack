@@ -1544,6 +1544,8 @@ class PutAwayInventoryService
             ];
         })->values()->all();
 
+        $rows = $this->enrichReceivingListRows($rows);
+
         $nextOffset = $offset + $first;
 
         return [
@@ -1564,5 +1566,84 @@ class PutAwayInventoryService
                 'skipped_unresolved_account' => (int) $snapshot->skipped_unresolved_account,
             ],
         ];
+    }
+
+    /**
+     * Add pick/backstock location labels and receiving_location from cached product detail only.
+     *
+     * @param  list<array<string, mixed>>  $rows
+     * @return list<array<string, mixed>>
+     */
+    private function enrichReceivingListRows(array $rows): array
+    {
+        if ($rows === []) {
+            return [];
+        }
+
+        $accountIds = [];
+        foreach ($rows as $row) {
+            $id = (int) ($row['client_account_id'] ?? 0);
+            if ($id > 0) {
+                $accountIds[$id] = true;
+            }
+        }
+
+        $customerByAccount = [];
+        if ($accountIds !== []) {
+            $accounts = ClientAccount::query()
+                ->whereIn('id', array_keys($accountIds))
+                ->get(['id', 'shiphero_customer_account_id']);
+            foreach ($accounts as $account) {
+                $sid = trim((string) $account->shiphero_customer_account_id);
+                $customerByAccount[(int) $account->id] = $sid !== '' ? $sid : '';
+            }
+        }
+
+        $out = [];
+        foreach ($rows as $row) {
+            $out[] = $this->enrichReceivingListRow($row, $customerByAccount);
+        }
+
+        return $out;
+    }
+
+    /**
+     * @param  array<int, string>  $customerByAccount
+     * @param  array<string, mixed>  $row
+     * @return array<string, mixed>
+     */
+    private function enrichReceivingListRow(array $row, array $customerByAccount): array
+    {
+        $clientAccountId = (int) ($row['client_account_id'] ?? 0);
+        $sku = trim((string) ($row['sku'] ?? ''));
+        $row['pick_location'] = null;
+        $row['backstock_location'] = null;
+        $row['receiving_location'] = null;
+
+        if ($clientAccountId <= 0 || $sku === '') {
+            return $row;
+        }
+
+        $customerId = $customerByAccount[$clientAccountId] ?? '';
+        $product = $this->detailCache->getCachedProduct($clientAccountId, $sku);
+
+        if (is_array($product)) {
+            $locations = PutAwayRowBuilder::locationsFromProductDetail($product);
+            $row['pick_location'] = PutAwayRowBuilder::pickLocationLabel($locations);
+            $row['backstock_location'] = PutAwayRowBuilder::backstockLocationLabel($locations);
+            $row['receiving_location'] = $this->receivingLocationMetaForRow(
+                $customerId,
+                $product,
+                (int) ($row['receiving_qty'] ?? 0)
+            );
+        } elseif ((int) ($row['receiving_qty'] ?? 0) > 0 && $customerId !== '') {
+            $row['receiving_location'] = $this->receivingLocationMetaForRow(
+                $customerId,
+                null,
+                (int) ($row['receiving_qty'] ?? 0)
+            );
+        }
+
+        return $row;
     }
 }

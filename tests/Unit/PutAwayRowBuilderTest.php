@@ -30,6 +30,8 @@ class PutAwayRowBuilderTest extends TestCase
         $this->assertSame(35, $row['non_pickable_qty']);
         $this->assertSame(40, $row['on_hand']);
         $this->assertSame(2, $row['backorder']);
+        $this->assertSame('A-01 (5)', $row['pick_location']);
+        $this->assertSame('OS-1 (25)', $row['backstock_location']);
     }
 
     public function test_receiving_qty_is_case_insensitive(): void
@@ -67,5 +69,27 @@ class PutAwayRowBuilderTest extends TestCase
         ]);
 
         $this->assertCount(2, $locations);
+    }
+
+    public function test_pick_location_label_joins_multiple_pickable_bins(): void
+    {
+        $label = PutAwayRowBuilder::pickLocationLabel([
+            ['location_name' => 'A-01', 'quantity' => 1, 'pickable' => true],
+            ['location_name' => 'A-02', 'quantity' => 2, 'pickable' => true],
+            ['location_name' => 'OS-1', 'quantity' => 10, 'pickable' => false],
+        ]);
+
+        $this->assertSame('A-01 (1), A-02 (2)', $label);
+    }
+
+    public function test_backstock_location_excludes_receiving(): void
+    {
+        $label = PutAwayRowBuilder::backstockLocationLabel([
+            ['location_name' => 'Receiving', 'quantity' => 10, 'pickable' => false],
+            ['location_name' => 'OS-2', 'quantity' => 5, 'pickable' => false],
+            ['location_name' => 'OS-1', 'quantity' => 25, 'pickable' => false],
+        ]);
+
+        $this->assertSame('OS-2 (5)', $label);
     }
 }

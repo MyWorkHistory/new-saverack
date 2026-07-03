@@ -24,6 +24,7 @@ return [
         'Order Fulfilment',
         'Quality Control Holds',
         'Restock',
+        'Return',
         'Returns Processing',
         'Shipped via Shipstation',
         'System Sync or Integration Corrections',

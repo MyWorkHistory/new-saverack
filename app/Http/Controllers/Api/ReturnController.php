@@ -190,6 +190,7 @@ class ReturnController extends Controller
             'created_at' => optional($return->created_at)->toIso8601String(),
             'processed_at' => optional($return->processed_at)->toIso8601String(),
             'updated_at' => optional($return->updated_at)->toIso8601String(),
+            'return_bin_number' => $return->return_bin_number,
             'lines' => $return->lines->map(fn (ClientAccountReturnLine $l) => $this->serializeLine($l, $return->created_source, $return))->values()->all(),
             'non_compliant_reasons' => ReturnReasonOptions::nonCompliant(),
             'return_reasons' => $this->returnReasonOptions(),

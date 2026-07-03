@@ -43,6 +43,10 @@ class ClientAccountReturn extends Model
 
     public const UNKNOWN_SKU = 'Unknown SKU';
 
+    public const RETURN_BIN_MIN = 1;
+
+    public const RETURN_BIN_MAX = 20;
+
     public const RETURN_TYPES = [
         self::TYPE_DIRECT,
         self::TYPE_AMAZON,
@@ -72,6 +76,7 @@ class ClientAccountReturn extends Model
         'return_bill_id',
         'processed_at',
         'processed_by_user_id',
+        'return_bin_number',
     ];
 
     protected $casts = [
@@ -84,6 +89,7 @@ class ClientAccountReturn extends Model
         'return_fee_non_compliant' => 'decimal:4',
         'fees_locked_at' => 'datetime',
         'processed_at' => 'datetime',
+        'return_bin_number' => 'integer',
     ];
 
     public function clientAccount(): BelongsTo

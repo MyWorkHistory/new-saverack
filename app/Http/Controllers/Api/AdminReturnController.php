@@ -7,6 +7,7 @@ use App\Models\ClientAccount;
 use App\Models\ClientAccountReturn;
 use App\Models\ClientAccountReturnLine;
 use App\Models\User;
+use App\Services\ReturnBinService;
 use App\Services\ReturnFeeService;
 use App\Services\ReturnProcessingService;
 use App\Services\ShipHeroInventoryService;
@@ -38,16 +39,21 @@ class AdminReturnController extends Controller
     /** @var ShipHeroInventoryService */
     private $inventory;
 
+    /** @var ReturnBinService */
+    private $returnBins;
+
     public function __construct(
         ShipHeroOrderService $orders,
         ReturnProcessingService $processing,
         ReturnFeeService $returnFees,
-        ShipHeroInventoryService $inventory
+        ShipHeroInventoryService $inventory,
+        ReturnBinService $returnBins
     ) {
         $this->orders = $orders;
         $this->processing = $processing;
         $this->returnFees = $returnFees;
         $this->inventory = $inventory;
+        $this->returnBins = $returnBins;
     }
 
     private function safePdfName($raw): string
@@ -346,6 +352,7 @@ class AdminReturnController extends Controller
             'created_source' => $return->created_source,
             'created_at' => optional($return->created_at)->toIso8601String(),
             'processed_at' => optional($return->processed_at)->toIso8601String(),
+            'return_bin_number' => $return->return_bin_number,
             'lines' => $return->lines->map(fn (ClientAccountReturnLine $l) => $this->serializeLine($l, $return->created_source, $return))->values()->all(),
             'non_compliant_reasons' => ReturnReasonOptions::nonCompliant(),
             'return_reasons' => $return->isAdminCreated() ? ReturnReasonOptions::admin() : $this->returnReasonOptions(),
@@ -1103,5 +1110,87 @@ class AdminReturnController extends Controller
         return response()->json([
             'data' => $returns->all(),
         ]);
+    }
+
+    public function listReturnBins(Request $request): JsonResponse
+    {
+        $this->assertStaff($request);
+        Gate::authorize('viewAny', ClientAccountReturn::class);
+
+        return response()->json([
+            'data' => $this->returnBins->listBins(),
+        ]);
+    }
+
+    public function listReturnBinItems(Request $request, int $binNumber): JsonResponse
+    {
+        $this->assertStaff($request);
+        Gate::authorize('viewAny', ClientAccountReturn::class);
+
+        return response()->json([
+            'bin_number' => $binNumber,
+            'data' => $this->returnBins->listBinItems($binNumber),
+        ]);
+    }
+
+    public function assignReturnBin(Request $request, ClientAccountReturn $clientAccountReturn): JsonResponse
+    {
+        $this->assertStaff($request);
+        Gate::authorize('view', $clientAccountReturn);
+
+        $validated = $request->validate([
+            'return_bin_number' => [
+                'required',
+                'integer',
+                'min:'.ClientAccountReturn::RETURN_BIN_MIN,
+                'max:'.ClientAccountReturn::RETURN_BIN_MAX,
+            ],
+        ]);
+
+        $return = $this->returnBins->assignReturnToBin(
+            $clientAccountReturn,
+            (int) $validated['return_bin_number']
+        );
+
+        return response()->json($this->serializeReturnDetail($return));
+    }
+
+    public function transferReturnBinItem(Request $request, int $binNumber): JsonResponse
+    {
+        $this->assertStaff($request);
+        Gate::authorize('viewAny', ClientAccountReturn::class);
+
+        $validated = $request->validate([
+            'sku' => ['required', 'string', 'max:255'],
+            'client_account_id' => ['required', 'integer', 'exists:client_accounts,id'],
+            'quantity' => ['required', 'integer', 'min:1'],
+            'warehouse_id' => ['required', 'string', 'max:255'],
+            'to_location_id' => ['nullable', 'string', 'max:255'],
+            'to_location' => ['nullable', 'string', 'max:255'],
+        ]);
+
+        try {
+            $result = $this->returnBins->transferFromBin(
+                $binNumber,
+                $validated,
+                $request->user() instanceof User ? $request->user() : null
+            );
+        } catch (ValidationException $e) {
+            throw $e;
+        } catch (RuntimeException $e) {
+            return response()->json(['message' => $e->getMessage()], 502);
+        } catch (\Throwable $e) {
+            report($e);
+
+            return response()->json([
+                'message' => config('app.debug')
+                    ? $e->getMessage()
+                    : 'Could not transfer item from return bin.',
+            ], 502);
+        }
+
+        return response()->json(array_merge($result, [
+            'data' => $this->returnBins->listBinItems($binNumber),
+        ]));
     }
 }

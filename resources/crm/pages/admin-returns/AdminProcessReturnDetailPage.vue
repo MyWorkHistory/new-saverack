@@ -48,9 +48,18 @@ const isProcessed = computed(() => {
   return s === "received" || s === "completed";
 });
 
+const returnBinOptions = Array.from({ length: 20 }, (_, i) => i + 1);
+
+const binAssigning = ref(false);
+const selectedReturnBin = ref("");
+
 const clientAccountId = computed(() => Number(ret.value?.client_account_id || 0));
 
 const lines = computed(() => (Array.isArray(ret.value?.lines) ? ret.value.lines : []));
+
+const hasStagedLines = computed(() =>
+  lines.value.some((line) => Number(line.return_qty) > 0),
+);
 
 const selectedCount = computed(() => selected.value.size);
 const allSelected = computed(() => {
@@ -90,6 +99,10 @@ function syncSelectionFromLines() {
 function applyReturnData(data) {
   ret.value = data;
   returnFees.value = data?.return_fees || {};
+  selectedReturnBin.value =
+    data?.return_bin_number != null && data.return_bin_number !== ""
+      ? String(data.return_bin_number)
+      : "";
   const restockMap = {};
   for (const line of Array.isArray(data?.lines) ? data.lines : []) {
     restockMap[line.id] = line.restock !== false;
@@ -314,6 +327,24 @@ async function processReturn() {
   }
 }
 
+async function assignReturnBin() {
+  if (!ret.value?.id || !isProcessed.value) return;
+  const binNumber = Number(selectedReturnBin.value);
+  if (!binNumber || binNumber < 1 || binNumber > 20) return;
+  binAssigning.value = true;
+  try {
+    const { data } = await api.patch(`/admin/returns/${ret.value.id}/return-bin`, {
+      return_bin_number: binNumber,
+    });
+    applyReturnData(data);
+    toast.success(`Assigned to Return Bin ${binNumber}.`);
+  } catch (e) {
+    toast.errorFrom(e, "Could not assign return bin.");
+  } finally {
+    binAssigning.value = false;
+  }
+}
+
 onMounted(load);
 </script>
 
@@ -334,13 +365,6 @@ onMounted(load);
               <h1 class="h4 mb-0 fw-semibold text-body">
                 {{ formatRmaLabel(ret.rma_number) || "Process Return" }}
               </h1>
-              <span
-                v-if="isThirdPartyPending"
-                class="badge rounded-pill fw-medium"
-                :class="processDisplayStatusBadgeClass('third_party_return')"
-              >
-                {{ processDisplayStatusLabel("third_party_return") }}
-              </span>
               <span
                 v-if="isNonCompliantPending"
                 class="badge rounded-pill fw-medium"
@@ -369,6 +393,23 @@ onMounted(load);
             >
               {{ processing ? "Processing…" : "Process Return" }}
             </button>
+          </div>
+          <div
+            v-else-if="isProcessed && hasStagedLines"
+            class="d-flex flex-wrap gap-2 flex-shrink-0 align-items-center"
+          >
+            <label class="small text-secondary mb-0 fw-medium" for="admin-return-bin-select">Return Bin</label>
+            <select
+              id="admin-return-bin-select"
+              v-model="selectedReturnBin"
+              class="form-select form-select-sm"
+              style="min-width: 8rem"
+              :disabled="binAssigning"
+              @change="assignReturnBin"
+            >
+              <option value="">Select bin…</option>
+              <option v-for="n in returnBinOptions" :key="n" :value="String(n)">{{ n }}</option>
+            </select>
           </div>
         </div>
       </div>

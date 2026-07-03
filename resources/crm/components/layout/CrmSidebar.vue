@@ -133,6 +133,7 @@ function navActive(mode) {
   if (mode === "returns-process") return p.startsWith("/admin/returns/process");
   if (mode === "returns-orders") return p === "/admin/returns/orders";
   if (mode === "returns-items") return p === "/admin/returns/items";
+  if (mode === "returns-bins") return p.startsWith("/admin/returns/bins");
   if (mode === "inventory") {
     return p.startsWith("/admin/inventory");
   }
@@ -537,6 +538,16 @@ function collapseNav() {
                     @click="closeMobile"
                   >
                     Returned Items
+                  </RouterLink>
+                </li>
+                <li>
+                  <RouterLink
+                    to="/admin/returns/bins"
+                    class="vx-nav-link vx-nav-sublink"
+                    :class="{ 'vx-nav-link--active': navActive('returns-bins') }"
+                    @click="closeMobile"
+                  >
+                    Return Bins
                   </RouterLink>
                 </li>
               </ul>

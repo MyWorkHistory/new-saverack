@@ -267,6 +267,14 @@ const meta = {
     title: "Save Rack | Returned Items",
     description: "Processed return line items.",
   },
+  adminReturnBins: {
+    title: "Save Rack | Return Bins",
+    description: "Physical return bins awaiting restock.",
+  },
+  adminReturnBinDetail: {
+    title: "Save Rack | Return Bin",
+    description: "Items in a return bin.",
+  },
   userReturnOrdersList: {
     title: "Save Rack | Return Orders",
     description: "View returned orders that are pending processing or completed.",
@@ -524,6 +532,19 @@ const routes = [
     name: "admin-returned-items",
     component: () => import("../pages/admin-returns/AdminReturnedItemsPage.vue"),
     meta: meta.adminReturnedItems,
+  },
+  {
+    path: "/admin/returns/bins",
+    name: "admin-return-bins",
+    component: () => import("../pages/admin-returns/AdminReturnBinsListPage.vue"),
+    meta: meta.adminReturnBins,
+  },
+  {
+    path: "/admin/returns/bins/:binNumber",
+    name: "admin-return-bin-detail",
+    component: () => import("../pages/admin-returns/AdminReturnBinDetailPage.vue"),
+    props: true,
+    meta: meta.adminReturnBinDetail,
   },
   { path: "/admin/returns", redirect: "/admin/returns/process" },
   {

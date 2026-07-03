@@ -100,6 +100,33 @@ class AdminReturnBinWorkflowTest extends TestCase
         $this->assertSame(2, $lineA->return_bin_remaining_qty);
     }
 
+    public function test_process_pending_return_assigns_bin(): void
+    {
+        $account = $this->account('proc');
+        $return = ClientAccountReturn::query()->create([
+            'client_account_id' => $account->id,
+            'rma_number' => 'PR1111',
+            'status' => ClientAccountReturn::STATUS_PENDING,
+            'return_type' => ClientAccountReturn::TYPE_DIRECT,
+            'shiphero_order_id' => 'order-pr',
+            'order_number' => '2',
+            'items_count' => 1,
+        ]);
+        $line = $this->line($return, 'SKU-PR', 1);
+        Sanctum::actingAs($this->staffUser(['inventory.view']));
+
+        $this->postJson('/api/admin/returns/'.$return->id.'/process', [
+            'line_ids' => [$line->id],
+            'return_bin_number' => 6,
+        ])
+            ->assertOk()
+            ->assertJsonPath('return_bin_number', 6);
+
+        $return->refresh();
+        $this->assertSame(6, $return->return_bin_number);
+        $this->assertSame(6, $line->fresh()->return_bin_number);
+    }
+
     public function test_pending_return_cannot_assign_bin(): void
     {
         $account = $this->account();

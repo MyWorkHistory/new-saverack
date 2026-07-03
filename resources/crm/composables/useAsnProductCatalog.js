@@ -51,6 +51,9 @@ function wholesaleOrderIdFromBrowserPath() {
   return m ? Number(m[1]) : 0;
 }
 
+/** Route names whose `:id` param is an ASN id (not return/order/etc.). */
+const ASN_DETAIL_ROUTE_NAMES = new Set(["admin-asn-detail", "user-asn-detail"]);
+
 /**
  * ShipHero product catalog for ASN / order line-item pickers.
  *
@@ -97,7 +100,7 @@ export function useAsnProductCatalog(
     let id = Number(toValue(asnIdSource) || 0);
     if (id > 0) return id;
     id = Number(route.params?.id || 0);
-    if (id > 0 && route.name !== "wholesale-order-detail") return id;
+    if (id > 0 && ASN_DETAIL_ROUTE_NAMES.has(String(route.name || ""))) return id;
     return asnIdFromBrowserPath();
   }
 

@@ -28,7 +28,7 @@ const sortBy = ref("processed_at");
 const sortDir = ref("desc");
 let searchTimer = null;
 
-const tableColspan = 8;
+const tableColspan = 9;
 
 const accountOptions = computed(() =>
   (accounts.value || []).map((a) => ({
@@ -171,7 +171,7 @@ onMounted(() => {
               <th class="staff-table-head__th text-center staff-table-head__th--sortable" scope="col" @click="toggleSort('order_number')">
                 Order # {{ sortIndicator("order_number") }}
               </th>
-              <th class="staff-table-head__th text-center" scope="col">Account</th>
+              <th class="staff-table-head__th text-center" scope="col">Company</th>
               <th class="staff-table-head__th text-center staff-table-head__th--sortable" scope="col" @click="toggleSort('customer_name')">
                 Customer {{ sortIndicator("customer_name") }}
               </th>
@@ -181,8 +181,9 @@ onMounted(() => {
               </th>
               <th class="staff-table-head__th text-center" scope="col">Status</th>
               <th class="staff-table-head__th text-center staff-table-head__th--sortable" scope="col" @click="toggleSort('processed_at')">
-                Processed {{ sortIndicator("processed_at") }}
+                Date Processed {{ sortIndicator("processed_at") }}
               </th>
+              <th class="staff-table-head__th text-center" scope="col">Processed By</th>
             </tr>
           </thead>
           <tbody>
@@ -218,6 +219,7 @@ onMounted(() => {
                 </span>
               </td>
               <td class="text-center small text-secondary">{{ formatDateUs(row.processed_at) || "—" }}</td>
+              <td class="text-center">{{ row.processed_by_name || "—" }}</td>
             </tr>
           </tbody>
         </table>

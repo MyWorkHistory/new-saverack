@@ -22,7 +22,7 @@ const accounts = ref([]);
 const accountsLoading = ref(false);
 let searchTimer = null;
 
-const tableColspan = 9;
+const tableColspan = 10;
 
 const accountOptions = computed(() =>
   (accounts.value || []).map((a) => ({
@@ -143,13 +143,14 @@ onMounted(() => {
             <tr>
               <th class="staff-table-head__th text-center" scope="col">RMA #</th>
               <th class="staff-table-head__th text-center" scope="col">Order #</th>
-              <th class="staff-table-head__th text-center" scope="col">Account</th>
+              <th class="staff-table-head__th text-center" scope="col">Company</th>
               <th class="staff-table-head__th" scope="col">SKU</th>
               <th class="staff-table-head__th" scope="col">Item</th>
               <th class="staff-table-head__th text-center" scope="col">Qty</th>
               <th class="staff-table-head__th text-center" scope="col">Type</th>
               <th class="staff-table-head__th" scope="col">Reason</th>
-              <th class="staff-table-head__th text-center" scope="col">Processed</th>
+              <th class="staff-table-head__th text-center" scope="col">Date Processed</th>
+              <th class="staff-table-head__th text-center" scope="col">Processed By</th>
             </tr>
           </thead>
           <tbody>
@@ -182,6 +183,7 @@ onMounted(() => {
               <td class="text-center">{{ returnTypeLabel(row.return_type) }}</td>
               <td>{{ row.return_reason_label || row.return_reason || "—" }}</td>
               <td class="text-center small text-secondary">{{ formatDateUs(row.processed_at) || "—" }}</td>
+              <td class="text-center">{{ row.processed_by_name || "—" }}</td>
             </tr>
           </tbody>
         </table>

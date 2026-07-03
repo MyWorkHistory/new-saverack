@@ -184,6 +184,19 @@ class AdminReturnController extends Controller
         $return->customer_name = '';
     }
 
+    /**
+     * @return array<string, mixed>
+     */
+    private function returnBinNumberRules(): array
+    {
+        return [
+            'required',
+            'integer',
+            'min:'.ClientAccountReturn::RETURN_BIN_MIN,
+            'max:'.ClientAccountReturn::RETURN_BIN_MAX,
+        ];
+    }
+
     private function pendingReturnsQuery(Request $request): \Illuminate\Database\Eloquent\Builder
     {
         $validated = $request->validate([
@@ -268,9 +281,12 @@ class AdminReturnController extends Controller
      */
     private function serializeListRow(ClientAccountReturn $return, ?string $displayStatus = null): array
     {
-        $return->loadMissing('clientAccount');
+        $return->loadMissing(['clientAccount', 'processedBy']);
         $companyName = $return->clientAccount !== null
             ? trim((string) $return->clientAccount->company_name)
+            : '';
+        $processedByName = $return->processedBy !== null
+            ? trim((string) $return->processedBy->name)
             : '';
 
         return [
@@ -289,6 +305,7 @@ class AdminReturnController extends Controller
             'shiphero_order_id' => $return->shiphero_order_id,
             'created_at' => optional($return->created_at)->toIso8601String(),
             'processed_at' => optional($return->processed_at)->toIso8601String(),
+            'processed_by_name' => $processedByName !== '' ? $processedByName : null,
         ];
     }
 
@@ -325,9 +342,12 @@ class AdminReturnController extends Controller
      */
     private function serializeReturnDetail(ClientAccountReturn $return): array
     {
-        $return->loadMissing(['lines', 'clientAccount', 'returnBill']);
+        $return->loadMissing(['lines', 'clientAccount', 'returnBill', 'processedBy']);
         $companyName = $return->clientAccount !== null
             ? trim((string) $return->clientAccount->company_name)
+            : '';
+        $processedByName = $return->processedBy !== null
+            ? trim((string) $return->processedBy->name)
             : '';
 
         $payload = [
@@ -352,6 +372,7 @@ class AdminReturnController extends Controller
             'created_source' => $return->created_source,
             'created_at' => optional($return->created_at)->toIso8601String(),
             'processed_at' => optional($return->processed_at)->toIso8601String(),
+            'processed_by_name' => $processedByName !== '' ? $processedByName : null,
             'return_bin_number' => $return->return_bin_number,
             'lines' => $return->lines->map(fn (ClientAccountReturnLine $l) => $this->serializeLine($l, $return->created_source, $return))->values()->all(),
             'non_compliant_reasons' => ReturnReasonOptions::nonCompliant(),
@@ -592,6 +613,7 @@ class AdminReturnController extends Controller
             'warehouse_private_note' => ['nullable', 'string', 'max:20000'],
             'first_item_fee' => ['nullable', 'numeric', 'min:0'],
             'additional_item_fee' => ['nullable', 'numeric', 'min:0'],
+            'return_bin_number' => $this->returnBinNumberRules(),
             'lines' => ['required', 'array', 'min:1'],
             'lines.*.sku' => ['required', 'string', 'max:255'],
             'lines.*.name' => ['required', 'string', 'max:512'],
@@ -612,6 +634,7 @@ class AdminReturnController extends Controller
             isset($validated['first_item_fee']) ? (float) $validated['first_item_fee'] : null,
             isset($validated['additional_item_fee']) ? (float) $validated['additional_item_fee'] : null,
             $request->user() instanceof User ? $request->user() : null,
+            (int) $validated['return_bin_number'],
         );
 
         return response()->json($this->serializeReturnDetail($return));
@@ -636,6 +659,7 @@ class AdminReturnController extends Controller
             'first_item_fee' => ['nullable', 'numeric', 'min:0'],
             'additional_item_fee' => ['nullable', 'numeric', 'min:0'],
             'non_compliant_fee' => ['nullable', 'numeric', 'min:0'],
+            'return_bin_number' => $this->returnBinNumberRules(),
         ]);
 
         $lineIds = array_map('intval', $validated['line_ids']);
@@ -663,6 +687,7 @@ class AdminReturnController extends Controller
             $lineIds,
             $restockMap,
             $request->user() instanceof User ? $request->user() : null,
+            (int) $validated['return_bin_number'],
         );
 
         return response()->json($this->serializeReturnDetail($return));
@@ -698,7 +723,7 @@ class AdminReturnController extends Controller
 
         $query = ClientAccountReturn::query()
             ->whereIn('status', [ClientAccountReturn::STATUS_RECEIVED, ClientAccountReturn::STATUS_COMPLETED])
-            ->with('clientAccount');
+            ->with(['clientAccount', 'processedBy']);
 
         if (! empty($validated['client_account_id'])) {
             $account = ClientAccount::query()->findOrFail((int) $validated['client_account_id']);
@@ -769,7 +794,7 @@ class AdminReturnController extends Controller
                     }
                 }
             })
-            ->with(['clientAccountReturn.clientAccount']);
+            ->with(['clientAccountReturn.clientAccount', 'clientAccountReturn.processedBy']);
 
         if (! empty($validated['client_account_id'])) {
             $account = ClientAccount::query()->findOrFail((int) $validated['client_account_id']);
@@ -808,6 +833,10 @@ class AdminReturnController extends Controller
                 if ($ret !== null && $ret->clientAccount !== null) {
                     $companyName = trim((string) $ret->clientAccount->company_name);
                 }
+                $processedByName = '';
+                if ($ret !== null && $ret->processedBy !== null) {
+                    $processedByName = trim((string) $ret->processedBy->name);
+                }
 
                 return [
                     'id' => $line->id,
@@ -826,6 +855,7 @@ class AdminReturnController extends Controller
                     'client_account_company_name' => $companyName,
                     'created_at' => $ret !== null ? optional($ret->created_at)->toIso8601String() : null,
                     'processed_at' => $ret !== null ? optional($ret->processed_at)->toIso8601String() : null,
+                    'processed_by_name' => $processedByName !== '' ? $processedByName : null,
                 ];
             })
             ->values()

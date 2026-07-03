@@ -69,6 +69,7 @@ const allSelected = computed(() => {
 
 const canProcess = computed(() => {
   if (!isPending.value) return false;
+  if (!selectedReturnBin.value) return false;
   if (isStaffManagedPending.value) {
     return lines.value.some((line) => selected.value.has(line.id) && Number(line.return_qty) > 0);
   }
@@ -307,13 +308,22 @@ async function processReturn() {
     toast.error("Select at least one item to process.");
     return;
   }
+  const binNumber = Number(selectedReturnBin.value);
+  if (!binNumber || binNumber < 1 || binNumber > 20) {
+    toast.error("Select a return bin before processing.");
+    return;
+  }
   processing.value = true;
   try {
     const restockByLineId = {};
     for (const lineId of lineIds) {
       restockByLineId[lineId] = lineRestock.value[lineId] !== false;
     }
-    const payload = { line_ids: lineIds, restock_by_line_id: restockByLineId };
+    const payload = {
+      line_ids: lineIds,
+      restock_by_line_id: restockByLineId,
+      return_bin_number: binNumber,
+    };
     if (returnFees.value.first_item != null) payload.first_item_fee = returnFees.value.first_item;
     if (returnFees.value.additional_item != null) payload.additional_item_fee = returnFees.value.additional_item;
     if (returnFees.value.non_compliant != null) payload.non_compliant_fee = returnFees.value.non_compliant;
@@ -385,6 +395,17 @@ onMounted(load);
             </button>
           </div>
           <div v-if="isPending" class="d-flex flex-wrap gap-2 flex-shrink-0 align-items-center">
+            <label class="small text-secondary mb-0 fw-medium" for="admin-return-bin-select">Return Bin</label>
+            <select
+              id="admin-return-bin-select"
+              v-model="selectedReturnBin"
+              class="form-select form-select-sm"
+              style="min-width: 8rem"
+              :disabled="processing"
+            >
+              <option value="">Select bin…</option>
+              <option v-for="n in returnBinOptions" :key="n" :value="String(n)">{{ n }}</option>
+            </select>
             <button
               type="button"
               class="btn btn-primary staff-page-primary btn-sm fw-semibold"
@@ -398,9 +419,14 @@ onMounted(load);
             v-else-if="isProcessed && hasStagedLines"
             class="d-flex flex-wrap gap-2 flex-shrink-0 align-items-center"
           >
-            <label class="small text-secondary mb-0 fw-medium" for="admin-return-bin-select">Return Bin</label>
+            <span v-if="ret.return_bin_number" class="small text-secondary mb-0">
+              Return Bin <span class="fw-semibold text-body">{{ ret.return_bin_number }}</span>
+            </span>
+            <label class="small text-secondary mb-0 fw-medium" for="admin-return-bin-change">
+              {{ ret.return_bin_number ? "Change Bin" : "Return Bin" }}
+            </label>
             <select
-              id="admin-return-bin-select"
+              id="admin-return-bin-change"
               v-model="selectedReturnBin"
               class="form-select form-select-sm"
               style="min-width: 8rem"
@@ -606,6 +632,11 @@ onMounted(load);
           </div>
         </div>
 
+        <div class="staff-table-card staff-datatable-card staff-datatable-card--white p-4">
+          <h3 class="h6 fw-semibold mb-3">Company</h3>
+          <p class="small mb-0">{{ ret.client_account_company_name || "—" }}</p>
+        </div>
+
         <div
           v-if="isThirdParty"
           class="staff-table-card staff-datatable-card staff-datatable-card--white p-4"
@@ -644,8 +675,13 @@ onMounted(load);
         </div>
 
         <div v-if="ret.processed_at" class="staff-table-card staff-datatable-card staff-datatable-card--white p-4">
-          <h3 class="h6 fw-semibold mb-2">Processed</h3>
-          <p class="small text-secondary mb-0">{{ formatDateUs(ret.processed_at) }}</p>
+          <h3 class="h6 fw-semibold mb-3">Processed</h3>
+          <dl class="small mb-0">
+            <dt class="text-secondary fw-normal">Date</dt>
+            <dd class="mb-2">{{ formatDateUs(ret.processed_at) || "—" }}</dd>
+            <dt class="text-secondary fw-normal">Processed By</dt>
+            <dd class="mb-0">{{ ret.processed_by_name || "—" }}</dd>
+          </dl>
         </div>
       </div>
     </div>

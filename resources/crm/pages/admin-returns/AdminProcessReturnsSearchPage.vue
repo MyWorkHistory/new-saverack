@@ -367,7 +367,7 @@ onMounted(() => {
               <th class="staff-table-head__th text-center" scope="col">Status</th>
               <th class="staff-table-head__th text-center" scope="col">RMA #</th>
               <th class="staff-table-head__th text-center" scope="col">Order #</th>
-              <th class="staff-table-head__th text-center" scope="col">Account</th>
+              <th class="staff-table-head__th text-center" scope="col">Company</th>
               <th class="staff-table-head__th text-center" scope="col">Customer</th>
               <th class="staff-table-head__th text-center" scope="col">Items</th>
               <th class="staff-table-head__th text-center" scope="col">Created</th>

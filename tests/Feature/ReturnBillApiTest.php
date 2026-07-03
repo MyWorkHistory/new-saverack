@@ -134,6 +134,7 @@ class ReturnBillApiTest extends TestCase
         $this->postJson('/api/admin/returns/'.$return->id.'/process', [
             'line_ids' => [$return->lines()->first()->id],
             'restock_by_line_id' => [$return->lines()->first()->id => false],
+            'return_bin_number' => 2,
         ])->assertOk();
 
         $return->refresh();

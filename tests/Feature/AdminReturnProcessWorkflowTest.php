@@ -184,6 +184,20 @@ class AdminReturnProcessWorkflowTest extends TestCase
             ->assertJsonPath('data.display_status', 'returned');
     }
 
+    public function test_process_return_requires_return_bin_number(): void
+    {
+        $account = $this->account();
+        $this->seedReturnFees($account);
+        $return = $this->returnForAccount($account);
+        $lineA = $this->lineForReturn($return, ['sku' => 'A', 'return_qty' => 2]);
+        Sanctum::actingAs($this->staffUser());
+
+        $this->postJson('/api/admin/returns/'.$return->id.'/process', [
+            'line_ids' => [$lineA->id],
+            'restock_by_line_id' => [$lineA->id => true],
+        ])->assertUnprocessable();
+    }
+
     public function test_process_return_sets_received_and_zeros_unselected_lines(): void
     {
         $account = $this->account();
@@ -191,24 +205,32 @@ class AdminReturnProcessWorkflowTest extends TestCase
         $return = $this->returnForAccount($account);
         $lineA = $this->lineForReturn($return, ['sku' => 'A', 'return_qty' => 2]);
         $lineB = $this->lineForReturn($return, ['sku' => 'B', 'return_qty' => 1, 'sort_order' => 1]);
-        Sanctum::actingAs($this->staffUser());
+        $staff = $this->staffUser();
+        Sanctum::actingAs($staff);
 
         $this->postJson('/api/admin/returns/'.$return->id.'/process', [
             'line_ids' => [$lineA->id],
             'restock_by_line_id' => [$lineA->id => true],
+            'return_bin_number' => 5,
         ])
             ->assertOk()
             ->assertJsonPath('status', ClientAccountReturn::STATUS_RECEIVED)
-            ->assertJsonPath('return_fees.locked', true);
+            ->assertJsonPath('return_fees.locked', true)
+            ->assertJsonPath('return_bin_number', 5)
+            ->assertJsonPath('processed_by_name', $staff->name);
 
         $return->refresh();
         $this->assertSame(ClientAccountReturn::STATUS_RECEIVED, $return->status);
         $this->assertNotNull($return->processed_at);
+        $this->assertSame($staff->id, $return->processed_by_user_id);
+        $this->assertSame(5, $return->return_bin_number);
         $this->assertNotNull($return->fees_locked_at);
         $this->assertNotNull($return->return_bill_id);
         $this->assertSame(2, (int) $return->items_count);
         $this->assertSame(0, (int) $lineB->fresh()->return_qty);
         $this->assertTrue((bool) $lineA->fresh()->restock);
+        $this->assertSame(5, $lineA->fresh()->return_bin_number);
+        $this->assertSame(2, $lineA->fresh()->return_bin_remaining_qty);
         $this->assertSame(ReturnBill::STATUS_OPEN, ReturnBill::query()->find($return->return_bill_id)->status);
 
         $bill = ReturnBill::query()->with('items')->find($return->return_bill_id);
@@ -238,6 +260,7 @@ class AdminReturnProcessWorkflowTest extends TestCase
 
         $this->postJson('/api/admin/returns/'.$return->id.'/process-from-draft', [
             'return_type' => ClientAccountReturn::TYPE_DIRECT,
+            'return_bin_number' => 3,
             'lines' => [
                 [
                     'sku' => 'SKU-X',
@@ -251,10 +274,12 @@ class AdminReturnProcessWorkflowTest extends TestCase
         ])
             ->assertOk()
             ->assertJsonPath('status', ClientAccountReturn::STATUS_RECEIVED)
-            ->assertJsonPath('return_fees.locked', true);
+            ->assertJsonPath('return_fees.locked', true)
+            ->assertJsonPath('return_bin_number', 3);
 
         $return->refresh();
         $this->assertSame(ClientAccountReturn::STATUS_RECEIVED, $return->status);
+        $this->assertSame(3, $return->return_bin_number);
         $this->assertNotNull($return->return_bill_id);
         $this->assertSame('unknown', $return->lines()->first()->return_reason);
     }
@@ -262,23 +287,29 @@ class AdminReturnProcessWorkflowTest extends TestCase
     public function test_processed_return_appears_in_returned_orders_and_items(): void
     {
         $account = $this->account();
+        $staff = $this->staffUser();
+        $staff->update(['name' => 'Orders Staff']);
         $return = $this->returnForAccount($account, [
             'status' => ClientAccountReturn::STATUS_RECEIVED,
             'processed_at' => now(),
+            'processed_by_user_id' => $staff->id,
             'rma_number' => 'RC5555',
         ]);
         $this->lineForReturn($return);
-        Sanctum::actingAs($this->staffUser());
+        Sanctum::actingAs($staff);
 
         $this->getJson('/api/admin/returns/orders')
             ->assertOk()
             ->assertJsonPath('data.0.id', $return->id)
-            ->assertJsonPath('data.0.display_status', 'returned');
+            ->assertJsonPath('data.0.display_status', 'returned')
+            ->assertJsonPath('data.0.client_account_company_name', $account->company_name)
+            ->assertJsonPath('data.0.processed_by_name', $staff->name);
 
         $this->getJson('/api/admin/returns/items')
             ->assertOk()
             ->assertJsonPath('data.0.return_id', $return->id)
-            ->assertJsonPath('data.0.display_status', 'returned');
+            ->assertJsonPath('data.0.display_status', 'returned')
+            ->assertJsonPath('data.0.processed_by_name', $staff->name);
     }
 
     public function test_portal_user_cannot_access_admin_pending(): void

@@ -199,6 +199,7 @@ class AdminReturnNonCompliantWorkflowTest extends TestCase
         $this->postJson('/api/admin/returns/'.$returnId.'/process', [
             'line_ids' => [$lineId],
             'restock_by_line_id' => [$lineId => true],
+            'return_bin_number' => 4,
         ])
             ->assertOk()
             ->assertJsonPath('status', ClientAccountReturn::STATUS_RECEIVED)

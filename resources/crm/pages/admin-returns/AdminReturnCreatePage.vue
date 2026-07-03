@@ -22,6 +22,9 @@ const reasonOptions = ref({});
 const returnFees = ref({});
 const defaultReason = ref("unknown");
 const selected = ref(new Set());
+const selectedReturnBin = ref("");
+
+const returnBinOptions = Array.from({ length: 20 }, (_, i) => i + 1);
 
 const shipheroOrderId = computed(() => String(route.params.shipheroOrderId || ""));
 const clientAccountId = computed(() => Number(route.query.client_account_id || 0));
@@ -33,6 +36,8 @@ const allSelected = computed(() => {
 });
 
 const hasReturnQty = computed(() => formLines.value.some((l) => Number(l.return_qty) > 0));
+
+const canProcess = computed(() => hasReturnQty.value && Boolean(selectedReturnBin.value));
 
 function lineKey(idx) {
   return idx;
@@ -123,6 +128,11 @@ async function processReturn() {
     toast.error("Enter a return quantity for at least one item.");
     return;
   }
+  const binNumber = Number(selectedReturnBin.value);
+  if (!binNumber || binNumber < 1 || binNumber > 20) {
+    toast.error("Select a return bin before processing.");
+    return;
+  }
   submitBusy.value = true;
   try {
     const lines = formLines.value.map((row) => ({
@@ -138,6 +148,7 @@ async function processReturn() {
     const payload = {
       return_type: returnType.value,
       warehouse_private_note: warehouseNote.value.trim() || null,
+      return_bin_number: binNumber,
       lines,
     };
     if (returnFees.value.first_item != null) payload.first_item_fee = returnFees.value.first_item;
@@ -233,6 +244,17 @@ onMounted(() => {
             </button>
           </div>
           <div class="d-flex flex-wrap gap-2 flex-shrink-0 align-items-center">
+            <label class="small text-secondary mb-0 fw-medium" for="admin-return-create-bin">Return Bin</label>
+            <select
+              id="admin-return-create-bin"
+              v-model="selectedReturnBin"
+              class="form-select form-select-sm"
+              style="min-width: 8rem"
+              :disabled="submitBusy"
+            >
+              <option value="">Select bin…</option>
+              <option v-for="n in returnBinOptions" :key="n" :value="String(n)">{{ n }}</option>
+            </select>
             <button
               type="button"
               class="btn btn-outline-secondary btn-sm fw-semibold orders-toolbar-outline-btn"
@@ -247,7 +269,7 @@ onMounted(() => {
             <button
               type="button"
               class="btn btn-primary staff-page-primary btn-sm fw-semibold"
-              :disabled="submitBusy || !hasReturnQty"
+              :disabled="submitBusy || !canProcess"
               @click="processReturn"
             >
               {{ submitBusy ? "Processing…" : "Process" }}

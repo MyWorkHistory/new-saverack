@@ -1,5 +1,5 @@
 <script setup>
-import { computed, inject, onMounted, onUnmounted, ref, watch } from "vue";
+import { computed, inject, nextTick, onMounted, onUnmounted, ref, watch } from "vue";
 import { RouterLink, useRouter } from "vue-router";
 import api from "../../services/api";
 import CrmLoadingSpinner from "../../components/common/CrmLoadingSpinner.vue";
@@ -42,6 +42,12 @@ const lightboxUrl = ref("");
 const deletePhotoTarget = ref(null);
 const deletePhotoBusy = ref(false);
 const thumbUrls = ref({});
+const actionsMenuOpen = ref(false);
+const actionsMenuRect = ref({ top: 0, left: 0 });
+const ACTIONS_MENU_W = 180;
+const ACTIONS_MENU_H = 100;
+
+const canShowActionsMenu = computed(() => Boolean(tutorial.value) && (canUpdate.value || canDelete.value));
 
 function userHasPerm(key) {
   const u = crmUser.value;
@@ -223,6 +229,62 @@ async function deleteTutorial() {
   }
 }
 
+function placeActionsMenu(anchorEl) {
+  if (!(anchorEl instanceof HTMLElement)) return;
+  const rect = anchorEl.getBoundingClientRect();
+  let top = rect.bottom + 4;
+  let left = rect.right - ACTIONS_MENU_W;
+  left = Math.max(8, Math.min(left, window.innerWidth - ACTIONS_MENU_W - 8));
+  if (top + ACTIONS_MENU_H > window.innerHeight - 8) {
+    top = Math.max(8, rect.top - ACTIONS_MENU_H - 4);
+  }
+  actionsMenuRect.value = { top, left };
+}
+
+async function toggleActionsMenu(event) {
+  event?.stopPropagation?.();
+  if (actionsMenuOpen.value) {
+    actionsMenuOpen.value = false;
+    return;
+  }
+  const btn = event?.currentTarget;
+  actionsMenuOpen.value = true;
+  await nextTick();
+  requestAnimationFrame(() => {
+    placeActionsMenu(btn);
+  });
+}
+
+function closeActionsMenu() {
+  actionsMenuOpen.value = false;
+}
+
+function openEditFromMenu() {
+  closeActionsMenu();
+  editorOpen.value = true;
+}
+
+function openDeleteFromMenu() {
+  closeActionsMenu();
+  deleteTutorialOpen.value = true;
+}
+
+function onDocClick(e) {
+  if (!e.target?.closest?.("[data-tutorial-actions]")) {
+    actionsMenuOpen.value = false;
+  }
+}
+
+function onWindowScrollOrResize() {
+  actionsMenuOpen.value = false;
+}
+
+function onDocKeydown(e) {
+  if (e.key === "Escape") {
+    actionsMenuOpen.value = false;
+  }
+}
+
 async function loadMeta() {
   try {
     const { data } = await api.get("/resources/tutorials/meta");
@@ -317,9 +379,17 @@ watch(
 onMounted(() => {
   loadMeta();
   loadTutorial();
+  document.addEventListener("click", onDocClick);
+  document.addEventListener("keydown", onDocKeydown);
+  window.addEventListener("scroll", onWindowScrollOrResize, true);
+  window.addEventListener("resize", onWindowScrollOrResize);
 });
 
 onUnmounted(() => {
+  document.removeEventListener("click", onDocClick);
+  document.removeEventListener("keydown", onDocKeydown);
+  window.removeEventListener("scroll", onWindowScrollOrResize, true);
+  window.removeEventListener("resize", onWindowScrollOrResize);
   for (const url of Object.values(imagePreviewUrls.value)) {
     if (typeof url === "string") window.URL.revokeObjectURL(url);
   }
@@ -345,24 +415,33 @@ onUnmounted(() => {
         <h1 class="staff-user-view__title">Tutorial</h1>
         <p class="text-secondary small mb-0">Training guide details and discussion</p>
       </div>
-      <div class="d-flex flex-wrap gap-2">
+      <div class="d-flex flex-wrap gap-2 align-items-center">
         <RouterLink to="/admin/resources/tutorials" class="btn btn-outline-secondary btn-sm">Back to list</RouterLink>
-        <button
-          v-if="tutorial && canUpdate"
-          type="button"
-          class="btn btn-primary staff-page-primary btn-sm"
-          @click="editorOpen = true"
-        >
-          Edit
-        </button>
-        <button
-          v-if="tutorial && canDelete"
-          type="button"
-          class="btn btn-outline-danger btn-sm"
-          @click="deleteTutorialOpen = true"
-        >
-          Delete
-        </button>
+        <div v-if="canShowActionsMenu" class="staff-detail-tab-bar-actions" data-tutorial-actions>
+          <button
+            type="button"
+            class="staff-detail-tab-btn"
+            :class="{ 'staff-detail-tab-btn--active': actionsMenuOpen }"
+            :aria-expanded="actionsMenuOpen"
+            aria-label="Actions"
+            @click="toggleActionsMenu"
+          >
+            <svg
+              class="staff-detail-tab-btn__icon"
+              width="26"
+              height="26"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="1.75"
+              viewBox="0 0 24 24"
+              aria-hidden="true"
+            >
+              <path stroke-linecap="round" stroke-linejoin="round" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
+              <path stroke-linecap="round" stroke-linejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+            </svg>
+            <span class="staff-detail-tab-btn__label">Actions</span>
+          </button>
+        </div>
       </div>
     </div>
 
@@ -385,60 +464,6 @@ onUnmounted(() => {
             <h3 class="small fw-semibold text-secondary text-uppercase mb-2">Description</h3>
             <CrmLinkedText :text="tutorial.description" class="whitespace-pre-wrap" />
           </section>
-        </div>
-
-        <div class="staff-table-card overflow-hidden">
-          <div class="p-4 p-md-5 border-bottom d-flex flex-wrap align-items-center justify-content-between gap-2">
-            <h3 class="h6 fw-semibold text-body mb-0">Photos</h3>
-            <button
-              v-if="canCreatePhoto"
-              type="button"
-              class="btn btn-primary staff-page-primary btn-sm"
-              @click="openPhotoUpload"
-            >
-              Add Photo
-            </button>
-          </div>
-          <div class="p-4 p-md-5">
-            <p v-if="!photos.length" class="text-secondary small mb-0">No photos yet.</p>
-            <div v-else class="resources-photo-grid">
-              <div class="row g-3 g-md-4">
-                <div
-                  v-for="photo in photos"
-                  :key="photo.id"
-                  class="col-6 col-sm-4 col-md-3"
-                >
-                  <div class="resources-photo-card h-100 position-relative">
-                    <button
-                      v-if="canDeletePhoto"
-                      type="button"
-                      class="btn btn-sm btn-outline-danger resources-photo-card__delete"
-                      aria-label="Delete photo"
-                      @click.stop="confirmDeletePhoto(photo)"
-                    >
-                      ×
-                    </button>
-                    <button
-                      type="button"
-                      class="resources-photo-card__thumb-btn w-100 border-0 bg-transparent p-0"
-                      @click="openPhotoLightbox(photo)"
-                    >
-                      <img
-                        v-if="thumbUrls[photo.id]"
-                        :src="thumbUrls[photo.id]"
-                        :alt="photo.name"
-                        class="resources-photo-card__thumb rounded"
-                      />
-                      <div v-else class="resources-photo-card__placeholder rounded bg-light" />
-                    </button>
-                    <p class="small text-center mb-0 mt-2 fw-medium text-truncate px-1" :title="photo.name">
-                      {{ photo.name }}
-                    </p>
-                  </div>
-                </div>
-              </div>
-            </div>
-          </div>
         </div>
 
         <div class="staff-table-card overflow-hidden">
@@ -530,9 +555,93 @@ onUnmounted(() => {
               <dd class="mb-0 text-body">{{ tutorial.creator?.name || "—" }}</dd>
             </div>
           </dl>
+
+          <div class="resources-tutorial-photos mt-4 pt-4 border-top">
+            <div class="d-flex flex-wrap align-items-center justify-content-between gap-2 mb-3">
+              <h3 class="small fw-semibold text-secondary text-uppercase mb-0">Photos</h3>
+              <button
+                v-if="canCreatePhoto"
+                type="button"
+                class="btn btn-primary staff-page-primary btn-sm"
+                @click="openPhotoUpload"
+              >
+                Add Photo
+              </button>
+            </div>
+            <p v-if="!photos.length" class="text-secondary small mb-0">No photos yet.</p>
+            <div v-else class="row g-2">
+              <div
+                v-for="photo in photos"
+                :key="photo.id"
+                class="col-6"
+              >
+                <div class="resources-photo-card h-100 position-relative">
+                  <button
+                    v-if="canDeletePhoto"
+                    type="button"
+                    class="btn btn-sm btn-outline-danger resources-photo-card__delete"
+                    aria-label="Delete photo"
+                    @click.stop="confirmDeletePhoto(photo)"
+                  >
+                    ×
+                  </button>
+                  <button
+                    type="button"
+                    class="resources-photo-card__thumb-btn w-100 border-0 bg-transparent p-0"
+                    @click="openPhotoLightbox(photo)"
+                  >
+                    <img
+                      v-if="thumbUrls[photo.id]"
+                      :src="thumbUrls[photo.id]"
+                      :alt="photo.name"
+                      class="resources-photo-card__thumb rounded"
+                    />
+                    <div v-else class="resources-photo-card__placeholder rounded bg-light" />
+                  </button>
+                  <p class="small text-center mb-0 mt-2 fw-medium text-truncate px-1" :title="photo.name">
+                    {{ photo.name }}
+                  </p>
+                </div>
+              </div>
+            </div>
+          </div>
         </div>
       </aside>
     </div>
+
+    <Teleport to="body">
+      <div
+        v-if="actionsMenuOpen"
+        data-tutorial-actions
+        class="staff-row-menu fixed z-[300] overflow-hidden"
+        role="menu"
+        :style="{
+          top: `${actionsMenuRect.top}px`,
+          left: `${actionsMenuRect.left}px`,
+          minWidth: `${ACTIONS_MENU_W}px`,
+        }"
+        @click.stop
+      >
+        <button
+          v-if="canUpdate"
+          type="button"
+          class="staff-row-menu__item"
+          role="menuitem"
+          @click="openEditFromMenu"
+        >
+          Edit
+        </button>
+        <button
+          v-if="canDelete"
+          type="button"
+          class="staff-row-menu__item staff-row-menu__item--danger"
+          role="menuitem"
+          @click="openDeleteFromMenu"
+        >
+          Delete
+        </button>
+      </div>
+    </Teleport>
 
     <TutorialModal
       v-if="tutorial"

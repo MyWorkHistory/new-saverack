@@ -1,5 +1,5 @@
 <script setup>
-import { computed, onMounted, onUnmounted, ref } from "vue";
+import { computed, nextTick, onMounted, onUnmounted, ref } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import api from "../../services/api";
 import CrmLoadingSpinner from "../../components/common/CrmLoadingSpinner.vue";
@@ -26,8 +26,11 @@ const order = ref(null);
 
 const instructionsDraft = ref("");
 const instructionsSaving = ref(false);
-const statusDraft = ref("pending");
 const statusSaving = ref(false);
+const statusMenuOpen = ref(false);
+const statusMenuRect = ref({ top: 0, left: 0 });
+const STATUS_MENU_W = 160;
+const STATUS_MENU_H = 96;
 
 const manualStatusOptions = WHOLESALE_MANUAL_STATUS_OPTIONS;
 
@@ -51,9 +54,75 @@ const comments = computed(() => (Array.isArray(order.value?.comments) ? order.va
 function applyOrderData(data) {
   order.value = data;
   instructionsDraft.value = String(data?.instructions || "");
-  const status = String(data?.status || "").toLowerCase();
-  statusDraft.value =
-    status === "completed" || status === "pending" ? status : "pending";
+}
+
+function orderStatusLabel() {
+  return order.value?.status_label || wholesaleStatusLabel(order.value?.status);
+}
+
+function placeStatusMenu(anchorEl) {
+  if (!(anchorEl instanceof HTMLElement)) return;
+  const rect = anchorEl.getBoundingClientRect();
+  let top = rect.bottom + 4;
+  let left = rect.right - STATUS_MENU_W;
+  left = Math.max(8, Math.min(left, window.innerWidth - STATUS_MENU_W - 8));
+  if (top + STATUS_MENU_H > window.innerHeight - 8) {
+    top = Math.max(8, rect.top - STATUS_MENU_H - 4);
+  }
+  statusMenuRect.value = { top, left };
+}
+
+async function toggleStatusMenu(event) {
+  event?.stopPropagation?.();
+  if (statusMenuOpen.value) {
+    statusMenuOpen.value = false;
+    return;
+  }
+  const btn = event?.currentTarget;
+  statusMenuOpen.value = true;
+  await nextTick();
+  requestAnimationFrame(() => {
+    placeStatusMenu(btn);
+  });
+}
+
+function closeStatusMenu() {
+  statusMenuOpen.value = false;
+}
+
+async function selectStatusFromMenu(status) {
+  closeStatusMenu();
+  if (!order.value?.id) return;
+  const next = String(status || "").toLowerCase();
+  if (next === String(order.value.status || "").toLowerCase()) return;
+  statusSaving.value = true;
+  try {
+    const { data } = await api.patch(`/admin/wholesale-orders/${order.value.id}`, {
+      status: next,
+    });
+    applyOrderData(data);
+    toast.success("Status updated.");
+  } catch (e) {
+    toast.errorFrom(e, "Could not update status.");
+  } finally {
+    statusSaving.value = false;
+  }
+}
+
+function onDocClick(e) {
+  if (!e.target?.closest?.("[data-wholesale-status-menu]")) {
+    statusMenuOpen.value = false;
+  }
+}
+
+function onWindowScrollOrResize() {
+  statusMenuOpen.value = false;
+}
+
+function onDocKeydown(e) {
+  if (e.key === "Escape") {
+    statusMenuOpen.value = false;
+  }
 }
 
 function inventoryDetailTo(sku) {
@@ -136,26 +205,6 @@ async function saveInstructions() {
     toast.errorFrom(e, "Could not save instructions.");
   } finally {
     instructionsSaving.value = false;
-  }
-}
-
-async function saveStatus() {
-  if (!order.value?.id) return;
-  const next = String(statusDraft.value || "").toLowerCase();
-  if (next === String(order.value.status || "").toLowerCase()) return;
-  statusSaving.value = true;
-  try {
-    const { data } = await api.patch(`/admin/wholesale-orders/${order.value.id}`, {
-      status: next,
-    });
-    applyOrderData(data);
-    toast.success("Status updated.");
-  } catch (e) {
-    statusDraft.value =
-      String(order.value.status || "").toLowerCase() === "completed" ? "completed" : "pending";
-    toast.errorFrom(e, "Could not update status.");
-  } finally {
-    statusSaving.value = false;
   }
 }
 
@@ -339,9 +388,19 @@ async function loadImagePreview(commentId) {
   }
 }
 
-onMounted(load);
+onMounted(() => {
+  load();
+  document.addEventListener("click", onDocClick);
+  document.addEventListener("keydown", onDocKeydown);
+  window.addEventListener("scroll", onWindowScrollOrResize, true);
+  window.addEventListener("resize", onWindowScrollOrResize);
+});
 
 onUnmounted(() => {
+  document.removeEventListener("click", onDocClick);
+  document.removeEventListener("keydown", onDocKeydown);
+  window.removeEventListener("scroll", onWindowScrollOrResize, true);
+  window.removeEventListener("resize", onWindowScrollOrResize);
   Object.values(imagePreviewUrls.value).forEach((url) => {
     if (url) window.URL.revokeObjectURL(url);
   });
@@ -360,9 +419,6 @@ onUnmounted(() => {
           <div class="min-w-0">
             <div class="d-flex flex-wrap align-items-center gap-2 mb-1">
               <h1 class="h4 mb-0 fw-semibold text-body">Order #{{ order.order_number }}</h1>
-              <span class="badge rounded-pill fw-medium" :class="wholesaleStatusBadgeClass(order.status)">
-                {{ order.status_label || wholesaleStatusLabel(order.status) }}
-              </span>
             </div>
             <button
               type="button"
@@ -380,7 +436,20 @@ onUnmounted(() => {
       <div class="col-lg-8 d-flex flex-column gap-4">
         <div class="staff-table-card staff-datatable-card staff-datatable-card--white p-0">
           <div class="px-4 py-3 border-bottom d-flex flex-wrap justify-content-between align-items-center gap-2">
-            <h2 class="h6 mb-0 fw-semibold">Items</h2>
+            <div class="d-flex flex-wrap align-items-center gap-2">
+              <h2 class="h6 mb-0 fw-semibold">Items</h2>
+              <button
+                v-if="!lines.length"
+                type="button"
+                data-wholesale-status-menu
+                class="badge rounded-pill fw-medium border-0 asn-line-status-badge"
+                :class="wholesaleStatusBadgeClass(order.status)"
+                :disabled="statusSaving"
+                @click="toggleStatusMenu"
+              >
+                {{ orderStatusLabel() }} ▾
+              </button>
+            </div>
             <button
               v-if="isEditable"
               type="button"
@@ -418,34 +487,46 @@ onUnmounted(() => {
                 <tr v-for="line in lines" :key="line.id">
                   <td class="order-detail-page__items-col">
                     <div class="order-detail-page__item-cell">
-                      <a
-                        v-if="inventoryDetailHref(line.sku)"
-                        :href="inventoryDetailHref(line.sku)"
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        class="asn-line-thumb-link text-decoration-none"
-                        :aria-label="line.sku ? `View inventory for SKU ${line.sku} in new tab` : undefined"
-                        @click="openInventoryInNewTab(line, $event)"
-                      >
-                        <img
-                          v-if="line.image_url"
-                          :src="line.image_url"
-                          alt=""
-                          class="asn-line-thumb asn-line-thumb--lg"
-                          loading="lazy"
-                        />
-                        <div v-else class="asn-line-thumb asn-line-thumb--lg asn-line-thumb--empty" aria-hidden="true" />
-                      </a>
-                      <template v-else>
-                        <img
-                          v-if="line.image_url"
-                          :src="line.image_url"
-                          alt=""
-                          class="asn-line-thumb asn-line-thumb--lg"
-                          loading="lazy"
-                        />
-                        <div v-else class="asn-line-thumb asn-line-thumb--lg asn-line-thumb--empty" aria-hidden="true" />
-                      </template>
+                      <div class="asn-line-media">
+                        <a
+                          v-if="inventoryDetailHref(line.sku)"
+                          :href="inventoryDetailHref(line.sku)"
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          class="asn-line-thumb-link text-decoration-none"
+                          :aria-label="line.sku ? `View inventory for SKU ${line.sku} in new tab` : undefined"
+                          @click="openInventoryInNewTab(line, $event)"
+                        >
+                          <img
+                            v-if="line.image_url"
+                            :src="line.image_url"
+                            alt=""
+                            class="asn-line-thumb asn-line-thumb--lg"
+                            loading="lazy"
+                          />
+                          <div v-else class="asn-line-thumb asn-line-thumb--lg asn-line-thumb--empty" aria-hidden="true" />
+                        </a>
+                        <template v-else>
+                          <img
+                            v-if="line.image_url"
+                            :src="line.image_url"
+                            alt=""
+                            class="asn-line-thumb asn-line-thumb--lg"
+                            loading="lazy"
+                          />
+                          <div v-else class="asn-line-thumb asn-line-thumb--lg asn-line-thumb--empty" aria-hidden="true" />
+                        </template>
+                        <button
+                          type="button"
+                          data-wholesale-status-menu
+                          class="badge rounded-pill fw-medium border-0 asn-line-status-badge"
+                          :class="wholesaleStatusBadgeClass(order.status)"
+                          :disabled="statusSaving"
+                          @click="toggleStatusMenu"
+                        >
+                          {{ orderStatusLabel() }} ▾
+                        </button>
+                      </div>
                       <div class="order-detail-page__item-copy">
                         <div class="order-detail-page__item-sku-title" :title="line.sku || undefined">
                           {{ line.sku || "—" }}
@@ -620,20 +701,6 @@ onUnmounted(() => {
         <div class="staff-table-card staff-datatable-card staff-datatable-card--white p-4">
           <h3 class="h6 fw-semibold mb-3">Order Info</h3>
           <dl class="small mb-0">
-            <dt class="text-secondary fw-normal">Status</dt>
-            <dd class="mb-2">
-              <select
-                id="wholesale-order-status"
-                v-model="statusDraft"
-                class="form-select form-select-sm"
-                :disabled="statusSaving"
-                @change="saveStatus"
-              >
-                <option v-for="opt in manualStatusOptions" :key="opt.value" :value="opt.value">
-                  {{ opt.label }}
-                </option>
-              </select>
-            </dd>
             <dt class="text-secondary fw-normal">Type</dt>
             <dd class="mb-2">{{ order.order_type_label || wholesaleTypeLabel(order.order_type) }}</dd>
             <dt class="text-secondary fw-normal">Create Date</dt>
@@ -644,6 +711,33 @@ onUnmounted(() => {
         </div>
       </div>
     </div>
+
+    <Teleport to="body">
+      <div
+        v-if="statusMenuOpen"
+        data-wholesale-status-menu
+        class="staff-row-menu fixed z-[300] overflow-hidden"
+        role="menu"
+        :style="{
+          top: `${statusMenuRect.top}px`,
+          left: `${statusMenuRect.left}px`,
+          minWidth: `${STATUS_MENU_W}px`,
+        }"
+        @click.stop
+      >
+        <button
+          v-for="opt in manualStatusOptions"
+          :key="opt.value"
+          type="button"
+          class="staff-row-menu__item"
+          role="menuitem"
+          :disabled="statusSaving"
+          @click="selectStatusFromMenu(opt.value)"
+        >
+          {{ opt.label }}
+        </button>
+      </div>
+    </Teleport>
 
     <WholesaleBarcodeUploadModal
       :open="barcodeModalOpen"
@@ -708,6 +802,26 @@ onUnmounted(() => {
   line-height: 1.4;
   color: var(--bs-secondary-color);
   word-break: break-word;
+}
+
+.wholesale-order-detail-page .asn-line-media {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  flex-shrink: 0;
+}
+
+.wholesale-order-detail-page .asn-line-status-badge {
+  font-size: 0.6875rem;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.wholesale-order-detail-page .asn-line-status-badge:disabled {
+  cursor: wait;
+  opacity: 0.7;
 }
 
 .wholesale-order-detail-page .asn-line-thumb-link {

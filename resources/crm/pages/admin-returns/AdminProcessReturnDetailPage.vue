@@ -15,6 +15,7 @@ import {
   processDisplayStatusLabel,
   returnStatusBadgeClass,
   returnStatusLabel,
+  thirdPartyTypeLabel,
 } from "../../utils/formatReturnDisplay.js";
 
 const UNKNOWN_SKU = "Unknown SKU";
@@ -38,7 +39,10 @@ const returnId = computed(() => String(route.params.id || ""));
 
 const isPending = computed(() => String(ret.value?.status || "").toLowerCase() === "pending");
 const isNonCompliant = computed(() => Boolean(ret.value?.is_non_compliant));
+const isThirdParty = computed(() => Boolean(ret.value?.is_third_party));
 const isNonCompliantPending = computed(() => isPending.value && isNonCompliant.value);
+const isThirdPartyPending = computed(() => isPending.value && isThirdParty.value);
+const isStaffManagedPending = computed(() => isNonCompliantPending.value || isThirdPartyPending.value);
 const isProcessed = computed(() => {
   const s = String(ret.value?.status || "").toLowerCase();
   return s === "received" || s === "completed";
@@ -56,7 +60,7 @@ const allSelected = computed(() => {
 
 const canProcess = computed(() => {
   if (!isPending.value) return false;
-  if (isNonCompliantPending.value) {
+  if (isStaffManagedPending.value) {
     return lines.value.some((line) => selected.value.has(line.id) && Number(line.return_qty) > 0);
   }
   return selectedCount.value > 0;
@@ -64,6 +68,7 @@ const canProcess = computed(() => {
 
 const statusBadgeClass = computed(() => {
   if (isProcessed.value) return processDisplayStatusBadgeClass("returned");
+  if (isThirdPartyPending.value) return processDisplayStatusBadgeClass("third_party_return");
   if (isNonCompliantPending.value) return processDisplayStatusBadgeClass("pending");
   if (isPending.value) return processDisplayStatusBadgeClass("pending");
   return returnStatusBadgeClass(ret.value?.status);
@@ -71,6 +76,7 @@ const statusBadgeClass = computed(() => {
 
 const statusLabel = computed(() => {
   if (isProcessed.value) return processDisplayStatusLabel("returned");
+  if (isThirdPartyPending.value) return processDisplayStatusLabel("third_party_return");
   if (isPending.value) return processDisplayStatusLabel("pending");
   return returnStatusLabel(ret.value?.status);
 });
@@ -155,7 +161,7 @@ function printLineBarcode(line) {
 
 const tableColspan = computed(() => {
   let cols = isPending.value ? 7 : 6;
-  if (isNonCompliantPending.value) cols += 1;
+  if (isStaffManagedPending.value) cols += 1;
   return cols;
 });
 
@@ -184,7 +190,7 @@ function buildLinePayload(product, quantity) {
 }
 
 async function addFromCatalog({ product, quantity }) {
-  if (!ret.value?.id || !isNonCompliantPending.value) return;
+  if (!ret.value?.id || !isStaffManagedPending.value) return;
   const payload = buildLinePayload(product, quantity);
   if (!payload.sku) {
     toast.error("This product has no SKU.");
@@ -203,7 +209,7 @@ async function addFromCatalog({ product, quantity }) {
 }
 
 async function saveLineReturnQty(line, rawQty) {
-  if (!ret.value?.id || !isNonCompliantPending.value || !line?.id) return;
+  if (!ret.value?.id || !isStaffManagedPending.value || !line?.id) return;
   const qty = Math.max(1, Number(rawQty) || 1);
   if (qty === Number(line.return_qty)) return;
   lineBusy.value = true;
@@ -221,7 +227,7 @@ async function saveLineReturnQty(line, rawQty) {
 }
 
 async function removeLine(line) {
-  if (!ret.value?.id || !isNonCompliantPending.value || !line?.id) return;
+  if (!ret.value?.id || !isStaffManagedPending.value || !line?.id) return;
   lineBusy.value = true;
   try {
     const { data } = await api.delete(`/admin/returns/${ret.value.id}/lines/${line.id}`);
@@ -245,7 +251,7 @@ function closeUnknownSkuModal() {
 }
 
 async function submitUnknownSku() {
-  if (!ret.value?.id || !isNonCompliantPending.value) return;
+  if (!ret.value?.id || !isStaffManagedPending.value) return;
   const qty = Math.max(1, Number(unknownSkuQty.value) || 1);
   lineBusy.value = true;
   try {
@@ -329,6 +335,13 @@ onMounted(load);
                 {{ formatRmaLabel(ret.rma_number) || "Process Return" }}
               </h1>
               <span
+                v-if="isThirdPartyPending"
+                class="badge rounded-pill fw-medium"
+                :class="processDisplayStatusBadgeClass('third_party_return')"
+              >
+                {{ processDisplayStatusLabel("third_party_return") }}
+              </span>
+              <span
                 v-if="isNonCompliantPending"
                 class="badge rounded-pill fw-medium"
                 :class="processDisplayStatusBadgeClass('non_compliant_return')"
@@ -366,7 +379,7 @@ onMounted(load);
         <div class="staff-table-card staff-datatable-card staff-datatable-card--white p-0 mb-4">
           <div class="px-4 py-3 border-bottom d-flex flex-wrap justify-content-between align-items-center gap-2">
             <h2 class="h6 mb-0 fw-semibold">Return Items</h2>
-            <div v-if="isNonCompliantPending" class="d-flex flex-wrap gap-2 align-items-center">
+            <div v-if="isStaffManagedPending" class="d-flex flex-wrap gap-2 align-items-center">
               <button
                 type="button"
                 class="btn btn-sm btn-outline-secondary fw-semibold orders-toolbar-outline-btn"
@@ -389,7 +402,7 @@ onMounted(load);
             </span>
           </div>
 
-          <div v-if="isNonCompliantPending && addPanelOpen" class="border-bottom">
+          <div v-if="isStaffManagedPending && addPanelOpen" class="border-bottom">
             <AsnProductCatalogPanel
               :client-account-id="clientAccountId"
               :active="addPanelOpen"
@@ -419,12 +432,12 @@ onMounted(load);
                     />
                   </th>
                   <th class="staff-table-head__th order-detail-page__items-col" scope="col">Item</th>
-                  <th v-if="!isNonCompliantPending" class="staff-table-head__th text-center" scope="col">Order Qty</th>
+                  <th v-if="!isStaffManagedPending" class="staff-table-head__th text-center" scope="col">Order Qty</th>
                   <th class="staff-table-head__th text-center" scope="col">Return Qty</th>
                   <th class="staff-table-head__th" scope="col">Reason</th>
                   <th class="staff-table-head__th text-center" scope="col">Restock</th>
                   <th class="staff-table-head__th text-center" scope="col">Barcode</th>
-                  <th v-if="isNonCompliantPending" class="staff-table-head__th text-center" scope="col">Actions</th>
+                  <th v-if="isStaffManagedPending" class="staff-table-head__th text-center" scope="col">Actions</th>
                 </tr>
               </thead>
               <tbody>
@@ -455,10 +468,10 @@ onMounted(load);
                       </div>
                     </div>
                   </td>
-                  <td v-if="!isNonCompliantPending" class="text-center">{{ line.order_qty }}</td>
+                  <td v-if="!isStaffManagedPending" class="text-center">{{ line.order_qty }}</td>
                   <td class="text-center">
                     <input
-                      v-if="isNonCompliantPending"
+                      v-if="isStaffManagedPending"
                       type="number"
                       min="1"
                       class="form-control form-control-sm text-center mx-auto admin-return-nc-qty-input"
@@ -502,7 +515,7 @@ onMounted(load);
                       Print
                     </button>
                   </td>
-                  <td v-if="isNonCompliantPending" class="text-center">
+                  <td v-if="isStaffManagedPending" class="text-center">
                     <button
                       type="button"
                       class="btn btn-link btn-sm text-danger text-decoration-none p-0"
@@ -550,6 +563,17 @@ onMounted(load);
             </div>
             <div class="user-return-page__order-display">{{ displayOrderNumber }}</div>
           </div>
+        </div>
+
+        <div
+          v-if="isThirdParty"
+          class="staff-table-card staff-datatable-card staff-datatable-card--white p-4"
+        >
+          <h3 class="h6 fw-semibold mb-3">3rd Party Return</h3>
+          <dl class="small mb-0">
+            <dt class="text-secondary fw-normal">3rd Party</dt>
+            <dd class="mb-0">{{ thirdPartyTypeLabel(ret) }}</dd>
+          </dl>
         </div>
 
         <div

@@ -117,17 +117,122 @@ class AdminReturnController extends Controller
         if ($return->isNonCompliant() && $status === ClientAccountReturn::STATUS_PENDING) {
             return 'non_compliant_return';
         }
+        if ($return->isThirdParty() && $status === ClientAccountReturn::STATUS_PENDING) {
+            return 'third_party_return';
+        }
 
         return 'pending';
     }
 
-    private function assertPendingNonCompliant(ClientAccountReturn $return): void
+    private function assertPendingStaffManagedLines(ClientAccountReturn $return): void
     {
-        if (! $return->isNonCompliant() || $return->status !== ClientAccountReturn::STATUS_PENDING) {
+        if ($return->status !== ClientAccountReturn::STATUS_PENDING) {
             throw ValidationException::withMessages([
-                'status' => ['Line changes are only allowed on pending non-compliant returns.'],
+                'status' => ['Line changes are only allowed on pending staff-managed returns.'],
             ]);
         }
+        if (! $return->isNonCompliant() && ! $return->isThirdParty()) {
+            throw ValidationException::withMessages([
+                'status' => ['Line changes are only allowed on pending non-compliant or third-party returns.'],
+            ]);
+        }
+    }
+
+    /**
+     * @return array{third_party_type: string|null, third_party_type_label: string|null}
+     */
+    private function thirdPartyMeta(ClientAccountReturn $return): array
+    {
+        if (! $return->isThirdParty()) {
+            return [
+                'third_party_type' => null,
+                'third_party_type_label' => null,
+            ];
+        }
+
+        $channel = ClientAccountReturn::thirdPartyTypeFromReturnType($return->return_type);
+
+        return [
+            'third_party_type' => $channel,
+            'third_party_type_label' => ClientAccountReturn::thirdPartyTypeLabel($return->return_type),
+        ];
+    }
+
+    private function lineReturnReasonForStaffManagedReturn(ClientAccountReturn $return): ?string
+    {
+        if ($return->isNonCompliant()) {
+            return $return->non_compliant_reason;
+        }
+        if ($return->isThirdParty()) {
+            return ReturnReasonOptions::adminDefaultKey();
+        }
+
+        return null;
+    }
+
+    private function pendingReturnsQuery(Request $request, bool $thirdPartyOnly): \Illuminate\Database\Eloquent\Builder
+    {
+        $validated = $request->validate([
+            'client_account_id' => ['nullable', 'integer', 'exists:client_accounts,id'],
+            'page' => ['nullable', 'integer', 'min:1'],
+            'per_page' => ['nullable', 'integer', 'min:1', 'max:100'],
+        ]);
+
+        $user = $request->user();
+
+        $query = ClientAccountReturn::query()
+            ->where('status', ClientAccountReturn::STATUS_PENDING)
+            ->with('clientAccount')
+            ->orderByDesc('created_at')
+            ->orderByDesc('id');
+
+        if ($thirdPartyOnly) {
+            $query->where('is_third_party', true);
+        } else {
+            $query->where('is_third_party', false);
+        }
+
+        if (! empty($validated['client_account_id'])) {
+            $account = ClientAccount::query()->findOrFail((int) $validated['client_account_id']);
+            Gate::authorize('view', $account);
+            $query->where('client_account_id', $account->id);
+        } else {
+            $allowedIds = $this->viewableAccountIds($user);
+            if ($allowedIds !== null) {
+                $query->whereIn('client_account_id', $allowedIds);
+            }
+        }
+
+        return $query;
+    }
+
+    private function paginatedPendingResponse(Request $request, \Illuminate\Database\Eloquent\Builder $query): JsonResponse
+    {
+        $perPage = (int) ($request->validate([
+            'per_page' => ['nullable', 'integer', 'min:1', 'max:100'],
+        ])['per_page'] ?? 25);
+        $user = $request->user();
+
+        $paginator = $query->paginate($perPage);
+
+        $data = collect($paginator->items())
+            ->filter(fn (ClientAccountReturn $return) => Gate::forUser($user)->allows('view', $return))
+            ->map(fn (ClientAccountReturn $return) => array_merge(
+                $this->serializeListRow($return),
+                $this->thirdPartyMeta($return)
+            ))
+            ->values()
+            ->all();
+
+        return response()->json([
+            'data' => $data,
+            'meta' => [
+                'current_page' => $paginator->currentPage(),
+                'last_page' => $paginator->lastPage(),
+                'per_page' => $paginator->perPage(),
+                'total' => $paginator->total(),
+            ],
+        ]);
     }
 
     private function recalculateItemsCount(ClientAccountReturn $return): void
@@ -168,6 +273,7 @@ class AdminReturnController extends Controller
             'status' => $return->status,
             'display_status' => $displayStatus ?? $this->displayStatusForReturn($return),
             'is_non_compliant' => $return->isNonCompliant(),
+            'is_third_party' => $return->isThirdParty(),
             'return_type' => $return->return_type,
             'order_number' => $return->order_number,
             'customer_name' => $return->customer_name,
@@ -225,6 +331,7 @@ class AdminReturnController extends Controller
             'status' => $return->status,
             'display_status' => $this->displayStatusForReturn($return),
             'is_non_compliant' => $return->isNonCompliant(),
+            'is_third_party' => $return->isThirdParty(),
             'non_compliant_reason' => $return->non_compliant_reason,
             'non_compliant_reason_label' => ReturnReasonOptions::nonCompliantLabel($return->non_compliant_reason),
             'non_compliant_declared_items' => $return->non_compliant_declared_items,
@@ -247,7 +354,7 @@ class AdminReturnController extends Controller
             'return_warehouse_address' => config('returns.return_warehouse_address', []),
         ];
 
-        return $payload;
+        return array_merge($payload, $this->thirdPartyMeta($return));
     }
 
     /**
@@ -298,49 +405,15 @@ class AdminReturnController extends Controller
         $this->assertStaff($request);
         Gate::authorize('viewAny', ClientAccountReturn::class);
 
-        $validated = $request->validate([
-            'client_account_id' => ['nullable', 'integer', 'exists:client_accounts,id'],
-            'page' => ['nullable', 'integer', 'min:1'],
-            'per_page' => ['nullable', 'integer', 'min:1', 'max:100'],
-        ]);
+        return $this->paginatedPendingResponse($request, $this->pendingReturnsQuery($request, false));
+    }
 
-        $perPage = (int) ($validated['per_page'] ?? 25);
-        $user = $request->user();
+    public function thirdPartyPending(Request $request): JsonResponse
+    {
+        $this->assertStaff($request);
+        Gate::authorize('viewAny', ClientAccountReturn::class);
 
-        $query = ClientAccountReturn::query()
-            ->where('status', ClientAccountReturn::STATUS_PENDING)
-            ->with('clientAccount')
-            ->orderByDesc('created_at')
-            ->orderByDesc('id');
-
-        if (! empty($validated['client_account_id'])) {
-            $account = ClientAccount::query()->findOrFail((int) $validated['client_account_id']);
-            Gate::authorize('view', $account);
-            $query->where('client_account_id', $account->id);
-        } else {
-            $allowedIds = $this->viewableAccountIds($user);
-            if ($allowedIds !== null) {
-                $query->whereIn('client_account_id', $allowedIds);
-            }
-        }
-
-        $paginator = $query->paginate($perPage);
-
-        $data = collect($paginator->items())
-            ->filter(fn (ClientAccountReturn $return) => Gate::forUser($user)->allows('view', $return))
-            ->map(fn (ClientAccountReturn $return) => $this->serializeListRow($return))
-            ->values()
-            ->all();
-
-        return response()->json([
-            'data' => $data,
-            'meta' => [
-                'current_page' => $paginator->currentPage(),
-                'last_page' => $paginator->lastPage(),
-                'per_page' => $paginator->perPage(),
-                'total' => $paginator->total(),
-            ],
-        ]);
+        return $this->paginatedPendingResponse($request, $this->pendingReturnsQuery($request, true));
     }
 
     public function orderLookup(Request $request): JsonResponse
@@ -808,11 +881,43 @@ class AdminReturnController extends Controller
         return response()->json($this->serializeReturnDetail($return->fresh(['lines', 'clientAccount'])), 201);
     }
 
+    public function storeThirdParty(Request $request): JsonResponse
+    {
+        $this->assertStaff($request);
+        Gate::authorize('viewAny', ClientAccountReturn::class);
+
+        $validated = $request->validate([
+            'client_account_id' => ['required', 'integer', 'exists:client_accounts,id'],
+            'third_party_type' => ['required', 'string', Rule::in(['amazon', 'other'])],
+        ]);
+
+        $account = ClientAccount::query()->findOrFail((int) $validated['client_account_id']);
+        Gate::authorize('view', $account);
+
+        $return = DB::transaction(function () use ($account, $validated) {
+            $return = new ClientAccountReturn;
+            $return->client_account_id = $account->id;
+            $return->rma_number = ReturnRmaGenerator::generateUniqueForAccount($account->id);
+            $return->status = ClientAccountReturn::STATUS_PENDING;
+            $return->created_source = ClientAccountReturn::SOURCE_ADMIN;
+            $return->is_third_party = true;
+            $return->return_type = ClientAccountReturn::returnTypeForThirdPartyType($validated['third_party_type']);
+            $return->items_count = 0;
+            $return->save();
+
+            $this->returnFees->seedReturnFees($return);
+
+            return $return;
+        });
+
+        return response()->json($this->serializeReturnDetail($return->fresh(['lines', 'clientAccount'])), 201);
+    }
+
     public function storeLine(Request $request, ClientAccountReturn $clientAccountReturn): JsonResponse
     {
         $this->assertStaff($request);
         Gate::authorize('view', $clientAccountReturn);
-        $this->assertPendingNonCompliant($clientAccountReturn);
+        $this->assertPendingStaffManagedLines($clientAccountReturn);
 
         $validated = $request->validate([
             'sku' => ['required', 'string', 'max:255'],
@@ -837,7 +942,7 @@ class AdminReturnController extends Controller
         $line->image_url = isset($validated['image_url']) ? trim((string) $validated['image_url']) : null;
         $line->order_qty = $returnQty;
         $line->return_qty = $returnQty;
-        $line->return_reason = $clientAccountReturn->non_compliant_reason;
+        $line->return_reason = $this->lineReturnReasonForStaffManagedReturn($clientAccountReturn);
         $line->restock = true;
         $line->sort_order = $maxSort + 1;
         $line->save();
@@ -854,7 +959,7 @@ class AdminReturnController extends Controller
     ): JsonResponse {
         $this->assertStaff($request);
         Gate::authorize('view', $clientAccountReturn);
-        $this->assertPendingNonCompliant($clientAccountReturn);
+        $this->assertPendingStaffManagedLines($clientAccountReturn);
 
         if ((int) $line->client_account_return_id !== (int) $clientAccountReturn->id) {
             throw ValidationException::withMessages(['line' => ['Invalid line selected.']]);
@@ -881,7 +986,7 @@ class AdminReturnController extends Controller
     ): JsonResponse {
         $this->assertStaff($request);
         Gate::authorize('view', $clientAccountReturn);
-        $this->assertPendingNonCompliant($clientAccountReturn);
+        $this->assertPendingStaffManagedLines($clientAccountReturn);
 
         if ((int) $line->client_account_return_id !== (int) $clientAccountReturn->id) {
             throw ValidationException::withMessages(['line' => ['Invalid line selected.']]);

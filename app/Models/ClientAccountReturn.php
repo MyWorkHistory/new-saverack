@@ -35,6 +35,8 @@ class ClientAccountReturn extends Model
 
     public const TYPE_NORDSTROM = 'nordstrom';
 
+    public const TYPE_THIRD_PARTY_OTHER = 'third_party_other';
+
     public const SOURCE_PORTAL = 'portal';
 
     public const SOURCE_ADMIN = 'admin';
@@ -45,6 +47,7 @@ class ClientAccountReturn extends Model
         self::TYPE_DIRECT,
         self::TYPE_AMAZON,
         self::TYPE_NORDSTROM,
+        self::TYPE_THIRD_PARTY_OTHER,
     ];
 
     protected $fillable = [
@@ -62,6 +65,7 @@ class ClientAccountReturn extends Model
         'return_fee_additional_item',
         'return_fee_non_compliant',
         'is_non_compliant',
+        'is_third_party',
         'non_compliant_reason',
         'non_compliant_declared_items',
         'fees_locked_at',
@@ -73,6 +77,7 @@ class ClientAccountReturn extends Model
     protected $casts = [
         'items_count' => 'integer',
         'is_non_compliant' => 'boolean',
+        'is_third_party' => 'boolean',
         'non_compliant_declared_items' => 'integer',
         'return_fee_first_item' => 'decimal:4',
         'return_fee_additional_item' => 'decimal:4',
@@ -116,5 +121,37 @@ class ClientAccountReturn extends Model
     public function isNonCompliant(): bool
     {
         return (bool) $this->is_non_compliant;
+    }
+
+    public function isThirdParty(): bool
+    {
+        return (bool) $this->is_third_party;
+    }
+
+    public static function thirdPartyTypeFromReturnType(?string $returnType): ?string
+    {
+        $type = strtolower(trim((string) $returnType));
+        if ($type === self::TYPE_AMAZON) {
+            return 'amazon';
+        }
+        if ($type === self::TYPE_THIRD_PARTY_OTHER) {
+            return 'other';
+        }
+
+        return null;
+    }
+
+    public static function returnTypeForThirdPartyType(string $thirdPartyType): string
+    {
+        return strtolower(trim($thirdPartyType)) === 'amazon'
+            ? self::TYPE_AMAZON
+            : self::TYPE_THIRD_PARTY_OTHER;
+    }
+
+    public static function thirdPartyTypeLabel(?string $returnType): string
+    {
+        $channel = self::thirdPartyTypeFromReturnType($returnType);
+
+        return $channel === 'amazon' ? 'Amazon' : 'Other';
     }
 }

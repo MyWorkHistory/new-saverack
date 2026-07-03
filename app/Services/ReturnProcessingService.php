@@ -44,8 +44,8 @@ class ReturnProcessingService
             ->get();
 
         $this->assertValidLineIds($lines, $lineIds);
-        if ($return->isNonCompliant()) {
-            $this->assertNonCompliantLinesReady($lines, $lineIds);
+        if ($return->isNonCompliant() || $return->isThirdParty()) {
+            $this->assertStaffManagedLinesReady($lines, $lineIds);
         }
 
         return DB::transaction(function () use ($return, $lines, $lineIds, $restockByLineId, $actor) {
@@ -165,7 +165,7 @@ class ReturnProcessingService
      * @param  \Illuminate\Support\Collection<int, ClientAccountReturnLine>  $lines
      * @param  list<int>  $lineIds
      */
-    private function assertNonCompliantLinesReady($lines, array $lineIds): void
+    private function assertStaffManagedLinesReady($lines, array $lineIds): void
     {
         foreach ($lines as $line) {
             if (! in_array((int) $line->id, $lineIds, true)) {

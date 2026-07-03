@@ -96,6 +96,40 @@ class ReturnController extends Controller
         $return->saveQuietly();
     }
 
+    private function displayStatusForReturn(ClientAccountReturn $return): string
+    {
+        $status = (string) $return->status;
+        if (in_array($status, [ClientAccountReturn::STATUS_RECEIVED, ClientAccountReturn::STATUS_COMPLETED], true)) {
+            return 'returned';
+        }
+        if ($return->isNonCompliant() && $status === ClientAccountReturn::STATUS_PENDING) {
+            return 'non_compliant_return';
+        }
+        if ($return->isThirdParty() && $status === ClientAccountReturn::STATUS_PENDING) {
+            return 'third_party_return';
+        }
+
+        return $status === ClientAccountReturn::STATUS_PENDING ? 'pending' : $status;
+    }
+
+    /**
+     * @return array{third_party_type: string|null, third_party_type_label: string|null}
+     */
+    private function thirdPartyMeta(ClientAccountReturn $return): array
+    {
+        if (! $return->isThirdParty()) {
+            return [
+                'third_party_type' => null,
+                'third_party_type_label' => null,
+            ];
+        }
+
+        return [
+            'third_party_type' => ClientAccountReturn::thirdPartyTypeFromReturnType($return->return_type),
+            'third_party_type_label' => ClientAccountReturn::thirdPartyTypeLabel($return->return_type),
+        ];
+    }
+
     /**
      * @return array<string, mixed>
      */
@@ -134,17 +168,16 @@ class ReturnController extends Controller
             ? trim((string) $return->clientAccount->company_name)
             : '';
 
-        return [
+        return array_merge([
             'id' => $return->id,
             'client_account_id' => $return->client_account_id,
             'client_account_company_name' => $companyName,
             'rma_number' => $return->rma_number,
             'rma_label' => $this->formatRmaLabel($return->rma_number),
             'status' => $return->status,
-            'display_status' => $return->isNonCompliant() && $return->status === ClientAccountReturn::STATUS_PENDING
-                ? 'non_compliant_return'
-                : ($return->status === ClientAccountReturn::STATUS_PENDING ? 'pending' : $return->status),
+            'display_status' => $this->displayStatusForReturn($return),
             'is_non_compliant' => $return->isNonCompliant(),
+            'is_third_party' => $return->isThirdParty(),
             'non_compliant_reason' => $return->non_compliant_reason,
             'non_compliant_reason_label' => ReturnReasonOptions::nonCompliantLabel($return->non_compliant_reason),
             'non_compliant_declared_items' => $return->non_compliant_declared_items,
@@ -164,7 +197,7 @@ class ReturnController extends Controller
             'created_source' => $return->created_source,
             'return_fees' => app(ReturnFeeService::class)->serializeReturnFees($return),
             'return_bill_id' => $return->return_bill_id,
-        ];
+        ], $this->thirdPartyMeta($return));
     }
 
     /**

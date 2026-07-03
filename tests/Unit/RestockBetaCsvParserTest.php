@@ -12,8 +12,8 @@ final class RestockBetaCsvParserTest extends TestCase
         $f = tempnam(sys_get_temp_dir(), 'restockcsv');
         $this->assertNotFalse($f);
         $csv = <<<'CSV'
-SKU,Name,On hand,Allocated,Replenishment level,Available in pickable bins,Qty from Non-Pickable bins,Items to replenish,Top 3 Non-Pickable bins
-ABC-123,Widget Alpha,"1,234",56,100,2,523,42,"test 3 (QTY: 523), test 2 (QTY: 42)"
+SKU,Name,On hand,Allocated,Replenishment level,Available in pickable bins,Qty from Non-Pickable bins,Items to replenish,Top 3 Non-Pickable bins,Top 3 Pickable bins
+ABC-123,Widget Alpha,"1,234",56,100,2,523,42,"test 3 (QTY: 523), test 2 (QTY: 42)","pick-a (QTY: 1), pick-b (QTY: 1)"
 CSV;
         file_put_contents($f, $csv);
 
@@ -34,6 +34,7 @@ CSV;
         $this->assertSame(523, $row['backstock_qty']);
         $this->assertSame(42, $row['restock_needed']);
         $this->assertSame('test 3 (QTY: 523), test 2 (QTY: 42)', $row['backstock_locations']);
+        $this->assertSame('pick-a (QTY: 1), pick-b (QTY: 1)', $row['pick_location']);
     }
 
     public function test_accepts_case_insensitive_header_variants(): void

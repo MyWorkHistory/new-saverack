@@ -26,6 +26,14 @@ final class RestockBetaCsvParser
             'top 3 non-pickable bins',
             'top 3 non pickable bins',
         ],
+        'pick_location' => [
+            'top 3 pickable bins',
+            'top 3 pickable bin',
+            'top pickable bins',
+            'pick location',
+            'pick locations',
+            'pickable locations',
+        ],
     ];
 
     /** @var list<string> */
@@ -127,6 +135,7 @@ final class RestockBetaCsvParser
             'backstock_qty' => $this->cellInt($row, $map, 'backstock_qty'),
             'restock_needed' => $this->cellInt($row, $map, 'restock_needed'),
             'backstock_locations' => $this->cellString($row, $map, 'backstock_locations'),
+            'pick_location' => $this->cellString($row, $map, 'pick_location'),
         ];
     }
 

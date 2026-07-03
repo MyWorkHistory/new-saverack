@@ -549,8 +549,8 @@ onUnmounted(() => {
               <th class="staff-table-head__th text-center" scope="col">Allocated</th>
               <th class="staff-table-head__th text-center" scope="col">Pickable QTY</th>
               <th class="staff-table-head__th text-center" scope="col">Backstock</th>
-              <th class="staff-table-head__th text-center" scope="col">Restock Needed</th>
               <th class="staff-table-head__th" scope="col">Backstock Locations</th>
+              <th class="staff-table-head__th" scope="col">Pick Location</th>
               <th class="staff-table-head__th staff-actions-col text-center restock-actions-col" scope="col">
                 Actions
               </th>
@@ -612,12 +612,23 @@ onUnmounted(() => {
               <td class="text-center">{{ formatQty(row.allocated) }}</td>
               <td class="text-center">{{ formatQty(row.pickable_qty) }}</td>
               <td class="text-center">{{ formatQty(row.backstock_qty) }}</td>
-              <td class="text-center">{{ formatQty(row.restock_needed) }}</td>
               <td class="restock-locations-col">
                 <template v-if="splitBackstockLocations(row.backstock_locations).length">
                   <div
                     v-for="(location, index) in splitBackstockLocations(row.backstock_locations)"
-                    :key="`${row.sku}-${index}`"
+                    :key="`${row.sku}-backstock-${index}`"
+                    class="restock-loc-row small text-secondary"
+                  >
+                    {{ location }}
+                  </div>
+                </template>
+                <span v-else class="text-secondary">—</span>
+              </td>
+              <td class="restock-locations-col">
+                <template v-if="splitBackstockLocations(row.pick_location).length">
+                  <div
+                    v-for="(location, index) in splitBackstockLocations(row.pick_location)"
+                    :key="`${row.sku}-pick-${index}`"
                     class="restock-loc-row small text-secondary"
                   >
                     {{ location }}

@@ -19,6 +19,7 @@ use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Gate;
+use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\ValidationException;
 use RuntimeException;
@@ -170,7 +171,14 @@ class AdminReturnController extends Controller
         return null;
     }
 
-    private function pendingReturnsQuery(Request $request, bool $thirdPartyOnly): \Illuminate\Database\Eloquent\Builder
+    private function assignStaffManagedOrderPlaceholders(ClientAccountReturn $return): void
+    {
+        $return->shiphero_order_id = 'manual:'.(string) Str::uuid();
+        $return->order_number = '';
+        $return->customer_name = '';
+    }
+
+    private function pendingReturnsQuery(Request $request): \Illuminate\Database\Eloquent\Builder
     {
         $validated = $request->validate([
             'client_account_id' => ['nullable', 'integer', 'exists:client_accounts,id'],
@@ -185,12 +193,6 @@ class AdminReturnController extends Controller
             ->with('clientAccount')
             ->orderByDesc('created_at')
             ->orderByDesc('id');
-
-        if ($thirdPartyOnly) {
-            $query->where('is_third_party', true);
-        } else {
-            $query->where('is_third_party', false);
-        }
 
         if (! empty($validated['client_account_id'])) {
             $account = ClientAccount::query()->findOrFail((int) $validated['client_account_id']);
@@ -405,15 +407,7 @@ class AdminReturnController extends Controller
         $this->assertStaff($request);
         Gate::authorize('viewAny', ClientAccountReturn::class);
 
-        return $this->paginatedPendingResponse($request, $this->pendingReturnsQuery($request, false));
-    }
-
-    public function thirdPartyPending(Request $request): JsonResponse
-    {
-        $this->assertStaff($request);
-        Gate::authorize('viewAny', ClientAccountReturn::class);
-
-        return $this->paginatedPendingResponse($request, $this->pendingReturnsQuery($request, true));
+        return $this->paginatedPendingResponse($request, $this->pendingReturnsQuery($request));
     }
 
     public function orderLookup(Request $request): JsonResponse
@@ -871,6 +865,7 @@ class AdminReturnController extends Controller
             $return->non_compliant_reason = $validated['reason'];
             $return->non_compliant_declared_items = (int) $validated['declared_items'];
             $return->items_count = 0;
+            $this->assignStaffManagedOrderPlaceholders($return);
             $return->save();
 
             $this->returnFees->seedReturnFees($return);
@@ -903,6 +898,7 @@ class AdminReturnController extends Controller
             $return->is_third_party = true;
             $return->return_type = ClientAccountReturn::returnTypeForThirdPartyType($validated['third_party_type']);
             $return->items_count = 0;
+            $this->assignStaffManagedOrderPlaceholders($return);
             $return->save();
 
             $this->returnFees->seedReturnFees($return);

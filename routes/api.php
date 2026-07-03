@@ -227,7 +227,6 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::patch('/{clientAccountReturn}/fees', [AdminReturnController::class, 'updateFees'])->middleware('can:inventory.view');
         Route::post('/{clientAccountReturn}/process-from-draft', [AdminReturnController::class, 'processFromDraft'])->middleware('can:inventory.view');
         Route::get('/pending', [AdminReturnController::class, 'pending'])->middleware('can:inventory.view');
-        Route::get('/third-party-pending', [AdminReturnController::class, 'thirdPartyPending'])->middleware('can:inventory.view');
         Route::get('/order-lookup', [AdminReturnController::class, 'orderLookup'])->middleware('can:inventory.view');
         Route::get('/rma-lookup', [AdminReturnController::class, 'rmaLookup'])->middleware('can:inventory.view');
         Route::get('/orders', [AdminReturnController::class, 'returnedOrders'])->middleware('can:inventory.view');

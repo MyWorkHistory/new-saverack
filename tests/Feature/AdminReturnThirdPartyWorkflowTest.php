@@ -150,7 +150,7 @@ class AdminReturnThirdPartyWorkflowTest extends TestCase
             ->assertJsonCount(2, 'lines');
     }
 
-    public function test_main_pending_list_excludes_third_party_returns(): void
+    public function test_main_pending_list_includes_third_party_returns(): void
     {
         $account = $this->account('split');
         Sanctum::actingAs($this->staffUser());
@@ -166,15 +166,12 @@ class AdminReturnThirdPartyWorkflowTest extends TestCase
             'reason' => 'unable_to_identify_customer',
         ])->assertCreated();
 
-        $this->getJson('/api/admin/returns/pending')
+        $response = $this->getJson('/api/admin/returns/pending')
             ->assertOk()
-            ->assertJsonCount(1, 'data')
-            ->assertJsonPath('data.0.display_status', 'non_compliant_return');
+            ->assertJsonCount(2, 'data');
 
-        $this->getJson('/api/admin/returns/third-party-pending')
-            ->assertOk()
-            ->assertJsonCount(1, 'data')
-            ->assertJsonPath('data.0.display_status', 'third_party_return');
+        $statuses = collect($response->json('data'))->pluck('display_status')->sort()->values()->all();
+        $this->assertSame(['non_compliant_return', 'third_party_return'], $statuses);
     }
 
     public function test_process_third_party_creates_bill_with_item_fees_only(): void

@@ -656,7 +656,7 @@ onUnmounted(() => {
   </div>
   <div v-else-if="!asn" class="staff-page staff-page--wide py-5 text-secondary">ASN not found.</div>
   <div v-else class="staff-page staff-page--wide user-asn-detail-page order-detail-page asn-detail-page">
-    <header class="asn-detail-page__hero">
+    <header class="asn-detail-page__hero staff-table-card staff-datatable-card staff-datatable-card--white p-4">
       <div class="d-flex flex-wrap justify-content-between align-items-start gap-3">
         <div class="asn-detail-page__hero-title-row min-w-0">
           <span class="asn-detail-page__hero-doc-icon" aria-hidden="true">
@@ -674,16 +674,16 @@ onUnmounted(() => {
             <p class="small text-secondary mb-0 mt-1">Created {{ formatDateUs(asn.created_at) }}</p>
           </div>
         </div>
-        <div class="d-flex flex-wrap gap-2 flex-shrink-0 align-items-center">
+        <div class="d-flex flex-wrap gap-2 flex-shrink-0 align-items-center asn-detail-page__hero-actions">
           <button
             v-if="isDraft"
             type="button"
-            class="btn btn-primary staff-page-primary btn-sm fw-semibold"
+            class="btn btn-primary staff-page-primary fw-semibold"
             @click="openMarkReadyModal"
           >
             Mark as Ready
           </button>
-          <button type="button" class="btn btn-outline-secondary btn-sm fw-semibold d-inline-flex align-items-center gap-2" @click="openPrintSlip">
+          <button type="button" class="btn btn-outline-secondary fw-semibold d-inline-flex align-items-center gap-2" @click="openPrintSlip">
             <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2zm8-12V5a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z" />
             </svg>
@@ -692,7 +692,7 @@ onUnmounted(() => {
           <div data-asn-header-actions class="position-relative">
             <button
               type="button"
-              class="btn btn-primary staff-page-primary btn-sm fw-semibold d-inline-flex align-items-center gap-2"
+              class="btn btn-primary staff-page-primary fw-semibold d-inline-flex align-items-center gap-2"
               :class="{ 'is-open': headerMenuOpen }"
               aria-haspopup="true"
               :aria-expanded="headerMenuOpen ? 'true' : 'false'"

@@ -1287,7 +1287,7 @@ onUnmounted(() => {
   </div>
   <div v-else-if="!asn" class="staff-page staff-page--wide py-5 text-secondary">ASN not found.</div>
   <div v-else class="staff-page staff-page--wide user-asn-detail-page order-detail-page admin-asn-detail-page asn-detail-page">
-    <header class="asn-detail-page__hero">
+    <header class="asn-detail-page__hero staff-table-card staff-datatable-card staff-datatable-card--white p-4">
       <div class="d-flex flex-wrap justify-content-between align-items-start gap-3">
         <div class="asn-detail-page__hero-title-row min-w-0">
           <span class="asn-detail-page__hero-doc-icon" aria-hidden="true">
@@ -1310,18 +1310,18 @@ onUnmounted(() => {
             </div>
           </div>
         </div>
-        <div class="d-flex flex-wrap gap-2 flex-shrink-0 align-items-center">
+        <div class="d-flex flex-wrap gap-2 flex-shrink-0 align-items-center asn-detail-page__hero-actions">
           <button
             v-if="isDraft"
             type="button"
-            class="btn btn-primary staff-page-primary btn-sm fw-semibold"
+            class="btn btn-primary staff-page-primary fw-semibold"
             @click="openMarkReadyModal"
           >
             Mark as Ready
           </button>
           <button
             type="button"
-            class="btn btn-outline-secondary btn-sm fw-semibold d-inline-flex align-items-center gap-2"
+            class="btn btn-outline-secondary fw-semibold d-inline-flex align-items-center gap-2"
             @click="openPrintSlip"
           >
             <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
@@ -1332,7 +1332,7 @@ onUnmounted(() => {
           <div data-asn-header-actions class="position-relative">
             <button
               type="button"
-              class="btn btn-primary staff-page-primary btn-sm fw-semibold d-inline-flex align-items-center gap-2"
+              class="btn btn-primary staff-page-primary fw-semibold d-inline-flex align-items-center gap-2"
               :class="{ 'is-open': headerMenuOpen }"
               aria-haspopup="true"
               :aria-expanded="headerMenuOpen ? 'true' : 'false'"
@@ -1487,8 +1487,8 @@ onUnmounted(() => {
         </div>
 
         <div v-if="!isDraft" class="staff-table-card staff-datatable-card staff-datatable-card--white p-0 mb-4">
-          <div class="px-4 py-3 border-bottom d-flex justify-content-between align-items-center flex-wrap gap-2 asn-detail-page__section-head">
-            <div class="d-flex align-items-center gap-2 min-w-0">
+          <div class="asn-detail-page__products-card-head">
+            <div class="asn-detail-page__products-card-head-title asn-detail-page__section-head">
               <span class="asn-detail-page__section-icon asn-detail-page__section-icon--products" aria-hidden="true">
                 <svg width="18" height="18" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4" />
@@ -1506,11 +1506,27 @@ onUnmounted(() => {
                 </svg>
               </button>
             </div>
-            <div class="d-flex flex-wrap gap-2">
+            <div class="asn-detail-page__products-card-head-actions">
+              <button
+                type="button"
+                class="btn btn-outline-primary asn-detail-page__refresh-specs-btn d-inline-flex align-items-center gap-2"
+                :disabled="enrichBusy"
+                @click="enrichSpecs(true)"
+              >
+                <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+                  <path
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                    stroke-width="2"
+                    d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"
+                  />
+                </svg>
+                {{ enrichBusy ? "Refreshing…" : "Refresh Specs" }}
+              </button>
               <button
                 v-if="isNonCompliant"
                 type="button"
-                class="btn btn-sm btn-outline-primary"
+                class="btn btn-outline-primary"
                 @click="addPanelOpen = !addPanelOpen"
               >
                 {{ addPanelOpen ? "Hide Add Products" : "Add Products" }}
@@ -1617,22 +1633,6 @@ onUnmounted(() => {
                 </div>
               </div>
             </div>
-            <button
-              type="button"
-              class="btn btn-sm btn-outline-primary asn-detail-page__refresh-specs-btn d-inline-flex align-items-center gap-2"
-              :disabled="enrichBusy"
-              @click="enrichSpecs(true)"
-            >
-              <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
-                <path
-                  stroke-linecap="round"
-                  stroke-linejoin="round"
-                  stroke-width="2"
-                  d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"
-                />
-              </svg>
-              {{ enrichBusy ? "Refreshing…" : "Refresh Specs" }}
-            </button>
           </div>
 
           <div class="table-responsive staff-table-wrap">

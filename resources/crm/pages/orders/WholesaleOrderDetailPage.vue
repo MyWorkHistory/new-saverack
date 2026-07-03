@@ -1,8 +1,9 @@
 <script setup>
-import { computed, nextTick, onMounted, onUnmounted, ref } from "vue";
+import { computed, onMounted, onUnmounted, ref } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import api from "../../services/api";
 import CrmLoadingSpinner from "../../components/common/CrmLoadingSpinner.vue";
+import Modal from "../../components/Modal.vue";
 import AsnProductCatalogPanel from "../../components/inventory/AsnProductCatalogPanel.vue";
 import WholesaleBarcodeUploadModal from "../../components/orders/WholesaleBarcodeUploadModal.vue";
 import { setCrmPageMeta } from "../../composables/useCrmPageMeta.js";
@@ -27,10 +28,8 @@ const order = ref(null);
 const instructionsDraft = ref("");
 const instructionsSaving = ref(false);
 const statusSaving = ref(false);
-const statusMenuOpen = ref(false);
-const statusMenuRect = ref({ top: 0, left: 0 });
-const STATUS_MENU_W = 160;
-const STATUS_MENU_H = 96;
+const statusModalOpen = ref(false);
+const statusDraft = ref("pending");
 
 const manualStatusOptions = WHOLESALE_MANUAL_STATUS_OPTIONS;
 
@@ -60,68 +59,37 @@ function orderStatusLabel() {
   return order.value?.status_label || wholesaleStatusLabel(order.value?.status);
 }
 
-function placeStatusMenu(anchorEl) {
-  if (!(anchorEl instanceof HTMLElement)) return;
-  const rect = anchorEl.getBoundingClientRect();
-  let top = rect.bottom + 4;
-  let left = rect.right - STATUS_MENU_W;
-  left = Math.max(8, Math.min(left, window.innerWidth - STATUS_MENU_W - 8));
-  if (top + STATUS_MENU_H > window.innerHeight - 8) {
-    top = Math.max(8, rect.top - STATUS_MENU_H - 4);
-  }
-  statusMenuRect.value = { top, left };
+function openStatusModal() {
+  const status = String(order.value?.status || "").toLowerCase();
+  statusDraft.value =
+    status === "completed" || status === "pending" ? status : "pending";
+  statusModalOpen.value = true;
 }
 
-async function toggleStatusMenu(event) {
-  event?.stopPropagation?.();
-  if (statusMenuOpen.value) {
-    statusMenuOpen.value = false;
+function closeStatusModal() {
+  if (statusSaving.value) return;
+  statusModalOpen.value = false;
+}
+
+async function saveStatusFromModal() {
+  if (!order.value?.id) return;
+  const next = String(statusDraft.value || "").toLowerCase();
+  if (next === String(order.value.status || "").toLowerCase()) {
+    statusModalOpen.value = false;
     return;
   }
-  const btn = event?.currentTarget;
-  statusMenuOpen.value = true;
-  await nextTick();
-  requestAnimationFrame(() => {
-    placeStatusMenu(btn);
-  });
-}
-
-function closeStatusMenu() {
-  statusMenuOpen.value = false;
-}
-
-async function selectStatusFromMenu(status) {
-  closeStatusMenu();
-  if (!order.value?.id) return;
-  const next = String(status || "").toLowerCase();
-  if (next === String(order.value.status || "").toLowerCase()) return;
   statusSaving.value = true;
   try {
     const { data } = await api.patch(`/admin/wholesale-orders/${order.value.id}`, {
       status: next,
     });
     applyOrderData(data);
+    statusModalOpen.value = false;
     toast.success("Status updated.");
   } catch (e) {
     toast.errorFrom(e, "Could not update status.");
   } finally {
     statusSaving.value = false;
-  }
-}
-
-function onDocClick(e) {
-  if (!e.target?.closest?.("[data-wholesale-status-menu]")) {
-    statusMenuOpen.value = false;
-  }
-}
-
-function onWindowScrollOrResize() {
-  statusMenuOpen.value = false;
-}
-
-function onDocKeydown(e) {
-  if (e.key === "Escape") {
-    statusMenuOpen.value = false;
   }
 }
 
@@ -388,19 +356,9 @@ async function loadImagePreview(commentId) {
   }
 }
 
-onMounted(() => {
-  load();
-  document.addEventListener("click", onDocClick);
-  document.addEventListener("keydown", onDocKeydown);
-  window.addEventListener("scroll", onWindowScrollOrResize, true);
-  window.addEventListener("resize", onWindowScrollOrResize);
-});
+onMounted(load);
 
 onUnmounted(() => {
-  document.removeEventListener("click", onDocClick);
-  document.removeEventListener("keydown", onDocKeydown);
-  window.removeEventListener("scroll", onWindowScrollOrResize, true);
-  window.removeEventListener("resize", onWindowScrollOrResize);
   Object.values(imagePreviewUrls.value).forEach((url) => {
     if (url) window.URL.revokeObjectURL(url);
   });
@@ -441,13 +399,11 @@ onUnmounted(() => {
               <button
                 v-if="!lines.length"
                 type="button"
-                data-wholesale-status-menu
                 class="badge rounded-pill fw-medium border-0 asn-line-status-badge"
                 :class="wholesaleStatusBadgeClass(order.status)"
-                :disabled="statusSaving"
-                @click="toggleStatusMenu"
+                @click="openStatusModal"
               >
-                {{ orderStatusLabel() }} ▾
+                {{ orderStatusLabel() }}
               </button>
             </div>
             <button
@@ -518,13 +474,11 @@ onUnmounted(() => {
                         </template>
                         <button
                           type="button"
-                          data-wholesale-status-menu
                           class="badge rounded-pill fw-medium border-0 asn-line-status-badge"
                           :class="wholesaleStatusBadgeClass(order.status)"
-                          :disabled="statusSaving"
-                          @click="toggleStatusMenu"
+                          @click="openStatusModal"
                         >
-                          {{ orderStatusLabel() }} ▾
+                          {{ orderStatusLabel() }}
                         </button>
                       </div>
                       <div class="order-detail-page__item-copy">
@@ -712,32 +666,37 @@ onUnmounted(() => {
       </div>
     </div>
 
-    <Teleport to="body">
-      <div
-        v-if="statusMenuOpen"
-        data-wholesale-status-menu
-        class="staff-row-menu fixed z-[300] overflow-hidden"
-        role="menu"
-        :style="{
-          top: `${statusMenuRect.top}px`,
-          left: `${statusMenuRect.left}px`,
-          minWidth: `${STATUS_MENU_W}px`,
-        }"
-        @click.stop
+    <Modal :open="statusModalOpen" title="Update Status" @close="closeStatusModal">
+      <label class="form-label" for="wholesale-order-status-modal">Status</label>
+      <select
+        id="wholesale-order-status-modal"
+        v-model="statusDraft"
+        class="form-select mb-4"
+        :disabled="statusSaving"
       >
-        <button
-          v-for="opt in manualStatusOptions"
-          :key="opt.value"
-          type="button"
-          class="staff-row-menu__item"
-          role="menuitem"
-          :disabled="statusSaving"
-          @click="selectStatusFromMenu(opt.value)"
-        >
+        <option v-for="opt in manualStatusOptions" :key="opt.value" :value="opt.value">
           {{ opt.label }}
+        </option>
+      </select>
+      <div class="d-flex justify-content-end gap-2">
+        <button
+          type="button"
+          class="btn btn-outline-secondary"
+          :disabled="statusSaving"
+          @click="closeStatusModal"
+        >
+          Cancel
+        </button>
+        <button
+          type="button"
+          class="btn btn-primary staff-page-primary"
+          :disabled="statusSaving"
+          @click="saveStatusFromModal"
+        >
+          {{ statusSaving ? "Saving…" : "Save" }}
         </button>
       </div>
-    </Teleport>
+    </Modal>
 
     <WholesaleBarcodeUploadModal
       :open="barcodeModalOpen"
@@ -817,11 +776,6 @@ onUnmounted(() => {
   font-size: 0.6875rem;
   white-space: nowrap;
   cursor: pointer;
-}
-
-.wholesale-order-detail-page .asn-line-status-badge:disabled {
-  cursor: wait;
-  opacity: 0.7;
 }
 
 .wholesale-order-detail-page .asn-line-thumb-link {

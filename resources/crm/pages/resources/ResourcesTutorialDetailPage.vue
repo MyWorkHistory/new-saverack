@@ -415,9 +415,7 @@ onUnmounted(() => {
         <h1 class="staff-user-view__title">Tutorial</h1>
         <p class="text-secondary small mb-0">Training guide details and discussion</p>
       </div>
-      <div class="d-flex flex-wrap gap-2 align-items-center">
-        <RouterLink to="/admin/resources/tutorials" class="btn btn-outline-secondary btn-sm">Back to list</RouterLink>
-        <div v-if="canShowActionsMenu" class="staff-detail-tab-bar-actions" data-tutorial-actions>
+      <div v-if="canShowActionsMenu" class="staff-detail-tab-bar-actions" data-tutorial-actions>
           <button
             type="button"
             class="staff-detail-tab-btn"
@@ -441,7 +439,6 @@ onUnmounted(() => {
             </svg>
             <span class="staff-detail-tab-btn__label">Actions</span>
           </button>
-        </div>
       </div>
     </div>
 
@@ -538,7 +535,7 @@ onUnmounted(() => {
         </div>
       </div>
 
-      <aside class="col-12 col-lg-4">
+      <aside class="col-12 col-lg-4 d-flex flex-column gap-4">
         <div class="staff-table-card overflow-hidden p-4 p-md-5">
           <h3 class="small fw-semibold text-secondary text-uppercase mb-3">Details</h3>
           <dl class="row small mb-0 gy-3">
@@ -555,53 +552,53 @@ onUnmounted(() => {
               <dd class="mb-0 text-body">{{ tutorial.creator?.name || "—" }}</dd>
             </div>
           </dl>
+        </div>
 
-          <div class="resources-tutorial-photos mt-4 pt-4 border-top">
-            <div class="d-flex flex-wrap align-items-center justify-content-between gap-2 mb-3">
-              <h3 class="small fw-semibold text-secondary text-uppercase mb-0">Photos</h3>
-              <button
-                v-if="canCreatePhoto"
-                type="button"
-                class="btn btn-primary staff-page-primary btn-sm"
-                @click="openPhotoUpload"
-              >
-                Add Photo
-              </button>
-            </div>
-            <p v-if="!photos.length" class="text-secondary small mb-0">No photos yet.</p>
-            <div v-else class="row g-2">
-              <div
-                v-for="photo in photos"
-                :key="photo.id"
-                class="col-6"
-              >
-                <div class="resources-photo-card h-100 position-relative">
-                  <button
-                    v-if="canDeletePhoto"
-                    type="button"
-                    class="btn btn-sm btn-outline-danger resources-photo-card__delete"
-                    aria-label="Delete photo"
-                    @click.stop="confirmDeletePhoto(photo)"
-                  >
-                    ×
-                  </button>
-                  <button
-                    type="button"
-                    class="resources-photo-card__thumb-btn w-100 border-0 bg-transparent p-0"
-                    @click="openPhotoLightbox(photo)"
-                  >
-                    <img
-                      v-if="thumbUrls[photo.id]"
-                      :src="thumbUrls[photo.id]"
-                      :alt="photo.name"
-                      class="resources-photo-card__thumb rounded"
-                    />
-                    <div v-else class="resources-photo-card__placeholder rounded bg-light" />
-                  </button>
-                  <p class="small text-center mb-0 mt-2 fw-medium text-truncate px-1" :title="photo.name">
-                    {{ photo.name }}
-                  </p>
-                </div>
+        <div class="staff-table-card overflow-hidden p-4 p-md-5">
+          <div class="d-flex flex-wrap align-items-center justify-content-between gap-2 mb-3">
+            <h3 class="small fw-semibold text-secondary text-uppercase mb-0">Photos</h3>
+            <button
+              v-if="canCreatePhoto"
+              type="button"
+              class="btn btn-primary staff-page-primary btn-sm"
+              @click="openPhotoUpload"
+            >
+              Add Photo
+            </button>
+          </div>
+          <p v-if="!photos.length" class="text-secondary small mb-0">No photos yet.</p>
+          <div v-else class="row g-2">
+            <div
+              v-for="photo in photos"
+              :key="photo.id"
+              class="col-6"
+            >
+              <div class="resources-photo-card h-100 position-relative">
+                <button
+                  v-if="canDeletePhoto"
+                  type="button"
+                  class="btn btn-sm btn-outline-danger resources-photo-card__delete"
+                  aria-label="Delete photo"
+                  @click.stop="confirmDeletePhoto(photo)"
+                >
+                  ×
+                </button>
+                <button
+                  type="button"
+                  class="resources-photo-card__thumb-btn w-100 border-0 bg-transparent p-0"
+                  @click="openPhotoLightbox(photo)"
+                >
+                  <img
+                    v-if="thumbUrls[photo.id]"
+                    :src="thumbUrls[photo.id]"
+                    :alt="photo.name"
+                    class="resources-photo-card__thumb rounded"
+                  />
+                  <div v-else class="resources-photo-card__placeholder rounded bg-light" />
+                </button>
+                <p class="small text-center mb-0 mt-2 fw-medium text-truncate px-1" :title="photo.name">
+                  {{ photo.name }}
+                </p>
               </div>
             </div>
           </div>

@@ -164,6 +164,75 @@ class WholesaleOrderWorkflowTest extends TestCase
             ->assertJsonCount(0, 'lines');
     }
 
+    public function test_manual_status_update_pending_and_completed(): void
+    {
+        $account = $this->account();
+        Sanctum::actingAs($this->staffUser());
+
+        $order = WholesaleOrder::query()->create([
+            'client_account_id' => $account->id,
+            'order_number' => 'STAT-1',
+            'order_type' => WholesaleOrder::TYPE_B2B,
+            'status' => WholesaleOrder::STATUS_DRAFT,
+            'items_count' => 0,
+        ]);
+
+        $this->patchJson('/api/admin/wholesale-orders/'.$order->id, [
+            'status' => WholesaleOrder::STATUS_PENDING,
+        ])
+            ->assertOk()
+            ->assertJsonPath('status', WholesaleOrder::STATUS_PENDING);
+
+        $this->patchJson('/api/admin/wholesale-orders/'.$order->id, [
+            'status' => WholesaleOrder::STATUS_COMPLETED,
+        ])
+            ->assertOk()
+            ->assertJsonPath('status', WholesaleOrder::STATUS_COMPLETED);
+
+        $this->patchJson('/api/admin/wholesale-orders/'.$order->id, [
+            'status' => WholesaleOrder::STATUS_SHIPPED,
+        ])->assertUnprocessable();
+    }
+
+    public function test_show_enriches_missing_line_image_from_inventory_index(): void
+    {
+        $account = $this->account();
+        Sanctum::actingAs($this->staffUser());
+
+        $order = WholesaleOrder::query()->create([
+            'client_account_id' => $account->id,
+            'order_number' => 'IMG-1',
+            'order_type' => WholesaleOrder::TYPE_AMAZON,
+            'status' => WholesaleOrder::STATUS_PENDING,
+            'items_count' => 1,
+        ]);
+
+        WholesaleOrderLine::query()->create([
+            'wholesale_order_id' => $order->id,
+            'sku' => 'IMG-SKU',
+            'name' => 'Indexed Product',
+            'image_url' => null,
+            'quantity' => 1,
+            'barcode_mode' => WholesaleOrderLine::BARCODE_SHIP_AS_IS,
+            'sort_order' => 1,
+        ]);
+
+        \App\Models\ShipHeroInventoryProductIndex::query()->create([
+            'client_account_id' => $account->id,
+            'sku' => 'IMG-SKU',
+            'sku_search' => 'img-sku',
+            'name' => 'Indexed Product',
+            'image_url' => 'https://cdn.example.com/img-sku.jpg',
+            'shiphero_product_id' => 'prod-img-1',
+            'shiphero_customer_account_id' => $account->shiphero_customer_account_id,
+            'synced_at' => now(),
+        ]);
+
+        $this->getJson('/api/admin/wholesale-orders/'.$order->id)
+            ->assertOk()
+            ->assertJsonPath('lines.0.image_url', 'https://cdn.example.com/img-sku.jpg');
+    }
+
     public function test_post_comment_with_attachment(): void
     {
         Storage::fake('local');

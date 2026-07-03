@@ -12,6 +12,7 @@ import {
   wholesaleStatusBadgeClass,
   wholesaleStatusLabel,
   wholesaleTypeLabel,
+  WHOLESALE_MANUAL_STATUS_OPTIONS,
 } from "../../utils/formatWholesaleOrderDisplay.js";
 
 const route = useRoute();
@@ -25,6 +26,10 @@ const order = ref(null);
 
 const instructionsDraft = ref("");
 const instructionsSaving = ref(false);
+const statusDraft = ref("pending");
+const statusSaving = ref(false);
+
+const manualStatusOptions = WHOLESALE_MANUAL_STATUS_OPTIONS;
 
 const barcodeModalOpen = ref(false);
 const barcodeUploadBusy = ref(false);
@@ -46,6 +51,35 @@ const comments = computed(() => (Array.isArray(order.value?.comments) ? order.va
 function applyOrderData(data) {
   order.value = data;
   instructionsDraft.value = String(data?.instructions || "");
+  const status = String(data?.status || "").toLowerCase();
+  statusDraft.value =
+    status === "completed" || status === "pending" ? status : "pending";
+}
+
+function inventoryDetailTo(sku) {
+  const s = String(sku || "").trim();
+  if (!s) return null;
+  const query =
+    clientAccountId.value > 0 ? { client_account_id: String(clientAccountId.value) } : {};
+  return {
+    name: "inventory-detail",
+    params: { sku: s },
+    query,
+  };
+}
+
+function inventoryDetailHref(sku) {
+  const to = inventoryDetailTo(sku);
+  if (!to) return "";
+  return router.resolve(to).href;
+}
+
+function openInventoryInNewTab(line, event) {
+  event?.preventDefault?.();
+  event?.stopPropagation?.();
+  const href = inventoryDetailHref(line?.sku);
+  if (!href) return;
+  window.open(href, "_blank", "noopener,noreferrer");
 }
 
 function isImageMime(mime) {
@@ -102,6 +136,26 @@ async function saveInstructions() {
     toast.errorFrom(e, "Could not save instructions.");
   } finally {
     instructionsSaving.value = false;
+  }
+}
+
+async function saveStatus() {
+  if (!order.value?.id) return;
+  const next = String(statusDraft.value || "").toLowerCase();
+  if (next === String(order.value.status || "").toLowerCase()) return;
+  statusSaving.value = true;
+  try {
+    const { data } = await api.patch(`/admin/wholesale-orders/${order.value.id}`, {
+      status: next,
+    });
+    applyOrderData(data);
+    toast.success("Status updated.");
+  } catch (e) {
+    statusDraft.value =
+      String(order.value.status || "").toLowerCase() === "completed" ? "completed" : "pending";
+    toast.errorFrom(e, "Could not update status.");
+  } finally {
+    statusSaving.value = false;
   }
 }
 
@@ -299,7 +353,7 @@ onUnmounted(() => {
     <CrmLoadingSpinner message="Loading order…" :center="true" />
   </div>
 
-  <div v-else-if="order" class="staff-page staff-page--wide order-detail-page">
+  <div v-else-if="order" class="staff-page staff-page--wide order-detail-page wholesale-order-detail-page">
     <div class="staff-table-card staff-datatable-card staff-datatable-card--white mb-4">
       <div class="p-4 pb-3">
         <div class="d-flex flex-wrap justify-content-between align-items-start gap-3">
@@ -362,20 +416,41 @@ onUnmounted(() => {
               </thead>
               <tbody>
                 <tr v-for="line in lines" :key="line.id">
-                  <td>
-                    <div class="d-flex align-items-center gap-2 order-detail-page__item-cell">
-                      <img
-                        v-if="line.image_url"
-                        :src="line.image_url"
-                        alt=""
-                        class="order-detail-page__item-thumb rounded border flex-shrink-0"
-                        width="48"
-                        height="48"
-                        loading="lazy"
-                      />
-                      <div class="min-w-0">
-                        <div class="fw-semibold text-truncate">{{ line.name || "—" }}</div>
-                        <div class="small text-secondary">{{ line.sku }}</div>
+                  <td class="order-detail-page__items-col">
+                    <div class="order-detail-page__item-cell">
+                      <a
+                        v-if="inventoryDetailHref(line.sku)"
+                        :href="inventoryDetailHref(line.sku)"
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        class="asn-line-thumb-link text-decoration-none"
+                        :aria-label="line.sku ? `View inventory for SKU ${line.sku} in new tab` : undefined"
+                        @click="openInventoryInNewTab(line, $event)"
+                      >
+                        <img
+                          v-if="line.image_url"
+                          :src="line.image_url"
+                          alt=""
+                          class="asn-line-thumb asn-line-thumb--lg"
+                          loading="lazy"
+                        />
+                        <div v-else class="asn-line-thumb asn-line-thumb--lg asn-line-thumb--empty" aria-hidden="true" />
+                      </a>
+                      <template v-else>
+                        <img
+                          v-if="line.image_url"
+                          :src="line.image_url"
+                          alt=""
+                          class="asn-line-thumb asn-line-thumb--lg"
+                          loading="lazy"
+                        />
+                        <div v-else class="asn-line-thumb asn-line-thumb--lg asn-line-thumb--empty" aria-hidden="true" />
+                      </template>
+                      <div class="order-detail-page__item-copy">
+                        <div class="order-detail-page__item-sku-title" :title="line.sku || undefined">
+                          {{ line.sku || "—" }}
+                        </div>
+                        <div class="order-detail-page__item-name-sub" :title="line.name">{{ line.name || "—" }}</div>
                       </div>
                     </div>
                   </td>
@@ -545,6 +620,20 @@ onUnmounted(() => {
         <div class="staff-table-card staff-datatable-card staff-datatable-card--white p-4">
           <h3 class="h6 fw-semibold mb-3">Order Info</h3>
           <dl class="small mb-0">
+            <dt class="text-secondary fw-normal">Status</dt>
+            <dd class="mb-2">
+              <select
+                id="wholesale-order-status"
+                v-model="statusDraft"
+                class="form-select form-select-sm"
+                :disabled="statusSaving"
+                @change="saveStatus"
+              >
+                <option v-for="opt in manualStatusOptions" :key="opt.value" :value="opt.value">
+                  {{ opt.label }}
+                </option>
+              </select>
+            </dd>
             <dt class="text-secondary fw-normal">Type</dt>
             <dd class="mb-2">{{ order.order_type_label || wholesaleTypeLabel(order.order_type) }}</dd>
             <dt class="text-secondary fw-normal">Create Date</dt>
@@ -569,5 +658,64 @@ onUnmounted(() => {
 <style scoped>
 .wholesale-line-qty-input {
   max-width: 5rem;
+}
+
+.wholesale-order-detail-page .asn-line-thumb {
+  width: 64px;
+  height: 64px;
+  border-radius: 0.4rem;
+  object-fit: cover;
+  border: 1px solid rgba(0, 0, 0, 0.08);
+  background: #fff;
+  flex-shrink: 0;
+}
+
+.wholesale-order-detail-page .asn-line-thumb--lg {
+  width: 96px;
+  height: 96px;
+}
+
+.wholesale-order-detail-page .asn-line-thumb--empty {
+  display: block;
+  background: rgba(0, 0, 0, 0.05);
+}
+
+.wholesale-order-detail-page .order-detail-page__item-cell {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  min-width: 0;
+}
+
+.wholesale-order-detail-page .order-detail-page__items-col {
+  width: 48%;
+  min-width: 16rem;
+  vertical-align: middle;
+}
+
+.wholesale-order-detail-page .order-detail-page__item-sku-title {
+  font-size: 1.25rem;
+  font-weight: 700;
+  line-height: 1.35;
+  color: var(--bs-body-color);
+  word-break: break-word;
+  user-select: text;
+  margin-bottom: 0.2rem;
+}
+
+.wholesale-order-detail-page .order-detail-page__item-name-sub {
+  font-size: 0.8125rem;
+  line-height: 1.4;
+  color: var(--bs-secondary-color);
+  word-break: break-word;
+}
+
+.wholesale-order-detail-page .asn-line-thumb-link {
+  flex-shrink: 0;
+  line-height: 0;
+}
+
+.wholesale-order-detail-page .asn-line-thumb-link:hover .asn-line-thumb {
+  opacity: 0.92;
 }
 </style>

@@ -28,6 +28,11 @@ export function wholesaleTypeLabel(type) {
   return type || "—";
 }
 
+export const WHOLESALE_MANUAL_STATUS_OPTIONS = [
+  { value: "pending", label: "Pending" },
+  { value: "completed", label: "Completed" },
+];
+
 export const WHOLESALE_STATUS_OPTIONS = [
   { value: "", label: "All statuses" },
   { value: "draft", label: "Draft" },

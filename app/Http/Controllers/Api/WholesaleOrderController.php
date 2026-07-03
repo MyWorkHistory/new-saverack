@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\WholesaleOrderCommentStoreRequest;
 use App\Models\ClientAccount;
+use App\Models\ShipHeroInventoryProductIndex;
 use App\Models\User;
 use App\Models\WholesaleOrder;
 use App\Models\WholesaleOrderComment;
@@ -117,13 +118,15 @@ class WholesaleOrderController extends Controller
     /**
      * @return array<string, mixed>
      */
-    private function serializeLine(WholesaleOrderLine $line): array
+    private function serializeLine(WholesaleOrderLine $line, ?string $resolvedImageUrl = null): array
     {
+        $imageUrl = $resolvedImageUrl ?? $line->image_url;
+
         return [
             'id' => $line->id,
             'sku' => $line->sku,
             'name' => $line->name,
-            'image_url' => $line->image_url,
+            'image_url' => $imageUrl,
             'quantity' => $line->quantity,
             'barcode_mode' => $line->barcode_mode,
             'has_barcode' => $line->hasUploadedBarcode(),
@@ -131,6 +134,48 @@ class WholesaleOrderController extends Controller
             'barcode_mime' => $line->barcode_mime,
             'sort_order' => $line->sort_order,
         ];
+    }
+
+    /**
+     * @return array<string, string|null>
+     */
+    private function resolveLineImageUrls(WholesaleOrder $order): array
+    {
+        $order->loadMissing('lines');
+        $clientAccountId = (int) $order->client_account_id;
+        $skuKeys = [];
+        foreach ($order->lines as $line) {
+            if (is_string($line->image_url) && trim($line->image_url) !== '') {
+                continue;
+            }
+            $key = mb_strtolower(trim((string) $line->sku));
+            if ($key !== '') {
+                $skuKeys[$key] = true;
+            }
+        }
+        if ($skuKeys === [] || $clientAccountId <= 0) {
+            return [];
+        }
+
+        $rows = ShipHeroInventoryProductIndex::query()
+            ->where('client_account_id', $clientAccountId)
+            ->whereIn('sku_search', array_keys($skuKeys))
+            ->orderByDesc('synced_at')
+            ->get(['sku_search', 'image_url']);
+
+        $map = [];
+        foreach ($rows as $row) {
+            $key = (string) $row->sku_search;
+            if ($key === '' || isset($map[$key])) {
+                continue;
+            }
+            $url = is_string($row->image_url) ? trim($row->image_url) : '';
+            if ($url !== '') {
+                $map[$key] = $url;
+            }
+        }
+
+        return $map;
     }
 
     /**
@@ -167,13 +212,23 @@ class WholesaleOrderController extends Controller
     private function serializeDetail(WholesaleOrder $order): array
     {
         $order->loadMissing(['clientAccount', 'createdBy', 'lines', 'comments.user']);
+        $imageBySku = $this->resolveLineImageUrls($order);
 
         return array_merge($this->serializeListRow($order), [
             'instructions' => $order->instructions,
             'is_editable' => $order->isEditable(),
-            'lines' => $order->lines->map(fn (WholesaleOrderLine $l) => $this->serializeLine($l))->values()->all(),
+            'lines' => $order->lines->map(function (WholesaleOrderLine $line) use ($imageBySku) {
+                $key = mb_strtolower(trim((string) $line->sku));
+                $resolved = $imageBySku[$key] ?? null;
+
+                return $this->serializeLine($line, $resolved);
+            })->values()->all(),
             'comments' => $order->comments->map(fn (WholesaleOrderComment $c) => $this->serializeComment($c))->values()->all(),
             'statuses' => $this->statusLabels(),
+            'manual_statuses' => [
+                WholesaleOrder::STATUS_PENDING => $this->statusLabel(WholesaleOrder::STATUS_PENDING),
+                WholesaleOrder::STATUS_COMPLETED => $this->statusLabel(WholesaleOrder::STATUS_COMPLETED),
+            ],
             'order_types' => $this->typeLabels(),
         ]);
     }
@@ -383,14 +438,25 @@ class WholesaleOrderController extends Controller
     {
         $this->assertStaff($request);
         Gate::authorize('update', $wholesaleOrder);
-        $this->assertLineEditable($wholesaleOrder);
 
         $validated = $request->validate([
             'order_number' => ['sometimes', 'string', 'max:128'],
             'order_type' => ['sometimes', 'string', Rule::in(WholesaleOrder::ORDER_TYPES)],
-            'status' => ['sometimes', 'string', Rule::in(WholesaleOrder::STATUSES)],
+            'status' => ['sometimes', 'string', Rule::in([
+                WholesaleOrder::STATUS_PENDING,
+                WholesaleOrder::STATUS_COMPLETED,
+            ])],
             'instructions' => ['nullable', 'string', 'max:20000'],
         ]);
+
+        $statusOnly = array_key_exists('status', $validated)
+            && ! array_key_exists('order_number', $validated)
+            && ! array_key_exists('order_type', $validated)
+            && ! array_key_exists('instructions', $validated);
+
+        if (! $statusOnly) {
+            $this->assertLineEditable($wholesaleOrder);
+        }
 
         if (array_key_exists('order_number', $validated)) {
             $wholesaleOrder->order_number = trim((string) $validated['order_number']);

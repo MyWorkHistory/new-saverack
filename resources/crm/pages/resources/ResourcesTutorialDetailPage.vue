@@ -192,9 +192,11 @@ onUnmounted(() => {
     <nav class="staff-user-view__breadcrumb d-flex flex-wrap align-items-center gap-1" aria-label="Breadcrumb">
       <RouterLink to="/admin/home">Home</RouterLink>
       <span class="text-secondary" aria-hidden="true">/</span>
+      <span class="text-body-secondary">Resources</span>
+      <span class="text-secondary" aria-hidden="true">/</span>
       <RouterLink to="/admin/resources/tutorials">Tutorials</RouterLink>
       <span class="text-secondary" aria-hidden="true">/</span>
-      <span class="text-body-secondary">Tutorial</span>
+      <span class="text-body-secondary text-truncate" style="max-width: 14rem">{{ tutorial?.title || "Tutorial" }}</span>
     </nav>
 
     <div class="staff-user-view__title-row d-flex flex-wrap align-items-start justify-content-between gap-2 mb-4">

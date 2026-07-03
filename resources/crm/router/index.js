@@ -41,6 +41,7 @@ import InventoryBetaDetailPage from "../pages/inventory/InventoryBetaDetailPage.
 import OrdersListPage from "../pages/orders/OrdersListPage.vue";
 import OrderDetailPage from "../pages/orders/OrderDetailPage.vue";
 import OrderDetailIframePage from "../pages/orders/OrderDetailIframePage.vue";
+import FulfillmentPage from "../pages/orders/FulfillmentPage.vue";
 import UserDashboardPage from "../pages/user-portal/UserDashboardPage.vue";
 import PortalPendingWelcomePage from "../pages/user-portal/PortalPendingWelcomePage.vue";
 
@@ -63,7 +64,7 @@ const meta = {
   },
   dashboard: {
     title: "Save Rack | Home",
-    description: "Operations overview — ready to ship, holds, shipped, and ASN.",
+    description: "Operations overview — holds and ASN.",
   },
   staff: {
     title: "Save Rack | Staff",
@@ -181,6 +182,10 @@ const meta = {
   ordersShipped: {
     title: "Save Rack | Orders | Shipped",
     description: "ShipHero shipped orders.",
+  },
+  ordersFulfillment: {
+    title: "Save Rack | Orders | Fulfillment",
+    description: "Ready to ship and shipped orders by account.",
   },
   orderDetail: {
     title: "Save Rack | Order",
@@ -586,6 +591,12 @@ const routes = [
     name: "orders-search",
     component: OrdersListPage,
     meta: { ...meta.ordersSearch, orderTab: "search" },
+  },
+  {
+    path: "/admin/orders/fulfillment",
+    name: "orders-fulfillment",
+    component: FulfillmentPage,
+    meta: meta.ordersFulfillment,
   },
   {
     path: "/admin/orders/all",

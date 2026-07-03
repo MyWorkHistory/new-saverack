@@ -15,8 +15,6 @@ const { loading, refreshing, totals, sections, load, refreshSection } = useAdmin
   onError: (e) => toast.errorFrom(e, "Could not load Home dashboard."),
 });
 
-const SECTION_READY = "ready_to_ship";
-const SECTION_SHIPPED = "shipped";
 const SECTION_ASN = "asn_pending";
 
 const DASHBOARD_ICON = {
@@ -97,20 +95,6 @@ function isSectionRefreshing(key) {
   return s.status === "running" || refreshing.value;
 }
 
-function ordersAwaitingRoute(accountId) {
-  return {
-    name: "orders-awaiting",
-    query: { client_account_id: String(accountId) },
-  };
-}
-
-function ordersShippedRoute(accountId) {
-  return {
-    name: "orders-shipped",
-    query: { client_account_id: String(accountId) },
-  };
-}
-
 function ordersHoldRoute(accountId, holdReason) {
   if (holdReason === null) {
     return {
@@ -171,7 +155,7 @@ async function onRefreshSection(key) {
 onMounted(async () => {
   setCrmPageMeta({
     title: "Save Rack | Home",
-    description: "Operations overview — ready to ship, holds, shipped, and ASN.",
+    description: "Operations overview — holds and ASN.",
   });
   try {
     await load();
@@ -251,139 +235,6 @@ onMounted(async () => {
               </svg>
             </div>
           </RouterLink>
-        </div>
-      </div>
-
-      <div class="row g-3 mb-4">
-        <div class="col-12 col-lg-6">
-          <section
-            class="staff-table-card staff-datatable-card staff-datatable-card--white w-100 h-100"
-          >
-            <div class="staff-table-toolbar">
-              <div
-                class="staff-table-toolbar--row d-flex align-items-start justify-content-between gap-2"
-              >
-                <div>
-                  <h2 class="staff-user-section-title mb-1">Ready to Ship</h2>
-                  <p class="small text-secondary mb-0">
-                    Last updated: {{ lastUpdatedLabel(SECTION_READY) }}
-                  </p>
-                </div>
-                <CrmRefreshToolbarButton
-                  :disabled="isSectionRefreshing(SECTION_READY)"
-                  :loading="isSectionRefreshing(SECTION_READY)"
-                  @click="onRefreshSection(SECTION_READY)"
-                />
-              </div>
-            </div>
-            <div class="table-responsive staff-table-wrap">
-              <table class="table table-hover align-middle mb-0 staff-data-table">
-                <thead class="table-light staff-table-head">
-                  <tr>
-                    <th class="staff-table-head__th" scope="col">Account</th>
-                    <th class="staff-table-head__th text-end" scope="col" style="width: 6rem">
-                      Orders
-                    </th>
-                  </tr>
-                </thead>
-                <tbody>
-                  <tr
-                    v-for="row in sectionData(SECTION_READY).accounts"
-                    :key="`rts-${row.account_id}`"
-                  >
-                    <td>
-                      <div class="d-flex align-items-center gap-2 min-w-0">
-                        <ClientAccountShippingStatusIcon
-                          :status="row.account_status"
-                          :size="18"
-                        />
-                        <RouterLink
-                          :to="ordersAwaitingRoute(row.account_id)"
-                          class="text-truncate text-decoration-none fw-semibold"
-                        >
-                          {{ row.account_name }}
-                        </RouterLink>
-                      </div>
-                    </td>
-                    <td class="text-end fw-semibold tabular-nums">
-                      {{ Number(row.orders_count || 0).toLocaleString() }}
-                    </td>
-                  </tr>
-                  <tr v-if="!sectionData(SECTION_READY).accounts.length">
-                    <td colspan="2" class="text-secondary small py-4 text-center">
-                      No ready-to-ship orders in snapshot.
-                    </td>
-                  </tr>
-                </tbody>
-              </table>
-            </div>
-          </section>
-        </div>
-
-        <div class="col-12 col-lg-6">
-          <section
-            class="staff-table-card staff-datatable-card staff-datatable-card--white w-100 h-100"
-          >
-            <div class="staff-table-toolbar">
-              <div
-                class="staff-table-toolbar--row d-flex align-items-start justify-content-between gap-2"
-              >
-                <div>
-                  <h2 class="staff-user-section-title mb-1">Shipped</h2>
-                  <p class="small text-secondary mb-0">
-                    Last updated: {{ lastUpdatedLabel(SECTION_SHIPPED) }}
-                    <span class="text-body-secondary">(today)</span>
-                  </p>
-                </div>
-                <CrmRefreshToolbarButton
-                  :disabled="isSectionRefreshing(SECTION_SHIPPED)"
-                  :loading="isSectionRefreshing(SECTION_SHIPPED)"
-                  @click="onRefreshSection(SECTION_SHIPPED)"
-                />
-              </div>
-            </div>
-            <div class="table-responsive staff-table-wrap">
-              <table class="table table-hover align-middle mb-0 staff-data-table">
-                <thead class="table-light staff-table-head">
-                  <tr>
-                    <th class="staff-table-head__th" scope="col">Account</th>
-                    <th class="staff-table-head__th text-end" scope="col" style="width: 6rem">
-                      Orders
-                    </th>
-                  </tr>
-                </thead>
-                <tbody>
-                  <tr
-                    v-for="row in sectionData(SECTION_SHIPPED).accounts"
-                    :key="`shp-${row.account_id}`"
-                  >
-                    <td>
-                      <div class="d-flex align-items-center gap-2 min-w-0">
-                        <ClientAccountShippingStatusIcon
-                          :status="row.account_status"
-                          :size="18"
-                        />
-                        <RouterLink
-                          :to="ordersShippedRoute(row.account_id)"
-                          class="text-truncate text-decoration-none fw-semibold"
-                        >
-                          {{ row.account_name }}
-                        </RouterLink>
-                      </div>
-                    </td>
-                    <td class="text-end fw-semibold tabular-nums">
-                      {{ Number(row.orders_count || 0).toLocaleString() }}
-                    </td>
-                  </tr>
-                  <tr v-if="!sectionData(SECTION_SHIPPED).accounts.length">
-                    <td colspan="2" class="text-secondary small py-4 text-center">
-                      No shipments in snapshot for today.
-                    </td>
-                  </tr>
-                </tbody>
-              </table>
-            </div>
-          </section>
         </div>
       </div>
 

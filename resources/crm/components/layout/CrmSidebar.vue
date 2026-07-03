@@ -119,6 +119,7 @@ function navActive(mode) {
   if (mode === "clients-users") return p.startsWith("/admin/clients/users");
   if (mode === "orders") return p.startsWith("/admin/orders");
   if (mode === "orders-index") return p === "/admin/orders/search";
+  if (mode === "orders-fulfillment") return p === "/admin/orders/fulfillment";
   if (mode === "orders-manage") return p.startsWith("/admin/orders/search");
   if (mode === "orders-awaiting") return p.startsWith("/admin/orders/awaiting");
   if (mode === "orders-on-hold") return p.startsWith("/admin/orders/on-hold");
@@ -286,6 +287,16 @@ function collapseNav() {
                     @click="closeMobile"
                   >
                     Search
+                  </RouterLink>
+                </li>
+                <li>
+                  <RouterLink
+                    to="/admin/orders/fulfillment"
+                    class="vx-nav-link vx-nav-sublink"
+                    :class="{ 'vx-nav-link--active': navActive('orders-fulfillment') }"
+                    @click="closeMobile"
+                  >
+                    Fulfillment
                   </RouterLink>
                 </li>
                 <li>

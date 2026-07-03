@@ -47,6 +47,7 @@ class ClientAccountShipHeroStoresTest extends TestCase
             'company_name' => 'ShipHero Stores Co',
             'status' => ClientAccount::STATUS_ACTIVE,
             'shiphero_customer_account_id' => 'sh-stores-99',
+            'email' => 'stores-co@example.test',
         ]);
 
         return ['user' => $user, 'account' => $account];

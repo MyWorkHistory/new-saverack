@@ -36,7 +36,7 @@ class ProbeShipHeroCustomerStoresCommand extends Command
         $this->line('');
 
         try {
-            $result = $this->stores->fetchFromShipHero($customerId);
+            $result = $this->stores->fetchFromShipHeroCustomerId($customerId);
         } catch (RuntimeException $e) {
             $this->error('Probe failed: '.$e->getMessage());
 

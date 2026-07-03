@@ -51,8 +51,7 @@ class ShipHeroStoreService
      */
     public function importForAccount(ClientAccount $account): array
     {
-        $customerId = $this->resolveCustomerAccountId($account);
-        $fetched = $this->fetchFromShipHero($customerId);
+        $fetched = $this->fetchFromShipHero($account);
         $importedAt = now()->toIso8601String();
 
         $payload = [
@@ -71,16 +70,60 @@ class ShipHeroStoreService
     /**
      * @return array{stores: list<array<string, mixed>>, request_id: string|null}
      */
-    public function fetchFromShipHero(string $customerAccountId): array
+    public function fetchFromShipHero(ClientAccount $account): array
+    {
+        $customerAccountId = $this->resolveCustomerAccountId($account);
+        $lastError = null;
+
+        foreach ($this->userLookupStrategies($account, $customerAccountId) as $variables) {
+            try {
+                return $this->fetchStoresViaUserQuery($variables);
+            } catch (RuntimeException $e) {
+                $lastError = $e;
+            }
+        }
+
+        throw $lastError ?? new RuntimeException('Could not load ShipHero stores for this customer account.');
+    }
+
+    /**
+     * Probe helper when only the ShipHero customer_account_id is known.
+     *
+     * @return array{stores: list<array<string, mixed>>, request_id: string|null}
+     */
+    public function fetchFromShipHeroCustomerId(string $customerAccountId): array
     {
         $customerAccountId = trim($customerAccountId);
         if ($customerAccountId === '') {
             throw new RuntimeException('ShipHero customer account ID is required.');
         }
 
+        $account = new ClientAccount([
+            'shiphero_customer_account_id' => $customerAccountId,
+        ]);
+
+        return $this->fetchFromShipHero($account);
+    }
+
+    /**
+     * @param  array<string, string>  $variables
+     * @return array{stores: list<array<string, mixed>>, request_id: string|null}
+     */
+    private function fetchStoresViaUserQuery(array $variables): array
+    {
         $graphql = <<<'GQL'
-query ShipHeroCustomerStores($customer_account_id: String!) {
-  user(customer_account_id: $customer_account_id) {
+query ShipHeroCustomerStores(
+  $id: String,
+  $customer_account_id: String,
+  $email: String,
+  $account_pin: String
+) {
+  user(
+    id: $id,
+    customer_account_id: $customer_account_id,
+    email: $email,
+    account_pin: $account_pin
+  ) {
     request_id
     complexity
     data {
@@ -94,9 +137,7 @@ query ShipHeroCustomerStores($customer_account_id: String!) {
 }
 GQL;
 
-        $json = $this->client->query($graphql, [
-            'customer_account_id' => $customerAccountId,
-        ]);
+        $json = $this->client->query($graphql, $variables);
 
         if (isset($json['errors']) && is_array($json['errors']) && $json['errors'] !== []) {
             $message = $json['errors'][0]['message'] ?? 'ShipHero GraphQL error.';
@@ -138,6 +179,108 @@ GQL;
             'stores' => $stores,
             'request_id' => $requestId,
         ];
+    }
+
+    /**
+     * ShipHero requires user(id|email|account_pin). customer_account_id only scopes 3PL context.
+     *
+     * @return list<array<string, string>>
+     */
+    private function userLookupStrategies(ClientAccount $account, string $customerAccountId): array
+    {
+        $strategies = [
+            [
+                'id' => $customerAccountId,
+                'customer_account_id' => $customerAccountId,
+            ],
+        ];
+
+        $email = $this->resolveAccountEmail($account);
+        if ($email !== '') {
+            $strategies[] = [
+                'email' => $email,
+                'customer_account_id' => $customerAccountId,
+            ];
+        }
+
+        $customerEmail = $this->resolveCustomerEmailFromShipHero($customerAccountId);
+        if ($customerEmail !== '' && strcasecmp($customerEmail, $email) !== 0) {
+            $strategies[] = [
+                'email' => $customerEmail,
+                'customer_account_id' => $customerAccountId,
+            ];
+        }
+
+        return $strategies;
+    }
+
+    private function resolveAccountEmail(ClientAccount $account): string
+    {
+        foreach ([$account->email, $account->notification_email] as $candidate) {
+            $email = trim((string) $candidate);
+            if ($email !== '' && filter_var($email, FILTER_VALIDATE_EMAIL)) {
+                return $email;
+            }
+        }
+
+        return '';
+    }
+
+    private function resolveCustomerEmailFromShipHero(string $customerAccountId): string
+    {
+        $graphql = <<<'GQL'
+query ShipHeroCustomerEmailLookup {
+  account {
+    data {
+      customers(first: 100) {
+        edges {
+          node {
+            id
+            legacy_id
+            email
+          }
+        }
+      }
+    }
+  }
+}
+GQL;
+
+        try {
+            $json = $this->client->query($graphql);
+        } catch (\Throwable $e) {
+            return '';
+        }
+
+        if (isset($json['errors']) && is_array($json['errors']) && $json['errors'] !== []) {
+            return '';
+        }
+
+        $edges = data_get($json, 'data.account.data.customers.edges');
+        if (! is_array($edges)) {
+            return '';
+        }
+
+        foreach ($edges as $edge) {
+            if (! is_array($edge)) {
+                continue;
+            }
+            $node = $edge['node'] ?? null;
+            if (! is_array($node)) {
+                continue;
+            }
+            $id = trim((string) ($node['id'] ?? ''));
+            $legacyId = trim((string) ($node['legacy_id'] ?? ''));
+            if ($id !== $customerAccountId && $legacyId !== $customerAccountId) {
+                continue;
+            }
+            $email = trim((string) ($node['email'] ?? ''));
+            if ($email !== '' && filter_var($email, FILTER_VALIDATE_EMAIL)) {
+                return $email;
+            }
+        }
+
+        return '';
     }
 
     private function resolveCustomerAccountId(ClientAccount $account): string

@@ -94,6 +94,7 @@ const placeHoldModalOpen = ref(false);
 const placeHoldBusy = ref(false);
 const moreActionsOpen = ref(false);
 const moreActionsBtnRef = ref(null);
+const headerKebabBtnRef = ref(null);
 const moreActionsMenuRef = ref(null);
 const moreActionsMenuStyle = ref({ visibility: "hidden" });
 const moreActionsLayoutBound = ref(false);
@@ -287,10 +288,8 @@ const canUseStaffOrderHeaderActions = computed(
 
 const portalPrimaryBtnClass = "btn btn-primary btn-sm staff-page-primary";
 
-const addItemsBtnClass = computed(() =>
-  isPortalUser.value
-    ? portalPrimaryBtnClass
-    : "btn btn-outline-secondary btn-sm order-detail-page__add-items-btn",
+const addItemsBtnClass = computed(
+  () => "btn btn-outline-primary btn-sm order-detail-page__add-items-btn",
 );
 
 const shippingEditBtnClass = computed(() =>
@@ -593,12 +592,6 @@ const customerDisplayName = computed(() => {
   return name || "—";
 });
 
-const shippingAddressDisplayCaps = computed(() => {
-  const t = formattedShippingAddress.value;
-  if (!t || t === "—") return "—";
-  return t.toUpperCase();
-});
-
 const currentShippingMethodDisplay = computed(() => {
   const o = order.value;
   if (!o) return "—";
@@ -684,8 +677,8 @@ function fmtCreationDate(iso) {
   const d = new Date(iso);
   if (Number.isNaN(d.getTime())) return "—";
   return d.toLocaleString("en-US", {
-    month: "2-digit",
-    day: "2-digit",
+    month: "short",
+    day: "numeric",
     year: "numeric",
     hour: "numeric",
     minute: "2-digit",
@@ -693,6 +686,72 @@ function fmtCreationDate(iso) {
     hour12: true,
   });
 }
+
+function fmtOrderHeaderDate(iso) {
+  if (!iso) return null;
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return null;
+  return d.toLocaleString("en-US", {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+    hour12: true,
+  });
+}
+
+const isShopifyOrder = computed(() => {
+  const o = order.value;
+  if (!o) return false;
+  if (o.shopify_admin_url) return true;
+  const account = String(o.account || "").toLowerCase();
+  const source = String(o.source || "").toLowerCase();
+  return account.includes("shopify") || source.includes("shopify");
+});
+
+const salesChannelLabel = computed(() => {
+  if (isShopifyOrder.value) return "Shopify";
+  const source = String(order.value?.source || "").trim();
+  return source || "—";
+});
+
+const orderHeaderMetaLine = computed(() => {
+  const placed = fmtOrderHeaderDate(order.value?.order_date);
+  const parts = [];
+  if (placed) parts.push(`Order placed on ${placed}`);
+  if (isShopifyOrder.value) {
+    const store = String(order.value?.account || "").trim();
+    parts.push(store ? `via Shopify (${store})` : "via Shopify");
+  } else {
+    const source = String(order.value?.source || "").trim();
+    if (source) parts.push(`via ${source}`);
+  }
+  return parts.join(" • ");
+});
+
+const showHeaderBadgeCheckmark = computed(
+  () => orderIsShipped.value || orderIsReadyToShip.value,
+);
+
+const itemsSummary = computed(() => {
+  const rows = sortedItems.value;
+  let totalQty = 0;
+  let totalToShip = 0;
+  for (const r of rows) {
+    totalQty += Number(r?.quantity ?? 0);
+    totalToShip += Number(r?.quantity_pending_fulfillment ?? 0);
+  }
+  return {
+    totalItems: rows.length,
+    totalQuantity: totalQty,
+    totalQtyToShip: totalToShip,
+  };
+});
+
+const showStaffMoreActions = computed(
+  () => canUseStaffOrderHeaderActions.value && !isDraftOrder.value && !isPortalUser.value,
+);
 
 function escapeHtml(value) {
   return String(value)
@@ -1523,7 +1582,7 @@ async function submitAddNewSku() {
 }
 
 function layoutMoreActionsMenu() {
-  const btn = moreActionsBtnRef.value;
+  const btn = headerKebabBtnRef.value || moreActionsBtnRef.value;
   if (!btn || !moreActionsOpen.value) return;
   const r = btn.getBoundingClientRect();
   const menuWidth = 220;
@@ -1573,7 +1632,11 @@ async function toggleMoreActionsMenu(ev) {
 function onMoreActionsDocumentClick(ev) {
   if (!moreActionsOpen.value) return;
   const t = ev.target;
-  if (moreActionsBtnRef.value?.contains(t) || moreActionsMenuRef.value?.contains(t)) {
+  if (
+    moreActionsBtnRef.value?.contains(t)
+    || headerKebabBtnRef.value?.contains(t)
+    || moreActionsMenuRef.value?.contains(t)
+  ) {
     return;
   }
   moreActionsOpen.value = false;
@@ -1726,51 +1789,67 @@ function goToOrdersList() {
       No order data loaded. Check the order link and account, then try again.
     </div>
     <template v-else>
-      <div class="staff-table-card staff-datatable-card staff-datatable-card--white order-detail-page__header-shell mb-4">
-        <div class="p-4 pb-3">
-          <div class="d-flex flex-wrap justify-content-between align-items-start gap-3">
-            <div class="min-w-0">
-              <div class="d-flex align-items-center flex-wrap gap-2">
-                <h1 class="h4 mb-0 fw-bold text-body">Order {{ headingOrderNumber }}</h1>
-                <a
-                  v-if="shipheroAdminUrl && !isDraftOrder"
-                  :href="shipheroAdminUrl"
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  class="small text-primary text-decoration-none order-detail-page__shopify-header-link"
-                >
-                  View in ShipHero
-                </a>
-                <span
-                  v-if="showOrderHeaderBadge"
-                  class="order-detail-page__status-pill"
-                  :class="orderHeaderBadgeClass"
-                >
-                  {{ orderHeaderBadgeLabel }}
-                </span>
-          </div>
-          <button
-            type="button"
-                class="btn btn-link btn-sm text-secondary px-0 py-0 mt-1 text-decoration-none"
-                @click="goToOrdersList"
-          >
-                {{ isReturnPreviewMode ? "&lt; Create Return" : "&lt; Orders" }}
-          </button>
-        </div>
-            <div
-              v-if="canUseStaffOrderHeaderActions"
-              class="d-flex flex-wrap gap-2 align-items-center flex-shrink-0"
-            >
-              <button
-                v-if="isDraftOrder && canRunShipHeroActions"
-                type="button"
-                class="btn btn-primary staff-page-primary"
-                :disabled="readyToShipBusy || loading"
-                @click="submitReadyToShip"
+      <header class="order-detail-page__hero mb-4">
+        <button
+          type="button"
+          class="btn btn-link btn-sm text-secondary px-0 py-0 mb-2 text-decoration-none order-detail-page__back-link"
+          @click="goToOrdersList"
+        >
+          {{ isReturnPreviewMode ? "&lt; Create Return" : "&lt; Back to Orders" }}
+        </button>
+        <div class="d-flex flex-wrap justify-content-between align-items-start gap-3">
+          <div class="min-w-0">
+            <div class="d-flex align-items-center flex-wrap gap-2 mb-1">
+              <h1 class="h4 mb-0 fw-bold text-body">Order #{{ headingOrderNumber }}</h1>
+              <span
+                v-if="showOrderHeaderBadge"
+                class="order-detail-page__status-pill d-inline-flex align-items-center gap-1"
+                :class="orderHeaderBadgeClass"
               >
-                {{ readyToShipBusy ? "Sending…" : "Ready to Ship" }}
-              </button>
-              <template v-if="!isDraftOrder">
+                <svg
+                  v-if="showHeaderBadgeCheckmark"
+                  width="14"
+                  height="14"
+                  fill="none"
+                  stroke="currentColor"
+                  viewBox="0 0 24 24"
+                  aria-hidden="true"
+                >
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M5 13l4 4L19 7" />
+                </svg>
+                {{ orderHeaderBadgeLabel }}
+              </span>
+              <a
+                v-if="shipheroAdminUrl && !isDraftOrder"
+                :href="shipheroAdminUrl"
+                target="_blank"
+                rel="noopener noreferrer"
+                class="small text-primary text-decoration-none order-detail-page__shopify-header-link d-inline-flex align-items-center gap-1"
+              >
+                View in ShipHero
+                <svg width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+                </svg>
+              </a>
+            </div>
+            <p v-if="orderHeaderMetaLine" class="small text-secondary mb-0 order-detail-page__hero-meta">
+              {{ orderHeaderMetaLine }}
+            </p>
+          </div>
+          <div
+            v-if="canUseStaffOrderHeaderActions"
+            class="d-flex flex-wrap gap-2 align-items-center flex-shrink-0 order-detail-page__hero-actions"
+          >
+            <button
+              v-if="isDraftOrder && canRunShipHeroActions"
+              type="button"
+              class="btn btn-primary staff-page-primary"
+              :disabled="readyToShipBusy || loading"
+              @click="submitReadyToShip"
+            >
+              {{ readyToShipBusy ? "Sending…" : "Ready to Ship" }}
+            </button>
+            <template v-if="!isDraftOrder">
               <template v-if="isPortalUser">
                 <p v-if="lastRefreshedLabel" class="small text-secondary mb-0">
                   Last refreshed: {{ lastRefreshedLabel }}
@@ -1783,14 +1862,7 @@ function goToOrdersList() {
                   aria-label="Refresh order from ShipHero"
                   @click="refreshOrderDetail"
                 >
-                  <svg
-                    width="18"
-                    height="18"
-                    fill="none"
-                    stroke="currentColor"
-                    viewBox="0 0 24 24"
-                    aria-hidden="true"
-                  >
+                  <svg width="18" height="18" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
                     <path
                       stroke-linecap="round"
                       stroke-linejoin="round"
@@ -1801,7 +1873,7 @@ function goToOrdersList() {
                   {{ refreshing ? "Refreshing…" : "Refresh" }}
                 </button>
               </template>
-              <div class="dropdown order-detail-page__more-actions position-relative">
+              <div v-if="showStaffMoreActions" class="dropdown order-detail-page__more-actions position-relative">
                 <button
                   ref="moreActionsBtnRef"
                   id="order-detail-more-actions"
@@ -1813,7 +1885,20 @@ function goToOrdersList() {
                 >
                   More Actions
                 </button>
-      </div>
+              </div>
+              <button
+                v-if="showStaffMoreActions"
+                ref="headerKebabBtnRef"
+                type="button"
+                class="staff-action-btn staff-action-btn--more order-detail-page__header-kebab"
+                :class="{ 'is-open': moreActionsOpen }"
+                aria-haspopup="true"
+                :aria-expanded="moreActionsOpen ? 'true' : 'false'"
+                aria-label="More order actions"
+                @click.stop="toggleMoreActionsMenu"
+              >
+                <CrmIconRowActions variant="vertical" />
+              </button>
               <button
                 v-if="showRemoveHoldBtn"
                 type="button"
@@ -1824,40 +1909,47 @@ function goToOrdersList() {
               >
                 {{ removeHoldsBusy ? "Removing…" : "Remove Hold" }}
               </button>
-              </template>
-    </div>
-    </div>
-    </div>
-        <div
-          v-if="showNotReadyToShipBanner && !isReturnPreviewMode"
-          class="order-detail-page__nrts-banner px-4 py-3 border-top border-warning border-2"
-        >
-          <div class="d-flex gap-3 align-items-start">
-            <span class="order-detail-page__nrts-bell text-warning flex-shrink-0" aria-hidden="true">
-              <svg width="22" height="22" fill="currentColor" viewBox="0 0 24 24">
-                <path
-                  d="M12 22c1.1 0 2-.9 2-2h-4c0 1.1.89 2 2 2zm6-6v-5c0-3.07-1.64-5.64-4.5-6.32V4c0-.83-.67-1.5-1.5-1.5s-1.5.67-1.5 1.5v.68C7.63 5.36 6 7.92 6 11v5l-2 2v1h16v-1l-2-2z"
-                />
-              </svg>
-            </span>
-            <div class="min-w-0 flex-grow-1">
-              <div class="fw-semibold text-body">This order is not ready to ship</div>
-              <ul class="small mb-0 ps-3 mt-2 text-secondary order-detail-page__nrts-list">
-                <li v-for="(line, idx) in notReadyBannerBullets" :key="'nrts-' + idx">{{ line }}</li>
-              </ul>
-    </div>
-    </div>
+            </template>
+          </div>
         </div>
-      </div>
+      </header>
 
       <div v-if="loadNotice" class="alert alert-warning small mb-4" role="status">
         {{ loadNotice }}
       </div>
       <div class="row g-4">
         <div class="col-lg-8">
+          <div
+            v-if="showNotReadyToShipBanner && !isReturnPreviewMode"
+            class="order-detail-page__nrts-banner staff-table-card staff-datatable-card staff-datatable-card--white p-4 mb-4"
+          >
+            <div class="d-flex gap-3 align-items-start">
+              <span class="order-detail-page__nrts-bell text-warning flex-shrink-0" aria-hidden="true">
+                <svg width="22" height="22" fill="currentColor" viewBox="0 0 24 24">
+                  <path
+                    d="M12 22c1.1 0 2-.9 2-2h-4c0 1.1.89 2 2 2zm6-6v-5c0-3.07-1.64-5.64-4.5-6.32V4c0-.83-.67-1.5-1.5-1.5s-1.5.67-1.5 1.5v.68C7.63 5.36 6 7.92 6 11v5l-2 2v1h16v-1l-2-2z"
+                  />
+                </svg>
+              </span>
+              <div class="min-w-0 flex-grow-1">
+                <div class="fw-semibold text-body">This order is not ready to ship</div>
+                <ul class="small mb-0 ps-3 mt-2 text-secondary order-detail-page__nrts-list">
+                  <li v-for="(line, idx) in notReadyBannerBullets" :key="'nrts-' + idx">{{ line }}</li>
+                </ul>
+              </div>
+            </div>
+          </div>
+
           <div class="staff-table-card staff-datatable-card staff-datatable-card--white p-0 mb-4">
-            <div class="px-4 py-3 border-bottom d-flex justify-content-between align-items-center flex-wrap gap-2">
-              <h2 class="h6 mb-0 fw-semibold">Items</h2>
+            <div class="px-4 py-3 border-bottom d-flex justify-content-between align-items-center flex-wrap gap-2 order-detail-page__section-head">
+              <div class="d-flex align-items-center gap-2 min-w-0">
+                <span class="order-detail-page__section-icon order-detail-page__section-icon--items" aria-hidden="true">
+                  <svg width="18" height="18" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4" />
+                  </svg>
+                </span>
+                <h2 class="h6 mb-0 fw-semibold">Items</h2>
+              </div>
               <button
                 v-if="!isReturnPreviewMode"
                 type="button"
@@ -1866,7 +1958,7 @@ function goToOrdersList() {
                 :title="!canRunShipHeroActions ? 'Requires orders update permission' : undefined"
                 @click="toggleAddPanel"
               >
-                {{ addPanelOpen ? "Hide Add Products" : "Add Products" }}
+                {{ addPanelOpen ? "Hide Add Items" : "Add Items" }}
               </button>
             </div>
             <div v-if="addPanelOpen && !isReturnPreviewMode" class="border-bottom">
@@ -1891,19 +1983,25 @@ function goToOrdersList() {
                   <tr>
                     <th class="staff-table-head__th order-detail-page__items-col">
                       <button class="order-detail-page__sort-btn" type="button" @click="toggleItemSort('name')">
-                        Items <span class="order-detail-page__sort-icon">{{ sortIndicator("name") }}</span>
+                        Item <span class="order-detail-page__sort-icon">{{ sortIndicator("name") }}</span>
                       </button>
                     </th>
-                    <th class="staff-table-head__th text-end">
+                    <th class="staff-table-head__th order-detail-page__sku-col">
+                      <button class="order-detail-page__sort-btn" type="button" @click="toggleItemSort('sku')">
+                        SKU <span class="order-detail-page__sort-icon">{{ sortIndicator("sku") }}</span>
+                      </button>
+                    </th>
+                    <th class="staff-table-head__th text-end order-detail-page__qty-col">
                       <button class="order-detail-page__sort-btn order-detail-page__sort-btn--right" type="button" @click="toggleItemSort('quantity')">
                         Quantity <span class="order-detail-page__sort-icon">{{ sortIndicator("quantity") }}</span>
                       </button>
                     </th>
-                    <th class="staff-table-head__th text-end">
+                    <th class="staff-table-head__th text-end order-detail-page__qty-col">
                       <button class="order-detail-page__sort-btn order-detail-page__sort-btn--right" type="button" @click="toggleItemSort('quantity_pending_fulfillment')">
-                        Quantity to ship <span class="order-detail-page__sort-icon">{{ sortIndicator("quantity_pending_fulfillment") }}</span>
+                        Quantity to Ship <span class="order-detail-page__sort-icon">{{ sortIndicator("quantity_pending_fulfillment") }}</span>
                       </button>
                     </th>
+                    <th class="staff-table-head__th text-center order-detail-page__status-col">Status</th>
                     <th v-if="!isReturnPreviewMode" class="staff-table-head__th text-center order-detail-page__items-actions-col">
                       Actions
                     </th>
@@ -1937,20 +2035,6 @@ function goToOrdersList() {
                           >
                             {{ item.name || "—" }}
                           </div>
-                          <span
-                            v-if="item.fulfillment_status"
-                            class="badge rounded-pill fw-medium order-detail-page__item-line-status-badge"
-                            :class="lineItemStatusBadgeClass(item.fulfillment_status)"
-                            :title="String(item.fulfillment_status)"
-                          >
-                            {{ item.fulfillment_status }}
-                          </span>
-                          <div
-                            class="order-detail-page__item-sku"
-                            :title="item.sku ? `SKU ${item.sku}` : undefined"
-                          >
-                            SKU {{ item.sku || "—" }}
-                          </div>
                         </div>
                       </a>
                       <div v-else class="order-detail-page__item-cell">
@@ -1969,24 +2053,13 @@ function goToOrdersList() {
                           >
                             {{ item.name || "—" }}
                           </div>
-                          <span
-                            v-if="item.fulfillment_status"
-                            class="badge rounded-pill fw-medium order-detail-page__item-line-status-badge"
-                            :class="lineItemStatusBadgeClass(item.fulfillment_status)"
-                            :title="String(item.fulfillment_status)"
-                          >
-                            {{ item.fulfillment_status }}
-                          </span>
-                          <div
-                            class="order-detail-page__item-sku"
-                            :title="item.sku ? `SKU ${item.sku}` : undefined"
-                          >
-                            SKU {{ item.sku || "—" }}
-                          </div>
                         </div>
                       </div>
                     </td>
-                    <td class="text-end">
+                    <td class="order-detail-page__sku-col small text-secondary">
+                      <span :title="item.sku ? String(item.sku) : undefined">{{ item.sku || "—" }}</span>
+                    </td>
+                    <td class="text-end order-detail-page__qty-col">
                       <div>{{ item.quantity ?? 0 }}</div>
                       <div
                         v-if="Number(item.backorder_quantity || 0) > 0"
@@ -1995,7 +2068,18 @@ function goToOrdersList() {
                         {{ Number(item.backorder_quantity) }} on backorder
                       </div>
                     </td>
-                    <td class="text-end">{{ item.quantity_pending_fulfillment ?? 0 }}</td>
+                    <td class="text-end order-detail-page__qty-col">{{ item.quantity_pending_fulfillment ?? 0 }}</td>
+                    <td class="text-center order-detail-page__status-col">
+                      <span
+                        v-if="item.fulfillment_status"
+                        class="badge rounded-pill fw-medium order-detail-page__item-line-status-badge"
+                        :class="lineItemStatusBadgeClass(item.fulfillment_status)"
+                        :title="String(item.fulfillment_status)"
+                      >
+                        {{ item.fulfillment_status }}
+                      </span>
+                      <span v-else class="small text-secondary">—</span>
+                    </td>
                     <td v-if="!isReturnPreviewMode" class="text-center align-middle order-detail-page__items-actions-col">
                       <div
                         v-if="canRunShipHeroActions && itemRowMenuKey(item)"
@@ -2019,10 +2103,56 @@ function goToOrdersList() {
                     </td>
                   </tr>
                   <tr v-if="!sortedItems.length">
-                    <td :colspan="isReturnPreviewMode ? 3 : 4" class="text-center text-secondary py-4">No items</td>
+                    <td :colspan="isReturnPreviewMode ? 5 : 6" class="text-center text-secondary py-4">No items</td>
                   </tr>
                 </tbody>
               </table>
+            </div>
+            <div class="order-detail-page__items-summary border-top px-4 py-3">
+              <div class="order-detail-page__items-summary-tile">
+                <span class="order-detail-page__items-summary-icon order-detail-page__items-summary-icon--items" aria-hidden="true">
+                  <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4" />
+                  </svg>
+                </span>
+                <div>
+                  <div class="order-detail-page__items-summary-label">Total Items</div>
+                  <div class="order-detail-page__items-summary-value">{{ itemsSummary.totalItems }}</div>
+                </div>
+              </div>
+              <div class="order-detail-page__items-summary-tile">
+                <span class="order-detail-page__items-summary-icon order-detail-page__items-summary-icon--qty" aria-hidden="true">
+                  <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                  </svg>
+                </span>
+                <div>
+                  <div class="order-detail-page__items-summary-label">Total Quantity</div>
+                  <div class="order-detail-page__items-summary-value">{{ itemsSummary.totalQuantity }}</div>
+                </div>
+              </div>
+              <div class="order-detail-page__items-summary-tile">
+                <span class="order-detail-page__items-summary-icon order-detail-page__items-summary-icon--ship" aria-hidden="true">
+                  <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16V6a1 1 0 00-1-1H4a1 1 0 00-1 1v10a1 1 0 001 1h1m8-1a1 1 0 01-1 1H9m4-1V8a1 1 0 011-1h2.586a1 1 0 01.707.293l3.414 3.414a1 1 0 01.293.707V16a1 1 0 01-1 1h-1m-6-1a1 1 0 001 1h1M5 17a2 2 0 104 0m6 0a2 2 0 104 0" />
+                  </svg>
+                </span>
+                <div>
+                  <div class="order-detail-page__items-summary-label">Quantity to Ship</div>
+                  <div class="order-detail-page__items-summary-value">{{ itemsSummary.totalQtyToShip }}</div>
+                </div>
+              </div>
+              <div class="order-detail-page__items-summary-tile">
+                <span class="order-detail-page__items-summary-icon order-detail-page__items-summary-icon--cost" aria-hidden="true">
+                  <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 7h.01M7 3h5c.512 0 1.024.195 1.414.586l7 7a2 2 0 010 2.828l-7 7a2 2 0 01-2.828 0l-7-7A2 2 0 013 12V7a4 4 0 014-4z" />
+                  </svg>
+                </span>
+                <div>
+                  <div class="order-detail-page__items-summary-label">Label Cost</div>
+                  <div class="order-detail-page__items-summary-value">{{ trackingLabelCostDisplay || "—" }}</div>
+                </div>
+              </div>
             </div>
             <p class="staff-table-mobile-scroll-cue d-md-none" aria-hidden="true">
               Scroll sideways or swipe to see all columns.
@@ -2030,15 +2160,25 @@ function goToOrdersList() {
           </div>
 
           <div class="staff-table-card staff-datatable-card staff-datatable-card--white p-4 mb-4">
-            <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-3">
-              <h2 class="h6 mb-0 fw-semibold">Note for warehouse packer</h2>
+            <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-3 order-detail-page__section-head">
+              <div class="d-flex align-items-center gap-2 min-w-0">
+                <span class="order-detail-page__section-icon order-detail-page__section-icon--note" aria-hidden="true">
+                  <svg width="18" height="18" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
+                  </svg>
+                </span>
+                <h2 class="h6 mb-0 fw-semibold">Note for warehouse packer</h2>
+              </div>
               <button
                 type="button"
-                class="btn btn-primary btn-sm"
+                class="btn btn-outline-secondary btn-sm d-inline-flex align-items-center gap-1"
                 :disabled="!canRunShipHeroActions || packingNoteSaveBusy"
                 :title="!canRunShipHeroActions ? 'Requires orders update permission' : undefined"
                 @click="savePackingNote"
               >
+                <svg width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
+                </svg>
                 {{ packingNoteSaveBusy ? "Updating…" : "Update" }}
               </button>
             </div>
@@ -2046,19 +2186,31 @@ function goToOrdersList() {
               v-model="packingNoteLocal"
               class="form-control"
               rows="5"
+              placeholder="Add a note for the warehouse team…"
               :disabled="!canRunShipHeroActions || packingNoteSaveBusy"
               autocomplete="off"
             ></textarea>
+            <p class="small text-secondary mt-2 mb-0">
+              This note will be visible to the warehouse team when packing this order.
+            </p>
             <p v-if="!canRunShipHeroActions" class="small text-secondary mt-2 mb-0">
               You do not have permission to edit this note.
             </p>
-            </div>
           </div>
+        </div>
 
         <div class="col-lg-4 d-flex flex-column gap-4 order-detail-page__side-column">
           <div class="staff-table-card staff-datatable-card staff-datatable-card--white p-4 order-detail-page__side-panel">
-            <div class="d-flex justify-content-between align-items-start gap-2 mb-3">
-              <h3 class="h6 fw-semibold mb-0">Shipping Address</h3>
+            <div class="d-flex justify-content-between align-items-start gap-2 mb-3 order-detail-page__section-head">
+              <div class="d-flex align-items-center gap-2 min-w-0">
+                <span class="order-detail-page__section-icon order-detail-page__section-icon--shipping" aria-hidden="true">
+                  <svg width="18" height="18" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
+                  </svg>
+                </span>
+                <h3 class="h6 fw-semibold mb-0">Shipping Address</h3>
+              </div>
               <button
                 v-if="canUseStaffOrderHeaderActions"
                 type="button"
@@ -2069,48 +2221,66 @@ function goToOrdersList() {
               </button>
             </div>
             <div class="small mb-3 pb-3 border-bottom">
-              <div class="order-detail-page__address-text order-detail-page__address-link--caps text-body">
-                {{ shippingAddressDisplayCaps }}
+              <div class="order-detail-page__address-text text-body fw-semibold">
+                {{ formattedShippingAddress }}
               </div>
             </div>
             <template v-if="orderIsShipped">
-              <div>
-                <div class="form-label small text-secondary mb-2">Tracking Info</div>
-                <div v-if="trackingLabels.length" class="order-detail-page__tracking-list">
+              <div class="order-detail-page__tracking-block">
+                <div class="d-flex align-items-center gap-2 mb-3">
+                  <span class="order-detail-page__section-icon order-detail-page__section-icon--tracking" aria-hidden="true">
+                    <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16V6a1 1 0 00-1-1H4a1 1 0 00-1 1v10a1 1 0 001 1h1m8-1a1 1 0 01-1 1H9m4-1V8a1 1 0 011-1h2.586a1 1 0 01.707.293l3.414 3.414a1 1 0 01.293.707V16a1 1 0 01-1 1h-1m-6-1a1 1 0 001 1h1M5 17a2 2 0 104 0m6 0a2 2 0 104 0" />
+                    </svg>
+                  </span>
+                  <div class="fw-semibold small text-body">Tracking Information</div>
+                </div>
+                <template v-if="trackingLabels.length">
                   <div
                     v-for="label in trackingLabels"
                     :key="label.id || `${label.service_label}-${label.tracking_number}`"
-                    class="order-detail-page__tracking-line small text-body mb-2"
+                    class="order-detail-page__tracking-fields mb-3"
                   >
                     <template v-for="parts in [formatCarrierTrackingLine(label)]" :key="parts.trackingNumber">
-                      <span class="fw-semibold">{{ parts.carrier }}</span>
-                      <span class="text-secondary mx-1">|</span>
-                      <a
-                        v-if="parts.trackingUrl"
-                        :href="parts.trackingUrl"
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        class="text-primary text-decoration-none"
-                      >
-                        {{ parts.trackingNumber }}
-                      </a>
-                      <span v-else>{{ parts.trackingNumber }}</span>
+                      <div class="order-detail-page__detail-row">
+                        <span class="order-detail-page__detail-label">Carrier</span>
+                        <span class="order-detail-page__detail-value">{{ parts.carrier || "—" }}</span>
+                      </div>
+                      <div class="order-detail-page__detail-row">
+                        <span class="order-detail-page__detail-label">Tracking Number</span>
+                        <span class="order-detail-page__detail-value">
+                          <a
+                            v-if="parts.trackingUrl"
+                            :href="parts.trackingUrl"
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            class="text-primary text-decoration-none d-inline-flex align-items-center gap-1"
+                          >
+                            {{ parts.trackingNumber }}
+                            <svg width="12" height="12" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+                              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+                            </svg>
+                          </a>
+                          <span v-else>{{ parts.trackingNumber || "—" }}</span>
+                        </span>
+                      </div>
                     </template>
-          </div>
-                </div>
+                  </div>
+                </template>
                 <p v-else class="small text-secondary mb-0">No tracking information available.</p>
-                <p v-if="trackingLabelCostDisplay" class="small text-secondary mb-0 mt-2">
-                  Label cost: <span class="fw-semibold text-body">{{ trackingLabelCostDisplay }}</span>
-                </p>
+                <div class="order-detail-page__detail-row">
+                  <span class="order-detail-page__detail-label">Label Cost</span>
+                  <span class="order-detail-page__detail-value fw-semibold">{{ trackingLabelCostDisplay || "—" }}</span>
+                </div>
               </div>
             </template>
             <template v-else>
               <div class="mb-3 pb-3 border-bottom">
-                <div class="form-label small text-secondary mb-1">Current Shipping Method</div>
+                <div class="order-detail-page__detail-label mb-1">Current Shipping Method</div>
                 <div class="small fw-semibold text-body">{{ currentShippingMethodDisplay }}</div>
               </div>
               <div class="mb-3">
-                <label class="form-label small text-secondary mb-1" for="order-detail-carrier">Shipping Carrier</label>
+                <label class="order-detail-page__detail-label d-block mb-1" for="order-detail-carrier">Shipping Carrier</label>
                 <select
                   id="order-detail-carrier"
                   v-model="carrierField"
@@ -2123,7 +2293,7 @@ function goToOrdersList() {
                 </select>
               </div>
               <div class="mb-3">
-                <label class="form-label small text-secondary mb-1" for="order-detail-method">Method</label>
+                <label class="order-detail-page__detail-label d-block mb-1" for="order-detail-method">Method</label>
                 <select
                   id="order-detail-method"
                   v-model="methodField"
@@ -2144,39 +2314,106 @@ function goToOrdersList() {
                 {{ shippingLinesSaveBusy ? "Saving…" : "Save Carrier & Method" }}
               </button>
             </template>
-        </div>
+          </div>
 
           <div class="staff-table-card staff-datatable-card staff-datatable-card--white p-4 order-detail-page__side-panel">
-            <h3 class="h6 fw-semibold mb-3">Order details</h3>
-            <dl class="small mb-0">
-              <dt class="text-secondary">Customer</dt>
-              <dd class="fw-semibold text-body">{{ customerDisplayName }}</dd>
-              <dt class="text-secondary">Email</dt>
-              <dd>{{ order.email || "—" }}</dd>
-              <dt class="text-secondary">Phone</dt>
-              <dd>{{ order.shipping_address?.phone || "—" }}</dd>
-              <dt class="text-secondary mt-2">Creation date</dt>
-              <dd>{{ fmtCreationDate(order.order_date) }}</dd>
-              <dt class="text-secondary">Store</dt>
-              <dd class="text-break">{{ order.account || "—" }}</dd>
-              <template v-if="shipheroAdminUrl && !isDraftOrder">
-                <dt class="text-secondary mt-2">ShipHero</dt>
-                <dd>
+            <div class="d-flex align-items-center gap-2 mb-3 order-detail-page__section-head">
+              <span class="order-detail-page__section-icon order-detail-page__section-icon--details" aria-hidden="true">
+                <svg width="18" height="18" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                </svg>
+              </span>
+              <h3 class="h6 fw-semibold mb-0">Order Details</h3>
+            </div>
+            <div class="order-detail-page__detail-rows">
+              <div class="order-detail-page__detail-row">
+                <span class="order-detail-page__detail-label">Customer</span>
+                <span class="order-detail-page__detail-value fw-semibold">{{ customerDisplayName }}</span>
+              </div>
+              <div class="order-detail-page__detail-row">
+                <span class="order-detail-page__detail-label">Email</span>
+                <span class="order-detail-page__detail-value">
+                  <a
+                    v-if="order.email"
+                    :href="`mailto:${order.email}`"
+                    class="text-primary text-decoration-none"
+                  >{{ order.email }}</a>
+                  <span v-else>—</span>
+                </span>
+              </div>
+              <div class="order-detail-page__detail-row">
+                <span class="order-detail-page__detail-label">Phone</span>
+                <span class="order-detail-page__detail-value">{{ order.shipping_address?.phone || "—" }}</span>
+              </div>
+              <div class="order-detail-page__detail-row">
+                <span class="order-detail-page__detail-label">Order Date</span>
+                <span class="order-detail-page__detail-value">{{ fmtCreationDate(order.order_date) }}</span>
+              </div>
+              <div class="order-detail-page__detail-row">
+                <span class="order-detail-page__detail-label">Store</span>
+                <span class="order-detail-page__detail-value text-break">{{ order.account || "—" }}</span>
+              </div>
+              <div class="order-detail-page__detail-row">
+                <span class="order-detail-page__detail-label">Sales Channel</span>
+                <span class="order-detail-page__detail-value d-inline-flex align-items-center gap-2">
+                  <svg
+                    v-if="isShopifyOrder"
+                    width="16"
+                    height="16"
+                    viewBox="0 0 24 24"
+                    fill="currentColor"
+                    class="text-success"
+                    aria-hidden="true"
+                  >
+                    <path d="M15.34 3.32c-.07 0-.14.01-.2.03-.06.02-1.16.36-3.2 1.01-.3-.88-.66-1.62-1.06-2.22-.82-1.14-1.88-1.72-3.14-1.72-1.26 0-2.32.58-3.14 1.72-.4.6-.76 1.34-1.06 2.22-2.04-.65-3.14-.99-3.2-1.01a.5.5 0 00-.2-.03C.48 3.32 0 3.8 0 4.36v15.28c0 .56.48 1.04 1.04 1.04h.2c.07 0 .14-.01.2-.03.06-.02 1.16-.36 3.2-1.01.3.88.66 1.62 1.06 2.22.82 1.14 1.88 1.72 3.14 1.72 1.26 0 2.32-.58 3.14-1.72.4-.6.76-1.34 1.06-2.22 2.04.65 3.14.99 3.2 1.01.06.02.13.03.2.03h.2c.56 0 1.04-.48 1.04-1.04V4.36c0-.56-.48-1.04-1.04-1.04h-.2z" />
+                  </svg>
+                  {{ salesChannelLabel }}
+                </span>
+              </div>
+              <div v-if="order.shopify_admin_url" class="order-detail-page__detail-row">
+                <span class="order-detail-page__detail-label">Shopify Order</span>
+                <span class="order-detail-page__detail-value">
+                  <a
+                    :href="order.shopify_admin_url"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    class="text-primary text-decoration-none d-inline-flex align-items-center gap-1"
+                  >
+                    View in Shopify
+                    <svg width="12" height="12" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+                    </svg>
+                  </a>
+                </span>
+              </div>
+              <div v-if="shipheroAdminUrl && !isDraftOrder" class="order-detail-page__detail-row">
+                <span class="order-detail-page__detail-label">ShipHero Order</span>
+                <span class="order-detail-page__detail-value">
                   <a
                     :href="shipheroAdminUrl"
                     target="_blank"
                     rel="noopener noreferrer"
-                    class="small text-primary text-decoration-none"
+                    class="text-primary text-decoration-none d-inline-flex align-items-center gap-1"
                   >
                     View in ShipHero
+                    <svg width="12" height="12" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+                    </svg>
                   </a>
-                </dd>
-              </template>
-            </dl>
+                </span>
+              </div>
+            </div>
           </div>
 
           <div class="staff-table-card staff-datatable-card staff-datatable-card--white p-4 order-detail-page__side-panel">
-            <h3 class="h6 fw-semibold mb-3">Options</h3>
+            <div class="d-flex align-items-center gap-2 mb-3 order-detail-page__section-head">
+              <span class="order-detail-page__section-icon order-detail-page__section-icon--options" aria-hidden="true">
+                <svg width="18" height="18" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6V4m0 2a2 2 0 100 4m0-4a2 2 0 110 4m-6 8a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4m6 6v10m6-2a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4" />
+                </svg>
+              </span>
+              <h3 class="h6 fw-semibold mb-0">Options</h3>
+            </div>
             <div class="form-check mb-2">
               <input
                 id="order-detail-allow-partial"
@@ -2217,7 +2454,14 @@ function goToOrdersList() {
           </div>
 
           <div class="staff-table-card staff-datatable-card staff-datatable-card--white p-4 order-detail-page__side-panel">
-            <h3 class="h6 fw-semibold mb-3">Order tags</h3>
+            <div class="d-flex align-items-center gap-2 mb-3 order-detail-page__section-head">
+              <span class="order-detail-page__section-icon order-detail-page__section-icon--tags" aria-hidden="true">
+                <svg width="18" height="18" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 7h.01M7 3h5c.512 0 1.024.195 1.414.586l7 7a2 2 0 010 2.828l-7 7a2 2 0 01-2.828 0l-7-7A2 2 0 013 12V7a4 4 0 014-4z" />
+                </svg>
+              </span>
+              <h3 class="h6 fw-semibold mb-0">Order Tags</h3>
+            </div>
             <label class="form-label small text-secondary mb-1" for="order-tags-input">Tags</label>
             <input
               id="order-tags-input"
@@ -2258,17 +2502,24 @@ function goToOrdersList() {
           </div>
 
           <div class="staff-table-card staff-datatable-card staff-datatable-card--white p-4 order-detail-page__side-panel">
-            <div class="d-flex justify-content-between align-items-center mb-3">
-              <h3 class="h6 fw-semibold mb-0">Attachments</h3>
+            <div class="d-flex justify-content-between align-items-center mb-3 order-detail-page__section-head">
+              <div class="d-flex align-items-center gap-2 min-w-0">
+                <span class="order-detail-page__section-icon order-detail-page__section-icon--attachments" aria-hidden="true">
+                  <svg width="18" height="18" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13" />
+                  </svg>
+                </span>
+                <h3 class="h6 fw-semibold mb-0">Attachments</h3>
+              </div>
               <button
                 type="button"
-                class="btn btn-sm btn-outline-secondary text-primary"
+                class="btn btn-sm btn-outline-secondary"
                 :disabled="!canRunShipHeroActions || attachmentUploadBusy"
                 @click="triggerAttachFile"
               >
                 Attach File
               </button>
-          </div>
+            </div>
             <input
               ref="attachmentFileInput"
               type="file"
@@ -2864,7 +3115,25 @@ function goToOrdersList() {
 }
 
 .order-detail-page__items-col {
-  width: 44%;
+  width: 34%;
+  min-width: 0;
+  vertical-align: middle;
+}
+
+.order-detail-page__sku-col {
+  width: 14%;
+  min-width: 0;
+  vertical-align: middle;
+}
+
+.order-detail-page__qty-col {
+  width: 10%;
+  min-width: 0;
+  vertical-align: middle;
+}
+
+.order-detail-page__status-col {
+  width: 12%;
   min-width: 0;
   vertical-align: middle;
 }
@@ -2912,11 +3181,171 @@ function goToOrdersList() {
   overflow: visible;
 }
 
-.order-detail-page__header-shell {
-  border: 1px solid rgba(0, 0, 0, 0.08);
+.order-detail-page__hero {
+  padding: 0;
+}
+
+.order-detail-page__back-link {
+  font-size: 0.875rem;
+}
+
+.order-detail-page__hero-meta {
+  line-height: 1.45;
+}
+
+.order-detail-page__hero-actions {
+  align-self: flex-start;
+}
+
+.order-detail-page__header-kebab {
+  flex-shrink: 0;
+}
+
+.order-detail-page__section-head {
+  min-width: 0;
+}
+
+.order-detail-page__section-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 2rem;
+  height: 2rem;
   border-radius: 0.5rem;
-  overflow: visible;
-  background: var(--bs-body-bg, #fff);
+  flex-shrink: 0;
+}
+
+.order-detail-page__section-icon--items {
+  color: #2563eb;
+  background: rgba(37, 99, 235, 0.1);
+}
+
+.order-detail-page__section-icon--note {
+  color: #7c3aed;
+  background: rgba(124, 58, 237, 0.1);
+}
+
+.order-detail-page__section-icon--shipping {
+  color: #2563eb;
+  background: rgba(37, 99, 235, 0.1);
+}
+
+.order-detail-page__section-icon--tracking {
+  color: #2563eb;
+  background: rgba(37, 99, 235, 0.1);
+}
+
+.order-detail-page__section-icon--details {
+  color: #2563eb;
+  background: rgba(37, 99, 235, 0.1);
+}
+
+.order-detail-page__section-icon--options,
+.order-detail-page__section-icon--tags,
+.order-detail-page__section-icon--attachments {
+  color: #64748b;
+  background: rgba(100, 116, 139, 0.12);
+}
+
+.order-detail-page__items-summary {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 1rem;
+}
+
+.order-detail-page__items-summary-tile {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  min-width: 0;
+}
+
+.order-detail-page__items-summary-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 2.25rem;
+  height: 2.25rem;
+  border-radius: 999px;
+  flex-shrink: 0;
+}
+
+.order-detail-page__items-summary-icon--items {
+  color: #2563eb;
+  background: rgba(37, 99, 235, 0.1);
+}
+
+.order-detail-page__items-summary-icon--qty {
+  color: #7c3aed;
+  background: rgba(124, 58, 237, 0.1);
+}
+
+.order-detail-page__items-summary-icon--ship {
+  color: #ea580c;
+  background: rgba(234, 88, 12, 0.1);
+}
+
+.order-detail-page__items-summary-icon--cost {
+  color: #16a34a;
+  background: rgba(22, 163, 74, 0.1);
+}
+
+.order-detail-page__items-summary-label {
+  font-size: 0.75rem;
+  color: var(--bs-secondary-color);
+  line-height: 1.2;
+}
+
+.order-detail-page__items-summary-value {
+  font-size: 1.125rem;
+  font-weight: 700;
+  line-height: 1.2;
+  color: var(--bs-body-color);
+}
+
+.order-detail-page__detail-rows {
+  display: flex;
+  flex-direction: column;
+  gap: 0.85rem;
+}
+
+.order-detail-page__detail-row {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+}
+
+.order-detail-page__detail-label {
+  font-size: 0.75rem;
+  color: var(--bs-secondary-color);
+  line-height: 1.3;
+}
+
+.order-detail-page__detail-value {
+  font-size: 0.875rem;
+  color: var(--bs-body-color);
+  line-height: 1.4;
+  word-break: break-word;
+}
+
+.order-detail-page__tracking-block {
+  margin-top: 0.25rem;
+}
+
+.order-detail-page__tracking-fields:last-child {
+  margin-bottom: 0 !important;
+}
+
+@media (max-width: 991.98px) {
+  .order-detail-page__items-summary {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 575.98px) {
+  .order-detail-page__items-summary {
+    grid-template-columns: 1fr;
+  }
 }
 
 .order-detail-page__shopify-header-link {
@@ -2989,6 +3418,7 @@ function goToOrdersList() {
 
 .order-detail-page__nrts-banner {
   background: #fffbeb;
+  border-top: 2px solid #f59e0b;
 }
 
 [data-bs-theme="dark"] .order-detail-page__nrts-banner {
@@ -3003,15 +3433,16 @@ function goToOrdersList() {
   position: relative;
 }
 
-.order-detail-page__address-link--caps {
-  white-space: pre-line;
-  line-height: 1.4;
-  text-transform: uppercase;
-}
-
 .order-detail-page__address-text {
   white-space: pre-line;
   line-height: 1.45;
+}
+
+.order-detail-page__add-items-btn.btn-outline-primary:hover,
+.order-detail-page__add-items-btn.btn-outline-primary:focus-visible {
+  background-color: rgba(37, 99, 235, 0.06);
+  color: #2563eb;
+  border-color: #2563eb;
 }
 
 .order-detail-page__attachments-empty-icon {

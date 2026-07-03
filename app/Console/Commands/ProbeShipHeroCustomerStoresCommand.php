@@ -48,6 +48,9 @@ class ProbeShipHeroCustomerStoresCommand extends Command
         }
 
         $stores = $result['stores'] ?? [];
+        if ($stores !== []) {
+            $this->line('  method: users(customer_account_id)');
+        }
         $count = count($stores);
         $this->info('Stores returned: '.$count);
         if (isset($result['request_id'])) {

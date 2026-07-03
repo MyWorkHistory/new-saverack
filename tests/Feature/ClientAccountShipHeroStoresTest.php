@@ -85,7 +85,46 @@ class ClientAccountShipHeroStoresTest extends TestCase
     {
         $client = Mockery::mock(ShipHeroClient::class);
         $client->shouldReceive('query')
-            ->andReturn($this->shipheroStoresGraphqlResponse());
+            ->andReturnUsing(function (string $graphql) {
+                if (strpos($graphql, 'users(customer_account_id') !== false) {
+                    return [
+                        'data' => [
+                            'users' => [
+                                'request_id' => 'req-stores-users',
+                                'data' => [
+                                    'pageInfo' => [
+                                        'hasNextPage' => false,
+                                        'endCursor' => null,
+                                    ],
+                                    'edges' => [
+                                        [
+                                            'node' => [
+                                                'id' => 'user-1',
+                                                'email' => 'stores-co@example.test',
+                                                'is_admin' => true,
+                                                'stores' => [
+                                                    [
+                                                        'id' => 'U3RvcmU6MTIz',
+                                                        'legacy_id' => '32363',
+                                                        'shop_name' => 'example.myshopify.com',
+                                                    ],
+                                                    [
+                                                        'id' => 'U3RvcmU6NDU2',
+                                                        'legacy_id' => '45678',
+                                                        'shop_name' => 'Second Shop',
+                                                    ],
+                                                ],
+                                            ],
+                                        ],
+                                    ],
+                                ],
+                            ],
+                        ],
+                    ];
+                }
+
+                return $this->shipheroStoresGraphqlResponse();
+            });
         $this->app->instance(ShipHeroClient::class, $client);
     }
 

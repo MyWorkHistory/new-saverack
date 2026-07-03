@@ -4,6 +4,7 @@ namespace App\Services;
 
 use App\Models\ClientAccount;
 use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\Log;
 use RuntimeException;
 
 class ShipHeroStoreService
@@ -74,13 +75,45 @@ class ShipHeroStoreService
     {
         $customerAccountId = $this->resolveCustomerAccountId($account);
         $lastError = null;
+        $bestEmpty = null;
+
+        $attempts = [
+            function () use ($customerAccountId) {
+                return $this->fetchStoresViaUsersQuery($customerAccountId);
+            },
+            function () use ($account) {
+                return $this->fetchStoresViaCustomerToken($account);
+            },
+        ];
 
         foreach ($this->userLookupStrategies($account, $customerAccountId) as $variables) {
-            try {
+            $attempts[] = function () use ($variables) {
                 return $this->fetchStoresViaUserQuery($variables);
+            };
+        }
+
+        foreach ($attempts as $attempt) {
+            try {
+                $result = $attempt();
+                if (($result['stores'] ?? []) !== []) {
+                    return $result;
+                }
+                if ($bestEmpty === null) {
+                    $bestEmpty = $result;
+                }
             } catch (RuntimeException $e) {
                 $lastError = $e;
             }
+        }
+
+        if ($bestEmpty !== null) {
+            Log::info('shiphero.stores.empty', [
+                'client_account_id' => $account->id,
+                'shiphero_customer_account_id' => $customerAccountId,
+                'request_id' => $bestEmpty['request_id'] ?? null,
+            ]);
+
+            return $bestEmpty;
         }
 
         throw $lastError ?? new RuntimeException('Could not load ShipHero stores for this customer account.');
@@ -103,6 +136,167 @@ class ShipHeroStoreService
         ]);
 
         return $this->fetchFromShipHero($account);
+    }
+
+    /**
+     * @return array{stores: list<array<string, mixed>>, request_id: string|null}
+     */
+    private function fetchStoresViaUsersQuery(string $customerAccountId): array
+    {
+        $graphql = <<<'GQL'
+query ShipHeroCustomerStoresUsers($customer_account_id: String!, $first: Int!, $after: String) {
+  users(customer_account_id: $customer_account_id) {
+    request_id
+    complexity
+    data(first: $first, after: $after) {
+      pageInfo {
+        hasNextPage
+        endCursor
+      }
+      edges {
+        node {
+          id
+          email
+          is_admin
+          stores {
+            id
+            legacy_id
+            shop_name
+          }
+        }
+      }
+    }
+  }
+}
+GQL;
+
+        $merged = [];
+        $requestId = null;
+        $after = null;
+        $pages = 0;
+
+        do {
+            $pages++;
+            if ($pages > 20) {
+                break;
+            }
+
+            $json = $this->client->query($graphql, [
+                'customer_account_id' => $customerAccountId,
+                'first' => 50,
+                'after' => $after,
+            ]);
+
+            if (isset($json['errors']) && is_array($json['errors']) && $json['errors'] !== []) {
+                $message = $json['errors'][0]['message'] ?? 'ShipHero GraphQL error.';
+                throw new RuntimeException((string) $message);
+            }
+
+            $usersBlock = $json['data']['users'] ?? null;
+            if (! is_array($usersBlock)) {
+                throw new RuntimeException('Unexpected ShipHero response for users query.');
+            }
+
+            if ($requestId === null && isset($usersBlock['request_id'])) {
+                $requestId = (string) $usersBlock['request_id'];
+            }
+
+            $edges = data_get($usersBlock, 'data.edges');
+            if (is_array($edges)) {
+                foreach ($edges as $edge) {
+                    if (! is_array($edge)) {
+                        continue;
+                    }
+                    $node = $edge['node'] ?? null;
+                    if (! is_array($node)) {
+                        continue;
+                    }
+                    $rawStores = $node['stores'] ?? [];
+                    if (! is_array($rawStores)) {
+                        continue;
+                    }
+                    foreach ($rawStores as $row) {
+                        if (! is_array($row)) {
+                            continue;
+                        }
+                        $normalized = $this->normalizeStoreRow($row);
+                        if ($normalized !== null) {
+                            $merged[$this->storeDedupeKey($normalized)] = $normalized;
+                        }
+                    }
+                }
+            }
+
+            $hasNext = (bool) data_get($usersBlock, 'data.pageInfo.hasNextPage');
+            $endCursor = data_get($usersBlock, 'data.pageInfo.endCursor');
+            $after = is_string($endCursor) && $endCursor !== '' ? $endCursor : null;
+        } while ($hasNext && $after !== null);
+
+        return [
+            'stores' => $this->sortStores(array_values($merged)),
+            'request_id' => $requestId,
+        ];
+    }
+
+    /**
+     * @return array{stores: list<array<string, mixed>>, request_id: string|null}
+     */
+    private function fetchStoresViaCustomerToken(ClientAccount $account): array
+    {
+        $token = trim((string) $account->shiphero_client_refresh_token);
+        if ($token === '') {
+            throw new RuntimeException('No ShipHero client refresh token on this account.');
+        }
+
+        $graphql = <<<'GQL'
+query ShipHeroCustomerStoresMe {
+  me {
+    request_id
+    data {
+      stores {
+        id
+        legacy_id
+        shop_name
+      }
+    }
+  }
+}
+GQL;
+
+        $json = $this->client->query($graphql, [], true, [
+            ShipHeroClient::OPTION_REFRESH_TOKEN => $token,
+        ]);
+
+        if (isset($json['errors']) && is_array($json['errors']) && $json['errors'] !== []) {
+            $message = $json['errors'][0]['message'] ?? 'ShipHero GraphQL error.';
+            throw new RuntimeException((string) $message);
+        }
+
+        $meBlock = $json['data']['me'] ?? null;
+        if (! is_array($meBlock)) {
+            throw new RuntimeException('Unexpected ShipHero response for me query.');
+        }
+
+        $rawStores = data_get($meBlock, 'data.stores');
+        if (! is_array($rawStores)) {
+            $rawStores = [];
+        }
+
+        $stores = [];
+        foreach ($rawStores as $row) {
+            if (! is_array($row)) {
+                continue;
+            }
+            $normalized = $this->normalizeStoreRow($row);
+            if ($normalized !== null) {
+                $stores[] = $normalized;
+            }
+        }
+
+        return [
+            'stores' => $this->sortStores($stores),
+            'request_id' => isset($meBlock['request_id']) ? (string) $meBlock['request_id'] : null,
+        ];
     }
 
     /**
@@ -171,12 +365,8 @@ GQL;
             }
         }
 
-        usort($stores, function (array $a, array $b) {
-            return strcasecmp((string) ($a['shop_name'] ?? ''), (string) ($b['shop_name'] ?? ''));
-        });
-
         return [
-            'stores' => $stores,
+            'stores' => $this->sortStores($stores),
             'request_id' => $requestId,
         ];
     }
@@ -188,28 +378,28 @@ GQL;
      */
     private function userLookupStrategies(ClientAccount $account, string $customerAccountId): array
     {
-        $strategies = [
-            [
-                'id' => $customerAccountId,
+        $strategies = [];
+
+        $customerEmail = $this->resolveCustomerEmailFromShipHero($customerAccountId);
+        if ($customerEmail !== '') {
+            $strategies[] = [
+                'email' => $customerEmail,
                 'customer_account_id' => $customerAccountId,
-            ],
-        ];
+            ];
+        }
 
         $email = $this->resolveAccountEmail($account);
-        if ($email !== '') {
+        if ($email !== '' && strcasecmp($email, $customerEmail) !== 0) {
             $strategies[] = [
                 'email' => $email,
                 'customer_account_id' => $customerAccountId,
             ];
         }
 
-        $customerEmail = $this->resolveCustomerEmailFromShipHero($customerAccountId);
-        if ($customerEmail !== '' && strcasecmp($customerEmail, $email) !== 0) {
-            $strategies[] = [
-                'email' => $customerEmail,
-                'customer_account_id' => $customerAccountId,
-            ];
-        }
+        $strategies[] = [
+            'id' => $customerAccountId,
+            'customer_account_id' => $customerAccountId,
+        ];
 
         return $strategies;
     }
@@ -229,10 +419,14 @@ GQL;
     private function resolveCustomerEmailFromShipHero(string $customerAccountId): string
     {
         $graphql = <<<'GQL'
-query ShipHeroCustomerEmailLookup {
+query ShipHeroCustomerEmailLookup($first: Int!, $after: String) {
   account {
     data {
-      customers(first: 100) {
+      customers(first: $first, after: $after) {
+        pageInfo {
+          hasNextPage
+          endCursor
+        }
         edges {
           node {
             id
@@ -246,38 +440,60 @@ query ShipHeroCustomerEmailLookup {
 }
 GQL;
 
+        $needle = strtolower(trim($customerAccountId));
+        if ($needle === '') {
+            return '';
+        }
+
+        $after = null;
+        $pages = 0;
+
         try {
-            $json = $this->client->query($graphql);
+            do {
+                $pages++;
+                if ($pages > 50) {
+                    break;
+                }
+
+                $json = $this->client->query($graphql, [
+                    'first' => 100,
+                    'after' => $after,
+                ]);
+
+                if (isset($json['errors']) && is_array($json['errors']) && $json['errors'] !== []) {
+                    return '';
+                }
+
+                $edges = data_get($json, 'data.account.data.customers.edges');
+                if (! is_array($edges)) {
+                    return '';
+                }
+
+                foreach ($edges as $edge) {
+                    if (! is_array($edge)) {
+                        continue;
+                    }
+                    $node = $edge['node'] ?? null;
+                    if (! is_array($node)) {
+                        continue;
+                    }
+                    $id = strtolower(trim((string) ($node['id'] ?? '')));
+                    $legacyId = strtolower(trim((string) ($node['legacy_id'] ?? '')));
+                    if ($id !== $needle && $legacyId !== $needle) {
+                        continue;
+                    }
+                    $email = trim((string) ($node['email'] ?? ''));
+                    if ($email !== '' && filter_var($email, FILTER_VALIDATE_EMAIL)) {
+                        return $email;
+                    }
+                }
+
+                $hasNext = (bool) data_get($json, 'data.account.data.customers.pageInfo.hasNextPage');
+                $endCursor = data_get($json, 'data.account.data.customers.pageInfo.endCursor');
+                $after = is_string($endCursor) && $endCursor !== '' ? $endCursor : null;
+            } while ($hasNext && $after !== null);
         } catch (\Throwable $e) {
             return '';
-        }
-
-        if (isset($json['errors']) && is_array($json['errors']) && $json['errors'] !== []) {
-            return '';
-        }
-
-        $edges = data_get($json, 'data.account.data.customers.edges');
-        if (! is_array($edges)) {
-            return '';
-        }
-
-        foreach ($edges as $edge) {
-            if (! is_array($edge)) {
-                continue;
-            }
-            $node = $edge['node'] ?? null;
-            if (! is_array($node)) {
-                continue;
-            }
-            $id = trim((string) ($node['id'] ?? ''));
-            $legacyId = trim((string) ($node['legacy_id'] ?? ''));
-            if ($id !== $customerAccountId && $legacyId !== $customerAccountId) {
-                continue;
-            }
-            $email = trim((string) ($node['email'] ?? ''));
-            if ($email !== '' && filter_var($email, FILTER_VALIDATE_EMAIL)) {
-                return $email;
-            }
         }
 
         return '';
@@ -314,6 +530,36 @@ GQL;
             'shop_name' => $shopName,
             'settings_url' => $this->buildSettingsUrl($legacyId),
         ];
+    }
+
+    /**
+     * @param  array<string, mixed>  $store
+     */
+    private function storeDedupeKey(array $store): string
+    {
+        $legacyId = trim((string) ($store['legacy_id'] ?? ''));
+        if ($legacyId !== '') {
+            return 'legacy:'.$legacyId;
+        }
+        $shipheroId = trim((string) ($store['shiphero_id'] ?? ''));
+        if ($shipheroId !== '') {
+            return 'id:'.$shipheroId;
+        }
+
+        return 'name:'.strtolower(trim((string) ($store['shop_name'] ?? '')));
+    }
+
+    /**
+     * @param  list<array<string, mixed>>  $stores
+     * @return list<array<string, mixed>>
+     */
+    private function sortStores(array $stores): array
+    {
+        usort($stores, function (array $a, array $b) {
+            return strcasecmp((string) ($a['shop_name'] ?? ''), (string) ($b['shop_name'] ?? ''));
+        });
+
+        return array_values($stores);
     }
 
     private function buildSettingsUrl(string $legacyId): string

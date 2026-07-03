@@ -736,7 +736,11 @@ async function importStores() {
     stores.value = Array.isArray(data?.stores) ? data.stores : [];
     storesImportedAt.value = data?.imported_at ?? null;
     const count = stores.value.length;
-    toast.success(count === 1 ? "Imported 1 store." : `Imported ${count} stores.`);
+    if (count === 0) {
+      toast.error("No stores returned from ShipHero for this account.");
+    } else {
+      toast.success(count === 1 ? "Imported 1 store." : `Imported ${count} stores.`);
+    }
   } catch (e) {
     toast.errorFrom(e, "Could not import stores from ShipHero.");
   } finally {

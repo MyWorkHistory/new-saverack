@@ -97,6 +97,7 @@ const shipToAccountName = computed(() => {
 const asnDisplayNumber = computed(() => formatAsnDisplay(asn.value?.asn_number));
 const asnHeading = computed(() => formatAsnHeading(asn.value?.asn_number));
 const asnLabel = computed(() => formatAsnLabel(asn.value?.asn_number));
+const totalLines = computed(() => (Array.isArray(asn.value?.lines) ? asn.value.lines.length : 0));
 
 function inventoryDetailTo(sku) {
   const s = String(sku || "").trim();
@@ -654,57 +655,87 @@ onUnmounted(() => {
     <CrmLoadingSpinner message="Loading ASN…" />
   </div>
   <div v-else-if="!asn" class="staff-page staff-page--wide py-5 text-secondary">ASN not found.</div>
-  <div v-else class="staff-page staff-page--wide user-asn-detail-page order-detail-page">
-    <div class="staff-table-card staff-datatable-card staff-datatable-card--white user-asn-detail-page__header-shell mb-4">
-      <div class="p-4 pb-3">
-        <div class="d-flex flex-wrap justify-content-between align-items-start gap-3">
+  <div v-else class="staff-page staff-page--wide user-asn-detail-page order-detail-page asn-detail-page">
+    <header class="asn-detail-page__hero">
+      <div class="d-flex flex-wrap justify-content-between align-items-start gap-3">
+        <div class="asn-detail-page__hero-title-row min-w-0">
+          <span class="asn-detail-page__hero-doc-icon" aria-hidden="true">
+            <svg width="22" height="22" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+            </svg>
+          </span>
           <div class="min-w-0">
-            <div class="d-flex flex-wrap align-items-center gap-2 mb-1">
-              <h1 class="h4 mb-0 fw-semibold text-body">{{ asnHeading || "—" }}</h1>
+            <div class="d-flex flex-wrap align-items-center gap-2">
+              <h1 class="h4 mb-0 fw-bold text-body">{{ asnHeading || "—" }}</h1>
               <span class="badge rounded-pill fw-medium" :class="statusBadgeClass(asn.status)">{{
                 statusLabel(asn.status)
               }}</span>
             </div>
-            <p class="small text-secondary mb-0 mt-2">Created {{ formatDateUs(asn.created_at) }}</p>
+            <p class="small text-secondary mb-0 mt-1">Created {{ formatDateUs(asn.created_at) }}</p>
           </div>
-          <div class="d-flex flex-wrap gap-2 flex-shrink-0 align-items-center">
+        </div>
+        <div class="d-flex flex-wrap gap-2 flex-shrink-0 align-items-center">
+          <button
+            v-if="isDraft"
+            type="button"
+            class="btn btn-primary staff-page-primary btn-sm fw-semibold"
+            @click="openMarkReadyModal"
+          >
+            Mark as Ready
+          </button>
+          <button type="button" class="btn btn-outline-secondary btn-sm fw-semibold d-inline-flex align-items-center gap-2" @click="openPrintSlip">
+            <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2zm8-12V5a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z" />
+            </svg>
+            Print Packing Slip
+          </button>
+          <div data-asn-header-actions class="position-relative">
             <button
-              v-if="isDraft"
               type="button"
-              class="btn btn-primary staff-page-primary btn-sm fw-semibold"
-              @click="openMarkReadyModal"
+              class="btn btn-primary staff-page-primary btn-sm fw-semibold d-inline-flex align-items-center gap-2"
+              :class="{ 'is-open': headerMenuOpen }"
+              aria-haspopup="true"
+              :aria-expanded="headerMenuOpen ? 'true' : 'false'"
+              @click="toggleHeaderMenu"
             >
-              Mark as Ready
+              <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+              </svg>
+              Manage ASN
+              <span aria-hidden="true">▾</span>
             </button>
-            <button type="button" class="btn btn-outline-secondary btn-sm fw-semibold" @click="openPrintSlip">
-              Print Packing Slip
-            </button>
-            <div data-asn-header-actions class="position-relative">
-              <button
-                type="button"
-                class="btn btn-outline-secondary btn-sm fw-semibold"
-                :class="{ 'is-open': headerMenuOpen }"
-                aria-haspopup="true"
-                :aria-expanded="headerMenuOpen ? 'true' : 'false'"
-                @click="toggleHeaderMenu"
-              >
-                Manage
-              </button>
-            </div>
           </div>
         </div>
       </div>
-    </div>
+    </header>
 
     <div class="row g-4">
       <div class="col-lg-8">
         <div id="user-asn-items" class="staff-table-card staff-datatable-card staff-datatable-card--white p-0 mb-4">
-          <div class="px-4 py-3 border-bottom d-flex justify-content-between align-items-center flex-wrap gap-2">
-            <h2 class="h6 mb-0 fw-semibold">Products</h2>
+          <div class="px-4 py-3 border-bottom d-flex justify-content-between align-items-center flex-wrap gap-2 asn-detail-page__section-head">
+            <div class="d-flex align-items-center gap-2 min-w-0">
+              <span class="asn-detail-page__section-icon asn-detail-page__section-icon--products" aria-hidden="true">
+                <svg width="18" height="18" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4" />
+                </svg>
+              </span>
+              <h2 class="h6 mb-0 fw-semibold">Products in Shipment</h2>
+              <button
+                type="button"
+                class="asn-detail-page__products-info-btn"
+                title="Line items expected in this inbound shipment."
+                aria-label="About products in shipment"
+              >
+                <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                </svg>
+              </button>
+            </div>
             <button
               v-if="isDraft"
               type="button"
-              class="btn btn-sm btn-primary staff-page-primary"
+              class="btn btn-sm btn-outline-primary"
               @click="addPanelOpen = !addPanelOpen"
             >
               {{ addPanelOpen ? "Hide Add Products" : "Add Products" }}
@@ -835,12 +866,27 @@ onUnmounted(() => {
               </tbody>
             </table>
           </div>
+          <div class="asn-detail-page__table-footer">
+            <span>Showing {{ totalLines }} of {{ totalLines }} products</span>
+            <div class="asn-detail-page__table-pager" aria-hidden="true">
+              <button type="button" class="btn btn-sm btn-outline-secondary asn-detail-page__table-pager-btn" disabled>&lt;</button>
+              <button type="button" class="btn btn-sm btn-primary staff-page-primary asn-detail-page__table-pager-btn" disabled>1</button>
+              <button type="button" class="btn btn-sm btn-outline-secondary asn-detail-page__table-pager-btn" disabled>&gt;</button>
+            </div>
+          </div>
         </div>
       </div>
 
       <div class="col-lg-4 d-flex flex-column gap-4 order-detail-page__side-column">
         <div class="staff-table-card staff-datatable-card staff-datatable-card--white p-4">
-          <h3 class="h6 fw-semibold mb-3">Tracking Details</h3>
+          <div class="d-flex align-items-center gap-2 mb-3 asn-detail-page__section-head">
+            <span class="asn-detail-page__section-icon asn-detail-page__section-icon--tracking" aria-hidden="true">
+              <svg width="18" height="18" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16V6a1 1 0 00-1-1H4a1 1 0 00-1 1v10a1 1 0 001 1h1m8-1a1 1 0 01-1 1H9m4-1V8a1 1 0 011-1h2.586a1 1 0 01.707.293l3.414 3.414a1 1 0 01.293.707V16a1 1 0 01-1 1h-1m-6-1a1 1 0 001 1h1M5 17a2 2 0 104 0m6 0a2 2 0 104 0" />
+              </svg>
+            </span>
+            <h3 class="h6 fw-semibold mb-0">Tracking Details</h3>
+          </div>
           <div class="row g-2 mb-3">
             <div class="col-6">
               <label class="form-label small mb-0">Total Boxes</label>
@@ -864,7 +910,7 @@ onUnmounted(() => {
               </div>
             </div>
           </div>
-          <button type="button" class="btn btn-link btn-sm px-0 mb-2" @click="addTrackingRow">Add Row</button>
+          <button type="button" class="btn btn-link btn-sm px-0 mb-2 text-primary text-decoration-none" @click="addTrackingRow">+ Add Row</button>
           <button
             type="button"
             class="btn btn-sm btn-primary staff-page-primary w-100"
@@ -876,7 +922,39 @@ onUnmounted(() => {
         </div>
 
         <div class="staff-table-card staff-datatable-card staff-datatable-card--white p-4">
-          <h3 class="h6 fw-semibold mb-3">Vendor Details</h3>
+          <div class="d-flex align-items-center gap-2 mb-3 asn-detail-page__section-head">
+            <span class="asn-detail-page__section-icon asn-detail-page__section-icon--info" aria-hidden="true">
+              <svg width="18" height="18" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+              </svg>
+            </span>
+            <h3 class="h6 fw-semibold mb-0">ASN Info</h3>
+          </div>
+          <div class="asn-detail-page__detail-rows">
+            <div class="asn-detail-page__detail-row">
+              <span class="asn-detail-page__detail-label">Company</span>
+              <span class="asn-detail-page__detail-value fw-semibold">{{ shipToAccountName }}</span>
+            </div>
+            <div class="asn-detail-page__detail-row">
+              <span class="asn-detail-page__detail-label">Created Date</span>
+              <span class="asn-detail-page__detail-value">{{ formatDateUs(asn.created_at) || "—" }}</span>
+            </div>
+            <div class="asn-detail-page__detail-row">
+              <span class="asn-detail-page__detail-label">Status</span>
+              <span class="asn-detail-page__detail-value">{{ statusLabel(asn.status) }}</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="staff-table-card staff-datatable-card staff-datatable-card--white p-4">
+          <div class="d-flex align-items-center gap-2 mb-3 asn-detail-page__section-head">
+            <span class="asn-detail-page__section-icon asn-detail-page__section-icon--info" aria-hidden="true">
+              <svg width="18" height="18" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4" />
+              </svg>
+            </span>
+            <h3 class="h6 fw-semibold mb-0">Vendor Details</h3>
+          </div>
           <div v-for="(row, idx) in vendorDraft" :key="'vnd' + idx" class="d-flex gap-1 mb-2">
             <input v-model="row.label" class="form-control form-control-sm" placeholder="Vendor line" />
             <button
@@ -889,7 +967,7 @@ onUnmounted(() => {
               ×
             </button>
           </div>
-          <button type="button" class="btn btn-link btn-sm px-0 mb-2" @click="addVendorRow">Add Row</button>
+          <button type="button" class="btn btn-link btn-sm px-0 mb-2 text-primary text-decoration-none" @click="addVendorRow">+ Add Row</button>
           <button
             type="button"
             class="btn btn-sm btn-primary staff-page-primary w-100"
@@ -901,7 +979,14 @@ onUnmounted(() => {
         </div>
 
         <div class="staff-table-card staff-datatable-card staff-datatable-card--white p-4">
-          <h3 class="h6 fw-semibold mb-3">Warehouse Notes</h3>
+          <div class="d-flex align-items-center gap-2 mb-3 asn-detail-page__section-head">
+            <span class="asn-detail-page__section-icon asn-detail-page__section-icon--note" aria-hidden="true">
+              <svg width="18" height="18" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+              </svg>
+            </span>
+            <h3 class="h6 fw-semibold mb-0">Warehouse Notes</h3>
+          </div>
           <textarea v-model="notesDraft" class="form-control form-control-sm mb-2" rows="4" placeholder="Notes for warehouse staff" />
           <button
             type="button"
@@ -914,7 +999,15 @@ onUnmounted(() => {
         </div>
 
         <div class="staff-table-card staff-datatable-card staff-datatable-card--white p-4">
-          <h3 class="h6 fw-semibold mb-3">Ship To</h3>
+          <div class="d-flex align-items-center gap-2 mb-3 asn-detail-page__section-head">
+            <span class="asn-detail-page__section-icon asn-detail-page__section-icon--tracking" aria-hidden="true">
+              <svg width="18" height="18" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
+              </svg>
+            </span>
+            <h3 class="h6 fw-semibold mb-0">Ship To</h3>
+          </div>
           <div class="user-asn-ship-to-block small">
             <p class="mb-1 fw-semibold text-body">{{ shipToAccountName }}</p>
             <p class="mb-1 fw-semibold text-body">{{ asnLabel || "—" }}</p>
@@ -1162,6 +1255,8 @@ onUnmounted(() => {
 </template>
 
 <style scoped>
+@import "../../styles/asn-detail-page.scss";
+
 .asn-line-thumb {
   width: 40px;
   height: 40px;

@@ -53,4 +53,29 @@ final class ReturnReasonOptions
     {
         return array_key_exists($key, self::admin());
     }
+
+    /**
+     * @return array<string, string>
+     */
+    public static function nonCompliant(): array
+    {
+        /** @var array<string, string> $reasons */
+        $reasons = config('returns.non_compliant_reasons', []);
+
+        return $reasons;
+    }
+
+    public static function nonCompliantLabel(?string $key): ?string
+    {
+        if ($key === null || $key === '') {
+            return null;
+        }
+
+        return self::nonCompliant()[$key] ?? $key;
+    }
+
+    public static function isValidNonCompliantKey(string $key): bool
+    {
+        return array_key_exists($key, self::nonCompliant());
+    }
 }

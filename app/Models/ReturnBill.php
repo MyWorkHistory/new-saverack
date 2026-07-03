@@ -25,6 +25,8 @@ class ReturnBill extends Model
 
     public const LINE_DISPOSAL = 'disposal';
 
+    public const LINE_NON_COMPLIANT = 'non_compliant';
+
     protected $fillable = [
         'bill_number',
         'status',

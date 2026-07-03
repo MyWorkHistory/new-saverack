@@ -19,6 +19,8 @@ class ReturnBillChargeCatalog
 
   public const DISPOSAL_NAME = 'Returns Disposal';
 
+  public const NON_COMPLIANT_NAME = 'Non-Compliant Return';
+
   /** @var array<string, array{display_name: string, group_key: string, subtype: string, fee_line_code: string}> */
   private const DEFINITIONS = [
     ReturnBill::LINE_FIRST_ITEM => [
@@ -50,6 +52,12 @@ class ReturnBillChargeCatalog
       'group_key' => 'returns:disposal',
       'subtype' => 'disposal',
       'fee_line_code' => ClientAccountFee::LINE_RETURNS_DISPOSAL,
+    ],
+    ReturnBill::LINE_NON_COMPLIANT => [
+      'display_name' => self::NON_COMPLIANT_NAME,
+      'group_key' => 'returns:non_compliant',
+      'subtype' => 'non_compliant',
+      'fee_line_code' => ClientAccountFee::LINE_RETURNS_NON_COMPLIANT,
     ],
   ];
 

@@ -9,8 +9,12 @@ use App\Models\ClientAccountReturnLine;
 use App\Models\User;
 use App\Services\ReturnFeeService;
 use App\Services\ReturnProcessingService;
+use App\Services\ShipHeroInventoryService;
 use App\Services\ShipHeroOrderService;
+use App\Support\Barcode\Code128Svg;
 use App\Support\Returns\ReturnReasonOptions;
+use App\Support\Returns\ReturnRmaGenerator;
+use Barryvdh\DomPDF\Facade\Pdf;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -30,14 +34,27 @@ class AdminReturnController extends Controller
     /** @var ReturnFeeService */
     private $returnFees;
 
+    /** @var ShipHeroInventoryService */
+    private $inventory;
+
     public function __construct(
         ShipHeroOrderService $orders,
         ReturnProcessingService $processing,
-        ReturnFeeService $returnFees
+        ReturnFeeService $returnFees,
+        ShipHeroInventoryService $inventory
     ) {
         $this->orders = $orders;
         $this->processing = $processing;
         $this->returnFees = $returnFees;
+        $this->inventory = $inventory;
+    }
+
+    private function safePdfName($raw): string
+    {
+        $s = preg_replace('/[^A-Za-z0-9_-]+/', '-', trim((string) $raw));
+        $s = trim((string) $s, '-');
+
+        return $s !== '' ? $s : 'document';
     }
 
     private function assertStaff(Request $request): void
@@ -97,8 +114,29 @@ class AdminReturnController extends Controller
         if (in_array($status, [ClientAccountReturn::STATUS_RECEIVED, ClientAccountReturn::STATUS_COMPLETED], true)) {
             return 'returned';
         }
+        if ($return->isNonCompliant() && $status === ClientAccountReturn::STATUS_PENDING) {
+            return 'non_compliant_return';
+        }
 
         return 'pending';
+    }
+
+    private function assertPendingNonCompliant(ClientAccountReturn $return): void
+    {
+        if (! $return->isNonCompliant() || $return->status !== ClientAccountReturn::STATUS_PENDING) {
+            throw ValidationException::withMessages([
+                'status' => ['Line changes are only allowed on pending non-compliant returns.'],
+            ]);
+        }
+    }
+
+    private function recalculateItemsCount(ClientAccountReturn $return): void
+    {
+        $sum = (int) ClientAccountReturnLine::query()
+            ->where('client_account_return_id', $return->id)
+            ->sum('return_qty');
+        $return->items_count = $sum;
+        $return->saveQuietly();
     }
 
     /**
@@ -129,6 +167,7 @@ class AdminReturnController extends Controller
             'rma_number' => $return->rma_number,
             'status' => $return->status,
             'display_status' => $displayStatus ?? $this->displayStatusForReturn($return),
+            'is_non_compliant' => $return->isNonCompliant(),
             'return_type' => $return->return_type,
             'order_number' => $return->order_number,
             'customer_name' => $return->customer_name,
@@ -142,8 +181,16 @@ class AdminReturnController extends Controller
     /**
      * @return array<string, mixed>
      */
-    private function serializeLine(ClientAccountReturnLine $line, ?string $createdSource = null): array
+    private function serializeLine(ClientAccountReturnLine $line, ?string $createdSource = null, ?ClientAccountReturn $return = null): array
     {
+        $reasonLabel = null;
+        if ($return !== null && $return->isNonCompliant()) {
+            $reasonKey = $line->return_reason ?: $return->non_compliant_reason;
+            $reasonLabel = ReturnReasonOptions::nonCompliantLabel($reasonKey);
+        } else {
+            $reasonLabel = ReturnReasonOptions::labelFor($line->return_reason, $createdSource);
+        }
+
         return [
             'id' => $line->id,
             'shiphero_line_item_id' => $line->shiphero_line_item_id,
@@ -153,7 +200,7 @@ class AdminReturnController extends Controller
             'order_qty' => $line->order_qty,
             'return_qty' => $line->return_qty,
             'return_reason' => $line->return_reason,
-            'return_reason_label' => ReturnReasonOptions::labelFor($line->return_reason, $createdSource),
+            'return_reason_label' => $reasonLabel,
             'restock' => (bool) $line->restock,
             'sort_order' => $line->sort_order,
         ];
@@ -177,6 +224,10 @@ class AdminReturnController extends Controller
             'rma_label' => $return->rma_number !== '' ? 'RMA #'.$return->rma_number : '',
             'status' => $return->status,
             'display_status' => $this->displayStatusForReturn($return),
+            'is_non_compliant' => $return->isNonCompliant(),
+            'non_compliant_reason' => $return->non_compliant_reason,
+            'non_compliant_reason_label' => ReturnReasonOptions::nonCompliantLabel($return->non_compliant_reason),
+            'non_compliant_declared_items' => $return->non_compliant_declared_items,
             'return_type' => $return->return_type,
             'shiphero_order_id' => $return->shiphero_order_id,
             'order_number' => $return->order_number,
@@ -186,7 +237,8 @@ class AdminReturnController extends Controller
             'created_source' => $return->created_source,
             'created_at' => optional($return->created_at)->toIso8601String(),
             'processed_at' => optional($return->processed_at)->toIso8601String(),
-            'lines' => $return->lines->map(fn (ClientAccountReturnLine $l) => $this->serializeLine($l, $return->created_source))->values()->all(),
+            'lines' => $return->lines->map(fn (ClientAccountReturnLine $l) => $this->serializeLine($l, $return->created_source, $return))->values()->all(),
+            'non_compliant_reasons' => ReturnReasonOptions::nonCompliant(),
             'return_reasons' => $return->isAdminCreated() ? ReturnReasonOptions::admin() : $this->returnReasonOptions(),
             'admin_return_reasons' => ReturnReasonOptions::admin(),
             'admin_default_return_reason' => ReturnReasonOptions::adminDefaultKey(),
@@ -276,7 +328,7 @@ class AdminReturnController extends Controller
 
         $data = collect($paginator->items())
             ->filter(fn (ClientAccountReturn $return) => Gate::forUser($user)->allows('view', $return))
-            ->map(fn (ClientAccountReturn $return) => $this->serializeListRow($return, 'pending'))
+            ->map(fn (ClientAccountReturn $return) => $this->serializeListRow($return))
             ->values()
             ->all();
 
@@ -432,8 +484,10 @@ class AdminReturnController extends Controller
         return response()->json([
             'first_item' => $defaults['first_item'],
             'additional_item' => $defaults['additional_item'],
+            'non_compliant' => $defaults['non_compliant'],
             'first_item_label' => 'Returns (First Item)',
             'additional_item_label' => 'Returns (Additional Items)',
+            'non_compliant_label' => 'Non-Compliant Return',
         ]);
     }
 
@@ -444,10 +498,12 @@ class AdminReturnController extends Controller
         $validated = $request->validate([
             'first_item' => ['nullable', 'numeric', 'min:0'],
             'additional_item' => ['nullable', 'numeric', 'min:0'],
+            'non_compliant' => ['nullable', 'numeric', 'min:0'],
         ]);
         $first = array_key_exists('first_item', $validated) ? (float) $validated['first_item'] : null;
         $additional = array_key_exists('additional_item', $validated) ? (float) $validated['additional_item'] : null;
-        $this->returnFees->updateReturnFees($clientAccountReturn, $first, $additional);
+        $nonCompliant = array_key_exists('non_compliant', $validated) ? (float) $validated['non_compliant'] : null;
+        $this->returnFees->updateReturnFees($clientAccountReturn, $first, $additional, $nonCompliant);
 
         return response()->json($this->serializeReturnDetail($clientAccountReturn->fresh(['lines', 'clientAccount', 'returnBill'])));
     }
@@ -505,16 +561,18 @@ class AdminReturnController extends Controller
             'restock_by_line_id.*' => ['boolean'],
             'first_item_fee' => ['nullable', 'numeric', 'min:0'],
             'additional_item_fee' => ['nullable', 'numeric', 'min:0'],
+            'non_compliant_fee' => ['nullable', 'numeric', 'min:0'],
         ]);
 
         $lineIds = array_map('intval', $validated['line_ids']);
         $lineIds = array_values(array_unique(array_filter($lineIds, fn ($id) => $id > 0)));
 
-        if (isset($validated['first_item_fee']) || isset($validated['additional_item_fee'])) {
+        if (isset($validated['first_item_fee']) || isset($validated['additional_item_fee']) || isset($validated['non_compliant_fee'])) {
             $this->returnFees->updateReturnFees(
                 $clientAccountReturn,
                 isset($validated['first_item_fee']) ? (float) $validated['first_item_fee'] : null,
                 isset($validated['additional_item_fee']) ? (float) $validated['additional_item_fee'] : null,
+                isset($validated['non_compliant_fee']) ? (float) $validated['non_compliant_fee'] : null,
             );
             $clientAccountReturn->refresh();
         }
@@ -710,12 +768,174 @@ class AdminReturnController extends Controller
         ]);
     }
 
-    /**
-     * @return array<string, mixed>
-     */
     private function serializeProcessLookupRow(ClientAccountReturn $return): array
     {
-        return $this->serializeListRow($return, 'pending');
+        return $this->serializeListRow($return);
+    }
+
+    public function storeNonCompliant(Request $request): JsonResponse
+    {
+        $this->assertStaff($request);
+        Gate::authorize('viewAny', ClientAccountReturn::class);
+
+        $validated = $request->validate([
+            'client_account_id' => ['required', 'integer', 'exists:client_accounts,id'],
+            'declared_items' => ['required', 'integer', 'min:1', 'max:99999999'],
+            'reason' => ['required', 'string', Rule::in(array_keys(ReturnReasonOptions::nonCompliant()))],
+        ]);
+
+        $account = ClientAccount::query()->findOrFail((int) $validated['client_account_id']);
+        Gate::authorize('view', $account);
+
+        $return = DB::transaction(function () use ($account, $validated) {
+            $return = new ClientAccountReturn;
+            $return->client_account_id = $account->id;
+            $return->rma_number = ReturnRmaGenerator::generateUniqueForAccount($account->id);
+            $return->status = ClientAccountReturn::STATUS_PENDING;
+            $return->created_source = ClientAccountReturn::SOURCE_ADMIN;
+            $return->return_type = ClientAccountReturn::TYPE_DIRECT;
+            $return->is_non_compliant = true;
+            $return->non_compliant_reason = $validated['reason'];
+            $return->non_compliant_declared_items = (int) $validated['declared_items'];
+            $return->items_count = 0;
+            $return->save();
+
+            $this->returnFees->seedReturnFees($return);
+
+            return $return;
+        });
+
+        return response()->json($this->serializeReturnDetail($return->fresh(['lines', 'clientAccount'])), 201);
+    }
+
+    public function storeLine(Request $request, ClientAccountReturn $clientAccountReturn): JsonResponse
+    {
+        $this->assertStaff($request);
+        Gate::authorize('view', $clientAccountReturn);
+        $this->assertPendingNonCompliant($clientAccountReturn);
+
+        $validated = $request->validate([
+            'sku' => ['required', 'string', 'max:255'],
+            'name' => ['required', 'string', 'max:512'],
+            'return_qty' => ['required', 'integer', 'min:1', 'max:99999999'],
+            'image_url' => ['nullable', 'string', 'max:2048'],
+            'shiphero_line_item_id' => ['nullable', 'string', 'max:64'],
+        ]);
+
+        $returnQty = (int) $validated['return_qty'];
+        $maxSort = (int) ClientAccountReturnLine::query()
+            ->where('client_account_return_id', $clientAccountReturn->id)
+            ->max('sort_order');
+
+        $line = new ClientAccountReturnLine;
+        $line->client_account_return_id = $clientAccountReturn->id;
+        $line->shiphero_line_item_id = isset($validated['shiphero_line_item_id'])
+            ? trim((string) $validated['shiphero_line_item_id'])
+            : null;
+        $line->sku = trim((string) $validated['sku']);
+        $line->name = trim((string) $validated['name']);
+        $line->image_url = isset($validated['image_url']) ? trim((string) $validated['image_url']) : null;
+        $line->order_qty = $returnQty;
+        $line->return_qty = $returnQty;
+        $line->return_reason = $clientAccountReturn->non_compliant_reason;
+        $line->restock = true;
+        $line->sort_order = $maxSort + 1;
+        $line->save();
+
+        $this->recalculateItemsCount($clientAccountReturn);
+
+        return response()->json($this->serializeReturnDetail($clientAccountReturn->fresh(['lines', 'clientAccount', 'returnBill'])));
+    }
+
+    public function updateLine(
+        Request $request,
+        ClientAccountReturn $clientAccountReturn,
+        ClientAccountReturnLine $line
+    ): JsonResponse {
+        $this->assertStaff($request);
+        Gate::authorize('view', $clientAccountReturn);
+        $this->assertPendingNonCompliant($clientAccountReturn);
+
+        if ((int) $line->client_account_return_id !== (int) $clientAccountReturn->id) {
+            throw ValidationException::withMessages(['line' => ['Invalid line selected.']]);
+        }
+
+        $validated = $request->validate([
+            'return_qty' => ['required', 'integer', 'min:1', 'max:99999999'],
+        ]);
+
+        $returnQty = (int) $validated['return_qty'];
+        $line->return_qty = $returnQty;
+        $line->order_qty = $returnQty;
+        $line->save();
+
+        $this->recalculateItemsCount($clientAccountReturn);
+
+        return response()->json($this->serializeReturnDetail($clientAccountReturn->fresh(['lines', 'clientAccount', 'returnBill'])));
+    }
+
+    public function destroyLine(
+        Request $request,
+        ClientAccountReturn $clientAccountReturn,
+        ClientAccountReturnLine $line
+    ): JsonResponse {
+        $this->assertStaff($request);
+        Gate::authorize('view', $clientAccountReturn);
+        $this->assertPendingNonCompliant($clientAccountReturn);
+
+        if ((int) $line->client_account_return_id !== (int) $clientAccountReturn->id) {
+            throw ValidationException::withMessages(['line' => ['Invalid line selected.']]);
+        }
+
+        $line->delete();
+        $this->recalculateItemsCount($clientAccountReturn);
+
+        return response()->json($this->serializeReturnDetail($clientAccountReturn->fresh(['lines', 'clientAccount', 'returnBill'])));
+    }
+
+    public function lineBarcodePdf(
+        Request $request,
+        ClientAccountReturn $clientAccountReturn,
+        ClientAccountReturnLine $line
+    ) {
+        $this->assertStaff($request);
+        Gate::authorize('view', $clientAccountReturn);
+
+        if ((int) $line->client_account_return_id !== (int) $clientAccountReturn->id) {
+            abort(404);
+        }
+
+        $clientAccountReturn->loadMissing('clientAccount');
+        $customerId = $clientAccountReturn->clientAccount !== null
+            ? trim((string) $clientAccountReturn->clientAccount->shiphero_customer_account_id)
+            : '';
+        $sku = trim((string) $line->sku);
+        $barcode = '';
+
+        if ($sku !== '' && $sku !== ClientAccountReturn::UNKNOWN_SKU && $customerId !== '') {
+            $product = $this->inventory->getProductDetailBySku($sku, null, $customerId);
+            $barcode = is_array($product) && isset($product['barcode'])
+                ? trim((string) $product['barcode'])
+                : '';
+        }
+
+        if ($barcode === '' && $sku !== '') {
+            $barcode = $sku;
+        }
+
+        if ($barcode === '') {
+            return response()->json(['message' => 'No barcode available for this line.'], 422);
+        }
+
+        $pdf = Pdf::loadView('pdf.asn.barcode', [
+            'line' => $line,
+            'barcode' => $barcode,
+            'barcodeSvg' => Code128Svg::dataUri($barcode),
+        ])->setPaper([0, 0, 288, 144]);
+
+        return $pdf->stream(
+            'return-'.$this->safePdfName($clientAccountReturn->rma_number).'-'.$this->safePdfName($line->sku).'-barcode.pdf'
+        );
     }
 
     public function processLookup(Request $request): JsonResponse

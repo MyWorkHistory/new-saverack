@@ -107,7 +107,9 @@ function fillForm() {
     String(form.communication_method || "").trim() === "email" &&
     String(form.contact_email || "").trim() === ""
   ) {
-    form.contact_email = String(props.profile?.email || "").trim();
+    form.contact_email = String(
+      sectionPrefs.value.contact_email || props.profile?.email || "",
+    ).trim();
   }
   logoPreviewUrl.value = props.brandLogoUrl || "";
   logoFile.value = null;
@@ -249,7 +251,9 @@ const isBrandingSection = computed(() => props.sectionId === "branding_informati
 function setCommunicationMethod(value) {
   form.communication_method = value;
   if (value === "email" && String(form.contact_email || "").trim() === "") {
-    form.contact_email = String(props.profile?.email || "").trim();
+    form.contact_email = String(
+      sectionPrefs.value.contact_email || props.profile?.email || "",
+    ).trim();
   }
 }
 

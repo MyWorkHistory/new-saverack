@@ -4,6 +4,7 @@ import { useRouter } from "vue-router";
 import api from "../../services/api";
 import CrmSearchableSelect from "../../components/common/CrmSearchableSelect.vue";
 import CrmLoadingSpinner from "../../components/common/CrmLoadingSpinner.vue";
+import AdminReturnNonCompliantDrawer from "../../components/admin-returns/AdminReturnNonCompliantDrawer.vue";
 import { setCrmPageMeta } from "../../composables/useCrmPageMeta.js";
 import { useToast } from "../../composables/useToast.js";
 import { formatDateUs } from "../../utils/formatUserDates.js";
@@ -24,6 +25,12 @@ const loading = ref(true);
 const searching = ref(false);
 const searchMode = ref(false);
 const results = ref([]);
+
+const nonCompliantOpen = ref(false);
+const nonCompliantBusy = ref(false);
+const ncAccountId = ref("");
+const ncDeclaredItems = ref(1);
+const ncReason = ref("");
 
 const tableColspan = 7;
 
@@ -165,6 +172,48 @@ function clearSearch() {
   loadPending();
 }
 
+function openNonCompliant() {
+  ncAccountId.value = accountFilter.value || "";
+  ncDeclaredItems.value = 1;
+  ncReason.value = "";
+  nonCompliantOpen.value = true;
+}
+
+async function submitNonCompliant() {
+  const id = Number(ncAccountId.value);
+  if (!id) {
+    toast.error("Select an account.");
+    return;
+  }
+  if (!ncReason.value) {
+    toast.error("Select a reason.");
+    return;
+  }
+  const items = Math.max(1, Number(ncDeclaredItems.value) || 1);
+  nonCompliantBusy.value = true;
+  try {
+    const { data } = await api.post("/admin/returns/non-compliant", {
+      client_account_id: id,
+      declared_items: items,
+      reason: ncReason.value,
+    });
+    nonCompliantOpen.value = false;
+    toast.success("Non-compliant return created.");
+    if (data?.id) {
+      router.push({
+        name: "admin-process-return-detail",
+        params: { id: String(data.id) },
+      });
+    } else {
+      await loadPending();
+    }
+  } catch (e) {
+    toast.errorFrom(e, "Could not create non-compliant return.");
+  } finally {
+    nonCompliantBusy.value = false;
+  }
+}
+
 onMounted(() => {
   setCrmPageMeta({
     title: "Save Rack | Process Returns",
@@ -184,14 +233,23 @@ onMounted(() => {
           Pending user returns are listed below. Search by order number (ShipHero) or RMA number (database).
         </p>
       </div>
-      <button
-        v-if="searchMode"
-        type="button"
-        class="btn btn-outline-secondary btn-sm"
-        @click="clearSearch"
-      >
-        Show All Pending
-      </button>
+      <div class="d-flex flex-wrap gap-2 align-items-center">
+        <button
+          v-if="searchMode"
+          type="button"
+          class="btn btn-outline-secondary btn-sm"
+          @click="clearSearch"
+        >
+          Show All Pending
+        </button>
+        <button
+          type="button"
+          class="btn btn-outline-secondary orders-toolbar-outline-btn fw-semibold"
+          @click="openNonCompliant"
+        >
+          Non-Compliant
+        </button>
+      </div>
     </div>
 
     <div
@@ -306,6 +364,16 @@ onMounted(() => {
         </table>
       </div>
     </div>
+
+    <AdminReturnNonCompliantDrawer
+      v-model:open="nonCompliantOpen"
+      v-model:account-id="ncAccountId"
+      v-model:declared-items="ncDeclaredItems"
+      v-model:reason="ncReason"
+      :account-options="accountOptions"
+      :busy="nonCompliantBusy"
+      @submit="submitNonCompliant"
+    />
   </div>
 </template>
 

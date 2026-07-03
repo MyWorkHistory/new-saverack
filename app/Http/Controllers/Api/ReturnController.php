@@ -99,8 +99,16 @@ class ReturnController extends Controller
     /**
      * @return array<string, mixed>
      */
-    private function serializeLine(ClientAccountReturnLine $line, ?string $createdSource = null): array
+    private function serializeLine(ClientAccountReturnLine $line, ?string $createdSource = null, ?ClientAccountReturn $return = null): array
     {
+        $reasonLabel = null;
+        if ($return !== null && $return->isNonCompliant()) {
+            $reasonKey = $line->return_reason ?: $return->non_compliant_reason;
+            $reasonLabel = ReturnReasonOptions::nonCompliantLabel($reasonKey);
+        } else {
+            $reasonLabel = ReturnReasonOptions::labelFor($line->return_reason, $createdSource);
+        }
+
         return [
             'id' => $line->id,
             'shiphero_line_item_id' => $line->shiphero_line_item_id,
@@ -110,7 +118,7 @@ class ReturnController extends Controller
             'order_qty' => $line->order_qty,
             'return_qty' => $line->return_qty,
             'return_reason' => $line->return_reason,
-            'return_reason_label' => ReturnReasonOptions::labelFor($line->return_reason, $createdSource),
+            'return_reason_label' => $reasonLabel,
             'restock' => (bool) $line->restock,
             'sort_order' => $line->sort_order,
         ];
@@ -133,6 +141,13 @@ class ReturnController extends Controller
             'rma_number' => $return->rma_number,
             'rma_label' => $this->formatRmaLabel($return->rma_number),
             'status' => $return->status,
+            'display_status' => $return->isNonCompliant() && $return->status === ClientAccountReturn::STATUS_PENDING
+                ? 'non_compliant_return'
+                : ($return->status === ClientAccountReturn::STATUS_PENDING ? 'pending' : $return->status),
+            'is_non_compliant' => $return->isNonCompliant(),
+            'non_compliant_reason' => $return->non_compliant_reason,
+            'non_compliant_reason_label' => ReturnReasonOptions::nonCompliantLabel($return->non_compliant_reason),
+            'non_compliant_declared_items' => $return->non_compliant_declared_items,
             'return_type' => $return->return_type,
             'shiphero_order_id' => $return->shiphero_order_id,
             'order_number' => $return->order_number,
@@ -142,7 +157,8 @@ class ReturnController extends Controller
             'created_at' => optional($return->created_at)->toIso8601String(),
             'processed_at' => optional($return->processed_at)->toIso8601String(),
             'updated_at' => optional($return->updated_at)->toIso8601String(),
-            'lines' => $return->lines->map(fn (ClientAccountReturnLine $l) => $this->serializeLine($l, $return->created_source))->values()->all(),
+            'lines' => $return->lines->map(fn (ClientAccountReturnLine $l) => $this->serializeLine($l, $return->created_source, $return))->values()->all(),
+            'non_compliant_reasons' => ReturnReasonOptions::nonCompliant(),
             'return_reasons' => $this->returnReasonOptions(),
             'return_warehouse_address' => config('returns.return_warehouse_address', []),
             'created_source' => $return->created_source,

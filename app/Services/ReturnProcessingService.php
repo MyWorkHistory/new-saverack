@@ -44,9 +44,12 @@ class ReturnProcessingService
             ->get();
 
         $this->assertValidLineIds($lines, $lineIds);
+        if ($return->isNonCompliant()) {
+            $this->assertNonCompliantLinesReady($lines, $lineIds);
+        }
 
         return DB::transaction(function () use ($return, $lines, $lineIds, $restockByLineId, $actor) {
-            $this->applyLineSelection($lines, $lineIds, $restockByLineId, true);
+            $this->applyLineSelection($lines, $lineIds, $restockByLineId, true, $return);
             $this->finalizeProcessedReturn($return, $actor);
 
             return $return->fresh(['lines', 'clientAccount', 'returnBill']);
@@ -162,6 +165,24 @@ class ReturnProcessingService
      * @param  \Illuminate\Support\Collection<int, ClientAccountReturnLine>  $lines
      * @param  list<int>  $lineIds
      */
+    private function assertNonCompliantLinesReady($lines, array $lineIds): void
+    {
+        foreach ($lines as $line) {
+            if (! in_array((int) $line->id, $lineIds, true)) {
+                continue;
+            }
+            if ((int) $line->return_qty <= 0) {
+                throw ValidationException::withMessages([
+                    'line_ids' => ['Each selected item must have a return quantity greater than zero.'],
+                ]);
+            }
+        }
+    }
+
+    /**
+     * @param  \Illuminate\Support\Collection<int, ClientAccountReturnLine>  $lines
+     * @param  list<int>  $lineIds
+     */
     private function assertValidLineIds($lines, array $lineIds): void
     {
         if ($lineIds === []) {
@@ -184,7 +205,7 @@ class ReturnProcessingService
      * @param  list<int>  $lineIds
      * @param  array<int, bool>  $restockByLineId
      */
-    private function applyLineSelection($lines, array $lineIds, array $restockByLineId, bool $clearUnselected): void
+    private function applyLineSelection($lines, array $lineIds, array $restockByLineId, bool $clearUnselected, ?ClientAccountReturn $return = null): void
     {
         foreach ($lines as $line) {
             $id = (int) $line->id;
@@ -197,10 +218,13 @@ class ReturnProcessingService
                 }
                 continue;
             }
+            if ($return !== null && $return->isNonCompliant() && $return->non_compliant_reason) {
+                $line->return_reason = $return->non_compliant_reason;
+            }
             if (array_key_exists($id, $restockByLineId)) {
                 $line->restock = (bool) $restockByLineId[$id];
-                $line->save();
             }
+            $line->save();
         }
     }
 

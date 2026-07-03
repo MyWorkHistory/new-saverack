@@ -28,11 +28,12 @@ export function returnStatusBadgeClass(status) {
   return "bg-body-secondary text-body-secondary";
 }
 
-/** Admin process page display status (not_returned | pending | returned). */
+/** Admin process page display status (not_returned | pending | returned | non_compliant_return). */
 export function processDisplayStatusLabel(displayStatus) {
   const s = String(displayStatus || "").toLowerCase();
   if (s === "not_returned") return "Not Returned";
   if (s === "returned") return "Returned";
+  if (s === "non_compliant_return") return "Non-Compliant Return";
   return "Pending";
 }
 
@@ -40,5 +41,6 @@ export function processDisplayStatusBadgeClass(displayStatus) {
   const s = String(displayStatus || "").toLowerCase();
   if (s === "not_returned") return "bg-secondary-subtle text-secondary-emphasis";
   if (s === "returned") return "bg-success-subtle text-success-emphasis";
+  if (s === "non_compliant_return") return "bg-danger-subtle text-danger-emphasis";
   return "bg-warning-subtle text-warning-emphasis";
 }

@@ -39,6 +39,8 @@ class ClientAccountReturn extends Model
 
     public const SOURCE_ADMIN = 'admin';
 
+    public const UNKNOWN_SKU = 'Unknown SKU';
+
     public const RETURN_TYPES = [
         self::TYPE_DIRECT,
         self::TYPE_AMAZON,
@@ -58,6 +60,10 @@ class ClientAccountReturn extends Model
         'warehouse_private_note',
         'return_fee_first_item',
         'return_fee_additional_item',
+        'return_fee_non_compliant',
+        'is_non_compliant',
+        'non_compliant_reason',
+        'non_compliant_declared_items',
         'fees_locked_at',
         'return_bill_id',
         'processed_at',
@@ -66,8 +72,11 @@ class ClientAccountReturn extends Model
 
     protected $casts = [
         'items_count' => 'integer',
+        'is_non_compliant' => 'boolean',
+        'non_compliant_declared_items' => 'integer',
         'return_fee_first_item' => 'decimal:4',
         'return_fee_additional_item' => 'decimal:4',
+        'return_fee_non_compliant' => 'decimal:4',
         'fees_locked_at' => 'datetime',
         'processed_at' => 'datetime',
     ];
@@ -102,5 +111,10 @@ class ClientAccountReturn extends Model
     public function isAdminCreated(): bool
     {
         return $this->created_source === self::SOURCE_ADMIN;
+    }
+
+    public function isNonCompliant(): bool
+    {
+        return (bool) $this->is_non_compliant;
     }
 }

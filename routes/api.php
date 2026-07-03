@@ -216,6 +216,11 @@ Route::middleware('auth:sanctum')->group(function () {
     });
 
     Route::prefix('admin/returns')->group(function () {
+        Route::post('/non-compliant', [AdminReturnController::class, 'storeNonCompliant'])->middleware('can:inventory.view');
+        Route::post('/{clientAccountReturn}/lines', [AdminReturnController::class, 'storeLine'])->middleware('can:inventory.view');
+        Route::patch('/{clientAccountReturn}/lines/{line}', [AdminReturnController::class, 'updateLine'])->middleware('can:inventory.view');
+        Route::delete('/{clientAccountReturn}/lines/{line}', [AdminReturnController::class, 'destroyLine'])->middleware('can:inventory.view');
+        Route::get('/{clientAccountReturn}/lines/{line}/barcode.pdf', [AdminReturnController::class, 'lineBarcodePdf'])->middleware('can:inventory.view');
         Route::get('/fee-defaults', [AdminReturnController::class, 'feeDefaults'])->middleware('can:inventory.view');
         Route::patch('/{clientAccountReturn}/fees', [AdminReturnController::class, 'updateFees'])->middleware('can:inventory.view');
         Route::post('/{clientAccountReturn}/process-from-draft', [AdminReturnController::class, 'processFromDraft'])->middleware('can:inventory.view');

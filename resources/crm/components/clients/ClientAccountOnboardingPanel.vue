@@ -133,8 +133,19 @@ function onSaved(data) {
   const previousLogo = onboarding.value?.brand_logo_url || "";
   applyOnboardingPayload(data);
   const nextLogo = data?.brand_logo_url || "";
+  const updates = {};
   if (nextLogo && nextLogo !== previousLogo) {
-    emit("account-updated", { brand_logo_url: nextLogo });
+    updates.brand_logo_url = nextLogo;
+  }
+  const profile = data?.profile;
+  if (profile && typeof profile === "object") {
+    updates.notify_email = !!profile.notify_email;
+    updates.notification_email = profile.notification_email || "";
+    updates.whatsapp_e164 = profile.whatsapp_e164 || "";
+    updates.slack_channel = profile.slack_channel || "";
+  }
+  if (Object.keys(updates).length > 0) {
+    emit("account-updated", updates);
   }
 }
 

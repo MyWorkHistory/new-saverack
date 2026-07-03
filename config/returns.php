@@ -24,4 +24,12 @@ return [
 
     'admin_default_return_reason' => 'unknown',
 
+    'non_compliant_reasons' => [
+        'unable_to_identify_customer' => 'Unable to Identify Customer',
+        'item_not_sold_by_client' => 'Item Not Sold by Client',
+        'mixed_products_multiple_orders' => 'Mixed Products from Multiple Orders',
+    ],
+
+    'unknown_sku_label' => 'Unknown SKU',
+
 ];

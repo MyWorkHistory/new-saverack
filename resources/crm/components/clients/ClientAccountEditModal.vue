@@ -739,7 +739,7 @@ async function onSubmit() {
                         v-model="form.in_house_slack"
                         type="text"
                         class="form-control form-control-sm"
-                        placeholder="#antonia-saint-ny"
+                        placeholder="#channel-name"
                         autocomplete="off"
                       />
                       <p class="small text-secondary mb-0 mt-1">

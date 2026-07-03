@@ -332,6 +332,10 @@ class PortalOnboardingService
             $account->brand_name = $sanitized['brand_name'];
         }
 
+        if ($sectionId === 'communication_preferences') {
+            $this->syncCommunicationChannelsFromPreferences($account, $prefs[$sectionId] ?? []);
+        }
+
         $account->save();
 
         return $account->fresh();
@@ -534,7 +538,46 @@ class PortalOnboardingService
             'postage_option_label' => ClientAccountBillingPreferences::postageLabel($account->postage_option),
             'packaging_option' => ClientAccountBillingPreferences::normalizePackagingKey($account->packaging_option),
             'packaging_option_label' => ClientAccountBillingPreferences::packagingLabel($account->packaging_option),
+            'notification_email' => $account->notification_email,
+            'notify_email' => (bool) $account->notify_email,
+            'whatsapp_e164' => $account->whatsapp_e164,
+            'slack_channel' => $account->slack_channel,
         ];
+    }
+
+    /**
+     * @param  array<string, mixed>  $sectionData
+     */
+    private function syncCommunicationChannelsFromPreferences(ClientAccount $account, array $sectionData): void
+    {
+        $method = trim((string) ($sectionData['communication_method'] ?? ''));
+
+        if ($method === 'email') {
+            $email = trim((string) ($sectionData['contact_email'] ?? ''));
+            if ($email !== '') {
+                $account->notification_email = $email;
+                $account->notify_email = true;
+            }
+
+            return;
+        }
+
+        if ($method === 'whatsapp') {
+            $phone = trim((string) ($sectionData['whatsapp_phone'] ?? ''));
+            if ($phone !== '') {
+                $account->whatsapp_e164 = $phone;
+            }
+
+            return;
+        }
+
+        if ($method === 'slack') {
+            $slackEmail = trim((string) ($sectionData['slack_email'] ?? ''));
+            if ($slackEmail !== '') {
+                $account->notification_email = $slackEmail;
+                $account->notify_email = true;
+            }
+        }
     }
 
     public function updatePackagingPreference(ClientAccount $account, string $packagingOption): ClientAccount

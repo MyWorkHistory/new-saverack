@@ -152,6 +152,25 @@ class ReturnBillService
                 ]);
             }
 
+            if ($return->isNonCompliant()) {
+                $nonCompliantCents = (int) round($this->feeService()->nonCompliantFeeAmount($return) * 100);
+                if ($nonCompliantCents !== 0) {
+                    $order++;
+                    $this->insertItem(
+                        $bill,
+                        $order,
+                        ReturnBill::LINE_NON_COMPLIANT,
+                        ReturnBillChargeCatalog::displayName(ReturnBill::LINE_NON_COMPLIANT),
+                        1.0,
+                        $nonCompliantCents,
+                        [
+                            'return_id' => $return->id,
+                            'rma_number' => $return->rma_number,
+                        ]
+                    );
+                }
+            }
+
             $this->recalculateTotal($bill);
             $this->logHistory($bill, $actor, 'created', 'Return bill created from processed return.');
 

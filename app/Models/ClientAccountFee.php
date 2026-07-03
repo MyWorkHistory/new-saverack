@@ -40,6 +40,8 @@ class ClientAccountFee extends Model
 
     public const LINE_RETURNS_DISPOSAL = 'disposal';
 
+    public const LINE_RETURNS_NON_COMPLIANT = 'non_compliant';
+
     protected $fillable = [
         'client_account_id',
         'pricing_template_id',

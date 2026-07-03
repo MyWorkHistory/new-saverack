@@ -607,10 +607,16 @@ function openAccountEdit(section = "") {
 }
 
 function onOnboardingAccountUpdated(payload) {
-  if (!payload?.brand_logo_url || !account.value) return;
+  if (!payload || typeof payload !== "object" || !account.value) return;
   account.value = {
     ...account.value,
-    brand_logo_url: payload.brand_logo_url,
+    ...(payload.brand_logo_url ? { brand_logo_url: payload.brand_logo_url } : {}),
+    ...(payload.notification_email !== undefined
+      ? { notification_email: payload.notification_email }
+      : {}),
+    ...(payload.notify_email !== undefined ? { notify_email: payload.notify_email } : {}),
+    ...(payload.whatsapp_e164 !== undefined ? { whatsapp_e164: payload.whatsapp_e164 } : {}),
+    ...(payload.slack_channel !== undefined ? { slack_channel: payload.slack_channel } : {}),
   };
 }
 

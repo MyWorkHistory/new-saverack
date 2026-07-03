@@ -255,4 +255,27 @@ class PortalOnboardingVerificationTest extends TestCase
         $this->assertTrue($branding['verification_fields']['brand_name']);
         $this->assertTrue($branding['verification_fields_complete']);
     }
+
+    public function test_save_communication_email_syncs_notification_email_channel(): void
+    {
+        $account = ClientAccount::create([
+            'company_name' => 'Comm Co',
+            'status' => ClientAccount::STATUS_PENDING,
+            'email' => 'account@comm.test',
+        ]);
+        $service = new PortalOnboardingService(Mockery::mock(ClientBrandLogoService::class));
+
+        $service->savePreferenceSection($account, 'communication_preferences', [
+            'communication_method' => 'email',
+            'contact_email' => 'notify@comm.test',
+        ]);
+        $account->refresh();
+
+        $this->assertSame('notify@comm.test', $account->notification_email);
+        $this->assertTrue($account->notify_email);
+        $this->assertSame(
+            'notify@comm.test',
+            $account->onboarding_preferences['communication_preferences']['contact_email'] ?? null
+        );
+    }
 }

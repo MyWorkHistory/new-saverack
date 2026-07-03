@@ -28,18 +28,28 @@ watch(
   { immediate: true, deep: true },
 );
 
-const feeRows = computed(() => [
-  {
-    key: "first_item",
-    name: localFees.value.first_item_label || "Returns (First Item)",
-    amount: localFees.value.first_item,
-  },
-  {
-    key: "additional_item",
-    name: localFees.value.additional_item_label || "Returns (Additional Items)",
-    amount: localFees.value.additional_item,
-  },
-]);
+const feeRows = computed(() => {
+  const rows = [
+    {
+      key: "first_item",
+      name: localFees.value.first_item_label || "Returns (First Item)",
+      amount: localFees.value.first_item,
+    },
+    {
+      key: "additional_item",
+      name: localFees.value.additional_item_label || "Returns (Additional Items)",
+      amount: localFees.value.additional_item,
+    },
+  ];
+  if (localFees.value.non_compliant_label || localFees.value.non_compliant != null) {
+    rows.push({
+      key: "non_compliant",
+      name: localFees.value.non_compliant_label || "Non-Compliant Return",
+      amount: localFees.value.non_compliant,
+    });
+  }
+  return rows;
+});
 
 function formatFeeAmount(amount) {
   const n = Number(amount);
@@ -71,6 +81,7 @@ async function saveFeeAmount({ amount }) {
   const payload = {};
   if (key === "first_item") payload.first_item = parsed;
   if (key === "additional_item") payload.additional_item = parsed;
+  if (key === "non_compliant") payload.non_compliant = parsed;
 
   if (props.returnId) {
     feeModalSaving.value = true;
@@ -91,6 +102,7 @@ async function saveFeeAmount({ amount }) {
 
   if (key === "first_item") localFees.value.first_item = parsed;
   if (key === "additional_item") localFees.value.additional_item = parsed;
+  if (key === "non_compliant") localFees.value.non_compliant = parsed;
   emit("update:fees", { ...localFees.value });
   feeModalOpen.value = false;
   feeEditTarget.value = null;

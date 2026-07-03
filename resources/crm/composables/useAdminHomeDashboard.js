@@ -33,6 +33,9 @@ export function useAdminHomeDashboard({ onError } = {}) {
     asn_pending: 0,
   });
   const sections = ref({});
+  const pausedAccounts = ref([]);
+  const putAwayByAccount = ref([]);
+  const restockPreview = ref([]);
 
   let pollTimer = null;
 
@@ -54,6 +57,11 @@ export function useAdminHomeDashboard({ onError } = {}) {
     };
     sections.value =
       data?.sections && typeof data.sections === "object" ? { ...data.sections } : {};
+    pausedAccounts.value = Array.isArray(data?.paused_accounts) ? [...data.paused_accounts] : [];
+    putAwayByAccount.value = Array.isArray(data?.put_away_by_account)
+      ? [...data.put_away_by_account]
+      : [];
+    restockPreview.value = Array.isArray(data?.restock_preview) ? [...data.restock_preview] : [];
   }
 
   async function load() {
@@ -122,6 +130,9 @@ export function useAdminHomeDashboard({ onError } = {}) {
     refreshing,
     totals,
     sections,
+    pausedAccounts,
+    putAwayByAccount,
+    restockPreview,
     anySectionRunning,
     anySectionPending,
     load,

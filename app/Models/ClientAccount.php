@@ -38,6 +38,7 @@ class ClientAccount extends Model
     protected $fillable = [
         'legacy_customer_id',
         'status',
+        'paused_at',
         'company_name',
         'brand_name',
         'website',
@@ -88,6 +89,7 @@ class ClientAccount extends Model
         'onboarding_preferences' => 'array',
         'onboarding_verifications' => 'array',
         'contract_date' => 'date',
+        'paused_at' => 'datetime',
         'cc_fee_percent' => 'decimal:2',
         'billing_available_funds_cents' => 'integer',
         'payment_terms_days' => 'integer',

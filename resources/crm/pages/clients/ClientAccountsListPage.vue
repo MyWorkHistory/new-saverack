@@ -9,7 +9,7 @@ import {
   ref,
   watch,
 } from "vue";
-import { RouterLink, useRouter } from "vue-router";
+import { RouterLink, useRoute, useRouter } from "vue-router";
 import api from "../../services/api";
 import ConfirmModal from "../../components/common/ConfirmModal.vue";
 import ClientAccountChannelIcons from "../../components/clients/ClientAccountChannelIcons.vue";
@@ -37,6 +37,7 @@ import {
 const crmUser = inject("crmUser", ref(null));
 const toast = useToast();
 const router = useRouter();
+const route = useRoute();
 const nf = new Intl.NumberFormat(undefined, { maximumFractionDigits: 0 });
 
 function userHasPerm(key) {
@@ -152,6 +153,8 @@ const query = reactive({
   account_manager_id: "",
   status: "all",
 });
+
+const CLIENT_ACCOUNT_STATUS_FILTERS = ["pending", "active", "paused", "inactive"];
 
 let searchDebounce = null;
 let searchWatchLock = false;
@@ -715,6 +718,10 @@ onMounted(async () => {
     title: "Save Rack | Accounts",
     description: "Accounts directory.",
   });
+  const statusFromQuery = String(route.query.status || "").trim().toLowerCase();
+  if (CLIENT_ACCOUNT_STATUS_FILTERS.includes(statusFromQuery)) {
+    query.status = statusFromQuery;
+  }
   await fetchMeta();
   await fetchRows();
 });

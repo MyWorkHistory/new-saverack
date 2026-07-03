@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Models\OrderDashboardSection;
+use App\Services\HomeDashboardWidgetsService;
 use App\Services\OrderDashboardSnapshotService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -15,9 +16,13 @@ class HomeDashboardController extends Controller
     /** @var OrderDashboardSnapshotService */
     private $snapshots;
 
-    public function __construct(OrderDashboardSnapshotService $snapshots)
+    /** @var HomeDashboardWidgetsService */
+    private $widgets;
+
+    public function __construct(OrderDashboardSnapshotService $snapshots, HomeDashboardWidgetsService $widgets)
     {
         $this->snapshots = $snapshots;
+        $this->widgets = $widgets;
     }
 
     public function show(Request $request): JsonResponse
@@ -26,7 +31,10 @@ class HomeDashboardController extends Controller
 
         $this->snapshots->bootstrapIfNeeded();
 
-        return response()->json($this->snapshots->getDashboardPayload());
+        return response()->json(array_merge(
+            $this->snapshots->getDashboardPayload(),
+            $this->widgets->widgetsForUser($request->user())
+        ));
     }
 
     public function refresh(Request $request): JsonResponse
@@ -57,6 +65,7 @@ class HomeDashboardController extends Controller
 
         return response()->json(array_merge(
             $this->snapshots->getDashboardPayload(),
+            $this->widgets->widgetsForUser($request->user()),
             [
                 'section' => $section,
                 'refresh_enqueued' => ! $sync && $section !== OrderDashboardSection::KEY_ASN_PENDING,

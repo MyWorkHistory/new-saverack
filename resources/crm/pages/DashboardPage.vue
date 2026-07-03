@@ -1,19 +1,46 @@
 <script setup>
-import { computed, onMounted } from "vue";
-import { RouterLink } from "vue-router";
+import { computed, inject, onMounted, ref } from "vue";
+import { RouterLink, useRouter } from "vue-router";
 import CrmLoadingSpinner from "../components/common/CrmLoadingSpinner.vue";
 import CrmRefreshToolbarButton from "../components/common/CrmRefreshToolbarButton.vue";
 import ClientAccountShippingStatusIcon from "../components/clients/ClientAccountShippingStatusIcon.vue";
 import { setCrmPageMeta } from "../composables/useCrmPageMeta.js";
 import { useAdminHomeDashboard } from "../composables/useAdminHomeDashboard.js";
 import { useToast } from "../composables/useToast.js";
-import { formatDateTimeUs } from "../utils/formatUserDates.js";
+import { crmIsAdmin } from "../utils/crmUser.js";
+import { formatDateTimeUs, formatDateUs } from "../utils/formatUserDates.js";
 
 const toast = useToast();
+const router = useRouter();
+const crmUser = inject("crmUser", ref(null));
 
-const { loading, refreshing, totals, sections, load, refreshSection } = useAdminHomeDashboard({
+function userHasPerm(key) {
+  const u = crmUser.value;
+  if (!u) return false;
+  if (crmIsAdmin(u) || u.is_crm_owner) return true;
+  return Array.isArray(u.permission_keys) && u.permission_keys.includes(key);
+}
+
+const canViewClients = computed(() => userHasPerm("clients.view"));
+const canViewReceiving = computed(() => userHasPerm("receiving.view"));
+const canViewInventory = computed(() => userHasPerm("inventory.view"));
+
+const {
+  loading,
+  refreshing,
+  totals,
+  sections,
+  pausedAccounts,
+  putAwayByAccount,
+  restockPreview,
+  load,
+  refreshSection,
+} = useAdminHomeDashboard({
   onError: (e) => toast.errorFrom(e, "Could not load Home dashboard."),
 });
+
+const putAwayTopFive = computed(() => putAwayByAccount.value.slice(0, 5));
+const restockTopFive = computed(() => restockPreview.value.slice(0, 5));
 
 const SECTION_ASN = "asn_pending";
 
@@ -94,6 +121,27 @@ function asnPendingRoute(accountId) {
       status: "pending",
     },
   };
+}
+
+function clientAccountDetailTo(accountId) {
+  const id = Number(accountId || 0);
+  if (id <= 0) return null;
+  return { name: "client-account-detail", params: { id: String(id) } };
+}
+
+function putAwayAccountRoute(accountId) {
+  return {
+    name: "admin-put-away",
+    query: { client_account_id: String(accountId) },
+  };
+}
+
+function inventoryDetailHref(row) {
+  const sku = String(row?.sku || "").trim();
+  if (!sku) return "#";
+  const accountId = Number(row?.client_account_id || 0);
+  const query = accountId > 0 ? { client_account_id: String(accountId) } : {};
+  return router.resolve({ name: "inventory-detail", params: { sku }, query }).href;
 }
 
 function refreshToastMessage(data, fallbackQueued) {
@@ -273,6 +321,202 @@ onMounted(async () => {
           </table>
         </div>
       </section>
+
+      <section
+        v-if="canViewClients"
+        class="staff-table-card staff-datatable-card staff-datatable-card--white w-100 mt-4"
+      >
+        <div class="staff-table-toolbar">
+          <div
+            class="staff-table-toolbar--row d-flex align-items-start justify-content-between gap-2"
+          >
+            <div>
+              <h2 class="staff-user-section-title mb-1">Paused Accounts</h2>
+              <p class="small text-secondary mb-0">Accounts with shipping paused.</p>
+            </div>
+          </div>
+        </div>
+        <div class="table-responsive staff-table-wrap">
+          <table class="table table-hover align-middle mb-0 staff-data-table">
+            <thead class="table-light staff-table-head">
+              <tr>
+                <th class="staff-table-head__th" scope="col">Account</th>
+                <th class="staff-table-head__th" scope="col" style="width: 10rem">Paused</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr v-for="row in pausedAccounts" :key="`paused-${row.id}`">
+                <td>
+                  <div class="d-flex align-items-center gap-2 min-w-0">
+                    <ClientAccountShippingStatusIcon status="paused" :size="18" />
+                    <RouterLink
+                      v-if="clientAccountDetailTo(row.id)"
+                      :to="clientAccountDetailTo(row.id)"
+                      class="text-truncate text-decoration-none fw-semibold"
+                    >
+                      {{ row.company_name }}
+                    </RouterLink>
+                  </div>
+                </td>
+                <td class="small text-secondary">
+                  {{ formatDateUs(row.paused_at) || "—" }}
+                </td>
+              </tr>
+              <tr v-if="!pausedAccounts.length">
+                <td colspan="2" class="text-secondary small py-4 text-center">
+                  No paused accounts.
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        <div class="px-3 py-3 border-top">
+          <RouterLink
+            :to="{ name: 'client-accounts', query: { status: 'paused' } }"
+            class="btn btn-outline-secondary btn-sm orders-toolbar-outline-btn"
+          >
+            View All
+          </RouterLink>
+        </div>
+      </section>
+
+      <section
+        v-if="canViewReceiving"
+        class="staff-table-card staff-datatable-card staff-datatable-card--white w-100 mt-4"
+      >
+        <div class="staff-table-toolbar">
+          <div
+            class="staff-table-toolbar--row d-flex align-items-start justify-content-between gap-2"
+          >
+            <div>
+              <h2 class="staff-user-section-title mb-1">Receiving Put Away</h2>
+              <p class="small text-secondary mb-0">
+                Top accounts by receiving quantity awaiting put away.
+              </p>
+            </div>
+          </div>
+        </div>
+        <div class="table-responsive staff-table-wrap">
+          <table class="table table-hover align-middle mb-0 staff-data-table">
+            <thead class="table-light staff-table-head">
+              <tr>
+                <th class="staff-table-head__th" scope="col">Account</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr v-for="row in putAwayTopFive" :key="`put-away-${row.account_id}`">
+                <td>
+                  <RouterLink
+                    :to="putAwayAccountRoute(row.account_id)"
+                    class="text-decoration-none fw-semibold"
+                  >
+                    {{ row.account_name }} — QTY: {{ Number(row.total_qty || 0).toLocaleString() }}
+                  </RouterLink>
+                </td>
+              </tr>
+              <tr v-if="!putAwayTopFive.length">
+                <td class="text-secondary small py-4 text-center">
+                  No receiving inventory awaiting put away.
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        <div class="px-3 py-3 border-top">
+          <RouterLink
+            :to="{ name: 'admin-put-away' }"
+            class="btn btn-outline-secondary btn-sm orders-toolbar-outline-btn"
+          >
+            View All
+          </RouterLink>
+        </div>
+      </section>
+
+      <section
+        v-if="canViewInventory"
+        class="staff-table-card staff-datatable-card staff-datatable-card--white w-100 mt-4"
+      >
+        <div class="staff-table-toolbar">
+          <div
+            class="staff-table-toolbar--row d-flex align-items-start justify-content-between gap-2"
+          >
+            <div>
+              <h2 class="staff-user-section-title mb-1">Restocks</h2>
+              <p class="small text-secondary mb-0">Active restock rows from the latest snapshot.</p>
+            </div>
+          </div>
+        </div>
+        <div class="table-responsive staff-table-wrap">
+          <table class="table table-hover align-middle mb-0 staff-data-table">
+            <thead class="table-light staff-table-head">
+              <tr>
+                <th class="staff-table-head__th" scope="col">Product</th>
+                <th class="staff-table-head__th" scope="col">Account</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr v-for="row in restockTopFive" :key="`restock-${row.sku}`" class="align-middle">
+                <td class="user-inv-table__text-col">
+                  <div class="restock-product">
+                    <a
+                      :href="inventoryDetailHref(row)"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      class="restock-product__thumb-link user-inv-table__image-link"
+                      :aria-label="`View ${row.sku || 'product'}`"
+                    >
+                      <img
+                        v-if="row.image_url"
+                        :src="row.image_url"
+                        alt=""
+                        class="user-inventory-thumb"
+                        loading="lazy"
+                      />
+                      <div v-else class="user-inventory-thumb user-inventory-thumb--empty" />
+                    </a>
+                    <div class="restock-product__text min-w-0">
+                      <a
+                        :href="inventoryDetailHref(row)"
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        class="restock-product__sku user-inv-table__sku-link"
+                      >
+                        {{ row.sku || "—" }}
+                      </a>
+                      <div class="restock-product__name text-secondary small">
+                        {{ row.name || "—" }}
+                      </div>
+                    </div>
+                  </div>
+                </td>
+                <td>
+                  <RouterLink
+                    v-if="clientAccountDetailTo(row.client_account_id)"
+                    :to="clientAccountDetailTo(row.client_account_id)"
+                    class="text-decoration-none"
+                  >
+                    {{ row.account_name || "—" }}
+                  </RouterLink>
+                  <span v-else class="text-secondary">—</span>
+                </td>
+              </tr>
+              <tr v-if="!restockTopFive.length">
+                <td colspan="2" class="text-secondary small py-4 text-center">
+                  No active restock rows.
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        <div class="px-3 py-3 border-top">
+          <RouterLink
+            :to="{ name: 'inventory-restock' }"
+            class="btn btn-outline-secondary btn-sm orders-toolbar-outline-btn"
+          >
+            View All
+          </RouterLink>
+        </div>
+      </section>
     </template>
   </div>
 </template>
@@ -280,5 +524,32 @@ onMounted(async () => {
 <style scoped>
 .tabular-nums {
   font-variant-numeric: tabular-nums;
+}
+
+.restock-product {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  min-width: 0;
+}
+
+.restock-product__thumb-link {
+  flex-shrink: 0;
+}
+
+.restock-product__text {
+  min-width: 0;
+}
+
+.restock-product__sku {
+  display: inline-block;
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.restock-product__name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 </style>

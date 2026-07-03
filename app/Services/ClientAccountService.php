@@ -160,6 +160,10 @@ class ClientAccountService
         $statusChanging = array_key_exists('status', $data)
             && strtolower(trim((string) $data['status'])) !== strtolower(trim($oldStatus));
 
+        if ($statusChanging) {
+            $this->applyPausedAtForStatusChange($data, $oldStatus);
+        }
+
         if ($data !== []) {
             $account->update($data);
         }
@@ -195,8 +199,26 @@ class ClientAccountService
             ->get()
             ->keyBy('id');
 
-        $updated = ClientAccount::query()->whereIn('id', $ids)->update(['status' => $status]);
-        $accounts = ClientAccount::query()->whereIn('id', $ids)->get();
+        $updated = 0;
+        $accounts = collect();
+
+        foreach ($ids as $id) {
+            $account = $accountsBefore->get($id);
+            if (! $account instanceof ClientAccount) {
+                continue;
+            }
+
+            $oldStatus = (string) $account->status;
+            $payload = ['status' => $status];
+            if (strtolower(trim($oldStatus)) !== strtolower(trim($status))) {
+                $this->applyPausedAtForStatusChange($payload, $oldStatus);
+            }
+
+            $account->update($payload);
+            $updated++;
+            $accounts->push($account->fresh());
+        }
+
         $failures = [];
 
         foreach ($accounts as $account) {
@@ -227,6 +249,33 @@ class ClientAccountService
         }
 
         return ['updated' => (int) $updated, 'shiphero_sync' => $shipheroSync];
+    }
+
+    /**
+     * @param  array<string, mixed>  $data
+     */
+    private function applyPausedAtForStatusChange(array &$data, string $oldStatus): void
+    {
+        if (! array_key_exists('status', $data)) {
+            return;
+        }
+
+        $newStatus = strtolower(trim((string) $data['status']));
+        $old = strtolower(trim($oldStatus));
+
+        if ($newStatus === $old) {
+            return;
+        }
+
+        if ($newStatus === ClientAccount::STATUS_PAUSED) {
+            $data['paused_at'] = now();
+
+            return;
+        }
+
+        if ($old === ClientAccount::STATUS_PAUSED) {
+            $data['paused_at'] = null;
+        }
     }
 
     /**

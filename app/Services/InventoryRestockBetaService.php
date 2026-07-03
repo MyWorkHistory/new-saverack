@@ -121,6 +121,39 @@ final class InventoryRestockBetaService
         return $this->toArray($snapshot);
     }
 
+    /**
+     * Active restock rows for dashboard preview (no inline enrichment).
+     *
+     * @return list<array<string, mixed>>
+     */
+    public function previewActiveRows(int $limit = 5): array
+    {
+        $snapshot = InventoryRestockBetaSnapshot::query()
+            ->orderByDesc('uploaded_at')
+            ->orderByDesc('id')
+            ->first();
+
+        if ($snapshot === null) {
+            return [];
+        }
+
+        $active = $this->activeRows($snapshot);
+        $slice = array_slice($active, 0, max(1, $limit));
+
+        return array_map(static fn (array $row) => [
+            'sku' => (string) ($row['sku'] ?? ''),
+            'name' => (string) ($row['name'] ?? ''),
+            'account_name' => (string) ($row['account_name'] ?? ''),
+            'client_account_id' => isset($row['client_account_id']) ? (int) $row['client_account_id'] : null,
+            'restock_needed' => isset($row['restock_needed']) && is_numeric($row['restock_needed'])
+                ? (int) $row['restock_needed']
+                : null,
+            'image_url' => is_string($row['image_url'] ?? null) && $row['image_url'] !== ''
+                ? (string) $row['image_url']
+                : null,
+        ], $slice);
+    }
+
     private function snapshotNeedsInlineEnrichment(InventoryRestockBetaSnapshot $snapshot): bool
     {
         $status = (string) ($snapshot->enrichment_status ?? '');

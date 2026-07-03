@@ -1,6 +1,6 @@
 <script setup>
 import { computed, onMounted, reactive, ref } from "vue";
-import { RouterLink, useRouter } from "vue-router";
+import { RouterLink, useRoute, useRouter } from "vue-router";
 import api from "../../services/api";
 import CrmLoadingSpinner from "../../components/common/CrmLoadingSpinner.vue";
 import CrmSearchableSelect from "../../components/common/CrmSearchableSelect.vue";
@@ -15,6 +15,7 @@ const PUT_AWAY_REASON = "Inbound Receiving Adjustments";
 
 const toast = useToast();
 const router = useRouter();
+const route = useRoute();
 
 const rows = ref([]);
 const loading = ref(false);
@@ -478,6 +479,10 @@ onMounted(async () => {
     title: "Save Rack | Put Away",
     description: "Move inventory from Receiving to warehouse locations.",
   });
+  const accountIdFromQuery = Number(route.query.client_account_id || 0);
+  if (accountIdFromQuery > 0) {
+    selectedAccountId.value = String(accountIdFromQuery);
+  }
   await loadAccounts();
   await loadAdjustmentReasons();
   await loadRows(true);

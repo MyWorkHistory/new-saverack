@@ -1,5 +1,5 @@
 <script setup>
-import { computed, onMounted, ref } from "vue";
+import { computed, onMounted, onUnmounted, ref } from "vue";
 import { useRouter } from "vue-router";
 import api from "../../services/api";
 import CrmSearchableSelect from "../../components/common/CrmSearchableSelect.vue";
@@ -27,6 +27,7 @@ const statusFilter = ref("");
 const typeFilter = ref("");
 const loading = ref(true);
 const results = ref([]);
+const filterMenuOpen = ref(false);
 
 const createOpen = ref(false);
 const createBusy = ref(false);
@@ -44,6 +45,19 @@ const accountOptions = computed(() =>
     email: a.email ? String(a.email) : "",
   })),
 );
+
+function onDocClickFilter(e) {
+  if (!e.target?.closest?.("[data-toolbar-filter]")) {
+    filterMenuOpen.value = false;
+  }
+}
+
+function resetToolbarFilters() {
+  statusFilter.value = "";
+  typeFilter.value = "";
+  filterMenuOpen.value = false;
+  loadList();
+}
 
 async function loadAccounts() {
   accountsLoading.value = true;
@@ -135,8 +149,13 @@ onMounted(() => {
     title: "Save Rack | Wholesale Orders",
     description: "Manage wholesale fulfillment orders.",
   });
+  document.addEventListener("click", onDocClickFilter);
   loadAccounts();
   loadList();
+});
+
+onUnmounted(() => {
+  document.removeEventListener("click", onDocClickFilter);
 });
 </script>
 
@@ -157,14 +176,14 @@ onMounted(() => {
     </div>
 
     <div
-      class="staff-table-card staff-datatable-card staff-datatable-card--white w-100 wholesale-orders-toolbar"
+      class="staff-table-card staff-datatable-card staff-datatable-card--white w-100 wholesale-orders-page-toolbar"
     >
       <div class="staff-table-toolbar">
         <div class="staff-table-toolbar--row wholesale-orders-toolbar-row">
-          <div class="wholesale-orders-toolbar-account">
+          <div class="wholesale-orders-toolbar-account flex-shrink-0">
             <CrmSearchableSelect
               v-model="accountFilter"
-              class="staff-toolbar-search staff-toolbar-search--inline w-100"
+              class="staff-toolbar-search staff-toolbar-search--inline"
               appearance="staff"
               aria-label="Client account"
               :options="accountOptions"
@@ -173,50 +192,112 @@ onMounted(() => {
               empty-label="All accounts"
               search-placeholder="Search accounts…"
               :allow-empty="true"
+              button-id="wholesale-orders-account-trigger"
             />
           </div>
-          <div class="wholesale-orders-toolbar-order">
-            <input
-              v-model="orderNumber"
-              type="search"
-              class="form-control staff-toolbar-search staff-toolbar-search--inline w-100"
-              placeholder="Order #"
-              autocomplete="off"
-              aria-label="Order number"
-              @keydown.enter.prevent="loadList"
-            />
+
+          <div class="wholesale-orders-search-wrap flex-shrink-0">
+            <div class="input-group orders-toolbar-search-group">
+              <input
+                id="wholesale-orders-order-search"
+                v-model.trim="orderNumber"
+                type="search"
+                class="form-control"
+                placeholder="Search by Order #"
+                autocomplete="off"
+                enterkeyhint="search"
+                aria-label="Order number"
+                :disabled="loading"
+                @keydown.enter.prevent="loadList"
+              />
+              <button
+                type="button"
+                class="btn btn-primary staff-page-primary orders-toolbar-search-btn fw-semibold"
+                :disabled="loading"
+                @click="loadList"
+              >
+                Search
+              </button>
+            </div>
           </div>
-          <div class="wholesale-orders-toolbar-status">
-            <select
-              v-model="statusFilter"
-              class="form-select staff-toolbar-search staff-toolbar-search--inline w-100"
-              aria-label="Status"
-            >
-              <option v-for="opt in WHOLESALE_STATUS_OPTIONS" :key="opt.value || 'all'" :value="opt.value">
-                {{ opt.label }}
-              </option>
-            </select>
-          </div>
-          <div class="wholesale-orders-toolbar-type">
-            <select
-              v-model="typeFilter"
-              class="form-select staff-toolbar-search staff-toolbar-search--inline w-100"
-              aria-label="Type"
-            >
-              <option v-for="opt in WHOLESALE_TYPE_OPTIONS" :key="opt.value || 'all-types'" :value="opt.value">
-                {{ opt.label }}
-              </option>
-            </select>
-          </div>
-          <div class="wholesale-orders-toolbar-action">
+
+          <div class="position-relative flex-shrink-0" data-toolbar-filter>
             <button
               type="button"
-              class="btn btn-primary staff-page-primary fw-semibold"
+              class="btn btn-outline-secondary staff-toolbar-btn orders-toolbar-outline-btn d-inline-flex align-items-center gap-2"
+              :aria-expanded="filterMenuOpen"
               :disabled="loading"
-              @click="loadList"
+              @click.stop="filterMenuOpen = !filterMenuOpen"
             >
-              Search
+              <svg
+                width="18"
+                height="18"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+                viewBox="0 0 24 24"
+                aria-hidden="true"
+              >
+                <path
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                  d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2.586a1 1 0 01-.293.707l-6.414 6.414a1 1 0 00-.293.707V17l-4 4v-6.586a1 1 0 00-.293-.707L3.293 7.293A1 1 0 013 6.586V4z"
+                />
+              </svg>
+              <span class="staff-toolbar-filter-text">Filters</span>
             </button>
+            <div
+              v-if="filterMenuOpen"
+              class="dropdown-menu show shadow border p-0 staff-toolbar-filter-dropdown"
+              role="dialog"
+              aria-label="Wholesale order filters"
+              @click.stop
+            >
+              <div class="staff-toolbar-filter-dropdown__head">
+                <span>Filters</span>
+                <button
+                  type="button"
+                  class="btn btn-link btn-sm text-secondary text-decoration-none p-0"
+                  @click="resetToolbarFilters"
+                >
+                  Reset
+                </button>
+              </div>
+              <div class="staff-toolbar-filter-dropdown__body">
+                <label class="form-label" for="wholesale-filter-status">Status</label>
+                <select
+                  id="wholesale-filter-status"
+                  v-model="statusFilter"
+                  class="form-select staff-datatable-filters__select mb-3"
+                  :disabled="loading"
+                  @change="loadList"
+                >
+                  <option
+                    v-for="opt in WHOLESALE_STATUS_OPTIONS"
+                    :key="opt.value || 'all-statuses'"
+                    :value="opt.value"
+                  >
+                    {{ opt.label }}
+                  </option>
+                </select>
+                <label class="form-label" for="wholesale-filter-type">Type</label>
+                <select
+                  id="wholesale-filter-type"
+                  v-model="typeFilter"
+                  class="form-select staff-datatable-filters__select"
+                  :disabled="loading"
+                  @change="loadList"
+                >
+                  <option
+                    v-for="opt in WHOLESALE_TYPE_OPTIONS"
+                    :key="opt.value || 'all-types'"
+                    :value="opt.value"
+                  >
+                    {{ opt.label }}
+                  </option>
+                </select>
+              </div>
+            </div>
           </div>
         </div>
       </div>
@@ -294,7 +375,7 @@ onMounted(() => {
 </template>
 
 <style scoped>
-.wholesale-orders-toolbar .wholesale-orders-toolbar-row {
+.wholesale-orders-page-toolbar .staff-table-toolbar--row.wholesale-orders-toolbar-row {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
@@ -306,15 +387,9 @@ onMounted(() => {
   width: min(280px, 100%);
 }
 
-.wholesale-orders-toolbar-order,
-.wholesale-orders-toolbar-status,
-.wholesale-orders-toolbar-type {
+.wholesale-orders-search-wrap {
   flex: 0 0 auto;
-  width: min(12rem, 100%);
-}
-
-.wholesale-orders-toolbar-action {
-  flex: 0 0 auto;
+  width: min(18rem, 100%);
 }
 
 .wholesale-orders-result-row {

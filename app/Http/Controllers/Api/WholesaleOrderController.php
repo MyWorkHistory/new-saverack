@@ -15,7 +15,6 @@ use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\ValidationException;
-use Symfony\Component\HttpFoundation\StreamedResponse;
 
 class WholesaleOrderController extends Controller
 {
@@ -432,7 +431,7 @@ class WholesaleOrderController extends Controller
         return response()->json($this->serializeDetail($wholesaleOrder->fresh(['clientAccount', 'createdBy', 'lines', 'comments.user'])));
     }
 
-    public function lineBarcodePdf(Request $request, WholesaleOrder $wholesaleOrder, WholesaleOrderLine $line): StreamedResponse|JsonResponse
+    public function lineBarcodePdf(Request $request, WholesaleOrder $wholesaleOrder, WholesaleOrderLine $line)
     {
         $this->assertStaff($request);
         Gate::authorize('view', $wholesaleOrder);

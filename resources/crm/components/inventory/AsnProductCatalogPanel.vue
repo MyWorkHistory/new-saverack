@@ -19,12 +19,19 @@ const props = defineProps({
   useSessionClientAccount: { type: Boolean, default: false },
   /** When set, catalog/create APIs resolve the client account from this ASN (staff admin). */
   asnId: { type: [Number, String], default: 0 },
+  /** When set, catalog APIs use the wholesale order scoped product catalog endpoint. */
+  wholesaleOrderId: { type: [Number, String], default: 0 },
 });
 
 const resolvedAccountId = computed(() => Number(props.clientAccountId || 0));
 const resolvedAsnId = computed(() => Number(props.asnId || 0));
+const resolvedWholesaleOrderId = computed(() => Number(props.wholesaleOrderId || 0));
 const canLoadCatalog = computed(
-  () => resolvedAccountId.value > 0 || props.useSessionClientAccount || resolvedAsnId.value > 0,
+  () =>
+    resolvedAccountId.value > 0 ||
+    props.useSessionClientAccount ||
+    resolvedAsnId.value > 0 ||
+    resolvedWholesaleOrderId.value > 0,
 );
 
 const emit = defineEmits(["add", "add-new-sku"]);
@@ -51,6 +58,7 @@ const {
   () => resolvedAccountId.value,
   () => props.useSessionClientAccount,
   () => resolvedAsnId.value,
+  () => resolvedWholesaleOrderId.value,
 );
 
 watch(
@@ -58,13 +66,16 @@ watch(
     props.active,
     resolvedAccountId.value,
     resolvedAsnId.value,
+    resolvedWholesaleOrderId.value,
     props.permissionDeniedMessage,
     props.useSessionClientAccount,
   ],
-  ([active, accountId, asnId, denied, useSession]) => {
+  ([active, accountId, asnId, wholesaleOrderId, denied, useSession]) => {
     if (!active) return;
     if (denied) return;
-    if (!Number(accountId || 0) && !useSession && !Number(asnId || 0)) return;
+    if (!Number(accountId || 0) && !useSession && !Number(asnId || 0) && !Number(wholesaleOrderId || 0)) {
+      return;
+    }
     resetCatalogSearchState();
     loadCatalogRows(true);
   },

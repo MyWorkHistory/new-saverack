@@ -237,6 +237,7 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::prefix('admin/wholesale-orders')->group(function () {
         Route::get('/', [WholesaleOrderController::class, 'index'])->middleware('can:orders.view');
         Route::post('/', [WholesaleOrderController::class, 'store'])->middleware('can:orders.update');
+        Route::get('/{wholesaleOrder}/product-catalog', [WholesaleOrderController::class, 'productCatalog'])->middleware('can:orders.view');
         Route::get('/{wholesaleOrder}', [WholesaleOrderController::class, 'show'])->middleware('can:orders.view');
         Route::patch('/{wholesaleOrder}', [WholesaleOrderController::class, 'update'])->middleware('can:orders.update');
         Route::post('/{wholesaleOrder}/lines', [WholesaleOrderController::class, 'storeLine'])->middleware('can:orders.update');

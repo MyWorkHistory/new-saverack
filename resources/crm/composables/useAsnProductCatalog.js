@@ -45,6 +45,12 @@ function asnIdFromBrowserPath() {
   return 0;
 }
 
+function wholesaleOrderIdFromBrowserPath() {
+  const path = currentBrowserPath();
+  const m = path.match(/\/admin\/orders\/wholesale\/(\d+)/i);
+  return m ? Number(m[1]) : 0;
+}
+
 /**
  * ShipHero product catalog for ASN / order line-item pickers.
  *
@@ -52,11 +58,13 @@ function asnIdFromBrowserPath() {
  * CRM client account id (the business customer), not the logged-in user id.
  * @param {import('vue').MaybeRefOrGetter<boolean>} [useSessionClientAccountSource]
  * @param {import('vue').MaybeRefOrGetter<number|string|null|undefined>} [asnIdSource]
+ * @param {import('vue').MaybeRefOrGetter<number|string|null|undefined>} [wholesaleOrderIdSource]
  */
 export function useAsnProductCatalog(
   clientAccountIdSource,
   useSessionClientAccountSource = () => false,
   asnIdSource = () => 0,
+  wholesaleOrderIdSource = () => 0,
 ) {
   const toast = useToast();
   const route = useRoute();
@@ -89,12 +97,26 @@ export function useAsnProductCatalog(
     let id = Number(toValue(asnIdSource) || 0);
     if (id > 0) return id;
     id = Number(route.params?.id || 0);
-    if (id > 0) return id;
+    if (id > 0 && route.name !== "wholesale-order-detail") return id;
     return asnIdFromBrowserPath();
   }
 
-  /** ASN-scoped catalog URL (preferred); null falls back to legacy inventory endpoint. */
+  function resolvedWholesaleOrderId() {
+    let id = Number(toValue(wholesaleOrderIdSource) || 0);
+    if (id > 0) return id;
+    if (route.name === "wholesale-order-detail") {
+      id = Number(route.params?.id || 0);
+      if (id > 0) return id;
+    }
+    return wholesaleOrderIdFromBrowserPath();
+  }
+
+  /** ASN / wholesale-scoped catalog URL; null falls back to legacy inventory endpoint. */
   function scopedCatalogBasePath() {
+    const wholesaleId = resolvedWholesaleOrderId();
+    if (wholesaleId > 0) {
+      return `/admin/wholesale-orders/${wholesaleId}`;
+    }
     return asnCatalogApiBase(resolvedAsnId(), {
       routeName: route.name,
       routePath: route.path,
@@ -145,7 +167,7 @@ export function useAsnProductCatalog(
       catalogLoadingMore.value ||
       catalogLoading.value ||
       catalogSearchAutoLoading.value ||
-      (!resolvedAsnId() && !resolvedAccountId() && !allowImplicitClientAccount())
+      (!resolvedWholesaleOrderId() && !resolvedAsnId() && !resolvedAccountId() && !allowImplicitClientAccount())
     ) {
       return;
     }
@@ -178,7 +200,12 @@ export function useAsnProductCatalog(
     const accountId = resolvedAccountId();
     const asnId = resolvedAsnId();
     const scopedBase = scopedCatalogBasePath();
-    if (!scopedBase && !accountId && !allowImplicitClientAccount()) {
+    if (
+      !scopedBase &&
+      !accountId &&
+      !allowImplicitClientAccount() &&
+      resolvedWholesaleOrderId() <= 0
+    ) {
       catalogLoadError.value =
         "Could not determine which customer account owns this ASN. Reload the page.";
       return;

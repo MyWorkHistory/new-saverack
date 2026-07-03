@@ -9,12 +9,15 @@ use App\Models\User;
 use App\Models\WholesaleOrder;
 use App\Models\WholesaleOrderComment;
 use App\Models\WholesaleOrderLine;
+use App\Services\ShipHeroInventoryService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\ValidationException;
+use RuntimeException;
+use Throwable;
 
 class WholesaleOrderController extends Controller
 {
@@ -299,6 +302,81 @@ class WholesaleOrderController extends Controller
         Gate::authorize('view', $wholesaleOrder);
 
         return response()->json($this->serializeDetail($wholesaleOrder));
+    }
+
+    public function productCatalog(
+        Request $request,
+        WholesaleOrder $wholesaleOrder,
+        ShipHeroInventoryService $inventory
+    ): JsonResponse {
+        $this->assertStaff($request);
+        Gate::authorize('view', $wholesaleOrder);
+
+        $validated = $request->validate([
+            'first' => ['nullable', 'integer', 'min:25', 'max:100'],
+            'after' => ['nullable', 'string', 'max:500'],
+            'query' => ['nullable', 'string', 'max:255'],
+            'search_skip' => ['nullable', 'integer', 'min:0', 'max:500000'],
+            'refresh' => ['nullable', 'boolean'],
+        ]);
+
+        $clientAccountId = (int) $wholesaleOrder->client_account_id;
+        $shipheroCustomerId = $this->shipheroCustomerIdForClientAccount($clientAccountId, $request);
+        $graphqlFirst = isset($validated['first']) ? (int) $validated['first'] : 75;
+        $after = isset($validated['after']) && is_string($validated['after']) ? $validated['after'] : null;
+        $query = isset($validated['query']) && is_string($validated['query']) ? trim($validated['query']) : '';
+        $searchSkip = isset($validated['search_skip']) ? (int) $validated['search_skip'] : 0;
+        $refresh = (bool) ($validated['refresh'] ?? false);
+
+        try {
+            $payload = $inventory->listAsnProductCatalogPage(
+                $shipheroCustomerId,
+                $graphqlFirst,
+                $after,
+                $query !== '' ? $query : null,
+                $searchSkip,
+                $clientAccountId,
+                $refresh
+            );
+
+            return response()->json([
+                'products' => $payload['products'],
+                'page_info' => $payload['page_info'],
+                'client_account_id' => $clientAccountId,
+            ]);
+        } catch (RuntimeException $e) {
+            return response()->json(['message' => $e->getMessage()], 502);
+        } catch (Throwable $e) {
+            report($e);
+
+            return response()->json([
+                'message' => config('app.debug')
+                    ? $e->getMessage()
+                    : 'Could not load product catalog from ShipHero.',
+            ], 502);
+        }
+    }
+
+    private function shipheroCustomerIdForClientAccount(int $clientAccountId, Request $request): string
+    {
+        $account = ClientAccount::query()->find($clientAccountId);
+        if ($account === null) {
+            throw ValidationException::withMessages([
+                'client_account_id' => ['Client account not found.'],
+            ]);
+        }
+        Gate::forUser($request->user())->authorize('view', $account);
+
+        $sid = $account->shiphero_customer_account_id;
+        if (! is_string($sid) || trim($sid) === '') {
+            throw ValidationException::withMessages([
+                'client_account_id' => [
+                    'This client account has no ShipHero customer account ID. Set it on the account profile (Payment section), then try again.',
+                ],
+            ]);
+        }
+
+        return trim($sid);
     }
 
     public function update(Request $request, WholesaleOrder $wholesaleOrder): JsonResponse

@@ -341,6 +341,7 @@ onUnmounted(() => {
           <div v-if="isEditable && addPanelOpen" class="border-bottom">
             <AsnProductCatalogPanel
               :client-account-id="clientAccountId"
+              :wholesale-order-id="orderId"
               :active="addPanelOpen"
               :busy="lineBusy"
               qty-label="Quantity"

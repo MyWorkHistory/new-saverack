@@ -7,10 +7,12 @@ use App\Models\Permission;
 use App\Models\User;
 use App\Models\WholesaleOrder;
 use App\Models\WholesaleOrderLine;
+use App\Services\ShipHeroInventoryService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Storage;
 use Laravel\Sanctum\Sanctum;
+use Mockery;
 use Tests\TestCase;
 
 class WholesaleOrderWorkflowTest extends TestCase
@@ -194,5 +196,42 @@ class WholesaleOrderWorkflowTest extends TestCase
         Sanctum::actingAs($user);
 
         $this->getJson('/api/admin/wholesale-orders')->assertForbidden();
+    }
+
+    public function test_wholesale_product_catalog_uses_orders_view_not_inventory_view(): void
+    {
+        $account = $this->account();
+        Sanctum::actingAs($this->staffUser());
+
+        $order = WholesaleOrder::query()->create([
+            'client_account_id' => $account->id,
+            'order_number' => 'WO-CAT-1',
+            'order_type' => WholesaleOrder::TYPE_AMAZON,
+            'status' => WholesaleOrder::STATUS_DRAFT,
+            'items_count' => 0,
+        ]);
+
+        $mock = Mockery::mock(ShipHeroInventoryService::class);
+        $mock->shouldReceive('listAsnProductCatalogPage')
+            ->once()
+            ->with('sh-wholesale-1', Mockery::type('int'), null, null, 0, $account->id, true)
+            ->andReturn([
+                'products' => [
+                    [
+                        'id' => 'prod-wh-1',
+                        'sku' => 'WH-SKU-1',
+                        'name' => 'Wholesale Item',
+                        'barcode' => '',
+                        'image_url' => null,
+                    ],
+                ],
+                'page_info' => ['has_next_page' => false, 'end_cursor' => null],
+            ]);
+        $this->app->instance(ShipHeroInventoryService::class, $mock);
+
+        $this->getJson('/api/admin/wholesale-orders/'.$order->id.'/product-catalog?first=50&refresh=1')
+            ->assertOk()
+            ->assertJsonPath('client_account_id', $account->id)
+            ->assertJsonPath('products.0.sku', 'WH-SKU-1');
     }
 }

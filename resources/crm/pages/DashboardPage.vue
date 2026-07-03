@@ -528,28 +528,53 @@ onMounted(async () => {
 
 .restock-product {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   gap: 0.75rem;
   min-width: 0;
+  max-width: min(20rem, 32vw);
 }
 
 .restock-product__thumb-link {
   flex-shrink: 0;
+  display: inline-block;
+  line-height: 0;
 }
 
 .restock-product__text {
+  flex: 1;
   min-width: 0;
 }
 
-.restock-product__sku {
+.user-inventory-thumb {
+  width: 52px;
+  height: 52px;
+  border-radius: 0.4rem;
+  object-fit: cover;
+  border: 1px solid rgba(0, 0, 0, 0.08);
+  background: #fff;
+}
+
+.user-inventory-thumb--empty {
   display: inline-block;
+  background: rgba(0, 0, 0, 0.05);
+}
+
+.restock-product__sku {
+  display: block;
+  font-size: 1rem;
   font-weight: 600;
+  line-height: 1.35;
+  margin-bottom: 0.15rem;
+  word-break: break-word;
   text-decoration: none;
 }
 
 .restock-product__name {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
   overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  line-height: 1.35;
+  word-break: break-word;
 }
 </style>

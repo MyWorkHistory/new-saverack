@@ -296,8 +296,8 @@ const shippingEditBtnClass = computed(() => portalPrimaryBtnClass);
 
 const moreActionsBtnClass = computed(() =>
   isPortalUser.value
-    ? "btn btn-outline-secondary dropdown-toggle order-detail-page__more-actions-toggle orders-toolbar-outline-btn"
-    : "btn btn-outline-secondary dropdown-toggle order-detail-page__more-actions-toggle",
+    ? "btn btn-outline-secondary order-detail-page__more-actions-toggle orders-toolbar-outline-btn d-inline-flex align-items-center gap-2"
+    : "btn btn-outline-secondary order-detail-page__more-actions-toggle d-inline-flex align-items-center gap-2",
 );
 
 function orderHasActiveHold(o) {
@@ -809,6 +809,11 @@ function toggleItemSort(key) {
 function sortIndicator(key) {
   if (itemSortKey.value !== key) return "↕";
   return itemSortDir.value === "asc" ? "↑" : "↓";
+}
+
+function itemSkuDisplay(sku) {
+  const s = String(sku ?? "").trim();
+  return s ? `SKU ${s}` : "—";
 }
 
 function extractErrorMessage(e) {
@@ -1877,7 +1882,19 @@ function goToOrdersList() {
                   :aria-expanded="moreActionsOpen ? 'true' : 'false'"
                   @click.stop="toggleMoreActionsMenu"
                 >
+                  <span class="order-detail-page__more-actions-gear-icon" aria-hidden="true">
+                    <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path
+                        stroke-linecap="round"
+                        stroke-linejoin="round"
+                        stroke-width="2"
+                        d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"
+                      />
+                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                    </svg>
+                  </span>
                   More Actions
+                  <span class="order-detail-page__more-actions-caret" aria-hidden="true">▾</span>
                 </button>
               </div>
               <button
@@ -1967,22 +1984,11 @@ function goToOrdersList() {
                         Item <span class="order-detail-page__sort-icon">{{ sortIndicator("name") }}</span>
                       </button>
                     </th>
-                    <th class="staff-table-head__th order-detail-page__sku-col">
-                      <button class="order-detail-page__sort-btn" type="button" @click="toggleItemSort('sku')">
-                        SKU <span class="order-detail-page__sort-icon">{{ sortIndicator("sku") }}</span>
-                      </button>
-                    </th>
                     <th class="staff-table-head__th text-end order-detail-page__qty-col">
                       <button class="order-detail-page__sort-btn order-detail-page__sort-btn--right" type="button" @click="toggleItemSort('quantity')">
                         Quantity <span class="order-detail-page__sort-icon">{{ sortIndicator("quantity") }}</span>
                       </button>
                     </th>
-                    <th class="staff-table-head__th text-end order-detail-page__qty-col">
-                      <button class="order-detail-page__sort-btn order-detail-page__sort-btn--right" type="button" @click="toggleItemSort('quantity_pending_fulfillment')">
-                        Quantity to Ship <span class="order-detail-page__sort-icon">{{ sortIndicator("quantity_pending_fulfillment") }}</span>
-                      </button>
-                    </th>
-                    <th class="staff-table-head__th text-center order-detail-page__status-col">Status</th>
                     <th v-if="!isReturnPreviewMode" class="staff-table-head__th text-center order-detail-page__items-actions-col">
                       Actions
                     </th>
@@ -2024,6 +2030,9 @@ function goToOrdersList() {
                           >
                             {{ item.fulfillment_status }}
                           </span>
+                          <div class="order-detail-page__item-sku" :title="item.sku ? String(item.sku) : undefined">
+                            {{ itemSkuDisplay(item.sku) }}
+                          </div>
                         </div>
                       </a>
                       <div v-else class="order-detail-page__item-cell">
@@ -2050,11 +2059,11 @@ function goToOrdersList() {
                           >
                             {{ item.fulfillment_status }}
                           </span>
+                          <div class="order-detail-page__item-sku" :title="item.sku ? String(item.sku) : undefined">
+                            {{ itemSkuDisplay(item.sku) }}
+                          </div>
                         </div>
                       </div>
-                    </td>
-                    <td class="order-detail-page__sku-col small text-secondary">
-                      <span :title="item.sku ? String(item.sku) : undefined">{{ item.sku || "—" }}</span>
                     </td>
                     <td class="text-end order-detail-page__qty-col">
                       <div>{{ item.quantity ?? 0 }}</div>
@@ -2064,18 +2073,6 @@ function goToOrdersList() {
                       >
                         {{ Number(item.backorder_quantity) }} on backorder
                       </div>
-                    </td>
-                    <td class="text-end order-detail-page__qty-col">{{ item.quantity_pending_fulfillment ?? 0 }}</td>
-                    <td class="text-center order-detail-page__status-col">
-                      <span
-                        v-if="item.fulfillment_status"
-                        class="badge rounded-pill fw-medium order-detail-page__item-line-status-badge"
-                        :class="lineItemStatusBadgeClass(item.fulfillment_status)"
-                        :title="String(item.fulfillment_status)"
-                      >
-                        {{ item.fulfillment_status }}
-                      </span>
-                      <span v-else class="small text-secondary">—</span>
                     </td>
                     <td v-if="!isReturnPreviewMode" class="text-center align-middle order-detail-page__items-actions-col">
                       <div
@@ -2100,7 +2097,7 @@ function goToOrdersList() {
                     </td>
                   </tr>
                   <tr v-if="!sortedItems.length">
-                    <td :colspan="isReturnPreviewMode ? 5 : 6" class="text-center text-secondary py-4">No items</td>
+                    <td :colspan="isReturnPreviewMode ? 2 : 3" class="text-center text-secondary py-4">No items</td>
                   </tr>
                 </tbody>
               </table>
@@ -2126,17 +2123,6 @@ function goToOrdersList() {
                 <div>
                   <div class="order-detail-page__items-summary-label">Total Quantity</div>
                   <div class="order-detail-page__items-summary-value">{{ itemsSummary.totalQuantity }}</div>
-                </div>
-              </div>
-              <div class="order-detail-page__items-summary-tile">
-                <span class="order-detail-page__items-summary-icon order-detail-page__items-summary-icon--ship" aria-hidden="true">
-                  <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16V6a1 1 0 00-1-1H4a1 1 0 00-1 1v10a1 1 0 001 1h1m8-1a1 1 0 01-1 1H9m4-1V8a1 1 0 011-1h2.586a1 1 0 01.707.293l3.414 3.414a1 1 0 01.293.707V16a1 1 0 01-1 1h-1m-6-1a1 1 0 001 1h1M5 17a2 2 0 104 0m6 0a2 2 0 104 0" />
-                  </svg>
-                </span>
-                <div>
-                  <div class="order-detail-page__items-summary-label">Quantity to Ship</div>
-                  <div class="order-detail-page__items-summary-value">{{ itemsSummary.totalQtyToShip }}</div>
                 </div>
               </div>
               <div class="order-detail-page__items-summary-tile">
@@ -2202,8 +2188,7 @@ function goToOrdersList() {
               <div class="d-flex align-items-center gap-2 min-w-0">
                 <span class="order-detail-page__section-icon order-detail-page__section-icon--shipping" aria-hidden="true">
                   <svg width="18" height="18" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16V6a1 1 0 00-1-1H4a1 1 0 00-1 1v10a1 1 0 001 1h1m8-1a1 1 0 01-1 1H9m4-1V8a1 1 0 011-1h2.586a1 1 0 01.707.293l3.414 3.414a1 1 0 01.293.707V16a1 1 0 01-1 1h-1m-6-1a1 1 0 001 1h1M5 17a2 2 0 104 0m6 0a2 2 0 104 0" />
                   </svg>
                 </span>
                 <h3 class="h6 fw-semibold mb-0">Shipping Address</h3>
@@ -3038,6 +3023,10 @@ function goToOrdersList() {
   text-decoration: underline;
 }
 
+.order-detail-page__item-cell--link .order-detail-page__item-sku {
+  color: #6c757d;
+}
+
 .order-detail-page__item-name--plain {
   color: inherit;
   font-weight: 600;
@@ -3102,25 +3091,13 @@ function goToOrdersList() {
 }
 
 .order-detail-page__items-col {
-  width: 34%;
-  min-width: 0;
-  vertical-align: middle;
-}
-
-.order-detail-page__sku-col {
-  width: 14%;
+  width: 58%;
   min-width: 0;
   vertical-align: middle;
 }
 
 .order-detail-page__qty-col {
-  width: 10%;
-  min-width: 0;
-  vertical-align: middle;
-}
-
-.order-detail-page__status-col {
-  width: 12%;
+  width: 14%;
   min-width: 0;
   vertical-align: middle;
 }
@@ -3380,6 +3357,24 @@ function goToOrdersList() {
   background-color: var(--bs-body-bg);
   color: var(--bs-body-color);
   border-color: var(--bs-border-color);
+}
+
+.order-detail-page__more-actions-gear-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.75rem;
+  height: 1.75rem;
+  border-radius: 0.375rem;
+  flex-shrink: 0;
+  color: #2563eb;
+  background: rgba(37, 99, 235, 0.1);
+}
+
+.order-detail-page__more-actions-caret {
+  font-size: 0.75rem;
+  line-height: 1;
+  opacity: 0.75;
 }
 
 .order-detail-page__more-actions .dropdown-menu {

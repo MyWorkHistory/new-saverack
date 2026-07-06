@@ -1,8 +1,15 @@
 .orders-on-hold-overview {
   .on-hold-summary-card {
-    text-align: center;
-    border: 1px solid color-mix(in srgb, var(--on-hold-card-accent, #2563eb) 18%, transparent);
-    background: color-mix(in srgb, var(--on-hold-card-tint, #dbeafe) 55%, var(--vx-nav-bg, #fff));
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    width: 100%;
+    padding: 1rem;
+    text-align: left;
+    background: var(--bs-body-bg, #fff);
+    border: 1px solid #e5e7eb;
+    border-radius: 0.5rem;
+    box-shadow: 0 1px 2px rgba(47, 43, 61, 0.04);
     cursor: pointer;
     transition:
       box-shadow 0.15s ease,
@@ -10,28 +17,188 @@
   }
 
   .on-hold-summary-card:hover {
-    box-shadow: 0 0.45rem 1rem rgba(47, 43, 61, 0.12);
+    box-shadow: 0 0.35rem 0.85rem rgba(47, 43, 61, 0.1);
     transform: translateY(-1px);
   }
 
-  .on-hold-summary-card__label {
-    font-size: 0.875rem;
-    font-weight: 600;
-    color: var(--bs-secondary-color);
+  .on-hold-summary-card__icon {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    width: 2.75rem;
+    height: 2.75rem;
+    border-radius: 0.4375rem;
+  }
+
+  .on-hold-summary-card__body {
+    flex: 1 1 auto;
+    min-width: 0;
+  }
+
+  .on-hold-summary-card__title {
     margin: 0;
+    font-size: 0.6875rem;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    line-height: 1.3;
+  }
+
+  .on-hold-summary-card__sub {
+    margin: 0.2rem 0 0;
+    font-size: 0.6875rem;
     line-height: 1.35;
+    color: var(--bs-secondary-color);
   }
 
   .on-hold-summary-card__value {
-    font-size: 1.875rem;
+    flex-shrink: 0;
+    margin: 0 0 0 auto;
+    font-size: 1.75rem;
     font-weight: 700;
-    color: var(--on-hold-card-accent, var(--bs-body-color));
-    margin: 0.5rem 0 0;
-    line-height: 1.2;
+    line-height: 1;
     font-variant-numeric: tabular-nums;
   }
 
-  .on-hold-section-panel + .on-hold-section-panel {
+  .on-hold-section-panel {
+    background: var(--bs-body-bg, #fff);
+    border: 1px solid #e5e7eb;
+    border-radius: 0.5rem;
+    box-shadow: 0 1px 2px rgba(47, 43, 61, 0.04);
+    padding: 1rem 1rem 0.75rem;
+  }
+
+  .on-hold-section-panel__header-icon {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 2.75rem;
+    height: 2.75rem;
+    border-radius: 0.4375rem;
+  }
+
+  .on-hold-section-panel__title {
+    font-size: 1rem;
+    font-weight: 600;
+    color: var(--bs-body-color);
+  }
+
+  .on-hold-section-panel__meta {
+    font-size: 0.75rem;
+    color: var(--bs-secondary-color);
+  }
+
+  .on-hold-section-panel__table-head {
     margin-top: 1rem;
+    padding: 0 0.125rem 0.5rem;
+    border-bottom: 1px solid #f0f0f2;
+  }
+
+  .on-hold-section-panel__col-head {
+    font-size: 0.6875rem;
+    font-weight: 600;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+    color: var(--bs-secondary-color);
+  }
+
+  .on-hold-section-panel__row {
+    padding: 0.625rem 0.125rem;
+    border-bottom: 1px solid #f5f5f7;
+  }
+
+  .on-hold-section-panel__row:last-child {
+    border-bottom: none;
+  }
+
+  .on-hold-section-panel__account-link {
+    font-size: 0.875rem;
+    font-weight: 500;
+    color: #2563eb;
+    text-decoration: none;
+  }
+
+  .on-hold-section-panel__account-link:hover {
+    text-decoration: underline;
+  }
+
+  .on-hold-count-pill {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 2rem;
+    padding: 0.2rem 0.55rem;
+    border-radius: 999px;
+    background: #f3f4f6;
+    color: var(--bs-body-color);
+    font-size: 0.8125rem;
+    font-weight: 600;
+    font-variant-numeric: tabular-nums;
+  }
+
+  .on-hold-count-pill--alert {
+    background: #fee2e2;
+    color: #dc2626;
+  }
+
+  .on-hold-section-panel__empty-icon {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 3rem;
+    height: 3rem;
+    border-radius: 0.5rem;
+    opacity: 0.85;
+  }
+
+  .on-hold-section-panel__empty-text {
+    font-size: 0.8125rem;
+    color: var(--bs-secondary-color);
+  }
+
+  .on-hold-section-panel__footer {
+    margin-top: 0.5rem;
+    padding-top: 0.75rem;
+    border-top: 1px solid #f0f0f2;
+  }
+
+  .on-hold-view-all-link {
+    font-size: 0.875rem;
+    font-weight: 500;
+    color: #2563eb;
+    text-decoration: none;
+  }
+
+  .on-hold-view-all-link:hover {
+    color: #1d4ed8;
+    text-decoration: underline;
+  }
+
+  .on-hold-view-all-link--static {
+    font-size: 0.875rem;
+    font-weight: 500;
+    color: #2563eb;
+  }
+}
+
+[data-bs-theme="dark"] .orders-on-hold-overview {
+  .on-hold-summary-card,
+  .on-hold-section-panel {
+    border-color: var(--vx-nav-border);
+  }
+
+  .on-hold-section-panel__table-head,
+  .on-hold-section-panel__row,
+  .on-hold-section-panel__footer {
+    border-color: var(--vx-nav-border);
+  }
+
+  .on-hold-count-pill {
+    background: rgba(255, 255, 255, 0.08);
+  }
+
+  .on-hold-count-pill--alert {
+    background: rgba(220, 38, 38, 0.2);
+    color: #fca5a5;
   }
 }

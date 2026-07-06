@@ -133,18 +133,26 @@ onMounted(async () => {
     <template v-else>
       <OnHoldSummaryCards :get-total-count="getTotalCount" @select="scrollToSection" />
 
-      <OnHoldSectionPanel
-        v-for="hold in HOLD_SECTIONS"
-        :key="hold.key"
-        :section-key="hold.key"
-        :label="hold.label"
-        :hold-reason="hold.holdReason"
-        :accounts="sectionData(hold.key).accounts"
-        :last-updated="lastUpdatedLabel(hold.key)"
-        :refreshing="isSectionRefreshing(hold.key)"
-        :orders-hold-route="ordersHoldRoute"
-        @refresh="onRefreshSection"
-      />
+      <div class="row g-3">
+        <div
+          v-for="hold in HOLD_SECTIONS"
+          :key="hold.key"
+          class="col-12 col-md-6 col-xl-4"
+        >
+          <OnHoldSectionPanel
+            :section-key="hold.key"
+            :label="hold.label"
+            :icon="hold.icon"
+            :icon-style="hold.iconStyle"
+            :hold-reason="hold.holdReason"
+            :accounts="sectionData(hold.key).accounts"
+            :last-updated="lastUpdatedLabel(hold.key)"
+            :refreshing="isSectionRefreshing(hold.key)"
+            :orders-hold-route="ordersHoldRoute"
+            @refresh="onRefreshSection"
+          />
+        </div>
+      </div>
     </template>
   </div>
 </template>

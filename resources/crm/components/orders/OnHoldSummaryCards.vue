@@ -1,4 +1,5 @@
 <script setup>
+import CrmMaterialIcon from "../common/CrmMaterialIcon.vue";
 import { HOLD_SECTIONS } from "../../constants/holdSummaryCards.js";
 
 const props = defineProps({
@@ -23,16 +24,29 @@ function onSelect(key) {
     <div
       v-for="section in HOLD_SECTIONS"
       :key="section.key"
-      class="col-6 col-md-4 col-xl-2"
+      class="col-12 col-md-6 col-xl-2"
     >
       <button
         type="button"
-        class="staff-stat-card on-hold-summary-card h-100 w-100"
-        :style="{ '--on-hold-card-accent': section.cardStyle.color, '--on-hold-card-tint': section.cardStyle.background }"
+        class="on-hold-summary-card h-100 w-100"
         @click="onSelect(section.key)"
       >
-        <p class="on-hold-summary-card__label">{{ section.label }}</p>
-        <p class="on-hold-summary-card__value">{{ formatCount(section.key) }}</p>
+        <div
+          class="on-hold-summary-card__icon"
+          :style="section.iconStyle"
+          aria-hidden="true"
+        >
+          <CrmMaterialIcon :name="section.icon" :size="22" />
+        </div>
+        <div class="on-hold-summary-card__body min-w-0">
+          <p class="on-hold-summary-card__title" :style="{ color: section.titleColor }">
+            {{ section.titleUpper }}
+          </p>
+          <p class="on-hold-summary-card__sub">{{ section.sub }}</p>
+        </div>
+        <p class="on-hold-summary-card__value" :style="{ color: section.titleColor }">
+          {{ formatCount(section.key) }}
+        </p>
       </button>
     </div>
   </div>

@@ -29,6 +29,7 @@ use App\Http\Controllers\Api\PricingFeeTemplateController;
 use App\Http\Controllers\Api\ReturnBillController;
 use App\Http\Controllers\Api\AsnBillController;
 use App\Http\Controllers\Api\PutAwayController;
+use App\Http\Controllers\Api\UserPersonalTaskController;
 use App\Http\Controllers\Api\UserController;
 use App\Http\Controllers\Api\WebmasterTaskController;
 use App\Http\Controllers\Api\TutorialController;
@@ -56,6 +57,13 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::prefix('auth')->group(function () {
         Route::get('/me', [AuthController::class, 'me']);
         Route::post('/logout', [AuthController::class, 'logout']);
+    });
+
+    Route::prefix('me/personal-tasks')->group(function () {
+        Route::get('/', [UserPersonalTaskController::class, 'index']);
+        Route::post('/', [UserPersonalTaskController::class, 'store']);
+        Route::patch('/{userPersonalTask}', [UserPersonalTaskController::class, 'update']);
+        Route::delete('/{userPersonalTask}', [UserPersonalTaskController::class, 'destroy']);
     });
 
     Route::get('/roles', [RoleController::class, 'index']);

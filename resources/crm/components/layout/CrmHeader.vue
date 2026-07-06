@@ -6,6 +6,9 @@ import CrmSearchableSelect from "../common/CrmSearchableSelect.vue";
 import { BRAND_MARK_SRC } from "../../utils/brandAssets.js";
 import { useCrmSidebar } from "../../composables/useCrmSidebar";
 import UserEditModal from "../users/UserEditModal.vue";
+import UserTasksNavButton from "../tasks/UserTasksNavButton.vue";
+import UserPersonalTasksDrawer from "../tasks/UserPersonalTasksDrawer.vue";
+import { useUserPersonalTasks } from "../../composables/useUserPersonalTasks.js";
 import { resolvePublicUrl } from "../../utils/resolvePublicUrl.js";
 import { useToast } from "../../composables/useToast.js";
 
@@ -42,6 +45,9 @@ const staffLookupAccounts = ref([]);
 const menuOpen = ref(false);
 const menuRoot = ref(null);
 const editProfileModalOpen = ref(false);
+const tasksDrawerOpen = ref(false);
+
+const { load: loadPersonalTasks } = useUserPersonalTasks();
 
 const buildEnvLabel = computed(() =>
   import.meta.env.MODE === "production" ? "Prod" : "Dev",
@@ -217,6 +223,7 @@ onMounted(() => {
   if (!isPortalUser.value) {
     loadStaffLookupAccounts();
   }
+  void loadPersonalTasks().catch(() => {});
 });
 
 onUnmounted(() => {
@@ -342,7 +349,8 @@ onUnmounted(() => {
             </button>
           </div>
 
-          <div class="d-flex align-items-center flex-shrink-0 ms-auto">
+          <div class="d-flex align-items-center flex-shrink-0 ms-auto gap-1">
+            <UserTasksNavButton v-model:open="tasksDrawerOpen" />
             <div ref="menuRoot" class="position-relative">
               <button
                 type="button"
@@ -485,7 +493,8 @@ onUnmounted(() => {
             </button>
           </div>
 
-          <div class="d-flex align-items-center flex-shrink-0 ms-auto">
+          <div class="d-flex align-items-center flex-shrink-0 ms-auto gap-1">
+            <UserTasksNavButton v-model:open="tasksDrawerOpen" />
             <div ref="menuRoot" class="position-relative">
               <button
                 type="button"
@@ -555,6 +564,8 @@ onUnmounted(() => {
       </div>
     </div>
   </header>
+
+  <UserPersonalTasksDrawer v-model:open="tasksDrawerOpen" />
 
   <UserEditModal
     v-if="!isPortalUser && user?.id"

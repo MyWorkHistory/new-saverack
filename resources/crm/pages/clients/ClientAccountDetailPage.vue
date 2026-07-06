@@ -13,6 +13,7 @@ import ClientAccountBillingPanel from "../../components/clients/ClientAccountBil
 import ClientAccountOrdersPanel from "../../components/clients/ClientAccountOrdersPanel.vue";
 import ClientAccountInventoryPanel from "../../components/clients/ClientAccountInventoryPanel.vue";
 import ClientAccountAsnPanel from "../../components/clients/ClientAccountAsnPanel.vue";
+import AccountDetailSectionHead from "../../components/clients/AccountDetailSectionHead.vue";
 import CrmIconRowActions from "../../components/common/CrmIconRowActions.vue";
 import { crmIsAdmin } from "../../utils/crmUser";
 import { setCrmPageMeta } from "../../composables/useCrmPageMeta.js";
@@ -1000,19 +1001,14 @@ onUnmounted(() => {
               </div>
             </div>
 
-            <div
-              class="d-flex flex-wrap align-items-center justify-content-between gap-2 mb-2"
-            >
-              <h3 class="staff-user-profile__details-title mb-0">Details</h3>
-              <button
-                v-if="canUpdateAccount"
-                type="button"
-                class="btn btn-sm staff-account-edit-btn"
-                @click="openAccountEdit('left')"
-              >
-                Edit
-              </button>
-            </div>
+            <AccountDetailSectionHead
+              title="Details"
+              icon="details"
+              title-class="staff-user-profile__details-title mb-0"
+              head-class="mb-2"
+              :show-edit="canUpdateAccount"
+              @edit="openAccountEdit('left')"
+            />
 
             <dl class="staff-user-profile__dl mb-4">
               <div>
@@ -1061,17 +1057,22 @@ onUnmounted(() => {
             </dl>
 
             <section class="staff-user-profile__activity" aria-labelledby="sidebar-activity-heading">
-              <div class="d-flex flex-wrap align-items-center justify-content-between gap-2 mb-2">
-                <h3 id="sidebar-activity-heading" class="staff-user-profile__details-title mb-0">
-                  Account activity
-                </h3>
-                <RouterLink
-                  :to="accountHistoryRoute()"
-                  class="small link-primary text-decoration-none"
-                >
-                  View All
-                </RouterLink>
-              </div>
+              <AccountDetailSectionHead
+                title="Account activity"
+                icon="activity"
+                title-class="staff-user-profile__details-title mb-0"
+                head-class="mb-2"
+                heading-id="sidebar-activity-heading"
+              >
+                <template #actions>
+                  <RouterLink
+                    :to="accountHistoryRoute()"
+                    class="small link-primary text-decoration-none"
+                  >
+                    View All
+                  </RouterLink>
+                </template>
+              </AccountDetailSectionHead>
               <div v-if="timelinePreview.length" class="staff-user-timeline staff-user-timeline--sidebar">
                 <div
                   v-for="row in timelinePreview"
@@ -1123,19 +1124,13 @@ onUnmounted(() => {
         >
           <template v-if="activeTab === TAB_ACCOUNT_INFO">
             <div class="staff-surface p-3 p-md-4 mb-4">
-              <div
-                class="d-flex flex-wrap align-items-start justify-content-between gap-2 mb-3"
-              >
-                <h3 class="staff-user-section-title mb-0">Personal information</h3>
-                <button
-                  v-if="canUpdateAccount"
-                  type="button"
-                  class="btn btn-sm staff-account-edit-btn"
-                  @click="openAccountEdit('account')"
-                >
-                  Edit
-                </button>
-              </div>
+              <AccountDetailSectionHead
+                title="Personal information"
+                icon="personal"
+                head-class="mb-3"
+                :show-edit="canUpdateAccount"
+                @edit="openAccountEdit('account')"
+              />
               <div class="row g-3">
                 <div class="col-md-6">
                   <dl class="mb-0 small">
@@ -1193,19 +1188,13 @@ onUnmounted(() => {
             </div>
 
             <div class="staff-surface p-3 p-md-4 mb-4">
-              <div
-                class="d-flex flex-wrap align-items-start justify-content-between gap-2 mb-3"
-              >
-                <h3 class="staff-user-section-title mb-0">Address</h3>
-                <button
-                  v-if="canUpdateAccount"
-                  type="button"
-                  class="btn btn-sm staff-account-edit-btn"
-                  @click="openAccountEdit('address')"
-                >
-                  Edit
-                </button>
-              </div>
+              <AccountDetailSectionHead
+                title="Address"
+                icon="address"
+                head-class="mb-3"
+                :show-edit="canUpdateAccount"
+                @edit="openAccountEdit('address')"
+              />
               <div class="row g-3">
                 <div class="col-md-6">
                   <dl class="mb-0 small">
@@ -1268,7 +1257,7 @@ onUnmounted(() => {
 
             <div class="staff-table-card staff-datatable-card overflow-hidden mb-4">
               <div class="px-4 py-3 px-md-5 py-md-3 border-bottom">
-                <h3 class="h6 fw-semibold text-body mb-0">Notes</h3>
+                <AccountDetailSectionHead title="Notes" icon="notes" />
               </div>
               <div class="p-4 p-md-5">
                 <ul
@@ -1597,7 +1586,11 @@ onUnmounted(() => {
 
           <template v-else-if="activeTab === TAB_ONBOARDING">
             <div class="staff-surface p-3 p-md-4">
-              <h3 class="staff-user-section-title mb-3">Onboarding</h3>
+              <AccountDetailSectionHead
+                title="Onboarding"
+                icon="onboarding"
+                head-class="mb-3"
+              />
               <ClientAccountOnboardingPanel
                 :client-account-id="account.id"
                 :can-edit="canUpdateAccount"
@@ -1654,19 +1647,13 @@ onUnmounted(() => {
 
           <template v-else-if="activeTab === TAB_SETTINGS">
             <div class="staff-surface p-3 p-md-4">
-              <div
-                class="d-flex flex-wrap align-items-start justify-content-between gap-2 mb-3"
-              >
-                <h3 class="staff-user-section-title mb-0">Settings</h3>
-                <button
-                  v-if="canUpdateAccount"
-                  type="button"
-                  class="btn btn-sm staff-account-edit-btn"
-                  @click="openAccountEdit('settings')"
-                >
-                  Edit
-                </button>
-              </div>
+              <AccountDetailSectionHead
+                title="Settings"
+                icon="settings"
+                head-class="mb-3"
+                :show-edit="canUpdateAccount"
+                @edit="openAccountEdit('settings')"
+              />
               <div class="row g-3">
                 <div class="col-md-6">
                   <dl class="mb-0 small">

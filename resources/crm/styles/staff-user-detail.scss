@@ -111,10 +111,19 @@ $staff-detail-primary: #2563eb;
   }
 
   .staff-account-edit-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.375rem;
     background-color: #fff;
     border: 1px solid $staff-detail-primary;
     color: $staff-detail-primary;
     font-weight: 500;
+
+    &__icon {
+      width: 0.875rem;
+      height: 0.875rem;
+      flex-shrink: 0;
+    }
 
     &:hover,
     &:focus-visible {
@@ -135,6 +144,48 @@ $staff-detail-primary: #2563eb;
       border-color: lighten($staff-detail-primary, 12%);
       color: lighten($staff-detail-primary, 12%);
     }
+  }
+
+  .account-detail-section-head {
+    min-width: 0;
+  }
+
+  .account-detail-section-head__title-wrap {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    min-width: 0;
+  }
+
+  .account-detail-section-icon {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 2rem;
+    height: 2rem;
+    border-radius: 0.5rem;
+    flex-shrink: 0;
+  }
+
+  .account-detail-section-icon--personal,
+  .account-detail-section-icon--details,
+  .account-detail-section-icon--address,
+  .account-detail-section-icon--settings,
+  .account-detail-section-icon--billing,
+  .account-detail-section-icon--invoices,
+  .account-detail-section-icon--activity {
+    color: $staff-detail-primary;
+    background: rgba($staff-detail-primary, 0.1);
+  }
+
+  .account-detail-section-icon--notes {
+    color: #7c3aed;
+    background: rgba(124, 58, 237, 0.1);
+  }
+
+  .account-detail-section-icon--onboarding {
+    color: #16a34a;
+    background: rgba(22, 163, 74, 0.1);
   }
 }
 

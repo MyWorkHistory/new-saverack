@@ -3,6 +3,7 @@ import { computed, onMounted, onUnmounted, ref, watch } from "vue";
 import { RouterLink } from "vue-router";
 import api from "../../services/api";
 import BillingDollarStatIcon from "../../components/billing/BillingDollarStatIcon.vue";
+import AccountDetailSectionHead from "./AccountDetailSectionHead.vue";
 import CrmLoadingSpinner from "../../components/common/CrmLoadingSpinner.vue";
 import { useToast } from "../../composables/useToast.js";
 import { formatCents } from "../../utils/formatMoney.js";
@@ -351,17 +352,13 @@ watch(() => props.accountId, load);
       <div class="row g-4">
         <div class="col-12 col-lg-5">
           <div class="staff-surface p-3 p-md-4 h-100">
-            <div class="d-flex flex-wrap align-items-start justify-content-between gap-2 mb-3">
-              <h3 class="staff-user-section-title mb-0">Billing preferences</h3>
-              <button
-                v-if="canEdit"
-                type="button"
-                class="btn btn-sm staff-account-edit-btn"
-                @click="emit('edit')"
-              >
-                Edit
-              </button>
-            </div>
+            <AccountDetailSectionHead
+              title="Billing preferences"
+              icon="billing"
+              head-class="mb-3"
+              :show-edit="canEdit"
+              @edit="emit('edit')"
+            />
 
             <div class="client-account-billing-prefs">
               <div
@@ -496,17 +493,18 @@ watch(() => props.accountId, load);
         </div>
 
         <div class="col-12 col-lg-7">
-          <div class="d-flex flex-wrap align-items-center justify-content-between gap-2 mb-3">
-            <h3 class="staff-user-section-title mb-0">Recent invoices</h3>
-            <RouterLink
-              :to="invoicesUrl('all')"
-              class="btn btn-sm btn-outline-primary"
-              target="_blank"
-              rel="noopener noreferrer"
-            >
-              View All
-            </RouterLink>
-          </div>
+          <AccountDetailSectionHead title="Recent invoices" icon="invoices" head-class="mb-3">
+            <template #actions>
+              <RouterLink
+                :to="invoicesUrl('all')"
+                class="btn btn-sm btn-outline-primary"
+                target="_blank"
+                rel="noopener noreferrer"
+              >
+                View All
+              </RouterLink>
+            </template>
+          </AccountDetailSectionHead>
           <div class="staff-table-card staff-datatable-card staff-datatable-card--white p-0 h-100 d-flex flex-column">
             <div class="table-responsive staff-table-wrap flex-grow-1">
               <table class="table table-hover align-middle mb-0 staff-data-table">

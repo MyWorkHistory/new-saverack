@@ -1,86 +1,32 @@
-// ASN list pages — status chips, summary cards, account cell
+// ASN list pages — status cells, summary cards, account avatar
 
-.asn-status-chip {
+.asn-status-cell {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  gap: 0.4375rem;
-  min-height: 1.625rem;
-  padding: 0.25rem 0.6875rem;
-  border-radius: 999rem;
+  gap: 0.5rem;
+  max-width: 100%;
+}
+
+.asn-status-cell__icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 1.625rem;
+  height: 1.625rem;
+  border-radius: 0.375rem;
+}
+
+.asn-status-cell__label {
   font-size: 0.8125rem;
   font-weight: 500;
   line-height: 1.25;
   white-space: nowrap;
-  border: 1px solid transparent;
 }
 
-.asn-status-chip__dot {
-  width: 0.4375rem;
-  height: 0.4375rem;
-  border-radius: 50%;
-  flex-shrink: 0;
-}
-
-.asn-status-chip__label {
-  color: inherit;
-}
-
-.asn-status-chip--draft {
-  background: #fff7ed;
-  border-color: #fed7aa;
-  color: #c2410c;
-
-  .asn-status-chip__dot {
-    background: #ea580c;
-  }
-}
-
-.asn-status-chip--pending {
-  background: #eff6ff;
-  border-color: #bfdbfe;
-  color: #1d4ed8;
-
-  .asn-status-chip__dot {
-    background: #2563eb;
-  }
-}
-
-.asn-status-chip--in_progress {
-  background: #fffbeb;
-  border-color: #fde68a;
-  color: #b45309;
-
-  .asn-status-chip__dot {
-    background: #d97706;
-  }
-}
-
-.asn-status-chip--completed {
-  background: #f0fdf4;
-  border-color: #bbf7d0;
-  color: #15803d;
-
-  .asn-status-chip__dot {
-    background: #16a34a;
-  }
-}
-
-.asn-status-chip--non_compliant {
-  background: #fef2f2;
-  border-color: #fecaca;
-  color: #b91c1c;
-
-  .asn-status-chip__dot {
-    background: #dc2626;
-  }
-}
-
-.admin-asn-list :deep(.asn-status-chip) {
-  vertical-align: middle;
-}
-
-.user-asn-list :deep(.asn-status-chip) {
+.admin-asn-list :deep(.asn-status-cell),
+.user-asn-list :deep(.asn-status-cell) {
   vertical-align: middle;
 }
 
@@ -88,7 +34,7 @@
   padding: 1.25rem 1.25rem 0.5rem;
 }
 
-.admin-asn-hub-summary :deep(.billing-inv-summary-card .staff-stat-card__icon) {
+.asn-hub-summary-cards :deep(.billing-inv-summary-card .staff-stat-card__icon) {
   top: 50%;
   right: 1.125rem;
   transform: translateY(-50%);
@@ -100,20 +46,16 @@
   border-radius: 0.4375rem;
 }
 
-.admin-asn-hub-summary__svg {
-  width: 1.4375rem;
-  height: 1.4375rem;
-  flex-shrink: 0;
-  display: block;
-  overflow: visible;
+.asn-hub-summary-cards :deep(.billing-inv-summary-card .staff-stat-card__value) {
+  font-size: 1.5rem;
 }
 
-button.billing-inv-summary-card.admin-asn-summary-card--active {
+button.billing-inv-summary-card.asn-hub-summary-card--active {
   border-color: var(--bs-primary) !important;
   box-shadow: 0 0 0 1px var(--bs-primary);
 }
 
-[data-bs-theme="dark"] button.billing-inv-summary-card.admin-asn-summary-card--active {
+[data-bs-theme="dark"] button.billing-inv-summary-card.asn-hub-summary-card--active {
   border-color: var(--bs-primary) !important;
   box-shadow: 0 0 0 1px var(--bs-primary);
 }
@@ -123,7 +65,7 @@ button.billing-inv-summary-card.admin-asn-summary-card--active {
   margin-inline: auto;
 }
 
-.admin-asn-list-account-icon {
+.admin-asn-list-account-avatar {
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -131,14 +73,9 @@ button.billing-inv-summary-card.admin-asn-summary-card--active {
   width: 2rem;
   height: 2rem;
   border-radius: 0.4375rem;
-  background: #dbeafe;
-  color: #1e3a8a;
-}
-
-.admin-asn-list-account-icon svg {
-  width: 1.125rem;
-  height: 1.125rem;
-  display: block;
+  font-size: 0.6875rem;
+  font-weight: 600;
+  line-height: 1;
 }
 
 .user-asn-list-toolbar-card {

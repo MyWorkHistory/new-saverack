@@ -2,6 +2,7 @@
 import { Transition, computed, nextTick, onMounted, onUnmounted, ref, watch } from "vue";
 import { useRoute, useRouter, RouterLink } from "vue-router";
 import api from "../../services/api";
+import AsnHubSummaryCards from "../../components/asn/AsnHubSummaryCards.vue";
 import AsnStatusChip from "../../components/asn/AsnStatusChip.vue";
 import CrmIconRowActions from "../../components/common/CrmIconRowActions.vue";
 import CrmLoadingSpinner from "../../components/common/CrmLoadingSpinner.vue";
@@ -14,6 +15,7 @@ import { useToast } from "../../composables/useToast.js";
 import { asnTrackingUrl } from "../../utils/asnTrackingUrl.js";
 import { formatAsnDisplay } from "../../utils/formatAsnDisplay.js";
 import { formatDateUs } from "../../utils/formatUserDates.js";
+import { avatarClassFromSeed, initialsFromName } from "../../utils/avatarDisplay.js";
 
 const toast = useToast();
 const router = useRouter();
@@ -96,52 +98,9 @@ const bulkDeleteDisabled = computed(() => selectedCount.value === 0);
 
 const manageMenuRowCanDelete = computed(() => Boolean(manageMenuRow.value));
 
-const ASN_HUB_ICON = {
-  truck:
-    "M3.875 19.125Q3 18.25 3 17H1V6q0-.825.588-1.412T3 4h14v4h3l3 4v5h-2q0 1.25-.875 2.125T18 20t-2.125-.875T15 17H9q0 1.25-.875 2.125T6 20t-2.125-.875m2.838-1.412Q7 17.425 7 17t-.288-.712T6 16t-.712.288T5 17t.288.713T6 18t.713-.288m12 0Q19 17.426 19 17t-.288-.712T18 16t-.712.288T17 17t.288.713T18 18t.713-.288M17 13h4.25L19 10h-2z",
-  hourglass:
-    "M8 20h8v-3q0-1.65-1.175-2.825T12 13t-2.825 1.175T8 17zm6.825-10.175Q16 8.65 16 7V4H8v3q0 1.65 1.175 2.825T12 11t2.825-1.175M4 22v-2h2v-3q0-1.525.713-2.863T8.7 12q-1.275-.8-1.987-2.137T6 7V4H4V2h16v2h-2v3q0 1.525-.712 2.863T15.3 12q1.275.8 1.988 2.138T18 17v3h2v2z",
-  check:
-    "M9 12.75L11.25 15 15 9.75M21 12a9 9 0 11-18 0 9 9 0 0118 0z",
-  close: "M6.4 19L5 17.6l5.6-5.6L5 6.4 6.4 5l5.6 5.6L17.6 5 19 6.4 13.4 12l5.6 5.6L17.6 19l-5.6-5.6z",
-};
-
-const STAT_CARDS = [
-  {
-    key: "pending",
-    label: "Pending",
-    sub: "Pending ASNs",
-    status: "pending",
-    iconKey: "truck",
-    iconStyle: { background: "#dbeafe", color: "#1e3a8a" },
-  },
-  {
-    key: "in_progress",
-    label: "In-Progress",
-    sub: "Processing ASNs",
-    status: "in_progress",
-    iconKey: "hourglass",
-    iconStyle: { background: "#fef3c7", color: "#b45309" },
-  },
-  {
-    key: "completed",
-    label: "Completed",
-    sub: "Completed ASNs",
-    status: "completed",
-    iconKey: "check",
-    iconStyle: { background: "#dcfce7", color: "#166534" },
-  },
-  {
-    key: "non_compliant",
-    label: "Non-Compliant",
-    sub: "Non-Compliant ASNs",
-    status: "non_compliant",
-    iconKey: "close",
-    iconStyle: { background: "#ffe4e6", color: "#be123c" },
-  },
-];
-
-const nf = new Intl.NumberFormat(undefined, { maximumFractionDigits: 0 });
+const summaryActiveStatus = computed(() =>
+  statusFilter.value === "all" ? "" : statusFilter.value,
+);
 
 watch(search, (v) => {
   clearTimeout(searchTimer);
@@ -506,8 +465,6 @@ function onWindowCloseManageMenu() {
   manageOpenId.value = null;
 }
 
-const statCardValue = (key) => nf.format(summary.value[key] ?? 0);
-
 onMounted(async () => {
   setCrmPageMeta({
     title: "Save Rack | Advanced Shipment Notice",
@@ -557,32 +514,12 @@ onUnmounted(() => {
       class="admin-asn-list admin-asn-page-toolbar staff-table-card staff-datatable-card staff-datatable-card--white w-100"
     >
       <div class="admin-asn-hub-summary">
-        <div v-if="summaryLoading" class="d-flex justify-content-center py-4">
-          <CrmLoadingSpinner message="Loading summary…" />
-        </div>
-        <div v-else class="row g-3">
-          <div v-for="card in STAT_CARDS" :key="card.key" class="col-12 col-sm-6 col-xl-3">
-            <button
-              type="button"
-              class="staff-stat-card billing-inv-summary-card h-100 text-start w-100"
-              :class="{ 'admin-asn-summary-card--active': statusFilter === card.status }"
-              @click="setStatusCard(card.status)"
-            >
-              <p class="staff-stat-card__label">{{ card.label }}</p>
-              <p class="staff-stat-card__value">{{ statCardValue(card.key) }}</p>
-              <p class="staff-stat-card__sub">{{ card.sub }}</p>
-              <div
-                class="staff-stat-card__icon admin-asn-hub-summary__icon"
-                :style="card.iconStyle"
-                aria-hidden="true"
-              >
-                <svg class="admin-asn-hub-summary__svg" fill="currentColor" viewBox="0 0 24 24">
-                  <path :d="ASN_HUB_ICON[card.iconKey]" />
-                </svg>
-              </div>
-            </button>
-          </div>
-        </div>
+        <AsnHubSummaryCards
+          :loading="summaryLoading"
+          :active-status="summaryActiveStatus"
+          :values="summary"
+          @select="setStatusCard"
+        />
       </div>
 
       <div class="staff-table-toolbar border-top">
@@ -793,12 +730,12 @@ onUnmounted(() => {
                 <td class="text-center small text-secondary">{{ formatDateUs(row.created_at) }}</td>
                 <td class="text-center" @click.stop>
                   <div class="d-flex align-items-center justify-content-center gap-2 min-w-0 admin-asn-list-account-cell">
-                    <span class="admin-asn-list-account-icon" aria-hidden="true">
-                      <svg fill="currentColor" viewBox="0 0 24 24">
-                        <path
-                          d="M12 7V3H2v18h20V7H12zM6 19H4v-2h2v2zm0-4H4v-2h2v2zm0-4H4V9h2v2zm0-4H4V5h2v2zm4 12H8v-2h2v2zm0-4H8v-2h2v2zm0-4H8V9h2v2zm0-4H8V5h2v2zm10 12h-8v-2h2v-2h-2v-2h2v-2h-2V9h8v10zm-2-8h-2v2h2v-2zm0 4h-2v2h2v-2z"
-                        />
-                      </svg>
+                    <span
+                      class="admin-asn-list-account-avatar"
+                      :class="avatarClassFromSeed(row.client_account_company_name || row.client_account_id)"
+                      aria-hidden="true"
+                    >
+                      {{ initialsFromName(row.client_account_company_name) }}
                     </span>
                     <RouterLink
                       v-if="row.client_account_id"

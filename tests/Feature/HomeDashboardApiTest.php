@@ -4,6 +4,7 @@ namespace Tests\Feature;
 
 use App\Jobs\RefreshOrderDashboardSectionJob;
 use App\Models\ClientAccount;
+use App\Models\ClientAccountAsn;
 use App\Models\InventoryRestockBetaSnapshot;
 use App\Models\OrderDashboardSection;
 use App\Models\Permission;
@@ -124,6 +125,13 @@ class HomeDashboardApiTest extends TestCase
             'paused_at' => now()->subHours(2),
         ]);
 
+        $pending = ClientAccount::create([
+            'company_name' => 'Pending Widget Co',
+            'status' => ClientAccount::STATUS_PENDING,
+            'email' => 'pending-widget@test.com',
+            'created_at' => now()->subDays(2),
+        ]);
+
         $accountA = ClientAccount::create([
             'company_name' => 'Put Away A',
             'status' => ClientAccount::STATUS_ACTIVE,
@@ -200,11 +208,35 @@ class HomeDashboardApiTest extends TestCase
             'uploaded_at' => now(),
         ]);
 
+        ClientAccountAsn::create([
+            'client_account_id' => $accountA->id,
+            'asn_number' => 'ASN-WIDGET-1',
+            'status' => ClientAccountAsn::STATUS_PENDING,
+            'total_pallets' => 2,
+            'total_boxes' => 0,
+            'expected_qty' => 150,
+        ]);
+        ClientAccountAsn::create([
+            'client_account_id' => $accountA->id,
+            'asn_number' => 'ASN-WIDGET-2',
+            'status' => ClientAccountAsn::STATUS_PENDING,
+            'total_pallets' => 0,
+            'total_boxes' => 3,
+            'expected_qty' => 45,
+        ]);
+
         $response = $this->getJson('/api/home-dashboard');
 
         $response->assertOk()
             ->assertJsonPath('paused_accounts.0.id', $paused->id)
             ->assertJsonPath('paused_accounts.0.company_name', 'Paused Widget Co')
+            ->assertJsonPath('paused_accounts.0.pause_reason', 'Past Due')
+            ->assertJsonPath('pending_new_accounts.0.id', $pending->id)
+            ->assertJsonPath('pending_new_accounts.0.company_name', 'Pending Widget Co')
+            ->assertJsonPath('pending_asn_preview.0.account_id', $accountA->id)
+            ->assertJsonPath('pending_asn_preview.0.account_name', 'Put Away A')
+            ->assertJsonPath('pending_asn_preview.0.unit_label', '2 Pallets')
+            ->assertJsonPath('pending_asn_preview.0.total_items', 195)
             ->assertJsonPath('put_away_by_account.0.account_id', $accountA->id)
             ->assertJsonPath('put_away_by_account.0.account_name', 'Put Away A')
             ->assertJsonPath('put_away_by_account.0.total_qty', 10)
@@ -212,7 +244,8 @@ class HomeDashboardApiTest extends TestCase
             ->assertJsonPath('put_away_by_account.1.total_qty', 5)
             ->assertJsonPath('restock_preview.0.sku', 'RESTOCK-1')
             ->assertJsonPath('restock_preview.0.account_name', 'Put Away A')
-            ->assertJsonPath('restock_preview.0.restock_needed', 2);
+            ->assertJsonPath('restock_preview.0.restock_needed', 2)
+            ->assertJsonPath('restock_active_count', 1);
     }
 
     public function test_home_dashboard_omits_widgets_without_permissions(): void
@@ -241,7 +274,10 @@ class HomeDashboardApiTest extends TestCase
 
         $response->assertOk()
             ->assertJsonPath('paused_accounts', [])
+            ->assertJsonPath('pending_new_accounts', [])
+            ->assertJsonPath('pending_asn_preview', [])
             ->assertJsonPath('put_away_by_account', [])
-            ->assertJsonPath('restock_preview', []);
+            ->assertJsonPath('restock_preview', [])
+            ->assertJsonPath('restock_active_count', 0);
     }
 }

@@ -34,8 +34,11 @@ export function useAdminHomeDashboard({ onError } = {}) {
   });
   const sections = ref({});
   const pausedAccounts = ref([]);
+  const pendingNewAccounts = ref([]);
+  const pendingAsnPreview = ref([]);
   const putAwayByAccount = ref([]);
   const restockPreview = ref([]);
+  const restockActiveCount = ref(0);
 
   let pollTimer = null;
 
@@ -58,10 +61,17 @@ export function useAdminHomeDashboard({ onError } = {}) {
     sections.value =
       data?.sections && typeof data.sections === "object" ? { ...data.sections } : {};
     pausedAccounts.value = Array.isArray(data?.paused_accounts) ? [...data.paused_accounts] : [];
+    pendingNewAccounts.value = Array.isArray(data?.pending_new_accounts)
+      ? [...data.pending_new_accounts]
+      : [];
+    pendingAsnPreview.value = Array.isArray(data?.pending_asn_preview)
+      ? [...data.pending_asn_preview]
+      : [];
     putAwayByAccount.value = Array.isArray(data?.put_away_by_account)
       ? [...data.put_away_by_account]
       : [];
     restockPreview.value = Array.isArray(data?.restock_preview) ? [...data.restock_preview] : [];
+    restockActiveCount.value = Number(data?.restock_active_count || 0);
   }
 
   async function load() {
@@ -131,8 +141,11 @@ export function useAdminHomeDashboard({ onError } = {}) {
     totals,
     sections,
     pausedAccounts,
+    pendingNewAccounts,
+    pendingAsnPreview,
     putAwayByAccount,
     restockPreview,
+    restockActiveCount,
     anySectionRunning,
     anySectionPending,
     load,

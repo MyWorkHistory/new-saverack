@@ -154,6 +154,20 @@ final class InventoryRestockBetaService
         ], $slice);
     }
 
+    public function activeRowCount(): int
+    {
+        $snapshot = InventoryRestockBetaSnapshot::query()
+            ->orderByDesc('uploaded_at')
+            ->orderByDesc('id')
+            ->first();
+
+        if ($snapshot === null) {
+            return 0;
+        }
+
+        return count($this->activeRows($snapshot));
+    }
+
     private function snapshotNeedsInlineEnrichment(InventoryRestockBetaSnapshot $snapshot): bool
     {
         $status = (string) ($snapshot->enrichment_status ?? '');

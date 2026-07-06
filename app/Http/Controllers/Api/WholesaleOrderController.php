@@ -11,6 +11,8 @@ use App\Models\WholesaleOrder;
 use App\Models\WholesaleOrderComment;
 use App\Models\WholesaleOrderLine;
 use App\Services\ShipHeroInventoryService;
+use App\Services\ShipHeroOrderService;
+use App\Services\WholesaleOrderShipHeroService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Gate;
@@ -74,6 +76,26 @@ class WholesaleOrderController extends Controller
     }
 
     /**
+     * @return array<string, string>
+     */
+    private function lineStatusLabels(): array
+    {
+        /** @var array<string, string> $labels */
+        $labels = config('wholesale_orders.line_statuses', []);
+
+        return $labels;
+    }
+
+    private function lineStatusLabel(?string $status): string
+    {
+        if ($status === null || $status === '') {
+            return '';
+        }
+
+        return $this->lineStatusLabels()[$status] ?? $status;
+    }
+
+    /**
      * @return list<int>|null
      */
     private function viewableAccountIds(User $user): ?array
@@ -128,6 +150,8 @@ class WholesaleOrderController extends Controller
             'name' => $line->name,
             'image_url' => $imageUrl,
             'quantity' => $line->quantity,
+            'status' => $line->status,
+            'status_label' => $this->lineStatusLabel($line->status),
             'barcode_mode' => $line->barcode_mode,
             'has_barcode' => $line->hasUploadedBarcode(),
             'barcode_original_name' => $line->barcode_original_name,
@@ -216,7 +240,21 @@ class WholesaleOrderController extends Controller
 
         return array_merge($this->serializeListRow($order), [
             'instructions' => $order->instructions,
+            'shiphero_order_id' => $order->shiphero_order_id,
+            'shipping_address' => $order->shipping_address,
+            'shipping_carrier' => $order->shipping_carrier,
+            'shipping_method' => $order->shipping_method,
+            'sku_barcode_labels' => $order->sku_barcode_labels,
+            'sku_barcode_labels_comment' => $order->sku_barcode_labels_comment,
+            'individual_sku_packaging' => $order->individual_sku_packaging,
+            'individual_sku_packaging_comment' => $order->individual_sku_packaging_comment,
+            'bundle_configuration' => $order->bundle_configuration,
+            'bundle_configuration_comment' => $order->bundle_configuration_comment,
+            'shipping_method_requirement' => $order->shipping_method_requirement,
             'is_editable' => $order->isEditable(),
+            'can_ready_to_ship' => $order->isReadyToShipEligible(),
+            'has_complete_shipping_address' => $order->hasCompleteShippingAddress(),
+            'has_requirements_filled' => $order->hasRequirementsFilled(),
             'lines' => $order->lines->map(function (WholesaleOrderLine $line) use ($imageBySku) {
                 $key = mb_strtolower(trim((string) $line->sku));
                 $resolved = $imageBySku[$key] ?? null;
@@ -230,6 +268,12 @@ class WholesaleOrderController extends Controller
                 WholesaleOrder::STATUS_COMPLETED => $this->statusLabel(WholesaleOrder::STATUS_COMPLETED),
             ],
             'order_types' => $this->typeLabels(),
+            'requirement_options' => [
+                'sku_barcode_labels' => config('wholesale_orders.sku_barcode_labels', []),
+                'individual_sku_packaging' => config('wholesale_orders.individual_sku_packaging', []),
+                'bundle_configuration' => config('wholesale_orders.bundle_configuration', []),
+                'shipping_method_requirement' => config('wholesale_orders.shipping_method_requirement', []),
+            ],
         ]);
     }
 
@@ -447,12 +491,31 @@ class WholesaleOrderController extends Controller
                 WholesaleOrder::STATUS_COMPLETED,
             ])],
             'instructions' => ['nullable', 'string', 'max:20000'],
+            'shipping_address' => ['sometimes', 'nullable', 'array'],
+            'shipping_address.first_name' => ['nullable', 'string', 'max:255'],
+            'shipping_address.last_name' => ['nullable', 'string', 'max:255'],
+            'shipping_address.company' => ['nullable', 'string', 'max:255'],
+            'shipping_address.address1' => ['nullable', 'string', 'max:255'],
+            'shipping_address.address2' => ['nullable', 'string', 'max:255'],
+            'shipping_address.city' => ['nullable', 'string', 'max:255'],
+            'shipping_address.state' => ['nullable', 'string', 'max:64'],
+            'shipping_address.zip' => ['nullable', 'string', 'max:32'],
+            'shipping_address.country' => ['nullable', 'string', 'max:64'],
+            'shipping_address.email' => ['nullable', 'string', 'max:255'],
+            'shipping_address.phone' => ['nullable', 'string', 'max:64'],
+            'shipping_carrier' => ['sometimes', 'nullable', 'string', 'max:128'],
+            'shipping_method' => ['sometimes', 'nullable', 'string', 'max:128'],
+            'sku_barcode_labels' => ['sometimes', 'nullable', 'string', Rule::in(array_keys(config('wholesale_orders.sku_barcode_labels', [])))],
+            'sku_barcode_labels_comment' => ['nullable', 'string', 'max:5000'],
+            'individual_sku_packaging' => ['sometimes', 'nullable', 'string', Rule::in(array_keys(config('wholesale_orders.individual_sku_packaging', [])))],
+            'individual_sku_packaging_comment' => ['nullable', 'string', 'max:5000'],
+            'bundle_configuration' => ['sometimes', 'nullable', 'string', Rule::in(array_keys(config('wholesale_orders.bundle_configuration', [])))],
+            'bundle_configuration_comment' => ['nullable', 'string', 'max:5000'],
+            'shipping_method_requirement' => ['sometimes', 'nullable', 'string', Rule::in(array_keys(config('wholesale_orders.shipping_method_requirement', [])))],
         ]);
 
         $statusOnly = array_key_exists('status', $validated)
-            && ! array_key_exists('order_number', $validated)
-            && ! array_key_exists('order_type', $validated)
-            && ! array_key_exists('instructions', $validated);
+            && count($validated) === 1;
 
         if (! $statusOnly) {
             $this->assertLineEditable($wholesaleOrder);
@@ -471,6 +534,46 @@ class WholesaleOrderController extends Controller
             $wholesaleOrder->instructions = $validated['instructions'] !== null
                 ? trim((string) $validated['instructions'])
                 : null;
+        }
+        if (array_key_exists('shipping_address', $validated)) {
+            $wholesaleOrder->shipping_address = $validated['shipping_address'];
+        }
+        if (array_key_exists('shipping_carrier', $validated)) {
+            $wholesaleOrder->shipping_carrier = $validated['shipping_carrier'] !== null
+                ? trim((string) $validated['shipping_carrier'])
+                : null;
+        }
+        if (array_key_exists('shipping_method', $validated)) {
+            $wholesaleOrder->shipping_method = $validated['shipping_method'] !== null
+                ? trim((string) $validated['shipping_method'])
+                : null;
+        }
+        if (array_key_exists('sku_barcode_labels', $validated)) {
+            $wholesaleOrder->sku_barcode_labels = $validated['sku_barcode_labels'];
+        }
+        if (array_key_exists('sku_barcode_labels_comment', $validated)) {
+            $wholesaleOrder->sku_barcode_labels_comment = $validated['sku_barcode_labels_comment'] !== null
+                ? trim((string) $validated['sku_barcode_labels_comment'])
+                : null;
+        }
+        if (array_key_exists('individual_sku_packaging', $validated)) {
+            $wholesaleOrder->individual_sku_packaging = $validated['individual_sku_packaging'];
+        }
+        if (array_key_exists('individual_sku_packaging_comment', $validated)) {
+            $wholesaleOrder->individual_sku_packaging_comment = $validated['individual_sku_packaging_comment'] !== null
+                ? trim((string) $validated['individual_sku_packaging_comment'])
+                : null;
+        }
+        if (array_key_exists('bundle_configuration', $validated)) {
+            $wholesaleOrder->bundle_configuration = $validated['bundle_configuration'];
+        }
+        if (array_key_exists('bundle_configuration_comment', $validated)) {
+            $wholesaleOrder->bundle_configuration_comment = $validated['bundle_configuration_comment'] !== null
+                ? trim((string) $validated['bundle_configuration_comment'])
+                : null;
+        }
+        if (array_key_exists('shipping_method_requirement', $validated)) {
+            $wholesaleOrder->shipping_method_requirement = $validated['shipping_method_requirement'];
         }
         $wholesaleOrder->save();
 
@@ -501,6 +604,7 @@ class WholesaleOrderController extends Controller
         $line->image_url = isset($validated['image_url']) ? trim((string) $validated['image_url']) : null;
         $line->quantity = (int) $validated['quantity'];
         $line->barcode_mode = WholesaleOrderLine::BARCODE_SHIP_AS_IS;
+        $line->status = WholesaleOrderLine::STATUS_PENDING;
         $line->sort_order = $maxSort + 1;
         $line->save();
 
@@ -517,10 +621,20 @@ class WholesaleOrderController extends Controller
         $this->assertLineBelongsToOrder($wholesaleOrder, $line);
 
         $validated = $request->validate([
-            'quantity' => ['required', 'integer', 'min:1', 'max:99999999'],
+            'quantity' => ['sometimes', 'integer', 'min:1', 'max:99999999'],
+            'barcode_mode' => ['sometimes', 'string', Rule::in([
+                WholesaleOrderLine::BARCODE_SHIP_AS_IS,
+                WholesaleOrderLine::BARCODE_UPLOADED,
+            ])],
         ]);
 
-        $line->quantity = (int) $validated['quantity'];
+        if (array_key_exists('quantity', $validated)) {
+            $line->quantity = (int) $validated['quantity'];
+        }
+        if (array_key_exists('barcode_mode', $validated)) {
+            $line->barcode_mode = $validated['barcode_mode'];
+            $line->syncStatusFromBarcodeMode();
+        }
         $line->save();
 
         $this->recalculateItemsCount($wholesaleOrder);
@@ -567,6 +681,7 @@ class WholesaleOrderController extends Controller
 
         $path = $file->store('wholesale-order-barcodes/'.$wholesaleOrder->id, 'local');
         $line->barcode_mode = WholesaleOrderLine::BARCODE_UPLOADED;
+        $line->status = WholesaleOrderLine::STATUS_BARCODE_READY;
         $line->barcode_path = $path;
         $line->barcode_original_name = $file->getClientOriginalName();
         $line->barcode_mime = $file->getClientMimeType();
@@ -658,5 +773,27 @@ class WholesaleOrderController extends Controller
             $comment->attachment_original_name ?: 'attachment',
             ['Content-Type' => $comment->attachment_mime ?: 'application/octet-stream']
         );
+    }
+
+    public function readyToShip(
+        Request $request,
+        WholesaleOrder $wholesaleOrder,
+        WholesaleOrderShipHeroService $shipHero
+    ): JsonResponse {
+        $this->assertStaff($request);
+        Gate::authorize('update', $wholesaleOrder);
+
+        $user = $request->user();
+        if (! $user instanceof User) {
+            abort(403);
+        }
+
+        $shipHero->submitToShipHero(
+            $wholesaleOrder,
+            app(ShipHeroOrderService::class),
+            $user
+        );
+
+        return response()->json($this->serializeDetail($wholesaleOrder->fresh(['clientAccount', 'createdBy', 'lines', 'comments.user'])));
     }
 }

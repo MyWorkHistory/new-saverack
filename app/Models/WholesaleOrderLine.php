@@ -11,12 +11,25 @@ class WholesaleOrderLine extends Model
 
     public const BARCODE_UPLOADED = 'uploaded';
 
+    public const STATUS_PENDING = 'pending';
+
+    public const STATUS_SHIP_AS_IS = 'ship_as_is';
+
+    public const STATUS_BARCODE_READY = 'barcode_ready';
+
+    public const STATUSES = [
+        self::STATUS_PENDING,
+        self::STATUS_SHIP_AS_IS,
+        self::STATUS_BARCODE_READY,
+    ];
+
     protected $fillable = [
         'wholesale_order_id',
         'sku',
         'name',
         'image_url',
         'quantity',
+        'status',
         'barcode_mode',
         'barcode_path',
         'barcode_original_name',
@@ -39,5 +52,14 @@ class WholesaleOrderLine extends Model
         return $this->barcode_mode === self::BARCODE_UPLOADED
             && $this->barcode_path !== null
             && $this->barcode_path !== '';
+    }
+
+    public function syncStatusFromBarcodeMode(): void
+    {
+        if ($this->barcode_mode === self::BARCODE_UPLOADED) {
+            $this->status = self::STATUS_BARCODE_READY;
+        } elseif ($this->barcode_mode === self::BARCODE_SHIP_AS_IS) {
+            $this->status = self::STATUS_SHIP_AS_IS;
+        }
     }
 }

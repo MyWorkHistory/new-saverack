@@ -50,12 +50,24 @@ class WholesaleOrder extends Model
         'order_type',
         'status',
         'instructions',
+        'shiphero_order_id',
+        'shipping_address',
+        'shipping_carrier',
+        'shipping_method',
+        'sku_barcode_labels',
+        'sku_barcode_labels_comment',
+        'individual_sku_packaging',
+        'individual_sku_packaging_comment',
+        'bundle_configuration',
+        'bundle_configuration_comment',
+        'shipping_method_requirement',
         'items_count',
         'created_by_user_id',
     ];
 
     protected $casts = [
         'items_count' => 'integer',
+        'shipping_address' => 'array',
     ];
 
     public function clientAccount(): BelongsTo
@@ -84,6 +96,51 @@ class WholesaleOrder extends Model
 
     public function isEditable(): bool
     {
-        return $this->status !== self::STATUS_SHIPPED;
+        return in_array($this->status, [self::STATUS_DRAFT, self::STATUS_PENDING], true);
+    }
+
+    public function hasCompleteShippingAddress(): bool
+    {
+        $ship = is_array($this->shipping_address) ? $this->shipping_address : [];
+        foreach (['first_name', 'last_name', 'address1', 'city', 'state', 'zip', 'country'] as $field) {
+            if (trim((string) ($ship[$field] ?? '')) === '') {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    public function hasShippingCarrierAndMethod(): bool
+    {
+        $carrier = trim((string) ($this->shipping_carrier ?? ''));
+        $method = trim((string) ($this->shipping_method ?? ''));
+
+        return $carrier !== '' && $method !== '' && strcasecmp($method, 'Select') !== 0;
+    }
+
+    public function hasRequirementsFilled(): bool
+    {
+        return trim((string) ($this->sku_barcode_labels ?? '')) !== ''
+            && trim((string) ($this->individual_sku_packaging ?? '')) !== ''
+            && trim((string) ($this->bundle_configuration ?? '')) !== ''
+            && trim((string) ($this->shipping_method_requirement ?? '')) !== '';
+    }
+
+    public function isReadyToShipEligible(): bool
+    {
+        if (! in_array($this->status, [self::STATUS_DRAFT, self::STATUS_PENDING], true)) {
+            return false;
+        }
+        if ($this->shiphero_order_id) {
+            return false;
+        }
+        if ((int) $this->items_count <= 0) {
+            return false;
+        }
+
+        return $this->hasCompleteShippingAddress()
+            && $this->hasShippingCarrierAndMethod()
+            && $this->hasRequirementsFilled();
     }
 }

@@ -8,6 +8,7 @@ use App\Models\User;
 use App\Models\WholesaleOrder;
 use App\Models\WholesaleOrderLine;
 use App\Services\ShipHeroInventoryService;
+use App\Services\ShipHeroOrderService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Storage;
@@ -46,6 +47,69 @@ class WholesaleOrderWorkflowTest extends TestCase
             'status' => ClientAccount::STATUS_ACTIVE,
             'shiphero_customer_account_id' => 'sh-wholesale-'.$suffix,
         ]);
+    }
+
+  /**
+   * @return array<string, mixed>
+   */
+    private function completeShippingAddress(): array
+    {
+        return [
+            'first_name' => 'Jane',
+            'last_name' => 'Buyer',
+            'company' => 'Acme',
+            'address1' => '123 Main St',
+            'address2' => '',
+            'city' => 'Austin',
+            'state' => 'TX',
+            'zip' => '78701',
+            'country' => 'US',
+            'email' => 'jane@example.com',
+            'phone' => '555-0100',
+        ];
+    }
+
+  /**
+   * @return array<string, mixed>
+   */
+    private function completeRequirementsPayload(): array
+    {
+        return [
+            'sku_barcode_labels' => 'apply_new',
+            'sku_barcode_labels_comment' => 'Use new labels',
+            'individual_sku_packaging' => 'poly_bag',
+            'individual_sku_packaging_comment' => 'Seal bags',
+            'bundle_configuration' => 'not_bundled',
+            'bundle_configuration_comment' => '',
+            'shipping_method_requirement' => 'boxes',
+        ];
+    }
+
+    private function seedReadyOrder(ClientAccount $account): WholesaleOrder
+    {
+        $order = WholesaleOrder::query()->create([
+            'client_account_id' => $account->id,
+            'order_number' => 'READY-1',
+            'order_type' => WholesaleOrder::TYPE_B2B,
+            'status' => WholesaleOrder::STATUS_PENDING,
+            'items_count' => 2,
+            'shipping_address' => $this->completeShippingAddress(),
+            'shipping_carrier' => 'ups',
+            'shipping_method' => 'Ground',
+            ...$this->completeRequirementsPayload(),
+        ]);
+
+        WholesaleOrderLine::query()->create([
+            'wholesale_order_id' => $order->id,
+            'sku' => 'SKU-READY',
+            'name' => 'Ready Product',
+            'quantity' => 2,
+            'status' => WholesaleOrderLine::STATUS_PENDING,
+            'barcode_mode' => WholesaleOrderLine::BARCODE_SHIP_AS_IS,
+            'sort_order' => 1,
+        ]);
+
+        return $order->fresh(['lines']);
     }
 
     public function test_create_wholesale_order_as_draft(): void
@@ -135,6 +199,7 @@ class WholesaleOrderWorkflowTest extends TestCase
         ])
             ->assertOk()
             ->assertJsonPath('lines.0.sku', 'SKU-A')
+            ->assertJsonPath('lines.0.status', WholesaleOrderLine::STATUS_PENDING)
             ->assertJsonPath('items_count', 3);
 
         $lineId = (int) $lineResponse->json('lines.0.id');
@@ -150,10 +215,12 @@ class WholesaleOrderWorkflowTest extends TestCase
             'barcode' => $file,
         ])
             ->assertOk()
-            ->assertJsonPath('lines.0.has_barcode', true);
+            ->assertJsonPath('lines.0.has_barcode', true)
+            ->assertJsonPath('lines.0.status', WholesaleOrderLine::STATUS_BARCODE_READY);
 
         $line = WholesaleOrderLine::query()->findOrFail($lineId);
         $this->assertSame(WholesaleOrderLine::BARCODE_UPLOADED, $line->barcode_mode);
+        $this->assertSame(WholesaleOrderLine::STATUS_BARCODE_READY, $line->status);
         Storage::disk('local')->assertExists($line->barcode_path);
 
         $this->get('/api/admin/wholesale-orders/'.$orderId.'/lines/'.$lineId.'/barcode.pdf')
@@ -302,5 +369,195 @@ class WholesaleOrderWorkflowTest extends TestCase
             ->assertOk()
             ->assertJsonPath('client_account_id', $account->id)
             ->assertJsonPath('products.0.sku', 'WH-SKU-1');
+    }
+
+    public function test_requirements_patch_persists_all_fields(): void
+    {
+        $account = $this->account();
+        Sanctum::actingAs($this->staffUser());
+
+        $order = WholesaleOrder::query()->create([
+            'client_account_id' => $account->id,
+            'order_number' => 'REQ-1',
+            'order_type' => WholesaleOrder::TYPE_AMAZON,
+            'status' => WholesaleOrder::STATUS_DRAFT,
+            'items_count' => 0,
+        ]);
+
+        $payload = $this->completeRequirementsPayload();
+
+        $this->patchJson('/api/admin/wholesale-orders/'.$order->id, $payload)
+            ->assertOk()
+            ->assertJsonPath('sku_barcode_labels', 'apply_new')
+            ->assertJsonPath('individual_sku_packaging', 'poly_bag')
+            ->assertJsonPath('bundle_configuration', 'not_bundled')
+            ->assertJsonPath('shipping_method_requirement', 'boxes')
+            ->assertJsonPath('has_requirements_filled', true);
+
+        $this->assertDatabaseHas('wholesale_orders', [
+            'id' => $order->id,
+            'sku_barcode_labels' => 'apply_new',
+            'shipping_method_requirement' => 'boxes',
+        ]);
+    }
+
+    public function test_shipping_address_patch_persists(): void
+    {
+        $account = $this->account();
+        Sanctum::actingAs($this->staffUser());
+
+        $order = WholesaleOrder::query()->create([
+            'client_account_id' => $account->id,
+            'order_number' => 'SHIP-1',
+            'order_type' => WholesaleOrder::TYPE_B2B,
+            'status' => WholesaleOrder::STATUS_DRAFT,
+            'items_count' => 0,
+        ]);
+
+        $address = $this->completeShippingAddress();
+
+        $this->patchJson('/api/admin/wholesale-orders/'.$order->id, [
+            'shipping_address' => $address,
+            'shipping_carrier' => 'ups',
+            'shipping_method' => 'Ground',
+        ])
+            ->assertOk()
+            ->assertJsonPath('shipping_carrier', 'ups')
+            ->assertJsonPath('shipping_method', 'Ground')
+            ->assertJsonPath('has_complete_shipping_address', true);
+
+        $fresh = WholesaleOrder::query()->findOrFail($order->id);
+        $this->assertTrue($fresh->hasCompleteShippingAddress());
+        $this->assertTrue($fresh->hasShippingCarrierAndMethod());
+    }
+
+    public function test_ready_to_ship_blocked_without_requirements(): void
+    {
+        $account = $this->account();
+        Sanctum::actingAs($this->staffUser());
+
+        $order = WholesaleOrder::query()->create([
+            'client_account_id' => $account->id,
+            'order_number' => 'BLOCK-1',
+            'order_type' => WholesaleOrder::TYPE_B2B,
+            'status' => WholesaleOrder::STATUS_PENDING,
+            'items_count' => 1,
+            'shipping_address' => $this->completeShippingAddress(),
+            'shipping_carrier' => 'ups',
+            'shipping_method' => 'Ground',
+        ]);
+
+        WholesaleOrderLine::query()->create([
+            'wholesale_order_id' => $order->id,
+            'sku' => 'SKU-BLOCK',
+            'name' => 'Blocked',
+            'quantity' => 1,
+            'status' => WholesaleOrderLine::STATUS_PENDING,
+            'barcode_mode' => WholesaleOrderLine::BARCODE_SHIP_AS_IS,
+            'sort_order' => 1,
+        ]);
+
+        $this->postJson('/api/admin/wholesale-orders/'.$order->id.'/ready-to-ship')
+            ->assertUnprocessable();
+    }
+
+    public function test_ready_to_ship_success_mocks_shiphero(): void
+    {
+        $account = $this->account();
+        Sanctum::actingAs($this->staffUser());
+        $order = $this->seedReadyOrder($account);
+
+        $mock = Mockery::mock(ShipHeroOrderService::class);
+        $mock->shouldReceive('createOrder')
+            ->once()
+            ->andReturn(['shiphero_order_id' => '99001', 'order_number' => 'READY-1']);
+        $mock->shouldReceive('updateOrderShippingLines')->once();
+        $mock->shouldReceive('updateOrderPackingNote')->once();
+        $mock->shouldReceive('updateOrderFulfillmentStatus')->once();
+        $mock->shouldReceive('addOrderHistoryEntry')->once();
+        $this->app->instance(ShipHeroOrderService::class, $mock);
+
+        $this->postJson('/api/admin/wholesale-orders/'.$order->id.'/ready-to-ship')
+            ->assertOk()
+            ->assertJsonPath('status', WholesaleOrder::STATUS_IN_PROGRESS)
+            ->assertJsonPath('status_label', 'Ready to Ship')
+            ->assertJsonPath('shiphero_order_id', '99001')
+            ->assertJsonPath('can_ready_to_ship', false)
+            ->assertJsonPath('is_editable', false);
+
+        $this->assertDatabaseHas('wholesale_orders', [
+            'id' => $order->id,
+            'status' => WholesaleOrder::STATUS_IN_PROGRESS,
+            'shiphero_order_id' => '99001',
+        ]);
+    }
+
+    public function test_line_ship_as_is_updates_status(): void
+    {
+        $account = $this->account();
+        Sanctum::actingAs($this->staffUser());
+
+        $order = WholesaleOrder::query()->create([
+            'client_account_id' => $account->id,
+            'order_number' => 'SAI-1',
+            'order_type' => WholesaleOrder::TYPE_B2B,
+            'status' => WholesaleOrder::STATUS_DRAFT,
+            'items_count' => 1,
+        ]);
+
+        $line = WholesaleOrderLine::query()->create([
+            'wholesale_order_id' => $order->id,
+            'sku' => 'SKU-SAI',
+            'name' => 'Ship As Is Product',
+            'quantity' => 1,
+            'status' => WholesaleOrderLine::STATUS_PENDING,
+            'barcode_mode' => WholesaleOrderLine::BARCODE_SHIP_AS_IS,
+            'sort_order' => 1,
+        ]);
+
+        $this->patchJson('/api/admin/wholesale-orders/'.$order->id.'/lines/'.$line->id, [
+            'barcode_mode' => WholesaleOrderLine::BARCODE_SHIP_AS_IS,
+        ])
+            ->assertOk()
+            ->assertJsonPath('lines.0.status', WholesaleOrderLine::STATUS_SHIP_AS_IS);
+    }
+
+    public function test_edits_blocked_after_in_progress(): void
+    {
+        $account = $this->account();
+        Sanctum::actingAs($this->staffUser());
+
+        $order = WholesaleOrder::query()->create([
+            'client_account_id' => $account->id,
+            'order_number' => 'LOCK-1',
+            'order_type' => WholesaleOrder::TYPE_B2B,
+            'status' => WholesaleOrder::STATUS_IN_PROGRESS,
+            'items_count' => 1,
+            'shiphero_order_id' => '88001',
+        ]);
+
+        $line = WholesaleOrderLine::query()->create([
+            'wholesale_order_id' => $order->id,
+            'sku' => 'SKU-LOCK',
+            'name' => 'Locked',
+            'quantity' => 1,
+            'status' => WholesaleOrderLine::STATUS_PENDING,
+            'barcode_mode' => WholesaleOrderLine::BARCODE_SHIP_AS_IS,
+            'sort_order' => 1,
+        ]);
+
+        $this->patchJson('/api/admin/wholesale-orders/'.$order->id, [
+            'instructions' => 'Should fail',
+        ])->assertStatus(422);
+
+        $this->postJson('/api/admin/wholesale-orders/'.$order->id.'/lines', [
+            'sku' => 'NEW-SKU',
+            'name' => 'New',
+            'quantity' => 1,
+        ])->assertStatus(422);
+
+        $this->patchJson('/api/admin/wholesale-orders/'.$order->id.'/lines/'.$line->id, [
+            'quantity' => 5,
+        ])->assertStatus(422);
     }
 }

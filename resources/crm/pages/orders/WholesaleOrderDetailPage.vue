@@ -1,24 +1,71 @@
 <script setup>
-import { computed, onMounted, onUnmounted, ref } from "vue";
+import { computed, nextTick, onMounted, onUnmounted, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import api from "../../services/api";
+import CrmIconRowActions from "../../components/common/CrmIconRowActions.vue";
 import CrmLoadingSpinner from "../../components/common/CrmLoadingSpinner.vue";
 import Modal from "../../components/Modal.vue";
 import AsnProductCatalogPanel from "../../components/inventory/AsnProductCatalogPanel.vue";
 import WholesaleBarcodeUploadModal from "../../components/orders/WholesaleBarcodeUploadModal.vue";
 import { setCrmPageMeta } from "../../composables/useCrmPageMeta.js";
 import { useToast } from "../../composables/useToast.js";
+import { CARRIER_PRESETS } from "../../utils/carrierPresets.js";
 import { formatDateUs, formatDateTimeUs } from "../../utils/formatUserDates.js";
 import {
+  wholesaleLineStatusBadgeClass,
+  wholesaleLineStatusLabel,
   wholesaleStatusBadgeClass,
   wholesaleStatusLabel,
   wholesaleTypeLabel,
+  WHOLESALE_BUNDLE_CONFIG_OPTIONS,
   WHOLESALE_MANUAL_STATUS_OPTIONS,
+  WHOLESALE_SHIPPING_METHOD_REQUIREMENT_OPTIONS,
+  WHOLESALE_SKU_BARCODE_LABEL_OPTIONS,
+  WHOLESALE_SKU_PACKAGING_OPTIONS,
 } from "../../utils/formatWholesaleOrderDisplay.js";
 
 const route = useRoute();
 const router = useRouter();
 const toast = useToast();
+
+const LINE_MENU_W = 176;
+const LINE_MENU_H = 88;
+
+const CARRIER_LIST = CARRIER_PRESETS;
+const METHOD_PRESETS = ["Select", "Ground", "Priority", "Express", "Standard", "A124"];
+const METHOD_OPTIONS_BY_CARRIER = {
+  cheapest: ["Select", "Ground", "Priority", "Express", "Standard", "A124"],
+  ups: ["Ground", "3 Day Select", "2nd Day Air", "Next Day Air Saver", "Next Day Air", "Standard", "Priority", "Express"],
+  fedex: [
+    "Ground",
+    "Home Delivery",
+    "Express Saver",
+    "2Day",
+    "Standard Overnight",
+    "Priority Overnight",
+    "International Priority",
+    "International Economy",
+  ],
+  usps: ["First Class", "Priority Mail", "Priority Mail Express", "Parcel Select Ground", "Media Mail", "Ground"],
+  dhl: ["Express Worldwide", "Express 12", "Express 9", "Express Easy"],
+  asendia_one: ["Select", "Ground", "Priority", "Express", "Standard"],
+  ontrac: ["Ground", "Express"],
+  lasership: ["Select", "Ground", "Next Day"],
+};
+
+function carrierPresetKey(carrier) {
+  return String(carrier || "").trim().toLowerCase();
+}
+
+function resolveCarrierPreset(carrier) {
+  const raw = String(carrier || "").trim();
+  if (!raw) return "";
+  const key = carrierPresetKey(raw);
+  for (const p of CARRIER_LIST) {
+    if (carrierPresetKey(p) === key) return p;
+  }
+  return raw;
+}
 
 const loading = ref(true);
 const lineBusy = ref(false);
@@ -31,11 +78,44 @@ const statusSaving = ref(false);
 const statusModalOpen = ref(false);
 const statusDraft = ref("pending");
 
+const readyToShipBusy = ref(false);
+
+const requirementsSaving = ref(false);
+const reqSkuBarcodeLabels = ref("");
+const reqSkuBarcodeLabelsComment = ref("");
+const reqIndividualPackaging = ref("");
+const reqIndividualPackagingComment = ref("");
+const reqBundleConfiguration = ref("");
+const reqBundleConfigurationComment = ref("");
+const reqShippingMethodRequirement = ref("");
+
+const carrierField = ref("");
+const methodField = ref("");
+const shippingLinesSaving = ref(false);
+const shippingModalOpen = ref(false);
+const shippingSaveBusy = ref(false);
+const shippingForm = ref({
+  first_name: "",
+  last_name: "",
+  company: "",
+  address1: "",
+  address2: "",
+  phone: "",
+  city: "",
+  state: "",
+  country: "",
+  zip: "",
+  email: "",
+});
+
 const manualStatusOptions = WHOLESALE_MANUAL_STATUS_OPTIONS;
 
 const barcodeModalOpen = ref(false);
 const barcodeUploadBusy = ref(false);
 const barcodeLine = ref(null);
+
+const lineMenuOpenId = ref(null);
+const lineMenuRect = ref({ top: 0, left: 0 });
 
 const commentBody = ref("");
 const commentFile = ref(null);
@@ -50,19 +130,140 @@ const isEditable = computed(() => Boolean(order.value?.is_editable));
 const lines = computed(() => (Array.isArray(order.value?.lines) ? order.value.lines : []));
 const comments = computed(() => (Array.isArray(order.value?.comments) ? order.value.comments : []));
 
+const canReadyToShip = computed(() => Boolean(order.value?.can_ready_to_ship));
+const showReadyToShipButton = computed(() => {
+  const s = String(order.value?.status || "").toLowerCase();
+  return (s === "draft" || s === "pending") && !order.value?.shiphero_order_id;
+});
+
+const canClickStatusBadge = computed(() => {
+  const s = String(order.value?.status || "").toLowerCase();
+  return s === "pending" || s === "completed";
+});
+
+const readyToShipDisabledReason = computed(() => {
+  const o = order.value;
+  if (!o) return "";
+  if (!showReadyToShipButton.value) return "";
+  if (canReadyToShip.value) return "";
+  const missing = [];
+  if (!lines.value.length) missing.push("add line items");
+  if (!o.has_requirements_filled) missing.push("save requirements");
+  if (!o.has_complete_shipping_address) missing.push("complete shipping address");
+  const carrier = String(o.shipping_carrier || "").trim();
+  const method = String(o.shipping_method || "").trim();
+  if (!carrier || !method || method.toLowerCase() === "select") {
+    missing.push("save carrier and method");
+  }
+  return missing.length ? `Complete: ${missing.join(", ")}.` : "Not ready to ship.";
+});
+
+const formattedShippingAddress = computed(() => {
+  const a = order.value?.shipping_address;
+  if (!a || typeof a !== "object") return "";
+  const parts = [];
+  const name = [a.first_name, a.last_name].filter(Boolean).join(" ").trim();
+  if (name) parts.push(name);
+  if (a.company) parts.push(String(a.company));
+  const line1 = [a.address1, a.address2].filter(Boolean).join(", ").trim();
+  if (line1) parts.push(line1);
+  const cityLine = [a.city, a.state, a.zip].filter(Boolean).join(", ").trim();
+  if (cityLine) parts.push(cityLine);
+  if (a.country) parts.push(String(a.country));
+  return parts.length ? parts.join("\n") : "—";
+});
+
+const carrierSelectOptions = computed(() => {
+  const labels = new Map();
+  for (const p of CARRIER_LIST) {
+    labels.set(carrierPresetKey(p), p);
+  }
+  const cur = String(carrierField.value || "").trim();
+  const curKey = carrierPresetKey(cur);
+  if (curKey && !labels.has(curKey)) {
+    labels.set(curKey, resolveCarrierPreset(cur));
+  }
+  return ["", ...labels.values()];
+});
+
+const methodSelectOptions = computed(() => {
+  const key = carrierPresetKey(carrierField.value);
+  const baseList = METHOD_OPTIONS_BY_CARRIER[key] || METHOD_PRESETS;
+  const cur = String(methodField.value || "").trim();
+  const out = ["", ...baseList];
+  if (cur && !baseList.includes(cur) && !out.includes(cur)) {
+    out.push(cur);
+  }
+  return out;
+});
+
+const itemsSummary = computed(() => {
+  const rows = lines.value;
+  const totalQuantity = rows.reduce((sum, line) => sum + Number(line.quantity || 0), 0);
+  return {
+    totalItems: rows.length,
+    totalQuantity,
+    quantityToShip: totalQuantity,
+  };
+});
+
+const shipheroAdminUrl = computed(() => {
+  const id = String(order.value?.shiphero_order_id || "").trim();
+  if (!id) return null;
+  const n = Number(id);
+  if (Number.isFinite(n) && n > 0) {
+    return `https://app.shiphero.com/dashboard/orders/details/${n}`;
+  }
+  return null;
+});
+
+const lineMenuOpenLine = computed(() => {
+  const id = lineMenuOpenId.value;
+  if (!id) return null;
+  return lines.value.find((l) => l.id === id) ?? null;
+});
+
+watch(carrierField, (newCar, oldCar) => {
+  if (carrierPresetKey(newCar) === carrierPresetKey(oldCar)) return;
+  const key = carrierPresetKey(newCar);
+  const baseList = METHOD_OPTIONS_BY_CARRIER[key];
+  if (!baseList) return;
+  const m = String(methodField.value || "").trim();
+  if (m !== "" && !baseList.includes(m)) {
+    methodField.value = "";
+  }
+});
+
+function syncDraftsFromOrder(data) {
+  instructionsDraft.value = String(data?.instructions || "");
+  reqSkuBarcodeLabels.value = String(data?.sku_barcode_labels || "");
+  reqSkuBarcodeLabelsComment.value = String(data?.sku_barcode_labels_comment || "");
+  reqIndividualPackaging.value = String(data?.individual_sku_packaging || "");
+  reqIndividualPackagingComment.value = String(data?.individual_sku_packaging_comment || "");
+  reqBundleConfiguration.value = String(data?.bundle_configuration || "");
+  reqBundleConfigurationComment.value = String(data?.bundle_configuration_comment || "");
+  reqShippingMethodRequirement.value = String(data?.shipping_method_requirement || "");
+  carrierField.value = resolveCarrierPreset(data?.shipping_carrier);
+  methodField.value = String(data?.shipping_method || "");
+}
+
 function applyOrderData(data) {
   order.value = data;
-  instructionsDraft.value = String(data?.instructions || "");
+  syncDraftsFromOrder(data);
 }
 
 function orderStatusLabel() {
   return order.value?.status_label || wholesaleStatusLabel(order.value?.status);
 }
 
+function lineStatusLabel(line) {
+  return line?.status_label || wholesaleLineStatusLabel(line?.status);
+}
+
 function openStatusModal() {
+  if (!canClickStatusBadge.value) return;
   const status = String(order.value?.status || "").toLowerCase();
-  statusDraft.value =
-    status === "completed" || status === "pending" ? status : "pending";
+  statusDraft.value = status === "completed" || status === "pending" ? status : "pending";
   statusModalOpen.value = true;
 }
 
@@ -80,9 +281,7 @@ async function saveStatusFromModal() {
   }
   statusSaving.value = true;
   try {
-    const { data } = await api.patch(`/admin/wholesale-orders/${order.value.id}`, {
-      status: next,
-    });
+    const { data } = await api.patch(`/admin/wholesale-orders/${order.value.id}`, { status: next });
     applyOrderData(data);
     statusModalOpen.value = false;
     toast.success("Status updated.");
@@ -96,13 +295,8 @@ async function saveStatusFromModal() {
 function inventoryDetailTo(sku) {
   const s = String(sku || "").trim();
   if (!s) return null;
-  const query =
-    clientAccountId.value > 0 ? { client_account_id: String(clientAccountId.value) } : {};
-  return {
-    name: "inventory-detail",
-    params: { sku: s },
-    query,
-  };
+  const query = clientAccountId.value > 0 ? { client_account_id: String(clientAccountId.value) } : {};
+  return { name: "inventory-detail", params: { sku: s }, query };
 }
 
 function inventoryDetailHref(sku) {
@@ -124,10 +318,7 @@ function isImageMime(mime) {
 }
 
 function initials(name) {
-  const parts = String(name || "")
-    .trim()
-    .split(/\s+/)
-    .filter(Boolean);
+  const parts = String(name || "").trim().split(/\s+/).filter(Boolean);
   if (!parts.length) return "?";
   if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
   return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
@@ -168,11 +359,105 @@ async function saveInstructions() {
       instructions: next || null,
     });
     applyOrderData(data);
-    toast.success("Instructions saved.");
+    toast.success("Note saved.");
   } catch (e) {
-    toast.errorFrom(e, "Could not save instructions.");
+    toast.errorFrom(e, "Could not save note.");
   } finally {
     instructionsSaving.value = false;
+  }
+}
+
+async function saveRequirements() {
+  if (!order.value?.id || !isEditable.value) return;
+  requirementsSaving.value = true;
+  try {
+    const { data } = await api.patch(`/admin/wholesale-orders/${order.value.id}`, {
+      sku_barcode_labels: reqSkuBarcodeLabels.value || null,
+      sku_barcode_labels_comment: reqSkuBarcodeLabelsComment.value.trim() || null,
+      individual_sku_packaging: reqIndividualPackaging.value || null,
+      individual_sku_packaging_comment: reqIndividualPackagingComment.value.trim() || null,
+      bundle_configuration: reqBundleConfiguration.value || null,
+      bundle_configuration_comment: reqBundleConfigurationComment.value.trim() || null,
+      shipping_method_requirement: reqShippingMethodRequirement.value || null,
+    });
+    applyOrderData(data);
+    toast.success("Requirements saved.");
+  } catch (e) {
+    toast.errorFrom(e, "Could not save requirements.");
+  } finally {
+    requirementsSaving.value = false;
+  }
+}
+
+function openShippingModal() {
+  const a = order.value?.shipping_address;
+  const src = a && typeof a === "object" ? a : {};
+  shippingForm.value = {
+    first_name: String(src.first_name || ""),
+    last_name: String(src.last_name || ""),
+    company: String(src.company || ""),
+    address1: String(src.address1 || ""),
+    address2: String(src.address2 || ""),
+    phone: String(src.phone || ""),
+    city: String(src.city || ""),
+    state: String(src.state || ""),
+    country: String(src.country || ""),
+    zip: String(src.zip || ""),
+    email: String(src.email || ""),
+  };
+  shippingModalOpen.value = true;
+}
+
+function closeShippingModal() {
+  if (shippingSaveBusy.value) return;
+  shippingModalOpen.value = false;
+}
+
+async function saveShippingAddress() {
+  if (!order.value?.id || !isEditable.value) return;
+  shippingSaveBusy.value = true;
+  try {
+    const { data } = await api.patch(`/admin/wholesale-orders/${order.value.id}`, {
+      shipping_address: { ...shippingForm.value },
+    });
+    applyOrderData(data);
+    shippingModalOpen.value = false;
+    toast.success("Shipping address saved.");
+  } catch (e) {
+    toast.errorFrom(e, "Could not save shipping address.");
+  } finally {
+    shippingSaveBusy.value = false;
+  }
+}
+
+async function saveShippingLines() {
+  if (!order.value?.id || !isEditable.value) return;
+  shippingLinesSaving.value = true;
+  try {
+    const { data } = await api.patch(`/admin/wholesale-orders/${order.value.id}`, {
+      shipping_carrier: carrierField.value || null,
+      shipping_method: methodField.value || null,
+    });
+    applyOrderData(data);
+    toast.success("Carrier and method saved.");
+  } catch (e) {
+    toast.errorFrom(e, "Could not save carrier and method.");
+  } finally {
+    shippingLinesSaving.value = false;
+  }
+}
+
+async function submitReadyToShip() {
+  if (!order.value?.id || !canReadyToShip.value || readyToShipBusy.value) return;
+  readyToShipBusy.value = true;
+  try {
+    const { data } = await api.post(`/admin/wholesale-orders/${order.value.id}/ready-to-ship`);
+    applyOrderData(data);
+    toast.success("Order sent to ShipHero.");
+  } catch (e) {
+    toast.errorFrom(e, "Could not mark order ready to ship.");
+  } finally {
+    readyToShipBusy.value = false;
   }
 }
 
@@ -239,10 +524,28 @@ async function removeLine(line) {
   }
 }
 
+async function markShipAsIs(line) {
+  if (!order.value?.id || !isEditable.value || !line?.id) return;
+  if (String(line.status || "").toLowerCase() === "ship_as_is") return;
+  lineBusy.value = true;
+  try {
+    const { data } = await api.patch(`/admin/wholesale-orders/${order.value.id}/lines/${line.id}`, {
+      barcode_mode: "ship_as_is",
+    });
+    applyOrderData(data);
+    toast.success("Line marked ship as is.");
+  } catch (e) {
+    toast.errorFrom(e, "Could not update line.");
+  } finally {
+    lineBusy.value = false;
+  }
+}
+
 function openBarcodeModal(line) {
   if (!isEditable.value || !line?.id) return;
   barcodeLine.value = line;
   barcodeModalOpen.value = true;
+  closeLineMenu();
 }
 
 function closeBarcodeModal() {
@@ -289,6 +592,54 @@ async function printBarcode(line) {
   }
 }
 
+function placeLineMenu(anchorEl) {
+  if (!(anchorEl instanceof HTMLElement)) return;
+  const r = anchorEl.getBoundingClientRect();
+  let top = r.bottom + 4;
+  let left = r.right - LINE_MENU_W;
+  left = Math.max(8, Math.min(left, window.innerWidth - LINE_MENU_W - 8));
+  if (top + LINE_MENU_H > window.innerHeight - 8) {
+    top = Math.max(8, r.top - LINE_MENU_H - 4);
+  }
+  lineMenuRect.value = { top, left };
+}
+
+async function toggleLineMenu(lineId, e) {
+  e?.stopPropagation?.();
+  if (lineMenuOpenId.value === lineId) {
+    lineMenuOpenId.value = null;
+    return;
+  }
+  const btn = e?.currentTarget;
+  lineMenuOpenId.value = lineId;
+  await nextTick();
+  requestAnimationFrame(() => {
+    if (btn instanceof HTMLElement) placeLineMenu(btn);
+  });
+}
+
+function closeLineMenu() {
+  lineMenuOpenId.value = null;
+}
+
+function onLineMenuUpload() {
+  const line = lineMenuOpenLine.value;
+  closeLineMenu();
+  if (line) openBarcodeModal(line);
+}
+
+function onLineMenuRemove() {
+  const line = lineMenuOpenLine.value;
+  closeLineMenu();
+  if (line) removeLine(line);
+}
+
+function onDocClickMenus(e) {
+  if (!e.target?.closest?.("[data-row-actions]")) {
+    lineMenuOpenId.value = null;
+  }
+}
+
 async function submitComment() {
   if (!order.value?.id) return;
   const body = commentBody.value?.trim() || "";
@@ -322,7 +673,7 @@ async function submitComment() {
 async function downloadAttachment(commentId) {
   if (!order.value?.id) return;
   try {
-    const { data, headers } = await api.get(
+    const { data } = await api.get(
       `/admin/wholesale-orders/${order.value.id}/comments/${commentId}/attachment`,
       { responseType: "blob" },
     );
@@ -356,9 +707,17 @@ async function loadImagePreview(commentId) {
   }
 }
 
-onMounted(load);
+onMounted(() => {
+  load();
+  document.addEventListener("click", onDocClickMenus);
+  window.addEventListener("scroll", closeLineMenu, true);
+  window.addEventListener("resize", closeLineMenu);
+});
 
 onUnmounted(() => {
+  document.removeEventListener("click", onDocClickMenus);
+  window.removeEventListener("scroll", closeLineMenu, true);
+  window.removeEventListener("resize", closeLineMenu);
   Object.values(imagePreviewUrls.value).forEach((url) => {
     if (url) window.URL.revokeObjectURL(url);
   });
@@ -375,15 +734,45 @@ onUnmounted(() => {
       <div class="p-4 pb-3">
         <div class="d-flex flex-wrap justify-content-between align-items-start gap-3">
           <div class="min-w-0">
-            <div class="d-flex flex-wrap align-items-center gap-2 mb-1">
-              <h1 class="h4 mb-0 fw-semibold text-body">Order #{{ order.order_number }}</h1>
-            </div>
             <button
               type="button"
-              class="btn btn-link btn-sm text-secondary px-0 py-0 mt-2 text-decoration-none"
+              class="btn btn-link btn-sm text-secondary px-0 py-0 mb-2 text-decoration-none"
               @click="router.push({ name: 'wholesale-orders' })"
             >
               &lt; Wholesale Orders
+            </button>
+            <div class="d-flex flex-wrap align-items-center gap-2 mb-1">
+              <h1 class="h4 mb-0 fw-semibold text-body">Order #{{ order.order_number }}</h1>
+              <button
+                v-if="canClickStatusBadge"
+                type="button"
+                class="badge rounded-pill fw-medium border-0 asn-line-status-badge"
+                :class="wholesaleStatusBadgeClass(order.status)"
+                @click="openStatusModal"
+              >
+                {{ orderStatusLabel() }}
+              </button>
+              <span
+                v-else
+                class="badge rounded-pill fw-medium asn-line-status-badge"
+                :class="wholesaleStatusBadgeClass(order.status)"
+              >
+                {{ orderStatusLabel() }}
+              </span>
+            </div>
+            <p class="small text-secondary mb-0">
+              Order placed on {{ formatDateUs(order.created_at) || "—" }} • via Save Rack CRM
+            </p>
+          </div>
+          <div v-if="showReadyToShipButton" class="flex-shrink-0">
+            <button
+              type="button"
+              class="btn btn-primary staff-page-primary"
+              :disabled="!canReadyToShip || readyToShipBusy"
+              :title="!canReadyToShip ? readyToShipDisabledReason : undefined"
+              @click="submitReadyToShip"
+            >
+              {{ readyToShipBusy ? "Sending…" : "Ready to Ship" }}
             </button>
           </div>
         </div>
@@ -393,18 +782,14 @@ onUnmounted(() => {
     <div class="row g-4">
       <div class="col-lg-8 d-flex flex-column gap-4">
         <div class="staff-table-card staff-datatable-card staff-datatable-card--white p-0">
-          <div class="px-4 py-3 border-bottom d-flex flex-wrap justify-content-between align-items-center gap-2">
-            <div class="d-flex flex-wrap align-items-center gap-2">
+          <div class="px-4 py-3 border-bottom d-flex flex-wrap justify-content-between align-items-center gap-2 order-detail-page__section-head">
+            <div class="d-flex align-items-center gap-2 min-w-0">
+              <span class="order-detail-page__section-icon order-detail-page__section-icon--items" aria-hidden="true">
+                <svg width="18" height="18" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4" />
+                </svg>
+              </span>
               <h2 class="h6 mb-0 fw-semibold">Items</h2>
-              <button
-                v-if="!lines.length"
-                type="button"
-                class="badge rounded-pill fw-medium border-0 asn-line-status-badge"
-                :class="wholesaleStatusBadgeClass(order.status)"
-                @click="openStatusModal"
-              >
-                {{ orderStatusLabel() }}
-              </button>
             </div>
             <button
               v-if="isEditable"
@@ -434,9 +819,12 @@ onUnmounted(() => {
               <thead class="table-light staff-table-head">
                 <tr>
                   <th class="staff-table-head__th order-detail-page__items-col" scope="col">Item</th>
+                  <th class="staff-table-head__th" scope="col">SKU</th>
                   <th class="staff-table-head__th text-center" scope="col">Qty</th>
                   <th class="staff-table-head__th text-center" scope="col">Barcodes</th>
-                  <th v-if="isEditable" class="staff-table-head__th text-center" scope="col">Actions</th>
+                  <th v-if="isEditable" class="staff-table-head__th text-center order-detail-page__items-actions-col" scope="col">
+                    Actions
+                  </th>
                 </tr>
               </thead>
               <tbody>
@@ -472,21 +860,21 @@ onUnmounted(() => {
                           />
                           <div v-else class="asn-line-thumb asn-line-thumb--lg asn-line-thumb--empty" aria-hidden="true" />
                         </template>
-                        <button
-                          type="button"
-                          class="badge rounded-pill fw-medium border-0 asn-line-status-badge"
-                          :class="wholesaleStatusBadgeClass(order.status)"
-                          @click="openStatusModal"
+                        <span
+                          class="badge rounded-pill fw-medium asn-line-status-badge"
+                          :class="wholesaleLineStatusBadgeClass(line.status)"
                         >
-                          {{ orderStatusLabel() }}
-                        </button>
+                          {{ lineStatusLabel(line) }}
+                        </span>
                       </div>
                       <div class="order-detail-page__item-copy">
-                        <div class="order-detail-page__item-sku-title" :title="line.sku || undefined">
-                          {{ line.sku || "—" }}
-                        </div>
                         <div class="order-detail-page__item-name-sub" :title="line.name">{{ line.name || "—" }}</div>
                       </div>
+                    </div>
+                  </td>
+                  <td>
+                    <div class="order-detail-page__item-sku-title" :title="line.sku || undefined">
+                      {{ line.sku || "—" }}
                     </div>
                   </td>
                   <td class="text-center">
@@ -511,53 +899,113 @@ onUnmounted(() => {
                       Print Barcode
                     </button>
                     <button
-                      v-else-if="isEditable"
+                      v-else-if="isEditable && String(line.status || '').toLowerCase() !== 'ship_as_is'"
                       type="button"
                       class="btn btn-link btn-sm p-0 text-decoration-none"
-                      @click="openBarcodeModal(line)"
+                      :disabled="lineBusy"
+                      @click="markShipAsIs(line)"
                     >
                       Ship As Is
                     </button>
-                    <span v-else class="text-secondary">Ship As Is</span>
+                    <span v-else-if="String(line.status || '').toLowerCase() === 'ship_as_is'" class="text-secondary small">
+                      Ship As Is
+                    </span>
+                    <span v-else class="text-secondary">—</span>
                   </td>
-                  <td v-if="isEditable" class="text-center">
-                    <div class="d-flex flex-column gap-1 align-items-center">
+                  <td v-if="isEditable" class="text-center align-middle order-detail-page__items-actions-col">
+                    <div
+                      data-row-actions
+                      class="staff-actions-inner staff-actions-inner--single justify-content-center"
+                      @click.stop
+                    >
                       <button
                         type="button"
-                        class="btn btn-sm btn-outline-secondary fw-semibold orders-toolbar-outline-btn"
+                        class="staff-action-btn staff-action-btn--more"
+                        :class="{ 'is-open': lineMenuOpenId === line.id }"
+                        :aria-expanded="lineMenuOpenId === line.id ? 'true' : 'false'"
+                        aria-haspopup="true"
+                        aria-label="Line item actions"
                         :disabled="lineBusy"
-                        @click="openBarcodeModal(line)"
+                        @click="toggleLineMenu(line.id, $event)"
                       >
-                        Upload Barcode
-                      </button>
-                      <button
-                        type="button"
-                        class="btn btn-link btn-sm text-danger text-decoration-none p-0"
-                        :disabled="lineBusy"
-                        @click="removeLine(line)"
-                      >
-                        Remove
+                        <CrmIconRowActions variant="horizontal" />
                       </button>
                     </div>
                   </td>
                 </tr>
                 <tr v-if="!lines.length">
-                  <td :colspan="isEditable ? 4 : 3" class="text-center text-secondary py-4">No items yet.</td>
+                  <td :colspan="isEditable ? 5 : 4" class="text-center text-secondary py-4">No items yet.</td>
                 </tr>
               </tbody>
             </table>
           </div>
+
+          <div v-if="lines.length" class="order-detail-page__items-summary border-top px-4 py-3">
+            <div class="order-detail-page__items-summary-tile">
+              <span class="order-detail-page__items-summary-icon order-detail-page__items-summary-icon--items" aria-hidden="true">
+                <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4" />
+                </svg>
+              </span>
+              <div>
+                <div class="order-detail-page__items-summary-label">Total Items</div>
+                <div class="order-detail-page__items-summary-value">{{ itemsSummary.totalItems }}</div>
+              </div>
+            </div>
+            <div class="order-detail-page__items-summary-tile">
+              <span class="order-detail-page__items-summary-icon order-detail-page__items-summary-icon--qty" aria-hidden="true">
+                <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                </svg>
+              </span>
+              <div>
+                <div class="order-detail-page__items-summary-label">Total Quantity</div>
+                <div class="order-detail-page__items-summary-value">{{ itemsSummary.totalQuantity }}</div>
+              </div>
+            </div>
+            <div class="order-detail-page__items-summary-tile">
+              <span class="order-detail-page__items-summary-icon order-detail-page__items-summary-icon--ship" aria-hidden="true">
+                <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 8h14M5 8a2 2 0 110-4h14a2 2 0 110 4M5 8v10a2 2 0 002 2h10a2 2 0 002-2V8m-9 4h4" />
+                </svg>
+              </span>
+              <div>
+                <div class="order-detail-page__items-summary-label">Quantity to Ship</div>
+                <div class="order-detail-page__items-summary-value">{{ itemsSummary.quantityToShip }}</div>
+              </div>
+            </div>
+            <div class="order-detail-page__items-summary-tile">
+              <span class="order-detail-page__items-summary-icon order-detail-page__items-summary-icon--cost" aria-hidden="true">
+                <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 7h.01M7 3h5c.512 0 1.024.195 1.414.586l7 7a2 2 0 010 2.828l-7 7a2 2 0 01-2.828 0l-7-7A2 2 0 013 12V7a4 4 0 014-4z" />
+                </svg>
+              </span>
+              <div>
+                <div class="order-detail-page__items-summary-label">Label Cost</div>
+                <div class="order-detail-page__items-summary-value">—</div>
+              </div>
+            </div>
+          </div>
         </div>
 
         <div class="staff-table-card staff-datatable-card staff-datatable-card--white p-4">
-          <h2 class="h6 fw-semibold mb-3">Instructions</h2>
+          <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-3 order-detail-page__section-head">
+            <div class="d-flex align-items-center gap-2 min-w-0">
+              <span class="order-detail-page__section-icon order-detail-page__section-icon--note" aria-hidden="true">
+                <svg width="18" height="18" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
+                </svg>
+              </span>
+              <h2 class="h6 mb-0 fw-semibold">Note for warehouse packer</h2>
+            </div>
+          </div>
           <textarea
             v-if="isEditable"
             v-model="instructionsDraft"
             class="form-control mb-3"
             rows="5"
             maxlength="20000"
-            placeholder="Warehouse instructions for this order…"
+            placeholder="Add a note for the warehouse team…"
             :disabled="instructionsSaving"
           />
           <p v-else class="small mb-0 text-secondary" style="white-space: pre-wrap">
@@ -570,7 +1018,7 @@ onUnmounted(() => {
             :disabled="instructionsSaving"
             @click="saveInstructions"
           >
-            {{ instructionsSaving ? "Saving…" : "Save Instructions" }}
+            {{ instructionsSaving ? "Saving…" : "Save Note" }}
           </button>
         </div>
 
@@ -646,22 +1094,202 @@ onUnmounted(() => {
         </div>
       </div>
 
-      <div class="col-lg-4 d-flex flex-column gap-4">
-        <div class="staff-table-card staff-datatable-card staff-datatable-card--white p-4">
-          <h3 class="h6 fw-semibold mb-3">Requirements Needed</h3>
-          <p class="small text-secondary mb-0">None yet.</p>
+      <div class="col-lg-4 d-flex flex-column gap-4 order-detail-page__side-column">
+        <div class="staff-table-card staff-datatable-card staff-datatable-card--white p-4 order-detail-page__side-panel">
+          <h3 class="h6 fw-semibold mb-3">Requirements</h3>
+          <div class="mb-3">
+            <label class="form-label small text-secondary" for="wholesale-req-sku-labels">SKU Barcode Labels</label>
+            <select
+              id="wholesale-req-sku-labels"
+              v-model="reqSkuBarcodeLabels"
+              class="form-select form-select-sm"
+              :disabled="!isEditable || requirementsSaving"
+            >
+              <option value="">—</option>
+              <option v-for="opt in WHOLESALE_SKU_BARCODE_LABEL_OPTIONS" :key="opt.value" :value="opt.value">
+                {{ opt.label }}
+              </option>
+            </select>
+            <textarea
+              v-model="reqSkuBarcodeLabelsComment"
+              class="form-control form-control-sm mt-2"
+              rows="2"
+              placeholder="Comments"
+              :disabled="!isEditable || requirementsSaving"
+            />
+          </div>
+          <div class="mb-3">
+            <label class="form-label small text-secondary" for="wholesale-req-packaging">Individual SKU Packaging</label>
+            <select
+              id="wholesale-req-packaging"
+              v-model="reqIndividualPackaging"
+              class="form-select form-select-sm"
+              :disabled="!isEditable || requirementsSaving"
+            >
+              <option value="">—</option>
+              <option v-for="opt in WHOLESALE_SKU_PACKAGING_OPTIONS" :key="opt.value" :value="opt.value">
+                {{ opt.label }}
+              </option>
+            </select>
+            <textarea
+              v-model="reqIndividualPackagingComment"
+              class="form-control form-control-sm mt-2"
+              rows="2"
+              placeholder="Comments"
+              :disabled="!isEditable || requirementsSaving"
+            />
+          </div>
+          <div class="mb-3">
+            <label class="form-label small text-secondary" for="wholesale-req-bundle">Bundle Configuration</label>
+            <select
+              id="wholesale-req-bundle"
+              v-model="reqBundleConfiguration"
+              class="form-select form-select-sm"
+              :disabled="!isEditable || requirementsSaving"
+            >
+              <option value="">—</option>
+              <option v-for="opt in WHOLESALE_BUNDLE_CONFIG_OPTIONS" :key="opt.value" :value="opt.value">
+                {{ opt.label }}
+              </option>
+            </select>
+            <textarea
+              v-model="reqBundleConfigurationComment"
+              class="form-control form-control-sm mt-2"
+              rows="2"
+              placeholder="Comments"
+              :disabled="!isEditable || requirementsSaving"
+            />
+          </div>
+          <div class="mb-3">
+            <div class="form-label small text-secondary mb-2">Shipping Method</div>
+            <div v-for="opt in WHOLESALE_SHIPPING_METHOD_REQUIREMENT_OPTIONS" :key="opt.value" class="form-check">
+              <input
+                :id="`wholesale-ship-req-${opt.value}`"
+                v-model="reqShippingMethodRequirement"
+                class="form-check-input"
+                type="radio"
+                name="wholesale-ship-req"
+                :value="opt.value"
+                :disabled="!isEditable || requirementsSaving"
+              />
+              <label class="form-check-label small" :for="`wholesale-ship-req-${opt.value}`">{{ opt.label }}</label>
+            </div>
+          </div>
+          <button
+            v-if="isEditable"
+            type="button"
+            class="btn btn-primary btn-sm staff-page-primary fw-semibold"
+            :disabled="requirementsSaving"
+            @click="saveRequirements"
+          >
+            {{ requirementsSaving ? "Saving…" : "Save Requirements" }}
+          </button>
         </div>
 
-        <div class="staff-table-card staff-datatable-card staff-datatable-card--white p-4">
-          <h3 class="h6 fw-semibold mb-3">Order Info</h3>
-          <dl class="small mb-0">
-            <dt class="text-secondary fw-normal">Type</dt>
-            <dd class="mb-2">{{ order.order_type_label || wholesaleTypeLabel(order.order_type) }}</dd>
-            <dt class="text-secondary fw-normal">Create Date</dt>
-            <dd class="mb-2">{{ formatDateUs(order.created_at) || "—" }}</dd>
-            <dt class="text-secondary fw-normal">Created By</dt>
-            <dd class="mb-0">{{ order.created_by_name || "—" }}</dd>
-          </dl>
+        <div class="staff-table-card staff-datatable-card staff-datatable-card--white p-4 order-detail-page__side-panel">
+          <div class="d-flex justify-content-between align-items-start gap-2 mb-3 order-detail-page__section-head">
+            <div class="d-flex align-items-center gap-2 min-w-0">
+              <span class="order-detail-page__section-icon order-detail-page__section-icon--shipping" aria-hidden="true">
+                <svg width="18" height="18" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16V6a1 1 0 00-1-1H4a1 1 0 00-1 1v10a1 1 0 001 1h1m8-1a1 1 0 01-1 1H9m4-1V8a1 1 0 011-1h2.586a1 1 0 01.707.293l3.414 3.414a1 1 0 01.293.707V16a1 1 0 01-1 1h-1m-6-1a1 1 0 001 1h1M5 17a2 2 0 104 0m6 0a2 2 0 104 0" />
+                </svg>
+              </span>
+              <h3 class="h6 fw-semibold mb-0">Shipping Address</h3>
+            </div>
+            <button
+              v-if="isEditable"
+              type="button"
+              class="btn btn-link btn-sm p-0 text-decoration-none"
+              @click="openShippingModal"
+            >
+              Edit
+            </button>
+          </div>
+          <p class="small mb-3" style="white-space: pre-line">{{ formattedShippingAddress }}</p>
+          <div class="mb-3">
+            <label class="order-detail-page__detail-label d-block mb-1" for="wholesale-carrier">Shipping Carrier</label>
+            <select
+              id="wholesale-carrier"
+              v-model="carrierField"
+              class="form-select form-select-sm"
+              :disabled="!isEditable || shippingLinesSaving"
+            >
+              <option v-for="c in carrierSelectOptions" :key="'c-' + (c || 'empty')" :value="c">
+                {{ c === "" ? "—" : c }}
+              </option>
+            </select>
+          </div>
+          <div class="mb-3">
+            <label class="order-detail-page__detail-label d-block mb-1" for="wholesale-method">Method</label>
+            <select
+              id="wholesale-method"
+              v-model="methodField"
+              class="form-select form-select-sm"
+              :disabled="!isEditable || shippingLinesSaving"
+            >
+              <option v-for="m in methodSelectOptions" :key="'m-' + (m || 'empty')" :value="m">
+                {{ m === "" ? "—" : m }}
+              </option>
+            </select>
+          </div>
+          <button
+            v-if="isEditable"
+            type="button"
+            class="btn btn-primary btn-sm staff-page-primary"
+            :disabled="shippingLinesSaving"
+            @click="saveShippingLines"
+          >
+            {{ shippingLinesSaving ? "Saving…" : "Save Carrier & Method" }}
+          </button>
+        </div>
+
+        <div class="staff-table-card staff-datatable-card staff-datatable-card--white p-4 order-detail-page__side-panel">
+          <div class="d-flex align-items-center gap-2 mb-3 order-detail-page__section-head">
+            <span class="order-detail-page__section-icon order-detail-page__section-icon--details" aria-hidden="true">
+              <svg width="18" height="18" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+              </svg>
+            </span>
+            <h3 class="h6 fw-semibold mb-0">Order Info</h3>
+          </div>
+          <div class="order-detail-page__detail-rows">
+            <div class="order-detail-page__detail-row">
+              <span class="order-detail-page__detail-label">Account</span>
+              <span class="order-detail-page__detail-value">{{ order.client_account_company_name || "—" }}</span>
+            </div>
+            <div class="order-detail-page__detail-row">
+              <span class="order-detail-page__detail-label">Type</span>
+              <span class="order-detail-page__detail-value">{{ order.order_type_label || wholesaleTypeLabel(order.order_type) }}</span>
+            </div>
+            <div class="order-detail-page__detail-row">
+              <span class="order-detail-page__detail-label">Create Date</span>
+              <span class="order-detail-page__detail-value">{{ formatDateUs(order.created_at) || "—" }}</span>
+            </div>
+            <div class="order-detail-page__detail-row">
+              <span class="order-detail-page__detail-label">Created By</span>
+              <span class="order-detail-page__detail-value">{{ order.created_by_name || "—" }}</span>
+            </div>
+            <div v-if="shipheroAdminUrl" class="order-detail-page__detail-row">
+              <span class="order-detail-page__detail-label">ShipHero Order</span>
+              <span class="order-detail-page__detail-value">
+                <a
+                  :href="shipheroAdminUrl"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  class="text-primary text-decoration-none d-inline-flex align-items-center gap-1"
+                >
+                  View in ShipHero
+                  <svg width="12" height="12" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+                  </svg>
+                </a>
+              </span>
+            </div>
+            <div v-else-if="order.shiphero_order_id" class="order-detail-page__detail-row">
+              <span class="order-detail-page__detail-label">ShipHero Order ID</span>
+              <span class="order-detail-page__detail-value text-break">{{ order.shiphero_order_id }}</span>
+            </div>
+          </div>
         </div>
       </div>
     </div>
@@ -679,21 +1307,68 @@ onUnmounted(() => {
         </option>
       </select>
       <div class="d-flex justify-content-end gap-2">
-        <button
-          type="button"
-          class="btn btn-outline-secondary"
-          :disabled="statusSaving"
-          @click="closeStatusModal"
-        >
+        <button type="button" class="btn btn-outline-secondary" :disabled="statusSaving" @click="closeStatusModal">
           Cancel
         </button>
-        <button
-          type="button"
-          class="btn btn-primary staff-page-primary"
-          :disabled="statusSaving"
-          @click="saveStatusFromModal"
-        >
+        <button type="button" class="btn btn-primary staff-page-primary" :disabled="statusSaving" @click="saveStatusFromModal">
           {{ statusSaving ? "Saving…" : "Save" }}
+        </button>
+      </div>
+    </Modal>
+
+    <Modal :open="shippingModalOpen" title="Edit Shipping Address" @close="closeShippingModal">
+      <div class="row g-3">
+        <div class="col-md-6">
+          <label class="form-label small text-secondary" for="wholesale-ship-fn">First Name</label>
+          <input id="wholesale-ship-fn" v-model="shippingForm.first_name" type="text" class="form-control" />
+        </div>
+        <div class="col-md-6">
+          <label class="form-label small text-secondary" for="wholesale-ship-ln">Last Name</label>
+          <input id="wholesale-ship-ln" v-model="shippingForm.last_name" type="text" class="form-control" />
+        </div>
+        <div class="col-12">
+          <label class="form-label small text-secondary" for="wholesale-ship-co">Company</label>
+          <input id="wholesale-ship-co" v-model="shippingForm.company" type="text" class="form-control" />
+        </div>
+        <div class="col-12">
+          <label class="form-label small text-secondary" for="wholesale-ship-a1">Address</label>
+          <input id="wholesale-ship-a1" v-model="shippingForm.address1" type="text" class="form-control" />
+        </div>
+        <div class="col-12">
+          <label class="form-label small text-secondary" for="wholesale-ship-a2">Address 2</label>
+          <input id="wholesale-ship-a2" v-model="shippingForm.address2" type="text" class="form-control" />
+        </div>
+        <div class="col-12">
+          <label class="form-label small text-secondary" for="wholesale-ship-ph">Phone</label>
+          <input id="wholesale-ship-ph" v-model="shippingForm.phone" type="text" class="form-control" />
+        </div>
+        <div class="col-md-6">
+          <label class="form-label small text-secondary" for="wholesale-ship-city">City</label>
+          <input id="wholesale-ship-city" v-model="shippingForm.city" type="text" class="form-control" />
+        </div>
+        <div class="col-md-6">
+          <label class="form-label small text-secondary" for="wholesale-ship-st">State</label>
+          <input id="wholesale-ship-st" v-model="shippingForm.state" type="text" class="form-control" />
+        </div>
+        <div class="col-md-6">
+          <label class="form-label small text-secondary" for="wholesale-ship-ct">Country</label>
+          <input id="wholesale-ship-ct" v-model="shippingForm.country" type="text" class="form-control" />
+        </div>
+        <div class="col-md-6">
+          <label class="form-label small text-secondary" for="wholesale-ship-zip">ZIP Code</label>
+          <input id="wholesale-ship-zip" v-model="shippingForm.zip" type="text" class="form-control" />
+        </div>
+        <div class="col-12">
+          <label class="form-label small text-secondary" for="wholesale-ship-em">Email</label>
+          <input id="wholesale-ship-em" v-model="shippingForm.email" type="email" class="form-control" />
+        </div>
+      </div>
+      <div class="d-flex justify-content-end gap-2 mt-4">
+        <button type="button" class="btn btn-outline-secondary" :disabled="shippingSaveBusy" @click="closeShippingModal">
+          Cancel
+        </button>
+        <button type="button" class="btn btn-primary staff-page-primary" :disabled="shippingSaveBusy" @click="saveShippingAddress">
+          {{ shippingSaveBusy ? "Saving…" : "Save" }}
         </button>
       </div>
     </Modal>
@@ -705,6 +1380,24 @@ onUnmounted(() => {
       @close="closeBarcodeModal"
       @upload="uploadBarcode"
     />
+
+    <Teleport to="body">
+      <div
+        v-if="lineMenuOpenLine"
+        data-row-actions
+        class="staff-row-menu fixed z-[300] overflow-hidden"
+        role="menu"
+        :style="{ top: `${lineMenuRect.top}px`, left: `${lineMenuRect.left}px` }"
+        @click.stop
+      >
+        <button type="button" class="staff-row-menu__item" role="menuitem" @click="onLineMenuUpload">
+          Upload Barcode
+        </button>
+        <button type="button" class="staff-row-menu__item staff-row-menu__item--danger" role="menuitem" @click="onLineMenuRemove">
+          Remove
+        </button>
+      </div>
+    </Teleport>
   </div>
 </template>
 
@@ -741,19 +1434,17 @@ onUnmounted(() => {
 }
 
 .wholesale-order-detail-page .order-detail-page__items-col {
-  width: 48%;
-  min-width: 16rem;
+  width: 40%;
+  min-width: 14rem;
   vertical-align: middle;
 }
 
 .wholesale-order-detail-page .order-detail-page__item-sku-title {
-  font-size: 1.25rem;
-  font-weight: 700;
+  font-size: 1rem;
+  font-weight: 600;
   line-height: 1.35;
   color: var(--bs-body-color);
   word-break: break-word;
-  user-select: text;
-  margin-bottom: 0.2rem;
 }
 
 .wholesale-order-detail-page .order-detail-page__item-name-sub {
@@ -775,7 +1466,6 @@ onUnmounted(() => {
 .wholesale-order-detail-page .asn-line-status-badge {
   font-size: 0.6875rem;
   white-space: nowrap;
-  cursor: pointer;
 }
 
 .wholesale-order-detail-page .asn-line-thumb-link {
@@ -785,5 +1475,122 @@ onUnmounted(() => {
 
 .wholesale-order-detail-page .asn-line-thumb-link:hover .asn-line-thumb {
   opacity: 0.92;
+}
+
+.wholesale-order-detail-page .order-detail-page__section-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 2rem;
+  height: 2rem;
+  border-radius: 0.5rem;
+  flex-shrink: 0;
+}
+
+.wholesale-order-detail-page .order-detail-page__section-icon--items {
+  background: rgba(var(--bs-primary-rgb), 0.1);
+  color: var(--bs-primary);
+}
+
+.wholesale-order-detail-page .order-detail-page__section-icon--note {
+  background: rgba(var(--bs-info-rgb), 0.12);
+  color: var(--bs-info);
+}
+
+.wholesale-order-detail-page .order-detail-page__section-icon--shipping {
+  background: rgba(var(--bs-warning-rgb), 0.15);
+  color: var(--bs-warning-text-emphasis, #664d03);
+}
+
+.wholesale-order-detail-page .order-detail-page__section-icon--details {
+  background: rgba(var(--bs-secondary-rgb), 0.12);
+  color: var(--bs-secondary);
+}
+
+.wholesale-order-detail-page .order-detail-page__detail-label {
+  font-size: 0.75rem;
+  color: var(--bs-secondary-color);
+}
+
+.wholesale-order-detail-page .order-detail-page__detail-value {
+  font-size: 0.875rem;
+}
+
+.wholesale-order-detail-page .order-detail-page__detail-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 0.35rem 0;
+  border-bottom: 1px solid rgba(0, 0, 0, 0.06);
+}
+
+.wholesale-order-detail-page .order-detail-page__detail-row:last-child {
+  border-bottom: none;
+}
+
+.wholesale-order-detail-page .order-detail-page__items-summary {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 1rem;
+}
+
+.wholesale-order-detail-page .order-detail-page__items-summary-tile {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.65rem;
+  min-width: 0;
+}
+
+.wholesale-order-detail-page .order-detail-page__items-summary-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 2rem;
+  height: 2rem;
+  border-radius: 0.5rem;
+  flex-shrink: 0;
+}
+
+.wholesale-order-detail-page .order-detail-page__items-summary-icon--items {
+  background: rgba(var(--bs-primary-rgb), 0.1);
+  color: var(--bs-primary);
+}
+
+.wholesale-order-detail-page .order-detail-page__items-summary-icon--qty {
+  background: rgba(var(--bs-info-rgb), 0.12);
+  color: var(--bs-info);
+}
+
+.wholesale-order-detail-page .order-detail-page__items-summary-icon--ship {
+  background: rgba(var(--bs-success-rgb), 0.12);
+  color: var(--bs-success);
+}
+
+.wholesale-order-detail-page .order-detail-page__items-summary-icon--cost {
+  background: rgba(var(--bs-warning-rgb), 0.15);
+  color: var(--bs-warning-text-emphasis, #664d03);
+}
+
+.wholesale-order-detail-page .order-detail-page__items-summary-label {
+  font-size: 0.75rem;
+  color: var(--bs-secondary-color);
+}
+
+.wholesale-order-detail-page .order-detail-page__items-summary-value {
+  font-size: 1.125rem;
+  font-weight: 600;
+  line-height: 1.2;
+}
+
+@media (max-width: 991.98px) {
+  .wholesale-order-detail-page .order-detail-page__items-summary {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 575.98px) {
+  .wholesale-order-detail-page .order-detail-page__items-summary {
+    grid-template-columns: 1fr;
+  }
 }
 </style>

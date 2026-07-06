@@ -2,7 +2,7 @@ export function wholesaleStatusLabel(status) {
   const s = String(status || "").toLowerCase();
   if (s === "draft") return "Draft";
   if (s === "pending") return "Pending";
-  if (s === "in_progress") return "In Progress";
+  if (s === "in_progress") return "Ready to Ship";
   if (s === "completed") return "Completed";
   if (s === "shipped") return "Shipped";
   return status || "—";
@@ -15,6 +15,22 @@ export function wholesaleStatusBadgeClass(status) {
   if (s === "in_progress") return "bg-primary-subtle text-primary-emphasis";
   if (s === "completed") return "bg-success-subtle text-success-emphasis";
   if (s === "shipped") return "bg-info-subtle text-info-emphasis";
+  return "bg-body-secondary text-body-secondary";
+}
+
+export function wholesaleLineStatusLabel(status) {
+  const s = String(status || "").toLowerCase();
+  if (s === "pending") return "Pending";
+  if (s === "ship_as_is") return "Ship As Is";
+  if (s === "barcode_ready") return "Barcode Ready";
+  return status || "—";
+}
+
+export function wholesaleLineStatusBadgeClass(status) {
+  const s = String(status || "").toLowerCase();
+  if (s === "pending") return "bg-warning-subtle text-warning-emphasis";
+  if (s === "ship_as_is") return "bg-secondary-subtle text-secondary-emphasis";
+  if (s === "barcode_ready") return "bg-success-subtle text-success-emphasis";
   return "bg-body-secondary text-body-secondary";
 }
 
@@ -37,9 +53,33 @@ export const WHOLESALE_STATUS_OPTIONS = [
   { value: "", label: "All statuses" },
   { value: "draft", label: "Draft" },
   { value: "pending", label: "Pending" },
-  { value: "in_progress", label: "In Progress" },
+  { value: "in_progress", label: "Ready to Ship" },
   { value: "completed", label: "Completed" },
   { value: "shipped", label: "Shipped" },
+];
+
+export const WHOLESALE_SKU_BARCODE_LABEL_OPTIONS = [
+  { value: "apply_new", label: "Apply New Barcode Labels" },
+  { value: "none", label: "No Barcode Labels" },
+];
+
+export const WHOLESALE_SKU_PACKAGING_OPTIONS = [
+  { value: "none", label: "No Additional Packaging" },
+  { value: "poly_bag", label: "Poly Bag Each Item" },
+  { value: "bubble_mailer", label: "Bubble Mailer Each Item" },
+  { value: "box", label: "Box Each Item" },
+  { value: "bubble_wrap", label: "Bubble Wrap Each Item" },
+  { value: "other", label: "Other (Specify)" },
+];
+
+export const WHOLESALE_BUNDLE_CONFIG_OPTIONS = [
+  { value: "not_bundled", label: "Not Bundled (Single SKU)" },
+  { value: "bundle_together", label: "Bundle Individual SKUs Together" },
+];
+
+export const WHOLESALE_SHIPPING_METHOD_REQUIREMENT_OPTIONS = [
+  { value: "boxes", label: "Ship all in boxes" },
+  { value: "pallet", label: "Ship all on pallet" },
 ];
 
 export const WHOLESALE_TYPE_OPTIONS = [

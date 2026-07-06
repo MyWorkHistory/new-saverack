@@ -1247,6 +1247,41 @@ GQL;
     }
 
     /**
+     * Update order fulfillment status at ShipHero (e.g. wholesale, fulfilled).
+     */
+    public function updateOrderFulfillmentStatus(
+        string $orderId,
+        string $customerAccountId,
+        string $fulfillmentStatus,
+        ?string $reason = null
+    ): void {
+        $relayId = $this->resolveOrderRelayIdForMutations($orderId, $customerAccountId);
+        $status = trim($fulfillmentStatus);
+        if ($status === '') {
+            throw new RuntimeException('Fulfillment status is required.');
+        }
+        $reasonText = ($reason !== null && trim($reason) !== '') ? trim($reason) : 'Updated via Save Rack CRM.';
+        $customer = trim($customerAccountId);
+        $data = [
+            'order_id' => $relayId,
+            'fulfillment_status' => $status,
+            'reason' => $reasonText,
+        ];
+        if ($customer !== '') {
+            $data['customer_account_id'] = $customer;
+        }
+        $graphql = <<<'GQL'
+mutation ShipHeroOrderUpdateFulfillmentStatus($data: UpdateOrderFulfillmentStatusInput!) {
+  order_update_fulfillment_status(data: $data) {
+    request_id
+    complexity
+  }
+}
+GQL;
+        $this->client->query($graphql, ['data' => $data]);
+    }
+
+    /**
      * Mark order fulfilled at ShipHero. Prefer whole-order status; on failure, retry line-by-line.
      *
      * Does not run shipment_create / inventory_remove; administrative status change only (see ShipHero docs).

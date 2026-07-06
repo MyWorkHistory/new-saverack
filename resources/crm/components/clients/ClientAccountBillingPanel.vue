@@ -268,7 +268,7 @@ watch(() => props.accountId, load);
             <p class="staff-stat-card__value">
               {{ formatCents(summary.open_balance_due_cents) }}
             </p>
-            <p class="staff-stat-card__sub">Sent and partial — unpaid total</p>
+            <p class="staff-stat-card__sub">Open and past due — unpaid total</p>
             <div class="staff-stat-card__icon staff-stat-card__icon--money" aria-hidden="true">
               <BillingDollarStatIcon />
             </div>

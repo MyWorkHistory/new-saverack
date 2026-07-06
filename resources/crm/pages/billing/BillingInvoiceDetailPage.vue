@@ -335,7 +335,10 @@ const payFilteredRows = computed(() => {
     return payRows.value.filter((row) => payRowStatusKey(row) === "draft");
   }
   if (payFilterStatus.value === "open") {
-    return payRows.value.filter((row) => payRowStatusKey(row) === "open");
+    return payRows.value.filter((row) => {
+      const key = payRowStatusKey(row);
+      return key === "open" || key === "past_due";
+    });
   }
   return payRows.value;
 });
@@ -2983,7 +2986,7 @@ function onDocKeydown(e) {
                 <p class="staff-stat-card__value">
                   {{ formatCents(payOpenBalanceCents, invoice.currency) }}
                 </p>
-                <p class="staff-stat-card__sub">Sent and partial — unpaid total</p>
+                <p class="staff-stat-card__sub">Open and past due — unpaid total</p>
                 <div class="staff-stat-card__icon staff-stat-card__icon--money" aria-hidden="true">
                   <BillingDollarStatIcon />
                 </div>

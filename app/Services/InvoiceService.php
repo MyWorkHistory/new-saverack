@@ -939,6 +939,11 @@ class InvoiceService
         $this->applyOpenBalanceScope($openBalanceQuery);
         $open = (int) $openBalanceQuery->sum('balance_due_cents');
 
+        $pastDueQuery = Invoice::query()
+            ->where('client_account_id', $invoice->client_account_id);
+        $this->applyPastDueScope($pastDueQuery);
+        $pastDue = (int) $pastDueQuery->sum('balance_due_cents');
+
         $rows = [];
         foreach ($payable as $row) {
             $balance = (int) $row->balance_due_cents;
@@ -967,8 +972,8 @@ class InvoiceService
             ],
             'current_invoice_id' => (int) $invoice->id,
             'available_funds_cents' => max(0, (int) $invoice->clientAccount->billing_available_funds_cents),
-            'open_balance_cents' => $open,
-            'past_due_balance_cents' => 0,
+            'open_balance_cents' => $open + $pastDue,
+            'past_due_balance_cents' => $pastDue,
             'pending_balance_cents' => (int) $pending,
             'rows' => $rows,
         ];
@@ -2488,7 +2493,7 @@ class InvoiceService
     }
 
     /**
-     * Open balance: unpaid sent/partial invoices that are not processing or past due.
+     * Open balance (not past due): unpaid sent/partial invoices still within grace period.
      *
      * @param  \Illuminate\Database\Eloquent\Builder<Invoice>  $query
      */
@@ -2651,7 +2656,7 @@ class InvoiceService
             ->all();
 
         return [
-            'open_balance_due_cents' => $openBalance,
+            'open_balance_due_cents' => $openBalance + $pastDueBalanceCents,
             'processing_total_cents' => $processingTotalCents,
             'past_due_balance_cents' => $pastDueBalanceCents,
             'overdue_invoice_count' => $overdueCount,

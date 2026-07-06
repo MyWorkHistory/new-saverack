@@ -327,7 +327,7 @@ class BillingInvoiceApiTest extends TestCase
             'client_account_id' => $client->id,
             'status' => Invoice::STATUS_PARTIAL,
             'currency' => 'USD',
-            'due_at' => now()->subDay(),
+            'due_at' => now()->subDays(5)->startOfDay(),
             'subtotal_cents' => 3000,
             'tax_cents' => 0,
             'total_cents' => 3000,
@@ -350,10 +350,44 @@ class BillingInvoiceApiTest extends TestCase
         $this->getJson("/api/invoices/{$current->id}/pay-context")
             ->assertOk()
             ->assertJsonPath('account.name', 'Context Co')
-            ->assertJsonPath('open_balance_cents', 5000)
+            ->assertJsonPath('open_balance_cents', 7000)
             ->assertJsonPath('past_due_balance_cents', 2000)
             ->assertJsonPath('pending_balance_cents', 1500)
             ->assertJsonCount(3, 'rows');
+    }
+
+    public function test_pay_context_open_balance_includes_past_due_only_account(): void
+    {
+        $user = User::factory()->create();
+        $user->permissions()->sync([
+            $this->billingViewPermission()->id,
+            $this->billingUpdatePermission()->id,
+        ]);
+        Sanctum::actingAs($user);
+
+        $client = ClientAccount::query()->create([
+            'status' => ClientAccount::STATUS_ACTIVE,
+            'company_name' => 'Past Due Only Co',
+            'email' => 'past-due-only@acme.test',
+        ]);
+
+        $pastDue = Invoice::query()->create([
+            'invoice_number' => 'INV-PAST-DUE-ONLY',
+            'client_account_id' => $client->id,
+            'status' => Invoice::STATUS_SENT,
+            'currency' => 'USD',
+            'due_at' => now()->subDays(10)->startOfDay(),
+            'subtotal_cents' => 4200,
+            'tax_cents' => 0,
+            'total_cents' => 4200,
+            'amount_paid_cents' => 0,
+            'balance_due_cents' => 4200,
+        ]);
+
+        $this->getJson("/api/invoices/{$pastDue->id}/pay-context")
+            ->assertOk()
+            ->assertJsonPath('open_balance_cents', 4200)
+            ->assertJsonPath('past_due_balance_cents', 4200);
     }
 
     public function test_pay_context_returns_available_funds_for_zero_balance_draft(): void

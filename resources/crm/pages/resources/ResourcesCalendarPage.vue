@@ -222,7 +222,12 @@ onMounted(async () => {
 </script>
 
 <template>
-  <div class="resources-calendar-page staff-page">
+  <div class="resources-calendar-page staff-page staff-page--wide">
+    <div class="mb-4">
+      <h1 class="h4 mb-1 fw-semibold text-body staff-page__heading">Calendar</h1>
+      <p class="staff-page__intro mb-0">Shared team events and personal reminders.</p>
+    </div>
+
     <div class="resources-calendar-layout">
       <aside class="resources-calendar-sidebar card border-0 shadow-sm">
         <div class="resources-calendar-sidebar__body">

@@ -789,7 +789,7 @@ onUnmounted(() => {
 </script>
 
 <template>
-  <div class="staff-user-view staff-page--wide">
+  <div class="staff-user-view staff-page--wide account-detail-page">
     <div class="account-detail-page-head">
       <nav
         class="staff-user-view__breadcrumb account-detail-page-head__breadcrumb d-flex flex-wrap align-items-center gap-1"
@@ -837,12 +837,13 @@ onUnmounted(() => {
               :class="{ 'staff-detail-tab-btn--active': activeTab === t.id }"
               role="tab"
               :aria-selected="activeTab === t.id"
+              :title="t.label"
               @click="setActiveTab(t.id)"
             >
               <svg
                 class="staff-detail-tab-btn__icon"
-                width="26"
-                height="26"
+                width="18"
+                height="18"
                 fill="none"
                 stroke="currentColor"
                 stroke-width="1.75"
@@ -1006,7 +1007,7 @@ onUnmounted(() => {
               <button
                 v-if="canUpdateAccount"
                 type="button"
-                class="btn btn-sm btn-primary staff-page-primary"
+                class="btn btn-sm staff-account-edit-btn"
                 @click="openAccountEdit('left')"
               >
                 Edit
@@ -1129,7 +1130,7 @@ onUnmounted(() => {
                 <button
                   v-if="canUpdateAccount"
                   type="button"
-                  class="btn btn-sm btn-primary staff-page-primary"
+                  class="btn btn-sm staff-account-edit-btn"
                   @click="openAccountEdit('account')"
                 >
                   Edit
@@ -1199,7 +1200,7 @@ onUnmounted(() => {
                 <button
                   v-if="canUpdateAccount"
                   type="button"
-                  class="btn btn-sm btn-primary staff-page-primary"
+                  class="btn btn-sm staff-account-edit-btn"
                   @click="openAccountEdit('address')"
                 >
                   Edit
@@ -1660,7 +1661,7 @@ onUnmounted(() => {
                 <button
                   v-if="canUpdateAccount"
                   type="button"
-                  class="btn btn-sm btn-primary staff-page-primary"
+                  class="btn btn-sm staff-account-edit-btn"
                   @click="openAccountEdit('settings')"
                 >
                   Edit

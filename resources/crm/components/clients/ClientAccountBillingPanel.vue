@@ -356,7 +356,7 @@ watch(() => props.accountId, load);
               <button
                 v-if="canEdit"
                 type="button"
-                class="btn btn-sm btn-primary staff-page-primary"
+                class="btn btn-sm staff-account-edit-btn"
                 @click="emit('edit')"
               >
                 Edit

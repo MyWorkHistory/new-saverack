@@ -252,13 +252,16 @@ Route::middleware('auth:sanctum')->group(function () {
 
     Route::prefix('admin/wholesale-orders')->group(function () {
         Route::get('/', [WholesaleOrderController::class, 'index'])->middleware('can:orders.view');
+        Route::get('/pick-list', [WholesaleOrderController::class, 'pickList'])->middleware('can:orders.view');
         Route::post('/', [WholesaleOrderController::class, 'store'])->middleware('can:orders.update');
         Route::get('/{wholesaleOrder}/product-catalog', [WholesaleOrderController::class, 'productCatalog'])->middleware('can:orders.view');
         Route::get('/{wholesaleOrder}', [WholesaleOrderController::class, 'show'])->middleware('can:orders.view');
         Route::patch('/{wholesaleOrder}', [WholesaleOrderController::class, 'update'])->middleware('can:orders.update');
         Route::post('/{wholesaleOrder}/ready-to-ship', [WholesaleOrderController::class, 'readyToShip'])->middleware('can:orders.update');
+        Route::post('/{wholesaleOrder}/mark-picked', [WholesaleOrderController::class, 'markPicked'])->middleware('can:orders.update');
         Route::post('/{wholesaleOrder}/lines', [WholesaleOrderController::class, 'storeLine'])->middleware('can:orders.update');
         Route::patch('/{wholesaleOrder}/lines/{line}', [WholesaleOrderController::class, 'updateLine'])->middleware('can:orders.update');
+        Route::patch('/{wholesaleOrder}/lines/{line}/pick', [WholesaleOrderController::class, 'updateLinePick'])->middleware('can:orders.update');
         Route::delete('/{wholesaleOrder}/lines/{line}', [WholesaleOrderController::class, 'destroyLine'])->middleware('can:orders.update');
         Route::post('/{wholesaleOrder}/lines/{line}/barcode', [WholesaleOrderController::class, 'uploadLineBarcode'])->middleware('can:orders.update');
         Route::get('/{wholesaleOrder}/lines/{line}/barcode.pdf', [WholesaleOrderController::class, 'lineBarcodePdf'])->middleware('can:orders.view');

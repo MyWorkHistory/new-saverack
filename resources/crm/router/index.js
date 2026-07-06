@@ -263,6 +263,10 @@ const meta = {
     title: "Save Rack | Wholesale Order",
     description: "Wholesale order detail.",
   },
+  wholesalePickList: {
+    title: "Save Rack | Pick List",
+    description: "Pick wholesale order line items.",
+  },
   adminReturnedOrders: {
     title: "Save Rack | Returned Orders",
     description: "Processed returns by order.",
@@ -636,6 +640,12 @@ const routes = [
     name: "wholesale-orders",
     component: () => import("../pages/orders/WholesaleOrdersListPage.vue"),
     meta: meta.wholesaleOrdersList,
+  },
+  {
+    path: "/admin/orders/wholesale/pick-list",
+    name: "wholesale-pick-list",
+    component: () => import("../pages/orders/WholesalePickListPage.vue"),
+    meta: meta.wholesalePickList,
   },
   {
     path: "/admin/orders/wholesale/:id",

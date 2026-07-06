@@ -598,4 +598,135 @@ class WholesaleOrderWorkflowTest extends TestCase
             'quantity' => 5,
         ])->assertStatus(422);
     }
+
+    private function seedInProgressOrder(ClientAccount $account): WholesaleOrder
+    {
+        $order = WholesaleOrder::query()->create([
+            'client_account_id' => $account->id,
+            'order_number' => 'PICK-1',
+            'order_type' => WholesaleOrder::TYPE_B2B,
+            'status' => WholesaleOrder::STATUS_IN_PROGRESS,
+            'items_count' => 5,
+            'shiphero_order_id' => 'sh-pick-1',
+        ]);
+
+        WholesaleOrderLine::query()->create([
+            'wholesale_order_id' => $order->id,
+            'sku' => 'SKU-PICK-A',
+            'name' => 'Pick Product A',
+            'quantity' => 3,
+            'quantity_picked' => 0,
+            'status' => WholesaleOrderLine::STATUS_PENDING,
+            'barcode_mode' => WholesaleOrderLine::BARCODE_SHIP_AS_IS,
+            'sort_order' => 1,
+        ]);
+        WholesaleOrderLine::query()->create([
+            'wholesale_order_id' => $order->id,
+            'sku' => 'SKU-PICK-B',
+            'name' => 'Pick Product B',
+            'quantity' => 2,
+            'quantity_picked' => 0,
+            'status' => WholesaleOrderLine::STATUS_PENDING,
+            'barcode_mode' => WholesaleOrderLine::BARCODE_SHIP_AS_IS,
+            'sort_order' => 2,
+        ]);
+
+        return $order->fresh(['lines']);
+    }
+
+    public function test_pick_list_returns_in_progress_orders(): void
+    {
+        $account = $this->account('pick');
+        $otherAccount = $this->account('other');
+        Sanctum::actingAs($this->staffUser());
+
+        $order = $this->seedInProgressOrder($account);
+
+        WholesaleOrder::query()->create([
+            'client_account_id' => $otherAccount->id,
+            'order_number' => 'OTHER-1',
+            'order_type' => WholesaleOrder::TYPE_B2B,
+            'status' => WholesaleOrder::STATUS_IN_PROGRESS,
+            'items_count' => 1,
+        ]);
+
+        WholesaleOrder::query()->create([
+            'client_account_id' => $account->id,
+            'order_number' => 'PENDING-1',
+            'order_type' => WholesaleOrder::TYPE_B2B,
+            'status' => WholesaleOrder::STATUS_PENDING,
+            'items_count' => 1,
+        ]);
+
+        $this->getJson('/api/admin/wholesale-orders/pick-list')
+            ->assertOk()
+            ->assertJsonCount(2, 'orders')
+            ->assertJsonPath('orders.0.id', $order->id)
+            ->assertJsonPath('orders.0.order_number', 'PICK-1')
+            ->assertJsonPath('orders.0.is_fully_picked', false)
+            ->assertJsonPath('orders.0.lines.0.sku', 'SKU-PICK-A');
+
+        $this->getJson('/api/admin/wholesale-orders/pick-list?client_account_id='.$account->id)
+            ->assertOk()
+            ->assertJsonCount(1, 'orders')
+            ->assertJsonPath('orders.0.id', $order->id);
+    }
+
+    public function test_update_line_pick_rejects_over_quantity(): void
+    {
+        $account = $this->account('pick-reject');
+        Sanctum::actingAs($this->staffUser());
+        $order = $this->seedInProgressOrder($account);
+        $line = $order->lines->first();
+
+        $this->patchJson("/api/admin/wholesale-orders/{$order->id}/lines/{$line->id}/pick", [
+            'quantity_picked' => 99,
+        ])->assertStatus(422);
+    }
+
+    public function test_update_line_pick_updates_quantity(): void
+    {
+        $account = $this->account('pick-update');
+        Sanctum::actingAs($this->staffUser());
+        $order = $this->seedInProgressOrder($account);
+        $line = $order->lines->first();
+
+        $this->patchJson("/api/admin/wholesale-orders/{$order->id}/lines/{$line->id}/pick", [
+            'quantity_picked' => 2,
+        ])
+            ->assertOk()
+            ->assertJsonPath('quantity_picked', 2)
+            ->assertJsonPath('is_fully_picked', false);
+
+        $this->assertDatabaseHas('wholesale_order_lines', [
+            'id' => $line->id,
+            'quantity_picked' => 2,
+        ]);
+    }
+
+    public function test_mark_picked_requires_all_lines_and_completes_order(): void
+    {
+        $account = $this->account('mark-picked');
+        Sanctum::actingAs($this->staffUser());
+        $order = $this->seedInProgressOrder($account);
+        $lines = $order->lines;
+
+        $this->postJson("/api/admin/wholesale-orders/{$order->id}/mark-picked")
+            ->assertStatus(422);
+
+        foreach ($lines as $line) {
+            $this->patchJson("/api/admin/wholesale-orders/{$order->id}/lines/{$line->id}/pick", [
+                'quantity_picked' => $line->quantity,
+            ])->assertOk();
+        }
+
+        $this->postJson("/api/admin/wholesale-orders/{$order->id}/mark-picked")
+            ->assertOk()
+            ->assertJsonPath('status', WholesaleOrder::STATUS_COMPLETED);
+
+        $this->assertDatabaseHas('wholesale_orders', [
+            'id' => $order->id,
+            'status' => WholesaleOrder::STATUS_COMPLETED,
+        ]);
+    }
 }

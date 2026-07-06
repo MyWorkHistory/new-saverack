@@ -29,6 +29,7 @@ class WholesaleOrderLine extends Model
         'name',
         'image_url',
         'quantity',
+        'quantity_picked',
         'status',
         'barcode_mode',
         'barcode_path',
@@ -39,6 +40,7 @@ class WholesaleOrderLine extends Model
 
     protected $casts = [
         'quantity' => 'integer',
+        'quantity_picked' => 'integer',
         'sort_order' => 'integer',
     ];
 
@@ -61,5 +63,10 @@ class WholesaleOrderLine extends Model
         } elseif ($this->barcode_mode === self::BARCODE_SHIP_AS_IS) {
             $this->status = self::STATUS_SHIP_AS_IS;
         }
+    }
+
+    public function isFullyPicked(): bool
+    {
+        return (int) $this->quantity_picked >= (int) $this->quantity && (int) $this->quantity > 0;
     }
 }

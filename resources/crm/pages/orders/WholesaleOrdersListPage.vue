@@ -1,6 +1,6 @@
 <script setup>
 import { computed, onMounted, onUnmounted, ref } from "vue";
-import { useRouter } from "vue-router";
+import { RouterLink, useRouter } from "vue-router";
 import api from "../../services/api";
 import CrmSearchableSelect from "../../components/common/CrmSearchableSelect.vue";
 import CrmLoadingSpinner from "../../components/common/CrmLoadingSpinner.vue";
@@ -45,6 +45,11 @@ const accountOptions = computed(() =>
     email: a.email ? String(a.email) : "",
   })),
 );
+
+const pickListRoute = computed(() => {
+  const query = accountFilter.value ? { client_account_id: String(accountFilter.value) } : {};
+  return { name: "wholesale-pick-list", query };
+});
 
 function onDocClickFilter(e) {
   if (!e.target?.closest?.("[data-toolbar-filter]")) {
@@ -166,13 +171,21 @@ onUnmounted(() => {
         <h1 class="h4 mb-1 fw-semibold text-body">Wholesale</h1>
         <p class="small text-secondary mb-0">Wholesale fulfillment orders by account.</p>
       </div>
-      <button
-        type="button"
-        class="btn btn-primary staff-page-primary fw-semibold"
-        @click="openCreate"
-      >
-        Create Order
-      </button>
+      <div class="d-flex flex-wrap gap-2">
+        <RouterLink
+          :to="pickListRoute"
+          class="btn btn-outline-secondary fw-semibold orders-toolbar-outline-btn"
+        >
+          Pick List
+        </RouterLink>
+        <button
+          type="button"
+          class="btn btn-primary staff-page-primary fw-semibold"
+          @click="openCreate"
+        >
+          Create Order
+        </button>
+      </div>
     </div>
 
     <div

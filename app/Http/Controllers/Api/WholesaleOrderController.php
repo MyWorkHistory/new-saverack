@@ -150,6 +150,8 @@ class WholesaleOrderController extends Controller
             'name' => $line->name,
             'image_url' => $imageUrl,
             'quantity' => $line->quantity,
+            'quantity_picked' => (int) ($line->quantity_picked ?? 0),
+            'is_fully_picked' => $line->isFullyPicked(),
             'status' => $line->status,
             'status_label' => $this->lineStatusLabel($line->status),
             'barcode_mode' => $line->barcode_mode,
@@ -828,5 +830,132 @@ class WholesaleOrderController extends Controller
         );
 
         return response()->json($this->serializeDetail($wholesaleOrder->fresh(['clientAccount', 'createdBy', 'lines', 'comments.user'])));
+    }
+
+    public function pickList(Request $request): JsonResponse
+    {
+        $this->assertStaff($request);
+        Gate::authorize('viewAny', WholesaleOrder::class);
+
+        $validated = $request->validate([
+            'client_account_id' => ['nullable', 'integer', 'exists:client_accounts,id'],
+        ]);
+
+        $user = $request->user();
+        if (! $user instanceof User) {
+            abort(403);
+        }
+
+        $query = WholesaleOrder::query()
+            ->with(['lines', 'clientAccount'])
+            ->where('status', WholesaleOrder::STATUS_IN_PROGRESS)
+            ->orderByDesc('updated_at')
+            ->orderByDesc('id');
+
+        if (! empty($validated['client_account_id'])) {
+            $query->where('client_account_id', (int) $validated['client_account_id']);
+        }
+
+        $viewable = $this->viewableAccountIds($user);
+        if ($viewable !== null) {
+            $query->whereIn('client_account_id', $viewable);
+        }
+
+        $orders = $query->get()->map(fn (WholesaleOrder $order) => $this->serializePickListOrder($order))->values()->all();
+
+        return response()->json(['orders' => $orders]);
+    }
+
+    public function updateLinePick(
+        Request $request,
+        WholesaleOrder $wholesaleOrder,
+        WholesaleOrderLine $line
+    ): JsonResponse {
+        $this->assertStaff($request);
+        Gate::authorize('update', $wholesaleOrder);
+        $this->assertPickableOrder($wholesaleOrder);
+        $this->assertLineBelongsToOrder($wholesaleOrder, $line);
+
+        $validated = $request->validate([
+            'quantity_picked' => ['required', 'integer', 'min:0', 'max:'.$line->quantity],
+        ]);
+
+        $line->quantity_picked = (int) $validated['quantity_picked'];
+        $line->save();
+
+        $imageBySku = $this->resolveLineImageUrls($wholesaleOrder->fresh(['lines']));
+
+        return response()->json(
+            $this->serializePickListLine($line->fresh(), $imageBySku[mb_strtolower(trim((string) $line->sku))] ?? null)
+        );
+    }
+
+    public function markPicked(Request $request, WholesaleOrder $wholesaleOrder): JsonResponse
+    {
+        $this->assertStaff($request);
+        Gate::authorize('update', $wholesaleOrder);
+        $this->assertPickableOrder($wholesaleOrder);
+
+        $wholesaleOrder->loadMissing('lines');
+        if (! $wholesaleOrder->canMarkPicked()) {
+            throw ValidationException::withMessages([
+                'order' => ['All line items must be fully picked before marking complete.'],
+            ]);
+        }
+
+        $wholesaleOrder->status = WholesaleOrder::STATUS_COMPLETED;
+        $wholesaleOrder->save();
+
+        return response()->json($this->serializeDetail($wholesaleOrder->fresh(['clientAccount', 'createdBy', 'lines', 'comments.user'])));
+    }
+
+    private function assertPickableOrder(WholesaleOrder $order): void
+    {
+        if ($order->status !== WholesaleOrder::STATUS_IN_PROGRESS) {
+            throw ValidationException::withMessages([
+                'status' => ['Only ready-to-ship wholesale orders can be picked.'],
+            ]);
+        }
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function serializePickListOrder(WholesaleOrder $order): array
+    {
+        $order->loadMissing(['lines', 'clientAccount']);
+        $imageBySku = $this->resolveLineImageUrls($order);
+        $companyName = $order->clientAccount !== null
+            ? trim((string) $order->clientAccount->company_name)
+            : '';
+
+        return [
+            'id' => $order->id,
+            'order_number' => $order->order_number,
+            'client_account_id' => $order->client_account_id,
+            'client_account_company_name' => $companyName,
+            'is_fully_picked' => $order->isFullyPicked(),
+            'lines' => $order->lines->map(function (WholesaleOrderLine $line) use ($imageBySku) {
+                $key = mb_strtolower(trim((string) $line->sku));
+
+                return $this->serializePickListLine($line, $imageBySku[$key] ?? null);
+            })->values()->all(),
+        ];
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function serializePickListLine(WholesaleOrderLine $line, ?string $resolvedImageUrl = null): array
+    {
+        return [
+            'id' => $line->id,
+            'sku' => $line->sku,
+            'name' => $line->name,
+            'image_url' => $resolvedImageUrl ?? $line->image_url,
+            'quantity' => (int) $line->quantity,
+            'quantity_picked' => (int) ($line->quantity_picked ?? 0),
+            'is_fully_picked' => $line->isFullyPicked(),
+        ];
     }
 }

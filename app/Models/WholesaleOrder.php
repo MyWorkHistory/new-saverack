@@ -150,4 +150,19 @@ class WholesaleOrder extends Model
             && $this->hasShippingCarrierAndMethod()
             && $this->hasRequirementsFilled();
     }
+
+    public function isFullyPicked(): bool
+    {
+        $this->loadMissing('lines');
+        if ($this->lines->isEmpty()) {
+            return false;
+        }
+
+        return $this->lines->every(fn (WholesaleOrderLine $line) => $line->isFullyPicked());
+    }
+
+    public function canMarkPicked(): bool
+    {
+        return $this->status === self::STATUS_IN_PROGRESS && $this->isFullyPicked();
+    }
 }

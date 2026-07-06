@@ -246,11 +246,16 @@ class WholesaleOrderController extends Controller
             'shipping_method' => $order->shipping_method,
             'sku_barcode_labels' => $order->sku_barcode_labels,
             'sku_barcode_labels_comment' => $order->sku_barcode_labels_comment,
+            'cover_existing_barcodes' => $order->cover_existing_barcodes,
+            'cover_existing_barcodes_comment' => $order->cover_existing_barcodes_comment,
             'individual_sku_packaging' => $order->individual_sku_packaging,
             'individual_sku_packaging_comment' => $order->individual_sku_packaging_comment,
             'bundle_configuration' => $order->bundle_configuration,
             'bundle_configuration_comment' => $order->bundle_configuration_comment,
             'shipping_method_requirement' => $order->shipping_method_requirement,
+            'shipping_method_requirement_comment' => $order->shipping_method_requirement_comment,
+            'master_cartons' => $order->master_cartons,
+            'master_cartons_comment' => $order->master_cartons_comment,
             'is_editable' => $order->isEditable(),
             'can_ready_to_ship' => $order->isReadyToShipEligible(),
             'has_complete_shipping_address' => $order->hasCompleteShippingAddress(),
@@ -270,9 +275,11 @@ class WholesaleOrderController extends Controller
             'order_types' => $this->typeLabels(),
             'requirement_options' => [
                 'sku_barcode_labels' => config('wholesale_orders.sku_barcode_labels', []),
+                'cover_existing_barcodes' => config('wholesale_orders.cover_existing_barcodes', []),
                 'individual_sku_packaging' => config('wholesale_orders.individual_sku_packaging', []),
                 'bundle_configuration' => config('wholesale_orders.bundle_configuration', []),
                 'shipping_method_requirement' => config('wholesale_orders.shipping_method_requirement', []),
+                'master_cartons' => config('wholesale_orders.master_cartons', []),
             ],
         ]);
     }
@@ -507,11 +514,16 @@ class WholesaleOrderController extends Controller
             'shipping_method' => ['sometimes', 'nullable', 'string', 'max:128'],
             'sku_barcode_labels' => ['sometimes', 'nullable', 'string', Rule::in(array_keys(config('wholesale_orders.sku_barcode_labels', [])))],
             'sku_barcode_labels_comment' => ['nullable', 'string', 'max:5000'],
+            'cover_existing_barcodes' => ['sometimes', 'nullable', 'string', Rule::in(array_keys(config('wholesale_orders.cover_existing_barcodes', [])))],
+            'cover_existing_barcodes_comment' => ['nullable', 'string', 'max:5000'],
             'individual_sku_packaging' => ['sometimes', 'nullable', 'string', Rule::in(array_keys(config('wholesale_orders.individual_sku_packaging', [])))],
             'individual_sku_packaging_comment' => ['nullable', 'string', 'max:5000'],
             'bundle_configuration' => ['sometimes', 'nullable', 'string', Rule::in(array_keys(config('wholesale_orders.bundle_configuration', [])))],
             'bundle_configuration_comment' => ['nullable', 'string', 'max:5000'],
             'shipping_method_requirement' => ['sometimes', 'nullable', 'string', Rule::in(array_keys(config('wholesale_orders.shipping_method_requirement', [])))],
+            'shipping_method_requirement_comment' => ['nullable', 'string', 'max:5000'],
+            'master_cartons' => ['sometimes', 'nullable', 'string', Rule::in(array_keys(config('wholesale_orders.master_cartons', [])))],
+            'master_cartons_comment' => ['nullable', 'string', 'max:5000'],
         ]);
 
         $statusOnly = array_key_exists('status', $validated)
@@ -556,6 +568,14 @@ class WholesaleOrderController extends Controller
                 ? trim((string) $validated['sku_barcode_labels_comment'])
                 : null;
         }
+        if (array_key_exists('cover_existing_barcodes', $validated)) {
+            $wholesaleOrder->cover_existing_barcodes = $validated['cover_existing_barcodes'];
+        }
+        if (array_key_exists('cover_existing_barcodes_comment', $validated)) {
+            $wholesaleOrder->cover_existing_barcodes_comment = $validated['cover_existing_barcodes_comment'] !== null
+                ? trim((string) $validated['cover_existing_barcodes_comment'])
+                : null;
+        }
         if (array_key_exists('individual_sku_packaging', $validated)) {
             $wholesaleOrder->individual_sku_packaging = $validated['individual_sku_packaging'];
         }
@@ -574,6 +594,19 @@ class WholesaleOrderController extends Controller
         }
         if (array_key_exists('shipping_method_requirement', $validated)) {
             $wholesaleOrder->shipping_method_requirement = $validated['shipping_method_requirement'];
+        }
+        if (array_key_exists('shipping_method_requirement_comment', $validated)) {
+            $wholesaleOrder->shipping_method_requirement_comment = $validated['shipping_method_requirement_comment'] !== null
+                ? trim((string) $validated['shipping_method_requirement_comment'])
+                : null;
+        }
+        if (array_key_exists('master_cartons', $validated)) {
+            $wholesaleOrder->master_cartons = $validated['master_cartons'];
+        }
+        if (array_key_exists('master_cartons_comment', $validated)) {
+            $wholesaleOrder->master_cartons_comment = $validated['master_cartons_comment'] !== null
+                ? trim((string) $validated['master_cartons_comment'])
+                : null;
         }
         $wholesaleOrder->save();
 

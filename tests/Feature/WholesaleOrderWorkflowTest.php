@@ -77,11 +77,16 @@ class WholesaleOrderWorkflowTest extends TestCase
         return [
             'sku_barcode_labels' => 'apply_new',
             'sku_barcode_labels_comment' => 'Use new labels',
+            'cover_existing_barcodes' => 'yes',
+            'cover_existing_barcodes_comment' => 'Cover all',
             'individual_sku_packaging' => 'poly_bag',
             'individual_sku_packaging_comment' => 'Seal bags',
             'bundle_configuration' => 'not_bundled',
             'bundle_configuration_comment' => '',
             'shipping_method_requirement' => 'boxes',
+            'shipping_method_requirement_comment' => 'Standard boxes',
+            'master_cartons' => 'no',
+            'master_cartons_comment' => '',
         ];
     }
 
@@ -389,16 +394,49 @@ class WholesaleOrderWorkflowTest extends TestCase
         $this->patchJson('/api/admin/wholesale-orders/'.$order->id, $payload)
             ->assertOk()
             ->assertJsonPath('sku_barcode_labels', 'apply_new')
+            ->assertJsonPath('cover_existing_barcodes', 'yes')
             ->assertJsonPath('individual_sku_packaging', 'poly_bag')
             ->assertJsonPath('bundle_configuration', 'not_bundled')
             ->assertJsonPath('shipping_method_requirement', 'boxes')
+            ->assertJsonPath('master_cartons', 'no')
             ->assertJsonPath('has_requirements_filled', true);
 
         $this->assertDatabaseHas('wholesale_orders', [
             'id' => $order->id,
             'sku_barcode_labels' => 'apply_new',
+            'cover_existing_barcodes' => 'yes',
+            'master_cartons' => 'no',
             'shipping_method_requirement' => 'boxes',
         ]);
+    }
+
+    public function test_requirements_not_filled_until_all_six_dropdowns_set(): void
+    {
+        $account = $this->account();
+        Sanctum::actingAs($this->staffUser());
+
+        $order = WholesaleOrder::query()->create([
+            'client_account_id' => $account->id,
+            'order_number' => 'REQ-PARTIAL',
+            'order_type' => WholesaleOrder::TYPE_B2B,
+            'status' => WholesaleOrder::STATUS_DRAFT,
+            'items_count' => 0,
+            'sku_barcode_labels' => 'apply_new',
+            'cover_existing_barcodes' => 'yes',
+            'individual_sku_packaging' => 'poly_bag',
+            'bundle_configuration' => 'not_bundled',
+            'shipping_method_requirement' => 'boxes',
+        ]);
+
+        $this->getJson('/api/admin/wholesale-orders/'.$order->id)
+            ->assertOk()
+            ->assertJsonPath('has_requirements_filled', false);
+
+        $this->patchJson('/api/admin/wholesale-orders/'.$order->id, [
+            'master_cartons' => 'no',
+        ])
+            ->assertOk()
+            ->assertJsonPath('has_requirements_filled', true);
     }
 
     public function test_shipping_address_patch_persists(): void

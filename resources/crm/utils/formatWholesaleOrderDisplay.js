@@ -63,6 +63,11 @@ export const WHOLESALE_SKU_BARCODE_LABEL_OPTIONS = [
   { value: "none", label: "No Barcode Labels" },
 ];
 
+export const WHOLESALE_COVER_EXISTING_BARCODE_OPTIONS = [
+  { value: "yes", label: "Yes" },
+  { value: "no", label: "No" },
+];
+
 export const WHOLESALE_SKU_PACKAGING_OPTIONS = [
   { value: "none", label: "No Additional Packaging" },
   { value: "poly_bag", label: "Poly Bag Each Item" },
@@ -80,6 +85,12 @@ export const WHOLESALE_BUNDLE_CONFIG_OPTIONS = [
 export const WHOLESALE_SHIPPING_METHOD_REQUIREMENT_OPTIONS = [
   { value: "boxes", label: "Ship all in boxes" },
   { value: "pallet", label: "Ship all on pallet" },
+];
+
+export const WHOLESALE_MASTER_CARTON_OPTIONS = [
+  { value: "yes", label: "Yes" },
+  { value: "no", label: "No" },
+  { value: "other", label: "Other (specify in comments)" },
 ];
 
 export const WHOLESALE_TYPE_OPTIONS = [

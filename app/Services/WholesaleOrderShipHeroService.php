@@ -154,12 +154,16 @@ class WholesaleOrderShipHeroService
     {
         /** @var array<string, string> $barcodeLabels */
         $barcodeLabels = config('wholesale_orders.sku_barcode_labels', []);
+        /** @var array<string, string> $coverExisting */
+        $coverExisting = config('wholesale_orders.cover_existing_barcodes', []);
         /** @var array<string, string> $packaging */
         $packaging = config('wholesale_orders.individual_sku_packaging', []);
         /** @var array<string, string> $bundle */
         $bundle = config('wholesale_orders.bundle_configuration', []);
         /** @var array<string, string> $shipMethod */
         $shipMethod = config('wholesale_orders.shipping_method_requirement', []);
+        /** @var array<string, string> $masterCartons */
+        $masterCartons = config('wholesale_orders.master_cartons', []);
 
         $lines = ['--- Wholesale Requirements ---'];
 
@@ -167,6 +171,15 @@ class WholesaleOrderShipHeroService
         if ($skuLabels !== '') {
             $lines[] = 'SKU Barcode Labels: '.($barcodeLabels[$skuLabels] ?? $skuLabels);
             $comment = trim((string) ($order->sku_barcode_labels_comment ?? ''));
+            if ($comment !== '') {
+                $lines[] = '  Comments: '.$comment;
+            }
+        }
+
+        $cover = (string) ($order->cover_existing_barcodes ?? '');
+        if ($cover !== '') {
+            $lines[] = 'Cover Existing Barcodes: '.($coverExisting[$cover] ?? $cover);
+            $comment = trim((string) ($order->cover_existing_barcodes_comment ?? ''));
             if ($comment !== '') {
                 $lines[] = '  Comments: '.$comment;
             }
@@ -193,6 +206,19 @@ class WholesaleOrderShipHeroService
         $shipReq = (string) ($order->shipping_method_requirement ?? '');
         if ($shipReq !== '') {
             $lines[] = 'Shipping Method: '.($shipMethod[$shipReq] ?? $shipReq);
+            $comment = trim((string) ($order->shipping_method_requirement_comment ?? ''));
+            if ($comment !== '') {
+                $lines[] = '  Comments: '.$comment;
+            }
+        }
+
+        $cartons = (string) ($order->master_cartons ?? '');
+        if ($cartons !== '') {
+            $lines[] = 'Master Cartons: '.($masterCartons[$cartons] ?? $cartons);
+            $comment = trim((string) ($order->master_cartons_comment ?? ''));
+            if ($comment !== '') {
+                $lines[] = '  Comments: '.$comment;
+            }
         }
 
         return count($lines) > 1 ? implode("\n", $lines) : '';

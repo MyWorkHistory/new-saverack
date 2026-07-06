@@ -56,11 +56,16 @@ class WholesaleOrder extends Model
         'shipping_method',
         'sku_barcode_labels',
         'sku_barcode_labels_comment',
+        'cover_existing_barcodes',
+        'cover_existing_barcodes_comment',
         'individual_sku_packaging',
         'individual_sku_packaging_comment',
         'bundle_configuration',
         'bundle_configuration_comment',
         'shipping_method_requirement',
+        'shipping_method_requirement_comment',
+        'master_cartons',
+        'master_cartons_comment',
         'items_count',
         'created_by_user_id',
     ];
@@ -122,9 +127,11 @@ class WholesaleOrder extends Model
     public function hasRequirementsFilled(): bool
     {
         return trim((string) ($this->sku_barcode_labels ?? '')) !== ''
+            && trim((string) ($this->cover_existing_barcodes ?? '')) !== ''
             && trim((string) ($this->individual_sku_packaging ?? '')) !== ''
             && trim((string) ($this->bundle_configuration ?? '')) !== ''
-            && trim((string) ($this->shipping_method_requirement ?? '')) !== '';
+            && trim((string) ($this->shipping_method_requirement ?? '')) !== ''
+            && trim((string) ($this->master_cartons ?? '')) !== '';
     }
 
     public function isReadyToShipEligible(): bool

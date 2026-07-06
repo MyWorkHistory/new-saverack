@@ -1,5 +1,5 @@
 <script setup>
-import { computed, nextTick, onMounted, onUnmounted, ref, watch } from "vue";
+import { computed, nextTick, onMounted, onUnmounted, reactive, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import api from "../../services/api";
 import CrmIconRowActions from "../../components/common/CrmIconRowActions.vue";
@@ -18,7 +18,9 @@ import {
   wholesaleStatusLabel,
   wholesaleTypeLabel,
   WHOLESALE_BUNDLE_CONFIG_OPTIONS,
+  WHOLESALE_COVER_EXISTING_BARCODE_OPTIONS,
   WHOLESALE_MANUAL_STATUS_OPTIONS,
+  WHOLESALE_MASTER_CARTON_OPTIONS,
   WHOLESALE_SHIPPING_METHOD_REQUIREMENT_OPTIONS,
   WHOLESALE_SKU_BARCODE_LABEL_OPTIONS,
   WHOLESALE_SKU_PACKAGING_OPTIONS,
@@ -81,13 +83,29 @@ const statusDraft = ref("pending");
 const readyToShipBusy = ref(false);
 
 const requirementsSaving = ref(false);
-const reqSkuBarcodeLabels = ref("");
-const reqSkuBarcodeLabelsComment = ref("");
-const reqIndividualPackaging = ref("");
-const reqIndividualPackagingComment = ref("");
-const reqBundleConfiguration = ref("");
-const reqBundleConfigurationComment = ref("");
-const reqShippingMethodRequirement = ref("");
+const requirementsDraft = reactive({
+  sku_barcode_labels: "",
+  sku_barcode_labels_comment: "",
+  cover_existing_barcodes: "",
+  cover_existing_barcodes_comment: "",
+  individual_sku_packaging: "",
+  individual_sku_packaging_comment: "",
+  bundle_configuration: "",
+  bundle_configuration_comment: "",
+  shipping_method_requirement: "",
+  shipping_method_requirement_comment: "",
+  master_cartons: "",
+  master_cartons_comment: "",
+});
+
+const requirementSections = [
+  { id: "sku-labels", label: "SKU Barcode Labels", valueKey: "sku_barcode_labels", commentKey: "sku_barcode_labels_comment", options: WHOLESALE_SKU_BARCODE_LABEL_OPTIONS },
+  { id: "cover-existing", label: "Cover Existing Barcodes", valueKey: "cover_existing_barcodes", commentKey: "cover_existing_barcodes_comment", options: WHOLESALE_COVER_EXISTING_BARCODE_OPTIONS },
+  { id: "packaging", label: "Individual SKU Packaging", valueKey: "individual_sku_packaging", commentKey: "individual_sku_packaging_comment", options: WHOLESALE_SKU_PACKAGING_OPTIONS },
+  { id: "bundle", label: "Bundle Configuration", valueKey: "bundle_configuration", commentKey: "bundle_configuration_comment", options: WHOLESALE_BUNDLE_CONFIG_OPTIONS },
+  { id: "shipping-method", label: "Shipping Method", valueKey: "shipping_method_requirement", commentKey: "shipping_method_requirement_comment", options: WHOLESALE_SHIPPING_METHOD_REQUIREMENT_OPTIONS },
+  { id: "master-cartons", label: "Master Cartons", valueKey: "master_cartons", commentKey: "master_cartons_comment", options: WHOLESALE_MASTER_CARTON_OPTIONS },
+];
 
 const carrierField = ref("");
 const methodField = ref("");
@@ -236,13 +254,18 @@ watch(carrierField, (newCar, oldCar) => {
 
 function syncDraftsFromOrder(data) {
   instructionsDraft.value = String(data?.instructions || "");
-  reqSkuBarcodeLabels.value = String(data?.sku_barcode_labels || "");
-  reqSkuBarcodeLabelsComment.value = String(data?.sku_barcode_labels_comment || "");
-  reqIndividualPackaging.value = String(data?.individual_sku_packaging || "");
-  reqIndividualPackagingComment.value = String(data?.individual_sku_packaging_comment || "");
-  reqBundleConfiguration.value = String(data?.bundle_configuration || "");
-  reqBundleConfigurationComment.value = String(data?.bundle_configuration_comment || "");
-  reqShippingMethodRequirement.value = String(data?.shipping_method_requirement || "");
+  requirementsDraft.sku_barcode_labels = String(data?.sku_barcode_labels || "");
+  requirementsDraft.sku_barcode_labels_comment = String(data?.sku_barcode_labels_comment || "");
+  requirementsDraft.cover_existing_barcodes = String(data?.cover_existing_barcodes || "");
+  requirementsDraft.cover_existing_barcodes_comment = String(data?.cover_existing_barcodes_comment || "");
+  requirementsDraft.individual_sku_packaging = String(data?.individual_sku_packaging || "");
+  requirementsDraft.individual_sku_packaging_comment = String(data?.individual_sku_packaging_comment || "");
+  requirementsDraft.bundle_configuration = String(data?.bundle_configuration || "");
+  requirementsDraft.bundle_configuration_comment = String(data?.bundle_configuration_comment || "");
+  requirementsDraft.shipping_method_requirement = String(data?.shipping_method_requirement || "");
+  requirementsDraft.shipping_method_requirement_comment = String(data?.shipping_method_requirement_comment || "");
+  requirementsDraft.master_cartons = String(data?.master_cartons || "");
+  requirementsDraft.master_cartons_comment = String(data?.master_cartons_comment || "");
   carrierField.value = resolveCarrierPreset(data?.shipping_carrier);
   methodField.value = String(data?.shipping_method || "");
 }
@@ -372,13 +395,18 @@ async function saveRequirements() {
   requirementsSaving.value = true;
   try {
     const { data } = await api.patch(`/admin/wholesale-orders/${order.value.id}`, {
-      sku_barcode_labels: reqSkuBarcodeLabels.value || null,
-      sku_barcode_labels_comment: reqSkuBarcodeLabelsComment.value.trim() || null,
-      individual_sku_packaging: reqIndividualPackaging.value || null,
-      individual_sku_packaging_comment: reqIndividualPackagingComment.value.trim() || null,
-      bundle_configuration: reqBundleConfiguration.value || null,
-      bundle_configuration_comment: reqBundleConfigurationComment.value.trim() || null,
-      shipping_method_requirement: reqShippingMethodRequirement.value || null,
+      sku_barcode_labels: requirementsDraft.sku_barcode_labels || null,
+      sku_barcode_labels_comment: requirementsDraft.sku_barcode_labels_comment.trim() || null,
+      cover_existing_barcodes: requirementsDraft.cover_existing_barcodes || null,
+      cover_existing_barcodes_comment: requirementsDraft.cover_existing_barcodes_comment.trim() || null,
+      individual_sku_packaging: requirementsDraft.individual_sku_packaging || null,
+      individual_sku_packaging_comment: requirementsDraft.individual_sku_packaging_comment.trim() || null,
+      bundle_configuration: requirementsDraft.bundle_configuration || null,
+      bundle_configuration_comment: requirementsDraft.bundle_configuration_comment.trim() || null,
+      shipping_method_requirement: requirementsDraft.shipping_method_requirement || null,
+      shipping_method_requirement_comment: requirementsDraft.shipping_method_requirement_comment.trim() || null,
+      master_cartons: requirementsDraft.master_cartons || null,
+      master_cartons_comment: requirementsDraft.master_cartons_comment.trim() || null,
     });
     applyOrderData(data);
     toast.success("Requirements saved.");
@@ -1095,90 +1123,50 @@ onUnmounted(() => {
       </div>
 
       <div class="col-lg-4 d-flex flex-column gap-4 order-detail-page__side-column">
-        <div class="staff-table-card staff-datatable-card staff-datatable-card--white p-4 order-detail-page__side-panel">
-          <h3 class="h6 fw-semibold mb-3">Requirements</h3>
-          <div class="mb-3">
-            <label class="form-label small text-secondary" for="wholesale-req-sku-labels">SKU Barcode Labels</label>
+        <div class="staff-table-card staff-datatable-card staff-datatable-card--white p-4 order-detail-page__side-panel wholesale-requirements-card">
+          <h3 class="h6 fw-semibold mb-1">Product &amp; Fulfillment Requirements</h3>
+          <p class="small text-secondary mb-4 wholesale-requirements-card__subtitle">
+            Please select the appropriate options for each requirement and add any relevant comments.
+          </p>
+
+          <div
+            v-for="section in requirementSections"
+            :key="section.id"
+            class="wholesale-requirements-card__section"
+          >
+            <label class="form-label fw-semibold mb-2" :for="`wholesale-req-${section.id}`">
+              {{ section.label }} <span class="text-danger">*</span>
+            </label>
             <select
-              id="wholesale-req-sku-labels"
-              v-model="reqSkuBarcodeLabels"
-              class="form-select form-select-sm"
+              :id="`wholesale-req-${section.id}`"
+              v-model="requirementsDraft[section.valueKey]"
+              class="form-select"
               :disabled="!isEditable || requirementsSaving"
             >
-              <option value="">—</option>
-              <option v-for="opt in WHOLESALE_SKU_BARCODE_LABEL_OPTIONS" :key="opt.value" :value="opt.value">
+              <option value="">Select an option</option>
+              <option v-for="opt in section.options" :key="opt.value" :value="opt.value">
                 {{ opt.label }}
               </option>
             </select>
-            <textarea
-              v-model="reqSkuBarcodeLabelsComment"
-              class="form-control form-control-sm mt-2"
-              rows="2"
-              placeholder="Comments"
-              :disabled="!isEditable || requirementsSaving"
-            />
-          </div>
-          <div class="mb-3">
-            <label class="form-label small text-secondary" for="wholesale-req-packaging">Individual SKU Packaging</label>
-            <select
-              id="wholesale-req-packaging"
-              v-model="reqIndividualPackaging"
-              class="form-select form-select-sm"
-              :disabled="!isEditable || requirementsSaving"
-            >
-              <option value="">—</option>
-              <option v-for="opt in WHOLESALE_SKU_PACKAGING_OPTIONS" :key="opt.value" :value="opt.value">
-                {{ opt.label }}
-              </option>
-            </select>
-            <textarea
-              v-model="reqIndividualPackagingComment"
-              class="form-control form-control-sm mt-2"
-              rows="2"
-              placeholder="Comments"
-              :disabled="!isEditable || requirementsSaving"
-            />
-          </div>
-          <div class="mb-3">
-            <label class="form-label small text-secondary" for="wholesale-req-bundle">Bundle Configuration</label>
-            <select
-              id="wholesale-req-bundle"
-              v-model="reqBundleConfiguration"
-              class="form-select form-select-sm"
-              :disabled="!isEditable || requirementsSaving"
-            >
-              <option value="">—</option>
-              <option v-for="opt in WHOLESALE_BUNDLE_CONFIG_OPTIONS" :key="opt.value" :value="opt.value">
-                {{ opt.label }}
-              </option>
-            </select>
-            <textarea
-              v-model="reqBundleConfigurationComment"
-              class="form-control form-control-sm mt-2"
-              rows="2"
-              placeholder="Comments"
-              :disabled="!isEditable || requirementsSaving"
-            />
-          </div>
-          <div class="mb-3">
-            <div class="form-label small text-secondary mb-2">Shipping Method</div>
-            <div v-for="opt in WHOLESALE_SHIPPING_METHOD_REQUIREMENT_OPTIONS" :key="opt.value" class="form-check">
-              <input
-                :id="`wholesale-ship-req-${opt.value}`"
-                v-model="reqShippingMethodRequirement"
-                class="form-check-input"
-                type="radio"
-                name="wholesale-ship-req"
-                :value="opt.value"
+            <template v-if="section.commentKey">
+              <label class="form-label small text-secondary mt-3 mb-1" :for="`wholesale-req-${section.id}-comment`">
+                Comments (Optional)
+              </label>
+              <textarea
+                :id="`wholesale-req-${section.id}-comment`"
+                v-model="requirementsDraft[section.commentKey]"
+                class="form-control wholesale-requirements-card__comment"
+                rows="3"
+                placeholder="Enter any additional comments..."
                 :disabled="!isEditable || requirementsSaving"
               />
-              <label class="form-check-label small" :for="`wholesale-ship-req-${opt.value}`">{{ opt.label }}</label>
-            </div>
+            </template>
           </div>
+
           <button
             v-if="isEditable"
             type="button"
-            class="btn btn-primary btn-sm staff-page-primary fw-semibold"
+            class="btn btn-primary staff-page-primary fw-semibold mt-2"
             :disabled="requirementsSaving"
             @click="saveRequirements"
           >
@@ -1592,5 +1580,24 @@ onUnmounted(() => {
   .wholesale-order-detail-page .order-detail-page__items-summary {
     grid-template-columns: 1fr;
   }
+}
+
+.wholesale-requirements-card__subtitle {
+  line-height: 1.5;
+}
+
+.wholesale-requirements-card__section + .wholesale-requirements-card__section {
+  margin-top: 1.5rem;
+  padding-top: 1.5rem;
+  border-top: 1px solid rgba(0, 0, 0, 0.06);
+}
+
+.wholesale-requirements-card__section:first-of-type {
+  margin-top: 0;
+}
+
+.wholesale-requirements-card__comment {
+  resize: vertical;
+  min-height: 5.5rem;
 }
 </style>

@@ -28,6 +28,11 @@ return [
         'none' => 'No Barcode Labels',
     ],
 
+    'cover_existing_barcodes' => [
+        'yes' => 'Yes',
+        'no' => 'No',
+    ],
+
     'individual_sku_packaging' => [
         'none' => 'No Additional Packaging',
         'poly_bag' => 'Poly Bag Each Item',
@@ -45,5 +50,11 @@ return [
     'shipping_method_requirement' => [
         'boxes' => 'Ship all in boxes',
         'pallet' => 'Ship all on pallet',
+    ],
+
+    'master_cartons' => [
+        'yes' => 'Yes',
+        'no' => 'No',
+        'other' => 'Other (specify in comments)',
     ],
 ];

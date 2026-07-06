@@ -34,6 +34,7 @@ use App\Http\Controllers\Api\UserController;
 use App\Http\Controllers\Api\WebmasterTaskController;
 use App\Http\Controllers\Api\TutorialController;
 use App\Http\Controllers\Api\TutorialPhotoController;
+use App\Http\Controllers\Api\ResourceCalendarEventController;
 use App\Http\Controllers\Api\ResourcePhotoController;
 use App\Http\Controllers\Api\WholesaleOrderController;
 use App\Http\Controllers\StripeWebhookController;
@@ -459,6 +460,11 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::post('/photos', [ResourcePhotoController::class, 'store']);
         Route::delete('/photos/{photo}', [ResourcePhotoController::class, 'destroy']);
         Route::get('/photos/{photo}/file', [ResourcePhotoController::class, 'file']);
+        Route::get('/calendar-events/meta', [ResourceCalendarEventController::class, 'meta']);
+        Route::get('/calendar-events', [ResourceCalendarEventController::class, 'index']);
+        Route::post('/calendar-events', [ResourceCalendarEventController::class, 'store']);
+        Route::patch('/calendar-events/{calendarEvent}', [ResourceCalendarEventController::class, 'update']);
+        Route::delete('/calendar-events/{calendarEvent}', [ResourceCalendarEventController::class, 'destroy']);
     });
 
     Route::post('users/{user}/avatar', [UserController::class, 'uploadAvatar'])

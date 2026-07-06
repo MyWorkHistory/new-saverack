@@ -1,12 +1,41 @@
 <script setup>
+import { onMounted, ref } from "vue";
+import { RouterLink } from "vue-router";
 import CrmMaterialIcon from "../common/CrmMaterialIcon.vue";
+import CrmLoadingSpinner from "../common/CrmLoadingSpinner.vue";
+import { useResourceCalendarEvents } from "../../composables/useResourceCalendarEvents.js";
+import { parseCalendarDay } from "../../utils/formatUserDates.js";
 
-const PLACEHOLDER_EVENTS = [
-  { dateLabel: "Jul 3", title: "Inbound ASN — Acme Co", sub: "Expected delivery" },
-  { dateLabel: "Jul 4", title: "Account Review — Beta LLC", sub: "Onboarding call" },
-  { dateLabel: "Jul 5", title: "Restock Upload — Gamma Inc", sub: "Inventory snapshot" },
-  { dateLabel: "Jul 7", title: "Shipping Hold Release", sub: "Paused account follow-up" },
-];
+const { loadUpcoming } = useResourceCalendarEvents();
+
+const loading = ref(true);
+const events = ref([]);
+
+function formatDateShort(val) {
+  const d = parseCalendarDay(val);
+  if (!d) return "—";
+  return new Intl.DateTimeFormat("en-US", { month: "short", day: "numeric" }).format(d);
+}
+
+function formatEventDateRange(event) {
+  const start = formatDateShort(event.start_date);
+  if (!event.end_date || event.end_date === event.start_date) {
+    return start;
+  }
+  const end = formatDateShort(event.end_date);
+  return `${start} – ${end}`;
+}
+
+onMounted(async () => {
+  loading.value = true;
+  try {
+    events.value = await loadUpcoming(4);
+  } catch {
+    events.value = [];
+  } finally {
+    loading.value = false;
+  }
+});
 </script>
 
 <template>
@@ -22,28 +51,31 @@ const PLACEHOLDER_EVENTS = [
         </div>
         <h2 class="home-list-panel__title">Calendar</h2>
       </div>
-      <a href="#" class="home-list-panel__header-link text-secondary" @click.prevent>View All</a>
+      <RouterLink to="/admin/resources/calendar" class="home-list-panel__header-link text-secondary">
+        View All
+      </RouterLink>
     </div>
 
     <div class="home-list-panel__body">
-      <div v-for="(event, index) in PLACEHOLDER_EVENTS" :key="index" class="home-list-panel__row">
-        <span class="home-calendar-date">{{ event.dateLabel }}</span>
+      <div v-if="loading" class="d-flex justify-content-center py-4">
+        <CrmLoadingSpinner />
+      </div>
+      <p v-else-if="!events.length" class="text-muted small mb-0 px-1">No upcoming events.</p>
+      <div v-for="event in events" :key="event.id" class="home-list-panel__row">
+        <span class="home-calendar-date">{{ formatEventDateRange(event) }}</span>
         <div class="home-list-panel__row-main min-w-0">
           <span class="home-list-panel__row-title text-truncate d-block">{{ event.title }}</span>
-          <p class="home-list-panel__row-sub mb-0">{{ event.sub }}</p>
+          <p class="home-list-panel__row-sub mb-0">
+            {{ event.category_label }}{{ event.is_personal ? " · Personal" : "" }}
+          </p>
         </div>
       </div>
     </div>
 
     <div class="home-list-panel__footer">
-      <a
-        href="#"
-        class="home-list-panel__footer-link home-list-panel__footer-link--disabled"
-        aria-disabled="true"
-        @click.prevent
-      >
+      <RouterLink to="/admin/resources/calendar" class="home-list-panel__footer-link">
         View Full Calendar
-      </a>
+      </RouterLink>
     </div>
   </section>
 </template>

@@ -295,6 +295,10 @@ const meta = {
     title: "Save Rack | Photos",
     description: "Reference photos for staff training.",
   },
+  resourcesCalendar: {
+    title: "Save Rack | Calendar",
+    description: "Staff calendar for meetings, holidays, and operations.",
+  },
   userReturnOrdersList: {
     title: "Save Rack | Return Orders",
     description: "View returned orders that are pending processing or completed.",
@@ -585,6 +589,12 @@ const routes = [
     name: "resources-photos",
     component: () => import("../pages/resources/ResourcesPhotosPage.vue"),
     meta: meta.resourcesPhotos,
+  },
+  {
+    path: "/admin/resources/calendar",
+    name: "resources-calendar",
+    component: () => import("../pages/resources/ResourcesCalendarPage.vue"),
+    meta: meta.resourcesCalendar,
   },
   { path: "/admin/resources", redirect: "/admin/resources/tutorials" },
   {

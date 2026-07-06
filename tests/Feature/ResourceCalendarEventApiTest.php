@@ -1,0 +1,272 @@
+<?php
+
+namespace Tests\Feature;
+
+use App\Models\Permission;
+use App\Models\ResourceCalendarEvent;
+use App\Models\User;
+use Illuminate\Foundation\Testing\RefreshDatabase;
+use Laravel\Sanctum\Sanctum;
+use Tests\TestCase;
+
+class ResourceCalendarEventApiTest extends TestCase
+{
+    use RefreshDatabase;
+
+    private function resourcesViewPermission(): Permission
+    {
+        return Permission::query()->firstOrCreate(
+            ['key' => 'resources.view'],
+            ['label' => 'View resources', 'module' => 'resources']
+        );
+    }
+
+    private function resourcesCreatePermission(): Permission
+    {
+        return Permission::query()->firstOrCreate(
+            ['key' => 'resources.create'],
+            ['label' => 'Create resources', 'module' => 'resources']
+        );
+    }
+
+    private function resourcesUpdatePermission(): Permission
+    {
+        return Permission::query()->firstOrCreate(
+            ['key' => 'resources.update'],
+            ['label' => 'Update resources', 'module' => 'resources']
+        );
+    }
+
+    private function resourcesDeletePermission(): Permission
+    {
+        return Permission::query()->firstOrCreate(
+            ['key' => 'resources.delete'],
+            ['label' => 'Delete resources', 'module' => 'resources']
+        );
+    }
+
+    private function staffWithView(): User
+    {
+        $user = User::factory()->create();
+        $user->permissions()->attach($this->resourcesViewPermission()->id);
+
+        return $user;
+    }
+
+    private function staffWithCreate(): User
+    {
+        $user = $this->staffWithView();
+        $user->permissions()->attach($this->resourcesCreatePermission()->id);
+
+        return $user;
+    }
+
+    public function test_guest_cannot_access_calendar_events(): void
+    {
+        $this->getJson('/api/resources/calendar-events?start=2026-07-01&end=2026-07-31')
+            ->assertUnauthorized();
+    }
+
+    public function test_user_without_resources_view_cannot_list_events(): void
+    {
+        Sanctum::actingAs(User::factory()->create());
+
+        $this->getJson('/api/resources/calendar-events?start=2026-07-01&end=2026-07-31')
+            ->assertForbidden();
+    }
+
+    public function test_user_with_resources_view_can_read_meta(): void
+    {
+        Sanctum::actingAs($this->staffWithView());
+
+        $this->getJson('/api/resources/calendar-events/meta')
+            ->assertOk()
+            ->assertJsonStructure(['categories']);
+    }
+
+    public function test_shared_event_visible_to_all_users_with_view(): void
+    {
+        $creator = $this->staffWithCreate();
+        $viewer = $this->staffWithView();
+
+        $event = ResourceCalendarEvent::query()->create([
+            'created_by_user_id' => $creator->id,
+            'title' => 'Team Meeting',
+            'category' => ResourceCalendarEvent::CATEGORY_MEETING,
+            'start_date' => '2026-07-10',
+            'end_date' => '2026-07-10',
+            'is_personal' => false,
+        ]);
+
+        Sanctum::actingAs($viewer);
+
+        $this->getJson('/api/resources/calendar-events?start=2026-07-01&end=2026-07-31')
+            ->assertOk()
+            ->assertJsonFragment(['id' => $event->id, 'title' => 'Team Meeting']);
+    }
+
+    public function test_personal_event_visible_only_to_creator(): void
+    {
+        $creator = $this->staffWithCreate();
+        $other = $this->staffWithView();
+
+        ResourceCalendarEvent::query()->create([
+            'created_by_user_id' => $creator->id,
+            'title' => 'Private Day',
+            'category' => ResourceCalendarEvent::CATEGORY_OUT_OF_OFFICE,
+            'start_date' => '2026-07-12',
+            'end_date' => '2026-07-12',
+            'is_personal' => true,
+        ]);
+
+        Sanctum::actingAs($creator);
+        $this->getJson('/api/resources/calendar-events?start=2026-07-01&end=2026-07-31')
+            ->assertOk()
+            ->assertJsonFragment(['title' => 'Private Day']);
+
+        Sanctum::actingAs($other);
+        $this->getJson('/api/resources/calendar-events?start=2026-07-01&end=2026-07-31')
+            ->assertOk()
+            ->assertJsonMissing(['title' => 'Private Day']);
+    }
+
+    public function test_creator_can_crud_own_personal_event(): void
+    {
+        $user = $this->staffWithCreate();
+        $user->permissions()->attach($this->resourcesUpdatePermission()->id);
+        $user->permissions()->attach($this->resourcesDeletePermission()->id);
+        Sanctum::actingAs($user);
+
+        $create = $this->postJson('/api/resources/calendar-events', [
+            'title' => 'My OOO',
+            'category' => ResourceCalendarEvent::CATEGORY_OUT_OF_OFFICE,
+            'start_date' => '2026-07-15',
+            'end_date' => '2026-07-16',
+            'is_personal' => true,
+        ])->assertCreated();
+
+        $eventId = (int) $create->json('id');
+
+        $this->patchJson("/api/resources/calendar-events/{$eventId}", [
+            'title' => 'Updated OOO',
+        ])->assertOk()
+            ->assertJsonFragment(['title' => 'Updated OOO']);
+
+        $this->deleteJson("/api/resources/calendar-events/{$eventId}")
+            ->assertOk();
+    }
+
+    public function test_other_user_cannot_update_or_delete_personal_event(): void
+    {
+        $creator = $this->staffWithCreate();
+        $other = $this->staffWithView();
+        $other->permissions()->attach($this->resourcesUpdatePermission()->id);
+        $other->permissions()->attach($this->resourcesDeletePermission()->id);
+
+        $event = ResourceCalendarEvent::query()->create([
+            'created_by_user_id' => $creator->id,
+            'title' => 'Creator Personal',
+            'category' => ResourceCalendarEvent::CATEGORY_HOLIDAY,
+            'start_date' => '2026-07-20',
+            'end_date' => '2026-07-20',
+            'is_personal' => true,
+        ]);
+
+        Sanctum::actingAs($other);
+
+        $this->patchJson("/api/resources/calendar-events/{$event->id}", [
+            'title' => 'Hacked',
+        ])->assertForbidden();
+
+        $this->deleteJson("/api/resources/calendar-events/{$event->id}")
+            ->assertForbidden();
+    }
+
+    public function test_user_with_update_can_edit_shared_event_created_by_someone_else(): void
+    {
+        $creator = $this->staffWithCreate();
+        $editor = $this->staffWithView();
+        $editor->permissions()->attach($this->resourcesUpdatePermission()->id);
+
+        $event = ResourceCalendarEvent::query()->create([
+            'created_by_user_id' => $creator->id,
+            'title' => 'Shared Project',
+            'category' => ResourceCalendarEvent::CATEGORY_PROJECT,
+            'start_date' => '2026-07-22',
+            'end_date' => '2026-07-25',
+            'is_personal' => false,
+        ]);
+
+        Sanctum::actingAs($editor);
+
+        $this->patchJson("/api/resources/calendar-events/{$event->id}", [
+            'title' => 'Shared Project Updated',
+        ])->assertOk()
+            ->assertJsonFragment(['title' => 'Shared Project Updated']);
+    }
+
+    public function test_user_with_delete_can_delete_shared_event_created_by_someone_else(): void
+    {
+        $creator = $this->staffWithCreate();
+        $deleter = $this->staffWithView();
+        $deleter->permissions()->attach($this->resourcesDeletePermission()->id);
+
+        $event = ResourceCalendarEvent::query()->create([
+            'created_by_user_id' => $creator->id,
+            'title' => 'Shared Receiving',
+            'category' => ResourceCalendarEvent::CATEGORY_RECEIVING,
+            'start_date' => '2026-07-28',
+            'end_date' => '2026-07-28',
+            'is_personal' => false,
+        ]);
+
+        Sanctum::actingAs($deleter);
+
+        $this->deleteJson("/api/resources/calendar-events/{$event->id}")
+            ->assertOk();
+
+        $this->assertDatabaseMissing('resource_calendar_events', ['id' => $event->id]);
+    }
+
+    public function test_validation_requires_end_date_on_or_after_start_date(): void
+    {
+        Sanctum::actingAs($this->staffWithCreate());
+
+        $this->postJson('/api/resources/calendar-events', [
+            'title' => 'Bad Range',
+            'category' => ResourceCalendarEvent::CATEGORY_MEETING,
+            'start_date' => '2026-07-10',
+            'end_date' => '2026-07-09',
+        ])->assertUnprocessable()
+            ->assertJsonValidationErrors(['end_date']);
+    }
+
+    public function test_upcoming_endpoint_returns_future_events(): void
+    {
+        $user = $this->staffWithCreate();
+        Sanctum::actingAs($user);
+
+        ResourceCalendarEvent::query()->create([
+            'created_by_user_id' => $user->id,
+            'title' => 'Past Event',
+            'category' => ResourceCalendarEvent::CATEGORY_MEETING,
+            'start_date' => now()->subDays(10)->toDateString(),
+            'end_date' => now()->subDays(9)->toDateString(),
+            'is_personal' => false,
+        ]);
+
+        ResourceCalendarEvent::query()->create([
+            'created_by_user_id' => $user->id,
+            'title' => 'Future Event',
+            'category' => ResourceCalendarEvent::CATEGORY_MEETING,
+            'start_date' => now()->addDays(2)->toDateString(),
+            'end_date' => now()->addDays(2)->toDateString(),
+            'is_personal' => false,
+        ]);
+
+        $this->getJson('/api/resources/calendar-events?upcoming=1&limit=4')
+            ->assertOk()
+            ->assertJsonFragment(['title' => 'Future Event'])
+            ->assertJsonMissing(['title' => 'Past Event']);
+    }
+}

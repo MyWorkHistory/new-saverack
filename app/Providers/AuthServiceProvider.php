@@ -14,6 +14,7 @@ use App\Models\AsnBill;
 use App\Models\Task;
 use App\Models\Ticket;
 use App\Models\Tutorial;
+use App\Models\ResourceCalendarEvent;
 use App\Models\ResourcePhoto;
 use App\Models\User;
 use App\Models\WholesaleOrder;
@@ -26,6 +27,7 @@ use App\Policies\CustomBillPolicy;
 use App\Policies\InvoicePolicy;
 use App\Policies\ReturnBillPolicy;
 use App\Policies\AsnBillPolicy;
+use App\Policies\ResourceCalendarEventPolicy;
 use App\Policies\ResourcePhotoPolicy;
 use App\Policies\TaskPolicy;
 use App\Policies\TicketPolicy;
@@ -58,6 +60,7 @@ class AuthServiceProvider extends ServiceProvider
         Task::class => TaskPolicy::class,
         Tutorial::class => TutorialPolicy::class,
         ResourcePhoto::class => ResourcePhotoPolicy::class,
+        ResourceCalendarEvent::class => ResourceCalendarEventPolicy::class,
         WholesaleOrder::class => WholesaleOrderPolicy::class,
     ];
 

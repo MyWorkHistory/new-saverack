@@ -1,5 +1,5 @@
 <script setup>
-import { computed, inject, onMounted, ref } from "vue";
+import { computed, inject, onMounted, reactive, ref, watch } from "vue";
 import FullCalendar from "@fullcalendar/vue3";
 import dayGridPlugin from "@fullcalendar/daygrid";
 import interactionPlugin from "@fullcalendar/interaction";
@@ -45,7 +45,22 @@ const editingEvent = ref(null);
 const initialStartDate = ref("");
 const initialEndDate = ref("");
 
-const calendarEvents = computed(() => events.value.map(toFullCalendarEvent));
+const filterPersonal = ref(true);
+const filterCategories = reactive({});
+
+const viewAllChecked = computed(() => {
+  if (!filterPersonal.value) return false;
+  return categories.value.every((cat) => filterCategories[cat.value] !== false);
+});
+
+const filteredEvents = computed(() =>
+  events.value.filter((event) => {
+    if (event.is_personal) return filterPersonal.value;
+    return filterCategories[event.category] !== false;
+  }),
+);
+
+const calendarEvents = computed(() => filteredEvents.value.map(toFullCalendarEvent));
 
 const drawerCanSave = computed(() => {
   if (drawerMode.value === "create") return canCreate.value;
@@ -76,6 +91,8 @@ const calendarOptions = computed(() => ({
   },
   height: "auto",
   fixedWeekCount: false,
+  dayMaxEvents: 3,
+  moreLinkClick: "popover",
   events: calendarEvents.value,
   dateClick: handleDateClick,
   eventClick: handleEventClick,
@@ -83,6 +100,31 @@ const calendarOptions = computed(() => ({
 }));
 
 let activeRange = { start: "", end: "" };
+
+function initCategoryFilters() {
+  categories.value.forEach((cat) => {
+    if (filterCategories[cat.value] === undefined) {
+      filterCategories[cat.value] = true;
+    }
+  });
+}
+
+watch(categories, initCategoryFilters, { immediate: true });
+
+function setViewAll(checked) {
+  filterPersonal.value = checked;
+  categories.value.forEach((cat) => {
+    filterCategories[cat.value] = checked;
+  });
+}
+
+function onViewAllChange(event) {
+  setViewAll(event.target.checked);
+}
+
+function onCategoryFilterChange() {
+  /* view-all checkbox syncs via computed */
+}
 
 async function refreshEvents() {
   if (!activeRange.start || !activeRange.end) return;
@@ -172,6 +214,7 @@ onMounted(async () => {
   });
   try {
     await loadMeta();
+    initCategoryFilters();
   } catch {
     /* optional */
   }
@@ -180,42 +223,83 @@ onMounted(async () => {
 
 <template>
   <div class="resources-calendar-page staff-page">
-    <div class="d-flex flex-wrap align-items-center justify-content-between gap-3 mb-4">
-      <div>
-        <h1 class="h4 mb-1">Calendar</h1>
-        <p class="text-muted small mb-0">Shared team events and personal reminders.</p>
-      </div>
-      <button
-        v-if="canCreate"
-        type="button"
-        class="btn btn-primary fw-semibold rounded-3"
-        @click="onAddEventClick"
-      >
-        Add Event
-      </button>
-    </div>
+    <div class="resources-calendar-layout">
+      <aside class="resources-calendar-sidebar card border-0 shadow-sm">
+        <div class="resources-calendar-sidebar__body">
+          <button
+            v-if="canCreate"
+            type="button"
+            class="btn btn-primary w-100 fw-semibold resources-calendar-add-btn"
+            @click="onAddEventClick"
+          >
+            Add Event
+          </button>
 
-    <div v-if="categories.length" class="resources-calendar-legend mb-3">
-      <span
-        v-for="cat in categories"
-        :key="cat.value"
-        class="resources-calendar-legend__item"
-      >
-        <span
-          class="resources-calendar-legend__dot"
-          :style="{ backgroundColor: cat.color }"
-          aria-hidden="true"
-        />
-        {{ cat.label }}
-      </span>
-    </div>
+          <hr class="resources-calendar-sidebar__divider" />
 
-    <div class="card border-0 shadow-sm resources-calendar-card position-relative">
-      <div v-if="loading" class="resources-calendar-card__loading">
-        <CrmLoadingSpinner />
-      </div>
-      <div class="card-body p-3 p-md-4">
-        <FullCalendar ref="calendarRef" class="resources-calendar" :options="calendarOptions" />
+          <h2 class="resources-calendar-sidebar__heading">Event Filters</h2>
+
+          <ul class="resources-calendar-filters list-unstyled mb-0">
+            <li class="resources-calendar-filter">
+              <label class="resources-calendar-filter__label">
+                <input
+                  class="form-check-input resources-calendar-filter__input"
+                  type="checkbox"
+                  :checked="viewAllChecked"
+                  @change="onViewAllChange"
+                />
+                <span class="resources-calendar-filter__text">View All</span>
+              </label>
+            </li>
+
+            <li class="resources-calendar-filter">
+              <label class="resources-calendar-filter__label">
+                <input
+                  v-model="filterPersonal"
+                  class="form-check-input resources-calendar-filter__input"
+                  type="checkbox"
+                  @change="onCategoryFilterChange"
+                />
+                <span
+                  class="resources-calendar-filter__dot"
+                  style="background-color: #6b7280"
+                  aria-hidden="true"
+                />
+                <span class="resources-calendar-filter__text">Personal</span>
+              </label>
+            </li>
+
+            <li
+              v-for="cat in categories"
+              :key="cat.value"
+              class="resources-calendar-filter"
+            >
+              <label class="resources-calendar-filter__label">
+                <input
+                  v-model="filterCategories[cat.value]"
+                  class="form-check-input resources-calendar-filter__input"
+                  type="checkbox"
+                  @change="onCategoryFilterChange"
+                />
+                <span
+                  class="resources-calendar-filter__dot"
+                  :style="{ backgroundColor: cat.color }"
+                  aria-hidden="true"
+                />
+                <span class="resources-calendar-filter__text">{{ cat.label }}</span>
+              </label>
+            </li>
+          </ul>
+        </div>
+      </aside>
+
+      <div class="resources-calendar-main card border-0 shadow-sm position-relative">
+        <div v-if="loading" class="resources-calendar-card__loading">
+          <CrmLoadingSpinner />
+        </div>
+        <div class="card-body p-3 p-md-4">
+          <FullCalendar ref="calendarRef" class="resources-calendar" :options="calendarOptions" />
+        </div>
       </div>
     </div>
 

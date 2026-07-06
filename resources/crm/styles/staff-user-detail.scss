@@ -155,6 +155,14 @@ $staff-detail-primary: #2563eb;
     align-items: center;
     gap: 0.5rem;
     min-width: 0;
+
+    .staff-user-section-title,
+    .staff-user-profile__details-title {
+      margin: 0;
+      padding: 0;
+      border-bottom: none;
+      line-height: 1.25;
+    }
   }
 
   .account-detail-section-icon {
@@ -165,6 +173,11 @@ $staff-detail-primary: #2563eb;
     height: 2rem;
     border-radius: 0.5rem;
     flex-shrink: 0;
+    align-self: center;
+
+    svg {
+      display: block;
+    }
   }
 
   .account-detail-section-icon--personal,

@@ -1,4 +1,4 @@
-// ASN list pages — status chips + account cell icon
+// ASN list pages — status chips, summary cards, account cell
 
 .asn-status-chip {
   display: inline-flex;
@@ -20,52 +20,82 @@
 }
 
 .asn-status-chip--draft {
-  background: rgba(var(--bs-warning-rgb), 0.12);
-  color: var(--bs-warning-text-emphasis, #664d03);
+  background: #fff7ed;
+  color: #c2410c;
 
   .asn-status-chip__dot {
-    background: var(--bs-warning);
+    background: #ea580c;
   }
 }
 
 .asn-status-chip--pending {
-  background: rgba(var(--bs-secondary-rgb), 0.12);
-  color: var(--bs-secondary-color);
+  background: #eff6ff;
+  color: #1d4ed8;
 
   .asn-status-chip__dot {
-    background: var(--bs-secondary);
+    background: #2563eb;
   }
 }
 
 .asn-status-chip--in_progress {
-  background: rgba(var(--bs-primary-rgb), 0.1);
-  color: var(--bs-primary);
+  background: #fffbeb;
+  color: #b45309;
 
   .asn-status-chip__dot {
-    background: var(--bs-primary);
+    background: #d97706;
   }
 }
 
 .asn-status-chip--completed {
-  background: rgba(var(--bs-success-rgb), 0.12);
-  color: var(--bs-success);
+  background: #f0fdf4;
+  color: #15803d;
 
   .asn-status-chip__dot {
-    background: var(--bs-success);
+    background: #16a34a;
   }
 }
 
 .asn-status-chip--non_compliant {
-  background: rgba(var(--bs-danger-rgb), 0.1);
-  color: var(--bs-danger);
+  background: #fef2f2;
+  color: #b91c1c;
 
   .asn-status-chip__dot {
-    background: var(--bs-danger);
+    background: #dc2626;
   }
 }
 
-.admin-asn-hub-toolbar-card {
-  margin-bottom: 1rem;
+.admin-asn-hub-summary {
+  padding: 1.25rem 1.25rem 0.5rem;
+}
+
+.admin-asn-hub-summary :deep(.billing-inv-summary-card .staff-stat-card__icon) {
+  top: 50%;
+  right: 1.125rem;
+  transform: translateY(-50%);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 2.875rem;
+  height: 2.875rem;
+  border-radius: 0.4375rem;
+}
+
+.admin-asn-hub-summary__svg {
+  width: 1.4375rem;
+  height: 1.4375rem;
+  flex-shrink: 0;
+  display: block;
+  overflow: visible;
+}
+
+button.billing-inv-summary-card.admin-asn-summary-card--active {
+  border-color: var(--bs-primary) !important;
+  box-shadow: 0 0 0 1px var(--bs-primary);
+}
+
+[data-bs-theme="dark"] button.billing-inv-summary-card.admin-asn-summary-card--active {
+  border-color: var(--bs-primary) !important;
+  box-shadow: 0 0 0 1px var(--bs-primary);
 }
 
 .admin-asn-list-account-cell {
@@ -77,12 +107,18 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
+  flex-shrink: 0;
   width: 2rem;
   height: 2rem;
-  border-radius: 0.5rem;
-  flex-shrink: 0;
-  color: #2563eb;
-  background: rgba(37, 99, 235, 0.1);
+  border-radius: 0.4375rem;
+  background: #dbeafe;
+  color: #1e3a8a;
+}
+
+.admin-asn-list-account-icon svg {
+  width: 1.125rem;
+  height: 1.125rem;
+  display: block;
 }
 
 .user-asn-list-toolbar-card {

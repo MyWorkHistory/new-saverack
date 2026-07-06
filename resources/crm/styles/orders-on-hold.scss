@@ -1,0 +1,37 @@
+.orders-on-hold-overview {
+  .on-hold-summary-card {
+    text-align: center;
+    border: 1px solid color-mix(in srgb, var(--on-hold-card-accent, #2563eb) 18%, transparent);
+    background: color-mix(in srgb, var(--on-hold-card-tint, #dbeafe) 55%, var(--vx-nav-bg, #fff));
+    cursor: pointer;
+    transition:
+      box-shadow 0.15s ease,
+      transform 0.15s ease;
+  }
+
+  .on-hold-summary-card:hover {
+    box-shadow: 0 0.45rem 1rem rgba(47, 43, 61, 0.12);
+    transform: translateY(-1px);
+  }
+
+  .on-hold-summary-card__label {
+    font-size: 0.875rem;
+    font-weight: 600;
+    color: var(--bs-secondary-color);
+    margin: 0;
+    line-height: 1.35;
+  }
+
+  .on-hold-summary-card__value {
+    font-size: 1.875rem;
+    font-weight: 700;
+    color: var(--on-hold-card-accent, var(--bs-body-color));
+    margin: 0.5rem 0 0;
+    line-height: 1.2;
+    font-variant-numeric: tabular-nums;
+  }
+
+  .on-hold-section-panel + .on-hold-section-panel {
+    margin-top: 1rem;
+  }
+}

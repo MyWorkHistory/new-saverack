@@ -1,9 +1,10 @@
 <script setup>
 import { onMounted } from "vue";
-import { RouterLink } from "vue-router";
 import CrmLoadingSpinner from "../../components/common/CrmLoadingSpinner.vue";
 import CrmRefreshToolbarButton from "../../components/common/CrmRefreshToolbarButton.vue";
-import ClientAccountShippingStatusIcon from "../../components/clients/ClientAccountShippingStatusIcon.vue";
+import OnHoldSectionPanel from "../../components/orders/OnHoldSectionPanel.vue";
+import OnHoldSummaryCards from "../../components/orders/OnHoldSummaryCards.vue";
+import { HOLD_SECTIONS } from "../../constants/holdSummaryCards.js";
 import { setCrmPageMeta } from "../../composables/useCrmPageMeta.js";
 import { useAdminHomeDashboard } from "../../composables/useAdminHomeDashboard.js";
 import { useToast } from "../../composables/useToast.js";
@@ -15,15 +16,6 @@ const { loading, refreshing, sections, load, refreshSection } = useAdminHomeDash
   onError: (e) => toast.errorFrom(e, "Could not load on-hold overview."),
 });
 
-const HOLD_SECTIONS = [
-  { key: "hold_operator", label: "Operator Hold", holdReason: "operator" },
-  { key: "hold_address", label: "Address Hold", holdReason: "address" },
-  { key: "hold_fraud", label: "Fraud Hold", holdReason: "fraud" },
-  { key: "hold_payment", label: "Payment Hold", holdReason: "payment" },
-  { key: "hold_user", label: "User Hold", holdReason: "user" },
-  { key: "hold_backorder", label: "Backorder", holdReason: null },
-];
-
 function sectionData(key) {
   return (
     sections.value?.[key] || {
@@ -34,6 +26,10 @@ function sectionData(key) {
       truncated: false,
     }
   );
+}
+
+function getTotalCount(key) {
+  return sectionData(key).total_count;
 }
 
 function lastUpdatedLabel(key) {
@@ -61,6 +57,11 @@ function ordersHoldRoute(accountId, holdReason) {
       hold_reason: holdReason,
     },
   };
+}
+
+function scrollToSection(key) {
+  const el = document.getElementById(`hold-${key}`);
+  el?.scrollIntoView({ behavior: "smooth", block: "start" });
 }
 
 function refreshToastMessage(data, fallbackQueued) {
@@ -129,81 +130,21 @@ onMounted(async () => {
       <CrmLoadingSpinner message="Loading on-hold overview…" :center="true" />
     </div>
 
-    <div v-else class="row g-3">
-      <div
+    <template v-else>
+      <OnHoldSummaryCards :get-total-count="getTotalCount" @select="scrollToSection" />
+
+      <OnHoldSectionPanel
         v-for="hold in HOLD_SECTIONS"
         :key="hold.key"
-        class="col-12 col-md-6 col-xl-4"
-      >
-        <section
-          class="staff-table-card staff-datatable-card staff-datatable-card--white w-100 h-100"
-        >
-          <div class="staff-table-toolbar">
-            <div
-              class="staff-table-toolbar--row d-flex align-items-start justify-content-between gap-2"
-            >
-              <div>
-                <h2 class="h6 fw-semibold mb-1">{{ hold.label }}</h2>
-                <p class="small text-secondary mb-0">
-                  Last updated: {{ lastUpdatedLabel(hold.key) }}
-                </p>
-              </div>
-              <CrmRefreshToolbarButton
-                :disabled="isSectionRefreshing(hold.key)"
-                :loading="isSectionRefreshing(hold.key)"
-                @click="onRefreshSection(hold.key)"
-              />
-            </div>
-          </div>
-          <div class="table-responsive staff-table-wrap">
-            <table class="table table-hover align-middle mb-0 staff-data-table">
-              <thead class="table-light staff-table-head">
-                <tr>
-                  <th class="staff-table-head__th" scope="col">Account</th>
-                  <th class="staff-table-head__th text-end" scope="col" style="width: 5rem">
-                    Orders
-                  </th>
-                </tr>
-              </thead>
-              <tbody>
-                <tr
-                  v-for="row in sectionData(hold.key).accounts"
-                  :key="`${hold.key}-${row.account_id}`"
-                >
-                  <td>
-                    <div class="d-flex align-items-center gap-2 min-w-0">
-                      <ClientAccountShippingStatusIcon
-                        :status="row.account_status"
-                        :size="18"
-                      />
-                      <RouterLink
-                        :to="ordersHoldRoute(row.account_id, hold.holdReason)"
-                        class="text-truncate text-decoration-none fw-semibold"
-                      >
-                        {{ row.account_name }}
-                      </RouterLink>
-                    </div>
-                  </td>
-                  <td class="text-end fw-semibold tabular-nums">
-                    {{ Number(row.orders_count || 0).toLocaleString() }}
-                  </td>
-                </tr>
-                <tr v-if="!sectionData(hold.key).accounts.length">
-                  <td colspan="2" class="text-secondary small py-4 text-center">
-                    No accounts with {{ hold.label.toLowerCase() }}.
-                  </td>
-                </tr>
-              </tbody>
-            </table>
-          </div>
-        </section>
-      </div>
-    </div>
+        :section-key="hold.key"
+        :label="hold.label"
+        :hold-reason="hold.holdReason"
+        :accounts="sectionData(hold.key).accounts"
+        :last-updated="lastUpdatedLabel(hold.key)"
+        :refreshing="isSectionRefreshing(hold.key)"
+        :orders-hold-route="ordersHoldRoute"
+        @refresh="onRefreshSection"
+      />
+    </template>
   </div>
 </template>
-
-<style scoped>
-.tabular-nums {
-  font-variant-numeric: tabular-nums;
-}
-</style>

@@ -1,9 +1,10 @@
 <script setup>
 import { onMounted } from "vue";
-import { RouterLink } from "vue-router";
 import CrmLoadingSpinner from "../../components/common/CrmLoadingSpinner.vue";
 import CrmRefreshToolbarButton from "../../components/common/CrmRefreshToolbarButton.vue";
-import ClientAccountShippingStatusIcon from "../../components/clients/ClientAccountShippingStatusIcon.vue";
+import FulfillmentSummaryCards from "../../components/orders/FulfillmentSummaryCards.vue";
+import OrdersAccountSectionPanel from "../../components/orders/OrdersAccountSectionPanel.vue";
+import { FULFILLMENT_SECTIONS } from "../../constants/fulfillmentSections.js";
 import { setCrmPageMeta } from "../../composables/useCrmPageMeta.js";
 import { useAdminHomeDashboard } from "../../composables/useAdminHomeDashboard.js";
 import { useToast } from "../../composables/useToast.js";
@@ -14,9 +15,6 @@ const toast = useToast();
 const { loading, refreshing, sections, load, refreshSection } = useAdminHomeDashboard({
   onError: (e) => toast.errorFrom(e, "Could not load fulfillment dashboard."),
 });
-
-const SECTION_READY = "ready_to_ship";
-const SECTION_SHIPPED = "shipped";
 
 function sectionData(key) {
   return (
@@ -30,6 +28,10 @@ function sectionData(key) {
   );
 }
 
+function getTotalCount(key) {
+  return sectionData(key).total_count;
+}
+
 function lastUpdatedLabel(key) {
   const at = sectionData(key).refreshed_at;
   if (!at) return "Not refreshed yet";
@@ -41,18 +43,16 @@ function isSectionRefreshing(key) {
   return s.status === "running" || refreshing.value;
 }
 
-function ordersAwaitingRoute(accountId) {
+function accountRoute(section, accountId) {
   return {
-    name: "orders-awaiting",
+    name: section.routeName,
     query: { client_account_id: String(accountId) },
   };
 }
 
-function ordersShippedRoute(accountId) {
-  return {
-    name: "orders-shipped",
-    query: { client_account_id: String(accountId) },
-  };
+function scrollToSection(key) {
+  const el = document.getElementById(`fulfillment-${key}`);
+  el?.scrollIntoView({ behavior: "smooth", block: "start" });
 }
 
 function refreshToastMessage(data, fallbackQueued) {
@@ -70,9 +70,10 @@ function refreshToastMessage(data, fallbackQueued) {
 
 async function onRefreshAll() {
   try {
-    await refreshSection(SECTION_READY, { sync: true });
-    const data = await refreshSection(SECTION_SHIPPED, { sync: true });
-    toast.success(refreshToastMessage(data, false));
+    for (const section of FULFILLMENT_SECTIONS) {
+      await refreshSection(section.key, { sync: true });
+    }
+    toast.success("Fulfillment sections refreshed.");
   } catch {
     /* toast handled */
   }
@@ -101,11 +102,11 @@ onMounted(async () => {
 </script>
 
 <template>
-  <div class="staff-page staff-page--wide admin-fulfillment-page">
+  <div class="staff-page staff-page--wide orders-on-hold-overview orders-fulfillment-overview">
     <div class="mb-4 d-flex align-items-center justify-content-between gap-2 flex-wrap">
       <div>
-        <h1 class="h4 mb-1 fw-semibold text-body">Fulfillment</h1>
-        <p class="text-secondary small mb-0">Ready to ship and shipped orders by account.</p>
+        <h1 class="h4 mb-1 fw-semibold text-body staff-page__heading">Fulfillment</h1>
+        <p class="staff-page__intro mb-0">Ready to ship and shipped orders by account.</p>
       </div>
       <CrmRefreshToolbarButton
         :disabled="loading || refreshing"
@@ -120,143 +121,33 @@ onMounted(async () => {
       <CrmLoadingSpinner message="Loading fulfillment…" :center="true" />
     </div>
 
-    <div v-else class="row g-3">
-      <div class="col-12 col-lg-6">
-        <section
-          class="staff-table-card staff-datatable-card staff-datatable-card--white w-100 h-100"
-        >
-          <div class="staff-table-toolbar">
-            <div
-              class="staff-table-toolbar--row d-flex align-items-start justify-content-between gap-2"
-            >
-              <div>
-                <h2 class="staff-user-section-title mb-1">Ready to Ship</h2>
-                <p class="small text-secondary mb-0">
-                  Last updated: {{ lastUpdatedLabel(SECTION_READY) }}
-                </p>
-              </div>
-              <CrmRefreshToolbarButton
-                :disabled="isSectionRefreshing(SECTION_READY)"
-                :loading="isSectionRefreshing(SECTION_READY)"
-                @click="onRefreshSection(SECTION_READY)"
-              />
-            </div>
-          </div>
-          <div class="table-responsive staff-table-wrap">
-            <table class="table table-hover align-middle mb-0 staff-data-table">
-              <thead class="table-light staff-table-head">
-                <tr>
-                  <th class="staff-table-head__th" scope="col">Account</th>
-                  <th class="staff-table-head__th text-end" scope="col" style="width: 6rem">
-                    Orders
-                  </th>
-                </tr>
-              </thead>
-              <tbody>
-                <tr
-                  v-for="row in sectionData(SECTION_READY).accounts"
-                  :key="`rts-${row.account_id}`"
-                >
-                  <td>
-                    <div class="d-flex align-items-center gap-2 min-w-0">
-                      <ClientAccountShippingStatusIcon
-                        :status="row.account_status"
-                        :size="18"
-                      />
-                      <RouterLink
-                        :to="ordersAwaitingRoute(row.account_id)"
-                        class="text-truncate text-decoration-none fw-semibold"
-                      >
-                        {{ row.account_name }}
-                      </RouterLink>
-                    </div>
-                  </td>
-                  <td class="text-end fw-semibold tabular-nums">
-                    {{ Number(row.orders_count || 0).toLocaleString() }}
-                  </td>
-                </tr>
-                <tr v-if="!sectionData(SECTION_READY).accounts.length">
-                  <td colspan="2" class="text-secondary small py-4 text-center">
-                    No ready-to-ship orders in snapshot.
-                  </td>
-                </tr>
-              </tbody>
-            </table>
-          </div>
-        </section>
-      </div>
+    <template v-else>
+      <FulfillmentSummaryCards :get-total-count="getTotalCount" @select="scrollToSection" />
 
-      <div class="col-12 col-lg-6">
-        <section
-          class="staff-table-card staff-datatable-card staff-datatable-card--white w-100 h-100"
+      <div class="row g-3">
+        <div
+          v-for="section in FULFILLMENT_SECTIONS"
+          :key="section.key"
+          class="col-12 col-lg-6"
         >
-          <div class="staff-table-toolbar">
-            <div
-              class="staff-table-toolbar--row d-flex align-items-start justify-content-between gap-2"
-            >
-              <div>
-                <h2 class="staff-user-section-title mb-1">Shipped</h2>
-                <p class="small text-secondary mb-0">
-                  Last updated: {{ lastUpdatedLabel(SECTION_SHIPPED) }}
-                  <span class="text-body-secondary">(today)</span>
-                </p>
-              </div>
-              <CrmRefreshToolbarButton
-                :disabled="isSectionRefreshing(SECTION_SHIPPED)"
-                :loading="isSectionRefreshing(SECTION_SHIPPED)"
-                @click="onRefreshSection(SECTION_SHIPPED)"
-              />
-            </div>
-          </div>
-          <div class="table-responsive staff-table-wrap">
-            <table class="table table-hover align-middle mb-0 staff-data-table">
-              <thead class="table-light staff-table-head">
-                <tr>
-                  <th class="staff-table-head__th" scope="col">Account</th>
-                  <th class="staff-table-head__th text-end" scope="col" style="width: 6rem">
-                    Orders
-                  </th>
-                </tr>
-              </thead>
-              <tbody>
-                <tr
-                  v-for="row in sectionData(SECTION_SHIPPED).accounts"
-                  :key="`shp-${row.account_id}`"
-                >
-                  <td>
-                    <div class="d-flex align-items-center gap-2 min-w-0">
-                      <ClientAccountShippingStatusIcon
-                        :status="row.account_status"
-                        :size="18"
-                      />
-                      <RouterLink
-                        :to="ordersShippedRoute(row.account_id)"
-                        class="text-truncate text-decoration-none fw-semibold"
-                      >
-                        {{ row.account_name }}
-                      </RouterLink>
-                    </div>
-                  </td>
-                  <td class="text-end fw-semibold tabular-nums">
-                    {{ Number(row.orders_count || 0).toLocaleString() }}
-                  </td>
-                </tr>
-                <tr v-if="!sectionData(SECTION_SHIPPED).accounts.length">
-                  <td colspan="2" class="text-secondary small py-4 text-center">
-                    No shipments in snapshot for today.
-                  </td>
-                </tr>
-              </tbody>
-            </table>
-          </div>
-        </section>
+          <OrdersAccountSectionPanel
+            :section-key="section.key"
+            :label="section.label"
+            :icon="section.icon"
+            :icon-style="section.iconStyle"
+            :accounts="sectionData(section.key).accounts"
+            :last-updated="lastUpdatedLabel(section.key)"
+            :meta-suffix="section.metaSuffix || ''"
+            :refreshing="isSectionRefreshing(section.key)"
+            :account-route="(id) => accountRoute(section, id)"
+            :pill-variant="section.pillVariant || 'neutral'"
+            :empty-message="section.emptyMessage || ''"
+            :show-view-all-footer="false"
+            anchor-prefix="fulfillment"
+            @refresh="onRefreshSection"
+          />
+        </div>
       </div>
-    </div>
+    </template>
   </div>
 </template>
-
-<style scoped>
-.tabular-nums {
-  font-variant-numeric: tabular-nums;
-}
-</style>

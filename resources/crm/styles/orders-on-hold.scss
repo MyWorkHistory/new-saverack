@@ -141,6 +141,11 @@
     color: #dc2626;
   }
 
+  .on-hold-count-pill--success {
+    background: #dcfce7;
+    color: #16a34a;
+  }
+
   .on-hold-section-panel__empty-icon {
     display: inline-flex;
     align-items: center;
@@ -200,5 +205,10 @@
   .on-hold-count-pill--alert {
     background: rgba(220, 38, 38, 0.2);
     color: #fca5a5;
+  }
+
+  .on-hold-count-pill--success {
+    background: rgba(22, 163, 74, 0.2);
+    color: #86efac;
   }
 }

@@ -1,7 +1,8 @@
 <script setup>
 import { Transition, computed, nextTick, onMounted, onUnmounted, ref, watch } from "vue";
-import { useRoute, useRouter } from "vue-router";
+import { useRoute, useRouter, RouterLink } from "vue-router";
 import api from "../../services/api";
+import AsnStatusChip from "../../components/asn/AsnStatusChip.vue";
 import CrmIconRowActions from "../../components/common/CrmIconRowActions.vue";
 import CrmLoadingSpinner from "../../components/common/CrmLoadingSpinner.vue";
 import CrmSearchableSelect from "../../components/common/CrmSearchableSelect.vue";
@@ -148,26 +149,6 @@ watch([accountFilter, statusFilter], () => {
   loadSummary();
   loadList();
 });
-
-function statusLabel(s) {
-  const x = String(s || "").toLowerCase();
-  if (x === "draft") return "Draft";
-  if (x === "pending") return "Pending";
-  if (x === "in_progress") return "In Progress";
-  if (x === "completed") return "Completed";
-  if (x === "non_compliant") return "Non-Compliant";
-  return s || "—";
-}
-
-function statusBadgeClass(status) {
-  const s = String(status || "").toLowerCase();
-  if (s === "draft") return "bg-warning-subtle text-warning-emphasis";
-  if (s === "pending") return "bg-secondary-subtle text-secondary-emphasis";
-  if (s === "in_progress") return "bg-primary-subtle text-primary-emphasis";
-  if (s === "completed") return "bg-success-subtle text-success-emphasis";
-  if (s === "non_compliant") return "bg-danger-subtle text-danger-emphasis";
-  return "bg-body-secondary text-body-secondary";
-}
 
 function sortIndicator(column) {
   if (sortBy.value !== column) return "";
@@ -564,31 +545,8 @@ onUnmounted(() => {
       </div>
     </div>
 
-    <div v-if="summaryLoading" class="d-flex justify-content-center py-4 mb-2">
-      <CrmLoadingSpinner message="Loading summary…" />
-    </div>
-    <div v-else class="row g-4 mb-4">
-      <div v-for="card in STAT_CARDS" :key="card.key" class="col-12 col-sm-6 col-xl-3">
-        <button
-          type="button"
-          class="staff-stat-card billing-inv-summary-card h-100 text-start w-100"
-          :class="{ 'admin-asn-summary-card--active': statusFilter === card.status }"
-          @click="setStatusCard(card.status)"
-        >
-          <p class="staff-stat-card__label">{{ card.label }}</p>
-          <p class="staff-stat-card__value">{{ statCardValue(card.key) }}</p>
-          <p class="staff-stat-card__sub">{{ card.sub }}</p>
-          <div class="staff-stat-card__icon" :class="card.iconClass" aria-hidden="true">
-            <svg width="22" height="22" fill="currentColor" viewBox="0 0 24 24">
-              <path :d="card.iconPath" />
-            </svg>
-          </div>
-        </button>
-      </div>
-    </div>
-
     <div
-      class="admin-asn-list admin-asn-page-toolbar staff-table-card staff-datatable-card staff-datatable-card--white w-100"
+      class="admin-asn-hub-toolbar-card admin-asn-page-toolbar staff-table-card staff-datatable-card staff-datatable-card--white w-100"
     >
       <div class="staff-table-toolbar">
         <div class="staff-table-toolbar--row admin-asn-toolbar-row">
@@ -677,7 +635,34 @@ onUnmounted(() => {
           </div>
         </div>
       </div>
+    </div>
 
+    <div v-if="summaryLoading" class="d-flex justify-content-center py-4 mb-2">
+      <CrmLoadingSpinner message="Loading summary…" />
+    </div>
+    <div v-else class="row g-4 mb-4">
+      <div v-for="card in STAT_CARDS" :key="card.key" class="col-12 col-sm-6 col-xl-3">
+        <button
+          type="button"
+          class="staff-stat-card billing-inv-summary-card h-100 text-start w-100"
+          :class="{ 'admin-asn-summary-card--active': statusFilter === card.status }"
+          @click="setStatusCard(card.status)"
+        >
+          <p class="staff-stat-card__label">{{ card.label }}</p>
+          <p class="staff-stat-card__value">{{ statCardValue(card.key) }}</p>
+          <p class="staff-stat-card__sub">{{ card.sub }}</p>
+          <div class="staff-stat-card__icon" :class="card.iconClass" aria-hidden="true">
+            <svg width="22" height="22" fill="currentColor" viewBox="0 0 24 24">
+              <path :d="card.iconPath" />
+            </svg>
+          </div>
+        </button>
+      </div>
+    </div>
+
+    <div
+      class="admin-asn-list staff-table-card staff-datatable-card staff-datatable-card--white w-100"
+    >
       <div
         v-if="selectedCount > 0"
         class="staff-bulk-selection-bar d-flex flex-wrap align-items-center gap-2 gap-md-3 px-3 px-md-4 py-3"
@@ -790,15 +775,42 @@ onUnmounted(() => {
                   />
                 </td>
                 <td class="text-center">
-                  <span class="badge rounded-pill fw-medium" :class="statusBadgeClass(row.status)">
-                    {{ statusLabel(row.status) }}
-                  </span>
+                  <AsnStatusChip :status="row.status" />
                 </td>
                 <td class="text-center fw-semibold admin-asn-list-asn-col">
                   {{ formatAsnDisplay(row.asn_number) }}
                 </td>
                 <td class="text-center small text-secondary">{{ formatDateUs(row.created_at) }}</td>
-                <td class="text-center small text-secondary">{{ row.client_account_company_name || "—" }}</td>
+                <td class="text-center" @click.stop>
+                  <div class="d-flex align-items-center justify-content-center gap-2 min-w-0 admin-asn-list-account-cell">
+                    <span class="admin-asn-list-account-icon" aria-hidden="true">
+                      <svg
+                        width="18"
+                        height="18"
+                        fill="none"
+                        stroke="currentColor"
+                        stroke-width="1.75"
+                        viewBox="0 0 24 24"
+                      >
+                        <path
+                          stroke-linecap="round"
+                          stroke-linejoin="round"
+                          d="M3 9.75L12 4.5l9 5.25M4.5 10.5v8.25A1.5 1.5 0 006 20.25h3.75M4.5 10.5h15M19.5 10.5v8.25a1.5 1.5 0 01-1.5 1.5H15M9 20.25h6M9 14.25h.008v.008H9v-.008zm3 0h.008v.008H12v-.008zm3 0h.008v.008H15v-.008z"
+                        />
+                      </svg>
+                    </span>
+                    <RouterLink
+                      v-if="row.client_account_id"
+                      :to="`/admin/clients/accounts/${row.client_account_id}`"
+                      class="text-truncate text-body text-decoration-none fw-medium"
+                    >
+                      {{ row.client_account_company_name || "—" }}
+                    </RouterLink>
+                    <span v-else class="text-truncate text-secondary small">
+                      {{ row.client_account_company_name || "—" }}
+                    </span>
+                  </div>
+                </td>
                 <td class="text-center">{{ Number(row.expected_qty ?? 0).toLocaleString() }}</td>
                 <td class="text-center">{{ Number(row.accepted_qty ?? 0).toLocaleString() }}</td>
                 <td class="text-center">{{ Number(row.rejected_qty ?? 0).toLocaleString() }}</td>

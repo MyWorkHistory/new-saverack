@@ -2,6 +2,7 @@
 import { computed, inject, nextTick, onMounted, onUnmounted, ref, watch } from "vue";
 import { useRouter } from "vue-router";
 import api from "../../services/api";
+import AsnStatusChip from "../../components/asn/AsnStatusChip.vue";
 import CrmIconRowActions from "../../components/common/CrmIconRowActions.vue";
 import CrmLoadingSpinner from "../../components/common/CrmLoadingSpinner.vue";
 import ConfirmModal from "../../components/common/ConfirmModal.vue";
@@ -101,25 +102,6 @@ function toggleSort(column) {
   }
   meta.value.current_page = 1;
   load();
-}
-
-function statusLabel(s) {
-  if (s === "draft") return "Draft";
-  if (s === "in_progress") return "In Progress";
-  if (s === "completed") return "Completed";
-  if (s === "pending") return "Pending";
-  if (s === "non_compliant") return "Non-Compliant";
-  return "Pending";
-}
-
-function statusBadgeClass(status) {
-  const s = String(status || "").toLowerCase();
-  if (s === "draft") return "bg-warning-subtle text-warning-emphasis";
-  if (s === "pending") return "bg-secondary-subtle text-secondary-emphasis";
-  if (s === "in_progress") return "bg-primary-subtle text-primary-emphasis";
-  if (s === "completed") return "bg-success-subtle text-success-emphasis";
-  if (s === "non_compliant") return "bg-danger-subtle text-danger-emphasis";
-  return "bg-body-secondary text-body-secondary";
 }
 
 function clearSelection() {
@@ -358,7 +340,9 @@ onUnmounted(() => {
       <button type="button" class="btn btn-primary staff-page-primary" @click="createAsn">Create ASN</button>
     </div>
 
-    <div class="user-asn-list staff-table-card staff-datatable-card staff-datatable-card--white w-100">
+    <div
+      class="user-asn-list-toolbar-card staff-table-card staff-datatable-card staff-datatable-card--white w-100"
+    >
       <div class="staff-table-toolbar">
         <div class="staff-table-toolbar--row flex-wrap align-items-end gap-2 gap-md-3">
           <input
@@ -442,7 +426,9 @@ onUnmounted(() => {
           </button>
         </div>
       </div>
+    </div>
 
+    <div class="user-asn-list staff-table-card staff-datatable-card staff-datatable-card--white w-100">
       <div
         v-if="selectedCount > 0"
         class="staff-bulk-selection-bar d-flex flex-wrap align-items-center gap-2 gap-md-3 px-3 px-md-4 py-3"
@@ -555,9 +541,7 @@ onUnmounted(() => {
                   />
                 </td>
                 <td class="text-center">
-                  <span class="badge rounded-pill fw-medium" :class="statusBadgeClass(r.status)">
-                    {{ statusLabel(r.status) }}
-                  </span>
+                  <AsnStatusChip :status="r.status" />
                 </td>
                 <td class="text-center fw-semibold user-asn-list-asn-col">{{ formatAsnDisplay(r.asn_number) }}</td>
                 <td class="text-center small text-secondary">{{ formatDateUs(r.created_at) }}</td>

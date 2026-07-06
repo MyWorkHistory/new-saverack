@@ -28,7 +28,7 @@ function onSelect(key) {
     >
       <button
         type="button"
-        class="on-hold-summary-card h-100 w-100"
+        class="staff-datatable-card staff-datatable-card--white on-hold-summary-card h-100 w-100"
         @click="onSelect(section.key)"
       >
         <div

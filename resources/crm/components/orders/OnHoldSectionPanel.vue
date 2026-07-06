@@ -49,7 +49,7 @@ function onRefresh() {
 <template>
   <section
     :id="`hold-${sectionKey}`"
-    class="on-hold-section-panel h-100 d-flex flex-column"
+    class="staff-datatable-card staff-datatable-card--white on-hold-section-panel h-100 d-flex flex-column"
   >
     <div class="on-hold-section-panel__header d-flex align-items-start justify-content-between gap-2">
       <div class="d-flex align-items-start gap-3 min-w-0">

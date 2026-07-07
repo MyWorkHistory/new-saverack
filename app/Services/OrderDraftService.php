@@ -490,6 +490,17 @@ class OrderDraftService
         ];
     }
 
+    public function deleteDraft(OrderDraft $draft): void
+    {
+        if (! $draft->isDraft()) {
+            throw ValidationException::withMessages([
+                'status' => ['This order draft has already been submitted and cannot be deleted.'],
+            ]);
+        }
+
+        $draft->delete();
+    }
+
     public function assertDraftAccountAccess(OrderDraft $draft, User $user): void
     {
         $portalAccountId = (int) ($user->client_account_id ?? 0);

@@ -134,6 +134,31 @@ class OrderDraftController extends Controller
         return response()->json($result);
     }
 
+    public function destroy(Request $request, int $orderDraft): JsonResponse
+    {
+        Gate::authorize('shiphero.orders.write');
+
+        $user = $request->user();
+        if (! $user instanceof User) {
+            abort(401);
+        }
+
+        $draft = OrderDraft::query()->findOrFail($orderDraft);
+        if (! $draft->isDraft()) {
+            return response()->json(['message' => 'This order draft has already been submitted.'], 422);
+        }
+
+        $this->drafts->assertDraftAccountAccess($draft, $user);
+
+        try {
+            $this->drafts->deleteDraft($draft);
+        } catch (ValidationException $e) {
+            throw $e;
+        }
+
+        return response()->json(['deleted' => true]);
+    }
+
     private function assertClientAccountAccess(int $clientAccountId, User $user): void
     {
         $portalAccountId = (int) ($user->client_account_id ?? 0);

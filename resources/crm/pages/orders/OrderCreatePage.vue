@@ -1,9 +1,11 @@
 <script setup>
-import { computed, inject, onMounted, ref, watch } from "vue";
+import { computed, inject, onMounted, onUnmounted, ref, watch } from "vue";
 import { RouterLink, useRoute, useRouter } from "vue-router";
 import api from "../../services/api";
 import CrmLoadingSpinner from "../../components/common/CrmLoadingSpinner.vue";
 import CrmSearchableSelect from "../../components/common/CrmSearchableSelect.vue";
+import CrmIconRowActions from "../../components/common/CrmIconRowActions.vue";
+import ConfirmModal from "../../components/common/ConfirmModal.vue";
 import OrderCreateDrawer from "../../components/orders/OrderCreateDrawer.vue";
 import { setCrmPageMeta } from "../../composables/useCrmPageMeta.js";
 import { useToast } from "../../composables/useToast.js";
@@ -21,6 +23,11 @@ const accounts = ref([]);
 const rows = ref([]);
 const selectedAccountId = ref(String(route.query.client_account_id || ""));
 const createOrderModalOpen = ref(false);
+const manageOpenId = ref(null);
+const manageMenuRect = ref({ top: 0, left: 0 });
+const deleteModalOpen = ref(false);
+const deleteBusy = ref(false);
+const deleteTargetRow = ref(null);
 
 const isPortalMode = computed(
   () => route.meta?.userPortal === true || crmIsPortalUser(crmUser.value),
@@ -108,6 +115,70 @@ async function onDraftOrderCreated(data) {
   });
 }
 
+const manageMenuRow = computed(
+  () => rows.value.find((row) => row.id === manageOpenId.value) ?? null,
+);
+
+function closeManageMenu() {
+  manageOpenId.value = null;
+}
+
+function placeManageMenu(btn) {
+  const rect = btn.getBoundingClientRect();
+  const menuWidth = 180;
+  const left = Math.max(8, rect.right - menuWidth);
+  const top = rect.bottom + 4;
+  manageMenuRect.value = { top, left };
+}
+
+async function toggleManageMenu(id, e) {
+  const btn = e?.currentTarget;
+  if (manageOpenId.value === id) {
+    manageOpenId.value = null;
+    return;
+  }
+  manageOpenId.value = id;
+  await Promise.resolve();
+  if (manageOpenId.value === id && btn instanceof HTMLElement) {
+    placeManageMenu(btn);
+  }
+}
+
+function onDocumentClick(e) {
+  if (!e.target?.closest?.("[data-row-actions]")) {
+    manageOpenId.value = null;
+  }
+}
+
+function openDeleteModal(row) {
+  manageOpenId.value = null;
+  deleteTargetRow.value = row;
+  deleteModalOpen.value = true;
+}
+
+function closeDeleteModal() {
+  if (deleteBusy.value) return;
+  deleteModalOpen.value = false;
+  deleteTargetRow.value = null;
+}
+
+async function confirmDeleteDraft() {
+  const row = deleteTargetRow.value;
+  const draftId = Number(row?.id || 0);
+  if (!draftId || deleteBusy.value) return;
+  deleteBusy.value = true;
+  try {
+    await api.delete(`/order-drafts/${draftId}`);
+    toast.success("Draft order deleted.");
+    closeDeleteModal();
+    await loadDrafts();
+  } catch (e) {
+    toast.errorFrom(e, "Could not delete draft order.");
+  } finally {
+    deleteBusy.value = false;
+  }
+}
+
 watch(selectedAccountId, () => {
   if (!isPortalMode.value) {
     loadDrafts();
@@ -121,8 +192,13 @@ onMounted(() => {
       : "Save Rack | Orders | Draft Orders",
     description: "Local order drafts not yet sent to ShipHero.",
   });
+  document.addEventListener("click", onDocumentClick);
   loadAccounts();
   loadDrafts();
+});
+
+onUnmounted(() => {
+  document.removeEventListener("click", onDocumentClick);
 });
 </script>
 
@@ -246,7 +322,7 @@ onMounted(() => {
               <td>{{ row.country || "—" }}</td>
               <td class="text-end">{{ row.line_items_count ?? 0 }}</td>
               <td class="text-center staff-actions-cell">
-                <div class="staff-actions-inner staff-actions-inner--single justify-content-center">
+                <div class="staff-actions-inner justify-content-center">
                   <RouterLink
                     v-if="draftDetailRoute(row)"
                     :to="draftDetailRoute(row)"
@@ -276,6 +352,19 @@ onMounted(() => {
                       />
                     </svg>
                   </RouterLink>
+                  <button
+                    v-if="canWriteOrders"
+                    type="button"
+                    class="staff-action-btn"
+                    :class="{ 'is-open': manageOpenId === row.id }"
+                    :aria-expanded="manageOpenId === row.id"
+                    aria-haspopup="true"
+                    aria-label="Row actions"
+                    data-row-actions
+                    @click.stop="toggleManageMenu(row.id, $event)"
+                  >
+                    <CrmIconRowActions variant="horizontal" />
+                  </button>
                 </div>
               </td>
             </tr>
@@ -293,6 +382,50 @@ onMounted(() => {
       :accounts-loading="accountsLoading"
       :initial-account-id="String(selectedAccountId || route.query.client_account_id || '')"
       @created="onDraftOrderCreated"
+    />
+
+    <Teleport to="body">
+      <div
+        v-if="manageMenuRow"
+        data-row-actions
+        class="staff-row-menu fixed z-[300] overflow-hidden"
+        role="menu"
+        :style="{
+          top: `${manageMenuRect.top}px`,
+          left: `${manageMenuRect.left}px`,
+        }"
+        @click.stop
+      >
+        <RouterLink
+          v-if="draftDetailRoute(manageMenuRow)"
+          :to="draftDetailRoute(manageMenuRow)"
+          class="staff-row-menu__item text-decoration-none"
+          role="menuitem"
+          @click="closeManageMenu"
+        >
+          View
+        </RouterLink>
+        <button
+          v-if="canWriteOrders"
+          class="staff-row-menu__item staff-row-menu__item--danger"
+          role="menuitem"
+          @click="openDeleteModal(manageMenuRow)"
+        >
+          Delete
+        </button>
+      </div>
+    </Teleport>
+
+    <ConfirmModal
+      :open="deleteModalOpen"
+      title="Delete Draft Order?"
+      :message="`Delete draft order ${deleteTargetRow?.order_number || ''}? This cannot be undone.`"
+      confirm-label="Delete"
+      cancel-label="Cancel"
+      danger
+      :busy="deleteBusy"
+      @close="closeDeleteModal"
+      @confirm="confirmDeleteDraft"
     />
   </div>
 </template>

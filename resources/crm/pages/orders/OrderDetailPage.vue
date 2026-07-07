@@ -48,7 +48,10 @@ const itemSortKey = ref("name");
 const itemSortDir = ref("asc");
 const confirmFulfilledOpen = ref(false);
 const confirmCancelOpen = ref(false);
+const confirmAllowPartialOpen = ref(false);
+const confirmDeleteDraftOpen = ref(false);
 const actionBusy = ref(false);
+const deleteDraftBusy = ref(false);
 const readyToShipBusy = ref(false);
 
 const shippingModalOpen = ref(false);
@@ -747,8 +750,39 @@ const itemsSummary = computed(() => {
   };
 });
 
-const showStaffMoreActions = computed(
-  () => canUseStaffOrderHeaderActions.value && !isDraftOrder.value && !isPortalUser.value,
+const showStaffMoreActions = computed(() => {
+  if (!canUseStaffOrderHeaderActions.value || isPortalUser.value || !canRunShipHeroActions.value) {
+    return false;
+  }
+  if (isDraftOrder.value) {
+    return draftId.value > 0;
+  }
+  return (
+    showPlaceHoldAction.value
+    || showMarkFulfilledAction.value
+    || showAllowPartialAction.value
+    || showCancelOrderAction.value
+  );
+});
+
+const showPlaceHoldAction = computed(
+  () => !isDraftOrder.value && orderIsReadyToShip.value && canPlaceHold.value,
+);
+
+const showMarkFulfilledAction = computed(
+  () => !isDraftOrder.value && !orderIsTerminalFulfillment.value && canRunShipHeroActions.value,
+);
+
+const showAllowPartialAction = computed(
+  () => !isDraftOrder.value && !orderIsTerminalFulfillment.value && canRunShipHeroActions.value,
+);
+
+const showCancelOrderAction = computed(
+  () => !isDraftOrder.value && !orderIsTerminalFulfillment.value && canRunShipHeroActions.value,
+);
+
+const showDeleteDraftAction = computed(
+  () => isDraftOrder.value && canRunShipHeroActions.value && draftId.value > 0,
 );
 
 function escapeHtml(value) {
@@ -1097,6 +1131,8 @@ watch(
 function closeActionConfirms() {
   confirmFulfilledOpen.value = false;
   confirmCancelOpen.value = false;
+  confirmAllowPartialOpen.value = false;
+  confirmDeleteDraftOpen.value = false;
   removeHoldsModalOpen.value = false;
   confirmDeleteLineOpen.value = false;
 }
@@ -1132,6 +1168,42 @@ async function runCancelOrder() {
     toast.errorFrom(e, "Could not cancel order.");
   } finally {
     actionBusy.value = false;
+  }
+}
+
+async function runAllowPartial() {
+  if (!order.value || !selectedAccountId.value || !orderId.value) return;
+  actionBusy.value = true;
+  try {
+    await api.post(`/orders/${encodeURIComponent(orderId.value)}/allow-partial`, {
+      client_account_id: Number(selectedAccountId.value),
+      allow_partial: true,
+    });
+    toast.success("Allow partial updated.");
+    closeActionConfirms();
+    await loadOrder({ refresh: true });
+  } catch (e) {
+    toast.errorFrom(e, "Could not update allow partial.");
+  } finally {
+    actionBusy.value = false;
+  }
+}
+
+async function runDeleteDraft() {
+  if (!showDeleteDraftAction.value || deleteDraftBusy.value) return;
+  deleteDraftBusy.value = true;
+  try {
+    await api.delete(`/order-drafts/${draftId.value}`);
+    toast.success("Draft order deleted.");
+    closeActionConfirms();
+    closeMoreActionsMenu();
+    const createRouteName =
+      isPortalUser.value || isUserPortalRoute.value ? "user-orders-create" : "orders-create";
+    await router.push({ name: createRouteName });
+  } catch (e) {
+    toast.errorFrom(e, "Could not delete draft order.");
+  } finally {
+    deleteDraftBusy.value = false;
   }
 }
 
@@ -1872,42 +1944,42 @@ function goToOrdersList() {
                   {{ refreshing ? "Refreshing…" : "Refresh" }}
                 </button>
               </template>
-              <div v-if="showStaffMoreActions" class="dropdown order-detail-page__more-actions position-relative">
-                <button
-                  ref="moreActionsBtnRef"
-                  id="order-detail-more-actions"
-                  type="button"
-                  :class="moreActionsBtnClass"
-                  aria-haspopup="true"
-                  :aria-expanded="moreActionsOpen ? 'true' : 'false'"
-                  @click.stop="toggleMoreActionsMenu"
-                >
-                  <span class="order-detail-page__more-actions-gear-icon" aria-hidden="true">
-                    <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path
-                        stroke-linecap="round"
-                        stroke-linejoin="round"
-                        stroke-width="2"
-                        d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"
-                      />
-                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-                    </svg>
-                  </span>
-                  More Actions
-                  <span class="order-detail-page__more-actions-caret" aria-hidden="true">▾</span>
-                </button>
-              </div>
-              <button
-                v-if="showRemoveHoldBtn"
-                type="button"
-                class="btn btn-danger text-white"
-                :disabled="removeHoldsBusy"
-                title="Remove holds"
-                @click="removeHoldsModalOpen = true"
-              >
-                {{ removeHoldsBusy ? "Removing…" : "Remove Hold" }}
-              </button>
             </template>
+            <div v-if="showStaffMoreActions" class="dropdown order-detail-page__more-actions position-relative">
+              <button
+                ref="moreActionsBtnRef"
+                id="order-detail-more-actions"
+                type="button"
+                :class="moreActionsBtnClass"
+                aria-haspopup="true"
+                :aria-expanded="moreActionsOpen ? 'true' : 'false'"
+                @click.stop="toggleMoreActionsMenu"
+              >
+                <span class="order-detail-page__more-actions-gear-icon" aria-hidden="true">
+                  <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path
+                      stroke-linecap="round"
+                      stroke-linejoin="round"
+                      stroke-width="2"
+                      d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"
+                    />
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                  </svg>
+                </span>
+                More Actions
+                <span class="order-detail-page__more-actions-caret" aria-hidden="true">▾</span>
+              </button>
+            </div>
+            <button
+              v-if="!isDraftOrder && showRemoveHoldBtn"
+              type="button"
+              class="btn btn-danger text-white"
+              :disabled="removeHoldsBusy"
+              title="Remove holds"
+              @click="removeHoldsModalOpen = true"
+            >
+              {{ removeHoldsBusy ? "Removing…" : "Remove Hold" }}
+            </button>
           </div>
         </div>
       </header>
@@ -2712,14 +2784,28 @@ function goToOrdersList() {
 
     <Teleport to="body">
       <ul
-        v-show="moreActionsOpen && !isDraftOrder"
+        v-show="moreActionsOpen && showStaffMoreActions"
         ref="moreActionsMenuRef"
         class="dropdown-menu dropdown-menu-end show shadow-sm border bg-body order-detail-page__more-actions-menu"
         :style="moreActionsMenuStyle"
         role="menu"
         aria-labelledby="order-detail-more-actions"
       >
-        <li>
+        <li v-if="showDeleteDraftAction">
+          <button
+            type="button"
+            class="dropdown-item text-danger"
+            role="menuitem"
+            :disabled="deleteDraftBusy"
+            @click="
+              closeMoreActionsMenu();
+              confirmDeleteDraftOpen = true;
+            "
+          >
+            {{ deleteDraftBusy ? "Deleting…" : "Delete" }}
+          </button>
+        </li>
+        <li v-if="showPlaceHoldAction">
           <button
             type="button"
             class="dropdown-item"
@@ -2740,7 +2826,7 @@ function goToOrdersList() {
             {{ placeHoldBusy ? "Placing Hold…" : "Place Hold" }}
           </button>
         </li>
-        <li>
+        <li v-if="showMarkFulfilledAction">
           <button
             type="button"
             class="dropdown-item"
@@ -2754,7 +2840,21 @@ function goToOrdersList() {
             Mark As Fulfilled
           </button>
         </li>
-        <li>
+        <li v-if="showAllowPartialAction">
+          <button
+            type="button"
+            class="dropdown-item"
+            role="menuitem"
+            :disabled="!canRunShipHeroActions"
+            @click="
+              closeMoreActionsMenu();
+              if (canRunShipHeroActions) confirmAllowPartialOpen = true;
+            "
+          >
+            Allow Partial
+          </button>
+        </li>
+        <li v-if="showCancelOrderAction">
           <button
             type="button"
             class="dropdown-item text-danger"
@@ -2962,6 +3062,28 @@ function goToOrdersList() {
       :busy="actionBusy"
       @close="confirmCancelOpen = false"
       @confirm="runCancelOrder"
+    />
+    <ConfirmModal
+      :open="confirmAllowPartialOpen"
+      title="Allow Partial?"
+      message="Allow partial fulfillment for this order in ShipHero?"
+      confirm-label="Allow Partial"
+      cancel-label="Cancel"
+      :danger="false"
+      :busy="actionBusy"
+      @close="confirmAllowPartialOpen = false"
+      @confirm="runAllowPartial"
+    />
+    <ConfirmModal
+      :open="confirmDeleteDraftOpen"
+      title="Delete Draft Order?"
+      :message="`Delete draft order ${order?.order_number || ''}? This cannot be undone.`"
+      confirm-label="Delete"
+      cancel-label="Cancel"
+      danger
+      :busy="deleteDraftBusy"
+      @close="confirmDeleteDraftOpen = false"
+      @confirm="runDeleteDraft"
     />
     <ConfirmModal
       :open="confirmDeleteLineOpen"

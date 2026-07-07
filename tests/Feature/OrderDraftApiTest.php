@@ -385,4 +385,49 @@ class OrderDraftApiTest extends TestCase
             ->assertJsonCount(1, 'data')
             ->assertJsonPath('data.0.order_number', 'PORTAL-LIST-OWN');
     }
+
+    public function test_staff_can_delete_draft(): void
+    {
+        $this->staffWithOrdersUpdate();
+        $account = $this->makeAccount();
+        $draft = $this->makeDraftForAccount($account, 'DELETE-ME-1');
+
+        $this->deleteJson('/api/order-drafts/'.$draft->id)
+            ->assertOk()
+            ->assertJsonPath('deleted', true);
+
+        $this->assertDatabaseMissing('order_drafts', ['id' => $draft->id]);
+    }
+
+    public function test_staff_cannot_delete_submitted_draft(): void
+    {
+        $this->staffWithOrdersUpdate();
+        $account = $this->makeAccount();
+        $draft = OrderDraft::query()->create([
+            'client_account_id' => $account->id,
+            'order_number' => 'SUBMITTED-1',
+            'status' => OrderDraft::STATUS_SUBMITTED,
+            'shipping_address' => $this->validDraftPayload($account->id)['shipping_address'],
+            'line_items' => [],
+            'tags' => [],
+            'created_by_user_id' => User::factory()->create()->id,
+        ]);
+
+        $this->deleteJson('/api/order-drafts/'.$draft->id)
+            ->assertStatus(422);
+
+        $this->assertDatabaseHas('order_drafts', ['id' => $draft->id]);
+    }
+
+    public function test_staff_without_orders_update_cannot_delete_draft(): void
+    {
+        $this->staffWithOrdersView();
+        $account = $this->makeAccount();
+        $draft = $this->makeDraftForAccount($account, 'NO-DELETE-1');
+
+        $this->deleteJson('/api/order-drafts/'.$draft->id)
+            ->assertForbidden();
+
+        $this->assertDatabaseHas('order_drafts', ['id' => $draft->id]);
+    }
 }

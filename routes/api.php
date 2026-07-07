@@ -328,6 +328,8 @@ Route::middleware('auth:sanctum')->group(function () {
             ->middleware('can:shiphero.orders.write');
         Route::post('/{orderDraft}/ready-to-ship', [OrderDraftController::class, 'readyToShip'])
             ->middleware('can:shiphero.orders.write');
+        Route::delete('/{orderDraft}', [OrderDraftController::class, 'destroy'])
+            ->middleware('can:shiphero.orders.write');
     });
 
     Route::prefix('orders')->group(function () {

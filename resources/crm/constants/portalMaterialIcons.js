@@ -50,4 +50,8 @@ export const PORTAL_MATERIAL_ICON = {
   close: "M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z",
   pauseCircle:
     "M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-1 14V8h2v8h-2zm4 0V8h2v8h-2z",
+  barcode:
+    "M4 6h2v12H4V6zm3 0h1v12H7V6zm2 0h3v12H9V6zm4 0h1v12h-1V6zm2 0h2v12h-2V6zm3 0h1v12h-1V6z",
+  package:
+    "M21 8.5V19c0 .55-.45 1-1 1H4c-.55 0-1-.45-1-1V8.5l9-5 9 5zM12 4.15L6 7.5V18h12V7.5l-6-3.35z",
 };

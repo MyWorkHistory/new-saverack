@@ -31,7 +31,7 @@ class WholesaleOrderShipHeroService
 
         if (! $order->isReadyToShipEligible()) {
             throw ValidationException::withMessages([
-                'order' => ['Complete shipping address, carrier, method, requirements, line barcodes, and add line items before ready to ship.'],
+                'order' => ['Complete shipping labels, requirements, line barcodes, and add line items before ready to ship.'],
             ]);
         }
 
@@ -218,6 +218,20 @@ class WholesaleOrderShipHeroService
             $comment = trim((string) ($order->master_cartons_comment ?? ''));
             if ($comment !== '') {
                 $lines[] = '  Comments: '.$comment;
+            }
+        }
+
+        /** @var array<string, string> $shippingLabelsProvider */
+        $shippingLabelsProvider = config('wholesale_orders.shipping_labels_provider', []);
+        $provider = (string) ($order->shipping_labels_provider ?? '');
+        if ($provider !== '') {
+            $lines[] = 'Shipping Labels: '.($shippingLabelsProvider[$provider] ?? $provider);
+            $comment = trim((string) ($order->shipping_labels_comment ?? ''));
+            if ($comment !== '') {
+                $lines[] = '  Comments: '.$comment;
+            }
+            if ($provider === WholesaleOrder::SHIPPING_LABELS_CLIENT_PROVIDES && $order->hasUploadedShippingLabel()) {
+                $lines[] = '  Client shipping label file: '.(string) ($order->shipping_label_original_name ?? 'uploaded');
             }
         }
 

@@ -262,6 +262,12 @@ class WholesaleOrderController extends Controller
             'shipping_address' => $order->shipping_address,
             'shipping_carrier' => $order->shipping_carrier,
             'shipping_method' => $order->shipping_method,
+            'shipping_labels_provider' => $order->shipping_labels_provider,
+            'shipping_labels_provider_label' => WholesaleOrder::shippingLabelsProviderLabel($order->shipping_labels_provider),
+            'shipping_labels_comment' => $order->shipping_labels_comment,
+            'has_shipping_label_file' => $order->hasUploadedShippingLabel(),
+            'shipping_label_original_name' => $order->shipping_label_original_name,
+            'shipping_label_mime' => $order->shipping_label_mime,
             'sku_barcode_labels' => $order->sku_barcode_labels,
             'sku_barcode_labels_comment' => $order->sku_barcode_labels_comment,
             'cover_existing_barcodes' => $order->cover_existing_barcodes,
@@ -278,6 +284,7 @@ class WholesaleOrderController extends Controller
             'is_lines_editable' => $order->canEditLines(),
             'can_ready_to_ship' => $order->isReadyToShipEligible(),
             'has_complete_shipping_address' => $order->hasCompleteShippingAddress(),
+            'has_shipping_labels_resolved' => $order->hasShippingLabelsResolved(),
             'has_requirements_filled' => $order->hasRequirementsFilled(),
             'has_all_lines_barcode_resolved' => $order->hasAllLinesBarcodeResolved(),
             'lines' => $order->lines->map(function (WholesaleOrderLine $line) use ($imageBySku) {
@@ -300,6 +307,7 @@ class WholesaleOrderController extends Controller
                 'bundle_configuration' => config('wholesale_orders.bundle_configuration', []),
                 'shipping_method_requirement' => config('wholesale_orders.shipping_method_requirement', []),
                 'master_cartons' => config('wholesale_orders.master_cartons', []),
+                'shipping_labels_provider' => config('wholesale_orders.shipping_labels_provider', []),
             ],
         ]);
     }
@@ -532,6 +540,8 @@ class WholesaleOrderController extends Controller
             'shipping_address.phone' => ['nullable', 'string', 'max:64'],
             'shipping_carrier' => ['sometimes', 'nullable', 'string', 'max:128'],
             'shipping_method' => ['sometimes', 'nullable', 'string', 'max:128'],
+            'shipping_labels_provider' => ['sometimes', 'nullable', 'string', Rule::in(WholesaleOrder::SHIPPING_LABELS_PROVIDERS)],
+            'shipping_labels_comment' => ['nullable', 'string', 'max:5000'],
             'sku_barcode_labels' => ['sometimes', 'nullable', 'string', Rule::in(array_keys(config('wholesale_orders.sku_barcode_labels', [])))],
             'sku_barcode_labels_comment' => ['nullable', 'string', 'max:5000'],
             'cover_existing_barcodes' => ['sometimes', 'nullable', 'string', Rule::in(array_keys(config('wholesale_orders.cover_existing_barcodes', [])))],
@@ -578,6 +588,14 @@ class WholesaleOrderController extends Controller
         if (array_key_exists('shipping_method', $validated)) {
             $wholesaleOrder->shipping_method = $validated['shipping_method'] !== null
                 ? trim((string) $validated['shipping_method'])
+                : null;
+        }
+        if (array_key_exists('shipping_labels_provider', $validated)) {
+            $wholesaleOrder->shipping_labels_provider = $validated['shipping_labels_provider'];
+        }
+        if (array_key_exists('shipping_labels_comment', $validated)) {
+            $wholesaleOrder->shipping_labels_comment = $validated['shipping_labels_comment'] !== null
+                ? trim((string) $validated['shipping_labels_comment'])
                 : null;
         }
         if (array_key_exists('sku_barcode_labels', $validated)) {
@@ -762,6 +780,59 @@ class WholesaleOrderController extends Controller
             $line->barcode_path,
             $line->barcode_original_name ?: 'barcode.pdf',
             ['Content-Type' => $line->barcode_mime ?: 'application/pdf']
+        );
+    }
+
+    public function uploadShippingLabel(Request $request, WholesaleOrder $wholesaleOrder): JsonResponse
+    {
+        $this->assertStaff($request);
+        Gate::authorize('update', $wholesaleOrder);
+        $this->assertLineEditable($wholesaleOrder);
+
+        $validated = $request->validate([
+            'shipping_label' => [
+                'required',
+                'file',
+                'max:10240',
+                'mimetypes:application/pdf,image/jpeg,image/png,image/gif,image/webp',
+            ],
+        ]);
+
+        $file = $request->file('shipping_label');
+        if ($wholesaleOrder->shipping_label_path) {
+            Storage::disk('local')->delete($wholesaleOrder->shipping_label_path);
+        }
+
+        $path = $file->store('wholesale-order-shipping-labels/'.$wholesaleOrder->id, 'local');
+        $wholesaleOrder->shipping_label_path = $path;
+        $wholesaleOrder->shipping_label_original_name = $file->getClientOriginalName();
+        $wholesaleOrder->shipping_label_mime = $file->getClientMimeType();
+        if (trim((string) ($wholesaleOrder->shipping_labels_provider ?? '')) === '') {
+            $wholesaleOrder->shipping_labels_provider = WholesaleOrder::SHIPPING_LABELS_CLIENT_PROVIDES;
+        }
+        $wholesaleOrder->save();
+
+        return response()->json($this->serializeDetail($wholesaleOrder->fresh(['clientAccount', 'createdBy', 'lines', 'comments.user'])));
+    }
+
+    public function shippingLabelDownload(Request $request, WholesaleOrder $wholesaleOrder)
+    {
+        $this->assertStaff($request);
+        Gate::authorize('view', $wholesaleOrder);
+
+        if (! $wholesaleOrder->hasUploadedShippingLabel()) {
+            return response()->json(['message' => 'No shipping label uploaded for this order.'], 422);
+        }
+
+        $disk = Storage::disk('local');
+        if (! $disk->exists($wholesaleOrder->shipping_label_path)) {
+            return response()->json(['message' => 'Shipping label file not found.'], 404);
+        }
+
+        return $disk->response(
+            $wholesaleOrder->shipping_label_path,
+            $wholesaleOrder->shipping_label_original_name ?: 'shipping-label.pdf',
+            ['Content-Type' => $wholesaleOrder->shipping_label_mime ?: 'application/pdf']
         );
     }
 

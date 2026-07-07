@@ -102,6 +102,7 @@ class WholesaleOrderWorkflowTest extends TestCase
             'shipping_address' => $this->completeShippingAddress(),
             'shipping_carrier' => 'ups',
             'shipping_method' => 'Ground',
+            'shipping_labels_provider' => WholesaleOrder::SHIPPING_LABELS_SAVE_RACK_PROVIDES,
             ...$this->completeRequirementsPayload(),
         ]);
 
@@ -468,6 +469,145 @@ class WholesaleOrderWorkflowTest extends TestCase
         $fresh = WholesaleOrder::query()->findOrFail($order->id);
         $this->assertTrue($fresh->hasCompleteShippingAddress());
         $this->assertTrue($fresh->hasShippingCarrierAndMethod());
+    }
+
+    public function test_shipping_labels_provider_patch_serializes(): void
+    {
+        Storage::fake('local');
+        $account = $this->account();
+        Sanctum::actingAs($this->staffUser());
+
+        $order = WholesaleOrder::query()->create([
+            'client_account_id' => $account->id,
+            'order_number' => 'SL-1',
+            'order_type' => WholesaleOrder::TYPE_B2B,
+            'status' => WholesaleOrder::STATUS_DRAFT,
+            'items_count' => 0,
+        ]);
+
+        $this->patchJson('/api/admin/wholesale-orders/'.$order->id, [
+            'shipping_labels_provider' => WholesaleOrder::SHIPPING_LABELS_CLIENT_PROVIDES,
+            'shipping_labels_comment' => 'Use attached labels',
+        ])
+            ->assertOk()
+            ->assertJsonPath('shipping_labels_provider', WholesaleOrder::SHIPPING_LABELS_CLIENT_PROVIDES)
+            ->assertJsonPath('shipping_labels_provider_label', 'Client provides shipping labels')
+            ->assertJsonPath('shipping_labels_comment', 'Use attached labels')
+            ->assertJsonPath('has_shipping_labels_resolved', false)
+            ->assertJsonPath('has_shipping_label_file', false);
+
+        $this->assertDatabaseHas('wholesale_orders', [
+            'id' => $order->id,
+            'shipping_labels_provider' => WholesaleOrder::SHIPPING_LABELS_CLIENT_PROVIDES,
+            'shipping_labels_comment' => 'Use attached labels',
+        ]);
+    }
+
+    public function test_shipping_label_upload_resolves_client_provides_without_address(): void
+    {
+        Storage::fake('local');
+        $account = $this->account();
+        Sanctum::actingAs($this->staffUser());
+
+        $order = WholesaleOrder::query()->create([
+            'client_account_id' => $account->id,
+            'order_number' => 'SL-UP',
+            'order_type' => WholesaleOrder::TYPE_B2B,
+            'status' => WholesaleOrder::STATUS_PENDING,
+            'items_count' => 1,
+            'shipping_labels_provider' => WholesaleOrder::SHIPPING_LABELS_CLIENT_PROVIDES,
+            ...$this->completeRequirementsPayload(),
+        ]);
+
+        WholesaleOrderLine::query()->create([
+            'wholesale_order_id' => $order->id,
+            'sku' => 'SKU-SL',
+            'name' => 'Label Item',
+            'quantity' => 1,
+            'status' => WholesaleOrderLine::STATUS_SHIP_AS_IS,
+            'barcode_mode' => WholesaleOrderLine::BARCODE_SHIP_AS_IS,
+            'sort_order' => 1,
+        ]);
+
+        $file = UploadedFile::fake()->create('shipping-label.pdf', 100, 'application/pdf');
+        $this->post('/api/admin/wholesale-orders/'.$order->id.'/shipping-label', [
+            'shipping_label' => $file,
+        ])
+            ->assertOk()
+            ->assertJsonPath('has_shipping_label_file', true)
+            ->assertJsonPath('has_shipping_labels_resolved', true)
+            ->assertJsonPath('shipping_label_original_name', 'shipping-label.pdf');
+
+        $fresh = WholesaleOrder::query()->findOrFail($order->id);
+        $this->assertTrue($fresh->hasShippingLabelsResolved());
+        Storage::disk('local')->assertExists($fresh->shipping_label_path);
+    }
+
+    public function test_save_rack_provides_requires_address_carrier_and_method_for_ready_to_ship(): void
+    {
+        $account = $this->account();
+        Sanctum::actingAs($this->staffUser());
+
+        $order = WholesaleOrder::query()->create([
+            'client_account_id' => $account->id,
+            'order_number' => 'SL-SR',
+            'order_type' => WholesaleOrder::TYPE_B2B,
+            'status' => WholesaleOrder::STATUS_PENDING,
+            'items_count' => 1,
+            'shipping_labels_provider' => WholesaleOrder::SHIPPING_LABELS_SAVE_RACK_PROVIDES,
+            ...$this->completeRequirementsPayload(),
+        ]);
+
+        WholesaleOrderLine::query()->create([
+            'wholesale_order_id' => $order->id,
+            'sku' => 'SKU-SR',
+            'name' => 'Save Rack Item',
+            'quantity' => 1,
+            'status' => WholesaleOrderLine::STATUS_SHIP_AS_IS,
+            'barcode_mode' => WholesaleOrderLine::BARCODE_SHIP_AS_IS,
+            'sort_order' => 1,
+        ]);
+
+        $this->getJson('/api/admin/wholesale-orders/'.$order->id)
+            ->assertOk()
+            ->assertJsonPath('has_shipping_labels_resolved', false)
+            ->assertJsonPath('can_ready_to_ship', false);
+
+        $this->patchJson('/api/admin/wholesale-orders/'.$order->id, [
+            'shipping_address' => $this->completeShippingAddress(),
+            'shipping_carrier' => 'ups',
+            'shipping_method' => 'Ground',
+        ])
+            ->assertOk()
+            ->assertJsonPath('has_shipping_labels_resolved', true)
+            ->assertJsonPath('can_ready_to_ship', true);
+    }
+
+    public function test_shipping_label_download_returns_file(): void
+    {
+        Storage::fake('local');
+        $account = $this->account();
+        Sanctum::actingAs($this->staffUser());
+
+        $order = WholesaleOrder::query()->create([
+            'client_account_id' => $account->id,
+            'order_number' => 'SL-DL',
+            'order_type' => WholesaleOrder::TYPE_B2B,
+            'status' => WholesaleOrder::STATUS_DRAFT,
+            'items_count' => 0,
+            'shipping_labels_provider' => WholesaleOrder::SHIPPING_LABELS_CLIENT_PROVIDES,
+        ]);
+
+        $path = 'wholesale-orders/'.$order->id.'/shipping-label.pdf';
+        Storage::disk('local')->put($path, '%PDF-1.4 test');
+        $order->shipping_label_path = $path;
+        $order->shipping_label_original_name = 'client-label.pdf';
+        $order->shipping_label_mime = 'application/pdf';
+        $order->save();
+
+        $this->get('/api/admin/wholesale-orders/'.$order->id.'/shipping-label.pdf')
+            ->assertOk()
+            ->assertHeader('content-type', 'application/pdf');
     }
 
     public function test_ready_to_ship_blocked_without_requirements(): void

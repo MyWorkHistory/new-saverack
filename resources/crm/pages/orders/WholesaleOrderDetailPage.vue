@@ -1,5 +1,5 @@
 <script setup>
-import { computed, nextTick, onMounted, onUnmounted, reactive, ref, watch } from "vue";
+import { computed, nextTick, onMounted, onUnmounted, ref } from "vue";
 import { RouterLink, useRoute, useRouter } from "vue-router";
 import api from "../../services/api";
 import CrmIconRowActions from "../../components/common/CrmIconRowActions.vue";
@@ -7,9 +7,11 @@ import CrmLoadingSpinner from "../../components/common/CrmLoadingSpinner.vue";
 import Modal from "../../components/Modal.vue";
 import AsnProductCatalogPanel from "../../components/inventory/AsnProductCatalogPanel.vue";
 import WholesaleBarcodeUploadModal from "../../components/orders/WholesaleBarcodeUploadModal.vue";
+import WholesaleRequirementEditDrawer from "../../components/orders/WholesaleRequirementEditDrawer.vue";
+import WholesaleRequirementRow from "../../components/orders/WholesaleRequirementRow.vue";
+import WholesaleShippingLabelsCard from "../../components/orders/WholesaleShippingLabelsCard.vue";
 import { setCrmPageMeta } from "../../composables/useCrmPageMeta.js";
 import { useToast } from "../../composables/useToast.js";
-import { CARRIER_PRESETS } from "../../utils/carrierPresets.js";
 import { formatDateUs, formatDateTimeUs } from "../../utils/formatUserDates.js";
 import {
   wholesaleLineStatusBadgeClass,
@@ -17,13 +19,9 @@ import {
   wholesaleStatusBadgeClass,
   wholesaleStatusLabel,
   wholesaleTypeLabel,
-  WHOLESALE_BUNDLE_CONFIG_OPTIONS,
-  WHOLESALE_COVER_EXISTING_BARCODE_OPTIONS,
   WHOLESALE_MANUAL_STATUS_OPTIONS,
-  WHOLESALE_MASTER_CARTON_OPTIONS,
-  WHOLESALE_SHIPPING_METHOD_REQUIREMENT_OPTIONS,
-  WHOLESALE_SKU_BARCODE_LABEL_OPTIONS,
-  WHOLESALE_SKU_PACKAGING_OPTIONS,
+  WHOLESALE_REQUIREMENT_SECTIONS,
+  wholesaleOptionLabel,
 } from "../../utils/formatWholesaleOrderDisplay.js";
 
 const route = useRoute();
@@ -32,42 +30,6 @@ const toast = useToast();
 
 const LINE_MENU_W = 176;
 const LINE_MENU_H = 88;
-
-const CARRIER_LIST = CARRIER_PRESETS;
-const METHOD_PRESETS = ["Select", "Ground", "Priority", "Express", "Standard", "A124"];
-const METHOD_OPTIONS_BY_CARRIER = {
-  cheapest: ["Select", "Ground", "Priority", "Express", "Standard", "A124"],
-  ups: ["Ground", "3 Day Select", "2nd Day Air", "Next Day Air Saver", "Next Day Air", "Standard", "Priority", "Express"],
-  fedex: [
-    "Ground",
-    "Home Delivery",
-    "Express Saver",
-    "2Day",
-    "Standard Overnight",
-    "Priority Overnight",
-    "International Priority",
-    "International Economy",
-  ],
-  usps: ["First Class", "Priority Mail", "Priority Mail Express", "Parcel Select Ground", "Media Mail", "Ground"],
-  dhl: ["Express Worldwide", "Express 12", "Express 9", "Express Easy"],
-  asendia_one: ["Select", "Ground", "Priority", "Express", "Standard"],
-  ontrac: ["Ground", "Express"],
-  lasership: ["Select", "Ground", "Next Day"],
-};
-
-function carrierPresetKey(carrier) {
-  return String(carrier || "").trim().toLowerCase();
-}
-
-function resolveCarrierPreset(carrier) {
-  const raw = String(carrier || "").trim();
-  if (!raw) return "";
-  const key = carrierPresetKey(raw);
-  for (const p of CARRIER_LIST) {
-    if (carrierPresetKey(p) === key) return p;
-  }
-  return raw;
-}
 
 const loading = ref(true);
 const lineBusy = ref(false);
@@ -82,49 +44,9 @@ const statusDraft = ref("pending");
 
 const readyToShipBusy = ref(false);
 
-const requirementsSaving = ref(false);
-const requirementsDraft = reactive({
-  sku_barcode_labels: "",
-  sku_barcode_labels_comment: "",
-  cover_existing_barcodes: "",
-  cover_existing_barcodes_comment: "",
-  individual_sku_packaging: "",
-  individual_sku_packaging_comment: "",
-  bundle_configuration: "",
-  bundle_configuration_comment: "",
-  shipping_method_requirement: "",
-  shipping_method_requirement_comment: "",
-  master_cartons: "",
-  master_cartons_comment: "",
-});
-
-const requirementSections = [
-  { id: "sku-labels", label: "SKU Barcode Labels", valueKey: "sku_barcode_labels", commentKey: "sku_barcode_labels_comment", options: WHOLESALE_SKU_BARCODE_LABEL_OPTIONS },
-  { id: "cover-existing", label: "Cover Existing Barcodes", valueKey: "cover_existing_barcodes", commentKey: "cover_existing_barcodes_comment", options: WHOLESALE_COVER_EXISTING_BARCODE_OPTIONS },
-  { id: "packaging", label: "Individual SKU Packaging", valueKey: "individual_sku_packaging", commentKey: "individual_sku_packaging_comment", options: WHOLESALE_SKU_PACKAGING_OPTIONS },
-  { id: "bundle", label: "Bundle Configuration", valueKey: "bundle_configuration", commentKey: "bundle_configuration_comment", options: WHOLESALE_BUNDLE_CONFIG_OPTIONS },
-  { id: "shipping-method", label: "Shipping Method", valueKey: "shipping_method_requirement", commentKey: "shipping_method_requirement_comment", options: WHOLESALE_SHIPPING_METHOD_REQUIREMENT_OPTIONS },
-  { id: "master-cartons", label: "Master Cartons", valueKey: "master_cartons", commentKey: "master_cartons_comment", options: WHOLESALE_MASTER_CARTON_OPTIONS },
-];
-
-const carrierField = ref("");
-const methodField = ref("");
-const shippingLinesSaving = ref(false);
-const shippingModalOpen = ref(false);
-const shippingSaveBusy = ref(false);
-const shippingForm = ref({
-  first_name: "",
-  last_name: "",
-  company: "",
-  address1: "",
-  address2: "",
-  phone: "",
-  city: "",
-  state: "",
-  country: "",
-  zip: "",
-  email: "",
-});
+const requirementEditOpen = ref(false);
+const requirementEditSection = ref(null);
+const requirementEditBusy = ref(false);
 
 const manualStatusOptions = WHOLESALE_MANUAL_STATUS_OPTIONS;
 
@@ -178,14 +100,9 @@ const readyToShipDisabledReason = computed(() => {
   if (canReadyToShip.value) return "";
   const missing = [];
   if (!lines.value.length) missing.push("add line items");
-  if (!o.has_requirements_filled) missing.push("save requirements");
+  if (!o.has_requirements_filled) missing.push("complete requirements");
   if (!o.has_all_lines_barcode_resolved) missing.push("resolve line barcodes (Ship As Is or upload)");
-  if (!o.has_complete_shipping_address) missing.push("complete shipping address");
-  const carrier = String(o.shipping_carrier || "").trim();
-  const method = String(o.shipping_method || "").trim();
-  if (!carrier || !method || method.toLowerCase() === "select") {
-    missing.push("save carrier and method");
-  }
+  if (!o.has_shipping_labels_resolved) missing.push("complete shipping labels");
   return missing.length ? `Complete: ${missing.join(", ")}.` : "Not ready to ship.";
 });
 
@@ -201,31 +118,7 @@ const formattedShippingAddress = computed(() => {
   const cityLine = [a.city, a.state, a.zip].filter(Boolean).join(", ").trim();
   if (cityLine) parts.push(cityLine);
   if (a.country) parts.push(String(a.country));
-  return parts.length ? parts.join("\n") : "—";
-});
-
-const carrierSelectOptions = computed(() => {
-  const labels = new Map();
-  for (const p of CARRIER_LIST) {
-    labels.set(carrierPresetKey(p), p);
-  }
-  const cur = String(carrierField.value || "").trim();
-  const curKey = carrierPresetKey(cur);
-  if (curKey && !labels.has(curKey)) {
-    labels.set(curKey, resolveCarrierPreset(cur));
-  }
-  return ["", ...labels.values()];
-});
-
-const methodSelectOptions = computed(() => {
-  const key = carrierPresetKey(carrierField.value);
-  const baseList = METHOD_OPTIONS_BY_CARRIER[key] || METHOD_PRESETS;
-  const cur = String(methodField.value || "").trim();
-  const out = ["", ...baseList];
-  if (cur && !baseList.includes(cur) && !out.includes(cur)) {
-    out.push(cur);
-  }
-  return out;
+  return parts.length ? parts.join("\n") : "";
 });
 
 const itemsSummary = computed(() => {
@@ -254,33 +147,50 @@ const lineMenuOpenLine = computed(() => {
   return lines.value.find((l) => l.id === id) ?? null;
 });
 
-watch(carrierField, (newCar, oldCar) => {
-  if (carrierPresetKey(newCar) === carrierPresetKey(oldCar)) return;
-  const key = carrierPresetKey(newCar);
-  const baseList = METHOD_OPTIONS_BY_CARRIER[key];
-  if (!baseList) return;
-  const m = String(methodField.value || "").trim();
-  if (m !== "" && !baseList.includes(m)) {
-    methodField.value = "";
-  }
+const requirementEditValue = computed(() => {
+  const section = requirementEditSection.value;
+  if (!section || !order.value) return "";
+  return String(order.value[section.valueKey] || "");
 });
+
+const requirementEditComment = computed(() => {
+  const section = requirementEditSection.value;
+  if (!section || !order.value) return "";
+  return String(order.value[section.commentKey] || "");
+});
+
+function requirementValueLabel(section) {
+  if (!order.value || !section) return null;
+  return wholesaleOptionLabel(section.options, order.value[section.valueKey]);
+}
+
+function openRequirementEdit(section) {
+  if (!isEditable.value) return;
+  requirementEditSection.value = section;
+  requirementEditOpen.value = true;
+}
+
+async function saveRequirementFromDrawer({ value, comment }) {
+  const section = requirementEditSection.value;
+  if (!section || !order.value?.id || requirementEditBusy.value) return;
+  requirementEditBusy.value = true;
+  try {
+    const { data } = await api.patch(`/admin/wholesale-orders/${order.value.id}`, {
+      [section.valueKey]: value || null,
+      [section.commentKey]: comment || null,
+    });
+    applyOrderData(data);
+    requirementEditOpen.value = false;
+    toast.success("Requirement saved.");
+  } catch (e) {
+    toast.errorFrom(e, "Could not save requirement.");
+  } finally {
+    requirementEditBusy.value = false;
+  }
+}
 
 function syncDraftsFromOrder(data) {
   instructionsDraft.value = String(data?.instructions || "");
-  requirementsDraft.sku_barcode_labels = String(data?.sku_barcode_labels || "");
-  requirementsDraft.sku_barcode_labels_comment = String(data?.sku_barcode_labels_comment || "");
-  requirementsDraft.cover_existing_barcodes = String(data?.cover_existing_barcodes || "");
-  requirementsDraft.cover_existing_barcodes_comment = String(data?.cover_existing_barcodes_comment || "");
-  requirementsDraft.individual_sku_packaging = String(data?.individual_sku_packaging || "");
-  requirementsDraft.individual_sku_packaging_comment = String(data?.individual_sku_packaging_comment || "");
-  requirementsDraft.bundle_configuration = String(data?.bundle_configuration || "");
-  requirementsDraft.bundle_configuration_comment = String(data?.bundle_configuration_comment || "");
-  requirementsDraft.shipping_method_requirement = String(data?.shipping_method_requirement || "");
-  requirementsDraft.shipping_method_requirement_comment = String(data?.shipping_method_requirement_comment || "");
-  requirementsDraft.master_cartons = String(data?.master_cartons || "");
-  requirementsDraft.master_cartons_comment = String(data?.master_cartons_comment || "");
-  carrierField.value = resolveCarrierPreset(data?.shipping_carrier);
-  methodField.value = String(data?.shipping_method || "");
 }
 
 function applyOrderData(data) {
@@ -403,89 +313,9 @@ async function saveInstructions() {
   }
 }
 
-async function saveRequirements() {
-  if (!order.value?.id || !isEditable.value) return;
-  requirementsSaving.value = true;
-  try {
-    const { data } = await api.patch(`/admin/wholesale-orders/${order.value.id}`, {
-      sku_barcode_labels: requirementsDraft.sku_barcode_labels || null,
-      sku_barcode_labels_comment: requirementsDraft.sku_barcode_labels_comment.trim() || null,
-      cover_existing_barcodes: requirementsDraft.cover_existing_barcodes || null,
-      cover_existing_barcodes_comment: requirementsDraft.cover_existing_barcodes_comment.trim() || null,
-      individual_sku_packaging: requirementsDraft.individual_sku_packaging || null,
-      individual_sku_packaging_comment: requirementsDraft.individual_sku_packaging_comment.trim() || null,
-      bundle_configuration: requirementsDraft.bundle_configuration || null,
-      bundle_configuration_comment: requirementsDraft.bundle_configuration_comment.trim() || null,
-      shipping_method_requirement: requirementsDraft.shipping_method_requirement || null,
-      shipping_method_requirement_comment: requirementsDraft.shipping_method_requirement_comment.trim() || null,
-      master_cartons: requirementsDraft.master_cartons || null,
-      master_cartons_comment: requirementsDraft.master_cartons_comment.trim() || null,
-    });
-    applyOrderData(data);
-    toast.success("Requirements saved.");
-  } catch (e) {
-    toast.errorFrom(e, "Could not save requirements.");
-  } finally {
-    requirementsSaving.value = false;
-  }
-}
-
-function openShippingModal() {
-  const a = order.value?.shipping_address;
-  const src = a && typeof a === "object" ? a : {};
-  shippingForm.value = {
-    first_name: String(src.first_name || ""),
-    last_name: String(src.last_name || ""),
-    company: String(src.company || ""),
-    address1: String(src.address1 || ""),
-    address2: String(src.address2 || ""),
-    phone: String(src.phone || ""),
-    city: String(src.city || ""),
-    state: String(src.state || ""),
-    country: String(src.country || ""),
-    zip: String(src.zip || ""),
-    email: String(src.email || ""),
-  };
-  shippingModalOpen.value = true;
-}
-
-function closeShippingModal() {
-  if (shippingSaveBusy.value) return;
-  shippingModalOpen.value = false;
-}
-
-async function saveShippingAddress() {
-  if (!order.value?.id || !isEditable.value) return;
-  shippingSaveBusy.value = true;
-  try {
-    const { data } = await api.patch(`/admin/wholesale-orders/${order.value.id}`, {
-      shipping_address: { ...shippingForm.value },
-    });
-    applyOrderData(data);
-    shippingModalOpen.value = false;
-    toast.success("Shipping address saved.");
-  } catch (e) {
-    toast.errorFrom(e, "Could not save shipping address.");
-  } finally {
-    shippingSaveBusy.value = false;
-  }
-}
-
-async function saveShippingLines() {
-  if (!order.value?.id || !isEditable.value) return;
-  shippingLinesSaving.value = true;
-  try {
-    const { data } = await api.patch(`/admin/wholesale-orders/${order.value.id}`, {
-      shipping_carrier: carrierField.value || null,
-      shipping_method: methodField.value || null,
-    });
-    applyOrderData(data);
-    toast.success("Carrier and method saved.");
-  } catch (e) {
-    toast.errorFrom(e, "Could not save carrier and method.");
-  } finally {
-    shippingLinesSaving.value = false;
-  }
+function onShippingLabelsSaved(data) {
+  applyOrderData(data);
+  toast.success("Shipping labels saved.");
 }
 
 async function submitReadyToShip() {
@@ -1149,111 +979,30 @@ onUnmounted(() => {
       <div class="col-lg-4 d-flex flex-column gap-4 order-detail-page__side-column">
         <div class="staff-table-card staff-datatable-card staff-datatable-card--white p-4 order-detail-page__side-panel wholesale-requirements-card">
           <h3 class="h6 fw-semibold mb-1">Product &amp; Fulfillment Requirements</h3>
-          <p class="small text-secondary mb-4 wholesale-requirements-card__subtitle">
-            Please select the appropriate options for each requirement and add any relevant comments.
+          <p class="small text-secondary mb-3 wholesale-requirements-card__subtitle">
+            Use Edit on each row to set options and optional comments.
           </p>
 
-          <div
-            v-for="section in requirementSections"
+          <WholesaleRequirementRow
+            v-for="section in WHOLESALE_REQUIREMENT_SECTIONS"
             :key="section.id"
-            class="wholesale-requirements-card__section"
-          >
-            <label class="form-label fw-semibold mb-2" :for="`wholesale-req-${section.id}`">
-              {{ section.label }} <span class="text-danger">*</span>
-            </label>
-            <select
-              :id="`wholesale-req-${section.id}`"
-              v-model="requirementsDraft[section.valueKey]"
-              class="form-select"
-              :disabled="!isEditable || requirementsSaving"
-            >
-              <option value="">Select an option</option>
-              <option v-for="opt in section.options" :key="opt.value" :value="opt.value">
-                {{ opt.label }}
-              </option>
-            </select>
-            <template v-if="section.commentKey">
-              <label class="form-label small text-secondary mt-3 mb-1" :for="`wholesale-req-${section.id}-comment`">
-                Comments (Optional)
-              </label>
-              <textarea
-                :id="`wholesale-req-${section.id}-comment`"
-                v-model="requirementsDraft[section.commentKey]"
-                class="form-control wholesale-requirements-card__comment"
-                rows="3"
-                placeholder="Enter any additional comments..."
-                :disabled="!isEditable || requirementsSaving"
-              />
-            </template>
-          </div>
-
-          <button
-            v-if="isEditable"
-            type="button"
-            class="btn btn-primary staff-page-primary fw-semibold mt-2"
-            :disabled="requirementsSaving"
-            @click="saveRequirements"
-          >
-            {{ requirementsSaving ? "Saving…" : "Save Requirements" }}
-          </button>
+            :icon="section.icon"
+            :icon-style="section.iconStyle"
+            :label="section.label"
+            :value-label="requirementValueLabel(section)"
+            :comment="order[section.commentKey]"
+            :editable="isEditable"
+            @edit="openRequirementEdit(section)"
+          />
         </div>
 
-        <div class="staff-table-card staff-datatable-card staff-datatable-card--white p-4 order-detail-page__side-panel">
-          <div class="d-flex justify-content-between align-items-start gap-2 mb-3 order-detail-page__section-head">
-            <div class="d-flex align-items-center gap-2 min-w-0">
-              <span class="order-detail-page__section-icon order-detail-page__section-icon--shipping" aria-hidden="true">
-                <svg width="18" height="18" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16V6a1 1 0 00-1-1H4a1 1 0 00-1 1v10a1 1 0 001 1h1m8-1a1 1 0 01-1 1H9m4-1V8a1 1 0 011-1h2.586a1 1 0 01.707.293l3.414 3.414a1 1 0 01.293.707V16a1 1 0 01-1 1h-1m-6-1a1 1 0 001 1h1M5 17a2 2 0 104 0m6 0a2 2 0 104 0" />
-                </svg>
-              </span>
-              <h3 class="h6 fw-semibold mb-0">Shipping Address</h3>
-            </div>
-            <button
-              v-if="isEditable"
-              type="button"
-              class="btn btn-link btn-sm p-0 text-decoration-none"
-              @click="openShippingModal"
-            >
-              Edit
-            </button>
-          </div>
-          <p class="small mb-3" style="white-space: pre-line">{{ formattedShippingAddress }}</p>
-          <div class="mb-3">
-            <label class="order-detail-page__detail-label d-block mb-1" for="wholesale-carrier">Shipping Carrier</label>
-            <select
-              id="wholesale-carrier"
-              v-model="carrierField"
-              class="form-select form-select-sm"
-              :disabled="!isEditable || shippingLinesSaving"
-            >
-              <option v-for="c in carrierSelectOptions" :key="'c-' + (c || 'empty')" :value="c">
-                {{ c === "" ? "—" : c }}
-              </option>
-            </select>
-          </div>
-          <div class="mb-3">
-            <label class="order-detail-page__detail-label d-block mb-1" for="wholesale-method">Method</label>
-            <select
-              id="wholesale-method"
-              v-model="methodField"
-              class="form-select form-select-sm"
-              :disabled="!isEditable || shippingLinesSaving"
-            >
-              <option v-for="m in methodSelectOptions" :key="'m-' + (m || 'empty')" :value="m">
-                {{ m === "" ? "—" : m }}
-              </option>
-            </select>
-          </div>
-          <button
-            v-if="isEditable"
-            type="button"
-            class="btn btn-primary btn-sm staff-page-primary"
-            :disabled="shippingLinesSaving"
-            @click="saveShippingLines"
-          >
-            {{ shippingLinesSaving ? "Saving…" : "Save Carrier & Method" }}
-          </button>
-        </div>
+        <WholesaleShippingLabelsCard
+          v-if="order"
+          :order="order"
+          :editable="isEditable"
+          :formatted-address="formattedShippingAddress"
+          @saved="onShippingLabelsSaved"
+        />
 
         <div class="staff-table-card staff-datatable-card staff-datatable-card--white p-4 order-detail-page__side-panel">
           <div class="d-flex align-items-center gap-2 mb-3 order-detail-page__section-head">
@@ -1328,62 +1077,15 @@ onUnmounted(() => {
       </div>
     </Modal>
 
-    <Modal :open="shippingModalOpen" title="Edit Shipping Address" @close="closeShippingModal">
-      <div class="row g-3">
-        <div class="col-md-6">
-          <label class="form-label small text-secondary" for="wholesale-ship-fn">First Name</label>
-          <input id="wholesale-ship-fn" v-model="shippingForm.first_name" type="text" class="form-control" />
-        </div>
-        <div class="col-md-6">
-          <label class="form-label small text-secondary" for="wholesale-ship-ln">Last Name</label>
-          <input id="wholesale-ship-ln" v-model="shippingForm.last_name" type="text" class="form-control" />
-        </div>
-        <div class="col-12">
-          <label class="form-label small text-secondary" for="wholesale-ship-co">Company</label>
-          <input id="wholesale-ship-co" v-model="shippingForm.company" type="text" class="form-control" />
-        </div>
-        <div class="col-12">
-          <label class="form-label small text-secondary" for="wholesale-ship-a1">Address</label>
-          <input id="wholesale-ship-a1" v-model="shippingForm.address1" type="text" class="form-control" />
-        </div>
-        <div class="col-12">
-          <label class="form-label small text-secondary" for="wholesale-ship-a2">Address 2</label>
-          <input id="wholesale-ship-a2" v-model="shippingForm.address2" type="text" class="form-control" />
-        </div>
-        <div class="col-12">
-          <label class="form-label small text-secondary" for="wholesale-ship-ph">Phone</label>
-          <input id="wholesale-ship-ph" v-model="shippingForm.phone" type="text" class="form-control" />
-        </div>
-        <div class="col-md-6">
-          <label class="form-label small text-secondary" for="wholesale-ship-city">City</label>
-          <input id="wholesale-ship-city" v-model="shippingForm.city" type="text" class="form-control" />
-        </div>
-        <div class="col-md-6">
-          <label class="form-label small text-secondary" for="wholesale-ship-st">State</label>
-          <input id="wholesale-ship-st" v-model="shippingForm.state" type="text" class="form-control" />
-        </div>
-        <div class="col-md-6">
-          <label class="form-label small text-secondary" for="wholesale-ship-ct">Country</label>
-          <input id="wholesale-ship-ct" v-model="shippingForm.country" type="text" class="form-control" />
-        </div>
-        <div class="col-md-6">
-          <label class="form-label small text-secondary" for="wholesale-ship-zip">ZIP Code</label>
-          <input id="wholesale-ship-zip" v-model="shippingForm.zip" type="text" class="form-control" />
-        </div>
-        <div class="col-12">
-          <label class="form-label small text-secondary" for="wholesale-ship-em">Email</label>
-          <input id="wholesale-ship-em" v-model="shippingForm.email" type="email" class="form-control" />
-        </div>
-      </div>
-      <div class="d-flex justify-content-end gap-2 mt-4">
-        <button type="button" class="btn btn-outline-secondary" :disabled="shippingSaveBusy" @click="closeShippingModal">
-          Cancel
-        </button>
-        <button type="button" class="btn btn-primary staff-page-primary" :disabled="shippingSaveBusy" @click="saveShippingAddress">
-          {{ shippingSaveBusy ? "Saving…" : "Save" }}
-        </button>
-      </div>
-    </Modal>
+    <WholesaleRequirementEditDrawer
+      v-model:open="requirementEditOpen"
+      :title="requirementEditSection?.label || 'Requirement'"
+      :options="requirementEditSection?.options || []"
+      :value="requirementEditValue"
+      :comment="requirementEditComment"
+      :busy="requirementEditBusy"
+      @save="saveRequirementFromDrawer"
+    />
 
     <WholesaleBarcodeUploadModal
       :open="barcodeModalOpen"
@@ -1608,20 +1310,5 @@ onUnmounted(() => {
 
 .wholesale-requirements-card__subtitle {
   line-height: 1.5;
-}
-
-.wholesale-requirements-card__section + .wholesale-requirements-card__section {
-  margin-top: 1.5rem;
-  padding-top: 1.5rem;
-  border-top: 1px solid rgba(0, 0, 0, 0.06);
-}
-
-.wholesale-requirements-card__section:first-of-type {
-  margin-top: 0;
-}
-
-.wholesale-requirements-card__comment {
-  resize: vertical;
-  min-height: 5.5rem;
 }
 </style>

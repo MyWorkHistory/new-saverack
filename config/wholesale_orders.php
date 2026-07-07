@@ -57,4 +57,9 @@ return [
         'no' => 'No',
         'other' => 'Other (specify in comments)',
     ],
+
+    'shipping_labels_provider' => [
+        'client_provides' => 'Client provides shipping labels',
+        'save_rack_provides' => 'Save Rack provides shipping labels',
+    ],
 ];

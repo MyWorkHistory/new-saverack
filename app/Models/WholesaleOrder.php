@@ -36,6 +36,15 @@ class WholesaleOrder extends Model
 
     public const TYPE_OTHER = 'other';
 
+    public const SHIPPING_LABELS_CLIENT_PROVIDES = 'client_provides';
+
+    public const SHIPPING_LABELS_SAVE_RACK_PROVIDES = 'save_rack_provides';
+
+    public const SHIPPING_LABELS_PROVIDERS = [
+        self::SHIPPING_LABELS_CLIENT_PROVIDES,
+        self::SHIPPING_LABELS_SAVE_RACK_PROVIDES,
+    ];
+
     public const ORDER_TYPES = [
         self::TYPE_AMAZON,
         self::TYPE_TIKTOK,
@@ -54,6 +63,11 @@ class WholesaleOrder extends Model
         'shipping_address',
         'shipping_carrier',
         'shipping_method',
+        'shipping_labels_provider',
+        'shipping_labels_comment',
+        'shipping_label_path',
+        'shipping_label_original_name',
+        'shipping_label_mime',
         'sku_barcode_labels',
         'sku_barcode_labels_comment',
         'cover_existing_barcodes',
@@ -125,6 +139,35 @@ class WholesaleOrder extends Model
         return true;
     }
 
+    public function hasUploadedShippingLabel(): bool
+    {
+        return trim((string) ($this->shipping_label_path ?? '')) !== '';
+    }
+
+    public static function shippingLabelsProviderLabel(?string $provider): ?string
+    {
+        if ($provider === null || trim($provider) === '') {
+            return null;
+        }
+
+        $labels = config('wholesale_orders.shipping_labels_provider', []);
+
+        return $labels[$provider] ?? null;
+    }
+
+    public function hasShippingLabelsResolved(): bool
+    {
+        $provider = trim((string) ($this->shipping_labels_provider ?? ''));
+        if ($provider === self::SHIPPING_LABELS_CLIENT_PROVIDES) {
+            return $this->hasUploadedShippingLabel();
+        }
+        if ($provider === self::SHIPPING_LABELS_SAVE_RACK_PROVIDES) {
+            return $this->hasCompleteShippingAddress() && $this->hasShippingCarrierAndMethod();
+        }
+
+        return $this->hasCompleteShippingAddress() && $this->hasShippingCarrierAndMethod();
+    }
+
     public function hasShippingCarrierAndMethod(): bool
     {
         $carrier = trim((string) ($this->shipping_carrier ?? ''));
@@ -167,8 +210,7 @@ class WholesaleOrder extends Model
             return false;
         }
 
-        return $this->hasCompleteShippingAddress()
-            && $this->hasShippingCarrierAndMethod()
+        return $this->hasShippingLabelsResolved()
             && $this->hasRequirementsFilled()
             && $this->hasAllLinesBarcodeResolved();
     }

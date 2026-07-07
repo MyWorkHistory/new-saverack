@@ -268,6 +268,8 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::delete('/{wholesaleOrder}/lines/{line}', [WholesaleOrderController::class, 'destroyLine'])->middleware('can:orders.update');
         Route::post('/{wholesaleOrder}/lines/{line}/barcode', [WholesaleOrderController::class, 'uploadLineBarcode'])->middleware('can:orders.update');
         Route::get('/{wholesaleOrder}/lines/{line}/barcode.pdf', [WholesaleOrderController::class, 'lineBarcodePdf'])->middleware('can:orders.view');
+        Route::post('/{wholesaleOrder}/shipping-label', [WholesaleOrderController::class, 'uploadShippingLabel'])->middleware('can:orders.update');
+        Route::get('/{wholesaleOrder}/shipping-label.pdf', [WholesaleOrderController::class, 'shippingLabelDownload'])->middleware('can:orders.view');
         Route::post('/{wholesaleOrder}/comments', [WholesaleOrderController::class, 'storeComment'])->middleware('can:orders.view');
         Route::get('/{wholesaleOrder}/comments/{comment}/attachment', [WholesaleOrderController::class, 'downloadCommentAttachment'])->middleware('can:orders.view');
     });

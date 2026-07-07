@@ -322,38 +322,11 @@ onUnmounted(() => {
               <td>{{ row.country || "—" }}</td>
               <td class="text-end">{{ row.line_items_count ?? 0 }}</td>
               <td class="text-center staff-actions-cell">
-                <div class="staff-actions-inner justify-content-center">
-                  <RouterLink
-                    v-if="draftDetailRoute(row)"
-                    :to="draftDetailRoute(row)"
-                    class="staff-action-btn"
-                    title="Open draft"
-                    aria-label="Open draft"
-                  >
-                    <svg
-                      width="20"
-                      height="20"
-                      fill="none"
-                      stroke="currentColor"
-                      viewBox="0 0 24 24"
-                      aria-hidden="true"
-                    >
-                      <path
-                        stroke-linecap="round"
-                        stroke-linejoin="round"
-                        stroke-width="2"
-                        d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"
-                      />
-                      <path
-                        stroke-linecap="round"
-                        stroke-linejoin="round"
-                        stroke-width="2"
-                        d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"
-                      />
-                    </svg>
-                  </RouterLink>
+                <div
+                  v-if="canWriteOrders"
+                  class="staff-actions-inner staff-actions-inner--single justify-content-center"
+                >
                   <button
-                    v-if="canWriteOrders"
                     type="button"
                     class="staff-action-btn"
                     :class="{ 'is-open': manageOpenId === row.id }"

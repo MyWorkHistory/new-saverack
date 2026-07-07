@@ -38,7 +38,7 @@ function onSelect(status) {
     <div v-for="card in ASN_SUMMARY_CARDS" :key="card.key" class="col-12 col-sm-6 col-xl-3">
       <button
         type="button"
-        class="staff-datatable-card staff-datatable-card--white asn-summary-card h-100 w-100"
+        class="asn-summary-card h-100 w-100"
         :class="{ 'asn-summary-card--active': activeStatus === card.status }"
         @click="onSelect(card.status)"
       >

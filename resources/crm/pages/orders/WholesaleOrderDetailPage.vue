@@ -167,6 +167,7 @@ const readyToShipDisabledReason = computed(() => {
   const missing = [];
   if (!lines.value.length) missing.push("add line items");
   if (!o.has_requirements_filled) missing.push("save requirements");
+  if (!o.has_all_lines_barcode_resolved) missing.push("resolve line barcodes (Ship As Is or upload)");
   if (!o.has_complete_shipping_address) missing.push("complete shipping address");
   const carrier = String(o.shipping_carrier || "").trim();
   const method = String(o.shipping_method || "").trim();

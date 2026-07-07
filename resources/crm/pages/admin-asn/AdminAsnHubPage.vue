@@ -510,19 +510,19 @@ onUnmounted(() => {
       </div>
     </div>
 
+    <div class="admin-asn-hub-summary mb-4">
+      <AsnHubSummaryCards
+        :loading="summaryLoading"
+        :active-status="summaryActiveStatus"
+        :values="summary"
+        @select="setStatusCard"
+      />
+    </div>
+
     <div
       class="admin-asn-list admin-asn-page-toolbar staff-table-card staff-datatable-card staff-datatable-card--white w-100"
     >
-      <div class="admin-asn-hub-summary">
-        <AsnHubSummaryCards
-          :loading="summaryLoading"
-          :active-status="summaryActiveStatus"
-          :values="summary"
-          @select="setStatusCard"
-        />
-      </div>
-
-      <div class="staff-table-toolbar border-top">
+      <div class="staff-table-toolbar">
         <div class="staff-table-toolbar--row admin-asn-toolbar-row">
           <div class="admin-asn-toolbar-account">
             <CrmSearchableSelect

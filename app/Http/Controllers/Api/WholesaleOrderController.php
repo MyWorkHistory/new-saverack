@@ -262,6 +262,7 @@ class WholesaleOrderController extends Controller
             'can_ready_to_ship' => $order->isReadyToShipEligible(),
             'has_complete_shipping_address' => $order->hasCompleteShippingAddress(),
             'has_requirements_filled' => $order->hasRequirementsFilled(),
+            'has_all_lines_barcode_resolved' => $order->hasAllLinesBarcodeResolved(),
             'lines' => $order->lines->map(function (WholesaleOrderLine $line) use ($imageBySku) {
                 $key = mb_strtolower(trim((string) $line->sku));
                 $resolved = $imageBySku[$key] ?? null;
@@ -639,7 +640,7 @@ class WholesaleOrderController extends Controller
         $line->image_url = isset($validated['image_url']) ? trim((string) $validated['image_url']) : null;
         $line->quantity = (int) $validated['quantity'];
         $line->barcode_mode = WholesaleOrderLine::BARCODE_SHIP_AS_IS;
-        $line->status = WholesaleOrderLine::STATUS_PENDING;
+        $line->syncStatusFromBarcodeMode();
         $line->sort_order = $maxSort + 1;
         $line->save();
 

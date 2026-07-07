@@ -56,6 +56,19 @@ class WholesaleOrderLine extends Model
             && $this->barcode_path !== '';
     }
 
+    public function isBarcodeResolved(): bool
+    {
+        if ($this->barcode_mode === self::BARCODE_SHIP_AS_IS) {
+            return true;
+        }
+
+        if ($this->barcode_mode === self::BARCODE_UPLOADED) {
+            return $this->hasUploadedBarcode();
+        }
+
+        return false;
+    }
+
     public function syncStatusFromBarcodeMode(): void
     {
         if ($this->barcode_mode === self::BARCODE_UPLOADED) {

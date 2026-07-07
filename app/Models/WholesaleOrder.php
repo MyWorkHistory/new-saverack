@@ -134,6 +134,16 @@ class WholesaleOrder extends Model
             && trim((string) ($this->master_cartons ?? '')) !== '';
     }
 
+    public function hasAllLinesBarcodeResolved(): bool
+    {
+        $this->loadMissing('lines');
+        if ($this->lines->isEmpty()) {
+            return false;
+        }
+
+        return $this->lines->every(fn (WholesaleOrderLine $line) => $line->isBarcodeResolved());
+    }
+
     public function isReadyToShipEligible(): bool
     {
         if (! in_array($this->status, [self::STATUS_DRAFT, self::STATUS_PENDING], true)) {
@@ -142,13 +152,16 @@ class WholesaleOrder extends Model
         if ($this->shiphero_order_id) {
             return false;
         }
-        if ((int) $this->items_count <= 0) {
+
+        $this->loadMissing('lines');
+        if ($this->lines->isEmpty()) {
             return false;
         }
 
         return $this->hasCompleteShippingAddress()
             && $this->hasShippingCarrierAndMethod()
-            && $this->hasRequirementsFilled();
+            && $this->hasRequirementsFilled()
+            && $this->hasAllLinesBarcodeResolved();
     }
 
     public function isFullyPicked(): bool

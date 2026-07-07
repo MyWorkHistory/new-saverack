@@ -109,7 +109,7 @@ class WholesaleOrderWorkflowTest extends TestCase
             'sku' => 'SKU-READY',
             'name' => 'Ready Product',
             'quantity' => 2,
-            'status' => WholesaleOrderLine::STATUS_PENDING,
+            'status' => WholesaleOrderLine::STATUS_SHIP_AS_IS,
             'barcode_mode' => WholesaleOrderLine::BARCODE_SHIP_AS_IS,
             'sort_order' => 1,
         ]);
@@ -497,6 +497,55 @@ class WholesaleOrderWorkflowTest extends TestCase
 
         $this->postJson('/api/admin/wholesale-orders/'.$order->id.'/ready-to-ship')
             ->assertUnprocessable();
+    }
+
+    public function test_ready_to_ship_blocked_when_uploaded_barcode_missing_file(): void
+    {
+        $account = $this->account();
+        Sanctum::actingAs($this->staffUser());
+
+        $order = WholesaleOrder::query()->create([
+            'client_account_id' => $account->id,
+            'order_number' => 'BLOCK-BC',
+            'order_type' => WholesaleOrder::TYPE_B2B,
+            'status' => WholesaleOrder::STATUS_PENDING,
+            'items_count' => 1,
+            'shipping_address' => $this->completeShippingAddress(),
+            'shipping_carrier' => 'ups',
+            'shipping_method' => 'Ground',
+            ...$this->completeRequirementsPayload(),
+        ]);
+
+        WholesaleOrderLine::query()->create([
+            'wholesale_order_id' => $order->id,
+            'sku' => 'SKU-NOFILE',
+            'name' => 'Missing Upload',
+            'quantity' => 1,
+            'status' => WholesaleOrderLine::STATUS_BARCODE_READY,
+            'barcode_mode' => WholesaleOrderLine::BARCODE_UPLOADED,
+            'sort_order' => 1,
+        ]);
+
+        $this->getJson('/api/admin/wholesale-orders/'.$order->id)
+            ->assertOk()
+            ->assertJsonPath('can_ready_to_ship', false)
+            ->assertJsonPath('has_all_lines_barcode_resolved', false);
+
+        $this->postJson('/api/admin/wholesale-orders/'.$order->id.'/ready-to-ship')
+            ->assertUnprocessable();
+    }
+
+    public function test_can_ready_to_ship_when_requirements_and_ship_as_is_line(): void
+    {
+        $account = $this->account();
+        Sanctum::actingAs($this->staffUser());
+        $order = $this->seedReadyOrder($account);
+
+        $this->getJson('/api/admin/wholesale-orders/'.$order->id)
+            ->assertOk()
+            ->assertJsonPath('can_ready_to_ship', true)
+            ->assertJsonPath('has_all_lines_barcode_resolved', true)
+            ->assertJsonPath('has_requirements_filled', true);
     }
 
     public function test_ready_to_ship_success_mocks_shiphero(): void

@@ -1,27 +1,28 @@
-.admin-home-dashboard,
+.user-tasks-nav-btn {
+  position: relative;
+  width: 2.75rem !important;
+  height: 2.75rem !important;
+}
+
+.user-tasks-nav-badge {
+  position: absolute;
+  top: -0.05rem;
+  right: -0.1rem;
+  min-width: 1.25rem;
+  height: 1.25rem;
+  padding: 0 0.35rem;
+  border-radius: 999px;
+  background: #ff4c51;
+  color: #fff;
+  font-size: 0.6875rem;
+  font-weight: 700;
+  line-height: 1.25rem;
+  text-align: center;
+  pointer-events: none;
+  border: 2px solid var(--vx-nav-bg, #fff);
+}
+
 .user-personal-tasks {
-  .user-tasks-nav-btn {
-    position: relative;
-  }
-
-  .user-tasks-nav-badge {
-    position: absolute;
-    top: 0.1rem;
-    right: 0.1rem;
-    min-width: 1.125rem;
-    height: 1.125rem;
-    padding: 0 0.3rem;
-    border-radius: 999px;
-    background: #ff4c51;
-    color: #fff;
-    font-size: 0.625rem;
-    font-weight: 700;
-    line-height: 1.125rem;
-    text-align: center;
-    pointer-events: none;
-    border: 2px solid var(--vx-nav-bg, #fff);
-  }
-
   .user-tasks-drawer-add {
     display: flex;
     gap: 0.5rem;
@@ -30,12 +31,6 @@
 
   .user-tasks-drawer-add .form-control {
     min-width: 0;
-  }
-
-  .user-tasks-cap-hint {
-    margin: -0.25rem 0 0.75rem;
-    font-size: 0.75rem;
-    color: var(--bs-secondary-color);
   }
 
   .user-tasks-empty {
@@ -137,4 +132,8 @@
   .user-tasks-row {
     border-bottom-color: rgba(225, 222, 245, 0.08);
   }
+}
+
+[data-bs-theme="dark"] .user-tasks-nav-badge {
+  border-color: var(--vx-nav-bg, #2f3349);
 }

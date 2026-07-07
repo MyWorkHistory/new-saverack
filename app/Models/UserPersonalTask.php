@@ -7,7 +7,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 class UserPersonalTask extends Model
 {
-    public const MAX_PER_USER = 10;
+    public const COMPLETED_VISIBLE_HOURS = 24;
 
     protected $fillable = [
         'user_id',

@@ -41,7 +41,6 @@ class UserPersonalTaskApiTest extends TestCase
         $response->assertOk()
             ->assertJsonPath('incomplete_count', 1)
             ->assertJsonPath('total_count', 2)
-            ->assertJsonPath('max_tasks', 10)
             ->assertJsonCount(2, 'tasks');
 
         $titles = collect($response->json('tasks'))->pluck('title')->all();
@@ -70,12 +69,12 @@ class UserPersonalTaskApiTest extends TestCase
         $this->assertDatabaseHas('user_personal_tasks', ['id' => $task->id]);
     }
 
-    public function test_create_rejects_eleventh_task(): void
+    public function test_user_can_create_more_than_ten_tasks(): void
     {
         $user = User::factory()->create(['client_account_id' => null]);
         Sanctum::actingAs($user);
 
-        for ($i = 1; $i <= 10; $i++) {
+        for ($i = 1; $i <= 11; $i++) {
             UserPersonalTask::query()->create([
                 'user_id' => $user->id,
                 'title' => "Task {$i}",
@@ -83,10 +82,46 @@ class UserPersonalTaskApiTest extends TestCase
             ]);
         }
 
-        $response = $this->postJson('/api/me/personal-tasks', ['title' => 'Task 11']);
+        $this->postJson('/api/me/personal-tasks', ['title' => 'Task 12'])
+            ->assertCreated()
+            ->assertJsonPath('title', 'Task 12');
+    }
 
-        $response->assertStatus(422)
-            ->assertJsonValidationErrors(['title']);
+    public function test_completed_tasks_older_than_24_hours_are_purged_on_index(): void
+    {
+        $user = User::factory()->create(['client_account_id' => null]);
+        Sanctum::actingAs($user);
+
+        $recent = UserPersonalTask::query()->create([
+            'user_id' => $user->id,
+            'title' => 'Recent done',
+            'is_completed' => true,
+            'completed_at' => now()->subHours(2),
+        ]);
+        $expired = UserPersonalTask::query()->create([
+            'user_id' => $user->id,
+            'title' => 'Old done',
+            'is_completed' => true,
+            'completed_at' => now()->subHours(25),
+        ]);
+        UserPersonalTask::query()->create([
+            'user_id' => $user->id,
+            'title' => 'Active',
+            'is_completed' => false,
+        ]);
+
+        $response = $this->getJson('/api/me/personal-tasks');
+
+        $response->assertOk()
+            ->assertJsonPath('incomplete_count', 1)
+            ->assertJsonPath('total_count', 2)
+            ->assertJsonCount(2, 'tasks');
+
+        $titles = collect($response->json('tasks'))->pluck('title')->all();
+        $this->assertSame(['Active', 'Recent done'], $titles);
+
+        $this->assertDatabaseHas('user_personal_tasks', ['id' => $recent->id]);
+        $this->assertDatabaseMissing('user_personal_tasks', ['id' => $expired->id]);
     }
 
     public function test_toggle_complete_sets_and_clears_completed_at(): void
@@ -111,24 +146,21 @@ class UserPersonalTaskApiTest extends TestCase
         $this->assertNull($task->fresh()->completed_at);
     }
 
-    public function test_delete_frees_slot_for_new_task(): void
+    public function test_delete_allows_new_task(): void
     {
         $user = User::factory()->create(['client_account_id' => null]);
         Sanctum::actingAs($user);
 
-        for ($i = 1; $i <= 10; $i++) {
-            UserPersonalTask::query()->create([
-                'user_id' => $user->id,
-                'title' => "Task {$i}",
-                'is_completed' => false,
-            ]);
-        }
+        $task = UserPersonalTask::query()->create([
+            'user_id' => $user->id,
+            'title' => 'To delete',
+            'is_completed' => false,
+        ]);
 
-        $toDelete = UserPersonalTask::query()->where('user_id', $user->id)->first();
-        $this->deleteJson("/api/me/personal-tasks/{$toDelete->id}")->assertOk();
+        $this->deleteJson("/api/me/personal-tasks/{$task->id}")->assertOk();
 
-        $create = $this->postJson('/api/me/personal-tasks', ['title' => 'Replacement task']);
-        $create->assertCreated()
+        $this->postJson('/api/me/personal-tasks', ['title' => 'Replacement task'])
+            ->assertCreated()
             ->assertJsonPath('title', 'Replacement task');
     }
 }

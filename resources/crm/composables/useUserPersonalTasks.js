@@ -5,7 +5,6 @@ import { useToast } from "./useToast.js";
 const tasks = ref([]);
 const incompleteCount = ref(0);
 const totalCount = ref(0);
-const maxTasks = ref(10);
 const loading = ref(false);
 const saving = ref(false);
 
@@ -13,7 +12,6 @@ function applyPayload(data) {
   tasks.value = Array.isArray(data?.tasks) ? [...data.tasks] : [];
   incompleteCount.value = Number(data?.incomplete_count || 0);
   totalCount.value = Number(data?.total_count || 0);
-  maxTasks.value = Number(data?.max_tasks || 10);
 }
 
 function sortTasksClient(rows) {
@@ -29,7 +27,6 @@ function sortTasksClient(rows) {
 export function useUserPersonalTasks() {
   const toast = useToast();
 
-  const canAdd = computed(() => totalCount.value < maxTasks.value);
   const incompleteTasks = computed(() => tasks.value.filter((t) => !t.is_completed));
   const completedTasks = computed(() => tasks.value.filter((t) => t.is_completed));
 
@@ -93,6 +90,7 @@ export function useUserPersonalTasks() {
         tasks.value.map((t) => (t.id === data.id ? data : t)),
       );
       incompleteCount.value = tasks.value.filter((t) => !t.is_completed).length;
+      totalCount.value = tasks.value.length;
     } catch (e) {
       tasks.value = previous;
       incompleteCount.value = previous.filter((t) => !t.is_completed).length;
@@ -127,10 +125,8 @@ export function useUserPersonalTasks() {
     tasks,
     incompleteCount,
     totalCount,
-    maxTasks,
     loading,
     saving,
-    canAdd,
     incompleteTasks,
     completedTasks,
     load,

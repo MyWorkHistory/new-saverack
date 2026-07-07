@@ -14,7 +14,7 @@ const { incompleteCount } = useUserPersonalTasks();
 const badgeLabel = computed(() => {
   const n = Number(incompleteCount.value || 0);
   if (n <= 0) return "";
-  if (n > 9) return "9+";
+  if (n > 99) return "99+";
   return String(n);
 });
 
@@ -31,12 +31,12 @@ function toggle() {
 <template>
   <button
     type="button"
-    class="btn vx-icon-btn user-tasks-nav-btn user-personal-tasks flex-shrink-0"
+    class="btn vx-icon-btn user-tasks-nav-btn flex-shrink-0"
     :aria-label="ariaLabel"
     :aria-expanded="open ? 'true' : 'false'"
     @click="toggle"
   >
-    <CrmMaterialIcon name="taskAlt" :size="22" />
+    <CrmMaterialIcon name="taskAlt" :size="26" />
     <span v-if="badgeLabel" class="user-tasks-nav-badge">{{ badgeLabel }}</span>
   </button>
 </template>

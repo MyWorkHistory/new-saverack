@@ -7,7 +7,6 @@ use App\Models\User;
 use App\Models\UserPersonalTask;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
-use Illuminate\Validation\ValidationException;
 
 class UserPersonalTaskController extends Controller
 {
@@ -15,8 +14,14 @@ class UserPersonalTaskController extends Controller
     {
         $user = $this->requireUser($request);
 
+        $this->purgeExpiredCompletedTasks($user->id);
+
         $tasks = UserPersonalTask::query()
             ->where('user_id', $user->id)
+            ->where(function ($query) {
+                $query->where('is_completed', false)
+                    ->orWhere('completed_at', '>=', now()->subHours(UserPersonalTask::COMPLETED_VISIBLE_HOURS));
+            })
             ->orderBy('is_completed')
             ->orderByRaw('CASE WHEN is_completed = 1 THEN completed_at ELSE created_at END DESC')
             ->get();
@@ -27,7 +32,6 @@ class UserPersonalTaskController extends Controller
             'tasks' => $tasks->map(fn (UserPersonalTask $task) => $this->transformTask($task))->values()->all(),
             'incomplete_count' => $incompleteCount,
             'total_count' => $tasks->count(),
-            'max_tasks' => UserPersonalTask::MAX_PER_USER,
         ]);
     }
 
@@ -38,16 +42,6 @@ class UserPersonalTaskController extends Controller
         $validated = $request->validate([
             'title' => ['required', 'string', 'max:255'],
         ]);
-
-        $existingCount = UserPersonalTask::query()
-            ->where('user_id', $user->id)
-            ->count();
-
-        if ($existingCount >= UserPersonalTask::MAX_PER_USER) {
-            throw ValidationException::withMessages([
-                'title' => ['You can only have 10 tasks.'],
-            ]);
-        }
 
         $task = UserPersonalTask::query()->create([
             'user_id' => $user->id,
@@ -73,6 +67,8 @@ class UserPersonalTaskController extends Controller
         $userPersonalTask->completed_at = $isCompleted ? now() : null;
         $userPersonalTask->save();
 
+        $this->purgeExpiredCompletedTasks($user->id);
+
         return response()->json($this->transformTask($userPersonalTask->fresh()));
     }
 
@@ -84,6 +80,15 @@ class UserPersonalTaskController extends Controller
         $userPersonalTask->delete();
 
         return response()->json(['deleted' => true]);
+    }
+
+    private function purgeExpiredCompletedTasks(int $userId): void
+    {
+        UserPersonalTask::query()
+            ->where('user_id', $userId)
+            ->where('is_completed', true)
+            ->where('completed_at', '<', now()->subHours(UserPersonalTask::COMPLETED_VISIBLE_HOURS))
+            ->delete();
     }
 
     private function requireUser(Request $request): User

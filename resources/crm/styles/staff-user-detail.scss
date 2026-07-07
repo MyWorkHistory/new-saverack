@@ -206,11 +206,12 @@ $staff-detail-primary: #2563eb;
 /* Client account detail: title + section tabs */
 .account-detail-header {
   min-width: 0;
+  flex-wrap: nowrap;
 }
 
 .account-detail-header__title {
-  flex-shrink: 1;
-  word-break: break-word;
+  flex-shrink: 0;
+  white-space: nowrap;
 }
 
 @media (max-width: 1199.98px) {

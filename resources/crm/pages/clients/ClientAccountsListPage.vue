@@ -15,7 +15,7 @@ import ConfirmModal from "../../components/common/ConfirmModal.vue";
 import ClientAccountChannelIcons from "../../components/clients/ClientAccountChannelIcons.vue";
 import ClientAccountCreateDrawer from "../../components/clients/ClientAccountCreateDrawer.vue";
 import ClientAccountEditModal from "../../components/clients/ClientAccountEditModal.vue";
-import CrmMaterialIcon from "../../components/common/CrmMaterialIcon.vue";
+import ClientAccountSummaryCards from "../../components/clients/ClientAccountSummaryCards.vue";
 import CrmStatusUpdateModal from "../../components/common/CrmStatusUpdateModal.vue";
 import CrmLoadingSpinner from "../../components/common/CrmLoadingSpinner.vue";
 import CrmSearchableSelect from "../../components/common/CrmSearchableSelect.vue";
@@ -83,40 +83,9 @@ const directoryStats = ref({
   inactive: 0,
 });
 
-const DIRECTORY_STAT_CARDS = [
-  {
-    key: "active",
-    status: "active",
-    label: "Active",
-    sub: "Accounts marked active",
-    iconClass: "bg-success-subtle text-success",
-    icon: "checkCircle",
-  },
-  {
-    key: "pending",
-    status: "pending",
-    label: "Pending",
-    sub: "Awaiting activation",
-    iconClass: "bg-warning-subtle text-warning-emphasis",
-    icon: "hourglass",
-  },
-  {
-    key: "paused",
-    status: "paused",
-    label: "Paused",
-    sub: "Temporarily paused accounts",
-    iconClass: "bg-danger-subtle text-danger",
-    icon: "pauseCircle",
-  },
-  {
-    key: "inactive",
-    status: "inactive",
-    label: "Inactive",
-    sub: "Inactive accounts",
-    iconClass: "bg-secondary-subtle text-secondary",
-    icon: "cancel",
-  },
-];
+const directorySummaryActiveStatus = computed(() =>
+  query.status === "all" ? "" : String(query.status || ""),
+);
 
 const deleteTarget = ref(null);
 const deleteBusy = ref(false);
@@ -830,29 +799,11 @@ onUnmounted(() => {
       </div>
     </div>
 
-    <div class="row g-4 mb-2">
-      <div
-        v-for="card in DIRECTORY_STAT_CARDS"
-        :key="card.key"
-        class="col-12 col-sm-6 col-xl-3"
-      >
-        <button
-          type="button"
-          class="staff-stat-card billing-inv-summary-card h-100 text-start w-100"
-          :class="{ 'client-accounts-stat-card--active': query.status === card.status }"
-          @click="setDirectoryStatFilter(card.status)"
-        >
-          <p class="staff-stat-card__label">{{ card.label }}</p>
-          <p class="staff-stat-card__value">
-            {{ nf.format(directoryStats[card.key] ?? 0) }}
-          </p>
-          <p class="staff-stat-card__sub">{{ card.sub }}</p>
-          <div class="staff-stat-card__icon" :class="card.iconClass" aria-hidden="true">
-            <CrmMaterialIcon :name="card.icon" :size="22" />
-          </div>
-        </button>
-      </div>
-    </div>
+    <ClientAccountSummaryCards
+      :values="directoryStats"
+      :active-status="directorySummaryActiveStatus"
+      @select="setDirectoryStatFilter"
+    />
 
     <div class="staff-table-card staff-datatable-card staff-datatable-card--white">
       <div class="staff-table-toolbar">
@@ -1543,12 +1494,3 @@ onUnmounted(() => {
     </Teleport>
   </div>
 </template>
-
-<style scoped>
-.client-accounts-stat-card--active {
-  border-color: rgba(115, 103, 240, 0.35) !important;
-  box-shadow:
-    0 0 0 2px rgba(115, 103, 240, 0.2),
-    0 0.45rem 1rem rgba(47, 43, 61, 0.12);
-}
-</style>

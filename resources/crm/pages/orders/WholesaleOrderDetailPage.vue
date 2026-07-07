@@ -630,6 +630,18 @@ onUnmounted(() => {
               >
                 {{ orderStatusLabel() }}
               </span>
+              <a
+                v-if="shipheroAdminUrl"
+                :href="shipheroAdminUrl"
+                target="_blank"
+                rel="noopener noreferrer"
+                class="small text-primary text-decoration-none order-detail-page__shopify-header-link d-inline-flex align-items-center gap-1"
+              >
+                View in ShipHero
+                <svg width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+                </svg>
+              </a>
             </div>
             <p class="small text-secondary mb-0">
               Order placed on {{ formatDateUs(order.created_at) || "—" }} • via Save Rack CRM
@@ -1310,5 +1322,15 @@ onUnmounted(() => {
 
 .wholesale-requirements-card__subtitle {
   line-height: 1.5;
+}
+
+.wholesale-order-detail-page .order-detail-page__shopify-header-link {
+  line-height: 1.35;
+  white-space: nowrap;
+}
+
+.wholesale-order-detail-page .order-detail-page__shopify-header-link:hover,
+.wholesale-order-detail-page .order-detail-page__shopify-header-link:focus-visible {
+  text-decoration: underline !important;
 }
 </style>

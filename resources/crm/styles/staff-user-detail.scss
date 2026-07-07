@@ -201,6 +201,15 @@ $staff-detail-primary: #2563eb;
     background: rgba(22, 163, 74, 0.1);
   }
 
+  .account-detail-section-icon--plain {
+    width: auto;
+    height: auto;
+    padding: 0;
+    border-radius: 0;
+    background: none;
+    color: var(--bs-secondary-color);
+  }
+
 }
 
 /* Client account detail: title + section tabs */

@@ -247,7 +247,7 @@ function accountStatusBadgeClass(status) {
     return "badge bg-warning-subtle text-warning-emphasis";
   }
   if (s === "paused") {
-    return "badge bg-info-subtle text-info-emphasis";
+    return "badge bg-danger-subtle text-danger";
   }
   if (s === "inactive") {
     return "badge bg-secondary-subtle text-secondary";
@@ -1004,6 +1004,7 @@ onUnmounted(() => {
             <AccountDetailSectionHead
               title="Details"
               icon="details"
+              icon-style="plain"
               title-class="staff-user-profile__details-title mb-0"
               head-class="mb-2"
               :show-edit="canUpdateAccount"

@@ -14,7 +14,6 @@ import api from "../../services/api";
 import ConfirmModal from "../../components/common/ConfirmModal.vue";
 import ClientAccountChannelIcons from "../../components/clients/ClientAccountChannelIcons.vue";
 import ClientAccountCreateDrawer from "../../components/clients/ClientAccountCreateDrawer.vue";
-import ClientAccountShippingStatusIcon from "../../components/clients/ClientAccountShippingStatusIcon.vue";
 import ClientAccountEditModal from "../../components/clients/ClientAccountEditModal.vue";
 import CrmStatusUpdateModal from "../../components/common/CrmStatusUpdateModal.vue";
 import CrmLoadingSpinner from "../../components/common/CrmLoadingSpinner.vue";
@@ -280,7 +279,7 @@ const statusBadgeClass = (status) => {
     return "bg-warning-subtle text-warning-emphasis";
   }
   if (s === "paused") {
-    return "bg-info-subtle text-info-emphasis";
+    return "bg-danger-subtle text-danger";
   }
   if (s === "inactive") {
     return "bg-secondary-subtle text-secondary";
@@ -1189,24 +1188,7 @@ onUnmounted(() => {
                       }}
                     </span>
                   </span>
-                  <div class="min-w-0 d-flex align-items-start gap-2">
-                    <button
-                      v-if="canUpdate"
-                      type="button"
-                      class="client-account-shipping-icon-btn flex-shrink-0 mt-1 border-0 bg-transparent p-0"
-                      title="Change account status"
-                      @click.stop="openStatusModal(row)"
-                    >
-                      <ClientAccountShippingStatusIcon
-                        :status="row.status"
-                      />
-                    </button>
-                    <ClientAccountShippingStatusIcon
-                      v-else
-                      :status="row.status"
-                      class="flex-shrink-0 mt-1"
-                    />
-                    <div class="min-w-0">
+                  <div class="min-w-0">
                     <RouterLink
                       :to="accountDetailRoute(row)"
                       class="d-block text-truncate fw-semibold text-body text-decoration-none"
@@ -1224,7 +1206,6 @@ onUnmounted(() => {
                           : "—"
                       }}
                     </RouterLink>
-                    </div>
                   </div>
                 </div>
               </td>
@@ -1541,15 +1522,5 @@ onUnmounted(() => {
   box-shadow:
     0 0 0 2px rgba(115, 103, 240, 0.2),
     0 0.45rem 1rem rgba(47, 43, 61, 0.12);
-}
-
-.client-account-shipping-icon-btn {
-  cursor: pointer;
-  line-height: 0;
-  border-radius: 0.25rem;
-}
-
-.client-account-shipping-icon-btn:hover {
-  opacity: 0.85;
 }
 </style>

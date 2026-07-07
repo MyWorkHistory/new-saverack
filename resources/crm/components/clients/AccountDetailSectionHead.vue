@@ -19,6 +19,11 @@ const props = defineProps({
         "invoices",
       ].includes(v),
   },
+  iconStyle: {
+    type: String,
+    default: "colored",
+    validator: (v) => ["colored", "plain"].includes(v),
+  },
   titleTag: { type: String, default: "h3" },
   titleClass: { type: String, default: "staff-user-section-title mb-0" },
   headClass: { type: String, default: "" },
@@ -63,7 +68,11 @@ const iconPath = computed(() => ICON_PATHS[props.icon] || ICON_PATHS.details);
     <div class="account-detail-section-head__title-wrap min-w-0">
       <span
         class="account-detail-section-icon"
-        :class="`account-detail-section-icon--${icon}`"
+        :class="[
+          iconStyle === 'plain'
+            ? 'account-detail-section-icon--plain'
+            : `account-detail-section-icon--${icon}`,
+        ]"
         aria-hidden="true"
       >
         <svg

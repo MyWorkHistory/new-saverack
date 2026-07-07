@@ -930,14 +930,23 @@ class WholesaleOrderController extends Controller
         $companyName = $order->clientAccount !== null
             ? trim((string) $order->clientAccount->company_name)
             : '';
+        $lines = $order->lines;
+        $totalQuantity = (int) $lines->sum('quantity');
+        $totalQuantityPicked = (int) $lines->sum('quantity_picked');
 
         return [
             'id' => $order->id,
             'order_number' => $order->order_number,
             'client_account_id' => $order->client_account_id,
             'client_account_company_name' => $companyName,
+            'order_type' => $order->order_type,
+            'order_type_label' => $this->typeLabel($order->order_type),
+            'created_at' => optional($order->created_at)->toIso8601String(),
+            'line_count' => $lines->count(),
+            'total_quantity' => $totalQuantity,
+            'total_quantity_picked' => $totalQuantityPicked,
             'is_fully_picked' => $order->isFullyPicked(),
-            'lines' => $order->lines->map(function (WholesaleOrderLine $line) use ($imageBySku) {
+            'lines' => $lines->map(function (WholesaleOrderLine $line) use ($imageBySku) {
                 $key = mb_strtolower(trim((string) $line->sku));
 
                 return $this->serializePickListLine($line, $imageBySku[$key] ?? null);
@@ -954,10 +963,13 @@ class WholesaleOrderController extends Controller
             'id' => $line->id,
             'sku' => $line->sku,
             'name' => $line->name,
+            'variant_description' => null,
             'image_url' => $resolvedImageUrl ?? $line->image_url,
             'quantity' => (int) $line->quantity,
             'quantity_picked' => (int) ($line->quantity_picked ?? 0),
             'is_fully_picked' => $line->isFullyPicked(),
+            'backstock_location' => null,
+            'pick_location' => null,
         ];
     }
 }

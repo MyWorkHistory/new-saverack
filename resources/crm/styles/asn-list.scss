@@ -96,6 +96,11 @@
     line-height: 1;
     font-variant-numeric: tabular-nums;
   }
+
+  button.asn-summary-card.asn-summary-card--active {
+    border-color: var(--bs-primary);
+    box-shadow: 0 0 0 1px var(--bs-primary);
+  }
 }
 
 [data-bs-theme="dark"] .asn-hub-summary-cards {

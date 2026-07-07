@@ -1,9 +1,7 @@
 <script setup>
 import { computed, ref, watch } from "vue";
-import Modal from "../Modal.vue";
 import api from "../../services/api";
 import { useToast } from "../../composables/useToast.js";
-import { CRM_BTN_PRIMARY } from "../../constants/dialogFooter.js";
 
 const props = defineProps({
   open: { type: Boolean, default: false },
@@ -17,14 +15,19 @@ const toast = useToast();
 const saving = ref(false);
 const qtyPicked = ref(0);
 
-const qtyToPick = computed(() => Math.max(0, Number(props.line?.quantity || 0)));
+const qtyNeeded = computed(() => Math.max(0, Number(props.line?.quantity || 0)));
+const pickLocation = computed(() => {
+  const v = String(props.line?.pick_location || "").trim();
+  return v || "—";
+});
+
 const canSubmit = computed(() => {
   const picked = Number(qtyPicked.value);
   return (
     !saving.value &&
     Number.isFinite(picked) &&
     picked >= 0 &&
-    picked <= qtyToPick.value &&
+    picked <= qtyNeeded.value &&
     props.orderId &&
     props.line?.id
   );
@@ -46,7 +49,7 @@ function close() {
 function clampQty() {
   let n = Number(qtyPicked.value);
   if (!Number.isFinite(n) || n < 0) n = 0;
-  if (n > qtyToPick.value) n = qtyToPick.value;
+  if (n > qtyNeeded.value) n = qtyNeeded.value;
   qtyPicked.value = n;
 }
 
@@ -58,7 +61,7 @@ function onQtyInput(e) {
   }
   let n = Number(raw);
   if (!Number.isFinite(n) || n < 0) n = 0;
-  if (n > qtyToPick.value) n = qtyToPick.value;
+  if (n > qtyNeeded.value) n = qtyNeeded.value;
   qtyPicked.value = n;
 }
 
@@ -82,59 +85,98 @@ async function submit() {
 </script>
 
 <template>
-  <Modal :open="open" title="Pick Items" @close="close">
-    <div v-if="line" class="wholesale-pick-modal">
-      <div class="wholesale-pick-modal__product d-flex align-items-start gap-3 mb-4">
-        <img
-          v-if="line.image_url"
-          :src="line.image_url"
-          alt=""
-          class="wholesale-pick-modal__thumb"
-          loading="lazy"
-        />
-        <div v-else class="wholesale-pick-modal__thumb wholesale-pick-modal__thumb--empty" aria-hidden="true" />
-        <div class="min-w-0">
-          <div class="fw-semibold text-truncate">{{ line.name || "—" }}</div>
-          <div class="small text-secondary">{{ line.sku || "—" }}</div>
+  <Teleport to="body">
+    <Transition name="crm-vx-confirm">
+      <div
+        v-if="open"
+        class="crm-vx-modal-overlay wholesale-pick-modal-overlay"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="wholesale-pick-modal-title"
+        @click.self="close"
+      >
+        <div class="crm-vx-modal wholesale-pick-modal" @click.stop>
+          <button
+            type="button"
+            class="crm-vx-modal__close"
+            aria-label="Close"
+            :disabled="saving"
+            @click="close"
+          >
+            <svg
+              width="20"
+              height="20"
+              fill="none"
+              viewBox="0 0 24 24"
+              stroke="currentColor"
+              stroke-width="1.75"
+              aria-hidden="true"
+            >
+              <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" />
+            </svg>
+          </button>
+
+          <header class="crm-vx-modal__head">
+            <h2 id="wholesale-pick-modal-title" class="crm-vx-modal__title">Pick Items</h2>
+          </header>
+
+          <div v-if="line" class="crm-vx-modal__body">
+            <div class="wholesale-pick-modal__product">
+              <img
+                v-if="line.image_url"
+                :src="line.image_url"
+                alt=""
+                class="wholesale-pick-modal__thumb"
+                loading="lazy"
+              />
+              <div v-else class="wholesale-pick-modal__thumb wholesale-pick-modal__thumb--empty" aria-hidden="true" />
+              <div class="min-w-0">
+                <div class="wholesale-pick-modal__sku">{{ line.sku || "—" }}</div>
+                <div class="wholesale-pick-modal__name">{{ line.name || "—" }}</div>
+                <div v-if="line.variant_description" class="wholesale-pick-modal__variant">
+                  {{ line.variant_description }}
+                </div>
+              </div>
+            </div>
+
+            <div class="wholesale-pick-modal__field">
+              <p class="wholesale-pick-modal__field-label">Qty Needed</p>
+              <p class="wholesale-pick-modal__field-value">{{ qtyNeeded.toLocaleString() }}</p>
+            </div>
+
+            <div class="wholesale-pick-modal__field">
+              <p class="wholesale-pick-modal__field-label">Pick Location</p>
+              <select class="form-select form-select-sm wholesale-pick-modal__field-select" disabled>
+                <option :value="pickLocation">{{ pickLocation }}</option>
+              </select>
+            </div>
+
+            <div class="wholesale-pick-modal__field">
+              <p class="wholesale-pick-modal__field-label">Qty Picked</p>
+              <input
+                id="wholesale-pick-qty-input"
+                type="number"
+                min="0"
+                :max="qtyNeeded"
+                class="form-control form-control-sm wholesale-pick-modal__field-input"
+                :value="qtyPicked"
+                :disabled="saving"
+                @input="onQtyInput"
+                @blur="clampQty"
+              />
+            </div>
+
+            <button
+              type="button"
+              class="btn btn-primary crm-vx-modal-btn--primary wholesale-pick-modal__submit"
+              :disabled="!canSubmit"
+              @click="submit"
+            >
+              {{ saving ? "Saving…" : "Submit" }}
+            </button>
+          </div>
         </div>
       </div>
-
-      <div class="mb-3">
-        <label class="form-label text-secondary small mb-1">QTY to Pick</label>
-        <div class="wholesale-pick-qty wholesale-pick-qty--target fw-semibold">
-          {{ qtyToPick.toLocaleString() }}
-        </div>
-      </div>
-
-      <div class="mb-4">
-        <label class="form-label" for="wholesale-pick-qty-input">QTY Picked</label>
-        <input
-          id="wholesale-pick-qty-input"
-          type="number"
-          min="0"
-          :max="qtyToPick"
-          class="form-control"
-          :value="qtyPicked"
-          :disabled="saving"
-          @input="onQtyInput"
-          @blur="clampQty"
-        />
-      </div>
-
-      <div class="d-flex justify-content-end gap-2">
-        <button type="button" class="btn btn-outline-secondary" :disabled="saving" @click="close">
-          Cancel
-        </button>
-        <button
-          type="button"
-          class="btn"
-          :class="CRM_BTN_PRIMARY"
-          :disabled="!canSubmit"
-          @click="submit"
-        >
-          {{ saving ? "Saving…" : "Submit" }}
-        </button>
-      </div>
-    </div>
-  </Modal>
+    </Transition>
+  </Teleport>
 </template>

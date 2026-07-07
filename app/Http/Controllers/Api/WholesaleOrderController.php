@@ -259,6 +259,7 @@ class WholesaleOrderController extends Controller
             'master_cartons' => $order->master_cartons,
             'master_cartons_comment' => $order->master_cartons_comment,
             'is_editable' => $order->isEditable(),
+            'is_lines_editable' => $order->canEditLines(),
             'can_ready_to_ship' => $order->isReadyToShipEligible(),
             'has_complete_shipping_address' => $order->hasCompleteShippingAddress(),
             'has_requirements_filled' => $order->hasRequirementsFilled(),
@@ -298,7 +299,7 @@ class WholesaleOrderController extends Controller
 
     private function assertLineEditable(WholesaleOrder $order): void
     {
-        if (! $order->isEditable()) {
+        if (! $order->canEditLines()) {
             throw ValidationException::withMessages([
                 'status' => ['This wholesale order cannot be edited.'],
             ]);

@@ -104,6 +104,15 @@ class WholesaleOrder extends Model
         return in_array($this->status, [self::STATUS_DRAFT, self::STATUS_PENDING], true);
     }
 
+    public function canEditLines(): bool
+    {
+        return in_array($this->status, [
+            self::STATUS_DRAFT,
+            self::STATUS_PENDING,
+            self::STATUS_IN_PROGRESS,
+        ], true);
+    }
+
     public function hasCompleteShippingAddress(): bool
     {
         $ship = is_array($this->shipping_address) ? $this->shipping_address : [];

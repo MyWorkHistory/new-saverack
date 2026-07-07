@@ -1,6 +1,6 @@
 <script setup>
 import { computed, nextTick, onMounted, onUnmounted, reactive, ref, watch } from "vue";
-import { useRoute, useRouter } from "vue-router";
+import { RouterLink, useRoute, useRouter } from "vue-router";
 import api from "../../services/api";
 import CrmIconRowActions from "../../components/common/CrmIconRowActions.vue";
 import CrmLoadingSpinner from "../../components/common/CrmLoadingSpinner.vue";
@@ -145,6 +145,7 @@ const imagePreviewUrls = ref({});
 const orderId = computed(() => String(route.params.id || ""));
 const clientAccountId = computed(() => Number(order.value?.client_account_id || 0));
 const isEditable = computed(() => Boolean(order.value?.is_editable));
+const canEditLines = computed(() => Boolean(order.value?.is_lines_editable));
 const lines = computed(() => (Array.isArray(order.value?.lines) ? order.value.lines : []));
 const comments = computed(() => (Array.isArray(order.value?.comments) ? order.value.comments : []));
 
@@ -152,6 +153,17 @@ const canReadyToShip = computed(() => Boolean(order.value?.can_ready_to_ship));
 const showReadyToShipButton = computed(() => {
   const s = String(order.value?.status || "").toLowerCase();
   return (s === "draft" || s === "pending") && !order.value?.shiphero_order_id;
+});
+
+const showPickListLink = computed(() => String(order.value?.status || "").toLowerCase() === "in_progress");
+
+const pickListRoute = computed(() => {
+  const query = {};
+  const accountId = Number(order.value?.client_account_id || 0);
+  if (accountId > 0) {
+    query.client_account_id = String(accountId);
+  }
+  return { name: "wholesale-pick-list", query };
 });
 
 const canClickStatusBadge = computed(() => {
@@ -503,7 +515,7 @@ function buildLinePayload(product, quantity) {
 }
 
 async function addFromCatalog({ product, quantity }) {
-  if (!order.value?.id || !isEditable.value) return;
+  if (!order.value?.id || !canEditLines.value) return;
   const payload = buildLinePayload(product, quantity);
   if (!payload.sku) {
     toast.error("This product has no SKU.");
@@ -522,7 +534,7 @@ async function addFromCatalog({ product, quantity }) {
 }
 
 async function saveLineQty(line, rawQty) {
-  if (!order.value?.id || !isEditable.value || !line?.id) return;
+  if (!order.value?.id || !canEditLines.value || !line?.id) return;
   const qty = Math.max(1, Number(rawQty) || 1);
   if (qty === Number(line.quantity)) return;
   lineBusy.value = true;
@@ -540,7 +552,7 @@ async function saveLineQty(line, rawQty) {
 }
 
 async function removeLine(line) {
-  if (!order.value?.id || !isEditable.value || !line?.id) return;
+  if (!order.value?.id || !canEditLines.value || !line?.id) return;
   lineBusy.value = true;
   try {
     const { data } = await api.delete(`/admin/wholesale-orders/${order.value.id}/lines/${line.id}`);
@@ -554,7 +566,7 @@ async function removeLine(line) {
 }
 
 async function markShipAsIs(line) {
-  if (!order.value?.id || !isEditable.value || !line?.id) return;
+  if (!order.value?.id || !canEditLines.value || !line?.id) return;
   if (String(line.status || "").toLowerCase() === "ship_as_is") return;
   lineBusy.value = true;
   try {
@@ -571,7 +583,7 @@ async function markShipAsIs(line) {
 }
 
 function openBarcodeModal(line) {
-  if (!isEditable.value || !line?.id) return;
+  if (!canEditLines.value || !line?.id) return;
   barcodeLine.value = line;
   barcodeModalOpen.value = true;
   closeLineMenu();
@@ -770,24 +782,33 @@ onUnmounted(() => {
             >
               &lt; Wholesale Orders
             </button>
-            <div class="d-flex flex-wrap align-items-center gap-2 mb-1">
-              <h1 class="h4 mb-0 fw-semibold text-body">Order #{{ order.order_number }}</h1>
-              <button
-                v-if="canClickStatusBadge"
-                type="button"
-                class="badge rounded-pill fw-medium border-0 asn-line-status-badge"
-                :class="wholesaleStatusBadgeClass(order.status)"
-                @click="openStatusModal"
+            <div class="d-flex flex-wrap align-items-center justify-content-between gap-2 mb-1 wholesale-order-detail-page__title-row">
+              <div class="d-flex flex-wrap align-items-center gap-2 min-w-0">
+                <h1 class="h4 mb-0 fw-semibold text-body">Order #{{ order.order_number }}</h1>
+                <button
+                  v-if="canClickStatusBadge"
+                  type="button"
+                  class="badge rounded-pill fw-medium border-0 asn-line-status-badge"
+                  :class="wholesaleStatusBadgeClass(order.status)"
+                  @click="openStatusModal"
+                >
+                  {{ orderStatusLabel() }}
+                </button>
+                <span
+                  v-else
+                  class="badge rounded-pill fw-medium asn-line-status-badge"
+                  :class="wholesaleStatusBadgeClass(order.status)"
+                >
+                  {{ orderStatusLabel() }}
+                </span>
+              </div>
+              <RouterLink
+                v-if="showPickListLink"
+                :to="pickListRoute"
+                class="btn btn-outline-secondary btn-sm fw-semibold orders-toolbar-outline-btn flex-shrink-0"
               >
-                {{ orderStatusLabel() }}
-              </button>
-              <span
-                v-else
-                class="badge rounded-pill fw-medium asn-line-status-badge"
-                :class="wholesaleStatusBadgeClass(order.status)"
-              >
-                {{ orderStatusLabel() }}
-              </span>
+                Pick List
+              </RouterLink>
             </div>
             <p class="small text-secondary mb-0">
               Order placed on {{ formatDateUs(order.created_at) || "—" }} • via Save Rack CRM
@@ -821,7 +842,7 @@ onUnmounted(() => {
               <h2 class="h6 mb-0 fw-semibold">Items</h2>
             </div>
             <button
-              v-if="isEditable"
+              v-if="canEditLines"
               type="button"
               class="btn btn-sm btn-primary staff-page-primary"
               :disabled="lineBusy"
@@ -831,7 +852,7 @@ onUnmounted(() => {
             </button>
           </div>
 
-          <div v-if="isEditable && addPanelOpen" class="border-bottom">
+          <div v-if="canEditLines && addPanelOpen" class="border-bottom">
             <AsnProductCatalogPanel
               :client-account-id="clientAccountId"
               :wholesale-order-id="orderId"
@@ -851,7 +872,7 @@ onUnmounted(() => {
                   <th class="staff-table-head__th" scope="col">SKU</th>
                   <th class="staff-table-head__th text-center" scope="col">Qty</th>
                   <th class="staff-table-head__th text-center" scope="col">Barcodes</th>
-                  <th v-if="isEditable" class="staff-table-head__th text-center order-detail-page__items-actions-col" scope="col">
+                  <th v-if="canEditLines" class="staff-table-head__th text-center order-detail-page__items-actions-col" scope="col">
                     Actions
                   </th>
                 </tr>
@@ -908,7 +929,7 @@ onUnmounted(() => {
                   </td>
                   <td class="text-center">
                     <input
-                      v-if="isEditable"
+                      v-if="canEditLines"
                       type="number"
                       min="1"
                       class="form-control form-control-sm text-center mx-auto wholesale-line-qty-input"
@@ -928,7 +949,7 @@ onUnmounted(() => {
                       Print Barcode
                     </button>
                     <button
-                      v-else-if="isEditable && String(line.status || '').toLowerCase() !== 'ship_as_is'"
+                      v-else-if="canEditLines && String(line.status || '').toLowerCase() !== 'ship_as_is'"
                       type="button"
                       class="btn btn-link btn-sm p-0 text-decoration-none"
                       :disabled="lineBusy"
@@ -941,7 +962,7 @@ onUnmounted(() => {
                     </span>
                     <span v-else class="text-secondary">—</span>
                   </td>
-                  <td v-if="isEditable" class="text-center align-middle order-detail-page__items-actions-col">
+                  <td v-if="canEditLines" class="text-center align-middle order-detail-page__items-actions-col">
                     <div
                       data-row-actions
                       class="staff-actions-inner staff-actions-inner--single justify-content-center"
@@ -963,7 +984,7 @@ onUnmounted(() => {
                   </td>
                 </tr>
                 <tr v-if="!lines.length">
-                  <td :colspan="isEditable ? 5 : 4" class="text-center text-secondary py-4">No items yet.</td>
+                  <td :colspan="canEditLines ? 5 : 4" class="text-center text-secondary py-4">No items yet.</td>
                 </tr>
               </tbody>
             </table>

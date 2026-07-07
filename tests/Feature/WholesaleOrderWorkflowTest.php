@@ -570,7 +570,8 @@ class WholesaleOrderWorkflowTest extends TestCase
             ->assertJsonPath('status_label', 'Ready to Ship')
             ->assertJsonPath('shiphero_order_id', '99001')
             ->assertJsonPath('can_ready_to_ship', false)
-            ->assertJsonPath('is_editable', false);
+            ->assertJsonPath('is_editable', false)
+            ->assertJsonPath('is_lines_editable', true);
 
         $this->assertDatabaseHas('wholesale_orders', [
             'id' => $order->id,
@@ -609,7 +610,7 @@ class WholesaleOrderWorkflowTest extends TestCase
             ->assertJsonPath('lines.0.status', WholesaleOrderLine::STATUS_SHIP_AS_IS);
     }
 
-    public function test_edits_blocked_after_in_progress(): void
+    public function test_lines_editable_after_in_progress_but_order_fields_locked(): void
     {
         $account = $this->account();
         Sanctum::actingAs($this->staffUser());
@@ -641,11 +642,13 @@ class WholesaleOrderWorkflowTest extends TestCase
             'sku' => 'NEW-SKU',
             'name' => 'New',
             'quantity' => 1,
-        ])->assertStatus(422);
+        ])->assertOk()
+            ->assertJsonPath('lines.1.sku', 'NEW-SKU');
 
         $this->patchJson('/api/admin/wholesale-orders/'.$order->id.'/lines/'.$line->id, [
             'quantity' => 5,
-        ])->assertStatus(422);
+        ])->assertOk()
+            ->assertJsonPath('lines.0.quantity', 5);
     }
 
     private function seedInProgressOrder(ClientAccount $account): WholesaleOrder

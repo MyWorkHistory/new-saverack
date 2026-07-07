@@ -782,40 +782,42 @@ onUnmounted(() => {
             >
               &lt; Wholesale Orders
             </button>
-            <div class="d-flex flex-wrap align-items-center justify-content-between gap-2 mb-1 wholesale-order-detail-page__title-row">
-              <div class="d-flex flex-wrap align-items-center gap-2 min-w-0">
-                <h1 class="h4 mb-0 fw-semibold text-body">Order #{{ order.order_number }}</h1>
-                <button
-                  v-if="canClickStatusBadge"
-                  type="button"
-                  class="badge rounded-pill fw-medium border-0 asn-line-status-badge"
-                  :class="wholesaleStatusBadgeClass(order.status)"
-                  @click="openStatusModal"
-                >
-                  {{ orderStatusLabel() }}
-                </button>
-                <span
-                  v-else
-                  class="badge rounded-pill fw-medium asn-line-status-badge"
-                  :class="wholesaleStatusBadgeClass(order.status)"
-                >
-                  {{ orderStatusLabel() }}
-                </span>
-              </div>
-              <RouterLink
-                v-if="showPickListLink"
-                :to="pickListRoute"
-                class="btn btn-outline-secondary btn-sm fw-semibold orders-toolbar-outline-btn flex-shrink-0"
+            <div class="d-flex flex-wrap align-items-center gap-2 mb-1 wholesale-order-detail-page__title-row">
+              <h1 class="h4 mb-0 fw-semibold text-body">Order #{{ order.order_number }}</h1>
+              <button
+                v-if="canClickStatusBadge"
+                type="button"
+                class="badge rounded-pill fw-medium border-0 asn-line-status-badge"
+                :class="wholesaleStatusBadgeClass(order.status)"
+                @click="openStatusModal"
               >
-                Pick List
-              </RouterLink>
+                {{ orderStatusLabel() }}
+              </button>
+              <span
+                v-else
+                class="badge rounded-pill fw-medium asn-line-status-badge"
+                :class="wholesaleStatusBadgeClass(order.status)"
+              >
+                {{ orderStatusLabel() }}
+              </span>
             </div>
             <p class="small text-secondary mb-0">
               Order placed on {{ formatDateUs(order.created_at) || "—" }} • via Save Rack CRM
             </p>
           </div>
-          <div v-if="showReadyToShipButton" class="flex-shrink-0">
+          <div
+            v-if="showPickListLink || showReadyToShipButton"
+            class="d-flex flex-wrap align-items-center gap-2 flex-shrink-0 align-self-start wholesale-order-detail-page__header-actions"
+          >
+            <RouterLink
+              v-if="showPickListLink"
+              :to="pickListRoute"
+              class="btn btn-primary staff-page-primary fw-semibold"
+            >
+              Pick List
+            </RouterLink>
             <button
+              v-if="showReadyToShipButton"
               type="button"
               class="btn btn-primary staff-page-primary"
               :disabled="!canReadyToShip || readyToShipBusy"

@@ -162,13 +162,13 @@ onMounted(() => {
         class="wholesale-pick-order"
       >
         <div class="wholesale-pick-order__summary">
-          <div class="wholesale-pick-order__summary-item">
+          <div class="wholesale-pick-order__summary-item wholesale-pick-order__summary-item--with-icon">
             <span class="wholesale-pick-order__summary-icon" aria-hidden="true">
-              <svg width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.75" viewBox="0 0 24 24">
+              <svg width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.75" viewBox="0 0 24 24">
                 <path stroke-linecap="round" stroke-linejoin="round" d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4" />
               </svg>
             </span>
-            <div class="min-w-0">
+            <div class="wholesale-pick-order__summary-item-body min-w-0">
               <p class="wholesale-pick-order__summary-label">Account</p>
               <p class="wholesale-pick-order__summary-value text-truncate">
                 {{ order.client_account_company_name || "—" }}
@@ -179,7 +179,7 @@ onMounted(() => {
           <div class="wholesale-pick-order__summary-divider" aria-hidden="true" />
 
           <div class="wholesale-pick-order__summary-item">
-            <div>
+            <div class="wholesale-pick-order__summary-item-body">
               <p class="wholesale-pick-order__summary-label">Order #</p>
               <p class="wholesale-pick-order__summary-value">{{ order.order_number || "—" }}</p>
             </div>
@@ -188,7 +188,7 @@ onMounted(() => {
           <div class="wholesale-pick-order__summary-divider" aria-hidden="true" />
 
           <div class="wholesale-pick-order__summary-item">
-            <div>
+            <div class="wholesale-pick-order__summary-item-body">
               <p class="wholesale-pick-order__summary-label">Type</p>
               <span class="wholesale-pick-type-badge" :class="typeBadgeClass(order.order_type)">
                 {{ order.order_type_label || "—" }}
@@ -198,13 +198,13 @@ onMounted(() => {
 
           <div class="wholesale-pick-order__summary-divider" aria-hidden="true" />
 
-          <div class="wholesale-pick-order__summary-item">
+          <div class="wholesale-pick-order__summary-item wholesale-pick-order__summary-item--with-icon">
             <span class="wholesale-pick-order__summary-icon" aria-hidden="true">
-              <svg width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.75" viewBox="0 0 24 24">
+              <svg width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.75" viewBox="0 0 24 24">
                 <path stroke-linecap="round" stroke-linejoin="round" d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4" />
               </svg>
             </span>
-            <div>
+            <div class="wholesale-pick-order__summary-item-body">
               <p class="wholesale-pick-order__summary-label">Total Items</p>
               <p class="wholesale-pick-order__summary-value">{{ nf.format(order.line_count || 0) }}</p>
             </div>
@@ -212,13 +212,13 @@ onMounted(() => {
 
           <div class="wholesale-pick-order__summary-divider" aria-hidden="true" />
 
-          <div class="wholesale-pick-order__summary-item">
+          <div class="wholesale-pick-order__summary-item wholesale-pick-order__summary-item--with-icon">
             <span class="wholesale-pick-order__summary-icon" aria-hidden="true">
-              <svg width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.75" viewBox="0 0 24 24">
+              <svg width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.75" viewBox="0 0 24 24">
                 <path stroke-linecap="round" stroke-linejoin="round" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
               </svg>
             </span>
-            <div>
+            <div class="wholesale-pick-order__summary-item-body">
               <p class="wholesale-pick-order__summary-label">Date Created</p>
               <p class="wholesale-pick-order__summary-value mb-0">{{ formatCreatedDate(order.created_at) }}</p>
               <p class="wholesale-pick-order__summary-sub mb-0">{{ formatCreatedTime(order.created_at) }}</p>
@@ -335,13 +335,13 @@ onMounted(() => {
           </div>
 
           <button
-            v-if="order.is_fully_picked"
             type="button"
             class="btn wholesale-pick-order__mark-btn"
-            :disabled="markBusyId === order.id"
+            :disabled="!order.is_fully_picked || markBusyId === order.id"
+            :title="order.is_fully_picked ? '' : 'Pick all line items before marking complete.'"
             @click="markAllPicked(order)"
           >
-            <svg width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.75" viewBox="0 0 24 24" aria-hidden="true">
+            <svg width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.75" viewBox="0 0 24 24" aria-hidden="true">
               <path stroke-linecap="round" stroke-linejoin="round" d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4" />
             </svg>
             {{ markBusyId === order.id ? "Saving…" : "Mark All as Picked" }}

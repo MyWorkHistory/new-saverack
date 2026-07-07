@@ -10,9 +10,11 @@ use App\Models\User;
 use App\Models\WholesaleOrder;
 use App\Models\WholesaleOrderComment;
 use App\Models\WholesaleOrderLine;
+use App\Services\InventoryProductDetailCacheService;
 use App\Services\ShipHeroInventoryService;
 use App\Services\ShipHeroOrderService;
 use App\Services\WholesaleOrderShipHeroService;
+use App\Support\PutAwayRowBuilder;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Gate;
@@ -24,6 +26,20 @@ use Throwable;
 
 class WholesaleOrderController extends Controller
 {
+    /** @var InventoryProductDetailCacheService */
+    private $detailCache;
+
+    /** @var ShipHeroInventoryService */
+    private $inventory;
+
+    public function __construct(
+        InventoryProductDetailCacheService $detailCache,
+        ShipHeroInventoryService $inventory
+    ) {
+        $this->detailCache = $detailCache;
+        $this->inventory = $inventory;
+    }
+
     private function assertStaff(Request $request): void
     {
         $user = $request->user();
@@ -886,9 +902,16 @@ class WholesaleOrderController extends Controller
         $line->save();
 
         $imageBySku = $this->resolveLineImageUrls($wholesaleOrder->fresh(['lines']));
+        $locationsBySku = $this->resolvePickListLocationsBySku($wholesaleOrder->fresh(['lines', 'clientAccount']));
+        $skuKey = mb_strtolower(trim((string) $line->sku));
 
         return response()->json(
-            $this->serializePickListLine($line->fresh(), $imageBySku[mb_strtolower(trim((string) $line->sku))] ?? null)
+            $this->serializePickListLine(
+                $line->fresh(),
+                $imageBySku[$skuKey] ?? null,
+                $locationsBySku[$skuKey]['pick_location'] ?? null,
+                $locationsBySku[$skuKey]['backstock_location'] ?? null,
+            )
         );
     }
 
@@ -927,6 +950,7 @@ class WholesaleOrderController extends Controller
     {
         $order->loadMissing(['lines', 'clientAccount']);
         $imageBySku = $this->resolveLineImageUrls($order);
+        $locationsBySku = $this->resolvePickListLocationsBySku($order);
         $companyName = $order->clientAccount !== null
             ? trim((string) $order->clientAccount->company_name)
             : '';
@@ -946,10 +970,16 @@ class WholesaleOrderController extends Controller
             'total_quantity' => $totalQuantity,
             'total_quantity_picked' => $totalQuantityPicked,
             'is_fully_picked' => $order->isFullyPicked(),
-            'lines' => $lines->map(function (WholesaleOrderLine $line) use ($imageBySku) {
+            'lines' => $lines->map(function (WholesaleOrderLine $line) use ($imageBySku, $locationsBySku) {
                 $key = mb_strtolower(trim((string) $line->sku));
+                $loc = $locationsBySku[$key] ?? null;
 
-                return $this->serializePickListLine($line, $imageBySku[$key] ?? null);
+                return $this->serializePickListLine(
+                    $line,
+                    $imageBySku[$key] ?? null,
+                    is_array($loc) ? ($loc['pick_location'] ?? null) : null,
+                    is_array($loc) ? ($loc['backstock_location'] ?? null) : null,
+                );
             })->values()->all(),
         ];
     }
@@ -957,8 +987,12 @@ class WholesaleOrderController extends Controller
     /**
      * @return array<string, mixed>
      */
-    private function serializePickListLine(WholesaleOrderLine $line, ?string $resolvedImageUrl = null): array
-    {
+    private function serializePickListLine(
+        WholesaleOrderLine $line,
+        ?string $resolvedImageUrl = null,
+        ?string $pickLocation = null,
+        ?string $backstockLocation = null
+    ): array {
         return [
             'id' => $line->id,
             'sku' => $line->sku,
@@ -968,8 +1002,82 @@ class WholesaleOrderController extends Controller
             'quantity' => (int) $line->quantity,
             'quantity_picked' => (int) ($line->quantity_picked ?? 0),
             'is_fully_picked' => $line->isFullyPicked(),
-            'backstock_location' => null,
-            'pick_location' => null,
+            'backstock_location' => $backstockLocation,
+            'pick_location' => $pickLocation,
         ];
+    }
+
+    /**
+     * @return array<string, array{pick_location: ?string, backstock_location: ?string}>
+     */
+    private function resolvePickListLocationsBySku(WholesaleOrder $order): array
+    {
+        $order->loadMissing(['lines', 'clientAccount']);
+        $clientAccountId = (int) $order->client_account_id;
+        if ($clientAccountId <= 0) {
+            return [];
+        }
+
+        $customerId = $order->clientAccount !== null
+            ? trim((string) $order->clientAccount->shiphero_customer_account_id)
+            : '';
+
+        $skuKeys = [];
+        foreach ($order->lines as $line) {
+            $key = mb_strtolower(trim((string) $line->sku));
+            if ($key !== '') {
+                $skuKeys[$key] = trim((string) $line->sku);
+            }
+        }
+        if ($skuKeys === []) {
+            return [];
+        }
+
+        $out = [];
+        foreach ($skuKeys as $key => $sku) {
+            $product = $this->resolveProductDetailForPickList($clientAccountId, $customerId, $sku);
+            if ($product === null) {
+                $out[$key] = [
+                    'pick_location' => null,
+                    'backstock_location' => null,
+                ];
+                continue;
+            }
+
+            $locations = PutAwayRowBuilder::locationsFromProductDetail($product);
+            $out[$key] = [
+                'pick_location' => PutAwayRowBuilder::pickLocationLabel($locations),
+                'backstock_location' => PutAwayRowBuilder::backstockLocationLabel($locations),
+            ];
+        }
+
+        return $out;
+    }
+
+    /**
+     * @return array<string, mixed>|null
+     */
+    private function resolveProductDetailForPickList(int $clientAccountId, string $customerId, string $sku): ?array
+    {
+        $sku = trim($sku);
+        if ($sku === '') {
+            return null;
+        }
+
+        $product = $this->detailCache->getCachedProduct($clientAccountId, $sku);
+        if ($product !== null) {
+            return $product;
+        }
+
+        if ($customerId === '') {
+            return null;
+        }
+
+        $product = $this->inventory->getProductDetailBySku($sku, null, $customerId, false);
+        if ($product !== null) {
+            $this->detailCache->putProduct($clientAccountId, $sku, $product);
+        }
+
+        return $product;
     }
 }

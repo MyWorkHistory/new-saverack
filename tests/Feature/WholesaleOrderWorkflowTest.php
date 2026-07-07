@@ -4,6 +4,7 @@ namespace Tests\Feature;
 
 use App\Models\ClientAccount;
 use App\Models\Permission;
+use App\Models\ShipHeroInventoryProductDetailCache;
 use App\Models\User;
 use App\Models\WholesaleOrder;
 use App\Models\WholesaleOrderLine;
@@ -722,6 +723,49 @@ class WholesaleOrderWorkflowTest extends TestCase
             ->assertOk()
             ->assertJsonCount(1, 'orders')
             ->assertJsonPath('orders.0.id', $order->id);
+    }
+
+    public function test_pick_list_includes_locations_from_cached_product_detail(): void
+    {
+        $account = $this->account('pick-loc');
+        Sanctum::actingAs($this->staffUser());
+        $order = $this->seedInProgressOrder($account);
+
+        ShipHeroInventoryProductDetailCache::query()->create([
+            'client_account_id' => $account->id,
+            'sku' => 'SKU-PICK-A',
+            'sku_search' => 'sku-pick-a',
+            'product_json' => [
+                'sku' => 'SKU-PICK-A',
+                'warehouses' => [
+                    [
+                        'warehouse_id' => 'wh-1',
+                        'locations' => [
+                            [
+                                'location_id' => 'pick-1',
+                                'location_name' => 'A-01',
+                                'quantity' => 5,
+                                'pickable' => true,
+                            ],
+                            [
+                                'location_id' => 'back-1',
+                                'location_name' => 'OS-1',
+                                'quantity' => 25,
+                                'pickable' => false,
+                            ],
+                        ],
+                    ],
+                ],
+            ],
+            'product_synced_at' => now(),
+        ]);
+
+        $this->getJson('/api/admin/wholesale-orders/pick-list?client_account_id='.$account->id)
+            ->assertOk()
+            ->assertJsonPath('orders.0.lines.0.pick_location', 'A-01 (5)')
+            ->assertJsonPath('orders.0.lines.0.backstock_location', 'OS-1 (25)')
+            ->assertJsonPath('orders.0.lines.1.pick_location', null)
+            ->assertJsonPath('orders.0.lines.1.backstock_location', null);
     }
 
     public function test_update_line_pick_rejects_over_quantity(): void

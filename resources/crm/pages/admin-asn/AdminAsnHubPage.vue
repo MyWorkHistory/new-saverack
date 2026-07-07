@@ -665,7 +665,7 @@ onUnmounted(() => {
                   <span v-if="sortIndicator('created_at')" class="staff-sort-ind">{{ sortIndicator("created_at") }}</span>
                 </button>
               </th>
-              <th class="staff-table-head__th" scope="col">Account</th>
+              <th class="staff-table-head__th text-center" scope="col">Account</th>
               <th class="staff-table-head__th staff-table-head__th--sort text-center" scope="col">
                 <button type="button" class="staff-sort-btn" @click="toggleSort('expected_qty')">
                   Expected QTY

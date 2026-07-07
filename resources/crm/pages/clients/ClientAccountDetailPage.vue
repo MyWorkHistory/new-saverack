@@ -822,10 +822,7 @@ onUnmounted(() => {
         v-else-if="account"
         class="account-detail-header d-flex flex-column flex-lg-row align-items-stretch align-items-lg-center gap-2 gap-lg-3"
       >
-        <h1
-          class="staff-user-view__title account-detail-header__title mb-0 min-w-0"
-          :title="account.company_name"
-        >
+        <h1 class="staff-user-view__title account-detail-header__title mb-0">
           {{ account.company_name }}
         </h1>
         <div
@@ -950,7 +947,7 @@ onUnmounted(() => {
                 </span>
               </template>
             </div>
-            <h2 class="staff-user-profile__name" :title="account.company_name">
+            <h2 class="staff-user-profile__name">
               {{ account.company_name }}
             </h2>
             <div class="text-center mb-3">

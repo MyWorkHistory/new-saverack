@@ -202,31 +202,24 @@ $staff-detail-primary: #2563eb;
   }
 
   .staff-user-profile__name {
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
+    white-space: normal;
     word-break: normal;
-  }
-
-  .account-detail-page-head__breadcrumb > span:last-child {
-    min-width: 0;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
+    overflow-wrap: break-word;
   }
 }
 
 /* Client account detail: title + section tabs */
 .account-detail-header {
   min-width: 0;
+  flex-wrap: wrap;
 }
 
 .account-detail-header__title {
-  flex-shrink: 1;
-  min-width: 0;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  flex: 0 1 auto;
+  max-width: 100%;
+  white-space: normal;
+  word-break: normal;
+  overflow-wrap: break-word;
 }
 
 @media (max-width: 1199.98px) {

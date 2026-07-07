@@ -103,7 +103,6 @@ function confirmDelete() {
             </dl>
 
             <div v-if="event.description" class="calendar-event-detail-modal__description">
-              <div class="calendar-event-detail-modal__description-label">Description</div>
               <p class="calendar-event-detail-modal__description-text mb-0">
                 {{ event.description }}
               </p>

@@ -665,7 +665,7 @@ onUnmounted(() => {
                   <span v-if="sortIndicator('created_at')" class="staff-sort-ind">{{ sortIndicator("created_at") }}</span>
                 </button>
               </th>
-              <th class="staff-table-head__th text-center" scope="col">Account</th>
+              <th class="staff-table-head__th" scope="col">Account</th>
               <th class="staff-table-head__th staff-table-head__th--sort text-center" scope="col">
                 <button type="button" class="staff-sort-btn" @click="toggleSort('expected_qty')">
                   Expected QTY
@@ -728,8 +728,8 @@ onUnmounted(() => {
                   {{ formatAsnDisplay(row.asn_number) }}
                 </td>
                 <td class="text-center small text-secondary">{{ formatDateUs(row.created_at) }}</td>
-                <td class="text-center" @click.stop>
-                  <div class="d-flex align-items-center justify-content-center gap-2 min-w-0 admin-asn-list-account-cell">
+                <td @click.stop>
+                  <div class="d-flex align-items-center justify-content-start gap-2 min-w-0 admin-asn-list-account-cell">
                     <span
                       class="admin-asn-list-account-avatar"
                       :class="avatarClassFromSeed(row.client_account_company_name || row.client_account_id)"

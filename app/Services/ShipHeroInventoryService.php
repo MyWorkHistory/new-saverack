@@ -6,7 +6,9 @@ use App\Models\ClientAccount;
 use App\Models\ClientAccountOnDemandProduct;
 use App\Models\ShipHeroInventoryProductDetailCache;
 use App\Models\ShipHeroInventoryProductIndex;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use RuntimeException;
 
@@ -387,6 +389,40 @@ GQL;
         return null;
     }
 
+    private function applyInventoryIndexCrmStatusJoin(Builder $query): Builder
+    {
+        $table = (new ShipHeroInventoryProductIndex())->getTable();
+
+        return $query
+            ->leftJoin(
+                'inventory_product_crm_status as inventory_crm_status',
+                function ($join) use ($table) {
+                    $join->on('inventory_crm_status.client_account_id', '=', $table.'.client_account_id')
+                        ->on('inventory_crm_status.sku', '=', $table.'.sku');
+                }
+            )
+            ->select($table.'.*')
+            ->addSelect(DB::raw('COALESCE(inventory_crm_status.crm_active, 1) as crm_active_resolved'));
+    }
+
+    private function applyInventoryIndexCrmActiveFilter(Builder $query, string $activeStatus): void
+    {
+        if ($activeStatus === 'active') {
+            $query->whereRaw('COALESCE(inventory_crm_status.crm_active, 1) = 1');
+        } elseif ($activeStatus === 'inactive') {
+            $query->where('inventory_crm_status.crm_active', false);
+        }
+    }
+
+    private function resolveCrmActiveFromIndexRow(ShipHeroInventoryProductIndex $row): bool
+    {
+        if ($row->offsetExists('crm_active_resolved')) {
+            return (bool) $row->crm_active_resolved;
+        }
+
+        return true;
+    }
+
     private function inventoryIndexRowToListRow(ShipHeroInventoryProductIndex $row): array
     {
         return [
@@ -402,6 +438,7 @@ GQL;
             'barcode' => $row->barcode,
             'image_url' => $row->image_url,
             'product_active' => (bool) $row->product_active,
+            'crm_active' => $this->resolveCrmActiveFromIndexRow($row),
             'kit' => (bool) $row->kit,
             'kit_build' => (bool) $row->kit_build,
             'warehouse_id' => $row->warehouse_id,
@@ -747,10 +784,11 @@ GQL;
             return null;
         }
 
-        if ($activeStatus === 'active') {
-            $query->where('product_active', true);
-        } elseif ($activeStatus === 'inactive') {
-            $query->where('product_active', false);
+        $query = $this->applyInventoryIndexCrmStatusJoin($query);
+
+        $term = $this->normalizeInventoryIndexSearchValue($searchQuery ?? '');
+        if ($term === '' && ($activeStatus === 'active' || $activeStatus === 'inactive')) {
+            $this->applyInventoryIndexCrmActiveFilter($query, $activeStatus);
         }
         if ($kitsFilter === 'yes') {
             $query->where(function ($q) {
@@ -763,7 +801,6 @@ GQL;
             $query->where('backorder', '>', 0);
         }
 
-        $term = $this->normalizeInventoryIndexSearchValue($searchQuery ?? '');
         if ($term !== '') {
             if ($after !== null) {
                 return null;
@@ -867,11 +904,8 @@ GQL;
         $query = ShipHeroInventoryProductIndex::query()
             ->whereIn('client_account_id', $clientAccountIds);
 
-        if ($activeStatus === 'active') {
-            $query->where('product_active', true);
-        } elseif ($activeStatus === 'inactive') {
-            $query->where('product_active', false);
-        }
+        $query = $this->applyInventoryIndexCrmStatusJoin($query);
+
         if ($kitsFilter === 'yes') {
             $query->where(function ($q) {
                 $q->where('kit', true)->orWhere('kit_build', true);

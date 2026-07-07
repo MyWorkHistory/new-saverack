@@ -113,7 +113,7 @@ const canLoadInventory = computed(() => {
 
 const showAccountColumn = computed(() => isStaffPickerMode.value);
 
-const tableColspan = computed(() => (showAccountColumn.value ? 9 : 8));
+const tableColspan = computed(() => (showAccountColumn.value ? 10 : 9));
 
 const accountOptions = computed(() =>
   (accounts.value || [])
@@ -369,9 +369,22 @@ const selectedRows = computed(() =>
   displayRows.value.filter((r) => isKeySelected(rowKey(r))),
 );
 
-const bulkEligibleRows = computed(() =>
-  selectedRows.value.filter((r) => String(r?.warehouse_id || "").trim() !== ""),
-);
+const bulkEligibleSkus = computed(() => {
+  const seen = new Set();
+  const skus = [];
+  for (const row of selectedRows.value) {
+    const sku = String(row?.sku || "").trim();
+    if (sku && !seen.has(sku)) {
+      seen.add(sku);
+      skus.push(sku);
+    }
+  }
+  return skus;
+});
+
+function crmStatusLabel(row) {
+  return row?.crm_active === false ? "Inactive" : "Active";
+}
 
 async function commitSearch() {
   if (isStaffPickerMode.value) {
@@ -499,38 +512,20 @@ async function bulkSetActive(active) {
     toast.error("Select an account for bulk updates.");
     return;
   }
-  const items = bulkEligibleRows.value.map((r) => ({
-    sku: String(r.sku || ""),
-    warehouse_id: String(r.warehouse_id || ""),
-  }));
-  if (!items.length) {
-    toast.error("Select rows with a warehouse to update status.");
+  const skus = bulkEligibleSkus.value;
+  if (!skus.length) {
+    toast.error("Select at least one SKU.");
     return;
   }
-  const skipped = selectedRows.value.length - items.length;
   bulkBusy.value = true;
   try {
-    const { data } = await api.post("/inventory/warehouse-products/bulk-active", {
+    const { data } = await api.patch("/inventory/products/bulk-crm-active", {
       client_account_id: accountId.value,
       active,
-      items,
+      skus,
     });
     const updated = Number(data?.updated ?? 0);
-    const errs = Array.isArray(data?.errors) ? data.errors : [];
-    const parts = [];
-    if (errs.length) {
-      parts.push(`Updated ${updated}; ${errs.length} error(s). First: ${errs[0]?.message || "unknown"}`);
-    } else {
-      parts.push(`Updated ${updated} warehouse product(s).`);
-    }
-    if (skipped > 0) {
-      parts.push(`${skipped} skipped (no warehouse).`);
-    }
-    if (errs.length) {
-      toast.error(parts.join(" "));
-    } else {
-      toast.success(parts.join(" "));
-    }
+    toast.success(`Updated ${updated} SKU(s).`);
     selectedKeys.value = [];
     await loadRows(true);
   } catch (e) {
@@ -988,7 +983,7 @@ onUnmounted(() => {
                   <option value="yes">Yes (kits only)</option>
                   <option value="no">No (exclude kits)</option>
                 </select>
-                <label class="form-label" for="user-inv-filter-active">Product status</label>
+                <label class="form-label" for="user-inv-filter-active">Status</label>
                 <select
                   id="user-inv-filter-active"
                   v-model="filters.activeStatus"
@@ -1184,6 +1179,7 @@ onUnmounted(() => {
               <th v-if="showAccountColumn" class="staff-table-head__th user-inv-table__text-col" scope="col">
                 Account
               </th>
+              <th class="staff-table-head__th text-center user-inv-table__status-col" scope="col">Status</th>
               <th
                 class="staff-table-head__th staff-table-head__th--sort text-center user-inv-table__num-col"
                 scope="col"
@@ -1300,6 +1296,14 @@ onUnmounted(() => {
                 </a>
                 <span v-else class="text-secondary">{{ rowAccountLabel(row) }}</span>
               </td>
+              <td class="text-center user-inv-table__status-col">
+                <span
+                  class="badge rounded-pill user-inv-status-badge"
+                  :class="row.crm_active === false ? 'user-inv-status-badge--inactive' : 'user-inv-status-badge--active'"
+                >
+                  {{ crmStatusLabel(row) }}
+                </span>
+              </td>
               <td class="text-center user-inv-table__num-col">{{ (row.kit || row.kit_build) ? "Yes" : "No" }}</td>
               <td class="text-center user-inv-table__num-col">{{ Number(row.on_hand || 0) }}</td>
               <td class="text-center user-inv-table__num-col">{{ Number(row.allocated || 0) }}</td>
@@ -1371,6 +1375,26 @@ onUnmounted(() => {
 .user-inv-search-wrap {
   flex: 0 0 auto;
   width: min(22rem, 100%);
+}
+
+.user-inv-table__status-col {
+  width: 6.5rem;
+}
+
+.user-inv-status-badge {
+  font-size: 0.6875rem;
+  font-weight: 600;
+  padding: 0.35rem 0.55rem;
+}
+
+.user-inv-status-badge--active {
+  background: #dcfce7;
+  color: #166534;
+}
+
+.user-inv-status-badge--inactive {
+  background: #f3f4f6;
+  color: #6b7280;
 }
 
 .user-inv-table--syncing {

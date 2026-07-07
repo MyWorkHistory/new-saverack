@@ -3,12 +3,14 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use App\Http\Requests\InventoryBulkCrmActiveRequest;
 use App\Models\ClientAccount;
 use App\Models\ClientAccountAsn;
 use App\Models\ClientAccountAsnLine;
 use App\Models\ClientAccountOnDemandProduct;
 use App\Models\InventoryRestockSnapshot;
 use App\Services\ShipHeroClient;
+use App\Services\InventoryProductCrmStatusService;
 use App\Services\InventoryProductDetailCacheService;
 use App\Services\InventoryRestockBetaService;
 use App\Services\InventoryRestockReportService;
@@ -977,6 +979,25 @@ class InventoryController extends Controller
                     : 'Could not reach ShipHero. Check SHIPHERO_* in .env and server logs.',
             ], 502);
         }
+    }
+
+    /**
+     * Staff: bulk set CRM-only active/inactive per SKU (does not update ShipHero).
+     */
+    public function bulkCrmActive(
+        InventoryBulkCrmActiveRequest $request,
+        InventoryProductCrmStatusService $crmStatus
+    ): JsonResponse {
+        $validated = $request->validated();
+
+        $updated = $crmStatus->bulkSetActive(
+            (int) $validated['client_account_id'],
+            $validated['skus'],
+            (bool) $validated['active'],
+            $request->user() instanceof User ? (int) $request->user()->id : null
+        );
+
+        return response()->json(['updated' => $updated]);
     }
 
     /**

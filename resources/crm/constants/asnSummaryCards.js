@@ -2,6 +2,9 @@ import { ASN_STATUS_DISPLAY } from "../utils/asnStatusDisplay.js";
 
 function cardFromStatus(key, status, sub) {
   const display = ASN_STATUS_DISPLAY[status];
+  const borderColor = display.labelColor;
+  const backgroundTint = display.iconStyle?.background || "#fff";
+
   return {
     key,
     status,
@@ -11,6 +14,15 @@ function cardFromStatus(key, status, sub) {
     titleColor: display.labelColor,
     icon: display.icon,
     iconStyle: display.iconStyle,
+    cardStyle: {
+      background: backgroundTint,
+      borderColor,
+    },
+    activeCardStyle: {
+      background: backgroundTint,
+      borderColor,
+      boxShadow: `0 0 0 1px ${borderColor}`,
+    },
   };
 }
 

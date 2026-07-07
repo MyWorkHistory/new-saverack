@@ -40,6 +40,7 @@ function onSelect(status) {
         type="button"
         class="asn-summary-card h-100 w-100"
         :class="{ 'asn-summary-card--active': activeStatus === card.status }"
+        :style="activeStatus === card.status ? card.activeCardStyle : card.cardStyle"
         @click="onSelect(card.status)"
       >
         <div class="asn-summary-card__icon" :style="card.iconStyle" aria-hidden="true">

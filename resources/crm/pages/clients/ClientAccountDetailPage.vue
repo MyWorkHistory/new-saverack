@@ -27,6 +27,7 @@ import {
 } from "../../utils/clientAccountOnboardingActivation.js";
 import { inHouseSlackDisplayLabel, inHouseSlackHref } from "../../utils/slackChannel.js";
 import { warnIfShipheroSyncFailed } from "../../utils/clientAccountShipheroSync.js";
+import { CLIENT_ACCOUNT_PAUSE_REASONS } from "../../constants/clientAccountPauseReasons.js";
 
 const props = defineProps({
   id: { type: String, required: true },
@@ -63,6 +64,7 @@ const accountManagers = ref([]);
 const accountStatuses = ref(["pending", "active", "paused", "inactive"]);
 const accountStatusModalOpen = ref(false);
 const accountStatusForm = ref("pending");
+const accountPauseReasonForm = ref("");
 const accountStatusSaving = ref(false);
 
 const brandLogoInput = ref(null);
@@ -508,14 +510,24 @@ async function onBrandLogoChange(e) {
 function openAccountStatusModal() {
   if (!account.value || !canUpdateAccount.value) return;
   accountStatusForm.value = account.value.status || "pending";
+  accountPauseReasonForm.value = String(account.value.pause_reason || "");
   accountStatusModalOpen.value = true;
 }
 
 async function saveAccountStatusFromModal() {
   if (!account.value || !canUpdateAccount.value) return;
   const next = accountStatusForm.value;
-  if (next === account.value.status) {
+  const pauseReason = String(accountPauseReasonForm.value || "").trim();
+  const prevStatus = String(account.value.status || "");
+  const prevReason = String(account.value.pause_reason || "");
+  const statusUnchanged = prevStatus === next;
+  const reasonUnchanged = prevReason === pauseReason;
+  if (statusUnchanged && reasonUnchanged) {
     accountStatusModalOpen.value = false;
+    return;
+  }
+  if (next === "paused" && !pauseReason) {
+    toast.error("Select a pause reason.");
     return;
   }
   if (next === "active") {
@@ -527,10 +539,16 @@ async function saveAccountStatusFromModal() {
   }
   accountStatusSaving.value = true;
   try {
-    const { data } = await api.patch(`/client-accounts/${props.id}`, { status: next });
+    const payload = { status: next };
+    if (next === "paused") {
+      payload.pause_reason = pauseReason;
+    }
+    const { data } = await api.patch(`/client-accounts/${props.id}`, payload);
     account.value = {
       ...account.value,
       status: data?.status ?? next,
+      pause_reason: data?.pause_reason ?? (next === "paused" ? pauseReason : null),
+      pause_reason_label: data?.pause_reason_label ?? null,
     };
     accountStatusModalOpen.value = false;
     toast.success("Account status updated.");
@@ -879,9 +897,11 @@ onUnmounted(() => {
       v-if="canUpdateAccount"
       v-model:open="accountStatusModalOpen"
       v-model:status="accountStatusForm"
+      v-model:reason="accountPauseReasonForm"
       title="Account status"
       subtitle="Choose the directory status for this client account."
       :statuses="accountStatuses"
+      :reason-options="CLIENT_ACCOUNT_PAUSE_REASONS"
       :busy="accountStatusSaving"
       @save="saveAccountStatusFromModal"
     />
@@ -966,6 +986,12 @@ onUnmounted(() => {
                 class="text-capitalize"
                 :class="accountStatusBadgeClass(account.status)"
               >{{ account.status }}</span>
+              <div
+                v-if="String(account.status || '').toLowerCase() === 'paused' && account.pause_reason_label"
+                class="small text-secondary mt-2"
+              >
+                Reason: {{ account.pause_reason_label }}
+              </div>
             </div>
             <div class="staff-user-profile__stats">
               <div class="staff-user-profile__stat">

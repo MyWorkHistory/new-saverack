@@ -40,12 +40,32 @@ class ClientAccountPausedAtTest extends TestCase
 
         $response = $this->patchJson('/api/client-accounts/'.$account->id, [
             'status' => ClientAccount::STATUS_PAUSED,
+            'pause_reason' => ClientAccount::PAUSE_REASON_ACCOUNT_PAST_DUE,
         ]);
 
-        $response->assertOk();
+        $response->assertOk()
+            ->assertJsonPath('pause_reason', ClientAccount::PAUSE_REASON_ACCOUNT_PAST_DUE)
+            ->assertJsonPath('pause_reason_label', 'Account Past Due');
         $account->refresh();
         $this->assertSame(ClientAccount::STATUS_PAUSED, $account->status);
         $this->assertNotNull($account->paused_at);
+        $this->assertSame(ClientAccount::PAUSE_REASON_ACCOUNT_PAST_DUE, $account->pause_reason);
+    }
+
+    public function test_patch_to_paused_requires_pause_reason(): void
+    {
+        $this->staffWithClientsUpdate();
+
+        $account = ClientAccount::create([
+            'company_name' => 'Pause Reason Co',
+            'status' => ClientAccount::STATUS_ACTIVE,
+            'email' => 'pause-reason-co@test.com',
+        ]);
+
+        $this->patchJson('/api/client-accounts/'.$account->id, [
+            'status' => ClientAccount::STATUS_PAUSED,
+        ])->assertUnprocessable()
+            ->assertJsonValidationErrors(['pause_reason']);
     }
 
     public function test_patch_from_paused_to_active_clears_paused_at(): void
@@ -57,6 +77,7 @@ class ClientAccountPausedAtTest extends TestCase
             'status' => ClientAccount::STATUS_PAUSED,
             'email' => 'resume-co@test.com',
             'paused_at' => now()->subDay(),
+            'pause_reason' => ClientAccount::PAUSE_REASON_ADMIN,
         ]);
 
         $response = $this->patchJson('/api/client-accounts/'.$account->id, [
@@ -67,5 +88,6 @@ class ClientAccountPausedAtTest extends TestCase
         $account->refresh();
         $this->assertSame(ClientAccount::STATUS_ACTIVE, $account->status);
         $this->assertNull($account->paused_at);
+        $this->assertNull($account->pause_reason);
     }
 }

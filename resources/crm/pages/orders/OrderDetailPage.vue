@@ -2053,8 +2053,11 @@ function goToOrdersList() {
                   <tr>
                     <th class="staff-table-head__th order-detail-page__items-col">
                       <button class="order-detail-page__sort-btn" type="button" @click="toggleItemSort('name')">
-                        Item <span class="order-detail-page__sort-icon">{{ sortIndicator("name") }}</span>
+                        Item Name <span class="order-detail-page__sort-icon">{{ sortIndicator("name") }}</span>
                       </button>
+                    </th>
+                    <th class="staff-table-head__th order-detail-page__item-status-col">
+                      Status
                     </th>
                     <th class="staff-table-head__th text-end order-detail-page__qty-col">
                       <button class="order-detail-page__sort-btn order-detail-page__sort-btn--right" type="button" @click="toggleItemSort('quantity')">
@@ -2094,14 +2097,6 @@ function goToOrdersList() {
                           >
                             {{ item.name || "—" }}
                           </div>
-                          <span
-                            v-if="item.fulfillment_status"
-                            class="badge rounded-pill fw-medium order-detail-page__item-line-status-badge"
-                            :class="lineItemStatusBadgeClass(item.fulfillment_status)"
-                            :title="String(item.fulfillment_status)"
-                          >
-                            {{ item.fulfillment_status }}
-                          </span>
                           <div class="order-detail-page__item-sku" :title="item.sku ? String(item.sku) : undefined">
                             {{ itemSkuDisplay(item.sku) }}
                           </div>
@@ -2123,19 +2118,22 @@ function goToOrdersList() {
                           >
                             {{ item.name || "—" }}
                           </div>
-                          <span
-                            v-if="item.fulfillment_status"
-                            class="badge rounded-pill fw-medium order-detail-page__item-line-status-badge"
-                            :class="lineItemStatusBadgeClass(item.fulfillment_status)"
-                            :title="String(item.fulfillment_status)"
-                          >
-                            {{ item.fulfillment_status }}
-                          </span>
                           <div class="order-detail-page__item-sku" :title="item.sku ? String(item.sku) : undefined">
                             {{ itemSkuDisplay(item.sku) }}
                           </div>
                         </div>
                       </div>
+                    </td>
+                    <td class="order-detail-page__item-status-col">
+                      <span
+                        v-if="item.fulfillment_status"
+                        class="badge rounded-pill fw-medium"
+                        :class="lineItemStatusBadgeClass(item.fulfillment_status)"
+                        :title="String(item.fulfillment_status)"
+                      >
+                        {{ item.fulfillment_status }}
+                      </span>
+                      <span v-else class="text-secondary">—</span>
                     </td>
                     <td class="text-end order-detail-page__qty-col">
                       <div>{{ item.quantity ?? 0 }}</div>

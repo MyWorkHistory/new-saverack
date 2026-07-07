@@ -1,5 +1,5 @@
 <script setup>
-import { onUnmounted, watch } from "vue";
+import { computed, onUnmounted, watch } from "vue";
 
 const props = defineProps({
   title: { type: String, default: "Update status" },
@@ -7,12 +7,26 @@ const props = defineProps({
   label: { type: String, default: "Status" },
   statuses: { type: Array, default: () => [] },
   busy: { type: Boolean, default: false },
+  reasonOptions: { type: Array, default: () => [] },
+  reasonLabel: { type: String, default: "Reason" },
+  showReasonWhenStatus: { type: String, default: "paused" },
 });
 
 const open = defineModel("open", { type: Boolean, default: false });
 const status = defineModel("status", { type: String, default: "" });
+const reason = defineModel("reason", { type: String, default: "" });
 
 const emit = defineEmits(["save"]);
+
+const showReasonField = computed(
+  () =>
+    props.reasonOptions.length > 0 &&
+    String(status.value || "").toLowerCase() === String(props.showReasonWhenStatus || "").toLowerCase(),
+);
+
+const saveDisabled = computed(
+  () => props.busy || (showReasonField.value && !String(reason.value || "").trim()),
+);
 
 function displayStatus(value) {
   return String(value || "")
@@ -112,6 +126,23 @@ onUnmounted(() => {
                     </option>
                   </select>
                 </div>
+                <div v-if="showReasonField">
+                  <label class="form-label small mb-1 text-secondary" for="crm-status-update-reason">
+                    {{ reasonLabel }}
+                  </label>
+                  <select
+                    id="crm-status-update-reason"
+                    v-model="reason"
+                    class="form-select"
+                    :disabled="busy"
+                    required
+                  >
+                    <option value="" disabled>Select a reason</option>
+                    <option v-for="opt in reasonOptions" :key="opt.value" :value="opt.value">
+                      {{ opt.label }}
+                    </option>
+                  </select>
+                </div>
               </form>
             </div>
 
@@ -128,7 +159,7 @@ onUnmounted(() => {
                 type="submit"
                 form="crm-status-update-modal-form"
                 class="crm-vx-modal-btn crm-vx-modal-btn--primary"
-                :disabled="busy"
+                :disabled="saveDisabled"
               >
                 {{ busy ? "Saving..." : "Save" }}
               </button>

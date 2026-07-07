@@ -15,6 +15,7 @@ import ConfirmModal from "../../components/common/ConfirmModal.vue";
 import ClientAccountChannelIcons from "../../components/clients/ClientAccountChannelIcons.vue";
 import ClientAccountCreateDrawer from "../../components/clients/ClientAccountCreateDrawer.vue";
 import ClientAccountEditModal from "../../components/clients/ClientAccountEditModal.vue";
+import CrmMaterialIcon from "../../components/common/CrmMaterialIcon.vue";
 import CrmStatusUpdateModal from "../../components/common/CrmStatusUpdateModal.vue";
 import CrmLoadingSpinner from "../../components/common/CrmLoadingSpinner.vue";
 import CrmSearchableSelect from "../../components/common/CrmSearchableSelect.vue";
@@ -32,6 +33,10 @@ import {
   ONBOARDING_ACTIVATION_BLOCKED_MESSAGE,
   checkOnboardingReadyForActivation,
 } from "../../utils/clientAccountOnboardingActivation.js";
+import {
+  CLIENT_ACCOUNT_PAUSE_REASONS,
+  clientAccountPauseReasonLabel,
+} from "../../constants/clientAccountPauseReasons.js";
 
 const crmUser = inject("crmUser", ref(null));
 const toast = useToast();
@@ -85,8 +90,7 @@ const DIRECTORY_STAT_CARDS = [
     label: "Active",
     sub: "Accounts marked active",
     iconClass: "bg-success-subtle text-success",
-    iconPath:
-      "M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z",
+    icon: "checkCircle",
   },
   {
     key: "pending",
@@ -94,17 +98,15 @@ const DIRECTORY_STAT_CARDS = [
     label: "Pending",
     sub: "Awaiting activation",
     iconClass: "bg-warning-subtle text-warning-emphasis",
-    iconPath:
-      "M15.5 14h-.79l-.28-.27A6.471 6.471 0 0016 9.5 6.5 6.5 0 109.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C7.01 9.5 5 7.49 5 5c0-2.59 2.01-4.5 4.5-4.5S14 2.41 14 5c0 2.49-2.01 4.5-4.5 4.5z",
+    icon: "hourglass",
   },
   {
     key: "paused",
     status: "paused",
     label: "Paused",
     sub: "Temporarily paused accounts",
-    iconClass: "bg-info-subtle text-info-emphasis",
-    iconPath:
-      "M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z",
+    iconClass: "bg-danger-subtle text-danger",
+    icon: "pauseCircle",
   },
   {
     key: "inactive",
@@ -112,8 +114,7 @@ const DIRECTORY_STAT_CARDS = [
     label: "Inactive",
     sub: "Inactive accounts",
     iconClass: "bg-secondary-subtle text-secondary",
-    iconPath:
-      "M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z",
+    icon: "cancel",
   },
 ];
 
@@ -141,6 +142,7 @@ const editAccountId = ref("");
 const statusModalOpen = ref(false);
 const statusModalRow = ref(null);
 const statusForm = ref("active");
+const pauseReasonForm = ref("");
 const statusPickerBusy = ref(false);
 
 const query = reactive({
@@ -499,6 +501,7 @@ function openStatusModal(row) {
   if (!canUpdate.value) return;
   statusModalRow.value = row;
   statusForm.value = String(row.status || "pending");
+  pauseReasonForm.value = String(row.pause_reason || "");
   statusModalOpen.value = true;
 }
 
@@ -511,9 +514,18 @@ function closeStatusModal() {
 async function saveStatusFromModal() {
   const row = statusModalRow.value;
   const status = String(statusForm.value || "").trim();
+  const pauseReason = String(pauseReasonForm.value || "").trim();
   if (!row || statusPickerBusy.value) return;
-  if (String(row.status || "") === status) {
+  const prevStatus = String(row.status || "");
+  const prevReason = String(row.pause_reason || "");
+  const statusUnchanged = prevStatus === status;
+  const reasonUnchanged = prevReason === pauseReason;
+  if (statusUnchanged && reasonUnchanged) {
     closeStatusModal();
+    return;
+  }
+  if (status === "paused" && !pauseReason) {
+    toast.error("Select a pause reason.");
     return;
   }
   if (status === "active") {
@@ -525,8 +537,16 @@ async function saveStatusFromModal() {
   }
   statusPickerBusy.value = true;
   try {
-    const { data } = await api.patch(`/client-accounts/${row.id}`, { status });
+    const payload = { status };
+    if (status === "paused") {
+      payload.pause_reason = pauseReason;
+    }
+    const { data } = await api.patch(`/client-accounts/${row.id}`, payload);
     row.status = status;
+    row.pause_reason = data?.pause_reason ?? (status === "paused" ? pauseReason : null);
+    row.pause_reason_label =
+      data?.pause_reason_label ??
+      (status === "paused" ? clientAccountPauseReasonLabel(pauseReason) : null);
     toast.success("Status updated.");
     warnIfShipheroSyncFailed(data, toast);
     statusModalOpen.value = false;
@@ -750,9 +770,11 @@ onUnmounted(() => {
     <CrmStatusUpdateModal
       v-model:open="statusModalOpen"
       v-model:status="statusForm"
+      v-model:reason="pauseReasonForm"
       title="Account Status"
       :subtitle="statusModalSubtitle"
       :statuses="accountStatusOptions"
+      :reason-options="CLIENT_ACCOUNT_PAUSE_REASONS"
       :busy="statusPickerBusy"
       @save="saveStatusFromModal"
     />
@@ -826,9 +848,7 @@ onUnmounted(() => {
           </p>
           <p class="staff-stat-card__sub">{{ card.sub }}</p>
           <div class="staff-stat-card__icon" :class="card.iconClass" aria-hidden="true">
-            <svg width="22" height="22" fill="currentColor" viewBox="0 0 24 24">
-              <path :d="card.iconPath" />
-            </svg>
+            <CrmMaterialIcon :name="card.icon" :size="22" />
           </div>
         </button>
       </div>
@@ -1210,23 +1230,31 @@ onUnmounted(() => {
                 </div>
               </td>
               <td>
-                <button
-                  v-if="canUpdate"
-                  type="button"
-                  class="staff-status-badge text-capitalize"
-                  :class="statusBadgeClass(row.status)"
-                  title="Change account status"
-                  @click.stop="openStatusModal(row)"
-                >
-                  {{ row.status }}
-                </button>
-                <span
-                  v-else
-                  class="badge rounded-pill text-capitalize fw-medium"
-                  :class="statusBadgeClass(row.status)"
-                >
-                  {{ row.status }}
-                </span>
+                <div class="d-flex flex-column align-items-start gap-1">
+                  <button
+                    v-if="canUpdate"
+                    type="button"
+                    class="staff-status-badge text-capitalize"
+                    :class="statusBadgeClass(row.status)"
+                    title="Change account status"
+                    @click.stop="openStatusModal(row)"
+                  >
+                    {{ row.status }}
+                  </button>
+                  <span
+                    v-else
+                    class="badge rounded-pill text-capitalize fw-medium"
+                    :class="statusBadgeClass(row.status)"
+                  >
+                    {{ row.status }}
+                  </span>
+                  <span
+                    v-if="String(row.status || '').toLowerCase() === 'paused' && (row.pause_reason_label || row.pause_reason)"
+                    class="small text-secondary"
+                  >
+                    Reason: {{ row.pause_reason_label || clientAccountPauseReasonLabel(row.pause_reason) }}
+                  </span>
+                </div>
               </td>
               <td
                 class="text-body staff-table-cell__meta text-truncate"

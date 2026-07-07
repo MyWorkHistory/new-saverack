@@ -25,6 +25,33 @@ class ClientAccount extends Model
         self::STATUS_INACTIVE,
     ];
 
+    public const PAUSE_REASON_ACCOUNT_PAST_DUE = 'account_past_due';
+
+    public const PAUSE_REASON_ADMIN = 'admin';
+
+    public const PAUSE_REASON_USER_REQUEST = 'user_request';
+
+    public const PAUSE_REASONS = [
+        self::PAUSE_REASON_ACCOUNT_PAST_DUE,
+        self::PAUSE_REASON_ADMIN,
+        self::PAUSE_REASON_USER_REQUEST,
+    ];
+
+    public const PAUSE_REASON_LABELS = [
+        self::PAUSE_REASON_ACCOUNT_PAST_DUE => 'Account Past Due',
+        self::PAUSE_REASON_ADMIN => 'Admin',
+        self::PAUSE_REASON_USER_REQUEST => 'User Request',
+    ];
+
+    public static function pauseReasonLabel(?string $reason): ?string
+    {
+        if ($reason === null || trim($reason) === '') {
+            return null;
+        }
+
+        return self::PAUSE_REASON_LABELS[$reason] ?? null;
+    }
+
     public const DEFAULT_PAYMENT_TYPES = [
         'ACH',
         'Wire',
@@ -39,6 +66,7 @@ class ClientAccount extends Model
         'legacy_customer_id',
         'status',
         'paused_at',
+        'pause_reason',
         'company_name',
         'brand_name',
         'website',

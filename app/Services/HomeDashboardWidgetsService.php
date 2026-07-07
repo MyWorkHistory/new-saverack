@@ -85,12 +85,12 @@ class HomeDashboardWidgetsService
             ->where('status', ClientAccount::STATUS_PAUSED)
             ->orderByDesc('paused_at')
             ->orderBy('company_name')
-            ->get(['id', 'company_name', 'paused_at'])
+            ->get(['id', 'company_name', 'paused_at', 'pause_reason'])
             ->map(static fn (ClientAccount $account) => [
                 'id' => (int) $account->id,
                 'company_name' => (string) $account->company_name,
                 'paused_at' => optional($account->paused_at)->toIso8601String(),
-                'pause_reason' => 'Past Due',
+                'pause_reason' => ClientAccount::pauseReasonLabel($account->pause_reason),
             ])
             ->values()
             ->all();

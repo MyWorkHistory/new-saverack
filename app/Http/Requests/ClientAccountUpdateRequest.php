@@ -91,6 +91,7 @@ class ClientAccountUpdateRequest extends FormRequest
 
         return [
             'status' => ['sometimes', 'string', Rule::in(ClientAccount::STATUSES)],
+            'pause_reason' => ['sometimes', 'nullable', 'string', Rule::in(ClientAccount::PAUSE_REASONS)],
             'company_name' => ['sometimes', 'string', 'max:190'],
             'brand_name' => ['sometimes', 'nullable', 'string', 'max:190'],
             'website' => ['sometimes', 'nullable', 'string', 'max:512'],
@@ -147,6 +148,18 @@ class ClientAccountUpdateRequest extends FormRequest
                 return;
             }
             $newStatus = (string) $this->input('status');
+            $oldStatus = (string) $account->status;
+            if ($newStatus === ClientAccount::STATUS_PAUSED) {
+                $reason = $this->input('pause_reason');
+                $hasReason = is_string($reason) && trim($reason) !== '';
+                $transitioningToPaused = strtolower(trim($oldStatus)) !== ClientAccount::STATUS_PAUSED;
+                if ($transitioningToPaused && ! $hasReason) {
+                    $v->errors()->add(
+                        'pause_reason',
+                        'A pause reason is required when setting an account to paused.'
+                    );
+                }
+            }
             if ($newStatus !== ClientAccount::STATUS_ACTIVE) {
                 return;
             }

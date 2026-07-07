@@ -123,6 +123,7 @@ class HomeDashboardApiTest extends TestCase
             'status' => ClientAccount::STATUS_PAUSED,
             'email' => 'paused-widget@test.com',
             'paused_at' => now()->subHours(2),
+            'pause_reason' => ClientAccount::PAUSE_REASON_ACCOUNT_PAST_DUE,
         ]);
 
         $pending = ClientAccount::create([
@@ -230,7 +231,7 @@ class HomeDashboardApiTest extends TestCase
         $response->assertOk()
             ->assertJsonPath('paused_accounts.0.id', $paused->id)
             ->assertJsonPath('paused_accounts.0.company_name', 'Paused Widget Co')
-            ->assertJsonPath('paused_accounts.0.pause_reason', 'Past Due')
+            ->assertJsonPath('paused_accounts.0.pause_reason', 'Account Past Due')
             ->assertJsonPath('pending_new_accounts.0.id', $pending->id)
             ->assertJsonPath('pending_new_accounts.0.company_name', 'Pending Widget Co')
             ->assertJsonPath('pending_asn_preview.0.account_id', $accountA->id)

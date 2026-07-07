@@ -275,6 +275,7 @@ class ClientAccountService
 
         if ($old === ClientAccount::STATUS_PAUSED) {
             $data['paused_at'] = null;
+            $data['pause_reason'] = null;
         }
     }
 
@@ -699,6 +700,8 @@ class ClientAccountService
         return [
             'id' => $account->id,
             'status' => $account->status,
+            'pause_reason' => $account->pause_reason,
+            'pause_reason_label' => ClientAccount::pauseReasonLabel($account->pause_reason),
             'company_name' => $account->company_name,
             'brand_name' => $account->brand_name,
             'brand_logo_url' => $brandLogoUrl,

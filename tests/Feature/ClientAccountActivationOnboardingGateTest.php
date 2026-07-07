@@ -64,6 +64,7 @@ class ClientAccountActivationOnboardingGateTest extends TestCase
 
         $response = $this->patchJson('/api/client-accounts/'.$account->id, [
             'status' => ClientAccount::STATUS_PAUSED,
+            'pause_reason' => ClientAccount::PAUSE_REASON_ADMIN,
         ]);
 
         $response->assertOk();

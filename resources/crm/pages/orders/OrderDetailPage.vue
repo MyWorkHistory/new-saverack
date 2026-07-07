@@ -2100,6 +2100,14 @@ function goToOrdersList() {
                           <div class="order-detail-page__item-sku" :title="item.sku ? String(item.sku) : undefined">
                             {{ itemSkuDisplay(item.sku) }}
                           </div>
+                          <span
+                            v-if="item.fulfillment_status"
+                            class="badge rounded-pill fw-medium order-detail-page__item-line-status-badge"
+                            :class="lineItemStatusBadgeClass(item.fulfillment_status)"
+                            :title="String(item.fulfillment_status)"
+                          >
+                            {{ item.fulfillment_status }}
+                          </span>
                         </div>
                       </a>
                       <div v-else class="order-detail-page__item-cell">
@@ -2121,6 +2129,14 @@ function goToOrdersList() {
                           <div class="order-detail-page__item-sku" :title="item.sku ? String(item.sku) : undefined">
                             {{ itemSkuDisplay(item.sku) }}
                           </div>
+                          <span
+                            v-if="item.fulfillment_status"
+                            class="badge rounded-pill fw-medium order-detail-page__item-line-status-badge"
+                            :class="lineItemStatusBadgeClass(item.fulfillment_status)"
+                            :title="String(item.fulfillment_status)"
+                          >
+                            {{ item.fulfillment_status }}
+                          </span>
                         </div>
                       </div>
                     </td>

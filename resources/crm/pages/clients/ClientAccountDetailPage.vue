@@ -822,7 +822,7 @@ onUnmounted(() => {
         v-else-if="account"
         class="account-detail-header d-flex flex-column flex-lg-row align-items-stretch align-items-lg-center gap-2 gap-lg-3"
       >
-        <h1 class="staff-user-view__title account-detail-header__title mb-0">
+        <h1 class="staff-user-view__title account-detail-header__title mb-0 min-w-0">
           {{ account.company_name }}
         </h1>
         <div
@@ -1717,10 +1717,6 @@ onUnmounted(() => {
 
 .account-detail-page-head {
   margin-bottom: 1rem;
-}
-
-.account-detail-page-head__breadcrumb {
-  margin-bottom: 0.125rem;
 }
 
 .account-detail-header {

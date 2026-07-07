@@ -182,7 +182,7 @@ class ResourceCalendarEventApiTest extends TestCase
             ->assertForbidden();
     }
 
-    public function test_user_with_update_can_edit_shared_event_created_by_someone_else(): void
+    public function test_user_with_update_cannot_edit_shared_event_created_by_someone_else(): void
     {
         $creator = $this->staffWithCreate();
         $editor = $this->staffWithView();
@@ -201,11 +201,10 @@ class ResourceCalendarEventApiTest extends TestCase
 
         $this->patchJson("/api/resources/calendar-events/{$event->id}", [
             'title' => 'Shared Project Updated',
-        ])->assertOk()
-            ->assertJsonFragment(['title' => 'Shared Project Updated']);
+        ])->assertForbidden();
     }
 
-    public function test_user_with_delete_can_delete_shared_event_created_by_someone_else(): void
+    public function test_user_with_delete_cannot_delete_shared_event_created_by_someone_else(): void
     {
         $creator = $this->staffWithCreate();
         $deleter = $this->staffWithView();
@@ -221,6 +220,39 @@ class ResourceCalendarEventApiTest extends TestCase
         ]);
 
         Sanctum::actingAs($deleter);
+
+        $this->deleteJson("/api/resources/calendar-events/{$event->id}")
+            ->assertForbidden();
+
+        $this->assertDatabaseHas('resource_calendar_events', ['id' => $event->id]);
+    }
+
+    public function test_administrator_can_edit_and_delete_shared_event_created_by_someone_else(): void
+    {
+        $creator = $this->staffWithCreate();
+        $adminRole = \App\Models\Role::query()->firstOrCreate(
+            ['name' => 'admin'],
+            ['label' => 'Administrator', 'description' => 'Full access', 'is_system' => true]
+        );
+        $admin = User::factory()->create();
+        $admin->roles()->attach($adminRole->id);
+        $admin->permissions()->attach($this->resourcesViewPermission()->id);
+
+        $event = ResourceCalendarEvent::query()->create([
+            'created_by_user_id' => $creator->id,
+            'title' => 'Admin Managed Event',
+            'category' => ResourceCalendarEvent::CATEGORY_MEETING,
+            'start_date' => '2026-07-30',
+            'end_date' => '2026-07-30',
+            'is_personal' => false,
+        ]);
+
+        Sanctum::actingAs($admin);
+
+        $this->patchJson("/api/resources/calendar-events/{$event->id}", [
+            'title' => 'Admin Updated Event',
+        ])->assertOk()
+            ->assertJsonFragment(['title' => 'Admin Updated Event']);
 
         $this->deleteJson("/api/resources/calendar-events/{$event->id}")
             ->assertOk();

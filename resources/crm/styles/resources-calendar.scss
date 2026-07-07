@@ -198,6 +198,10 @@
       box-shadow: 0 0 0 0.2rem rgba(37, 99, 235, 0.25);
     }
 
+    .fc .fc-daygrid-event {
+      cursor: pointer;
+    }
+
     .fc .fc-button-group > .fc-button {
       border-radius: 0;
     }
@@ -221,4 +225,95 @@
   .fc-col-header-cell {
     background: rgba(255, 255, 255, 0.03);
   }
+}
+
+.calendar-event-detail-overlay {
+  align-items: center;
+  justify-content: center;
+  padding: 1rem;
+}
+
+.calendar-event-detail-modal {
+  width: min(96vw, 32rem);
+  max-height: 90vh;
+  overflow: auto;
+}
+
+.calendar-event-detail-modal__category-row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-bottom: 0.5rem;
+}
+
+.calendar-event-detail-modal__category-dot {
+  width: 0.625rem;
+  height: 0.625rem;
+  border-radius: 999px;
+  flex-shrink: 0;
+}
+
+.calendar-event-detail-modal__category-label {
+  font-size: 0.75rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--bs-secondary-color);
+}
+
+.calendar-event-detail-modal__personal-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.1rem 0.45rem;
+  border-radius: 999px;
+  background: rgba(107, 114, 128, 0.15);
+  color: var(--bs-secondary-color);
+  font-size: 0.6875rem;
+  font-weight: 600;
+}
+
+.calendar-event-detail-modal__meta {
+  display: grid;
+  gap: 0.75rem;
+  margin: 0;
+}
+
+.calendar-event-detail-modal__meta-row {
+  display: grid;
+  grid-template-columns: 6.5rem minmax(0, 1fr);
+  gap: 0.75rem;
+  align-items: start;
+}
+
+.calendar-event-detail-modal__meta-row dt {
+  margin: 0;
+  font-size: 0.8125rem;
+  font-weight: 600;
+  color: var(--bs-secondary-color);
+}
+
+.calendar-event-detail-modal__meta-row dd {
+  margin: 0;
+  font-size: 0.875rem;
+  color: var(--bs-body-color);
+}
+
+.calendar-event-detail-modal__description {
+  margin-top: 1.25rem;
+  padding-top: 1rem;
+  border-top: 1px solid var(--bs-border-color);
+}
+
+.calendar-event-detail-modal__description-label {
+  font-size: 0.8125rem;
+  font-weight: 600;
+  color: var(--bs-secondary-color);
+  margin-bottom: 0.35rem;
+}
+
+.calendar-event-detail-modal__description-text {
+  font-size: 0.875rem;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  color: var(--bs-body-color);
 }

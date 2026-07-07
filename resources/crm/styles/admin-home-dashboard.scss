@@ -125,6 +125,21 @@
     border-bottom: 1px solid #f3f4f6;
   }
 
+  .home-list-panel__row--clickable {
+    width: 100%;
+    border: none;
+    background: transparent;
+    text-align: left;
+    cursor: pointer;
+    transition: background-color 0.15s ease;
+  }
+
+  .home-list-panel__row--clickable:hover,
+  .home-list-panel__row--clickable:focus-visible {
+    background: rgba(59, 130, 246, 0.06);
+    outline: none;
+  }
+
   .home-list-panel__row:last-child {
     border-bottom: none;
   }

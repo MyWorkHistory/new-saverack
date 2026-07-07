@@ -30,21 +30,21 @@ class ResourceCalendarEventPolicy
         return $user->isCrmOwner() || $user->hasPermission('resources.create');
     }
 
-    public function update(User $user, ResourceCalendarEvent $event): bool
+  public function update(User $user, ResourceCalendarEvent $event): bool
     {
-        if ($event->is_personal) {
-            return (int) $event->created_by_user_id === (int) $user->id;
+        if ($user->isAdministrator() || $user->isCrmOwner()) {
+            return true;
         }
 
-        return $user->isCrmOwner() || $user->hasPermission('resources.update');
+        return (int) $event->created_by_user_id === (int) $user->id;
     }
 
     public function delete(User $user, ResourceCalendarEvent $event): bool
     {
-        if ($event->is_personal) {
-            return (int) $event->created_by_user_id === (int) $user->id;
+        if ($user->isAdministrator() || $user->isCrmOwner()) {
+            return true;
         }
 
-        return $user->isCrmOwner() || $user->hasPermission('resources.delete');
+        return (int) $event->created_by_user_id === (int) $user->id;
     }
 }

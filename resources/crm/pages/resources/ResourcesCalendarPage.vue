@@ -4,12 +4,14 @@ import FullCalendar from "@fullcalendar/vue3";
 import dayGridPlugin from "@fullcalendar/daygrid";
 import interactionPlugin from "@fullcalendar/interaction";
 import CalendarEventDrawer from "../../components/resources/CalendarEventDrawer.vue";
+import CalendarEventDetailModal from "../../components/resources/CalendarEventDetailModal.vue";
 import CrmLoadingSpinner from "../../components/common/CrmLoadingSpinner.vue";
 import {
   toFullCalendarEvent,
   useResourceCalendarEvents,
 } from "../../composables/useResourceCalendarEvents.js";
 import { setCrmPageMeta } from "../../composables/useCrmPageMeta.js";
+import { canManageCalendarEvent } from "../../utils/calendarEventPermissions.js";
 import { crmIsAdmin } from "../../utils/crmUser.js";
 
 const crmUser = inject("crmUser", ref(null));
@@ -22,8 +24,6 @@ function userHasPerm(key) {
 }
 
 const canCreate = computed(() => userHasPerm("resources.create"));
-const canUpdate = computed(() => userHasPerm("resources.update"));
-const canDelete = computed(() => userHasPerm("resources.delete"));
 
 const {
   loading,
@@ -44,7 +44,8 @@ const drawerMode = ref("create");
 const editingEvent = ref(null);
 const initialStartDate = ref("");
 const initialEndDate = ref("");
-
+const detailOpen = ref(false);
+const detailEvent = ref(null);
 const filterPersonal = ref(true);
 const filterCategories = reactive({});
 
@@ -64,22 +65,13 @@ const calendarEvents = computed(() => filteredEvents.value.map(toFullCalendarEve
 
 const drawerCanSave = computed(() => {
   if (drawerMode.value === "create") return canCreate.value;
-  const ev = editingEvent.value;
-  if (!ev) return false;
-  if (ev.is_personal) {
-    return Number(ev.created_by_user_id) === Number(crmUser.value?.id);
-  }
-  return canUpdate.value;
+  return canManageCalendarEvent(crmUser.value, editingEvent.value);
 });
 
-const drawerCanDelete = computed(() => {
-  const ev = editingEvent.value;
-  if (!ev) return false;
-  if (ev.is_personal) {
-    return Number(ev.created_by_user_id) === Number(crmUser.value?.id);
-  }
-  return canDelete.value;
-});
+const drawerCanDelete = computed(() => canManageCalendarEvent(crmUser.value, editingEvent.value));
+
+const detailCanEdit = computed(() => canManageCalendarEvent(crmUser.value, detailEvent.value));
+const detailCanDelete = computed(() => canManageCalendarEvent(crmUser.value, detailEvent.value));
 
 const calendarOptions = computed(() => ({
   plugins: [dayGridPlugin, interactionPlugin],
@@ -153,6 +145,16 @@ function openCreateDrawer(dateStr) {
   drawerOpen.value = true;
 }
 
+function openDetailModal(event) {
+  detailEvent.value = event;
+  detailOpen.value = true;
+}
+
+function closeDetailModal() {
+  detailOpen.value = false;
+  detailEvent.value = null;
+}
+
 function openEditDrawer(event) {
   drawerMode.value = "edit";
   editingEvent.value = event;
@@ -170,7 +172,25 @@ function handleEventClick(info) {
   info.jsEvent.preventDefault();
   const raw = info.event.extendedProps?.raw;
   if (raw) {
-    openEditDrawer(raw);
+    openDetailModal(raw);
+  }
+}
+
+function onDetailEdit() {
+  const ev = detailEvent.value;
+  if (!ev) return;
+  closeDetailModal();
+  openEditDrawer(ev);
+}
+
+async function onDetailDelete() {
+  if (!detailEvent.value?.id) return;
+  try {
+    await deleteEvent(detailEvent.value.id);
+    closeDetailModal();
+    await refreshEvents();
+  } catch {
+    /* toast handled */
   }
 }
 
@@ -307,6 +327,17 @@ onMounted(async () => {
         </div>
       </div>
     </div>
+
+    <CalendarEventDetailModal
+      :open="detailOpen"
+      :event="detailEvent"
+      :can-edit="detailCanEdit"
+      :can-delete="detailCanDelete"
+      :deleting="deleting"
+      @close="closeDetailModal"
+      @edit="onDetailEdit"
+      @delete="onDetailDelete"
+    />
 
     <CalendarEventDrawer
       v-model:open="drawerOpen"

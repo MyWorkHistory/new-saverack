@@ -38,20 +38,22 @@ function onSelect(status) {
     <div v-for="card in ASN_SUMMARY_CARDS" :key="card.key" class="col-12 col-sm-6 col-xl-3">
       <button
         type="button"
-        class="staff-stat-card billing-inv-summary-card h-100 text-start w-100"
-        :class="{ 'asn-hub-summary-card--active': activeStatus === card.status }"
+        class="staff-datatable-card staff-datatable-card--white asn-summary-card h-100 w-100"
+        :class="{ 'asn-summary-card--active': activeStatus === card.status }"
         @click="onSelect(card.status)"
       >
-        <p class="staff-stat-card__label">{{ card.label }}</p>
-        <p class="staff-stat-card__value">{{ cardValue(card.key, values) }}</p>
-        <p class="staff-stat-card__sub">{{ card.sub }}</p>
-        <div
-          class="staff-stat-card__icon asn-hub-summary-card__icon"
-          :style="card.iconStyle"
-          aria-hidden="true"
-        >
-          <CrmMaterialIcon :name="card.icon" :size="23" />
+        <div class="asn-summary-card__icon" :style="card.iconStyle" aria-hidden="true">
+          <CrmMaterialIcon :name="card.icon" :size="22" />
         </div>
+        <div class="asn-summary-card__body min-w-0">
+          <p class="asn-summary-card__title" :style="{ color: card.titleColor }">
+            {{ card.titleUpper }}
+          </p>
+          <p class="asn-summary-card__sub">{{ card.sub }}</p>
+        </div>
+        <p class="asn-summary-card__value" :style="{ color: card.titleColor }">
+          {{ cardValue(card.key, values) }}
+        </p>
       </button>
     </div>
   </div>

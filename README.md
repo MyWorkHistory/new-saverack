@@ -29,9 +29,20 @@ Open the app via Laravel: `http://127.0.0.1:8000/` (SPA) and sign in with `ADMIN
 ### Inventory catalog sync (production)
 
 - Run migrations after deploy: `php artisan migrate --force`
-- Run a queue worker: `php artisan queue:work` (catalog sync uses `SyncInventoryCatalogPageJob`)
+- Run a persistent queue worker: `php artisan queue:work database-long --timeout=3700 --tries=1`
 - If sync is stuck `running` and list returns 409: `php artisan inventory:reset-catalog-sync` then `php artisan inventory:reset-catalog-sync 271`
 - Reload PHP-FPM / clear OPcache after backend deploy; deploy `public/assets/*` after `npm run build:spa`
+
+**Smoke test after deploy**
+
+| Request | Expected |
+|---------|----------|
+| `GET /api/inventory-beta/catalog-sync?client_account_id=271` | 200 in under 1s; `inventory_beta.catalog_sync.completed` in `laravel.log` |
+| `GET /api/inventory-beta/list?client_account_id=271&first=50` | 200 in under 2s; `inventory_beta.list.start` + `inventory_beta.list.completed` in log |
+| `GET ...&refresh=1` | 202; worker logs `inventory.catalog_sync.page` |
+| After sync idle | List populates from local index without ShipHero GraphQL on reads |
+
+If `inventory_beta.list.start` never appears in the log, the request is not reaching Laravel (undeployed code, OPcache, or PHP-FPM pool exhaustion).
 
 ---
 

@@ -116,6 +116,9 @@ return [
     /** Queue connection for inventory restock refresh chunks (see database-long). */
     'restock_long_connection' => env('QUEUE_RESTOCK_CONNECTION', 'database-long'),
 
+    /** Queue connection for inventory catalog sync jobs (see database-long). */
+    'catalog_long_connection' => env('QUEUE_CATALOG_CONNECTION', 'database-long'),
+
     'failed' => [
         'driver' => env('QUEUE_FAILED_DRIVER', 'database-uuids'),
         'database' => env('DB_CONNECTION', 'sqlite'),

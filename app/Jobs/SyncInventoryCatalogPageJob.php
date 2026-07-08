@@ -8,6 +8,7 @@ use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Bus\Dispatchable;
 use Illuminate\Queue\InteractsWithQueue;
 use Illuminate\Queue\SerializesModels;
+use Illuminate\Support\Facades\Log;
 use Throwable;
 
 class SyncInventoryCatalogPageJob implements ShouldQueue
@@ -60,19 +61,35 @@ class SyncInventoryCatalogPageJob implements ShouldQueue
                 : null;
 
             if ($hasNextPage && $endCursor !== null && $endCursor !== '') {
-                self::dispatch($this->clientAccountId, $this->customerAccountId, $endCursor, $this->syncMode);
+                $inventory->dispatchCatalogPageJob(
+                    $this->clientAccountId,
+                    $this->customerAccountId,
+                    $endCursor,
+                    $this->syncMode
+                );
 
                 return;
             }
 
             if ($this->syncMode === ShipHeroInventoryService::CATALOG_SYNC_FULL) {
                 $inventory->markCatalogSyncCompleted($this->clientAccountId);
-            } else {
-                $inventory->finalizeIncrementalCatalogSync($this->clientAccountId);
+                Log::info('inventory.catalog_sync.completed', [
+                    'client_account_id' => $this->clientAccountId,
+                    'sync_mode' => ShipHeroInventoryService::CATALOG_SYNC_FULL,
+                ]);
+
+                return;
             }
+
+            $inventory->dispatchFinalizeCatalogSyncJob($this->clientAccountId);
         } catch (Throwable $e) {
             report($e);
             $inventory->markCatalogSyncFailed($this->clientAccountId);
+            Log::warning('inventory.catalog_sync.failed', [
+                'client_account_id' => $this->clientAccountId,
+                'phase' => 'page',
+                'message' => $e->getMessage(),
+            ]);
             throw $e;
         }
     }

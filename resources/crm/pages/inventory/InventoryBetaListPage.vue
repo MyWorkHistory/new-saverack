@@ -53,6 +53,9 @@ let accountLoadSeq = 0;
 
 /** ShipHero inventory list page size */
 const LIST_PAGE_SIZE = 50;
+const LIST_FETCH_TIMEOUT_MS = 20000;
+
+const listLoadFailed = ref(false);
 
 const filterMenuOpen = ref(false);
 const bulkEditMenuOpen = ref(false);
@@ -164,7 +167,11 @@ async function fetchPage(append, forceRefresh = false, syncMode = "incremental")
     params.sync_mode = syncMode;
     currentSyncMode.value = syncMode;
   }
-  const response = await api.get("/inventory-beta/list", { params });
+  listLoadFailed.value = false;
+  const response = await api.get("/inventory-beta/list", {
+    params,
+    timeout: LIST_FETCH_TIMEOUT_MS,
+  });
   const data = response.data;
   if (data?.catalog_sync && typeof data.catalog_sync === "object") {
     catalogSync.value = { ...catalogSync.value, ...data.catalog_sync };
@@ -234,8 +241,18 @@ async function loadRows(reset, forceRefresh = false) {
   } catch (e) {
     if (forceRefresh) {
       rows.value = previousRows;
+    } else {
+      const status = Number(e?.response?.status || 0);
+      const isTimeout = e?.code === "ECONNABORTED";
+      if (status === 502 || isTimeout) {
+        listLoadFailed.value = true;
+      }
+      if ((status === 502 || isTimeout) && rows.value.length === 0) {
+        toast.error("Catalog not loaded. Click Sync Products to load from ShipHero.");
+      } else {
+        toast.errorFrom(e, "Could not load inventory.");
+      }
     }
-    toast.errorFrom(e, "Could not load inventory.");
   } finally {
     loading.value = false;
     loadingMore.value = false;
@@ -1200,6 +1217,11 @@ onUnmounted(() => {
             <tr v-else-if="isStaffPickerMode && !hasSearched">
               <td :colspan="tableColspan" class="text-center text-secondary py-5">
                 Enter a SKU or barcode and press Search — account is optional. Select an account to filter the catalog.
+              </td>
+            </tr>
+            <tr v-else-if="listLoadFailed && !displayRows.length">
+              <td :colspan="tableColspan" class="text-center text-secondary py-5">
+                Catalog not loaded. Click <strong>Sync Products</strong> to load from ShipHero.
               </td>
             </tr>
             <tr v-else-if="!displayRows.length">

@@ -4,6 +4,7 @@ namespace Tests\Feature;
 
 use App\Jobs\SyncInventoryCatalogPageJob;
 use App\Models\ClientAccount;
+use App\Models\InventoryProductCrmStatus;
 use App\Models\ShipHeroInventoryProductDetailCache;
 use App\Models\ShipHeroInventoryProductIndex;
 use App\Models\User;
@@ -260,6 +261,86 @@ class InventoryCatalogSyncApiTest extends TestCase
             return $job->clientAccountId === $account->id
                 && $job->customerAccountId === 'sh-job-sync-1';
         });
+    }
+
+    public function test_refresh_uses_async_queue_connection_when_default_is_sync(): void
+    {
+        config(['queue.default' => 'sync']);
+        Queue::fake();
+
+        $user = User::factory()->create();
+        $user->permissions()->sync([$this->inventoryViewPermission()->id]);
+        Sanctum::actingAs($user);
+
+        $account = ClientAccount::query()->create([
+            'company_name' => 'Async Queue Co',
+            'status' => ClientAccount::STATUS_ACTIVE,
+            'shiphero_customer_account_id' => 'sh-async-queue-1',
+            'inventory_catalog_sync_status' => 'idle',
+        ]);
+
+        $client = Mockery::mock(ShipHeroClient::class);
+        $client->shouldNotReceive('query');
+        $this->app->instance(ShipHeroClient::class, $client);
+
+        $this->getJson('/api/inventory-beta/list?'.http_build_query([
+            'client_account_id' => $account->id,
+            'refresh' => 1,
+        ]))->assertStatus(202);
+
+        Queue::assertPushedOn('database-long', SyncInventoryCatalogPageJob::class);
+    }
+
+    public function test_list_read_hides_crm_inactive_skus_without_join(): void
+    {
+        $user = User::factory()->create();
+        $user->permissions()->sync([$this->inventoryViewPermission()->id]);
+        Sanctum::actingAs($user);
+
+        $account = ClientAccount::query()->create([
+            'company_name' => 'CRM Filter Co',
+            'status' => ClientAccount::STATUS_ACTIVE,
+            'shiphero_customer_account_id' => 'sh-crm-filter-1',
+        ]);
+
+        foreach (['ACTIVE-SKU', 'INACTIVE-SKU'] as $sku) {
+            ShipHeroInventoryProductIndex::query()->create([
+                'client_account_id' => $account->id,
+                'shiphero_customer_account_id' => 'sh-crm-filter-1',
+                'sku' => $sku,
+                'sku_search' => strtolower($sku),
+                'name' => $sku,
+                'name_search' => strtolower($sku),
+                'product_active' => true,
+                'kit' => false,
+                'kit_build' => false,
+                'warehouse_id' => 'WH1',
+                'warehouse_active' => true,
+                'on_hand' => $sku === 'ACTIVE-SKU' ? 10 : 5,
+                'allocated' => 0,
+                'backorder' => 0,
+                'synced_at' => now(),
+            ]);
+        }
+
+        InventoryProductCrmStatus::query()->create([
+            'client_account_id' => $account->id,
+            'sku' => 'INACTIVE-SKU',
+            'crm_active' => false,
+        ]);
+
+        $client = Mockery::mock(ShipHeroClient::class);
+        $client->shouldNotReceive('query');
+        $this->app->instance(ShipHeroClient::class, $client);
+
+        $this->getJson('/api/inventory-beta/list?'.http_build_query([
+            'client_account_id' => $account->id,
+            'active_status' => 'active',
+        ]))
+            ->assertOk()
+            ->assertJsonCount(1, 'rows')
+            ->assertJsonPath('rows.0.sku', 'ACTIVE-SKU')
+            ->assertJsonPath('rows.0.crm_active', true);
     }
 
     public function test_list_read_works_when_crm_status_table_is_missing(): void

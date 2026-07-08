@@ -2,9 +2,11 @@
 
 namespace App\Services;
 
+use App\Jobs\FinalizeInventoryCatalogSyncJob;
 use App\Jobs\SyncInventoryCatalogPageJob;
 use App\Models\ClientAccount;
 use App\Models\ClientAccountOnDemandProduct;
+use App\Models\InventoryProductCrmStatus;
 use App\Models\ShipHeroInventoryProductDetailCache;
 use App\Models\ShipHeroInventoryProductIndex;
 use Illuminate\Database\Eloquent\Builder;
@@ -25,6 +27,11 @@ class ShipHeroInventoryService
 
     /** @var bool */
     private $catalogSyncTrackSeen = false;
+
+    /** @var bool|null */
+    private static $inventoryIndexCrmStatusTableExists = null;
+
+    public const CATALOG_FINALIZE_BATCH_SIZE = 2000;
 
     public function __construct(ShipHeroClient $client)
     {
@@ -477,27 +484,11 @@ GQL;
 
     private function inventoryIndexCrmStatusEnabled(): bool
     {
-        return Schema::hasTable('inventory_product_crm_status');
-    }
-
-    private function applyInventoryIndexCrmStatusJoin(Builder $query): Builder
-    {
-        if (! $this->inventoryIndexCrmStatusEnabled()) {
-            return $query;
+        if (self::$inventoryIndexCrmStatusTableExists === null) {
+            self::$inventoryIndexCrmStatusTableExists = Schema::hasTable('inventory_product_crm_status');
         }
 
-        $table = (new ShipHeroInventoryProductIndex())->getTable();
-
-        return $query
-            ->leftJoin(
-                'inventory_product_crm_status as inventory_crm_status',
-                function ($join) use ($table) {
-                    $join->on('inventory_crm_status.client_account_id', '=', $table.'.client_account_id')
-                        ->on('inventory_crm_status.sku', '=', $table.'.sku');
-                }
-            )
-            ->select($table.'.*')
-            ->addSelect(DB::raw('COALESCE(inventory_crm_status.crm_active, 1) as crm_active_resolved'));
+        return self::$inventoryIndexCrmStatusTableExists;
     }
 
     private function applyInventoryIndexCrmActiveFilter(Builder $query, string $activeStatus): void
@@ -506,10 +497,79 @@ GQL;
             return;
         }
 
+        $table = (new ShipHeroInventoryProductIndex())->getTable();
+
         if ($activeStatus === 'active') {
-            $query->whereRaw('COALESCE(inventory_crm_status.crm_active, 1) = 1');
+            $query->whereNotExists(function ($sub) use ($table) {
+                $sub->select(DB::raw(1))
+                    ->from('inventory_product_crm_status as inventory_crm_status')
+                    ->whereColumn('inventory_crm_status.client_account_id', $table.'.client_account_id')
+                    ->whereColumn('inventory_crm_status.sku', $table.'.sku')
+                    ->where('inventory_crm_status.crm_active', false);
+            });
         } elseif ($activeStatus === 'inactive') {
-            $query->where('inventory_crm_status.crm_active', false);
+            $query->whereExists(function ($sub) use ($table) {
+                $sub->select(DB::raw(1))
+                    ->from('inventory_product_crm_status as inventory_crm_status')
+                    ->whereColumn('inventory_crm_status.client_account_id', $table.'.client_account_id')
+                    ->whereColumn('inventory_crm_status.sku', $table.'.sku')
+                    ->where('inventory_crm_status.crm_active', false);
+            });
+        }
+    }
+
+    /**
+     * @param  \Illuminate\Support\Collection<int, ShipHeroInventoryProductIndex>  $items
+     */
+    private function hydrateIndexRowsCrmActive($items): void
+    {
+        if ($items->isEmpty()) {
+            return;
+        }
+
+        if (! $this->inventoryIndexCrmStatusEnabled()) {
+            foreach ($items as $row) {
+                $row->setAttribute('crm_active_resolved', true);
+            }
+
+            return;
+        }
+
+        $skusByAccount = [];
+        foreach ($items as $row) {
+            $accountId = (int) $row->client_account_id;
+            if ($accountId <= 0) {
+                continue;
+            }
+            $skusByAccount[$accountId][] = (string) $row->sku;
+        }
+
+        $statusMap = [];
+        foreach ($skusByAccount as $accountId => $skus) {
+            $skus = array_values(array_unique(array_filter($skus, static function ($sku) {
+                return trim($sku) !== '';
+            })));
+            if ($skus === []) {
+                continue;
+            }
+
+            $rows = InventoryProductCrmStatus::query()
+                ->where('client_account_id', $accountId)
+                ->whereIn('sku', $skus)
+                ->get(['sku', 'crm_active']);
+
+            foreach ($rows as $statusRow) {
+                $statusMap[$accountId][(string) $statusRow->sku] = (bool) $statusRow->crm_active;
+            }
+        }
+
+        foreach ($items as $row) {
+            $accountId = (int) $row->client_account_id;
+            $sku = (string) $row->sku;
+            $row->setAttribute(
+                'crm_active_resolved',
+                $statusMap[$accountId][$sku] ?? true
+            );
         }
     }
 
@@ -731,12 +791,69 @@ GQL;
      */
     public function dispatchCatalogSyncJob(int $clientAccountId, string $customerAccountId, string $syncMode): void
     {
-        $syncMode = $this->normalizeCatalogSyncMode($syncMode);
-        if ($syncMode === self::CATALOG_SYNC_FULL) {
-            $this->clearInventoryIndexForAccount($clientAccountId, $customerAccountId);
-        }
         $this->beginCatalogSync($clientAccountId);
-        SyncInventoryCatalogPageJob::dispatch($clientAccountId, $customerAccountId, null, $syncMode);
+        $this->dispatchCatalogPageJob($clientAccountId, $customerAccountId, null, $syncMode);
+    }
+
+    public function dispatchCatalogPageJob(
+        int $clientAccountId,
+        string $customerAccountId,
+        ?string $after,
+        string $syncMode
+    ): void {
+        $this->dispatchCatalogJob(new SyncInventoryCatalogPageJob(
+            $clientAccountId,
+            $customerAccountId,
+            $after,
+            $syncMode
+        ));
+    }
+
+    public function dispatchFinalizeCatalogSyncJob(int $clientAccountId, ?int $afterId = null): void
+    {
+        $this->dispatchCatalogJob(new FinalizeInventoryCatalogSyncJob($clientAccountId, $afterId));
+    }
+
+    /**
+     * @param  SyncInventoryCatalogPageJob|FinalizeInventoryCatalogSyncJob  $job
+     */
+    private function dispatchCatalogJob($job): void
+    {
+        $default = (string) config('queue.default', 'sync');
+        if ($default === 'sync') {
+            $async = $this->catalogQueueConnection();
+            if ($async === null) {
+                throw new RuntimeException(
+                    'Catalog sync requires a background queue. Set QUEUE_CONNECTION=database or redis and run: php artisan queue:work database-long --timeout=3700 --tries=1'
+                );
+            }
+            dispatch($job)->onConnection($async);
+
+            return;
+        }
+
+        dispatch($job);
+    }
+
+    public function catalogQueueConnection(): ?string
+    {
+        $preferred = trim((string) config('queue.catalog_long_connection', 'database-long'));
+        if ($preferred !== '' && config("queue.connections.{$preferred}.driver") !== null) {
+            return $preferred;
+        }
+
+        return $this->asyncQueueConnection();
+    }
+
+    private function asyncQueueConnection(): ?string
+    {
+        foreach (['redis', 'database', 'beanstalkd', 'sqs'] as $name) {
+            if (config("queue.connections.{$name}.driver") !== null) {
+                return $name;
+            }
+        }
+
+        return null;
     }
 
     /**
@@ -751,15 +868,20 @@ GQL;
         ?string $after,
         string $syncMode
     ): array {
-        $this->normalizeCatalogSyncMode($syncMode);
+        $syncMode = $this->normalizeCatalogSyncMode($syncMode);
+        if ($syncMode === self::CATALOG_SYNC_FULL && ($after === null || trim((string) $after) === '')) {
+            $this->clearInventoryIndexForAccount($clientAccountId, $customerAccountId);
+        }
+
+        $pageStartedAt = microtime(true);
         $this->catalogSyncTrackSeen = true;
         try {
-            return $this->listInventoryRows(
+            $payload = $this->listInventoryRows(
                 $customerAccountId,
                 $first,
                 $after,
                 'all',
-                'active',
+                'all',
                 null,
                 0,
                 $clientAccountId,
@@ -771,6 +893,16 @@ GQL;
         } finally {
             $this->catalogSyncTrackSeen = false;
         }
+
+        Log::info('inventory.catalog_sync.page', [
+            'client_account_id' => $clientAccountId,
+            'after' => $after,
+            'row_count' => count($payload['rows'] ?? []),
+            'has_next_page' => (bool) ($payload['page_info']['has_next_page'] ?? false),
+            'page_ms' => (int) round((microtime(true) - $pageStartedAt) * 1000),
+        ]);
+
+        return $payload;
     }
 
     public function resolveStaleRunningCatalogSync(int $clientAccountId): void
@@ -839,27 +971,57 @@ GQL;
 
     public function finalizeIncrementalCatalogSync(int $clientAccountId): void
     {
+        $this->dispatchFinalizeCatalogSyncJob($clientAccountId);
+    }
+
+    /**
+     * Mark stale incremental-sync rows inactive in batches. Returns the last processed id, or null when done.
+     */
+    public function finalizeIncrementalCatalogSyncBatch(int $clientAccountId, ?int $afterId = null): ?int
+    {
         if ($clientAccountId <= 0) {
-            return;
+            return null;
         }
 
         $account = ClientAccount::query()->find($clientAccountId);
         if ($account === null) {
-            return;
+            return null;
         }
 
         $startedAt = $account->inventory_catalog_sync_started_at;
-        if ($startedAt !== null) {
-            ShipHeroInventoryProductIndex::query()
-                ->where('client_account_id', $clientAccountId)
-                ->where(function ($query) use ($startedAt) {
-                    $query->whereNull('last_seen_at')
-                        ->orWhere('last_seen_at', '<', $startedAt);
-                })
-                ->update(['product_active' => false]);
+        if ($startedAt === null) {
+            return null;
         }
 
-        $this->markCatalogSyncCompleted($clientAccountId);
+        $query = ShipHeroInventoryProductIndex::query()
+            ->where('client_account_id', $clientAccountId)
+            ->where(function ($builder) use ($startedAt) {
+                $builder->whereNull('last_seen_at')
+                    ->orWhere('last_seen_at', '<', $startedAt);
+            })
+            ->orderBy('id');
+
+        if ($afterId !== null && $afterId > 0) {
+            $query->where('id', '>', $afterId);
+        }
+
+        $ids = $query
+            ->limit(self::CATALOG_FINALIZE_BATCH_SIZE)
+            ->pluck('id');
+
+        if ($ids->isEmpty()) {
+            return null;
+        }
+
+        ShipHeroInventoryProductIndex::query()
+            ->whereIn('id', $ids->all())
+            ->update(['product_active' => false]);
+
+        if ($ids->count() < self::CATALOG_FINALIZE_BATCH_SIZE) {
+            return null;
+        }
+
+        return (int) $ids->last();
     }
 
     public function markCatalogSyncCompleted(int $clientAccountId): void
@@ -984,13 +1146,12 @@ GQL;
         string $activeStatus,
         bool $backorderOnly
     ): ?array {
+        $searchStartedAt = microtime(true);
         $query = ShipHeroInventoryProductIndex::query();
         $query = $this->applyInventoryIndexAccountScope($query, $clientAccountId, $customerAccountId);
         if ($query === null) {
             return null;
         }
-
-        $query = $this->applyInventoryIndexCrmStatusJoin($query);
 
         $term = $this->normalizeInventoryIndexSearchValue($searchQuery ?? '');
         if ($term === '' && ($activeStatus === 'active' || $activeStatus === 'inactive')) {
@@ -1058,6 +1219,7 @@ GQL;
         if ($hasNextPage) {
             $items = $items->slice(0, $first)->values();
         }
+        $this->hydrateIndexRowsCrmActive($items);
         $rows = $items->map(function (ShipHeroInventoryProductIndex $row) {
             return $this->inventoryIndexRowToListRow($row);
         })->values()->all();
@@ -1065,6 +1227,14 @@ GQL;
             $rows = $this->filterOversoldInventoryRows($rows);
         }
         $next = $offset + count($rows);
+
+        Log::info('inventory.index.search_ms', [
+            'client_account_id' => $clientAccountId,
+            'offset' => $offset,
+            'row_count' => count($rows),
+            'search_ms' => (int) round((microtime(true) - $searchStartedAt) * 1000),
+            'crm_join_skipped' => true,
+        ]);
 
         return [
             'rows' => $rows,
@@ -1120,7 +1290,9 @@ GQL;
         $query = ShipHeroInventoryProductIndex::query()
             ->whereIn('client_account_id', $clientAccountIds);
 
-        $query = $this->applyInventoryIndexCrmStatusJoin($query);
+        if ($activeStatus === 'active' || $activeStatus === 'inactive') {
+            $this->applyInventoryIndexCrmActiveFilter($query, $activeStatus);
+        }
 
         if ($kitsFilter === 'yes') {
             $query->where(function ($q) {
@@ -1146,8 +1318,18 @@ GQL;
 
         $first = max(1, min(200, $first));
         $offset = max(0, $searchSkip);
-        $total = (clone $query)->count();
-        if ($total === 0) {
+        $fetchLimit = $first + 1;
+
+        $items = $query
+            ->with('clientAccount:id,company_name')
+            ->orderByDesc('on_hand')
+            ->orderBy('sku')
+            ->orderBy('warehouse_id')
+            ->skip($offset)
+            ->take($fetchLimit)
+            ->get();
+
+        if ($items->isEmpty()) {
             return [
                 'rows' => [],
                 'page_info' => [
@@ -1158,14 +1340,11 @@ GQL;
             ];
         }
 
-        $items = $query
-            ->with('clientAccount:id,company_name')
-            ->orderByDesc('on_hand')
-            ->orderBy('sku')
-            ->orderBy('warehouse_id')
-            ->skip($offset)
-            ->take($first)
-            ->get();
+        $hasNextPage = $items->count() > $first;
+        if ($hasNextPage) {
+            $items = $items->slice(0, $first)->values();
+        }
+        $this->hydrateIndexRowsCrmActive($items);
         $rows = $items->map(function (ShipHeroInventoryProductIndex $row) {
             return $this->inventoryIndexRowToListRow($row);
         })->values()->all();
@@ -1177,9 +1356,9 @@ GQL;
         return [
             'rows' => $rows,
             'page_info' => [
-                'has_next_page' => $next < $total,
+                'has_next_page' => $hasNextPage,
                 'end_cursor' => null,
-                'next_search_skip' => $next,
+                'next_search_skip' => $hasNextPage ? $next : 0,
             ],
         ];
     }

@@ -87,17 +87,15 @@ class ShipHeroInventoryRefreshTest extends TestCase
             ]);
 
         $service = new ShipHeroInventoryService($client);
-        $payload = $service->listCatalogInventoryRows(
+        $account->inventory_catalog_sync_status = 'running';
+        $account->inventory_catalog_sync_started_at = now();
+        $account->save();
+
+        $payload = $service->syncCatalogInventoryPage(
+            $account->id,
             'sh-refresh-1',
             50,
             null,
-            'all',
-            'active',
-            null,
-            0,
-            $account->id,
-            false,
-            true,
             ShipHeroInventoryService::CATALOG_SYNC_FULL
         );
 
@@ -181,17 +179,15 @@ class ShipHeroInventoryRefreshTest extends TestCase
             ]);
 
         $service = new ShipHeroInventoryService($client);
-        $service->listCatalogInventoryRows(
+        $account->inventory_catalog_sync_status = 'running';
+        $account->inventory_catalog_sync_started_at = now();
+        $account->save();
+
+        $service->syncCatalogInventoryPage(
+            $account->id,
             'sh-inc-1',
             50,
             null,
-            'all',
-            'active',
-            null,
-            0,
-            $account->id,
-            false,
-            true,
             ShipHeroInventoryService::CATALOG_SYNC_INCREMENTAL
         );
 
@@ -205,7 +201,10 @@ class ShipHeroInventoryRefreshTest extends TestCase
             'sku' => 'NEW-SKU',
         ]);
 
-        $service->finalizeIncrementalCatalogSync($account->id);
+        $nextId = null;
+        do {
+            $nextId = $service->finalizeIncrementalCatalogSyncBatch($account->id, $nextId);
+        } while ($nextId !== null);
 
         $this->assertDatabaseHas('shiphero_inventory_product_index', [
             'client_account_id' => $account->id,
@@ -485,5 +484,55 @@ class ShipHeroInventoryRefreshTest extends TestCase
 
         $this->assertSame([], $payload['rows']);
         $this->assertFalse((bool) ($payload['page_info']['has_next_page'] ?? true));
+    }
+
+    public function test_index_list_read_paginates_many_rows_without_count_query(): void
+    {
+        $account = ClientAccount::query()->create([
+            'company_name' => 'Large Index Co',
+            'status' => ClientAccount::STATUS_ACTIVE,
+            'shiphero_customer_account_id' => 'sh-large-1',
+        ]);
+
+        for ($i = 1; $i <= 55; $i++) {
+            ShipHeroInventoryProductIndex::query()->create([
+                'client_account_id' => $account->id,
+                'shiphero_customer_account_id' => 'sh-large-1',
+                'sku' => 'SKU-'.$i,
+                'sku_search' => 'sku-'.$i,
+                'name' => 'Product '.$i,
+                'name_search' => 'product '.$i,
+                'product_active' => true,
+                'kit' => false,
+                'kit_build' => false,
+                'warehouse_id' => 'WH1',
+                'warehouse_active' => true,
+                'on_hand' => $i,
+                'allocated' => 0,
+                'backorder' => 0,
+                'synced_at' => now(),
+            ]);
+        }
+
+        $client = Mockery::mock(ShipHeroClient::class);
+        $client->shouldNotReceive('query');
+
+        $service = new ShipHeroInventoryService($client);
+        $payload = $service->listCatalogInventoryRows(
+            'sh-large-1',
+            50,
+            null,
+            'all',
+            'active',
+            null,
+            0,
+            $account->id,
+            false,
+            false
+        );
+
+        $this->assertCount(50, $payload['rows']);
+        $this->assertTrue((bool) ($payload['page_info']['has_next_page'] ?? false));
+        $this->assertSame('idx:50', $payload['page_info']['end_cursor'] ?? null);
     }
 }

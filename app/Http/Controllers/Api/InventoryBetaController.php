@@ -50,11 +50,20 @@ class InventoryBetaController extends Controller
         }
 
         $clientAccountId = (int) $validated['client_account_id'];
+        Log::info('inventory_beta.catalog_sync.start', [
+            'client_account_id' => $clientAccountId,
+        ]);
         $this->resolveShipHeroCustomerAccountId($clientAccountId, $request);
         $this->inventory->resolveStaleRunningCatalogSync($clientAccountId);
 
+        $meta = $this->inventory->catalogSyncMetaForAccount($clientAccountId);
+        Log::info('inventory_beta.catalog_sync.completed', [
+            'client_account_id' => $clientAccountId,
+            'status' => $meta['inventory_catalog_sync_status'] ?? 'idle',
+        ]);
+
         return response()->json([
-            'catalog_sync' => $this->inventory->catalogSyncMetaForAccount($clientAccountId),
+            'catalog_sync' => $meta,
         ]);
     }
 
@@ -186,6 +195,16 @@ class InventoryBetaController extends Controller
             }
         }
 
+        Log::info('inventory_beta.list.start', [
+            'client_account_id' => $clientAccountId,
+            'refresh' => false,
+            'backorder_only' => $backorderOnly,
+            'first' => $first,
+            'kits' => $kits,
+            'active_status' => $activeStatus,
+            'has_query' => $searchQuery !== '',
+        ]);
+
         $listStartedAt = microtime(true);
         try {
             $shipheroCustomerId = $this->resolveShipHeroCustomerAccountId($clientAccountId, $request);
@@ -233,9 +252,20 @@ class InventoryBetaController extends Controller
         } catch (ValidationException $e) {
             throw $e;
         } catch (RuntimeException $e) {
+            Log::warning('inventory_beta.list.failed', [
+                'client_account_id' => $clientAccountId,
+                'exception' => RuntimeException::class,
+                'message' => $e->getMessage(),
+            ]);
+
             return response()->json(['message' => $e->getMessage()], 502);
         } catch (Throwable $e) {
             report($e);
+            Log::warning('inventory_beta.list.failed', [
+                'client_account_id' => $clientAccountId,
+                'exception' => get_class($e),
+                'message' => $e->getMessage(),
+            ]);
 
             return response()->json([
                 'message' => config('app.debug')

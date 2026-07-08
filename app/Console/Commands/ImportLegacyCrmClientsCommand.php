@@ -4,6 +4,7 @@ namespace App\Console\Commands;
 
 use App\Models\ClientAccount;
 use App\Models\ClientStore;
+use App\Support\Legacy\LegacyCustomerAccountImportMapper;
 use Carbon\Carbon;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\DB;
@@ -267,10 +268,6 @@ class ImportLegacyCrmClientsCommand extends Command
         $telegram = $this->nonEmptyString($row->c_telegram ?? null)
             ?? $this->nonEmptyString($row->b_telegram ?? null);
 
-        $stripeCustomerId = $this->nullableTruncate($row->stripe_customer_id ?? null, 191);
-        $whatsappApiId = $this->nullableTruncate($row->wp_chat_id ?? null, 191);
-        $ccFeePercent = is_numeric($row->cc_charge ?? null) ? (float) $row->cc_charge : null;
-
         $website = $this->nonEmptyString($row->website_url ?? null);
         $website = $this->truncate($website ?? '', 512);
 
@@ -280,7 +277,9 @@ class ImportLegacyCrmClientsCommand extends Command
         $created = $this->parseTimestamp($row->created_at ?? null);
         $updated = $this->parseTimestamp($row->updated_at ?? null);
 
-        return array_filter([
+        $enrichment = LegacyCustomerAccountImportMapper::mapEnrichmentFields($row, $email);
+
+        return array_filter(array_merge([
             'status' => $status,
             'company_name' => $this->truncate((string) ($row->company_name ?? 'Legacy import'), 190),
             'brand_name' => $brand,
@@ -289,21 +288,15 @@ class ImportLegacyCrmClientsCommand extends Command
             'contact_last_name' => $last !== '' ? $this->truncate($last, 100) : null,
             'email' => $email,
             'phone' => $phone !== null ? $this->truncate($phone, 64) : null,
-            'notify_email' => false,
-            'notification_email' => null,
             'telegram_handle' => $telegram !== null ? $this->truncate(ltrim($telegram, '@'), 190) : null,
-            'stripe_customer_id' => $stripeCustomerId,
-            'whatsapp_api_id' => $whatsappApiId,
-            'cc_fee_percent' => $ccFeePercent,
             'street' => $street !== '' ? $this->truncate($street, 190) : null,
             'city' => $city !== null ? $this->truncate($city, 120) : null,
             'state' => $state !== null ? $this->truncate($state, 64) : null,
             'zip' => $zip !== null ? $this->truncate($zip, 32) : null,
             'country' => $country !== null ? $this->truncate($country, 120) : null,
-            'account_manager_id' => null,
             'created_at' => $created,
             'updated_at' => $updated,
-        ], function ($v) {
+        ], $enrichment), function ($v) {
             return $v !== null;
         });
     }

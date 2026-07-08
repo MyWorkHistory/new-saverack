@@ -11,6 +11,9 @@ use Illuminate\Support\Facades\DB;
  * the old CRM `customers` table (`stripe_customer_id`, `wp_chat_id`, `cc_charge`) into `client_accounts`
  * matched by {@see ClientAccount::$legacy_customer_id}.
  *
+ * Prefer {@see SyncLegacyAccountFieldsCommand} (`crm:sync-legacy-account-fields`) which includes
+ * these fields plus account manager, contract date, Slack, payment prefs, and notes.
+ *
  * Prerequisites: import `database/customers (1).sql` (or your dump) into MySQL and set
  * LEGACY_DB_* in `.env` (same as `crm:import-legacy-clients`).
  */

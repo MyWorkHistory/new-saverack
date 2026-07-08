@@ -172,4 +172,32 @@ class InventoryCatalogSyncApiTest extends TestCase
         $response->assertJsonPath('catalog_sync.inventory_catalog_product_count', 42);
         $this->assertNotNull($response->json('catalog_sync.inventory_catalog_synced_at'));
     }
+
+    public function test_list_with_empty_index_returns_ok_without_shiphero(): void
+    {
+        $user = User::factory()->create();
+        $user->permissions()->sync([$this->inventoryViewPermission()->id]);
+        Sanctum::actingAs($user);
+
+        $account = ClientAccount::query()->create([
+            'company_name' => 'Empty Catalog Co',
+            'status' => ClientAccount::STATUS_ACTIVE,
+            'shiphero_customer_account_id' => 'sh-empty-catalog-1',
+            'inventory_catalog_sync_status' => 'idle',
+        ]);
+
+        $client = Mockery::mock(ShipHeroClient::class);
+        $client->shouldNotReceive('query');
+        $this->app->instance(ShipHeroClient::class, $client);
+
+        $this->getJson('/api/inventory-beta/list?'.http_build_query([
+            'client_account_id' => $account->id,
+            'first' => 50,
+            'kits' => 'all',
+            'active_status' => 'active',
+        ]))
+            ->assertOk()
+            ->assertJsonPath('rows', [])
+            ->assertJsonPath('page_info.has_next_page', false);
+    }
 }

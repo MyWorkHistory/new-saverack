@@ -380,4 +380,81 @@ class ShipHeroInventoryRefreshTest extends TestCase
         $this->assertSame([], $payload['rows']);
         $this->assertFalse((bool) ($payload['page_info']['has_next_page'] ?? true));
     }
+
+    public function test_catalog_read_with_empty_index_does_not_hit_shiphero(): void
+    {
+        $account = ClientAccount::query()->create([
+            'company_name' => 'Empty Index Co',
+            'status' => ClientAccount::STATUS_ACTIVE,
+            'shiphero_customer_account_id' => 'sh-empty-idx-1',
+        ]);
+
+        $client = Mockery::mock(ShipHeroClient::class);
+        $client->shouldNotReceive('query');
+
+        $service = new ShipHeroInventoryService($client);
+        $payload = $service->listCatalogInventoryRows(
+            'sh-empty-idx-1',
+            50,
+            null,
+            'all',
+            'active',
+            null,
+            0,
+            $account->id,
+            false,
+            false
+        );
+
+        $this->assertSame([], $payload['rows']);
+        $this->assertFalse((bool) ($payload['page_info']['has_next_page'] ?? true));
+    }
+
+    public function test_catalog_read_with_synced_index_zero_filter_does_not_hit_shiphero(): void
+    {
+        $account = ClientAccount::query()->create([
+            'company_name' => 'Zero Filter Co',
+            'status' => ClientAccount::STATUS_ACTIVE,
+            'shiphero_customer_account_id' => 'sh-zero-filter-1',
+        ]);
+
+        ShipHeroInventoryProductIndex::query()->create([
+            'client_account_id' => $account->id,
+            'shiphero_customer_account_id' => 'sh-zero-filter-1',
+            'shiphero_product_id' => 'prod-active-only',
+            'sku' => 'ACTIVE-ONLY',
+            'sku_search' => 'active-only',
+            'name' => 'Active only',
+            'name_search' => 'active only',
+            'product_active' => true,
+            'kit' => false,
+            'kit_build' => false,
+            'warehouse_id' => 'WH1',
+            'warehouse_active' => true,
+            'on_hand' => 4,
+            'allocated' => 0,
+            'backorder' => 0,
+            'synced_at' => now(),
+        ]);
+
+        $client = Mockery::mock(ShipHeroClient::class);
+        $client->shouldNotReceive('query');
+
+        $service = new ShipHeroInventoryService($client);
+        $payload = $service->listCatalogInventoryRows(
+            'sh-zero-filter-1',
+            50,
+            null,
+            'all',
+            'inactive',
+            null,
+            0,
+            $account->id,
+            false,
+            false
+        );
+
+        $this->assertSame([], $payload['rows']);
+        $this->assertFalse((bool) ($payload['page_info']['has_next_page'] ?? true));
+    }
 }

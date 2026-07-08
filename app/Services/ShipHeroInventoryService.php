@@ -261,6 +261,11 @@ GQL;
                 return $indexed;
             }
 
+            // Beta catalog reads are index-only; sync via refresh=1 populates the index.
+            if ($indexSearchOnly && ! $refresh) {
+                return $this->emptyInventoryListPage($searchSkip);
+            }
+
             return $this->listInventoryRowsSearch(
                 $graphql,
                 $customerAccountId,
@@ -271,7 +276,8 @@ GQL;
                 $searchQuery,
                 $searchSkip,
                 $clientAccountId,
-                $backorderOnly
+                $backorderOnly,
+                $this->shouldUpsertInventoryIndexOnList($refresh, $indexSearchOnly)
             );
         }
 
@@ -292,17 +298,16 @@ GQL;
             return $indexed;
         }
 
+        // Beta catalog reads are index-only; sync via refresh=1 populates the index.
+        if ($indexSearchOnly && ! $refresh) {
+            return $this->emptyInventoryListPage();
+        }
+
         if ($backorderOnly) {
             // Prefer empty quick response over scanning ShipHero page-by-page when the
             // catalog index is empty/unpopulated — live backorder scans cause origin 502s.
             if ($this->inventoryIndexHasAnyRows($clientAccountId, $customerAccountId)) {
-                return [
-                    'rows' => [],
-                    'page_info' => [
-                        'has_next_page' => false,
-                        'end_cursor' => null,
-                    ],
-                ];
+                return $this->emptyInventoryListPage();
             }
 
             return $this->listInventoryRowsSearch(
@@ -315,7 +320,8 @@ GQL;
                 '',
                 0,
                 $clientAccountId,
-                true
+                true,
+                $this->shouldUpsertInventoryIndexOnList($refresh, $indexSearchOnly)
             );
         }
 
@@ -323,6 +329,7 @@ GQL;
             ['first' => $first, 'after' => $after],
             $this->customerAccountVariables($customerAccountId)
         );
+        $postStart = microtime(true);
         $json = $this->client->query($graphql, $vars);
         $edges = data_get($json, 'data.products.data.edges');
         $pageInfo = data_get($json, 'data.products.data.pageInfo');
@@ -342,11 +349,27 @@ GQL;
                 ],
             ];
         }
+        $expandStart = microtime(true);
         $rows = $this->expandInventoryProductEdgesToRows($edges, $kitsFilter, $activeStatus);
         if ($backorderOnly) {
             $rows = $this->filterOversoldInventoryRows($rows);
         }
-        $this->upsertInventoryIndexRows($clientAccountId, $customerAccountId, $rows);
+        $expandMs = (int) round((microtime(true) - $expandStart) * 1000);
+        $upsertMs = 0;
+        if ($this->shouldUpsertInventoryIndexOnList($refresh, $indexSearchOnly)) {
+            $upsertStart = microtime(true);
+            $this->upsertInventoryIndexRows($clientAccountId, $customerAccountId, $rows);
+            $upsertMs = (int) round((microtime(true) - $upsertStart) * 1000);
+        }
+        Log::info('shiphero.inventory.list.post_process_ms', [
+            'operation' => 'ShipHeroInventoryRows',
+            'row_count' => count($rows),
+            'expand_ms' => $expandMs,
+            'upsert_ms' => $upsertMs,
+            'total_ms' => (int) round((microtime(true) - $postStart) * 1000),
+            'refresh' => $refresh,
+            'index_search_only' => $indexSearchOnly,
+        ]);
 
         return [
             'rows' => $rows,
@@ -355,6 +378,35 @@ GQL;
                 'end_cursor' => $endCursor,
             ],
         ];
+    }
+
+    /**
+     * @return array{rows: list<array<string,mixed>>, page_info: array{has_next_page: bool, end_cursor: null, next_search_skip?: int|null}}
+     */
+    private function emptyInventoryListPage(?int $searchSkip = null): array
+    {
+        $pageInfo = [
+            'has_next_page' => false,
+            'end_cursor' => null,
+        ];
+        if ($searchSkip !== null) {
+            $pageInfo['next_search_skip'] = max(0, $searchSkip);
+        }
+
+        return [
+            'rows' => [],
+            'page_info' => $pageInfo,
+        ];
+    }
+
+    private function shouldUpsertInventoryIndexOnList(bool $refresh, bool $indexSearchOnly): bool
+    {
+        if ($refresh || $this->catalogSyncTrackSeen) {
+            return true;
+        }
+
+        // Legacy /api/inventory/list still seeds the index on live reads.
+        return ! $indexSearchOnly;
     }
 
     /**
@@ -485,6 +537,9 @@ GQL;
             return;
         }
 
+        $customerAccountId = trim((string) $customerAccountId) ?: null;
+        $now = now();
+        $records = [];
         foreach ($rows as $row) {
             if (! is_array($row)) {
                 continue;
@@ -500,7 +555,11 @@ GQL;
                 $warehouseId = null;
             }
 
-            $payload = [
+            $record = [
+                'client_account_id' => $clientAccountId,
+                'shiphero_customer_account_id' => $customerAccountId,
+                'sku' => $sku,
+                'warehouse_id' => $warehouseId,
                 'shiphero_product_id' => trim((string) ($row['product_id'] ?? '')) ?: null,
                 'sku_search' => $this->normalizeInventoryIndexSearchValue($sku),
                 'name' => isset($row['name']) ? (string) $row['name'] : '',
@@ -515,20 +574,73 @@ GQL;
                 'on_hand' => (float) ($row['on_hand'] ?? 0),
                 'allocated' => (float) ($row['allocated'] ?? 0),
                 'backorder' => (float) ($row['backorder'] ?? 0),
-                'synced_at' => now(),
+                'synced_at' => $now,
+                'created_at' => $now,
+                'updated_at' => $now,
             ];
             if ($this->catalogSyncTrackSeen) {
-                $payload['last_seen_at'] = now();
+                $record['last_seen_at'] = $now;
             }
+            $records[] = $record;
+        }
 
-            ShipHeroInventoryProductIndex::query()->updateOrCreate(
-                [
-                    'client_account_id' => $clientAccountId,
-                    'shiphero_customer_account_id' => trim((string) $customerAccountId) ?: null,
-                    'sku' => $sku,
-                    'warehouse_id' => $warehouseId,
-                ],
-                $payload
+        if ($records === []) {
+            return;
+        }
+
+        $updateColumns = [
+            'shiphero_product_id',
+            'sku_search',
+            'name',
+            'name_search',
+            'barcode',
+            'barcode_search',
+            'image_url',
+            'product_active',
+            'kit',
+            'kit_build',
+            'warehouse_active',
+            'on_hand',
+            'allocated',
+            'backorder',
+            'synced_at',
+            'updated_at',
+        ];
+        if ($this->catalogSyncTrackSeen) {
+            $updateColumns[] = 'last_seen_at';
+        }
+
+        // MySQL UNIQUE treats NULL as distinct, so ON DUPLICATE KEY UPDATE cannot match
+        // rows with null warehouse_id / customer account. Fall back to updateOrCreate there.
+        $upsertable = [];
+        foreach ($records as $record) {
+            if ($record['warehouse_id'] === null || $record['shiphero_customer_account_id'] === null
+                || $record['client_account_id'] === null) {
+                $unique = [
+                    'client_account_id' => $record['client_account_id'],
+                    'shiphero_customer_account_id' => $record['shiphero_customer_account_id'],
+                    'sku' => $record['sku'],
+                    'warehouse_id' => $record['warehouse_id'],
+                ];
+                $payload = $record;
+                unset($payload['created_at'], $payload['updated_at']);
+                unset(
+                    $payload['client_account_id'],
+                    $payload['shiphero_customer_account_id'],
+                    $payload['sku'],
+                    $payload['warehouse_id']
+                );
+                ShipHeroInventoryProductIndex::query()->updateOrCreate($unique, $payload);
+                continue;
+            }
+            $upsertable[] = $record;
+        }
+
+        foreach (array_chunk($upsertable, 100) as $chunk) {
+            ShipHeroInventoryProductIndex::query()->upsert(
+                $chunk,
+                ['client_account_id', 'shiphero_customer_account_id', 'sku', 'warehouse_id'],
+                $updateColumns
             );
         }
     }
@@ -852,15 +964,8 @@ GQL;
             }
             if ((clone $query)->count() === 0) {
                 // Synced index with zero matches for this filter → empty page (no ShipHero scan).
-                if ($backorderOnly && $this->inventoryIndexHasAnyRows($clientAccountId, $customerAccountId)) {
-                    return [
-                        'rows' => [],
-                        'page_info' => [
-                            'has_next_page' => false,
-                            'end_cursor' => null,
-                            'next_search_skip' => null,
-                        ],
-                    ];
+                if ($this->inventoryIndexHasAnyRows($clientAccountId, $customerAccountId)) {
+                    return $this->emptyInventoryListPage();
                 }
 
                 return null;
@@ -870,18 +975,11 @@ GQL;
         $first = max(1, min(200, $first));
         $total = (clone $query)->count();
         if ($total === 0) {
-            // Index is synced but no matching rows (common for backorder_only with zero
-            // oversold SKUs). Returning null used to fall through to a multi-page ShipHero
+            // Index is synced but no matching rows (e.g. CRM active filter or backorder_only
+            // with zero oversold SKUs). Returning null used to fall through to a live ShipHero
             // scan that regularly exceeded Cloudflare's origin timeout (~100s) and 502'd.
-            if ($backorderOnly && $this->inventoryIndexHasAnyRows($clientAccountId, $customerAccountId)) {
-                return [
-                    'rows' => [],
-                    'page_info' => [
-                        'has_next_page' => false,
-                        'end_cursor' => null,
-                        'next_search_skip' => $term !== '' ? max(0, $searchSkip) : null,
-                    ],
-                ];
+            if ($this->inventoryIndexHasAnyRows($clientAccountId, $customerAccountId)) {
+                return $this->emptyInventoryListPage($term !== '' ? max(0, $searchSkip) : null);
             }
 
             return null;
@@ -1162,7 +1260,8 @@ GQL;
         string $searchQuery,
         int $searchSkip,
         ?int $clientAccountId,
-        bool $backorderOnly
+        bool $backorderOnly,
+        bool $upsertIndex = true
     ): array {
         $qLower = mb_strtolower($searchQuery);
         $matchSkip = $after === null ? $searchSkip : 0;
@@ -1175,6 +1274,9 @@ GQL;
         // Cap hard: each ShipHero page can take ~6–25s; Cloudflare origin timeout is ~100s.
         $maxIterations = $backorderOnly ? 3 : 1;
         $deadline = $backorderOnly ? (microtime(true) + 12.0) : null;
+        $postStart = microtime(true);
+        $upsertMsTotal = 0;
+        $expandedRowCount = 0;
 
         while ($iterations < $maxIterations) {
             if ($deadline !== null && microtime(true) >= $deadline) {
@@ -1199,7 +1301,12 @@ GQL;
                 break;
             }
             $pageRows = $this->expandInventoryProductEdgesToRows($edges, $kitsFilter, $activeStatus);
-            $this->upsertInventoryIndexRows($clientAccountId, $customerAccountId, $pageRows);
+            $expandedRowCount += count($pageRows);
+            if ($upsertIndex) {
+                $upsertStart = microtime(true);
+                $this->upsertInventoryIndexRows($clientAccountId, $customerAccountId, $pageRows);
+                $upsertMsTotal += (int) round((microtime(true) - $upsertStart) * 1000);
+            }
             if ($backorderOnly) {
                 $pageRows = $this->filterOversoldInventoryRows($pageRows);
             }
@@ -1225,6 +1332,17 @@ GQL;
             if ($backorderOnly && count($output) >= $desired) {
                 break;
             }
+        }
+
+        if ($iterations > 0) {
+            Log::info('shiphero.inventory.list.post_process_ms', [
+                'operation' => 'ShipHeroInventoryRowsSearch',
+                'row_count' => $expandedRowCount,
+                'upsert_ms' => $upsertMsTotal,
+                'total_ms' => (int) round((microtime(true) - $postStart) * 1000),
+                'iterations' => $iterations,
+                'upsert_index' => $upsertIndex,
+            ]);
         }
 
         $delivered = count($output);

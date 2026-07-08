@@ -284,7 +284,7 @@ class PortalQueueCountsService
      * @param  array<string, mixed>  $context
      * @return array{count: int, truncated: bool}|null
      */
-    private function countTabFromIndex(array $context, string $tab): ?array
+    public function countTabFromIndex(array $context, string $tab): ?array
     {
         $accountId = (int) ($context['client_account_id'] ?? 0);
         if ($accountId <= 0 || ! in_array($tab, self::QUEUES, true)) {
@@ -426,6 +426,95 @@ class PortalQueueCountsService
             'shipped_order_date_to' => $context['shipped_to'],
             'cached_at' => now()->toIso8601String(),
         ];
+    }
+
+    /**
+     * @param  array<string, mixed>  $context
+     * @return array<string, mixed>
+     */
+    public function buildAllQueuesFromIndex(array $context): array
+    {
+        $parts = [];
+        foreach (self::QUEUES as $tab) {
+            $fromIndex = $this->countTabFromIndex($context, $tab);
+            $parts[$tab] = [
+                'count' => (int) ($fromIndex['count'] ?? 0),
+                'truncated' => (bool) ($fromIndex['truncated'] ?? false),
+                'cached_at' => now()->toIso8601String(),
+            ];
+        }
+
+        $payload = $this->assembleDashboardPayload($context, $parts, false);
+        $accountId = (int) ($context['client_account_id'] ?? 0);
+        $payload['revision'] = $this->getCountsRevision($accountId);
+        $payload['from_index'] = true;
+
+        return $payload;
+    }
+
+    public function getCountsRevision(int $clientAccountId): int
+    {
+        if ($clientAccountId <= 0) {
+            return 0;
+        }
+
+        return max(0, (int) Cache::get($this->countsRevisionKey($clientAccountId), 0));
+    }
+
+    public function bumpCountsRevision(int $clientAccountId): int
+    {
+        if ($clientAccountId <= 0) {
+            return 0;
+        }
+
+        $key = $this->countsRevisionKey($clientAccountId);
+        if (! Cache::has($key)) {
+            Cache::put($key, 1, now()->addDays(30));
+
+            return 1;
+        }
+
+        $next = (int) Cache::increment($key);
+        Cache::put($key, $next, now()->addDays(30));
+
+        return $next;
+    }
+
+    /**
+     * @param  list<string>  $tabs
+     */
+    public function refreshQueueCacheFromIndex(int $clientAccountId, array $tabs): void
+    {
+        if ($clientAccountId <= 0 || $tabs === []) {
+            return;
+        }
+
+        $account = ClientAccount::query()->find($clientAccountId);
+        if ($account === null) {
+            return;
+        }
+
+        $context = $this->contextForAccount($account);
+        foreach ($tabs as $tab) {
+            $tab = strtolower(trim($tab));
+            if (! in_array($tab, self::QUEUES, true)) {
+                continue;
+            }
+
+            $fromIndex = $this->countTabFromIndex($context, $tab);
+            $stored = [
+                'count' => (int) ($fromIndex['count'] ?? 0),
+                'truncated' => (bool) ($fromIndex['truncated'] ?? false),
+                'cached_at' => now()->toIso8601String(),
+            ];
+            Cache::put($this->queueCacheKey($context, $tab), $stored, now()->addMinutes(self::CACHE_TTL_MINUTES));
+            $this->touchAggregateLastGood($context, $tab, $stored);
+        }
+    }
+
+    private function countsRevisionKey(int $clientAccountId): string
+    {
+        return 'orders:queue_counts:revision:'.$clientAccountId;
     }
 
     /**

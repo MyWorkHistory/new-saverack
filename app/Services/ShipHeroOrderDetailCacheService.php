@@ -100,6 +100,25 @@ class ShipHeroOrderDetailCacheService
         }
     }
 
+    public function clearOrder(int $clientAccountId, string $orderId): void
+    {
+        if (! $this->tableAvailable()) {
+            return;
+        }
+        try {
+            $id = $this->normalizeOrderId($orderId);
+            if ($id === '' || $clientAccountId <= 0) {
+                return;
+            }
+            ShipHeroOrderDetailCache::query()
+                ->where('client_account_id', $clientAccountId)
+                ->where('order_id', $id)
+                ->delete();
+        } catch (Throwable $e) {
+            $this->logCacheFailure('clear_order', $e);
+        }
+    }
+
     private function tableAvailable(): bool
     {
         if (self::$tableAvailable !== null) {

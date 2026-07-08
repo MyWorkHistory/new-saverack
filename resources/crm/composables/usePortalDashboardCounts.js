@@ -1,10 +1,12 @@
-import { onUnmounted, ref } from "vue";
+import { onMounted, onUnmounted, ref } from "vue";
 import api from "../services/api";
 import { usePortalLastRefreshed } from "./usePortalLastRefreshed.js";
 
-const CACHE_KEY_PREFIX = "portal:dashboard:queue-counts:v12:";
+const CACHE_KEY_PREFIX = "portal:dashboard:queue-counts:v13:";
 const QUEUE_TIMEOUT_MS = 45000;
 const SHIPPED_QUEUE_TIMEOUT_MS = 90000;
+const REVISION_POLL_MS = 30000;
+const SNAPSHOT_TIMEOUT_MS = 15000;
 
 /** API queue param → dashboard count field */
 const PORTAL_QUEUES = [
@@ -25,6 +27,7 @@ export function parsePortalQueueCounts(data) {
     refresh_pending: Boolean(data?.refresh_pending),
     shiphero_ready: data?.shiphero_ready !== false,
     message: typeof data?.message === "string" ? data.message : "",
+    revision: Number(data?.revision ?? 0),
   };
 }
 
@@ -75,13 +78,16 @@ export function prefetchPortalDashboardCounts(clientAccountId, shipheroReady = t
     return;
   }
   api
-    .get("/orders/queue-counts", { params: { client_account_id: id }, timeout: 10000 })
+    .get("/orders/queue-counts/snapshot", {
+      params: { client_account_id: id },
+      timeout: SNAPSHOT_TIMEOUT_MS,
+    })
     .then(({ data }) => writeCache(id, parsePortalQueueCounts(data)))
     .catch(() => {});
 }
 
 /**
- * Portal dashboard queue counts — one ShipHero queue per HTTP request (avoids 502).
+ * Portal dashboard queue counts — fast index snapshot + revision polling.
  * @param {() => number} getClientAccountId
  * @param {{ onError?: (err: unknown) => void, getShipheroReady?: () => boolean }} [options]
  */
@@ -93,6 +99,8 @@ export function usePortalDashboardCounts(getClientAccountId, options = {}) {
   const counts = ref(parsePortalQueueCounts(null));
   const { markRefreshed, lastRefreshedLabel } = usePortalLastRefreshed();
   let fetchGeneration = 0;
+  let revisionPollTimer = null;
+  let knownRevision = 0;
 
   function shipheroReadyFlag() {
     if (typeof options.getShipheroReady === "function") {
@@ -104,6 +112,7 @@ export function usePortalDashboardCounts(getClientAccountId, options = {}) {
 
   function applyCounts(next, { markFresh = false, markReady = true } = {}) {
     counts.value = next;
+    knownRevision = Number(next?.revision ?? knownRevision);
     if (markReady) {
       countsReady.value = true;
       loading.value = false;
@@ -115,6 +124,21 @@ export function usePortalDashboardCounts(getClientAccountId, options = {}) {
     if (markFresh) {
       markRefreshed(next?.cached_at ?? null);
     }
+  }
+
+  async function fetchSnapshot({ markFresh = true } = {}) {
+    const clientAccountId = Number(getClientAccountId() || 0);
+    if (!clientAccountId || shipheroReadyFlag() === false) {
+      return;
+    }
+
+    const { data } = await api.get("/orders/queue-counts/snapshot", {
+      params: { client_account_id: clientAccountId },
+      timeout: SNAPSHOT_TIMEOUT_MS,
+    });
+    applyCounts(parsePortalQueueCounts(data), { markFresh, markReady: true });
+    refreshing.value = false;
+    loading.value = false;
   }
 
   async function fetchOneQueue(clientAccountId, { queue, field }, bustCache) {
@@ -185,6 +209,16 @@ export function usePortalDashboardCounts(getClientAccountId, options = {}) {
       return;
     }
 
+    if (bustCache) {
+      const isBackgroundRefresh = background || countsReady.value;
+      if (isBackgroundRefresh) {
+        refreshing.value = true;
+        loading.value = false;
+      }
+      await fetchAllQueues({ bustCache: true });
+      return;
+    }
+
     const isBackgroundRefresh = background || countsReady.value;
     if (isBackgroundRefresh) {
       refreshing.value = true;
@@ -195,7 +229,15 @@ export function usePortalDashboardCounts(getClientAccountId, options = {}) {
       loading.value = false;
     }
 
-    await fetchAllQueues({ bustCache });
+    try {
+      await fetchSnapshot({ markFresh: !isBackgroundRefresh });
+    } catch (e) {
+      if (shipheroReadyFlag()) {
+        options.onError?.(e);
+      }
+      loading.value = false;
+      refreshing.value = false;
+    }
   }
 
   async function loadCounts() {
@@ -212,17 +254,7 @@ export function usePortalDashboardCounts(getClientAccountId, options = {}) {
       return;
     }
 
-    try {
-      const { data } = await api.get("/orders/queue-counts", {
-        params: { client_account_id: clientAccountId },
-        timeout: 10000,
-      });
-      applyCounts(parsePortalQueueCounts(data));
-    } catch {
-      applyCounts(parsePortalQueueCounts(null));
-    }
-
-    await fetchCounts({ background: true, shipheroReady: shipheroReadyFlag() });
+    await fetchCounts({ shipheroReady: shipheroReadyFlag() });
   }
 
   async function refreshCounts() {
@@ -245,8 +277,42 @@ export function usePortalDashboardCounts(getClientAccountId, options = {}) {
     });
   }
 
+  function stopRevisionPolling() {
+    if (revisionPollTimer !== null) {
+      window.clearInterval(revisionPollTimer);
+      revisionPollTimer = null;
+    }
+  }
+
+  function startRevisionPolling() {
+    stopRevisionPolling();
+    revisionPollTimer = window.setInterval(() => {
+      const clientAccountId = Number(getClientAccountId() || 0);
+      if (!clientAccountId || shipheroReadyFlag() === false) {
+        return;
+      }
+      void api
+        .get("/orders/queue-counts/revision", {
+          params: { client_account_id: clientAccountId },
+          timeout: 10000,
+        })
+        .then(({ data }) => {
+          const revision = Number(data?.revision ?? 0);
+          if (revision > knownRevision) {
+            void fetchSnapshot({ markFresh: true }).catch(() => {});
+          }
+        })
+        .catch(() => {});
+    }, REVISION_POLL_MS);
+  }
+
+  onMounted(() => {
+    startRevisionPolling();
+  });
+
   onUnmounted(() => {
     fetchGeneration += 1;
+    stopRevisionPolling();
   });
 
   return {

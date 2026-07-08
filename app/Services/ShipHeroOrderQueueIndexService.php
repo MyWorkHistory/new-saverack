@@ -355,6 +355,59 @@ class ShipHeroOrderQueueIndexService
     }
 
     /**
+     * @return list<string> affected queue tabs
+     */
+    public function reconcileOrder(int $clientAccountId, string $shipheroOrderId): array
+    {
+        $orderId = trim($shipheroOrderId);
+        if ($clientAccountId <= 0 || $orderId === '') {
+            return [];
+        }
+
+        $account = ClientAccount::query()->find($clientAccountId);
+        if ($account === null) {
+            return [];
+        }
+
+        $customerId = trim((string) $account->shiphero_customer_account_id);
+        if ($customerId === '') {
+            return [];
+        }
+
+        $previousTabs = ShipHeroOrderQueueIndex::query()
+            ->where('client_account_id', $clientAccountId)
+            ->where('shiphero_order_id', $orderId)
+            ->pluck('queue_kind')
+            ->map(static fn ($tab) => strtolower(trim((string) $tab)))
+            ->filter()
+            ->unique()
+            ->values()
+            ->all();
+
+        $listRow = $this->orders->fetchOrderListRowForIndex($orderId, $customerId);
+        $resolvedOrderId = $listRow !== null ? trim((string) ($listRow['id'] ?? $orderId)) : $orderId;
+
+        $this->invalidateOrder($clientAccountId, $resolvedOrderId);
+        if ($resolvedOrderId !== $orderId) {
+            $this->invalidateOrder($clientAccountId, $orderId);
+        }
+
+        $affected = $previousTabs;
+        if ($listRow === null) {
+            return array_values(array_unique($affected));
+        }
+
+        $tab = $this->orders->classifyOrderQueueTab($listRow);
+        if ($tab !== null && $this->isQueueTab($tab)) {
+            $listRow['ready_to_ship'] = $tab === ShipHeroOrderQueueIndex::KIND_AWAITING;
+            $this->upsertRows($clientAccountId, $tab, [$listRow]);
+            $affected[] = $tab;
+        }
+
+        return array_values(array_unique($affected));
+    }
+
+    /**
      * @return array{payload: array<string, mixed>, total_count: int}
      */
     public function aggregateDashboardSection(string $sectionKey): array

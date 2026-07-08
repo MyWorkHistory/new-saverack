@@ -1181,6 +1181,140 @@ GQL;
         return $this->normalizeOrderDetail($node, $lineItems, $history, $trackingPayload);
     }
 
+    public function orderExistsForCustomer(string $orderId, string $customerAccountId): bool
+    {
+        $id = trim($orderId);
+        $customer = trim($customerAccountId);
+        if ($id === '' || $customer === '') {
+            return false;
+        }
+
+        foreach ($this->buildOrderIdCandidates($id) as $candidateId) {
+            if ($this->fetchOrderHeaderNode($customer, $candidateId) !== null) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /**
+     * @return array<string, mixed>|null
+     */
+    public function fetchOrderListRowForIndex(string $orderId, string $customerAccountId): ?array
+    {
+        $id = trim($orderId);
+        $customer = trim($customerAccountId);
+        if ($id === '' || $customer === '') {
+            return null;
+        }
+
+        foreach ($this->buildOrderIdCandidates($id) as $candidateId) {
+            $node = $this->fetchOrderNodeForIndexReconcile($customer, $candidateId);
+            if ($node === null) {
+                continue;
+            }
+
+            return $this->normalizeOrderRow($node, null);
+        }
+
+        return null;
+    }
+
+    /**
+     * @param  array<string, mixed>  $row
+     */
+    public function classifyOrderQueueTab(array $row): ?string
+    {
+        foreach (['status', 'raw_fulfillment_status', 'raw_status'] as $key) {
+            $normalized = strtolower(trim((string) ($row[$key] ?? '')));
+            if ($normalized !== '' && str_contains($normalized, 'cancel')) {
+                return null;
+            }
+        }
+
+        if ($this->orderRowIsFulfilledOrShipped($row)) {
+            return 'shipped';
+        }
+
+        if (! empty($row['has_backorder'])) {
+            return 'backorder';
+        }
+
+        if (! empty($row['has_active_hold'])) {
+            return 'on_hold';
+        }
+
+        $display = strtolower(trim((string) ($row['display_status'] ?? '')));
+        if ($display === 'ready to ship') {
+            return 'awaiting';
+        }
+
+        $holds = is_array($row['holds'] ?? null) ? $row['holds'] : [];
+        $method = trim((string) ($row['method'] ?? ''));
+        $pseudoNode = [
+            'fulfillment_status' => (string) ($row['raw_fulfillment_status'] ?? ''),
+            'status' => (string) ($row['raw_status'] ?? ''),
+            'shipping_lines' => $method !== '' ? [['method' => $method]] : [],
+        ];
+        if ($this->orderListNodeIsReadyToShip($pseudoNode, $holds)) {
+            return 'awaiting';
+        }
+
+        return null;
+    }
+
+    /**
+     * @return array{rows: list<array<string, mixed>>, pagination: array<string, mixed>}
+     */
+    public function listRecentlyUpdatedOrders(array $filters): array
+    {
+        $customerAccountId = trim((string) ($filters['customer_account_id'] ?? ''));
+        if ($customerAccountId === '') {
+            throw new RuntimeException('customer_account_id is required.');
+        }
+
+        $updatedFrom = $this->nullableIso($filters['updated_from'] ?? null);
+        if ($updatedFrom === null) {
+            throw new RuntimeException('updated_from is required.');
+        }
+
+        $first = max(1, min(100, (int) ($filters['first'] ?? 50)));
+        $after = isset($filters['after']) ? trim((string) $filters['after']) : null;
+        $after = $after !== '' ? $after : null;
+
+        $vars = [
+            'customer_account_id' => $customerAccountId,
+            'first' => $first,
+            'after' => $after,
+            'order_date_from' => null,
+            'order_date_to' => null,
+            'updated_from' => $updatedFrom,
+            'updated_to' => $this->nullableIso($filters['updated_to'] ?? null) ?? now()->toIso8601String(),
+            'has_hold' => null,
+            'has_backorder' => null,
+            'ready_to_ship' => null,
+            'fulfillment_status' => null,
+            'order_number' => null,
+            'partner_order_id' => null,
+            'fraud_hold' => null,
+            'operator_hold' => null,
+            'address_hold' => null,
+            'payment_hold' => null,
+        ];
+
+        $json = $this->client->query($this->ordersListGraphql(false), $vars);
+        $parsed = $this->parseShipHeroOrdersConnection($json, false);
+
+        return [
+            'rows' => $parsed['rows'],
+            'pagination' => [
+                'has_next_page' => (bool) ($parsed['pageInfo']['hasNextPage'] ?? false),
+                'end_cursor' => $parsed['pageInfo']['endCursor'] ?? null,
+            ],
+        ];
+    }
+
     /**
      * Single header fetch for hold mutations: relay id + normalized holds.
      *
@@ -2343,6 +2477,80 @@ query ShipHeroOrderHeader($id: String!) {
         payment_hold
         client_hold
       }
+    }
+  }
+}
+GQL;
+
+        $json = $this->client->query($graphql, [
+            'id' => $id,
+        ]);
+        $node = data_get($json, 'data.order.data');
+        if (! is_array($node)) {
+            return null;
+        }
+
+        return $node;
+    }
+
+    /**
+     * @return array<string, mixed>|null
+     */
+    private function fetchOrderNodeForIndexReconcile(string $customerAccountId, string $id): ?array
+    {
+        $graphql = <<<'GQL'
+query ShipHeroOrderIndexReconcile($id: String!) {
+  order(id: $id) {
+    request_id
+    complexity
+    data {
+      id
+      legacy_id
+      order_number
+      partner_order_id
+      shop_name
+      fulfillment_status
+      status
+      order_date
+      required_ship_date
+      profile
+      source
+      email
+      shipping_address {
+        first_name
+        last_name
+        country
+      }
+      shipping_lines {
+        title
+        carrier
+        method
+      }
+      shipments {
+        created_date
+        shipped_off_shiphero
+        shipping_labels {
+          status
+          created_date
+        }
+      }
+      line_items(first: 25) {
+        edges {
+          node {
+            sku
+            backorder_quantity
+          }
+        }
+      }
+      holds {
+        fraud_hold
+        address_hold
+        shipping_method_hold
+        operator_hold
+        payment_hold
+        client_hold
+      }
+      tags
     }
   }
 }

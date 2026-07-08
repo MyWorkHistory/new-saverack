@@ -8,6 +8,7 @@ use App\Models\ClientAccountAsn;
 use App\Models\OrderDashboardSection;
 use App\Models\ShipHeroOrderQueueIndex;
 use Carbon\Carbon;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Log;
 use RuntimeException;
 use Throwable;
@@ -131,7 +132,33 @@ class OrderDashboardSnapshotService
                 'asn_pending' => (int) ($sections[OrderDashboardSection::KEY_ASN_PENDING]['total_count'] ?? 0),
             ],
             'sections' => $sections,
+            'revision' => $this->getDashboardRevision(),
         ];
+    }
+
+    public function getDashboardRevision(): int
+    {
+        return max(0, (int) Cache::get($this->dashboardRevisionKey(), 0));
+    }
+
+    public function bumpDashboardRevision(): int
+    {
+        $key = $this->dashboardRevisionKey();
+        if (! Cache::has($key)) {
+            Cache::put($key, 1, now()->addDays(30));
+
+            return 1;
+        }
+
+        $next = (int) Cache::increment($key);
+        Cache::put($key, $next, now()->addDays(30));
+
+        return $next;
+    }
+
+    private function dashboardRevisionKey(): string
+    {
+        return 'orders:home_dashboard:revision';
     }
 
     public function markSectionRunning(string $sectionKey): void

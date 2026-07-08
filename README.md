@@ -44,6 +44,27 @@ Open the app via Laravel: `http://127.0.0.1:8000/` (SPA) and sign in with `ADMIN
 
 If `inventory_beta.list.start` never appears in the log, the request is not reaching Laravel (undeployed code, OPcache, or PHP-FPM pool exhaustion).
 
+### ShipHero order webhooks (near-real-time dashboard counts)
+
+1. Set in production `.env`:
+   - `SHIPHERO_WEBHOOK_URL=https://your-domain/api/shiphero/webhook`
+   - `SHIPHERO_WEBHOOK_SECRET=` (from ShipHero `webhook_create` response — shown once)
+2. `php artisan migrate --force` (creates `shiphero_webhook_events`)
+3. Ensure queue worker processes `ProcessShipHeroOrderWebhookJob` (same worker as other order jobs)
+4. Register webhooks: `php artisan shiphero:register-webhooks`
+5. Scheduled fallback: `orders:sync-recent-updates` every 15 minutes (7am–5pm ET) reconciles missed events
+
+**Smoke test after deploy**
+
+| Step | Expected |
+|------|----------|
+| `HEAD /api/shiphero/webhook` | 200 (ShipHero endpoint validation) |
+| Ship one order in ShipHero | Row in `shiphero_webhook_events`; `shiphero.webhook.processed` in log |
+| Portal home within ~30s | `GET /api/orders/queue-counts/revision` revision increments; snapshot counts update |
+| `GET /api/orders/queue-counts/snapshot?client_account_id=` | Single fast response from `shiphero_order_queue_index` |
+
+Subscribed webhook types: Shipment Update, Order Canceled, Order Allocated, Order Deallocated, Order Packed Out.
+
 ---
 
 <p align="center"><a href="https://laravel.com" target="_blank"><img src="https://raw.githubusercontent.com/laravel/art/master/logo-lockup/5%20SVG/2%20CMYK/1%20Full%20Color/laravel-logolockup-cmyk-red.svg" width="400" alt="Laravel Logo"></a></p>

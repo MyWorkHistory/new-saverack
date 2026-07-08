@@ -37,6 +37,16 @@ class HomeDashboardController extends Controller
         ));
     }
 
+    public function revision(Request $request): JsonResponse
+    {
+        $this->authorizeHomeDashboard($request);
+
+        return response()->json([
+            'revision' => $this->snapshots->getDashboardRevision(),
+            'updated_at' => now()->toIso8601String(),
+        ]);
+    }
+
     public function refresh(Request $request): JsonResponse
     {
         $this->authorizeHomeDashboard($request);

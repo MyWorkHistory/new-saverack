@@ -37,6 +37,7 @@ use App\Http\Controllers\Api\TutorialPhotoController;
 use App\Http\Controllers\Api\ResourceCalendarEventController;
 use App\Http\Controllers\Api\ResourcePhotoController;
 use App\Http\Controllers\Api\WholesaleOrderController;
+use App\Http\Controllers\ShipHeroWebhookController;
 use App\Http\Controllers\StripeWebhookController;
 use Illuminate\Support\Facades\Route;
 
@@ -49,6 +50,7 @@ Route::prefix('auth')->group(function () {
 });
 
 Route::post('stripe/webhook', [StripeWebhookController::class, 'handle']);
+Route::match(['post', 'head'], 'shiphero/webhook', [ShipHeroWebhookController::class, 'handle']);
 
 Route::get('/slack/status-icons/{icon}', [\App\Http\Controllers\SlackStatusIconController::class, 'show'])
     ->where('icon', 'shipping-status-(?:live|paused)(?:-thumb)?\.png')
@@ -73,6 +75,7 @@ Route::middleware('auth:sanctum')->group(function () {
         ->middleware('can:view-dashboard');
 
     Route::get('/home-dashboard', [HomeDashboardController::class, 'show']);
+    Route::get('/home-dashboard/revision', [HomeDashboardController::class, 'revision']);
     Route::post('/home-dashboard/refresh', [HomeDashboardController::class, 'refresh']);
 
     Route::get('/billing/summary', BillingSummaryController::class)
@@ -338,6 +341,10 @@ Route::middleware('auth:sanctum')->group(function () {
 
     Route::prefix('orders')->group(function () {
         Route::get('/summary', [OrderController::class, 'summary'])
+            ->middleware('can:orders.view');
+        Route::get('/queue-counts/snapshot', [OrderController::class, 'queueCountsSnapshot'])
+            ->middleware('can:orders.view');
+        Route::get('/queue-counts/revision', [OrderController::class, 'queueCountsRevision'])
             ->middleware('can:orders.view');
         Route::get('/queue-counts', [OrderController::class, 'queueCounts'])
             ->middleware('can:orders.view');

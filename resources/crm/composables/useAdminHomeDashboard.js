@@ -1,7 +1,8 @@
-import { computed, onUnmounted, ref } from "vue";
+import { computed, onMounted, onUnmounted, ref } from "vue";
 import api from "../services/api";
 
 const POLL_MS = 3000;
+const REVISION_POLL_MS = 30000;
 
 const SHIPHERO_SECTION_KEYS = [
   "ready_to_ship",
@@ -41,6 +42,8 @@ export function useAdminHomeDashboard({ onError } = {}) {
   const restockActiveCount = ref(0);
 
   let pollTimer = null;
+  let revisionPollTimer = null;
+  let knownRevision = 0;
 
   const anySectionRunning = computed(() =>
     Object.values(sections.value || {}).some((s) => s?.status === "running"),
@@ -72,14 +75,19 @@ export function useAdminHomeDashboard({ onError } = {}) {
       : [];
     restockPreview.value = Array.isArray(data?.restock_preview) ? [...data.restock_preview] : [];
     restockActiveCount.value = Number(data?.restock_active_count || 0);
+    knownRevision = Number(data?.revision ?? knownRevision);
+  }
+
+  async function fetchDashboard() {
+    const { data } = await api.get("/home-dashboard");
+    applyPayload(data);
+    syncPolling();
   }
 
   async function load() {
     loading.value = true;
     try {
-      const { data } = await api.get("/home-dashboard");
-      applyPayload(data);
-      syncPolling();
+      await fetchDashboard();
     } catch (e) {
       onError?.(e);
       throw e;
@@ -112,17 +120,9 @@ export function useAdminHomeDashboard({ onError } = {}) {
     stopPolling();
     if (!shouldPoll()) return;
     pollTimer = window.setInterval(() => {
-      void api
-        .get("/home-dashboard")
-        .then(({ data }) => {
-          applyPayload(data);
-          if (!shouldPoll()) {
-            stopPolling();
-          }
-        })
-        .catch(() => {
-          /* keep polling on transient errors */
-        });
+      void fetchDashboard().catch(() => {
+        /* keep polling on transient errors */
+      });
     }, POLL_MS);
   }
 
@@ -133,7 +133,39 @@ export function useAdminHomeDashboard({ onError } = {}) {
     }
   }
 
-  onUnmounted(stopPolling);
+  function stopRevisionPolling() {
+    if (revisionPollTimer !== null) {
+      window.clearInterval(revisionPollTimer);
+      revisionPollTimer = null;
+    }
+  }
+
+  function startRevisionPolling() {
+    stopRevisionPolling();
+    revisionPollTimer = window.setInterval(() => {
+      if (shouldPoll()) {
+        return;
+      }
+      void api
+        .get("/home-dashboard/revision", { timeout: 10000 })
+        .then(({ data }) => {
+          const revision = Number(data?.revision ?? 0);
+          if (revision > knownRevision) {
+            void fetchDashboard().catch(() => {});
+          }
+        })
+        .catch(() => {});
+    }, REVISION_POLL_MS);
+  }
+
+  onMounted(() => {
+    startRevisionPolling();
+  });
+
+  onUnmounted(() => {
+    stopPolling();
+    stopRevisionPolling();
+  });
 
   return {
     loading,

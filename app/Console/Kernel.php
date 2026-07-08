@@ -31,6 +31,9 @@ class Kernel extends ConsoleKernel
         $schedule->command('orders:sync-queue-index --sync')
             ->cron('0,30 7-17 * * *')
             ->timezone('America/New_York');
+        $schedule->command('orders:sync-recent-updates')
+            ->cron('*/15 7-17 * * *')
+            ->timezone('America/New_York');
     }
 
     /**

@@ -90,6 +90,8 @@ return [
             env('SHIPHERO_CUSTOMER_ACCOUNT_HIDE_ORDERS_SYNC', true),
             FILTER_VALIDATE_BOOLEAN
         ),
+        'webhook_secret' => env('SHIPHERO_WEBHOOK_SECRET'),
+        'webhook_url' => env('SHIPHERO_WEBHOOK_URL'),
     ],
 
     'whatsapp' => [

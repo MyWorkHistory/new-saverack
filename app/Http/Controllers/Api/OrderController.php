@@ -346,6 +346,64 @@ class OrderController extends Controller
         }
     }
 
+    public function queueCountsSnapshot(Request $request, PortalQueueCountsService $queueCounts): JsonResponse
+    {
+        $validated = $request->validate([
+            'client_account_id' => ['required', 'integer', 'exists:client_accounts,id'],
+        ]);
+
+        $clientAccountId = (int) $validated['client_account_id'];
+        $account = ClientAccount::query()->find($clientAccountId);
+        if ($account === null) {
+            throw ValidationException::withMessages([
+                'client_account_id' => ['Client account not found.'],
+            ]);
+        }
+        Gate::forUser($request->user())->authorize('view', $account);
+
+        $sid = $account->shiphero_customer_account_id;
+        if (! is_string($sid) || trim($sid) === '') {
+            return response()->json([
+                'ready_to_ship' => 0,
+                'on_hold' => 0,
+                'backorder' => 0,
+                'shipped' => 0,
+                'truncated' => false,
+                'refresh_pending' => false,
+                'shiphero_ready' => false,
+                'revision' => 0,
+                'from_index' => false,
+                'message' => 'ShipHero is not configured for this account yet. Save Rack will finish setup shortly.',
+                'cached_at' => now()->toIso8601String(),
+            ]);
+        }
+
+        $context = $queueCounts->contextForAccount($account);
+
+        return response()->json($queueCounts->buildAllQueuesFromIndex($context));
+    }
+
+    public function queueCountsRevision(Request $request, PortalQueueCountsService $queueCounts): JsonResponse
+    {
+        $validated = $request->validate([
+            'client_account_id' => ['required', 'integer', 'exists:client_accounts,id'],
+        ]);
+
+        $clientAccountId = (int) $validated['client_account_id'];
+        $account = ClientAccount::query()->find($clientAccountId);
+        if ($account === null) {
+            throw ValidationException::withMessages([
+                'client_account_id' => ['Client account not found.'],
+            ]);
+        }
+        Gate::forUser($request->user())->authorize('view', $account);
+
+        return response()->json([
+            'revision' => $queueCounts->getCountsRevision($clientAccountId),
+            'updated_at' => now()->toIso8601String(),
+        ]);
+    }
+
     public function summary(Request $request): JsonResponse
     {
         $startedAt = microtime(true);

@@ -258,29 +258,13 @@ class ShipHeroOrderService
      */
     private function queryOrdersListConnection(array $vars, bool $countOnly): array
     {
-        try {
-            $json = $this->client->query($this->ordersListGraphql($countOnly, true), $vars);
-        } catch (RuntimeException $e) {
-            if (! $countOnly && $this->isOrderListStatusFieldError($e->getMessage())) {
-                $json = $this->client->query($this->ordersListGraphql($countOnly, false), $vars);
-            } else {
-                throw $e;
-            }
-        }
+        // Order.status was removed from ShipHero's schema; use fulfillment_status only.
+        $json = $this->client->query($this->ordersListGraphql($countOnly), $vars);
 
         return $this->parseShipHeroOrdersConnection($json, $countOnly);
     }
 
-    private function isOrderListStatusFieldError(string $message): bool
-    {
-        $m = strtolower($message);
-
-        return str_contains($m, 'cannot query field')
-            && str_contains($m, 'status')
-            && (str_contains($m, 'order') || str_contains($m, 'orders'));
-    }
-
-    private function ordersListGraphql(bool $countOnly, bool $includeListStatus = true): string
+    private function ordersListGraphql(bool $countOnly): string
     {
         if ($countOnly) {
             return <<<'GQL'
@@ -350,8 +334,6 @@ query ShipHeroOrders(
 GQL;
         }
 
-        $statusField = $includeListStatus ? "          status\n" : '';
-
         return <<<'GQL'
 query ShipHeroOrders(
   $customer_account_id: String!,
@@ -401,9 +383,6 @@ query ShipHeroOrders(
           partner_order_id
           shop_name
           fulfillment_status
-GQL
-            .$statusField
-            .<<<'GQL'
           order_date
           updated_at
           required_ship_date
@@ -897,7 +876,6 @@ query ShipHeroOrdersByIds($ids: [String], $customer_account_id: String!, $first:
           partner_order_id
           shop_name
           fulfillment_status
-          status
           order_date
           updated_at
           required_ship_date

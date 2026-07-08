@@ -8,6 +8,7 @@ use App\Models\PutAwayReceivingSnapshot;
 use App\Models\PutAwayReceivingSnapshotRow;
 use App\Models\User;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Schema;
 
 class HomeDashboardWidgetsService
 {
@@ -39,19 +40,39 @@ class HomeDashboardWidgetsService
         $canViewInventory = $user->hasPermission('inventory.view');
 
         return [
-            'paused_accounts' => $canViewClients ? $this->pausedAccounts() : [],
-            'pending_new_accounts' => $canViewClients ? $this->pendingNewAccounts() : [],
-            'pending_asn_preview' => $canViewClients ? $this->pendingAsnPreview() : [],
+            'paused_accounts' => $canViewClients ? $this->safeWidget(fn () => $this->pausedAccounts()) : [],
+            'pending_new_accounts' => $canViewClients ? $this->safeWidget(fn () => $this->pendingNewAccounts()) : [],
+            'pending_asn_preview' => $canViewClients ? $this->safeWidget(fn () => $this->pendingAsnPreview()) : [],
             'put_away_by_account' => $user->hasPermission('receiving.view')
-                ? $this->putAwayByAccount()
+                ? $this->safeWidget(fn () => $this->putAwayByAccount())
                 : [],
             'restock_preview' => $canViewInventory
-                ? $this->restockBeta->previewActiveRows(5)
+                ? $this->safeWidget(fn () => $this->restockBeta->previewActiveRows(5), [])
                 : [],
             'restock_active_count' => $canViewInventory
-                ? $this->restockBeta->activeRowCount()
+                ? (int) $this->safeWidget(fn () => $this->restockBeta->activeRowCount(), 0)
                 : 0,
         ];
+    }
+
+    /**
+     * Keep the home dashboard up even if one widget query fails
+     * (e.g. a migration not yet applied on production).
+     *
+     * @template T
+     * @param  callable(): T  $callback
+     * @param  T  $fallback
+     * @return T
+     */
+    private function safeWidget(callable $callback, $fallback = [])
+    {
+        try {
+            return $callback();
+        } catch (\Throwable $e) {
+            report($e);
+
+            return $fallback;
+        }
     }
 
     /**
@@ -81,16 +102,21 @@ class HomeDashboardWidgetsService
      */
     private function pausedAccounts(): array
     {
+        $columns = ['id', 'company_name', 'paused_at'];
+        if (Schema::hasColumn('client_accounts', 'pause_reason')) {
+            $columns[] = 'pause_reason';
+        }
+
         return ClientAccount::query()
             ->where('status', ClientAccount::STATUS_PAUSED)
             ->orderByDesc('paused_at')
             ->orderBy('company_name')
-            ->get(['id', 'company_name', 'paused_at', 'pause_reason'])
+            ->get($columns)
             ->map(static fn (ClientAccount $account) => [
                 'id' => (int) $account->id,
                 'company_name' => (string) $account->company_name,
                 'paused_at' => optional($account->paused_at)->toIso8601String(),
-                'pause_reason' => ClientAccount::pauseReasonLabel($account->pause_reason),
+                'pause_reason' => ClientAccount::pauseReasonLabel($account->pause_reason ?? null),
             ])
             ->values()
             ->all();

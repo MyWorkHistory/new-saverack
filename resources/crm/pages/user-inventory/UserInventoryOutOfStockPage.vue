@@ -80,7 +80,7 @@ async function fetchPage(append, forceRefresh = false) {
     params.query = q;
     params.search_skip = searchSkipNext.value;
   }
-  const { data } = await api.get("/inventory/list", { params });
+  const { data } = await api.get("/inventory-beta/list", { params });
   const chunk = normalizeRows(data?.rows);
   pageInfo.value = {
     has_next_page: Boolean(data?.page_info?.has_next_page),

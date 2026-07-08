@@ -53,9 +53,8 @@ export function usePortalOutOfStockPreview(getClientAccountId, options = {}) {
         active_status: "active",
         first: PREVIEW_FETCH_SIZE,
       };
-      // Never refresh=1 from home preview — that wipes/rebuilds the index and can
-      // stall origin PHP workers past Cloudflare's gateway timeout.
-      const { data } = await api.get("/inventory/list", { params, timeout: 20000 });
+      // Index-only beta catalog path — never blocks origin on live ShipHero reads.
+      const { data } = await api.get("/inventory-beta/list", { params, timeout: 20000 });
       rows.value = Array.isArray(data?.rows) ? data.rows : [];
       hasLoaded.value = true;
     } catch (e) {

@@ -743,6 +743,15 @@ async function ensureAccountCatalogSynced(loadId) {
     return;
   }
   if (loading.value || refreshing.value) return;
+  // Portal: sync in background so the first index read can return immediately.
+  if (isPortalList.value) {
+    void syncAccountRows("incremental").finally(() => {
+      if (loadId === accountLoadSeq) {
+        startAutoSyncTimer();
+      }
+    });
+    return;
+  }
   await syncAccountRows("incremental");
   if (loadId === accountLoadSeq) {
     startAutoSyncTimer();

@@ -310,6 +310,11 @@ GQL;
                 return $this->emptyInventoryListPage();
             }
 
+            // Non-refresh reads (portal home OOS preview, etc.) must not block on live scan.
+            if (! $refresh) {
+                return $this->emptyInventoryListPage();
+            }
+
             return $this->listInventoryRowsSearch(
                 $graphql,
                 $customerAccountId,

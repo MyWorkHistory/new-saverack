@@ -457,4 +457,33 @@ class ShipHeroInventoryRefreshTest extends TestCase
         $this->assertSame([], $payload['rows']);
         $this->assertFalse((bool) ($payload['page_info']['has_next_page'] ?? true));
     }
+
+    public function test_backorder_only_with_empty_index_and_no_refresh_does_not_hit_shiphero(): void
+    {
+        $account = ClientAccount::query()->create([
+            'company_name' => 'OOS No Live Co',
+            'status' => ClientAccount::STATUS_ACTIVE,
+            'shiphero_customer_account_id' => 'sh-oos-nolive-1',
+        ]);
+
+        $client = Mockery::mock(ShipHeroClient::class);
+        $client->shouldNotReceive('query');
+
+        $service = new ShipHeroInventoryService($client);
+        $payload = $service->listInventoryRows(
+            'sh-oos-nolive-1',
+            100,
+            null,
+            'all',
+            'active',
+            null,
+            0,
+            $account->id,
+            true,
+            false
+        );
+
+        $this->assertSame([], $payload['rows']);
+        $this->assertFalse((bool) ($payload['page_info']['has_next_page'] ?? true));
+    }
 }
